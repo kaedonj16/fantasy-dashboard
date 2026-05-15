@@ -5330,7 +5330,7 @@ thead th {
 .da-board { flex: 1; min-width: 0; }
 .da-board-header {
   display: grid;
-  grid-template-columns: 32px 1fr 48px 52px 52px 76px;
+  grid-template-columns: 32px 1fr 48px 56px 52px 76px;
   gap: 8px;
   padding: 4px 10px 8px;
   font-size: 11px;
@@ -5350,7 +5350,7 @@ thead th {
 }
 .da-row {
   display: grid;
-  grid-template-columns: 32px 1fr 48px 52px 52px 76px;
+  grid-template-columns: 32px 1fr 48px 56px 52px 76px;
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
@@ -5427,6 +5427,38 @@ thead th {
   width: 100%;
 }
 .da-undraft-btn:hover { border-color: var(--accent); color: var(--accent); }
+.da-mine-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.da-mine-btn.active {
+  background: rgba(16,185,129,.12);
+  border-color: #10b981;
+  color: #10b981;
+}
+.da-mine-btn:hover { border-color: #10b981; color: #10b981; }
+.da-my-pick { background: rgba(16,185,129,.05); }
+.da-end-draft-btn {
+  width: 100%;
+  padding: 10px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.da-end-draft-btn:hover { opacity: 0.85; }
 .da-drafted-sep {
   font-size: 11px;
   font-weight: 700;
@@ -5486,8 +5518,23 @@ thead th {
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s;
+  margin-left: auto;
 }
 .da-reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+.da-info-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.da-info-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 @media (max-width: 720px) {
   .da-layout { flex-direction: column; }
@@ -5496,19 +5543,19 @@ thead th {
   .da-needs-chevron { display: inline; }
   .da-needs-collapsed .da-needs-body { display: none; }
   .da-needs-collapsed .da-needs-title { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
-  /* Drop badge column (col 4) from the template; display:none shifts items 5+6 into slots 4+5 */
+  /* On mobile: drop value col (col 5), keep Mine/badge (col 4) and tighten button */
   .da-board-header,
-  .da-row { grid-template-columns: 28px 1fr 44px 48px 60px; gap: 4px; }
-  .da-board-header span:nth-child(4),
-  .da-row > :nth-child(4) { display: none; }
+  .da-row { grid-template-columns: 28px 1fr 40px 52px 40px; gap: 4px; }
+  .da-board-header span:nth-child(5),
+  .da-row > :nth-child(5) { display: none; }
   .da-rec-badge { display: none; }
   /* Let the page scroll naturally on mobile instead of clipping the board */
   .da-board-list { max-height: none; overflow-y: visible; }
 }
 @media (max-width: 400px) {
   .da-board-header,
-  .da-row { grid-template-columns: 24px 1fr 40px 44px 52px; }
-  .da-draft-btn, .da-undraft-btn { padding: 5px 6px; font-size: 11px; }
+  .da-row { grid-template-columns: 24px 1fr 36px 48px 36px; }
+  .da-draft-btn, .da-undraft-btn, .da-mine-btn { padding: 4px 6px; font-size: 10px; }
   .da-name { font-size: 12px; }
 }
 

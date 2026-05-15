@@ -9206,11 +9206,13 @@ function setupFunAwardsGrid() {
 
 // ── Rookie Draft Assistant ────────────────────────────────────────────────────
 (function () {
-  let daProspects = [];
-  let daDrafted   = new Set();
+  let daProspects  = [];
+  let daDrafted    = new Set(); // insertion order = overall draft pick order
+  let myPicks      = new Set(); // subset of daDrafted that are the user's own picks
+  let myPickOrder  = [];        // ordered subset of myPicks (for grading)
   let daFilter    = 'ALL';
   let daSubView   = 'available'; // 'available' | 'drafted'
-  let daNeeds     = {};
+  let daNeeds      = {};
   let daLeagueType = '1qb';
   let daLeagueSize = 10;
   let daYear       = new Date().getFullYear();
@@ -9221,8 +9223,31 @@ function setupFunAwardsGrid() {
   const NEED_COLOR = { 2: '#ef4444', 1: '#f59e0b', 0: '#9ca3af', '-1': '#10b981', '-2': '#059669' };
   const NEED_BONUS = { 2: 1.5, 1: 1.2, 0: 1.0, '-1': 0.85, '-2': 0.7 };
 
+  function effectiveNeed(pos) {
+    const raw   = daNeeds[pos] ?? 0;
+    const delta = daLocalNeeds[pos] || 0;
+    let need    = Math.max(-2, Math.min(2, raw + delta));
+    // In 1QB leagues cap QB need at Neutral if roster already has 2+ QBs (including my picks)
+    if (pos === 'QB' && daLeagueType !== 'sf') {
+      const myQBs = myPickOrder.filter(id => {
+        const p = daProspects.find(x => String(x.player_id) === id);
+        return p && p.position === 'QB';
+      }).length;
+      if ((daNeeds.QB_count || 0) + myQBs >= 2) need = Math.min(0, need);
+    }
+    return need;
+  }
+
   function needBonus(pos) {
-    return NEED_BONUS[String(daNeeds[pos] ?? 0)] ?? 1.0;
+    return NEED_BONUS[String(effectiveNeed(pos))] ?? 1.0;
+  }
+
+  function adjustNeedsForDraft(playerId, delta) {
+    const p = daProspects.find(x => String(x.player_id) === String(playerId));
+    if (!p || !p.position) return;
+    const pos = p.position.toUpperCase();
+    daLocalNeeds[pos] = (daLocalNeeds[pos] || 0) + delta;
+    renderNeeds();
   }
 
   function daScore(p) {
@@ -9257,7 +9282,7 @@ function setupFunAwardsGrid() {
       return;
     }
     const rows = ['QB','RB','WR','TE'].map(pos => {
-      const need  = daNeeds[pos] ?? 0;
+      const need  = effectiveNeed(pos);
       const col   = POS_COLORS[pos] || '#9ca3af';
       const count = daNeeds[`${pos}_count`] ?? 0;
       const val   = Math.round(daNeeds[`${pos}_value`] || 0);
@@ -9291,18 +9316,27 @@ function setupFunAwardsGrid() {
         listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No players drafted yet.</div>';
         return;
       }
-      listEl.innerHTML = drafted.map((p, i) => {
-        const col    = POS_COLORS[p.position] || '#9ca3af';
-        const dAdp   = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
-        const dTeam  = p.actual_nfl_team || p.school || '';
-        const dMeta  = [dTeam, dAdp != null ? `ADP ${parseFloat(dAdp).toFixed(1)}` : ''].filter(Boolean).join(' · ');
-        return `<div class="da-row">
-          <div class="da-rank">${i + 1}</div>
+      const endBtn = myPicks.size > 0
+        ? `<div style="padding:12px 10px 4px;"><button class="da-end-draft-btn" onclick="window._da.endDraft()">End Draft &amp; Grade My Picks</button></div>`
+        : '';
+      listEl.innerHTML = endBtn + drafted.map((p, i) => {
+        const sid   = String(p.player_id);
+        const isMine = myPicks.has(sid);
+        const col   = POS_COLORS[p.position] || '#9ca3af';
+        const dAdp  = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
+        const dTeam = p.actual_nfl_team || p.school || '';
+        const dMeta = [dTeam, dAdp != null ? `ADP ${parseFloat(dAdp).toFixed(1)}` : ''].filter(Boolean).join(' · ');
+        const draftedArr = [...daDrafted];
+        const overallPick = draftedArr.indexOf(sid) + 1; // overall pick # in draft order
+        return `<div class="da-row${isMine ? ' da-my-pick' : ''}">
+          <div class="da-rank">${isMine
+            ? `<span style="color:var(--accent);font-weight:800;">${overallPick}</span>`
+            : `<span style="color:var(--text-muted);">${overallPick}</span>`}</div>
           <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${dMeta}</span></div>
           <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
-          <div></div>
+          <button class="da-mine-btn${isMine ? ' active' : ''}" onclick="window._da.toggleMine('${p.player_id}')">${isMine ? 'Mine' : 'Mine?'}</button>
           <div class="da-col-right da-val">${Math.round(parseFloat(p.display_value||0))||'—'}</div>
-          <button class="da-undraft-btn" onclick="window._da.undraft('${p.player_id}')">↩ Remove</button>
+          <button class="da-undraft-btn" onclick="window._da.undraft('${p.player_id}')">↩</button>
         </div>`;
       }).join('');
       return;
@@ -9359,13 +9393,188 @@ function setupFunAwardsGrid() {
   }
 
   function saveSession() {
-    try { sessionStorage.setItem('da_' + location.pathname, JSON.stringify([...daDrafted])); } catch (_) {}
+    const key = 'da_' + location.pathname;
+    try {
+      sessionStorage.setItem(key, JSON.stringify([...daDrafted]));
+      sessionStorage.setItem(key + '_mine', JSON.stringify(myPickOrder));
+    } catch (_) {}
+  }
+
+  function showDraftHelp() {
+    const steps = [
+      { icon: '1', title: 'Draft players in order', body: 'As each pick happens — yours or anyone else\'s — tap <strong>Draft</strong> to remove them from the board. Do this in real draft order so pick numbers are accurate.' },
+      { icon: '2', title: 'Mark your picks', body: 'Switch to the <strong>Drafted</strong> tab and tap <strong>Mine</strong> on each player you actually selected. The pick number is set automatically based on when you drafted them.' },
+      { icon: '3', title: 'Watch your needs update', body: 'The <strong>Roster Needs</strong> panel reflects your current roster vs. the league. Marking a pick as Mine adjusts the needs panel live.' },
+      { icon: '4', title: 'End Draft &amp; grade', body: 'Once you\'ve marked your picks, tap <strong>End Draft &amp; Grade My Picks</strong>. Each pick is graded A+–F using ADP value, positional need, and QB context — the same formula as the Teams page Draft Grades.' },
+    ];
+    const html = `
+      <div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:16px;font-weight:700;color:var(--text);">How to use the Draft Assistant</div>
+        <button onclick="document.getElementById('daHelpModal').style.display='none'" style="background:none;border:none;font-size:20px;color:var(--text-muted);cursor:pointer;">✕</button>
+      </div>
+      <div style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:16px;">
+        ${steps.map(s => `
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <div style="flex-shrink:0;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;">${s.icon}</div>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;">${s.title}</div>
+              <div style="font-size:12px;color:var(--text-muted);line-height:1.5;">${s.body}</div>
+            </div>
+          </div>`).join('')}
+      </div>`;
+
+    let modal = document.getElementById('daHelpModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'daHelpModal';
+      modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:10600;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,0.7);backdrop-filter:blur(4px);';
+      modal.innerHTML = '<div id="daHelpModalContent" style="background:var(--card);border-radius:16px;max-width:420px;width:100%;box-shadow:0 24px 48px rgba(15,23,42,0.25);"></div>';
+      modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+      document.body.appendChild(modal);
+    }
+    document.getElementById('daHelpModalContent').innerHTML = html;
+    modal.style.display = 'flex';
+  }
+
+  // Exact port of pick_grade() and team_grade() from app.py
+  function _pickGrade(adpDiff, need, pos, isSF, qbCount, numTeams) {
+    if (adpDiff === null) return 'N/A';
+    const bigReach = -(numTeams * 1.1);
+    let score;
+    if      (adpDiff >= 4)          score = 4;
+    else if (adpDiff >= 2)          score = 3;
+    else if (adpDiff >= -3)         score = 2;
+    else if (adpDiff >= bigReach)   score = 1;
+    else                            score = 0;
+
+    if (need) {
+      score += 1;
+    } else {
+      if (pos === 'QB' && !isSF && qbCount >= 2) score = Math.max(score - 2, 0);
+      else if (pos === 'QB' && !isSF && qbCount >= 1) score = Math.max(score - 1, 0);
+    }
+    if (adpDiff >= -3)            score = Math.max(score, 1);
+    if (need && adpDiff >= -4)    score = Math.max(score, 2);
+    return ({5:'A+',4:'A',3:'B',2:'C',1:'D',0:'F'})[Math.min(score, 5)] || 'F';
+  }
+
+  function _teamGrade(grades) {
+    if (!grades.length) return 'N/A';
+    const v = {'A+':5,'A':4,'B':3,'C':2,'D':1,'F':0,'N/A':2};
+    const avg = grades.reduce((s, g) => s + (v[g] ?? 2), 0) / grades.length;
+    if (avg >= 4.5) return 'A+';
+    if (avg >= 3.5) return 'A';
+    if (avg >= 2.5) return 'B';
+    if (avg >= 1.5) return 'C';
+    if (avg >= 0.5) return 'D';
+    return 'F';
+  }
+
+  function showDraftGrade() {
+    const GRADE_COLOR = { 'A+': '#10b981', 'A': '#10b981', 'B': '#3b82f6', 'C': '#f59e0b', 'D': '#ef4444', 'F': '#6b7280', 'N/A': '#9ca3af' };
+    const isSF = daLeagueType === 'sf';
+
+    const draftedArr = [...daDrafted]; // preserves insertion order = actual pick sequence
+    const picks = myPickOrder.map((sid, idx) => {
+      const p = daProspects.find(x => String(x.player_id) === sid);
+      if (!p) return null;
+      const actualPick = draftedArr.indexOf(sid) + 1; // overall pick # in draft order
+      const adp = parseFloat(isSF ? p.sf_avg_pick : p.avg_pick) || null;
+      const adpDiff = adp !== null ? actualPick - adp : null;
+      const need = (daNeeds[p.position] ?? 0) >= 1;
+      const qbsBefore = myPickOrder.slice(0, idx).filter(id => {
+        const q = daProspects.find(x => String(x.player_id) === id);
+        return q && q.position === 'QB';
+      }).length;
+      const qbCount = (daNeeds.QB_count || 0) + qbsBefore;
+      const grade = _pickGrade(adpDiff, need, p.position, isSF, qbCount, daLeagueSize);
+      const needLabel = NEED_LABEL[String(daNeeds[p.position] ?? 0)] || 'Neutral';
+      const tier = p.tier_label || '';
+      return { p, actualPick, adp, adpDiff, grade, need, needLabel, tier };
+    }).filter(Boolean);
+
+    if (!picks.length) return;
+
+    const overall = _teamGrade(picks.map(x => x.grade));
+
+    const rows = picks.map(({ p, actualPick, adp, adpDiff, grade, needLabel, tier }) => {
+      const col    = POS_COLORS[p.position] || '#9ca3af';
+      const gc     = GRADE_COLOR[grade] || '#9ca3af';
+      const adpTxt = adp ? `ADP ${adp.toFixed(1)}` : '';
+      const pickTxt = `Pick ${actualPick}`;
+      const diffTxt = adpDiff !== null ? (adpDiff >= 0 ? `+${adpDiff.toFixed(1)} value` : `${adpDiff.toFixed(1)} reach`) : '';
+      const diffCol = adpDiff !== null ? (adpDiff >= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)';
+      const tierTxt = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : '';
+      const meta = [pickTxt, adpTxt, tierTxt, needLabel].filter(Boolean).join(' · ');
+      return `<div style="display:grid;grid-template-columns:1fr 44px 36px;align-items:center;gap:8px;padding:9px 16px;border-top:1px solid var(--border);">
+        <div style="display:flex;flex-direction:column;gap:2px;min-width:0;">
+          <span style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</span>
+          <span style="font-size:11px;color:var(--text-muted);">${meta}</span>
+          ${diffTxt ? `<span style="font-size:11px;font-weight:600;color:${diffCol};">${diffTxt}</span>` : ''}
+        </div>
+        <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;text-align:center;">${p.position}</span>
+        <div style="font-size:18px;font-weight:800;color:${gc};text-align:center;">${grade}</div>
+      </div>`;
+    }).join('');
+
+    const gc = GRADE_COLOR[overall] || '#9ca3af';
+    const html = `
+      <div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:var(--text);">My Draft Grade</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${picks.length} pick${picks.length !== 1 ? 's' : ''}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="font-size:42px;font-weight:800;color:${gc};">${overall}</div>
+          <button onclick="document.getElementById('daGradeModal').style.display='none'" style="background:none;border:none;font-size:20px;color:var(--text-muted);cursor:pointer;">✕</button>
+        </div>
+      </div>
+      <div style="margin-top:8px;">${rows}</div>
+      <div style="padding:16px;text-align:center;">
+        <button onclick="document.getElementById('daGradeModal').style.display='none'" style="padding:8px 24px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Done</button>
+      </div>`;
+
+    let modal = document.getElementById('daGradeModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'daGradeModal';
+      modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:10600;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,0.7);backdrop-filter:blur(4px);';
+      modal.innerHTML = '<div id="daGradeModalContent" style="background:var(--card);border-radius:16px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 24px 48px rgba(15,23,42,0.25);"></div>';
+      modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+      document.body.appendChild(modal);
+    }
+    document.getElementById('daGradeModalContent').innerHTML = html;
+    modal.style.display = 'flex';
   }
 
   window._da = {
     draft(id)      { daDrafted.add(String(id));    saveSession(); render(); },
-    undraft(id)    { daDrafted.delete(String(id)); saveSession(); render(); },
+    undraft(id) {
+      const sid = String(id);
+      daDrafted.delete(sid);
+      if (myPicks.has(sid)) {
+        myPicks.delete(sid);
+        myPickOrder = myPickOrder.filter(x => x !== sid);
+        adjustNeedsForDraft(sid, +1);
+      }
+      saveSession(); render();
+    },
+    toggleMine(id) {
+      const sid = String(id);
+      if (myPicks.has(sid)) {
+        myPicks.delete(sid);
+        myPickOrder = myPickOrder.filter(x => x !== sid);
+        adjustNeedsForDraft(sid, +1);
+      } else {
+        myPicks.add(sid);
+        myPickOrder.push(sid);
+        adjustNeedsForDraft(sid, -1);
+      }
+      saveSession(); render();
+    },
     toggleNeeds()  { daToggleNeeds(); },
+    endDraft()     { showDraftGrade(); },
+    showHelp()     { showDraftHelp(); },
   };
 
   window.daFilterPos = function (pos) {
@@ -9382,6 +9591,9 @@ function setupFunAwardsGrid() {
 
   window.daReset = function () {
     daDrafted.clear();
+    myPicks.clear();
+    myPickOrder = [];
+    daLocalNeeds = {};
     daFilter  = 'ALL';
     daSubView = 'available';
     document.querySelectorAll('.da-filter').forEach(b => b.classList.toggle('active', b.dataset.pos === 'ALL'));
@@ -9402,7 +9614,9 @@ function setupFunAwardsGrid() {
   };
 
   async function initDA() {
-    try { daDrafted = new Set(JSON.parse(sessionStorage.getItem('da_' + location.pathname) || '[]')); } catch (_) {}
+    const _sessKey = 'da_' + location.pathname;
+    try { daDrafted = new Set(JSON.parse(sessionStorage.getItem(_sessKey) || '[]')); } catch (_) {}
+    try { myPickOrder = JSON.parse(sessionStorage.getItem(_sessKey + '_mine') || '[]'); myPicks = new Set(myPickOrder); } catch (_) {}
 
     // Derive league context from URL: /<platform>/<season>/<league_id>/...
     const parts    = location.pathname.split('/').filter(Boolean);
