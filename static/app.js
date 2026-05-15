@@ -2395,6 +2395,15 @@ window.initTradePage = function initTradePage(root = document) {
 
     tabs.forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
 
+    // If the user selects their team while the suggestions tab is already open
+    // (or after clicking it too early), retry loading targets automatically.
+    const teamSelEl = root.querySelector("#teamSelect");
+    if (teamSelEl) {
+      teamSelEl.addEventListener("change", () => {
+        if (!suggTargetsLoaded && suggTab.style.display !== "none") loadSuggTargets();
+      });
+    }
+
     // expose so Load & Analyze can switch back
     function switchToCalc() { switchTab("calculator"); }
 
