@@ -14421,6 +14421,77 @@ def api_team_details(roster_id: str):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/team-trades/<roster_id>")
+def api_team_trades(roster_id: str):
+    """Return all trades for a specific team in the current league season."""
+    try:
+        from dashboard_services.service import get_transactions_by_week
+        from utils.utils import load_players_index
+
+        league_id = request.args.get("league_id")
+        platform = request.args.get("platform", "sleeper")
+        season = int(request.args.get("season") or datetime.now().year)
+
+        if not league_id:
+            return jsonify({"error": "league_id required"}), 400
+
+        players_index = load_players_index() or {}
+
+        weeks = list(range(1, 19))
+        tx_by_week = get_transactions_by_week(league_id, weeks, platform=platform, season=season) or {}
+
+        def _pinfo(pid):
+            meta = players_index.get(str(pid)) or {}
+            return {
+                "player_id": str(pid),
+                "name": meta.get("name") or str(pid),
+                "position": meta.get("pos") or "",
+            }
+
+        trades = []
+        for week in sorted(tx_by_week):
+            for t in (tx_by_week[week] or []):
+                if t.get("type") != "trade":
+                    continue
+
+                adds = t.get("adds") or {}
+                drops = t.get("drops") or {}
+                draft_picks = t.get("draft_picks") or []
+                base_rids = set(str(r) for r in (t.get("roster_ids") or []))
+                all_rids = base_rids | {str(v) for v in adds.values()} | {str(v) for v in drops.values()}
+
+                if str(roster_id) not in all_rids:
+                    continue
+
+                ts_raw = t.get("status_updated") or t.get("created")
+                date_str = ""
+                if ts_raw:
+                    from datetime import timezone as _tz
+                    _dt = datetime.fromtimestamp(ts_raw / 1000.0, tz=_tz.utc)
+                    date_str = _dt.strftime("%-m/%-d/%y")
+
+                my_gets = [_pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == str(roster_id)]
+                my_sends = [_pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == str(roster_id)]
+                my_pick_gets = [p for p in draft_picks if str(p.get("owner_id")) == str(roster_id)]
+                my_pick_sends = [p for p in draft_picks if str(p.get("previous_owner_id")) == str(roster_id)]
+
+                trades.append({
+                    "week": week,
+                    "date": date_str,
+                    "my_gets": my_gets,
+                    "my_sends": my_sends,
+                    "my_pick_gets": my_pick_gets,
+                    "my_pick_sends": my_pick_sends,
+                })
+
+        trades.sort(key=lambda x: x["week"], reverse=True)
+        return jsonify({"trades": trades, "total": len(trades)})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 # /api/subscription-status → routes/billing_bp.py :: api_subscription_status()
 
 @app.route("/api/sleeper-user-leagues")

@@ -7605,6 +7605,8 @@ function openTeamModal(rosterId, teamName) {
   modal.className = 'team-modal';
   modal.id = 'teamModal';
 
+  window._tmRosterId = rosterId;
+
   modal.innerHTML = `
     <div class="team-modal-header">
       <div class="team-modal-avatar" id="teamModalAvatar">
@@ -7618,11 +7620,20 @@ function openTeamModal(rosterId, teamName) {
       </div>
       <button class="team-modal-close" onclick="closeTeamModal()">×</button>
     </div>
-    <div class="team-modal-body" id="teamModalBody">
-      <div class="team-modal-loading">
-        <div class="loading-spinner"></div>
-        <div>Loading team details...</div>
+    <div class="tm-tab-bar">
+      <button class="tm-tab active" data-tab="roster" onclick="tmSwitchTab('roster')">Roster</button>
+      <button class="tm-tab" data-tab="charts" onclick="tmSwitchTab('charts')">Charts</button>
+      <button class="tm-tab" data-tab="trades" onclick="tmSwitchTab('trades')">Trades</button>
+    </div>
+    <div class="team-modal-body">
+      <div class="tm-panel active" id="tm-panel-roster">
+        <div class="team-modal-loading">
+          <div class="loading-spinner"></div>
+          <div>Loading team details...</div>
+        </div>
       </div>
+      <div class="tm-panel" id="tm-panel-charts"></div>
+      <div class="tm-panel" id="tm-panel-trades"></div>
     </div>
   `;
 
@@ -7641,6 +7652,86 @@ function closeTeamModal() {
   if (overlay) overlay.remove();
   if (modal) modal.remove();
   document.body.style.overflow = '';
+  window._tmRosterId = null;
+  window._tmTradesLoaded = false;
+}
+
+function tmSwitchTab(tab) {
+  document.querySelectorAll('.tm-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tm-tab').forEach(t => t.classList.remove('active'));
+  const panel = document.getElementById('tm-panel-' + tab);
+  const btn = document.querySelector('.tm-tab[data-tab="' + tab + '"]');
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
+
+  if (tab === 'trades' && !window._tmTradesLoaded) {
+    window._tmTradesLoaded = true;
+    tmLoadTrades(window._tmRosterId);
+  }
+}
+
+async function tmLoadTrades(rosterId) {
+  const panel = document.getElementById('tm-panel-trades');
+  if (!panel) return;
+  panel.innerHTML = '<div class="team-modal-loading"><div class="loading-spinner"></div><div>Loading trade history…</div></div>';
+
+  try {
+    const pathParts = window.location.pathname.split('/').filter(p => p);
+    const platform = pathParts[0] || 'sleeper';
+    const season = pathParts[1] || new Date().getFullYear();
+    const leagueId = pathParts[2];
+
+    if (!leagueId) throw new Error('League ID not found');
+
+    const res = await fetch(`/api/team-trades/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    const trades = data.trades || [];
+    if (!trades.length) {
+      panel.innerHTML = '<div class="tm-trade-empty-state">No trades found for this team this season.</div>';
+      return;
+    }
+
+    const cards = trades.map(tr => {
+      const gotAssets = [
+        ...tr.my_gets.map(p => `<div class="tm-trade-asset"><strong class="player-clickable" data-player-id="${p.player_id}" data-player-name="${p.name}" style="cursor:pointer">${p.name}</strong><span class="asset-pos">${p.position}</span></div>`),
+        ...tr.my_pick_gets.map(p => `<div class="tm-trade-pick">${p.season} Rd ${p.round}</div>`),
+      ].join('') || '<div class="tm-trade-asset" style="color:var(--text-muted)">—</div>';
+
+      const sentAssets = [
+        ...tr.my_sends.map(p => `<div class="tm-trade-asset"><strong class="player-clickable" data-player-id="${p.player_id}" data-player-name="${p.name}" style="cursor:pointer">${p.name}</strong><span class="asset-pos">${p.position}</span></div>`),
+        ...tr.my_pick_sends.map(p => `<div class="tm-trade-pick">${p.season} Rd ${p.round}</div>`),
+      ].join('') || '<div class="tm-trade-asset" style="color:var(--text-muted)">—</div>';
+
+      const dateStr = tr.date ? `· ${tr.date}` : '';
+      const weekStr = tr.week ? `Week ${tr.week}` : '';
+
+      return `
+        <div class="tm-trade-card">
+          <div class="tm-trade-header">
+            <span class="tm-trade-week">${weekStr}</span>
+            <span>${dateStr}</span>
+          </div>
+          <div class="tm-trade-body">
+            <div class="tm-trade-side">
+              <div class="tm-trade-side-label got">Received</div>
+              ${gotAssets}
+            </div>
+            <div class="tm-trade-divider">⇄</div>
+            <div class="tm-trade-side">
+              <div class="tm-trade-side-label sent">Sent</div>
+              ${sentAssets}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    panel.innerHTML = cards;
+  } catch (err) {
+    panel.innerHTML = `<div class="team-modal-error"><div>Failed to load trades</div><div style="font-size:13px;color:#9ca3af">${err.message}</div></div>`;
+  }
 }
 
 async function checkTradeOutcome(btn) {
@@ -7764,7 +7855,8 @@ async function fetchTeamDetails(rosterId) {
 
   } catch (error) {
     console.error('[team-modal] Error fetching team details:', error);
-    document.getElementById('teamModalBody').innerHTML = `
+    const _errPanel = document.getElementById('tm-panel-roster');
+    if (_errPanel) _errPanel.innerHTML = `
       <div class="team-modal-error">
         <div>Failed to load team details</div>
         <div style="color: #9ca3af; font-size: 14px;">${error.message}</div>
@@ -8181,10 +8273,15 @@ function renderTeamDetails(data) {
     graphsHTML += '</div>';
   }
 
-  // Set body content with two-column layout
-  const leftColumn = `<div class="team-modal-body-left">${rosterHTML}</div>`;
-  const rightColumn = `<div class="team-modal-body-right">${graphsHTML}${picksHTML}</div>`;
-  document.getElementById('teamModalBody').innerHTML = leftColumn + rightColumn;
+  // Populate tab panels
+  const rosterPanel = document.getElementById('tm-panel-roster');
+  if (rosterPanel) {
+    rosterPanel.innerHTML = `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${picksHTML}</div>`;
+  }
+  const chartsPanel = document.getElementById('tm-panel-charts');
+  if (chartsPanel) {
+    chartsPanel.innerHTML = graphsHTML || '<div class="team-modal-empty">No chart data available</div>';
+  }
 
   // Helper function to get theme-appropriate Plotly styling
   function getPlotlyTheme() {
