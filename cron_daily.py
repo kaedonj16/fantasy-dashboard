@@ -11,7 +11,37 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from dashboard_services.api import get_nfl_state
-from utils.paths import DATA_DIR
+from utils.paths import DATA_DIR, CACHE_DIR
+
+
+# ---------------------------------------------------------------------------
+# Cleanup: delete old date-stamped files left from before the undated migration
+# ---------------------------------------------------------------------------
+
+import re
+_DATED_PATTERN = re.compile(r'_\d{4}-\d{2}-\d{2}')
+
+
+def cleanup_dated_files() -> int:
+    """Delete any files whose names contain a YYYY-MM-DD date stamp."""
+    removed = 0
+    search_dirs = [DATA_DIR]
+    try:
+        search_dirs.append(CACHE_DIR)
+    except Exception:
+        pass
+    for base in search_dirs:
+        if not Path(base).exists():
+            continue
+        for p in Path(base).rglob("*"):
+            if p.is_file() and _DATED_PATTERN.search(p.stem):
+                try:
+                    p.unlink()
+                    print(f"[cron] Removed dated file: {p}")
+                    removed += 1
+                except Exception as e:
+                    print(f"[cron] Could not remove {p}: {e}")
+    return removed
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +159,10 @@ def main():
     today_weekday = date.today().weekday()  # 6 = Sunday
 
     print(f"[cron] Daily run starting - Season {season}, Week {week}")
+
+    n_cleaned = cleanup_dated_files()
+    if n_cleaned:
+        print(f"[cron] Cleaned up {n_cleaned} old dated file(s)")
 
     # ------------------------------------------------------------------ #
     # Step 1: Vendor data + usage table                                   #

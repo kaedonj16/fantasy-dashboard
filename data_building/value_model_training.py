@@ -32,9 +32,9 @@ from utils.utils import load_teams_index, bucket_for_slot, normalize_name, load_
 # ------------------------------------------------
 
 MODEL_PATH = DATA_DIR / "trade_value_model.pkl"
-DYNASTYPROCESS_VALUES_PATH = DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv"
-FANTASYCALC_VALUES_PATH = DATA_DIR / f"fantasycalc_api_values_{date.today().isoformat()}.csv"
-ENGINE_VALUES_PATH = DATA_DIR / f"engine_values_{date.today().isoformat()}.csv"
+DYNASTYPROCESS_VALUES_PATH = DATA_DIR / "dynastyprocess_values.csv"
+FANTASYCALC_VALUES_PATH    = DATA_DIR / "fantasycalc_api_values.csv"
+ENGINE_VALUES_PATH         = DATA_DIR / "engine_values.csv"
 
 FANTASYCALC_URL = (
     "https://api.fantasycalc.com/values/current"
@@ -1096,8 +1096,7 @@ def build_ml_value_table() -> Dict[str, float]:
 # ------------------------------------------------
 
 def rewrite_value_table_with_model() -> Path:
-    date_str = date.today().isoformat()
-    source_path = DATA_DIR / f"usage_table_{date_str}.json"
+    source_path = DATA_DIR / "usage_table.json"
     if not source_path.exists():
         raise FileNotFoundError(f"No usage table file at {source_path}")
 
@@ -1184,7 +1183,7 @@ def rewrite_value_table_with_model() -> Path:
     sf_vendor_values: dict[str, float] = {}
 
     # Load engine_values CSV (contains both 1QB + SF values for all league sizes)
-    engine_values_path = DATA_DIR / f"engine_values_{date.today().isoformat()}.csv"
+    engine_values_path = DATA_DIR / "engine_values.csv"
     sf_engine_map: dict[str, float] = {}
     # Per-league-size engine maps: {size: {pid: value}}
     engine_size_map: dict[int, dict[str, float]] = {}
@@ -1231,7 +1230,7 @@ def rewrite_value_table_with_model() -> Path:
     dp_df_full = pd.DataFrame()  # Full DP dataframe for outlier detection
     # Always try to load DP dataframe for outlier detection
     try:
-        dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
+        dp_raw = pd.read_csv(DATA_DIR / "dynastyprocess_values.csv")
         if "player" in dp_raw.columns and "value_1qb" in dp_raw.columns:
             dp_df_full = dp_raw
     except Exception as e:
@@ -1247,7 +1246,7 @@ def rewrite_value_table_with_model() -> Path:
     # NOTE: dp_df_full intentionally kept from the load above - it is used below
     # to look up per-player DP value_1qb for vendor consensus.  Do NOT reset it here.
     try:
-        dp_raw = pd.read_csv(DATA_DIR / f"dynastyprocess_values_{date.today().isoformat()}.csv")
+        dp_raw = pd.read_csv(DATA_DIR / "dynastyprocess_values.csv")
         dp_df_full = dp_raw.copy()  # Populate dp_df_full with the actual data
         if "player" in dp_raw.columns and "value_2qb" in dp_raw.columns:
             for _, row in dp_raw.iterrows():
@@ -1613,18 +1612,8 @@ def rewrite_value_table_with_model() -> Path:
             else:
                 asset["pos_rank_change_7d"] = None
 
-    out_path = DATA_DIR / f"model_values_{date_str}.json"
+    out_path = DATA_DIR / "model_values.json"
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(cleaned_assets, f, ensure_ascii=False, indent=2)
-
-    # Remove all previous model_values files now that today's has been written
-    today_name = out_path.name
-    for old_file in DATA_DIR.glob("model_values_*.json"):
-        if old_file.name != today_name:
-            try:
-                old_file.unlink()
-                print(f"[model_values] Removed old value file: {old_file.name}")
-            except Exception as e:
-                print(f"[model_values] Failed to remove {old_file.name}: {e}")
 
     return out_path
