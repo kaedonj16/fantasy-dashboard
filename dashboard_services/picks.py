@@ -478,6 +478,27 @@ def load_pick_value_table(
                                          and k.split("_")[1].isdigit()
                                          and int(k.split("_")[1]) > 5)}
 
+                    # Enforce slot monotonicity within each year+round:
+                    # pick 1.01 must be worth >= 1.02 >= ... >= 1.10.
+                    # Group slot picks by (year, round), sort by slot, then
+                    # cap each slot at the value of the previous (better) slot.
+                    from collections import defaultdict as _dd
+                    slot_groups: dict = _dd(list)
+                    for k in list(wls_final):
+                        p = k.split("_")
+                        if len(p) == 3 and p[2].isdigit():
+                            try:
+                                slot_groups[(int(p[0]), int(p[1]))].append((int(p[2]), k))
+                            except ValueError:
+                                pass
+                    for (yr, rnd), entries in slot_groups.items():
+                        entries.sort()  # ascending slot order (1.01, 1.02, ...)
+                        for i in range(1, len(entries)):
+                            prev_key = entries[i - 1][1]
+                            curr_key = entries[i][1]
+                            # Later slot must not exceed earlier slot
+                            wls_final[curr_key] = min(wls_final[curr_key], wls_final[prev_key])
+
                     # Enforce year-over-year monotonicity on bucket picks:
                     # a far-year bucket should never exceed the same near-year bucket.
                     # Slot picks (third part is numeric) are current-year only, skip them.
