@@ -3,6 +3,7 @@ import gc
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -21,19 +22,27 @@ def _today() -> date:
     return date.today()
 
 
+def _file_fresh_today(path: Path) -> bool:
+    """True if the file exists and was last modified today."""
+    if not path.exists():
+        return False
+    return date.fromtimestamp(path.stat().st_mtime) == _today()
+
+
 def _model_values_fresh() -> bool:
-    return (DATA_DIR / f"model_values_{_today().isoformat()}.json").exists()
+    return _file_fresh_today(DATA_DIR / "model_values.json")
 
 
 def _vendor_values_fresh() -> bool:
-    fc  = DATA_DIR / f"fantasycalc_api_values_{_today().isoformat()}.csv"
-    dp  = DATA_DIR / f"dynastyprocess_values_{_today().isoformat()}.csv"
-    eng = DATA_DIR / f"engine_values_{_today().isoformat()}.csv"
-    return fc.exists() and dp.exists() and eng.exists()
+    return (
+        _file_fresh_today(DATA_DIR / "fantasycalc_api_values.csv") and
+        _file_fresh_today(DATA_DIR / "dynastyprocess_values.csv") and
+        _file_fresh_today(DATA_DIR / "engine_values.csv")
+    )
 
 
 def _usage_table_fresh() -> bool:
-    return (DATA_DIR / f"usage_table_{_today().isoformat()}.json").exists()
+    return _file_fresh_today(DATA_DIR / "usage_table.json")
 
 
 def _player_values_fresh() -> bool:

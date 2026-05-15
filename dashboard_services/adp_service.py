@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+import time
 from typing import Dict
 
 
@@ -22,9 +22,8 @@ def fetch_league_adp_from_db(
         from utils.paths import DATA_DIR
         import json as _json
 
-        cache_key = f"league_adp_{draft_type}_{'sf' if is_sf else '1qb'}_{season}_{date.today().isoformat()}.json"
-        cache_path = DATA_DIR / cache_key
-        if cache_path.exists():
+        cache_path = DATA_DIR / f"league_adp_{draft_type}_{'sf' if is_sf else '1qb'}_{season}.json"
+        if cache_path.exists() and (time.time() - cache_path.stat().st_mtime) < 86400:
             try:
                 return _json.load(open(cache_path))
             except Exception:
