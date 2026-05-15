@@ -2675,12 +2675,12 @@ window.initTradePage = function initTradePage(root = document) {
 
     // ── Suggestions-tab Trade Targets (different from sidebar) ───
     async function loadSuggTargets() {
-      suggTargetsLoaded = true;
       const container = root.querySelector("#otcSuggTargetsBody");
       if (!container) return;
 
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
+        suggTargetsLoaded = true;
         container.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
         return;
       }
@@ -2690,9 +2690,12 @@ window.initTradePage = function initTradePage(root = document) {
       const viewerRosterId = root.querySelector("#teamSelect")?.value    || "";
 
       if (!leagueId || !viewerRosterId) {
+        // Don't mark loaded — retry next time the tab is opened
         container.innerHTML = '<div class="otc-movers-empty">Select your team to see targets.</div>';
         return;
       }
+
+      suggTargetsLoaded = true;
 
       const pathParts  = window.location.pathname.split("/").filter(Boolean);
       const platform   = pathParts[0] || "sleeper";
