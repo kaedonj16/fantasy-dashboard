@@ -10,14 +10,12 @@ from __future__ import annotations
 
 def build_prospects_body() -> str:
     return """
-<div class="card central">
-  <div class="card-header">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-      <div>
-        <h2 id="rookiesTitle">Rookie Prospects</h2>
-        <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
-          Dynasty prospect rankings - production, athleticism, and draft capital combined
-        </div>
+<div class="card central" id="prospectsCard">
+  <div class="card-header rk-card-header">
+    <div>
+      <h2 id="rookiesTitle">Rookie Prospects</h2>
+      <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
+        Dynasty prospect rankings - production, athleticism, and draft capital combined
       </div>
     </div>
     <!-- Page-level tab bar -->
@@ -197,6 +195,24 @@ def build_prospects_body() -> str:
 </div>
 
 <style>
+  /* Prospects card-header: override global 50px height, allow vertical stacking */
+  .rk-card-header {
+    height: auto !important;
+    min-height: 50px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 14px 0 0;
+    gap: 10px;
+  }
+  @media (max-width: 600px) {
+    .rk-card-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .rk-page-tabs { margin: 0; }
+  }
+
   /* Page-level tabs (Rankings / Draft Board) — OTC pill style */
   .rk-page-tabs {
     display: flex;
