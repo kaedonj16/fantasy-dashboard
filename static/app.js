@@ -9400,6 +9400,42 @@ function setupFunAwardsGrid() {
     } catch (_) {}
   }
 
+  function showDraftHelp() {
+    const steps = [
+      { icon: '1', title: 'Draft players in order', body: 'As each pick happens — yours or anyone else\'s — tap <strong>Draft</strong> to remove them from the board. Do this in real draft order so pick numbers are accurate.' },
+      { icon: '2', title: 'Mark your picks', body: 'Switch to the <strong>Drafted</strong> tab and tap <strong>Mine</strong> on each player you actually selected. The pick number is set automatically based on when you drafted them.' },
+      { icon: '3', title: 'Watch your needs update', body: 'The <strong>Roster Needs</strong> panel reflects your current roster vs. the league. Marking a pick as Mine adjusts the needs panel live.' },
+      { icon: '4', title: 'End Draft &amp; grade', body: 'Once you\'ve marked your picks, tap <strong>End Draft &amp; Grade My Picks</strong>. Each pick is graded A+–F using ADP value, positional need, and QB context — the same formula as the Teams page Draft Grades.' },
+    ];
+    const html = `
+      <div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:16px;font-weight:700;color:var(--text);">How to use the Draft Assistant</div>
+        <button onclick="document.getElementById('daHelpModal').style.display='none'" style="background:none;border:none;font-size:20px;color:var(--text-muted);cursor:pointer;">✕</button>
+      </div>
+      <div style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:16px;">
+        ${steps.map(s => `
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <div style="flex-shrink:0;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;">${s.icon}</div>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;">${s.title}</div>
+              <div style="font-size:12px;color:var(--text-muted);line-height:1.5;">${s.body}</div>
+            </div>
+          </div>`).join('')}
+      </div>`;
+
+    let modal = document.getElementById('daHelpModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'daHelpModal';
+      modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:10600;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,0.7);backdrop-filter:blur(4px);';
+      modal.innerHTML = '<div id="daHelpModalContent" style="background:var(--card);border-radius:16px;max-width:420px;width:100%;box-shadow:0 24px 48px rgba(15,23,42,0.25);"></div>';
+      modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+      document.body.appendChild(modal);
+    }
+    document.getElementById('daHelpModalContent').innerHTML = html;
+    modal.style.display = 'flex';
+  }
+
   // Exact port of pick_grade() and team_grade() from app.py
   function _pickGrade(adpDiff, need, pos, isSF, qbCount, numTeams) {
     if (adpDiff === null) return 'N/A';
@@ -9538,6 +9574,7 @@ function setupFunAwardsGrid() {
     },
     toggleNeeds()  { daToggleNeeds(); },
     endDraft()     { showDraftGrade(); },
+    showHelp()     { showDraftHelp(); },
   };
 
   window.daFilterPos = function (pos) {

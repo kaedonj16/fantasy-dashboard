@@ -154,7 +154,8 @@ def build_prospects_body() -> str:
       <button class="da-filter" data-pos="RB"  onclick="daFilterPos('RB')">RB</button>
       <button class="da-filter" data-pos="WR"  onclick="daFilterPos('WR')">WR</button>
       <button class="da-filter" data-pos="TE"  onclick="daFilterPos('TE')">TE</button>
-      <button class="da-reset-btn" onclick="daReset()" style="margin-left:auto;">Reset Board</button>
+      <button class="da-info-btn" onclick="window._da.showHelp()" title="How to use">?</button>
+      <button class="da-reset-btn" onclick="daReset()">Reset Board</button>
     </div>
     <div class="da-layout">
       <div class="da-board">
