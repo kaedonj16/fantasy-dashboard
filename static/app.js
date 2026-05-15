@@ -2216,7 +2216,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
     const season         = root.querySelector("#seasonInput")?.value   || new Date().getFullYear();
-    const viewerRosterId = root.querySelector("#teamSelect")?.value    || "";
+    const viewerRosterId = getCurrentRosterId();
 
     if (!leagueId || !viewerRosterId) {
       body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Sign in to see targets.</div>';
@@ -2395,13 +2395,16 @@ window.initTradePage = function initTradePage(root = document) {
 
     tabs.forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
 
-    // If the user selects their team while the suggestions tab is already open
-    // (or after clicking it too early), retry loading targets automatically.
+    // Retry targets automatically once a roster ID becomes available.
+    // Covers both teamSelect changes and cases where viewerRosterIdInput is set late.
     const teamSelEl = root.querySelector("#teamSelect");
-    if (teamSelEl) {
-      teamSelEl.addEventListener("change", () => {
-        if (!suggTargetsLoaded && suggTab.style.display !== "none") loadSuggTargets();
-      });
+    const rosterInputEl = root.querySelector("#viewerRosterIdInput");
+    function _onRosterReady() {
+      if (!suggTargetsLoaded && getCurrentRosterId()) loadSuggTargets();
+    }
+    if (teamSelEl) teamSelEl.addEventListener("change", _onRosterReady);
+    if (rosterInputEl) {
+      new MutationObserver(_onRosterReady).observe(rosterInputEl, { attributes: true, attributeFilter: ["value"] });
     }
 
     // expose so Load & Analyze can switch back
@@ -2492,7 +2495,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       const leagueId       = root.querySelector("#leagueIdInput")?.value  || "";
       const season         = root.querySelector("#seasonInput")?.value     || new Date().getFullYear();
-      const viewerRosterId = root.querySelector("#teamSelect")?.value      || "";
+      const viewerRosterId = getCurrentRosterId();
       const platform       = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
       const leagueType     = getLeagueType();
 
@@ -2696,7 +2699,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
       const season         = root.querySelector("#seasonInput")?.value   || new Date().getFullYear();
-      const viewerRosterId = root.querySelector("#teamSelect")?.value    || "";
+      const viewerRosterId = getCurrentRosterId();
 
       if (!leagueId || !viewerRosterId) {
         // Don't mark loaded — retry next time the tab is opened
