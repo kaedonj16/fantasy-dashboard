@@ -9283,7 +9283,8 @@ function setupFunAwardsGrid() {
       listEl.innerHTML = drafted.map((p, i) => {
         const col    = POS_COLORS[p.position] || '#9ca3af';
         const dAdp   = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
-        const dMeta  = [p.school, dAdp != null ? `ADP ${parseFloat(dAdp).toFixed(1)}` : ''].filter(Boolean).join(' · ');
+        const dTeam  = p.actual_nfl_team || p.school || '';
+        const dMeta  = [dTeam, dAdp != null ? `ADP ${parseFloat(dAdp).toFixed(1)}` : ''].filter(Boolean).join(' · ');
         return `<div class="da-row">
           <div class="da-rank">${i + 1}</div>
           <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${dMeta}</span></div>
@@ -9321,9 +9322,10 @@ function setupFunAwardsGrid() {
       const adpRaw   = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
       const adpTxt   = adpRaw != null ? `ADP ${parseFloat(adpRaw).toFixed(1)}` : '';
       const gradeTxt = p.tier_label || '';
-      const baseMeta = [p.school, adpTxt].filter(Boolean).join(' · ');
+      const teamTxt  = p.actual_nfl_team || p.school || '';
+      const baseMeta = [teamTxt, adpTxt].filter(Boolean).join(' · ');
       const recMeta  = isRec
-        ? [p.school, gradeTxt, adpTxt].filter(Boolean).join(' · ')
+        ? [teamTxt, gradeTxt, adpTxt].filter(Boolean).join(' · ')
         : baseMeta;
 
       // Need badge goes in the badge column (col 4) — same slot as PICK for rec rows
