@@ -197,53 +197,72 @@ def build_prospects_body() -> str:
 </div>
 
 <style>
-  /* Page-level tabs (Rankings / Draft Board) */
+  /* Page-level tabs (Rankings / Draft Board) — mirrors .pm-tab-bar / .pm-tab */
   .rk-page-tabs {
     display: flex;
-    gap: 0;
-    border-bottom: 2px solid var(--border);
-    padding: 0;
+    background: var(--bg-alt, rgba(0,0,0,.03));
+    border-bottom: 1px solid var(--border);
+    padding: 0 12px;
     margin: 16px -24px 0;
-    padding: 0 24px;
+    gap: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  .rk-page-tabs::-webkit-scrollbar { display: none; }
   .rk-page-tab {
     background: none;
     border: none;
-    border-bottom: 3px solid transparent;
-    padding: 10px 18px;
+    border-bottom: 2px solid transparent;
+    padding: 9px 13px;
     font-size: 12px;
     font-weight: 700;
     color: var(--text-muted);
     cursor: pointer;
-    letter-spacing: .04em;
+    white-space: nowrap;
+    letter-spacing: .02em;
     text-transform: uppercase;
-    transition: color .12s, border-color .12s;
-    margin-bottom: -2px;
+    transition: color .12s, border-color .12s, background .12s;
+    border-radius: 6px 6px 0 0;
+    margin-bottom: -1px;
   }
-  .rk-page-tab:hover { color: var(--text); }
-  .rk-page-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .rk-page-tab:hover { color: var(--text); background: rgba(255,255,255,.04); }
+  .rk-page-tab.active {
+    color: var(--accent, #3b82f6);
+    border-bottom-color: var(--accent, #3b82f6);
+    background: rgba(59,130,246,.06);
+  }
 
-  /* DA sub-tabs (Available / Drafted) */
+  /* DA sub-tabs (Available / Drafted) — same style, slightly smaller */
   .da-sub-tabs {
     display: flex;
-    gap: 0;
-    border-bottom: 2px solid var(--border);
+    background: var(--bg-alt, rgba(0,0,0,.03));
+    border-bottom: 1px solid var(--border);
+    padding: 0 4px;
+    gap: 2px;
     margin-bottom: 8px;
   }
   .da-sub-tab {
     background: none;
     border: none;
-    border-bottom: 3px solid transparent;
-    padding: 8px 16px;
+    border-bottom: 2px solid transparent;
+    padding: 7px 12px;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--text-muted);
     cursor: pointer;
-    margin-bottom: -2px;
-    transition: color .12s, border-color .12s;
+    white-space: nowrap;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    transition: color .12s, border-color .12s, background .12s;
+    border-radius: 6px 6px 0 0;
+    margin-bottom: -1px;
   }
-  .da-sub-tab:hover { color: var(--text); }
-  .da-sub-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .da-sub-tab:hover { color: var(--text); background: rgba(255,255,255,.04); }
+  .da-sub-tab.active {
+    color: var(--accent, #3b82f6);
+    border-bottom-color: var(--accent, #3b82f6);
+    background: rgba(59,130,246,.06);
+  }
   .da-sub-tab span {
     font-size: 11px;
     background: var(--border);
