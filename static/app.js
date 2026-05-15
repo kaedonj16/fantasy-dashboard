@@ -9281,10 +9281,12 @@ function setupFunAwardsGrid() {
         return;
       }
       listEl.innerHTML = drafted.map((p, i) => {
-        const col = POS_COLORS[p.position] || '#9ca3af';
+        const col    = POS_COLORS[p.position] || '#9ca3af';
+        const dAdp   = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
+        const dMeta  = [p.school, dAdp != null ? `ADP ${parseFloat(dAdp).toFixed(1)}` : ''].filter(Boolean).join(' · ');
         return `<div class="da-row">
           <div class="da-rank">${i + 1}</div>
-          <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${p.school || ''}</span></div>
+          <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${dMeta}</span></div>
           <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
           <div></div>
           <div class="da-col-right da-val">${Math.round(parseFloat(p.display_value||0))||'—'}</div>
@@ -9316,12 +9318,12 @@ function setupFunAwardsGrid() {
       const needTxt  = NEED_LABEL[String(needLvl)] || '';
 
       // Recommendation row: add grade + ADP in meta
-      const adpVal   = daLeagueType === 'sf' ? (p.sf_avg_pick || p.avg_pick) : (p.avg_pick || p.sf_avg_pick);
-      const adpTxt   = adpVal ? `ADP ${parseFloat(adpVal).toFixed(1)}` : (p.draft_capital_label ? p.draft_capital_label : '');
+      const adpRaw   = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
+      const adpTxt   = adpRaw != null ? `ADP ${parseFloat(adpRaw).toFixed(1)}` : '';
       const gradeTxt = p.tier_label || '';
-      const baseMeta = p.school || '';
+      const baseMeta = [p.school, adpTxt].filter(Boolean).join(' · ');
       const recMeta  = isRec
-        ? [baseMeta, gradeTxt, adpTxt].filter(Boolean).join(' · ')
+        ? [p.school, gradeTxt, adpTxt].filter(Boolean).join(' · ')
         : baseMeta;
 
       // Need badge goes in the badge column (col 4) — same slot as PICK for rec rows
