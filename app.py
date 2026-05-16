@@ -16475,7 +16475,17 @@ def api_player_packages(player_id: str):
                 for a in assets
             )
             if focus_value > 0:
-                ratio       = recv_val / focus_value
+                ratio = recv_val / focus_value
+                # Hard-filter packages that are clearly unreasonable overpays,
+                # or where any single player sent is worth far more than the target.
+                if ratio > 1.55:
+                    continue
+                max_single = max(
+                    (a["value"] for a in assets if a["type"] == "player" and a["value"] > 0),
+                    default=0,
+                )
+                if max_single > focus_value * 1.5:
+                    continue
                 value_label = ("Overpay"        if ratio >= 1.25 else
                                "Slight overpay" if ratio >= 1.08 else
                                "Fair value"     if ratio >= 0.92 else
