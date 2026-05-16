@@ -2361,6 +2361,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     let suggTargetsLoaded = false;
     let suggCurrentPlayerId = null;
+    let _fetchAbortCtrl = null;  // cancels in-flight fetchPackages requests
 
     function switchTab(name) {
       if (name === "suggestions") {
@@ -2382,12 +2383,23 @@ window.initTradePage = function initTradePage(root = document) {
 
     // Retry targets automatically once a roster ID becomes available.
     // Covers both teamSelect changes and cases where viewerRosterIdInput is set late.
-    const teamSelEl = root.querySelector("#teamSelect");
+    const teamSelEl    = root.querySelector("#teamSelect");
     const rosterInputEl = root.querySelector("#viewerRosterIdInput");
+    const leagueInputEl = root.querySelector("#leagueIdInput");
+    const seasonInputEl = root.querySelector("#seasonInput");
+
     function _onRosterReady() {
       if (!suggTargetsLoaded && getCurrentRosterId()) loadSuggTargets();
     }
-    if (teamSelEl) teamSelEl.addEventListener("change", _onRosterReady);
+    function _onContextChange() {
+      // League or season changed — stale targets must be re-fetched
+      suggTargetsLoaded = false;
+      if (suggTab.style.display !== "none") loadSuggTargets();
+    }
+
+    if (teamSelEl)    teamSelEl.addEventListener("change", _onRosterReady);
+    if (leagueInputEl) leagueInputEl.addEventListener("change", _onContextChange);
+    if (seasonInputEl) seasonInputEl.addEventListener("change", _onContextChange);
     if (rosterInputEl) {
       new MutationObserver(_onRosterReady).observe(rosterInputEl, { attributes: true, attributeFilter: ["value"] });
     }
@@ -2462,6 +2474,12 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Fetch packages from API ──────────────────────────────────
     async function fetchPackages(playerId, playerName) {
       if (!playerId) return;
+
+      // Cancel any previous in-flight request for a different player
+      if (_fetchAbortCtrl) _fetchAbortCtrl.abort();
+      _fetchAbortCtrl = new AbortController();
+      const signal = _fetchAbortCtrl.signal;
+
       suggCurrentPlayerId = playerId;
 
       resultsMeta.style.display = "none";
@@ -2505,8 +2523,12 @@ window.initTradePage = function initTradePage(root = document) {
         const res = await fetch(
           `/api/trade-intel/player-packages/${encodeURIComponent(playerId)}` +
           `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
-          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`
+          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`,
+          { signal }
         );
+
+        // A newer search was started — discard this response silently
+        if (signal.aborted || suggCurrentPlayerId !== playerId) return;
 
         if (res.status === 403) {
           resultsList.innerHTML = `<div class="otc-sugg-empty">
@@ -2546,6 +2568,7 @@ window.initTradePage = function initTradePage(root = document) {
         );
 
       } catch (err) {
+        if (err.name === "AbortError") return;  // superseded by a newer search
         resultsList.innerHTML = `<div class="otc-sugg-empty">
           <div class="otc-sugg-empty-sub">Failed to load packages.</div></div>`;
       }
@@ -2848,8 +2871,6 @@ window.initTradePage = function initTradePage(root = document) {
         return;
       }
 
-      suggTargetsLoaded = true;
-
       const pathParts  = window.location.pathname.split("/").filter(Boolean);
       const platform   = pathParts[0] || "sleeper";
       const leagueType = getLeagueType();
@@ -2866,6 +2887,7 @@ window.initTradePage = function initTradePage(root = document) {
         );
         if (!res.ok) throw new Error("Failed");
         const data = await res.json();
+        suggTargetsLoaded = true;  // only mark done after a successful response
 
         const grouped     = data.by_position || {};
         const allGrouped  = data.all_positions || {};
