@@ -17493,13 +17493,23 @@ def api_trade_ideas_for_target():
             return 8
 
         target_tier = _tier(effective_target)
-        # Anchor floors scale with package size: the more players sent, the
-        # lower the bar for the lead asset — but it must still be meaningful.
-        # 2-for-1: lead ≥ 75% of target  (near-equal + sweetener)
-        # 3-for-1: lead ≥ 65% of target  (strong piece + two contributors)
-        # player+pick: lead ≥ 65% of target (pick is a known, bounded asset)
+        # Anchor floors: lead player must be this fraction of target value.
+        # 2-for-1: 75% — near-equal piece + sweetener
+        # 3-for-1: 65% — strong piece + two contributors
+        # player+pick: 65% — strong piece + pick
         ANCHOR_2 = effective_target * 0.75
         ANCHOR_3 = effective_target * 0.65
+
+        # Per-tier minimum value for non-anchor (secondary/tertiary) assets.
+        # Elite players are harder to acquire — even the "add-ons" must be quality.
+        # T1 target: secondary ≥ 20% of target (~200 on a 1000-value player)
+        # T2 target: secondary ≥ 16%  (~96 on a 600-value player)
+        # T3 target: secondary ≥ 12%  (~48 on a 400-value player)
+        # T4+ target: secondary ≥ 8%  (scales down gracefully)
+        _secondary_pct = {1: 0.20, 2: 0.16, 3: 0.12}.get(target_tier, 0.08)
+        secondary_min = max(40, effective_target * _secondary_pct)
+        # Tertiary (3rd player) can be a bit lighter than secondary
+        tertiary_min  = max(40, secondary_min * 0.65)
 
         # 1-for-1: single player in range
         for p in viewer_players:
@@ -17511,14 +17521,14 @@ def api_trade_ideas_for_target():
                                      "send_value": p["value"],
                                      "_delta": abs(p["value"] - effective_target)})
 
-        # 2-for-1: lead player must be >= 75% of target (anchor), p2 fills gap.
+        # 2-for-1: anchor ≥ 75% of target, secondary meets tier-scaled floor
         for i, p1 in enumerate(viewer_players):
             if p1["value"] < ANCHOR_2:
-                break  # list is sorted desc; no point continuing
+                break
             if p1["value"] > effective_target * 0.93:
-                continue  # close enough for 1-for-1; skip here
+                continue  # close enough for 1-for-1
             for p2 in viewer_players[i + 1:]:
-                if p2["value"] < 40:
+                if p2["value"] < secondary_min:
                     break
                 combined = p1["value"] + p2["value"]
                 if combined > hi:
@@ -17532,17 +17542,17 @@ def api_trade_ideas_for_target():
                                          "_delta": abs(combined - effective_target)})
                     break
 
-        # 3-for-1: lead player must be >= 65% of target; two additional pieces.
+        # 3-for-1: anchor ≥ 65% of target, p2 ≥ secondary_min, p3 ≥ tertiary_min
         for i, p1 in enumerate(viewer_players):
             if p1["value"] < ANCHOR_3:
                 break
             if p1["value"] >= ANCHOR_2:
-                continue  # would be 2-for-1 territory
+                continue  # 2-for-1 territory
             for j, p2 in enumerate(viewer_players[i + 1:], i + 1):
-                if p2["value"] < 40:
+                if p2["value"] < secondary_min:
                     break
                 for p3 in viewer_players[j + 1:]:
-                    if p3["value"] < 40:
+                    if p3["value"] < tertiary_min:
                         break
                     combined = p1["value"] + p2["value"] + p3["value"]
                     if combined > hi:
@@ -17559,13 +17569,15 @@ def api_trade_ideas_for_target():
                     continue
                 break
 
-        # Player + pick: player must be >= 65% of target (same bar as 3-for-1 anchor).
+        # Player + pick: player ≥ 65% of target, pick value meets secondary_min
         for p in viewer_players:
             if p["value"] < ANCHOR_3:
                 break
             if p["value"] > effective_target * 0.93:
                 continue  # close enough for 1-for-1
             for pick in viewer_picks:
+                if pick["value"] < secondary_min:
+                    continue
                 combined = p["value"] + pick["value"]
                 if lo <= combined <= hi:
                     k = _key(p, {"player_id": pick["name"]})
