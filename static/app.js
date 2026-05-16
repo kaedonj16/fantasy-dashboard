@@ -2435,7 +2435,7 @@ window.initTradePage = function initTradePage(root = document) {
         return `<div class="otc-sugg-dropdown-item" data-id="${p.id}" data-name="${(p.name||"").replace(/"/g,"&quot;")}">
           <span class="otc-sugg-dropdown-pos" style="background:${col}20;color:${col};">${p.position}</span>
           <span class="otc-sugg-dropdown-name">${p.name || p.id}</span>
-          <span class="otc-sugg-dropdown-val">${p.value ? Math.round(p.value) : ""}</span>
+          <span class="otc-sugg-dropdown-val">${Math.round(getPlayerValue(p)) || ""}</span>
         </div>`;
       }).join("");
       playerDropdown.style.display = "block";
@@ -2447,7 +2447,7 @@ window.initTradePage = function initTradePage(root = document) {
       const matches = allPlayers.filter(p =>
         ["QB","RB","WR","TE"].includes(p.position) &&
         (p.name || "").toLowerCase().includes(q)
-      ).sort((a,b) => (b.value||0)-(a.value||0));
+      ).sort((a,b) => getPlayerValue(b) - getPlayerValue(a));
       renderDropdown(matches);
     });
 
@@ -2584,8 +2584,9 @@ window.initTradePage = function initTradePage(root = document) {
       };
 
       function assetHtml(a) {
-        if (a.type === "pick") {
-          return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>${a.name}</div>`;
+        if (a.is_pick || a.type === "pick") {
+          const label = a.name || "Pick";
+          return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>${label}</div>`;
         }
         const col = posColor(a.position);
         const prof = a.profile ? PROFILE_LABEL[a.profile] : null;
