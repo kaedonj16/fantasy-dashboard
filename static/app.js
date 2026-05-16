@@ -2796,7 +2796,7 @@ window.initTradePage = function initTradePage(root = document) {
 
           // Side B = what you give (the package)
           assets.forEach(a => {
-            if (a.type === "pick") {
+            if (a.type === "pick" || a.is_pick) {
               const yr   = String(a.pick_season || "").replace(/\D/g, "");
               const rd   = String(a.pick_round  || "").replace(/\D/g, "");
               const slot = a.pick_slot ? String(a.pick_slot).replace(/\D/g, "").padStart(2, "0") : null;
