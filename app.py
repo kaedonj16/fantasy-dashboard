@@ -16581,6 +16581,8 @@ def api_player_packages(player_id: str):
         # When viewer roster is known, generate profile-matched suggestions from their
         # actual roster — these show "players like what history shows" from *their* team.
         profile_packages = []
+        _real_trade_export: list = []   # real-trade patterns shown separately in the UI
+        _total_real_trades_export: int = 0
         if roster_player_ids and focus_value > 0:
             try:
                 from utils.utils import load_model_value_table as _lmvt
@@ -16609,23 +16611,43 @@ def api_player_packages(player_id: str):
                 _pp = _real_trade_packages_for_target(
                     str(player_id), _is_sf, _num_t, _vplayers, [], _vbi, max_packages=3,
                 )
+                _real_export: list = []
+                def _ft(v):
+                    return (1 if v>=800 else 2 if v>=500 else 3 if v>=300 else
+                            4 if v>=200 else 5 if v>=130 else 6 if v>=80 else
+                            7 if v>=40 else 8)
+                _tgt_tier_pre = _ft(focus_value)
+                _sec_fl_pre   = {1:300, 2:200, 3:130, 4:80}.get(_tgt_tier_pre, 40)
+                _ter_fl_pre   = {1:200, 2:130, 3:80, 4:40}.get(_tgt_tier_pre, 40)
+
                 for _pkg in _pp.get("packages", []):
                     _sv = _pkg.get("send_value", 0)
+                    # Enrich ALL assets with profile/position (in-place, used by both paths below)
+                    for _a in _pkg.get("send", []):
+                        if not _a.get("is_pick") and _a.get("player_id"):
+                            _info = _vbi.get(str(_a["player_id"])) or {}
+                            _a["profile"] = _compute_profile(str(_a["player_id"]), _info.get("age"))
+                            _a["position"] = _info.get("position", _a.get("position", ""))
+
+                    # ── Real-trade export (minimal filter: only ±10% value) ─────────────
+                    # These appear in the "Based on real trades" section in the UI and
+                    # include reference/fallback packages that may not match the viewer's
+                    # exact roster but show the market pattern for this player type.
+                    if focus_value > 0:
+                        _ratio_pre = _sv / focus_value
+                        if 0.90 <= _ratio_pre <= 1.10:
+                            _real_export.append({
+                                "send":             _pkg.get("send", []),
+                                "send_value":       round(_sv, 1),
+                                "trades_like_this": _pkg.get("trades_like_this", 0),
+                                "is_reference":     _pkg.get("is_reference", False),
+                            })
+
+                    # ── Strict path: only roster-matched packages → profile_packages ────
                     if focus_value > 0:
                         _ratio = _sv / focus_value
-                        # Hard ±10% band
                         if _ratio > 1.10 or _ratio < 0.90:
                             continue
-                        # Tier-aware secondary/tertiary floor enforcement.
-                        # Mirrors the rules in _real_trade_packages_for_target and
-                        # the value-based generator.
-                        def _ft(v):
-                            return (1 if v>=800 else 2 if v>=500 else 3 if v>=300 else
-                                    4 if v>=200 else 5 if v>=130 else 6 if v>=80 else
-                                    7 if v>=40 else 8)
-                        _tgt_tier = _ft(focus_value)
-                        _sec_fl = {1:300, 2:200, 3:130, 4:80}.get(_tgt_tier, 40)
-                        _ter_fl = {1:200, 2:130, 3:80, 4:40}.get(_tgt_tier, 40)
                         _pvals = sorted(
                             [_a.get("value", 0) for _a in _pkg.get("send", []) if not _a.get("is_pick")],
                             reverse=True,
@@ -16633,25 +16655,22 @@ def api_player_packages(player_id: str):
                         # Anchor: best player must be ≥ 65% of focus_value
                         if not _pvals or _pvals[0] < focus_value * 0.65:
                             continue
-                        if len(_pvals) >= 2 and _pvals[1] < _sec_fl:
+                        if len(_pvals) >= 2 and _pvals[1] < _sec_fl_pre:
                             continue
-                        if len(_pvals) >= 3 and _pvals[2] < _ter_fl:
+                        if len(_pvals) >= 3 and _pvals[2] < _ter_fl_pre:
                             continue
                         _vl = ("Overpay" if _ratio >= 1.08 else
                                "Fair value" if _ratio >= 0.92 else "Great deal")
                     else:
                         _vl = "Fair value"
-                    # Annotate each asset with profile
-                    for _a in _pkg.get("send", []):
-                        if not _a.get("is_pick") and _a.get("player_id"):
-                            _info = _vbi.get(str(_a["player_id"])) or {}
-                            _a["profile"] = _compute_profile(str(_a["player_id"]), _info.get("age"))
-                            _a["position"] = _info.get("position", _a.get("position", ""))
                     profile_packages.append({
                         "assets": _pkg["send"], "frequency": _pkg.get("trades_like_this", 0),
                         "value_label": _vl, "size_label": "from-your-roster",
                         "receive_value": round(_sv), "is_profile_match": True,
                     })
+                # Expose real-trade patterns to the outer scope for the response
+                _real_trade_export = _real_export
+                _total_real_trades_export = _pp.get("total_real_trades", 0)
                 # ------------------------------------------------------------------
                 # Also generate pure value-based packages from the viewer's roster
                 # so suggestions appear even when no historical trades match.
@@ -16753,12 +16772,14 @@ def api_player_packages(player_id: str):
         ]
 
         return jsonify({
-            "packages":          profile_packages + deduped_results[:limit],
-            "total_trades":      total_trades,
-            "total_packages":    len(deduped_results),
-            "player_name":       player_name,
-            "player_id":         player_id,
-            "focus_value":       round(focus_value),
+            "packages":           profile_packages + deduped_results[:limit],
+            "real_packages":      _real_trade_export,
+            "total_real_trades":  _total_real_trades_export,
+            "total_trades":       total_trades,
+            "total_packages":     len(deduped_results),
+            "player_name":        player_name,
+            "player_id":          player_id,
+            "focus_value":        round(focus_value),
         })
 
     except Exception:

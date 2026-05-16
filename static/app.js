@@ -2523,7 +2523,9 @@ window.initTradePage = function initTradePage(root = document) {
 
         const data = await res.json();
 
-        if (!data.packages || !data.packages.length) {
+        const hasProfilePkgs = data.packages && data.packages.length;
+        const hasRealPkgs    = data.real_packages && data.real_packages.length;
+        if (!hasProfilePkgs && !hasRealPkgs) {
           resultsList.innerHTML = `<div class="otc-sugg-empty">
             <div class="otc-sugg-empty-title">No packages found</div>
             <div class="otc-sugg-empty-sub">Not enough trade history for ${playerName} yet.</div>
@@ -2537,7 +2539,10 @@ window.initTradePage = function initTradePage(root = document) {
           : `${data.packages.length} packages · sorted by likelihood`;
         resultsMeta.style.display = "block";
 
-        renderPackages(data.packages, data.player_name, playerId, data.focus_value);
+        renderPackages(
+          data.packages || [], data.player_name, playerId, data.focus_value,
+          data.real_packages, data.total_real_trades
+        );
 
       } catch (err) {
         resultsList.innerHTML = `<div class="otc-sugg-empty">
@@ -2551,12 +2556,16 @@ window.initTradePage = function initTradePage(root = document) {
     let _pkgAll  = [];
     let _pkgPlayerId   = null;
     let _pkgPlayerName = null;
+    let _pkgRealPkgs   = [];
+    let _pkgRealTotal  = 0;
 
-    function renderPackages(packages, playerName, playerId, focusValue) {
+    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal) {
       _pkgAll        = packages;
       _pkgPage       = 0;
       _pkgPlayerId   = playerId;
       _pkgPlayerName = playerName;
+      _pkgRealPkgs   = realPkgs  || [];
+      _pkgRealTotal  = realTotal || 0;
       renderPackagePage();
     }
 
@@ -2648,7 +2657,55 @@ window.initTradePage = function initTradePage(root = document) {
           <button class="otc-sugg-page-btn" data-dir="1" ${page >= totalPages - 1 ? "disabled" : ""}>Next →</button>
         </div>` : "";
 
-      resultsList.innerHTML = cardsHtml + paginationHtml;
+      // ── "Based on real trades" section (always shown below the paginated cards) ──
+      let realTradeHtml = "";
+      if (_pkgRealPkgs.length) {
+        const PROF_LBL = {
+          'young-rising':  { text: '↑ Young Rising',   color: '#10b981' },
+          'young-stable':  { text: 'Young',             color: '#3b82f6' },
+          'young-falling': { text: '↓ Young Falling',  color: '#f59e0b' },
+          'prime-rising':  { text: '↑ Prime Rising',   color: '#10b981' },
+          'prime-stable':  { text: 'Prime',             color: '#6366f1' },
+          'prime-falling': { text: '↓ Prime Falling',  color: '#f59e0b' },
+          'vet-rising':    { text: '↑ Vet',             color: '#f59e0b' },
+          'vet-stable':    { text: 'Veteran',            color: '#9ca3af' },
+          'vet-falling':   { text: '↓ Declining Vet',  color: '#ef4444' },
+        };
+        realTradeHtml += `<div style="margin-top:12px;padding-top:8px;border-top:2px solid var(--border);">
+          <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px;letter-spacing:.04em;">
+            BASED ON ${_pkgRealTotal} REAL TRADES IN SIMILAR LEAGUES
+          </div>`;
+        _pkgRealPkgs.forEach(pkg => {
+          const sv      = pkg.send_value.toFixed(1);
+          const count   = pkg.trades_like_this || 0;
+          const isRef   = !!pkg.is_reference;
+          const assetsHtml = (pkg.send || []).map(a => {
+            if (a.is_pick || a.type === "pick") {
+              return `<span style="font-weight:600;color:var(--text-muted);">${a.name || "Pick"}</span>`;
+            }
+            const prof = a.profile ? PROF_LBL[a.profile] : null;
+            const profTag = prof
+              ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
+              : '';
+            return `<span style="font-weight:600;color:${isRef ? 'var(--text-muted)' : 'var(--text)'};">${a.name}</span>${profTag}`;
+          }).join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
+          const patternLabel = isRef
+            ? `market pattern · send ~${sv} (example assets)`
+            : `market pattern · send ${sv}`;
+          realTradeHtml += `<div style="padding:5px 0;border-top:1px solid var(--border);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
+              <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetsHtml}</div>
+              <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;flex-shrink:0;">${count}× seen</span>
+            </div>
+            <div style="margin-top:2px;">
+              <span style="font-size:10px;color:var(--text-muted);">${patternLabel}</span>
+            </div>
+          </div>`;
+        });
+        realTradeHtml += `</div>`;
+      }
+
+      resultsList.innerHTML = cardsHtml + paginationHtml + realTradeHtml;
 
       resultsList.querySelectorAll(".otc-sugg-page-btn").forEach(btn => {
         btn.addEventListener("click", () => {
