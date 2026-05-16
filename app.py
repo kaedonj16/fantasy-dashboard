@@ -16339,31 +16339,8 @@ def api_player_packages(player_id: str):
             except Exception:
                 pass
 
-        with get_conn() as conn:
-            val_rows = conn.execute(
-                """
-                SELECT pv.player_id,
-                    COALESCE(tips.weighted_market_value_1qb,
-                             pv.calibrated_value_1qb,
-                             pv.value_1qb) AS val,
-                    pv.rank_change_7d,
-                    tips.market_trend_1qb  AS market_trend,
-                    tips.buy_sell_ratio
-                FROM player_values pv
-                LEFT JOIN trade_intel_player_stats tips ON tips.player_id = pv.player_id
-                """,
-            ).fetchall()
-            value_map   = {str(r["player_id"]): float(r["val"] or 0) for r in val_rows}
-            focus_value = value_map.get(str(player_id), 0)
-
-            # Profile enrichment: rank movement + market signals per player
-            profile_map: dict = {}
-            for r in val_rows:
-                profile_map[str(r["player_id"])] = {
-                    "rank_change_7d": r["rank_change_7d"],
-                    "market_trend":   float(r["market_trend"] or 0) if r["market_trend"] is not None else None,
-                    "buy_sell_ratio": float(r["buy_sell_ratio"] or 1.0) if r["buy_sell_ratio"] is not None else None,
-                }
+        # Profile enrichment map built from the val_rows query
+        profile_map: dict = {}
 
         def _compute_profile(pid: str, age=None) -> str:
             """Return 'young-rising', 'vet-falling', etc. from live market signals."""
@@ -16386,6 +16363,29 @@ def api_player_packages(player_id: str):
             elif bsr <= 0.75: score -= 1
             momentum = "rising" if score >= 2 else ("falling" if score <= -2 else "stable")
             return f"{age_cat}-{momentum}"
+
+        with get_conn() as conn:
+            val_rows = conn.execute(
+                """
+                SELECT pv.player_id,
+                    COALESCE(tips.weighted_market_value_1qb,
+                             pv.calibrated_value_1qb,
+                             pv.value_1qb) AS val,
+                    pv.rank_change_7d,
+                    tips.market_trend_1qb  AS market_trend,
+                    tips.buy_sell_ratio
+                FROM player_values pv
+                LEFT JOIN trade_intel_player_stats tips ON tips.player_id = pv.player_id
+                """,
+            ).fetchall()
+            value_map   = {str(r["player_id"]): float(r["val"] or 0) for r in val_rows}
+            focus_value = value_map.get(str(player_id), 0)
+            for r in val_rows:
+                profile_map[str(r["player_id"])] = {
+                    "rank_change_7d": r["rank_change_7d"],
+                    "market_trend":   float(r["market_trend"] or 0) if r["market_trend"] is not None else None,
+                    "buy_sell_ratio": float(r["buy_sell_ratio"] or 1.0) if r["buy_sell_ratio"] is not None else None,
+                }
 
             base_args = [str(player_id), season] + ([sf_param] if sf_param is not None else [])
             count_row = conn.execute(
