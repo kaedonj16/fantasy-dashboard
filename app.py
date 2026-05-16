@@ -17493,10 +17493,13 @@ def api_trade_ideas_for_target():
             return 8
 
         target_tier = _tier(effective_target)
-        # Anchor: best player sent must be meaningful relative to target value.
-        # For T1 targets (800+) demand a T2-or-better anchor (≥40% of target).
-        # For lower tiers the floor scales down proportionally.
-        anchor_floor = effective_target * 0.40
+        # Anchor floors scale with package size: the more players sent, the
+        # lower the bar for the lead asset — but it must still be meaningful.
+        # 2-for-1: lead ≥ 75% of target  (near-equal + sweetener)
+        # 3-for-1: lead ≥ 65% of target  (strong piece + two contributors)
+        # player+pick: lead ≥ 65% of target (pick is a known, bounded asset)
+        ANCHOR_2 = effective_target * 0.75
+        ANCHOR_3 = effective_target * 0.65
 
         # 1-for-1: single player in range
         for p in viewer_players:
@@ -17508,25 +17511,19 @@ def api_trade_ideas_for_target():
                                      "send_value": p["value"],
                                      "_delta": abs(p["value"] - effective_target)})
 
-        # 2-for-1: neither player alone covers >75% of effective_target.
-        # Enforce anchor: highest-value player must be >= anchor_floor.
-        # Also reject packages where both players are 2+ tiers below the target.
+        # 2-for-1: lead player must be >= 75% of target (anchor), p2 fills gap.
         for i, p1 in enumerate(viewer_players):
-            if p1["value"] > effective_target * 0.75:
-                continue
-            # p1 is the higher-value player (list is sorted desc); check anchor
-            if p1["value"] < anchor_floor:
-                break  # remaining p1 values only get smaller
+            if p1["value"] < ANCHOR_2:
+                break  # list is sorted desc; no point continuing
+            if p1["value"] > effective_target * 0.93:
+                continue  # close enough for 1-for-1; skip here
             for p2 in viewer_players[i + 1:]:
-                if p2["value"] < 60:
+                if p2["value"] < 40:
                     break
                 combined = p1["value"] + p2["value"]
                 if combined > hi:
                     continue
                 if combined >= lo:
-                    # Reject if p2 is more than 2 tiers below target
-                    if _tier(p2["value"]) > target_tier + 2:
-                        break
                     k = _key(p1, p2)
                     if k not in seen:
                         seen.add(k)
@@ -17535,12 +17532,39 @@ def api_trade_ideas_for_target():
                                          "_delta": abs(combined - effective_target)})
                     break
 
-        # Player + pick: player must be a meaningful anchor (>= anchor_floor).
-        for p in viewer_players:
-            if p["value"] > effective_target * 0.85:
-                continue
-            if p["value"] < anchor_floor:
+        # 3-for-1: lead player must be >= 65% of target; two additional pieces.
+        for i, p1 in enumerate(viewer_players):
+            if p1["value"] < ANCHOR_3:
                 break
+            if p1["value"] >= ANCHOR_2:
+                continue  # would be 2-for-1 territory
+            for j, p2 in enumerate(viewer_players[i + 1:], i + 1):
+                if p2["value"] < 40:
+                    break
+                for p3 in viewer_players[j + 1:]:
+                    if p3["value"] < 40:
+                        break
+                    combined = p1["value"] + p2["value"] + p3["value"]
+                    if combined > hi:
+                        continue
+                    if combined >= lo:
+                        k = _key(p1, p2, p3)
+                        if k not in seen:
+                            seen.add(k)
+                            packages.append({"type": "3-for-1", "send": [p1, p2, p3],
+                                             "send_value": combined,
+                                             "_delta": abs(combined - effective_target)})
+                        break
+                else:
+                    continue
+                break
+
+        # Player + pick: player must be >= 65% of target (same bar as 3-for-1 anchor).
+        for p in viewer_players:
+            if p["value"] < ANCHOR_3:
+                break
+            if p["value"] > effective_target * 0.93:
+                continue  # close enough for 1-for-1
             for pick in viewer_picks:
                 combined = p["value"] + pick["value"]
                 if lo <= combined <= hi:
