@@ -4820,7 +4820,8 @@ def _asset_tier(value: float, thresholds: list = None) -> int:
 
 
 def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
-                                 tier_thresholds: list = None) -> None:
+                                 tier_thresholds: list = None,
+                                 is_sf: bool = False) -> None:
     """
     Tier-aware trade evaluation.
 
@@ -4829,33 +4830,56 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
     where tier_cap is driven by that player's individual tier derived from the
     live value-table gaps. Stacking lower-tier players against an elite anchor
     produces compounding discounts; adding a quality T2 player is barely penalised.
+
+    In SF leagues, QBs fill up to 3 starting slots (QB / SFLEX / FLEX), so
+    each QB in a package uses its own QB-specific depth index rather than its
+    global value-rank index — preventing the second and third QBs from being
+    over-penalised relative to their actual roster utility.
     """
     thresholds = tier_thresholds if tier_thresholds is not None else _FALLBACK_THRESHOLDS
     tier_caps  = _build_tier_caps(len(thresholds) + 1)
+    # In SF, QBs have 3 starting slots before the depth penalty steepens
+    qb_starter_slots = 3 if is_sf else 1
 
     def _compute_side(side):
         bd = side.get("breakdown") or []
         if bd:
-            vals = sorted([item.get("value", 0.0) for item in bd], reverse=True)
+            items = sorted(
+                [(item.get("value", 0.0), str(item.get("position") or "").upper()) for item in bd],
+                reverse=True,
+            )
         else:
-            # Fallback for call sites that omit per-asset breakdown
-            vals = sorted(list(side.get("player_values", []) or []), reverse=True)
+            # Fallback: no position info available
+            raw_vals = sorted(list(side.get("player_values", []) or []), reverse=True)
             raw_picks = float(side.get("raw_picks_total", 0.0) or 0.0)
             if raw_picks > 0.0:
-                vals.append(raw_picks)
-                vals.sort(reverse=True)
+                raw_vals.append(raw_picks)
+                raw_vals.sort(reverse=True)
+            items = [(v, "") for v in raw_vals]
 
-        if not vals:
+        if not items:
             return float(side.get("raw_total", 0.0) or 0.0), 0.0
 
-        effective = 0.0
-        for i, v in enumerate(vals):
-            if i == 0:
-                effective += v  # anchor - always full value
-            else:
-                depth_m = _DEPTH_MULTS[min(i, len(_DEPTH_MULTS) - 1)]
+        effective  = 0.0
+        global_idx = 0
+        qb_idx     = 0  # separate counter so SF QBs use their own depth slot
+
+        for v, pos in items:
+            if global_idx == 0:
+                effective += v  # anchor always full value
+            elif is_sf and pos == "QB" and qb_idx < qb_starter_slots:
+                # QB still within SF starting depth — use QB-specific depth index
+                depth_m = _DEPTH_MULTS[min(qb_idx, len(_DEPTH_MULTS) - 1)]
                 tier_m  = tier_caps.get(_asset_tier(v, thresholds), 0.38)
                 effective += v * min(depth_m, tier_m)
+            else:
+                depth_m = _DEPTH_MULTS[min(global_idx, len(_DEPTH_MULTS) - 1)]
+                tier_m  = tier_caps.get(_asset_tier(v, thresholds), 0.38)
+                effective += v * min(depth_m, tier_m)
+
+            if pos == "QB":
+                qb_idx += 1
+            global_idx += 1
 
         return effective, effective - float(side.get("raw_total", 0.0) or 0.0)
 
@@ -4873,13 +4897,19 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
         if not bd:
             continue
         sorted_bd = sorted(bd, key=lambda x: x.get("value", 0.0), reverse=True)
+        qb_idx = 0
         for idx, item in enumerate(sorted_bd):
             val  = item.get("value", 0.0)
+            pos  = str(item.get("position") or "").upper()
             tier = _asset_tier(val, thresholds)
             if idx == 0:
                 m = 1.0
+            elif is_sf and pos == "QB" and qb_idx < qb_starter_slots:
+                m = min(_DEPTH_MULTS[min(qb_idx, len(_DEPTH_MULTS) - 1)], tier_caps.get(tier, 0.38))
             else:
                 m = min(_DEPTH_MULTS[min(idx, len(_DEPTH_MULTS) - 1)], tier_caps.get(tier, 0.38))
+            if pos == "QB":
+                qb_idx += 1
             item["tier"]            = tier
             item["stack_mult"]      = round(m, 3)
             item["effective_value"] = round(val * m, 1)
@@ -12199,7 +12229,7 @@ def api_trade_eval():
     side_b = build_side(side_b_players, side_b_picks)
 
     tier_thresholds = compute_tier_thresholds(value_table, league_type, league_size)
-    apply_tier_stack_adjustment(side_a, side_b, tier_thresholds)
+    apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"))
 
     a_eff = side_a["effective_total"]
     b_eff = side_b["effective_total"]
@@ -16364,15 +16394,23 @@ def api_player_packages(player_id: str):
             momentum = "rising" if score >= 2 else ("falling" if score <= -2 else "stable")
             return f"{age_cat}-{momentum}"
 
+        _is_sf = (league_type == "sf")
         with get_conn() as conn:
+            # Use SF or 1QB values depending on league type so QBs are priced correctly.
+            # In SF, Josh Allen is ~1000; in 1QB he's ~570 — using the wrong column
+            # would produce wildly incorrect value-ratio labels and anchor checks.
+            if _is_sf:
+                _val_col     = "COALESCE(tips.weighted_market_value_sf, pv.calibrated_value_sf, pv.value_sf)"
+                _trend_col   = "tips.market_trend_sf"
+            else:
+                _val_col     = "COALESCE(tips.weighted_market_value_1qb, pv.calibrated_value_1qb, pv.value_1qb)"
+                _trend_col   = "tips.market_trend_1qb"
             val_rows = conn.execute(
-                """
+                f"""
                 SELECT pv.player_id,
-                    COALESCE(tips.weighted_market_value_1qb,
-                             pv.calibrated_value_1qb,
-                             pv.value_1qb) AS val,
+                    {_val_col} AS val,
                     pv.rank_change_7d,
-                    tips.market_trend_1qb  AS market_trend,
+                    {_trend_col} AS market_trend,
                     tips.buy_sell_ratio
                 FROM player_values pv
                 LEFT JOIN trade_intel_player_stats tips ON tips.player_id = pv.player_id
@@ -16514,13 +16552,13 @@ def api_player_packages(player_id: str):
                 ratio = recv_val / focus_value
                 # Hard-filter clear overpays and underpays:
                 # below 82% the receiving team is giving away value too cheaply.
-                if ratio > 1.55 or ratio < 0.90:
+                if ratio > 1.10 or ratio < 0.90:
                     continue
                 max_single = max(
                     (a["value"] for a in assets if a["type"] == "player" and a["value"] > 0),
                     default=0,
                 )
-                if max_single > focus_value * 1.5:
+                if max_single > focus_value * 1.10:
                     continue
                 value_label = ("Overpay"        if ratio >= 1.25 else
                                "Slight overpay" if ratio >= 1.08 else
@@ -16567,7 +16605,6 @@ def api_player_packages(player_id: str):
                      for _pid in roster_player_ids if _pid in _vbi and _vbi[_pid]["value"] >= 50],
                     key=lambda x: -x["value"],
                 )
-                _is_sf = (league_type == "sf")
                 _num_t  = 12  # default; refine if league ctx available
                 _pp = _real_trade_packages_for_target(
                     str(player_id), _is_sf, _num_t, _vplayers, [], _vbi, max_packages=3,
@@ -16595,9 +16632,13 @@ def api_player_packages(player_id: str):
             except Exception:
                 pass
 
-        # Deduplicate: remove any result whose player set already appears in profile_packages
+        # Deduplicate: remove any result whose player set already appears in profile_packages.
+        # Profile package assets are raw player dicts (no "type" key) — key on player_id presence.
         profile_keys = {
-            tuple(sorted(a["player_id"] for a in pkg["assets"] if a.get("type") == "player"))
+            tuple(sorted(
+                a["player_id"] for a in pkg["assets"]
+                if a.get("player_id") and not a.get("is_pick")
+            ))
             for pkg in profile_packages
         }
         deduped_results = [
@@ -17082,7 +17123,7 @@ def _real_trade_packages_for_target(
 
     target_info = values_by_id.get(str(target_player_id))
     target_value = target_info["value"] if target_info else 300
-    max_send_value = target_value * 1.55  # filter packages that are clear overpays
+    max_send_value = target_value * 1.10  # no more than 10% overpay
     min_send_value = target_value * 0.90  # reject packages that underpay by more than 10%
 
     # Build position / value-bucket / player-profile signature for each trade package
@@ -17247,11 +17288,24 @@ def _real_trade_packages_for_target(
 
         # Anchor check: best single player sent must be ≥ 65% of target value.
         # Prevents historical multi-scraps patterns from mapping onto the viewer's roster.
-        best_player_val = max(
-            (a.get("value", 0) for a in matched if not a.get("is_pick")),
-            default=0,
+        player_vals = sorted(
+            [a.get("value", 0) for a in matched if not a.get("is_pick")],
+            reverse=True,
         )
-        if best_player_val < target_value * 0.65:
+        if not player_vals or player_vals[0] < target_value * 0.65:
+            continue
+
+        # Secondary tier floor: add-ons must be at least one tier above target tier.
+        # Mirrors the same rule in the value-based package generator.
+        def _t(v): return (1 if v>=800 else 2 if v>=500 else 3 if v>=300 else
+                           4 if v>=200 else 5 if v>=130 else 6 if v>=80 else 7 if v>=40 else 8)
+        tgt_tier = _t(target_value)
+        _sec_floor = {1: 300, 2: 200, 3: 130, 4: 80}.get(tgt_tier, 40)
+        _ter_floor = {1: 200, 2: 130, 3: 80,  4: 40}.get(tgt_tier, 40)
+        non_anchor_vals = player_vals[1:]  # everything after best player
+        if len(non_anchor_vals) >= 1 and non_anchor_vals[0] < _sec_floor:
+            continue
+        if len(non_anchor_vals) >= 2 and non_anchor_vals[1] < _ter_floor:
             continue
 
         result_packages.append({
