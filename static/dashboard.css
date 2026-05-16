@@ -5427,24 +5427,26 @@ thead th {
   width: 100%;
 }
 .da-undraft-btn:hover { border-color: var(--accent); color: var(--accent); }
-.da-mine-btn {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 8px;
+.da-mine-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
-  cursor: pointer;
+  user-select: none;
   white-space: nowrap;
-  transition: all 0.15s;
 }
-.da-mine-btn.active {
-  background: rgba(16,185,129,.12);
-  border-color: #10b981;
-  color: #10b981;
+.da-mine-label:hover { color: var(--text); }
+.da-mine-cb {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
 }
-.da-mine-btn:hover { border-color: #10b981; color: #10b981; }
+.da-my-pick .da-mine-label { color: var(--accent); }
 .da-my-pick { background: rgba(16,185,129,.05); }
 .da-end-draft-btn {
   width: 100%;
@@ -5543,9 +5545,9 @@ thead th {
   .da-needs-chevron { display: inline; }
   .da-needs-collapsed .da-needs-body { display: none; }
   .da-needs-collapsed .da-needs-title { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
-  /* On mobile: drop value col (col 5), keep Mine/badge (col 4) and tighten button */
+  /* On mobile: drop value col (col 5), keep Mine checkbox (col 4) and tighten */
   .da-board-header,
-  .da-row { grid-template-columns: 28px 1fr 40px 52px 40px; gap: 4px; }
+  .da-row { grid-template-columns: 28px 1fr 40px 52px 24px; gap: 4px; }
   .da-board-header span:nth-child(5),
   .da-row > :nth-child(5) { display: none; }
   .da-rec-badge { display: none; }
