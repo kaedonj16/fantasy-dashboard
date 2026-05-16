@@ -16613,8 +16613,31 @@ def api_player_packages(player_id: str):
                     _sv = _pkg.get("send_value", 0)
                     if focus_value > 0:
                         _ratio = _sv / focus_value
-                        _vl = ("Overpay" if _ratio >= 1.25 else
-                               "Slight overpay" if _ratio >= 1.08 else
+                        # Hard ±10% band
+                        if _ratio > 1.10 or _ratio < 0.90:
+                            continue
+                        # Tier-aware secondary/tertiary floor enforcement.
+                        # Mirrors the rules in _real_trade_packages_for_target and
+                        # the value-based generator.
+                        def _ft(v):
+                            return (1 if v>=800 else 2 if v>=500 else 3 if v>=300 else
+                                    4 if v>=200 else 5 if v>=130 else 6 if v>=80 else
+                                    7 if v>=40 else 8)
+                        _tgt_tier = _ft(focus_value)
+                        _sec_fl = {1:300, 2:200, 3:130, 4:80}.get(_tgt_tier, 40)
+                        _ter_fl = {1:200, 2:130, 3:80, 4:40}.get(_tgt_tier, 40)
+                        _pvals = sorted(
+                            [_a.get("value", 0) for _a in _pkg.get("send", []) if not _a.get("is_pick")],
+                            reverse=True,
+                        )
+                        # Anchor: best player must be ≥ 65% of focus_value
+                        if not _pvals or _pvals[0] < focus_value * 0.65:
+                            continue
+                        if len(_pvals) >= 2 and _pvals[1] < _sec_fl:
+                            continue
+                        if len(_pvals) >= 3 and _pvals[2] < _ter_fl:
+                            continue
+                        _vl = ("Overpay" if _ratio >= 1.08 else
                                "Fair value" if _ratio >= 0.92 else "Great deal")
                     else:
                         _vl = "Fair value"
