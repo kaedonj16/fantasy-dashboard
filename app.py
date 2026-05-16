@@ -16354,8 +16354,10 @@ def api_player_packages(player_id: str):
         player_info = players_map.get(str(player_id)) or {}
         player_name = player_info.get("name") or str(player_id)
 
-        # Load viewer's roster player IDs for filtering
+        # Load viewer's roster player IDs, draft picks, and locate the target owner
         roster_player_ids: set = set()
+        viewer_pick_list:  list = []
+        target_owner_pids: set  = set()
         if league_id and viewer_roster_id:
             try:
                 ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -16366,6 +16368,33 @@ def api_player_packages(player_id: str):
                 )
                 if viewer_roster:
                     roster_player_ids = {str(p) for p in (viewer_roster.get("players") or [])}
+
+                # Draft picks on the viewer's roster
+                picks_by_roster = ctx.get("picks_by_roster") or {}
+                _cur_yr = datetime.now().year
+                for pk in picks_by_roster.get(str(viewer_roster_id), []):
+                    try:
+                        yr  = int(pk.get("season") or _cur_yr + 1)
+                        rd  = int(pk.get("round")  or 4)
+                    except (TypeError, ValueError):
+                        continue
+                    if yr > _cur_yr + 2:
+                        continue
+                    suffix   = {1: "1st", 2: "2nd", 3: "3rd"}.get(rd, f"{rd}th")
+                    pick_val = {1: 250, 2: 120, 3: 60}.get(rd, 30)
+                    viewer_pick_list.append({
+                        "name": f"{yr} {suffix} Round Pick",
+                        "is_pick": True, "value": pick_val,
+                        "pick_round": rd, "pick_season": yr,
+                    })
+                viewer_pick_list.sort(key=lambda x: -x["value"])
+
+                # Find target player's current owner (for combo suggestions)
+                for r in rosters:
+                    r_pids = {str(p) for p in (r.get("players") or [])}
+                    if str(player_id) in r_pids and str(r.get("roster_id")) != str(viewer_roster_id):
+                        target_owner_pids = r_pids - {str(player_id)}
+                        break
             except Exception:
                 pass
 
@@ -16579,8 +16608,9 @@ def api_player_packages(player_id: str):
         # When viewer roster is known, generate profile-matched suggestions from their
         # actual roster — these show "players like what history shows" from *their* team.
         profile_packages = []
-        _real_trade_export: list = []   # real-trade patterns shown separately in the UI
-        _total_real_trades_export: int = 0
+        _real_trade_export: list  = []
+        _total_real_trades_export = 0
+        _combo_export: list       = []
         if roster_player_ids and focus_value > 0:
             try:
                 from utils.utils import load_model_value_table as _lmvt
@@ -16607,7 +16637,7 @@ def api_player_packages(player_id: str):
                 )
                 _num_t  = 12  # default; refine if league ctx available
                 _pp = _real_trade_packages_for_target(
-                    str(player_id), _is_sf, _num_t, _vplayers, [], _vbi, max_packages=3,
+                    str(player_id), _is_sf, _num_t, _vplayers, viewer_pick_list, _vbi, max_packages=3,
                 )
                 _real_export: list = []
                 def _ft(v):
@@ -16674,7 +16704,7 @@ def api_player_packages(player_id: str):
                 # so suggestions appear even when no historical trades match.
                 # ------------------------------------------------------------------
                 synth_pkgs = _generate_roster_packages(
-                    focus_value, _vplayers, [], max_packages=6
+                    focus_value, _vplayers, viewer_pick_list, max_packages=6
                 )
                 _pp_keys_synth = {
                     tuple(sorted(
@@ -16751,6 +16781,58 @@ def api_player_packages(player_id: str):
                         "pattern_learned":  True,
                     })
 
+                # ------------------------------------------------------------------
+                # Combo packages: "Get [target] + [lower player] for [X, Y, Z]"
+                # Finds throw-in players on the target owner's roster, generates
+                # packages from the viewer's roster at (focus_value + throw_in_value).
+                # ------------------------------------------------------------------
+                _combo_seen: set = set()
+                for _ti in sorted(
+                    [
+                        {"player_id": _tp, "name": _vbi[_tp]["name"],
+                         "position": _vbi[_tp]["position"], "value": _vbi[_tp]["value"],
+                         "profile": _compute_profile(_tp, _vbi[_tp].get("age"))}
+                        for _tp in target_owner_pids
+                        if _tp in _vbi and 80 <= _vbi[_tp]["value"] <= 500
+                    ],
+                    key=lambda x: x["value"],  # cheapest throw-in first (best deal)
+                )[:6]:
+                    _combo_val = focus_value + _ti["value"]
+                    for _cpkg in _generate_roster_packages(
+                        _combo_val, _vplayers, viewer_pick_list, max_packages=2
+                    ):
+                        _csv = _cpkg["send_value"]
+                        _cr  = _csv / _combo_val if _combo_val > 0 else 1.0
+                        if not (0.90 <= _cr <= 1.10):
+                            continue
+                        _ckey = (
+                            _ti["player_id"],
+                            tuple(sorted(
+                                a.get("player_id") or a.get("name", "")
+                                for a in _cpkg["send"]
+                            )),
+                        )
+                        if _ckey in _combo_seen:
+                            continue
+                        _combo_seen.add(_ckey)
+                        for _ca in _cpkg["send"]:
+                            if _ca.get("player_id"):
+                                _ca_inf = _vbi.get(str(_ca["player_id"])) or {}
+                                _ca["profile"] = _compute_profile(
+                                    str(_ca["player_id"]), _ca_inf.get("age")
+                                )
+                        _combo_export.append({
+                            "extra_receive": _ti,
+                            "assets":        _cpkg["send"],
+                            "send_value":    round(_csv, 1),
+                            "receive_value": round(_combo_val, 1),
+                            "type":          _cpkg["type"],
+                            "value_label":   (
+                                "Overpay" if _cr >= 1.08 else
+                                "Fair value" if _cr >= 0.92 else "Great deal"
+                            ),
+                        })
+
             except Exception:
                 pass
 
@@ -16773,6 +16855,7 @@ def api_player_packages(player_id: str):
             "packages":           profile_packages + deduped_results[:limit],
             "real_packages":      _real_trade_export,
             "total_real_trades":  _total_real_trades_export,
+            "combo_packages":     _combo_export[:6],
             "total_trades":       total_trades,
             "total_packages":     len(deduped_results),
             "player_name":        player_name,
@@ -17350,11 +17433,12 @@ def _generate_roster_packages(
         if v >= 40:  return 7
         return 8
 
-    tgt_tier   = _tier(effective)
-    ANCHOR_2   = effective * 0.75
-    ANCHOR_3   = effective * 0.65
-    sec_min    = {1: 300, 2: 200, 3: 130, 4: 80}.get(tgt_tier, 40)
-    ter_min    = {1: 200, 2: 130, 3: 80,  4: 40}.get(tgt_tier, 40)
+    tgt_tier     = _tier(effective)
+    ANCHOR_2     = effective * 0.75   # 2-for-1: best player ≥ 75%
+    ANCHOR_3     = effective * 0.65   # 3-for-1: best player ≥ 65%
+    ANCHOR_PICK  = effective * 0.45   # player+picks: player only needs 45% (picks fill rest)
+    sec_min      = {1: 300, 2: 200, 3: 130, 4: 80}.get(tgt_tier, 40)
+    ter_min      = {1: 200, 2: 130, 3: 80,  4: 40}.get(tgt_tier, 40)
 
     packages = []
     seen: set = set()
@@ -17362,7 +17446,7 @@ def _generate_roster_packages(
     def _key(*assets):
         return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
 
-    # 1-for-1
+    # ── 1-for-1 ────────────────────────────────────────────────────────────────
     for p in viewer_players:
         if lo <= p["value"] <= hi:
             k = _key(p)
@@ -17372,7 +17456,7 @@ def _generate_roster_packages(
                                  "send_value": p["value"],
                                  "_delta": abs(p["value"] - effective)})
 
-    # 2-for-1
+    # ── 2-for-1 ────────────────────────────────────────────────────────────────
     for i, p1 in enumerate(viewer_players):
         if p1["value"] < ANCHOR_2: break
         if p1["value"] > effective * 0.93: continue
@@ -17389,7 +17473,7 @@ def _generate_roster_packages(
                                      "_delta": abs(combined - effective)})
                 break
 
-    # 3-for-1
+    # ── 3-for-1 ────────────────────────────────────────────────────────────────
     for i, p1 in enumerate(viewer_players):
         if p1["value"] < ANCHOR_3: break
         if p1["value"] >= ANCHOR_2: continue
@@ -17411,20 +17495,65 @@ def _generate_roster_packages(
                 continue
             break
 
-    # Player + pick
+    # ── Player + 1 pick (relaxed anchor: player needs ≥ 45%) ──────────────────
     for p in viewer_players:
-        if p["value"] < ANCHOR_3: break
+        if p["value"] < ANCHOR_PICK: break
         if p["value"] > effective * 0.93: continue
         for pick in viewer_picks:
-            if pick["value"] < sec_min: continue
             combined = p["value"] + pick["value"]
-            if lo <= combined <= hi:
+            if combined > hi: continue
+            if combined >= lo:
                 k = _key(p, {"player_id": pick.get("name", "")})
                 if k not in seen:
                     seen.add(k)
                     packages.append({"type": "player + pick", "send": [p, pick],
                                      "send_value": combined,
                                      "_delta": abs(combined - effective)})
+                break
+
+    # ── 2 players + 1 pick ─────────────────────────────────────────────────────
+    for i, p1 in enumerate(viewer_players):
+        if p1["value"] < ANCHOR_PICK: break
+        if p1["value"] > effective * 0.85: continue
+        for j, p2 in enumerate(viewer_players[i + 1:], i + 1):
+            if p2["value"] < ter_min: break
+            for pick in viewer_picks:
+                combined = p1["value"] + p2["value"] + pick["value"]
+                if combined > hi: continue
+                if combined >= lo:
+                    k = _key(p1, p2, {"player_id": pick.get("name", "")})
+                    if k not in seen:
+                        seen.add(k)
+                        packages.append({"type": "2 players + pick",
+                                         "send": [p1, p2, pick],
+                                         "send_value": combined,
+                                         "_delta": abs(combined - effective)})
+                    break
+            else:
+                continue
+            break
+
+    # ── Player + 2 picks ───────────────────────────────────────────────────────
+    if len(viewer_picks) >= 2:
+        for p in viewer_players:
+            if p["value"] < ANCHOR_PICK: break
+            if p["value"] > effective * 0.85: continue
+            for pi, pk1 in enumerate(viewer_picks):
+                for pk2 in viewer_picks[pi + 1:]:
+                    combined = p["value"] + pk1["value"] + pk2["value"]
+                    if combined > hi: continue
+                    if combined >= lo:
+                        k = _key(p, {"player_id": pk1.get("name", "")},
+                                    {"player_id": pk2.get("name", "")})
+                        if k not in seen:
+                            seen.add(k)
+                            packages.append({"type": "player + 2 picks",
+                                             "send": [p, pk1, pk2],
+                                             "send_value": combined,
+                                             "_delta": abs(combined - effective)})
+                        break
+                else:
+                    continue
                 break
 
     packages.sort(key=lambda x: (x["_delta"], len(x["send"])))
