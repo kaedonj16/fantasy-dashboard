@@ -16345,13 +16345,47 @@ def api_player_packages(player_id: str):
                 SELECT pv.player_id,
                     COALESCE(tips.weighted_market_value_1qb,
                              pv.calibrated_value_1qb,
-                             pv.value_1qb) AS val
+                             pv.value_1qb) AS val,
+                    pv.rank_change_7d,
+                    tips.market_trend_1qb  AS market_trend,
+                    tips.buy_sell_ratio
                 FROM player_values pv
                 LEFT JOIN trade_intel_player_stats tips ON tips.player_id = pv.player_id
                 """,
             ).fetchall()
             value_map   = {str(r["player_id"]): float(r["val"] or 0) for r in val_rows}
             focus_value = value_map.get(str(player_id), 0)
+
+            # Profile enrichment: rank movement + market signals per player
+            profile_map: dict = {}
+            for r in val_rows:
+                profile_map[str(r["player_id"])] = {
+                    "rank_change_7d": r["rank_change_7d"],
+                    "market_trend":   float(r["market_trend"] or 0) if r["market_trend"] is not None else None,
+                    "buy_sell_ratio": float(r["buy_sell_ratio"] or 1.0) if r["buy_sell_ratio"] is not None else None,
+                }
+
+        def _compute_profile(pid: str, age=None) -> str:
+            """Return 'young-rising', 'vet-falling', etc. from live market signals."""
+            try: a = float(age or 99)
+            except: a = 99
+            age_cat = "young" if a <= 24 else ("prime" if a <= 27 else "vet")
+            sig = profile_map.get(str(pid)) or {}
+            rank_chg  = sig.get("rank_change_7d")
+            mkt_trend = sig.get("market_trend") or 0.0
+            bsr       = sig.get("buy_sell_ratio") or 1.0
+            score = 0
+            if rank_chg is not None:
+                if rank_chg >= 4:    score += 2
+                elif rank_chg >= 2:  score += 1
+                elif rank_chg <= -4: score -= 2
+                elif rank_chg <= -2: score -= 1
+            if mkt_trend > 40:   score += 1
+            elif mkt_trend < -40: score -= 1
+            if bsr >= 1.3:    score += 1
+            elif bsr <= 0.75: score -= 1
+            momentum = "rising" if score >= 2 else ("falling" if score <= -2 else "stable")
+            return f"{age_cat}-{momentum}"
 
             base_args = [str(player_id), season] + ([sf_param] if sf_param is not None else [])
             count_row = conn.execute(
@@ -16408,10 +16442,12 @@ def api_player_packages(player_id: str):
             if a["asset_type"] == "player":
                 pid  = str(a["player_id"])
                 info = players_map.get(pid) or {}
+                age  = info.get("age")
                 return {"type": "player", "player_id": pid,
                         "name": info.get("name") or pid,
                         "position": info.get("pos") or "?",
-                        "value": value_map.get(pid, 0)}
+                        "value": value_map.get(pid, 0),
+                        "profile": _compute_profile(pid, age)}
             s     = str(a["pick_season"] or "?")
             rd    = str(a["pick_round"] or "?")
             slot  = a.get("pick_slot")
@@ -16504,9 +16540,69 @@ def api_player_packages(player_id: str):
         for r in results:
             del r["_score"]
 
-        return jsonify({"packages": results[:limit], "total_trades": total_trades,
-                        "total_packages": len(results), "player_name": player_name,
-                        "player_id": player_id, "focus_value": round(focus_value)})
+        # When viewer roster is known, generate profile-matched suggestions from their
+        # actual roster — these show "players like what history shows" from *their* team.
+        profile_packages = []
+        if roster_player_ids and focus_value > 0:
+            try:
+                from utils.utils import load_model_value_table as _lmvt
+                _vt = _lmvt() or []
+                _val_key = "sf_value" if league_type == "sf" else "value"
+                _vbi = {}
+                for _p in _vt:
+                    _pid = str(_p.get("id") or "")
+                    if _pid:
+                        _vbi[_pid] = {
+                            "name": _p.get("name", ""), "position": str(_p.get("position") or "").upper(),
+                            "value": float(_p.get(_val_key) or _p.get("value") or 0),
+                            "pos_rank_label": _p.get("pos_rank_label") or "",
+                            "age": _p.get("age"),
+                            "rank_change_7d": _p.get("rank_change_7d"),
+                            "market_trend": (profile_map.get(_pid) or {}).get("market_trend"),
+                            "buy_sell_ratio": (profile_map.get(_pid) or {}).get("buy_sell_ratio"),
+                        }
+                _vplayers = sorted(
+                    [{"player_id": _pid, **{k: _vbi[_pid][k] for k in
+                       ("name","position","value","pos_rank_label","age","rank_change_7d","market_trend","buy_sell_ratio")}}
+                     for _pid in roster_player_ids if _pid in _vbi and _vbi[_pid]["value"] >= 50],
+                    key=lambda x: -x["value"],
+                )
+                _is_sf = (league_type == "sf")
+                _num_t  = 12  # default; refine if league ctx available
+                _pp = _real_trade_packages_for_target(
+                    str(player_id), _is_sf, _num_t, _vplayers, [], _vbi, max_packages=3,
+                )
+                for _pkg in _pp.get("packages", []):
+                    _sv = _pkg.get("send_value", 0)
+                    if focus_value > 0:
+                        _ratio = _sv / focus_value
+                        _vl = ("Overpay" if _ratio >= 1.25 else
+                               "Slight overpay" if _ratio >= 1.08 else
+                               "Fair value" if _ratio >= 0.92 else "Great deal")
+                    else:
+                        _vl = "Fair value"
+                    # Annotate each asset with profile
+                    for _a in _pkg.get("send", []):
+                        if not _a.get("is_pick") and _a.get("player_id"):
+                            _info = _vbi.get(str(_a["player_id"])) or {}
+                            _a["profile"] = _compute_profile(str(_a["player_id"]), _info.get("age"))
+                            _a["position"] = _info.get("position", _a.get("position", ""))
+                    profile_packages.append({
+                        "assets": _pkg["send"], "frequency": _pkg.get("trades_like_this", 0),
+                        "value_label": _vl, "size_label": "from-your-roster",
+                        "receive_value": round(_sv), "is_profile_match": True,
+                    })
+            except Exception:
+                pass
+
+        return jsonify({
+            "packages":          profile_packages + results[:limit],
+            "total_trades":      total_trades,
+            "total_packages":    len(results),
+            "player_name":       player_name,
+            "player_id":         player_id,
+            "focus_value":       round(focus_value),
+        })
 
     except Exception:
         logger.exception("[player-packages] error")
@@ -17458,6 +17554,7 @@ def api_trade_ideas_for_target():
                                 "sf_value":         round(info.get("sf_value", info["value"]), 1),
                                 "pos_rank_label":   info["pos_rank_label"],
                                 "sf_pos_rank_label": info["pos_rank_label"],
+                                "profile":          _player_profile(info),
                             })
 
         _enrich_pkg_assets(packages)
