@@ -16952,18 +16952,40 @@ def _real_trade_packages_for_target(
     target_value = target_info["value"] if target_info else 300
     max_send_value = target_value * 1.55  # filter packages that are clear overpays
 
-    def _age_profile(age) -> str:
-        """Dynasty age profile: young risers vs prime contributors vs aging vets."""
-        try:
-            a = float(age)
-        except (TypeError, ValueError):
-            return "unk"
-        if a <= 24:  return "young"   # ascending, buy-high targets
-        if a <= 27:  return "prime"   # peak contributors
-        if a <= 30:  return "aging"   # declining window
-        return "vet"                  # end of dynasty value
+    def _player_profile(info: dict) -> str:
+        """
+        Classify a player's dynasty profile using value trend + market signals.
+        Returns one of: rising / stable / falling — with age prefix.
+        Age prefix: young(≤24) / prime(25-27) / vet(28+).
+        Combined: e.g. 'young-rising', 'vet-falling', 'prime-stable'.
+        """
+        try: age = float(info.get("age") or 99)
+        except: age = 99
+        age_cat = "young" if age <= 24 else ("prime" if age <= 27 else "vet")
 
-    # Build position/value/age-profile signature for each trade package
+        # Momentum from value rank movement (positive = climbing)
+        rank_chg = info.get("rank_change_7d")
+        mkt_trend = info.get("market_trend", 0.0) or 0.0
+        bsr = info.get("buy_sell_ratio", 1.0) or 1.0
+
+        # Score from -2 to +2: each signal contributes
+        score = 0
+        if rank_chg is not None:
+            if rank_chg >= 4:   score += 2
+            elif rank_chg >= 2: score += 1
+            elif rank_chg <= -4: score -= 2
+            elif rank_chg <= -2: score -= 1
+        # Market trend: 14d median vs 90d (positive = market is buying)
+        if mkt_trend > 40:   score += 1
+        elif mkt_trend < -40: score -= 1
+        # Buy/sell pressure
+        if bsr >= 1.3:   score += 1
+        elif bsr <= 0.75: score -= 1
+
+        momentum = "rising" if score >= 2 else ("falling" if score <= -2 else "stable")
+        return f"{age_cat}-{momentum}"
+
+    # Build position / value-bucket / player-profile signature for each trade package
     def _sig(assets: list[dict]) -> Optional[tuple]:
         parts = []
         for a in sorted(assets, key=lambda x: x["asset_type"]):
@@ -16974,7 +16996,7 @@ def _real_trade_packages_for_target(
                 pos    = info["position"]
                 val    = info["value"]
                 bucket = "elite" if val >= 900 else "high" if val >= 550 else "mid" if val >= 300 else "low"
-                prof   = _age_profile(info.get("age"))
+                prof   = _player_profile(info)
                 parts.append(f"P:{pos}:{bucket}:{prof}")
             elif a["asset_type"] == "pick" and a["pick_round"]:
                 parts.append(f"K:{a['pick_round']}")
@@ -17005,13 +17027,6 @@ def _real_trade_packages_for_target(
         "mid":   (220, 600),
         "low":   (100, 400),
     }
-    AGE_RANGES = {
-        "young": (16, 24),
-        "prime": (25, 27),
-        "aging": (28, 30),
-        "vet":   (31, 99),
-        "unk":   (16, 99),
-    }
 
     result_packages = []
     used_pids: set = set()
@@ -17026,44 +17041,41 @@ def _real_trade_packages_for_target(
         for part in sig:
             kind, *rest = part.split(":")
             if kind == "P":
-                # sig format: P:{pos}:{bucket}:{age_prof}  (age_prof may be absent for old sigs)
+                # sig format: P:{pos}:{bucket}:{age_cat}-{momentum}
                 pos    = rest[0]
                 bucket = rest[1] if len(rest) > 1 else "mid"
-                prof   = rest[2] if len(rest) > 2 else "unk"
+                prof   = rest[2] if len(rest) > 2 else ""   # e.g. "young-rising"
                 lo, hi = VALUE_RANGES.get(bucket, (100, 2000))
-                age_lo, age_hi = AGE_RANGES.get(prof, (16, 99))
 
-                def _age_ok(vp, alo=age_lo, ahi=age_hi):
-                    a = vp.get("age")
-                    if a is None: return True  # unknown age → don't filter
-                    try: return alo <= float(a) <= ahi
-                    except: return True
+                # Decode profile into age + momentum components
+                parts_prof = prof.split("-") if prof else []
+                want_age = parts_prof[0] if parts_prof else ""       # young/prime/vet
+                want_mom = parts_prof[1] if len(parts_prof) > 1 else ""  # rising/stable/falling
 
-                # Try strict match: value + age profile
+                def _profile_match(vp, wa=want_age, wm=want_mom):
+                    got = _player_profile(vp)   # vp has rank_change_7d etc from viewer_players
+                    got_parts = got.split("-")
+                    got_age = got_parts[0] if got_parts else ""
+                    got_mom = got_parts[1] if len(got_parts) > 1 else ""
+                    age_ok = (not wa or wa == got_age)
+                    mom_ok = (not wm or wm == got_mom)
+                    # Score: 0=exact, 1=age-only match, 2=momentum-only, 3=no match
+                    return (0 if (age_ok and mom_ok) else
+                            1 if age_ok else
+                            2 if mom_ok else 3)
+
                 candidates = [
                     vp for vp in vp_by_pos.get(pos, [])
                     if vp["player_id"] not in used_pids
                     and vp["player_id"] not in temp_used
                     and lo <= vp["value"] <= hi
-                    and _age_ok(vp)
                 ]
-                # Fallback: relax age constraint if no strict match
-                if not candidates:
-                    candidates = [
-                        vp for vp in vp_by_pos.get(pos, [])
-                        if vp["player_id"] not in used_pids
-                        and vp["player_id"] not in temp_used
-                        and lo <= vp["value"] <= hi
-                    ]
                 if not candidates:
                     ok = False
                     break
                 mid_val = (lo + hi) / 2
-                # Prefer players whose age profile matches; break ties by value proximity
-                def _score(vp, alo=age_lo, ahi=age_hi, mv=mid_val):
-                    age_match = 0 if _age_ok(vp, alo, ahi) else 1
-                    return (age_match, abs(vp["value"] - mv))
-                best = min(candidates, key=_score)
+                # Sort: profile match quality first, then value proximity
+                best = min(candidates, key=lambda vp: (_profile_match(vp), abs(vp["value"] - mid_val)))
                 matched.append(best)
                 temp_used.add(best["player_id"])
             elif kind == "K":
@@ -17075,32 +17087,38 @@ def _real_trade_packages_for_target(
                 matched.append(available[0])
 
         if not ok or not matched:
-            # Build a fallback package describing the pattern (no viewer-specific players)
+            # Fallback: find a reference player from the full values_by_id that fits the profile
             fallback_assets = []
             for part in sig:
                 kind, *rest = part.split(":")
                 if kind == "P":
                     pos    = rest[0]
                     bucket = rest[1] if len(rest) > 1 else "mid"
-                    prof   = rest[2] if len(rest) > 2 else "unk"
+                    prof   = rest[2] if len(rest) > 2 else ""
                     lo, hi = VALUE_RANGES.get(bucket, (100, 2000))
-                    age_lo, age_hi = AGE_RANGES.get(prof, (16, 99))
                     mid_val = (lo + hi) / 2
-                    # Find any player in values_by_id matching pos + value + age profile
+                    parts_prof = prof.split("-") if prof else []
+                    want_age = parts_prof[0] if parts_prof else ""
+                    want_mom = parts_prof[1] if len(parts_prof) > 1 else ""
+
                     candidates = [
                         {"player_id": pid, "name": info["name"], "position": pos,
                          "value": info["value"], "pos_rank_label": info.get("pos_rank_label", ""),
-                         "age": info.get("age"), "is_reference": True}
+                         "is_reference": True, **{k: info.get(k) for k in ("age","rank_change_7d","market_trend","buy_sell_ratio")}}
                         for pid, info in values_by_id.items()
                         if info["position"] == pos and lo <= info["value"] <= hi
                     ]
-                    # Prefer age-profile match, fall back to value proximity
-                    def _ref_score(p, alo=age_lo, ahi=age_hi, mv=mid_val):
-                        try: age_ok = alo <= float(p.get("age") or 99) <= ahi
-                        except: age_ok = True
-                        return (0 if age_ok else 1, abs(p["value"] - mv))
+
+                    def _ref_prof_score(p, wa=want_age, wm=want_mom, mv=mid_val):
+                        got = _player_profile(p)
+                        gp = got.split("-")
+                        age_ok = (not wa or wa == gp[0])
+                        mom_ok = (not wm or wm == (gp[1] if len(gp) > 1 else ""))
+                        return (0 if (age_ok and mom_ok) else 1 if age_ok else 2 if mom_ok else 3,
+                                abs(p["value"] - mv))
+
                     if candidates:
-                        best = min(candidates, key=_ref_score)
+                        best = min(candidates, key=_ref_prof_score)
                         fallback_assets.append(best)
                 elif kind == "K":
                     rnd = int(rest[0])
@@ -17188,7 +17206,25 @@ def api_trade_ideas_for_target():
                     "pos_rank_label": p.get("pos_rank_label") or "",
                     "team":           p.get("team") or "",
                     "age":            p.get("age"),
+                    "rank_change_7d": p.get("rank_change_7d"),
                 }
+
+        # Enrich with market momentum from trade_intel_player_stats
+        try:
+            from dashboard_services.db import get_conn as _gc
+            with _gc() as _conn:
+                _trend_col = "market_trend_sf" if league_type == "sf" else "market_trend_1qb"
+                _mkt_rows = _conn.execute(
+                    f"SELECT player_id, buy_sell_ratio, {_trend_col} AS market_trend "
+                    "FROM trade_intel_player_stats WHERE trade_count > 0"
+                ).fetchall()
+            for _r in _mkt_rows:
+                _pid = str(_r["player_id"])
+                if _pid in values_by_id:
+                    values_by_id[_pid]["buy_sell_ratio"] = float(_r["buy_sell_ratio"] or 1.0)
+                    values_by_id[_pid]["market_trend"]   = float(_r["market_trend"] or 0.0)
+        except Exception:
+            pass  # market signals optional — fall back to rank_change_7d only
 
         target_info = values_by_id.get(target_player_id)
         if not target_info:
@@ -17255,6 +17291,9 @@ def api_trade_ideas_for_target():
                     "value":          values_by_id[pid]["value"],
                     "pos_rank_label": values_by_id[pid]["pos_rank_label"],
                     "age":            values_by_id[pid].get("age"),
+                    "rank_change_7d": values_by_id[pid].get("rank_change_7d"),
+                    "market_trend":   values_by_id[pid].get("market_trend"),
+                    "buy_sell_ratio": values_by_id[pid].get("buy_sell_ratio"),
                 }
                 for pid in [str(p) for p in (viewer_roster_obj.get("players") or [])]
                 if pid in values_by_id and values_by_id[pid]["value"] >= 50
