@@ -9328,16 +9328,18 @@ function setupFunAwardsGrid() {
         const dTeam = p.actual_nfl_team || p.school || '';
         const dMeta = [dTeam, dAdp != null ? `ADP ${parseFloat(dAdp).toFixed(1)}` : ''].filter(Boolean).join(' · ');
         const draftedArr = [...daDrafted];
-        const overallPick = draftedArr.indexOf(sid) + 1; // overall pick # in draft order
+        const overallPick = draftedArr.indexOf(sid) + 1;
+        const cbId = `da-mine-cb-${p.player_id}`;
         return `<div class="da-row${isMine ? ' da-my-pick' : ''}">
-          <div class="da-rank">${isMine
-            ? `<span style="color:var(--accent);font-weight:800;">${overallPick}</span>`
-            : `<span style="color:var(--text-muted);">${overallPick}</span>`}</div>
+          <div class="da-rank"><span style="color:${isMine ? 'var(--accent)' : 'var(--text-muted)'};font-weight:${isMine ? '800' : '400'};">${overallPick}</span></div>
           <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${dMeta}</span></div>
           <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
-          <button class="da-mine-btn${isMine ? ' active' : ''}" onclick="window._da.toggleMine('${p.player_id}')">${isMine ? 'Mine' : 'Mine?'}</button>
+          <label class="da-mine-label" title="My pick">
+            <input type="checkbox" class="da-mine-cb" ${isMine ? 'checked' : ''} onchange="window._da.toggleMine('${p.player_id}')">
+            <span>Mine</span>
+          </label>
           <div class="da-col-right da-val">${Math.round(parseFloat(p.display_value||0))||'—'}</div>
-          <button class="da-undraft-btn" onclick="window._da.undraft('${p.player_id}')">↩</button>
+          <button class="otc-chip-remove" onclick="window._da.undraft('${p.player_id}')" title="Remove">×</button>
         </div>`;
       }).join('');
       return;
