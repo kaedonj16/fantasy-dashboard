@@ -895,12 +895,14 @@ def page_trade_database(platform: str, season: int, league_id: str):
         .tdb-col-divider {{ height: 1px; width: auto; }}
       }}
       @media(max-width: 600px) {{
-        .tdb-toolbar {{ flex-direction: column; gap: 8px; }}
-        .tdb-sides-row {{ flex-direction: column; gap: 8px; }}
-        .tdb-side-wrap {{ min-width: 0; }}
-        .tdb-side-sep {{ align-self: flex-start; padding-top: 0; }}
-        .tdb-lt-filters {{ align-self: flex-start; width: 100%; }}
-        .tdb-lt {{ flex: 1; text-align: center; }}
+        .tdb-toolbar {{ flex-direction: column; gap: 10px; margin-bottom: 12px; }}
+        .tdb-sides-row {{ flex-direction: column; gap: 10px; width: 100%; }}
+        .tdb-side-wrap {{ min-width: 0; width: 100%; flex: none; }}
+        .tdb-search-outer {{ width: 100%; box-sizing: border-box; }}
+        .tdb-chip-area {{ flex-wrap: wrap; gap: 6px; min-height: 0; }}
+        .tdb-side-sep {{ align-self: flex-start; padding-top: 0; font-size: 12px; }}
+        .tdb-lt-filters {{ width: 100%; display: flex; }}
+        .tdb-lt {{ flex: 1; text-align: center; padding: 8px 4px; font-size: 13px; }}
       }}
       /* ── Pagination (matches site-wide style) ── */
       .ti-pagination {{
