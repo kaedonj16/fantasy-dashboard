@@ -9569,21 +9569,22 @@ function setupFunAwardsGrid() {
     const gc  = GRADE_COLOR[overall] || '#9ca3af';
     const gbg = GRADE_BG[overall] || 'transparent';
     const html = `
-      <div style="padding:18px 16px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
-        <div style="display:flex;align-items:center;gap:12px;">
-          <div style="width:52px;height:52px;border-radius:50%;background:${gbg};border:2px solid ${gc};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-            <span style="font-size:22px;font-weight:900;color:${gc};line-height:1;">${overall}</span>
-          </div>
-          <div>
-            <div style="font-size:15px;font-weight:700;color:var(--text);">My Draft Grade</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${picks.length} pick${picks.length !== 1 ? 's' : ''} graded</div>
-          </div>
+      <div style="padding:16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--text);">My Draft Grade</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${picks.length} pick${picks.length !== 1 ? 's' : ''} graded</div>
         </div>
-        <button onclick="document.getElementById('daGradeModal').style.display='none'" style="background:none;border:none;font-size:18px;color:var(--text-muted);cursor:pointer;padding:6px;line-height:1;flex-shrink:0;">✕</button>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:48px;height:48px;border-radius:50%;background:${gbg};border:2px solid ${gc};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <span style="font-size:20px;font-weight:900;color:${gc};line-height:1;">${overall}</span>
+          </div>
+          <button onclick="document.getElementById('daGradeModal').style.display='none'" style="background:none;border:none;font-size:18px;color:var(--text-muted);cursor:pointer;padding:6px;line-height:1;flex-shrink:0;">✕</button>
+        </div>
       </div>
       <div>${rows}</div>
-      <div style="padding:14px 16px;">
-        <button onclick="document.getElementById('daGradeModal').style.display='none'" class="da-end-draft-btn">Done</button>
+      <div style="padding:14px 16px;display:flex;gap:8px;">
+        <button onclick="document.getElementById('daGradeModal').style.display='none';daReset();" style="flex:1;padding:9px;background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Reset Board</button>
+        <button onclick="document.getElementById('daGradeModal').style.display='none'" class="da-end-draft-btn" style="flex:2;">Done</button>
       </div>`;
 
     let modal = document.getElementById('daGradeModal');
