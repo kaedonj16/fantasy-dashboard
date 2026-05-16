@@ -17501,15 +17501,18 @@ def api_trade_ideas_for_target():
         ANCHOR_3 = effective_target * 0.65
 
         # Per-tier minimum value for non-anchor (secondary/tertiary) assets.
-        # Elite players are harder to acquire — even the "add-ons" must be quality.
-        # T1 target: secondary ≥ 20% of target (~200 on a 1000-value player)
-        # T2 target: secondary ≥ 16%  (~96 on a 600-value player)
-        # T3 target: secondary ≥ 12%  (~48 on a 400-value player)
-        # T4+ target: secondary ≥ 8%  (scales down gracefully)
-        _secondary_pct = {1: 0.20, 2: 0.16, 3: 0.12}.get(target_tier, 0.08)
-        secondary_min = max(40, effective_target * _secondary_pct)
-        # Tertiary (3rd player) can be a bit lighter than secondary
-        tertiary_min  = max(40, secondary_min * 0.65)
+        # The add-on must be one tier above what the target tier alone would imply,
+        # making elite players progressively harder to acquire via multi-player deals.
+        # T1 target → secondary ≥ T3 (300)
+        # T2 target → secondary ≥ T4 (200)
+        # T3 target → secondary ≥ T5 (130)
+        # T4 target → secondary ≥ T6 (80)
+        # T5+        → secondary ≥ T7 (40)
+        _secondary_floor = {1: 300, 2: 200, 3: 130, 4: 80}.get(target_tier, 40)
+        secondary_min = _secondary_floor
+        # Tertiary (3rd player) drops one tier below secondary
+        _tertiary_floor = {1: 200, 2: 130, 3: 80, 4: 40}.get(target_tier, 40)
+        tertiary_min = _tertiary_floor
 
         # 1-for-1: single player in range
         for p in viewer_players:
