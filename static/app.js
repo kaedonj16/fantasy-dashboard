@@ -9247,7 +9247,7 @@ function setupFunAwardsGrid() {
         const p = daProspects.find(x => String(x.player_id) === id);
         return p && p.position === 'QB';
       }).length;
-      if ((daNeeds.QB_count || 0) + myQBs >= 2) need = Math.min(0, need);
+      if ((daNeeds.QB_count || 0) + myQBs >= 2) need = Math.min(-1, need);
     }
     return need;
   }
