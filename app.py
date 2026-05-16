@@ -16425,7 +16425,7 @@ def api_player_packages(player_id: str):
                     "buy_sell_ratio": float(r["buy_sell_ratio"] or 1.0) if r["buy_sell_ratio"] is not None else None,
                 }
 
-            base_args = [str(player_id), season] + ([sf_param] if sf_param is not None else [])
+            base_args = [str(player_id)] + ([sf_param] if sf_param is not None else [])
             count_row = conn.execute(
                 f"""
                 SELECT COUNT(DISTINCT t.id) AS n
@@ -16433,15 +16433,12 @@ def api_player_packages(player_id: str):
                 JOIN trade_intel_assets a ON a.trade_id = t.id
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                 WHERE a.player_id = %s AND a.asset_type = 'player'
-                  AND t.season = %s {sf_clause}
+                  AND t.created_at > NOW() - INTERVAL '18 months'
+                  {sf_clause}
                 """,
                 base_args,
             ).fetchone()
             total_trades = int(count_row["n"]) if count_row else 0
-
-            if not total_trades:
-                return jsonify({"packages": [], "total_trades": 0,
-                                "player_name": player_name, "player_id": player_id})
 
             trade_id_rows = conn.execute(
                 f"""
@@ -16450,7 +16447,8 @@ def api_player_packages(player_id: str):
                 JOIN trade_intel_assets a ON a.trade_id = t.id
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                 WHERE a.player_id = %s AND a.asset_type = 'player'
-                  AND t.season = %s {sf_clause}
+                  AND t.created_at > NOW() - INTERVAL '18 months'
+                  {sf_clause}
                 ORDER BY t.id DESC
                 LIMIT 3000
                 """,
@@ -16458,7 +16456,7 @@ def api_player_packages(player_id: str):
             ).fetchall()
             trade_ids = [r["id"] for r in trade_id_rows]
 
-            asset_rows = conn.execute(
+            asset_rows = (conn.execute(
                 """
                 SELECT trade_id, side, asset_type, player_id,
                        pick_season, pick_round, pick_order, pick_slot
@@ -16467,7 +16465,7 @@ def api_player_packages(player_id: str):
                 ORDER BY trade_id, side, id
                 """,
                 (trade_ids,),
-            ).fetchall()
+            ).fetchall()) if trade_ids else []
 
         by_trade: dict = {}
         for a in asset_rows:

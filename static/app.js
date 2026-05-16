@@ -2526,18 +2526,24 @@ window.initTradePage = function initTradePage(root = document) {
         const hasProfilePkgs = data.packages && data.packages.length;
         const hasRealPkgs    = data.real_packages && data.real_packages.length;
         if (!hasProfilePkgs && !hasRealPkgs) {
+          const noRoster = !viewerRosterId;
           resultsList.innerHTML = `<div class="otc-sugg-empty">
             <div class="otc-sugg-empty-title">No packages found</div>
-            <div class="otc-sugg-empty-sub">Not enough trade history for ${playerName} yet.</div>
+            <div class="otc-sugg-empty-sub">${noRoster
+              ? "Connect a league to see trade suggestions from your roster."
+              : "Your roster may not have players at the right value to trade for " + playerName + "."
+            }</div>
           </div>`;
           return;
         }
 
-        const roosterFiltered = viewerRosterId && data.packages.length < data.total_packages;
-        resultsMeta.textContent = roosterFiltered
-          ? `${data.packages.length} packages from your roster · sorted by likelihood`
-          : `${data.packages.length} packages · sorted by likelihood`;
-        resultsMeta.style.display = "block";
+        if (hasProfilePkgs) {
+          const roosterFiltered = viewerRosterId && data.packages.length < data.total_packages;
+          resultsMeta.textContent = roosterFiltered
+            ? `${data.packages.length} packages from your roster · sorted by likelihood`
+            : `${data.packages.length} packages · sorted by likelihood`;
+          resultsMeta.style.display = "block";
+        }
 
         renderPackages(
           data.packages || [], data.player_name, playerId, data.focus_value,
