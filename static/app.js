@@ -2571,14 +2571,30 @@ window.initTradePage = function initTradePage(root = document) {
         return "overpay";
       }
 
+      const PROFILE_LABEL = {
+        'young-rising':  { text: '↑ Young Rising',    color: '#10b981' },
+        'young-stable':  { text: 'Young Stable',      color: '#3b82f6' },
+        'young-falling': { text: '↓ Young Falling',   color: '#f59e0b' },
+        'prime-rising':  { text: '↑ Prime Rising',    color: '#10b981' },
+        'prime-stable':  { text: 'Prime',             color: '#6366f1' },
+        'prime-falling': { text: '↓ Prime Falling',   color: '#f59e0b' },
+        'vet-rising':    { text: '↑ Vet Resurgence',  color: '#f59e0b' },
+        'vet-stable':    { text: 'Veteran',            color: '#9ca3af' },
+        'vet-falling':   { text: '↓ Declining Vet',   color: '#ef4444' },
+      };
+
       function assetHtml(a) {
         if (a.type === "pick") {
           return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>${a.name}</div>`;
         }
         const col = posColor(a.position);
-        return `<div class="otc-sugg-pkg-asset">
+        const prof = a.profile ? PROFILE_LABEL[a.profile] : null;
+        const profBadge = prof
+          ? `<span style="font-size:10px;font-weight:600;color:${prof.color};margin-left:4px;white-space:nowrap;">${prof.text}</span>`
+          : '';
+        return `<div class="otc-sugg-pkg-asset" style="flex-wrap:wrap;gap:4px;">
           <span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${a.position}</span>
-          ${a.name}
+          <span>${a.name}</span>${profBadge}
         </div>`;
       }
 
@@ -2592,10 +2608,13 @@ window.initTradePage = function initTradePage(root = document) {
 
       const cardsHtml = slice.map((pkg) => {
         const vc = valueClass(pkg.value_label);
+        const freqLabel = pkg.is_profile_match
+          ? `<span class="otc-sugg-pkg-freq" style="color:var(--accent);">From your roster</span>`
+          : `<span class="otc-sugg-pkg-freq">${pkg.frequency}× traded</span>`;
         return `<div class="otc-sugg-package">
           <div class="otc-sugg-pkg-meta">
             <span class="otc-sugg-pkg-value ${vc}">${pkg.value_label}</span>
-            <span class="otc-sugg-pkg-freq">${pkg.frequency}× traded</span>
+            ${freqLabel}
           </div>
           <div class="otc-sugg-pkg-sides">
             <div class="otc-sugg-pkg-side">
