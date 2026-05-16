@@ -16864,7 +16864,7 @@ def api_player_packages(player_id: str):
             )) not in personalized_keys
         ]
 
-        return jsonify({
+        resp = jsonify({
             "packages":          personalized_packages + filtered_market_results[:limit],
             "real_packages":     market_reference_deals,
             "total_real_trades": total_real_trades,
@@ -16875,6 +16875,10 @@ def api_player_packages(player_id: str):
             "player_id":         player_id,
             "focus_value":       round(focus_value),
         })
+        # Trade values update daily — cache for 1 hour in the browser, 6 hours
+        # shared across users via any CDN/reverse-proxy in front of this service.
+        resp.headers["Cache-Control"] = "public, max-age=3600, s-maxage=21600"
+        return resp
 
     except Exception:
         logger.exception("[player-packages] error")
