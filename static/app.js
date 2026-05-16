@@ -8824,24 +8824,37 @@ document.addEventListener('click', (e) => {
   }
 
   function placeTooltip(target) {
-    const TW   = 300;
-    const TH   = 180; // estimate
+    const TH   = 200;
     const PAD  = 12;
     const vw   = window.innerWidth;
     const vh   = window.innerHeight;
     const r    = target.getBoundingClientRect();
 
-    let top  = r.bottom + PAD;
+    let top = r.bottom + PAD;
     if (top + TH > vh) top = Math.max(PAD, r.top - PAD - TH);
+    if (top < PAD) top = PAD;
 
-    let left = r.left + r.width / 2 - TW / 2;
-    left = Math.max(PAD, Math.min(left, vw - TW - PAD));
-
-    Object.assign(tooltipEl.style, {
-      top: top + 'px',
-      left: left + 'px',
-      transform: '',
-    });
+    // On mobile stretch full-width; on desktop use fixed 300px centered on target
+    if (vw <= 540) {
+      Object.assign(tooltipEl.style, {
+        top: top + 'px',
+        left: PAD + 'px',
+        right: PAD + 'px',
+        width: 'auto',
+        transform: '',
+      });
+    } else {
+      const TW = 300;
+      let left = r.left + r.width / 2 - TW / 2;
+      left = Math.max(PAD, Math.min(left, vw - TW - PAD));
+      Object.assign(tooltipEl.style, {
+        top: top + 'px',
+        left: left + 'px',
+        right: '',
+        width: '',
+        transform: '',
+      });
+    }
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────
@@ -9234,7 +9247,7 @@ function setupFunAwardsGrid() {
         const p = daProspects.find(x => String(x.player_id) === id);
         return p && p.position === 'QB';
       }).length;
-      if ((daNeeds.QB_count || 0) + myQBs >= 2) need = Math.min(0, need);
+      if ((daNeeds.QB_count || 0) + myQBs >= 2) need = Math.min(-1, need);
     }
     return need;
   }
@@ -9310,6 +9323,10 @@ function setupFunAwardsGrid() {
     const listEl = document.getElementById('daBoardList');
     if (!listEl) return;
     updateDraftedBadge();
+
+    // Tag .da-board with current view so CSS can use different grid per view
+    const boardEl = listEl.closest('.da-board');
+    if (boardEl) boardEl.dataset.view = daSubView;
 
     if (daSubView === 'drafted') {
       const drafted = daProspects.filter(p => daDrafted.has(String(p.player_id)));
