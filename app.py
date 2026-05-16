@@ -16328,10 +16328,11 @@ def api_trade_intel_similar_trades():
 @app.route("/api/trade-intel/player-packages/<player_id>")
 def api_player_packages(player_id: str):
     """
-    Grouped trade packages for a single player filtered to the viewer's roster,
-    sorted by likelihood of being accepted (value fairness × frequency).
+    Personalized trade packages for acquiring a single target player,
+    filtered and ranked against the viewer's actual roster.
     """
     try:
+        # ── 1. Market & Roster Context ────────────────────────────────────────
         season           = int(request.args.get("season") or datetime.now().year)
         league_type      = (request.args.get("league_type") or "all").strip().lower()
         league_id        = (request.args.get("league_id") or "").strip()
@@ -16343,7 +16344,8 @@ def api_player_packages(player_id: str):
         if not has_premium_access(user_id, league_id or None, platform):
             return jsonify({"paywall": True}), 403
 
-        sf_param  = True if league_type == "sf" else (False if league_type == "1qb" else None)
+        _is_sf    = (league_type == "sf")
+        sf_param  = True if _is_sf else (False if league_type == "1qb" else None)
         sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
 
         from dashboard_services.db import get_conn
@@ -16353,31 +16355,61 @@ def api_player_packages(player_id: str):
         players_map = load_players_index() or {}
         player_info = players_map.get(str(player_id)) or {}
         player_name = player_info.get("name") or str(player_id)
+        focus_pid   = str(player_id)
 
-        # Load viewer's roster player IDs for filtering
-        roster_player_ids: set = set()
+        # Load viewer's roster, draft picks, and locate the target player's owner
+        viewer_player_ids: set = set()
+        viewer_pick_list:  list = []
+        target_owner_pids: set  = set()
         if league_id and viewer_roster_id:
             try:
-                ctx = get_league_ctx_from_cache(platform, league_id, season)
+                ctx     = get_league_ctx_from_cache(platform, league_id, season)
                 rosters = ctx.get("rosters") or []
                 viewer_roster = next(
                     (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
                     None,
                 )
                 if viewer_roster:
-                    roster_player_ids = {str(p) for p in (viewer_roster.get("players") or [])}
+                    viewer_player_ids = {str(p) for p in (viewer_roster.get("players") or [])}
+
+                picks_by_roster = ctx.get("picks_by_roster") or {}
+                cur_yr = datetime.now().year
+                for pk in picks_by_roster.get(str(viewer_roster_id), []):
+                    try:
+                        yr = int(pk.get("season") or cur_yr + 1)
+                        rd = int(pk.get("round")  or 4)
+                    except (TypeError, ValueError):
+                        continue
+                    if yr > cur_yr + 2:
+                        continue
+                    suffix   = {1: "1st", 2: "2nd", 3: "3rd"}.get(rd, f"{rd}th")
+                    pick_val = {1: 250, 2: 120, 3: 60}.get(rd, 30)
+                    viewer_pick_list.append({
+                        "name": f"{yr} {suffix} Round Pick",
+                        "is_pick": True, "value": pick_val,
+                        "pick_round": rd, "pick_season": yr,
+                    })
+                viewer_pick_list.sort(key=lambda x: -x["value"])
+
+                for r in rosters:
+                    r_pids = {str(p) for p in (r.get("players") or [])}
+                    if focus_pid in r_pids and str(r.get("roster_id")) != str(viewer_roster_id):
+                        target_owner_pids = r_pids - {focus_pid}
+                        break
             except Exception:
                 pass
 
-        # Profile enrichment map built from the val_rows query
-        profile_map: dict = {}
+        # Market signal map for profile enrichment (built from DB query below)
+        market_signals: dict = {}
 
-        def _compute_profile(pid: str, age=None) -> str:
-            """Return 'young-rising', 'vet-falling', etc. from live market signals."""
-            try: a = float(age or 99)
-            except: a = 99
+        def _player_profile(pid: str, age=None) -> str:
+            """Combine age tier + market momentum into a profile label."""
+            try:
+                a = float(age or 99)
+            except Exception:
+                a = 99
             age_cat = "young" if a <= 24 else ("prime" if a <= 27 else "vet")
-            sig = profile_map.get(str(pid)) or {}
+            sig       = market_signals.get(str(pid)) or {}
             rank_chg  = sig.get("rank_change_7d")
             mkt_trend = sig.get("market_trend") or 0.0
             bsr       = sig.get("buy_sell_ratio") or 1.0
@@ -16387,45 +16419,61 @@ def api_player_packages(player_id: str):
                 elif rank_chg >= 2:  score += 1
                 elif rank_chg <= -4: score -= 2
                 elif rank_chg <= -2: score -= 1
-            if mkt_trend > 40:   score += 1
+            if mkt_trend > 40:    score += 1
             elif mkt_trend < -40: score -= 1
             if bsr >= 1.3:    score += 1
             elif bsr <= 0.75: score -= 1
             momentum = "rising" if score >= 2 else ("falling" if score <= -2 else "stable")
             return f"{age_cat}-{momentum}"
 
-        _is_sf = (league_type == "sf")
+        def _value_label(ratio: float) -> str:
+            if ratio >= 1.08: return "Overpay"
+            if ratio >= 0.92: return "Fair value"
+            return "Great deal"
+
+        def _enrich_asset(asset: dict, values_by_id: dict) -> None:
+            """Attach profile and position to a player asset dict in-place."""
+            if asset.get("is_pick") or not asset.get("player_id"):
+                return
+            info = values_by_id.get(str(asset["player_id"])) or {}
+            asset["profile"]  = _player_profile(str(asset["player_id"]), info.get("age"))
+            asset["position"] = info.get("position", asset.get("position", ""))
+
+        # ── 2. Historical Market Returns ──────────────────────────────────────
+        # Pull all trades involving the target player over the last 18 months,
+        # fetch every asset, and index by trade ID for pattern extraction.
+
         with get_conn() as conn:
-            # Use SF or 1QB values depending on league type so QBs are priced correctly.
-            # In SF, Josh Allen is ~1000; in 1QB he's ~570 — using the wrong column
-            # would produce wildly incorrect value-ratio labels and anchor checks.
+            # SF vs 1QB value columns — wrong column would misprice QBs by ~2x
             if _is_sf:
-                _val_col     = "COALESCE(tips.weighted_market_value_sf, pv.calibrated_value_sf, pv.value_sf)"
-                _trend_col   = "tips.market_trend_sf"
+                val_col   = "COALESCE(tips.weighted_market_value_sf, pv.calibrated_value_sf, pv.value_sf)"
+                trend_col = "tips.market_trend_sf"
             else:
-                _val_col     = "COALESCE(tips.weighted_market_value_1qb, pv.calibrated_value_1qb, pv.value_1qb)"
-                _trend_col   = "tips.market_trend_1qb"
+                val_col   = "COALESCE(tips.weighted_market_value_1qb, pv.calibrated_value_1qb, pv.value_1qb)"
+                trend_col = "tips.market_trend_1qb"
+
             val_rows = conn.execute(
                 f"""
                 SELECT pv.player_id,
-                    {_val_col} AS val,
+                    {val_col} AS val,
                     pv.rank_change_7d,
-                    {_trend_col} AS market_trend,
+                    {trend_col} AS market_trend,
                     tips.buy_sell_ratio
                 FROM player_values pv
                 LEFT JOIN trade_intel_player_stats tips ON tips.player_id = pv.player_id
                 """,
             ).fetchall()
+
             value_map   = {str(r["player_id"]): float(r["val"] or 0) for r in val_rows}
-            focus_value = value_map.get(str(player_id), 0)
+            focus_value = value_map.get(focus_pid, 0)
             for r in val_rows:
-                profile_map[str(r["player_id"])] = {
+                market_signals[str(r["player_id"])] = {
                     "rank_change_7d": r["rank_change_7d"],
                     "market_trend":   float(r["market_trend"] or 0) if r["market_trend"] is not None else None,
                     "buy_sell_ratio": float(r["buy_sell_ratio"] or 1.0) if r["buy_sell_ratio"] is not None else None,
                 }
 
-            base_args = [str(player_id), season] + ([sf_param] if sf_param is not None else [])
+            base_args = [focus_pid] + ([sf_param] if sf_param is not None else [])
             count_row = conn.execute(
                 f"""
                 SELECT COUNT(DISTINCT t.id) AS n
@@ -16433,15 +16481,12 @@ def api_player_packages(player_id: str):
                 JOIN trade_intel_assets a ON a.trade_id = t.id
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                 WHERE a.player_id = %s AND a.asset_type = 'player'
-                  AND t.season = %s {sf_clause}
+                  AND t.created_at > NOW() - INTERVAL '18 months'
+                  {sf_clause}
                 """,
                 base_args,
             ).fetchone()
             total_trades = int(count_row["n"]) if count_row else 0
-
-            if not total_trades:
-                return jsonify({"packages": [], "total_trades": 0,
-                                "player_name": player_name, "player_id": player_id})
 
             trade_id_rows = conn.execute(
                 f"""
@@ -16450,7 +16495,8 @@ def api_player_packages(player_id: str):
                 JOIN trade_intel_assets a ON a.trade_id = t.id
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                 WHERE a.player_id = %s AND a.asset_type = 'player'
-                  AND t.season = %s {sf_clause}
+                  AND t.created_at > NOW() - INTERVAL '18 months'
+                  {sf_clause}
                 ORDER BY t.id DESC
                 LIMIT 3000
                 """,
@@ -16458,7 +16504,7 @@ def api_player_packages(player_id: str):
             ).fetchall()
             trade_ids = [r["id"] for r in trade_id_rows]
 
-            asset_rows = conn.execute(
+            asset_rows = (conn.execute(
                 """
                 SELECT trade_id, side, asset_type, player_id,
                        pick_season, pick_round, pick_order, pick_slot
@@ -16467,8 +16513,9 @@ def api_player_packages(player_id: str):
                 ORDER BY trade_id, side, id
                 """,
                 (trade_ids,),
-            ).fetchall()
+            ).fetchall()) if trade_ids else []
 
+        # Index assets by trade for pattern analysis
         by_trade: dict = {}
         for a in asset_rows:
             tid = a["trade_id"]
@@ -16476,32 +16523,41 @@ def api_player_packages(player_id: str):
                 by_trade[tid] = {"a": [], "b": []}
             by_trade[tid][a["side"]].append(a)
 
-        def describe(a) -> dict:
+        def _describe_asset(a) -> dict:
             if a["asset_type"] == "player":
                 pid  = str(a["player_id"])
                 info = players_map.get(pid) or {}
-                age  = info.get("age")
-                return {"type": "player", "player_id": pid,
-                        "name": info.get("name") or pid,
-                        "position": info.get("pos") or "?",
-                        "value": value_map.get(pid, 0),
-                        "profile": _compute_profile(pid, age)}
-            s     = str(a["pick_season"] or "?")
-            rd    = str(a["pick_round"] or "?")
-            slot  = a.get("pick_slot")
+                return {
+                    "type": "player", "player_id": pid,
+                    "name": info.get("name") or pid,
+                    "position": info.get("pos") or "?",
+                    "value": value_map.get(pid, 0),
+                    "profile": _player_profile(pid, info.get("age")),
+                }
+            s    = str(a["pick_season"] or "?")
+            rd   = str(a["pick_round"] or "?")
+            slot = a.get("pick_slot")
             order = a.get("pick_order") or ""
-            name  = (f"{s} Pick {rd}.{str(slot).zfill(2)}" if slot
-                     else f"{s} Round {rd}" + (f" ({order})" if order else ""))
-            return {"type": "pick", "name": name, "value": 0,
-                    "pick_season": s, "pick_round": rd, "pick_order": order,
-                    "pick_slot": str(slot).zfill(2) if slot else None}
+            name = (f"{s} Pick {rd}.{str(slot).zfill(2)}" if slot
+                    else f"{s} Round {rd}" + (f" ({order})" if order else ""))
+            return {
+                "type": "pick", "name": name, "value": 0,
+                "pick_season": s, "pick_round": rd, "pick_order": order,
+                "pick_slot": str(slot).zfill(2) if slot else None,
+            }
 
-        def pick_approx_value(a) -> float:
+        def _pick_approx_value(a) -> float:
             return {1: 4500, 2: 2000, 3: 800}.get(int(a.get("pick_round") or 4), 400)
 
-        focus_pid      = str(player_id)
-        package_groups: dict = defaultdict(list)
+        # Group real trades into canonical packages (keyed by sorted asset set)
+        def _acceptance_weight(ratio: float) -> float:
+            if ratio < 0.80:  return 0.15
+            if ratio < 0.92:  return 0.55
+            if ratio <= 1.12: return 1.00
+            if ratio <= 1.28: return 0.70
+            return 0.35
 
+        package_groups: dict = defaultdict(list)
         for tid, sides in by_trade.items():
             focus_side = next(
                 (sk for sk in ("a", "b")
@@ -16512,46 +16568,37 @@ def api_player_packages(player_id: str):
             if not focus_side:
                 continue
             other_key  = "b" if focus_side == "a" else "a"
-            other_side = [describe(x) for x in sides[other_key]
-                          if not (x["asset_type"] == "player"
-                                  and str(x["player_id"]) == focus_pid)]
+            other_side = [
+                _describe_asset(x) for x in sides[other_key]
+                if not (x["asset_type"] == "player" and str(x["player_id"]) == focus_pid)
+            ]
             if not other_side:
                 continue
-
             canonical = tuple(sorted(
                 f"p:{x['player_id']}" if x["type"] == "player" else f"pick:{x['name']}"
                 for x in other_side
             ))
             package_groups[canonical].append(other_side)
 
-        def acceptance_weight(ratio: float) -> float:
-            """Higher = more likely the target owner accepts."""
-            if ratio < 0.80:   return 0.15   # lowball, partner passes
-            if ratio < 0.92:   return 0.55   # under market
-            if ratio <= 1.12:  return 1.00   # fair sweet spot
-            if ratio <= 1.28:  return 0.70   # you're overpaying, still fine
-            return 0.35                       # way too much
-
-        results = []
+        # Score and filter market return packages — these go into `market_results`
+        # and are deduplicated against personalized packages before final assembly.
+        market_results = []
         for canonical, occurrences in package_groups.items():
-            assets   = occurrences[0]
-            freq     = len(occurrences)
+            assets = occurrences[0]
+            freq   = len(occurrences)
 
-            # Filter: every player asset must be on the viewer's roster (if known)
-            if roster_player_ids:
-                if any(a["type"] == "player" and a["player_id"] not in roster_player_ids
+            if viewer_player_ids:
+                if any(a["type"] == "player" and a["player_id"] not in viewer_player_ids
                        for a in assets):
                     continue
 
             recv_val = sum(
                 a["value"] if a["type"] == "player" and a["value"] > 0
-                else pick_approx_value(a)
+                else _pick_approx_value(a)
                 for a in assets
             )
             if focus_value > 0:
                 ratio = recv_val / focus_value
-                # Hard-filter clear overpays and underpays:
-                # below 82% the receiving team is giving away value too cheaply.
                 if ratio > 1.10 or ratio < 0.90:
                     continue
                 max_single = max(
@@ -16560,202 +16607,270 @@ def api_player_packages(player_id: str):
                 )
                 if max_single > focus_value * 1.10:
                     continue
-                value_label = ("Overpay"        if ratio >= 1.25 else
-                               "Slight overpay" if ratio >= 1.08 else
-                               "Fair value"     if ratio >= 0.92 else
-                               "Great deal")
-                score = freq * acceptance_weight(ratio)
+                value_lbl = ("Slight overpay" if ratio >= 1.08 else
+                             "Fair value"     if ratio >= 0.92 else "Great deal")
+                score = freq * _acceptance_weight(ratio)
             else:
-                ratio, value_label, score = 1.0, "Unknown", float(freq)
+                ratio, value_lbl, score = 1.0, "Unknown", float(freq)
 
-            n          = len(assets)
-            size_label = "1-for-1" if n == 1 else f"{n}-for-1"
-            results.append({"assets": assets, "frequency": freq,
-                             "value_label": value_label, "size_label": size_label,
-                             "receive_value": round(recv_val), "_score": score})
+            n = len(assets)
+            market_results.append({
+                "assets": assets, "frequency": freq,
+                "value_label": value_lbl,
+                "size_label": "1-for-1" if n == 1 else f"{n}-for-1",
+                "receive_value": round(recv_val),
+                "_score": score,
+            })
 
-        results.sort(key=lambda x: -x["_score"])
-        for r in results:
+        market_results.sort(key=lambda x: -x["_score"])
+        for r in market_results:
             del r["_score"]
 
-        # When viewer roster is known, generate profile-matched suggestions from their
-        # actual roster — these show "players like what history shows" from *their* team.
-        profile_packages = []
-        if roster_player_ids and focus_value > 0:
+        # ── 3. Personalized Trade Packages ────────────────────────────────────
+        # Three layers of roster-specific suggestions, run in priority order:
+        #   Layer C — Pattern-Learned Roster Fits   (market-informed, surfaces first)
+        #   Layer A — Market-Matched Packages       (real trade signature reconstruction)
+        #   Layer B — Value-Based Package Generation (mathematical fallback)
+
+        personalized_packages: list = []
+        market_reference_deals: list = []
+        total_real_trades: int       = 0
+        combo_packages: list         = []
+
+        if viewer_player_ids and focus_value > 0:
             try:
                 from utils.utils import load_model_value_table as _lmvt
-                _vt = _lmvt() or []
-                _val_key = "sf_value" if league_type == "sf" else "value"
-                _vbi = {}
-                for _p in _vt:
-                    _pid = str(_p.get("id") or "")
-                    if _pid:
-                        _vbi[_pid] = {
-                            "name": _p.get("name", ""), "position": str(_p.get("position") or "").upper(),
-                            "value": float(_p.get(_val_key) or _p.get("value") or 0),
-                            "pos_rank_label": _p.get("pos_rank_label") or "",
-                            "age": _p.get("age"),
-                            "rank_change_7d": _p.get("rank_change_7d"),
-                            "market_trend": (profile_map.get(_pid) or {}).get("market_trend"),
-                            "buy_sell_ratio": (profile_map.get(_pid) or {}).get("buy_sell_ratio"),
+                val_table = _lmvt() or []
+                val_key   = "sf_value" if _is_sf else "value"
+
+                # Build a rich values_by_id lookup for the viewer's roster context
+                values_by_id: dict = {}
+                for p in val_table:
+                    pid = str(p.get("id") or "")
+                    if pid:
+                        values_by_id[pid] = {
+                            "name":           p.get("name", ""),
+                            "position":       str(p.get("position") or "").upper(),
+                            "value":          float(p.get(val_key) or p.get("value") or 0),
+                            "pos_rank_label": p.get("pos_rank_label") or "",
+                            "age":            p.get("age"),
+                            "rank_change_7d": p.get("rank_change_7d"),
+                            "market_trend":   (market_signals.get(pid) or {}).get("market_trend"),
+                            "buy_sell_ratio": (market_signals.get(pid) or {}).get("buy_sell_ratio"),
                         }
-                _vplayers = sorted(
-                    [{"player_id": _pid, **{k: _vbi[_pid][k] for k in
-                       ("name","position","value","pos_rank_label","age","rank_change_7d","market_trend","buy_sell_ratio")}}
-                     for _pid in roster_player_ids if _pid in _vbi and _vbi[_pid]["value"] >= 50],
+
+                # Viewer's roster players sorted by value (min value 50 to exclude handcuffs)
+                viewer_players = sorted(
+                    [
+                        {"player_id": pid, **{k: values_by_id[pid][k] for k in
+                          ("name", "position", "value", "pos_rank_label",
+                           "age", "rank_change_7d", "market_trend", "buy_sell_ratio")}}
+                        for pid in viewer_player_ids
+                        if pid in values_by_id and values_by_id[pid]["value"] >= 50
+                    ],
                     key=lambda x: -x["value"],
                 )
-                _num_t  = 12  # default; refine if league ctx available
-                _pp = _real_trade_packages_for_target(
-                    str(player_id), _is_sf, _num_t, _vplayers, [], _vbi, max_packages=3,
-                )
-                for _pkg in _pp.get("packages", []):
-                    _sv = _pkg.get("send_value", 0)
-                    if focus_value > 0:
-                        _ratio = _sv / focus_value
-                        # Hard ±10% band
-                        if _ratio > 1.10 or _ratio < 0.90:
-                            continue
-                        # Tier-aware secondary/tertiary floor enforcement.
-                        # Mirrors the rules in _real_trade_packages_for_target and
-                        # the value-based generator.
-                        def _ft(v):
-                            return (1 if v>=800 else 2 if v>=500 else 3 if v>=300 else
-                                    4 if v>=200 else 5 if v>=130 else 6 if v>=80 else
-                                    7 if v>=40 else 8)
-                        _tgt_tier = _ft(focus_value)
-                        _sec_fl = {1:300, 2:200, 3:130, 4:80}.get(_tgt_tier, 40)
-                        _ter_fl = {1:200, 2:130, 3:80, 4:40}.get(_tgt_tier, 40)
-                        _pvals = sorted(
-                            [_a.get("value", 0) for _a in _pkg.get("send", []) if not _a.get("is_pick")],
-                            reverse=True,
-                        )
-                        # Anchor: best player must be ≥ 65% of focus_value
-                        if not _pvals or _pvals[0] < focus_value * 0.65:
-                            continue
-                        if len(_pvals) >= 2 and _pvals[1] < _sec_fl:
-                            continue
-                        if len(_pvals) >= 3 and _pvals[2] < _ter_fl:
-                            continue
-                        _vl = ("Overpay" if _ratio >= 1.08 else
-                               "Fair value" if _ratio >= 0.92 else "Great deal")
-                    else:
-                        _vl = "Fair value"
-                    # Annotate each asset with profile
-                    for _a in _pkg.get("send", []):
-                        if not _a.get("is_pick") and _a.get("player_id"):
-                            _info = _vbi.get(str(_a["player_id"])) or {}
-                            _a["profile"] = _compute_profile(str(_a["player_id"]), _info.get("age"))
-                            _a["position"] = _info.get("position", _a.get("position", ""))
-                    profile_packages.append({
-                        "assets": _pkg["send"], "frequency": _pkg.get("trades_like_this", 0),
-                        "value_label": _vl, "size_label": "from-your-roster",
-                        "receive_value": round(_sv), "is_profile_match": True,
-                    })
-                # ------------------------------------------------------------------
-                # Also generate pure value-based packages from the viewer's roster
-                # so suggestions appear even when no historical trades match.
-                # ------------------------------------------------------------------
-                synth_pkgs = _generate_roster_packages(
-                    focus_value, _vplayers, [], max_packages=6
-                )
-                _pp_keys_synth = {
-                    tuple(sorted(
-                        a.get("player_id", "") for a in pkg["assets"]
-                        if a.get("player_id") and not a.get("is_pick")
-                    ))
-                    for pkg in profile_packages
-                }
-                for _sp in synth_pkgs:
-                    _sv2 = _sp["send_value"]
-                    _skey = tuple(sorted(
-                        a.get("player_id", "") for a in _sp["send"]
-                        if a.get("player_id") and not a.get("is_pick")
-                    ))
-                    if _skey in _pp_keys_synth:
-                        continue
-                    _ratio2 = _sv2 / focus_value if focus_value > 0 else 1.0
-                    _vl2 = ("Overpay" if _ratio2 >= 1.08 else
-                            "Fair value" if _ratio2 >= 0.92 else "Great deal")
-                    for _a2 in _sp["send"]:
-                        if not _a2.get("is_pick") and _a2.get("player_id"):
-                            _inf2 = _vbi.get(str(_a2["player_id"])) or {}
-                            _a2["profile"] = _compute_profile(str(_a2["player_id"]), _inf2.get("age"))
-                    _pp_keys_synth.add(_skey)
-                    profile_packages.append({
-                        "assets": _sp["send"],
-                        "frequency": 0,
-                        "value_label": _vl2,
-                        "size_label": _sp["type"],
-                        "receive_value": round(_sv2),
-                        "is_profile_match": True,
-                        "is_synthetic": True,
-                    })
 
-                # ------------------------------------------------------------------
-                # Pattern-learned suggestions: study real trade signatures for this
-                # player, then fill those position+tier slots from the viewer's roster.
-                # These rank first (market-informed) and dedup against all above.
-                # ------------------------------------------------------------------
-                pattern_pkgs = _pattern_based_packages(
-                    focus_pid, focus_value, by_trade, _vplayers, value_map, players_map,
-                    max_packages=6,
-                )
-                _pp_keys_pat = {
-                    tuple(sorted(
-                        a.get("player_id", "") for a in pkg["assets"]
+                # Tier thresholds for anchor validation
+                def _tier(v: float) -> int:
+                    return (1 if v >= 800 else 2 if v >= 500 else 3 if v >= 300 else
+                            4 if v >= 200 else 5 if v >= 130 else 6 if v >= 80 else
+                            7 if v >= 40 else 8)
+
+                target_tier = _tier(focus_value)
+                sec_floor   = {1: 300, 2: 200, 3: 130, 4: 80}.get(target_tier, 40)
+                ter_floor   = {1: 200, 2: 130, 3: 80,  4: 40}.get(target_tier, 40)
+
+                # Shared dedup key set — grows as each layer adds packages
+                seen_player_sets: set = set()
+
+                def _pkg_key(assets: list) -> tuple:
+                    return tuple(sorted(
+                        a.get("player_id", "") for a in assets
                         if a.get("player_id") and not a.get("is_pick")
                     ))
-                    for pkg in profile_packages
-                }
-                for _pp_pkg in pattern_pkgs:
-                    _ppv = _pp_pkg["send_value"]
-                    _ppkey = tuple(sorted(p["player_id"] for p in _pp_pkg["send"]))
-                    if _ppkey in _pp_keys_pat:
+
+                # ── Layer C: Pattern-Learned Roster Fits ──────────────────────
+                # Learns position+tier signatures from real trade history, then
+                # fills those slots from the viewer's actual roster. Surfaces first
+                # because it is most reflective of how this player actually trades.
+                pattern_pkgs = _pattern_based_packages(
+                    focus_pid, focus_value, by_trade, viewer_players,
+                    value_map, players_map, max_packages=6,
+                )
+                for pkg in pattern_pkgs:
+                    key = _pkg_key(pkg["send"])
+                    if key in seen_player_sets:
                         continue
-                    _pp_ratio = _ppv / focus_value if focus_value > 0 else 1.0
-                    _pp_vl = ("Overpay" if _pp_ratio >= 1.08 else
-                              "Fair value" if _pp_ratio >= 0.92 else "Great deal")
-                    for _pp_a in _pp_pkg["send"]:
-                        if _pp_a.get("player_id"):
-                            _pp_inf = _vbi.get(str(_pp_a["player_id"])) or {}
-                            _pp_a["profile"] = _compute_profile(
-                                str(_pp_a["player_id"]), _pp_inf.get("age")
-                            )
-                    _pp_keys_pat.add(_ppkey)
-                    profile_packages.insert(0, {
-                        "assets":           _pp_pkg["send"],
+                    ratio = pkg["send_value"] / focus_value if focus_value > 0 else 1.0
+                    for asset in pkg["send"]:
+                        _enrich_asset(asset, values_by_id)
+                    seen_player_sets.add(key)
+                    personalized_packages.append({
+                        "assets":           pkg["send"],
                         "frequency":        0,
-                        "value_label":      _pp_vl,
-                        "size_label":       _pp_pkg["type"],
-                        "receive_value":    round(_ppv),
+                        "value_label":      _value_label(ratio),
+                        "size_label":       pkg["type"],
+                        "receive_value":    round(pkg["send_value"]),
                         "is_profile_match": True,
                         "is_synthetic":     True,
                         "pattern_learned":  True,
                     })
 
+                # ── Layer A: Market-Matched Packages ──────────────────────────
+                # Reconstructs packages from real trade signatures for this exact
+                # player, matched to assets on the viewer's roster. Also exports
+                # reference deals for the "Based on real trades" UI section.
+                market_result = _real_trade_packages_for_target(
+                    focus_pid, _is_sf, 12, viewer_players, viewer_pick_list,
+                    values_by_id, max_packages=3,
+                )
+                total_real_trades = market_result.get("total_real_trades", 0)
+
+                for pkg in market_result.get("packages", []):
+                    send_val = pkg.get("send_value", 0)
+                    for asset in pkg.get("send", []):
+                        _enrich_asset(asset, values_by_id)
+
+                    # Export to market reference section (±10% only)
+                    ratio = send_val / focus_value if focus_value > 0 else 1.0
+                    if 0.90 <= ratio <= 1.10:
+                        market_reference_deals.append({
+                            "send":             pkg.get("send", []),
+                            "send_value":       round(send_val, 1),
+                            "trades_like_this": pkg.get("trades_like_this", 0),
+                            "is_reference":     pkg.get("is_reference", False),
+                        })
+
+                    # Add to personalized packages if roster-matched and anchor-valid
+                    if ratio > 1.10 or ratio < 0.90:
+                        continue
+                    player_vals = sorted(
+                        [a.get("value", 0) for a in pkg.get("send", []) if not a.get("is_pick")],
+                        reverse=True,
+                    )
+                    if not player_vals or player_vals[0] < focus_value * 0.65:
+                        continue
+                    if len(player_vals) >= 2 and player_vals[1] < sec_floor:
+                        continue
+                    if len(player_vals) >= 3 and player_vals[2] < ter_floor:
+                        continue
+                    key = _pkg_key(pkg["send"])
+                    if key in seen_player_sets:
+                        continue
+                    seen_player_sets.add(key)
+                    personalized_packages.append({
+                        "assets":           pkg["send"],
+                        "frequency":        pkg.get("trades_like_this", 0),
+                        "value_label":      _value_label(ratio),
+                        "size_label":       "from-your-roster",
+                        "receive_value":    round(send_val),
+                        "is_profile_match": True,
+                    })
+
+                # ── Layer B: Value-Based Package Generation ───────────────────
+                # Pure mathematical packages built from the viewer's roster values.
+                # Guarantees suggestions even when no historical trades match.
+                value_pkgs = _generate_roster_packages(
+                    focus_value, viewer_players, viewer_pick_list, max_packages=6,
+                )
+                for pkg in value_pkgs:
+                    key = _pkg_key(pkg["send"])
+                    if key in seen_player_sets:
+                        continue
+                    ratio = pkg["send_value"] / focus_value if focus_value > 0 else 1.0
+                    for asset in pkg["send"]:
+                        _enrich_asset(asset, values_by_id)
+                    seen_player_sets.add(key)
+                    personalized_packages.append({
+                        "assets":           pkg["send"],
+                        "frequency":        0,
+                        "value_label":      _value_label(ratio),
+                        "size_label":       pkg["type"],
+                        "receive_value":    round(pkg["send_value"]),
+                        "is_profile_match": True,
+                        "is_synthetic":     True,
+                    })
+
+                # ── 4. Market Reference Deals ─────────────────────────────────
+                # (market_reference_deals already built in Layer A above)
+
+                # ── 5. Expanded Acquisition Packages ─────────────────────────
+                # "Get [target] + [throw-in] for [your package]"
+                # Scans target owner's roster for T4–T6 players, then generates
+                # viewer packages priced at focus_value + throw_in_value.
+                combo_seen: set = set()
+                throw_in_candidates = sorted(
+                    [
+                        {
+                            "player_id": pid,
+                            "name":      values_by_id[pid]["name"],
+                            "position":  values_by_id[pid]["position"],
+                            "value":     values_by_id[pid]["value"],
+                            "profile":   _player_profile(pid, values_by_id[pid].get("age")),
+                        }
+                        for pid in target_owner_pids
+                        if pid in values_by_id and 80 <= values_by_id[pid]["value"] <= 500
+                    ],
+                    key=lambda x: x["value"],  # cheapest throw-in = best deal for viewer
+                )[:6]
+
+                for throw_in in throw_in_candidates:
+                    combo_target_val = focus_value + throw_in["value"]
+                    for pkg in _generate_roster_packages(
+                        combo_target_val, viewer_players, viewer_pick_list, max_packages=2
+                    ):
+                        send_val = pkg["send_value"]
+                        ratio    = send_val / combo_target_val if combo_target_val > 0 else 1.0
+                        if not (0.90 <= ratio <= 1.10):
+                            continue
+                        combo_key = (
+                            throw_in["player_id"],
+                            tuple(sorted(
+                                a.get("player_id") or a.get("name", "")
+                                for a in pkg["send"]
+                            )),
+                        )
+                        if combo_key in combo_seen:
+                            continue
+                        combo_seen.add(combo_key)
+                        for asset in pkg["send"]:
+                            _enrich_asset(asset, values_by_id)
+                        combo_packages.append({
+                            "extra_receive": throw_in,
+                            "assets":        pkg["send"],
+                            "send_value":    round(send_val, 1),
+                            "receive_value": round(combo_target_val, 1),
+                            "type":          pkg["type"],
+                            "value_label":   _value_label(ratio),
+                        })
+
             except Exception:
                 pass
 
-        # Deduplicate: remove any result whose player set already appears in profile_packages.
-        # Profile package assets are raw player dicts (no "type" key) — key on player_id presence.
-        profile_keys = {
+        # ── 6. Final Response Assembly ────────────────────────────────────────
+        # Deduplicate market_results against personalized_packages, then merge.
+        personalized_keys = {
             tuple(sorted(
                 a["player_id"] for a in pkg["assets"]
                 if a.get("player_id") and not a.get("is_pick")
             ))
-            for pkg in profile_packages
+            for pkg in personalized_packages
         }
-        deduped_results = [
-            r for r in results
-            if tuple(sorted(a["player_id"] for a in r["assets"] if a.get("type") == "player"))
-            not in profile_keys
+        filtered_market_results = [
+            r for r in market_results
+            if tuple(sorted(
+                a["player_id"] for a in r["assets"] if a.get("type") == "player"
+            )) not in personalized_keys
         ]
 
         return jsonify({
-            "packages":          profile_packages + deduped_results[:limit],
+            "packages":          personalized_packages + filtered_market_results[:limit],
+            "real_packages":     market_reference_deals,
+            "total_real_trades": total_real_trades,
+            "combo_packages":    combo_packages[:6],
             "total_trades":      total_trades,
-            "total_packages":    len(deduped_results),
+            "total_packages":    len(filtered_market_results),
             "player_name":       player_name,
             "player_id":         player_id,
             "focus_value":       round(focus_value),
@@ -17331,11 +17446,12 @@ def _generate_roster_packages(
         if v >= 40:  return 7
         return 8
 
-    tgt_tier   = _tier(effective)
-    ANCHOR_2   = effective * 0.75
-    ANCHOR_3   = effective * 0.65
-    sec_min    = {1: 300, 2: 200, 3: 130, 4: 80}.get(tgt_tier, 40)
-    ter_min    = {1: 200, 2: 130, 3: 80,  4: 40}.get(tgt_tier, 40)
+    tgt_tier     = _tier(effective)
+    ANCHOR_2     = effective * 0.75   # 2-for-1: best player ≥ 75%
+    ANCHOR_3     = effective * 0.65   # 3-for-1: best player ≥ 65%
+    ANCHOR_PICK  = effective * 0.45   # player+picks: player only needs 45% (picks fill rest)
+    sec_min      = {1: 300, 2: 200, 3: 130, 4: 80}.get(tgt_tier, 40)
+    ter_min      = {1: 200, 2: 130, 3: 80,  4: 40}.get(tgt_tier, 40)
 
     packages = []
     seen: set = set()
@@ -17343,7 +17459,7 @@ def _generate_roster_packages(
     def _key(*assets):
         return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
 
-    # 1-for-1
+    # ── 1-for-1 ────────────────────────────────────────────────────────────────
     for p in viewer_players:
         if lo <= p["value"] <= hi:
             k = _key(p)
@@ -17353,7 +17469,7 @@ def _generate_roster_packages(
                                  "send_value": p["value"],
                                  "_delta": abs(p["value"] - effective)})
 
-    # 2-for-1
+    # ── 2-for-1 ────────────────────────────────────────────────────────────────
     for i, p1 in enumerate(viewer_players):
         if p1["value"] < ANCHOR_2: break
         if p1["value"] > effective * 0.93: continue
@@ -17370,7 +17486,7 @@ def _generate_roster_packages(
                                      "_delta": abs(combined - effective)})
                 break
 
-    # 3-for-1
+    # ── 3-for-1 ────────────────────────────────────────────────────────────────
     for i, p1 in enumerate(viewer_players):
         if p1["value"] < ANCHOR_3: break
         if p1["value"] >= ANCHOR_2: continue
@@ -17392,20 +17508,65 @@ def _generate_roster_packages(
                 continue
             break
 
-    # Player + pick
+    # ── Player + 1 pick (relaxed anchor: player needs ≥ 45%) ──────────────────
     for p in viewer_players:
-        if p["value"] < ANCHOR_3: break
+        if p["value"] < ANCHOR_PICK: break
         if p["value"] > effective * 0.93: continue
         for pick in viewer_picks:
-            if pick["value"] < sec_min: continue
             combined = p["value"] + pick["value"]
-            if lo <= combined <= hi:
+            if combined > hi: continue
+            if combined >= lo:
                 k = _key(p, {"player_id": pick.get("name", "")})
                 if k not in seen:
                     seen.add(k)
                     packages.append({"type": "player + pick", "send": [p, pick],
                                      "send_value": combined,
                                      "_delta": abs(combined - effective)})
+                break
+
+    # ── 2 players + 1 pick ─────────────────────────────────────────────────────
+    for i, p1 in enumerate(viewer_players):
+        if p1["value"] < ANCHOR_PICK: break
+        if p1["value"] > effective * 0.85: continue
+        for j, p2 in enumerate(viewer_players[i + 1:], i + 1):
+            if p2["value"] < ter_min: break
+            for pick in viewer_picks:
+                combined = p1["value"] + p2["value"] + pick["value"]
+                if combined > hi: continue
+                if combined >= lo:
+                    k = _key(p1, p2, {"player_id": pick.get("name", "")})
+                    if k not in seen:
+                        seen.add(k)
+                        packages.append({"type": "2 players + pick",
+                                         "send": [p1, p2, pick],
+                                         "send_value": combined,
+                                         "_delta": abs(combined - effective)})
+                    break
+            else:
+                continue
+            break
+
+    # ── Player + 2 picks ───────────────────────────────────────────────────────
+    if len(viewer_picks) >= 2:
+        for p in viewer_players:
+            if p["value"] < ANCHOR_PICK: break
+            if p["value"] > effective * 0.85: continue
+            for pi, pk1 in enumerate(viewer_picks):
+                for pk2 in viewer_picks[pi + 1:]:
+                    combined = p["value"] + pk1["value"] + pk2["value"]
+                    if combined > hi: continue
+                    if combined >= lo:
+                        k = _key(p, {"player_id": pk1.get("name", "")},
+                                    {"player_id": pk2.get("name", "")})
+                        if k not in seen:
+                            seen.add(k)
+                            packages.append({"type": "player + 2 picks",
+                                             "send": [p, pk1, pk2],
+                                             "send_value": combined,
+                                             "_delta": abs(combined - effective)})
+                        break
+                else:
+                    continue
                 break
 
     packages.sort(key=lambda x: (x["_delta"], len(x["send"])))
@@ -17635,6 +17796,7 @@ def _real_trade_packages_for_target(
                          "is_reference": True, **{k: info.get(k) for k in ("age","rank_change_7d","market_trend","buy_sell_ratio")}}
                         for pid, info in values_by_id.items()
                         if info["position"] == pos and lo <= info["value"] <= hi
+                        and pid != str(target_player_id)  # never suggest the target as their own cost
                     ]
 
                     def _ref_prof_score(p, wa=want_age, wm=want_mom, mv=mid_val):
@@ -17651,9 +17813,10 @@ def _real_trade_packages_for_target(
                 elif kind == "K":
                     rnd = int(rest[0])
                     suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
+                    pick_yr = datetime.now().year + 1
                     fallback_assets.append({
-                        "name": f"{suffix} Round Pick", "is_pick": True,
-                        "value": 200 if rnd == 1 else 100,
+                        "name": f"{pick_yr} {suffix} Round Pick", "is_pick": True,
+                        "value": 250 if rnd == 1 else 120 if rnd == 2 else 60,
                         "is_reference": True,
                     })
             if fallback_assets:
