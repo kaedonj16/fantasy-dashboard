@@ -17554,6 +17554,7 @@ def api_trade_ideas_for_target():
                                 "sf_value":         round(info.get("sf_value", info["value"]), 1),
                                 "pos_rank_label":   info["pos_rank_label"],
                                 "sf_pos_rank_label": info["pos_rank_label"],
+                                "profile":          _player_profile(info),
                             })
 
         _enrich_pkg_assets(packages)

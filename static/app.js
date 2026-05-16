@@ -2863,19 +2863,37 @@ window.initTradePage = function initTradePage(root = document) {
         </div>`;
       }
 
+      const PROF_LABEL = {
+        'young-rising':  { text: '↑ Young Rising',  color: '#10b981' },
+        'young-stable':  { text: 'Young',           color: '#3b82f6' },
+        'young-falling': { text: '↓ Young Falling', color: '#f59e0b' },
+        'prime-rising':  { text: '↑ Prime Rising',  color: '#10b981' },
+        'prime-stable':  { text: 'Prime',           color: '#6366f1' },
+        'prime-falling': { text: '↓ Prime Falling', color: '#f59e0b' },
+        'vet-rising':    { text: '↑ Vet Resurgence',color: '#f59e0b' },
+        'vet-stable':    { text: 'Veteran',          color: '#9ca3af' },
+        'vet-falling':   { text: '↓ Declining Vet', color: '#ef4444' },
+      };
+
       function renderPkg(pkg) {
-        const names   = pkg.send.map(p => p.name).join(" + ");
         const sv      = pkg.send_value.toFixed(1);
         const diff    = (parseFloat(sv) - parseFloat(tv)).toFixed(1);
         const diffStr = (diff >= 0 ? "+" : "") + diff;
         const { text: label, color: lc } = fairLabel(pkg.send_value);
         const btnData = encodeURIComponent(JSON.stringify({ pkg, target: data.target }));
+        const assetsHtml = pkg.send.map(p => {
+          const prof = p.profile ? PROF_LABEL[p.profile] : null;
+          const profTag = prof
+            ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
+            : '';
+          return `<span style="font-weight:600;color:var(--text);">${p.name}</span>${profTag}`;
+        }).join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
         return `<div style="padding:5px 0;border-top:1px solid var(--border);">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;">
-            <span style="font-weight:600;color:var(--text);flex:1;">${names}</span>
-            <span style="font-size:11px;font-weight:700;color:${lc};white-space:nowrap;">${label}</span>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
+            <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetsHtml}</div>
+            <span style="font-size:11px;font-weight:700;color:${lc};white-space:nowrap;flex-shrink:0;">${label}</span>
           </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;">
             <span style="font-size:10px;color:var(--text-muted);">${pkg.type} · send ${sv} (${diffStr})</span>
             <button class="load-in-calc-btn" data-payload="${btnData}"
               style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #3b82f6;background:transparent;color:#3b82f6;cursor:pointer;white-space:nowrap;">
@@ -2900,7 +2918,6 @@ window.initTradePage = function initTradePage(root = document) {
             BASED ON ${totalTrades} REAL TRADE${totalTrades !== 1 ? "S" : ""} IN SIMILAR LEAGUES
           </div>`;
         realPkgs.forEach(pkg => {
-          const names   = pkg.send.map(p => p.name).join(" + ");
           const sv      = pkg.send_value.toFixed(1);
           const count   = pkg.trades_like_this;
           const isRef   = !!pkg.is_reference;
@@ -2908,10 +2925,17 @@ window.initTradePage = function initTradePage(root = document) {
           const patternLabel = isRef
             ? `market pattern · send ~${sv} (example assets)`
             : `market pattern · send ${sv}`;
+          const assetsHtml = pkg.send.map(p => {
+            const prof = p.profile ? PROF_LABEL[p.profile] : null;
+            const profTag = prof
+              ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
+              : '';
+            return `<span style="font-weight:600;color:${isRef ? 'var(--text-muted)' : 'var(--text)'};">${p.name}</span>${profTag}`;
+          }).join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
           html += `<div style="padding:5px 0;border-top:1px solid var(--border);">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;">
-              <span style="font-weight:600;color:${isRef ? "var(--text-muted)" : "var(--text)"};flex:1;">${names}</span>
-              <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${count}× seen</span>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
+              <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetsHtml}</div>
+              <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;flex-shrink:0;">${count}× seen</span>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
               <span style="font-size:10px;color:var(--text-muted);">${patternLabel}</span>
