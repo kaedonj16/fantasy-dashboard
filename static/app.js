@@ -2257,26 +2257,22 @@ window.initTradePage = function initTradePage(root = document) {
 
       // Each player row includes an inline hidden panel for package ideas
       function renderPlayerRow(t, pos) {
-        const col     = posColor[pos] || "var(--text-muted)";
+        const col      = posColor[pos] || "var(--text-muted)";
         const safeName = (t.name || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
         const safePid  = (t.player_id || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
-        const panelId  = `pkgpanel-${(t.player_id || "x").replace(/\W/g,"_")}`;
-        return `<div>
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
-            <div style="min-width:0;flex:1;">
-              <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${t.name}</span></div>
-              <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-              <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
-              <span style="font-size:13px;font-weight:800;color:var(--text);">${parseFloat(t.value).toFixed(1)}</span>
-              <button class="get-target-btn"
-                data-pid="${safePid}" data-name="${safeName}" data-panel="${panelId}"
-                style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
-                title="Trade suggestions for this player">Get</button>
-            </div>
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${t.name}</span></div>
+            <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
           </div>
-          <div id="${panelId}" style="display:none;margin:4px 0 8px;padding:8px 10px;border-radius:6px;background:var(--surface-raised,var(--surface));border:1px solid var(--border);font-size:12px;"></div>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
+            <span style="font-size:13px;font-weight:800;color:var(--text);">${parseFloat(t.value).toFixed(1)}</span>
+            <button class="get-target-btn"
+              data-pid="${safePid}" data-name="${safeName}"
+              style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
+              title="Trade suggestions for this player">Get</button>
+          </div>
         </div>`;
       }
 
@@ -2308,31 +2304,13 @@ window.initTradePage = function initTradePage(root = document) {
 
       body.innerHTML = html;
 
-      // Delegate Get clicks
+      // Delegate Get clicks — navigate to Suggestions tab with this player pre-loaded
       body.addEventListener("click", function(e) {
         const btn = e.target.closest(".get-target-btn");
         if (!btn) return;
-        // Close any other open panel first
-        body.querySelectorAll(".pkg-inline-panel[data-open]").forEach(p => {
-          p.style.display = "none";
-          p.removeAttribute("data-open");
-        });
-        const panel = document.getElementById(btn.dataset.panel);
-        if (!panel) return;
-        // Toggle: close if already open
-        if (panel.dataset.open) {
-          panel.style.display = "none";
-          panel.removeAttribute("data-open");
-          return;
+        if (typeof window._openPlayerInSuggestions === "function") {
+          window._openPlayerInSuggestions(btn.dataset.pid, btn.dataset.name);
         }
-        panel.dataset.open = "1";
-        panel.classList.add("pkg-inline-panel");
-        panel.style.display = "block";
-        panel.innerHTML = `<div style="display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:13px;"><div class="loading-spinner" style="width:12px;height:12px;margin:0;flex-shrink:0;"></div>Loading…</div>`;
-        window._generatePackageForTarget(
-          btn.dataset.pid, btn.dataset.name, panel,
-          leagueId, viewerRosterId, platform, leagueType, season
-        );
       });
     } catch (e) {
       body.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">Could not load targets.</div>`;
@@ -2416,6 +2394,13 @@ window.initTradePage = function initTradePage(root = document) {
 
     // expose so Load & Analyze can switch back
     function switchToCalc() { switchTab("calculator"); }
+
+    // expose so Targets tab "Get" button can navigate here with a pre-selected player
+    window._openPlayerInSuggestions = function(playerId, playerName) {
+      switchTab("suggestions");
+      if (playerInput) playerInput.value = playerName;
+      fetchPackages(playerId, playerName);
+    };
 
     // ── Player search ────────────────────────────────────────────
     const playerInput    = root.querySelector("#suggPlayerInput");
