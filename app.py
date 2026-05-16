@@ -16512,9 +16512,9 @@ def api_player_packages(player_id: str):
             )
             if focus_value > 0:
                 ratio = recv_val / focus_value
-                # Hard-filter packages that are clearly unreasonable overpays,
-                # or where any single player sent is worth far more than the target.
-                if ratio > 1.55:
+                # Hard-filter clear overpays and underpays:
+                # below 82% the receiving team is giving away value too cheaply.
+                if ratio > 1.55 or ratio < 0.90:
                     continue
                 max_single = max(
                     (a["value"] for a in assets if a["type"] == "player" and a["value"] > 0),
@@ -16595,10 +16595,21 @@ def api_player_packages(player_id: str):
             except Exception:
                 pass
 
+        # Deduplicate: remove any result whose player set already appears in profile_packages
+        profile_keys = {
+            tuple(sorted(a["player_id"] for a in pkg["assets"] if a.get("type") == "player"))
+            for pkg in profile_packages
+        }
+        deduped_results = [
+            r for r in results
+            if tuple(sorted(a["player_id"] for a in r["assets"] if a.get("type") == "player"))
+            not in profile_keys
+        ]
+
         return jsonify({
-            "packages":          profile_packages + results[:limit],
+            "packages":          profile_packages + deduped_results[:limit],
             "total_trades":      total_trades,
-            "total_packages":    len(results),
+            "total_packages":    len(deduped_results),
             "player_name":       player_name,
             "player_id":         player_id,
             "focus_value":       round(focus_value),
@@ -17072,7 +17083,7 @@ def _real_trade_packages_for_target(
     target_info = values_by_id.get(str(target_player_id))
     target_value = target_info["value"] if target_info else 300
     max_send_value = target_value * 1.55  # filter packages that are clear overpays
-    min_send_value = target_value * 0.72  # reject packages that significantly underpay
+    min_send_value = target_value * 0.90  # reject packages that underpay by more than 10%
 
     # Build position / value-bucket / player-profile signature for each trade package
     def _sig(assets: list[dict]) -> Optional[tuple]:
