@@ -16652,6 +16652,46 @@ def api_player_packages(player_id: str):
                         "value_label": _vl, "size_label": "from-your-roster",
                         "receive_value": round(_sv), "is_profile_match": True,
                     })
+                # ------------------------------------------------------------------
+                # Also generate pure value-based packages from the viewer's roster
+                # so suggestions appear even when no historical trades match.
+                # ------------------------------------------------------------------
+                synth_pkgs = _generate_roster_packages(
+                    focus_value, _vplayers, [], max_packages=6
+                )
+                _pp_keys_synth = {
+                    tuple(sorted(
+                        a.get("player_id", "") for a in pkg["assets"]
+                        if a.get("player_id") and not a.get("is_pick")
+                    ))
+                    for pkg in profile_packages
+                }
+                for _sp in synth_pkgs:
+                    _sv2 = _sp["send_value"]
+                    _skey = tuple(sorted(
+                        a.get("player_id", "") for a in _sp["send"]
+                        if a.get("player_id") and not a.get("is_pick")
+                    ))
+                    if _skey in _pp_keys_synth:
+                        continue
+                    _ratio2 = _sv2 / focus_value if focus_value > 0 else 1.0
+                    _vl2 = ("Overpay" if _ratio2 >= 1.08 else
+                            "Fair value" if _ratio2 >= 0.92 else "Great deal")
+                    for _a2 in _sp["send"]:
+                        if not _a2.get("is_pick") and _a2.get("player_id"):
+                            _inf2 = _vbi.get(str(_a2["player_id"])) or {}
+                            _a2["profile"] = _compute_profile(str(_a2["player_id"]), _inf2.get("age"))
+                    _pp_keys_synth.add(_skey)
+                    profile_packages.append({
+                        "assets": _sp["send"],
+                        "frequency": 0,
+                        "value_label": _vl2,
+                        "size_label": _sp["type"],
+                        "receive_value": round(_sv2),
+                        "is_profile_match": True,
+                        "is_synthetic": True,
+                    })
+
             except Exception:
                 pass
 
@@ -17048,6 +17088,122 @@ def api_trade_targets():
         "position_ranks": position_ranks_out,
         "projected_picks": _projected_picks_out,
     })
+
+
+def _generate_roster_packages(
+    target_value: float,
+    viewer_players: list,
+    viewer_picks: list = None,
+    premium: float = 1.0,
+    max_packages: int = 6,
+) -> list:
+    """
+    Build trade packages from a viewer's roster using value + tier logic only —
+    no historical signature required.  Applies the same anchor / secondary /
+    tertiary tier floors as the value-based generator in api_trade_ideas_for_target.
+
+    Returns a list of {"type", "send", "send_value"} dicts sorted by closeness
+    to effective_target, capped at max_packages.
+    """
+    if not viewer_players:
+        return []
+    viewer_picks = viewer_picks or []
+
+    effective = target_value * premium
+    lo = effective * 0.90
+    hi = effective * 1.10
+
+    def _tier(v):
+        if v >= 800: return 1
+        if v >= 500: return 2
+        if v >= 300: return 3
+        if v >= 200: return 4
+        if v >= 130: return 5
+        if v >= 80:  return 6
+        if v >= 40:  return 7
+        return 8
+
+    tgt_tier   = _tier(effective)
+    ANCHOR_2   = effective * 0.75
+    ANCHOR_3   = effective * 0.65
+    sec_min    = {1: 300, 2: 200, 3: 130, 4: 80}.get(tgt_tier, 40)
+    ter_min    = {1: 200, 2: 130, 3: 80,  4: 40}.get(tgt_tier, 40)
+
+    packages = []
+    seen: set = set()
+
+    def _key(*assets):
+        return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
+
+    # 1-for-1
+    for p in viewer_players:
+        if lo <= p["value"] <= hi:
+            k = _key(p)
+            if k not in seen:
+                seen.add(k)
+                packages.append({"type": "1-for-1", "send": [p],
+                                 "send_value": p["value"],
+                                 "_delta": abs(p["value"] - effective)})
+
+    # 2-for-1
+    for i, p1 in enumerate(viewer_players):
+        if p1["value"] < ANCHOR_2: break
+        if p1["value"] > effective * 0.93: continue
+        for p2 in viewer_players[i + 1:]:
+            if p2["value"] < sec_min: break
+            combined = p1["value"] + p2["value"]
+            if combined > hi: continue
+            if combined >= lo:
+                k = _key(p1, p2)
+                if k not in seen:
+                    seen.add(k)
+                    packages.append({"type": "2-for-1", "send": [p1, p2],
+                                     "send_value": combined,
+                                     "_delta": abs(combined - effective)})
+                break
+
+    # 3-for-1
+    for i, p1 in enumerate(viewer_players):
+        if p1["value"] < ANCHOR_3: break
+        if p1["value"] >= ANCHOR_2: continue
+        for j, p2 in enumerate(viewer_players[i + 1:], i + 1):
+            if p2["value"] < sec_min: break
+            for p3 in viewer_players[j + 1:]:
+                if p3["value"] < ter_min: break
+                combined = p1["value"] + p2["value"] + p3["value"]
+                if combined > hi: continue
+                if combined >= lo:
+                    k = _key(p1, p2, p3)
+                    if k not in seen:
+                        seen.add(k)
+                        packages.append({"type": "3-for-1", "send": [p1, p2, p3],
+                                         "send_value": combined,
+                                         "_delta": abs(combined - effective)})
+                    break
+            else:
+                continue
+            break
+
+    # Player + pick
+    for p in viewer_players:
+        if p["value"] < ANCHOR_3: break
+        if p["value"] > effective * 0.93: continue
+        for pick in viewer_picks:
+            if pick["value"] < sec_min: continue
+            combined = p["value"] + pick["value"]
+            if lo <= combined <= hi:
+                k = _key(p, {"player_id": pick.get("name", "")})
+                if k not in seen:
+                    seen.add(k)
+                    packages.append({"type": "player + pick", "send": [p, pick],
+                                     "send_value": combined,
+                                     "_delta": abs(combined - effective)})
+                break
+
+    packages.sort(key=lambda x: (x["_delta"], len(x["send"])))
+    for pkg in packages:
+        del pkg["_delta"]
+    return packages[:max_packages]
 
 
 def _player_profile(info: dict) -> str:
