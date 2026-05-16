@@ -9553,37 +9553,36 @@ function setupFunAwardsGrid() {
       const tierTxt = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : '';
       const bpaTxt  = isBpa ? '<span style="font-size:10px;font-weight:700;color:#10b981;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.25);border-radius:4px;padding:1px 5px;margin-left:4px;">BPA</span>' : '';
       const meta = [pickTxt, adpTxt, tierTxt].filter(Boolean).join(' · ');
-      return `<div style="display:grid;grid-template-columns:1fr 44px 38px;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--border);background:${gbg};">
-        <div style="display:flex;flex-direction:column;gap:3px;min-width:0;">
-          <div style="display:flex;align-items:center;gap:4px;">
-            <span style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</span>${bpaTxt}
+      return `<div style="display:grid;grid-template-columns:1fr 38px 32px;align-items:center;gap:8px;padding:10px 14px 10px 12px;border-top:1px solid var(--border);border-left:3px solid ${gc};">
+        <div style="display:flex;flex-direction:column;gap:2px;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+            <span style="font-size:13px;font-weight:700;color:var(--text);">${p.name}</span>${bpaTxt}
           </div>
           <span style="font-size:11px;color:var(--text-muted);">${meta}</span>
           ${diffTxt ? `<span style="font-size:11px;font-weight:600;color:${diffCol};">${diffTxt}</span>` : ''}
         </div>
-        <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;text-align:center;">${p.position}</span>
-        <div style="font-size:20px;font-weight:800;color:${gc};text-align:right;padding-right:2px;">${grade}</div>
+        <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 5px;text-align:center;">${p.position}</span>
+        <div style="font-size:18px;font-weight:800;color:${gc};text-align:right;">${grade}</div>
       </div>`;
     }).join('');
 
     const gc  = GRADE_COLOR[overall] || '#9ca3af';
     const gbg = GRADE_BG[overall] || 'transparent';
     const html = `
-      <div style="padding:20px 20px 16px;display:flex;align-items:flex-start;justify-content:space-between;border-bottom:1px solid var(--border);">
-        <div>
-          <div style="font-size:17px;font-weight:700;color:var(--text);">My Draft Grade</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">${picks.length} pick${picks.length !== 1 ? 's' : ''} graded</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <div style="display:flex;flex-direction:column;align-items:center;background:${gbg};border:2px solid ${gc}33;border-radius:12px;padding:6px 16px;">
-            <span style="font-size:36px;font-weight:900;color:${gc};line-height:1;">${overall}</span>
-            <span style="font-size:10px;font-weight:600;color:var(--text-muted);margin-top:2px;">OVERALL</span>
+      <div style="padding:18px 16px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:52px;height:52px;border-radius:50%;background:${gbg};border:2px solid ${gc};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <span style="font-size:22px;font-weight:900;color:${gc};line-height:1;">${overall}</span>
           </div>
-          <button onclick="document.getElementById('daGradeModal').style.display='none'" style="background:none;border:none;font-size:20px;color:var(--text-muted);cursor:pointer;padding:4px;line-height:1;">✕</button>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--text);">My Draft Grade</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${picks.length} pick${picks.length !== 1 ? 's' : ''} graded</div>
+          </div>
         </div>
+        <button onclick="document.getElementById('daGradeModal').style.display='none'" style="background:none;border:none;font-size:18px;color:var(--text-muted);cursor:pointer;padding:6px;line-height:1;flex-shrink:0;">✕</button>
       </div>
       <div>${rows}</div>
-      <div style="padding:16px;">
+      <div style="padding:14px 16px;">
         <button onclick="document.getElementById('daGradeModal').style.display='none'" class="da-end-draft-btn">Done</button>
       </div>`;
 
