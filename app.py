@@ -16514,7 +16514,7 @@ def api_player_packages(player_id: str):
                 ratio = recv_val / focus_value
                 # Hard-filter clear overpays and underpays:
                 # below 82% the receiving team is giving away value too cheaply.
-                if ratio > 1.55 or ratio < 0.82:
+                if ratio > 1.55 or ratio < 0.90:
                     continue
                 max_single = max(
                     (a["value"] for a in assets if a["type"] == "player" and a["value"] > 0),
@@ -17083,7 +17083,7 @@ def _real_trade_packages_for_target(
     target_info = values_by_id.get(str(target_player_id))
     target_value = target_info["value"] if target_info else 300
     max_send_value = target_value * 1.55  # filter packages that are clear overpays
-    min_send_value = target_value * 0.82  # reject packages that significantly underpay
+    min_send_value = target_value * 0.90  # reject packages that underpay by more than 10%
 
     # Build position / value-bucket / player-profile signature for each trade package
     def _sig(assets: list[dict]) -> Optional[tuple]:
