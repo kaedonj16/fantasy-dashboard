@@ -9329,7 +9329,11 @@ function setupFunAwardsGrid() {
     if (boardEl) boardEl.dataset.view = daSubView;
 
     if (daSubView === 'drafted') {
-      const drafted = daProspects.filter(p => daDrafted.has(String(p.player_id)));
+      // Sort by insertion order in daDrafted (first pick = index 0 = top)
+      const draftedArr = [...daDrafted];
+      const drafted = draftedArr
+        .map(sid => daProspects.find(p => String(p.player_id) === sid))
+        .filter(Boolean);
       if (!drafted.length) {
         listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No players drafted yet.</div>';
         return;
@@ -9344,9 +9348,7 @@ function setupFunAwardsGrid() {
         const dAdp  = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
         const dTeam = p.actual_nfl_team || p.school || '';
         const dMeta = [dTeam, dAdp != null ? `ADP ${parseFloat(dAdp).toFixed(1)}` : ''].filter(Boolean).join(' · ');
-        const draftedArr = [...daDrafted];
         const overallPick = draftedArr.indexOf(sid) + 1;
-        const cbId = `da-mine-cb-${p.player_id}`;
         return `<div class="da-row${isMine ? ' da-my-pick' : ''}">
           <div class="da-rank"><span style="color:${isMine ? 'var(--accent)' : 'var(--text-muted)'};font-weight:${isMine ? '800' : '400'};">${overallPick}</span></div>
           <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${dMeta}</span></div>
@@ -9456,8 +9458,8 @@ function setupFunAwardsGrid() {
     modal.style.display = 'flex';
   }
 
-  // Exact port of pick_grade() and team_grade() from app.py
-  function _pickGrade(adpDiff, need, pos, isSF, qbCount, numTeams) {
+  // Exact port of pick_grade() and team_grade() from app.py (including BPA logic)
+  function _pickGrade(adpDiff, need, pos, isSF, qbCount, numTeams, isBpa, bpaGap) {
     if (adpDiff === null) return 'N/A';
     const bigReach = -(numTeams * 1.1);
     let score;
@@ -9466,6 +9468,13 @@ function setupFunAwardsGrid() {
     else if (adpDiff >= -3)         score = 2;
     else if (adpDiff >= bigReach)   score = 1;
     else                            score = 0;
+
+    // BPA bonus / penalty (mirrors Python logic)
+    if (isBpa) {
+      score += adpDiff < -3 ? 1 : 2;
+    } else if (bpaGap != null && bpaGap >= 5) {
+      score = Math.max(score - 1, 0);
+    }
 
     if (need) {
       score += 1;
@@ -9491,10 +9500,15 @@ function setupFunAwardsGrid() {
   }
 
   function showDraftGrade() {
-    const GRADE_COLOR = { 'A+': '#10b981', 'A': '#10b981', 'B': '#3b82f6', 'C': '#f59e0b', 'D': '#ef4444', 'F': '#6b7280', 'N/A': '#9ca3af' };
+    const GRADE_COLOR = { 'A+': '#10b981', 'A': '#10b981', 'B': '#3b82f6', 'C': '#f59e0b', 'D': '#ef4444', 'F': '#ef4444', 'N/A': '#9ca3af' };
+    const GRADE_BG    = { 'A+': 'rgba(16,185,129,.08)', 'A': 'rgba(16,185,129,.08)', 'B': 'rgba(59,130,246,.08)', 'C': 'rgba(245,158,11,.08)', 'D': 'rgba(239,68,68,.08)', 'F': 'rgba(239,68,68,.08)', 'N/A': 'transparent' };
     const isSF = daLeagueType === 'sf';
 
     const draftedArr = [...daDrafted]; // preserves insertion order = actual pick sequence
+
+    // Build a lookup of adp for BPA computation
+    const adpKey = p => parseFloat(isSF ? p.sf_avg_pick : p.avg_pick) || 9999;
+
     const picks = myPickOrder.map((sid, idx) => {
       const p = daProspects.find(x => String(x.player_id) === sid);
       if (!p) return null;
@@ -9507,51 +9521,70 @@ function setupFunAwardsGrid() {
         return q && q.position === 'QB';
       }).length;
       const qbCount = (daNeeds.QB_count || 0) + qbsBefore;
-      const grade = _pickGrade(adpDiff, need, p.position, isSF, qbCount, daLeagueSize);
+
+      // BPA: who was available at this pick with a better ADP?
+      const takenBefore = new Set(draftedArr.slice(0, actualPick - 1));
+      const available = daProspects.filter(x => !takenBefore.has(String(x.player_id)));
+      const bpa = available.reduce((best, x) => adpKey(x) < adpKey(best) ? x : best, available[0]);
+      const bpaAdp = bpa ? adpKey(bpa) : null;
+      const isBpa = bpa ? String(bpa.player_id) === sid : false;
+      const bpaGap = (adp !== null && bpaAdp !== null && !isBpa) ? adp - bpaAdp : 0;
+
+      const grade = _pickGrade(adpDiff, need, p.position, isSF, qbCount, daLeagueSize, isBpa, bpaGap);
       const needLabel = NEED_LABEL[String(daNeeds[p.position] ?? 0)] || 'Neutral';
       const tier = p.tier_label || '';
-      return { p, actualPick, adp, adpDiff, grade, need, needLabel, tier };
+      return { p, actualPick, adp, adpDiff, grade, need, needLabel, tier, isBpa, bpaGap };
     }).filter(Boolean);
 
     if (!picks.length) return;
 
     const overall = _teamGrade(picks.map(x => x.grade));
 
-    const rows = picks.map(({ p, actualPick, adp, adpDiff, grade, needLabel, tier }) => {
+    const rows = picks.map(({ p, actualPick, adp, adpDiff, grade, needLabel, tier, isBpa }) => {
       const col    = POS_COLORS[p.position] || '#9ca3af';
       const gc     = GRADE_COLOR[grade] || '#9ca3af';
+      const gbg    = GRADE_BG[grade] || 'transparent';
       const adpTxt = adp ? `ADP ${adp.toFixed(1)}` : '';
       const pickTxt = `Pick ${actualPick}`;
-      const diffTxt = adpDiff !== null ? (adpDiff >= 0 ? `+${adpDiff.toFixed(1)} value` : `${adpDiff.toFixed(1)} reach`) : '';
+      const diffTxt = adpDiff !== null
+        ? (adpDiff >= 0 ? `+${adpDiff.toFixed(1)} value` : `${adpDiff.toFixed(1)} reach`)
+        : '';
       const diffCol = adpDiff !== null ? (adpDiff >= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)';
       const tierTxt = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : '';
-      const meta = [pickTxt, adpTxt, tierTxt, needLabel].filter(Boolean).join(' · ');
-      return `<div style="display:grid;grid-template-columns:1fr 44px 36px;align-items:center;gap:8px;padding:9px 16px;border-top:1px solid var(--border);">
-        <div style="display:flex;flex-direction:column;gap:2px;min-width:0;">
-          <span style="font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</span>
+      const bpaTxt  = isBpa ? '<span style="font-size:10px;font-weight:700;color:#10b981;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.25);border-radius:4px;padding:1px 5px;margin-left:4px;">BPA</span>' : '';
+      const meta = [pickTxt, adpTxt, tierTxt].filter(Boolean).join(' · ');
+      return `<div style="display:grid;grid-template-columns:1fr 44px 38px;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--border);background:${gbg};">
+        <div style="display:flex;flex-direction:column;gap:3px;min-width:0;">
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</span>${bpaTxt}
+          </div>
           <span style="font-size:11px;color:var(--text-muted);">${meta}</span>
           ${diffTxt ? `<span style="font-size:11px;font-weight:600;color:${diffCol};">${diffTxt}</span>` : ''}
         </div>
         <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;text-align:center;">${p.position}</span>
-        <div style="font-size:18px;font-weight:800;color:${gc};text-align:center;">${grade}</div>
+        <div style="font-size:20px;font-weight:800;color:${gc};text-align:right;padding-right:2px;">${grade}</div>
       </div>`;
     }).join('');
 
-    const gc = GRADE_COLOR[overall] || '#9ca3af';
+    const gc  = GRADE_COLOR[overall] || '#9ca3af';
+    const gbg = GRADE_BG[overall] || 'transparent';
     const html = `
-      <div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;">
+      <div style="padding:20px 20px 16px;display:flex;align-items:flex-start;justify-content:space-between;border-bottom:1px solid var(--border);">
         <div>
-          <div style="font-size:16px;font-weight:700;color:var(--text);">My Draft Grade</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${picks.length} pick${picks.length !== 1 ? 's' : ''}</div>
+          <div style="font-size:17px;font-weight:700;color:var(--text);">My Draft Grade</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:3px;">${picks.length} pick${picks.length !== 1 ? 's' : ''} graded</div>
         </div>
-        <div style="display:flex;align-items:center;gap:12px;">
-          <div style="font-size:42px;font-weight:800;color:${gc};">${overall}</div>
-          <button onclick="document.getElementById('daGradeModal').style.display='none'" style="background:none;border:none;font-size:20px;color:var(--text-muted);cursor:pointer;">✕</button>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="display:flex;flex-direction:column;align-items:center;background:${gbg};border:2px solid ${gc}33;border-radius:12px;padding:6px 16px;">
+            <span style="font-size:36px;font-weight:900;color:${gc};line-height:1;">${overall}</span>
+            <span style="font-size:10px;font-weight:600;color:var(--text-muted);margin-top:2px;">OVERALL</span>
+          </div>
+          <button onclick="document.getElementById('daGradeModal').style.display='none'" style="background:none;border:none;font-size:20px;color:var(--text-muted);cursor:pointer;padding:4px;line-height:1;">✕</button>
         </div>
       </div>
-      <div style="margin-top:8px;">${rows}</div>
-      <div style="padding:16px;text-align:center;">
-        <button onclick="document.getElementById('daGradeModal').style.display='none'" style="padding:8px 24px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Done</button>
+      <div>${rows}</div>
+      <div style="padding:16px;">
+        <button onclick="document.getElementById('daGradeModal').style.display='none'" class="da-end-draft-btn">Done</button>
       </div>`;
 
     let modal = document.getElementById('daGradeModal');

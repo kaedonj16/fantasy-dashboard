@@ -894,6 +894,14 @@ def page_trade_database(platform: str, season: int, league_id: str):
         .tdb-card-body {{ grid-template-columns: 1fr; }}
         .tdb-col-divider {{ height: 1px; width: auto; }}
       }}
+      @media(max-width: 600px) {{
+        .tdb-toolbar {{ flex-direction: column; gap: 8px; }}
+        .tdb-sides-row {{ flex-direction: column; gap: 8px; }}
+        .tdb-side-wrap {{ min-width: 0; }}
+        .tdb-side-sep {{ align-self: flex-start; padding-top: 0; }}
+        .tdb-lt-filters {{ align-self: flex-start; width: 100%; }}
+        .tdb-lt {{ flex: 1; text-align: center; }}
+      }}
       /* ── Pagination (matches site-wide style) ── */
       .ti-pagination {{
         display: flex; justify-content: space-between; align-items: center;

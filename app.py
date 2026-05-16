@@ -16938,6 +16938,10 @@ def _real_trade_packages_for_target(
     if not total_real_trades:
         return {"packages": [], "total_real_trades": 0}
 
+    target_info = values_by_id.get(str(target_player_id))
+    target_value = target_info["value"] if target_info else 300
+    max_send_value = target_value * 1.55  # filter packages that are clear overpays
+
     # Build position/value signature for each trade package, then count frequencies
     def _sig(assets: list[dict]) -> Optional[tuple]:
         parts = []
@@ -17048,16 +17052,21 @@ def _real_trade_packages_for_target(
                         "is_reference": True,
                     })
             if fallback_assets:
-                fallback_packages.append({
-                    "type":             "real-trade",
-                    "trades_like_this": trades_like_this,
-                    "send":             fallback_assets,
-                    "send_value":       round(sum(a.get("value", 0) for a in fallback_assets), 1),
-                    "is_reference":     True,
-                })
+                fb_send_value = round(sum(a.get("value", 0) for a in fallback_assets), 1)
+                if fb_send_value <= max_send_value:
+                    fallback_packages.append({
+                        "type":             "real-trade",
+                        "trades_like_this": trades_like_this,
+                        "send":             fallback_assets,
+                        "send_value":       fb_send_value,
+                        "is_reference":     True,
+                    })
             continue
 
         send_value = round(sum(a.get("value", 0) for a in matched), 1)
+
+        if send_value > max_send_value:
+            continue
 
         result_packages.append({
             "type":             "real-trade",
