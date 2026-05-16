@@ -17047,6 +17047,7 @@ def _real_trade_packages_for_target(
     target_info = values_by_id.get(str(target_player_id))
     target_value = target_info["value"] if target_info else 300
     max_send_value = target_value * 1.55  # filter packages that are clear overpays
+    min_send_value = target_value * 0.72  # reject packages that significantly underpay
 
     def _player_profile(info: dict) -> str:
         """
@@ -17226,7 +17227,7 @@ def _real_trade_packages_for_target(
                     })
             if fallback_assets:
                 fb_send_value = round(sum(a.get("value", 0) for a in fallback_assets), 1)
-                if fb_send_value <= max_send_value:
+                if min_send_value <= fb_send_value <= max_send_value:
                     fallback_packages.append({
                         "type":             "real-trade",
                         "trades_like_this": trades_like_this,
@@ -17238,7 +17239,7 @@ def _real_trade_packages_for_target(
 
         send_value = round(sum(a.get("value", 0) for a in matched), 1)
 
-        if send_value > max_send_value:
+        if send_value > max_send_value or send_value < min_send_value:
             continue
 
         result_packages.append({
@@ -17481,6 +17482,22 @@ def api_trade_ideas_for_target():
         def _key(*assets):
             return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
 
+        def _tier(v: float) -> int:
+            if v >= 800: return 1
+            if v >= 500: return 2
+            if v >= 300: return 3
+            if v >= 200: return 4
+            if v >= 130: return 5
+            if v >= 80:  return 6
+            if v >= 40:  return 7
+            return 8
+
+        target_tier = _tier(effective_target)
+        # Anchor: best player sent must be meaningful relative to target value.
+        # For T1 targets (800+) demand a T2-or-better anchor (≥40% of target).
+        # For lower tiers the floor scales down proportionally.
+        anchor_floor = effective_target * 0.40
+
         # 1-for-1: single player in range
         for p in viewer_players:
             if lo <= p["value"] <= hi:
@@ -17491,10 +17508,15 @@ def api_trade_ideas_for_target():
                                      "send_value": p["value"],
                                      "_delta": abs(p["value"] - effective_target)})
 
-        # 2-for-1: neither player alone covers >75% of effective_target
+        # 2-for-1: neither player alone covers >75% of effective_target.
+        # Enforce anchor: highest-value player must be >= anchor_floor.
+        # Also reject packages where both players are 2+ tiers below the target.
         for i, p1 in enumerate(viewer_players):
             if p1["value"] > effective_target * 0.75:
                 continue
+            # p1 is the higher-value player (list is sorted desc); check anchor
+            if p1["value"] < anchor_floor:
+                break  # remaining p1 values only get smaller
             for p2 in viewer_players[i + 1:]:
                 if p2["value"] < 60:
                     break
@@ -17502,6 +17524,9 @@ def api_trade_ideas_for_target():
                 if combined > hi:
                     continue
                 if combined >= lo:
+                    # Reject if p2 is more than 2 tiers below target
+                    if _tier(p2["value"]) > target_tier + 2:
+                        break
                     k = _key(p1, p2)
                     if k not in seen:
                         seen.add(k)
@@ -17510,10 +17535,12 @@ def api_trade_ideas_for_target():
                                          "_delta": abs(combined - effective_target)})
                     break
 
-        # Player + pick
+        # Player + pick: player must be a meaningful anchor (>= anchor_floor).
         for p in viewer_players:
             if p["value"] > effective_target * 0.85:
                 continue
+            if p["value"] < anchor_floor:
+                break
             for pick in viewer_picks:
                 combined = p["value"] + pick["value"]
                 if lo <= combined <= hi:
