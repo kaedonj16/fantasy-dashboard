@@ -16975,6 +16975,31 @@ def api_trade_targets():
     })
 
 
+def _player_profile(info: dict) -> str:
+    """Classify a player's dynasty profile using value trend + market signals."""
+    try: age = float(info.get("age") or 99)
+    except: age = 99
+    age_cat = "young" if age <= 24 else ("prime" if age <= 27 else "vet")
+
+    rank_chg  = info.get("rank_change_7d")
+    mkt_trend = info.get("market_trend", 0.0) or 0.0
+    bsr       = info.get("buy_sell_ratio", 1.0) or 1.0
+
+    score = 0
+    if rank_chg is not None:
+        if rank_chg >= 4:    score += 2
+        elif rank_chg >= 2:  score += 1
+        elif rank_chg <= -4: score -= 2
+        elif rank_chg <= -2: score -= 1
+    if mkt_trend > 40:    score += 1
+    elif mkt_trend < -40: score -= 1
+    if bsr >= 1.3:    score += 1
+    elif bsr <= 0.75: score -= 1
+
+    momentum = "rising" if score >= 2 else ("falling" if score <= -2 else "stable")
+    return f"{age_cat}-{momentum}"
+
+
 def _real_trade_packages_for_target(
     target_player_id: str,
     is_sf: bool,
@@ -17048,39 +17073,6 @@ def _real_trade_packages_for_target(
     target_value = target_info["value"] if target_info else 300
     max_send_value = target_value * 1.55  # filter packages that are clear overpays
     min_send_value = target_value * 0.72  # reject packages that significantly underpay
-
-    def _player_profile(info: dict) -> str:
-        """
-        Classify a player's dynasty profile using value trend + market signals.
-        Returns one of: rising / stable / falling — with age prefix.
-        Age prefix: young(≤24) / prime(25-27) / vet(28+).
-        Combined: e.g. 'young-rising', 'vet-falling', 'prime-stable'.
-        """
-        try: age = float(info.get("age") or 99)
-        except: age = 99
-        age_cat = "young" if age <= 24 else ("prime" if age <= 27 else "vet")
-
-        # Momentum from value rank movement (positive = climbing)
-        rank_chg = info.get("rank_change_7d")
-        mkt_trend = info.get("market_trend", 0.0) or 0.0
-        bsr = info.get("buy_sell_ratio", 1.0) or 1.0
-
-        # Score from -2 to +2: each signal contributes
-        score = 0
-        if rank_chg is not None:
-            if rank_chg >= 4:   score += 2
-            elif rank_chg >= 2: score += 1
-            elif rank_chg <= -4: score -= 2
-            elif rank_chg <= -2: score -= 1
-        # Market trend: 14d median vs 90d (positive = market is buying)
-        if mkt_trend > 40:   score += 1
-        elif mkt_trend < -40: score -= 1
-        # Buy/sell pressure
-        if bsr >= 1.3:   score += 1
-        elif bsr <= 0.75: score -= 1
-
-        momentum = "rising" if score >= 2 else ("falling" if score <= -2 else "stable")
-        return f"{age_cat}-{momentum}"
 
     # Build position / value-bucket / player-profile signature for each trade package
     def _sig(assets: list[dict]) -> Optional[tuple]:
@@ -17240,6 +17232,15 @@ def _real_trade_packages_for_target(
         send_value = round(sum(a.get("value", 0) for a in matched), 1)
 
         if send_value > max_send_value or send_value < min_send_value:
+            continue
+
+        # Anchor check: best single player sent must be ≥ 65% of target value.
+        # Prevents historical multi-scraps patterns from mapping onto the viewer's roster.
+        best_player_val = max(
+            (a.get("value", 0) for a in matched if not a.get("is_pick")),
+            default=0,
+        )
+        if best_player_val < target_value * 0.65:
             continue
 
         result_packages.append({
