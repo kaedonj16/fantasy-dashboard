@@ -16394,15 +16394,23 @@ def api_player_packages(player_id: str):
             momentum = "rising" if score >= 2 else ("falling" if score <= -2 else "stable")
             return f"{age_cat}-{momentum}"
 
+        _is_sf = (league_type == "sf")
         with get_conn() as conn:
+            # Use SF or 1QB values depending on league type so QBs are priced correctly.
+            # In SF, Josh Allen is ~1000; in 1QB he's ~570 — using the wrong column
+            # would produce wildly incorrect value-ratio labels and anchor checks.
+            if _is_sf:
+                _val_col     = "COALESCE(tips.weighted_market_value_sf, pv.calibrated_value_sf, pv.value_sf)"
+                _trend_col   = "tips.market_trend_sf"
+            else:
+                _val_col     = "COALESCE(tips.weighted_market_value_1qb, pv.calibrated_value_1qb, pv.value_1qb)"
+                _trend_col   = "tips.market_trend_1qb"
             val_rows = conn.execute(
-                """
+                f"""
                 SELECT pv.player_id,
-                    COALESCE(tips.weighted_market_value_1qb,
-                             pv.calibrated_value_1qb,
-                             pv.value_1qb) AS val,
+                    {_val_col} AS val,
                     pv.rank_change_7d,
-                    tips.market_trend_1qb  AS market_trend,
+                    {_trend_col} AS market_trend,
                     tips.buy_sell_ratio
                 FROM player_values pv
                 LEFT JOIN trade_intel_player_stats tips ON tips.player_id = pv.player_id
@@ -16597,7 +16605,6 @@ def api_player_packages(player_id: str):
                      for _pid in roster_player_ids if _pid in _vbi and _vbi[_pid]["value"] >= 50],
                     key=lambda x: -x["value"],
                 )
-                _is_sf = (league_type == "sf")
                 _num_t  = 12  # default; refine if league ctx available
                 _pp = _real_trade_packages_for_target(
                     str(player_id), _is_sf, _num_t, _vplayers, [], _vbi, max_packages=3,
