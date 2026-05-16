@@ -16952,7 +16952,18 @@ def _real_trade_packages_for_target(
     target_value = target_info["value"] if target_info else 300
     max_send_value = target_value * 1.55  # filter packages that are clear overpays
 
-    # Build position/value signature for each trade package, then count frequencies
+    def _age_profile(age) -> str:
+        """Dynasty age profile: young risers vs prime contributors vs aging vets."""
+        try:
+            a = float(age)
+        except (TypeError, ValueError):
+            return "unk"
+        if a <= 24:  return "young"   # ascending, buy-high targets
+        if a <= 27:  return "prime"   # peak contributors
+        if a <= 30:  return "aging"   # declining window
+        return "vet"                  # end of dynasty value
+
+    # Build position/value/age-profile signature for each trade package
     def _sig(assets: list[dict]) -> Optional[tuple]:
         parts = []
         for a in sorted(assets, key=lambda x: x["asset_type"]):
@@ -16960,11 +16971,11 @@ def _real_trade_packages_for_target(
                 info = values_by_id.get(str(a["sent_player_id"]))
                 if not info:
                     continue
-                pos = info["position"]
-                val = info["value"]
-                # Bucket value so similar-value swaps collapse to the same signature
+                pos    = info["position"]
+                val    = info["value"]
                 bucket = "elite" if val >= 900 else "high" if val >= 550 else "mid" if val >= 300 else "low"
-                parts.append(f"P:{pos}:{bucket}")
+                prof   = _age_profile(info.get("age"))
+                parts.append(f"P:{pos}:{bucket}:{prof}")
             elif a["asset_type"] == "pick" and a["pick_round"]:
                 parts.append(f"K:{a['pick_round']}")
         return tuple(sorted(parts)) if parts else None
@@ -16994,11 +17005,16 @@ def _real_trade_packages_for_target(
         "mid":   (220, 600),
         "low":   (100, 400),
     }
+    AGE_RANGES = {
+        "young": (16, 24),
+        "prime": (25, 27),
+        "aging": (28, 30),
+        "vet":   (31, 99),
+        "unk":   (16, 99),
+    }
 
     result_packages = []
     used_pids: set = set()
-
-    # Track which sigs we fall back on so we don't double-count
     fallback_packages = []
 
     for sig, trade_ids in sorted(sig_counts.items(), key=lambda x: -len(x[1])):
@@ -17010,19 +17026,44 @@ def _real_trade_packages_for_target(
         for part in sig:
             kind, *rest = part.split(":")
             if kind == "P":
-                pos, bucket = rest
+                # sig format: P:{pos}:{bucket}:{age_prof}  (age_prof may be absent for old sigs)
+                pos    = rest[0]
+                bucket = rest[1] if len(rest) > 1 else "mid"
+                prof   = rest[2] if len(rest) > 2 else "unk"
                 lo, hi = VALUE_RANGES.get(bucket, (100, 2000))
+                age_lo, age_hi = AGE_RANGES.get(prof, (16, 99))
+
+                def _age_ok(vp, alo=age_lo, ahi=age_hi):
+                    a = vp.get("age")
+                    if a is None: return True  # unknown age → don't filter
+                    try: return alo <= float(a) <= ahi
+                    except: return True
+
+                # Try strict match: value + age profile
                 candidates = [
                     vp for vp in vp_by_pos.get(pos, [])
                     if vp["player_id"] not in used_pids
                     and vp["player_id"] not in temp_used
                     and lo <= vp["value"] <= hi
+                    and _age_ok(vp)
                 ]
+                # Fallback: relax age constraint if no strict match
+                if not candidates:
+                    candidates = [
+                        vp for vp in vp_by_pos.get(pos, [])
+                        if vp["player_id"] not in used_pids
+                        and vp["player_id"] not in temp_used
+                        and lo <= vp["value"] <= hi
+                    ]
                 if not candidates:
                     ok = False
                     break
                 mid_val = (lo + hi) / 2
-                best = min(candidates, key=lambda p: abs(p["value"] - mid_val))
+                # Prefer players whose age profile matches; break ties by value proximity
+                def _score(vp, alo=age_lo, ahi=age_hi, mv=mid_val):
+                    age_match = 0 if _age_ok(vp, alo, ahi) else 1
+                    return (age_match, abs(vp["value"] - mv))
+                best = min(candidates, key=_score)
                 matched.append(best)
                 temp_used.add(best["player_id"])
             elif kind == "K":
@@ -17039,19 +17080,27 @@ def _real_trade_packages_for_target(
             for part in sig:
                 kind, *rest = part.split(":")
                 if kind == "P":
-                    pos, bucket = rest
+                    pos    = rest[0]
+                    bucket = rest[1] if len(rest) > 1 else "mid"
+                    prof   = rest[2] if len(rest) > 2 else "unk"
                     lo, hi = VALUE_RANGES.get(bucket, (100, 2000))
+                    age_lo, age_hi = AGE_RANGES.get(prof, (16, 99))
                     mid_val = (lo + hi) / 2
-                    # Find any player in values_by_id matching this pos + value range
+                    # Find any player in values_by_id matching pos + value + age profile
                     candidates = [
                         {"player_id": pid, "name": info["name"], "position": pos,
                          "value": info["value"], "pos_rank_label": info.get("pos_rank_label", ""),
-                         "is_reference": True}
+                         "age": info.get("age"), "is_reference": True}
                         for pid, info in values_by_id.items()
                         if info["position"] == pos and lo <= info["value"] <= hi
                     ]
+                    # Prefer age-profile match, fall back to value proximity
+                    def _ref_score(p, alo=age_lo, ahi=age_hi, mv=mid_val):
+                        try: age_ok = alo <= float(p.get("age") or 99) <= ahi
+                        except: age_ok = True
+                        return (0 if age_ok else 1, abs(p["value"] - mv))
                     if candidates:
-                        best = min(candidates, key=lambda p: abs(p["value"] - mid_val))
+                        best = min(candidates, key=_ref_score)
                         fallback_assets.append(best)
                 elif kind == "K":
                     rnd = int(rest[0])
@@ -17205,6 +17254,7 @@ def api_trade_ideas_for_target():
                     "position":       values_by_id[pid]["position"],
                     "value":          values_by_id[pid]["value"],
                     "pos_rank_label": values_by_id[pid]["pos_rank_label"],
+                    "age":            values_by_id[pid].get("age"),
                 }
                 for pid in [str(p) for p in (viewer_roster_obj.get("players") or [])]
                 if pid in values_by_id and values_by_id[pid]["value"] >= 50
