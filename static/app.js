@@ -2930,135 +2930,123 @@ window.initTradePage = function initTradePage(root = document) {
 
   window._generatePackageForTarget = async function(playerId, playerName, panel, leagueId, viewerRosterId, platform, leagueType, season) {
     try {
-      const res = await fetch("/api/trade-ideas-for-target", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ league_id: leagueId, season, platform,
-                               viewer_roster_id: viewerRosterId,
-                               target_player_id: playerId, league_type: leagueType }),
-      });
+      const res = await fetch(
+        `/api/trade-intel/player-packages/${encodeURIComponent(playerId)}` +
+        `?season=${encodeURIComponent(season)}&league_type=${encodeURIComponent(leagueType)}` +
+        `&league_id=${encodeURIComponent(leagueId)}&platform=${encodeURIComponent(platform)}` +
+        `&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`
+      );
+
       const closeBtn = `<button onclick="this.closest('[data-open]').style.display='none';this.closest('[data-open]').removeAttribute('data-open');"
         style="float:right;background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-muted);line-height:1;padding:0;">✕</button>`;
 
-      const data = await res.json();
-
-      if (data.paywall) {
+      if (res.status === 403) {
+        const errData = await res.json().catch(() => ({}));
         panel.style.display = 'none';
         panel.removeAttribute('data-open');
-        if (typeof showPaywall === 'function') showPaywall('trade-suggestions');
+        if (errData.paywall && typeof showPaywall === 'function') showPaywall('trade-suggestions');
         return;
       }
 
+      const data = await res.json();
       if (!res.ok) {
         panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">Failed to load packages.</span>`;
         return;
       }
 
-      if (!data.success || !data.packages) {
-        panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">${data.error || "No fair packages found."}</span>`;
+      const packages   = data.packages   || [];
+      const realPkgs   = data.real_packages || [];
+      const comboPkgs  = data.combo_packages || [];
+      const focusValue = data.focus_value || 0;
+      const totalReal  = data.total_real_trades || 0;
+
+      if (!packages.length && !realPkgs.length) {
+        panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">No fair packages found — your roster may not have matching value yet.</span>`;
         return;
       }
 
-      // For elite young players with a dynasty premium, label relative to effective_target
-      const hasPremium  = data.premium > 1.0;
-      const premiumPct  = Math.round((data.premium - 1) * 100);
-      const tv          = data.target_value.toFixed(1);
-      const etv         = data.effective_target.toFixed(1);
-
-      function fairLabel(sendVal) {
-        const ratio = sendVal / data.effective_target;
-        if (ratio <= 0.90) return { text: "underpay",        color: "#22c55e" };
-        if (ratio <= 1.05) return { text: "fair",             color: "#3b82f6" };
-        if (ratio <= 1.12) return { text: "slight overpay",   color: "#f59e0b" };
-        return                    { text: "overpay",          color: "#ef4444" };
-      }
-
-      let html = closeBtn + `<div style="font-weight:700;color:var(--text);margin-bottom:4px;">
-        Trade suggestions for ${data.target.name}
-      </div>`;
-
-      if (hasPremium) {
-        html += `<div style="font-size:10px;color:#f59e0b;margin-bottom:6px;">
-          +${premiumPct}% dynasty premium applied
-        </div>`;
-      }
-
       const PROF_LABEL = {
-        'young-rising':  { text: '↑ Young Rising',  color: '#10b981' },
-        'young-stable':  { text: 'Young',           color: '#3b82f6' },
-        'young-falling': { text: '↓ Young Falling', color: '#f59e0b' },
-        'prime-rising':  { text: '↑ Prime Rising',  color: '#10b981' },
-        'prime-stable':  { text: 'Prime',           color: '#6366f1' },
-        'prime-falling': { text: '↓ Prime Falling', color: '#f59e0b' },
-        'vet-rising':    { text: '↑ Vet Resurgence',color: '#f59e0b' },
-        'vet-stable':    { text: 'Veteran',          color: '#9ca3af' },
-        'vet-falling':   { text: '↓ Declining Vet', color: '#ef4444' },
+        'young-rising':  { text: '↑ Young Rising',   color: '#10b981' },
+        'young-stable':  { text: 'Young',             color: '#3b82f6' },
+        'young-falling': { text: '↓ Young Falling',  color: '#f59e0b' },
+        'prime-rising':  { text: '↑ Prime Rising',   color: '#10b981' },
+        'prime-stable':  { text: 'Prime',             color: '#6366f1' },
+        'prime-falling': { text: '↓ Prime Falling',  color: '#f59e0b' },
+        'vet-rising':    { text: '↑ Vet Resurgence', color: '#f59e0b' },
+        'vet-stable':    { text: 'Veteran',           color: '#9ca3af' },
+        'vet-falling':   { text: '↓ Declining Vet',  color: '#ef4444' },
       };
 
-      function renderPkg(pkg) {
-        const sv      = pkg.send_value.toFixed(1);
-        const diff    = (parseFloat(sv) - parseFloat(tv)).toFixed(1);
-        const diffStr = (diff >= 0 ? "+" : "") + diff;
-        const { text: label, color: lc } = fairLabel(pkg.send_value);
-        const btnData = encodeURIComponent(JSON.stringify({ pkg, target: data.target }));
-        const assetsHtml = pkg.send.map(p => {
-          const prof = p.profile ? PROF_LABEL[p.profile] : null;
-          const profTag = prof
-            ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
-            : '';
-          return `<span style="font-weight:600;color:var(--text);">${p.name}</span>${profTag}`;
-        }).join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
-        return `<div style="padding:5px 0;border-top:1px solid var(--border);">
+      function assetSpan(a, muted) {
+        if (a.is_pick || a.type === 'pick') {
+          return `<span style="font-weight:600;color:var(--text-muted);">${a.name || 'Pick'}</span>`;
+        }
+        const prof = a.profile ? PROF_LABEL[a.profile] : null;
+        const profTag = prof
+          ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
+          : '';
+        return `<span style="font-weight:600;color:${muted ? 'var(--text-muted)' : 'var(--text)'};">${a.name}</span>${profTag}`;
+      }
+
+      function assetList(assets, muted) {
+        return assets.map(a => assetSpan(a, muted))
+          .join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
+      }
+
+      function valueColor(label) {
+        if (label === 'Great deal')   return '#22c55e';
+        if (label === 'Fair value')   return '#3b82f6';
+        return '#f59e0b';
+      }
+
+      let html = closeBtn + `<div style="font-weight:700;color:var(--text);margin-bottom:4px;">Trade suggestions for ${playerName}</div>`;
+
+      // ── Personalized packages ───────────────────────────────────────────────
+      packages.forEach(pkg => {
+        const sv      = (pkg.receive_value || 0).toFixed(1);
+        const label   = pkg.value_label || 'Fair value';
+        const lc      = valueColor(label);
+        const sendArr = pkg.assets || [];
+        const btnData = encodeURIComponent(JSON.stringify({
+          pkg: { send: sendArr, send_value: pkg.receive_value, type: pkg.size_label },
+          target: { id: playerId, player_id: playerId, name: playerName },
+        }));
+        html += `<div style="padding:5px 0;border-top:1px solid var(--border);">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
-            <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetsHtml}</div>
+            <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetList(sendArr, false)}</div>
             <span style="font-size:11px;font-weight:700;color:${lc};white-space:nowrap;flex-shrink:0;">${label}</span>
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;">
-            <span style="font-size:10px;color:var(--text-muted);">${pkg.type} · send ${sv} (${diffStr})</span>
+            <span style="font-size:10px;color:var(--text-muted);">${pkg.size_label} · send ${sv}</span>
             <button class="load-in-calc-btn" data-payload="${btnData}"
               style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #3b82f6;background:transparent;color:#3b82f6;cursor:pointer;white-space:nowrap;">
               Load in Calc →
             </button>
           </div>
         </div>`;
-      }
+      });
 
-      if (!data.packages.length) {
-        html += `<span style="color:var(--text-muted);">No fair packages found - your roster may not have matching value yet.</span>`;
-      } else {
-        data.packages.forEach(pkg => { html += renderPkg(pkg); });
-      }
-
-      // Real-trade packages: what people in similar leagues actually sent
-      const realPkgs = data.real_packages || [];
+      // ── Real-trade reference section ────────────────────────────────────────
       if (realPkgs.length) {
-        const totalTrades = data.total_real_trades || 0;
-        html += `<div style="margin-top:10px;padding-top:6px;border-top:1px solid var(--border);">
+        html += `<div style="margin-top:10px;padding-top:6px;border-top:2px solid var(--border);">
           <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px;letter-spacing:.03em;">
-            BASED ON ${totalTrades} REAL TRADE${totalTrades !== 1 ? "S" : ""} IN SIMILAR LEAGUES
+            BASED ON ${totalReal} REAL TRADE${totalReal !== 1 ? "S" : ""} IN SIMILAR LEAGUES
           </div>`;
         realPkgs.forEach(pkg => {
-          const sv      = pkg.send_value.toFixed(1);
-          const count   = pkg.trades_like_this;
-          const isRef   = !!pkg.is_reference;
-          const btnData = encodeURIComponent(JSON.stringify({ pkg, target: data.target }));
-          const patternLabel = isRef
-            ? `market pattern · send ~${sv} (example assets)`
-            : `market pattern · send ${sv}`;
-          const assetsHtml = pkg.send.map(p => {
-            const prof = p.profile ? PROF_LABEL[p.profile] : null;
-            const profTag = prof
-              ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
-              : '';
-            return `<span style="font-weight:600;color:${isRef ? 'var(--text-muted)' : 'var(--text)'};">${p.name}</span>${profTag}`;
-          }).join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
+          const sv    = (pkg.send_value || 0).toFixed(1);
+          const count = pkg.trades_like_this || 0;
+          const isRef = !!pkg.is_reference;
+          const btnData = encodeURIComponent(JSON.stringify({
+            pkg: { send: pkg.send, send_value: pkg.send_value, type: 'market pattern' },
+            target: { id: playerId, player_id: playerId, name: playerName },
+          }));
           html += `<div style="padding:5px 0;border-top:1px solid var(--border);">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
-              <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetsHtml}</div>
+              <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetList(pkg.send || [], isRef)}</div>
               <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;flex-shrink:0;">${count}× seen</span>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
-              <span style="font-size:10px;color:var(--text-muted);">${patternLabel}</span>
+              <span style="font-size:10px;color:var(--text-muted);">${isRef ? `market pattern · send ~${sv} (example assets)` : `market pattern · send ${sv}`}</span>
               ${!isRef ? `<button class="load-in-calc-btn" data-payload="${btnData}"
                 style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #a78bfa;background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;">
                 Load in Calc →
@@ -3069,7 +3057,45 @@ window.initTradePage = function initTradePage(root = document) {
         html += `</div>`;
       }
 
-      // Delegate load-in-calc clicks (covers both value-based and real-trade packages)
+      // ── Combo packages: "Get [target] + [throw-in] for [package]" ──────────
+      if (comboPkgs.length) {
+        html += `<div style="margin-top:10px;padding-top:6px;border-top:2px solid var(--border);">
+          <div style="font-size:10px;font-weight:700;color:#10b981;margin-bottom:4px;letter-spacing:.03em;">
+            GET ${playerName.toUpperCase()} + MORE
+          </div>`;
+        comboPkgs.forEach(pkg => {
+          const extra  = pkg.extra_receive || {};
+          const sv     = (pkg.send_value || 0).toFixed(1);
+          const rv     = (pkg.receive_value || 0).toFixed(1);
+          const label  = pkg.value_label || 'Fair value';
+          const lc     = valueColor(label);
+          const sendArr = pkg.assets || [];
+          const btnData = encodeURIComponent(JSON.stringify({
+            pkg: { send: sendArr, send_value: pkg.send_value, type: pkg.type },
+            target: { id: playerId, player_id: playerId, name: playerName },
+          }));
+          const sendHtml = assetList(sendArr, false);
+          html += `<div style="padding:5px 0;border-top:1px solid var(--border);">
+            <div style="font-size:11px;color:#10b981;font-weight:600;margin-bottom:3px;">
+              + ${extra.name || ''} <span style="font-weight:400;color:var(--text-muted);">(${extra.position || ''})</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
+              <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;font-size:12px;">${sendHtml}</div>
+              <span style="font-size:11px;font-weight:700;color:${lc};white-space:nowrap;flex-shrink:0;">${label}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+              <span style="font-size:10px;color:var(--text-muted);">${pkg.type} · send ${sv} · receive ~${rv}</span>
+              <button class="load-in-calc-btn" data-payload="${btnData}"
+                style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #10b981;background:transparent;color:#10b981;cursor:pointer;white-space:nowrap;">
+                Load in Calc →
+              </button>
+            </div>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+
+      // Delegate load-in-calc clicks
       panel.addEventListener("click", function handler(e) {
         const btn = e.target.closest(".load-in-calc-btn");
         if (!btn) return;
