@@ -2400,6 +2400,11 @@ window.initTradePage = function initTradePage(root = document) {
       switchTab("suggestions");
       if (playerInput) playerInput.value = playerName;
       fetchPackages(playerId, playerName);
+      // On mobile the tab content is below the fold — scroll to it after paint
+      requestAnimationFrame(() => {
+        const el = root.querySelector("#otcSuggestionsTab") || root.querySelector(".otc-shell");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
     };
 
     // ── Player search ────────────────────────────────────────────
