@@ -17635,6 +17635,7 @@ def _real_trade_packages_for_target(
                          "is_reference": True, **{k: info.get(k) for k in ("age","rank_change_7d","market_trend","buy_sell_ratio")}}
                         for pid, info in values_by_id.items()
                         if info["position"] == pos and lo <= info["value"] <= hi
+                        and pid != str(target_player_id)  # never suggest the target as their own cost
                     ]
 
                     def _ref_prof_score(p, wa=want_age, wm=want_mom, mv=mid_val):
@@ -17651,9 +17652,10 @@ def _real_trade_packages_for_target(
                 elif kind == "K":
                     rnd = int(rest[0])
                     suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
+                    pick_yr = datetime.now().year + 1
                     fallback_assets.append({
-                        "name": f"{suffix} Round Pick", "is_pick": True,
-                        "value": 200 if rnd == 1 else 100,
+                        "name": f"{pick_yr} {suffix} Round Pick", "is_pick": True,
+                        "value": 250 if rnd == 1 else 120 if rnd == 2 else 60,
                         "is_reference": True,
                     })
             if fallback_assets:
