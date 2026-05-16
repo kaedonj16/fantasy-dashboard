@@ -16632,9 +16632,13 @@ def api_player_packages(player_id: str):
             except Exception:
                 pass
 
-        # Deduplicate: remove any result whose player set already appears in profile_packages
+        # Deduplicate: remove any result whose player set already appears in profile_packages.
+        # Profile package assets are raw player dicts (no "type" key) — key on player_id presence.
         profile_keys = {
-            tuple(sorted(a["player_id"] for a in pkg["assets"] if a.get("type") == "player"))
+            tuple(sorted(
+                a["player_id"] for a in pkg["assets"]
+                if a.get("player_id") and not a.get("is_pick")
+            ))
             for pkg in profile_packages
         }
         deduped_results = [
