@@ -9210,6 +9210,7 @@ function setupFunAwardsGrid() {
   let daDrafted    = new Set(); // insertion order = overall draft pick order
   let myPicks      = new Set(); // subset of daDrafted that are the user's own picks
   let myPickOrder  = [];        // ordered subset of myPicks (for grading)
+  let daLocalNeeds = {};        // position -> need level delta from my picks
   let daFilter    = 'ALL';
   let daSubView   = 'available'; // 'available' | 'drafted'
   let daNeeds      = {};
