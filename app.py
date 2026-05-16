@@ -16692,6 +16692,48 @@ def api_player_packages(player_id: str):
                         "is_synthetic": True,
                     })
 
+                # ------------------------------------------------------------------
+                # Pattern-learned suggestions: study real trade signatures for this
+                # player, then fill those position+tier slots from the viewer's roster.
+                # These rank first (market-informed) and dedup against all above.
+                # ------------------------------------------------------------------
+                pattern_pkgs = _pattern_based_packages(
+                    focus_pid, focus_value, by_trade, _vplayers, value_map, players_map,
+                    max_packages=6,
+                )
+                _pp_keys_pat = {
+                    tuple(sorted(
+                        a.get("player_id", "") for a in pkg["assets"]
+                        if a.get("player_id") and not a.get("is_pick")
+                    ))
+                    for pkg in profile_packages
+                }
+                for _pp_pkg in pattern_pkgs:
+                    _ppv = _pp_pkg["send_value"]
+                    _ppkey = tuple(sorted(p["player_id"] for p in _pp_pkg["send"]))
+                    if _ppkey in _pp_keys_pat:
+                        continue
+                    _pp_ratio = _ppv / focus_value if focus_value > 0 else 1.0
+                    _pp_vl = ("Overpay" if _pp_ratio >= 1.08 else
+                              "Fair value" if _pp_ratio >= 0.92 else "Great deal")
+                    for _pp_a in _pp_pkg["send"]:
+                        if _pp_a.get("player_id"):
+                            _pp_inf = _vbi.get(str(_pp_a["player_id"])) or {}
+                            _pp_a["profile"] = _compute_profile(
+                                str(_pp_a["player_id"]), _pp_inf.get("age")
+                            )
+                    _pp_keys_pat.add(_ppkey)
+                    profile_packages.insert(0, {
+                        "assets":           _pp_pkg["send"],
+                        "frequency":        0,
+                        "value_label":      _pp_vl,
+                        "size_label":       _pp_pkg["type"],
+                        "receive_value":    round(_ppv),
+                        "is_profile_match": True,
+                        "is_synthetic":     True,
+                        "pattern_learned":  True,
+                    })
+
             except Exception:
                 pass
 
@@ -17088,6 +17130,172 @@ def api_trade_targets():
         "position_ranks": position_ranks_out,
         "projected_picks": _projected_picks_out,
     })
+
+
+def _pattern_based_packages(
+    focus_pid: str,
+    focus_value: float,
+    by_trade: dict,
+    viewer_players: list,
+    value_map: dict,
+    players_map: dict,
+    max_packages: int = 6,
+) -> list:
+    """
+    Learn the position+tier package patterns from real trades for focus_pid,
+    then fill those pattern slots with the viewer's actual roster players.
+
+    This produces suggestions that respect what the market actually trades for
+    this player type, applied purely to the viewer's specific assets.
+
+    Returns packages in {"type", "send", "send_value"} format.
+    """
+    if not viewer_players or focus_value <= 0 or not by_trade:
+        return []
+
+    from collections import Counter, defaultdict
+
+    def _tier(v):
+        for t, floor in enumerate([800, 500, 300, 200, 130, 80, 40], 1):
+            if v >= floor:
+                return t
+        return 8
+
+    # ---- Step 1: Extract real-trade signatures --------------------------------
+    sig_counter: Counter = Counter()
+
+    for tid, sides in by_trade.items():
+        focus_side = next(
+            (sk for sk in ("a", "b")
+             if any(a["asset_type"] == "player" and str(a.get("player_id")) == focus_pid
+                    for a in sides[sk])),
+            None,
+        )
+        if not focus_side:
+            continue
+        other_key = "b" if focus_side == "a" else "a"
+        other = [a for a in sides[other_key]
+                 if not (a["asset_type"] == "player"
+                         and str(a.get("player_id", "")) == focus_pid)]
+        if not other:
+            continue
+
+        slots = []
+        for a in other:
+            if a["asset_type"] == "pick":
+                rd = min(int(a.get("pick_round") or 4), 4)
+                slots.append(("PICK", rd))
+            else:
+                pid     = str(a.get("player_id") or "")
+                v       = value_map.get(pid, 0)
+                raw_pos = ((players_map.get(pid) or {}).get("pos") or "FLEX").upper()
+                pos     = raw_pos if raw_pos in ("QB", "RB", "WR", "TE") else "FLEX"
+                slots.append((pos, _tier(v)))
+
+        # Sort so best tier (lowest number) comes first, break ties by pos
+        slots.sort(key=lambda x: (x[1] if x[0] != "PICK" else 99, x[0]))
+        if slots:
+            sig_counter[tuple(slots)] += 1
+
+    if not sig_counter:
+        return []
+
+    # ---- Step 2: Apply learned patterns to viewer's roster -------------------
+    lo       = focus_value * 0.90
+    hi       = focus_value * 1.10
+    tgt_tier = _tier(focus_value)
+    ANCHOR_2 = focus_value * 0.75
+    ANCHOR_3 = focus_value * 0.65
+    sec_min  = {1: 300, 2: 200, 3: 130, 4: 80}.get(tgt_tier, 40)
+    ter_min  = {1: 200, 2: 130, 3: 80,  4: 40}.get(tgt_tier, 40)
+
+    # Build position × tier pool from viewer's roster, best players first
+    pos_tier_pool: dict = defaultdict(list)
+    for p in sorted(viewer_players, key=lambda x: -x["value"]):
+        t   = _tier(p["value"])
+        pos = (p.get("position") or "FLEX").upper()
+        pos = pos if pos in ("QB", "RB", "WR", "TE") else "FLEX"
+        pos_tier_pool[(pos, t)].append(p)
+
+    def _candidates(pos, tier, exclude_ids):
+        """Viewer players matching pos at tier ±2, closest tier first, excluding used."""
+        seen   = set()
+        result = []
+        for t_off in (0, 1, -1, 2, -2):
+            t2 = tier + t_off
+            if t2 < 1 or t2 > 8:
+                continue
+            for bucket_pos in ((pos, "FLEX") if pos != "FLEX" else ("FLEX",)):
+                for p in pos_tier_pool.get((bucket_pos, t2), []):
+                    pid = p["player_id"]
+                    if pid not in exclude_ids and pid not in seen:
+                        seen.add(pid)
+                        result.append(p)
+        result.sort(key=lambda p: abs(_tier(p["value"]) - tier))
+        return result
+
+    packages = []
+    seen_keys: set = set()
+
+    for sig, freq in sig_counter.most_common(50):
+        player_slots = [(pos, t) for pos, t in sig if pos != "PICK"]
+        if not player_slots or len(player_slots) > 3:
+            continue  # skip pick-only or huge packages
+
+        used_ids: set = set()
+        filled: list  = []
+        ok = True
+        for pos, tier in player_slots:
+            cands = _candidates(pos, tier, used_ids)
+            if not cands:
+                ok = False
+                break
+            filled.append(cands[0])  # closest-tier match
+            used_ids.add(cands[0]["player_id"])
+
+        if not ok or not filled:
+            continue
+
+        # Sort by value desc so anchor is first
+        filled.sort(key=lambda p: -p["value"])
+
+        send_val = sum(p["value"] for p in filled)
+        if not (lo <= send_val <= hi):
+            continue
+
+        n = len(filled)
+        if n == 2 and filled[0]["value"] < ANCHOR_2:
+            continue
+        if n >= 3 and filled[0]["value"] < ANCHOR_3:
+            continue
+        if n >= 2 and filled[1]["value"] < sec_min:
+            continue
+        if n >= 3 and filled[2]["value"] < ter_min:
+            continue
+
+        pkg_key = tuple(sorted(p["player_id"] for p in filled))
+        if pkg_key in seen_keys:
+            continue
+        seen_keys.add(pkg_key)
+
+        size_lbl = "1-for-1" if n == 1 else f"{n}-for-1"
+        packages.append({
+            "type":       size_lbl,
+            "send":       filled,
+            "send_value": send_val,
+            "_delta":     abs(send_val - focus_value),
+            "_freq":      freq,
+        })
+
+        if len(packages) >= max_packages * 3:
+            break
+
+    # Rank by pattern frequency (market signal), then closeness to fair value
+    packages.sort(key=lambda x: (-x["_freq"], x["_delta"]))
+    for pkg in packages:
+        del pkg["_delta"]
+        del pkg["_freq"]
+    return packages[:max_packages]
 
 
 def _generate_roster_packages(
