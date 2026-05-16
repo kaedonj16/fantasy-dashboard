@@ -17047,6 +17047,7 @@ def _real_trade_packages_for_target(
     target_info = values_by_id.get(str(target_player_id))
     target_value = target_info["value"] if target_info else 300
     max_send_value = target_value * 1.55  # filter packages that are clear overpays
+    min_send_value = target_value * 0.72  # reject packages that significantly underpay
 
     def _player_profile(info: dict) -> str:
         """
@@ -17226,7 +17227,7 @@ def _real_trade_packages_for_target(
                     })
             if fallback_assets:
                 fb_send_value = round(sum(a.get("value", 0) for a in fallback_assets), 1)
-                if fb_send_value <= max_send_value:
+                if min_send_value <= fb_send_value <= max_send_value:
                     fallback_packages.append({
                         "type":             "real-trade",
                         "trades_like_this": trades_like_this,
@@ -17238,7 +17239,7 @@ def _real_trade_packages_for_target(
 
         send_value = round(sum(a.get("value", 0) for a in matched), 1)
 
-        if send_value > max_send_value:
+        if send_value > max_send_value or send_value < min_send_value:
             continue
 
         result_packages.append({
@@ -17481,6 +17482,38 @@ def api_trade_ideas_for_target():
         def _key(*assets):
             return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
 
+        def _tier(v: float) -> int:
+            if v >= 800: return 1
+            if v >= 500: return 2
+            if v >= 300: return 3
+            if v >= 200: return 4
+            if v >= 130: return 5
+            if v >= 80:  return 6
+            if v >= 40:  return 7
+            return 8
+
+        target_tier = _tier(effective_target)
+        # Anchor floors: lead player must be this fraction of target value.
+        # 2-for-1: 75% — near-equal piece + sweetener
+        # 3-for-1: 65% — strong piece + two contributors
+        # player+pick: 65% — strong piece + pick
+        ANCHOR_2 = effective_target * 0.75
+        ANCHOR_3 = effective_target * 0.65
+
+        # Per-tier minimum value for non-anchor (secondary/tertiary) assets.
+        # The add-on must be one tier above what the target tier alone would imply,
+        # making elite players progressively harder to acquire via multi-player deals.
+        # T1 target → secondary ≥ T3 (300)
+        # T2 target → secondary ≥ T4 (200)
+        # T3 target → secondary ≥ T5 (130)
+        # T4 target → secondary ≥ T6 (80)
+        # T5+        → secondary ≥ T7 (40)
+        _secondary_floor = {1: 300, 2: 200, 3: 130, 4: 80}.get(target_tier, 40)
+        secondary_min = _secondary_floor
+        # Tertiary (3rd player) drops one tier below secondary
+        _tertiary_floor = {1: 200, 2: 130, 3: 80, 4: 40}.get(target_tier, 40)
+        tertiary_min = _tertiary_floor
+
         # 1-for-1: single player in range
         for p in viewer_players:
             if lo <= p["value"] <= hi:
@@ -17491,12 +17524,14 @@ def api_trade_ideas_for_target():
                                      "send_value": p["value"],
                                      "_delta": abs(p["value"] - effective_target)})
 
-        # 2-for-1: neither player alone covers >75% of effective_target
+        # 2-for-1: anchor ≥ 75% of target, secondary meets tier-scaled floor
         for i, p1 in enumerate(viewer_players):
-            if p1["value"] > effective_target * 0.75:
-                continue
+            if p1["value"] < ANCHOR_2:
+                break
+            if p1["value"] > effective_target * 0.93:
+                continue  # close enough for 1-for-1
             for p2 in viewer_players[i + 1:]:
-                if p2["value"] < 60:
+                if p2["value"] < secondary_min:
                     break
                 combined = p1["value"] + p2["value"]
                 if combined > hi:
@@ -17510,11 +17545,42 @@ def api_trade_ideas_for_target():
                                          "_delta": abs(combined - effective_target)})
                     break
 
-        # Player + pick
+        # 3-for-1: anchor ≥ 65% of target, p2 ≥ secondary_min, p3 ≥ tertiary_min
+        for i, p1 in enumerate(viewer_players):
+            if p1["value"] < ANCHOR_3:
+                break
+            if p1["value"] >= ANCHOR_2:
+                continue  # 2-for-1 territory
+            for j, p2 in enumerate(viewer_players[i + 1:], i + 1):
+                if p2["value"] < secondary_min:
+                    break
+                for p3 in viewer_players[j + 1:]:
+                    if p3["value"] < tertiary_min:
+                        break
+                    combined = p1["value"] + p2["value"] + p3["value"]
+                    if combined > hi:
+                        continue
+                    if combined >= lo:
+                        k = _key(p1, p2, p3)
+                        if k not in seen:
+                            seen.add(k)
+                            packages.append({"type": "3-for-1", "send": [p1, p2, p3],
+                                             "send_value": combined,
+                                             "_delta": abs(combined - effective_target)})
+                        break
+                else:
+                    continue
+                break
+
+        # Player + pick: player ≥ 65% of target, pick value meets secondary_min
         for p in viewer_players:
-            if p["value"] > effective_target * 0.85:
-                continue
+            if p["value"] < ANCHOR_3:
+                break
+            if p["value"] > effective_target * 0.93:
+                continue  # close enough for 1-for-1
             for pick in viewer_picks:
+                if pick["value"] < secondary_min:
+                    continue
                 combined = p["value"] + pick["value"]
                 if lo <= combined <= hi:
                     k = _key(p, {"player_id": pick["name"]})
