@@ -59,12 +59,8 @@ def main():
 
     # Normalize — median of top-5 by trade count (matches market_calibration.py)
     def _anchor(vals, counts):
-        pairs = sorted(zip(counts, vals), reverse=True)
-        top5  = [v for _, v in pairs[:5] if v and v > 0]
-        if not top5:
-            return 999.9
-        top5.sort()
-        return top5[len(top5) // 2]
+        filtered = [v for v in vals if v and v > 0]
+        return max(filtered) if filtered else 999.9
 
     all_1qb    = [float(r["mkt_1qb"] or 0) for r in rows]
     all_sf     = [float(r["mkt_sf"]  or 0) for r in rows]

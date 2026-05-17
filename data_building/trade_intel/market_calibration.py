@@ -350,16 +350,11 @@ def run_calibration(season: int | None = None) -> dict:
     logger.info("[calibration] %d tier buckets built", len(tier_ratios))
 
     # Normalize market values to 0–999.9 scale.
-    # Anchor = median of the top-5 players by trade count.
-    # Using median of top-5 (not raw max) makes the anchor robust against a single
-    # outlier inflating the scale and compressing everyone else.
+    # Anchor = max market value across all players with trade data.
+    # Top player = 999.9; all others scale proportionally below.
     def _anchor(values_iter, trade_counts_iter):
-        pairs = sorted(zip(trade_counts_iter, values_iter), reverse=True)
-        top5  = [v for _, v in pairs[:5] if v > 0]
-        if not top5:
-            return 999.9
-        top5.sort()
-        return top5[len(top5) // 2]  # median
+        vals = [v for v in values_iter if v > 0]
+        return max(vals) if vals else 999.9
 
     anchor_1qb = _anchor(
         (m["market_1qb"] for m in market_map.values()),
@@ -372,7 +367,7 @@ def run_calibration(season: int | None = None) -> dict:
     scale_1qb = 999.9 / anchor_1qb if anchor_1qb > 0 else 1.0
     scale_sf  = 999.9 / anchor_sf  if anchor_sf  > 0 else 1.0
     logger.info(
-        "[calibration] Normalizing (median top-5 anchor): "
+        "[calibration] Normalizing (max anchor): "
         "1QB anchor=%.1f (scale=%.4f)  SF anchor=%.1f (scale=%.4f)",
         anchor_1qb, scale_1qb, anchor_sf, scale_sf,
     )
