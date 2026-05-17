@@ -255,7 +255,14 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
             # trades produce received values > 999.9.
             player_val_1qb = values.get(pid, {}).get("value_1qb", 0)
             player_val_sf  = values.get(pid, {}).get("value_sf",  0)
-            if pkg_1qb > 0 and player_val_1qb > 0:
+
+            # If this player has no model value we cannot proportion their share
+            # of the package — skip them entirely rather than crediting them the
+            # full other-side return (which produces garbage 10000+ values).
+            if player_val_1qb <= 0:
+                continue
+
+            if pkg_1qb > 0:
                 recv_1qb = recv_1qb * (player_val_1qb / pkg_1qb)
             if pkg_sf > 0 and player_val_sf > 0:
                 recv_sf = recv_sf * (player_val_sf / pkg_sf)

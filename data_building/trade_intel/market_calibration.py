@@ -35,8 +35,8 @@ from dashboard_services.db import get_conn
 logger = logging.getLogger(__name__)
 
 MAX_BLEND                   = 0.65   # never more than 65% market influence
-MIN_TRADES_FOR_SIGNAL       = 5      # below this = model only
-ROOKIE_DIRECT_THRESHOLD     = 15     # rookies need more trades before direct blend
+MIN_TRADES_FOR_SIGNAL       = 20     # below this = model only
+ROOKIE_DIRECT_THRESHOLD     = 20     # rookies need more trades before direct use
 TREND_BOOST_THRESHOLD       = 40     # market_trend points that trigger extra weight
 TREND_BOOST_AMOUNT          = 0.10   # extra blend weight added when trending strongly
 STALENESS_PENALTY_THRESHOLD = 0.15   # if <15% of trades are from last 14d, penalise

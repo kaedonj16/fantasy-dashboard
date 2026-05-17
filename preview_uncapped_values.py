@@ -16,7 +16,7 @@ sys.path.insert(0, "/home/user/fantasy-dashboard")
 
 from dashboard_services.db import get_conn
 
-MIN_TRADES = 5
+MIN_TRADES = 20
 
 
 def main():
