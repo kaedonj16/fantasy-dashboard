@@ -259,8 +259,8 @@ def _calibrate_one(
         mkt_1qb = market["market_1qb"]
         mkt_sf  = market["market_sf"]
         return {
-            "calibrated_value_1qb": max(0, min(999.9, round(mkt_1qb, 2))),
-            "calibrated_value_sf":  max(0, min(999.9, round(mkt_sf,  2))),
+            "calibrated_value_1qb": max(0, round(mkt_1qb, 2)),
+            "calibrated_value_sf":  max(0, round(mkt_sf,  2)),
             "calibration_weight":   1.0,
             "calibration_source":   "direct",
         }
@@ -270,8 +270,8 @@ def _calibrate_one(
         ratio = _find_tier_ratio(pos, model_1qb, tier_ratios)
         if ratio is not None:
             return {
-                "calibrated_value_1qb": min(999.9, round(model_1qb * ratio, 2)),
-                "calibrated_value_sf":  min(999.9, round(model_sf  * ratio, 2)),
+                "calibrated_value_1qb": round(model_1qb * ratio, 2),
+                "calibrated_value_sf":  round(model_sf  * ratio, 2),
                 "calibration_weight":   round(ratio - 1.0, 3),
                 "calibration_source":   "tier_anchor",
             }
@@ -348,6 +348,27 @@ def run_calibration(season: int | None = None) -> dict:
     logger.info("[calibration] Building position-tier ratios for rookie anchoring...")
     tier_ratios = _build_tier_ratios(model_rows, market_map)
     logger.info("[calibration] %d tier buckets built", len(tier_ratios))
+
+    # Normalize market values to 0–999.9 scale.
+    # The highest market value player becomes 999.9; all others scale proportionally.
+    # Only use players with enough trades to be reliable as the scale anchor.
+    raw_max_1qb = max(
+        (m["market_1qb"] for m in market_map.values() if m["market_1qb"] > 0),
+        default=999.9,
+    )
+    raw_max_sf = max(
+        (m["market_sf"] for m in market_map.values() if m["market_sf"] > 0),
+        default=999.9,
+    )
+    scale_1qb = 999.9 / raw_max_1qb
+    scale_sf  = 999.9 / raw_max_sf
+    logger.info(
+        "[calibration] Normalizing: 1QB max=%.1f → 999.9 (scale=%.4f)  SF max=%.1f → 999.9 (scale=%.4f)",
+        raw_max_1qb, scale_1qb, raw_max_sf, scale_sf,
+    )
+    for m in market_map.values():
+        m["market_1qb"] = round(m["market_1qb"] * scale_1qb, 2)
+        m["market_sf"]  = round(m["market_sf"]  * scale_sf,  2)
 
     out_rows = []
     counts   = {"direct": 0, "tier_anchor": 0, "model_only": 0}

@@ -57,6 +57,12 @@ def main():
               AND ti.weighted_market_value_1qb IS NOT NULL
         """, (MIN_TRADES, MIN_TRADES)).fetchall()
 
+    # Normalize market values to 0-999.9 — same logic as market_calibration.py
+    raw_max_1qb = max((float(r["mkt_1qb"]) for r in rows if r["mkt_1qb"]), default=999.9)
+    raw_max_sf  = max((float(r["mkt_sf"])  for r in rows if r["mkt_sf"]),  default=999.9)
+    scale_1qb = 999.9 / raw_max_1qb
+    scale_sf  = 999.9 / raw_max_sf
+
     results = []
     for row in rows:
         pos = (row["position"] or "").upper()
@@ -65,8 +71,8 @@ def main():
 
         cur_1qb = float(row["cur_1qb"] or 0)
         cur_sf  = float(row["cur_sf"]  or 0)
-        mkt_1qb = float(row["mkt_1qb"] or 0)
-        mkt_sf  = float(row["mkt_sf"]  or mkt_1qb)
+        mkt_1qb = round(float(row["mkt_1qb"] or 0) * scale_1qb, 1)
+        mkt_sf  = round(float(row["mkt_sf"]  or row["mkt_1qb"] or 0) * scale_sf, 1)
 
         if args.capped_only and cur_1qb < 999.0 and cur_sf < 999.0:
             continue
