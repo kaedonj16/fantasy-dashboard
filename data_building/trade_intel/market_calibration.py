@@ -31,10 +31,10 @@ ROOKIE_DIRECT_THRESHOLD     = 15     # rookies need more trades before direct bl
 # change. Cap the SF/1QB ratio for non-QB positions so the premium stays
 # realistic. QBs are uncapped — they're the entire reason SF premiums exist.
 _SF_CAP: dict[str, float] = {
-    "QB": 9999.0,  # uncapped
-    "RB": 1.08,
-    "WR": 1.08,
-    "TE": 1.10,
+    "QB": 9999.0,  # uncapped — QB scarcity is the entire SF premium
+    "RB": 1.0,
+    "WR": 1.0,
+    "TE": 1.0,
 }
 
 
