@@ -16669,7 +16669,30 @@ def api_player_packages(player_id: str):
                             "buy_sell_ratio": (market_signals.get(pid) or {}).get("buy_sell_ratio"),
                         }
 
-                # Viewer's roster players sorted by value (min value 50 to exclude handcuffs)
+                # ── Fix 2: Viewer positional surplus ──────────────────────────
+                # Positions where the viewer has more depth than a typical roster.
+                # Packages that send from surplus positions are more tradeable —
+                # the viewer gives up less and the trade is easier to justify.
+                _TYPICAL_ROSTER = {"QB": 2, "RB": 7, "WR": 8, "TE": 2}
+                viewer_pos_counts: dict = {}
+                for pid in viewer_player_ids:
+                    pos = (values_by_id.get(pid) or {}).get("position", "").upper()
+                    if pos in _TYPICAL_ROSTER:
+                        viewer_pos_counts[pos] = viewer_pos_counts.get(pos, 0) + 1
+                viewer_pos_surplus = {
+                    pos: max(0, viewer_pos_counts.get(pos, 0) - _TYPICAL_ROSTER[pos])
+                    for pos in _TYPICAL_ROSTER
+                }
+
+                # Viewer's roster players: sort by value, using surplus as a
+                # tiebreaker within ~50-point value bands so we prefer sending
+                # from overstocked positions.
+                def _surplus_sort_key(p):
+                    pos = (p.get("position") or "").upper()
+                    band = round(p["value"] / 50)      # ~50-point grouping
+                    surplus = viewer_pos_surplus.get(pos, 0)
+                    return (-band, -surplus, -p["value"])
+
                 viewer_players = sorted(
                     [
                         {"player_id": pid, **{k: values_by_id[pid][k] for k in
@@ -16678,8 +16701,52 @@ def api_player_packages(player_id: str):
                         for pid in viewer_player_ids
                         if pid in values_by_id and values_by_id[pid]["value"] >= 50
                     ],
-                    key=lambda x: -x["value"],
+                    key=_surplus_sort_key,
                 )
+
+                # ── Fix 1: Target owner positional needs ──────────────────────
+                # Positions the target owner is thin at — packages containing
+                # those positions are more attractive to them and should rank first.
+                target_pos_counts: dict = {}
+                for pid in target_owner_pids:
+                    pos = (values_by_id.get(pid) or {}).get("position", "").upper()
+                    if pos in _TYPICAL_ROSTER:
+                        target_pos_counts[pos] = target_pos_counts.get(pos, 0) + 1
+                _TYPICAL_DEPTH = {"QB": 2, "RB": 6, "WR": 7, "TE": 2}
+                target_pos_needs: dict = {
+                    pos: max(0, _TYPICAL_DEPTH.get(pos, 4) - target_pos_counts.get(pos, 0))
+                    for pos in _TYPICAL_DEPTH
+                }
+
+                def _need_appeal(assets: list) -> int:
+                    """Sum of target owner's positional needs for each player in the package."""
+                    return sum(
+                        target_pos_needs.get((a.get("position") or "").upper(), 0)
+                        for a in assets
+                        if not a.get("is_pick") and a.get("player_id")
+                    )
+
+                # ── Fix 3: Position-aware scarcity multiplier for tiers ────────
+                # RBs are scarcer than WRs at the same value tier — fewer starter
+                # slots and faster aging means a T3 RB holds more trade capital
+                # than a T3 WR. Apply a per-position factor when computing the
+                # effective send value for anchor/floor validation.
+                _POS_SCARCITY = {"QB": 1.0, "RB": 1.08, "WR": 0.92, "TE": 1.04}
+                if _is_sf:
+                    # In SF, QBs are more plentiful (3 starter slots) so their
+                    # scarcity premium drops and WR/TE shift up slightly.
+                    _POS_SCARCITY = {"QB": 0.90, "RB": 1.08, "WR": 0.95, "TE": 1.06}
+
+                def _effective_send_value(assets: list) -> float:
+                    """Value-sum adjusted for positional scarcity."""
+                    total = 0.0
+                    for a in assets:
+                        if a.get("is_pick"):
+                            total += a.get("value", 0)
+                        else:
+                            pos   = (a.get("position") or "").upper()
+                            total += a.get("value", 0) * _POS_SCARCITY.get(pos, 1.0)
+                    return total
 
                 # Tier thresholds for anchor validation
                 def _tier(v: float) -> int:
@@ -16751,6 +16818,11 @@ def api_player_packages(player_id: str):
                             "trades_like_this": pkg.get("trades_like_this", 0),
                             "is_reference":     pkg.get("is_reference", False),
                         })
+
+                    # Fix 5: reference packages (fallback assets the viewer doesn't own)
+                    # go to market_reference_deals only — never into personalized_packages.
+                    if pkg.get("is_reference"):
+                        continue
 
                     # Add to personalized packages if roster-matched and anchor-valid
                     if ratio > 1.10 or ratio < 0.90:
@@ -16854,6 +16926,16 @@ def api_player_packages(player_id: str):
                             "type":          pkg["type"],
                             "value_label":   _value_label(ratio),
                         })
+
+                # ── Fix 1+2+3: Re-sort personalized packages ──────────────────
+                # Priority: pattern-learned first, then by (need appeal ↓, scarcity-
+                # adjusted send value proximity ↑). This surfaces packages the target
+                # owner is most likely to accept AND that the viewer can most easily part with.
+                personalized_packages.sort(key=lambda p: (
+                    0 if p.get("pattern_learned") else 1,
+                    -_need_appeal(p.get("assets", [])),
+                    abs(_effective_send_value(p.get("assets", [])) - focus_value),
+                ))
 
             except Exception:
                 pass
@@ -17688,22 +17770,29 @@ def _real_trade_packages_for_target(
     max_send_value = target_value * 1.10  # no more than 10% overpay
     min_send_value = target_value * 0.90  # reject packages that underpay by more than 10%
 
-    # Build position / value-bucket / player-profile signature for each trade package
+    # Build position / value-bucket / player-profile signature for each trade package.
+    # Fix 4: preserve slot ORDER (anchor first by value desc, picks last) so the
+    # signature captures which position fills the primary vs secondary role.
+    # The old sorted(parts) alphabetically destroyed this ordering, causing e.g.
+    # "WR anchor + RB secondary" and "RB anchor + WR secondary" to map to the same sig.
     def _sig(assets: list[dict]) -> Optional[tuple]:
-        parts = []
-        for a in sorted(assets, key=lambda x: x["asset_type"]):
+        # Collect (sort_key, sig_part) pairs: players ordered by value desc, picks last
+        items = []
+        for a in assets:
             if a["asset_type"] == "player" and a["sent_player_id"]:
                 info = values_by_id.get(str(a["sent_player_id"]))
                 if not info:
                     continue
-                pos    = info["position"]
                 val    = info["value"]
+                pos    = info["position"]
                 bucket = "elite" if val >= 900 else "high" if val >= 550 else "mid" if val >= 300 else "low"
                 prof   = _player_profile(info)
-                parts.append(f"P:{pos}:{bucket}:{prof}")
+                items.append((-val, f"P:{pos}:{bucket}:{prof}"))   # neg-val = highest first
             elif a["asset_type"] == "pick" and a["pick_round"]:
-                parts.append(f"K:{a['pick_round']}")
-        return tuple(sorted(parts)) if parts else None
+                items.append((1, f"K:{a['pick_round']}"))          # picks sort after players
+        items.sort(key=lambda x: x[0])
+        parts = [part for _, part in items]
+        return tuple(parts) if parts else None
 
     sig_counts: dict = defaultdict(list)
     for trade_id, assets in trade_pkgs.items():
