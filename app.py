@@ -16349,6 +16349,7 @@ def api_player_packages(player_id: str):
         platform         = (request.args.get("platform") or "sleeper").strip()
         viewer_roster_id = (request.args.get("viewer_roster_id") or "").strip()
         limit            = min(int(request.args.get("limit") or 100), 200)
+        _debug           = request.args.get("debug") == "1"
 
         user_id = session.get("viewer_username")
         if not has_premium_access(user_id, league_id or None, platform):
@@ -16646,6 +16647,7 @@ def api_player_packages(player_id: str):
         market_reference_deals: list = []
         total_real_trades: int       = 0
         combo_packages: list         = []
+        _pattern_debug: dict         = {}
 
         if viewer_player_ids and focus_value > 0:
             try:
@@ -16771,11 +16773,12 @@ def api_player_packages(player_id: str):
                 # Learns position+tier signatures from real trade history, then
                 # fills those slots from the viewer's actual roster. Surfaces first
                 # because it is most reflective of how this player actually trades.
-                pattern_pkgs = _pattern_based_packages(
+                _pat_result = _pattern_based_packages(
                     focus_pid, focus_value, by_trade, viewer_players,
                     value_map, players_map, max_packages=9,
-                    pos_scarcity=_POS_SCARCITY,
+                    pos_scarcity=_POS_SCARCITY, debug=_debug,
                 )
+                pattern_pkgs, _pattern_debug = _pat_result if _debug else (_pat_result, {})
                 for pkg in pattern_pkgs:
                     key = _pkg_key(pkg["send"])
                     if key in seen_player_sets:
@@ -17034,7 +17037,7 @@ def api_player_packages(player_id: str):
             )) not in personalized_keys
         ]
 
-        resp = jsonify({
+        payload = {
             "packages":          personalized_packages + filtered_market_results[:limit],
             "real_packages":     market_reference_deals,
             "total_real_trades": total_real_trades,
@@ -17044,10 +17047,14 @@ def api_player_packages(player_id: str):
             "player_name":       player_name,
             "player_id":         player_id,
             "focus_value":       round(focus_value),
-        })
-        # Trade values update daily — cache for 1 hour in the browser, 6 hours
-        # shared across users via any CDN/reverse-proxy in front of this service.
-        resp.headers["Cache-Control"] = "public, max-age=3600, s-maxage=21600"
+        }
+        if _debug:
+            payload["_debug_patterns"] = _pattern_debug
+        resp = jsonify(payload)
+        if not _debug:
+            # Trade values update daily — cache for 1 hour in browser, 6 hours
+            # shared across users via any CDN/reverse-proxy.
+            resp.headers["Cache-Control"] = "public, max-age=3600, s-maxage=21600"
         return resp
 
     except Exception:
@@ -17430,7 +17437,8 @@ def _pattern_based_packages(
     players_map: dict,
     max_packages: int = 6,
     pos_scarcity: dict = None,
-) -> list:
+    debug: bool = False,
+) -> list | tuple:
     """
     Learn the position+tier package patterns from real trades for focus_pid,
     then fill those pattern slots with the viewer's actual roster players.
@@ -17441,7 +17449,7 @@ def _pattern_based_packages(
     Returns packages in {"type", "send", "send_value"} format.
     """
     if not viewer_players or focus_value <= 0 or not by_trade:
-        return []
+        return ([], {}) if debug else []
 
     from collections import Counter, defaultdict
 
@@ -17488,7 +17496,7 @@ def _pattern_based_packages(
             sig_counter[tuple(slots)] += 1
 
     if not sig_counter:
-        return []
+        return ([], {}) if debug else []
 
     # ---- Step 2: Apply learned patterns to viewer's roster -------------------
     # Pattern packages use a slightly wider window (±13%) because the signatures
@@ -17607,6 +17615,27 @@ def _pattern_based_packages(
 
     # Rank by pattern frequency (market signal), then closeness to fair value
     packages.sort(key=lambda x: (-x["_freq"], x["_delta"]))
+    if debug:
+        debug_info = {
+            "sig_counter": [
+                {
+                    "sig":   " + ".join(
+                        f"PICK:R{t}" if pos == "PICK" else f"{pos}:T{t}"
+                        for pos, t in sig
+                    ),
+                    "raw_sig": list(sig),
+                    "count": cnt,
+                }
+                for sig, cnt in sig_counter.most_common(30)
+            ],
+            "total_trades_scanned": sum(sig_counter.values()),
+            "patterns_tried":       len(sig_counter),
+            "packages_before_cap":  len(packages),
+        }
+        for pkg in packages:
+            del pkg["_delta"]
+            del pkg["_freq"]
+        return packages[:max_packages], debug_info
     for pkg in packages:
         del pkg["_delta"]
         del pkg["_freq"]
