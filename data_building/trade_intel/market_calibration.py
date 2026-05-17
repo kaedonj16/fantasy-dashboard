@@ -1,30 +1,45 @@
 """
 Market Calibration Layer - Trade Intelligence Engine.
 
-Writes calibrated_value_1qb / calibrated_value_sf to player_values using
-purely market-derived values from real trades.
+Takes raw model values and time-aware market values from real trades,
+then writes calibrated_value_1qb / calibrated_value_sf back to player_values.
 
-• Players with enough direct trade data (>= MIN_TRADES_FOR_SIGNAL) use the
-  time-decay weighted market value directly — no model blending.
+Design principles:
+─────────────────
+• Model is the prior; market is evidence. We never fully override the model.
 
-• Rookies/prospects with no trade data use a tier-anchor ratio derived from
-  veteran peers at the same position + value tier.
+• Blend weight is driven by TWO factors:
+    1. Trade volume  - more trades = more confidence in the market signal
+    2. Trend signal  - if the market has moved sharply in the last 14 days
+                       relative to the 90-day baseline, lean harder on recent
+                       data. The market already knows something the model doesn't.
 
-• Players with no market data pass through the raw model value unchanged.
+• Recency of data matters for blend weight too - if all trades are old
+  (trade_count_14d is low relative to trade_count), we reduce the weight.
+
+• Rookies/prospects have no direct trade data yet. We compute a calibration
+  ratio from veteran peers in the same position + value tier and apply it
+  to preserve the model's relative grade while anchoring the price to what
+  the market actually pays for that tier.
 
 • All raw model values are preserved. Calibrated values are separate columns.
 """
 from __future__ import annotations
 
 import logging
+import math
 from collections import defaultdict
 
 from dashboard_services.db import get_conn
 
 logger = logging.getLogger(__name__)
 
+MAX_BLEND                   = 0.65   # never more than 65% market influence
 MIN_TRADES_FOR_SIGNAL       = 5      # below this = model only
-ROOKIE_DIRECT_THRESHOLD     = 15     # rookies need more trades before direct use
+ROOKIE_DIRECT_THRESHOLD     = 15     # rookies need more trades before direct blend
+TREND_BOOST_THRESHOLD       = 40     # market_trend points that trigger extra weight
+TREND_BOOST_AMOUNT          = 0.10   # extra blend weight added when trending strongly
+STALENESS_PENALTY_THRESHOLD = 0.15   # if <15% of trades are from last 14d, penalise
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +132,37 @@ def _load_market_values(season: int) -> dict[str, dict]:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Blend weight - volume + recency + trend
+# ---------------------------------------------------------------------------
+
+def _blend_weight(market: dict) -> float:
+    """
+    Compute how much the market signal should influence the final value.
+
+    Base: sqrt ramp from trade volume (saturates at MAX_BLEND around 50 trades)
+    Adjustments:
+      + trend boost  : if market has moved >TREND_BOOST_THRESHOLD in 14d
+      - stale penalty: if very few trades are recent (<15% from last 14d)
+    """
+    trade_count    = market["trade_count"]
+    trade_count_14d = market["trade_count_14d"]
+    trend_1qb      = market["trend_1qb"]
+
+    # Base weight from volume
+    base = min(MAX_BLEND, math.sqrt(trade_count / 50) * MAX_BLEND)
+
+    # Trend boost - market has repriced recently; lean into it
+    if abs(trend_1qb) >= TREND_BOOST_THRESHOLD:
+        base = min(MAX_BLEND, base + TREND_BOOST_AMOUNT)
+
+    # Staleness penalty - if hardly any trades in last 14 days, data is stale
+    recency_ratio = trade_count_14d / trade_count if trade_count else 0
+    if recency_ratio < STALENESS_PENALTY_THRESHOLD and trade_count >= 20:
+        base *= 0.6  # reduce confidence in old data
+
+    return round(base, 3)
+
 
 # ---------------------------------------------------------------------------
 # Tier anchor for rookies
@@ -205,12 +251,25 @@ def _calibrate_one(
     rookie_ok  = not is_rookie or trade_count >= ROOKIE_DIRECT_THRESHOLD
 
     if has_direct and rookie_ok:
+        weight  = _blend_weight(market)
         mkt_1qb = market["market_1qb"]
         mkt_sf  = market["market_sf"]
+
+        # When there's a strong trend, pull the calibrated value toward
+        # the recent market direction, not just the weighted median
+        trend = market["trend_1qb"]
+        if abs(trend) >= TREND_BOOST_THRESHOLD:
+            # Nudge by up to half the trend signal (don't chase noise)
+            trend_nudge = trend * 0.5
+            mkt_1qb = mkt_1qb + trend_nudge
+            mkt_sf  = mkt_sf  + (market["trend_sf"] * 0.5)
+
+        cal_1qb = round(model_1qb * (1 - weight) + mkt_1qb * weight, 2)
+        cal_sf  = round(model_sf  * (1 - weight) + mkt_sf  * weight, 2)
         return {
-            "calibrated_value_1qb": max(0, min(999.9, round(mkt_1qb, 2))),
-            "calibrated_value_sf":  max(0, min(999.9, round(mkt_sf,  2))),
-            "calibration_weight":   1.0,
+            "calibrated_value_1qb": max(0, cal_1qb),
+            "calibrated_value_sf":  max(0, cal_sf),
+            "calibration_weight":   weight,
             "calibration_source":   "direct",
         }
 
@@ -219,8 +278,8 @@ def _calibrate_one(
         ratio = _find_tier_ratio(pos, model_1qb, tier_ratios)
         if ratio is not None:
             return {
-                "calibrated_value_1qb": min(999.9, round(model_1qb * ratio, 2)),
-                "calibrated_value_sf":  min(999.9, round(model_sf  * ratio, 2)),
+                "calibrated_value_1qb": round(model_1qb * ratio, 2),
+                "calibrated_value_sf":  round(model_sf  * ratio, 2),
                 "calibration_weight":   round(ratio - 1.0, 3),
                 "calibration_source":   "tier_anchor",
             }
