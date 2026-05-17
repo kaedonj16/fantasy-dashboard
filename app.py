@@ -16824,6 +16824,7 @@ def api_player_packages(player_id: str):
                 market_result = _real_trade_packages_for_target(
                     focus_pid, _is_sf, 12, viewer_players, viewer_pick_list,
                     values_by_id, max_packages=3,
+                    tier_thresholds=_pat_thresholds,
                 )
                 total_real_trades = market_result.get("total_real_trades", 0)
 
@@ -17497,10 +17498,25 @@ def _pattern_based_packages(
             return "Vet"
 
     # ---- Step 1: Extract real-trade signatures --------------------------------
-    # Rough pick-round value estimates aligned with the tier thresholds used
-    # elsewhere, so the value-proximity filter works consistently for pick-heavy
-    # packages.  These are intentionally approximate.
-    _PICK_VAL = {1: 500, 2: 150, 3: 75, 4: 40}
+    # Load pick values from the same source as the rest of the app (FantasyCalc +
+    # DynastyProcess, normalized by market calibration scale). Aggregate to
+    # per-round medians for proximity estimation. Falls back to hardcoded
+    # approximations if the pick table can't be loaded.
+    try:
+        from dashboard_services.picks import load_pick_value_table as _lpvt
+        import statistics as _stat
+        _ptbl = _lpvt()
+        _by_round: dict = {}
+        for _k, _v in _ptbl.items():
+            _parts = _k.split("_")
+            if len(_parts) >= 2 and _parts[1].isdigit():
+                _rnd = int(_parts[1])
+                _by_round.setdefault(_rnd, []).append(_v)
+        _PICK_VAL = {rnd: round(_stat.median(vals)) for rnd, vals in _by_round.items() if vals}
+        if not _PICK_VAL:
+            raise ValueError("empty pick table")
+    except Exception:
+        _PICK_VAL = {1: 500, 2: 150, 3: 75, 4: 40}
 
     # Dynamic proximity window — tighter for elite players where overpay is larger
     # in absolute terms and patterns are more meaningful.
@@ -17572,8 +17588,12 @@ def _pattern_based_packages(
         if send_slots:
             sig_counter[(send_slots, throw_in_slots)] += 1
 
-    # Filter low-frequency noise — patterns seen fewer than 5 times are not signal
-    sig_counter = Counter({k: v for k, v in sig_counter.items() if v >= 5})
+    # Filter low-frequency noise: threshold is 2% of total observed trade sigs,
+    # with a floor of 5. This scales with trade volume so Chase (500 trades) needs
+    # a pattern seen 10+ times while a mid-tier player (60 trades) only needs 5.
+    _total_sigs = sum(sig_counter.values())
+    _min_freq   = max(5, int(_total_sigs * 0.02))
+    sig_counter = Counter({k: v for k, v in sig_counter.items() if v >= _min_freq})
 
     if not sig_counter:
         return ([], {}) if debug else []
@@ -17952,6 +17972,7 @@ def _real_trade_packages_for_target(
     viewer_picks: list[dict],
     values_by_id: dict,
     max_packages: int = 3,
+    tier_thresholds: list = None,
 ) -> dict:
     """
     Find real trades where target_player_id was acquired in comparable leagues,
@@ -18013,10 +18034,13 @@ def _real_trade_packages_for_target(
     if not total_real_trades:
         return {"packages": [], "total_real_trades": 0}
 
-    target_info = values_by_id.get(str(target_player_id))
+    target_info  = values_by_id.get(str(target_player_id))
     target_value = target_info["value"] if target_info else 300
-    max_send_value = target_value * 1.10  # no more than 10% overpay
-    min_send_value = target_value * 0.90  # reject packages that underpay by more than 10%
+    _tgt_tier    = _asset_tier(target_value, tier_thresholds if tier_thresholds is not None else _FALLBACK_THRESHOLDS)
+    _prox_hi     = {1: 1.10, 2: 1.15, 3: 1.20}.get(_tgt_tier, 1.25)
+    _prox_lo     = {1: 0.90, 2: 0.88, 3: 0.85}.get(_tgt_tier, 0.80)
+    max_send_value = target_value * _prox_hi
+    min_send_value = target_value * _prox_lo
 
     # Build position / value-bucket / player-profile signature for each trade package.
     # Fix 4: preserve slot ORDER (anchor first by value desc, picks last) so the

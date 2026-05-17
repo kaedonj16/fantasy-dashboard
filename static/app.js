@@ -2668,6 +2668,9 @@ window.initTradePage = function initTradePage(root = document) {
         const patternSigHtml = pkg.pattern_sig
           ? `<div style="font-size:10px;color:var(--text-muted);margin-top:4px;letter-spacing:.02em;">Market pattern: ${pkg.pattern_sig}</div>`
           : '';
+        const throwInHtml = pkg.throw_in_sig
+          ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px;letter-spacing:.02em;">Seller may include: ${pkg.throw_in_sig}</div>`
+          : '';
         return `<div class="otc-sugg-package">
           <div class="otc-sugg-pkg-meta">
             <span class="otc-sugg-pkg-value ${vc}">${pkg.value_label}</span>
@@ -2691,6 +2694,7 @@ window.initTradePage = function initTradePage(root = document) {
             </div>
           </div>
           ${patternSigHtml}
+          ${throwInHtml}
           <button class="otc-sugg-pkg-load-btn"
             data-focus-id="${playerId}"
             data-assets="${encodeURIComponent(JSON.stringify(pkg.assets))}"
