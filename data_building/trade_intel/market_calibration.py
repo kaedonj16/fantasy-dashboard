@@ -267,8 +267,8 @@ def _calibrate_one(
         cal_1qb = round(model_1qb * (1 - weight) + mkt_1qb * weight, 2)
         cal_sf  = round(model_sf  * (1 - weight) + mkt_sf  * weight, 2)
         return {
-            "calibrated_value_1qb": max(0, min(999.9, cal_1qb)),
-            "calibrated_value_sf":  max(0, min(999.9, cal_sf)),
+            "calibrated_value_1qb": max(0, cal_1qb),
+            "calibrated_value_sf":  max(0, cal_sf),
             "calibration_weight":   weight,
             "calibration_source":   "direct",
         }
@@ -278,8 +278,8 @@ def _calibrate_one(
         ratio = _find_tier_ratio(pos, model_1qb, tier_ratios)
         if ratio is not None:
             return {
-                "calibrated_value_1qb": min(999.9, round(model_1qb * ratio, 2)),
-                "calibrated_value_sf":  min(999.9, round(model_sf  * ratio, 2)),
+                "calibrated_value_1qb": round(model_1qb * ratio, 2),
+                "calibrated_value_sf":  round(model_sf  * ratio, 2),
                 "calibration_weight":   round(ratio - 1.0, 3),
                 "calibration_source":   "tier_anchor",
             }
