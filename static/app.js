@@ -2563,8 +2563,9 @@ window.initTradePage = function initTradePage(root = document) {
         }
 
         renderPackages(
-          data.packages || [], data.player_name, playerId, data.focus_value,
-          data.real_packages, data.total_real_trades, data.combo_packages
+          [...(data.packages || []), ...(data.combo_packages || [])],
+          data.player_name, playerId, data.focus_value,
+          data.real_packages, data.total_real_trades
         );
 
       } catch (err) {
@@ -2584,14 +2585,14 @@ window.initTradePage = function initTradePage(root = document) {
     let _pkgRealTotal  = 0;
     let _pkgComboPkgs  = [];
 
-    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal, comboPkgs) {
+    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal) {
       _pkgAll        = packages;
       _pkgPage       = 0;
       _pkgPlayerId   = playerId;
       _pkgPlayerName = playerName;
       _pkgRealPkgs   = realPkgs   || [];
       _pkgRealTotal  = realTotal  || 0;
-      _pkgComboPkgs  = comboPkgs  || [];
+      _pkgComboPkgs  = [];
       renderPackagePage();
     }
 
@@ -2644,9 +2645,26 @@ window.initTradePage = function initTradePage(root = document) {
 
       const cardsHtml = slice.map((pkg) => {
         const vc = valueClass(pkg.value_label);
-        const freqLabel = pkg.is_profile_match
-          ? `<span class="otc-sugg-pkg-freq" style="color:var(--accent);">From your roster</span>`
-          : `<span class="otc-sugg-pkg-freq">${pkg.frequency}× traded</span>`;
+        const extra = pkg.extra_receive || null;
+        const freqLabel = extra
+          ? `<span class="otc-sugg-pkg-freq" style="color:#10b981;">+ bonus player</span>`
+          : pkg.is_profile_match
+            ? `<span class="otc-sugg-pkg-freq" style="color:var(--accent);">From your roster</span>`
+            : `<span class="otc-sugg-pkg-freq">${pkg.frequency}× traded</span>`;
+
+        // YOU GET side: always shows the target, plus the throw-in if present
+        const extraCol  = extra ? posColor(extra.position) : null;
+        const extraProf = extra?.profile ? PROFILE_LABEL[extra.profile] : null;
+        const extraBadge = extraProf
+          ? `<span style="font-size:10px;font-weight:600;color:${extraProf.color};margin-left:4px;">${extraProf.text}</span>`
+          : '';
+        const extraAssetHtml = extra
+          ? `<div class="otc-sugg-pkg-asset" style="flex-wrap:wrap;gap:4px;">
+               <span class="otc-sugg-pkg-asset-pos" style="background:${extraCol}20;color:${extraCol};">${extra.position}</span>
+               <span>${extra.name}</span>${extraBadge}
+             </div>`
+          : '';
+
         return `<div class="otc-sugg-package">
           <div class="otc-sugg-pkg-meta">
             <span class="otc-sugg-pkg-value ${vc}">${pkg.value_label}</span>
@@ -2660,6 +2678,7 @@ window.initTradePage = function initTradePage(root = document) {
                   <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
                   ${playerName}
                 </div>
+                ${extraAssetHtml}
               </div>
             </div>
             <div class="otc-sugg-pkg-divider">←</div>
@@ -2670,7 +2689,8 @@ window.initTradePage = function initTradePage(root = document) {
           </div>
           <button class="otc-sugg-pkg-load-btn"
             data-focus-id="${playerId}"
-            data-assets="${encodeURIComponent(JSON.stringify(pkg.assets))}">
+            data-assets="${encodeURIComponent(JSON.stringify(pkg.assets))}"
+            ${extra ? `data-extra-receive="${encodeURIComponent(JSON.stringify(extra))}"` : ''}>
             Analyze
           </button>
         </div>`;
@@ -2733,59 +2753,7 @@ window.initTradePage = function initTradePage(root = document) {
         realTradeHtml += `</div>`;
       }
 
-      // ── Combo packages: "Get [target] + [throw-in] for [package]" ───────────
-      let comboHtml = "";
-      if (_pkgComboPkgs.length) {
-        const focusPlayer = allPlayers.find(p => String(p.id) === String(_pkgPlayerId));
-        const focusName   = focusPlayer ? focusPlayer.name : _pkgPlayerName;
-        comboHtml += `<div style="margin-top:12px;padding-top:8px;border-top:2px solid var(--border);">
-          <div style="font-size:10px;font-weight:700;color:#10b981;margin-bottom:4px;letter-spacing:.04em;">
-            GET ${(focusName || "").toUpperCase()} + MORE
-          </div>`;
-        _pkgComboPkgs.forEach(pkg => {
-          const extra = pkg.extra_receive;
-          const sv    = pkg.send_value.toFixed(1);
-          const rv    = pkg.receive_value.toFixed(1);
-          const extraCol = posColor(extra.position);
-          const prof  = extra.profile ? PROF_LBL[extra.profile] : null;
-          const profTag = prof
-            ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
-            : '';
-          const extraHtml = `<span style="font-weight:600;color:var(--text);">${extra.name}</span>${profTag}`;
-          const sendHtml  = (pkg.assets || []).map(a => {
-            if (a.is_pick || a.type === "pick") {
-              return `<span style="font-weight:600;color:var(--text-muted);">${a.name || "Pick"}</span>`;
-            }
-            const ap = a.profile ? PROF_LBL[a.profile] : null;
-            const apTag = ap ? `<span style="font-size:10px;color:${ap.color};margin-left:3px;">${ap.text}</span>` : '';
-            return `<span style="font-weight:600;color:var(--text);">${a.name}</span>${apTag}`;
-          }).join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
-          const btnData = encodeURIComponent(JSON.stringify({
-            pkg: { send: pkg.assets, send_value: pkg.send_value, type: pkg.type },
-            target: focusPlayer || { id: _pkgPlayerId, name: focusName },
-          }));
-          comboHtml += `<div style="padding:6px 0;border-top:1px solid var(--border);">
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:3px;">
-              You also get:
-              <span class="otc-sugg-pkg-asset-pos" style="background:${extraCol}20;color:${extraCol};font-size:10px;padding:1px 5px;border-radius:4px;">${extra.position}</span>
-              ${extraHtml}
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
-              <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;font-size:12px;">${sendHtml}</div>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:3px;">
-              <span style="font-size:10px;color:var(--text-muted);">${pkg.type} · send ${sv} · receive ~${rv}</span>
-              <button class="load-in-calc-btn" data-payload="${btnData}"
-                style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #10b981;background:transparent;color:#10b981;cursor:pointer;white-space:nowrap;">
-                Analyze →
-              </button>
-            </div>
-          </div>`;
-        });
-        comboHtml += `</div>`;
-      }
-
-      resultsList.innerHTML = cardsHtml + paginationHtml + realTradeHtml + comboHtml;
+      resultsList.innerHTML = cardsHtml + paginationHtml + realTradeHtml;
 
       resultsList.querySelectorAll(".otc-sugg-page-btn").forEach(btn => {
         btn.addEventListener("click", () => {
@@ -2799,8 +2767,11 @@ window.initTradePage = function initTradePage(root = document) {
 
       resultsList.querySelectorAll(".otc-sugg-pkg-load-btn").forEach(btn => {
         btn.addEventListener("click", () => {
-          const focusId   = btn.dataset.focusId;
-          const assets    = JSON.parse(decodeURIComponent(btn.dataset.assets));
+          const focusId    = btn.dataset.focusId;
+          const assets     = JSON.parse(decodeURIComponent(btn.dataset.assets));
+          const extraRaw   = btn.dataset.extraReceive
+            ? JSON.parse(decodeURIComponent(btn.dataset.extraReceive))
+            : null;
           const focusPObj = allPlayers.find(p => String(p.id) === String(focusId));
           if (!focusPObj) return;
 
@@ -2809,8 +2780,12 @@ window.initTradePage = function initTradePage(root = document) {
           state.sideAPicks.length   = 0;
           state.sideBPicks.length   = 0;
 
-          // Side A = what you receive (the focus/target player)
+          // Side A = what you receive (the target player, plus any combo throw-in)
           state.sideAPlayers.push(focusPObj);
+          if (extraRaw) {
+            const extraPObj = allPlayers.find(p => String(p.id) === String(extraRaw.player_id));
+            if (extraPObj) state.sideAPlayers.push(extraPObj);
+          }
 
           // Side B = what you give (the package)
           assets.forEach(a => {
