@@ -68,12 +68,19 @@ def main():
     parser.add_argument("--capped-only", action="store_true", help="Only show players currently capped at 999.9")
     args = parser.parse_args()
 
+    # Build player_id → name lookup from the local players index JSON
+    from utils.utils import load_players_index
+    players_index = load_players_index() or {}
+    name_map: dict[str, str] = {
+        str(pid): (meta.get("name") or meta.get("full_name") or str(pid))
+        for pid, meta in players_index.items()
+    }
+
     with get_conn() as conn:
         # Load players with current stored values
         rows = conn.execute("""
             SELECT
                 pv.player_id,
-                pv.player_name,
                 pv.position,
                 pv.years_exp,
                 pv.value_1qb        AS model_1qb,
@@ -138,8 +145,9 @@ def main():
         if args.capped_only and cur_1qb < 999.0 and cur_sf < 999.0:
             continue
 
+        pid = row["player_id"]
         results.append({
-            "name":     row["player_name"] or row["player_id"],
+            "name":     name_map.get(str(pid), str(pid)),
             "pos":      pos,
             "cur_1qb":  cur_1qb,
             "cur_sf":   cur_sf,
