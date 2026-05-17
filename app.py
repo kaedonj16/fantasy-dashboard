@@ -17510,10 +17510,10 @@ def _pattern_based_packages(
         pos_tier_pool[(pos, t)].append(p)
 
     def _candidates(pos, tier, exclude_ids):
-        """Viewer players matching pos at tier ±3, closest tier first, excluding used."""
+        """Viewer players matching pos at tier ±1, closest tier first, excluding used."""
         seen   = set()
         result = []
-        for t_off in (0, 1, -1, 2, -2, 3, -3):
+        for t_off in (0, 1, -1):
             t2 = tier + t_off
             if t2 < 1 or t2 > 8:
                 continue
