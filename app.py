@@ -16774,6 +16774,7 @@ def api_player_packages(player_id: str):
                 pattern_pkgs = _pattern_based_packages(
                     focus_pid, focus_value, by_trade, viewer_players,
                     value_map, players_map, max_packages=6,
+                    pos_scarcity=_POS_SCARCITY,
                 )
                 for pkg in pattern_pkgs:
                     key = _pkg_key(pkg["send"])
@@ -16855,6 +16856,7 @@ def api_player_packages(player_id: str):
                 # Guarantees suggestions even when no historical trades match.
                 value_pkgs = _generate_roster_packages(
                     focus_value, viewer_players, viewer_pick_list, max_packages=6,
+                    pos_scarcity=_POS_SCARCITY,
                 )
                 for pkg in value_pkgs:
                     key = _pkg_key(pkg["send"])
@@ -16882,6 +16884,11 @@ def api_player_packages(player_id: str):
                 # Scans target owner's roster for T4–T6 players, then generates
                 # viewer packages priced at focus_value + throw_in_value.
                 combo_seen: set = set()
+                # Viewer's positional needs: positions where viewer is below typical depth.
+                viewer_pos_needs_for_combo = {
+                    pos: max(0, _TYPICAL_ROSTER.get(pos, 4) - viewer_pos_counts.get(pos, 0))
+                    for pos in _TYPICAL_ROSTER
+                }
                 throw_in_candidates = sorted(
                     [
                         {
@@ -16894,13 +16901,19 @@ def api_player_packages(player_id: str):
                         for pid in target_owner_pids
                         if pid in values_by_id and 80 <= values_by_id[pid]["value"] <= 500
                     ],
-                    key=lambda x: x["value"],  # cheapest throw-in = best deal for viewer
+                    # Prefer throw-ins at positions the viewer needs; break ties by cheapest
+                    # (easier for target owner to include, better deal for viewer).
+                    key=lambda x: (
+                        -viewer_pos_needs_for_combo.get(x["position"].upper(), 0),
+                        x["value"],
+                    ),
                 )[:6]
 
                 for throw_in in throw_in_candidates:
                     combo_target_val = focus_value + throw_in["value"]
                     for pkg in _generate_roster_packages(
-                        combo_target_val, viewer_players, viewer_pick_list, max_packages=2
+                        combo_target_val, viewer_players, viewer_pick_list, max_packages=2,
+                        pos_scarcity=_POS_SCARCITY,
                     ):
                         send_val = pkg["send_value"]
                         ratio    = send_val / combo_target_val if combo_target_val > 0 else 1.0
@@ -16916,6 +16929,10 @@ def api_player_packages(player_id: str):
                         if combo_key in combo_seen:
                             continue
                         combo_seen.add(combo_key)
+                        # Skip if same send-side player set already appears in personalized
+                        send_key = _pkg_key(pkg["send"])
+                        if send_key in seen_player_sets:
+                            continue
                         for asset in pkg["send"]:
                             _enrich_asset(asset, values_by_id)
                         combo_packages.append({
@@ -17351,6 +17368,7 @@ def _pattern_based_packages(
     value_map: dict,
     players_map: dict,
     max_packages: int = 6,
+    pos_scarcity: dict = None,
 ) -> list:
     """
     Learn the position+tier package patterns from real trades for focus_pid,
@@ -17470,8 +17488,15 @@ def _pattern_based_packages(
         # Sort by value desc so anchor is first
         filled.sort(key=lambda p: -p["value"])
 
-        send_val = sum(p["value"] for p in filled)
-        if not (lo <= send_val <= hi):
+        # Scarcity-adjusted value for the fairness window: RB-heavy packages
+        # aren't wrongly filtered vs WR-heavy ones; raw sum is stored for display.
+        raw_send_val = sum(p["value"] for p in filled)
+        _sc = pos_scarcity or {}
+        adj_send_val = sum(
+            p["value"] * _sc.get((p.get("position") or "").upper(), 1.0)
+            for p in filled
+        )
+        if not (lo <= adj_send_val <= hi):
             continue
 
         n = len(filled)
@@ -17493,8 +17518,8 @@ def _pattern_based_packages(
         packages.append({
             "type":       size_lbl,
             "send":       filled,
-            "send_value": send_val,
-            "_delta":     abs(send_val - focus_value),
+            "send_value": raw_send_val,
+            "_delta":     abs(adj_send_val - focus_value),
             "_freq":      freq,
         })
 
@@ -17515,6 +17540,7 @@ def _generate_roster_packages(
     viewer_picks: list = None,
     premium: float = 1.0,
     max_packages: int = 6,
+    pos_scarcity: dict = None,
 ) -> list:
     """
     Build trade packages from a viewer's roster using value + tier logic only —
@@ -17527,6 +17553,15 @@ def _generate_roster_packages(
     if not viewer_players:
         return []
     viewer_picks = viewer_picks or []
+
+    _sc = pos_scarcity or {}
+
+    def _adj(players):
+        """Scarcity-adjusted combined value for lo/hi fairness window checks."""
+        return sum(
+            p["value"] * _sc.get((p.get("position") or "").upper(), 1.0)
+            for p in players
+        )
 
     effective = target_value * premium
     lo = effective * 0.90
@@ -17572,14 +17607,15 @@ def _generate_roster_packages(
         for p2 in viewer_players[i + 1:]:
             if p2["value"] < sec_min: break
             combined = p1["value"] + p2["value"]
-            if combined > hi: continue
-            if combined >= lo:
+            adj = _adj([p1, p2])
+            if adj > hi: continue
+            if adj >= lo:
                 k = _key(p1, p2)
                 if k not in seen:
                     seen.add(k)
                     packages.append({"type": "2-for-1", "send": [p1, p2],
                                      "send_value": combined,
-                                     "_delta": abs(combined - effective)})
+                                     "_delta": abs(adj - effective)})
                 break
 
     # ── 3-for-1 ────────────────────────────────────────────────────────────────
@@ -17591,14 +17627,15 @@ def _generate_roster_packages(
             for p3 in viewer_players[j + 1:]:
                 if p3["value"] < ter_min: break
                 combined = p1["value"] + p2["value"] + p3["value"]
-                if combined > hi: continue
-                if combined >= lo:
+                adj = _adj([p1, p2, p3])
+                if adj > hi: continue
+                if adj >= lo:
                     k = _key(p1, p2, p3)
                     if k not in seen:
                         seen.add(k)
                         packages.append({"type": "3-for-1", "send": [p1, p2, p3],
                                          "send_value": combined,
-                                         "_delta": abs(combined - effective)})
+                                         "_delta": abs(adj - effective)})
                     break
             else:
                 continue
@@ -17610,14 +17647,15 @@ def _generate_roster_packages(
         if p["value"] > effective * 0.93: continue
         for pick in viewer_picks:
             combined = p["value"] + pick["value"]
-            if combined > hi: continue
-            if combined >= lo:
+            adj = _adj([p]) + pick["value"]  # picks have no position scarcity
+            if adj > hi: continue
+            if adj >= lo:
                 k = _key(p, {"player_id": pick.get("name", "")})
                 if k not in seen:
                     seen.add(k)
                     packages.append({"type": "player + pick", "send": [p, pick],
                                      "send_value": combined,
-                                     "_delta": abs(combined - effective)})
+                                     "_delta": abs(adj - effective)})
                 break
 
     # ── 2 players + 1 pick ─────────────────────────────────────────────────────
@@ -17628,15 +17666,16 @@ def _generate_roster_packages(
             if p2["value"] < ter_min: break
             for pick in viewer_picks:
                 combined = p1["value"] + p2["value"] + pick["value"]
-                if combined > hi: continue
-                if combined >= lo:
+                adj = _adj([p1, p2]) + pick["value"]
+                if adj > hi: continue
+                if adj >= lo:
                     k = _key(p1, p2, {"player_id": pick.get("name", "")})
                     if k not in seen:
                         seen.add(k)
                         packages.append({"type": "2 players + pick",
                                          "send": [p1, p2, pick],
                                          "send_value": combined,
-                                         "_delta": abs(combined - effective)})
+                                         "_delta": abs(adj - effective)})
                     break
             else:
                 continue
@@ -17650,8 +17689,9 @@ def _generate_roster_packages(
             for pi, pk1 in enumerate(viewer_picks):
                 for pk2 in viewer_picks[pi + 1:]:
                     combined = p["value"] + pk1["value"] + pk2["value"]
-                    if combined > hi: continue
-                    if combined >= lo:
+                    adj = _adj([p]) + pk1["value"] + pk2["value"]
+                    if adj > hi: continue
+                    if adj >= lo:
                         k = _key(p, {"player_id": pk1.get("name", "")},
                                     {"player_id": pk2.get("name", "")})
                         if k not in seen:
@@ -17659,7 +17699,7 @@ def _generate_roster_packages(
                             packages.append({"type": "player + 2 picks",
                                              "send": [p, pk1, pk2],
                                              "send_value": combined,
-                                             "_delta": abs(combined - effective)})
+                                             "_delta": abs(adj - effective)})
                         break
                 else:
                     continue
