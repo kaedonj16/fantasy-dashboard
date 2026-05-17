@@ -250,6 +250,11 @@ def _calibrate_one(
     has_direct = trade_count >= MIN_TRADES_FOR_SIGNAL
     rookie_ok  = not is_rookie or trade_count >= ROOKIE_DIRECT_THRESHOLD
 
+    # Guard: if the player has no model value their proportional share of any
+    # trade package is unknown — market values for them are unreliable garbage.
+    if model_1qb <= 0:
+        has_direct = False
+
     if has_direct and rookie_ok:
         mkt_1qb = market["market_1qb"]
         mkt_sf  = market["market_sf"]
