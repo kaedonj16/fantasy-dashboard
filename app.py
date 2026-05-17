@@ -16786,10 +16786,14 @@ def api_player_packages(player_id: str):
                 # Learns position+tier signatures from real trade history, then
                 # fills those slots from the viewer's actual roster. Surfaces first
                 # because it is most reflective of how this player actually trades.
+                _pat_thresholds = compute_tier_thresholds(
+                    val_table, "sf" if _is_sf else "1qb"
+                )
                 _pat_result = _pattern_based_packages(
                     focus_pid, focus_value, by_trade, viewer_players,
                     value_map, players_map, max_packages=9,
                     pos_scarcity=_POS_SCARCITY, debug=_debug,
+                    tier_thresholds=_pat_thresholds,
                 )
                 pattern_pkgs, _pattern_debug = _pat_result if _debug else (_pat_result, {})
                 for pkg in pattern_pkgs:
@@ -17451,6 +17455,7 @@ def _pattern_based_packages(
     max_packages: int = 6,
     pos_scarcity: dict = None,
     debug: bool = False,
+    tier_thresholds: list = None,
 ) -> list | tuple:
     """
     Learn the position+tier package patterns from real trades for focus_pid,
@@ -17467,10 +17472,7 @@ def _pattern_based_packages(
     from collections import Counter, defaultdict
 
     def _tier(v):
-        for t, floor in enumerate([800, 500, 300, 200, 130, 80, 40], 1):
-            if v >= floor:
-                return t
-        return 8
+        return _asset_tier(v, tier_thresholds if tier_thresholds is not None else _FALLBACK_THRESHOLDS)
 
     def _age_label(pos: str, age) -> str:
         if age is None:
