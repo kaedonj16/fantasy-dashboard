@@ -4766,12 +4766,14 @@ def _market_scale(fmt: str = "1qb") -> float:
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
-    Derive tier breakpoints from normalized gap significance across the full player list.
+    Derive tier breakpoints from gap significance across the full player list.
 
-    Each gap is scored relative to the local median gap in a sliding window so that
-    the algorithm detects meaningful separations regardless of value density. Boundaries
-    are chosen with a minimum spacing (min_group players) so no tier ends up with a
-    single isolated player.
+    Primary method: score each gap by how large it is relative to nearby gaps
+    (local significance), then select the top (num_tiers-1) boundaries.
+
+    Constraint: no tier may contain more than max_tier_size players. If the
+    initial gap-detection leaves an oversized tier, it is force-split at its
+    largest internal gap until the constraint is met or num_tiers is exhausted.
     """
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -4796,7 +4798,7 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
 
     # Score each gap by how large it is relative to nearby gaps (local significance)
     window  = 12
-    min_grp = 3   # minimum players per tier
+    min_grp = 3
     scored  = []
     for i in range(len(vals) - 1):
         gap = vals[i] - vals[i + 1]
@@ -4806,7 +4808,7 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
         scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
 
-    # Select top (num_tiers-1) gaps, enforcing minimum group spacing
+    # Select top (num_tiers-1) gaps with minimum group spacing
     scored.sort(key=lambda x: x[0], reverse=True)
     chosen_pos = []
     boundaries = []
@@ -4822,6 +4824,43 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
 
     if not boundaries:
         return _FALLBACK_THRESHOLDS
+
+    # Enforce max tier size: no tier should contain more than this many players.
+    # Oversized tiers are force-split at their largest internal gap.
+    max_tier_size = max(8, len(vals) // num_tiers)
+
+    def _tier_ranges(bounds):
+        """Return list of (start_idx, end_idx) for each tier given sorted bounds."""
+        sb = sorted(bounds, reverse=True)
+        ranges = []
+        start = 0
+        for b in sb:
+            end = next((i for i, v in enumerate(vals) if v < b), len(vals))
+            if end > start:
+                ranges.append((start, end))
+            start = end
+        ranges.append((start, len(vals)))
+        return ranges
+
+    while len(boundaries) < num_tiers - 1:
+        ranges = _tier_ranges(boundaries)
+        # Find the largest tier
+        largest = max(ranges, key=lambda r: r[1] - r[0])
+        if largest[1] - largest[0] <= max_tier_size:
+            break  # all tiers within limit
+        s, e = largest
+        # Split at the largest gap within this tier
+        best_gap, best_mid = -1.0, None
+        for i in range(s, e - 1):
+            g = vals[i] - vals[i + 1]
+            if g > best_gap:
+                best_gap = g
+                best_mid = (vals[i] + vals[i + 1]) / 2.0
+        if best_mid is None or any(abs(best_mid - b) < 1.0 for b in boundaries):
+            # No useful gap found — force midpoint split
+            mid = (s + e) // 2
+            best_mid = (vals[mid] + vals[min(mid + 1, e - 1)]) / 2.0
+        boundaries.append(best_mid)
 
     return sorted(boundaries, reverse=True)
 
