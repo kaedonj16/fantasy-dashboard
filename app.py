@@ -444,6 +444,7 @@ FORM_BODY = """
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
           <input type="hidden" name="season" value="{{ viewed_season }}">
           <input type="hidden" name="username" id="formUsername" value="">
+          <input type="hidden" name="next" id="formNext" value="{{ next_url or '' }}">
 
           <div class="row" id="leagueSelectWrap" style="display:none;">
             <label for="league">Choose League</label>
@@ -1388,6 +1389,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"      <input type='hidden' name='platform' value='{platform}'>"
         f"      <input type='hidden' name='season' value='{season}'>"
         f"      <input type='hidden' name='league_id' value='{league_id}'>"
+        f"      <input type='hidden' name='next' value='{request.path + ('?' + request.query_string.decode() if request.query_string else '')}'>"
         f"      <input class='signin-modal-input' type='text' name='username' placeholder='Sleeper username' autocomplete='username' autofocus>"
         f"      <div class='signin-modal-actions'>"
         f"        <button class='signin-modal-submit' type='submit'>Sign In</button>"
@@ -11452,6 +11454,9 @@ def index():
             target=_preload_history, args=(platform, league_id, season), daemon=True
         ).start()
 
+        next_url = (request.form.get("next") or "").strip()
+        if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+            return redirect(next_url)
         return redirect(url_for(
             "page_dashboard",
             platform=platform,
@@ -11459,11 +11464,16 @@ def index():
             league_id=league_id,
         ))
 
+    next_url = (request.args.get("next") or "").strip()
+    # Reject open redirects — only allow local paths
+    if not (next_url.startswith("/") and not next_url.startswith("//")):
+        next_url = ""
     body_html = render_template_string(
         FORM_BODY,
         username="",
         viewed_season=viewed_season,
         error=None,
+        next_url=next_url,
         recent_updates=generate_recent_updates_html(),
     )
     return render_page("BR Fantasy Dashboard", None, "home", body_html)

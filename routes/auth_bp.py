@@ -114,6 +114,11 @@ def set_viewer():
     save_viewer_session(viewer)
     if platform == "sleeper" and viewer.get("viewer_user_id"):
         _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
+
+    # Return to the page the user was on when they signed in, if safe
+    next_url = (request.form.get("next") or "").strip()
+    if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+        return redirect(next_url)
     return redirect(url_for("page_dashboard", platform=platform, season=season, league_id=league_id))
 
 
