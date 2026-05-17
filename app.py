@@ -12287,8 +12287,8 @@ def api_trade_eval():
             viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
             if viewer_roster:
                 model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
-                viewer_gives = side_b if viewer_side == "b" else side_a
-                viewer_gets = side_a if viewer_side == "a" else side_b
+                viewer_gives = side_a if viewer_side == "b" else side_b
+                viewer_gets  = side_b if viewer_side == "b" else side_a
                 sending = [a for a in (viewer_gives.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
                 receiving = [a for a in (viewer_gets.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
                 depth_warnings = calculate_roster_depth_warning(viewer_roster, model_value_lookup, sending, receiving)
@@ -16793,6 +16793,7 @@ def api_player_packages(player_id: str):
                         "is_profile_match": True,
                         "is_synthetic":     True,
                         "pattern_learned":  True,
+                        "pattern_sig":      pkg.get("pattern_sig", ""),
                     })
 
                 # ── Layer A: Market-Matched Packages ──────────────────────────
@@ -17584,12 +17585,18 @@ def _pattern_based_packages(
             seen_keys.add(pkg_key)
 
             size_lbl = "1-for-1" if n == 1 else f"{n}-for-1"
+            # Human-readable pattern signature, e.g. "WR:T2 + RB:T3 + PICK:R1"
+            _sig_parts = [
+                (f"PICK:R{t}" if pos == "PICK" else f"{pos}:T{t}")
+                for pos, t in sig
+            ]
             packages.append({
-                "type":       size_lbl,
-                "send":       filled,
-                "send_value": raw_send_val,
-                "_delta":     abs(adj_send_val - focus_value),
-                "_freq":      freq,
+                "type":        size_lbl,
+                "send":        filled,
+                "send_value":  raw_send_val,
+                "_delta":      abs(adj_send_val - focus_value),
+                "_freq":       freq,
+                "pattern_sig": " + ".join(_sig_parts),
             })
 
             if len(packages) >= max_packages * 4:

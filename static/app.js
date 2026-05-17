@@ -2665,6 +2665,9 @@ window.initTradePage = function initTradePage(root = document) {
              </div>`
           : '';
 
+        const patternSigHtml = pkg.pattern_sig
+          ? `<div style="font-size:10px;color:var(--text-muted);margin-top:4px;letter-spacing:.02em;">Market pattern: ${pkg.pattern_sig}</div>`
+          : '';
         return `<div class="otc-sugg-package">
           <div class="otc-sugg-pkg-meta">
             <span class="otc-sugg-pkg-value ${vc}">${pkg.value_label}</span>
@@ -2687,6 +2690,7 @@ window.initTradePage = function initTradePage(root = document) {
               <div class="otc-sugg-pkg-assets">${pkg.assets.map(assetHtml).join("")}</div>
             </div>
           </div>
+          ${patternSigHtml}
           <button class="otc-sugg-pkg-load-btn"
             data-focus-id="${playerId}"
             data-assets="${encodeURIComponent(JSON.stringify(pkg.assets))}"
@@ -2790,7 +2794,8 @@ window.initTradePage = function initTradePage(root = document) {
           // Side A = what you receive (the target player, plus any combo throw-in)
           state.sideAPlayers.push(focusPObj);
           if (extraRaw) {
-            const extraPObj = allPlayers.find(p => String(p.id) === String(extraRaw.player_id));
+            const extraPObj = allPlayers.find(p => String(p.id) === String(extraRaw.player_id))
+              || (extraRaw.name && allPlayers.find(p => p.name && p.name.toLowerCase() === extraRaw.name.toLowerCase()));
             if (extraPObj) state.sideAPlayers.push(extraPObj);
           }
 
