@@ -57,11 +57,20 @@ def main():
               AND ti.weighted_market_value_1qb IS NOT NULL
         """, (MIN_TRADES, MIN_TRADES)).fetchall()
 
-    # Normalize market values to 0-999.9 — same logic as market_calibration.py
-    raw_max_1qb = max((float(r["mkt_1qb"]) for r in rows if r["mkt_1qb"]), default=999.9)
-    raw_max_sf  = max((float(r["mkt_sf"])  for r in rows if r["mkt_sf"]),  default=999.9)
-    scale_1qb = 999.9 / raw_max_1qb
-    scale_sf  = 999.9 / raw_max_sf
+    # Normalize — median of top-5 by trade count (matches market_calibration.py)
+    def _anchor(vals, counts):
+        pairs = sorted(zip(counts, vals), reverse=True)
+        top5  = [v for _, v in pairs[:5] if v and v > 0]
+        if not top5:
+            return 999.9
+        top5.sort()
+        return top5[len(top5) // 2]
+
+    all_1qb    = [float(r["mkt_1qb"] or 0) for r in rows]
+    all_sf     = [float(r["mkt_sf"]  or 0) for r in rows]
+    all_trades = [int(r["trade_count"] or 0) for r in rows]
+    scale_1qb  = 999.9 / _anchor(all_1qb, all_trades)
+    scale_sf   = 999.9 / _anchor(all_sf,  all_trades)
 
     results = []
     for row in rows:
@@ -91,8 +100,8 @@ def main():
             "delta_1qb": delta_1qb,
             "delta_sf":  delta_sf,
             "trades":    int(row["trade_count"] or 0),
-            "trend_1qb": float(row["trend_1qb"] or 0),
-            "trend_sf":  float(row["trend_sf"]  or 0),
+            "trend_1qb": round(float(row["trend_1qb"] or 0) * scale_1qb, 1),
+            "trend_sf":  round(float(row["trend_sf"]  or 0) * scale_sf,  1),
         })
 
     results.sort(key=lambda x: x["mkt_1qb"], reverse=True)

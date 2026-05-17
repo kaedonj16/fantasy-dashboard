@@ -4750,6 +4750,19 @@ _TIER_CAPS  = _build_tier_caps(_NUM_TIERS)
 _FALLBACK_THRESHOLDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
 
 
+def _market_scale(fmt: str = "1qb") -> float:
+    """Return the normalization scale factor written by market_calibration."""
+    try:
+        from utils.paths import DATA_DIR
+        import json as _json
+        p = DATA_DIR / "market_calibration_scale.json"
+        if p.exists():
+            return float(_json.loads(p.read_text()).get(f"scale_{fmt}", 1.0))
+    except Exception:
+        pass
+    return 1.0
+
+
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
@@ -15676,7 +15689,7 @@ def api_trade_intel_trending():
                 "market_value": market_val or None,
                 "model_value": model_val or None,
                 "value_delta": delta,
-                "market_trend": float(r["market_trend_1qb"]) if r["market_trend_1qb"] is not None else None,
+                "market_trend": round(float(r["market_trend_1qb"]) * _market_scale(), 1) if r["market_trend_1qb"] is not None else None,
             })
 
         # Calculate pagination info
@@ -16480,7 +16493,7 @@ def api_player_packages(player_id: str):
             for r in val_rows:
                 market_signals[str(r["player_id"])] = {
                     "rank_change_7d": r["rank_change_7d"],
-                    "market_trend":   float(r["market_trend"] or 0) if r["market_trend"] is not None else None,
+                    "market_trend":   round(float(r["market_trend"] or 0) * _market_scale(), 1) if r["market_trend"] is not None else None,
                     "buy_sell_ratio": float(r["buy_sell_ratio"] or 1.0) if r["buy_sell_ratio"] is not None else None,
                 }
 
@@ -18219,7 +18232,7 @@ def api_trade_ideas_for_target():
                 _pid = str(_r["player_id"])
                 if _pid in values_by_id:
                     values_by_id[_pid]["buy_sell_ratio"] = float(_r["buy_sell_ratio"] or 1.0)
-                    values_by_id[_pid]["market_trend"]   = float(_r["market_trend"] or 0.0)
+                    values_by_id[_pid]["market_trend"]   = round(float(_r["market_trend"] or 0.0) * _market_scale(), 1)
         except Exception:
             pass  # market signals optional — fall back to rank_change_7d only
 

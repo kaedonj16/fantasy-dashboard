@@ -350,25 +350,48 @@ def run_calibration(season: int | None = None) -> dict:
     logger.info("[calibration] %d tier buckets built", len(tier_ratios))
 
     # Normalize market values to 0–999.9 scale.
-    # The highest market value player becomes 999.9; all others scale proportionally.
-    # Only use players with enough trades to be reliable as the scale anchor.
-    raw_max_1qb = max(
-        (m["market_1qb"] for m in market_map.values() if m["market_1qb"] > 0),
-        default=999.9,
+    # Anchor = median of the top-5 players by trade count.
+    # Using median of top-5 (not raw max) makes the anchor robust against a single
+    # outlier inflating the scale and compressing everyone else.
+    def _anchor(values_iter, trade_counts_iter):
+        pairs = sorted(zip(trade_counts_iter, values_iter), reverse=True)
+        top5  = [v for _, v in pairs[:5] if v > 0]
+        if not top5:
+            return 999.9
+        top5.sort()
+        return top5[len(top5) // 2]  # median
+
+    anchor_1qb = _anchor(
+        (m["market_1qb"] for m in market_map.values()),
+        (m["trade_count"] for m in market_map.values()),
     )
-    raw_max_sf = max(
-        (m["market_sf"] for m in market_map.values() if m["market_sf"] > 0),
-        default=999.9,
+    anchor_sf = _anchor(
+        (m["market_sf"]  for m in market_map.values()),
+        (m["trade_count"] for m in market_map.values()),
     )
-    scale_1qb = 999.9 / raw_max_1qb
-    scale_sf  = 999.9 / raw_max_sf
+    scale_1qb = 999.9 / anchor_1qb if anchor_1qb > 0 else 1.0
+    scale_sf  = 999.9 / anchor_sf  if anchor_sf  > 0 else 1.0
     logger.info(
-        "[calibration] Normalizing: 1QB max=%.1f → 999.9 (scale=%.4f)  SF max=%.1f → 999.9 (scale=%.4f)",
-        raw_max_1qb, scale_1qb, raw_max_sf, scale_sf,
+        "[calibration] Normalizing (median top-5 anchor): "
+        "1QB anchor=%.1f (scale=%.4f)  SF anchor=%.1f (scale=%.4f)",
+        anchor_1qb, scale_1qb, anchor_sf, scale_sf,
     )
     for m in market_map.values():
         m["market_1qb"] = round(m["market_1qb"] * scale_1qb, 2)
         m["market_sf"]  = round(m["market_sf"]  * scale_sf,  2)
+        m["trend_1qb"]  = round(m["trend_1qb"]  * scale_1qb, 2)
+        m["trend_sf"]   = round(m["trend_sf"]   * scale_sf,  2)
+
+    # Persist the scale factors so picks.py can normalize pick values to the same scale.
+    import json
+    from utils.paths import DATA_DIR
+    _scale_path = DATA_DIR / "market_calibration_scale.json"
+    _scale_path.write_text(json.dumps({
+        "scale_1qb": round(scale_1qb, 6),
+        "scale_sf":  round(scale_sf,  6),
+        "anchor_1qb": round(anchor_1qb, 2),
+        "anchor_sf":  round(anchor_sf,  2),
+    }))
 
     out_rows = []
     counts   = {"direct": 0, "tier_anchor": 0, "model_only": 0}

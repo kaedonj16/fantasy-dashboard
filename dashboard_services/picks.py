@@ -519,4 +519,17 @@ def load_pick_value_table(
             except Exception:
                 pass
 
+    # Apply the same normalization scale used for player market values so picks
+    # stay proportional to player values after market calibration runs.
+    try:
+        import json as _json
+        from utils.paths import DATA_DIR as _DATA_DIR
+        _scale_path = _DATA_DIR / "market_calibration_scale.json"
+        if _scale_path.exists():
+            _scale = _json.loads(_scale_path.read_text()).get("scale_1qb", 1.0)
+            if _scale and _scale != 1.0:
+                final = {k: round(v * _scale, 1) for k, v in final.items()}
+    except Exception:
+        pass
+
     return final
