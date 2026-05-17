@@ -17517,6 +17517,19 @@ def _pattern_based_packages(
     if not sig_counter:
         return ([], {}) if debug else []
 
+    # Log the top patterns found so they're visible in server logs
+    _focus_name = (players_map.get(focus_pid) or {}).get("full_name") or focus_pid
+    app.logger.info(
+        "[patterns] %s (val=%.0f) — top patterns from %d trades:",
+        _focus_name, focus_value, sum(sig_counter.values()),
+    )
+    for _sig, _cnt in sig_counter.most_common(10):
+        _sig_str = " + ".join(
+            f"PICK:R{t}" if pos == "PICK" else f"{pos}:T{t}"
+            for pos, t in _sig
+        )
+        app.logger.info("[patterns]   %3dx  %s", _cnt, _sig_str)
+
     # ---- Step 2: Apply learned patterns to viewer's roster -------------------
     # Pattern packages use a slightly wider window (±13%) because the signatures
     # already carry market validation — a slight value mismatch from the viewer's
