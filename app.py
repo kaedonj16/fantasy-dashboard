@@ -17472,6 +17472,27 @@ def _pattern_based_packages(
                 return t
         return 8
 
+    def _age_label(pos: str, age) -> str:
+        if age is None:
+            return "Prime"
+        age = int(age)
+        if pos == "QB":
+            if age <= 25: return "Young"
+            if age <= 32: return "Prime"
+            return "Vet"
+        elif pos == "RB":
+            if age <= 23: return "Young"
+            if age <= 26: return "Prime"
+            return "Vet"
+        elif pos == "TE":
+            if age <= 24: return "Young"
+            if age <= 29: return "Prime"
+            return "Vet"
+        else:  # WR and FLEX
+            if age <= 23: return "Young"
+            if age <= 28: return "Prime"
+            return "Vet"
+
     # ---- Step 1: Extract real-trade signatures --------------------------------
     # Rough pick-round value estimates aligned with the tier thresholds used
     # elsewhere, so the value-proximity filter works consistently for pick-heavy
@@ -17514,13 +17535,15 @@ def _pattern_based_packages(
         for a in other:
             if a["asset_type"] == "pick":
                 rd = min(int(a.get("pick_round") or 4), 4)
-                slots.append(("PICK", rd))
+                slots.append(("PICK", rd, ""))
             else:
-                pid     = str(a.get("player_id") or "")
-                v       = value_map.get(pid, 0)
-                raw_pos = ((players_map.get(pid) or {}).get("pos") or "FLEX").upper()
-                pos     = raw_pos if raw_pos in ("QB", "RB", "WR", "TE") else "FLEX"
-                slots.append((pos, _tier(v)))
+                pid      = str(a.get("player_id") or "")
+                v        = value_map.get(pid, 0)
+                pinfo    = players_map.get(pid) or {}
+                raw_pos  = (pinfo.get("pos") or "FLEX").upper()
+                pos      = raw_pos if raw_pos in ("QB", "RB", "WR", "TE") else "FLEX"
+                age_lbl  = _age_label(pos, pinfo.get("age"))
+                slots.append((pos, _tier(v), age_lbl))
 
         # Sort so best tier (lowest number) comes first, break ties by pos
         slots.sort(key=lambda x: (x[1] if x[0] != "PICK" else 99, x[0]))
@@ -17538,8 +17561,8 @@ def _pattern_based_packages(
     )
     for _sig, _cnt in sig_counter.most_common(10):
         _sig_str = " + ".join(
-            f"PICK:R{t}" if pos == "PICK" else f"{pos}:T{t}"
-            for pos, t in _sig
+            f"PICK:R{t}" if pos == "PICK" else f"{pos}-T{t}-{age}"
+            for pos, t, age in _sig
         )
         app.logger.info("[patterns]   %3dx  %s", _cnt, _sig_str)
 
@@ -17555,28 +17578,33 @@ def _pattern_based_packages(
     sec_min  = {1: 300, 2: 200, 3: 130, 4: 80}.get(tgt_tier, 40)
     ter_min  = {1: 200, 2: 130, 3: 80,  4: 40}.get(tgt_tier, 40)
 
-    # Build position × tier pool from viewer's roster, best players first
+    # Build position × tier × age pool from viewer's roster, best players first
     pos_tier_pool: dict = defaultdict(list)
     for p in sorted(viewer_players, key=lambda x: -x["value"]):
-        t   = _tier(p["value"])
-        pos = (p.get("position") or "FLEX").upper()
-        pos = pos if pos in ("QB", "RB", "WR", "TE") else "FLEX"
-        pos_tier_pool[(pos, t)].append(p)
+        t       = _tier(p["value"])
+        pos     = (p.get("position") or "FLEX").upper()
+        pos     = pos if pos in ("QB", "RB", "WR", "TE") else "FLEX"
+        age_lbl = _age_label(pos, p.get("age"))
+        pos_tier_pool[(pos, t, age_lbl)].append(p)
+        pos_tier_pool[(pos, t, "")].append(p)  # age-agnostic fallback bucket
 
-    def _candidates(pos, tier, exclude_ids):
-        """Viewer players matching pos at tier ±1, closest tier first, excluding used."""
+    def _candidates(pos, tier, age_lbl, exclude_ids):
+        """Viewer players matching pos at tier ±1, preferring age match, excluding used."""
         seen   = set()
         result = []
+        # Try age-specific match first, then any age
+        age_keys = ([age_lbl, ""] if age_lbl else [""])
         for t_off in (0, 1, -1):
             t2 = tier + t_off
             if t2 < 1 or t2 > 8:
                 continue
             for bucket_pos in ((pos, "FLEX") if pos != "FLEX" else ("FLEX",)):
-                for p in pos_tier_pool.get((bucket_pos, t2), []):
-                    pid = p["player_id"]
-                    if pid not in exclude_ids and pid not in seen:
-                        seen.add(pid)
-                        result.append(p)
+                for ak in age_keys:
+                    for p in pos_tier_pool.get((bucket_pos, t2, ak), []):
+                        pid = p["player_id"]
+                        if pid not in exclude_ids and pid not in seen:
+                            seen.add(pid)
+                            result.append(p)
         result.sort(key=lambda p: abs(_tier(p["value"]) - tier))
         return result
 
@@ -17585,21 +17613,21 @@ def _pattern_based_packages(
     _sc = pos_scarcity or {}
 
     for sig, freq in sig_counter.most_common(100):
-        player_slots = [(pos, t) for pos, t in sig if pos != "PICK"]
+        player_slots = [(pos, t, age) for pos, t, age in sig if pos != "PICK"]
         if not player_slots or len(player_slots) > 3:
             continue  # skip pick-only or huge packages
 
         # Try up to 3 different anchor players for each signature so one market
         # pattern can produce multiple distinct packages from the viewer's roster.
-        anchor_pos, anchor_tier = player_slots[0]
-        anchor_cands = _candidates(anchor_pos, anchor_tier, set())[:3]
+        anchor_pos, anchor_tier, anchor_age = player_slots[0]
+        anchor_cands = _candidates(anchor_pos, anchor_tier, anchor_age, set())[:3]
 
         for anchor in anchor_cands:
             used_ids: set = {anchor["player_id"]}
             filled: list  = [anchor]
             ok = True
-            for pos, tier in player_slots[1:]:
-                cands = _candidates(pos, tier, used_ids)
+            for pos, tier, age in player_slots[1:]:
+                cands = _candidates(pos, tier, age, used_ids)
                 if not cands:
                     ok = False
                     break
@@ -17638,10 +17666,10 @@ def _pattern_based_packages(
             seen_keys.add(pkg_key)
 
             size_lbl = "1-for-1" if n == 1 else f"{n}-for-1"
-            # Human-readable pattern signature, e.g. "WR:T2 + RB:T3 + PICK:R1"
+            # Human-readable pattern signature, e.g. "WR-T2-Prime + RB-T3-Young + PICK:R1"
             _sig_parts = [
-                (f"PICK:R{t}" if pos == "PICK" else f"{pos}:T{t}")
-                for pos, t in sig
+                (f"PICK:R{t}" if pos == "PICK" else (f"{pos}-T{t}-{age}" if age else f"{pos}-T{t}"))
+                for pos, t, age in sig
             ]
             packages.append({
                 "type":        size_lbl,
@@ -17665,8 +17693,8 @@ def _pattern_based_packages(
             "sig_counter": [
                 {
                     "sig":   " + ".join(
-                        f"PICK:R{t}" if pos == "PICK" else f"{pos}:T{t}"
-                        for pos, t in sig
+                        f"PICK:R{t}" if pos == "PICK" else (f"{pos}-T{t}-{age}" if age else f"{pos}-T{t}")
+                        for pos, t, age in sig
                     ),
                     "raw_sig": list(sig),
                     "count": cnt,
