@@ -16814,6 +16814,7 @@ def api_player_packages(player_id: str):
                         "is_synthetic":     True,
                         "pattern_learned":  True,
                         "pattern_sig":      pkg.get("pattern_sig", ""),
+                        "throw_in_sig":     pkg.get("throw_in_sig", ""),
                     })
 
                 # ── Layer A: Market-Matched Packages ──────────────────────────
@@ -17501,6 +17502,29 @@ def _pattern_based_packages(
     # packages.  These are intentionally approximate.
     _PICK_VAL = {1: 500, 2: 150, 3: 75, 4: 40}
 
+    # Dynamic proximity window — tighter for elite players where overpay is larger
+    # in absolute terms and patterns are more meaningful.
+    _focus_tier = _tier(focus_value)
+    _prox_hi = {1: 1.10, 2: 1.15, 3: 1.20}.get(_focus_tier, 1.25)
+    _prox_lo = {1: 0.90, 2: 0.88, 3: 0.85}.get(_focus_tier, 0.80)
+
+    def _asset_slots(assets):
+        slots = []
+        for a in assets:
+            if a["asset_type"] == "pick":
+                rd = min(int(a.get("pick_round") or 4), 4)
+                slots.append(("PICK", rd, ""))
+            else:
+                pid     = str(a.get("player_id") or "")
+                v       = value_map.get(pid, 0)
+                pinfo   = players_map.get(pid) or {}
+                raw_pos = (pinfo.get("pos") or "FLEX").upper()
+                pos     = raw_pos if raw_pos in ("QB", "RB", "WR", "TE") else "FLEX"
+                age_lbl = _age_label(pos, pinfo.get("age"))
+                slots.append((pos, _tier(v), age_lbl))
+        slots.sort(key=lambda x: (x[1] if x[0] != "PICK" else 99, x[0]))
+        return slots
+
     sig_counter: Counter = Counter()
 
     for tid, sides in by_trade.items():
@@ -17513,44 +17537,43 @@ def _pattern_based_packages(
         if not focus_side:
             continue
         other_key = "b" if focus_side == "a" else "a"
+
+        # Assets sent TO GET the focus player (the cost package)
         other = [a for a in sides[other_key]
                  if not (a["asset_type"] == "player"
                          and str(a.get("player_id", "")) == focus_pid)]
+        # Assets that came WITH the focus player (throw-ins from seller)
+        throw_ins = [a for a in sides[focus_side]
+                     if not (a["asset_type"] == "player"
+                             and str(a.get("player_id", "")) == focus_pid)]
         if not other:
             continue
 
-        # Value-proximity filter: only learn patterns from trades where the
-        # cost side roughly matches the model's valuation of this player (±30%).
-        # This prevents patterns from "real market" trades where the player was
-        # valued higher/lower than the model (e.g. a capped elite QB), which
-        # would teach the pipeline to suggest packages at the wrong price.
-        other_val = sum(
+        other_val    = sum(
             value_map.get(str(a.get("player_id") or ""), 0)
             if a["asset_type"] == "player"
             else _PICK_VAL.get(min(int(a.get("pick_round") or 4), 4), 40)
             for a in other
         )
-        if other_val > 0 and not (focus_value * 0.95 <= other_val <= focus_value * 1.30):
+        throw_in_val = sum(
+            value_map.get(str(a.get("player_id") or ""), 0)
+            if a["asset_type"] == "player"
+            else _PICK_VAL.get(min(int(a.get("pick_round") or 4), 4), 40)
+            for a in throw_ins
+        )
+
+        # Proximity check: cost ≈ focus_value + throw-ins (both sides must balance)
+        effective_cost = focus_value + throw_in_val
+        if other_val > 0 and not (_prox_lo * effective_cost <= other_val <= _prox_hi * effective_cost):
             continue
 
-        slots = []
-        for a in other:
-            if a["asset_type"] == "pick":
-                rd = min(int(a.get("pick_round") or 4), 4)
-                slots.append(("PICK", rd, ""))
-            else:
-                pid      = str(a.get("player_id") or "")
-                v        = value_map.get(pid, 0)
-                pinfo    = players_map.get(pid) or {}
-                raw_pos  = (pinfo.get("pos") or "FLEX").upper()
-                pos      = raw_pos if raw_pos in ("QB", "RB", "WR", "TE") else "FLEX"
-                age_lbl  = _age_label(pos, pinfo.get("age"))
-                slots.append((pos, _tier(v), age_lbl))
+        send_slots     = tuple(_asset_slots(other))
+        throw_in_slots = tuple(_asset_slots(throw_ins))
+        if send_slots:
+            sig_counter[(send_slots, throw_in_slots)] += 1
 
-        # Sort so best tier (lowest number) comes first, break ties by pos
-        slots.sort(key=lambda x: (x[1] if x[0] != "PICK" else 99, x[0]))
-        if slots:
-            sig_counter[tuple(slots)] += 1
+    # Filter low-frequency noise — patterns seen fewer than 5 times are not signal
+    sig_counter = Counter({k: v for k, v in sig_counter.items() if v >= 5})
 
     if not sig_counter:
         return ([], {}) if debug else []
@@ -17558,23 +17581,29 @@ def _pattern_based_packages(
     # Log the top patterns found so they're visible in server logs
     _focus_name = (players_map.get(focus_pid) or {}).get("full_name") or focus_pid
     app.logger.info(
-        "[patterns] %s (val=%.0f) — top patterns from %d trades:",
+        "[patterns] %s (val=%.0f) — top patterns from %d trades (tier=%d, window=%.0f%%–%.0f%%):",
         _focus_name, focus_value, sum(sig_counter.values()),
+        _focus_tier, _prox_lo * 100, _prox_hi * 100,
     )
-    for _sig, _cnt in sig_counter.most_common(10):
-        _sig_str = " + ".join(
+
+    def _fmt_slots(slots):
+        return " + ".join(
             f"PICK:R{t}" if pos == "PICK" else f"{pos}-T{t}-{age}"
-            for pos, t, age in _sig
+            for pos, t, age in slots
         )
-        app.logger.info("[patterns]   %3dx  %s", _cnt, _sig_str)
+
+    for (_send, _throw), _cnt in sig_counter.most_common(10):
+        _line = f"Send: {_fmt_slots(_send)}"
+        if _throw:
+            _line += f"  |  +throw-in: {_fmt_slots(_throw)}"
+        app.logger.info("[patterns]   %3dx  %s", _cnt, _line)
 
     # ---- Step 2: Apply learned patterns to viewer's roster -------------------
-    # Pattern packages use a slightly wider window (±13%) because the signatures
-    # already carry market validation — a slight value mismatch from the viewer's
-    # available players is acceptable.
-    lo       = focus_value * 0.87
-    hi       = focus_value * 1.13
-    tgt_tier = _tier(focus_value)
+    # Fairness window uses the same dynamic width as the proximity filter above
+    # so pattern application and pattern learning use consistent tolerances.
+    lo       = focus_value * _prox_lo
+    hi       = focus_value * _prox_hi
+    tgt_tier = _focus_tier
     ANCHOR_2 = focus_value * 0.75
     ANCHOR_3 = focus_value * 0.65
     sec_min  = {1: 300, 2: 200, 3: 130, 4: 80}.get(tgt_tier, 40)
@@ -17594,7 +17623,6 @@ def _pattern_based_packages(
         """Viewer players matching pos at tier ±1, preferring age match, excluding used."""
         seen   = set()
         result = []
-        # Try age-specific match first, then any age
         age_keys = ([age_lbl, ""] if age_lbl else [""])
         for t_off in (0, 1, -1):
             t2 = tier + t_off
@@ -17614,13 +17642,12 @@ def _pattern_based_packages(
     seen_keys: set = set()
     _sc = pos_scarcity or {}
 
-    for sig, freq in sig_counter.most_common(100):
-        player_slots = [(pos, t, age) for pos, t, age in sig if pos != "PICK"]
+    for (send_sig, throw_sig), freq in sig_counter.most_common(100):
+        player_slots = [(pos, t, age) for pos, t, age in send_sig if pos != "PICK"]
         if not player_slots or len(player_slots) > 3:
             continue  # skip pick-only or huge packages
 
-        # Try up to 3 different anchor players for each signature so one market
-        # pattern can produce multiple distinct packages from the viewer's roster.
+        # Try up to 3 different anchor players per signature
         anchor_pos, anchor_tier, anchor_age = player_slots[0]
         anchor_cands = _candidates(anchor_pos, anchor_tier, anchor_age, set())[:3]
 
@@ -17639,11 +17666,8 @@ def _pattern_based_packages(
             if not ok or not filled:
                 continue
 
-            # Sort by value desc so anchor is first
             filled.sort(key=lambda p: -p["value"])
 
-            # Scarcity-adjusted value for the fairness window: RB-heavy packages
-            # aren't wrongly filtered vs WR-heavy ones; raw sum stored for display.
             raw_send_val = sum(p["value"] for p in filled)
             adj_send_val = sum(
                 p["value"] * _sc.get((p.get("position") or "").upper(), 1.0)
@@ -17668,18 +17692,22 @@ def _pattern_based_packages(
             seen_keys.add(pkg_key)
 
             size_lbl = "1-for-1" if n == 1 else f"{n}-for-1"
-            # Human-readable pattern signature, e.g. "WR-T2-Prime + RB-T3-Young + PICK:R1"
-            _sig_parts = [
-                (f"PICK:R{t}" if pos == "PICK" else (f"{pos}-T{t}-{age}" if age else f"{pos}-T{t}"))
-                for pos, t, age in sig
-            ]
+
+            # Two-sided pattern label: what the viewer sends + what comes back with the elite
+            send_label = _fmt_slots(send_sig)
+            throw_label = _fmt_slots(throw_sig) if throw_sig else ""
+            pattern_sig = f"Send: {send_label}"
+            if throw_label:
+                pattern_sig += f"  |  +throw-in: {throw_label}"
+
             packages.append({
                 "type":        size_lbl,
                 "send":        filled,
                 "send_value":  raw_send_val,
+                "throw_in_sig": throw_label,
                 "_delta":      abs(adj_send_val - focus_value),
                 "_freq":       freq,
-                "pattern_sig": " + ".join(_sig_parts),
+                "pattern_sig": pattern_sig,
             })
 
             if len(packages) >= max_packages * 4:
@@ -17688,20 +17716,16 @@ def _pattern_based_packages(
         if len(packages) >= max_packages * 4:
             break
 
-    # Rank by pattern frequency (market signal), then closeness to fair value
     packages.sort(key=lambda x: (-x["_freq"], x["_delta"]))
     if debug:
         debug_info = {
             "sig_counter": [
                 {
-                    "sig":   " + ".join(
-                        f"PICK:R{t}" if pos == "PICK" else (f"{pos}-T{t}-{age}" if age else f"{pos}-T{t}")
-                        for pos, t, age in sig
-                    ),
-                    "raw_sig": list(sig),
-                    "count": cnt,
+                    "send_sig":     _fmt_slots(send),
+                    "throw_in_sig": _fmt_slots(throw),
+                    "count":        cnt,
                 }
-                for sig, cnt in sig_counter.most_common(30)
+                for (send, throw), cnt in sig_counter.most_common(30)
             ],
             "total_trades_scanned": sum(sig_counter.values()),
             "patterns_tried":       len(sig_counter),
