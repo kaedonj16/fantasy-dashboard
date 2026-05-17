@@ -17494,7 +17494,7 @@ def _pattern_based_packages(
             else _PICK_VAL.get(min(int(a.get("pick_round") or 4), 4), 40)
             for a in other
         )
-        if other_val > 0 and not (focus_value * 0.70 <= other_val <= focus_value * 1.30):
+        if other_val > 0 and not (focus_value * 0.95 <= other_val <= focus_value * 1.05):
             continue
 
         slots = []
