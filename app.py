@@ -17460,6 +17460,11 @@ def _pattern_based_packages(
         return 8
 
     # ---- Step 1: Extract real-trade signatures --------------------------------
+    # Rough pick-round value estimates aligned with the tier thresholds used
+    # elsewhere, so the value-proximity filter works consistently for pick-heavy
+    # packages.  These are intentionally approximate.
+    _PICK_VAL = {1: 500, 2: 150, 3: 75, 4: 40}
+
     sig_counter: Counter = Counter()
 
     for tid, sides in by_trade.items():
@@ -17476,6 +17481,20 @@ def _pattern_based_packages(
                  if not (a["asset_type"] == "player"
                          and str(a.get("player_id", "")) == focus_pid)]
         if not other:
+            continue
+
+        # Value-proximity filter: only learn patterns from trades where the
+        # cost side roughly matches the model's valuation of this player (±30%).
+        # This prevents patterns from "real market" trades where the player was
+        # valued higher/lower than the model (e.g. a capped elite QB), which
+        # would teach the pipeline to suggest packages at the wrong price.
+        other_val = sum(
+            value_map.get(str(a.get("player_id") or ""), 0)
+            if a["asset_type"] == "player"
+            else _PICK_VAL.get(min(int(a.get("pick_round") or 4), 4), 40)
+            for a in other
+        )
+        if other_val > 0 and not (focus_value * 0.70 <= other_val <= focus_value * 1.30):
             continue
 
         slots = []
