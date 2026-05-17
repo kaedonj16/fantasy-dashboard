@@ -16944,7 +16944,67 @@ def api_player_packages(player_id: str):
                             "value_label":   _value_label(ratio),
                         })
 
-                # ── Fix 1+2+3: Re-sort personalized packages ──────────────────
+                # ── Depletion guard ───────────────────────────────────────────
+                # Reject any package that sends 2+ players from the same position
+                # if doing so would leave the viewer below typical depth there.
+                # e.g. don't trade both top WRs for an RB — that creates a WR hole.
+                _TYPICAL_ROSTER_DEPTH = {"QB": 2, "RB": 7, "WR": 8, "TE": 2}
+
+                def _depletes_position(send_assets: list) -> bool:
+                    pos_sends: dict = {}
+                    for a in send_assets:
+                        if a.get("is_pick"):
+                            continue
+                        pos = (a.get("position") or "").upper()
+                        pos_sends[pos] = pos_sends.get(pos, 0) + 1
+                    for pos, cnt in pos_sends.items():
+                        if cnt < 2:
+                            continue
+                        remaining = viewer_pos_counts.get(pos, 0) - cnt
+                        if remaining < _TYPICAL_ROSTER_DEPTH.get(pos, 4):
+                            return True
+                    return False
+
+                personalized_packages = [
+                    p for p in personalized_packages
+                    if not _depletes_position(p.get("assets", []))
+                ]
+                combo_packages = [
+                    p for p in combo_packages
+                    if not _depletes_position(p.get("assets", []))
+                ]
+
+                # ── Progressive fallback ──────────────────────────────────────
+                # If the strict ±10% window produced fewer than 4 suggestions,
+                # widen to ±15% and re-run Layer B to fill gaps.
+                if len(personalized_packages) < 4:
+                    fallback_pkgs = _generate_roster_packages(
+                        focus_value, viewer_players, viewer_pick_list,
+                        max_packages=8, pos_scarcity=_POS_SCARCITY, tolerance=0.15,
+                    )
+                    for pkg in fallback_pkgs:
+                        if len(personalized_packages) >= 6:
+                            break
+                        key = _pkg_key(pkg["send"])
+                        if key in seen_player_sets:
+                            continue
+                        if _depletes_position(pkg["send"]):
+                            continue
+                        ratio = pkg["send_value"] / focus_value if focus_value > 0 else 1.0
+                        for asset in pkg["send"]:
+                            _enrich_asset(asset, values_by_id)
+                        seen_player_sets.add(key)
+                        personalized_packages.append({
+                            "assets":           pkg["send"],
+                            "frequency":        0,
+                            "value_label":      _value_label(ratio),
+                            "size_label":       pkg["type"],
+                            "receive_value":    round(pkg["send_value"]),
+                            "is_profile_match": True,
+                            "is_synthetic":     True,
+                        })
+
+                # ── Re-sort personalized packages ─────────────────────────────
                 # Priority: pattern-learned first, then by (need appeal ↓, scarcity-
                 # adjusted send value proximity ↑). This surfaces packages the target
                 # owner is most likely to accept AND that the viewer can most easily part with.
@@ -17541,6 +17601,7 @@ def _generate_roster_packages(
     premium: float = 1.0,
     max_packages: int = 6,
     pos_scarcity: dict = None,
+    tolerance: float = 0.10,
 ) -> list:
     """
     Build trade packages from a viewer's roster using value + tier logic only —
@@ -17564,8 +17625,8 @@ def _generate_roster_packages(
         )
 
     effective = target_value * premium
-    lo = effective * 0.90
-    hi = effective * 1.10
+    lo = effective * (1 - tolerance)
+    hi = effective * (1 + tolerance)
 
     def _tier(v):
         if v >= 800: return 1
