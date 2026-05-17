@@ -519,6 +519,23 @@ def load_pick_value_table(
             except Exception:
                 pass
 
+    # Override with market-derived values from trade intel where available
+    try:
+        from dashboard_services.db import get_conn as _get_conn
+        with _get_conn() as _conn:
+            _pick_rows = _conn.execute("""
+                SELECT pick_season, pick_round, pick_bucket, weighted_market_value_1qb
+                FROM trade_intel_pick_stats
+                WHERE season = (SELECT MAX(season) FROM trade_intel_pick_stats WHERE trade_count >= 10)
+                  AND trade_count >= 10
+                  AND weighted_market_value_1qb IS NOT NULL
+            """).fetchall()
+        for _pr in _pick_rows:
+            _pk = f"{_pr['pick_season']}_{_pr['pick_round']}_{_pr['pick_bucket']}"
+            final[_pk] = float(_pr['weighted_market_value_1qb'])
+    except Exception:
+        pass  # fall back to CSV-based values
+
     # Apply the same normalization scale used for player market values so picks
     # stay proportional to player values after market calibration runs.
     try:
