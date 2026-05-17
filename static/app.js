@@ -2740,13 +2740,20 @@ window.initTradePage = function initTradePage(root = document) {
           const patternLabel = isRef
             ? `market pattern · send ~${sv} (example assets)`
             : `market pattern · send ${sv}`;
+          const analyzeBtn = `<button class="otc-sugg-pkg-load-btn"
+            data-focus-id="${_pkgPlayerId}"
+            data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}"
+            style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid #a78bfa;background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;margin-top:4px;">
+            Analyze
+          </button>`;
           realTradeHtml += `<div style="padding:5px 0;border-top:1px solid var(--border);">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
               <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetsHtml}</div>
               <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;flex-shrink:0;">${count}× seen</span>
             </div>
-            <div style="margin-top:2px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
               <span style="font-size:10px;color:var(--text-muted);">${patternLabel}</span>
+              ${analyzeBtn}
             </div>
           </div>`;
         });

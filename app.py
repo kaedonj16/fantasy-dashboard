@@ -16773,7 +16773,7 @@ def api_player_packages(player_id: str):
                 # because it is most reflective of how this player actually trades.
                 pattern_pkgs = _pattern_based_packages(
                     focus_pid, focus_value, by_trade, viewer_players,
-                    value_map, players_map, max_packages=6,
+                    value_map, players_map, max_packages=9,
                     pos_scarcity=_POS_SCARCITY,
                 )
                 for pkg in pattern_pkgs:
@@ -16944,7 +16944,67 @@ def api_player_packages(player_id: str):
                             "value_label":   _value_label(ratio),
                         })
 
-                # ── Fix 1+2+3: Re-sort personalized packages ──────────────────
+                # ── Depletion guard ───────────────────────────────────────────
+                # Reject any package that sends 2+ players from the same position
+                # if doing so would leave the viewer below typical depth there.
+                # e.g. don't trade both top WRs for an RB — that creates a WR hole.
+                _TYPICAL_ROSTER_DEPTH = {"QB": 2, "RB": 7, "WR": 8, "TE": 2}
+
+                def _depletes_position(send_assets: list) -> bool:
+                    pos_sends: dict = {}
+                    for a in send_assets:
+                        if a.get("is_pick"):
+                            continue
+                        pos = (a.get("position") or "").upper()
+                        pos_sends[pos] = pos_sends.get(pos, 0) + 1
+                    for pos, cnt in pos_sends.items():
+                        if cnt < 2:
+                            continue
+                        remaining = viewer_pos_counts.get(pos, 0) - cnt
+                        if remaining < _TYPICAL_ROSTER_DEPTH.get(pos, 4):
+                            return True
+                    return False
+
+                personalized_packages = [
+                    p for p in personalized_packages
+                    if not _depletes_position(p.get("assets", []))
+                ]
+                combo_packages = [
+                    p for p in combo_packages
+                    if not _depletes_position(p.get("assets", []))
+                ]
+
+                # ── Progressive fallback ──────────────────────────────────────
+                # If the strict ±10% window produced fewer than 4 suggestions,
+                # widen to ±15% and re-run Layer B to fill gaps.
+                if len(personalized_packages) < 4:
+                    fallback_pkgs = _generate_roster_packages(
+                        focus_value, viewer_players, viewer_pick_list,
+                        max_packages=8, pos_scarcity=_POS_SCARCITY, tolerance=0.15,
+                    )
+                    for pkg in fallback_pkgs:
+                        if len(personalized_packages) >= 6:
+                            break
+                        key = _pkg_key(pkg["send"])
+                        if key in seen_player_sets:
+                            continue
+                        if _depletes_position(pkg["send"]):
+                            continue
+                        ratio = pkg["send_value"] / focus_value if focus_value > 0 else 1.0
+                        for asset in pkg["send"]:
+                            _enrich_asset(asset, values_by_id)
+                        seen_player_sets.add(key)
+                        personalized_packages.append({
+                            "assets":           pkg["send"],
+                            "frequency":        0,
+                            "value_label":      _value_label(ratio),
+                            "size_label":       pkg["type"],
+                            "receive_value":    round(pkg["send_value"]),
+                            "is_profile_match": True,
+                            "is_synthetic":     True,
+                        })
+
+                # ── Re-sort personalized packages ─────────────────────────────
                 # Priority: pattern-learned first, then by (need appeal ↓, scarcity-
                 # adjusted send value proximity ↑). This surfaces packages the target
                 # owner is most likely to accept AND that the viewer can most easily part with.
@@ -17430,8 +17490,11 @@ def _pattern_based_packages(
         return []
 
     # ---- Step 2: Apply learned patterns to viewer's roster -------------------
-    lo       = focus_value * 0.90
-    hi       = focus_value * 1.10
+    # Pattern packages use a slightly wider window (±13%) because the signatures
+    # already carry market validation — a slight value mismatch from the viewer's
+    # available players is acceptable.
+    lo       = focus_value * 0.87
+    hi       = focus_value * 1.13
     tgt_tier = _tier(focus_value)
     ANCHOR_2 = focus_value * 0.75
     ANCHOR_3 = focus_value * 0.65
@@ -17447,10 +17510,10 @@ def _pattern_based_packages(
         pos_tier_pool[(pos, t)].append(p)
 
     def _candidates(pos, tier, exclude_ids):
-        """Viewer players matching pos at tier ±2, closest tier first, excluding used."""
+        """Viewer players matching pos at tier ±1, closest tier first, excluding used."""
         seen   = set()
         result = []
-        for t_off in (0, 1, -1, 2, -2):
+        for t_off in (0, 1, -1):
             t2 = tier + t_off
             if t2 < 1 or t2 > 8:
                 continue
@@ -17465,65 +17528,74 @@ def _pattern_based_packages(
 
     packages = []
     seen_keys: set = set()
+    _sc = pos_scarcity or {}
 
-    for sig, freq in sig_counter.most_common(50):
+    for sig, freq in sig_counter.most_common(100):
         player_slots = [(pos, t) for pos, t in sig if pos != "PICK"]
         if not player_slots or len(player_slots) > 3:
             continue  # skip pick-only or huge packages
 
-        used_ids: set = set()
-        filled: list  = []
-        ok = True
-        for pos, tier in player_slots:
-            cands = _candidates(pos, tier, used_ids)
-            if not cands:
-                ok = False
+        # Try up to 3 different anchor players for each signature so one market
+        # pattern can produce multiple distinct packages from the viewer's roster.
+        anchor_pos, anchor_tier = player_slots[0]
+        anchor_cands = _candidates(anchor_pos, anchor_tier, set())[:3]
+
+        for anchor in anchor_cands:
+            used_ids: set = {anchor["player_id"]}
+            filled: list  = [anchor]
+            ok = True
+            for pos, tier in player_slots[1:]:
+                cands = _candidates(pos, tier, used_ids)
+                if not cands:
+                    ok = False
+                    break
+                filled.append(cands[0])
+                used_ids.add(cands[0]["player_id"])
+
+            if not ok or not filled:
+                continue
+
+            # Sort by value desc so anchor is first
+            filled.sort(key=lambda p: -p["value"])
+
+            # Scarcity-adjusted value for the fairness window: RB-heavy packages
+            # aren't wrongly filtered vs WR-heavy ones; raw sum stored for display.
+            raw_send_val = sum(p["value"] for p in filled)
+            adj_send_val = sum(
+                p["value"] * _sc.get((p.get("position") or "").upper(), 1.0)
+                for p in filled
+            )
+            if not (lo <= adj_send_val <= hi):
+                continue
+
+            n = len(filled)
+            if n == 2 and filled[0]["value"] < ANCHOR_2:
+                continue
+            if n >= 3 and filled[0]["value"] < ANCHOR_3:
+                continue
+            if n >= 2 and filled[1]["value"] < sec_min:
+                continue
+            if n >= 3 and filled[2]["value"] < ter_min:
+                continue
+
+            pkg_key = tuple(sorted(p["player_id"] for p in filled))
+            if pkg_key in seen_keys:
+                continue
+            seen_keys.add(pkg_key)
+
+            size_lbl = "1-for-1" if n == 1 else f"{n}-for-1"
+            packages.append({
+                "type":       size_lbl,
+                "send":       filled,
+                "send_value": raw_send_val,
+                "_delta":     abs(adj_send_val - focus_value),
+                "_freq":      freq,
+            })
+
+            if len(packages) >= max_packages * 4:
                 break
-            filled.append(cands[0])  # closest-tier match
-            used_ids.add(cands[0]["player_id"])
 
-        if not ok or not filled:
-            continue
-
-        # Sort by value desc so anchor is first
-        filled.sort(key=lambda p: -p["value"])
-
-        # Scarcity-adjusted value for the fairness window: RB-heavy packages
-        # aren't wrongly filtered vs WR-heavy ones; raw sum is stored for display.
-        raw_send_val = sum(p["value"] for p in filled)
-        _sc = pos_scarcity or {}
-        adj_send_val = sum(
-            p["value"] * _sc.get((p.get("position") or "").upper(), 1.0)
-            for p in filled
-        )
-        if not (lo <= adj_send_val <= hi):
-            continue
-
-        n = len(filled)
-        if n == 2 and filled[0]["value"] < ANCHOR_2:
-            continue
-        if n >= 3 and filled[0]["value"] < ANCHOR_3:
-            continue
-        if n >= 2 and filled[1]["value"] < sec_min:
-            continue
-        if n >= 3 and filled[2]["value"] < ter_min:
-            continue
-
-        pkg_key = tuple(sorted(p["player_id"] for p in filled))
-        if pkg_key in seen_keys:
-            continue
-        seen_keys.add(pkg_key)
-
-        size_lbl = "1-for-1" if n == 1 else f"{n}-for-1"
-        packages.append({
-            "type":       size_lbl,
-            "send":       filled,
-            "send_value": raw_send_val,
-            "_delta":     abs(adj_send_val - focus_value),
-            "_freq":      freq,
-        })
-
-        if len(packages) >= max_packages * 3:
+        if len(packages) >= max_packages * 4:
             break
 
     # Rank by pattern frequency (market signal), then closeness to fair value
@@ -17541,6 +17613,7 @@ def _generate_roster_packages(
     premium: float = 1.0,
     max_packages: int = 6,
     pos_scarcity: dict = None,
+    tolerance: float = 0.10,
 ) -> list:
     """
     Build trade packages from a viewer's roster using value + tier logic only —
@@ -17564,8 +17637,8 @@ def _generate_roster_packages(
         )
 
     effective = target_value * premium
-    lo = effective * 0.90
-    hi = effective * 1.10
+    lo = effective * (1 - tolerance)
+    hi = effective * (1 + tolerance)
 
     def _tier(v):
         if v >= 800: return 1
