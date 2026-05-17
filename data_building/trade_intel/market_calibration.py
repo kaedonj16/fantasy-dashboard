@@ -35,8 +35,8 @@ from dashboard_services.db import get_conn
 logger = logging.getLogger(__name__)
 
 MAX_BLEND                   = 0.65   # never more than 65% market influence
-MIN_TRADES_FOR_SIGNAL       = 5      # below this = model only
-ROOKIE_DIRECT_THRESHOLD     = 15     # rookies need more trades before direct blend
+MIN_TRADES_FOR_SIGNAL       = 20     # below this = model only
+ROOKIE_DIRECT_THRESHOLD     = 20     # rookies need more trades before direct use
 TREND_BOOST_THRESHOLD       = 40     # market_trend points that trigger extra weight
 TREND_BOOST_AMOUNT          = 0.10   # extra blend weight added when trending strongly
 STALENESS_PENALTY_THRESHOLD = 0.15   # if <15% of trades are from last 14d, penalise
@@ -250,26 +250,18 @@ def _calibrate_one(
     has_direct = trade_count >= MIN_TRADES_FOR_SIGNAL
     rookie_ok  = not is_rookie or trade_count >= ROOKIE_DIRECT_THRESHOLD
 
+    # Guard: if the player has no model value their proportional share of any
+    # trade package is unknown — market values for them are unreliable garbage.
+    if model_1qb <= 0:
+        has_direct = False
+
     if has_direct and rookie_ok:
-        weight  = _blend_weight(market)
         mkt_1qb = market["market_1qb"]
         mkt_sf  = market["market_sf"]
-
-        # When there's a strong trend, pull the calibrated value toward
-        # the recent market direction, not just the weighted median
-        trend = market["trend_1qb"]
-        if abs(trend) >= TREND_BOOST_THRESHOLD:
-            # Nudge by up to half the trend signal (don't chase noise)
-            trend_nudge = trend * 0.5
-            mkt_1qb = mkt_1qb + trend_nudge
-            mkt_sf  = mkt_sf  + (market["trend_sf"] * 0.5)
-
-        cal_1qb = round(model_1qb * (1 - weight) + mkt_1qb * weight, 2)
-        cal_sf  = round(model_sf  * (1 - weight) + mkt_sf  * weight, 2)
         return {
-            "calibrated_value_1qb": max(0, min(999.9, cal_1qb)),
-            "calibrated_value_sf":  max(0, min(999.9, cal_sf)),
-            "calibration_weight":   weight,
+            "calibrated_value_1qb": max(0, round(mkt_1qb, 2)),
+            "calibrated_value_sf":  max(0, round(mkt_sf,  2)),
+            "calibration_weight":   1.0,
             "calibration_source":   "direct",
         }
 
@@ -278,8 +270,8 @@ def _calibrate_one(
         ratio = _find_tier_ratio(pos, model_1qb, tier_ratios)
         if ratio is not None:
             return {
-                "calibrated_value_1qb": min(999.9, round(model_1qb * ratio, 2)),
-                "calibrated_value_sf":  min(999.9, round(model_sf  * ratio, 2)),
+                "calibrated_value_1qb": round(model_1qb * ratio, 2),
+                "calibrated_value_sf":  round(model_sf  * ratio, 2),
                 "calibration_weight":   round(ratio - 1.0, 3),
                 "calibration_source":   "tier_anchor",
             }
@@ -356,6 +348,45 @@ def run_calibration(season: int | None = None) -> dict:
     logger.info("[calibration] Building position-tier ratios for rookie anchoring...")
     tier_ratios = _build_tier_ratios(model_rows, market_map)
     logger.info("[calibration] %d tier buckets built", len(tier_ratios))
+
+    # Normalize market values to 0–999.9 scale.
+    # Anchor = max market value across all players with trade data.
+    # Top player = 999.9; all others scale proportionally below.
+    def _anchor(values_iter, trade_counts_iter):
+        vals = [v for v in values_iter if v > 0]
+        return max(vals) if vals else 999.9
+
+    anchor_1qb = _anchor(
+        (m["market_1qb"] for m in market_map.values()),
+        (m["trade_count"] for m in market_map.values()),
+    )
+    anchor_sf = _anchor(
+        (m["market_sf"]  for m in market_map.values()),
+        (m["trade_count"] for m in market_map.values()),
+    )
+    scale_1qb = 999.9 / anchor_1qb if anchor_1qb > 0 else 1.0
+    scale_sf  = 999.9 / anchor_sf  if anchor_sf  > 0 else 1.0
+    logger.info(
+        "[calibration] Normalizing (max anchor): "
+        "1QB anchor=%.1f (scale=%.4f)  SF anchor=%.1f (scale=%.4f)",
+        anchor_1qb, scale_1qb, anchor_sf, scale_sf,
+    )
+    for m in market_map.values():
+        m["market_1qb"] = round(m["market_1qb"] * scale_1qb, 2)
+        m["market_sf"]  = round(m["market_sf"]  * scale_sf,  2)
+        m["trend_1qb"]  = round(m["trend_1qb"]  * scale_1qb, 2)
+        m["trend_sf"]   = round(m["trend_sf"]   * scale_sf,  2)
+
+    # Persist the scale factors so picks.py can normalize pick values to the same scale.
+    import json
+    from utils.paths import DATA_DIR
+    _scale_path = DATA_DIR / "market_calibration_scale.json"
+    _scale_path.write_text(json.dumps({
+        "scale_1qb": round(scale_1qb, 6),
+        "scale_sf":  round(scale_sf,  6),
+        "anchor_1qb": round(anchor_1qb, 2),
+        "anchor_sf":  round(anchor_sf,  2),
+    }))
 
     out_rows = []
     counts   = {"direct": 0, "tier_anchor": 0, "model_only": 0}

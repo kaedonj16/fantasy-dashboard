@@ -255,7 +255,14 @@ def _compute_player_stats(trades: list[dict], values: dict[str, dict], season: i
             # trades produce received values > 999.9.
             player_val_1qb = values.get(pid, {}).get("value_1qb", 0)
             player_val_sf  = values.get(pid, {}).get("value_sf",  0)
-            if pkg_1qb > 0 and player_val_1qb > 0:
+
+            # If this player has no model value we cannot proportion their share
+            # of the package — skip them entirely rather than crediting them the
+            # full other-side return (which produces garbage 10000+ values).
+            if player_val_1qb <= 0:
+                continue
+
+            if pkg_1qb > 0:
                 recv_1qb = recv_1qb * (player_val_1qb / pkg_1qb)
             if pkg_sf > 0 and player_val_sf > 0:
                 recv_sf = recv_sf * (player_val_sf / pkg_sf)
@@ -539,6 +546,177 @@ def _upsert_packages(packages: list[dict]) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Pick stats - market-derived values for draft picks
+# ---------------------------------------------------------------------------
+
+def _normalize_pick_bucket(pick_order) -> str:
+    """Normalize pick_order from DB to one of 'early', 'mid', 'late'."""
+    if pick_order is None:
+        return "mid"
+    s = str(pick_order).strip().lower()
+    # If it looks like a number, treat as 'mid'
+    try:
+        float(s)
+        return "mid"
+    except ValueError:
+        pass
+    if s.startswith("e"):
+        return "early"
+    if s.startswith("l"):
+        return "late"
+    return "mid"
+
+
+def _ensure_pick_stats_table() -> None:
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS trade_intel_pick_stats (
+                    pick_season  INTEGER     NOT NULL,
+                    pick_round   INTEGER     NOT NULL,
+                    pick_bucket  VARCHAR(10) NOT NULL,
+                    season       INTEGER     NOT NULL,
+                    trade_count  INTEGER     DEFAULT 0,
+                    trade_count_14d INTEGER  DEFAULT 0,
+                    weighted_market_value_1qb NUMERIC,
+                    weighted_market_value_sf  NUMERIC,
+                    market_trend_1qb          NUMERIC,
+                    updated_at   TIMESTAMP,
+                    PRIMARY KEY (pick_season, pick_round, pick_bucket, season)
+                )
+                """
+            )
+
+
+def _compute_pick_stats(trades: list[dict], values: dict[str, dict], season: int) -> list[dict]:
+    now     = datetime.now(tz=timezone.utc)
+    cut_14d = now - timedelta(days=14)
+    cut_90d = now - timedelta(days=90)
+
+    # key: (pick_season, pick_round, pick_bucket)
+    # value: {"weighted_1qb": [(val, decay), ...], "weighted_sf": [...],
+    #         "vals_14d_1qb": [...], "vals_90d_1qb": [...],
+    #         "trade_count": int, "trade_count_14d": int}
+    AccType = dict[str, Any]
+
+    def _empty_acc() -> AccType:
+        return {
+            "trade_count":     0,
+            "trade_count_14d": 0,
+            "weighted_1qb":    [],
+            "weighted_sf":     [],
+            "vals_14d_1qb":    [],
+            "vals_90d_1qb":    [],
+        }
+
+    stats: dict[tuple, AccType] = defaultdict(_empty_acc)
+
+    for trade in trades:
+        assets  = trade["assets"]
+        created = trade["created_at"]
+        if created and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+
+        days_ago = (now - created).total_seconds() / 86400 if created else 999
+        decay    = _decay_weight(days_ago)
+
+        pick_assets = [a for a in assets if a["asset_type"] == "pick"]
+
+        for asset in pick_assets:
+            side       = asset["side"]
+            other_side = "b" if side == "a" else "a"
+
+            recv_1qb     = _side_value(assets, other_side, values, "1qb")
+            recv_sf      = _side_value(assets, other_side, values, "sf")
+            pkg_1qb      = _side_value(assets, side, values, "1qb")
+            pkg_sf       = _side_value(assets, side, values, "sf")
+            pick_val_1qb = _pick_value(asset, "1qb")
+            pick_val_sf  = _pick_value(asset, "sf")
+
+            if pick_val_1qb <= 0 or pkg_1qb <= 0:
+                continue
+
+            attr_1qb = recv_1qb * (pick_val_1qb / pkg_1qb)
+            attr_sf  = recv_sf  * (pick_val_sf  / pkg_sf) if (pkg_sf > 0 and pick_val_sf > 0) else None
+
+            ps  = asset.get("pick_season") or season
+            pr  = min(asset.get("pick_round") or 4, 4)
+            pb  = _normalize_pick_bucket(asset.get("pick_order"))
+            key = (int(ps), int(pr), pb)
+
+            s = stats[key]
+            s["trade_count"] += 1
+
+            if attr_1qb > 0:
+                s["weighted_1qb"].append((attr_1qb, decay))
+            if attr_sf is not None and attr_sf > 0:
+                s["weighted_sf"].append((attr_sf, decay))
+
+            if created and created >= cut_14d:
+                s["trade_count_14d"] += 1
+                if attr_1qb > 0:
+                    s["vals_14d_1qb"].append(attr_1qb)
+            if created and created >= cut_90d:
+                if attr_1qb > 0:
+                    s["vals_90d_1qb"].append(attr_1qb)
+
+    results = []
+    for (pick_season, pick_round, pick_bucket), s in stats.items():
+        wm_1qb = _weighted_median(s["weighted_1qb"])
+        wm_sf  = _weighted_median(s["weighted_sf"])
+
+        m14_1qb = _plain_median(s["vals_14d_1qb"])
+        m90_1qb = _plain_median(s["vals_90d_1qb"])
+        trend_1qb = round(m14_1qb - m90_1qb, 2) if (m14_1qb and m90_1qb) else None
+
+        results.append({
+            "pick_season":               pick_season,
+            "pick_round":                pick_round,
+            "pick_bucket":               pick_bucket,
+            "season":                    season,
+            "trade_count":               s["trade_count"],
+            "trade_count_14d":           s["trade_count_14d"],
+            "weighted_market_value_1qb": wm_1qb,
+            "weighted_market_value_sf":  wm_sf,
+            "market_trend_1qb":          trend_1qb,
+        })
+
+    return results
+
+
+def _upsert_pick_stats(stats: list[dict]) -> int:
+    if not stats:
+        return 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO trade_intel_pick_stats (
+                    pick_season, pick_round, pick_bucket, season,
+                    trade_count, trade_count_14d,
+                    weighted_market_value_1qb, weighted_market_value_sf,
+                    market_trend_1qb, updated_at
+                ) VALUES (
+                    %(pick_season)s, %(pick_round)s, %(pick_bucket)s, %(season)s,
+                    %(trade_count)s, %(trade_count_14d)s,
+                    %(weighted_market_value_1qb)s, %(weighted_market_value_sf)s,
+                    %(market_trend_1qb)s, NOW()
+                )
+                ON CONFLICT (pick_season, pick_round, pick_bucket, season) DO UPDATE SET
+                    trade_count               = EXCLUDED.trade_count,
+                    trade_count_14d           = EXCLUDED.trade_count_14d,
+                    weighted_market_value_1qb = EXCLUDED.weighted_market_value_1qb,
+                    weighted_market_value_sf  = EXCLUDED.weighted_market_value_sf,
+                    market_trend_1qb          = EXCLUDED.market_trend_1qb,
+                    updated_at                = NOW()
+                """,
+                stats,
+            )
+    return len(stats)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -578,7 +756,7 @@ def run_analytics(season: int | None = None) -> dict:
 
     if not trades:
         logger.warning("[analytics] No trades found - skipping.")
-        return {"player_stats": 0, "packages": 0}
+        return {"player_stats": 0, "packages": 0, "pick_stats": 0}
 
     # Log size distribution for observability
     from collections import Counter
@@ -595,7 +773,14 @@ def run_analytics(season: int | None = None) -> dict:
     n_pkgs = _upsert_packages(packages)
     logger.info("[analytics] Upserted %d package rows", n_pkgs)
 
-    return {"player_stats": n_stats, "packages": n_pkgs}
+    logger.info("[analytics] Ensuring pick stats table...")
+    _ensure_pick_stats_table()
+    logger.info("[analytics] Computing pick market values...")
+    pick_stats = _compute_pick_stats(trades, values, season)
+    n_picks = _upsert_pick_stats(pick_stats)
+    logger.info("[analytics] Upserted %d pick stat rows", n_picks)
+
+    return {"player_stats": n_stats, "packages": n_pkgs, "pick_stats": n_picks}
 
 
 if __name__ == "__main__":

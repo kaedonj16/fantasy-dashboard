@@ -4750,15 +4750,30 @@ _TIER_CAPS  = _build_tier_caps(_NUM_TIERS)
 _FALLBACK_THRESHOLDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
 
 
+def _market_scale(fmt: str = "1qb") -> float:
+    """Return the normalization scale factor written by market_calibration."""
+    try:
+        from utils.paths import DATA_DIR
+        import json as _json
+        p = DATA_DIR / "market_calibration_scale.json"
+        if p.exists():
+            return float(_json.loads(p.read_text()).get(f"scale_{fmt}", 1.0))
+    except Exception:
+        pass
+    return 1.0
+
+
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
-    Derive tier breakpoints from normalized gap significance across the full player list.
+    Derive tier breakpoints from gap significance across the full player list.
 
-    Each gap is scored relative to the local median gap in a sliding window so that
-    the algorithm detects meaningful separations regardless of value density. Boundaries
-    are chosen with a minimum spacing (min_group players) so no tier ends up with a
-    single isolated player.
+    Primary method: score each gap by how large it is relative to nearby gaps
+    (local significance), then select the top (num_tiers-1) boundaries.
+
+    Constraint: no tier may contain more than max_tier_size players. If the
+    initial gap-detection leaves an oversized tier, it is force-split at its
+    largest internal gap until the constraint is met or num_tiers is exhausted.
     """
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -4783,7 +4798,7 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
 
     # Score each gap by how large it is relative to nearby gaps (local significance)
     window  = 12
-    min_grp = 3   # minimum players per tier
+    min_grp = 3
     scored  = []
     for i in range(len(vals) - 1):
         gap = vals[i] - vals[i + 1]
@@ -4793,7 +4808,7 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
         scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
 
-    # Select top (num_tiers-1) gaps, enforcing minimum group spacing
+    # Select top (num_tiers-1) gaps with minimum group spacing
     scored.sort(key=lambda x: x[0], reverse=True)
     chosen_pos = []
     boundaries = []
@@ -4809,6 +4824,43 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
 
     if not boundaries:
         return _FALLBACK_THRESHOLDS
+
+    # Enforce max tier size: no tier should contain more than this many players.
+    # Oversized tiers are force-split at their largest internal gap.
+    max_tier_size = max(8, len(vals) // num_tiers)
+
+    def _tier_ranges(bounds):
+        """Return list of (start_idx, end_idx) for each tier given sorted bounds."""
+        sb = sorted(bounds, reverse=True)
+        ranges = []
+        start = 0
+        for b in sb:
+            end = next((i for i, v in enumerate(vals) if v < b), len(vals))
+            if end > start:
+                ranges.append((start, end))
+            start = end
+        ranges.append((start, len(vals)))
+        return ranges
+
+    while len(boundaries) < num_tiers - 1:
+        ranges = _tier_ranges(boundaries)
+        # Find the largest tier
+        largest = max(ranges, key=lambda r: r[1] - r[0])
+        if largest[1] - largest[0] <= max_tier_size:
+            break  # all tiers within limit
+        s, e = largest
+        # Split at the largest gap within this tier
+        best_gap, best_mid = -1.0, None
+        for i in range(s, e - 1):
+            g = vals[i] - vals[i + 1]
+            if g > best_gap:
+                best_gap = g
+                best_mid = (vals[i] + vals[i + 1]) / 2.0
+        if best_mid is None or any(abs(best_mid - b) < 1.0 for b in boundaries):
+            # No useful gap found — force midpoint split
+            mid = (s + e) // 2
+            best_mid = (vals[mid] + vals[min(mid + 1, e - 1)]) / 2.0
+        boundaries.append(best_mid)
 
     return sorted(boundaries, reverse=True)
 
@@ -12287,8 +12339,8 @@ def api_trade_eval():
             viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
             if viewer_roster:
                 model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
-                viewer_gives = side_b if viewer_side == "b" else side_a
-                viewer_gets = side_a if viewer_side == "a" else side_b
+                viewer_gives = side_a if viewer_side == "b" else side_b
+                viewer_gets  = side_b if viewer_side == "b" else side_a
                 sending = [a for a in (viewer_gives.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
                 receiving = [a for a in (viewer_gets.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
                 depth_warnings = calculate_roster_depth_warning(viewer_roster, model_value_lookup, sending, receiving)
@@ -15676,7 +15728,7 @@ def api_trade_intel_trending():
                 "market_value": market_val or None,
                 "model_value": model_val or None,
                 "value_delta": delta,
-                "market_trend": float(r["market_trend_1qb"]) if r["market_trend_1qb"] is not None else None,
+                "market_trend": round(float(r["market_trend_1qb"]) * _market_scale(), 1) if r["market_trend_1qb"] is not None else None,
             })
 
         # Calculate pagination info
@@ -16349,6 +16401,7 @@ def api_player_packages(player_id: str):
         platform         = (request.args.get("platform") or "sleeper").strip()
         viewer_roster_id = (request.args.get("viewer_roster_id") or "").strip()
         limit            = min(int(request.args.get("limit") or 100), 200)
+        _debug           = request.args.get("debug") == "1"
 
         user_id = session.get("viewer_username")
         if not has_premium_access(user_id, league_id or None, platform):
@@ -16479,7 +16532,7 @@ def api_player_packages(player_id: str):
             for r in val_rows:
                 market_signals[str(r["player_id"])] = {
                     "rank_change_7d": r["rank_change_7d"],
-                    "market_trend":   float(r["market_trend"] or 0) if r["market_trend"] is not None else None,
+                    "market_trend":   round(float(r["market_trend"] or 0) * _market_scale(), 1) if r["market_trend"] is not None else None,
                     "buy_sell_ratio": float(r["buy_sell_ratio"] or 1.0) if r["buy_sell_ratio"] is not None else None,
                 }
 
@@ -16646,6 +16699,7 @@ def api_player_packages(player_id: str):
         market_reference_deals: list = []
         total_real_trades: int       = 0
         combo_packages: list         = []
+        _pattern_debug: dict         = {}
 
         if viewer_player_ids and focus_value > 0:
             try:
@@ -16771,11 +16825,16 @@ def api_player_packages(player_id: str):
                 # Learns position+tier signatures from real trade history, then
                 # fills those slots from the viewer's actual roster. Surfaces first
                 # because it is most reflective of how this player actually trades.
-                pattern_pkgs = _pattern_based_packages(
+                _pat_thresholds = compute_tier_thresholds(
+                    val_table, "sf" if _is_sf else "1qb"
+                )
+                _pat_result = _pattern_based_packages(
                     focus_pid, focus_value, by_trade, viewer_players,
                     value_map, players_map, max_packages=9,
-                    pos_scarcity=_POS_SCARCITY,
+                    pos_scarcity=_POS_SCARCITY, debug=_debug,
+                    tier_thresholds=_pat_thresholds,
                 )
+                pattern_pkgs, _pattern_debug = _pat_result if _debug else (_pat_result, {})
                 for pkg in pattern_pkgs:
                     key = _pkg_key(pkg["send"])
                     if key in seen_player_sets:
@@ -16793,6 +16852,8 @@ def api_player_packages(player_id: str):
                         "is_profile_match": True,
                         "is_synthetic":     True,
                         "pattern_learned":  True,
+                        "pattern_sig":      pkg.get("pattern_sig", ""),
+                        "throw_in_sig":     pkg.get("throw_in_sig", ""),
                     })
 
                 # ── Layer A: Market-Matched Packages ──────────────────────────
@@ -16802,6 +16863,7 @@ def api_player_packages(player_id: str):
                 market_result = _real_trade_packages_for_target(
                     focus_pid, _is_sf, 12, viewer_players, viewer_pick_list,
                     values_by_id, max_packages=3,
+                    tier_thresholds=_pat_thresholds,
                 )
                 total_real_trades = market_result.get("total_real_trades", 0)
 
@@ -17033,7 +17095,7 @@ def api_player_packages(player_id: str):
             )) not in personalized_keys
         ]
 
-        resp = jsonify({
+        payload = {
             "packages":          personalized_packages + filtered_market_results[:limit],
             "real_packages":     market_reference_deals,
             "total_real_trades": total_real_trades,
@@ -17043,10 +17105,14 @@ def api_player_packages(player_id: str):
             "player_name":       player_name,
             "player_id":         player_id,
             "focus_value":       round(focus_value),
-        })
-        # Trade values update daily — cache for 1 hour in the browser, 6 hours
-        # shared across users via any CDN/reverse-proxy in front of this service.
-        resp.headers["Cache-Control"] = "public, max-age=3600, s-maxage=21600"
+        }
+        if _debug:
+            payload["_debug_patterns"] = _pattern_debug
+        resp = jsonify(payload)
+        if not _debug:
+            # Trade values update daily — cache for 1 hour in browser, 6 hours
+            # shared across users via any CDN/reverse-proxy.
+            resp.headers["Cache-Control"] = "public, max-age=3600, s-maxage=21600"
         return resp
 
     except Exception:
@@ -17429,7 +17495,9 @@ def _pattern_based_packages(
     players_map: dict,
     max_packages: int = 6,
     pos_scarcity: dict = None,
-) -> list:
+    debug: bool = False,
+    tier_thresholds: list = None,
+) -> list | tuple:
     """
     Learn the position+tier package patterns from real trades for focus_pid,
     then fill those pattern slots with the viewer's actual roster players.
@@ -17440,17 +17508,78 @@ def _pattern_based_packages(
     Returns packages in {"type", "send", "send_value"} format.
     """
     if not viewer_players or focus_value <= 0 or not by_trade:
-        return []
+        return ([], {}) if debug else []
 
     from collections import Counter, defaultdict
 
     def _tier(v):
-        for t, floor in enumerate([800, 500, 300, 200, 130, 80, 40], 1):
-            if v >= floor:
-                return t
-        return 8
+        return _asset_tier(v, tier_thresholds if tier_thresholds is not None else _FALLBACK_THRESHOLDS)
+
+    def _age_label(pos: str, age) -> str:
+        if age is None:
+            return "Prime"
+        age = int(age)
+        if pos == "QB":
+            if age <= 25: return "Young"
+            if age <= 32: return "Prime"
+            return "Vet"
+        elif pos == "RB":
+            if age <= 23: return "Young"
+            if age <= 26: return "Prime"
+            return "Vet"
+        elif pos == "TE":
+            if age <= 24: return "Young"
+            if age <= 29: return "Prime"
+            return "Vet"
+        else:  # WR and FLEX
+            if age <= 23: return "Young"
+            if age <= 28: return "Prime"
+            return "Vet"
 
     # ---- Step 1: Extract real-trade signatures --------------------------------
+    # Load pick values from the same source as the rest of the app (FantasyCalc +
+    # DynastyProcess, normalized by market calibration scale). Aggregate to
+    # per-round medians for proximity estimation. Falls back to hardcoded
+    # approximations if the pick table can't be loaded.
+    try:
+        from dashboard_services.picks import load_pick_value_table as _lpvt
+        import statistics as _stat
+        _ptbl = _lpvt()
+        _by_round: dict = {}
+        for _k, _v in _ptbl.items():
+            _parts = _k.split("_")
+            if len(_parts) >= 2 and _parts[1].isdigit():
+                _rnd = int(_parts[1])
+                _by_round.setdefault(_rnd, []).append(_v)
+        _PICK_VAL = {rnd: round(_stat.median(vals)) for rnd, vals in _by_round.items() if vals}
+        if not _PICK_VAL:
+            raise ValueError("empty pick table")
+    except Exception:
+        _PICK_VAL = {1: 500, 2: 150, 3: 75, 4: 40}
+
+    # Dynamic proximity window — tighter for elite players where overpay is larger
+    # in absolute terms and patterns are more meaningful.
+    _focus_tier = _tier(focus_value)
+    _prox_hi = {1: 1.10, 2: 1.15, 3: 1.20}.get(_focus_tier, 1.25)
+    _prox_lo = {1: 0.90, 2: 0.88, 3: 0.85}.get(_focus_tier, 0.80)
+
+    def _asset_slots(assets):
+        slots = []
+        for a in assets:
+            if a["asset_type"] == "pick":
+                rd = min(int(a.get("pick_round") or 4), 4)
+                slots.append(("PICK", rd, ""))
+            else:
+                pid     = str(a.get("player_id") or "")
+                v       = value_map.get(pid, 0)
+                pinfo   = players_map.get(pid) or {}
+                raw_pos = (pinfo.get("pos") or "FLEX").upper()
+                pos     = raw_pos if raw_pos in ("QB", "RB", "WR", "TE") else "FLEX"
+                age_lbl = _age_label(pos, pinfo.get("age"))
+                slots.append((pos, _tier(v), age_lbl))
+        slots.sort(key=lambda x: (x[1] if x[0] != "PICK" else 99, x[0]))
+        return slots
+
     sig_counter: Counter = Counter()
 
     for tid, sides in by_trade.items():
@@ -17463,66 +17592,108 @@ def _pattern_based_packages(
         if not focus_side:
             continue
         other_key = "b" if focus_side == "a" else "a"
+
+        # Assets sent TO GET the focus player (the cost package)
         other = [a for a in sides[other_key]
                  if not (a["asset_type"] == "player"
                          and str(a.get("player_id", "")) == focus_pid)]
+        # Assets that came WITH the focus player (throw-ins from seller)
+        throw_ins = [a for a in sides[focus_side]
+                     if not (a["asset_type"] == "player"
+                             and str(a.get("player_id", "")) == focus_pid)]
         if not other:
             continue
 
-        slots = []
-        for a in other:
-            if a["asset_type"] == "pick":
-                rd = min(int(a.get("pick_round") or 4), 4)
-                slots.append(("PICK", rd))
-            else:
-                pid     = str(a.get("player_id") or "")
-                v       = value_map.get(pid, 0)
-                raw_pos = ((players_map.get(pid) or {}).get("pos") or "FLEX").upper()
-                pos     = raw_pos if raw_pos in ("QB", "RB", "WR", "TE") else "FLEX"
-                slots.append((pos, _tier(v)))
+        other_val    = sum(
+            value_map.get(str(a.get("player_id") or ""), 0)
+            if a["asset_type"] == "player"
+            else _PICK_VAL.get(min(int(a.get("pick_round") or 4), 4), 40)
+            for a in other
+        )
+        throw_in_val = sum(
+            value_map.get(str(a.get("player_id") or ""), 0)
+            if a["asset_type"] == "player"
+            else _PICK_VAL.get(min(int(a.get("pick_round") or 4), 4), 40)
+            for a in throw_ins
+        )
 
-        # Sort so best tier (lowest number) comes first, break ties by pos
-        slots.sort(key=lambda x: (x[1] if x[0] != "PICK" else 99, x[0]))
-        if slots:
-            sig_counter[tuple(slots)] += 1
+        # Proximity check: cost ≈ focus_value + throw-ins (both sides must balance)
+        effective_cost = focus_value + throw_in_val
+        if other_val > 0 and not (_prox_lo * effective_cost <= other_val <= _prox_hi * effective_cost):
+            continue
+
+        send_slots     = tuple(_asset_slots(other))
+        throw_in_slots = tuple(_asset_slots(throw_ins))
+        if send_slots:
+            sig_counter[(send_slots, throw_in_slots)] += 1
+
+    # Filter low-frequency noise: threshold is 2% of total observed trade sigs,
+    # with a floor of 5. This scales with trade volume so Chase (500 trades) needs
+    # a pattern seen 10+ times while a mid-tier player (60 trades) only needs 5.
+    _total_sigs = sum(sig_counter.values())
+    _min_freq   = max(5, int(_total_sigs * 0.02))
+    sig_counter = Counter({k: v for k, v in sig_counter.items() if v >= _min_freq})
 
     if not sig_counter:
-        return []
+        return ([], {}) if debug else []
+
+    # Log the top patterns found so they're visible in server logs
+    _focus_name = (players_map.get(focus_pid) or {}).get("full_name") or focus_pid
+    app.logger.info(
+        "[patterns] %s (val=%.0f) — top patterns from %d trades (tier=%d, window=%.0f%%–%.0f%%):",
+        _focus_name, focus_value, sum(sig_counter.values()),
+        _focus_tier, _prox_lo * 100, _prox_hi * 100,
+    )
+
+    def _fmt_slots(slots):
+        return " + ".join(
+            f"PICK:R{t}" if pos == "PICK" else f"{pos}-T{t}-{age}"
+            for pos, t, age in slots
+        )
+
+    for (_send, _throw), _cnt in sig_counter.most_common(10):
+        _line = f"Send: {_fmt_slots(_send)}"
+        if _throw:
+            _line += f"  |  +throw-in: {_fmt_slots(_throw)}"
+        app.logger.info("[patterns]   %3dx  %s", _cnt, _line)
 
     # ---- Step 2: Apply learned patterns to viewer's roster -------------------
-    # Pattern packages use a slightly wider window (±13%) because the signatures
-    # already carry market validation — a slight value mismatch from the viewer's
-    # available players is acceptable.
-    lo       = focus_value * 0.87
-    hi       = focus_value * 1.13
-    tgt_tier = _tier(focus_value)
+    # Fairness window uses the same dynamic width as the proximity filter above
+    # so pattern application and pattern learning use consistent tolerances.
+    lo       = focus_value * _prox_lo
+    hi       = focus_value * _prox_hi
+    tgt_tier = _focus_tier
     ANCHOR_2 = focus_value * 0.75
     ANCHOR_3 = focus_value * 0.65
     sec_min  = {1: 300, 2: 200, 3: 130, 4: 80}.get(tgt_tier, 40)
     ter_min  = {1: 200, 2: 130, 3: 80,  4: 40}.get(tgt_tier, 40)
 
-    # Build position × tier pool from viewer's roster, best players first
+    # Build position × tier × age pool from viewer's roster, best players first
     pos_tier_pool: dict = defaultdict(list)
     for p in sorted(viewer_players, key=lambda x: -x["value"]):
-        t   = _tier(p["value"])
-        pos = (p.get("position") or "FLEX").upper()
-        pos = pos if pos in ("QB", "RB", "WR", "TE") else "FLEX"
-        pos_tier_pool[(pos, t)].append(p)
+        t       = _tier(p["value"])
+        pos     = (p.get("position") or "FLEX").upper()
+        pos     = pos if pos in ("QB", "RB", "WR", "TE") else "FLEX"
+        age_lbl = _age_label(pos, p.get("age"))
+        pos_tier_pool[(pos, t, age_lbl)].append(p)
+        pos_tier_pool[(pos, t, "")].append(p)  # age-agnostic fallback bucket
 
-    def _candidates(pos, tier, exclude_ids):
-        """Viewer players matching pos at tier ±1, closest tier first, excluding used."""
+    def _candidates(pos, tier, age_lbl, exclude_ids):
+        """Viewer players matching pos at tier ±1, preferring age match, excluding used."""
         seen   = set()
         result = []
+        age_keys = ([age_lbl, ""] if age_lbl else [""])
         for t_off in (0, 1, -1):
             t2 = tier + t_off
             if t2 < 1 or t2 > 8:
                 continue
             for bucket_pos in ((pos, "FLEX") if pos != "FLEX" else ("FLEX",)):
-                for p in pos_tier_pool.get((bucket_pos, t2), []):
-                    pid = p["player_id"]
-                    if pid not in exclude_ids and pid not in seen:
-                        seen.add(pid)
-                        result.append(p)
+                for ak in age_keys:
+                    for p in pos_tier_pool.get((bucket_pos, t2, ak), []):
+                        pid = p["player_id"]
+                        if pid not in exclude_ids and pid not in seen:
+                            seen.add(pid)
+                            result.append(p)
         result.sort(key=lambda p: abs(_tier(p["value"]) - tier))
         return result
 
@@ -17530,22 +17701,21 @@ def _pattern_based_packages(
     seen_keys: set = set()
     _sc = pos_scarcity or {}
 
-    for sig, freq in sig_counter.most_common(100):
-        player_slots = [(pos, t) for pos, t in sig if pos != "PICK"]
+    for (send_sig, throw_sig), freq in sig_counter.most_common(100):
+        player_slots = [(pos, t, age) for pos, t, age in send_sig if pos != "PICK"]
         if not player_slots or len(player_slots) > 3:
             continue  # skip pick-only or huge packages
 
-        # Try up to 3 different anchor players for each signature so one market
-        # pattern can produce multiple distinct packages from the viewer's roster.
-        anchor_pos, anchor_tier = player_slots[0]
-        anchor_cands = _candidates(anchor_pos, anchor_tier, set())[:3]
+        # Try up to 3 different anchor players per signature
+        anchor_pos, anchor_tier, anchor_age = player_slots[0]
+        anchor_cands = _candidates(anchor_pos, anchor_tier, anchor_age, set())[:3]
 
         for anchor in anchor_cands:
             used_ids: set = {anchor["player_id"]}
             filled: list  = [anchor]
             ok = True
-            for pos, tier in player_slots[1:]:
-                cands = _candidates(pos, tier, used_ids)
+            for pos, tier, age in player_slots[1:]:
+                cands = _candidates(pos, tier, age, used_ids)
                 if not cands:
                     ok = False
                     break
@@ -17555,11 +17725,8 @@ def _pattern_based_packages(
             if not ok or not filled:
                 continue
 
-            # Sort by value desc so anchor is first
             filled.sort(key=lambda p: -p["value"])
 
-            # Scarcity-adjusted value for the fairness window: RB-heavy packages
-            # aren't wrongly filtered vs WR-heavy ones; raw sum stored for display.
             raw_send_val = sum(p["value"] for p in filled)
             adj_send_val = sum(
                 p["value"] * _sc.get((p.get("position") or "").upper(), 1.0)
@@ -17584,12 +17751,22 @@ def _pattern_based_packages(
             seen_keys.add(pkg_key)
 
             size_lbl = "1-for-1" if n == 1 else f"{n}-for-1"
+
+            # Two-sided pattern label: what the viewer sends + what comes back with the elite
+            send_label = _fmt_slots(send_sig)
+            throw_label = _fmt_slots(throw_sig) if throw_sig else ""
+            pattern_sig = f"Send: {send_label}"
+            if throw_label:
+                pattern_sig += f"  |  +throw-in: {throw_label}"
+
             packages.append({
-                "type":       size_lbl,
-                "send":       filled,
-                "send_value": raw_send_val,
-                "_delta":     abs(adj_send_val - focus_value),
-                "_freq":      freq,
+                "type":        size_lbl,
+                "send":        filled,
+                "send_value":  raw_send_val,
+                "throw_in_sig": throw_label,
+                "_delta":      abs(adj_send_val - focus_value),
+                "_freq":       freq,
+                "pattern_sig": pattern_sig,
             })
 
             if len(packages) >= max_packages * 4:
@@ -17598,8 +17775,25 @@ def _pattern_based_packages(
         if len(packages) >= max_packages * 4:
             break
 
-    # Rank by pattern frequency (market signal), then closeness to fair value
     packages.sort(key=lambda x: (-x["_freq"], x["_delta"]))
+    if debug:
+        debug_info = {
+            "sig_counter": [
+                {
+                    "send_sig":     _fmt_slots(send),
+                    "throw_in_sig": _fmt_slots(throw),
+                    "count":        cnt,
+                }
+                for (send, throw), cnt in sig_counter.most_common(30)
+            ],
+            "total_trades_scanned": sum(sig_counter.values()),
+            "patterns_tried":       len(sig_counter),
+            "packages_before_cap":  len(packages),
+        }
+        for pkg in packages:
+            del pkg["_delta"]
+            del pkg["_freq"]
+        return packages[:max_packages], debug_info
     for pkg in packages:
         del pkg["_delta"]
         del pkg["_freq"]
@@ -17817,6 +18011,7 @@ def _real_trade_packages_for_target(
     viewer_picks: list[dict],
     values_by_id: dict,
     max_packages: int = 3,
+    tier_thresholds: list = None,
 ) -> dict:
     """
     Find real trades where target_player_id was acquired in comparable leagues,
@@ -17878,10 +18073,13 @@ def _real_trade_packages_for_target(
     if not total_real_trades:
         return {"packages": [], "total_real_trades": 0}
 
-    target_info = values_by_id.get(str(target_player_id))
+    target_info  = values_by_id.get(str(target_player_id))
     target_value = target_info["value"] if target_info else 300
-    max_send_value = target_value * 1.10  # no more than 10% overpay
-    min_send_value = target_value * 0.90  # reject packages that underpay by more than 10%
+    _tgt_tier    = _asset_tier(target_value, tier_thresholds if tier_thresholds is not None else _FALLBACK_THRESHOLDS)
+    _prox_hi     = {1: 1.10, 2: 1.15, 3: 1.20}.get(_tgt_tier, 1.25)
+    _prox_lo     = {1: 0.90, 2: 0.88, 3: 0.85}.get(_tgt_tier, 0.80)
+    max_send_value = target_value * _prox_hi
+    min_send_value = target_value * _prox_lo
 
     # Build position / value-bucket / player-profile signature for each trade package.
     # Fix 4: preserve slot ORDER (anchor first by value desc, picks last) so the
@@ -18151,7 +18349,7 @@ def api_trade_ideas_for_target():
                 _pid = str(_r["player_id"])
                 if _pid in values_by_id:
                     values_by_id[_pid]["buy_sell_ratio"] = float(_r["buy_sell_ratio"] or 1.0)
-                    values_by_id[_pid]["market_trend"]   = float(_r["market_trend"] or 0.0)
+                    values_by_id[_pid]["market_trend"]   = round(float(_r["market_trend"] or 0.0) * _market_scale(), 1)
         except Exception:
             pass  # market signals optional — fall back to rank_change_7d only
 
