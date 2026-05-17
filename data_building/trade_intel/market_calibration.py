@@ -251,25 +251,12 @@ def _calibrate_one(
     rookie_ok  = not is_rookie or trade_count >= ROOKIE_DIRECT_THRESHOLD
 
     if has_direct and rookie_ok:
-        weight  = _blend_weight(market)
         mkt_1qb = market["market_1qb"]
         mkt_sf  = market["market_sf"]
-
-        # When there's a strong trend, pull the calibrated value toward
-        # the recent market direction, not just the weighted median
-        trend = market["trend_1qb"]
-        if abs(trend) >= TREND_BOOST_THRESHOLD:
-            # Nudge by up to half the trend signal (don't chase noise)
-            trend_nudge = trend * 0.5
-            mkt_1qb = mkt_1qb + trend_nudge
-            mkt_sf  = mkt_sf  + (market["trend_sf"] * 0.5)
-
-        cal_1qb = round(model_1qb * (1 - weight) + mkt_1qb * weight, 2)
-        cal_sf  = round(model_sf  * (1 - weight) + mkt_sf  * weight, 2)
         return {
-            "calibrated_value_1qb": max(0, cal_1qb),
-            "calibrated_value_sf":  max(0, cal_sf),
-            "calibration_weight":   weight,
+            "calibrated_value_1qb": max(0, min(999.9, round(mkt_1qb, 2))),
+            "calibrated_value_sf":  max(0, min(999.9, round(mkt_sf,  2))),
+            "calibration_weight":   1.0,
             "calibration_source":   "direct",
         }
 
@@ -278,8 +265,8 @@ def _calibrate_one(
         ratio = _find_tier_ratio(pos, model_1qb, tier_ratios)
         if ratio is not None:
             return {
-                "calibrated_value_1qb": round(model_1qb * ratio, 2),
-                "calibrated_value_sf":  round(model_sf  * ratio, 2),
+                "calibrated_value_1qb": min(999.9, round(model_1qb * ratio, 2)),
+                "calibrated_value_sf":  min(999.9, round(model_sf  * ratio, 2)),
                 "calibration_weight":   round(ratio - 1.0, 3),
                 "calibration_source":   "tier_anchor",
             }
