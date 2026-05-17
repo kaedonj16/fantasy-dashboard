@@ -1020,12 +1020,12 @@ def predict_scaled_value_from_row(bundle: TrainedModelBundle, row: pd.Series) ->
         return 0.0
 
     s01 = (raw_pred - scale_min) / (scale_max - scale_min)
-    s01 = max(0.0, s01)
+    s01 = max(0.0, min(1.0, s01))
 
     # Apply power boost for elite players (top 10% of predictions)
     if s01 > 0.85:
         boost_factor = 1.0 + (s01 - 0.85) * 0.3
-        s01 = s01 * boost_factor
+        s01 = min(1.0, s01 * boost_factor)
 
     return round(s01 * 999.9, 1)
 

@@ -208,8 +208,8 @@ def _calibrate_one(
         mkt_1qb = market["market_1qb"]
         mkt_sf  = market["market_sf"]
         return {
-            "calibrated_value_1qb": max(0, round(mkt_1qb, 2)),
-            "calibrated_value_sf":  max(0, round(mkt_sf,  2)),
+            "calibrated_value_1qb": max(0, min(999.9, round(mkt_1qb, 2))),
+            "calibrated_value_sf":  max(0, min(999.9, round(mkt_sf,  2))),
             "calibration_weight":   1.0,
             "calibration_source":   "direct",
         }
@@ -219,8 +219,8 @@ def _calibrate_one(
         ratio = _find_tier_ratio(pos, model_1qb, tier_ratios)
         if ratio is not None:
             return {
-                "calibrated_value_1qb": round(model_1qb * ratio, 2),
-                "calibrated_value_sf":  round(model_sf  * ratio, 2),
+                "calibrated_value_1qb": min(999.9, round(model_1qb * ratio, 2)),
+                "calibrated_value_sf":  min(999.9, round(model_sf  * ratio, 2)),
                 "calibration_weight":   round(ratio - 1.0, 3),
                 "calibration_source":   "tier_anchor",
             }
