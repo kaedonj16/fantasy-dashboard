@@ -23,8 +23,8 @@ from dashboard_services.db import get_conn
 
 logger = logging.getLogger(__name__)
 
-MIN_TRADES_FOR_SIGNAL       = 25     # below this = model only (raised to filter noise)
-ROOKIE_DIRECT_THRESHOLD     = 25     # rookies need more trades before direct use
+MIN_TRADES_FOR_SIGNAL       = 5      # below this = model only
+ROOKIE_DIRECT_THRESHOLD     = 15     # rookies need more trades before direct use
 
 
 # ---------------------------------------------------------------------------
@@ -293,29 +293,6 @@ def run_calibration(season: int | None = None) -> dict:
         "[calibration] %d players in model, %d with market data",
         len(model_rows), len(market_map)
     )
-
-    # Normalize raw market values to 0–999.9 scale.
-    # Raw trade data can be in any scale; we find the highest-traded player
-    # (by trade volume, minimum 50 trades) and set them as the 999.9 anchor.
-    anchor_vals_1qb = [
-        m["market_1qb"] for m in market_map.values()
-        if m["trade_count"] >= 50 and m["market_1qb"] > 0
-    ]
-    anchor_vals_sf = [
-        m["market_sf"] for m in market_map.values()
-        if m["trade_count"] >= 50 and m["market_sf"] > 0
-    ]
-    raw_max_1qb = max(anchor_vals_1qb) if anchor_vals_1qb else 1.0
-    raw_max_sf  = max(anchor_vals_sf)  if anchor_vals_sf  else 1.0
-    scale_1qb = 999.9 / raw_max_1qb
-    scale_sf  = 999.9 / raw_max_sf
-    logger.info(
-        "[calibration] Market scale anchors — 1QB max=%.1f (scale=%.4f)  SF max=%.1f (scale=%.4f)",
-        raw_max_1qb, scale_1qb, raw_max_sf, scale_sf,
-    )
-    for m in market_map.values():
-        m["market_1qb"] = round(m["market_1qb"] * scale_1qb, 2)
-        m["market_sf"]  = round(m["market_sf"]  * scale_sf,  2)
 
     logger.info("[calibration] Building position-tier ratios for rookie anchoring...")
     tier_ratios = _build_tier_ratios(model_rows, market_map)
