@@ -18,14 +18,6 @@ from dashboard_services.db import get_conn
 
 MIN_TRADES = 5
 
-# Must match market_calibration.py _SF_CAP
-_SF_CAP: dict[str, float] = {
-    "QB": 9999.0,
-    "RB": 1.0,
-    "WR": 1.0,
-    "TE": 1.0,
-}
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -74,8 +66,7 @@ def main():
         cur_1qb = float(row["cur_1qb"] or 0)
         cur_sf  = float(row["cur_sf"]  or 0)
         mkt_1qb = float(row["mkt_1qb"] or 0)
-        sf_cap  = _SF_CAP.get(pos, 1.0)
-        mkt_sf  = min(float(row["mkt_sf"] or mkt_1qb), mkt_1qb * sf_cap)
+        mkt_sf  = float(row["mkt_sf"]  or mkt_1qb)
 
         if args.capped_only and cur_1qb < 999.0 and cur_sf < 999.0:
             continue

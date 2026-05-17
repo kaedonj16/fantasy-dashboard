@@ -26,17 +26,6 @@ logger = logging.getLogger(__name__)
 MIN_TRADES_FOR_SIGNAL       = 5      # below this = model only
 ROOKIE_DIRECT_THRESHOLD     = 15     # rookies need more trades before direct blend
 
-# In SF leagues the overall market is inflated due to QB scarcity, which
-# pushes every player's nominal price up even if their relative value didn't
-# change. Cap the SF/1QB ratio for non-QB positions so the premium stays
-# realistic. QBs are uncapped — they're the entire reason SF premiums exist.
-_SF_CAP: dict[str, float] = {
-    "QB": 9999.0,  # uncapped — QB scarcity is the entire SF premium
-    "RB": 1.0,
-    "WR": 1.0,
-    "TE": 1.0,
-}
-
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -218,8 +207,6 @@ def _calibrate_one(
     if has_direct and rookie_ok:
         mkt_1qb = market["market_1qb"]
         mkt_sf  = market["market_sf"]
-        sf_cap  = _SF_CAP.get(pos.upper(), 1.08)
-        mkt_sf  = min(mkt_sf, mkt_1qb * sf_cap)
         return {
             "calibrated_value_1qb": max(0, round(mkt_1qb, 2)),
             "calibrated_value_sf":  max(0, round(mkt_sf,  2)),
@@ -231,13 +218,9 @@ def _calibrate_one(
     if is_rookie and model_1qb > 0:
         ratio = _find_tier_ratio(pos, model_1qb, tier_ratios)
         if ratio is not None:
-            cal_1qb = round(model_1qb * ratio, 2)
-            cal_sf  = round(model_sf  * ratio, 2)
-            sf_cap  = _SF_CAP.get(pos.upper(), 1.08)
-            cal_sf  = min(cal_sf, cal_1qb * sf_cap)
             return {
-                "calibrated_value_1qb": cal_1qb,
-                "calibrated_value_sf":  round(cal_sf, 2),
+                "calibrated_value_1qb": round(model_1qb * ratio, 2),
+                "calibrated_value_sf":  round(model_sf  * ratio, 2),
                 "calibration_weight":   round(ratio - 1.0, 3),
                 "calibration_source":   "tier_anchor",
             }
