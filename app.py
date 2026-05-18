@@ -1119,11 +1119,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if not offseason_mode:
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
     nav_pills.append(nav_pill_dropdown("League", [
-        ("Standings", "page_standings", "standings", False, False),
-        ("Teams",     "page_teams",     "teams",     False, False),
-        ("Activity",  "page_activity",  "activity",  False, False),
-        ("Waivers",   "page_waivers",   "waivers",   False, False),
-    ], ["standings", "teams", "activity", "waivers"], "teamsNavDropdown"))
+        ("Standings", "page_standings", "standings", False),
+        ("Teams",     "page_teams",     "teams",     False),
+        ("Activity",  "page_activity",  "activity",  False),
+    ], ["standings", "teams", "activity"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
@@ -1134,7 +1133,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Graphs",  "page_graphs",  "graphs",  False),
         ("History", "page_history", "history", False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
-    nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
 
     # Changelog bell
     # League switcher dropdown (if user is logged in)
