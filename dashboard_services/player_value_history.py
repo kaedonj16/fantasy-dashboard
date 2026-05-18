@@ -341,16 +341,8 @@ def load_current_values_from_db() -> list[dict]:
                     """
                     SELECT
                         player_id  AS id,
-                        CASE
-                            WHEN value_1qb > 0 AND calibrated_value_1qb > value_1qb * 3 THEN value_1qb
-                            WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_1qb > 100   THEN value_1qb
-                            ELSE calibrated_value_1qb
-                        END AS value,
-                        CASE
-                            WHEN value_1qb > 0 AND calibrated_value_sf > value_1qb * 3 THEN COALESCE(value_sf, value_1qb)
-                            WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_sf > 100    THEN COALESCE(value_sf, value_1qb)
-                            ELSE calibrated_value_sf
-                        END AS sf_value,
+                        value_1qb AS value,
+                        COALESCE(value_sf, value_1qb) AS sf_value,
                         value_1qb  AS model_value,
                         value_sf   AS model_sf_value,
                         COALESCE(calibrated_value_8,      value_8)      AS value_8,
@@ -375,8 +367,8 @@ def load_current_values_from_db() -> list[dict]:
                         redraft_value_1qb,
                         redraft_value_sf
                     FROM player_values
-                    WHERE calibrated_value_1qb IS NOT NULL
-                    ORDER BY calibrated_value_1qb DESC NULLS LAST
+                    WHERE value_1qb IS NOT NULL
+                    ORDER BY value_1qb DESC NULLS LAST
                     """
                 )
                 rows = cur.fetchall()
@@ -496,23 +488,25 @@ def load_current_values_from_db() -> list[dict]:
 
 def load_calibration_overrides() -> dict[str, dict]:
     """
-    Return {player_id: {value, sf_value, value_8, value_12, value_14, sf_value_8, ...}}
-    for every player that has been market-calibrated.  Size-specific keys are included
-    when the corresponding calibrated_value_{size} columns are populated.
-    Falls back to empty dict if the DB is unavailable or the columns don't exist.
+    Calibration overrides disabled — DB calibrated values are corrupted from
+    bad pipeline runs. Returns empty dict so the app always uses the clean
+    model_values.json values. Re-enable once market_calibration.py has been
+    re-run against correct model values.
     """
-    try:
+    return {}
+
+    try:  # noqa: unreachable
         with get_conn() as conn:
             rows = conn.execute(
                 """
                 SELECT player_id,
                        CASE
-                           WHEN value_1qb > 0 AND calibrated_value_1qb > value_1qb * 3 THEN value_1qb
+                           WHEN value_1qb > 0 AND calibrated_value_1qb > value_1qb * 1.5 THEN value_1qb
                            WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_1qb > 100   THEN value_1qb
                            ELSE calibrated_value_1qb
                        END AS value,
                        CASE
-                           WHEN value_1qb > 0 AND calibrated_value_sf > value_1qb * 3 THEN COALESCE(value_sf, value_1qb)
+                           WHEN value_1qb > 0 AND calibrated_value_sf > value_1qb * 1.5 THEN COALESCE(value_sf, value_1qb)
                            WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_sf > 100    THEN COALESCE(value_sf, value_1qb)
                            ELSE COALESCE(calibrated_value_sf, calibrated_value_1qb)
                        END AS sf_value,
