@@ -2677,20 +2677,20 @@ window.initTradePage = function initTradePage(root = document) {
             <span class="otc-sugg-pkg-value ${vc}">${pkg.value_label}</span>
             ${freqLabel}
           </div>
-          <div class="otc-sugg-pkg-sides">
-            <div class="otc-sugg-pkg-side">
-              <div class="otc-sugg-pkg-side-label">You get</div>
+          <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:6px;margin-top:6px;">
+            <div>
+              <div class="otc-sugg-pkg-side-label">YOU GET</div>
               <div class="otc-sugg-pkg-assets">
-                <div class="otc-sugg-pkg-asset">
-                  <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
-                  ${playerName}
+                <div class="otc-sugg-pkg-asset" style="overflow:hidden;">
+                  <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};flex-shrink:0;">${focusPos}</span>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${playerName}</span>
                 </div>
                 ${extraAssetHtml}
               </div>
             </div>
-            <div class="otc-sugg-pkg-divider">←</div>
-            <div class="otc-sugg-pkg-side">
-              <div class="otc-sugg-pkg-side-label">You give</div>
+            <div class="otc-sugg-pkg-divider" style="padding-top:18px;">←</div>
+            <div>
+              <div class="otc-sugg-pkg-side-label">YOU GIVE</div>
               <div class="otc-sugg-pkg-assets">${pkg.assets.map(assetHtml).join("")}</div>
             </div>
           </div>
@@ -2776,19 +2776,22 @@ window.initTradePage = function initTradePage(root = document) {
 
         // ── Common archetype patterns ─────────────────────────────
         if (_pkgArchetypes.length) {
-          realTradeHtml += `<div style="margin-bottom:10px;border-radius:8px;border:1px solid var(--border);overflow:hidden;">
+          realTradeHtml += `<div style="margin-bottom:12px;border-radius:8px;border:1px solid var(--border);overflow:hidden;">
             <div style="padding:6px 10px;background:var(--surface-2,rgba(0,0,0,.04));border-bottom:1px solid var(--border);font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">
               Common archetypes sent
-            </div>`;
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">`;
           _pkgArchetypes.forEach((ap, idx) => {
             const sigHtml = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
-            const pct     = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;">${ap.pct}%</span>` : '';
-            realTradeHtml += `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;${idx > 0 ? 'border-top:1px solid var(--border);' : ''}">
-              <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;">${sigHtml}</div>
+            const pct     = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${ap.pct}%</span>` : '';
+            const borderTop = idx >= 2 ? 'border-top:1px solid var(--border);' : '';
+            const borderRight = idx % 2 === 0 ? 'border-right:1px solid var(--border);' : '';
+            realTradeHtml += `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;padding:7px 10px;${borderTop}${borderRight}min-width:0;">
+              <div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;min-width:0;">${sigHtml}</div>
               ${pct}
             </div>`;
           });
-          realTradeHtml += `</div>`;
+          realTradeHtml += `</div></div>`;
         }
 
         // ── Individual real-trade examples (card style matching top packages) ──
@@ -2801,15 +2804,15 @@ window.initTradePage = function initTradePage(root = document) {
 
             function tradeAssetHtml(a) {
               if (a.is_pick || a.type === "pick") {
-                return `<div class="otc-sugg-pkg-asset">
-                  <span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>
-                  ${a.name || "Pick"}
+                return `<div class="otc-sugg-pkg-asset" style="overflow:hidden;">
+                  <span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;flex-shrink:0;">PICK</span>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.name || "Pick"}</span>
                 </div>`;
               }
               const col = posColor(a.position);
-              return `<div class="otc-sugg-pkg-asset">
-                <span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${a.position}</span>
-                <span style="color:${isRef ? 'var(--text-muted)' : 'var(--text)'}">${a.name}</span>
+              return `<div class="otc-sugg-pkg-asset" style="overflow:hidden;">
+                <span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};flex-shrink:0;">${a.position}</span>
+                <span style="color:${isRef ? 'var(--text-muted)' : 'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.name}</span>
               </div>`;
             }
 
@@ -2827,22 +2830,22 @@ window.initTradePage = function initTradePage(root = document) {
 
             realTradeHtml += `<div class="otc-sugg-package">
               <div class="otc-sugg-pkg-meta">
-                <span class="otc-sugg-pkg-value fair">Market pattern</span>
-                ${freqLabel}
+                <span class="otc-sugg-pkg-value fair">${count}× traded</span>
+                ${isRef ? '<span class="otc-sugg-pkg-freq" style="color:var(--text-muted);">Reference</span>' : ''}
               </div>
-              <div class="otc-sugg-pkg-sides">
-                <div class="otc-sugg-pkg-side">
-                  <div class="otc-sugg-pkg-side-label">You get</div>
+              <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:6px;margin-top:6px;">
+                <div>
+                  <div class="otc-sugg-pkg-side-label">YOU GET</div>
                   <div class="otc-sugg-pkg-assets">
                     <div class="otc-sugg-pkg-asset">
                       <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
-                      ${_pkgPlayerName}
+                      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_pkgPlayerName}</span>
                     </div>
                   </div>
                 </div>
-                <div class="otc-sugg-pkg-divider">←</div>
-                <div class="otc-sugg-pkg-side">
-                  <div class="otc-sugg-pkg-side-label">You give</div>
+                <div class="otc-sugg-pkg-divider" style="padding-top:18px;">←</div>
+                <div>
+                  <div class="otc-sugg-pkg-side-label">YOU GIVE</div>
                   <div class="otc-sugg-pkg-assets">${giveHtml}</div>
                 </div>
               </div>

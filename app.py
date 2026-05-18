@@ -16813,7 +16813,8 @@ def api_trade_intel_player_packages(player_id: str):
                         pval = pick_val_lookup.get(f"{yr}_{rnd}", 0) or (
                             220 if rnd == 1 else 130 if rnd == 2 else 70
                         )
-                        viewer_picks.append({"name": pk_name, "value": pval, "is_pick": True})
+                        viewer_picks.append({"name": pk_name, "value": pval, "is_pick": True,
+                                             "pick_season": yr, "pick_round": rnd})
             except Exception:
                 pass  # League context is best-effort
 
@@ -17175,6 +17176,8 @@ def _real_trade_packages_for_target(
                     fallback_assets.append({
                         "name": f"{suffix} Round ({slot_bucket})", "is_pick": True,
                         "pick_round": rnd,
+                        "pick_season": datetime.now().year,
+                        "pick_order": slot_bucket,
                         "value": _pick_val(rnd),
                         "is_reference": True,
                     })
