@@ -12957,6 +12957,28 @@ def api_player_details(player_id: str):
             except Exception as pe:
                 print(f"[api_player_details] prospect lookup error: {pe}")
 
+        # ── Fantasy team ownership (only when league context is provided) ──
+        fantasy_team = None
+        fantasy_team_owner = None
+        if league_id:
+            try:
+                from dashboard_services.service import fantasy_team_and_roster_for_player as _ft_lookup
+                _ctx = get_league_ctx_from_cache(platform, league_id, season)
+                _rosters = _ctx.get("rosters") or []
+                _users   = _ctx.get("users")   or []
+                _rmap    = _build_roster_map(_users, _rosters)
+                _team_name, _rid = _ft_lookup(str(player_id), _rosters, _rmap)
+                if _team_name and _team_name != "Free Agent":
+                    fantasy_team = _team_name
+                    # Find the owner's username for the sub-label
+                    _roster_obj = next((r for r in _rosters if str(r.get("roster_id")) == _rid), None)
+                    if _roster_obj:
+                        _owner_id = _roster_obj.get("owner_id")
+                        _user = next((u for u in _users if u.get("user_id") == _owner_id), None)
+                        fantasy_team_owner = (_user or {}).get("display_name") or (_user or {}).get("username")
+            except Exception as _fe:
+                logger.debug("[api_player_details] roster lookup failed: %s", _fe)
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -12966,6 +12988,8 @@ def api_player_details(player_id: str):
             "pos_rank": player_value.get("pos_rank"),
             "pos_rank_label": player_value.get("pos_rank_label"),
             "espnHeadshot": player_meta.get("espnHeadshot"),
+            "fantasy_team": fantasy_team,
+            "fantasy_team_owner": fantasy_team_owner,
             "stats": {
                 "value": round(player_value.get("value", 0), 1) if player_value.get("value") else None,
                 "sf_value": round(player_value.get("sf_value", 0), 1) if player_value.get("sf_value") else None,
