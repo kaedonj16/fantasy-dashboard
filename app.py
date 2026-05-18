@@ -1148,9 +1148,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill_dropdown("Trades", [
-        ("Trade Calculator", "page_trade",          "trade",          False),
-        ("Trade Database",   "page_trade_database", "trade-database", False),
-        ("Trade Intel",      "page_trade_intel",    "trade-intel",    False),
+        ("Trade Calculator", "trade.page_trade",          "trade",          False),
+        ("Trade Database",   "trade.page_trade_database", "trade-database", False),
+        ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Weekly Hub only makes sense once games are being played
     draft_ended = has_draft_ended(league_id, platform, season)
