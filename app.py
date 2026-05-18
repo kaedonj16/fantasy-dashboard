@@ -12173,7 +12173,15 @@ def get_model_value_table_cached():
     now = time.time()
     if _MODEL_VALUE_CACHE is not None and now - _MODEL_VALUE_CACHE_TS < _MODEL_VALUE_TTL:
         return _MODEL_VALUE_CACHE
-    tbl = list(load_model_value_table() or [])
+    # Prefer DB (player_values table) so all endpoints use the same source.
+    tbl = None
+    try:
+        from dashboard_services.player_value_history import load_current_values_from_db
+        tbl = load_current_values_from_db() or None
+    except Exception as _e:
+        print(f"[model-value-cache] DB load failed: {_e}")
+    if not tbl:
+        tbl = list(load_model_value_table() or [])
 
     # Append rookie prospects (mirrors /api/league-players logic)
     try:
@@ -12855,15 +12863,14 @@ def api_players():
 
 @app.route("/api/league-players")
 def api_league_players():
-    # Use the same cached JSON-backed table as trade-eval so values are consistent.
-    # DB load is kept as a fallback only (DB values may be stale/corrupted).
-    model_value_table = list(get_model_value_table_cached() or [])
-    if not model_value_table:
-        try:
-            from dashboard_services.player_value_history import load_current_values_from_db
-            model_value_table = load_current_values_from_db() or []
-        except Exception as e:
-            print(f"[api/league-players] Database load failed: {e}")
+    try:
+        from dashboard_services.player_value_history import load_current_values_from_db
+        model_value_table = load_current_values_from_db()
+        if not model_value_table:
+            model_value_table = list(get_model_value_table_cached() or [])
+    except Exception as e:
+        print(f"[api/league-players] Database load failed: {e}, falling back to JSON")
+        model_value_table = list(get_model_value_table_cached() or [])
     
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
