@@ -957,5 +957,17 @@ def run_trade_model(
 
 
 if __name__ == "__main__":
+    import argparse
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    print(run_analytics())
+
+    parser = argparse.ArgumentParser(description="Trade Intel analytics + ML model runner")
+    parser.add_argument("--model-only", action="store_true", help="Train ML model only (skip player/package stats)")
+    parser.add_argument("--force", action="store_true", help="Force retrain even if model is fresh")
+    parser.add_argument("--season", type=int, default=None, help="Season year (default: auto-detect)")
+    args = parser.parse_args()
+
+    if args.model_only:
+        print(run_trade_model(season=args.season, force=args.force))
+    else:
+        print(run_analytics(season=args.season))
+        print(run_trade_model(season=args.season, force=args.force))
