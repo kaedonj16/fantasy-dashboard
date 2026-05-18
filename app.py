@@ -17134,7 +17134,7 @@ def _real_trade_packages_for_target(
                 break
 
     # Pre-filter sig_counts: drop patterns whose total estimated value is < 55% of target
-    _value_floor = focus_value * 0.55 if focus_value > 0 else 0
+    _value_floor = focus_value * 0.85 if focus_value > 0 else 0
     if _value_floor > 0:
         sig_counts = {k: v for k, v in sig_counts.items()
                       if _sig_estimate_value(k) >= _value_floor}
