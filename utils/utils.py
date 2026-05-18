@@ -245,7 +245,16 @@ def load_relevant_index() -> Optional[Dict]:
 
 
 def load_usage_table() -> Optional[Dict]:
-    return read_json(path_usage_table())
+    # Try today's file first, then fall back to most recent existing file
+    today = read_json(path_usage_table())
+    if today is not None:
+        return today
+    candidates = sorted(DATA_DIR.glob("usage_table_*.json"), reverse=True)
+    for c in candidates:
+        data = read_json(str(c))
+        if data is not None:
+            return data
+    return None
 
 
 def load_engine_table():
