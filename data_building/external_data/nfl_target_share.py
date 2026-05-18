@@ -2,6 +2,7 @@
 
 import concurrent.futures
 import json
+import time
 from datetime import date
 from io import StringIO
 from pathlib import Path
@@ -106,14 +107,13 @@ def fetch_league_target_share(season: int) -> Dict[Tuple[str, str], Dict[str, fl
     # Check cache first (daily cache)
     cache_dir = Path(DATA_DIR).parent / "cache" / "target_share"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_path = cache_dir / f"target_share_{season}_{date.today().isoformat()}.json"
+    cache_path = cache_dir / f"target_share_{season}.json"
 
-    if cache_path.exists():
+    if cache_path.exists() and (time.time() - cache_path.stat().st_mtime) < 86400:
         try:
             print(f"[target_share] Loading from cache: {cache_path.name}")
             with cache_path.open("r") as f:
                 cached_data = json.load(f)
-                # Convert string keys back to tuples
                 league_map = {}
                 for key_str, value in cached_data.items():
                     team, name = json.loads(key_str)
@@ -122,15 +122,6 @@ def fetch_league_target_share(season: int) -> Dict[Tuple[str, str], Dict[str, fl
                 return league_map
         except Exception as e:
             print(f"[target_share] Cache read failed: {e}, fetching fresh data")
-
-    # Remove old cache files for this season
-    for old_file in cache_dir.glob(f"target_share_{season}_*.json"):
-        if old_file != cache_path:
-            try:
-                old_file.unlink()
-                print(f"[target_share] Removed old cache: {old_file.name}")
-            except Exception:
-                pass
 
     league_map: Dict[Tuple[str, str], Dict[str, float]] = {}
 

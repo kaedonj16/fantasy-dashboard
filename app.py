@@ -67,7 +67,6 @@ from dashboard_services.pages.history_page import (
     _build_summary as _build_history_summary,
 )
 from dashboard_services.pages.trade_calculator_page import build_trade_calculator_body
-from dashboard_services.pages.waivers_page import build_waivers_body
 from dashboard_services.picks import load_pick_value_table
 from dashboard_services.platform_api import (
     get_bracket,
@@ -151,9 +150,9 @@ if _sentry_dsn:
         )
         logger.info("[sentry] Error tracking enabled")
     except ImportError:
-        logger.warning("[sentry] sentry-sdk not installed - error tracking disabled")
+        logger.warning("[sentry] sentry-sdk not installed — error tracking disabled")
 else:
-    logger.info("[sentry] SENTRY_DSN not set - error tracking disabled")
+    logger.info("[sentry] SENTRY_DSN not set — error tracking disabled")
 
 DASHBOARD_CACHE = {}
 # Per-key locks prevent simultaneous first-loads for the same league from both
@@ -192,7 +191,6 @@ def _static_hash(filename: str) -> str:
         return "0"
 
 _APP_JS_V = _static_hash("app.js")
-_CSS_V = _static_hash("dashboard.css")
 _PAYWALL_JS_V = _static_hash("paywall.js")
 
 
@@ -210,7 +208,7 @@ def _add_cache_headers(response):
 _secret_key = os.environ.get('FLASK_SECRET_KEY', '')
 if not _secret_key:
     logging.warning(
-        "FLASK_SECRET_KEY is not set - using insecure default. "
+        "FLASK_SECRET_KEY is not set — using insecure default. "
         "Set this env var in production to protect session cookies."
     )
     _secret_key = 'dev-secret-key-change-in-production'
@@ -232,7 +230,7 @@ try:
     backend = "redis" if _redis_url else "memory (set REDIS_URL for multi-worker)"
     logger.info("[limiter] Flask-Limiter enabled (%s backend)", backend)
 except ImportError:
-    logger.warning("[limiter] Flask-Limiter not installed - rate limiting disabled")
+    logger.warning("[limiter] Flask-Limiter not installed — rate limiting disabled")
     class _NoopLimiter:
         def limit(self, *a, **kw):
             def decorator(f): return f
@@ -259,42 +257,6 @@ try:
     logger.info("[rookie-api] Rookie API endpoints registered")
 except Exception as e:
     logger.warning("[rookie-api] Registration skipped: %s", e)
-
-# Register blueprints
-try:
-    from routes.public_bp import public_bp
-    app.register_blueprint(public_bp)
-    logger.info("[public-bp] registered")
-except Exception as e:
-    logger.warning("[public-bp] skipped: %s", e)
-
-try:
-    from routes.auth_bp import auth_bp
-    app.register_blueprint(auth_bp)
-    logger.info("[auth-bp] registered")
-except Exception as e:
-    logger.warning("[auth-bp] skipped: %s", e)
-
-try:
-    from routes.billing_bp import billing_bp
-    app.register_blueprint(billing_bp)
-    logger.info("[billing-bp] registered")
-except Exception as e:
-    logger.warning("[billing-bp] skipped: %s", e)
-
-try:
-    from routes.trade_bp import trade_bp
-    app.register_blueprint(trade_bp)
-    logger.info("[trade-bp] registered")
-except Exception as e:
-    logger.warning("[trade-bp] skipped: %s", e)
-
-try:
-    from routes.players_bp import players_bp
-    app.register_blueprint(players_bp)
-    logger.info("[players-bp] registered")
-except Exception as e:
-    logger.warning("[players-bp] skipped: %s", e)
 
 
 def generate_recent_updates_html(limit=5):
@@ -361,25 +323,6 @@ def get_team_full_name(abbreviation: str) -> str:
     return team_names.get(abbreviation.upper(), abbreviation)
 
 
-NFL_CITY_MAP: dict[str, str] = {
-    "ARI": "Arizona", "ATL": "Atlanta", "BAL": "Baltimore", "BUF": "Buffalo",
-    "CAR": "Carolina", "CHI": "Chicago", "CIN": "Cincinnati", "CLE": "Cleveland",
-    "DAL": "Dallas", "DEN": "Denver", "DET": "Detroit", "GB": "Green Bay",
-    "HOU": "Houston", "IND": "Indianapolis", "JAX": "Jacksonville",
-    "KC": "Kansas City", "LAC": "LA Chargers", "LAR": "LA Rams",
-    "LV": "Las Vegas", "MIA": "Miami", "MIN": "Minnesota",
-    "NE": "New England", "NO": "New Orleans", "NYG": "NY Giants", "NYJ": "NY Jets",
-    "PHI": "Philadelphia", "PIT": "Pittsburgh", "SEA": "Seattle",
-    "SF": "San Francisco", "TB": "Tampa Bay", "TEN": "Tennessee",
-    "WAS": "Washington", "WSH": "Washington",
-}
-
-
-def get_team_city(abbreviation: str) -> str:
-    """Return city/short name for an NFL team abbreviation."""
-    return NFL_CITY_MAP.get((abbreviation or "").upper(), abbreviation)
-
-
 FORM_BODY = """
 <div class="home-page">
   <section class="home-hero">
@@ -390,10 +333,10 @@ FORM_BODY = """
       </p>
 
       <ul class="home-bullets">
-        <li><strong>AI Trade Analyst</strong> - Personalized deal evaluation with counter suggestions</li>
-        <li><strong>Dynasty Value Engine</strong> - Hybrid model combining consensus data and advanced metrics</li>
-        <li><strong>Weekly Projections</strong> - Live scoring, matchup previews, and storyline tracking</li>
-        <li><strong>Historical Analysis</strong> - Season recaps, power rankings, and trend visualization</li>
+        <li><strong>AI Trade Analyst</strong> — Personalized deal evaluation with counter suggestions</li>
+        <li><strong>Dynasty Value Engine</strong> — Hybrid model combining consensus data and advanced metrics</li>
+        <li><strong>Weekly Projections</strong> — Live scoring, matchup previews, and storyline tracking</li>
+        <li><strong>Historical Analysis</strong> — Season recaps, power rankings, and trend visualization</li>
       </ul>
     </div>
 
@@ -477,7 +420,7 @@ FORM_BODY = """
       <h3>Trade Calculator</h3>
       <p>
         AI-powered trade analysis personalized to your roster. Get real-time value assessments,
-        balance indicators, and specific counter suggestions - not generic advice.
+        balance indicators, and specific counter suggestions — not generic advice.
       </p>
     </div>
 
@@ -495,7 +438,7 @@ FORM_BODY = """
       <h3>Weekly Hub</h3>
       <p>
         Live scoring context for every matchup. See projections, starters, and real-time updates
-        in one clean view - perfect for Sunday trash talk.
+        in one clean view — perfect for Sunday trash talk.
       </p>
     </div>
 
@@ -550,7 +493,6 @@ BASE_HTML = """
     <meta charset="utf-8">
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <title>{title}</title>
-    {og_tags}
     <meta name="viewport" content="width=device-width, initial-scale=1">
     
     <!-- Google AdSense -->
@@ -563,7 +505,7 @@ BASE_HTML = """
     <meta name="mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-title" content="BR Fantasy">
 
-    <link rel="stylesheet" href="/static/dashboard.css?v={css_v}">
+    <link rel="stylesheet" href="/static/dashboard.css">
     <link rel="stylesheet" href="/static/icons.css">
     <link rel="stylesheet" href="/static/font-awesome.css">
     <link rel="stylesheet" href="/static/paywall.css">
@@ -576,15 +518,12 @@ BASE_HTML = """
     </script>
   </head>
   <body>
-    <!-- Page navigation progress bar -->
-    <div id="page-load-bar"></div>
-
     <div id="app-scale">
       {nav}
 
       {ad_top}
 
-      <main id="page-root" class="overview-layout" data-cache-ts="{cache_ts}">
+      <main id="page-root" class="overview-layout">
         {body}
       </main>
 
@@ -633,7 +572,6 @@ BASE_HTML = """
     <script src="/static/app.js?v={app_js_v}"></script>
     <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
-      window.__brctx = {{is_logged_in:{is_logged_in_js},isPremium:{is_premium_js},leagueId:"{league_id_js}",platform:"{platform_js}",season:{season_js}}};
       {adsense_init}
 
       // Cookie consent handling
@@ -894,12 +832,8 @@ def store_awards_agg(platform: str, season: int, league_id: str, payload) -> Non
 # -------- global NFL data caches (shared across leagues) --------
 _PLAYERS_GLOBAL = None
 _PLAYERS_INDEX_GLOBAL = None
-_RELEVANT_INDEX_GLOBAL = None
-_VALUE_TABLE_GLOBAL = None
 _players_global_lock = threading.Lock()
 _players_index_lock = threading.Lock()
-_relevant_index_lock = threading.Lock()
-_value_table_lock = threading.Lock()
 
 
 def get_players_global():
@@ -920,41 +854,10 @@ def get_players_index_global():
     return _PLAYERS_INDEX_GLOBAL
 
 
-def get_relevant_index_global():
-    global _RELEVANT_INDEX_GLOBAL
-    if _RELEVANT_INDEX_GLOBAL is None:
-        with _relevant_index_lock:
-            if _RELEVANT_INDEX_GLOBAL is None:
-                from utils.utils import load_relevant_index as _lri
-                _RELEVANT_INDEX_GLOBAL = _lri() or {}
-    return _RELEVANT_INDEX_GLOBAL
-
-
-def get_value_table_global():
-    global _VALUE_TABLE_GLOBAL
-    if _VALUE_TABLE_GLOBAL is None:
-        with _value_table_lock:
-            if _VALUE_TABLE_GLOBAL is None:
-                from utils.utils import load_model_value_table as _lmvt
-                _VALUE_TABLE_GLOBAL = _lmvt() or []
-    return _VALUE_TABLE_GLOBAL
-
-
-def _invalidate_value_table_cache() -> None:
-    """Clear the in-memory value table cache so the next request reloads from disk."""
-    global _VALUE_TABLE_GLOBAL
-    with _value_table_lock:
-        _VALUE_TABLE_GLOBAL = None
-
-
 def run_daily_data_async(season: int, week: int) -> None:
     """Start daily data build in a background thread."""
-    def _build_and_invalidate(s, w):
-        build_daily_data(s, w)
-        _invalidate_value_table_cache()
-
     thread = threading.Thread(
-        target=_build_and_invalidate,
+        target=build_daily_data,
         args=(season, week),
         daemon=True,
     )
@@ -1144,26 +1047,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ]
 
         # Build utility bar for home screen (just settings gear with dark mode)
-        player_search_html = (
-            "<div class='nav-search-wrapper' id='navSearchWrapper'>"
-            "  <div class='nav-search-inner'>"
-            "    <img src='/static/images/magnifying-glass-solid.png' class='nav-search-icon' alt='Search'>"
-            "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
-            "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
-            "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
-            "  </div>"
-            "  <div class='nav-search-dropdown' id='navSearchDropdown'></div>"
-            "</div>"
-        )
-
         home_utility_bar = (
             "<div class='nav-utility-bar'>"
-            f"  {player_search_html}"
             f"  {changelog_bell}"
             f"  {settings_gear}"
-            "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
-            "    <i class='fa-solid fa-bars' aria-hidden='true'></i>"
-            "  </button>"
             "</div>"
         )
 
@@ -1183,6 +1070,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "    </a>"
             "  </div>"
             "  <div class='nav-center'>"
+            "    <button class='nav-hamburger' id='navToggle'>☰</button>"
             f"    {home_pills_container}"
             "  </div>"
             "  <div class='nav-right'>"
@@ -1199,15 +1087,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         return f"<a class='{cls}' href='{href}'>{label}</a>"
 
     def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
-        """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled[, premium])."""
+        """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled)."""
         is_active = active in active_keys
         btn_cls = "nav-pill active" if is_active else "nav-pill"
         item_html = ""
-        for item_tuple in items:
-            item_label, endpoint, item_key = item_tuple[0], item_tuple[1], item_tuple[2]
-            disabled = item_tuple[3] if len(item_tuple) > 3 else False
-            is_premium = item_tuple[4] if len(item_tuple) > 4 else False
-            pro_badge = "<span class='nav-pro-badge'>PRO</span>" if is_premium else ""
+        for item_label, endpoint, item_key, disabled in items:
             if disabled:
                 item_html += (
                     f"<span class='nav-pill-dropdown-item disabled'>"
@@ -1217,7 +1101,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             else:
                 href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
                 item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
-                item_html += f"<a class='{item_cls}' href='{href}'>{item_label}{pro_badge}</a>"
+                item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
         btn_id  = dropdown_id.replace("Dropdown", "Btn")
         menu_id = dropdown_id.replace("Dropdown", "Menu")
         return (
@@ -1237,31 +1121,28 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Navigation pills (no utilities)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
+    nav_pills.append(nav_pill_dropdown("Trades", [
+        ("Trade Calculator", "page_trade",          "trade",          False),
+        ("Trade Database",   "page_trade_database", "trade-database", False),
+        ("Trade Intel",      "page_trade_intel",    "trade-intel",    False),
+    ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Weekly Hub only makes sense once games are being played
     draft_ended = has_draft_ended(league_id, platform, season)
     if not offseason_mode:
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
-    nav_pills.append(nav_pill_dropdown("Teams", [
-        ("Standings", "page_standings", "standings", False, False),
-        ("Teams",     "page_teams",     "teams",     False, False),
-        ("Activity",  "page_activity",  "activity",  False, False),
-        ("Waivers",   "page_waivers",   "waivers",   False, False),
-    ], ["standings", "teams", "activity", "waivers"], "teamsNavDropdown"))
-    nav_pills.append(nav_pill_dropdown("Trades", [
-        ("Trade Calculator", "trade.page_trade",          "trade",          False, False),
-        ("Trade Database",   "trade.page_trade_database", "trade-database", False, False),
-        ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False, True),
-    ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
+    nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
+    nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
     nav_pills.append(nav_pill_dropdown("Players", [
-        ("Player Rankings",   "page_players",   "players",   False, False),
-        ("Prospect Rankings", "page_prospects",  "prospects", False, False),
-        ("Breakout Engine",   "page_breakouts",  "breakouts", False, True),
+        ("Player Rankings",   "page_players",   "players",   False),
+        ("Prospect Rankings", "page_prospects",  "prospects", False),
+        ("Breakout Engine",   "page_breakouts",  "breakouts", False),
     ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
-        ("Awards",  "page_awards",  "awards",  False, False),
-        ("Graphs",  "page_graphs",  "graphs",  False, False),
-        ("History", "page_history", "history", False, False),
+        ("Awards",  "page_awards",  "awards",  False),
+        ("Graphs",  "page_graphs",  "graphs",  False),
+        ("History", "page_history", "history", False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
+    nav_pills.append(nav_pill("Standings", "page_standings", "standings"))
 
     # Changelog bell
     # League switcher dropdown (if user is logged in)
@@ -1281,25 +1162,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"</div>"
         )
 
-        # Check if logged-in user has premium (for manage subscription button)
-        _viewer_uid = session.get("viewer_username")
-        _is_premium_user = has_premium_access(_viewer_uid, league_id, platform or "sleeper")
-        _portal_league_id = league_id or ''
-        manage_sub_html = (
-            "<button type='button' class='settings-menu-item' id='manageSubBtn' "
-            "        onclick=\"(function(b){b.disabled=true;b.style.opacity='.6';"
-            "fetch('/api/create-portal-session',{method:'POST',"
-            "credentials:'same-origin',headers:{'Content-Type':'application/json'},"
-            "body:JSON.stringify({league_id:'" + _portal_league_id + "',return_url:window.location.href})})"
-            ".then(function(r){return r.json().then(function(d){if(!r.ok)throw d;return d;});})"
-            ".then(function(d){if(d.url){window.location.href=d.url;}else{b.disabled=false;b.style.opacity='';alert(d.error||'Could not open billing portal.');}})"
-            ".catch(function(e){b.disabled=false;b.style.opacity='';alert(e&&e.error?e.error:'Could not open billing portal: '+JSON.stringify(e));});})(this)\""
-            ">"
-            "  <img src='/static/images/star-solid.png' class='settings-menu-icon' alt='Premium'>"
-            "  <span class='settings-menu-label'>Manage Subscription</span>"
-            "</button>"
-        ) if _is_premium_user else ""
-
         # Update settings dropdown content for logged-in users with full menu
         settings_content = (
             f"<button type='button' id='refreshBtn' class='settings-menu-item' "
@@ -1314,7 +1176,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  <span id='settingsNotifDot' class='settings-notif-dot' style='display:none'></span>"
             "</button>"
             f"{dark_mode_toggle_html}"
-            f"{manage_sub_html}"
             f"{league_switcher_html}"
             "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
             "  <img src='/static/logout.png' class='settings-menu-icon' alt='Logout'>"
@@ -1336,7 +1197,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</div>"
         )
     else:
-        # Logged-out user on a league page - offer quick sign-in
+        # Logged-out user on a league page — offer quick sign-in
         signin_item = (
             "<button type='button' class='settings-menu-item' "
             "        onclick='document.getElementById(\"signinModal\").style.display=\"flex\"'>"
@@ -1361,28 +1222,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     watchlist_btn = ""  # disabled
 
-    player_search_html = (
-        "<div class='nav-search-wrapper' id='navSearchWrapper'>"
-        "  <div class='nav-search-inner'>"
-        "    <img src='/static/images/magnifying-glass-solid.png' class='nav-search-icon' alt='Search'>"
-        "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
-        "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
-        "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
-        "  </div>"
-        "  <div class='nav-search-dropdown' id='navSearchDropdown'></div>"
-        "</div>"
-    )
-
     # Build utility bar (desktop right side, mobile header)
     utility_bar = (
         "<div class='nav-utility-bar'>"
-        f"  {player_search_html}"
         f"  {watchlist_btn}"
         f"  {changelog_bell}"
         f"  {settings_gear}"
-        "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
-        "    <i class='fa-solid fa-bars' aria-hidden='true'></i>"
-        "  </button>"
         "</div>"
     )
 
@@ -1395,18 +1240,27 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     )
 
     signin_modal = (
-        f"<div id='signinModal' class='signin-modal-overlay'>"
-        f"  <div class='signin-modal-box'>"
-        f"    <h3 class='signin-modal-title'>Sign in to your team</h3>"
-        f"    <p class='signin-modal-sub'>Enter your Sleeper username to get personalized features for your roster.</p>"
+        f"<div id='signinModal' style='display:none;position:fixed;inset:0;"
+        f"background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;'>"
+        f"  <div style='background:var(--card-bg,#1e2432);border:1px solid var(--border-color,#2d3748);"
+        f"border-radius:12px;padding:28px 24px;width:320px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.4);'>"
+        f"    <h3 style='margin:0 0 4px;font-size:18px;'>Sign In to your team</h3>"
+        f"    <p style='margin:0 0 16px;font-size:13px;color:var(--text-muted,#94a3b8);'>"
+        f"      Enter your Sleeper username to restore personalized features.</p>"
         f"    <form method='POST' action='/set-viewer'>"
         f"      <input type='hidden' name='platform' value='{platform}'>"
         f"      <input type='hidden' name='season' value='{season}'>"
         f"      <input type='hidden' name='league_id' value='{league_id}'>"
-        f"      <input class='signin-modal-input' type='text' name='username' placeholder='Sleeper username' autocomplete='username' autofocus>"
-        f"      <div class='signin-modal-actions'>"
-        f"        <button class='signin-modal-submit' type='submit'>Sign In</button>"
-        f"        <button class='signin-modal-cancel' type='button'"
+        f"      <input type='text' name='username' placeholder='sleeper_username' autofocus"
+        f"             style='width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;"
+        f"border:1px solid var(--border-color,#2d3748);background:var(--input-bg,#0f1623);"
+        f"color:var(--text-primary,#e2e8f0);font-size:14px;margin-bottom:14px;'>"
+        f"      <div style='display:flex;gap:8px;'>"
+        f"        <button type='submit' style='flex:1;padding:9px;border-radius:8px;border:none;"
+        f"background:#3b82f6;color:#fff;font-weight:600;cursor:pointer;font-size:14px;'>Sign In</button>"
+        f"        <button type='button' style='flex:1;padding:9px;border-radius:8px;border:1px solid"
+        f" var(--border-color,#2d3748);background:transparent;color:var(--text-primary,#e2e8f0);"
+        f"cursor:pointer;font-size:14px;'"
         f"                onclick='document.getElementById(\"signinModal\").style.display=\"none\"'>Cancel</button>"
         f"      </div>"
         f"    </form>"
@@ -1422,6 +1276,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "    </a>"
         "  </div>"
         "  <div class='nav-center'>"
+        "    <button class='nav-hamburger' id='navToggle'>☰</button>"
         f"    {pills_container}"
         "  </div>"
         "  <div class='nav-right'>"
@@ -1436,61 +1291,6 @@ _AD_SCRIPT = '<script async src="https://pagead2.googlesyndication.com/pagead/js
 _AD_TOP = """<div class="ad-container ad-top-banner"><ins class="adsbygoogle" style="display:block;max-height:90px;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal"></ins></div>"""
 _AD_BOTTOM = """<div class="ad-container ad-bottom-content"><ins class="adsbygoogle" style="display:block;max-height:90px;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal"></ins></div>"""
 _AD_INIT = """window.addEventListener('load', function() { setTimeout(function() { try { (adsbygoogle = window.adsbygoogle || []).push({}); (adsbygoogle = window.adsbygoogle || []).push({}); } catch(e) { console.warn('AdSense initialization error:', e); } }, 100); });"""
-
-
-_NO_ADS_PAGES = {"home", "privacy", "support", "faq", "contact"}
-
-
-_OG_DESCRIPTIONS = {
-    "home":          "Dynasty fantasy football tools - power rankings, trade calculator, matchup analysis, and more.",
-    "dashboard":     "Power rankings, matchup previews, and weekly scores for your dynasty league.",
-    "standings":     "League standings and power rankings for your dynasty league.",
-    "weekly":        "Weekly scoring hub with matchup previews and highlights.",
-    "trade":         "Dynasty trade calculator - evaluate any trade with real player market values.",
-    "trade-intel":   "Real dynasty trade data - buy-low, sell-high targets and market trends.",
-    "trade-database":"Browse thousands of real dynasty trades to understand player market values.",
-    "players":       "Dynasty player profiles, ADP, and values for every NFL player.",
-    "breakouts":     "Breakout candidates for the upcoming dynasty fantasy football season.",
-    "graphs":        "Dynasty league scoring trends and performance graphs.",
-    "history":       "League history and standings across multiple seasons.",
-    "awards":        "All-time league awards, records, and career statistics.",
-    "teams":         "Dynasty team rosters, grades, and analysis.",
-    "activity":      "League activity - recent moves, trades, and waiver claims.",
-    "pricing":       "BR Fantasy Premium - unlock advanced dynasty analytics, ad-free.",
-}
-_OG_IMAGE_PATH = "/static/Website_Logo.png"
-
-
-def _build_og_tags(title: str, active: str) -> str:
-    desc = _OG_DESCRIPTIONS.get(active or "", _OG_DESCRIPTIONS["home"])
-    try:
-        base = request.host_url.rstrip("/")
-        canonical = request.url
-        image = base + _OG_IMAGE_PATH
-    except RuntimeError:
-        # Outside request context
-        base = "https://brfantasy.com"
-        canonical = base
-        image = base + _OG_IMAGE_PATH
-    import html as _html
-    safe_title = _html.escape(title)
-    safe_desc  = _html.escape(desc)
-    safe_url   = _html.escape(canonical)
-    safe_img   = _html.escape(image)
-    return (
-        f'<meta property="og:type" content="website">'
-        f'<meta property="og:site_name" content="BR Fantasy">'
-        f'<meta property="og:title" content="{safe_title}">'
-        f'<meta property="og:description" content="{safe_desc}">'
-        f'<meta property="og:url" content="{safe_url}">'
-        f'<meta property="og:image" content="{safe_img}">'
-        f'<meta name="description" content="{safe_desc}">'
-        f'<meta name="twitter:card" content="summary_large_image">'
-        f'<meta name="twitter:site" content="@hoodiekj16">'
-        f'<meta name="twitter:title" content="{safe_title}">'
-        f'<meta name="twitter:description" content="{safe_desc}">'
-        f'<meta name="twitter:image" content="{safe_img}">'
-    )
 
 
 def render_page(
@@ -1508,42 +1308,22 @@ def render_page(
 
     user_id = session.get("viewer_username")
     is_premium = has_premium_access(user_id, league_id, platform or "sleeper")
-    # Don't serve ads on thin-content / navigation-only pages (AdSense policy)
-    suppress_ads = active in _NO_ADS_PAGES or active is None
-
-    # Compute cache freshness timestamp for the data-cache-ts attribute
-    cache_ts = ""
-    if league_id and platform and season:
-        try:
-            entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
-            if entry and entry.get("ts"):
-                cache_ts = str(int(entry["ts"] * 1000))  # ms epoch for JS Date
-        except Exception:
-            pass
 
     return BASE_HTML.format(
         title=title,
-        og_tags=_build_og_tags(title, active),
-        cache_ts=cache_ts,
         nav=nav_html,
         body=wrapped_body,
-        adsense_script="" if (is_premium or suppress_ads) else _AD_SCRIPT,
-        ad_top="" if (is_premium or suppress_ads) else _AD_TOP,
-        ad_bottom="" if (is_premium or suppress_ads) else _AD_BOTTOM,
-        adsense_init="" if (is_premium or suppress_ads) else _AD_INIT,
+        adsense_script="" if is_premium else _AD_SCRIPT,
+        ad_top="" if is_premium else _AD_TOP,
+        ad_bottom="" if is_premium else _AD_BOTTOM,
+        adsense_init="" if is_premium else _AD_INIT,
         privacy_url=league_url("privacy", league_id),
         faq_url=league_url("faq", league_id),
         support_url=league_url("support", league_id),
         contact_url=league_url("contact", league_id),
         yt_url="https://youtube.com/@hoodiekj",
         app_js_v=_APP_JS_V,
-        css_v=_CSS_V,
         paywall_js_v=_PAYWALL_JS_V,
-        is_logged_in_js="true" if user_id else "false",
-        is_premium_js="true" if is_premium else "false",
-        league_id_js=league_id or "",
-        platform_js=platform or "sleeper",
-        season_js=season or "null",
     )
 
 
@@ -1783,7 +1563,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     # For ESPN we need an explicit sync step.
     sync_league_globals(platform, resolved_league_id, season)
 
-    # League settings - read directly from the league dict for Sleeper to avoid reading
+    # League settings — read directly from the league dict for Sleeper to avoid reading
     # module-level globals that may have been overwritten by a concurrent request.
     if platform == "sleeper":
         from dashboard_services.api import SCORING_DEFAULTS as _SCORING_DEFAULTS
@@ -1939,9 +1719,6 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
         if isinstance(row, dict) and row.get("id") is not None:
             values_by_id[str(row["id"])] = row
 
-    _is_sf_dash = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in roster_positions)
-    _vf_dash = "sf_value" if _is_sf_dash else "value"
-
     standings = standings_map.get(str(viewer_roster_id), {}) or {}
 
     def pick_player_meta(pid: str) -> dict:
@@ -1960,7 +1737,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Optional[dict]:
         team = mv.get("team") or pmeta.get("team") or ""
         age  = age_from_bday(pmeta.get("bDay")) or mv.get("age") or pmeta.get("age")
 
-        value = safe_float(mv.get(_vf_dash) or mv.get("value"))
+        value = safe_float(mv.get("value"))
         name = (
                 mv.get("name")
                 or pmeta.get("full_name")
@@ -2276,70 +2053,43 @@ def get_trade_ai_analysis(
     return renderer_analysis(ctx, viewer_roster_id, viewer_side, side_a, side_b)
 
 
-def _error_page(code: int, headline: str, detail: str) -> str:
-    emoji = "⚡" if code == 500 else "🔍" if code == 404 else "⏱️"
-    return (
-        "<!doctype html><html lang='en'><head>"
-        "<meta charset='utf-8'>"
-        f"<title>{code} - BR Fantasy</title>"
-        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<link rel='icon' href='/static/BR_Logo.png' type='image/x-icon'>"
-        "<link rel='stylesheet' href='/static/dashboard.css'>"
-        "<style>"
-        "body{display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
-        ".err-box{text-align:center;padding:48px 28px;max-width:440px;}"
-        ".err-emoji{font-size:52px;margin-bottom:16px;line-height:1;}"
-        ".err-code{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;"
-        "color:var(--text-muted,#94a3b8);margin-bottom:8px;}"
-        ".err-h{margin:0 0 10px;font-size:24px;font-weight:800;}"
-        ".err-p{color:var(--text-muted,#94a3b8);margin:0 0 28px;font-size:14px;line-height:1.6;}"
-        ".err-btn{display:inline-block;padding:11px 24px;background:#3b82f6;color:#fff;"
-        "border-radius:9px;text-decoration:none;font-weight:700;font-size:14px;}"
-        ".err-btn:hover{opacity:.88;}"
-        ".err-brand{margin-top:32px;font-size:12px;color:var(--text-muted,#94a3b8);}"
-        "</style>"
-        "</head><body>"
-        "<div class='err-box'>"
-        f"<div class='err-emoji'>{emoji}</div>"
-        f"<div class='err-code'>Error {code}</div>"
-        f"<h1 class='err-h'>{headline}</h1>"
-        f"<p class='err-p'>{detail}</p>"
-        "<a href='/' class='err-btn'>&#8592; Back to home</a>"
-        "<div class='err-brand'>BR Fantasy</div>"
-        "</div>"
-        "</body></html>"
-    )
-
-
-@app.errorhandler(404)
-def handle_404(e):
-    return _error_page(
-        404,
-        "Page not found",
-        "The page you're looking for doesn't exist or may have moved.",
-    ), 404
-
-
 @app.errorhandler(500)
 def handle_500(e):
     logger.exception("[500] Internal server error")
-    return _error_page(
-        500,
-        "Something went wrong",
-        "The server hit an unexpected error. This usually fixes itself - please try again in a moment.",
+    return (
+        "<!doctype html><html><head><title>Error — BR Fantasy</title>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
+        "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
+        ".box{text-align:center;padding:40px 24px;max-width:400px;}"
+        "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
+        "a{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
+        "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
+        "</head><body><div class='box'>"
+        "<h2>Something went wrong</h2>"
+        "<p>The server hit an unexpected error. This usually fixes itself — please try again in a moment.</p>"
+        "<a href='/'>&#8592; Back to home</a>"
+        "</div></body></html>"
     ), 500
 
 
-@app.errorhandler(429)
-def handle_429(e):
-    return _error_page(
-        429,
-        "Too many requests",
-        "You've made too many requests in a short time. Please wait a moment before trying again.",
-    ), 429
+@app.route("/health")
+def health():
+    """Uptime / readiness probe used by Render and load balancers."""
+    from dashboard_services.db import get_database_url
+    db_ok = False
+    try:
+        import psycopg
+        url = get_database_url()
+        with psycopg.connect(url, connect_timeout=3) as conn:
+            conn.execute("SELECT 1")
+        db_ok = True
+    except Exception as exc:
+        logger.warning("[health] DB check failed: %s", exc)
 
-
-# /health → routes/auth_bp.py :: health()
+    payload = {"status": "ok" if db_ok else "degraded", "db": db_ok}
+    status_code = 200 if db_ok else 503
+    return jsonify(payload), status_code
 
 
 @app.route("/api/history/ai-recap")
@@ -2919,7 +2669,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     return ctx
 
 
-def render_standings(team_stats, length, name_to_rid: Optional[dict] = None) -> str:
+def render_standings(team_stats, length) -> str:
     if team_stats is None or team_stats.empty:
         return """
         <div class="card-body">
@@ -2955,18 +2705,10 @@ def render_standings(team_stats, length, name_to_rid: Optional[dict] = None) -> 
             if avatar else ""
         )
 
-        rid = (name_to_rid or {}).get(row['owner'])
-        if rid:
-            owner_cell = (f"<span class='team-clickable' style='cursor:pointer;' "
-                          f"data-roster-id='{rid}' data-team-name='{row['owner']}'>"
-                          f"{img} {row['owner']}</span>")
-        else:
-            owner_cell = f"{img} {row['owner']}"
-
         rows.append(f"""
             <tr>
               <td class="num">{int(row['Rank'])}</td>
-              <td class="team">{owner_cell}</td>
+              <td class="team">{img} {row['owner']}</td>
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
@@ -3033,15 +2775,7 @@ def build_dashboard_body(ctx: dict) -> str:
         except Exception:
             pass
 
-    _dfw = ctx.get("df_weekly")
-    if _dfw is not None and not _dfw.empty and "roster_id" in _dfw.columns and "owner" in _dfw.columns:
-        _dash_rid_map = (_dfw[["owner", "roster_id"]]
-                         .drop_duplicates("owner")
-                         .set_index("owner")["roster_id"]
-                         .astype(str).to_dict())
-    else:
-        _dash_rid_map = {v: k for k, v in (ctx.get("roster_map") or {}).items()}
-    standings_html = render_standings(team_stats, 5, name_to_rid=_dash_rid_map)
+    standings_html = render_standings(team_stats, 5)
 
     finalized_df = df_weekly[df_weekly["finalized"] == True].copy()
     if not finalized_df.empty:
@@ -3555,12 +3289,10 @@ def render_team_stats(team_stats, df_weekly) -> str:
         ]) + "</tr>")
 
     table_html = f"""
-        <div class="stats-scroll-wrap">
-          <table id="stats" class="standings-table">
-            <thead><tr>{"".join([f"<th data-col='{i}'>{c}</th>" for i, c in enumerate(cols)])}</tr></thead>
-            <tbody>{''.join(body_rows)}</tbody>
-          </table>
-        </div>
+        <table id="stats" class="standings-table">
+          <thead><tr>{"".join([f"<th data-col='{i}'>{c}</th>" for i, c in enumerate(cols)])}</tr></thead>
+          <tbody>{''.join(body_rows)}</tbody>
+        </table>
     """
     return table_html
 
@@ -3580,15 +3312,11 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     league_id_str     = str(ctx.get("resolved_league_id") or ctx.get("league_id") or "")
 
     # ── dynasty value lookup ──────────────────────────────────────────────────
-    _rp_os_st = ctx.get("roster_positions") or []
-    _is_sf_os_st = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_os_st)
-    _vf_os_st = "sf_value" if _is_sf_os_st else "value"
-
     values_by_id: dict[str, float] = {}
     for row in model_value_table:
         if isinstance(row, dict) and row.get("id") is not None:
             try:
-                values_by_id[str(row["id"])] = float(row.get(_vf_os_st) or row.get("value") or 0)
+                values_by_id[str(row["id"])] = float(row.get("value") or 0)
             except Exception:
                 pass
 
@@ -3698,112 +3426,41 @@ def _build_offseason_standings_body(ctx: dict) -> str:
                 return v
         return None
 
-    # Build a standard projected bracket for the configured playoff size.
-    # General algorithm works for any N where (N + n_byes) is a power of 2.
-    # Bye seeds receive first-round byes; R1 pairs outside seeds inward;
-    # subsequent rounds pair from opposite ends of the field (protects top seeds).
-    def _build_bracket(N: int) -> list[dict]:
-        try:
-            from data_building.simulate_playoff_odds import _n_byes as _nb
-            n_byes = _nb(N)
-        except Exception:
-            n_byes = 0
+    # Build a standard projected bracket for the configured playoff size
+    # Seeding: 1,2 get byes; R1 pairings are 3v(N), 4v(N-1), …
+    synthetic_bracket: list[dict] = []
+    match_id = 1
 
-        import math as _math
-        # Verify this forms a clean single-elimination bracket
-        total_after_r1 = n_byes + (N - n_byes) // 2
-        if total_after_r1 < 2:
-            return []
-        # total_after_r1 must be a power of 2 for a clean bracket
-        if total_after_r1 & (total_after_r1 - 1) != 0:
-            return []
-
-        matches: list[dict] = []
-        mid = 0
-
-        def _next_mid() -> int:
-            nonlocal mid
-            mid += 1
-            return mid
-
-        # Round 1: pair from outside in among non-bye seeds
-        # Seeds n_byes+1 vs N, n_byes+2 vs N-1, ...
-        n_r1 = (N - n_byes) // 2
-        r1_match_ids: list[int] = []
-        for i in range(n_r1):
-            s_top = n_byes + 1 + i
-            s_bot = N - i
-            m = _next_mid()
-            r1_match_ids.append(m)
-            matches.append({
-                "m": m, "r": 1,
-                "t1": _rid(s_top), "t2": _rid(s_bot),
-                "t1_from": None, "t2_from": None,
-                "w": None,  # filled in below
-            })
-
-        # Build "field" for R2: bye seed slots + R1 winner slots (interleaved top-protectively)
-        # Field order: [seed1, seed2, ..., seed(n_byes), W(r1_0), W(r1_1), ...]
-        # Represented as ("seed", s) or ("match", m_id)
-        field: list[tuple] = [("seed", s + 1) for s in range(n_byes)]
-        field += [("match", m) for m in r1_match_ids]
-
-        # Process subsequent rounds: pair field[0] vs field[-1], field[1] vs field[-2], ...
-        # Continue until 1 match remains (the final)
-        round_num = 1
-        while len(field) > 1:
-            round_num += 1
-            new_field: list[tuple] = []
-            half = len(field) // 2
-            for i in range(half):
-                a = field[i]
-                b = field[len(field) - 1 - i]
-                m = _next_mid()
-                new_field.append(("match", m))
-
-                def _slot(slot: tuple):
-                    if slot[0] == "seed":
-                        return {"t1": _rid(slot[1]), "t1_from": None}
-                    else:
-                        return {"t1": None, "t1_from": {"w": slot[1]}}
-
-                def _slot2(slot: tuple):
-                    if slot[0] == "seed":
-                        return {"t2": _rid(slot[1]), "t2_from": None}
-                    else:
-                        return {"t2": None, "t2_from": {"w": slot[1]}}
-
-                ma = _slot(a)
-                mb = _slot2(b)
-                matches.append({
-                    "m": m, "r": round_num,
-                    "t1": ma["t1"], "t2": mb["t2"],
-                    "t1_from": ma["t1_from"], "t2_from": mb["t2_from"],
-                    "w": None,
-                })
-            field = new_field
-
-        # Back-fill "w" (advancement) references on all non-final matches
-        # For each match, find which later match has t1_from or t2_from pointing to it
-        match_by_id = {m["m"]: m for m in matches}
-        for m in matches:
-            for ref_key in ("t1_from", "t2_from"):
-                ref = m.get(ref_key)
-                if ref and isinstance(ref, dict) and "w" in ref:
-                    src_id = ref["w"]
-                    if src_id in match_by_id:
-                        src = match_by_id[src_id]
-                        if src.get("w") is None:
-                            src["w"] = {"m": m["m"]}
-
-        # Final match has no "w"
-        final = matches[-1]
-        if final.get("w") is None:
-            final.pop("w", None)
-
-        return matches
-
-    synthetic_bracket = _build_bracket(playoff_teams)
+    if playoff_teams == 6:
+        # R1: 3v6, 4v5 → R2 (Semis): 1 vs W(4v5), 2 vs W(3v6) → R3 Finals
+        synthetic_bracket = [
+            {"m": 1, "r": 1, "t1": _rid(3), "t2": _rid(6), "t1_from": None, "t2_from": None, "w": {"m": 3}},
+            {"m": 2, "r": 1, "t1": _rid(4), "t2": _rid(5), "t1_from": None, "t2_from": None, "w": {"m": 4}},
+            {"m": 3, "r": 2, "t1": _rid(1), "t2": None,    "t1_from": None, "t2_from": {"w": 2}, "w": {"m": 5}},
+            {"m": 4, "r": 2, "t1": _rid(2), "t2": None,    "t1_from": None, "t2_from": {"w": 1}, "w": {"m": 5}},
+            {"m": 5, "r": 3, "t1": None,    "t2": None,    "t1_from": {"w": 3}, "t2_from": {"w": 4}},
+        ]
+    elif playoff_teams == 4:
+        # R1 (Semis): 1v4, 2v3 → Finals
+        synthetic_bracket = [
+            {"m": 1, "r": 1, "t1": _rid(1), "t2": _rid(4), "t1_from": None, "t2_from": None, "w": {"m": 3}},
+            {"m": 2, "r": 1, "t1": _rid(2), "t2": _rid(3), "t1_from": None, "t2_from": None, "w": {"m": 3}},
+            {"m": 3, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 1}, "t2_from": {"w": 2}},
+        ]
+    elif playoff_teams == 8:
+        # R1: 1v8, 4v5 (top half) + 2v7, 3v6 (bottom half) → Semis → Finals
+        synthetic_bracket = [
+            {"m": 1, "r": 1, "t1": _rid(1), "t2": _rid(8), "t1_from": None, "t2_from": None, "w": {"m": 5}},
+            {"m": 2, "r": 1, "t1": _rid(4), "t2": _rid(5), "t1_from": None, "t2_from": None, "w": {"m": 5}},
+            {"m": 3, "r": 1, "t1": _rid(2), "t2": _rid(7), "t1_from": None, "t2_from": None, "w": {"m": 6}},
+            {"m": 4, "r": 1, "t1": _rid(3), "t2": _rid(6), "t1_from": None, "t2_from": None, "w": {"m": 6}},
+            {"m": 5, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 1}, "t2_from": {"w": 2}, "w": {"m": 7}},
+            {"m": 6, "r": 2, "t1": None,    "t2": None,    "t1_from": {"w": 3}, "t2_from": {"w": 4}, "w": {"m": 7}},
+            {"m": 7, "r": 3, "t1": None,    "t2": None,    "t1_from": {"w": 5}, "t2_from": {"w": 6}},
+        ]
+    else:
+        # Generic: no bracket available
+        synthetic_bracket = []
 
     power_playoffs_html = render_power_and_playoffs(
         synthetic_ts, roster_map, league_id_str, platform, season,
@@ -3823,14 +3480,11 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             1 for pk in (picks_by_roster.get(row["rid"], []) if isinstance(picks_by_roster, dict) else [])
             if int(pk.get("round") or 0) == 1
         )
-        picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "-"
+        picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "—"
         table_rows_html += (
             f"<tr>"
             f"<td class='num'>{i}</td>"
-            f"<td class='team'>"
-            f"<span class='team-clickable' style='cursor:pointer;' "
-            f"data-roster-id='{row['rid']}' data-team-name='{row['name']}'>"
-            f"{img} {row['name']}</span></td>"
+            f"<td class='team'>{img} {row['name']}</td>"
             f"<td class='num'>{row['total']:.0f}</td>"
             f"<td class='num'>{row['player_v']:.0f}</td>"
             f"<td class='num'>{picks_label}</td>"
@@ -3859,8 +3513,16 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     <div class="standings-main two-col-standings">
       <div class="standings-col">
         <div class="card">
-          <div class="os-vr-header">Value Rankings</div>
-          {table_html}
+          <div class="card-tabs">
+            <div class="tab-strip">
+              <button class="tab-btn active" data-tab="standings">Value Rankings</button>
+              <div class="tab-panels">
+                <div class="tab-panel active" data-tab="standings">
+                  {table_html}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="standings-col">
@@ -3877,16 +3539,7 @@ def build_standings_body(ctx: dict) -> str:
     rosters = ctx["rosters"]
     num_teams = len({str(r.get("roster_id")) for r in rosters})
 
-    # Build owner→roster_id map directly from df_weekly (most reliable)
-    if df_weekly is not None and not df_weekly.empty and "roster_id" in df_weekly.columns and "owner" in df_weekly.columns:
-        _rid_map = (df_weekly[["owner", "roster_id"]]
-                    .drop_duplicates("owner")
-                    .set_index("owner")["roster_id"]
-                    .astype(str).to_dict())
-    else:
-        _rid_map = {v: k for k, v in roster_map.items()}
-
-    standings_html = render_standings(team_stats, num_teams, name_to_rid=_rid_map)
+    standings_html = render_standings(team_stats, num_teams)
 
     if (
             df_weekly is not None
@@ -4025,15 +3678,11 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     )
     teams_sidebar_html = render_teams_sidebar(teams_ctx)
 
-    _rp_osd = ctx.get("roster_positions") or []
-    _is_sf_osd = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_osd)
-    _vf_osd = "sf_value" if _is_sf_osd else "value"
-
     values_by_id = {}
     for row in model_value_table:
         if isinstance(row, dict) and row.get("id") is not None:
             try:
-                values_by_id[str(row["id"])] = float(row.get(_vf_osd) or row.get("value") or 0.0)
+                values_by_id[str(row["id"])] = float(row.get("value") or 0.0)
             except Exception:
                 values_by_id[str(row["id"])] = 0.0
 
@@ -4173,7 +3822,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         if pid in _rookie_sids and not _rookie_draft_done:
             continue
         try:
-            val = float(row.get(_vf_osd) or row.get("value") or 0.0)
+            val = float(row.get("value") or 0.0)
         except Exception:
             val = 0.0
         if val <= 0:
@@ -4472,7 +4121,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Waiver Wire Targets</h2>
-              <div class="os-section-subtitle">Smart pickup recommendations - value + trend + breakout potential</div>
+              <div class="os-section-subtitle">Smart pickup recommendations — value + trend + breakout potential</div>
             </div>
             <button type="button" class="card-collapse-toggle" data-target="waiver-assets-body">▼</button>
           </div>
@@ -4612,7 +4261,7 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
         effective = 0.0
         for i, v in enumerate(vals):
             if i == 0:
-                effective += v  # anchor - always full value
+                effective += v  # anchor — always full value
             else:
                 depth_m = _DEPTH_MULTS[min(i, len(_DEPTH_MULTS) - 1)]
                 tier_m  = tier_caps.get(_asset_tier(v, thresholds), 0.38)
@@ -4991,7 +4640,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         proj_warn_html = (
             "<div class='card' style='margin-bottom:12px;background:#fffbeb;border:1px solid #f59e0b;'>"
             "  <div class='card-body' style='padding:10px 14px;font-size:13px;color:#92400e;'>"
-            "    <strong>Projections unavailable</strong> - projected scores can't be loaded right now. "
+            "    <strong>Projections unavailable</strong> — projected scores can't be loaded right now. "
             "    Actual scores will still appear once games are final."
             "  </div>"
             "</div>"
@@ -5398,15 +5047,16 @@ def build_activity_body(ctx: dict) -> str:
     players_values_raw = ctx.get("model_value_table") or []
     player_val_by_key: Dict[Tuple[str, str, str], float] = {}
     player_val_by_key_np: Dict[Tuple[str, str], float] = {}
-    player_val_by_id: Dict[str, float] = {}
     rank_label_by_name: Dict[str, str] = {}
-    rank_label_by_id: Dict[str, str] = {}
 
     if isinstance(players_values_raw, list):
         for row in players_values_raw:
             if not isinstance(row, dict):
                 continue
             raw_name = str(row.get("search_name") or "").strip()
+            if not raw_name:
+                continue
+            name_lower = raw_name.lower()
             pos = str(row.get("position") or row.get("pos") or "").strip().upper()
             team = str(row.get("team") or "").strip().upper()
             if not pos:
@@ -5416,37 +5066,27 @@ def build_activity_body(ctx: dict) -> str:
             except Exception:
                 val = 0.0
 
-            if raw_name:
-                name_lower = raw_name.lower()
-                player_val_by_key[(name_lower, pos, team)] = val
-                player_val_by_key_np[(name_lower, pos)] = val
-                lbl = row.get("pos_rank_label") or pos
-                rank_label_by_name[name_lower] = str(lbl)
+            player_val_by_key[(name_lower, pos, team)] = val
+            player_val_by_key_np[(name_lower, pos)] = val
 
-            pid_str = str(row.get("id") or "").strip()
-            if pid_str:
-                player_val_by_id[pid_str] = val
-                rank_label_by_id[pid_str] = str(row.get("pos_rank_label") or pos)
+            lbl = row.get("pos_rank_label") or pos
+            rank_label_by_name[name_lower] = str(lbl)
 
     def player_value(p: dict) -> tuple[float, str]:
         name = str(p.get("name") or "").strip()
+        name_lower = name.lower()
         pos = str(p.get("pos") or p.get("position") or "").strip().upper()
         team = str(p.get("team") or "").strip().upper()
         if not name or not pos:
             return 0.0, ""
 
-        # Prefer ID-based lookup (most reliable - no name normalization issues)
-        pid_str = str(p.get("pid") or p.get("id") or "").strip()
-        if pid_str and pid_str in player_val_by_id:
-            return player_val_by_id[pid_str], rank_label_by_id.get(pid_str, pos)
-
-        # Fall back to name-based lookup
-        name_lower = name.lower()
         val = float(
             player_val_by_key.get((name_lower, pos, team))
             or player_val_by_key_np.get((name_lower, pos), 0.0)
         )
-        return val, rank_label_by_name.get(name_lower, pos)
+
+        rank_label = rank_label_by_name.get(name_lower, pos)
+        return val, rank_label
 
     pick_values = load_pick_value_table() or {}
 
@@ -6447,11 +6087,6 @@ def build_teams_body(ctx: dict) -> str:
         if isinstance(p, dict) and p.get("id") is not None
     }
 
-    # Detect SF league to use sf_value throughout
-    _rp_teams = ctx.get("roster_positions") or []
-    _is_sf_teams = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_teams)
-    _val_field = "sf_value" if _is_sf_teams else "value"
-
     CORE_POS = {"QB", "RB", "WR", "TE"}
     POS_ORDER = ["QB", "RB", "WR", "TE"]
 
@@ -6482,7 +6117,7 @@ def build_teams_body(ctx: dict) -> str:
     # sort each position bucket by value (high → low)
     for rid, pos_map in roster_pos_players.items():
         for pos, plist in pos_map.items():
-            plist.sort(key=lambda x: float(x.get(_val_field) or x.get("value") or 0.0), reverse=True)
+            plist.sort(key=lambda x: float(x.get("value", 0.0)), reverse=True)
 
     # ----------------- Build per-team position value buckets (for strength table) -----------------
     team_meta: Dict[int, Dict] = {}  # name, avatar
@@ -6506,7 +6141,7 @@ def build_teams_body(ctx: dict) -> str:
                 continue
             pos = str(row.get("position") or row.get("pos") or "").upper()
             try:
-                val = float(row.get(_val_field) or row.get("value") or 0.0)
+                val = float(row.get("value") or 0.0)
             except Exception:
                 val = 0.0
             if val <= 0:
@@ -6641,7 +6276,7 @@ def build_teams_body(ctx: dict) -> str:
             age_txt = f"{age:.1f} yrs" if age is not None else ""
 
             try:
-                val = float(p.get(_val_field) or p.get("value") or 0.0)
+                val = float(p.get("value") or 0.0)
             except Exception:
                 val = 0.0
             val_txt = f"{val:.1f}" if val > 0 else ""
@@ -6807,7 +6442,7 @@ def build_teams_body(ctx: dict) -> str:
             "  </td>"
             f"  <td class='pos-count'>{pick_count}</td>"
             f"  <td class='pos-total'>{pick_val:.1f}</td>"
-            "  <td class='pos-avg'>-</td>"
+            "  <td class='pos-avg'>—</td>"
             f"  <td class='pos-z'>{pick_z:+.2f}</td>"
             "  <td class='pos-bar-cell'>"
             "    <div class='pos-bar-outer'>"
@@ -7106,7 +6741,7 @@ def build_teams_body(ctx: dict) -> str:
             var html = '<div class="analytics-btm-header"><span class="analytics-date-label">Weeks remaining: ' + wr +
               '</span><span class="analytics-avg-label">' + sortLabel + '</span></div>';
             if (usingPR) {{
-              html += '<p class="analytics-empty" style="margin:4px 0 8px;font-size:12px;color:var(--text-muted)">No games played - opponent strength estimated from roster values.</p>';
+              html += '<p class="analytics-empty" style="margin:4px 0 8px;font-size:12px;color:var(--text-muted)">No games played — opponent strength estimated from roster values.</p>';
             }}
             html += '<div class="analytics-bar-list">';
             teams.forEach(function(t) {{
@@ -7345,7 +6980,7 @@ def build_teams_body(ctx: dict) -> str:
 
             var sigColor = {{
               'Core':           '#22c55e',
-              'Hold - Breakout':'#f59e0b',
+              'Hold — Breakout':'#f59e0b',
               'Sell High':      '#ef4444',
               'Buy Window':     '#3b82f6',
               'Hold':           'var(--text-muted)',
@@ -7353,17 +6988,17 @@ def build_teams_body(ctx: dict) -> str:
             }};
             var sigBg = {{
               'Core':           '#dcfce7',
-              'Hold - Breakout':'#fef3c7',
+              'Hold — Breakout':'#fef3c7',
               'Sell High':      '#fee2e2',
               'Buy Window':     '#dbeafe',
               'Hold':           'var(--row)',
               'Cut':            'var(--row)',
             }};
 
-            var sigOrder = {{'Sell High':0,'Cut':1,'Hold - Breakout':2,'Buy Window':3,'Core':4,'Hold':5}};
+            var sigOrder = {{'Sell High':0,'Cut':1,'Hold — Breakout':2,'Buy Window':3,'Core':4,'Hold':5}};
             var html = '';
             teams.forEach(function(t) {{
-              // Show everything except plain Hold - sorted by urgency
+              // Show everything except plain Hold — sorted by urgency
               var actionPlayers = t.players
                 .filter(function(p) {{ return p.signal !== 'Hold'; }})
                 .sort(function(a, b) {{
@@ -7391,8 +7026,8 @@ def build_teams_body(ctx: dict) -> str:
             }});
 
             var emptyMsg = _viewerRosterId
-              ? 'Your roster looks stable - no urgent actions flagged.'
-              : 'All rosters look stable - no urgent actions flagged.';
+              ? 'Your roster looks stable — no urgent actions flagged.'
+              : 'All rosters look stable — no urgent actions flagged.';
             panel.innerHTML = html || '<p class="analytics-empty">' + emptyMsg + '</p>';
           }})
           .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
@@ -7559,7 +7194,314 @@ def build_teams_body(ctx: dict) -> str:
     """
 
 
-# Public page routes (privacy, support, faq, contact, sw.js, ads.txt) are in routes/public_bp.py
+@app.route("/sw.js")
+def service_worker():
+    """Serve service worker from root scope so it can control all pages."""
+    return send_file("static/sw.js", mimetype="application/javascript")
+
+
+@app.route("/privacy")
+@app.route("/<platform>/<int:season>/<league_id>/privacy")
+def privacy_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
+    body = """
+        <div class="static-page">
+          <div class="static-card-page">
+
+            <h1 class="static-hero-title">Privacy Policy</h1>
+            <div class="static-section">
+              <div class="static-section-title">What We Collect</div>
+              <p>
+                We use your Sleeper league ID and public Sleeper data to build dashboards,
+                projections, and tools. No passwords, payment info, or sensitive personal data
+                is collected.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">What We Don't Collect</div>
+              <p>
+                We don’t store personal identifying information, sell data, or track you outside
+                of this site.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Data Storage</div>
+              <p>
+                League data is cached temporarily on the server to improve performance.
+                You may request removal at any time via the Contact page.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Trade Analytics</div>
+              <p>
+                When you enter your Sleeper username, your connected league IDs and Sleeper
+                user ID may be used to improve trade value accuracy across the platform.
+                This data is not sold or shared with third parties.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Advertising</div>
+              <p>
+                This site displays advertisements through Google AdSense. Google uses cookies
+                to serve ads based on your prior visits to this site or other websites.
+                Google's use of advertising cookies enables it and its partners to serve ads
+                based on your visit to this site and/or other sites on the Internet.
+              </p>
+              <p style="margin-top:8px;">
+                You may opt out of personalized advertising by visiting
+                <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener">
+                  Google's Ads Settings
+                </a> or
+                <a href="http://www.aboutads.info/choices/" target="_blank" rel="noopener">
+                  www.aboutads.info
+                </a>.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Cookies</div>
+              <p>
+                We use cookies to maintain your login session and improve your experience.
+                Third-party vendors, including Google, also use cookies to serve ads based
+                on your browsing activity. By using this site, you consent to the use of
+                cookies as described in this policy.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Third-Party Links</div>
+              <p>
+                Our site may contain links to external websites. We are not responsible
+                for the privacy practices or content of these third-party sites.
+              </p>
+            </div>
+
+            <div class="highlight-box">
+              Have questions or want your league data removed?
+              Reach out using the Contact page.
+            </div>
+
+          </div>
+        </div>
+        """
+    return render_page("BR Fantasy Privacy", league_id if league_id else None, "privacy", body, platform, season)
+
+
+@app.route("/support")
+@app.route("/<platform>/<int:season>/<league_id>/support")
+def support_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
+    body = """
+        <div class="static-page">
+          <div class="static-card-page">
+            <h1 class="static-hero-title">Support the Site</h1>
+
+            <div class="static-section">
+              <div class="static-section-title">1. Direct Support</div>
+              <p>
+                If you find the dashboard helpful for your league, you can support
+                ongoing development and hosting costs.
+              </p>
+              <p style="margin-top:6px;">
+                <a
+                  class="link-pill"
+                  href="https://buymeacoffee.com/brfantasy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  💸 Make a donation
+                </a>
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">2. Premium Ad-Free Mode (Coming Soon)</div>
+              <p>
+                The long-term plan is to offer a premium, ad-free experience with extra
+                features (advanced graphs, additional projections, league history views,
+                and more) while keeping a solid free version for everyone.
+              </p>
+              <p style="margin-top:8px;">
+                Want early access or to give feedback on premium ideas? Reach out on the
+                Contact page and include “Premium” in your message.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">3. Share With Your League</div>
+              <p>
+                Honestly one of the best ways to support this is just using it.
+                Share the link with your league mates, show the dashboards on stream,
+                or use the matchup previews in your weekly recaps.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">4. Follow & Subscribe</div>
+              <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank">▶️ YouTube</a>
+                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank">🎮 Twitch</a>
+                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank">🐦 Twitter/X</a>
+              </div>
+            </div>
+
+            <div class="highlight-box">
+              Every bit of support helps keep the site online and evolving for future seasons.
+              Thanks for using BR Fantasy.
+            </div>
+          </div>
+        </div>
+        """
+    return render_page("BR Fantasy Support", league_id if league_id else None, "support", body, platform, season)
+
+
+@app.route("/faq")
+@app.route("/<platform>/<int:season>/<league_id>/faq")
+def faq_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
+    body = """
+        <div class="static-page">
+          <div class="static-card-page">
+            <h1 class="static-hero-title">FAQ</h1>
+
+            <div class="static-section">
+              <div class="static-section-title">General</div>
+
+              <details class="faq-item" open>
+                <summary>What is the BR Fantasy Dashboard?</summary>
+                <p>
+                  It’s a custom fantasy football dashboard that pulls in your Sleeper league
+                  data and turns it into power rankings, weekly summaries, matchup previews,
+                  graphs, and more—all in one place.
+                </p>
+              </details>
+
+              <details class="faq-item">
+                <summary>What do I need to use it?</summary>
+                <p>
+                  All you need is your Sleeper or ESPN league ID. Paste it into the home screen,
+                  and the dashboard will fetch public data for that league.
+                </p>
+              </details>
+
+              <details class="faq-item">
+                <summary>Does this change anything in my Fantasy league?</summary>
+                <p>
+                  No. The dashboard is read-only. It just reads public data from your league’s
+                  API and never modifies your league, rosters, or settings.
+                </p>
+              </details>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Data & Privacy</div>
+
+              <details class="faq-item">
+                <summary>What data do you store?</summary>
+                <p>
+                  Some league data may be cached temporarily so pages load quickly
+                  (rosters, users, scores, projections, etc.). We do not store your
+                  password or payment information. See the Privacy Policy for more details.
+                </p>
+              </details>
+
+              <details class="faq-item">
+                <summary>Can I have my league data removed?</summary>
+                <p>
+                  Yes. Use the Contact page to send your Sleeper league ID and request
+                  removal. We’ll clear cached data for that league.
+                </p>
+              </details>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Premium / Ads / Support</div>
+
+              <details class="faq-item">
+                <summary>Is there a premium or ad-free mode?</summary>
+                <p>
+                  A premium, ad-free experience is planned. The idea is to keep a fully
+                  functional free tier while offering extra features and an ad-free UI for
+                  people who want to support the project.
+                </p>
+              </details>
+
+              <details class="faq-item">
+                <summary>How can I support the site?</summary>
+                <p>
+                  You can support the project through donations, using premium when it’s
+                  available, or by sharing the site with your league mates.
+                  Visit the Support page for options.
+                </p>
+              </details>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Issues & Feedback</div>
+
+              <details class="faq-item">
+                <summary>The numbers look wrong—what should I do?</summary>
+                <p>
+                  First, hit the refresh button on the nav to clear cached data for your
+                  league. If something still looks off, send a message via the Contact
+                  page with your league ID and a short description of the issue.
+                </p>
+              </details>
+
+              <details class="faq-item">
+                <summary>Can I request new features?</summary>
+                <p>
+                  Absolutely. This project is built for fantasy degenerates.
+                  Drop your ideas on the Contact page and they might make it onto the roadmap.
+                </p>
+              </details>
+            </div>
+          </div>
+        </div>
+        """
+    return render_page("BR Fantasy FAQ", league_id if league_id else None, "faq", body, platform, season)
+
+
+@app.route("/contact", methods=["GET", "POST"])
+@app.route("/<platform>/<int:season>/<league_id>/contact", methods=["GET", "POST"])
+def contact_page(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
+    # super simple "email us" style page; you can later hook this to a form handler
+    body = """
+        <div class="static-page">
+          <div class="static-card-page">
+
+            <h1 class="static-hero-title">Contact</h1>
+
+            <div class="static-section">
+              <div class="static-section-title">Message</div>
+              <p>You can message the creator directly via social platforms:</p>
+
+              <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;">
+                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank">▶️ YouTube</a>
+                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank">🎮 Twitch</a>
+                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank">🐦 Twitter/X</a>
+              </div>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">What to include</div>
+              <ul style="margin-left:20px; color:#4b5563; font-size:14px;">
+                <li>Your Sleeper league ID</li>
+                <li>Which page you were on</li>
+                <li>What wasn’t working or looked incorrect</li>
+                <li>Screenshots if possible</li>
+              </ul>
+            </div>
+
+            <div class="highlight-box">
+              Feedback helps shape future features — thanks for helping improve BR Fantasy.
+            </div>
+
+          </div>
+        </div>
+        """
+    return render_page("BR Fantasy Contact", league_id if league_id else None, "contact", body, platform, season)
 
 
 def league_url(slug: str, league_id: Optional[str] = None, platform: Optional[str] = None, season: Optional[int] = None) -> str:
@@ -7599,7 +7541,7 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         key_lock = _CTX_LOCKS[key]
 
     with key_lock:
-        # Re-check after acquiring lock - another thread may have built it while we waited
+        # Re-check after acquiring lock — another thread may have built it while we waited
         entry = DASHBOARD_CACHE.get(key)
         if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
             ctx = entry["ctx"]
@@ -7638,424 +7580,6 @@ def api_refresh_league():
     if key in DASHBOARD_CACHE:
         DASHBOARD_CACHE[key]["ts"] = 0  # expire immediately
     return jsonify({"ok": True})
-
-
-@app.route("/api/waiver-candidates")
-def api_waiver_candidates():
-    """
-    Returns scored waiver wire candidates for a league.
-    Query params: platform, league_id, season, position (optional filter)
-    """
-    platform = (request.args.get("platform") or "sleeper").strip().lower()
-    league_id = (request.args.get("league_id") or "").strip()
-    season = int(request.args.get("season") or datetime.now().year)
-    position_filter = (request.args.get("position") or "").strip().upper()
-
-    if not league_id:
-        return jsonify({"error": "league_id required"}), 400
-
-    try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    rosters = ctx.get("rosters") or []
-    rostered_ids = {
-        str(pid)
-        for r in rosters
-        for pid in (r.get("players") or [])
-    }
-
-    players_index = ctx.get("players_index") or {}
-    model_value_table = load_model_value_table()
-
-    _rp_wv = ctx.get("roster_positions") or []
-    _is_sf_wv = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_wv)
-    _vf_wv = "sf_value" if _is_sf_wv else "value"
-
-    candidates = []
-    for row in model_value_table:
-        if not isinstance(row, dict):
-            continue
-        pid = str(row.get("id") or "")
-        pos = str(row.get("position") or row.get("pos") or "").upper()
-        if not pid or pid in rostered_ids:
-            continue
-        if pos not in {"QB", "RB", "WR", "TE"}:
-            continue
-        try:
-            val = float(row.get(_vf_wv) or row.get("value") or 0.0)
-        except Exception:
-            val = 0.0
-        if val <= 0:
-            continue
-
-        try:
-            age = float(row.get("age") or 0)
-        except Exception:
-            age = 0.0
-
-        player_name = (
-            row.get("name")
-            or players_index.get(pid, {}).get("name")
-            or f"Player {pid}"
-        )
-
-        candidates.append({
-            "player_id": pid,
-            "name": player_name,
-            "position": pos,
-            "team": row.get("team") or players_index.get(pid, {}).get("team") or "",
-            "value": val,
-            "age": age,
-            "pos_rank_label": row.get("pos_rank_label") or "",
-            "rank_change_7d": row.get("rank_change_7d"),
-        })
-
-    # Bulk-fetch breakout scores
-    waiver_breakout: dict = {}
-    try:
-        _db_url = os.getenv("DATABASE_URL", "").strip()
-        if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
-            from dashboard_services.db import get_conn as _gc
-            _pids = [c["player_id"] for c in candidates[:100]]
-            if _pids:
-                with _gc() as _conn:
-                    with _conn.cursor() as _cur:
-                        _cur.execute(
-                            """
-                            SELECT DISTINCT ON (player_id)
-                                player_id,
-                                breakout_opportunity_score
-                            FROM breakout_opportunity_scores
-                            WHERE player_id = ANY(%s)
-                            ORDER BY player_id, as_of_date DESC
-                            """,
-                            (_pids,),
-                        )
-                        for _r in _cur.fetchall():
-                            _r = dict(_r)
-                            if _r.get("breakout_opportunity_score") is not None:
-                                waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
-    except Exception:
-        pass
-
-    _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
-
-    def _wv_score(c: dict) -> float:
-        val = c["value"]
-        age = c["age"] or 0
-        pos = c["position"]
-        rank_chg = c["rank_change_7d"] or 0
-        bscore = waiver_breakout.get(c["player_id"], 0)
-        prime = _prime_max.get(pos, 28)
-        trend_bonus = min(rank_chg * 4, 60) if rank_chg and rank_chg > 0 else 0
-        breakout_bonus = min(bscore * 0.5, 50)
-        age_bonus = 30 - max(0, (age - prime) * 10) if age else 0
-        return val + trend_bonus + breakout_bonus + age_bonus
-
-    def _wv_signal(c: dict) -> tuple:
-        rank_chg = c["rank_change_7d"] or 0
-        age = c["age"] or 0
-        pos = c["position"]
-        bscore = waiver_breakout.get(c["player_id"], 0)
-        prime = _prime_max.get(pos, 28)
-        if bscore >= 55:
-            return ("signal-breakout", "Breakout")
-        if rank_chg >= 8:
-            return ("signal-rising", "Rising Fast")
-        if rank_chg >= 3:
-            return ("signal-rising", "Trending Up")
-        if age < prime - 2 and c["value"] >= 300:
-            return ("signal-value", "Value Play")
-        if age > prime + 2:
-            return ("signal-aging", "Sell Window")
-        return ("signal-hold", "Available")
-
-    candidates.sort(key=_wv_score, reverse=True)
-
-    if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
-        candidates = [c for c in candidates if c["position"] == position_filter]
-
-    result = []
-    for c in candidates[:30]:
-        sig_cls, sig_label = _wv_signal(c)
-        bscore = waiver_breakout.get(c["player_id"], 0.0)
-        result.append({
-            "player_id": c["player_id"],
-            "name": c["name"],
-            "position": c["position"],
-            "team": c["team"],
-            "value": c["value"],
-            "age": c["age"],
-            "pos_rank_label": c["pos_rank_label"],
-            "rank_change_7d": c["rank_change_7d"],
-            "breakout_score": bscore,
-            "signal": sig_label,
-            "signal_class": sig_cls,
-            "composite_score": _wv_score(c),
-        })
-
-    return jsonify({"candidates": result, "total": len(result)})
-
-
-@app.route("/api/start-sit-options")
-def api_start_sit_options():
-    """
-    Returns roster options grouped by position for the viewing user.
-    Query params: platform, league_id, season
-    """
-    platform = (request.args.get("platform") or "sleeper").strip().lower()
-    league_id = (request.args.get("league_id") or "").strip()
-    season = int(request.args.get("season") or datetime.now().year)
-
-    if not league_id:
-        return jsonify({"error": "league_id required"}), 400
-
-    try:
-        ctx = get_league_ctx_from_cache(platform, league_id, season)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    viewer = ctx.get("viewer") or {}
-    viewer_roster_id = viewer.get("viewer_roster_id")
-
-    if not viewer_roster_id:
-        return jsonify({"positions": {}})
-
-    rosters = ctx.get("rosters") or []
-    viewer_roster = next(
-        (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
-        None,
-    )
-    if not viewer_roster:
-        return jsonify({"positions": {}})
-
-    player_ids = [str(pid) for pid in (viewer_roster.get("players") or [])]
-    players_index = ctx.get("players_index") or {}
-    players_full = ctx.get("players") or {}  # full Sleeper player data (has injury_status)
-    model_value_table = load_model_value_table()
-
-    # League roster slot counts (how many starters per position)
-    lineup_requirements: dict = ctx.get("lineup_requirements") or {}
-    # Fallback if not in ctx: derive from roster_positions
-    if not lineup_requirements:
-        roster_positions = ctx.get("roster_positions") or []
-        for slot in roster_positions:
-            s = str(slot).upper()
-            if s in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX", "K", "DEF"}:
-                lineup_requirements[s] = lineup_requirements.get(s, 0) + 1
-
-    _rp_ss = ctx.get("roster_positions") or []
-    _is_sf_ss = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_ss)
-    _vf_ss = "sf_value" if _is_sf_ss else "value"
-
-    rows_by_id: dict = {}
-    for row in model_value_table:
-        if not isinstance(row, dict):
-            continue
-        pid = str(row.get("id") or "")
-        if pid:
-            rows_by_id[pid] = row
-
-    # ── Defense rankings from last 4 completed weeks of week_stats ────────────
-    # week_stats format: {team: {pos: {player_name: {rush_yds, rec_yds, ...}}}}
-    current_week = int(ctx.get("current_week") or 0)
-    def_rush_allowed: dict[str, list] = {}   # team -> [rush_yds_allowed, ...]
-    def_recv_allowed: dict[str, list] = {}   # team -> [recv_yds_allowed, ...]
-    try:
-        from utils.utils import load_week_stats as _lws
-        schedule_dir = os.path.join("cache", "stats")
-        check_weeks = [w for w in range(max(1, current_week - 4), current_week) if w > 0]
-        for chk_week in check_weeks:
-            wstat = _lws(season, chk_week) or {}
-            for team, pos_data in wstat.items():
-                if not isinstance(pos_data, dict):
-                    continue
-                # Rush yards allowed = sum of all RB rush_yds gained against this team
-                rb_rush = sum(
-                    float(p.get("rush_yds") or p.get("rushing_yds") or 0)
-                    for p in (pos_data.get("RB") or {}).values()
-                    if isinstance(p, dict)
-                )
-                # Receiving yards allowed = WR + TE recv_yds gained against this team
-                wr_recv = sum(
-                    float(p.get("rec_yds") or p.get("receiving_yds") or 0)
-                    for p in (pos_data.get("WR") or {}).values()
-                    if isinstance(p, dict)
-                )
-                te_recv = sum(
-                    float(p.get("rec_yds") or p.get("receiving_yds") or 0)
-                    for p in (pos_data.get("TE") or {}).values()
-                    if isinstance(p, dict)
-                )
-                recv_allowed = wr_recv + te_recv
-                if rb_rush > 0:
-                    def_rush_allowed.setdefault(team, []).append(rb_rush)
-                if recv_allowed > 0:
-                    def_recv_allowed.setdefault(team, []).append(recv_allowed)
-    except Exception:
-        pass
-
-    def _avg(lst): return sum(lst) / len(lst) if lst else 0.0
-
-    # Rank teams: higher allowed yards = easier matchup for skill players
-    all_rush_avgs = {t: _avg(v) for t, v in def_rush_allowed.items()}
-    all_recv_avgs = {t: _avg(v) for t, v in def_recv_allowed.items()}
-
-    def _matchup_adj(opponent_team: str, pos: str) -> float:
-        """Return a multiplier 0.85-1.15 based on opponent defense rank."""
-        if not opponent_team:
-            return 1.0
-        if pos == "RB":
-            avgs = all_rush_avgs
-        elif pos in ("WR", "TE"):
-            avgs = all_recv_avgs
-        elif pos == "QB":
-            avgs = all_recv_avgs  # QB correlates with pass D
-        else:
-            return 1.0
-        if not avgs:
-            return 1.0
-        sorted_teams = sorted(avgs.keys(), key=lambda t: avgs[t])  # hardest → easiest
-        n = len(sorted_teams)
-        try:
-            rank = sorted_teams.index(opponent_team)  # 0=hardest
-        except ValueError:
-            return 1.0
-        # Map rank to [0.85, 1.15]
-        factor = 0.85 + 0.30 * (rank / max(n - 1, 1))
-        return factor
-
-    # ── Schedule: find each team's opponent this week ─────────────────────────
-    opponent_map: dict[str, str] = {}  # team_abbr -> opponent_abbr
-    opp_label_map: dict[str, str] = {}  # team_abbr -> "vs OPP" or "@OPP"
-    try:
-        from utils.utils import load_week_sched as _lsched
-        if current_week > 0:
-            sched = _lsched(season, current_week) or []
-            for game in sched:
-                home = str(game.get("home") or "").upper()
-                away = str(game.get("away") or "").upper()
-                if home and away:
-                    opponent_map[home] = away
-                    opponent_map[away] = home
-                    opp_label_map[home] = f"vs {away}"
-                    opp_label_map[away] = f"@ {home}"
-    except Exception:
-        pass
-
-    # ── Recent fantasy points: avg last 4 weeks from sleeper stats ────────────
-    recent_pts: dict[str, float] = {}
-    try:
-        import glob as _glob
-        from utils.utils import load_players_index as _lpi
-        _stat_pattern = os.path.join("cache", "sleeper_stats", f"sleeper_stats_{season}_week_*.json")
-        _week_files = sorted(_glob.glob(_stat_pattern))
-        _recent_files = _week_files[-4:] if len(_week_files) >= 4 else _week_files
-        _pts_by_player: dict[str, list] = {}
-        for _wf in _recent_files:
-            try:
-                with open(_wf) as _f:
-                    _wdata = json.load(_f)
-                for pid, stats in _wdata.items():
-                    if not isinstance(stats, dict):
-                        continue
-                    pts = float(stats.get("pts_half_ppr") or stats.get("pts_ppr") or 0)
-                    if pts > 0:
-                        _pts_by_player.setdefault(pid, []).append(pts)
-            except Exception:
-                continue
-        for pid, vals in _pts_by_player.items():
-            recent_pts[pid] = _avg(vals)
-    except Exception:
-        pass
-
-    # ── Build output grouped by position ──────────────────────────────────────
-    positions_out: dict = {"QB": [], "RB": [], "WR": [], "TE": []}
-    for pid in player_ids:
-        row = rows_by_id.get(pid) or {}
-        meta = players_index.get(pid) or {}
-        pos = str(row.get("position") or row.get("pos") or meta.get("pos") or "").upper()
-        if pos not in positions_out:
-            continue
-        player_name = row.get("name") or meta.get("name") or f"Player {pid}"
-        team = (row.get("team") or meta.get("team") or "").upper()
-        opponent = opponent_map.get(team, "")
-        opp_label = opp_label_map.get(team, "BYE" if current_week > 0 else "")
-        on_bye = current_week > 0 and team not in opponent_map
-
-        avg_pts = recent_pts.get(pid, 0.0)
-        adj = _matchup_adj(opponent, pos) if not on_bye else 0.5
-        score = avg_pts * adj if avg_pts > 0 else float(row.get(_vf_ss) or row.get("value") or 0) * 0.01
-
-        # Injury status from full Sleeper player data
-        full_player = players_full.get(pid) or {}
-        raw_status = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
-        ACTIVE_STATUSES = {"", "active", "Active", "ACT"}
-        injury_status = None if raw_status in ACTIVE_STATUSES else raw_status
-
-        positions_out[pos].append({
-            "player_id": pid,
-            "name": player_name,
-            "team": team,
-            "opponent": opp_label,
-            "on_bye": on_bye,
-            "avg_pts": round(avg_pts, 1),
-            "matchup_adj": round(adj, 2),
-            "pos_rank_label": row.get("pos_rank_label") or "",
-            "injury_status": injury_status,
-            "_score": score,
-        })
-
-    # Sort by composite score, mark starters per league slot settings
-    flex_slots = (lineup_requirements.get("FLEX") or 0)
-    sflex_slots = (lineup_requirements.get("SUPER_FLEX") or 0) + (lineup_requirements.get("SFLEX") or 0)
-
-    # First pass: mark base-position starters; collect flex candidates (keep _score)
-    for pos in positions_out:
-        positions_out[pos].sort(key=lambda x: (not x["on_bye"], x["_score"]), reverse=True)
-        n_start = lineup_requirements.get(pos, 1)
-        eligible_for_flex = pos in ("RB", "WR", "TE")
-        for i, p in enumerate(positions_out[pos]):
-            p["start"] = i < n_start and not p["on_bye"]
-            p["flex_start"] = False
-            p["flex_eligible"] = eligible_for_flex and i >= n_start and not p["on_bye"]
-
-    # Second pass: promote top flex-eligible players into FLEX slots → mark start=True
-    if flex_slots:
-        all_flex = sorted(
-            [p for pos in positions_out for p in positions_out[pos] if p["flex_eligible"]],
-            key=lambda x: x["_score"], reverse=True
-        )
-        for p in all_flex[:flex_slots]:
-            p["start"] = True
-            p["flex_start"] = True
-
-    # SUPER_FLEX: best QB/RB/WR/TE beyond base starters fills sflex
-    if sflex_slots:
-        sflex_cands = sorted(
-            [p for pos in positions_out for p in positions_out[pos]
-             if not p["start"] and not p["on_bye"] and pos in ("QB", "RB", "WR", "TE")],
-            key=lambda x: x["_score"], reverse=True
-        )
-        for p in sflex_cands[:sflex_slots]:
-            p["start"] = True
-            p["flex_start"] = True
-
-    # Clean up internal score key
-    for pos in positions_out:
-        for p in positions_out[pos]:
-            del p["_score"]
-
-    # Attach league meta so the frontend knows slot counts
-    return jsonify({
-        "positions": positions_out,
-        "lineup_requirements": lineup_requirements,
-        "flex_slots": flex_slots,
-        "sflex_slots": sflex_slots,
-        "current_week": current_week,
-    })
 
 
 @app.route("/<platform>/<int:season>/<league_id>/dashboard")
@@ -8114,7 +7638,31 @@ def page_weekly(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Weekly Hub", league_id, "weekly", body, platform, season)
 
 
-# /trade → routes/trade_bp.py :: page_trade()
+@app.route("/trade")
+@app.route("/<platform>/<int:season>/<league_id>/trade")
+def page_trade(platform: Optional[str] = None, season: Optional[int] = None, league_id: Optional[str] = None):
+    user_id = session.get("viewer_username") or None
+    if league_id:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        league_id_safe = ctx.get("league_id") or league_id
+        season_safe = int(ctx.get("season") or season or datetime.now().year)
+        num_teams = ctx.get("total_rosters") or None
+        rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+        scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+        viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or [])
+        viewer_roster_id = viewer.get("viewer_roster_id") or ""
+        has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
+        body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
+                                           scoring_format=scoring_format,
+                                           viewer_roster_id=viewer_roster_id,
+                                           has_premium=has_premium)
+    else:
+        state = get_nfl_state() or {}
+        current_season = int(state.get("season") or datetime.now().year)
+        has_premium = has_premium_access(user_id, None, "sleeper")
+        body = build_trade_calculator_body(None, current_season, has_premium=has_premium)
+
+    return render_page("BR Fantasy Trade Calculator", league_id, "trade", body, platform, season)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/activity")
@@ -8203,140 +7751,6 @@ def _build_tour_mock_history_ctx() -> dict:
         "rosters": [],
         "offseason_mode": False,
     }
-
-
-def _build_tour_mock_df_for_seed(seed: int) -> "pd.DataFrame":
-    """Same structure as _build_tour_mock_df_weekly but with a custom seed."""
-    import random as _rand
-    rng = _rand.Random(seed)
-    rows = []
-    for week in range(1, 14):
-        pairs = [(0, 1), (2, 3), (4, 5)] if week % 2 == 0 else [(0, 2), (1, 4), (3, 5)]
-        for mid, (a, b) in enumerate(pairs, start=week * 10):
-            rows += [
-                {"week": week, "matchup_id": mid, "owner": _TOUR_MOCK_TEAMS[a],
-                 "points": round(rng.gauss(98, 12), 2), "finalized": True},
-                {"week": week, "matchup_id": mid, "owner": _TOUR_MOCK_TEAMS[b],
-                 "points": round(rng.gauss(95, 11), 2), "finalized": True},
-            ]
-    return pd.DataFrame(rows)
-
-
-def _build_tour_mock_awards_data() -> tuple:
-    """Mock data for the awards page derived from the same seeded weekly scores as graphs/history."""
-    import random as _rand
-
-    mock_ids = ["u1", "u2", "u3", "u4", "u5", "u6"]
-    id_to_name = dict(zip(mock_ids, _TOUR_MOCK_TEAMS))
-    name_to_uid = {n: u for u, n in id_to_name.items()}
-
-    season_dfs = {
-        2024: _build_tour_mock_df_weekly(),           # seed 42
-        2023: _build_tour_mock_df_for_seed(43),
-        2022: _build_tour_mock_df_for_seed(44),
-    }
-
-    # Derive W/L/PF/PA per team per season from the actual matchup data
-    career_owners: dict = {uid: {
-        "Wins": 0, "Losses": 0, "Ties": 0,
-        "PF": 0.0, "PA": 0.0,
-        "seasons": 0, "weekly_pts": [],
-        "close_wins": 0, "bench_pts": 0.0,
-        "waiver_adds": 0, "activity": 0,
-        "playoff_delta_sum": 0.0, "playoff_delta_n": 0,
-    } for uid in mock_ids}
-
-    season_records = []
-    rng = _rand.Random(7)  # only for minor auxiliary fields
-
-    for yr, df in sorted(season_dfs.items(), reverse=True):
-        # Build matchup-level results for regular-season weeks (1-13)
-        reg = df[df["week"] <= 13].copy()
-        matchup_pts: dict = {}
-        for _, row in reg.iterrows():
-            mid = row["matchup_id"]
-            matchup_pts.setdefault(mid, []).append((row["owner"], row["points"]))
-
-        wins_season: dict = {t: 0 for t in _TOUR_MOCK_TEAMS}
-        losses_season: dict = {t: 0 for t in _TOUR_MOCK_TEAMS}
-        pf_season: dict = {t: 0.0 for t in _TOUR_MOCK_TEAMS}
-        pa_season: dict = {t: 0.0 for t in _TOUR_MOCK_TEAMS}
-        close_wins_season: dict = {t: 0 for t in _TOUR_MOCK_TEAMS}
-
-        for mid, sides in matchup_pts.items():
-            if len(sides) != 2:
-                continue
-            (t1, p1), (t2, p2) = sides
-            pf_season[t1] += p1; pa_season[t1] += p2
-            pf_season[t2] += p2; pa_season[t2] += p1
-            if p1 > p2:
-                wins_season[t1] += 1; losses_season[t2] += 1
-                if abs(p1 - p2) < 5:
-                    close_wins_season[t1] += 1
-            else:
-                wins_season[t2] += 1; losses_season[t1] += 1
-                if abs(p1 - p2) < 5:
-                    close_wins_season[t2] += 1
-
-        # Accumulate into career
-        for i, (uid, name) in enumerate(id_to_name.items()):
-            pts_list = list(reg[reg["owner"] == name]["points"])
-            career_owners[uid]["Wins"]     += wins_season[name]
-            career_owners[uid]["Losses"]   += losses_season[name]
-            career_owners[uid]["PF"]       += pf_season[name]
-            career_owners[uid]["PA"]       += pa_season[name]
-            career_owners[uid]["seasons"]  += 1
-            career_owners[uid]["weekly_pts"].extend(pts_list)
-            career_owners[uid]["close_wins"] += close_wins_season[name]
-            career_owners[uid]["bench_pts"]  += round(rng.gauss(200, 30), 1)
-            career_owners[uid]["waiver_adds"] += rng.randint(3, 12)
-            career_owners[uid]["activity"]   += rng.randint(6, 20)
-            career_owners[uid]["playoff_delta_sum"] += round(rng.gauss(0, 8), 1)
-            career_owners[uid]["playoff_delta_n"]   += 1
-
-        # Champion = most wins; runner-up = second most
-        sorted_teams = sorted(_TOUR_MOCK_TEAMS, key=lambda t: (wins_season[t], pf_season[t]), reverse=True)
-        champ_name, runner_name = sorted_teams[0], sorted_teams[1]
-        top_pf_name = max(_TOUR_MOCK_TEAMS, key=lambda t: pf_season[t])
-        high_week_name = str(reg.loc[reg["points"].idxmax(), "owner"])
-        high_week_val  = round(float(reg["points"].max()), 1)
-        # Closest matchup
-        margins = {}
-        for mid, sides in matchup_pts.items():
-            if len(sides) == 2:
-                margins[mid] = abs(sides[0][1] - sides[1][1])
-        closest_mid = min(margins, key=margins.get) if margins else None
-        if closest_mid:
-            (ct1, _), (ct2, _) = matchup_pts[closest_mid]
-            closest_str = f"{ct1} vs {ct2}"
-            closest_margin = round(margins[closest_mid], 2)
-        else:
-            closest_str, closest_margin = "-", 0.0
-
-        champ_w = wins_season[champ_name]
-        champ_l = losses_season[champ_name]
-        season_records.append({
-            "season": yr,
-            "champion": champ_name,
-            "champion_uid": name_to_uid[champ_name],
-            "runner_up": runner_name,
-            "runner_up_uid": name_to_uid[runner_name],
-            "champion_record": f"{champ_w}-{champ_l}",
-            "top_pf_team": top_pf_name,
-            "top_pf": round(pf_season[top_pf_name], 1),
-            "highest_week_team": high_week_name,
-            "highest_week_value": high_week_val,
-            "closest_matchup": closest_str,
-            "closest_margin": closest_margin,
-        })
-
-    championships: dict = {}
-    for rec in season_records:
-        uid = rec["champion_uid"]
-        championships.setdefault(uid, []).append(rec["season"])
-
-    available = sorted(season_dfs.keys(), reverse=True)
-    return available, career_owners, championships, season_records, id_to_name
 
 
 @app.route("/<platform>/<int:season>/<league_id>/graphs")
@@ -8545,7 +7959,7 @@ def page_auction_values(platform: str = None, season: int = None, league_id: str
       <div class="card-header">
         <h2>Startup Auction Values</h2>
         <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
-          Dynasty startup auction dollar values for every player - by league type, size, and budget
+          Dynasty startup auction dollar values for every player — by league type, size, and budget
         </div>
       </div>
       <div class="card-body" style="text-align:center;padding:60px 24px;">
@@ -8573,7 +7987,7 @@ def page_auction_values(platform: str = None, season: int = None, league_id: str
       <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
         <h2 style="margin:0 0 4px;">Startup Auction Values</h2>
         <div style="font-size:13px;color:var(--text-muted);">
-          Dynasty startup dollar values based on BR model - adjust format and budget below
+          Dynasty startup dollar values based on BR model — adjust format and budget below
         </div>
       </div>
       <div class="card-body" style="padding-top:20px;">
@@ -8761,15 +8175,15 @@ def page_auction_values(platform: str = None, season: int = None, league_id: str
         body.innerHTML = display.map((p, i) => {{
           const pos = (p.position || '').toUpperCase();
           const col = POS_COLORS[pos] || 'var(--text-muted)';
-          const age = p.age ? parseFloat(p.age).toFixed(1) : '-';
-          const val = p._val ? p._val.toFixed(1) : '-';
+          const age = p.age ? parseFloat(p.age).toFixed(1) : '—';
+          const val = p._val ? p._val.toFixed(1) : '—';
           const auc = p._auction;
           const dollarClass = auc >= 40 ? 'top' : auc >= 10 ? 'mid' : 'low';
           return `<tr>
             <td style="color:var(--text-muted);">${{i + 1}}</td>
-            <td style="font-weight:600;">${{p.name || '-'}}</td>
+            <td style="font-weight:600;">${{p.name || '—'}}</td>
             <td><span style="font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;background:${{col}}20;color:${{col}};">${{pos}}</span></td>
-            <td class="av-col-team" style="color:var(--text-muted);">${{p.team || '-'}}</td>
+            <td class="av-col-team" style="color:var(--text-muted);">${{p.team || '—'}}</td>
             <td>${{age}}</td>
             <td class="av-col-value" style="color:var(--text-muted);">${{val}}</td>
             <td style="padding-right:10px;"><span class="av-dollar ${{dollarClass}}">$${{auc}}</span></td>
@@ -8812,7 +8226,7 @@ def page_auction_values(platform: str = None, season: int = None, league_id: str
 @app.route("/players")
 @app.route("/<platform>/<int:season>/<league_id>/players")
 def page_players(platform: str = None, season: int = None, league_id: str = None):
-    """Player Rankings page - searchable, filterable, sortable list of all players."""
+    """Player Rankings page — searchable, filterable, sortable list of all players."""
     body_html = """
     <div class="card central">
       <div class="card-header">
@@ -8825,8 +8239,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
         <!-- Controls -->
         <div class="filter-controls-container">
-          <!-- Row 1: Search + pills (desktop: same flex row / mobile: stacked) -->
-          <div class="filter-row-primary">
+          <!-- Row 1: Primary filters -->
+          <div class="filter-row filter-row-primary">
+            <!-- Search -->
             <div class="filter-search">
               <input id="prSearch" type="text" placeholder="Search players…" autocomplete="off"
                 style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
@@ -8839,6 +8254,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                        background:none;border:none;cursor:pointer;color:var(--text-muted);
                        font-size:16px;line-height:1;padding:2px;">&#x2715;</button>
             </div>
+
+            <!-- Position filters -->
             <div class="filter-positions">
               <button class="pos-pill active" data-pos="ALL" onclick="prTogglePos('ALL')">All</button>
               <button class="pos-pill" data-pos="QB" onclick="prTogglePos('QB')">QB</button>
@@ -8847,19 +8264,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               <button class="pos-pill" data-pos="TE" onclick="prTogglePos('TE')">TE</button>
               <button class="pos-pill" data-pos="PICK" onclick="prTogglePos('PICK')">Picks</button>
             </div>
-          </div>
 
-          <!-- Row 2: Tags + Settings + Sort (desktop: same flex row / mobile: tags+settings then sort) -->
-          <div class="filter-row-secondary">
-            <div class="active-settings-indicator" id="prActiveSettings">
-              <span class="active-setting-tag">10-Team</span>
-              <span class="active-setting-tag">1QB</span>
-              <span class="active-setting-tag">Dynasty</span>
-            </div>
-            <div style="position:relative;flex-shrink:0;">
+            <!-- Settings button -->
+            <div style="position:relative;">
               <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
                 League️ Settings
               </button>
+
+              <!-- Settings panel (hidden by default) -->
               <div id="prSettingsPanel" class="filter-settings-panel" style="display:none;">
                 <div class="settings-section">
                   <span class="settings-section-label">Scoring Type</span>
@@ -8886,6 +8298,16 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                 </div>
               </div>
             </div>
+          </div>
+
+          <!-- Row 2: Secondary filters -->
+          <div class="filter-row filter-row-secondary">
+            <div id="prActiveSettings" class="active-settings-indicator">
+              <span class="active-setting-tag">10-Team</span>
+              <span class="active-setting-tag">1QB</span>
+              <span class="active-setting-tag">Dynasty</span>
+            </div>
+            <!-- Sort dropdown -->
             <div class="filter-sort">
               <label class="filter-label">Sort by</label>
               <select id="prSort" onchange="prPage=1;prRender()"
@@ -8895,8 +8317,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                 <option value="value">Value</option>
                 <option value="age">Age</option>
                 <option value="pos_rank">Pos Rank</option>
-                <option value="ppg">PPG</option>
-                <option value="total_pts">Total Pts</option>
               </select>
             </div>
           </div>
@@ -9010,43 +8430,34 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       .filter-controls-container {
         display: flex;
         flex-direction: column;
-        gap: 10px;
-        padding: 14px 0 12px;
+        gap: 12px;
+        padding: 16px 0 14px;
         border-bottom: 1px solid var(--border);
         margin-bottom: 12px;
       }
-      .filter-row-primary {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      .filter-row-secondary {
+      .filter-row {
         display: flex;
         align-items: center;
         gap: 10px;
+        flex-wrap: wrap;
         justify-content: space-between;
+      }
+      .filter-row-primary {
+        gap: 12px;
+      }
+      .filter-row-secondary {
+        padding-top: 4px;
       }
       .filter-search {
         position: relative;
         flex: 1;
         min-width: 200px;
       }
-      .filter-row-tags {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-        flex-wrap: nowrap;
-      }
       .filter-positions {
         display: flex;
-        gap: 4px;
-        overflow-x: auto;
-        flex-wrap: nowrap;
-        scrollbar-width: none;
-        -webkit-overflow-scrolling: touch;
+        gap: 3px;
+        flex-wrap: wrap;
       }
-      .filter-positions::-webkit-scrollbar { display: none; }
       .pos-pill {
         padding: 6px 12px;
         border-radius: 999px;
@@ -9137,13 +8548,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         display: flex;
         gap: 6px;
         align-items: center;
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        scrollbar-width: none;
-        flex: 1;
-        min-width: 0;
+        flex-wrap: wrap;
       }
-      .active-settings-indicator::-webkit-scrollbar { display: none; }
       .active-setting-tag {
         padding: 4px 10px;
         border-radius: 999px;
@@ -9230,14 +8636,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           gap: 8px;
           align-items: center;
         }
-        .pr-pagination-btn .pr-btn-label { display: none; }
+        .pr-pagination-btn .pr-btn-label {
+          display: none;
+        }
         .pr-pagination-btn {
           padding: 6px 10px;
           min-width: 36px;
           justify-content: center;
         }
-        .pos-pill { padding: 5px 10px; font-size: 11px; }
-        .filter-sort select { font-size: 12px; padding: 5px 8px; }
       }
       .pr-page-numbers {
         display: flex;
@@ -9267,15 +8673,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         .filter-row-primary {
           flex-direction: column;
           align-items: stretch;
-          gap: 8px;
         }
         .filter-search {
-          flex: none;
-          min-width: 0;
-          width: 100%;
+          max-width: 100%;
         }
         .filter-positions {
-          justify-content: space-evenly;
+          justify-content: flex-start;
           gap: 5px;
         }
         .pos-pill {
@@ -9286,26 +8689,24 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           white-space: nowrap;
         }
         .active-settings-indicator {
-          flex: 1;
-          min-width: 0;
+          justify-content: center;
+          order: -1;
+          width: 100%;
         }
         .filter-row-secondary {
           flex-wrap: wrap;
           gap: 8px;
-          justify-content: flex-start;
         }
-        .filter-sort {
-          flex: 1 1 100%;
-        }
+        .filter-sort,
         .filter-sort select {
           width: 100%;
         }
-        /* Table: hide Age on tablets - rank | arrow | name | pos | team | sort */
+        /* Table: hide Age on tablets — rank | arrow | name | pos | team | sort */
         .pr-grid-row { grid-template-columns: 28px 16px 1fr 44px 42px 56px !important; }
         .pr-age,  #prAgeHeader  { display: none !important; }
       }
       @media (max-width: 480px) {
-        /* Phone: rank | arrow | name | sort - hide pos and team */
+        /* Phone: rank | arrow | name | sort — hide pos and team */
         .pr-grid-row { grid-template-columns: 28px 16px 1fr 56px !important; }
         .pr-pos-cell, #prTableHeader span:nth-child(4) { display: none !important; }
         .pr-team,     #prTableHeader span:nth-child(6) { display: none !important; }
@@ -9315,7 +8716,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     <script>
       var prAllPlayers = [];
       var prIndicators = {};
-      var prTrends = {};   // player_id → {class, label, color, slope_pct_month}
       var prLeagueType   = '1qb';
       var prLeagueSize   = 10;
       var prScoringType  = 'dynasty';  // 'dynasty' | 'redraft'
@@ -9509,14 +8909,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
       // Map sort key → { header label, cell value function }
       const PR_SORT_META = {
-        rank:      { label: 'Value',     cell: p => prFormatValue(prGetValue(p)) },
-        value:     { label: 'Value',     cell: p => prFormatValue(prGetValue(p)) },
-        age:       { label: 'Age',       cell: p => p.age != null ? Number(p.age).toFixed(1) : '-' },
-        pos_rank:  { label: 'Pos Rank',  cell: p => prLeagueType === 'sf'
+        rank:     { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
+        value:    { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
+        age:      { label: 'Age',      cell: p => p.age != null ? Number(p.age).toFixed(1) : '—' },
+        pos_rank: { label: 'Pos Rank', cell: p => prLeagueType === 'sf'
           ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
           : (p.pos_rank_label || p.position) },
-        ppg:       { label: 'PPG',       cell: p => p.ppg != null ? Number(p.ppg).toFixed(1) : '-' },
-        total_pts: { label: 'Total Pts', cell: p => p.total_pts != null ? Number(p.total_pts).toFixed(1) : '-' },
       };
 
       // Sort and filter players, then render rows into the main table
@@ -9525,11 +8923,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         const sortBy = document.getElementById('prSort').value;
 
         // On mobile (≤768px) the Age column is hidden, so switch the sort column
-        // to show whatever is being sorted. On desktop all columns are visible,
-        // but for ppg/total_pts sorts always show the sort value in the sort column.
+        // to show whatever is being sorted. On desktop all columns are visible.
         const isMobile = window.innerWidth <= 768;
-        const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts';
-        const sortMeta = (isMobile || _alwaysShowSort) ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
+        const sortMeta = isMobile ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
         const sortHeaderEl = document.getElementById('prSortHeader');
         if (sortHeaderEl) sortHeaderEl.textContent = sortMeta.label;
         // Hide age col only on mobile when sort=age (shown in sort col instead)
@@ -9563,7 +8959,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           players = players.filter(p => !p.is_rookie || isDrafted(p));
         }
 
-        // Search filter - fuzzy match, sort by score when query present
+        // Search filter — fuzzy match, sort by score when query present
         if (prSearchQuery.length > 0) {
           const scored = players
             .map(p => ({
@@ -9584,10 +8980,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               const rA = prLeagueType === 'sf' ? (a.sf_pos_rank || a.pos_rank || 9999) : (a.pos_rank || 9999);
               const rB = prLeagueType === 'sf' ? (b.sf_pos_rank || b.pos_rank || 9999) : (b.pos_rank || 9999);
               return rA - rB;
-            } else if (sortBy === 'ppg') {
-              return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
-            } else if (sortBy === 'total_pts') {
-              return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
             } else {
               return prGetValue(b) - prGetValue(a);
             }
@@ -9630,7 +9022,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         list.innerHTML = '';
         let prevTier = null;
         pageSlice.forEach((p, i) => {
-          const _tier = (sortBy === 'value' || sortBy === 'rank') && p.position !== 'PICK' ? prGetTier(p) : null;
+          const _tier = (sortBy === 'value' || sortBy === 'rank') ? prGetTier(p) : null;
           if (_tier && _tier !== prevTier) {
             const tc = _PR_TIER_COLORS[_tier] || '#64748b';
             const tl = _PR_TIER_LABELS[_tier] || ('Tier ' + _tier);
@@ -9662,13 +9054,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           };
 
           const _drafted = p.is_rookie && p.team && p.team !== 'FA';
-          const _useValueRank = sortBy === 'rank' || sortBy === 'value';
-          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' :
-            (_useValueRank ? (rankMap.get(String(p.id)) || (idx + 1)) : (idx + 1));
+          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (rankMap.get(String(p.id)) || (idx + 1));
           const posRank = prLeagueType === 'sf'
             ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
             : (p.pos_rank_label || p.position);
-          const age = p.age != null ? Number(p.age).toFixed(1) : '-';
+          const age = p.age != null ? Number(p.age).toFixed(1) : '—';
           const val = prGetValue(p);
 
           let badges = '';
@@ -9679,38 +9069,22 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
           const rankChange = p.rank_change_7d;
           let rankArrow = '';
-          if (_useValueRank && rankChange != null && rankChange !== 0) {
+          if (rankChange != null && rankChange !== 0) {
             const dir = rankChange > 0 ? 'up' : 'down';
             const icon = rankChange > 0 ? 'fa-chevron-up' : 'fa-chevron-down';
             rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
           }
 
-          const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '-' : sortMeta.cell(p);
-          let sortDisplayHTML;
-          if (p.position !== 'PICK' && sortBy === 'ppg' && p.ppg != null) {
-            const pRank = p.ppg_rank ? (p.position + p.ppg_rank) : '-';
-            sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
-              + `<span>${sortDisplay}</span>`
-              + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${pRank}</span>`
-              + `</span>`;
-          } else if (p.position !== 'PICK' && sortBy === 'total_pts' && p.total_pts != null) {
-            const tRank = p.total_pts_rank ? (p.position + p.total_pts_rank) : '-';
-            sortDisplayHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.2;">`
-              + `<span>${sortDisplay}</span>`
-              + `<span style="font-size:10px;font-weight:600;color:var(--text-muted);">${tRank}</span>`
-              + `</span>`;
-          } else {
-            sortDisplayHTML = sortDisplay;
-          }
+          const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '—' : sortMeta.cell(p);
 
           row.innerHTML =
-            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '-') + '</span>' +
+            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
             '<span class="pr-arrows">' + rankArrow + '</span>' +
             '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
             '<span class="pr-pos-cell">' + posRank + '</span>' +
-            '<span class="pr-age">'   + (p.position === 'PICK' ? '-' : age) + '</span>' +
-            '<span class="pr-team">'  + (p.team || '-') + '</span>' +
-            '<span class="pr-value">' + sortDisplayHTML + '</span>';
+            '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
+            '<span class="pr-team">'  + (p.team || '—') + '</span>' +
+            '<span class="pr-value">' + sortDisplay + '</span>';
 
           list.appendChild(row);
         });
@@ -9845,11 +9219,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       Promise.all([
         fetch('/api/league-players', { cache: 'no-store' }).then(r => r.json()),
         fetch('/api/player-indicators?league_type=1qb&league_size=10', { cache: 'no-store' })
-          .then(r => r.json()).catch(() => ({})),
-        fetch('/api/player-trends').then(r => r.json()).catch(() => ({}))
-      ]).then(([resp, indicators, trends]) => {
+          .then(r => r.json()).catch(() => ({}))
+      ]).then(([resp, indicators]) => {
         prIndicators = indicators || {};
-        prTrends = trends || {};
         // Support both old (array) and new (object with players + tier_thresholds) format
         const rawPlayers = Array.isArray(resp) ? resp : (resp.players || []);
         prTierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
@@ -9918,11 +9290,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               search_name:      p.search_name || '',
               is_rookie:        p.is_rookie === true,
               rank_change_7d:   p.rank_change_7d != null ? Number(p.rank_change_7d) : null,
-              ppg:              p.ppg != null ? Number(p.ppg) : null,
-              total_pts:        p.total_pts != null ? Number(p.total_pts) : null,
-              ppg_rank:         p.ppg_rank != null ? Number(p.ppg_rank) : null,
-              total_pts_rank:   p.total_pts_rank != null ? Number(p.total_pts_rank) : null,
-              ppg_season:       p.ppg_season || null,
             };
           })
           .filter(p => ['QB','RB','WR','TE','PICK'].includes(p.position) || p.is_rookie)
@@ -9937,44 +9304,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       });
     </script>
     """
-    if platform and league_id:
-        try:
-            _pr_ctx = get_league_ctx_from_cache(platform, league_id, season)
-            _pr_rp = _pr_ctx.get("roster_positions") or []
-            _pr_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _pr_rp)
-            _pr_lt = "sf" if _pr_sf else "1qb"
-            _pr_sz = len(_pr_ctx.get("rosters") or []) or 10
-            _pr_sz_bucket = min([8, 10, 12, 14], key=lambda x: abs(x - _pr_sz))
-            body_html = body_html.replace(
-                "var prLeagueType   = '1qb';",
-                f"var prLeagueType   = '{_pr_lt}';",
-            ).replace(
-                "var prLeagueSize   = 10;",
-                f"var prLeagueSize   = {_pr_sz};",
-            ).replace(
-                "fetch('/api/player-indicators?league_type=1qb&league_size=10'",
-                f"fetch('/api/player-indicators?league_type={_pr_lt}&league_size={_pr_sz}'",
-            ).replace(
-                '<span class="active-setting-tag">10-Team</span>',
-                f'<span class="active-setting-tag">{_pr_sz}-Team</span>',
-            ).replace(
-                '<span class="active-setting-tag">1QB</span>',
-                f'<span class="active-setting-tag">{"SF" if _pr_sf else "1QB"}</span>',
-            ).replace(
-                '<button class="settings-toggle active" data-value="1qb" onclick="prSetLeagueType(\'1qb\')">1QB</button>',
-                f'<button class="settings-toggle{"" if _pr_sf else " active"}" data-value="1qb" onclick="prSetLeagueType(\'1qb\')">1QB</button>',
-            ).replace(
-                '<button class="settings-toggle" data-value="sf" onclick="prSetLeagueType(\'sf\')">SF</button>',
-                f'<button class="settings-toggle{" active" if _pr_sf else ""}" data-value="sf" onclick="prSetLeagueType(\'sf\')">SF</button>',
-            ).replace(
-                '<button class="settings-toggle active" data-value="10" onclick="prSetSize(10)">10</button>',
-                '<button class="settings-toggle" data-value="10" onclick="prSetSize(10)">10</button>',
-            ).replace(
-                f'<button class="settings-toggle" data-value="{_pr_sz_bucket}" onclick="prSetSize({_pr_sz_bucket})">{_pr_sz_bucket}</button>',
-                f'<button class="settings-toggle active" data-value="{_pr_sz_bucket}" onclick="prSetSize({_pr_sz_bucket})">{_pr_sz_bucket}</button>',
-            )
-        except Exception:
-            pass
+    if platform:
         return render_page("Player Rankings", league_id, "players", body_html, platform, season)
 
     return render_page("Player Rankings", None, "players", body_html)
@@ -9982,46 +9312,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
 @app.route("/<platform>/<int:season>/<league_id>/prospects")
 def page_prospects(platform: str, season: int, league_id: str):
-    """Rookie prospect rankings page - active class auto-detected."""
+    """Rookie prospect rankings page — active class auto-detected."""
     from dashboard_services.pages.rookies_page import build_prospects_body
     body_html = build_prospects_body()
-    try:
-        _rk_ctx = get_league_ctx_from_cache(platform, league_id, season)
-        _rk_rp = _rk_ctx.get("roster_positions") or []
-        _rk_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rk_rp)
-        _rk_lt = "sf" if _rk_sf else "1qb"
-        _rk_sz = len(_rk_ctx.get("rosters") or []) or 10
-        _rk_badge = "SF" if _rk_sf else "1QB"
-        _rk_1qb_cls = "settings-toggle" if _rk_sf else "settings-toggle active"
-        _rk_sf_cls = "settings-toggle active" if _rk_sf else "settings-toggle"
-        _rk_sz_bucket = min([8, 10, 12, 14], key=lambda x: abs(x - _rk_sz))
-        body_html = body_html.replace(
-            "var rkLeague    = '1qb';",
-            f"var rkLeague    = '{_rk_lt}';",
-        ).replace(
-            "var rkSize      = 10;",
-            f"var rkSize      = {_rk_sz};",
-        ).replace(
-            '<span class="active-setting-tag">10-Team</span>',
-            f'<span class="active-setting-tag">{_rk_sz}-Team</span>',
-        ).replace(
-            '<span class="active-setting-tag">1QB</span>',
-            f'<span class="active-setting-tag">{_rk_badge}</span>',
-        ).replace(
-            'class="settings-toggle active" data-value="1qb" onclick="rkSetLeague(\'1qb\')',
-            f'class="{_rk_1qb_cls}" data-value="1qb" onclick="rkSetLeague(\'1qb\')',
-        ).replace(
-            'class="settings-toggle" data-value="sf" onclick="rkSetLeague(\'sf\')',
-            f'class="{_rk_sf_cls}" data-value="sf" onclick="rkSetLeague(\'sf\')',
-        ).replace(
-            '<button class="settings-toggle active" data-value="10" onclick="rkSetSize(10)">10</button>',
-            '<button class="settings-toggle" data-value="10" onclick="rkSetSize(10)">10</button>',
-        ).replace(
-            f'<button class="settings-toggle" data-value="{_rk_sz_bucket}" onclick="rkSetSize({_rk_sz_bucket})">{_rk_sz_bucket}</button>',
-            f'<button class="settings-toggle active" data-value="{_rk_sz_bucket}" onclick="rkSetSize({_rk_sz_bucket})">{_rk_sz_bucket}</button>',
-        )
-    except Exception:
-        pass
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 
@@ -10065,47 +9358,18 @@ def page_breakouts(platform: str, season: int, league_id: str):
       </div>
     </div>
 
-    <style>
-      .bk-pagination {{
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 14px 0 4px;
-        border-top: 1px solid var(--border);
-        margin-top: 16px;
-        flex-wrap: wrap;
-        gap: 8px;
-      }}
-      .bk-pagination-info {{ font-size: 13px; color: var(--text-muted); }}
-      .bk-pagination-controls {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
-      .bk-pagination-btn {{
-        padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
-        background: var(--card-bg); color: var(--text); font-size: 12px; font-weight: 500;
-        cursor: pointer; display: flex; align-items: center; gap: 4px;
-      }}
-      .bk-pagination-btn:hover:not(:disabled) {{ background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }}
-      .bk-pagination-btn:disabled {{ opacity: 0.45; cursor: not-allowed; }}
-      .bk-page-numbers {{ display: flex; gap: 4px; }}
-      .bk-page-num {{
-        padding: 4px 9px; border: 1px solid var(--border); border-radius: 4px;
-        background: var(--card-bg); color: var(--text); font-size: 12px; cursor: pointer; min-width: 28px; text-align: center;
-      }}
-      .bk-page-num:hover {{ background: var(--accent-soft); border-color: var(--accent); }}
-      .bk-page-num.active {{ background: var(--accent); border-color: var(--accent); color: #fff; }}
-    </style>
-
     <script>
       const BO_HAS_PREMIUM = {str(has_premium).lower()};
-      const BK_PER_PAGE = 20;
       let breakoutCandidates = [];
       let currentFilter = 'ALL';
-      let bkCurrentPage = 1;
 
+      // Fetch breakout candidates on page load (using new BreakoutEngine API)
       fetch('/api/breakout/candidates?season={season}&min_score=25')
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
           document.getElementById('breakoutsLoading').style.display = 'none';
+
           if (breakoutCandidates.length === 0) {{
             document.getElementById('breakoutsEmpty').style.display = 'block';
           }} else {{
@@ -10119,135 +9383,128 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
       function filterBreakouts(position) {{
         currentFilter = position;
-        bkCurrentPage = 1;
+
+        // Update active button
         document.querySelectorAll('.breakout-filter-btn').forEach(btn => {{
           btn.classList.toggle('active', btn.getAttribute('data-position') === position);
         }});
-        renderBreakouts();
-      }}
 
-      function bkGoPage(dir) {{
-        if (dir === 'prev') bkCurrentPage--;
-        else if (dir === 'next') bkCurrentPage++;
-        else bkCurrentPage = dir;
         renderBreakouts();
-        window.scrollTo({{top: 0, behavior: 'smooth'}});
       }}
 
       function renderBreakouts() {{
         const container = document.getElementById('breakoutsContainer');
-        const empty = document.getElementById('breakoutsEmpty');
         const filtered = currentFilter === 'ALL'
           ? breakoutCandidates
           : breakoutCandidates.filter(c => c.position === currentFilter);
 
         if (filtered.length === 0) {{
-          empty.style.display = 'block';
+          document.getElementById('breakoutsEmpty').style.display = 'block';
           container.style.display = 'none';
           return;
         }}
-        empty.style.display = 'none';
+
+        document.getElementById('breakoutsEmpty').style.display = 'none';
         container.style.display = 'block';
 
         const FREE_LIMIT = 3;
-
-        // Pagination math
-        const total = filtered.length;
-        const totalPages = Math.max(1, Math.ceil((BO_HAS_PREMIUM ? total : Math.min(total, FREE_LIMIT)) / BK_PER_PAGE));
-        if (bkCurrentPage > totalPages) bkCurrentPage = 1;
-        const offset = (bkCurrentPage - 1) * BK_PER_PAGE;
-        const pageItems = BO_HAS_PREMIUM
-          ? filtered.slice(offset, offset + BK_PER_PAGE)
-          : filtered.slice(0, FREE_LIMIT);
-        const showLock = !BO_HAS_PREMIUM && total > FREE_LIMIT;
+        const visible = BO_HAS_PREMIUM ? filtered : filtered.slice(0, FREE_LIMIT);
+        const locked = !BO_HAS_PREMIUM && filtered.length > FREE_LIMIT;
 
         let html = '<div class="breakout-grid">';
-        pageItems.forEach(candidate => {{
+
+        visible.forEach(candidate => {{
           const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
           const pos = candidate.position || '?';
           const age = candidate.age ? parseFloat(candidate.age).toFixed(1) : '-';
           const score = candidate.breakout_opportunity_score ? parseFloat(candidate.breakout_opportunity_score).toFixed(1) : '0';
           const pid = candidate.player_id || '';
+
+          // Breakout type classification
           const breakoutType = candidate.breakout_type || {{}};
           const iconClass = breakoutType.icon_class || 'fa-chart-bar';
           const label = breakoutType.profile_label || 'Breakout Candidate';
           const driver = breakoutType.primary_driver || 'balanced';
+
+          // Component scores
           const oppScore = parseFloat(candidate.opportunity_opened_score || 0).toFixed(1);
           const readyScore = parseFloat(candidate.player_readiness_score || 0).toFixed(1);
           const confScore = parseFloat(candidate.confidence_score || 0).toFixed(1);
           const teamEnv = parseFloat(candidate.team_environment_score || 0).toFixed(1);
-          let scoreColor = '#10b981';
-          if (score < 50) scoreColor = '#3b82f6';
-          if (score < 40) scoreColor = '#f59e0b';
-          if (score < 30) scoreColor = '#6b7280';
+
+          // Key reasons (from engine)
+          const reasons = candidate.key_reasons || '';
+          const reasonsList = reasons.split('\\n').filter(r => r.trim() && r.startsWith('•')).map(r => r.substring(1).trim());
+
+          // Score badge color based on score ranges
+          let scoreColor = '#10b981'; // green (50+)
+          if (score < 50) scoreColor = '#3b82f6'; // blue (40-49)
+          if (score < 40) scoreColor = '#f59e0b'; // amber (30-39)
+          if (score < 30) scoreColor = '#6b7280'; // gray (<30)
 
           html += `
-            <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + (name||'').replace(/'/g,"\\\\'") + `', {{tab:'breakout'}})">
+            <div class="breakout-card" style="cursor:pointer;" onclick="openBreakoutModal('` + pid + `')">
               <div class="breakout-card-header">
                 <div>
                   <div class="breakout-player-name">` + name + `</div>
-                  <div class="breakout-player-meta">${{age}} &bull; ${{team}} &bull; ${{pos}}</div>
+                  <div class="breakout-player-meta">${{age}} • ${{team}} • ${{pos}}</div>
                 </div>
-                <div class="breakout-score-badge" style="background: ${{scoreColor}};">${{score}}</div>
+                <div class="breakout-score-badge" style="background: ${{scoreColor}};">
+                  ${{score}}
+                </div>
               </div>
+
               <div class="breakout-card-body">
-                <div class="breakout-type-badge" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--card-bg);border-radius:6px;margin-bottom:12px;border:1px solid var(--border-color);">
+                <!-- Breakout Type Badge -->
+                <div class="breakout-type-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--card-bg); border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--border-color);">
                   <i class="fa-solid ${{iconClass}}" style="font-size:18px;width:20px;text-align:center;"></i>
-                  <span style="font-weight:500;flex:1;">${{label}}</span>
-                  <span style="font-size:12px;color:var(--text-muted);text-transform:uppercase;">${{driver}} driven</span>
+                  <span style="font-weight: 500; flex: 1;">${{label}}</span>
+                  <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">${{driver}} driven</span>
                 </div>
+
+                <!-- Component Scores -->
                 <div class="breakout-section">
                   <div class="breakout-section-title">Component Breakdown</div>
-                  <div class="breakout-components" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:12px;">
-                    ${{driver === 'opportunity' || driver === 'balanced' ? `<div style="background:var(--card-bg);padding:8px;border-radius:4px;border:1px solid var(--border-color);"><div style="color:var(--text-muted);margin-bottom:2px;">Opportunity</div><div style="font-weight:600;font-size:14px;color:#10b981;">${{oppScore}}</div></div>` : ''}}
-                    ${{driver === 'readiness' || driver === 'balanced' ? `<div style="background:var(--card-bg);padding:8px;border-radius:4px;border:1px solid var(--border-color);"><div style="color:var(--text-muted);margin-bottom:2px;">Talent/Readiness</div><div style="font-weight:600;font-size:14px;color:#3b82f6;">${{readyScore}}</div></div>` : ''}}
-                    <div style="background:var(--card-bg);padding:8px;border-radius:4px;border:1px solid var(--border-color);"><div style="color:var(--text-muted);margin-bottom:2px;">Team Environment</div><div style="font-weight:600;font-size:14px;">${{teamEnv}}</div></div>
-                    <div style="background:var(--card-bg);padding:8px;border-radius:4px;border:1px solid var(--border-color);"><div style="color:var(--text-muted);margin-bottom:2px;">Confidence</div><div style="font-weight:600;font-size:14px;">${{confScore}}%</div></div>
+                  <div class="breakout-components" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 12px;">
+                    ${{driver === 'opportunity' || driver === 'balanced' ? `
+                      <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                        <div style="color: var(--text-muted); margin-bottom: 2px;">Opportunity</div>
+                        <div style="font-weight: 600; font-size: 14px; color: #10b981;">${{oppScore}}</div>
+                      </div>
+                    ` : ''}}
+                    ${{driver === 'readiness' || driver === 'balanced' ? `
+                      <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                        <div style="color: var(--text-muted); margin-bottom: 2px;">Talent/Readiness</div>
+                        <div style="font-weight: 600; font-size: 14px; color: #3b82f6;">${{readyScore}}</div>
+                      </div>
+                    ` : ''}}
+                    <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                      <div style="color: var(--text-muted); margin-bottom: 2px;">Team Environment</div>
+                      <div style="font-weight: 600; font-size: 14px;">${{teamEnv}}</div>
+                    </div>
+                    <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
+                      <div style="color: var(--text-muted); margin-bottom: 2px;">Confidence</div>
+                      <div style="font-weight: 600; font-size: 14px;">${{confScore}}%</div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>`;
+            </div>
+          `;
         }});
 
-        if (showLock) {{
+        if (locked) {{
           html += `
             <div class="breakout-card" onclick="showPaywall('breakout-candidates')" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;border:2px dashed var(--border);">
               <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
-              <div style="font-weight:700;font-size:15px;">${{total - FREE_LIMIT}} more candidates locked</div>
+              <div style="font-weight:700;font-size:15px;">${{filtered.length - FREE_LIMIT}} more candidates locked</div>
               <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to see all breakout<br>candidates and full details</div>
               <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
-            </div>`;
+            </div>
+          `;
         }}
         html += '</div>';
-
-        // Pagination controls (premium only, when there's more than one page)
-        if (BO_HAS_PREMIUM && totalPages > 1) {{
-          const start = offset + 1;
-          const end = Math.min(offset + BK_PER_PAGE, total);
-          let pageNums = '';
-          const maxShow = 5;
-          let startP = Math.max(1, bkCurrentPage - Math.floor(maxShow / 2));
-          let endP = Math.min(totalPages, startP + maxShow - 1);
-          if (endP - startP < maxShow - 1) startP = Math.max(1, endP - maxShow + 1);
-          for (let i = startP; i <= endP; i++) {{
-            pageNums += `<button class="bk-page-num${{i === bkCurrentPage ? ' active' : ''}}" onclick="bkGoPage(${{i}})">${{i}}</button>`;
-          }}
-          html += `
-            <div class="bk-pagination">
-              <span class="bk-pagination-info">Showing ${{start}}&ndash;${{end}} of ${{total}} candidates</span>
-              <div class="bk-pagination-controls">
-                <button class="bk-pagination-btn" onclick="bkGoPage('prev')" ${{bkCurrentPage <= 1 ? 'disabled' : ''}}>
-                  <i class="fa-solid fa-chevron-left"></i> Prev
-                </button>
-                <div class="bk-page-numbers">${{pageNums}}</div>
-                <button class="bk-pagination-btn" onclick="bkGoPage('next')" ${{bkCurrentPage >= totalPages ? 'disabled' : ''}}>
-                  Next <i class="fa-solid fa-chevron-right"></i>
-                </button>
-              </div>
-            </div>`;
-        }}
-
         container.innerHTML = html;
       }}
     </script>
@@ -10270,14 +9527,1482 @@ def page_breakouts_guest():
     current_season = int(nfl_state.get("season") or datetime.now().year)
     return page_breakouts(platform="sleeper", season=current_season, league_id=None)
 
-# /trade-intel → routes/trade_bp.py :: page_trade_intel()
-# /trade-intel (guest) → routes/trade_bp.py :: page_trade_intel_guest()
+
+@app.route("/<platform>/<int:season>/<league_id>/trade-intel")
+def page_trade_intel(platform: str, season: int, league_id: str):
+    user_id = session.get("viewer_username")
+    has_premium = has_premium_access(user_id, league_id, platform)
+    body_html = f"""
+    <div class="card central" style="max-width:960px;">
+      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
+        <h2 style="margin:0 0 4px;font-size:20px;">Trade Intelligence</h2>
+        <div style="font-size:13px;color:var(--text-muted);">
+          Actionable insights from thousands of real dynasty trades across multiple platforms
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:20px;">
+
+        <div class="ti-controls">
+          <div class="ti-tabs">
+            <button class="ti-tab active" data-tab="trending" onclick="switchTITab('trending')"><i class="fa-solid fa-fire"></i> Trending</button>
+            <button class="ti-tab" data-tab="buylows"  onclick="switchTITab('buylows')"><i class="fa-solid fa-arrow-trend-down"></i> Buy Low</button>
+            <button class="ti-tab" data-tab="sellhigh" onclick="switchTITab('sellhigh')"><i class="fa-solid fa-arrow-trend-up"></i> Sell High</button>
+          </div>
+          <div class="ti-pos-filters">
+            <button class="ti-pos active" data-pos="ALL" onclick="filterTI('ALL')">All</button>
+            <button class="ti-pos" data-pos="QB"  onclick="filterTI('QB')">QB</button>
+            <button class="ti-pos" data-pos="RB"  onclick="filterTI('RB')">RB</button>
+            <button class="ti-pos" data-pos="WR"  onclick="filterTI('WR')">WR</button>
+            <button class="ti-pos" data-pos="TE"  onclick="filterTI('TE')">TE</button>
+          </div>
+        </div>
+
+        <div class="ti-key">
+          <div class="ti-key-item">
+            <span class="ti-key-swatch" style="background:#3b82f6;opacity:.7;border-radius:3px;"></span>
+            <span><span class="ti-key-label">Market</span> Real Trade-weighted Median Value</span>
+          </div>
+          <div class="ti-key-item">
+            <span class="ti-key-swatch" style="background:#8b5cf6;opacity:.7;border-radius:3px;"></span>
+            <span><span class="ti-key-label">BR Model</span> BR Production Model Value</span>
+          </div>
+          <div class="ti-key-item">
+            <span class="ti-key-swatch ti-key-delta"></span>
+            <span><span class="ti-key-label">Delta</span> Market minus BR Model</span>
+          </div>
+          <div class="ti-key-item">
+            <span style="display:inline-flex;align-items:center;vertical-align:middle;">
+              <span style="width:8px;height:8px;border-radius:50%;color:#10b981;display:flex;align-items:center;line-height:1;">▲</span>
+              <span style="width:8px;height:8px;border-radius:50%;color:#ef4444;display:inline-block;line-height:1;">▼</span>
+            </span>
+            <span><span class="ti-key-label">Momentum</span> Rising or Falling Market Price</span>
+          </div>
+        </div>
+
+        <div id="tiPagination" class="ti-pagination" style="display:none;">
+          <div class="ti-pagination-info">
+            <span id="tiPaginationText">Showing 1-20 of 100 players</span>
+          </div>
+          <div class="ti-pagination-controls">
+            <button id="tiPrevBtn" class="ti-pagination-btn" onclick="loadTIPage('prev')" disabled>
+              <i class="fa-solid fa-chevron-left"></i> Previous
+            </button>
+            <div id="tiPageNumbers" class="ti-page-numbers"></div>
+            <button id="tiNextBtn" class="ti-pagination-btn" onclick="loadTIPage('next')" disabled>
+              Next <i class="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+
+        <div id="tiLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);">
+          <div class="loading-spinner" style="margin:0 auto 12px;"></div>
+          Loading trade data...
+        </div>
+        <div id="tiEmpty" style="display:none;text-align:center;padding:48px 0;color:var(--text-muted);">
+          No data for this filter yet — analytics need to run to populate this view.
+        </div>
+        <div id="tiGrid" class="ti-grid" style="display:none;"></div>
+
+      </div>
+    </div>
+
+    <!-- Trade History Modal -->
+    <div id="tiTradesOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this)closeTITradesModal()">
+      <div class="ti-trades-modal">
+        <div class="ti-trades-header">
+          <div>
+            <div id="tiTradesName" class="ti-trades-name"></div>
+            <div id="tiTradesMeta" class="ti-trades-meta"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <button class="ti-profile-btn" onclick="viewTIPlayerProfile()">View Profile</button>
+            <button class="ti-trades-close" onclick="closeTITradesModal()">&#x2715;</button>
+          </div>
+        </div>
+        <div class="ti-trades-lf-bar">
+          <button class="ti-lf-btn active" data-lf="all" onclick="switchTILF('all')">All</button>
+          <button class="ti-lf-btn" data-lf="sf"  onclick="switchTILF('sf')">Superflex</button>
+          <button class="ti-lf-btn" data-lf="1qb" onclick="switchTILF('1qb')">1QB</button>
+        </div>
+        <div id="tiTradesBody" class="ti-trades-body">
+          <div class="ti-trades-msg">Loading trades&hellip;</div>
+        </div>
+        <div id="tiTradesPager" class="ti-trades-pager" style="display:none;">
+          <button id="tiTradesPrev" onclick="prevTITrades()" disabled>&larr; Prev</button>
+          <span id="tiTradesPagerInfo"></span>
+          <button id="tiTradesNext" onclick="nextTITrades()" disabled>Next &rarr;</button>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .ti-controls {{
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }}
+      .ti-tabs {{
+        display: flex;
+        background: var(--bg-alt, #f1f5f9);
+        border-radius: 10px;
+        padding: 3px;
+        gap: 2px;
+      }}
+      .ti-tab {{
+        padding: 7px 16px;
+        border-radius: 8px;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+        transition: all .15s;
+      }}
+      .ti-tab.active {{
+        background: var(--card);
+        color: var(--text);
+        box-shadow: 0 1px 3px rgba(0,0,0,.12);
+      }}
+      .ti-pos-filters {{
+        display: flex;
+        gap: 6px;
+      }}
+      .ti-pos {{
+        padding: 6px 13px;
+        border-radius: 20px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        transition: all .15s;
+      }}
+      .ti-pos.active {{
+        background: var(--text);
+        color: var(--card);
+        border-color: var(--text);
+      }}
+      .ti-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+        gap: 12px;
+      }}
+      .ti-card {{
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+        cursor: pointer;
+        transition: transform .12s, box-shadow .12s;
+        background: var(--card);
+      }}
+      .ti-card:hover {{ transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }}
+      .ti-card-top {{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }}
+      .ti-name {{ font-weight:700; font-size:14px; line-height:1.3; }}
+      .ti-meta {{ font-size:11px; color:var(--text-muted); margin-top:2px; }}
+      .ti-chip {{
+        font-size:11px; font-weight:700;
+        padding:3px 9px; border-radius:10px; white-space:nowrap; flex-shrink:0;
+      }}
+      .ti-divider {{ height:1px; background:var(--border); margin:8px 0; }}
+      .ti-row {{ display:flex; justify-content:space-between; font-size:12px; margin-top:5px; }}
+      .ti-row-label {{ color:var(--text-muted); }}
+      .ti-row-val {{ font-weight:600; }}
+      .ti-delta-pos {{ color:#10b981; }}
+      .ti-delta-neg {{ color:#ef4444; }}
+      .ti-momentum {{ font-size:11px; font-weight:600; margin-top:6px; display:flex; align-items:center; gap:4px; }}
+      .ti-key {{
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 24px;
+        font-size: 12px; color: var(--text-muted);
+        background: var(--bg-alt, #f8fafc);
+        border: 1px solid var(--border);
+        border-radius: 10px; padding: 12px 16px;
+        margin-bottom: 20px; line-height: 1.4;
+      }}
+      .ti-key-item {{
+        display: flex; align-items: center; gap: 8px;
+      }}
+      .ti-key-swatch {{
+        display: inline-block; width: 12px; height: 12px;
+        flex-shrink: 0; margin-top: 1px;
+      }}
+      .ti-key-delta {{
+        background: linear-gradient(135deg, #10b981 50%, #ef4444 50%);
+        border-radius: 3px; opacity: .8;
+      }}
+      .ti-key-label {{
+        font-weight: 600; color: var(--text);
+        margin-right: 4px;
+      }}
+      .ti-pagination {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 20px 0;
+        padding: 12px 0;
+        border-top: 1px solid var(--border);
+      }}
+      .ti-pagination-info {{
+        font-size: 13px;
+        color: var(--text-muted);
+      }}
+      .ti-pagination-controls {{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }}
+      .ti-pagination-btn {{
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        transition: all .15s;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }}
+      .ti-pagination-btn:hover:not(:disabled) {{
+        background: var(--bg-alt);
+        border-color: var(--accent);
+      }}
+      .ti-pagination-btn:disabled {{
+        opacity: 0.5;
+        cursor: not-allowed;
+      }}
+      .ti-page-numbers {{
+        display: flex;
+        gap: 4px;
+      }}
+      .ti-page-number {{
+        padding: 4px 8px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--card);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        min-width: 28px;
+        text-align: center;
+      }}
+      .ti-page-number:hover {{
+        background: var(--bg-alt);
+      }}
+      .ti-page-number.active {{
+        background: var(--accent-color);
+        color: var(--card);
+        border-color: var(--accent-color);
+        font-weight: 700;
+      }}
+
+      /* ── Trade History Modal ── */
+      .ti-trades-modal {{
+        background: var(--card);
+        border-radius: 16px;
+        width: min(600px, 96vw);
+        max-height: 82vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0,0,0,.35);
+      }}
+      .ti-trades-header {{
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        padding: 20px 20px 14px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }}
+      .ti-trades-name {{ font-size: 18px; font-weight: 700; }}
+      .ti-trades-meta {{ font-size: 13px; color: var(--text-muted); margin-top: 3px; }}
+      .ti-trades-close {{
+        background: none; border: none; font-size: 20px;
+        color: var(--text-muted); cursor: pointer; padding: 0 4px; line-height: 1;
+      }}
+      .ti-trades-close:hover {{ color: var(--text); }}
+      .ti-profile-btn {{
+        padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+        border: 1px solid var(--border); background: var(--bg-alt, #f1f5f9);
+        color: var(--text); cursor: pointer; white-space: nowrap;
+        transition: opacity .15s;
+      }}
+      .ti-profile-btn:hover {{ opacity: .75; }}
+      .ti-trades-lf-bar {{
+        display: flex; gap: 6px; padding: 12px 20px;
+        border-bottom: 1px solid var(--border); flex-shrink: 0;
+      }}
+      .ti-lf-btn {{
+        padding: 5px 14px; border-radius: 20px;
+        border: 1px solid var(--border); background: var(--card);
+        color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer;
+        transition: all .15s;
+      }}
+      .ti-lf-btn.active {{
+        background: var(--text); color: var(--card);
+        border-color: var(--text);
+      }}
+      .ti-trades-body {{ overflow-y: auto; flex: 1; padding: 0 20px; }}
+      .ti-trades-msg {{ text-align: center; padding: 40px 0; color: var(--text-muted); font-size: 14px; }}
+      .ti-trade-item {{
+        padding: 14px 0;
+        border-bottom: 1px solid var(--border);
+      }}
+      .ti-trade-item:last-child {{ border-bottom: none; }}
+      .ti-trade-date {{
+        font-size: 11px; color: var(--text-muted); font-weight: 600;
+        text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
+      }}
+      .ti-trade-sides {{
+        display: grid; grid-template-columns: 1fr 28px 1fr; gap: 8px; align-items: start;
+      }}
+      .ti-trade-side-label {{
+        font-size: 10px; font-weight: 700; letter-spacing: .06em;
+        color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;
+      }}
+      .ti-trade-asset {{ font-size: 13px; padding: 2px 0; line-height: 1.4; }}
+      .ti-trade-asset.focus {{ font-weight: 700; }}
+      .ti-trade-asset.other {{ color: var(--text-muted); }}
+      .ti-trade-asset.pick {{ color: var(--text-muted); font-style: italic; }}
+      .ti-trade-arrow {{ text-align: center; color: var(--text-muted); padding-top: 22px; font-size: 15px; }}
+      .ti-trades-pager {{
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 20px; border-top: 1px solid var(--border); flex-shrink: 0;
+      }}
+      .ti-trades-pager button {{
+        padding: 6px 14px; border-radius: 8px;
+        border: 1px solid var(--border); background: var(--card);
+        color: var(--text); font-size: 13px; cursor: pointer;
+      }}
+      .ti-trades-pager button:disabled {{ opacity: .4; cursor: default; }}
+      #tiTradesPagerInfo {{ font-size: 13px; color: var(--text-muted); }}
+      @media (max-width: 480px) {{
+        .ti-trades-modal {{ border-radius: 12px 12px 0 0; max-height: 90vh; align-self: flex-end; width: 100%; }}
+        #tiTradesOverlay {{ align-items: flex-end !important; }}
+      }}
+    </style>
+
+    <script>
+    (function() {{
+      const TI_SEASON = {season};
+      const TI_HAS_PREMIUM = {str(has_premium).lower()};
+      let currentPage = 1;
+      let paginationData = null;
+      let currentTab = 'trending';
+      let currentPos = 'ALL';
+
+      // Load initial page
+      loadTIPage(1);
+
+      function loadTIPage(page) {{
+        if (typeof page === 'string') {{
+          if (page === 'prev' && currentPage > 1) {{
+            page = currentPage - 1;
+          }} else if (page === 'next' && paginationData && paginationData.has_next) {{
+            page = currentPage + 1;
+          }} else {{
+            return;
+          }}
+        }}
+        
+        currentPage = page;
+        document.getElementById('tiLoading').style.display = '';
+        document.getElementById('tiGrid').style.display = 'none';
+        document.getElementById('tiPagination').style.display = 'none';
+        
+        fetch('/api/trade-intel/trending?season=' + TI_SEASON + '&page=' + page)
+          .then(r => r.json())
+          .then(data => {{
+            if (data.error) {{
+              throw new Error(data.error);
+            }}
+            paginationData = data.pagination;
+            document.getElementById('tiLoading').style.display = 'none';
+            document.getElementById('tiGrid').style.display = '';
+            updatePaginationControls();
+            renderTI(data.players || []);
+          }})
+          .catch(() => {{
+            document.getElementById('tiLoading').innerHTML =
+              '<div style="color:var(--text-muted)">Trade data unavailable.</div>';
+          }});
+      }}
+
+      function updatePaginationControls() {{
+        if (!paginationData) return;
+        
+        const prevBtn = document.getElementById('tiPrevBtn');
+        const nextBtn = document.getElementById('tiNextBtn');
+        const pageNumbers = document.getElementById('tiPageNumbers');
+        const paginationText = document.getElementById('tiPaginationText');
+        
+        // Update button states
+        prevBtn.disabled = !paginationData.has_prev;
+        nextBtn.disabled = !paginationData.has_next;
+        
+        // Update text
+        const start = (paginationData.current_page - 1) * paginationData.per_page + 1;
+        const end = Math.min(paginationData.current_page * paginationData.per_page, paginationData.total_players);
+        paginationText.textContent = `Showing ${{start}}-${{end}} of ${{paginationData.total_players}} players`;
+        
+        // Update page numbers
+        pageNumbers.innerHTML = '';
+        const maxPages = 5;
+        let startPage = Math.max(1, paginationData.current_page - Math.floor(maxPages / 2));
+        let endPage = Math.min(paginationData.total_pages, startPage + maxPages - 1);
+        
+        if (endPage - startPage < maxPages - 1) {{
+          startPage = Math.max(1, endPage - maxPages + 1);
+        }}
+        
+        for (let i = startPage; i <= endPage; i++) {{
+          const pageBtn = document.createElement('button');
+          pageBtn.className = 'ti-page-number' + (i === paginationData.current_page ? ' active' : '');
+          pageBtn.textContent = i;
+          pageBtn.onclick = () => loadTIPage(i);
+          pageNumbers.appendChild(pageBtn);
+        }}
+        
+        document.getElementById('tiPagination').style.display = 'flex';
+      }}
+
+      window.switchTITab = function(tab) {{
+        currentTab = tab;
+        document.querySelectorAll('.ti-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        renderTI();
+      }};
+
+      window.filterTI = function(pos) {{
+        currentPos = pos;
+        document.querySelectorAll('.ti-pos').forEach(b => b.classList.toggle('active', b.dataset.pos === pos));
+        loadTIPage(currentPage); // Reload current page with new filter
+      }};
+
+      function renderTI(players = null) {{
+        // If no players provided, we need to load current page data
+        if (!players) {{
+          loadTIPage(currentPage);
+          return;
+        }}
+        
+        // Apply position filtering
+        let filteredPlayers = currentPos === 'ALL' ? players : players.filter(p => p.position === currentPos);
+        
+        // Apply tab filtering for non-trending tabs
+        if (currentTab !== 'trending') {{
+          const withDelta = filteredPlayers.filter(p => p.value_delta != null && p.model_value > 0);
+          if (currentTab === 'buylows') {{
+            filteredPlayers = withDelta.filter(p => p.value_delta < -5).sort((a, b) => a.value_delta - b.value_delta);
+          }} else if (currentTab === 'sellhigh') {{
+            filteredPlayers = withDelta.filter(p => p.value_delta > 5).sort((a, b) => b.value_delta - a.value_delta);
+          }}
+        }}
+        
+        const grid  = document.getElementById('tiGrid');
+        const empty = document.getElementById('tiEmpty');
+
+        if (filteredPlayers.length === 0) {{
+          grid.style.display = 'none';
+          empty.style.display = '';
+          return;
+        }}
+        empty.style.display = 'none';
+        grid.style.display = '';
+
+        const FREE_LIMIT = 5;
+        const displayPlayers = TI_HAS_PREMIUM ? filteredPlayers : filteredPlayers.slice(0, FREE_LIMIT);
+        const showPaywallCard = !TI_HAS_PREMIUM && filteredPlayers.length > FREE_LIMIT;
+
+        grid.innerHTML = displayPlayers.map(p => {{
+          const name   = p.name || 'Unknown';
+          const pos    = p.position || '?';
+          const team   = p.team || '?';
+          const cnt7   = p.trade_count_7d  || 0;
+          const cnt30  = p.trade_count_30d || 0;
+          const cntAll = p.trade_count_all || 0;
+          const market = p.market_value != null ? p.market_value.toFixed(1) : '—';
+          const model  = p.model_value  != null ? p.model_value.toFixed(1)  : '—';
+          const delta  = p.value_delta;
+          const trend  = p.market_trend;
+
+          let chipBg, chipColor, chipText;
+          if (currentTab === 'trending') {{
+            chipBg = '#3b82f620'; chipColor = '#3b82f6';
+            chipText = (cntAll) + ' trades';
+          }} else if (currentTab === 'buylows') {{
+            chipBg = '#10b98120'; chipColor = '#10b981';
+            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
+          }} else {{
+            chipBg = '#f59e0b20'; chipColor = '#f59e0b';
+            chipText = delta != null ? (delta > 0 ? '+' : '') + Math.round(delta) : '—';
+          }}
+
+          const deltaHtml = delta != null
+            ? `<span class="${{delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}}">${{delta >= 0 ? '+' : ''}}${{Math.round(delta)}}</span>`
+            : '<span style="color:var(--text-muted)">—</span>';
+
+          // Momentum: 14d median minus 90d median. Threshold ±5 to avoid noise.
+          let momentumHtml = '';
+          if (trend != null) {{
+            if (trend >= 5) {{
+              momentumHtml = '<span style="color:#10b981;">▲</span> Rising';
+            }} else if (trend <= -5) {{
+              momentumHtml = '<span style="color:#ef4444;">▼</span> Falling';
+            }}
+          }}
+
+          const player_json = JSON.stringify(p).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+
+          return `<div class="ti-card" data-player="${{player_json}}" onclick="openTITradesModal(JSON.parse(this.dataset.player))">
+            <div class="ti-card-top">
+              <div>
+                <div class="ti-name">${{name}}</div>
+                <div class="ti-meta">${{pos}} · ${{team}}</div>
+              </div>
+              <div class="ti-chip" style="background:${{chipBg}};color:${{chipColor}};">${{chipText}}</div>
+            </div>
+            <div class="ti-divider"></div>
+            <div class="ti-row"><span class="ti-row-label">Market</span><span class="ti-row-val">${{market}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">BR Model</span><span class="ti-row-val">${{model}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">Delta</span><span class="ti-row-val">${{deltaHtml}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
+            ${{momentumHtml ? `<div class="ti-momentum">${{momentumHtml}}</div>` : ''}}
+          </div>`;
+        }}).join('') + (showPaywallCard ? `
+          <div class="ti-card" onclick="showPaywall('trade-history')" style="cursor:pointer;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:160px;background:var(--card);">
+            <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
+            <div style="font-weight:700;font-size:14px;">Unlock Full Access</div>
+            <div style="font-size:12px;color:var(--text-muted);text-align:center;">See all players &amp; trade history<br>with a premium subscription</div>
+            <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
+          </div>` : '');
+      }}
+      
+      // ── Trade History Modal ────────────────────────────────────────────────
+      const _tiTrades = {{
+        player: null,
+        page: 1,
+        leagueFilter: 'all',
+        total: 0,
+        totalPages: 1,
+      }};
+
+      window.openTITradesModal = function(playerData) {{
+        if (!TI_HAS_PREMIUM) {{ showPaywall('trade-history'); return; }}
+        _tiTrades.player = playerData;
+        _tiTrades.page = 1;
+        _tiTrades.leagueFilter = 'all';
+        document.getElementById('tiTradesName').textContent = playerData.name || 'Player';
+        const pos  = playerData.position || '';
+        const team = playerData.team || '';
+        const cnt  = playerData.trade_count_all;
+        const cntTxt = cnt ? ` · ${{cnt}} trades tracked` : '';
+        document.getElementById('tiTradesMeta').textContent = [pos, team].filter(Boolean).join(' · ') + cntTxt;
+        document.querySelectorAll('.ti-lf-btn').forEach(b => b.classList.toggle('active', b.dataset.lf === 'all'));
+        const overlay = document.getElementById('tiTradesOverlay');
+        overlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        _loadTITrades(1);
+      }};
+
+      window.closeTITradesModal = function() {{
+        document.getElementById('tiTradesOverlay').style.display = 'none';
+        document.body.style.overflow = '';
+      }};
+
+      window.viewTIPlayerProfile = function() {{
+        const p = _tiTrades.player;
+        if (!p) return;
+        closeTITradesModal();
+        if (p.is_rookie && p.is_rookie !== 'False') {{
+          rkOpenModal(p);
+        }} else {{
+          const name = (p.name || '').replace(/'/g, "\\'");
+          openPlayerModal(p.player_id, name);
+        }}
+      }};
+
+      window.switchTILF = function(lf) {{
+        _tiTrades.leagueFilter = lf;
+        document.querySelectorAll('.ti-lf-btn').forEach(b => b.classList.toggle('active', b.dataset.lf === lf));
+        _loadTITrades(1);
+      }};
+
+      window.prevTITrades = function() {{ if (_tiTrades.page > 1) _loadTITrades(_tiTrades.page - 1); }};
+      window.nextTITrades = function() {{ if (_tiTrades.page < _tiTrades.totalPages) _loadTITrades(_tiTrades.page + 1); }};
+
+      function _loadTITrades(page) {{
+        const p = _tiTrades.player;
+        if (!p) return;
+        _tiTrades.page = page;
+        document.getElementById('tiTradesBody').innerHTML = '<div class="ti-trades-msg">Loading&hellip;</div>';
+        document.getElementById('tiTradesPager').style.display = 'none';
+        const qs = new URLSearchParams({{
+          season: TI_SEASON,
+          league_type: _tiTrades.leagueFilter,
+          page,
+          limit: 15,
+        }});
+        fetch(`/api/trade-intel/player-trades/${{p.player_id}}?${{qs}}`)
+          .then(r => {{ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }})
+          .then(_renderTITrades)
+          .catch(() => {{
+            document.getElementById('tiTradesBody').innerHTML =
+              '<div class="ti-trades-msg">Failed to load trades.</div>';
+          }});
+      }}
+
+      function _renderTITrades(data) {{
+        const body = document.getElementById('tiTradesBody');
+        _tiTrades.total = data.total || 0;
+        _tiTrades.totalPages = data.total_pages || 1;
+
+        if (!data.trades || data.trades.length === 0) {{
+          body.innerHTML = '<div class="ti-trades-msg">No trades found for this filter.</div>';
+          return;
+        }}
+
+        function assetHtml(a) {{
+          if (a.type === 'pick') {{
+            return `<div class="ti-trade-asset pick">${{a.name}}</div>`;
+          }}
+          const posTag = a.position && a.position !== '?' ? ` <span style="font-size:11px;opacity:.6;">${{a.position}}</span>` : '';
+          const cls = a.is_focus ? 'focus' : 'other';
+          return `<div class="ti-trade-asset ${{cls}}">${{a.name}}${{posTag}}</div>`;
+        }}
+
+        body.innerHTML = data.trades.map(t => {{
+          const sideA = (t.side_a || []).map(assetHtml).join('');
+          const sideB = (t.side_b || []).map(assetHtml).join('');
+          const fmt   = t.is_superflex ? 'SF' : t.is_superflex === false ? '1QB' : '';
+          const teams = t.num_teams ? `${{t.num_teams}}-team` : '';
+          const ctx   = [teams, fmt].filter(Boolean).join(' ');
+          const meta  = [t.date, ctx].filter(Boolean).join(' · ');
+          return `<div class="ti-trade-item">
+            <div class="ti-trade-date">${{meta}}</div>
+            <div class="ti-trade-sides">
+              <div>
+                <div class="ti-trade-side-label">Side A</div>
+                ${{sideA}}
+              </div>
+              <div class="ti-trade-arrow">&#x21C4;</div>
+              <div>
+                <div class="ti-trade-side-label">Side B</div>
+                ${{sideB}}
+              </div>
+            </div>
+          </div>`;
+        }}).join('');
+
+        if (_tiTrades.totalPages > 1 || _tiTrades.total > 0) {{
+          document.getElementById('tiTradesPager').style.display = 'flex';
+          document.getElementById('tiTradesPrev').disabled = !data.has_prev;
+          document.getElementById('tiTradesNext').disabled = !data.has_next;
+          document.getElementById('tiTradesPagerInfo').textContent =
+            `Page ${{data.page}} of ${{data.total_pages}} · ${{data.total}} trades`;
+        }}
+      }}
+
+      // Expose functions to global scope for onclick handlers
+      window.loadTIPage = loadTIPage;
+    }})();
+    </script>
+    """
+    return render_page("Trade Intelligence", league_id, "trade-intel", body_html, platform, season)
 
 
-# /pricing, /api/create-checkout-session, /api/stripe-webhook → routes/billing_bp.py
+@app.route("/trade-intel")
+def page_trade_intel_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_trade_intel(platform="sleeper", season=current_season, league_id=None)
 
-# /trade-database → routes/trade_bp.py :: page_trade_database()
-# /trade-database (guest) → routes/trade_bp.py :: page_trade_database_guest()
+
+def _try_grant_from_stripe_success() -> None:
+    """
+    When a user returns from Stripe checkout, verify the session server-side
+    and grant the subscription immediately. This is a reliable fallback for
+    when the webhook is delayed or misconfigured.
+    """
+    if request.args.get("success") != "1":
+        return
+    checkout_session_id = request.args.get("session_id", "").strip()
+    if not checkout_session_id:
+        return
+    try:
+        cs = stripe.checkout.Session.retrieve(checkout_session_id)
+        if cs.status != "complete":
+            return
+
+        meta      = cs.metadata.to_dict() if cs.metadata else {}
+        plan      = meta.get("plan")
+        user_id   = meta.get("user_id")
+        league_id = meta.get("league_id") or ""
+        sub_id    = cs.subscription
+        cust_id   = cs.customer
+
+        if plan not in ("league", "user", "combo"):
+            return
+        if plan == "user" and not user_id:
+            return
+        if plan == "league" and not league_id:
+            return
+        if plan == "combo" and not league_id and not user_id:
+            return
+
+        # Skip if already active (webhook may have already fired)
+        if has_premium_access(user_id or None, league_id or None, "sleeper"):
+            return
+
+        try:
+            sub        = stripe.Subscription.retrieve(sub_id) if sub_id else None
+            expires_at = (
+                datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
+                if sub else datetime.now(timezone.utc) + timedelta(days=366)
+            )
+        except Exception:
+            expires_at = datetime.now(timezone.utc) + timedelta(days=366)
+
+        if plan in ("league", "combo") and league_id:
+            create_league_subscription(
+                league_id, user_id or "", expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+            )
+        if plan in ("user", "combo") and user_id:
+            create_user_subscription(
+                user_id, expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+            )
+    except Exception:
+        logger.exception("[stripe] success-page session verification failed")
+
+
+@app.route("/<platform>/<int:season>/<league_id>/pricing")
+def page_pricing(platform: str, season: int, league_id: str):
+    _try_grant_from_stripe_success()
+    body_html = _pricing_body()
+    return render_page("Pricing", league_id, None, body_html, platform, season)
+
+
+@app.route("/pricing")
+def page_pricing_guest():
+    _try_grant_from_stripe_success()
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    body_html = _pricing_body()
+    return render_page("Pricing", None, None, body_html, "sleeper", current_season)
+
+
+def _pricing_body() -> str:
+    plan      = request.args.get("plan", "")
+    success   = request.args.get("success") == "1"
+    canceled  = request.args.get("canceled") == "1"
+    return_to = request.args.get("return_to", "").strip()
+
+    if success:
+        safe_return = html.escape(return_to) if return_to else ""
+        return f"""
+    <div class="card central" style="max-width:560px;text-align:center;">
+      <div class="card-body" style="padding:48px 32px;">
+        <div id="sub-icon" style="font-size:56px;margin-bottom:20px;">
+          <i class="fa-solid fa-circle-check" style="color:#22c55e;"></i>
+        </div>
+        <h2 id="sub-heading" style="margin:0 0 10px;font-size:24px;">Payment confirmed!</h2>
+        <p id="sub-msg" style="color:var(--text-muted);margin:0 0 28px;">
+          Your premium access is activating&nbsp;&mdash; just a moment&hellip;
+        </p>
+        <div id="sub-spinner" style="margin:0 auto 24px;width:36px;height:36px;border:3px solid #e5e7eb;border-top-color:#667eea;border-radius:50%;animation:paywall-spin .8s linear infinite;"></div>
+        {'<a id="sub-return" href="' + safe_return + '" style="display:none;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue</a>' if return_to else ''}
+      </div>
+    </div>
+    <script>
+    (function() {{
+      var returnTo = {json.dumps(return_to)};
+      var attempts = 0, maxAttempts = 20;
+
+      // Extract league_id from return URL path (/{{platform}}/{{season}}/{{league_id}}/...)
+      var leagueId = '';
+      try {{
+        if (returnTo) {{
+          var parts = new URL(returnTo, window.location.origin).pathname.split('/').filter(Boolean);
+          if (parts.length >= 3) leagueId = parts[2];
+        }}
+      }} catch(e) {{}}
+      var statusUrl = '/api/subscription-status' + (leagueId ? '?league_id=' + encodeURIComponent(leagueId) : '');
+
+      function activate() {{
+        attempts++;
+        fetch(statusUrl)
+          .then(function(r) {{ return r.json(); }})
+          .then(function(d) {{
+            if (d.has_premium) {{
+              document.getElementById('sub-spinner').style.display = 'none';
+              document.getElementById('sub-msg').textContent = 'Premium is active on your account!';
+              if (returnTo) {{
+                setTimeout(function() {{ window.location.href = returnTo; }}, 1200);
+              }} else {{
+                document.getElementById('sub-heading').textContent = 'You\\'re all set!';
+              }}
+            }} else if (attempts < maxAttempts) {{
+              setTimeout(activate, 2000);
+            }} else {{
+              document.getElementById('sub-spinner').style.display = 'none';
+              document.getElementById('sub-msg').textContent =
+                'Your access is being set up. If it isn\\'t active in a minute, try refreshing the page.';
+              var btn = document.getElementById('sub-return');
+              if (btn) btn.style.display = 'inline-block';
+            }}
+          }})
+          .catch(function() {{
+            if (attempts < maxAttempts) setTimeout(activate, 2000);
+          }});
+      }}
+
+      setTimeout(activate, 1500);
+    }})();
+    </script>
+    """
+
+    league_highlight = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "league" else ""
+    user_highlight   = "border-color:#667eea;box-shadow:0 8px 24px rgba(102,126,234,.2);" if plan == "user"   else ""
+    canceled_banner = """
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 18px;margin-bottom:20px;color:#dc2626;font-size:14px;">
+      <i class="fa-solid fa-circle-xmark" style="margin-right:6px;"></i>
+      Checkout was canceled. You have not been charged.
+    </div>""" if canceled else ""
+    return f"""
+    {canceled_banner}
+    <div class="card central" style="max-width:760px;">
+      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;text-align:center;">
+        <h2 style="margin:0 0 6px;font-size:22px;">BR Fantasy Premium</h2>
+        <div style="font-size:14px;color:var(--text-muted);">
+          Unlock advanced analytics and insights for your dynasty league
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:28px;">
+
+        <!-- Feature list -->
+        <div style="margin-bottom:28px;">
+          <div style="font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:12px;">What you get</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-chart-line" style="color:#667eea;width:16px;text-align:center;"></i>
+              Full Trade Intelligence feed
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-fire" style="color:#667eea;width:16px;text-align:center;"></i>
+              All Breakout Engine candidates
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-clock-rotate-left" style="color:#667eea;width:16px;text-align:center;"></i>
+              Player trade history
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:14px;">
+              <i class="fa-solid fa-star" style="color:#667eea;width:16px;text-align:center;"></i>
+              All future premium features
+            </div>
+          </div>
+        </div>
+
+        <!-- Pricing cards -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;">
+
+          <!-- League plan -->
+          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
+              <div style="font-size:17px;font-weight:700;">League Plan</div>
+            </div>
+            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
+              $10<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for every manager in your league</div>
+            <button onclick="initiatePurchase('league', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
+              Subscribe for League
+            </button>
+          </div>
+
+          <!-- Combo plan -->
+          <div style="border:2px solid #667eea;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{league_highlight}">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+              <div style="font-size:17px;font-weight:700;">League + Personal</div>
+              <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;text-transform:uppercase;letter-spacing:.4px;">Best Value</div>
+            </div>
+            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
+              $12<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for your league and all your personal leagues</div>
+            <button onclick="initiatePurchase('combo', this)" style="width:100%;padding:11px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:14px;font-weight:700;cursor:pointer;">
+              Subscribe Both
+            </button>
+          </div>
+
+          <!-- Personal plan -->
+          <div style="border:2px solid #e5e7eb;border-radius:14px;padding:24px;transition:all .2s;background:var(--card);{user_highlight}">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;min-height:28px;">
+              <div style="font-size:17px;font-weight:700;">Personal Plan</div>
+            </div>
+            <div style="font-size:38px;font-weight:800;line-height:1;margin-bottom:4px;">
+              $5<span style="font-size:16px;font-weight:500;color:var(--text-muted);">/year</span>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px;">Premium for all your leagues, one account</div>
+            <button onclick="initiatePurchase('user', this)" style="width:100%;padding:11px;border-radius:9px;border:2px solid #667eea;background:var(--card);color:#667eea;font-size:14px;font-weight:700;cursor:pointer;">
+              Subscribe Personally
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Free tier note -->
+        <div style="text-align:center;font-size:13px;color:var(--text-muted);padding-top:12px;border-top:1px solid var(--border);">
+          <i class="fa-solid fa-circle-info" style="margin-right:4px;"></i>
+          ADP rankings and basic player data are always free.
+        </div>
+
+      </div>
+    </div>
+
+    <style>
+      @media (max-width: 760px) {{
+        .card-body > div:nth-child(2) {{ grid-template-columns: 1fr !important; }}
+        .card-body > div:nth-child(3) {{ grid-template-columns: 1fr !important; }}
+      }}
+    </style>
+    """
+
+
+_STRIPE_LEAGUE_PRODUCT = "prod_USjDJYPhNGnmvM"
+_STRIPE_USER_PRODUCT   = "prod_USjDRuVDcwH1xb"
+_STRIPE_COMBO_PRODUCT  = "prod_UT5DaCA4u6hWgb"
+_STRIPE_PRICES = {
+    "league": {"unit_amount": 1000, "product": _STRIPE_LEAGUE_PRODUCT},
+    "user":   {"unit_amount":  500, "product": _STRIPE_USER_PRODUCT},
+    "combo":  {"unit_amount": 1200, "product": _STRIPE_COMBO_PRODUCT},
+}
+
+
+@app.route("/api/create-checkout-session", methods=["POST"])
+def create_checkout_session():
+    user_id = session.get("viewer_username")
+    if not user_id:
+        return jsonify({"error": "Must be logged in to subscribe"}), 401
+
+    payload    = request.get_json(force=True)
+    plan       = str(payload.get("plan") or "").strip()
+    league_id  = str(payload.get("league_id") or "").strip()
+    return_url = str(payload.get("return_url") or "").strip()
+
+    if plan not in _STRIPE_PRICES:
+        return jsonify({"error": "Invalid plan"}), 400
+
+    # Block duplicate subscriptions before hitting Stripe
+    check_league = league_id if league_id else None
+    if has_premium_access(user_id, check_league, "sleeper"):
+        return jsonify({"error": "You already have an active premium subscription."}), 400
+
+    price_spec = _STRIPE_PRICES[plan]
+    base_url   = request.host_url.rstrip("/")
+
+    # Validate return_url is same-origin
+    if return_url and not (return_url.startswith(base_url) or return_url.startswith("/")):
+        return_url = ""
+
+    success_url = base_url + "/pricing?success=1&session_id={CHECKOUT_SESSION_ID}"
+    if return_url:
+        success_url += "&return_to=" + urllib.parse.quote(return_url, safe="")
+
+    try:
+        checkout = stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "product": price_spec["product"],
+                    "unit_amount": price_spec["unit_amount"],
+                    "recurring": {"interval": "year"},
+                },
+                "quantity": 1,
+            }],
+            success_url=success_url,
+            cancel_url=base_url + "/pricing?canceled=1",
+            metadata={"plan": plan, "user_id": user_id, "league_id": league_id},
+        )
+        return jsonify({"url": checkout.url})
+    except Exception as e:
+        logger.exception("[stripe] checkout session error: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/stripe-webhook", methods=["POST"])
+def stripe_webhook():
+    payload = request.get_data()
+    sig     = request.headers.get("Stripe-Signature", "")
+    secret  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
+    if not secret:
+        logger.error("[stripe] STRIPE_WEBHOOK_SECRET not set — webhook will always fail signature check")
+        return "", 400
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, secret)
+    except ValueError as e:
+        logger.error("[stripe] webhook bad payload: %s", e)
+        return "", 400
+    except stripe.error.SignatureVerificationError as e:
+        logger.error("[stripe] webhook signature mismatch: %s", e)
+        return "", 400
+
+    etype = event["type"]
+
+    if etype == "checkout.session.completed":
+        s         = event["data"]["object"]
+        meta      = dict(s.metadata) if s.metadata else {}
+        plan      = meta.get("plan")
+        user_id   = meta.get("user_id")
+        league_id = meta.get("league_id") or ""
+        sub_id    = s.subscription
+        cust_id   = s.customer
+
+        # Retrieve subscription to get the real period end
+        try:
+            sub = stripe.Subscription.retrieve(sub_id)
+            expires_at = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
+        except Exception:
+            expires_at = datetime.now(timezone.utc) + timedelta(days=32)
+
+        if plan in ("league", "combo") and league_id:
+            ok = create_league_subscription(
+                league_id, user_id or "", expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+            )
+            logger.info("[stripe] webhook league subscription %s for league=%s user=%s expires=%s",
+                        "created" if ok else "FAILED", league_id, user_id, expires_at)
+        if plan in ("user", "combo") and user_id:
+            ok = create_user_subscription(
+                user_id, expires_at,
+                stripe_subscription_id=sub_id,
+                stripe_customer_id=cust_id,
+            )
+            logger.info("[stripe] webhook user subscription %s for user=%s expires=%s",
+                        "created" if ok else "FAILED", user_id, expires_at)
+        if plan not in ("league", "user", "combo"):
+            logger.warning("[stripe] webhook checkout.session.completed unhandled: plan=%s league=%s user=%s",
+                           plan, league_id, user_id)
+
+    elif etype == "invoice.paid":
+        s      = event["data"]["object"]
+        sub_id = s.subscription
+        if sub_id:
+            try:
+                sub        = stripe.Subscription.retrieve(sub_id)
+                expires_at = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
+                from dashboard_services.db import get_conn
+                with get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "UPDATE league_subscriptions SET expires_at=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
+                            (expires_at, sub_id),
+                        )
+                        cur.execute(
+                            "UPDATE user_subscriptions SET expires_at=%s, updated_at=NOW() WHERE stripe_subscription_id=%s",
+                            (expires_at, sub_id),
+                        )
+            except Exception as e:
+                logger.exception("[stripe] invoice.paid renewal error: %s", e)
+
+    elif etype in ("customer.subscription.deleted", "customer.subscription.updated"):
+        s = event["data"]["object"]
+        if s.status in ("canceled", "unpaid", "past_due"):
+            sub_id = s.id
+            cancel_subscription(sub_id, "league")
+            cancel_subscription(sub_id, "user")
+
+    return "", 200
+
+
+@app.route("/<platform>/<int:season>/<league_id>/trade-database")
+def page_trade_database(platform: str, season: int, league_id: str):
+    body_html = f"""
+    <div class="card central" style="max-width:960px;">
+      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
+        <h2 style="margin:0 0 4px;font-size:20px;">Trade Database</h2>
+        <div style="font-size:13px;color:var(--text-muted);">
+          Explore thousands of real dynasty trades to understand player values and market trends
+        </div>
+      </div>
+      <div class="card-body" style="padding-top:20px;">
+
+        <div class="tdb-toolbar">
+          <div class="tdb-search-wrap">
+            <span class="tdb-search-icon" aria-hidden="true"></span>
+            <input id="tdbSearch" type="text" placeholder="Search by player name..." class="tdb-search">
+          </div>
+          <div class="tdb-lt-filters">
+            <button class="tdb-lt active" data-lt="all" onclick="tdbFilter('all')">All</button>
+            <button class="tdb-lt" data-lt="1qb" onclick="tdbFilter('1qb')">1QB</button>
+            <button class="tdb-lt" data-lt="sf"  onclick="tdbFilter('sf')">SF</button>
+          </div>
+        </div>
+
+        <div id="tdbStatus" class="tdb-status"></div>
+        <div id="tdbList"   class="tdb-list"></div>
+        
+        <div id="tdbLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);display:none;">
+          <div class="loading-spinner" style="margin:0 auto 12px;"></div>
+          Loading trade data...
+        </div>
+        
+        <div id="tdbPagination" class="ti-pagination" style="display:none;">
+          <div class="ti-pagination-info">
+            <span id="tdbPaginationText">Showing 1-20 of 100 trades</span>
+          </div>
+          <div class="ti-pagination-controls">
+            <button id="tdbPrevBtn" class="ti-pagination-btn" onclick="loadTDBPage('prev')" disabled>
+              <i class="fa-solid fa-chevron-left"></i> Previous
+            </button>
+            <div id="tdbPageNumbers" class="ti-page-numbers"></div>
+            <button id="tdbNextBtn" class="ti-pagination-btn" onclick="loadTDBPage('next')" disabled>
+              Next <i class="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <style>
+      .tdb-toolbar {{
+        display: flex; gap: 12px; margin-bottom: 16px;
+        flex-wrap: wrap; align-items: center;
+      }}
+      .tdb-search-wrap {{
+        flex: 1; min-width: 200px;
+        display: flex; align-items: center;
+        border: 1px solid var(--border); border-radius: 8px;
+        background: var(--card); padding: 0 12px; gap: 8px;
+      }}
+      .tdb-search-icon {{
+        display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
+        background: url('/static/images/magnifying-glass-solid.png') no-repeat center / contain;
+        filter: brightness(0) saturate(100%) invert(60%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(85%) contrast(90%);
+        pointer-events: none;
+      }}
+      .tdb-search {{
+        flex: 1; padding: 9px 0; border: none; background: transparent;
+        color: var(--text); font-size: 14px; outline: none;
+        min-width: 0;
+      }}
+      .tdb-search-wrap:focus-within {{ border-color: var(--accent-color, #3b82f6); }}
+      .tdb-lt-filters {{ display: flex; gap: 4px; }}
+      .tdb-lt {{
+        padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+        background: var(--card); color: var(--text-muted); cursor: pointer;
+        font-size: 13px; font-weight: 600; transition: all .15s;
+      }}
+      .tdb-lt.active {{
+        background: var(--text-color); color: var(--card-bg); border-color: var(--text-color);
+      }}
+      .tdb-status {{ font-size: 12px; color: var(--text-muted); margin-bottom: 14px; min-height: 16px; }}
+      .tdb-list {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
+      @media(max-width: 600px) {{ .tdb-list {{ grid-template-columns: 1fr; }} }}
+      .tdb-more-wrap {{ text-align: center; margin-top: 20px; grid-column: 1 / -1; }}
+      .tdb-more-btn {{
+        padding: 9px 28px; border-radius: 20px; border: 1px solid var(--border-color);
+        background: var(--card-bg); color: var(--text-color); cursor: pointer; font-size: 13px;
+      }}
+
+      /* Trade card */
+      .tdb-card {{
+        border: 1px solid var(--border-color); border-radius: 12px;
+        overflow: hidden; background: var(--card-bg);
+      }}
+      .tdb-card-head {{
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 8px 14px; border-bottom: 1px solid var(--border-color);
+        background: var(--bg-alt, rgba(0,0,0,.03));
+      }}
+      .tdb-card-date {{ font-size: 11px; color: var(--text-muted); font-weight: 500; }}
+      .tdb-badges {{ display: flex; gap: 5px; flex-wrap: wrap; }}
+      .tdb-badge {{
+        font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
+        background: var(--row, #1e293b); color: var(--text);
+        border: 1px solid var(--border-color);
+      }}
+      .tdb-badge-sf {{ background: #7c3aed22; color: #a78bfa; border-color: #7c3aed44; }}
+      .tdb-card-body {{
+        display: grid; grid-template-columns: 1fr 1px 1fr;
+      }}
+      .tdb-col {{
+        padding: 12px 14px; display: flex; flex-direction: column; gap: 5px;
+      }}
+      .tdb-col-divider {{ background: var(--border-color); }}
+      .tdb-asset {{
+        font-size: 14px; color: var(--text); font-weight: 500;
+        display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      }}
+      .tdb-asset.tdb-match {{ font-weight: 800; color: var(--accent-color, #3b82f6); }}
+      .tdb-asset.tdb-pick {{ color: var(--text-muted); font-size: 14px; font-weight: 500; }}
+      .tdb-pos {{
+        font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
+        background: var(--row, #1e293b); color: var(--text); flex-shrink: 0;
+      }}
+      @media(max-width: 480px) {{
+        .tdb-card-body {{ grid-template-columns: 1fr; }}
+        .tdb-col-divider {{ height: 1px; width: auto; }}
+      }}
+      .ti-pagination {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 20px 0;
+        padding: 12px 0;
+        border-top: 1px solid var(--border);
+      }}
+      .ti-pagination-info {{
+        font-size: 13px;
+        color: var(--text-muted);
+      }}
+      .ti-pagination-controls {{
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }}
+      .ti-pagination-btn {{
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--card);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        transition: all .15s;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }}
+      .ti-pagination-btn:hover:not(:disabled) {{
+        background: var(--bg-alt);
+        border-color: var(--accent-color);
+      }}
+      .ti-pagination-btn:disabled {{
+        opacity: 0.5;
+        cursor: not-allowed;
+      }}
+      .ti-page-numbers {{
+        display: flex;
+        gap: 4px;
+      }}
+      .ti-page-number {{
+        padding: 4px 8px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--card);
+        color: var(--text);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        min-width: 28px;
+        text-align: center;
+      }}
+      .ti-page-number:hover {{
+        background: var(--bg-alt);
+      }}
+      .ti-page-number.active {{
+        background: var(--accent-color);
+        color: var(--card);
+        border-color: var(--accent-color);
+        font-weight: 700;
+      }}
+    </style>
+
+    <script>
+    (function() {{
+      const TDB_SEASON = {season};
+      let currentPage = 1;
+      let paginationData = null;
+      let leagueType = 'all';
+      let searchQuery = '';
+      let loading = false;
+
+      const listEl   = document.getElementById('tdbList');
+      const statusEl = document.getElementById('tdbStatus');
+      const searchEl = document.getElementById('tdbSearch');
+
+      // Load initial page
+      loadTDBPage(1);
+
+      function loadTDBPage(page) {{
+        if (loading) return;
+        if (typeof page === 'string') {{
+          if (page === 'prev' && currentPage > 1) {{
+            page = currentPage - 1;
+          }} else if (page === 'next' && paginationData && paginationData.has_next) {{
+            page = currentPage + 1;
+          }} else {{
+            return;
+          }}
+        }}
+        
+        currentPage = page;
+        loading = true;
+        statusEl.textContent = '';
+        listEl.style.display = 'none';
+        document.getElementById('tdbLoading').style.display = '';
+        document.getElementById('tdbPagination').style.display = 'none';
+        
+        const apiPage = page - 1; // Convert to 0-based for API
+        const params = new URLSearchParams({{ page: apiPage, limit: 20, league_type: leagueType, season: TDB_SEASON }});
+        if (searchQuery) params.set('q', searchQuery);
+
+        fetch('/api/trade-database?' + params)
+          .then(r => r.json())
+          .then(data => {{
+            if (data.error) {{
+              throw new Error(data.error);
+            }}
+            const trades = data.trades || [];
+            if (trades.length === 0) {{
+              document.getElementById('tdbLoading').style.display = 'none';
+              listEl.innerHTML = '<div style="color:var(--text-muted);padding:20px 0;text-align:center;grid-column:1/-1;">No trades found.</div>';
+              statusEl.textContent = '';
+              document.getElementById('tdbPagination').style.display = 'none';
+              loading = false;
+              return;
+            }}
+            
+            document.getElementById('tdbLoading').style.display = 'none';
+            paginationData = data.pagination;
+            statusEl.textContent = '';
+            listEl.style.display = '';
+            updateTDBPaginationControls();
+            renderTDBTrades(trades);
+            loading = false;
+          }})
+          .catch(err => {{
+            console.error('Error loading trades:', err);
+            document.getElementById('tdbLoading').style.display = 'none';
+            statusEl.textContent = 'Error loading trades';
+            loading = false;
+          }});
+      }}
+
+      function updateTDBPaginationControls() {{
+        if (!paginationData) return;
+        
+        const prevBtn = document.getElementById('tdbPrevBtn');
+        const nextBtn = document.getElementById('tdbNextBtn');
+        const pageNumbers = document.getElementById('tdbPageNumbers');
+        const paginationText = document.getElementById('tdbPaginationText');
+        
+        // Update button states
+        prevBtn.disabled = !paginationData.has_prev;
+        nextBtn.disabled = !paginationData.has_next;
+        
+        // Update text
+        const start = (paginationData.current_page - 1) * paginationData.per_page + 1;
+        const end = Math.min(paginationData.current_page * paginationData.per_page, paginationData.total_players);
+        paginationText.textContent = `Showing ${{start}}-${{end}} of ${{paginationData.total_players}} trades`;
+        
+        // Update page numbers
+        pageNumbers.innerHTML = '';
+        const maxPages = 5;
+        let startPage = Math.max(1, paginationData.current_page - Math.floor(maxPages / 2));
+        let endPage = Math.min(paginationData.total_pages, startPage + maxPages - 1);
+        
+        if (endPage - startPage < maxPages - 1) {{
+          startPage = Math.max(1, endPage - maxPages + 1);
+        }}
+        
+        for (let i = startPage; i <= endPage; i++) {{
+          const pageBtn = document.createElement('button');
+          pageBtn.className = 'ti-page-number' + (i === paginationData.current_page ? ' active' : '');
+          pageBtn.textContent = i;
+          pageBtn.onclick = () => loadTDBPage(i);
+          pageNumbers.appendChild(pageBtn);
+        }}
+        
+        document.getElementById('tdbPagination').style.display = 'flex';
+      }}
+
+      function renderTDBTrades(trades) {{
+        renderTrades(trades, searchQuery);
+      }}
+
+      function renderTrades(trades, q) {{
+        const lq = (q || '').toLowerCase();
+        trades.forEach(t => {{
+          const sfBadge    = t.is_superflex === true  ? '<span class="tdb-badge tdb-badge-sf">SF</span>'
+                           : t.is_superflex === false ? '<span class="tdb-badge">1QB</span>' : '';
+          const teamsBadge = t.num_teams    ? `<span class="tdb-badge">${{t.num_teams}} Teams</span>` : '';
+          const scoreBadge = t.scoring_type ? `<span class="tdb-badge">${{t.scoring_type.toUpperCase()}}</span>` : '';
+
+          function renderAsset(a) {{
+            const match = lq && a.name && a.name.toLowerCase().includes(lq);
+            const pickCls = a.type === 'pick' ? ' tdb-pick' : '';
+            const cls = 'tdb-asset' + pickCls + (match ? ' tdb-match' : '');
+            const pos = a.position && a.type === 'player' ? `<span class="tdb-pos">${{a.position}}</span>` : '';
+            return `<div class="${{cls}}">${{a.name}}${{pos}}</div>`;
+          }}
+
+          const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
+          const sideB = (t.side_b || []).map(renderAsset).join('') || '<div class="tdb-asset" style="color:var(--text-muted)">—</div>';
+
+          const card = document.createElement('div');
+          card.className = 'tdb-card';
+          card.innerHTML = `
+            <div class="tdb-card-head">
+              <span class="tdb-card-date">${{t.date || '—'}}</span>
+              <div class="tdb-badges">${{sfBadge}}${{teamsBadge}}${{scoreBadge}}</div>
+            </div>
+            <div class="tdb-card-body">
+              <div class="tdb-col">${{sideA}}</div>
+              <div class="tdb-col-divider"></div>
+              <div class="tdb-col">${{sideB}}</div>
+            </div>`;
+          listEl.appendChild(card);
+        }});
+      }}
+
+      window.tdbFilter = function(lt) {{
+        leagueType = lt;
+        document.querySelectorAll('.tdb-lt').forEach(b => b.classList.toggle('active', b.dataset.lt === lt));
+        loadTDBPage(1); // Reset to first page when filtering
+      }};
+
+      let debounce;
+      searchEl.addEventListener('input', () => {{
+        clearTimeout(debounce);
+        debounce = setTimeout(() => {{ 
+          searchQuery = searchEl.value.trim(); 
+          loadTDBPage(1); // Reset to first page when searching
+        }}, 350);
+      }});
+
+      // Expose pagination function to global scope
+      window.loadTDBPage = loadTDBPage;
+    }})();
+    </script>
+    """
+    return render_page("Trade Database", league_id, "trade-database", body_html, platform, season)
+
+
+@app.route("/trade-database")
+def page_trade_database_guest():
+    nfl_state = get_nfl_state() or {}
+    current_season = int(nfl_state.get("season") or datetime.now().year)
+    return page_trade_database(platform="sleeper", season=current_season, league_id=None)
+
 
 @app.route("/prospects")
 def page_prospects_guest():
@@ -10296,13 +11021,6 @@ def page_teams(platform: str, season: int, league_id: str):
     body_html = build_teams_body(ctx)
     store_page_html(platform, season, league_id, "teams", body_html)
     return render_page("BR Fantasy Teams", league_id, "teams", body_html, platform, season)
-
-
-@app.route("/<platform>/<int:season>/<league_id>/waivers")
-def page_waivers(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body = build_waivers_body(platform, season, league_id, ctx)
-    return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
 
 
 def _ens(career_owners: dict, uid: str) -> None:
@@ -10372,7 +11090,7 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             for r in season_rosters
         }
 
-        # df_weekly has roster_id column - use it as the stable team key.
+        # df_weekly has roster_id column — use it as the stable team key.
         # Team names can collide in larger leagues, which can hide/merge users.
         has_roster_id = "roster_id" in df.columns
         df_for_stats = df
@@ -10495,7 +11213,7 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
         champ_name, runner_up_name = get_champion_and_runner_up(ctx)
         champ_uid = name_to_uid.get(champ_name) or champ_name
         runner_up_uid = name_to_uid.get(runner_up_name) or runner_up_name
-        if champ_name != "-":
+        if champ_name != "—":
             championships.setdefault(champ_uid, []).append(hist_s)
 
         summary = _build_history_summary(ctx)
@@ -10505,12 +11223,12 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             "champion_uid": champ_uid,
             "runner_up": runner_up_name,
             "runner_up_uid": runner_up_uid,
-            "champion_record": summary.get("champion_record", "-"),
-            "top_pf_team": summary.get("top_scorer_team", "-"),
+            "champion_record": summary.get("champion_record", "—"),
+            "top_pf_team": summary.get("top_scorer_team", "—"),
             "top_pf": float(summary.get("top_scorer_value") or 0),
-            "highest_week_team": summary.get("highest_week_team", "-"),
+            "highest_week_team": summary.get("highest_week_team", "—"),
             "highest_week_value": float(summary.get("highest_week_value") or 0),
-            "closest_matchup": summary.get("closest_matchup", "-"),
+            "closest_matchup": summary.get("closest_matchup", "—"),
             "closest_margin": float(summary.get("closest_margin") or 0),
         })
 
@@ -10647,7 +11365,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
 
     # ── Championship timeline ───────────────────────────────────────────────
     def _cell(v: str) -> str:
-        return html.escape(v) if v and v != "-" else "<span style='color:var(--text-muted)'>-</span>"
+        return html.escape(v) if v and v != "—" else "<span style='color:var(--text-muted)'>—</span>"
 
     sorted_records = sorted(season_records, key=lambda x: x["season"], reverse=True)
     most_recent_season = sorted_records[0]["season"] if sorted_records else None
@@ -10756,12 +11474,12 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     # ── Fun Awards ──────────────────────────────────────────────────────────
     fun_awards_html = ""
 
-    # The Bridesmaid - most runner-up appearances without a title
+    # The Bridesmaid — most runner-up appearances without a title
     runner_up_counts: dict = {}
     for rec in season_records:
         ru_uid = rec.get("runner_up_uid")
         ru_display = _display_name(ru_uid) if ru_uid else rec.get("runner_up", "")
-        if ru_display and ru_display != "-":
+        if ru_display and ru_display != "—":
             runner_up_counts[ru_display] = runner_up_counts.get(ru_display, 0) + 1
     no_title_names = set(career_df[career_df["Championships"] == 0]["display_name"].astype(str).tolist())
     bridesmaid_candidates = {k: v for k, v in runner_up_counts.items() if k in no_title_names and v >= 1}
@@ -10776,7 +11494,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "#f59e0b",
         )
 
-    # Most Dominant - best career win% (2+ seasons)
+    # Most Dominant — best career win% (2+ seasons)
     if not eligible.empty:
         dominant_row = eligible.loc[eligible["Win%"].idxmax()]
         fun_awards_html += _fun_award(
@@ -10787,7 +11505,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "#f59e0b",
         )
 
-    # The Punching Bag - most PA with a losing record
+    # The Punching Bag — most PA with a losing record
     losing = career_df[career_df["Losses"] > career_df["Wins"]]
     if not losing.empty:
         punching_bag_row = losing.loc[losing["PA"].idxmax()]
@@ -10799,7 +11517,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "#94a3b8",
         )
 
-    # Boom or Bust - highest weekly score std dev
+    # Boom or Bust — highest weekly score std dev
     boom_eligible = career_df[career_df["Seasons"] >= 1].copy()
     if not boom_eligible.empty:
         boom_row = boom_eligible.loc[boom_eligible["STD"].idxmax()]
@@ -10811,7 +11529,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "#f97316",
         )
 
-    # Barely Breathing - most wins by <5 points
+    # Barely Breathing — most wins by <5 points
     if "CloseWins" in career_df.columns and career_df["CloseWins"].sum() > 0:
         close_row = career_df.loc[career_df["CloseWins"].idxmax()]
         if int(close_row["CloseWins"]) > 0:
@@ -10823,7 +11541,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
                 "#ef4444",
             )
 
-    # Consistency King - lowest weekly score std dev (2+ seasons)
+    # Consistency King — lowest weekly score std dev (2+ seasons)
     if not eligible.empty:
         consistent_row = eligible.loc[eligible["STD"].idxmin()]
         fun_awards_html += _fun_award(
@@ -10834,7 +11552,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "#60a5fa",
         )
 
-    # Main Character - most total league activity (trades + pickups)
+    # Main Character — most total league activity (trades + pickups)
     if "Activity" in career_df.columns and career_df["Activity"].sum() > 0:
         main_row = career_df.loc[career_df["Activity"].idxmax()]
         if int(main_row["Activity"]) > 0:
@@ -10848,7 +11566,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
                 "#a855f7",
             )
 
-    # Bench Warmer MVP - most career points left on bench
+    # Bench Warmer MVP — most career points left on bench
     if "BenchPts" in career_df.columns and career_df["BenchPts"].sum() > 0:
         bench_row = career_df.loc[career_df["BenchPts"].idxmax()]
         if float(bench_row["BenchPts"]) > 0:
@@ -10860,7 +11578,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
                 "#64748b",
             )
 
-    # Waiver Wire Demon - most FA/waiver pickups
+    # Waiver Wire Demon — most FA/waiver pickups
     if "WaiverAdds" in career_df.columns and career_df["WaiverAdds"].sum() > 0:
         waiver_row = career_df.loc[career_df["WaiverAdds"].idxmax()]
         if int(waiver_row["WaiverAdds"]) > 0:
@@ -10872,7 +11590,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
                 "#22c55e",
             )
 
-    # Playoff Riser - biggest avg pts jump from regular season to playoffs
+    # Playoff Riser — biggest avg pts jump from regular season to playoffs
     po_eligible = career_df[career_df["PlayoffDelta"].notna()].copy() if "PlayoffDelta" in career_df.columns else pd.DataFrame()
     if not po_eligible.empty:
         riser_row = po_eligible.loc[po_eligible["PlayoffDelta"].idxmax()]
@@ -10922,18 +11640,6 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
 
 @app.route("/<platform>/<int:season>/<league_id>/awards")
 def page_awards(platform: str, season: int, league_id: str):
-    # Tour preview: render with mock data, bypass real multi-season fetch
-    if request.args.get("tour"):
-        try:
-            available, career_owners, championships, season_records, id_to_name = _build_tour_mock_awards_data()
-            body_html = _build_awards_html(
-                career_owners, championships, season_records, id_to_name,
-                platform=platform, season=season, league_id=league_id, league_name="Demo League",
-            )
-        except Exception as exc:
-            body_html = f"<div class='card central'><div class='card-body'><p>Awards preview unavailable: {exc}</p></div></div>"
-        return render_page("League Awards", league_id, "awards", body_html, platform, season)
-
     cached = get_page_html_from_cache(platform, season, league_id, "awards")
     if cached:
         return render_page("League Awards", league_id, "awards", cached, platform, season)
@@ -10974,15 +11680,7 @@ def page_history(platform: str, season: int, league_id: str):
     # Tour preview: render with mock data, bypass real league fetch
     if request.args.get("tour"):
         try:
-            from dashboard_services.pages.history_page import (
-                get_history_summary_html, get_history_standings_html, get_history_chart_html,
-            )
             mock_ctx = _build_tour_mock_history_ctx()
-            prerendered = {
-                "summary":   get_history_summary_html(mock_ctx),
-                "standings": get_history_standings_html(mock_ctx),
-                "chart":     get_history_chart_html(mock_ctx),
-            }
             body_html = build_history_body(
                 history_ctx=mock_ctx,
                 available_seasons=[2024],
@@ -10991,7 +11689,6 @@ def page_history(platform: str, season: int, league_id: str):
                 base_league_id=league_id,
                 selected_history_season=2024,
                 resolved_history_league_id="tour_mock",
-                prerendered=prerendered,
             )
         except Exception as exc:
             body_html = f"<div class='card central'><div class='card-body'><p>History preview unavailable: {exc}</p></div></div>"
@@ -11101,7 +11798,19 @@ def maybe_run_daily():
         logger.warning("[daily] before_request check failed (non-fatal): %s", _daily_exc)
 
 
-# /ads.txt is served by routes/public_bp.py
+@app.route("/ads.txt")
+def ads_txt():
+    """Serve ads.txt file for ad network authorization"""
+    try:
+        ads_file = Path(__file__).resolve().parent / "ads.txt"
+        if ads_file.exists():
+            return send_file(ads_file, mimetype="text/plain")
+        else:
+            # Return a placeholder if file doesn't exist
+            return "# ads.txt - Add your ad network credentials here", 200, {"Content-Type": "text/plain"}
+    except Exception as e:
+        print(f"[ads.txt] Error serving file: {e}")
+        return "# ads.txt unavailable", 500, {"Content-Type": "text/plain"}
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -11138,7 +11847,7 @@ def index():
                 if platform == "sleeper" and viewer.get("viewer_user_id"):
                     _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
             else:
-                # For ESPN, skip the hard error - viewer matching is optional
+                # For ESPN, skip the hard error — viewer matching is optional
                 if platform != "espn":
                     body_html = render_template_string(
                         FORM_BODY,
@@ -11309,7 +12018,31 @@ def api_weekly_week():
     })
 
 
-# /set-viewer → routes/auth_bp.py :: set_viewer()
+@app.route("/set-viewer", methods=["POST"])
+def set_viewer():
+    league_id = (request.form.get("league_id") or "").strip()
+    username = (request.form.get("username") or "").strip()
+    platform = (request.form.get("platform") or "sleeper").strip().lower()
+    season = int(request.form.get("season") or datetime.now().year)
+
+    if not league_id or not username:
+        return redirect(url_for("home"))
+
+    ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+    viewer = resolve_viewer_for_league(ctx["users"], ctx["rosters"], username)
+
+    if not viewer:
+        return render_template_string(
+            FORM_BODY,
+            league=league_id,
+            error="Could not match that username to a team in this league.",
+            recent_updates=generate_recent_updates_html(),
+        )
+
+    save_viewer_session(viewer)
+    if platform == "sleeper" and viewer.get("viewer_user_id"):
+        _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
+    return redirect(url_for("page_dashboard", platform=platform, season=season, league_id=league_id))
 
 
 @app.route("/api/refresh-page", methods=["POST"])
@@ -11384,11 +12117,8 @@ def api_refresh_page():
             num_teams = ctx.get("total_rosters") or None
             rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
-            _rp_trade = ctx.get("roster_positions") or []
-            _is_sf_trade = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_trade)
             body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
-                                                    scoring_format=scoring_format,
-                                                    is_superflex=_is_sf_trade)
+                                                    scoring_format=scoring_format)
 
         else:
             body_html = ""
@@ -11407,7 +12137,12 @@ def api_refresh_page():
         }), 500
 
 
-# /logout → routes/auth_bp.py :: logout()
+@app.route("/logout")
+def logout():
+    # Clear the session + cached league context
+    from flask import session
+    session.clear()
+    return redirect(url_for("index"))
 
 
 # ---------- global cache for model value table used by trade eval ----------
@@ -11678,7 +12413,7 @@ def api_trade_outcome():
                 except (ValueError, TypeError):
                     pass
 
-            # Bucket lookup - derive bucket from slot if pick_order is absent
+            # Bucket lookup — derive bucket from slot if pick_order is absent
             order = asset.get("pick_order")
             if not order and slot:
                 try:
@@ -12047,68 +12782,14 @@ def _sanitize_for_json(obj):
     return obj
 
 
-_TREND_CACHE: dict = {}   # {"data": {...}, "ts": float}
-_TREND_CACHE_TTL = 3600  # 1 hour
-
-@app.route("/api/player-trends")
-def api_player_trends():
-    """Batch value-trend classifications for all players (cached 1 h)."""
-    import time
-    cached = _TREND_CACHE.get("data")
-    if cached and time.time() - _TREND_CACHE.get("ts", 0) < _TREND_CACHE_TTL:
-        return jsonify(cached)
-
-    try:
-        from data_building.player_value_history import classify_value_trend
-        from dashboard_services.db import get_conn
-
-        with get_conn() as conn:
-            rows = conn.execute(
-                """
-                SELECT player_id, as_of_date, COALESCE(value, 0) AS value
-                FROM player_value_history
-                WHERE source = 'model'
-                  AND as_of_date >= CURRENT_DATE - INTERVAL '365 days'
-                ORDER BY player_id, as_of_date
-                """
-            ).fetchall()
-
-        # Group by player_id
-        history_by_player: dict[str, list] = {}
-        for row in rows:
-            pid = str(row["player_id"])
-            history_by_player.setdefault(pid, []).append({
-                "as_of_date": str(row["as_of_date"]),
-                "value": float(row["value"]),
-            })
-
-        result = {}
-        for pid, hist in history_by_player.items():
-            t = classify_value_trend(hist)
-            if t["class"] != "unknown":
-                result[pid] = {
-                    "class": t["class"],
-                    "label": t["label"],
-                    "color": t["color"],
-                    "slope_pct_month": t["slope_pct_month"],
-                }
-
-        _TREND_CACHE["data"] = result
-        _TREND_CACHE["ts"] = time.time()
-        return jsonify(result)
-    except Exception as e:
-        logger.exception("[api_player_trends] Error")
-        return jsonify({}), 500
-
-
 @app.route("/api/players")
 def api_players():
     """Compact player list for comparison search. No league context required.
 
     Query params:
-        page  (int, default 1)   - 1-based page number
-        limit (int, default 0)   - results per page; 0 = return all (legacy)
-        q     (str, optional)    - prefix/substring filter applied before paging
+        page  (int, default 1)   — 1-based page number
+        limit (int, default 0)   — results per page; 0 = return all (legacy)
+        q     (str, optional)    — prefix/substring filter applied before paging
     """
     try:
         from utils.utils import load_players_index
@@ -12142,7 +12823,7 @@ def api_players():
         if q:
             results = [r for r in results if q in r["name"].lower()]
 
-        # Pagination - limit=0 (default) returns the full list for backwards compat
+        # Pagination — limit=0 (default) returns the full list for backwards compat
         total = len(results)
         try:
             limit = max(0, int(request.args.get("limit", 0)))
@@ -12308,7 +12989,7 @@ def api_league_players():
 
     # Decay tables: (rank_threshold, multiplier). Beyond the last threshold the
     # final multiplier applies.  QB only decays 1QB value (sf_value untouched).
-    # RB/WR/TE decay all value fields - depth penalty applies in any format.
+    # RB/WR/TE decay all value fields — depth penalty applies in any format.
     _DEPTH_DECAY = {
         "QB": [(12, 1.00), (18, 0.82), (24, 0.65), (36, 0.45), (48, 0.32), (9999, 0.22)],
         "RB": [(30, 1.00), (42, 0.88), (54, 0.72), (72, 0.55), (9999, 0.40)],
@@ -12362,7 +13043,7 @@ def api_league_players():
     try:
         from utils.utils import load_players_index
         players_index = load_players_index() or {}
-
+        
         # Enrich player data with birthday information
         for player in model_value_table:
             player_id = str(player.get("id") or "")
@@ -12371,65 +13052,6 @@ def api_league_players():
                 player["bDay"] = player_data.get("bDay")
     except Exception as e:
         print(f"[api/league-players] Could not add birthday data: {e}")
-
-    # Enrich with PPG and total points from usage cache (half-PPR, min 4 games)
-    try:
-        import os as _os_lp, json as _json_lp
-        _season_lp = date.today().year
-        _usage_data_lp = None
-        for _s in [_season_lp, _season_lp - 1]:
-            _up = _os_lp.path.join("cache", "player_history", f"usage_rows_{_s}.json")
-            if _os_lp.path.exists(_up):
-                with open(_up) as _f:
-                    _usage_data_lp = _json_lp.load(_f)
-                _usage_season_lp = _s
-                break
-        if _usage_data_lp:
-            _usage_map_lp = {str(p.get("id")): p for p in _usage_data_lp if p.get("id")}
-            # Build positional PPG and total_pts lists for ranking
-            _pos_ppg_lp: dict = {}
-            _pos_total_lp: dict = {}
-            for _p in _usage_data_lp:
-                _u = _p.get("usage") or {}
-                _g = int(_u.get("games") or 0)
-                if _g < 4:
-                    continue
-                _ppg_v = _u.get("ppr_ppg")
-                if _ppg_v is None:
-                    continue
-                _ppg_v = round(float(_ppg_v), 1)
-                _tot_v = round(_ppg_v * _g, 1)
-                _pos_lp = str(_p.get("position") or "")
-                _pos_ppg_lp.setdefault(_pos_lp, []).append(_ppg_v)
-                _pos_total_lp.setdefault(_pos_lp, []).append(_tot_v)
-            # Sort descending for rank lookup
-            _pos_ppg_sorted_lp = {pos: sorted(vals, reverse=True) for pos, vals in _pos_ppg_lp.items()}
-            _pos_total_sorted_lp = {pos: sorted(vals, reverse=True) for pos, vals in _pos_total_lp.items()}
-            for _player in model_value_table:
-                _pid = str(_player.get("id") or "")
-                _entry = _usage_map_lp.get(_pid)
-                if not _entry:
-                    continue
-                _u = _entry.get("usage") or {}
-                _g = int(_u.get("games") or 0)
-                if _g < 4:
-                    continue
-                _ppg_v = _u.get("ppr_ppg")
-                if _ppg_v is None:
-                    continue
-                _ppg_v = round(float(_ppg_v), 1)
-                _tot_v = round(_ppg_v * _g, 1)
-                _pos_lp = str(_entry.get("position") or "")
-                _ppg_sorted = _pos_ppg_sorted_lp.get(_pos_lp, [])
-                _tot_sorted = _pos_total_sorted_lp.get(_pos_lp, [])
-                _player["ppg"] = _ppg_v
-                _player["total_pts"] = _tot_v
-                _player["ppg_games"] = _g
-                _player["ppg_season"] = _usage_season_lp
-                _player["ppg_rank"] = (_ppg_sorted.index(_ppg_v) + 1) if _ppg_v in _ppg_sorted else None
-                _player["total_pts_rank"] = (_tot_sorted.index(_tot_v) + 1) if _tot_v in _tot_sorted else None
-    except Exception as _e_lp:
-        print(f"[api/league-players] PPG enrichment skipped: {_e_lp}")
 
     # Compute tier thresholds for every league-type × size combination so the
     # frontend can display each player's tier badge without a second API call.
@@ -12455,7 +13077,7 @@ def api_teams():
     season = int(request.args.get("season") or datetime.now().year)
 
     if not league_id:
-        return jsonify({"error": "league_id required"}), 400
+        return jsonify([])
 
     try:
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
@@ -12691,25 +13313,6 @@ def api_player_indicators():
         except Exception as _pe:
             print(f"[player-indicators] prospects skipped: {_pe}")
 
-        # Supplement breakouts with anyone who has a score in breakout_opportunity_scores
-        # (same min_score=25 as the breakout engine page), so the modal tab appears for
-        # every player visible on that page regardless of how indicators were built.
-        try:
-            from dashboard_services.db import get_conn
-            with get_conn() as _conn:
-                _bk_rows = _conn.execute(
-                    """
-                    SELECT DISTINCT player_id
-                    FROM breakout_opportunity_scores
-                    WHERE season = %s AND breakout_opportunity_score >= 25
-                    """,
-                    (current_season,),
-                ).fetchall()
-            _db_bk_ids = {str(r["player_id"]) for r in _bk_rows}
-            breakouts = list(dict.fromkeys(breakouts + list(_db_bk_ids)))
-        except Exception as _bke:
-            print(f"[player-indicators] breakout DB supplement skipped: {_bke}")
-
         return jsonify({
             "rookies": rookies,
             "breakouts": breakouts,
@@ -12861,6 +13464,139 @@ def api_nfl_state():
     except Exception as e:
         print(f"[nfl-state] Error: {e}")
         return jsonify({}), 500
+
+
+@app.route("/api/player-advanced-metrics/<player_id>")
+def api_player_advanced_metrics(player_id: str):
+    """
+    Get advanced efficiency metrics for a specific player.
+
+    Query params:
+        season: NFL season year (e.g. 2025). Omit to use the default season
+                (current season during regular season, most recent with data
+                during offseason).
+
+    Returns:
+        {
+            "player_id": "123",
+            "position": "WR",
+            "season": 2025,
+            "available_seasons": [2025, 2024],
+            "metrics": {
+                "yards_per_target": 8.5,
+                "catch_rate": 0.72,
+                ...
+            },
+            "as_of_date": "2025-01-15"
+        }
+    """
+    try:
+        from data_building.advanced_metrics import (
+            get_player_metrics,
+            get_player_metrics_by_season,
+            get_player_career_metrics,
+            get_available_seasons_for_player,
+        )
+
+        # Determine default season from NFL state
+        nfl_state = get_nfl_state() or {}
+        nfl_season = int(nfl_state.get("season") or datetime.now().year)
+        is_offseason = (nfl_state.get("season_type") or "").lower() == "off"
+
+        # Parse requested season from query param
+        requested_season = request.args.get("season")
+        is_career_request = requested_season == "career" or requested_season is None
+        
+        if requested_season and requested_season != "career":
+            try:
+                requested_season = int(requested_season)
+            except (ValueError, TypeError):
+                requested_season = None
+
+        # Get all seasons with data for this player
+        available_seasons = get_available_seasons_for_player(str(player_id))
+
+        # Choose target season: explicit request → current (if in-season) → most recent
+        if requested_season:
+            target_season = requested_season
+        elif not is_offseason and nfl_season in available_seasons:
+            target_season = nfl_season
+        elif available_seasons:
+            target_season = available_seasons[0]  # most recent season with data
+        else:
+            target_season = nfl_season
+
+        # Fetch metrics
+        if is_career_request:
+            # Career mode - aggregate across all seasons
+            metrics = get_player_career_metrics(str(player_id))
+            target_season = None
+        elif requested_season:
+            # Specific season requested
+            metrics = get_player_metrics_by_season(str(player_id), requested_season)
+            target_season = requested_season
+        elif not is_offseason and nfl_season in available_seasons:
+            # Current season (in-season)
+            metrics = get_player_metrics_by_season(str(player_id), nfl_season)
+            target_season = nfl_season
+        elif available_seasons:
+            # Most recent season with data
+            target_season = available_seasons[0]
+            metrics = get_player_metrics_by_season(str(player_id), target_season)
+        else:
+            # Fallback to latest
+            metrics = get_player_metrics(str(player_id))
+            target_season = None
+
+        if not metrics:
+            return jsonify({
+                "player_id": str(player_id),
+                "error": "No metrics available for this player"
+            }), 404
+
+        # Extract and clean metadata fields
+        as_of_date = str(metrics.pop("as_of_date", None))
+        season_val = metrics.pop("season", target_season)
+        metrics.pop("id", None)
+
+        metrics_payload = {
+            k: (float(v) if v is not None and not isinstance(v, (datetime, date)) else (str(v) if isinstance(v, (datetime, date)) else None))
+            for k, v in metrics.items()
+            if k not in ("player_id", "position")
+        }
+
+        # Blend usage-based role score with PFF quality grades for a single
+        # evaluation signal used by the modal.
+        role = metrics_payload.get("role_score")
+        off = metrics_payload.get("grades_offense")
+        rush = metrics_payload.get("pff_rushing_grade")
+        ppass = metrics_payload.get("pff_passing_grade")
+
+        quality = ppass if metrics.get("position") == "QB" else (rush or off)
+        if role is not None and quality is not None:
+            metrics_payload["player_evaluation_score"] = round((float(role) * 0.65) + (float(quality) * 0.35), 1)
+        elif role is not None:
+            metrics_payload["player_evaluation_score"] = round(float(role), 1)
+        elif quality is not None:
+            metrics_payload["player_evaluation_score"] = round(float(quality), 1)
+
+        return jsonify({
+            "player_id": str(player_id),
+            "position": metrics.get("position"),
+            "season": season_val,
+            "available_seasons": available_seasons,
+            "metrics": metrics_payload,
+            "as_of_date": as_of_date,
+        })
+
+    except Exception as e:
+        logger.exception("[player-advanced-metrics] Error for %s", player_id)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "player_id": str(player_id),
+            "error": "Failed to retrieve metrics"
+        }), 500
 
 
 @app.route("/api/advanced-metrics/top-role-players")
@@ -13151,11 +13887,9 @@ def api_calculate_breakout_scores():
         }
     """
     try:
-        import json as _json
-        import os as _os
         from datetime import datetime
         from data_building.breakout_engine import BreakoutEngine
-        from utils.utils import load_players_index
+        from utils.utils import load_players_index, load_usage_table
 
         # Get season
         nfl_state = get_nfl_state() or {}
@@ -13175,26 +13909,19 @@ def api_calculate_breakout_scores():
         # Initialize engine
         engine = BreakoutEngine(season=season)
 
-        # Load player PPG from usage_rows cache (same source as player modal).
-        # Try the requested season first, fall back to the prior year.
-        _cache_dir = _os.path.join(_os.path.dirname(__file__), "cache", "player_history")
-        _usage_data = None
-        for _y in [season, season - 1]:
-            _path = _os.path.join(_cache_dir, f"usage_rows_{_y}.json")
-            if _os.path.exists(_path):
-                with open(_path) as _f:
-                    _usage_data = _json.load(_f)
-                break
-        usage_rows = _usage_data or []
+        # Get all players from usage table or players_index
+        # This is a simplified version - in production you'd filter to relevant players
+        usage_table = load_usage_table() or []
         players_index = load_players_index() or {}
 
         # Build player list (top 600 by value/relevance)
         player_list = []
-        for player in usage_rows[:600]:
-            player_id = str(player.get('id') or player.get('player_id') or '')
+        for player in usage_table[:600]:  # Limit to top 600
+            player_id = player.get('player_id') or player.get('id')
             if not player_id:
                 continue
 
+            # Get additional metadata from players_index
             player_meta = players_index.get(player_id, {})
 
             player_list.append({
@@ -13225,6 +13952,34 @@ def api_calculate_breakout_scores():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e), "success": False}), 500
+
+
+@app.route("/api/player-value-history/<player_id>")
+def api_player_value_history(player_id: str):
+    try:
+        days = int(request.args.get("days", 30))
+    except (TypeError, ValueError):
+        days = 30
+
+    league_type = str(request.args.get("league_type", "1qb")).strip().lower()
+    try:
+        league_size = int(request.args.get("league_size", 10))
+        if league_size not in (8, 10, 12, 14):
+            league_size = 10
+    except (TypeError, ValueError):
+        league_size = 10
+
+    history = get_player_value_history(
+        player_id, days=max(days, 1),
+        league_type=league_type, league_size=league_size,
+    )
+    return jsonify(
+        {
+            "player_id": str(player_id),
+            "days": max(days, 1),
+            "history": history,
+        }
+    )
 
 
 @app.route("/api/player-details/<player_id>")
@@ -13269,49 +14024,21 @@ def api_player_details(player_id: str):
                 "fumbles": -2.0
             }
 
-        players_index = get_relevant_index_global()
+        players_index = load_relevant_index() or {}
         player_meta = players_index.get(player_id, {})
 
         # Fall back to full players index if not found in relevant index
         if not player_meta:
-            player_meta = get_players_index_global().get(player_id, {})
-
-        # Final fallback: internal prospect ID (ROOKIE_YEAR_NAME) - build meta from rookie cache
-        _prospect_meta_row = None
-        if not player_meta and str(player_id).startswith("ROOKIE_"):
-            try:
-                from dashboard_services.rookie_api import _cache as _rk_meta_cache
-                from data_building.rookie_pipeline.pipeline import (
-                    get_active_rookie_class as _garc_meta,
-                    get_rookie_rankings_from_db as _grr_meta,
-                )
-                _yr = _garc_meta()
-                for _cy in [_yr, _yr - 1]:
-                    if _cy not in _rk_meta_cache:
-                        _rk_meta_cache[_cy] = _grr_meta(_cy)
-                    _prospect_meta_row = next(
-                        (r for r in _rk_meta_cache.get(_cy, []) if r.get("player_id") == str(player_id)),
-                        None,
-                    )
-                    if _prospect_meta_row:
-                        break
-                if _prospect_meta_row:
-                    player_meta = {
-                        "name": _prospect_meta_row.get("name", ""),
-                        "pos":  _prospect_meta_row.get("position", ""),
-                        "team": _prospect_meta_row.get("team") or "",
-                        "espnHeadshot": _prospect_meta_row.get("headshot_url") or "",
-                    }
-            except Exception:
-                pass
+            players_index_full = load_players_index() or {}
+            player_meta = players_index_full.get(player_id, {})
 
         if not player_meta:
             return jsonify({"error": "Player not found"}), 404
 
         player_team = player_meta.get("team", "")
 
-        # Get value data (in-memory cache, no disk read per request)
-        value_table = get_value_table_global()
+        # Get value data
+        value_table = load_model_value_table() or []
         player_value = next((p for p in value_table if str(p.get("id")) == str(player_id)), {})
 
         # Get FULL value history from database (not just 90 days)
@@ -13320,359 +14047,28 @@ def api_player_details(player_id: str):
             league_type=_modal_lt, league_size=_modal_ls,
         )
 
-        # Classify value trajectory
-        from data_building.player_value_history import classify_value_trend
-        value_trend = classify_value_trend(value_history)
+        # Load game logs from sleeper_stats for all available seasons
+        game_logs_by_year = {}
 
-        game_logs_by_year = {}  # lazy-loaded via /api/player-game-logs/
-
-        # Try to attach prospect data - run unconditionally since game_logs_by_year is now always empty
-        prospect_data = None
-        if True:
-            try:
-                import re as _re
-                from dashboard_services.rookie_api import _cache as _rookie_cache
-                from data_building.rookie_pipeline.pipeline import get_active_rookie_class
-                from data_building.rookie_pipeline.value_translation import format_draft_capital
-
-                active_year = get_active_rookie_class()
-                found_row = None
-                for check_year in [active_year, active_year - 1]:
-                    if check_year not in _rookie_cache:
-                        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
-                        _rookie_cache[check_year] = get_rookie_rankings_from_db(check_year)
-                    for r in _rookie_cache.get(check_year, []):
-                        if str(r.get("sleeper_id") or "") == str(player_id):
-                            found_row = r
-                            break
-                    if found_row:
-                        break
-
-                # Fallback 2: direct player_id match (internal ROOKIE_YEAR_NAME IDs)
-                if not found_row:
-                    for check_year in [active_year, active_year - 1]:
-                        for r in _rookie_cache.get(check_year, []):
-                            if r.get("player_id") == str(player_id):
-                                found_row = r
-                                break
-                        if found_row:
-                            break
-
-                # Fallback 3: name match via players_index for Sleeper IDs not yet linked
-                if not found_row:
-                    def _norm_name(n):
-                        n = n.lower()
-                        n = _re.sub(r"['\.\-]", "", n)
-                        n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
-                        return _re.sub(r"\s+", " ", n).strip()
-
-                    players_idx = get_players_index_global() or {}
-                    idx_entry = players_idx.get(str(player_id)) or {}
-                    idx_name = idx_entry.get("name", "")
-                    if idx_name:
-                        norm_target = _norm_name(idx_name)
-                        for check_year in [active_year, active_year - 1]:
-                            for r in _rookie_cache.get(check_year, []):
-                                if _norm_name(r.get("name", "")) == norm_target:
-                                    found_row = r
-                                    r["sleeper_id"] = str(player_id)
-                                    break
-                            if found_row:
-                                break
-
-                if found_row:
-                    def _sf(v):
-                        try:
-                            return float(v) if v is not None else None
-                        except (TypeError, ValueError):
-                            return None
-
-                    prospect_data = {
-                        "player_id":                     found_row.get("player_id"),
-                        "draft_class_year":              found_row.get("draft_class_year"),
-                        "school":                        found_row.get("school"),
-                        "prospect_score":                _sf(found_row.get("prospect_score")),
-                        "tier":                          found_row.get("tier"),
-                        "tier_label":                    found_row.get("tier_label"),
-                        "overall_rank":                  found_row.get("overall_rank"),
-                        "position_rank":                 found_row.get("position_rank"),
-                        "production_score":              _sf(found_row.get("production_score")),
-                        "efficiency_score":              _sf(found_row.get("efficiency_score")),
-                        "age_score":                     _sf(found_row.get("age_score")),
-                        "breakout_profile_score":        _sf(found_row.get("breakout_profile_score")),
-                        "athleticism_score":             _sf(found_row.get("athleticism_score")),
-                        "competition_score":             _sf(found_row.get("competition_score")),
-                        "projected_draft_capital_score": _sf(found_row.get("projected_draft_capital_score")),
-                        "confidence_score":              _sf(found_row.get("confidence_score")),
-                        "key_reasons":                   found_row.get("key_reasons"),
-                        "rookie_value":                  _sf(found_row.get("rookie_value")),
-                        "rookie_sf_value":               _sf(found_row.get("rookie_sf_value")),
-                        "projected_round":               found_row.get("projected_round"),
-                        "projected_pick":                found_row.get("projected_pick"),
-                        "num_mocks_used":                found_row.get("num_mocks_used"),
-                        "height_inches":                 found_row.get("height_inches"),
-                        "weight_lbs":                    found_row.get("weight_lbs"),
-                        "forty_yard":                    _sf(found_row.get("forty_yard")),
-                        "ras_score":                     _sf(found_row.get("ras_score")),
-                        "draft_capital_label":           format_draft_capital(
-                            found_row.get("projected_round"),
-                            found_row.get("projected_pick"),
-                            found_row.get("projected_pick_low"),
-                            found_row.get("projected_pick_high"),
-                        ),
-                    }
-            except Exception as pe:
-                print(f"[api_player_details] prospect lookup error: {pe}")
-
-        # Overlay ADP onto prospect_data using same fallback chain as draft-grades
-        if prospect_data is not None:
-            try:
-                from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc
-                from dashboard_services.adp_service import (
-                    fetch_league_adp_from_db, fetch_fc_rookie_adp, build_model_adp_fallback,
-                )
-                _pid_str = str(player_id)
-                _adp_year = _garc()
-                for _is_sf in (False, True):
-                    # Try both class year and Sleeper league season (offset by 1)
-                    _adp_map = {}
-                    for _s in (_adp_year - 1, _adp_year):
-                        _rows = fetch_league_adp_from_db(is_sf=_is_sf, season=_s, draft_type='rookie')
-                        _adp_map.update(_rows)  # later year wins on conflict
-                    if _pid_str not in _adp_map:
-                        _fc = fetch_fc_rookie_adp(is_sf=_is_sf, season=_adp_year)
-                        if _pid_str in _fc:
-                            _adp_map = _fc
-                        else:
-                            _model = build_model_adp_fallback(is_sf=_is_sf, season=_adp_year)
-                            if _pid_str in _model:
-                                _adp_map = _model
-                    if _pid_str in _adp_map:
-                        _entry = _adp_map[_pid_str]
-                        _val = _entry["avg_pick"] if isinstance(_entry, dict) else float(_entry)
-                        prospect_data["sf_avg_pick" if _is_sf else "avg_pick"] = _val
-            except Exception:
-                pass
-
-        # Compute years_exp from draft_year if available (more accurate than age formula)
-        _draft_year_meta = player_meta.get("draft_year")
-        if _draft_year_meta:
-            _years_exp = max(0, season - int(_draft_year_meta))
-        else:
-            _years_exp = player_meta.get("years_exp")
-
-        # Compute PPG and positional scoring rank from usage cache
-        _ppg = None
-        _ppg_rank = None
-        _ppg_games = None
-        _ppg_season_used = None
-        _total_pts = None
-        _total_pts_rank = None
-        try:
-            import os as _os, json as _json2
-            _ppr_val = scoring_settings.get("pointsPerReception", 0.5)
-            def _pick_ppg(u):
-                if _ppr_val >= 1.0:
-                    return u.get("ppr_ppg")
-                if _ppr_val <= 0:
-                    return u.get("std_scoring_ppg") or u.get("std_ppg")
-                return u.get("half_ppr_ppg")
-
-            for _ppg_s in [season, season - 1]:
-                _up = _os.path.join("cache", "player_history", f"usage_rows_{_ppg_s}.json")
-                if not _os.path.exists(_up):
-                    continue
-                _ud = _json2.load(open(_up))
-                _pe = next((p for p in _ud if str(p.get("id")) == str(player_id)), None)
-                if not _pe:
-                    continue
-                _pu = _pe.get("usage") or {}
-                _pg = int(_pu.get("games") or 0)
-                if _pg < 4:
-                    continue
-                _ppg = _pick_ppg(_pu)
-                if _ppg is None:
-                    continue
-                _ppg = round(float(_ppg), 1)
-                _ppg_games = _pg
-                _ppg_season_used = _ppg_s
-                # Scoring rank within position (min 4 games)
-                _pos_str = player_meta.get("pos", "")
-                if _pos_str:
-                    _pos_players = [
-                        p for p in _ud
-                        if p.get("position") == _pos_str
-                        and int((p.get("usage") or {}).get("games") or 0) >= 4
-                        and _pick_ppg(p.get("usage") or {}) is not None
-                    ]
-                    _all_ppg = sorted(
-                        [round(float(_pick_ppg(p.get("usage") or {})), 1) for p in _pos_players],
-                        reverse=True,
-                    )
-                    try:
-                        _ppg_rank = _all_ppg.index(_ppg) + 1
-                    except ValueError:
-                        _ppg_rank = None
-                    # Total points rank — round ppg before multiplying so values
-                    # match _total_pts (which also uses already-rounded _ppg)
-                    _all_total = sorted(
-                        [round(round(float(_pick_ppg(p.get("usage") or {})), 1) * int((p.get("usage") or {}).get("games") or 0), 1)
-                         for p in _pos_players],
-                        reverse=True,
-                    )
-                    _total_pts = round(_ppg * _ppg_games, 1) if _ppg and _ppg_games else None
-                    try:
-                        _total_pts_rank = _all_total.index(_total_pts) + 1 if _total_pts is not None else None
-                    except ValueError:
-                        _total_pts_rank = None
-                break
-        except Exception:
-            pass
-
-        # Look up which fantasy team owns this player (requires league context)
-        _fantasy_team = None
-        _fantasy_team_owner = None
-        if league_id:
-            try:
-                from dashboard_services.platform_api import get_users, get_rosters
-                _rosters_pm = get_rosters(platform, league_id, season) or []
-                _users_pm   = get_users(platform, league_id, season) or []
-                _rmap_pm    = _build_roster_map(_users_pm, _rosters_pm)
-                _user_by_id = {str(u.get("user_id")): u for u in _users_pm}
-                for _r in _rosters_pm:
-                    if str(player_id) in [str(p) for p in (_r.get("players") or [])]:
-                        _fantasy_team = _rmap_pm.get(str(_r.get("roster_id")))
-                        _owner = _user_by_id.get(str(_r.get("owner_id") or ""))
-                        if _owner:
-                            _fantasy_team_owner = (
-                                _owner.get("display_name")
-                                or _owner.get("username")
-                            )
-                        break
-            except Exception:
-                pass
-
-        response = {
-            "player_id": player_id,
-            "name": player_meta.get("name", "Unknown"),
-            "position": player_meta.get("pos"),
-            "team": player_meta.get("team"),
-            "age": player_value.get("age"),
-            "pos_rank": player_value.get("pos_rank"),
-            "pos_rank_label": player_value.get("pos_rank_label"),
-            "espnHeadshot": player_meta.get("espnHeadshot"),
-            "draft_year": _draft_year_meta,
-            "fantasy_team": _fantasy_team,
-            "fantasy_team_owner": _fantasy_team_owner,
-            "stats": {
-                "value": round(player_value.get("value", 0), 1) if player_value.get("value") else None,
-                "sf_value": round(player_value.get("sf_value", 0), 1) if player_value.get("sf_value") else None,
-                "pos_rank": player_value.get("pos_rank"),
-                "pos_rank_label": player_value.get("pos_rank_label"),
-                "years_exp": _years_exp,
-                "ppg": _ppg,
-                "ppg_rank": _ppg_rank,
-                "ppg_season": _ppg_season_used,
-                "ppg_games": _ppg_games,
-                "total_pts": _total_pts if _ppg else None,
-                "total_pts_rank": _total_pts_rank if _ppg else None,
-            },
-            "value_history": value_history,
-            "value_trend": value_trend,
-            "game_logs_by_year": game_logs_by_year,
-            "prospect_data": prospect_data,
-        }
-
-        return jsonify(response)
-
-    except Exception as e:
-        logger.exception("[api_player_details] Error")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/player-index/update", methods=["POST"])
-def api_player_index_update():
-    """Update metadata fields (e.g. draft_year) on a players_index entry."""
-    global _PLAYERS_INDEX_GLOBAL
-    try:
-        body = request.get_json() or {}
-        player_id = str(body.get("player_id", "")).strip()
-        if not player_id:
-            return jsonify({"error": "player_id required"}), 400
-
-        # Only allow safe metadata fields to be written
-        ALLOWED_FIELDS = {"draft_year", "years_exp"}
-        updates = {k: v for k, v in body.items() if k in ALLOWED_FIELDS}
-        if not updates:
-            return jsonify({"error": "No valid fields provided"}), 400
-
-        from utils.utils import load_players_index, save_players_index
-        pi = load_players_index() or {}
-        if player_id not in pi:
-            return jsonify({"error": "Player not found in index"}), 404
-
-        pi[player_id].update(updates)
-        save_players_index(pi)
-
-        # Reset in-memory cache so next request picks up the change
-        with _players_index_lock:
-            _PLAYERS_INDEX_GLOBAL = pi
-
-        return jsonify({"ok": True, "player_id": player_id, "updated": updates})
-    except Exception as e:
-        logger.exception("[api_player_index_update] Error")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/player-game-logs/<player_id>")
-def api_player_game_logs(player_id: str):
-    """Game logs for the Stats tab - lazy loaded separately from player-details."""
-    import json, os, glob, re as _re2
-    try:
-        from utils.utils import load_relevant_index, load_model_value_table
-        from dashboard_services.api import get_effective_scoring_settings
-        from dashboard_services.platform_api import sync_league_globals
-
-        league_id   = request.args.get("league_id")
-        platform    = request.args.get("platform", "sleeper")
-        season      = int(request.args.get("season", datetime.now().year))
-
-        if league_id:
-            sync_league_globals(platform, league_id, season)
-            scoring_settings = get_effective_scoring_settings()
-        else:
-            scoring_settings = {
-                "passYards": 0.04, "passTD": 4.0, "passInterceptions": -2.0,
-                "rushYards": 0.1, "rushTD": 6.0, "pointsPerReception": 1.0,
-                "receivingYards": 0.1, "receivingTD": 6.0, "fumbles": -2.0,
-            }
-
-        players_index = load_relevant_index() or {}
-        player_meta = players_index.get(player_id) or {}
-        if not player_meta:
-            players_index_full = load_players_index() or {}
-            player_meta = players_index_full.get(player_id) or {}
-        player_team = player_meta.get("team", "")
-
-        # Reuse the years cache from api_player_details
+        # Find all available season years — cached for 5 minutes to avoid
+        # repeated glob scans on every player-details request.
         global _PLAYER_DETAIL_YEARS_CACHE, _PLAYER_DETAIL_YEARS_CACHE_TS
         now = time.time()
         if not _PLAYER_DETAIL_YEARS_CACHE or now - _PLAYER_DETAIL_YEARS_CACHE_TS > _PLAYER_DETAIL_YEARS_TTL:
             stats_files = glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_*.json"))
             _fresh_years: set = set()
-            for sf in stats_files:
-                bn = os.path.basename(sf)
-                if bn.startswith("sleeper_stats_s"):
-                    m = _re2.match(r'sleeper_stats_s(\d+)_w(\d+)', bn)
-                    if m:
-                        _fresh_years.add(int(m.group(1)))
+            for stats_file in stats_files:
+                try:
+                    basename = os.path.basename(stats_file)
+                    if basename.startswith("sleeper_stats_s"):
+                        match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
+                        if match:
+                            _fresh_years.add(int(match.group(1)))
+                except Exception:
+                    continue
             _PLAYER_DETAIL_YEARS_CACHE = _fresh_years
             _PLAYER_DETAIL_YEARS_CACHE_TS = now
         available_years = _PLAYER_DETAIL_YEARS_CACHE
-
-        game_logs_by_year = {}
 
         # Process each available year
         for season_year in sorted(available_years, reverse=True):  # Most recent first
@@ -13693,7 +14089,7 @@ def api_player_game_logs(player_id: str):
                         if isinstance(games, list) and week_num not in schedule_by_week:
                             schedule_by_week[week_num] = games
                 except Exception as e:
-                    logger.warning("[api_player_game_logs] Error loading schedule %s: %s", schedule_file, e)
+                    logger.warning("[api_player_details] Error loading schedule %s: %s", schedule_file, e)
                     continue
 
             # Load all stats for this season into memory
@@ -13705,7 +14101,7 @@ def api_player_game_logs(player_id: str):
                 try:
                     basename = os.path.basename(week_file)
                     # Extract week number from filename
-                    match = _re2.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
+                    match = re.match(r'sleeper_stats_s(\d+)_w(\d+)', basename)
                     if match:
                         week_num = int(match.group(2))
                     else:
@@ -13714,7 +14110,7 @@ def api_player_game_logs(player_id: str):
                     with open(week_file, 'r') as f:
                         week_stats = json.load(f)
                         stats_by_week[week_num] = week_stats
-                except Exception:
+                except Exception as e:
                     continue
 
             # Check if player has ANY stats in this season
@@ -13771,7 +14167,7 @@ def api_player_game_logs(player_id: str):
                 if stats:
                     # Player has stats - calculate fantasy points using league scoring settings
                     pts = 0.0
-
+                    
                     # Base scoring
                     pts += (stats.get("pass_yd") or 0) * scoring_settings.get("passYards", 0.04)
                     pts += (stats.get("pass_td") or 0) * scoring_settings.get("passTD", 4.0)
@@ -13782,31 +14178,31 @@ def api_player_game_logs(player_id: str):
                     pts += (stats.get("rec_yd") or 0) * scoring_settings.get("receivingYards", 0.1)
                     pts += (stats.get("rec_td") or 0) * scoring_settings.get("receivingTD", 6.0)
                     pts += (stats.get("fum_lost") or 0) * scoring_settings.get("fumbles", -2.0)
-
+                    
                     # Yardage bonuses
                     pass_yds = stats.get("pass_yd") or 0
                     rush_yds = stats.get("rush_yd") or 0
                     rec_yds = stats.get("rec_yd") or 0
                     rush_rec_yds = rush_yds + rec_yds
-
+                    
                     # Pass yardage bonuses
                     if pass_yds >= 400:
                         pts += scoring_settings.get("bonus_pass_yd_400", 0)
                     elif pass_yds >= 300:
                         pts += scoring_settings.get("bonus_pass_yd_300", 0)
-
+                    
                     # Rush yardage bonuses
                     if rush_yds >= 200:
                         pts += scoring_settings.get("bonus_rush_yd_200", 0)
                     elif rush_yds >= 100:
                         pts += scoring_settings.get("bonus_rush_yd_100", 0)
-
+                    
                     # Receiving yardage bonuses
                     if rec_yds >= 200:
                         pts += scoring_settings.get("bonus_rec_yd_200", 0)
                     elif rec_yds >= 100:
                         pts += scoring_settings.get("bonus_rec_yd_100", 0)
-
+                    
                     # Combined rush/rec yardage bonuses
                     if rush_rec_yds >= 200:
                         pts += scoring_settings.get("bonus_rush_rec_yd_200", 0)
@@ -13862,10 +14258,124 @@ def api_player_game_logs(player_id: str):
                 game_logs.sort(key=lambda g: g.get("date", "") or "")
                 game_logs_by_year[season_year] = game_logs
 
-        return jsonify({"game_logs_by_year": game_logs_by_year})
-    except Exception:
-        logger.exception("[api_player_game_logs] Error")
-        return jsonify({"game_logs_by_year": {}})
+        # Try to attach prospect data — use game_logs to detect rookies rather than years_exp
+        prospect_data = None
+        has_game_logs = bool(game_logs_by_year)
+        if not has_game_logs:
+            try:
+                import re as _re
+                from dashboard_services.rookie_api import _cache as _rookie_cache
+                from data_building.rookie_pipeline.pipeline import get_active_rookie_class
+                from data_building.rookie_pipeline.value_translation import format_draft_capital
+
+                active_year = get_active_rookie_class()
+                found_row = None
+                for check_year in [active_year, active_year - 1]:
+                    if check_year not in _rookie_cache:
+                        from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db
+                        _rookie_cache[check_year] = get_rookie_rankings_from_db(check_year)
+                    for r in _rookie_cache.get(check_year, []):
+                        if str(r.get("sleeper_id") or "") == str(player_id):
+                            found_row = r
+                            break
+                    if found_row:
+                        break
+
+                # Fallback: match by name from players_index when sleeper_id not yet linked
+                if not found_row:
+                    def _norm_name(n):
+                        n = n.lower()
+                        n = _re.sub(r"['\.\-]", "", n)
+                        n = _re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", n)
+                        return _re.sub(r"\s+", " ", n).strip()
+
+                    players_idx = get_players_index_global() or {}
+                    idx_entry = players_idx.get(str(player_id)) or {}
+                    idx_name = idx_entry.get("name", "")
+                    if idx_name:
+                        norm_target = _norm_name(idx_name)
+                        for check_year in [active_year, active_year - 1]:
+                            for r in _rookie_cache.get(check_year, []):
+                                if _norm_name(r.get("name", "")) == norm_target:
+                                    found_row = r
+                                    # Cache the link so future calls use sleeper_id
+                                    r["sleeper_id"] = str(player_id)
+                                    break
+                            if found_row:
+                                break
+
+                if found_row:
+                    def _sf(v):
+                        try:
+                            return float(v) if v is not None else None
+                        except (TypeError, ValueError):
+                            return None
+
+                    prospect_data = {
+                        "player_id":                     found_row.get("player_id"),
+                        "draft_class_year":              found_row.get("draft_class_year"),
+                        "school":                        found_row.get("school"),
+                        "prospect_score":                _sf(found_row.get("prospect_score")),
+                        "tier":                          found_row.get("tier"),
+                        "tier_label":                    found_row.get("tier_label"),
+                        "overall_rank":                  found_row.get("overall_rank"),
+                        "position_rank":                 found_row.get("position_rank"),
+                        "production_score":              _sf(found_row.get("production_score")),
+                        "efficiency_score":              _sf(found_row.get("efficiency_score")),
+                        "age_score":                     _sf(found_row.get("age_score")),
+                        "breakout_profile_score":        _sf(found_row.get("breakout_profile_score")),
+                        "athleticism_score":             _sf(found_row.get("athleticism_score")),
+                        "competition_score":             _sf(found_row.get("competition_score")),
+                        "projected_draft_capital_score": _sf(found_row.get("projected_draft_capital_score")),
+                        "confidence_score":              _sf(found_row.get("confidence_score")),
+                        "key_reasons":                   found_row.get("key_reasons"),
+                        "rookie_value":                  _sf(found_row.get("rookie_value")),
+                        "rookie_sf_value":               _sf(found_row.get("rookie_sf_value")),
+                        "projected_round":               found_row.get("projected_round"),
+                        "projected_pick":                found_row.get("projected_pick"),
+                        "num_mocks_used":                found_row.get("num_mocks_used"),
+                        "height_inches":                 found_row.get("height_inches"),
+                        "weight_lbs":                    found_row.get("weight_lbs"),
+                        "forty_yard":                    _sf(found_row.get("forty_yard")),
+                        "ras_score":                     _sf(found_row.get("ras_score")),
+                        "draft_capital_label":           format_draft_capital(
+                            found_row.get("projected_round"),
+                            found_row.get("projected_pick"),
+                            found_row.get("projected_pick_low"),
+                            found_row.get("projected_pick_high"),
+                        ),
+                    }
+            except Exception as pe:
+                print(f"[api_player_details] prospect lookup error: {pe}")
+
+        response = {
+            "player_id": player_id,
+            "name": player_meta.get("name", "Unknown"),
+            "position": player_meta.get("pos"),
+            "team": player_meta.get("team"),
+            "age": player_value.get("age"),
+            "pos_rank": player_value.get("pos_rank"),
+            "pos_rank_label": player_value.get("pos_rank_label"),
+            "espnHeadshot": player_meta.get("espnHeadshot"),
+            "stats": {
+                "value": round(player_value.get("value", 0), 1) if player_value.get("value") else None,
+                "sf_value": round(player_value.get("sf_value", 0), 1) if player_value.get("sf_value") else None,
+                "pos_rank": player_value.get("pos_rank"),
+                "pos_rank_label": player_value.get("pos_rank_label"),
+                "years_exp": player_meta.get("years_exp"),
+            },
+            "value_history": value_history,
+            "game_logs_by_year": game_logs_by_year,
+            "prospect_data": prospect_data,
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        logger.exception("[api_player_details] Error")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 def clean_nan_for_json(obj):
@@ -13892,7 +14402,6 @@ def api_team_details(roster_id: str):
         league_id = request.args.get("league_id")
         platform = request.args.get("platform", "sleeper")
         season = request.args.get("season")
-        _req_lt = request.args.get("league_type", "").strip().lower()
 
         if not league_id:
             return jsonify({"error": "league_id required"}), 400
@@ -13907,11 +14416,6 @@ def api_team_details(roster_id: str):
         league = get_league(platform, league_id, season)
         rosters = get_rosters(platform, league_id, season) or []
         users = get_users(platform, league_id, season) or []
-
-        # Detect SF from league roster positions (fallback to query param)
-        _td_rp = (league or {}).get("roster_positions") or []
-        _td_is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _td_rp) or _req_lt == "sf"
-        _td_val_field = "sf_value" if _td_is_sf else "value"
 
         # Find the specific roster
         roster = next((r for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
@@ -13957,7 +14461,7 @@ def api_team_details(roster_id: str):
             player_meta = players_index.get(pid_str, {})
             value_row = values_by_id.get(pid_str, {})
 
-            value = value_row.get(_td_val_field) or value_row.get("value") or 0
+            value = value_row.get("value", 0) or 0
             total_value += float(value)
 
             position = player_meta.get("pos") or ""
@@ -13970,10 +14474,11 @@ def api_team_details(roster_id: str):
             player_name = player_meta.get("name", "Unknown")
             player_team = player_meta.get("team")
 
-            # If player_id is a team abbreviation, treat as defense
-            if pid_str.isalpha() and 2 <= len(pid_str) <= 3 and (not position or player_name == "Unknown"):
-                city = get_team_city(pid_str)
-                player_name = f"{city} Defense"
+            # If player_id is a team abbreviation and no metadata found, treat as defense
+            if len(pid_str) == 3 and pid_str.isupper() and player_name == "Unknown":
+                # This is likely a defense player with team ID
+                full_team_name = get_team_full_name(pid_str)
+                player_name = f"{full_team_name} Defense"
                 position = "DEF"
                 player_team = pid_str
 
@@ -13993,7 +14498,6 @@ def api_team_details(roster_id: str):
                 "name": player_name,
                 "position": position,
                 "team": player_team,
-                "team_city": get_team_city(player_team) if player_team else None,
                 "age": age,
                 "years_exp": player_meta.get("years_exp"),
                 "value": round(float(value), 1) if value else None,
@@ -14277,7 +14781,23 @@ def api_team_details(roster_id: str):
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# /api/subscription-status → routes/billing_bp.py :: api_subscription_status()
+
+@app.route("/api/subscription-status")
+def api_subscription_status():
+    """Check if user has premium access for a league."""
+    from dashboard_services.subscriptions import get_subscription_info
+
+    user_id = request.args.get("user_id") or session.get("viewer_username")
+    league_id = request.args.get("league_id")
+    platform = request.args.get("platform", "sleeper")
+
+    try:
+        sub_info = get_subscription_info(user_id, league_id, platform)
+        return jsonify(sub_info)
+    except Exception as e:
+        print(f"[api_subscription_status] Error: {e}")
+        return jsonify({"has_premium": False, "subscription_type": None, "error": str(e)}), 500
+
 
 @app.route("/api/sleeper-user-leagues")
 def api_sleeper_user_leagues():
@@ -14656,13 +15176,6 @@ def api_schedule_strength():
         return jsonify({"error": "Internal error"}), 500
 
 
-# In-memory cache for playoff odds: key → {"ts": float, "data": dict}
-# Keyed by platform:league_id:season:current_week so stale entries are skipped
-# as the week advances. TTL of 5 minutes limits redundant MC simulations.
-_PO_CACHE: dict = {}
-_PO_CACHE_TTL = 5 * 60  # seconds
-
-
 @app.route("/api/playoff-odds")
 def api_playoff_odds():
     """
@@ -14674,8 +15187,6 @@ def api_playoff_odds():
 
     Query params: platform, league_id, season
     """
-    import time as _time
-
     platform  = (request.args.get("platform") or "sleeper").strip().lower()
     league_id = (request.args.get("league_id") or "").strip()
     season_s  = (request.args.get("season") or "").strip()
@@ -14692,32 +15203,23 @@ def api_playoff_odds():
         if not ctx:
             return jsonify({"error": "league not found"}), 404
 
-        current_week = int(ctx.get("current_week") or 0)
-        cache_key    = f"{platform}:{league_id}:{season}:{current_week}"
-        cached       = _PO_CACHE.get(cache_key)
-        if cached and (_time.time() - cached["ts"]) < _PO_CACHE_TTL:
-            return jsonify(cached["data"])
-
-        from data_building.simulate_playoff_odds import simulate_playoff_odds, _n_byes
+        from data_building.simulate_playoff_odds import simulate_playoff_odds
         odds = simulate_playoff_odds(ctx, platform=platform)
 
         settings           = ctx.get("league_settings") or {}
         playoff_week_start = int(settings.get("playoff_week_start") or 15)
         playoff_teams      = int(settings.get("playoff_teams") or 6)
-        playoff_byes       = _n_byes(playoff_teams)
+        current_week       = int(ctx.get("current_week") or 0)
         is_complete        = bool(odds and odds[0].get("is_complete"))
 
-        payload = {
+        return jsonify({
             "odds":                odds,
             "season":              season,
             "current_week":        current_week,
             "playoff_week_start":  playoff_week_start,
             "playoff_teams":       playoff_teams,
-            "playoff_byes":        playoff_byes,
             "is_complete":         is_complete,
-        }
-        _PO_CACHE[cache_key] = {"ts": _time.time(), "data": payload}
-        return jsonify(payload)
+        })
     except Exception as exc:
         logger.exception("[playoff-odds] %s", exc)
         return jsonify({"error": "Internal error"}), 500
@@ -14744,9 +15246,9 @@ def _fetch_league_adp_from_db(
 def api_draft_grades():
     """
     Grade each team's rookie draft class using three signals:
-      1. ADP value   - actual pick slot vs FantasyCalc rookie ADP (external)
-      2. BPA / board - who was still available with better ADP at that pick
-      3. Team need   - did the pick fill a positional need on the roster?
+      1. ADP value   — actual pick slot vs FantasyCalc rookie ADP (external)
+      2. BPA / board — who was still available with better ADP at that pick
+      3. Team need   — did the pick fill a positional need on the roster?
 
     Grading is rookie-draft-specific: only compares picks against other rookies
     in that draft, not against the full dynasty player pool.
@@ -14825,7 +15327,7 @@ def api_draft_grades():
         roster_map = _build_roster_map(users, rosters)
 
         # Pre-draft roster: each team's existing players by position
-        # (excluding picks made in this draft - we'll account for those)
+        # (excluding picks made in this draft — we'll account for those)
         roster_pos_counts: dict[str, dict[str, int]] = {}   # rid -> {pos: count}
         CORE_POS = {"QB", "RB", "WR", "TE"}
         # IDs that appear in any team's pre-draft roster (non-rookie veterans)
@@ -14860,7 +15362,7 @@ def api_draft_grades():
         )
 
         # For rookie drafts, restrict the board to players who are actually
-        # eligible - i.e., were actually picked in this draft or are confirmed
+        # eligible — i.e., were actually picked in this draft or are confirmed
         # rookies for this season.  This prevents veterans (e.g. Isaiah Likely)
         # from appearing in adp_info (sourced from startup drafts) from polluting
         # the rookie draft board.
@@ -14960,7 +15462,7 @@ def api_draft_grades():
                 score += 1 if adp_diff < -3 else 2
             elif bpa_gap is not None and bpa_gap >= 5:
                 score = max(score - 1, 0)   # better player available (was -2)
-            # Moderate BPA gap (3-4) no longer penalises - adp_diff already
+            # Moderate BPA gap (3-4) no longer penalises — adp_diff already
             # captures whether the pick was a reach
 
             # Need modifier with positional context
@@ -15300,7 +15802,7 @@ def api_trade_intel_player(player_id: str):
         model_val = float(stat_row["model_value"] or 0)
         market_val = float(stat_row["market_value"] or 0)
         calibrated_val = float(stat_row["calibrated_value"] or 0)
-        # Delta is market vs raw model - shows how much the model diverges from real trades
+        # Delta is market vs raw model — shows how much the model diverges from real trades
         delta = round(market_val - model_val, 1) if model_val and market_val else None
 
         return jsonify({
@@ -15328,11 +15830,9 @@ def api_trade_intel_player(player_id: str):
 def api_trade_database():
     """
     Paginated, searchable real-trade log.
-    ?player_a=<id>  &player_b=<id>  &page=<int>  &limit=<int>  &league_type=<all|1qb|sf>
+    ?q=<player name>  &page=<int>  &limit=<int>  &league_type=<all|1qb|sf>
     """
     try:
-        player_a    = (request.args.get("player_a") or "").strip()
-        player_b    = (request.args.get("player_b") or "").strip()
         q           = (request.args.get("q") or "").strip().lower()
         page        = max(0, int(request.args.get("page") or 0))
         limit       = min(int(request.args.get("limit") or 20), 50)
@@ -15344,25 +15844,9 @@ def api_trade_database():
 
         players_map = load_players_index() or {}
 
-        # player_a/player_b support comma-separated IDs (multi-player per side)
-        ids_a = [x.strip() for x in player_a.split(",") if x.strip()] if player_a else []
-        ids_b = [x.strip() for x in player_b.split(",") if x.strip()] if player_b else []
-
-        # Build combined search ID list and mode flags
-        # both_multi: True when players from both sides are specified
-        # all_ids: every ID that must appear somewhere in the trade
+        # If searching by name, resolve to player_ids first
         match_ids: list[str] = []
-        both_multi: bool = False
-        player_trade_counts: dict[str, int] = {}
-
-        if ids_a and ids_b:
-            both_multi = True
-            match_ids = list(dict.fromkeys(ids_a + ids_b))  # ordered dedup
-        elif ids_a:
-            match_ids = ids_a
-        elif ids_b:
-            match_ids = ids_b
-        elif q:
+        if q:
             match_ids = [
                 pid for pid, info in players_map.items()
                 if q in (info.get("name") or "").lower()
@@ -15380,44 +15864,35 @@ def api_trade_database():
 
         with get_conn() as conn:
             if match_ids:
-                # For both_multi, match_ids = ids_a + ids_b; we need ALL to appear.
-                # HAVING COUNT(DISTINCT player_id) = N enforces every ID is present.
-                n_required = len(match_ids)
-                base_p = [match_ids, season] + ([sf_param] if sf_param is not None else []) + [n_required]
+                base_params_count = [match_ids, season] + ([sf_param] if sf_param is not None else [])
                 count_row = conn.execute(
                     f"""
-                    SELECT COUNT(*) AS n FROM (
-                      SELECT t.id
-                      FROM trade_intel_trades t
-                      JOIN trade_intel_assets a ON a.trade_id = t.id
-                          AND a.player_id = ANY(%s) AND a.asset_type = 'player'
-                      LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                      WHERE t.season = %s {sf_clause}
-                      GROUP BY t.id
-                      HAVING COUNT(DISTINCT a.player_id) = %s
-                    ) sub
+                    SELECT COUNT(DISTINCT t.id) AS n
+                    FROM trade_intel_trades t
+                    JOIN trade_intel_assets a ON a.trade_id = t.id
+                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                    WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
+                      AND t.season = %s {sf_clause}
                     """,
-                    base_p,
+                    base_params_count,
                 ).fetchone()
                 total = int(count_row["n"]) if count_row else 0
 
-                base_rows = [match_ids, season] + ([sf_param] if sf_param is not None else []) + [n_required, limit + 1, page * limit]
+                base_params_rows = [match_ids, season] + ([sf_param] if sf_param is not None else []) + [limit + 1, page * limit]
                 trade_rows = conn.execute(
                     f"""
-                    SELECT t.id, t.transaction_id, t.season, t.week, t.created_at,
-                           l.scoring_type, l.is_superflex, l.num_teams
+                    SELECT DISTINCT
+                        t.id, t.transaction_id, t.season, t.week, t.created_at,
+                        l.scoring_type, l.is_superflex, l.num_teams
                     FROM trade_intel_trades t
                     JOIN trade_intel_assets a ON a.trade_id = t.id
-                        AND a.player_id = ANY(%s) AND a.asset_type = 'player'
                     LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s {sf_clause}
-                    GROUP BY t.id, t.transaction_id, t.season, t.week, t.created_at,
-                             l.scoring_type, l.is_superflex, l.num_teams
-                    HAVING COUNT(DISTINCT a.player_id) = %s
+                    WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
+                      AND t.season = %s {sf_clause}
                     ORDER BY t.created_at DESC NULLS LAST
                     LIMIT %s OFFSET %s
                     """,
-                    base_rows,
+                    base_params_rows,
                 ).fetchall()
             else:
                 base_params_count = [season] + ([sf_param] if sf_param is not None else [])
@@ -15452,20 +15927,6 @@ def api_trade_database():
                 return jsonify({"trades": [], "total": total, "has_more": False})
 
             trade_ids = [r["id"] for r in trade_rows]
-
-            # Per-player trade volume counts (not surfaced in UI, kept for API compatibility)
-            if match_ids:
-                vol_rows = conn.execute(
-                    """
-                    SELECT player_id, COUNT(DISTINCT trade_id) AS cnt
-                    FROM trade_intel_assets
-                    WHERE player_id = ANY(%s) AND asset_type = 'player'
-                    GROUP BY player_id
-                    """,
-                    (match_ids,),
-                ).fetchall()
-                player_trade_counts = {r["player_id"]: int(r["cnt"]) for r in vol_rows}
-
             asset_rows = conn.execute(
                 """
                 SELECT trade_id, side, asset_type, player_id,
@@ -15488,13 +15949,9 @@ def api_trade_database():
             if a["asset_type"] == "player":
                 pid  = a["player_id"]
                 info = players_map.get(pid) or {}
-                d = {"type": "player", "player_id": pid,
-                     "name": info.get("name") or pid,
-                     "position": info.get("pos") or "?"}
-                vol = player_trade_counts.get(pid)
-                if vol:
-                    d["trade_count"] = vol
-                return d
+                return {"type": "player", "player_id": pid,
+                        "name": info.get("name") or pid,
+                        "position": info.get("pos") or "?"}
             s    = str(a["pick_season"]) if a["pick_season"] else "?"
             r    = str(a["pick_round"])  if a["pick_round"]  else "?"
             slot = a["pick_slot"]
@@ -15740,7 +16197,7 @@ def api_trade_intel_similar_trades():
                     (side_a_ids, side_b_ids, season, fetch_limit),
                 ).fetchall()
             else:
-                # Only one side populated - match any trade with those players
+                # Only one side populated — match any trade with those players
                 all_ids = side_a_ids or side_b_ids
                 trade_rows = conn.execute(
                     """
@@ -15975,14 +16432,14 @@ def api_roster_intel():
         if not past_prime and rank_chg <= -6 and val >= 200:
             return "Buy Window"
         if bscore >= 55 and not past_prime:
-            return "Hold - Breakout"
+            return "Hold — Breakout"
         if val >= 500 and not past_prime:
             return "Core"
         if past_prime and val < 200:
             return "Cut"
         return "Hold"
 
-    signal_order = {"Sell High": 0, "Core": 1, "Hold - Breakout": 2,
+    signal_order = {"Sell High": 0, "Core": 1, "Hold — Breakout": 2,
                     "Buy Window": 3, "Hold": 4, "Cut": 5}
 
     result = []
@@ -16483,7 +16940,7 @@ def api_trade_ideas_for_target():
             pos = info.get("position", "")
             if pos in ("PICK", "K", "DEF"):
                 return 1.0
-            # QBs don't carry dynasty premium in 1QB - their value tracks production
+            # QBs don't carry dynasty premium in 1QB — their value tracks production
             if pos == "QB" and league_type == "1qb":
                 return 1.0
             age      = float(info.get("age") or 99)
@@ -16513,7 +16970,7 @@ def api_trade_ideas_for_target():
 
         target_owner_name = roster_map.get(target_owner_rid, "Unknown")
 
-        # Viewer's roster - players with value ≥50, sorted desc
+        # Viewer's roster — players with value ≥50, sorted desc
         viewer_roster_obj = next(
             (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
         )
@@ -16536,7 +16993,7 @@ def api_trade_ideas_for_target():
             reverse=True,
         )
 
-        # Viewer's picks (current + next season only) - use real values from value table
+        # Viewer's picks (current + next season only) — use real values from value table
         pick_val_lookup = {
             str(p.get("id") or ""): float(p.get("value") or 0)
             for p in value_table
@@ -16726,6 +17183,43 @@ def api_trade_ideas_for_target():
     except Exception as e:
         logger.exception("[api-trade-ideas-for-target] Error: %s", e)
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/player-news/<player_id>")
+def api_player_news(player_id: str):
+    """Recent news headlines for a single player (ESPN free API, 30-min cache)."""
+    try:
+        from utils.utils import load_players_index
+        from dashboard_services.news import get_player_news
+
+        players_index = load_players_index() or {}
+        meta = players_index.get(str(player_id)) or {}
+        name = meta.get("name") or meta.get("full_name") or ""
+        espn_id = str(meta.get("espnID") or "").strip()
+        # Build headshot URL from espnID (players_index has espnID, not espnHeadshot)
+        headshot = (
+            meta.get("espnHeadshot")
+            or (f"https://a.espncdn.com/i/headshots/nfl/players/full/{espn_id}.png" if espn_id else "")
+        )
+
+        items = get_player_news(player_name=name, espn_headshot=headshot, limit=4)
+        return jsonify({"player_id": player_id, "name": name, "news": items})
+    except Exception:
+        logger.exception("[player-news] error")
+        return jsonify({"player_id": player_id, "news": []}), 200
+
+
+@app.route("/api/nfl-news")
+def api_nfl_news():
+    """Latest NFL headlines for the activity feed sidebar (ESPN free API, 15-min cache)."""
+    try:
+        from dashboard_services.news import get_nfl_news
+        limit = min(int(request.args.get("limit") or 15), 30)
+        items = get_nfl_news(limit=limit)
+        return jsonify({"news": items})
+    except Exception:
+        logger.exception("[nfl-news] error")
+        return jsonify({"news": []}), 200
 
 
 def _run_startup_daily() -> None:

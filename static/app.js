@@ -1588,19 +1588,25 @@ window.initTradePage = function initTradePage(root = document) {
       })
       .sort((a, b) => getPlayerValue(b) - getPlayerValue(a));
 
-    const _TC = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
-    const _TL = ['','Elite','Star','High-End Starter','Starter','Flex','Bench','Deep Bench','Handcuff','Fringe'];
+    function _tcColor(t) {
+      const s=['#10b981','#22d3ee','#3b82f6','#818cf8','#a855f7','#d946ef','#f59e0b','#f97316','#ef4444','#94a3b8','#64748b','#475569','#334155','#1e293b','#0f172a'];
+      return s[Math.min(t-1,s.length-1)];
+    }
+    function _tcLabel(t) {
+      const l=['Elite','Star','High-End Starter','Starter','Flex','Bench Depth','Deep Bench','Handcuff','Fringe','Speculative'];
+      return l[t-1]||('Tier '+t);
+    }
     let prevTier = null;
 
     items.forEach(p => {
-      const tier = activePosFilter === "ALL" ? _getOtcTier(p) : null;
+      const tier = activePosFilter === "ALL" ? Math.min(_getOtcTier(p) ?? Infinity, 9) || null : null;
       if (tier && tier !== prevTier) {
-        const tc = _TC[tier] || '#64748b';
+        const tc = _tcColor(tier);
         const div = document.createElement("div");
         div.className = "otc-tier-divider";
         div.innerHTML =
           `<div class="otc-tier-divider-line" style="background:${tc};"></div>` +
-          `<span class="otc-tier-divider-label" style="color:${tc};" title="${_TL[tier] || ''}">T${tier}</span>` +
+          `<span class="otc-tier-divider-label" style="color:${tc};" title="${_tcLabel(tier)}">T${tier}</span>` +
           `<div class="otc-tier-divider-line" style="background:${tc};"></div>`;
         container.appendChild(div);
       }
@@ -2204,19 +2210,19 @@ window.initTradePage = function initTradePage(root = document) {
   // ------------------------------------------------------------
   // loadTradeTargets - surfaces players to pursue based on positional rank gaps
   // ------------------------------------------------------------
-  async function loadTradeTargets() {
-    const body = root.querySelector("#tradeTargetsBody");
+  async function loadTradeTargets(containerEl) {
+    const body = containerEl || root.querySelector("#tradeTargetsBody");
     if (!body) return;
 
     const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
     if (!hasPremium) {
-      if (typeof showPaywall === "function") showPaywall("trade-suggestions");
+      body.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
       return;
     }
 
     const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
     const season         = root.querySelector("#seasonInput")?.value   || new Date().getFullYear();
-    const viewerRosterId = root.querySelector("#teamSelect")?.value    || "";
+    const viewerRosterId = getCurrentRosterId();
 
     if (!leagueId || !viewerRosterId) {
       body.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">Sign in to see targets.</div>';
@@ -2257,26 +2263,22 @@ window.initTradePage = function initTradePage(root = document) {
 
       // Each player row includes an inline hidden panel for package ideas
       function renderPlayerRow(t, pos) {
-        const col     = posColor[pos] || "var(--text-muted)";
+        const col      = posColor[pos] || "var(--text-muted)";
         const safeName = (t.name || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
         const safePid  = (t.player_id || "").replace(/&/g,"&amp;").replace(/"/g,"&quot;");
-        const panelId  = `pkgpanel-${(t.player_id || "x").replace(/\W/g,"_")}`;
-        return `<div>
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
-            <div style="min-width:0;flex:1;">
-              <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${t.name}</span></div>
-              <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-              <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
-              <span style="font-size:13px;font-weight:800;color:var(--text);">${parseFloat(t.value).toFixed(1)}</span>
-              <button class="get-target-btn"
-                data-pid="${safePid}" data-name="${safeName}" data-panel="${panelId}"
-                style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
-                title="Trade suggestions for this player">Get</button>
-            </div>
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
+          <div style="min-width:0;flex:1;">
+            <div style="font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;"><span class="player-clickable" data-player-id="${safePid}" data-player-name="${safeName}">${t.name}</span></div>
+            <div style="font-size:11px;color:var(--text-muted);">${t.owner_team}</div>
           </div>
-          <div id="${panelId}" style="display:none;margin:4px 0 8px;padding:8px 10px;border-radius:6px;background:var(--surface-raised,var(--surface));border:1px solid var(--border);font-size:12px;"></div>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+            <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${col}20;color:${col};">${t.pos_rank_label || t.position}</span>
+            <span style="font-size:13px;font-weight:800;color:var(--text);">${parseFloat(t.value).toFixed(1)}</span>
+            <button class="get-target-btn"
+              data-pid="${safePid}" data-name="${safeName}"
+              style="font-size:10px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;white-space:nowrap;"
+              title="Trade suggestions for this player">Get</button>
+          </div>
         </div>`;
       }
 
@@ -2308,31 +2310,13 @@ window.initTradePage = function initTradePage(root = document) {
 
       body.innerHTML = html;
 
-      // Delegate Get clicks
+      // Delegate Get clicks — navigate to Suggestions tab with this player pre-loaded
       body.addEventListener("click", function(e) {
         const btn = e.target.closest(".get-target-btn");
         if (!btn) return;
-        // Close any other open panel first
-        body.querySelectorAll(".pkg-inline-panel[data-open]").forEach(p => {
-          p.style.display = "none";
-          p.removeAttribute("data-open");
-        });
-        const panel = document.getElementById(btn.dataset.panel);
-        if (!panel) return;
-        // Toggle: close if already open
-        if (panel.dataset.open) {
-          panel.style.display = "none";
-          panel.removeAttribute("data-open");
-          return;
+        if (typeof window._openPlayerInSuggestions === "function") {
+          window._openPlayerInSuggestions(btn.dataset.pid, btn.dataset.name);
         }
-        panel.dataset.open = "1";
-        panel.classList.add("pkg-inline-panel");
-        panel.style.display = "block";
-        panel.innerHTML = `<div style="display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:13px;"><div class="loading-spinner" style="width:12px;height:12px;margin:0;flex-shrink:0;"></div>Loading…</div>`;
-        window._generatePackageForTarget(
-          btn.dataset.pid, btn.dataset.name, panel,
-          leagueId, viewerRosterId, platform, leagueType, season
-        );
       });
     } catch (e) {
       body.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">Could not load targets.</div>`;
@@ -2373,138 +2357,591 @@ window.initTradePage = function initTradePage(root = document) {
     if (calcEl) calcEl.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  window._generatePackageForTarget = async function(playerId, playerName, panel, leagueId, viewerRosterId, platform, leagueType, season) {
-    try {
-      const res = await fetch("/api/trade-ideas-for-target", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ league_id: leagueId, season, platform,
-                               viewer_roster_id: viewerRosterId,
-                               target_player_id: playerId, league_type: leagueType }),
-      });
-      const closeBtn = `<button onclick="this.closest('[data-open]').style.display='none';this.closest('[data-open]').removeAttribute('data-open');"
-        style="float:right;background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-muted);line-height:1;padding:0;">✕</button>`;
+  // ── Suggestions tab ─────────────────────────────────────────────────────
+  (function initSuggestionsTab() {
+    const calcTab  = root.querySelector("#otcCalcTab");
+    const suggTab  = root.querySelector("#otcSuggestionsTab");
+    if (!calcTab || !suggTab) return;
 
-      const data = await res.json();
+    const tabs = root.querySelectorAll(".otc-main-tab");
 
-      if (data.paywall) {
-        panel.style.display = 'none';
-        panel.removeAttribute('data-open');
-        if (typeof showPaywall === 'function') showPaywall('trade-suggestions');
-        return;
+    let suggTargetsLoaded = false;
+    let suggCurrentPlayerId = null;
+    let _fetchAbortCtrl = null;  // cancels in-flight fetchPackages requests
+
+    function switchTab(name) {
+      if (name === "suggestions") {
+        const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+        if (!hasPremium) {
+          if (typeof showPaywall === "function") showPaywall("trade-suggestions");
+          return;
+        }
       }
-
-      if (!res.ok) {
-        panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">Failed to load packages.</span>`;
-        return;
+      tabs.forEach(t => t.classList.toggle("is-active", t.dataset.tab === name));
+      calcTab.style.display  = name === "calculator"   ? "" : "none";
+      suggTab.style.display  = name === "suggestions"  ? "" : "none";
+      if (name === "suggestions" && !suggTargetsLoaded) {
+        loadSuggTargets();
       }
+    }
 
-      if (!data.success || !data.packages) {
-        panel.innerHTML = closeBtn + `<span style="color:var(--text-muted);">${data.error || "No fair packages found."}</span>`;
-        return;
+    tabs.forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
+
+    // Retry targets automatically once a roster ID becomes available.
+    // Covers both teamSelect changes and cases where viewerRosterIdInput is set late.
+    const teamSelEl    = root.querySelector("#teamSelect");
+    const rosterInputEl = root.querySelector("#viewerRosterIdInput");
+    const leagueInputEl = root.querySelector("#leagueIdInput");
+    const seasonInputEl = root.querySelector("#seasonInput");
+
+    function _onRosterReady() {
+      if (!suggTargetsLoaded && getCurrentRosterId()) loadSuggTargets();
+    }
+    function _onContextChange() {
+      // League or season changed — stale targets must be re-fetched
+      suggTargetsLoaded = false;
+      if (suggTab.style.display !== "none") loadSuggTargets();
+    }
+
+    if (teamSelEl)    teamSelEl.addEventListener("change", _onRosterReady);
+    if (leagueInputEl) leagueInputEl.addEventListener("change", _onContextChange);
+    if (seasonInputEl) seasonInputEl.addEventListener("change", _onContextChange);
+    if (rosterInputEl) {
+      new MutationObserver(_onRosterReady).observe(rosterInputEl, { attributes: true, attributeFilter: ["value"] });
+    }
+
+    // expose so Load & Analyze can switch back
+    function switchToCalc() { switchTab("calculator"); }
+
+    // expose so Targets tab "Get" button can navigate here with a pre-selected player
+    window._openPlayerInSuggestions = function(playerId, playerName) {
+      switchTab("suggestions");
+      if (playerInput) playerInput.value = playerName;
+      fetchPackages(playerId, playerName);
+      // On mobile the tab content is below the fold — scroll to it after paint.
+      // Two frames: first lets the tab display change settle, second lets the
+      // browser finish reflowing before measuring the scroll target's position.
+      // Only scrolls on mobile-width viewports to avoid jarring jumps on desktop.
+      if (window.innerWidth < 768) {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          const el = root.querySelector("#otcSuggestionsTab") || root.querySelector(".otc-shell");
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }));
       }
+    };
 
-      // For elite young players with a dynasty premium, label relative to effective_target
-      const hasPremium  = data.premium > 1.0;
-      const premiumPct  = Math.round((data.premium - 1) * 100);
-      const tv          = data.target_value.toFixed(1);
-      const etv         = data.effective_target.toFixed(1);
+    // ── Player search ────────────────────────────────────────────
+    const playerInput    = root.querySelector("#suggPlayerInput");
+    const playerDropdown = root.querySelector("#suggPlayerDropdown");
+    const resultsMeta    = root.querySelector("#suggResultsMeta");
+    const resultsList    = root.querySelector("#suggResultsList");
+    if (!playerInput) return;
 
-      function fairLabel(sendVal) {
-        const ratio = sendVal / data.effective_target;
-        if (ratio <= 0.90) return { text: "underpay",        color: "#22c55e" };
-        if (ratio <= 1.05) return { text: "fair",             color: "#3b82f6" };
-        if (ratio <= 1.12) return { text: "slight overpay",   color: "#f59e0b" };
-        return                    { text: "overpay",          color: "#ef4444" };
-      }
+    function posColor(pos) {
+      return { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" }[pos] || "var(--accent)";
+    }
 
-      let html = closeBtn + `<div style="font-weight:700;color:var(--text);margin-bottom:4px;">
-        Trade suggestions for ${data.target.name}
+    function renderDropdown(matches) {
+      if (!matches.length) { playerDropdown.style.display = "none"; return; }
+      playerDropdown.innerHTML = matches.slice(0, 12).map(p => {
+        const col = posColor(p.position);
+        return `<div class="otc-sugg-dropdown-item" data-id="${p.id}" data-name="${(p.name||"").replace(/"/g,"&quot;")}">
+          <span class="otc-sugg-dropdown-pos" style="background:${col}20;color:${col};">${p.position}</span>
+          <span class="otc-sugg-dropdown-name">${p.name || p.id}</span>
+          <span class="otc-sugg-dropdown-val">${Math.round(getPlayerValue(p)) || ""}</span>
+        </div>`;
+      }).join("");
+      playerDropdown.style.display = "block";
+    }
+
+    playerInput.addEventListener("input", () => {
+      const q = playerInput.value.trim().toLowerCase();
+      if (q.length < 2) { playerDropdown.style.display = "none"; return; }
+      const matches = allPlayers.filter(p =>
+        ["QB","RB","WR","TE"].includes(p.position) &&
+        (p.name || "").toLowerCase().includes(q)
+      ).sort((a,b) => getPlayerValue(b) - getPlayerValue(a));
+      renderDropdown(matches);
+    });
+
+    playerDropdown.addEventListener("click", e => {
+      const item = e.target.closest(".otc-sugg-dropdown-item");
+      if (!item) return;
+      playerInput.value = item.querySelector(".otc-sugg-dropdown-name").textContent;
+      playerDropdown.style.display = "none";
+      fetchPackages(item.dataset.id, item.dataset.name);
+    });
+
+    document.addEventListener("click", e => {
+      if (!playerInput.contains(e.target) && !playerDropdown.contains(e.target))
+        playerDropdown.style.display = "none";
+    });
+
+    // ── Fetch packages from API ──────────────────────────────────
+    async function fetchPackages(playerId, playerName) {
+      if (!playerId) return;
+
+      // Cancel any previous in-flight request for a different player
+      if (_fetchAbortCtrl) _fetchAbortCtrl.abort();
+      _fetchAbortCtrl = new AbortController();
+      const signal = _fetchAbortCtrl.signal;
+
+      suggCurrentPlayerId = playerId;
+
+      resultsMeta.style.display = "none";
+      resultsList.innerHTML = `<div class="otc-sugg-loading">
+        ${[1,2,3,4,5].map((_, i) => `<div class="otc-sugg-skeleton" style="display:flex;align-items:center;gap:10px;padding:10px 12px;">
+          <div style="flex-shrink:0;width:64px;">
+            <div class="otc-sugg-skeleton-line" style="height:18px;border-radius:5px;margin-bottom:5px;animation-delay:${i*0.1}s;"></div>
+            <div class="otc-sugg-skeleton-line" style="height:10px;width:70%;animation-delay:${i*0.1+0.05}s;"></div>
+          </div>
+          <div style="flex:1;display:flex;align-items:center;gap:6px;">
+            <div style="flex:1;">
+              <div class="otc-sugg-skeleton-line" style="height:9px;width:45%;margin-bottom:5px;animation-delay:${i*0.1}s;"></div>
+              <div class="otc-sugg-skeleton-line" style="height:13px;width:${70+i*5}%;animation-delay:${i*0.1+0.05}s;"></div>
+            </div>
+            <div class="otc-sugg-skeleton-line" style="width:14px;height:14px;border-radius:50%;flex-shrink:0;animation-delay:${i*0.1}s;"></div>
+            <div style="flex:1;">
+              <div class="otc-sugg-skeleton-line" style="height:9px;width:40%;margin-bottom:5px;animation-delay:${i*0.1}s;"></div>
+              <div class="otc-sugg-skeleton-line" style="height:13px;width:${60+i*4}%;animation-delay:${i*0.1+0.05}s;"></div>
+            </div>
+          </div>
+          <div class="otc-sugg-skeleton-line" style="flex-shrink:0;width:64px;height:28px;border-radius:8px;animation-delay:${i*0.1}s;"></div>
+        </div>`).join("")}
       </div>`;
 
-      if (hasPremium) {
-        html += `<div style="font-size:10px;color:#f59e0b;margin-bottom:6px;">
-          +${premiumPct}% dynasty premium applied
+      const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      if (!hasPremium) {
+        resultsList.innerHTML = `<div class="otc-sugg-empty">
+          <div class="otc-sugg-empty-title">Pro Feature</div>
+          <div class="otc-sugg-empty-sub">Upgrade to see real trade packages for any player.</div>
         </div>`;
+        return;
       }
 
-      function renderPkg(pkg) {
-        const names   = pkg.send.map(p => p.name).join(" + ");
-        const sv      = pkg.send_value.toFixed(1);
-        const diff    = (parseFloat(sv) - parseFloat(tv)).toFixed(1);
-        const diffStr = (diff >= 0 ? "+" : "") + diff;
-        const { text: label, color: lc } = fairLabel(pkg.send_value);
-        const btnData = encodeURIComponent(JSON.stringify({ pkg, target: data.target }));
-        return `<div style="padding:5px 0;border-top:1px solid var(--border);">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;">
-            <span style="font-weight:600;color:var(--text);flex:1;">${names}</span>
-            <span style="font-size:11px;font-weight:700;color:${lc};white-space:nowrap;">${label}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
-            <span style="font-size:10px;color:var(--text-muted);">${pkg.type} · send ${sv} (${diffStr})</span>
-            <button class="load-in-calc-btn" data-payload="${btnData}"
-              style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #3b82f6;background:transparent;color:#3b82f6;cursor:pointer;white-space:nowrap;">
-              Load in Calc →
-            </button>
-          </div>
-        </div>`;
-      }
+      const leagueId       = root.querySelector("#leagueIdInput")?.value  || "";
+      const season         = root.querySelector("#seasonInput")?.value     || new Date().getFullYear();
+      const viewerRosterId = getCurrentRosterId();
+      const platform       = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
+      const leagueType     = getLeagueType();
 
-      if (!data.packages.length) {
-        html += `<span style="color:var(--text-muted);">No fair packages found - your roster may not have matching value yet.</span>`;
-      } else {
-        data.packages.forEach(pkg => { html += renderPkg(pkg); });
-      }
+      try {
+        const res = await fetch(
+          `/api/trade-intel/player-packages/${encodeURIComponent(playerId)}` +
+          `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
+          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`,
+          { signal }
+        );
 
-      // Real-trade packages: what people in similar leagues actually sent
-      const realPkgs = data.real_packages || [];
-      if (realPkgs.length) {
-        const totalTrades = data.total_real_trades || 0;
-        html += `<div style="margin-top:10px;padding-top:6px;border-top:1px solid var(--border);">
-          <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px;letter-spacing:.03em;">
-            BASED ON ${totalTrades} REAL TRADE${totalTrades !== 1 ? "S" : ""} IN SIMILAR LEAGUES
+        // A newer search was started — discard this response silently
+        if (signal.aborted || suggCurrentPlayerId !== playerId) return;
+
+        if (res.status === 403) {
+          resultsList.innerHTML = `<div class="otc-sugg-empty">
+            <div class="otc-sugg-empty-title">Pro Feature</div>
+            <div class="otc-sugg-empty-sub">Upgrade to unlock trade package history for any player.</div>
           </div>`;
-        realPkgs.forEach(pkg => {
-          const names   = pkg.send.map(p => p.name).join(" + ");
+          return;
+        }
+
+        const data = await res.json();
+
+        const hasProfilePkgs = data.packages && data.packages.length;
+        const hasRealPkgs    = data.real_packages && data.real_packages.length;
+        if (!hasProfilePkgs && !hasRealPkgs) {
+          const noRoster = !viewerRosterId;
+          resultsList.innerHTML = `<div class="otc-sugg-empty">
+            <div class="otc-sugg-empty-title">No packages found</div>
+            <div class="otc-sugg-empty-sub">${noRoster
+              ? "Connect a league to see trade suggestions from your roster."
+              : "Your roster may not have players at the right value to trade for " + playerName + "."
+            }</div>
+          </div>`;
+          return;
+        }
+
+        if (hasProfilePkgs) {
+          const roosterFiltered = viewerRosterId && data.packages.length < data.total_packages;
+          resultsMeta.textContent = roosterFiltered
+            ? `${data.packages.length} packages from your roster · sorted by likelihood`
+            : `${data.packages.length} packages · sorted by likelihood`;
+          resultsMeta.style.display = "block";
+        }
+
+        renderPackages(
+          [...(data.packages || []), ...(data.combo_packages || [])],
+          data.player_name, playerId, data.focus_value,
+          data.real_packages, data.total_real_trades
+        );
+
+      } catch (err) {
+        if (err.name === "AbortError") return;  // superseded by a newer search
+        resultsList.innerHTML = `<div class="otc-sugg-empty">
+          <div class="otc-sugg-empty-sub">Failed to load packages.</div></div>`;
+      }
+    }
+
+    // ── Render package cards (paginated, 5 per page) ────────────
+    const PAGE_SIZE = 5;
+    let _pkgPage = 0;
+    let _pkgAll  = [];
+    let _pkgPlayerId   = null;
+    let _pkgPlayerName = null;
+    let _pkgRealPkgs   = [];
+    let _pkgRealTotal  = 0;
+    let _pkgComboPkgs  = [];
+
+    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal) {
+      _pkgAll        = packages;
+      _pkgPage       = 0;
+      _pkgPlayerId   = playerId;
+      _pkgPlayerName = playerName;
+      _pkgRealPkgs   = realPkgs   || [];
+      _pkgRealTotal  = realTotal  || 0;
+      _pkgComboPkgs  = [];
+      renderPackagePage();
+    }
+
+    function renderPackagePage() {
+      const packages   = _pkgAll;
+      const playerId   = _pkgPlayerId;
+      const playerName = _pkgPlayerName;
+
+      function valueClass(label) {
+        if (label === "Great deal") return "great";
+        if (label === "Fair value") return "fair";
+        return "overpay";
+      }
+
+      const PROFILE_LABEL = {
+        'young-rising':  { text: '↑ Young Rising',    color: '#10b981' },
+        'young-stable':  { text: 'Young Stable',      color: '#3b82f6' },
+        'young-falling': { text: '↓ Young Falling',   color: '#f59e0b' },
+        'prime-rising':  { text: '↑ Prime Rising',    color: '#10b981' },
+        'prime-stable':  { text: 'Prime',             color: '#6366f1' },
+        'prime-falling': { text: '↓ Prime Falling',   color: '#f59e0b' },
+        'vet-rising':    { text: '↑ Vet Resurgence',  color: '#f59e0b' },
+        'vet-stable':    { text: 'Veteran',            color: '#9ca3af' },
+        'vet-falling':   { text: '↓ Declining Vet',   color: '#ef4444' },
+      };
+
+      function assetHtml(a) {
+        if (a.is_pick || a.type === "pick") {
+          const label = a.name || "Pick";
+          return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>${label}</div>`;
+        }
+        const col = posColor(a.position);
+        const prof = a.profile ? PROFILE_LABEL[a.profile] : null;
+        const profBadge = prof
+          ? `<span style="font-size:10px;font-weight:600;color:${prof.color};margin-left:4px;white-space:nowrap;">${prof.text}</span>`
+          : '';
+        return `<div class="otc-sugg-pkg-asset" style="flex-wrap:wrap;gap:4px;">
+          <span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${a.position}</span>
+          <span>${a.name}</span>${profBadge}
+        </div>`;
+      }
+
+      const focusPlayer = allPlayers.find(p => String(p.id) === String(playerId));
+      const focusPos    = focusPlayer?.position || "WR";
+      const focusCol    = posColor(focusPos);
+
+      const totalPages = Math.ceil(packages.length / PAGE_SIZE);
+      const page       = _pkgPage;
+      const slice      = packages.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+      const cardsHtml = slice.map((pkg) => {
+        const vc = valueClass(pkg.value_label);
+        const extra = pkg.extra_receive || null;
+        const freqLabel = extra
+          ? `<span class="otc-sugg-pkg-freq" style="color:#10b981;">+ bonus player</span>`
+          : pkg.is_profile_match
+            ? `<span class="otc-sugg-pkg-freq" style="color:var(--accent);">From your roster</span>`
+            : `<span class="otc-sugg-pkg-freq">${pkg.frequency}× traded</span>`;
+
+        // YOU GET side: always shows the target, plus the throw-in if present
+        const extraCol  = extra ? posColor(extra.position) : null;
+        const extraProf = extra?.profile ? PROFILE_LABEL[extra.profile] : null;
+        const extraBadge = extraProf
+          ? `<span style="font-size:10px;font-weight:600;color:${extraProf.color};margin-left:4px;">${extraProf.text}</span>`
+          : '';
+        const extraAssetHtml = extra
+          ? `<div class="otc-sugg-pkg-asset" style="flex-wrap:wrap;gap:4px;">
+               <span class="otc-sugg-pkg-asset-pos" style="background:${extraCol}20;color:${extraCol};">${extra.position}</span>
+               <span>${extra.name}</span>${extraBadge}
+             </div>`
+          : '';
+
+        const patternSigHtml = pkg.pattern_sig
+          ? `<div style="font-size:10px;color:var(--text-muted);margin-top:4px;letter-spacing:.02em;">Market pattern: ${pkg.pattern_sig}</div>`
+          : '';
+        const throwInHtml = pkg.throw_in_sig
+          ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px;letter-spacing:.02em;">Seller may include: ${pkg.throw_in_sig}</div>`
+          : '';
+        return `<div class="otc-sugg-package">
+          <div class="otc-sugg-pkg-meta">
+            <span class="otc-sugg-pkg-value ${vc}">${pkg.value_label}</span>
+            ${freqLabel}
+          </div>
+          <div class="otc-sugg-pkg-sides">
+            <div class="otc-sugg-pkg-side">
+              <div class="otc-sugg-pkg-side-label">You get</div>
+              <div class="otc-sugg-pkg-assets">
+                <div class="otc-sugg-pkg-asset">
+                  <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
+                  ${playerName}
+                </div>
+                ${extraAssetHtml}
+              </div>
+            </div>
+            <div class="otc-sugg-pkg-divider">←</div>
+            <div class="otc-sugg-pkg-side">
+              <div class="otc-sugg-pkg-side-label">You give</div>
+              <div class="otc-sugg-pkg-assets">${pkg.assets.map(assetHtml).join("")}</div>
+            </div>
+          </div>
+          ${patternSigHtml}
+          ${throwInHtml}
+          <button class="otc-sugg-pkg-load-btn"
+            data-focus-id="${playerId}"
+            data-assets="${encodeURIComponent(JSON.stringify(pkg.assets))}"
+            ${extra ? `data-extra-receive="${encodeURIComponent(JSON.stringify(extra))}"` : ''}>
+            Analyze
+          </button>
+        </div>`;
+      }).join("");
+
+      const paginationHtml = totalPages > 1 ? `
+        <div class="otc-sugg-pagination">
+          <button class="otc-sugg-page-btn" data-dir="-1" ${page === 0 ? "disabled" : ""}>← Prev</button>
+          <span class="otc-sugg-page-label">${page + 1} / ${totalPages}</span>
+          <button class="otc-sugg-page-btn" data-dir="1" ${page >= totalPages - 1 ? "disabled" : ""}>Next →</button>
+        </div>` : "";
+
+      // ── Profile labels shared across real-trade and combo sections ─────────────
+      const PROF_LBL = {
+        'young-rising':  { text: '↑ Young Rising',   color: '#10b981' },
+        'young-stable':  { text: 'Young',             color: '#3b82f6' },
+        'young-falling': { text: '↓ Young Falling',  color: '#f59e0b' },
+        'prime-rising':  { text: '↑ Prime Rising',   color: '#10b981' },
+        'prime-stable':  { text: 'Prime',             color: '#6366f1' },
+        'prime-falling': { text: '↓ Prime Falling',  color: '#f59e0b' },
+        'vet-rising':    { text: '↑ Vet',             color: '#f59e0b' },
+        'vet-stable':    { text: 'Veteran',            color: '#9ca3af' },
+        'vet-falling':   { text: '↓ Declining Vet',  color: '#ef4444' },
+      };
+
+      // ── "Based on real trades" section (always shown below the paginated cards) ──
+      let realTradeHtml = "";
+      if (_pkgRealPkgs.length) {
+        realTradeHtml += `<div style="margin-top:12px;padding-top:8px;border-top:2px solid var(--border);">
+          <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px;letter-spacing:.04em;">
+            BASED ON ${_pkgRealTotal} REAL TRADES IN SIMILAR LEAGUES
+          </div>`;
+        _pkgRealPkgs.forEach(pkg => {
           const sv      = pkg.send_value.toFixed(1);
-          const count   = pkg.trades_like_this;
+          const count   = pkg.trades_like_this || 0;
           const isRef   = !!pkg.is_reference;
-          const btnData = encodeURIComponent(JSON.stringify({ pkg, target: data.target }));
+          const assetsHtml = (pkg.send || []).map(a => {
+            if (a.is_pick || a.type === "pick") {
+              return `<span style="font-weight:600;color:var(--text-muted);">${a.name || "Pick"}</span>`;
+            }
+            const prof = a.profile ? PROF_LBL[a.profile] : null;
+            const profTag = prof
+              ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
+              : '';
+            return `<span style="font-weight:600;color:${isRef ? 'var(--text-muted)' : 'var(--text)'};">${a.name}</span>${profTag}`;
+          }).join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
           const patternLabel = isRef
             ? `market pattern · send ~${sv} (example assets)`
             : `market pattern · send ${sv}`;
-          html += `<div style="padding:5px 0;border-top:1px solid var(--border);">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;">
-              <span style="font-weight:600;color:${isRef ? "var(--text-muted)" : "var(--text)"};flex:1;">${names}</span>
-              <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${count}× seen</span>
+          const analyzeBtn = `<button class="otc-sugg-pkg-load-btn"
+            data-focus-id="${_pkgPlayerId}"
+            data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}"
+            style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid #a78bfa;background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;margin-top:4px;">
+            Analyze
+          </button>`;
+          realTradeHtml += `<div style="padding:5px 0;border-top:1px solid var(--border);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
+              <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetsHtml}</div>
+              <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;flex-shrink:0;">${count}× seen</span>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
               <span style="font-size:10px;color:var(--text-muted);">${patternLabel}</span>
-              ${!isRef ? `<button class="load-in-calc-btn" data-payload="${btnData}"
-                style="font-size:10px;padding:1px 7px;border-radius:4px;border:1px solid #a78bfa;background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;">
-                Load in Calc →
-              </button>` : ""}
+              ${analyzeBtn}
             </div>
           </div>`;
         });
-        html += `</div>`;
+        realTradeHtml += `</div>`;
       }
 
-      // Delegate load-in-calc clicks (covers both value-based and real-trade packages)
-      panel.addEventListener("click", function handler(e) {
-        const btn = e.target.closest(".load-in-calc-btn");
-        if (!btn) return;
-        try {
-          const { pkg, target } = JSON.parse(decodeURIComponent(btn.dataset.payload));
-          _loadPackageIntoCalc(target, pkg.send);
-        } catch (e) { console.error('[trade-calc] Invalid payload:', e); }
-      }, { once: false });
+      resultsList.innerHTML = cardsHtml + paginationHtml + realTradeHtml;
 
-      panel.innerHTML = html;
-    } catch {
-      panel.innerHTML = `<span style="color:var(--text-muted);">Could not generate trade ideas.</span>`;
+      resultsList.querySelectorAll(".otc-sugg-page-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const newPage = _pkgPage + parseInt(btn.dataset.dir);
+          if (newPage < 0 || newPage >= totalPages) return;
+          _pkgPage = newPage;
+          renderPackagePage();
+          resultsList.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        });
+      });
+
+      resultsList.querySelectorAll(".otc-sugg-pkg-load-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const focusId    = btn.dataset.focusId;
+          const assets     = JSON.parse(decodeURIComponent(btn.dataset.assets));
+          const extraRaw   = btn.dataset.extraReceive
+            ? JSON.parse(decodeURIComponent(btn.dataset.extraReceive))
+            : null;
+          const focusPObj = allPlayers.find(p => String(p.id) === String(focusId));
+          if (!focusPObj) return;
+
+          state.sideAPlayers.length = 0;
+          state.sideBPlayers.length = 0;
+          state.sideAPicks.length   = 0;
+          state.sideBPicks.length   = 0;
+
+          // Side A = what you receive (the target player, plus any combo throw-in)
+          state.sideAPlayers.push(focusPObj);
+          if (extraRaw) {
+            const extraPObj = allPlayers.find(p => String(p.id) === String(extraRaw.player_id))
+              || (extraRaw.name && allPlayers.find(p => p.name && p.name.toLowerCase() === extraRaw.name.toLowerCase()));
+            if (extraPObj) state.sideAPlayers.push(extraPObj);
+          }
+
+          // Side B = what you give (the package)
+          assets.forEach(a => {
+            if (a.type === "pick" || a.is_pick) {
+              const yr   = String(a.pick_season || "").replace(/\D/g, "");
+              const rd   = String(a.pick_round  || "").replace(/\D/g, "");
+              const slot = a.pick_slot ? String(a.pick_slot).replace(/\D/g, "").padStart(2, "0") : null;
+              const order = (a.pick_order || "").toLowerCase().replace(/[^a-z]/g, "") || "mid";
+              // Slot picks use numeric third segment (e.g. 2026_1_01), bucket picks use word (e.g. 2026_1_early)
+              const pickId = yr && rd ? `${yr}_${rd}_${slot || order}` : null;
+              const pickObj = pickId && (
+                allPlayers.find(p => p.id === pickId) ||
+                allPlayers.find(p => yr && rd && p.id && p.id.startsWith(`${yr}_${rd}_`))
+              );
+              if (pickObj) {
+                state.sideBPicks.push({ id: pickObj.id, display: pickObj.name });
+              } else if (pickId) {
+                state.sideBPicks.push({ id: pickId, display: a.name || formatPickId(pickId) });
+              }
+            } else {
+              const pObj = allPlayers.find(p => String(p.id) === String(a.player_id));
+              if (pObj) state.sideBPlayers.push(pObj);
+            }
+          });
+
+          saveState();
+          renderChips("A");
+          renderChips("B");
+          syncEmptyState("A");
+          syncEmptyState("B");
+          analyzeTrade();
+          switchToCalc();
+          const shell = root.querySelector(".otc-shell");
+          if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      });
     }
-  };
+
+    // ── Suggestions-tab Trade Targets (different from sidebar) ───
+    async function loadSuggTargets() {
+      const container = root.querySelector("#otcSuggTargetsBody");
+      if (!container) return;
+
+      const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      if (!hasPremium) {
+        suggTargetsLoaded = true;
+        container.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+        return;
+      }
+
+      const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
+      const season         = root.querySelector("#seasonInput")?.value   || new Date().getFullYear();
+      const viewerRosterId = getCurrentRosterId();
+
+      if (!leagueId || !viewerRosterId) {
+        // Don't mark loaded — retry next time the tab is opened
+        container.innerHTML = '<div class="otc-movers-empty">Select your team to see targets.</div>';
+        return;
+      }
+
+      const pathParts  = window.location.pathname.split("/").filter(Boolean);
+      const platform   = pathParts[0] || "sleeper";
+      const leagueType = getLeagueType();
+      const leagueSize = getLeagueSize();
+
+      container.innerHTML = '<div class="otc-movers-empty">Loading targets…</div>';
+
+      try {
+        const res = await fetch(
+          `/api/trade-targets?platform=${encodeURIComponent(platform)}&league_id=${encodeURIComponent(leagueId)}` +
+          `&season=${encodeURIComponent(season)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
+          `&league_type=${encodeURIComponent(leagueType)}&league_size=${encodeURIComponent(leagueSize)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) throw new Error("Failed");
+        const data = await res.json();
+        suggTargetsLoaded = true;  // only mark done after a successful response
+
+        const grouped     = data.by_position || {};
+        const allGrouped  = data.all_positions || {};
+        const isBalanced  = !Object.keys(grouped).length;
+        const posColor2   = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+
+        function renderRow(t, pos) {
+          const col      = posColor2[pos] || "var(--accent)";
+          const safeName = (t.name || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+          const safePid  = (t.player_id || "");
+          return `<div class="otc-sugg-target-row">
+            <span class="otc-sugg-target-pos" style="background:${col}20;color:${col};">${pos}</span>
+            <span class="otc-sugg-target-name">${t.name || ""}</span>
+            <button class="sugg-target-get-btn otc-sugg-target-btn"
+              data-pid="${safePid}" data-name="${safeName}">
+              Find packages
+            </button>
+          </div>`;
+        }
+
+        let html = "";
+        if (isBalanced) {
+          html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">Roster is balanced — top available at each position:</div>`;
+          Object.keys(allGrouped).forEach(pos => {
+            (allGrouped[pos] || []).forEach(t => { html += renderRow(t, pos); });
+          });
+        } else {
+          Object.keys(grouped).forEach(pos => {
+            (grouped[pos] || []).forEach(t => { html += renderRow(t, pos); });
+          });
+        }
+
+        container.innerHTML = html || '<div class="otc-movers-empty">No targets found.</div>';
+
+        container.addEventListener("click", e => {
+          const btn = e.target.closest(".sugg-target-get-btn");
+          if (!btn) return;
+          const pid  = btn.dataset.pid;
+          const name = btn.dataset.name;
+          if (!pid || !name) return;
+          // Populate the search input and fetch packages
+          if (playerInput) {
+            playerInput.value = name;
+            playerDropdown.style.display = "none";
+          }
+          fetchPackages(pid, name);
+          // Scroll search into view
+          const buildHead = root.querySelector(".otc-sugg-build-head");
+          if (buildHead) buildHead.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }, { once: false });
+
+      } catch (e) {
+        container.innerHTML = '<div class="otc-movers-empty">Could not load targets.</div>';
+      }
+    }
+  })();
+
 
   // ------------------------------------------------------------
   // analyzeTrade - owns ALL loading/result/empty state transitions
@@ -7189,6 +7626,8 @@ function openTeamModal(rosterId, teamName) {
   modal.className = 'team-modal';
   modal.id = 'teamModal';
 
+  window._tmRosterId = rosterId;
+
   modal.innerHTML = `
     <div class="team-modal-header">
       <div class="team-modal-avatar" id="teamModalAvatar">
@@ -7202,11 +7641,20 @@ function openTeamModal(rosterId, teamName) {
       </div>
       <button class="team-modal-close" onclick="closeTeamModal()">×</button>
     </div>
-    <div class="team-modal-body" id="teamModalBody">
-      <div class="team-modal-loading">
-        <div class="loading-spinner"></div>
-        <div>Loading team details...</div>
+    <div class="tm-tab-bar">
+      <button class="tm-tab active" data-tab="roster" onclick="tmSwitchTab('roster')">Roster</button>
+      <button class="tm-tab" data-tab="charts" onclick="tmSwitchTab('charts')">Charts</button>
+      <button class="tm-tab" data-tab="trades" onclick="tmSwitchTab('trades')">Trades</button>
+    </div>
+    <div class="team-modal-body">
+      <div class="tm-panel active" id="tm-panel-roster">
+        <div class="team-modal-loading">
+          <div class="loading-spinner"></div>
+          <div>Loading team details...</div>
+        </div>
       </div>
+      <div class="tm-panel" id="tm-panel-charts"></div>
+      <div class="tm-panel" id="tm-panel-trades"></div>
     </div>
   `;
 
@@ -7225,6 +7673,83 @@ function closeTeamModal() {
   if (overlay) overlay.remove();
   if (modal) modal.remove();
   document.body.style.overflow = '';
+  window._tmRosterId = null;
+  window._tmTradesLoaded = false;
+}
+
+function tmSwitchTab(tab) {
+  document.querySelectorAll('.tm-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tm-tab').forEach(t => t.classList.remove('active'));
+  const panel = document.getElementById('tm-panel-' + tab);
+  const btn = document.querySelector('.tm-tab[data-tab="' + tab + '"]');
+  if (panel) panel.classList.add('active');
+  if (btn) btn.classList.add('active');
+
+  if (tab === 'trades' && !window._tmTradesLoaded) {
+    window._tmTradesLoaded = true;
+    tmLoadTrades(window._tmRosterId);
+  }
+}
+
+async function tmLoadTrades(rosterId) {
+  const panel = document.getElementById('tm-panel-trades');
+  if (!panel) return;
+  panel.innerHTML = '<div class="team-modal-loading"><div class="loading-spinner"></div><div>Loading trade history…</div></div>';
+
+  try {
+    const pathParts = window.location.pathname.split('/').filter(p => p);
+    const platform = pathParts[0] || 'sleeper';
+    const season = pathParts[1] || new Date().getFullYear();
+    const leagueId = pathParts[2];
+
+    if (!leagueId) throw new Error('League ID not found');
+
+    const res = await fetch(`/api/team-trades/${rosterId}?league_id=${leagueId}&platform=${platform}&season=${season}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    const trades = data.trades || [];
+    if (!trades.length) {
+      panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">No trades found for this team this season.</div></div>';
+      return;
+    }
+
+    const renderAssets = (players, picks) => {
+      const parts = [
+        ...players.map(p => `<div class="pm-trade-asset player-clickable" data-player-id="${p.player_id}" data-player-name="${p.name}" style="cursor:pointer">${p.name}${p.position ? `<span style="font-size:11px;color:var(--text-muted);margin-left:4px;">${p.position}</span>` : ''}</div>`),
+        ...picks.map(p => `<div class="pm-trade-asset pm-pick">${p.season} Rd ${p.round}</div>`),
+      ];
+      return parts.length ? parts.join('') : '<div class="pm-trade-asset" style="color:var(--text-muted);">—</div>';
+    };
+
+    const cards = trades.map(tr => {
+      const weekLabel = tr.week ? `Week ${tr.week}` : '';
+      const dateLabel = tr.date || '';
+      const headRight = weekLabel && dateLabel ? `${weekLabel} · ${dateLabel}` : weekLabel || dateLabel;
+
+      return `<div class="pm-trade-card">
+        <div class="pm-trade-head">
+          <span class="pm-trade-date">${headRight}</span>
+        </div>
+        <div class="pm-trade-body">
+          <div class="pm-trade-col">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#10b981;margin-bottom:4px;">Received</div>
+            ${renderAssets(tr.my_gets, tr.my_pick_gets)}
+          </div>
+          <div style="color:var(--text-muted);font-size:18px;align-self:center;">⇄</div>
+          <div class="pm-trade-col">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#ef4444;margin-bottom:4px;">Sent</div>
+            ${renderAssets(tr.my_sends, tr.my_pick_sends)}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    panel.innerHTML = `<div style="padding:4px 0;">${cards}</div>`;
+  } catch (err) {
+    panel.innerHTML = `<div class="team-modal-error"><div>Failed to load trades</div><div style="font-size:13px;color:#9ca3af">${err.message}</div></div>`;
+  }
 }
 
 async function checkTradeOutcome(btn) {
@@ -7348,7 +7873,8 @@ async function fetchTeamDetails(rosterId) {
 
   } catch (error) {
     console.error('[team-modal] Error fetching team details:', error);
-    document.getElementById('teamModalBody').innerHTML = `
+    const _errPanel = document.getElementById('tm-panel-roster');
+    if (_errPanel) _errPanel.innerHTML = `
       <div class="team-modal-error">
         <div>Failed to load team details</div>
         <div style="color: #9ca3af; font-size: 14px;">${error.message}</div>
@@ -7746,29 +8272,27 @@ function renderTeamDetails(data) {
 
   picksHTML += '</div>';
 
-  // Build graphs section
+  // Build graphs section — each chart in its own section for side-by-side layout
   let graphsHTML = '';
 
   if (data.graphs && (data.graphs.weekly_scores || data.graphs.radar)) {
-    graphsHTML += '<div class="team-modal-section"><h3>Performance Charts</h3>';
-
-    // Weekly scores line chart
     if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
-      graphsHTML += '<div class="team-chart-container" id="teamWeeklyChart"></div>';
+      graphsHTML += '<div class="team-modal-section tm-chart-weekly"><h3>Weekly Scoring</h3><div class="team-chart-container" id="teamWeeklyChart"></div></div>';
     }
-
-    // Radar chart
     if (data.graphs.radar && data.graphs.radar.z_scores) {
-      graphsHTML += '<div class="team-chart-container" id="teamRadarChart"></div>';
+      graphsHTML += '<div class="team-modal-section tm-chart-radar"><h3>Team Breakdown</h3><div class="team-chart-container" id="teamRadarChart"></div></div>';
     }
-
-    graphsHTML += '</div>';
   }
 
-  // Set body content with two-column layout
-  const leftColumn = `<div class="team-modal-body-left">${rosterHTML}</div>`;
-  const rightColumn = `<div class="team-modal-body-right">${graphsHTML}${picksHTML}</div>`;
-  document.getElementById('teamModalBody').innerHTML = leftColumn + rightColumn;
+  // Populate tab panels
+  const rosterPanel = document.getElementById('tm-panel-roster');
+  if (rosterPanel) {
+    rosterPanel.innerHTML = `<div class="team-modal-body-left">${rosterHTML}</div><div class="team-modal-body-right">${picksHTML}</div>`;
+  }
+  const chartsPanel = document.getElementById('tm-panel-charts');
+  if (chartsPanel) {
+    chartsPanel.innerHTML = graphsHTML || '<div class="team-modal-empty">No chart data available</div>';
+  }
 
   // Helper function to get theme-appropriate Plotly styling
   function getPlotlyTheme() {
@@ -8321,24 +8845,37 @@ document.addEventListener('click', (e) => {
   }
 
   function placeTooltip(target) {
-    const TW   = 300;
-    const TH   = 180; // estimate
+    const TH   = 200;
     const PAD  = 12;
     const vw   = window.innerWidth;
     const vh   = window.innerHeight;
     const r    = target.getBoundingClientRect();
 
-    let top  = r.bottom + PAD;
+    let top = r.bottom + PAD;
     if (top + TH > vh) top = Math.max(PAD, r.top - PAD - TH);
+    if (top < PAD) top = PAD;
 
-    let left = r.left + r.width / 2 - TW / 2;
-    left = Math.max(PAD, Math.min(left, vw - TW - PAD));
-
-    Object.assign(tooltipEl.style, {
-      top: top + 'px',
-      left: left + 'px',
-      transform: '',
-    });
+    // On mobile stretch full-width; on desktop use fixed 300px centered on target
+    if (vw <= 540) {
+      Object.assign(tooltipEl.style, {
+        top: top + 'px',
+        left: PAD + 'px',
+        right: PAD + 'px',
+        width: 'auto',
+        transform: '',
+      });
+    } else {
+      const TW = 300;
+      let left = r.left + r.width / 2 - TW / 2;
+      left = Math.max(PAD, Math.min(left, vw - TW - PAD));
+      Object.assign(tooltipEl.style, {
+        top: top + 'px',
+        left: left + 'px',
+        right: '',
+        width: '',
+        transform: '',
+      });
+    }
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────
@@ -8698,5 +9235,516 @@ function setupFunAwardsGrid() {
     document.addEventListener('DOMContentLoaded', setup);
   } else {
     setup();
+  }
+})();
+
+// ── Rookie Draft Assistant ────────────────────────────────────────────────────
+(function () {
+  let daProspects  = [];
+  let daDrafted    = new Set(); // insertion order = overall draft pick order
+  let myPicks      = new Set(); // subset of daDrafted that are the user's own picks
+  let myPickOrder  = [];        // ordered subset of myPicks (for grading)
+  let daLocalNeeds = {};        // position -> need level delta from my picks
+  let daFilter    = 'ALL';
+  let daSubView   = 'available'; // 'available' | 'drafted'
+  let daNeeds      = {};
+  let daLeagueType = '1qb';
+  let daLeagueSize = 10;
+  let daYear       = new Date().getFullYear();
+  let daInitialized = false;
+
+  const POS_COLORS = { QB: '#a78bfa', RB: '#34d399', WR: '#60a5fa', TE: '#fb923c' };
+  const NEED_LABEL = { 2: 'Major Need', 1: 'Need', 0: 'Neutral', '-1': 'Depth', '-2': 'Stacked' };
+  const NEED_COLOR = { 2: '#ef4444', 1: '#f59e0b', 0: '#9ca3af', '-1': '#10b981', '-2': '#059669' };
+  const NEED_BONUS = { 2: 1.5, 1: 1.2, 0: 1.0, '-1': 0.85, '-2': 0.7 };
+
+  function effectiveNeed(pos) {
+    const raw   = daNeeds[pos] ?? 0;
+    const delta = daLocalNeeds[pos] || 0;
+    let need    = Math.max(-2, Math.min(2, raw + delta));
+    // In 1QB leagues cap QB need at Neutral if roster already has 2+ QBs (including my picks)
+    if (pos === 'QB' && daLeagueType !== 'sf') {
+      const myQBs = myPickOrder.filter(id => {
+        const p = daProspects.find(x => String(x.player_id) === id);
+        return p && p.position === 'QB';
+      }).length;
+      if ((daNeeds.QB_count || 0) + myQBs >= 2) need = Math.min(-1, need);
+    }
+    return need;
+  }
+
+  function needBonus(pos) {
+    return NEED_BONUS[String(effectiveNeed(pos))] ?? 1.0;
+  }
+
+  function adjustNeedsForDraft(playerId, delta) {
+    const p = daProspects.find(x => String(x.player_id) === String(playerId));
+    if (!p || !p.position) return;
+    const pos = p.position.toUpperCase();
+    daLocalNeeds[pos] = (daLocalNeeds[pos] || 0) + delta;
+    renderNeeds();
+  }
+
+  function daScore(p) {
+    const val = parseFloat(p.display_value || p.rookie_value || 0);
+    return val * 0.6 + val * needBonus(p.position) * 0.4;
+  }
+
+  // 1 rec normally; 2 only if there's a major need AND the top pick doesn't address a need
+  function recCount(scored) {
+    const hasMajorNeed = Object.values(daNeeds).some(v => typeof v === 'number' && v === 2);
+    if (!hasMajorNeed) return 1;
+    const topNeed = scored[0] ? (daNeeds[scored[0].position] ?? 0) : 0;
+    return topNeed >= 1 ? 1 : 2;
+  }
+
+  function daToggleNeeds() {
+    const panel = document.getElementById('daNeedsPanel');
+    if (!panel) return;
+    const collapsed = panel.classList.toggle('da-needs-collapsed');
+    const chevron = panel.querySelector('.da-needs-chevron');
+    if (chevron) chevron.style.transform = collapsed ? 'rotate(-90deg)' : 'rotate(0deg)';
+  }
+
+  function renderNeeds() {
+    const panel = document.getElementById('daNeedsPanel');
+    if (!panel) return;
+    const collapsed = panel.classList.contains('da-needs-collapsed');
+    const chevron = `<span class="da-needs-chevron" style="margin-left:auto;font-size:12px;transition:transform 0.2s;${collapsed?'transform:rotate(-90deg)':''}">&#8964;</span>`;
+    const titleHtml = `<div class="da-needs-title" onclick="window._da.toggleNeeds()">My Roster Needs${chevron}</div>`;
+    if (!Object.keys(daNeeds).length) {
+      panel.innerHTML = titleHtml + '<div class="da-needs-body"><div style="font-size:12px;color:var(--text-muted);padding-top:8px;">Log in with your league to see personalized needs.</div></div>';
+      return;
+    }
+    const rows = ['QB','RB','WR','TE'].map(pos => {
+      const need  = effectiveNeed(pos);
+      const col   = POS_COLORS[pos] || '#9ca3af';
+      const count = daNeeds[`${pos}_count`] ?? 0;
+      const val   = Math.round(daNeeds[`${pos}_value`] || 0);
+      const avg   = Math.round(daNeeds[`${pos}_avg`]   || 0);
+      return `<div class="da-need-row">
+        <span class="pos-badge ${pos}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 7px;">${pos}</span>
+        <div class="da-need-info">
+          <span class="da-need-label" style="color:${NEED_COLOR[String(need)] || '#9ca3af'}">${NEED_LABEL[String(need)] ?? 'Neutral'}</span>
+          <span class="da-need-meta">${count} players · ${val} (avg ${avg})</span>
+        </div>
+      </div>`;
+    }).join('');
+    panel.innerHTML = `${titleHtml}<div class="da-needs-body">${rows}</div>`;
+  }
+
+  function updateDraftedBadge() {
+    const el = document.getElementById('daDraftedCount');
+    if (!el) return;
+    if (daDrafted.size === 0) { el.style.display = 'none'; }
+    else { el.style.display = ''; el.textContent = daDrafted.size; }
+  }
+
+  function render() {
+    const listEl = document.getElementById('daBoardList');
+    if (!listEl) return;
+    updateDraftedBadge();
+
+    // Tag .da-board with current view so CSS can use different grid per view
+    const boardEl = listEl.closest('.da-board');
+    if (boardEl) boardEl.dataset.view = daSubView;
+
+    if (daSubView === 'drafted') {
+      // Sort by insertion order in daDrafted (first pick = index 0 = top)
+      const draftedArr = [...daDrafted];
+      const drafted = draftedArr
+        .map(sid => daProspects.find(p => String(p.player_id) === sid))
+        .filter(Boolean);
+      if (!drafted.length) {
+        listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No players drafted yet.</div>';
+        return;
+      }
+      const endBtn = myPicks.size > 0
+        ? `<div style="padding:12px 10px 4px;"><button class="da-end-draft-btn" onclick="window._da.endDraft()">End Draft &amp; Grade My Picks</button></div>`
+        : '';
+      listEl.innerHTML = endBtn + drafted.map((p, i) => {
+        const sid   = String(p.player_id);
+        const isMine = myPicks.has(sid);
+        const col   = POS_COLORS[p.position] || '#9ca3af';
+        const dAdp  = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
+        const dTeam = p.actual_nfl_team || p.school || '';
+        const dMeta = [dTeam, dAdp != null ? `ADP ${parseFloat(dAdp).toFixed(1)}` : ''].filter(Boolean).join(' · ');
+        const overallPick = draftedArr.indexOf(sid) + 1;
+        return `<div class="da-row${isMine ? ' da-my-pick' : ''}">
+          <div class="da-rank"><span style="color:${isMine ? 'var(--accent)' : 'var(--text-muted)'};font-weight:${isMine ? '800' : '400'};">${overallPick}</span></div>
+          <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${dMeta}</span></div>
+          <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
+          <label class="da-mine-label" title="My pick">
+            <input type="checkbox" class="da-mine-cb" ${isMine ? 'checked' : ''} onchange="window._da.toggleMine('${p.player_id}')">
+            <span>Mine</span>
+          </label>
+          <div class="da-col-right da-val">${Math.round(parseFloat(p.display_value||0))||'—'}</div>
+          <button class="otc-chip-remove" onclick="window._da.undraft('${p.player_id}')" title="Remove">×</button>
+        </div>`;
+      }).join('');
+      return;
+    }
+
+    // Available view
+    let visible = daProspects.filter(p => !daDrafted.has(String(p.player_id)));
+    if (daFilter !== 'ALL') visible = visible.filter(p => p.position === daFilter);
+    const scored = visible.map(p => ({ ...p, _s: daScore(p) })).sort((a, b) => b._s - a._s);
+    const nRec   = recCount(scored);
+    const recIds = new Set(scored.slice(0, nRec).map(p => String(p.player_id)));
+
+    if (!scored.length) {
+      listEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">No prospects available.</div>';
+      return;
+    }
+
+    listEl.innerHTML = scored.map((p, i) => {
+      const isRec    = recIds.has(String(p.player_id));
+      const col      = POS_COLORS[p.position] || '#9ca3af';
+      const val      = Math.round(parseFloat(p.display_value || 0));
+      const needLvl  = daNeeds[p.position] ?? 0;
+      const isNeed   = needLvl >= 1;
+      const needCol  = NEED_COLOR[String(needLvl)] || '#9ca3af';
+      const needTxt  = NEED_LABEL[String(needLvl)] || '';
+
+      // Recommendation row: add grade + ADP in meta
+      const adpRaw   = daLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
+      const adpTxt   = adpRaw != null ? `ADP ${parseFloat(adpRaw).toFixed(1)}` : '';
+      const gradeTxt = p.tier_label || '';
+      const teamTxt  = p.actual_nfl_team || p.school || '';
+      const baseMeta = [teamTxt, adpTxt].filter(Boolean).join(' · ');
+      const recMeta  = isRec
+        ? [teamTxt, gradeTxt, adpTxt].filter(Boolean).join(' · ')
+        : baseMeta;
+
+      // Need badge goes in the badge column (col 4) — same slot as PICK for rec rows
+      const needBadge = isNeed && !isRec
+        ? `<span style="font-size:10px;font-weight:700;color:${needCol};background:${needCol}18;border:1px solid ${needCol}33;border-radius:4px;padding:2px 6px;">${needTxt}</span>`
+        : '';
+
+      return `<div class="da-row${isRec ? ' da-recommended' : ''}">
+        <div class="da-rank">${i + 1}</div>
+        <div class="da-info">
+          <span class="da-name">${p.name || '—'}${isRec && isNeed ? `<span style="font-size:10px;font-weight:700;color:${needCol};margin-left:6px;">▲ ${needTxt}</span>` : ''}</span>
+          <span class="da-meta">${recMeta}</span>
+        </div>
+        <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
+        ${isRec ? '<div class="da-rec-badge">PICK</div>' : (needBadge || '<div></div>')}
+        <div class="da-col-right da-val">${val || '—'}</div>
+        <button class="da-draft-btn" onclick="window._da.draft('${p.player_id}')">Draft</button>
+      </div>`;
+    }).join('');
+  }
+
+  function saveSession() {
+    const key = 'da_' + location.pathname;
+    try {
+      sessionStorage.setItem(key, JSON.stringify([...daDrafted]));
+      sessionStorage.setItem(key + '_mine', JSON.stringify(myPickOrder));
+    } catch (_) {}
+  }
+
+  function showDraftHelp() {
+    const steps = [
+      { icon: '1', title: 'Draft players in order', body: 'As each pick happens — yours or anyone else\'s — tap <strong>Draft</strong> to remove them from the board. Do this in real draft order so pick numbers are accurate.' },
+      { icon: '2', title: 'Mark your picks', body: 'Switch to the <strong>Drafted</strong> tab and tap <strong>Mine</strong> on each player you actually selected. The pick number is set automatically based on when you drafted them.' },
+      { icon: '3', title: 'Watch your needs update', body: 'The <strong>Roster Needs</strong> panel reflects your current roster vs. the league. Marking a pick as Mine adjusts the needs panel live.' },
+      { icon: '4', title: 'End Draft &amp; grade', body: 'Once you\'ve marked your picks, tap <strong>End Draft &amp; Grade My Picks</strong>. Each pick is graded A+–F using ADP value, positional need, and QB context — the same formula as the Teams page Draft Grades.' },
+    ];
+    const html = `
+      <div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:16px;font-weight:700;color:var(--text);">How to use the Draft Assistant</div>
+        <button onclick="document.getElementById('daHelpModal').style.display='none'" style="background:none;border:none;font-size:20px;color:var(--text-muted);cursor:pointer;">✕</button>
+      </div>
+      <div style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:16px;">
+        ${steps.map(s => `
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <div style="flex-shrink:0;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;">${s.icon}</div>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;">${s.title}</div>
+              <div style="font-size:12px;color:var(--text-muted);line-height:1.5;">${s.body}</div>
+            </div>
+          </div>`).join('')}
+      </div>`;
+
+    let modal = document.getElementById('daHelpModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'daHelpModal';
+      modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:10600;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,0.7);backdrop-filter:blur(4px);';
+      modal.innerHTML = '<div id="daHelpModalContent" style="background:var(--card);border-radius:16px;max-width:420px;width:100%;box-shadow:0 24px 48px rgba(15,23,42,0.25);"></div>';
+      modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+      document.body.appendChild(modal);
+    }
+    document.getElementById('daHelpModalContent').innerHTML = html;
+    modal.style.display = 'flex';
+  }
+
+  // Exact port of pick_grade() and team_grade() from app.py (including BPA logic)
+  function _pickGrade(adpDiff, need, pos, isSF, qbCount, numTeams, isBpa, bpaGap) {
+    if (adpDiff === null) return 'N/A';
+    const bigReach = -(numTeams * 1.1);
+    let score;
+    if      (adpDiff >= 4)          score = 4;
+    else if (adpDiff >= 2)          score = 3;
+    else if (adpDiff >= -3)         score = 2;
+    else if (adpDiff >= bigReach)   score = 1;
+    else                            score = 0;
+
+    // BPA bonus / penalty (mirrors Python logic)
+    if (isBpa) {
+      score += adpDiff < -3 ? 1 : 2;
+    } else if (bpaGap != null && bpaGap >= 5) {
+      score = Math.max(score - 1, 0);
+    }
+
+    if (need) {
+      score += 1;
+    } else {
+      if (pos === 'QB' && !isSF && qbCount >= 2) score = Math.max(score - 2, 0);
+      else if (pos === 'QB' && !isSF && qbCount >= 1) score = Math.max(score - 1, 0);
+    }
+    if (adpDiff >= -3)            score = Math.max(score, 1);
+    if (need && adpDiff >= -4)    score = Math.max(score, 2);
+    return ({5:'A+',4:'A',3:'B',2:'C',1:'D',0:'F'})[Math.min(score, 5)] || 'F';
+  }
+
+  function _teamGrade(grades) {
+    if (!grades.length) return 'N/A';
+    const v = {'A+':5,'A':4,'B':3,'C':2,'D':1,'F':0,'N/A':2};
+    const avg = grades.reduce((s, g) => s + (v[g] ?? 2), 0) / grades.length;
+    if (avg >= 4.5) return 'A+';
+    if (avg >= 3.5) return 'A';
+    if (avg >= 2.5) return 'B';
+    if (avg >= 1.5) return 'C';
+    if (avg >= 0.5) return 'D';
+    return 'F';
+  }
+
+  function showDraftGrade() {
+    const GRADE_COLOR = { 'A+': '#10b981', 'A': '#10b981', 'B': '#3b82f6', 'C': '#f59e0b', 'D': '#ef4444', 'F': '#ef4444', 'N/A': '#9ca3af' };
+    const GRADE_BG    = { 'A+': 'rgba(16,185,129,.08)', 'A': 'rgba(16,185,129,.08)', 'B': 'rgba(59,130,246,.08)', 'C': 'rgba(245,158,11,.08)', 'D': 'rgba(239,68,68,.08)', 'F': 'rgba(239,68,68,.08)', 'N/A': 'transparent' };
+    const isSF = daLeagueType === 'sf';
+
+    const draftedArr = [...daDrafted]; // preserves insertion order = actual pick sequence
+
+    // Build a lookup of adp for BPA computation
+    const adpKey = p => parseFloat(isSF ? p.sf_avg_pick : p.avg_pick) || 9999;
+
+    const picks = myPickOrder.map((sid, idx) => {
+      const p = daProspects.find(x => String(x.player_id) === sid);
+      if (!p) return null;
+      const actualPick = draftedArr.indexOf(sid) + 1; // overall pick # in draft order
+      const adp = parseFloat(isSF ? p.sf_avg_pick : p.avg_pick) || null;
+      const adpDiff = adp !== null ? actualPick - adp : null;
+      const need = (daNeeds[p.position] ?? 0) >= 1;
+      const qbsBefore = myPickOrder.slice(0, idx).filter(id => {
+        const q = daProspects.find(x => String(x.player_id) === id);
+        return q && q.position === 'QB';
+      }).length;
+      const qbCount = (daNeeds.QB_count || 0) + qbsBefore;
+
+      // BPA: who was available at this pick with a better ADP?
+      const takenBefore = new Set(draftedArr.slice(0, actualPick - 1));
+      const available = daProspects.filter(x => !takenBefore.has(String(x.player_id)));
+      const bpa = available.reduce((best, x) => adpKey(x) < adpKey(best) ? x : best, available[0]);
+      const bpaAdp = bpa ? adpKey(bpa) : null;
+      const isBpa = bpa ? String(bpa.player_id) === sid : false;
+      const bpaGap = (adp !== null && bpaAdp !== null && !isBpa) ? adp - bpaAdp : 0;
+
+      const grade = _pickGrade(adpDiff, need, p.position, isSF, qbCount, daLeagueSize, isBpa, bpaGap);
+      const needLabel = NEED_LABEL[String(daNeeds[p.position] ?? 0)] || 'Neutral';
+      const tier = p.tier_label || '';
+      return { p, actualPick, adp, adpDiff, grade, need, needLabel, tier, isBpa, bpaGap };
+    }).filter(Boolean);
+
+    if (!picks.length) return;
+
+    const overall = _teamGrade(picks.map(x => x.grade));
+
+    const rows = picks.map(({ p, actualPick, adp, adpDiff, grade, needLabel, tier, isBpa }) => {
+      const col    = POS_COLORS[p.position] || '#9ca3af';
+      const gc     = GRADE_COLOR[grade] || '#9ca3af';
+      const gbg    = GRADE_BG[grade] || 'transparent';
+      const adpTxt = adp ? `ADP ${adp.toFixed(1)}` : '';
+      const pickTxt = `Pick ${actualPick}`;
+      const diffTxt = adpDiff !== null
+        ? (adpDiff >= 0 ? `+${adpDiff.toFixed(1)} value` : `${adpDiff.toFixed(1)} reach`)
+        : '';
+      const diffCol = adpDiff !== null ? (adpDiff >= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)';
+      const tierTxt = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : '';
+      const bpaTxt  = isBpa ? '<span style="font-size:10px;font-weight:700;color:#10b981;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.25);border-radius:4px;padding:1px 5px;margin-left:4px;">BPA</span>' : '';
+      const meta = [pickTxt, adpTxt, tierTxt].filter(Boolean).join(' · ');
+      return `<div style="display:grid;grid-template-columns:1fr 38px 32px;align-items:center;gap:8px;padding:10px 14px 10px 12px;border-top:1px solid var(--border);border-left:3px solid ${gc};">
+        <div style="display:flex;flex-direction:column;gap:2px;min-width:0;">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+            <span style="font-size:13px;font-weight:700;color:var(--text);">${p.name}</span>${bpaTxt}
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);">${meta}</span>
+          ${diffTxt ? `<span style="font-size:11px;font-weight:600;color:${diffCol};">${diffTxt}</span>` : ''}
+        </div>
+        <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 5px;text-align:center;">${p.position}</span>
+        <div style="font-size:18px;font-weight:800;color:${gc};text-align:right;">${grade}</div>
+      </div>`;
+    }).join('');
+
+    const gc  = GRADE_COLOR[overall] || '#9ca3af';
+    const gbg = GRADE_BG[overall] || 'transparent';
+    const html = `
+      <div style="padding:16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--text);">My Draft Grade</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${picks.length} pick${picks.length !== 1 ? 's' : ''} graded</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:48px;height:48px;border-radius:50%;background:${gbg};border:2px solid ${gc};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <span style="font-size:20px;font-weight:900;color:${gc};line-height:1;">${overall}</span>
+          </div>
+          <button onclick="document.getElementById('daGradeModal').style.display='none'" style="background:none;border:none;font-size:18px;color:var(--text-muted);cursor:pointer;padding:6px;line-height:1;flex-shrink:0;">✕</button>
+        </div>
+      </div>
+      <div>${rows}</div>
+      <div style="padding:14px 16px;display:flex;gap:8px;">
+        <button onclick="document.getElementById('daGradeModal').style.display='none';daReset();" style="flex:1;padding:9px;background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Reset Board</button>
+        <button onclick="document.getElementById('daGradeModal').style.display='none'" class="da-end-draft-btn" style="flex:2;">Done</button>
+      </div>`;
+
+    let modal = document.getElementById('daGradeModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'daGradeModal';
+      modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:10600;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,0.7);backdrop-filter:blur(4px);';
+      modal.innerHTML = '<div id="daGradeModalContent" style="background:var(--card);border-radius:16px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 24px 48px rgba(15,23,42,0.25);"></div>';
+      modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+      document.body.appendChild(modal);
+    }
+    document.getElementById('daGradeModalContent').innerHTML = html;
+    modal.style.display = 'flex';
+  }
+
+  window._da = {
+    draft(id)      { daDrafted.add(String(id));    saveSession(); render(); },
+    undraft(id) {
+      const sid = String(id);
+      daDrafted.delete(sid);
+      if (myPicks.has(sid)) {
+        myPicks.delete(sid);
+        myPickOrder = myPickOrder.filter(x => x !== sid);
+        adjustNeedsForDraft(sid, +1);
+      }
+      saveSession(); render();
+    },
+    toggleMine(id) {
+      const sid = String(id);
+      if (myPicks.has(sid)) {
+        myPicks.delete(sid);
+        myPickOrder = myPickOrder.filter(x => x !== sid);
+        adjustNeedsForDraft(sid, +1);
+      } else {
+        myPicks.add(sid);
+        myPickOrder.push(sid);
+        adjustNeedsForDraft(sid, -1);
+      }
+      saveSession(); render();
+    },
+    toggleNeeds()  { daToggleNeeds(); },
+    endDraft()     { showDraftGrade(); },
+    showHelp()     { showDraftHelp(); },
+  };
+
+  window.daFilterPos = function (pos) {
+    daFilter = pos;
+    document.querySelectorAll('.da-filter').forEach(b => b.classList.toggle('active', b.dataset.pos === pos));
+    render();
+  };
+
+  window.daSubTab = function (sub) {
+    daSubView = sub;
+    document.querySelectorAll('.da-sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
+    render();
+  };
+
+  window.daReset = function () {
+    daDrafted.clear();
+    myPicks.clear();
+    myPickOrder = [];
+    daLocalNeeds = {};
+    daFilter  = 'ALL';
+    daSubView = 'available';
+    document.querySelectorAll('.da-filter').forEach(b => b.classList.toggle('active', b.dataset.pos === 'ALL'));
+    document.querySelectorAll('.da-sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === 'available'));
+    saveSession();
+    render();
+  };
+
+  // Page-level tab switcher (Rankings / Draft Board)
+  window.rkPageTab = function (tab) {
+    document.querySelectorAll('.rk-page-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.getElementById('rk-panel-rankings').style.display = tab === 'rankings' ? '' : 'none';
+    document.getElementById('rk-panel-draft').style.display    = tab === 'draft'    ? '' : 'none';
+    if (tab === 'draft' && !daInitialized) {
+      daInitialized = true;
+      initDA();
+    }
+  };
+
+  async function initDA() {
+    const _sessKey = 'da_' + location.pathname;
+    try { daDrafted = new Set(JSON.parse(sessionStorage.getItem(_sessKey) || '[]')); } catch (_) {}
+    try { myPickOrder = JSON.parse(sessionStorage.getItem(_sessKey + '_mine') || '[]'); myPicks = new Set(myPickOrder); } catch (_) {}
+
+    // Derive league context from URL: /<platform>/<season>/<league_id>/...
+    const parts    = location.pathname.split('/').filter(Boolean);
+    const platform = parts[0] || 'sleeper';
+    const season   = parts[1] || new Date().getFullYear();
+    const leagueId = parts[2];
+    daYear         = parseInt(season);
+
+    // Fetch the active draft class year (may differ from NFL season in URL)
+    try {
+      const acr = await fetch('/api/prospects/active-class');
+      if (acr.ok) { const acd = await acr.json(); if (acd.year) daYear = acd.year; }
+    } catch (_) {}
+
+    // Fetch league-calibrated prospect rankings settings if in a league
+    if (leagueId && !['players','breakouts','prospects','trade-database','trade-intel'].includes(platform)) {
+      try {
+        // Detect league type / size from rankings context (use rkLeagueType/rkLeagueSize if set by the Rankings tab)
+        daLeagueType = (typeof rkLeagueType !== 'undefined' ? rkLeagueType : null)
+          || localStorage.getItem('rk_league_type') || '1qb';
+        daLeagueSize = parseInt((typeof rkLeagueSize !== 'undefined' ? rkLeagueSize : null)
+          || localStorage.getItem('rk_league_size') || '10');
+
+        // Get viewer roster_id if available on this page; backend falls back to session
+        const viewerRid = (typeof getCurrentRosterId === 'function' ? getCurrentRosterId() : null)
+          || document.querySelector('#viewerRosterIdInput')?.value || '';
+        const needsUrl = `/api/draft-needs?league_id=${leagueId}&platform=${platform}&season=${season}`
+          + (viewerRid ? `&roster_id=${encodeURIComponent(viewerRid)}` : '');
+        const nr = await fetch(needsUrl);
+        if (nr.ok) {
+          const nd = await nr.json();
+          if (nd.error) {
+            const np = document.getElementById('daNeedsPanel');
+            if (np) np.innerHTML = '<div class="da-needs-title">My Roster Needs<span class="da-needs-chevron" style="margin-left:auto;font-size:12px;">&#8964;</span></div><div class="da-needs-body"><div style="padding:12px 0;font-size:12px;color:var(--text-muted);">Log in with your league to see personalized needs.</div></div>';
+          } else {
+            daNeeds      = nd.needs || {};
+            daLeagueType = nd.league_type || daLeagueType;
+            daLeagueSize = nd.league_size || daLeagueSize;
+          }
+        }
+      } catch (_) {}
+    }
+
+    renderNeeds();
+
+    const listEl = document.getElementById('daBoardList');
+    try {
+      const r = await fetch(`/api/prospects/rankings?year=${daYear}&league_type=${encodeURIComponent(daLeagueType)}&league_size=${daLeagueSize}&limit=200`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      daProspects = data.rankings || [];
+      render();
+    } catch (e) {
+      if (listEl) listEl.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px;">Could not load prospects: ${e.message}</div>`;
+    }
   }
 })();

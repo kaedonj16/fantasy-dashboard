@@ -142,7 +142,7 @@ def _pricing_body() -> str:
           Activating your premium access&hellip;
         </p>
         <div id="sub-spinner" style="margin:0 auto 16px;width:32px;height:32px;border:3px solid #e5e7eb;border-top-color:#667eea;border-radius:50%;animation:paywall-spin .8s linear infinite;"></div>
-        <a id="sub-return" href="{safe_return or '/pricing'}" style="display:none;margin-top:8px;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue →</a>
+        <a id="sub-return" href="{safe_return or '/pricing'}" style="display:none;margin-top:8px;padding:12px 28px;border-radius:9px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-weight:700;text-decoration:none;font-size:15px;">Continue</a>
       </div>
     </div>
     <script>

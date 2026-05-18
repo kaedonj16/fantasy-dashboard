@@ -111,12 +111,21 @@ class RookieDiskCache:
 
 def write_rookie_snapshot(file_prefix: str, as_of_date: str, payload: Dict[str, Any]) -> Tuple[Path, Path]:
     """Write dated and latest rookie snapshot files under data/."""
+    import time as _time
     dated = DATA_DIR / f"{file_prefix}_{as_of_date}.json"
     latest = DATA_DIR / f"{file_prefix}_latest.json"
 
     text = json.dumps(payload, indent=2, sort_keys=True, default=_json_default)
     dated.write_text(text, encoding="utf-8")
-    latest.write_text(text, encoding="utf-8")
+
+    # Only refresh _latest once per calendar day
+    already_fresh = (
+        latest.exists()
+        and _time.time() - latest.stat().st_mtime < 86400
+        and latest.stat().st_mtime // 86400 == _time.time() // 86400
+    )
+    if not already_fresh:
+        latest.write_text(text, encoding="utf-8")
     return dated, latest
 
 
