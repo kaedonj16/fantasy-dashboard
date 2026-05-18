@@ -122,8 +122,8 @@ def _load_market_values(season: int) -> dict[str, dict]:
         if not wm_1qb:
             continue
         result[r["player_id"]] = {
-            "market_1qb":    float(wm_1qb),
-            "market_sf":     float(wm_sf or wm_1qb),
+            "market_1qb":    min(float(wm_1qb), 999.9),
+            "market_sf":     min(float(wm_sf or wm_1qb), 999.9),
             "trade_count":   int(r["trade_count"] or 0),
             "trade_count_14d": int(r["trade_count_14d"] or 0),
             "trend_1qb":     float(r["market_trend_1qb"] or 0),
