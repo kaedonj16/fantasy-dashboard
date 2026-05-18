@@ -1,0 +1,567 @@
+"""
+Trade Pattern ML Model — K-Means clustering on sent-package feature vectors.
+
+Training groups historical trades by target-player class (pos × value tier),
+then clusters the sent packages within each class. Representative examples
+from each cluster are stored so the serving layer can match them to any
+viewer's roster — including throw-ins that commonly accompany big deals.
+
+Model JSON layout
+-----------------
+{
+  "version": 1,
+  "trained_at": "...",
+  "n_trades": N,
+  "classes": {
+    "RB-T2": {
+      "clusters": [
+        {
+          "centroid": [f0..f9],
+          "size": 42,
+          "examples": [
+            {"trade_id": "...", "target_value": 900.0, "sent_value": 840.0,
+             "sent_assets": [{asset_type, sent_player_id, pick_round, ...}, ...]}
+          ]
+        }, ...
+      ]
+    }, ...
+  }
+}
+
+Feature vector (10 dims)
+------------------------
+  [0] value_ratio       sent_value / target_value, clipped [0.3, 2.0]
+  [1] n_players_norm    # players sent / 4
+  [2] n_picks_norm      # picks sent / 4
+  [3] top_tier_inv      1 / tier_of_best_sent_player (T1→1.0, T4→0.25); 0 if none
+  [4] has_second_player 1.0 if 2+ players in package
+  [5] r1_count_norm     # 1st-round picks / 3
+  [6] r2_count_norm     # 2nd-round picks / 3
+  [7] rb_frac           fraction of sent players who are RB
+  [8] wr_frac           fraction of sent players who are WR
+  [9] young_frac        fraction of sent players age < 25
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Optional
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+MODEL_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "..", "data", "trade_pattern_model.json"
+)
+
+# Tier thresholds (mirrors _FALLBACK_THRESHOLDS in app.py)
+_TIER_BOUNDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
+
+FEATURE_DIM = 10
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _value_to_tier(value: float) -> int:
+    for i, bound in enumerate(_TIER_BOUNDS, 1):
+        if value >= bound:
+            return i
+    return 9
+
+
+def _pick_rough_value(rnd: int) -> float:
+    return 450.0 if rnd == 1 else 175.0 if rnd == 2 else 70.0
+
+
+def _target_class(position: str, value: float) -> str:
+    pos = str(position or "WR").upper()
+    if pos not in {"QB", "RB", "WR", "TE"}:
+        pos = "WR"
+    tier = _value_to_tier(value)
+    return f"{pos}-T{tier}"
+
+
+# ---------------------------------------------------------------------------
+# Feature extraction
+# ---------------------------------------------------------------------------
+
+def featurize(
+    sent_assets: list[dict],
+    target_value: float,
+    values_by_id: dict,
+) -> Optional[list[float]]:
+    """
+    Build a FEATURE_DIM-dimensional vector for a sent package.
+    Returns None when the package has no meaningful value.
+
+    sent_assets items:
+      {asset_type, sent_player_id, pick_round, pick_season, pick_order}
+    values_by_id:
+      player_id → {position, value, age, ...}
+    """
+    players = [a for a in sent_assets if a.get("asset_type") == "player"]
+    picks   = [a for a in sent_assets if a.get("asset_type") == "pick"]
+
+    if not players and not picks:
+        return None
+
+    # Player details
+    player_vals: list[tuple[float, str, float]] = []  # (value, pos, age)
+    rb_count = wr_count = young_count = 0
+
+    for p in players:
+        pid  = str(p.get("sent_player_id") or p.get("player_id") or "")
+        info = values_by_id.get(pid) or {}
+        val  = float(info.get("value") or 0)
+        pos  = str(info.get("position") or "WR").upper()
+        age  = float(info.get("age") or 0)
+        if val < 10:
+            continue
+        player_vals.append((val, pos, age))
+        if pos == "RB":
+            rb_count += 1
+        elif pos == "WR":
+            wr_count += 1
+        if age and age < 25:
+            young_count += 1
+
+    # Pick details
+    pick_rounds = [int(pk.get("pick_round") or 3) for pk in picks]
+    r1_count    = sum(1 for r in pick_rounds if r == 1)
+    r2_count    = sum(1 for r in pick_rounds if r == 2)
+    pick_vals   = [_pick_rough_value(r) for r in pick_rounds]
+
+    all_vals   = [v for v, _, _ in player_vals] + pick_vals
+    total_sent = sum(all_vals)
+
+    if total_sent < 50:
+        return None
+
+    target_value = max(target_value, 100.0)
+    value_ratio  = min(2.0, max(0.3, total_sent / target_value))
+
+    n_pl = len(player_vals)
+    n_pk = len(picks)
+
+    if player_vals:
+        player_vals.sort(key=lambda x: -x[0])
+        top_tier     = _value_to_tier(player_vals[0][0])
+        top_tier_inv = 1.0 / top_tier
+    else:
+        top_tier_inv = 0.0
+
+    has_second = 1.0 if n_pl >= 2 else 0.0
+    rb_frac    = rb_count    / n_pl if n_pl > 0 else 0.0
+    wr_frac    = wr_count    / n_pl if n_pl > 0 else 0.0
+    young_frac = young_count / n_pl if n_pl > 0 else 0.0
+
+    return [
+        value_ratio,
+        min(1.0, n_pl / 4.0),
+        min(1.0, n_pk / 4.0),
+        top_tier_inv,
+        has_second,
+        min(1.0, r1_count / 3.0),
+        min(1.0, r2_count / 3.0),
+        rb_frac,
+        wr_frac,
+        young_frac,
+    ]
+
+
+# ---------------------------------------------------------------------------
+# K-Means (numpy-only implementation)
+# ---------------------------------------------------------------------------
+
+def _kmeans(
+    X: np.ndarray,
+    k: int,
+    n_iter: int = 50,
+    seed: int = 42,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Lloyd's K-Means with K-Means++ init. Returns (centroids, labels)."""
+    rng = np.random.default_rng(seed)
+    n   = len(X)
+    k   = min(k, n)
+
+    # K-Means++ initialisation
+    first    = int(rng.integers(n))
+    centers  = [X[first]]
+    for _ in range(k - 1):
+        dists = np.array(
+            [min(float(np.sum((x - c) ** 2)) for c in centers) for x in X]
+        )
+        total = dists.sum()
+        if total == 0:
+            break
+        probs = dists / total
+        idx   = int(rng.choice(n, p=probs))
+        centers.append(X[idx])
+
+    centroids = np.array(centers, dtype=float)
+    labels    = np.zeros(n, dtype=int)
+
+    for _ in range(n_iter):
+        # Assignment step
+        diffs      = X[:, None, :] - centroids[None, :, :]  # (n, k, d)
+        sq_dists   = (diffs ** 2).sum(axis=2)               # (n, k)
+        new_labels = np.argmin(sq_dists, axis=1)
+        if np.all(new_labels == labels):
+            break
+        labels = new_labels
+        # Update step
+        for j in range(k):
+            mask = labels == j
+            if mask.any():
+                centroids[j] = X[mask].mean(axis=0)
+
+    return centroids, labels
+
+
+# ---------------------------------------------------------------------------
+# Training
+# ---------------------------------------------------------------------------
+
+def train(
+    trade_rows: list[dict],
+    values_by_id: dict,
+    k_max: int = 6,
+    min_per_cluster: int = 8,
+) -> dict:
+    """
+    Build the trade pattern model from pre-processed trade rows.
+
+    Each trade_row must have:
+      target_player_id  str
+      target_value      float
+      sent_assets       list[{asset_type, sent_player_id, pick_round, pick_season, pick_order}]
+
+    Returns a model dict ready to pass to save_model().
+    """
+    from collections import defaultdict
+
+    class_trades: dict[str, list[dict]] = defaultdict(list)
+
+    for trade in trade_rows:
+        target_id   = str(trade.get("target_player_id") or "")
+        target_info = values_by_id.get(target_id)
+        if not target_info:
+            continue
+
+        target_val = float(target_info.get("value") or 0)
+        if target_val < 100:
+            continue
+
+        target_pos = str(target_info.get("position") or "WR").upper()
+        cls        = _target_class(target_pos, target_val)
+        sent       = trade.get("sent_assets") or []
+        vec        = featurize(sent, target_val, values_by_id)
+        if vec is None:
+            continue
+
+        sent_val = sum(
+            float((values_by_id.get(str(a.get("sent_player_id") or a.get("player_id") or "")) or {}).get("value") or 0)
+            for a in sent if a.get("asset_type") == "player"
+        ) + sum(
+            _pick_rough_value(int(a.get("pick_round") or 3))
+            for a in sent if a.get("asset_type") == "pick"
+        )
+
+        class_trades[cls].append({
+            "trade_id":      trade.get("trade_id"),
+            "target_value":  target_val,
+            "sent_value":    sent_val,
+            "sent_assets":   sent,
+            "feature_vec":   vec,
+        })
+
+    logger.info("[trade_model] %d target classes found", len(class_trades))
+
+    model_classes: dict[str, dict] = {}
+
+    for cls, trades in class_trades.items():
+        n = len(trades)
+        logger.info("[trade_model] Class %-8s  %d trades", cls, n)
+
+        X = np.array([t["feature_vec"] for t in trades], dtype=float)
+        k = max(1, min(k_max, n // min_per_cluster))
+
+        if k <= 1:
+            clusters = [{
+                "centroid": X.mean(axis=0).tolist(),
+                "size":     n,
+                "examples": _closest_examples(trades, X.mean(axis=0), X),
+            }]
+        else:
+            centroids, labels = _kmeans(X, k)
+            clusters = []
+            for j in range(k):
+                mask           = labels == j
+                cluster_trades = [trades[i] for i in range(n) if mask[i]]
+                cluster_X      = X[mask]
+                if not cluster_trades:
+                    continue
+                clusters.append({
+                    "centroid": centroids[j].tolist(),
+                    "size":     len(cluster_trades),
+                    "examples": _closest_examples(cluster_trades, centroids[j], cluster_X),
+                })
+            clusters.sort(key=lambda c: -c["size"])
+
+        model_classes[cls] = {"clusters": clusters}
+
+    return {
+        "version":    1,
+        "trained_at": datetime.now(timezone.utc).isoformat(),
+        "n_trades":   sum(len(v) for v in class_trades.values()),
+        "classes":    model_classes,
+    }
+
+
+def _closest_examples(
+    trades: list[dict],
+    centroid: np.ndarray,
+    X: np.ndarray,
+    max_ex: int = 20,
+) -> list[dict]:
+    """Return up to max_ex examples nearest to the centroid."""
+    dists = ((X - centroid) ** 2).sum(axis=1)
+    idx   = np.argsort(dists)[:max_ex]
+    out   = []
+    for i in idx:
+        t = trades[int(i)]
+        out.append({
+            "trade_id":    t["trade_id"],
+            "target_value": t["target_value"],
+            "sent_value":  t["sent_value"],
+            "sent_assets": t["sent_assets"],
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+def save_model(model: dict, path: str = MODEL_PATH) -> None:
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(model, f, separators=(",", ":"))
+    logger.info(
+        "[trade_model] Saved %s  (%d bytes, %d classes, %d trades)",
+        path,
+        os.path.getsize(path),
+        len(model.get("classes") or {}),
+        model.get("n_trades", 0),
+    )
+
+
+def load_model(path: str = MODEL_PATH) -> Optional[dict]:
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception as exc:
+        logger.warning("[trade_model] Failed to load model from %s: %s", path, exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Serving
+# ---------------------------------------------------------------------------
+
+def suggest_packages(
+    model: dict,
+    target_pos: str,
+    target_value: float,
+    viewer_players: list[dict],
+    viewer_picks: list[dict],
+    values_by_id: dict,
+    n: int = 5,
+    value_floor_ratio: float = 0.80,
+) -> list[dict]:
+    """
+    Given a loaded model and viewer's roster, return suggested packages.
+
+    Returns list of package dicts compatible with _real_trade_packages_for_target:
+      {send: [...], trades_like_this: N, sig: [...], pattern_source: 'ml'}
+    """
+    cls        = _target_class(target_pos, target_value)
+    class_data = (model.get("classes") or {}).get(cls)
+
+    if not class_data:
+        # Expand to adjacent tier
+        tier = _value_to_tier(target_value)
+        for adj in [tier - 1, tier + 1, tier - 2]:
+            if 1 <= adj <= 9:
+                adj_cls    = f"{target_pos.upper()}-T{adj}"
+                class_data = (model.get("classes") or {}).get(adj_cls)
+                if class_data:
+                    break
+
+    if not class_data:
+        return []
+
+    clusters = class_data.get("clusters") or []
+    packages: list[dict] = []
+    seen_shapes: set[str] = set()
+
+    for cluster in clusters:
+        if len(packages) >= n:
+            break
+
+        pkg = _match_viewer_to_cluster(
+            centroid       = cluster["centroid"],
+            target_value   = target_value,
+            viewer_players = viewer_players,
+            viewer_picks   = viewer_picks,
+            values_by_id   = values_by_id,
+            value_floor    = target_value * value_floor_ratio,
+        )
+        if pkg is None:
+            continue
+
+        shape = _shape_key(pkg["send"])
+        if shape in seen_shapes:
+            continue
+        seen_shapes.add(shape)
+
+        pkg["trades_like_this"] = cluster.get("size", 1)
+        pkg["pattern_source"]   = "ml"
+        packages.append(pkg)
+
+    return packages
+
+
+def _shape_key(assets: list[dict]) -> str:
+    """Stable canonical string for deduplicating packages by shape."""
+    parts = []
+    for a in sorted(assets, key=lambda x: -(float(x.get("value") or x.get("send_value") or 0))):
+        if a.get("is_pick"):
+            parts.append(f"pk{a.get('pick_round', 3)}")
+        else:
+            tier = _value_to_tier(float(a.get("value") or a.get("send_value") or 0))
+            pos  = str(a.get("position") or "?")[:2].upper()
+            parts.append(f"{pos}T{tier}")
+    return "+".join(parts)
+
+
+def _match_viewer_to_cluster(
+    centroid: list[float],
+    target_value: float,
+    viewer_players: list[dict],
+    viewer_picks: list[dict],
+    values_by_id: dict,
+    value_floor: float = 0.0,
+) -> Optional[dict]:
+    """
+    Assemble the best matching package from the viewer's roster given a
+    cluster centroid (feature vector).
+
+    centroid layout: see module docstring.
+    """
+    target_value = max(target_value, 100.0)
+
+    # Denormalise centroid targets
+    value_ratio = float(centroid[0])
+    n_players   = max(0, round(float(centroid[1]) * 4))
+    n_picks     = max(0, round(float(centroid[2]) * 4))
+    n_r1        = max(0, round(float(centroid[5]) * 3))
+    n_r2        = max(0, round(float(centroid[6]) * 3))
+
+    target_sent = target_value * value_ratio
+
+    # ── Select players ────────────────────────────────────────────────────
+    avail = sorted(viewer_players, key=lambda p: -float(p.get("value") or 0))
+    sent_assets: list[dict] = []
+    used_pids: set[str] = set()
+    remaining = target_sent
+
+    for _ in range(n_players):
+        best_p    = None
+        best_score = float("inf")
+        for p in avail:
+            pid = str(p.get("player_id") or "")
+            if pid in used_pids:
+                continue
+            val = float(p.get("value") or 0)
+            if val < 30:
+                continue
+            score = abs(val - remaining)
+            if score < best_score:
+                best_p    = p
+                best_score = score
+        if best_p is None:
+            break
+        pid  = str(best_p.get("player_id") or "")
+        val  = float(best_p.get("value") or 0)
+        info = values_by_id.get(pid) or {}
+        used_pids.add(pid)
+        remaining -= val
+        sent_assets.append({
+            "player_id":  pid,
+            "name":       best_p.get("name") or info.get("name") or "",
+            "position":   best_p.get("position") or info.get("position") or "",
+            "value":      val,
+            "send_value": val,
+            "is_pick":    False,
+        })
+
+    # ── Select picks ──────────────────────────────────────────────────────
+    pick_pool      = sorted(viewer_picks, key=lambda p: int(p.get("pick_round") or 3))
+    used_names: set[str] = set()
+    r1_added = r2_added = extra_added = 0
+
+    for pk in pick_pool:
+        total_picks_added = r1_added + r2_added + extra_added
+        if total_picks_added >= n_picks:
+            break
+        pname = str(pk.get("name") or "")
+        if pname in used_names:
+            continue
+        rnd = int(pk.get("pick_round") or 3)
+
+        if rnd == 1 and r1_added < n_r1:
+            r1_added += 1
+        elif rnd == 2 and r2_added < n_r2:
+            r2_added += 1
+        elif total_picks_added < n_picks:
+            extra_added += 1
+        else:
+            continue
+
+        used_names.add(pname)
+        sent_assets.append({
+            "name":        pname,
+            "value":       float(pk.get("value") or 0),
+            "send_value":  float(pk.get("value") or 0),
+            "is_pick":     True,
+            "pick_round":  rnd,
+            "pick_season": pk.get("pick_season"),
+        })
+
+    if not sent_assets:
+        return None
+
+    # Value gate
+    total_val = sum(float(a.get("value") or a.get("send_value") or 0) for a in sent_assets)
+    if value_floor and total_val < value_floor:
+        return None
+
+    # Build sig tokens for display
+    sig: list[str] = []
+    for a in sent_assets:
+        if a.get("is_pick"):
+            sig.append(f"K:{a.get('pick_round', 3)}:Mid")
+        else:
+            tier = _value_to_tier(float(a.get("value") or 0))
+            pos  = str(a.get("position") or "WR").upper()
+            sig.append(f"P:{pos}:T{tier}:Prime")
+
+    return {"send": sent_assets, "sig": sig}

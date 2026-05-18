@@ -17578,6 +17578,12 @@ def api_trade_intel_run_crawl():
                 logger.info("[trade-intel] Crawl: %s", crawl_result)
                 analytics_result = run_analytics()
                 logger.info("[trade-intel] Analytics: %s", analytics_result)
+                try:
+                    from data_building.trade_intel.analytics import run_trade_model
+                    model_result = run_trade_model()
+                    logger.info("[trade-intel] Trade pattern model: %s", model_result)
+                except Exception:
+                    logger.exception("[trade-intel] Trade pattern model training failed (non-fatal)")
                 wls_result = run_trade_value_model()
                 logger.info("[trade-intel] WLS: %s", wls_result)
                 build_daily_model_values()
@@ -18123,6 +18129,35 @@ def api_trade_intel_player_packages(player_id: str):
             focus_value=float(focus_value or 0),
         )
 
+        # ── ML model: supplement when real data is sparse ─────────────────
+        ml_pkgs: list = []
+        if len(real_result["packages"]) < 3:
+            try:
+                from data_building.trade_intel.trade_pattern_model import (
+                    load_model      as _tm_load,
+                    suggest_packages as _tm_suggest,
+                )
+                _tm_model = _tm_load()
+                if _tm_model:
+                    _focus_pos = (values_by_id.get(str(player_id)) or {}).get("position", "WR")
+                    ml_pkgs = _tm_suggest(
+                        model          = _tm_model,
+                        target_pos     = _focus_pos,
+                        target_value   = float(focus_value or 0),
+                        viewer_players = viewer_players,
+                        viewer_picks   = viewer_picks,
+                        values_by_id   = values_by_id,
+                        n              = 5 - len(real_result["packages"]),
+                    )
+                    logger.info(
+                        "[api-trade-intel-player-packages] ML model added %d packages "
+                        "(real had %d)",
+                        len(ml_pkgs),
+                        len(real_result["packages"]),
+                    )
+            except Exception as _ml_err:
+                logger.warning("[api-trade-intel-player-packages] ML model error: %s", _ml_err)
+
         # ── Archetype patterns — built from ALL sig_counts, not just top N pkgs ──
         total_trade_count = real_result["total_real_trades"] or 1
         def _sig_to_archetype(sig_str: str) -> tuple:
@@ -18191,14 +18226,38 @@ def api_trade_intel_player_packages(player_id: str):
             key=lambda x: -x["count"],
         )[:6]
 
+        # ── Enrich ML packages the same way as real packages ─────────────
+        for pkg in ml_pkgs:
+            for asset in pkg["send"]:
+                if not asset.get("is_pick"):
+                    info = values_by_id.get(asset.get("player_id") or "")
+                    if info:
+                        asset.update({
+                            "id":             asset["player_id"],
+                            "position":       info["position"],
+                            "team":           info.get("team", ""),
+                            "sf_value":       round(info.get("sf_value", info["value"]), 1),
+                            "pos_rank_label": info["pos_rank_label"],
+                        })
+            raw_sig = pkg.get("sig")
+            if raw_sig:
+                core_sig, throw_sig = _sig_to_archetype(str(tuple(raw_sig)))
+            else:
+                core_sig, throw_sig = _pattern_sigs(pkg["send"])
+            pkg["pattern_sig"]  = core_sig
+            pkg["throw_in_sig"] = throw_sig
+
+        combined_real = real_result["packages"] + ml_pkgs
+
         return jsonify({
             "player_name":        player_name,
             "focus_value":        focus_value,
             "packages":           [],
             "total_packages":     0,
-            "real_packages":      real_result["packages"],
+            "real_packages":      combined_real,
             "total_real_trades":  real_result["total_real_trades"],
             "archetype_patterns": archetype_patterns,
+            "ml_packages":        len(ml_pkgs),
         })
 
     except Exception as e:
