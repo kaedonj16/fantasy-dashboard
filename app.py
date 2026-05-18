@@ -16716,7 +16716,7 @@ def api_trade_intel_player_packages(player_id: str):
                     "pos_rank_change_7d": p.get("pos_rank_change_7d"),
                 }
 
-        def _compute_profile(info: dict) -> str | None:
+        def _compute_profile(info: dict):
             pos = info.get("position", "")
             if pos in ("PICK", "K", "DEF"):
                 return None
