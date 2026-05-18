@@ -387,6 +387,7 @@ FORM_BODY = """
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
           <input type="hidden" name="season" value="{{ viewed_season }}">
           <input type="hidden" name="username" id="formUsername" value="">
+          <input type="hidden" name="next" id="formNext" value="{{ next_url or '' }}">
 
           <div class="row" id="leagueSelectWrap" style="display:none;">
             <label for="league">Choose League</label>
@@ -414,61 +415,46 @@ FORM_BODY = """
   </section>
 
   <div class="home-content-wrapper">
-    <section class="home-feature-grid">
-    <div class="home-feature-card">
-      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg></div>
-      <h3>Trade Calculator</h3>
-      <p>
-        AI-powered trade analysis personalized to your roster. Get real-time value assessments,
-        balance indicators, and specific counter suggestions — not generic advice.
-      </p>
-    </div>
-
-    <div class="home-feature-card">
-      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
-      <h3>Dynasty Values</h3>
-      <p>
-        Hybrid valuation model blending market consensus with production metrics, age curves,
-        and positional scarcity. Updated daily for all players and picks.
-      </p>
-    </div>
-
-    <div class="home-feature-card">
-      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#f59e0b;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg></div>
-      <h3>Weekly Hub</h3>
-      <p>
-        Live scoring context for every matchup. See projections, starters, and real-time updates
-        in one clean view — perfect for Sunday trash talk.
-      </p>
-    </div>
-
-    <div class="home-feature-card">
-      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#ef4444;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg></div>
-      <h3>Team Analytics</h3>
-      <p>
-        Position strength breakdowns, roster composition analysis, and competitive advantages
-        mapped across your league. Know where you stand.
-      </p>
-    </div>
-
-    <div class="home-feature-card">
-      <div class="home-feature-icon"><svg style="width:32px;height:32px;color:#f43f5e;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></div>
-      <h3>Graphs & Trends</h3>
-      <p>
-        Visualize points for/against, strength of schedule, playoff odds, and luck metrics.
-        Prove who's actually good and who just got lucky.
-      </p>
-    </div>
-
-    <div class="home-feature-card">
-      <div class="home-feature-icon"><i class="fa-solid fa-trophy" aria-hidden="true"></i></div>
-      <h3>Historical Insights</h3>
-      <p>
-        AI-generated season recaps personalized to your team. Track multi-year trends,
-        rivalry records, and championship runs across league history.
-      </p>
-    </div>
-  </section>
+    <section class="home-feature-list-card">
+    <section class="home-feature-list">
+      <div class="home-feature-row">
+        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg></div>
+        <div class="home-feature-row-body"><span class="home-feature-row-title">Trade Calculator</span><span class="home-feature-row-desc">AI-powered deal evaluation with counter suggestions and similar trade history</span></div>
+      </div>
+      <div class="home-feature-row">
+        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
+        <div class="home-feature-row-body"><span class="home-feature-row-title">Dynasty Rankings</span><span class="home-feature-row-desc">Daily-updated hybrid values blending consensus data with advanced metrics</span></div>
+      </div>
+      <div class="home-feature-row">
+        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#a78bfa;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div>
+        <div class="home-feature-row-body"><span class="home-feature-row-title">Rookie Prospects</span><span class="home-feature-row-desc">Prospect profiles with college metrics, athleticism scores, and ADP trends</span></div>
+      </div>
+      <div class="home-feature-row">
+        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#f59e0b;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg></div>
+        <div class="home-feature-row-body"><span class="home-feature-row-title">Weekly Hub</span><span class="home-feature-row-desc">Live scoring, projections, injury news, and matchup context for gameday</span></div>
+      </div>
+      <div class="home-feature-row">
+        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#06b6d4;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+        <div class="home-feature-row-body"><span class="home-feature-row-title">Breakout Candidates</span><span class="home-feature-row-desc">Spot usage spikes from depth chart shifts, target share, and opportunity data</span></div>
+      </div>
+      <div class="home-feature-row">
+        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#f97316;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
+        <div class="home-feature-row-body"><span class="home-feature-row-title">Waiver Wire</span><span class="home-feature-row-desc">Personalized pickups ranked by roster fit and positional need</span></div>
+      </div>
+      <div class="home-feature-row">
+        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#ef4444;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg></div>
+        <div class="home-feature-row-body"><span class="home-feature-row-title">Team Analytics</span><span class="home-feature-row-desc">Position grades, roster composition, and competitive advantages across the league</span></div>
+      </div>
+      <div class="home-feature-row">
+        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#f43f5e;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></div>
+        <div class="home-feature-row-body"><span class="home-feature-row-title">Graphs & Trends</span><span class="home-feature-row-desc">PF/PA, SOS, playoff odds, luck metrics, and standings trajectory over time</span></div>
+      </div>
+      <div class="home-feature-row">
+        <div class="home-feature-row-icon"><i class="fa-solid fa-trophy" style="font-size:18px;color:#eab308;" aria-hidden="true"></i></div>
+        <div class="home-feature-row-body"><span class="home-feature-row-title">Historical Insights</span><span class="home-feature-row-desc">AI season recaps, rivalry records, draft grades, and full championship history</span></div>
+      </div>
+    </section>
+    </section>
 
     <aside class="home-updates-sidebar">
       <h3 class="home-updates-sidebar-title">Recent Updates</h3>
@@ -1130,8 +1116,17 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     draft_ended = has_draft_ended(league_id, platform, season)
     if not offseason_mode:
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
-    nav_pills.append(nav_pill("Teams", "page_teams", "teams"))
-    nav_pills.append(nav_pill("Activity", "page_activity", "activity"))
+    nav_pills.append(nav_pill_dropdown("League", [
+        ("Standings", "page_standings", "standings", False, False),
+        ("Teams",     "page_teams",     "teams",     False, False),
+        ("Activity",  "page_activity",  "activity",  False, False),
+        ("Waivers",   "page_waivers",   "waivers",   False, False),
+    ], ["standings", "teams", "activity", "waivers"], "teamsNavDropdown"))
+    nav_pills.append(nav_pill_dropdown("Trades", [
+        ("Trade Calculator", "trade.page_trade",          "trade",          False, False),
+        ("Trade Database",   "trade.page_trade_database", "trade-database", False, False),
+        ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False, True),
+    ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
@@ -1251,16 +1246,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"      <input type='hidden' name='platform' value='{platform}'>"
         f"      <input type='hidden' name='season' value='{season}'>"
         f"      <input type='hidden' name='league_id' value='{league_id}'>"
-        f"      <input type='text' name='username' placeholder='sleeper_username' autofocus"
-        f"             style='width:100%;box-sizing:border-box;padding:9px 12px;border-radius:8px;"
-        f"border:1px solid var(--border-color,#2d3748);background:var(--input-bg,#0f1623);"
-        f"color:var(--text-primary,#e2e8f0);font-size:14px;margin-bottom:14px;'>"
-        f"      <div style='display:flex;gap:8px;'>"
-        f"        <button type='submit' style='flex:1;padding:9px;border-radius:8px;border:none;"
-        f"background:#3b82f6;color:#fff;font-weight:600;cursor:pointer;font-size:14px;'>Sign In</button>"
-        f"        <button type='button' style='flex:1;padding:9px;border-radius:8px;border:1px solid"
-        f" var(--border-color,#2d3748);background:transparent;color:var(--text-primary,#e2e8f0);"
-        f"cursor:pointer;font-size:14px;'"
+        f"      <input type='hidden' name='next' value='{request.path + ('?' + request.query_string.decode() if request.query_string else '')}'>"
+        f"      <input class='signin-modal-input' type='text' name='username' placeholder='Sleeper username' autocomplete='username' autofocus>"
+        f"      <div class='signin-modal-actions'>"
+        f"        <button class='signin-modal-submit' type='submit'>Sign In</button>"
+        f"        <button class='signin-modal-cancel' type='button'"
         f"                onclick='document.getElementById(\"signinModal\").style.display=\"none\"'>Cancel</button>"
         f"      </div>"
         f"    </form>"
@@ -3356,6 +3346,22 @@ def _build_offseason_standings_body(ctx: dict) -> str:
 
     team_rows.sort(key=lambda x: x["total"], reverse=True)
 
+    # ── Compute value share and projected production share ─────────────────────
+    league_value_total = sum(r["total"] for r in team_rows) or 1.0
+    # Offseason projected scoring from playoff odds simulation
+    rid_to_proj: dict[str, float] = {}
+    try:
+        from data_building.simulate_playoff_odds import _estimate_from_rosters
+        est_teams = _estimate_from_rosters(ctx)
+        for t in est_teams:
+            rid_to_proj[str(t["roster_id"])] = float(t.get("avg") or 0.0)
+    except Exception:
+        pass
+    proj_total = sum(rid_to_proj.values()) or 1.0
+    for r in team_rows:
+        r["value_pct"] = r["total"] / league_value_total * 100
+        r["prod_pct"]  = rid_to_proj.get(r["rid"], 0.0) / proj_total * 100
+
     # ── normalize to a PPG-like scale (100–160) matching Teams page formula ──
     raw_vals = [r["total"] for r in team_rows]
     raw_max  = max(raw_vals) if raw_vals else 1
@@ -3488,6 +3494,8 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             f"<td class='num'>{row['total']:.0f}</td>"
             f"<td class='num'>{row['player_v']:.0f}</td>"
             f"<td class='num'>{picks_label}</td>"
+            f"<td class='num'>{row['value_pct']:.1f}%</td>"
+            f"<td class='num'>{row['prod_pct']:.1f}%</td>"
             f"</tr>"
         )
 
@@ -3501,6 +3509,8 @@ def _build_offseason_standings_body(ctx: dict) -> str:
                 <th>Value</th>
                 <th>Players</th>
                 <th>Draft Capital</th>
+                <th>Val%</th>
+                <th>Proj%</th>
               </tr>
             </thead>
             <tbody>{table_rows_html}</tbody>
@@ -3532,6 +3542,146 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     """
 
 
+def render_share_rankings(ctx: dict) -> str:
+    """
+    Table showing each team's value share and production share within the league.
+    Value share  = roster value / total league value (dynasty player_values).
+    Production share = team PF / total league PF.
+    """
+    team_stats = ctx.get("team_stats")
+    rosters    = ctx.get("rosters") or []
+    roster_map = ctx.get("roster_map") or {}
+    df_weekly  = ctx.get("df_weekly")
+
+    if team_stats is None or team_stats.empty or not rosters:
+        return '<div class="otc-movers-empty">Not enough data to compute shares.</div>'
+
+    # ── owner → roster_id map ─────────────────────────────────────
+    if df_weekly is not None and not df_weekly.empty and "roster_id" in df_weekly.columns and "owner" in df_weekly.columns:
+        owner_to_rid = (df_weekly[["owner", "roster_id"]]
+                        .drop_duplicates("owner")
+                        .set_index("owner")["roster_id"]
+                        .astype(str).to_dict())
+    else:
+        owner_to_rid = {v: k for k, v in roster_map.items()}
+
+    # ── Value: load from player_values DB ─────────────────────────
+    roster_positions = ctx.get("roster_positions") or []
+    is_sf = any(str(p).upper() in {"SUPER_FLEX", "SFLEX"} for p in roster_positions)
+    val_col = "value_sf" if is_sf else "value_1qb"
+
+    values_by_pid: Dict[str, float] = {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as _conn:
+            rows = _conn.execute(
+                f"SELECT player_id, {val_col} AS v FROM player_values WHERE {val_col} IS NOT NULL"
+            ).fetchall()
+        for r in rows:
+            values_by_pid[str(r["player_id"])] = float(r["v"] or 0)
+    except Exception:
+        pass
+
+    rid_to_roster = {str(r.get("roster_id")): r for r in rosters}
+
+    # ── Roster value per team ─────────────────────────────────────
+    rid_to_value: Dict[str, float] = {}
+    for rid, r in rid_to_roster.items():
+        pids = [str(p) for p in (r.get("players") or [])]
+        rid_to_value[rid] = sum(values_by_pid.get(pid, 0.0) for pid in pids)
+
+    league_value_total = sum(rid_to_value.values()) or 1.0
+
+    # ── Production: actual PF in-season, projected avg offseason ─────────────
+    league_pf_total = float(team_stats["PF"].sum()) if "PF" in team_stats.columns else 0.0
+    is_offseason    = league_pf_total == 0.0
+    prod_label      = "Proj. Production Share" if is_offseason else "Production Share"
+
+    # Offseason: use the same projected-avg pipeline as playoff odds
+    rid_to_proj: Dict[str, float] = {}
+    if is_offseason:
+        try:
+            from data_building.simulate_playoff_odds import _estimate_from_rosters
+            est_teams = _estimate_from_rosters(ctx)
+            for t in est_teams:
+                rid_to_proj[str(t["roster_id"])] = float(t.get("avg") or 0.0)
+        except Exception:
+            pass
+
+    # ── Build rows ────────────────────────────────────────────────────────────
+    if is_offseason:
+        proj_total = sum(rid_to_proj.values()) or 1.0
+    else:
+        proj_total = league_pf_total or 1.0
+
+    rows_data = []
+    for _, row in team_stats.iterrows():
+        owner = row.get("owner", "")
+        pf    = float(row.get("PF", 0) or 0)
+        rid   = str(owner_to_rid.get(owner, ""))
+        rval  = rid_to_value.get(rid, 0.0)
+
+        if is_offseason:
+            prod_val = rid_to_proj.get(rid, 0.0)
+        else:
+            prod_val = pf
+
+        prod_pct  = prod_val / proj_total  * 100
+        value_pct = rval     / league_value_total * 100
+        rows_data.append({"owner": owner, "prod_val": prod_val, "roster_value": rval,
+                          "prod_pct": prod_pct, "value_pct": value_pct})
+
+    rows_data.sort(key=lambda x: -x["value_pct"])
+    league_teams = len(rows_data) or 1
+    fair_share   = 100.0 / league_teams
+
+    def bar(pct: float) -> str:
+        width = min(pct / (fair_share * 2) * 100, 100)
+        color = "var(--accent)" if pct > fair_share else "var(--text-muted)"
+        return (f'<div style="height:6px;border-radius:3px;background:var(--border);flex:1;">'
+                f'<div style="height:100%;width:{width:.1f}%;border-radius:3px;background:{color};"></div></div>')
+
+    rows_html = ""
+    for i, d in enumerate(rows_data):
+        rows_html += f"""
+        <tr>
+          <td style="width:24px;color:var(--text-muted);font-size:11px;text-align:center;">{i+1}</td>
+          <td style="font-weight:600;font-size:13px;">{d['owner']}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;">
+              {bar(d['value_pct'])}
+              <span style="font-size:12px;font-weight:700;min-width:38px;text-align:right;">{d['value_pct']:.1f}%</span>
+            </div>
+          </td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;">
+              {bar(d['prod_pct'])}
+              <span style="font-size:12px;font-weight:700;min-width:38px;text-align:right;">{d['prod_pct']:.1f}%</span>
+            </div>
+          </td>
+        </tr>"""
+
+    proj_note = " · projected from roster" if is_offseason else ""
+    fair_pct  = f"{fair_share:.1f}%"
+    return f"""
+    <div style="padding:4px 0 8px;font-size:11px;color:var(--text-muted);">
+      Fair share per team: {fair_pct}{proj_note} &nbsp;·&nbsp; bar fills to 2× fair share
+    </div>
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">
+          <th style="width:24px;"></th>
+          <th style="text-align:left;padding:0 8px 6px 0;">Team</th>
+          <th style="text-align:left;padding:0 8px 6px 0;min-width:160px;">Value Share</th>
+          <th style="text-align:left;padding:0 0 6px 0;min-width:160px;">{prod_label}</th>
+        </tr>
+      </thead>
+      <tbody style="border-top:1px solid var(--border);">
+        {rows_html}
+      </tbody>
+    </table>"""
+
+
 def build_standings_body(ctx: dict) -> str:
     team_stats = ctx["team_stats"]
     roster_map = ctx["roster_map"]
@@ -3551,6 +3701,7 @@ def build_standings_body(ctx: dict) -> str:
         detailed_df = pd.DataFrame()
 
     table_html = render_team_stats(team_stats, detailed_df)
+    share_html = render_share_rankings(ctx)
     power_playoffs_html = render_power_and_playoffs(
         team_stats,
         roster_map,
@@ -3587,12 +3738,113 @@ def build_standings_body(ctx: dict) -> str:
         {power_playoffs_html}
       </div>
     </div>
+    <div class="card standings-shares-card">
+      <h3 class="standings-shares-title">Value &amp; Production Share</h3>
+      {share_html}
+    </div>
     <aside class="overview-sidebar">
       {sidebar_html}
     </aside>
     """
 
     return body
+
+
+def build_draft_assistant_html(ctx: dict) -> str:
+    """Rookie Draft Assistant section for the offseason hub."""
+    import json as _json_da
+
+    viewer = ctx.get("viewer") or {}
+    viewer_roster_id = viewer.get("viewer_roster_id")
+    roster_positions = ctx.get("roster_positions") or []
+    is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in roster_positions)
+    league_type = "sf" if is_sf else "1qb"
+    league_size = max(6, min(14, int(ctx.get("total_rosters") or 10)))
+    current_year = int(ctx.get("season") or datetime.now().year)
+
+    needs: dict = {}
+    if viewer_roster_id:
+        rosters = ctx.get("rosters") or []
+        roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
+        if roster:
+            players_index = ctx.get("players_index") or {}
+            value_table = ctx.get("model_value_table") or []
+            val_field = "sf_value" if is_sf else "value"
+            values_by_id = {str(row["id"]): row for row in value_table if isinstance(row, dict) and row.get("id")}
+
+            pos_counts: dict = {}
+            pos_values: dict = {}
+            for pid in (roster.get("players") or []):
+                meta = players_index.get(str(pid)) or {}
+                pos = str(meta.get("pos") or "").upper()
+                if pos not in ("QB", "RB", "WR", "TE"):
+                    continue
+                vrow = values_by_id.get(str(pid)) or {}
+                val = float(vrow.get(val_field) or vrow.get("value") or 0)
+                pos_counts[pos] = pos_counts.get(pos, 0) + 1
+                pos_values[pos] = pos_values.get(pos, 0.0) + val
+
+            thresholds = {
+                "QB":  [(-2, 600), (-1, 400), (0, 200), (1, 50)],
+                "RB":  [(-2, 1500), (-1, 1000), (0, 600), (1, 250)],
+                "WR":  [(-2, 1500), (-1, 1000), (0, 600), (1, 250)],
+                "TE":  [(-2, 600), (-1, 400), (0, 150), (1, 50)],
+            }
+            for pos in ("QB", "RB", "WR", "TE"):
+                val = pos_values.get(pos, 0.0)
+                needs[f"{pos}_count"] = pos_counts.get(pos, 0)
+                needs[f"{pos}_value"] = round(val, 1)
+                need_level = 2
+                for level, cutoff in thresholds.get(pos, []):
+                    if val >= cutoff:
+                        need_level = level
+                        break
+                needs[pos] = need_level
+
+    needs_json = _json_da.dumps(needs)
+
+    return f"""
+    <section class="os-card os-col-fill" id="draftAssistantCard"
+             data-league-type="{league_type}"
+             data-league-size="{league_size}"
+             data-needs='{needs_json}'
+             data-year="{current_year}">
+      <div class="os-section-head">
+        <div class="os-section-head-content">
+          <h2 class="os-section-title">Rookie Draft Assistant</h2>
+          <div class="os-section-subtitle">Personalized pick recommendations based on your roster</div>
+        </div>
+        <div class="os-section-head-actions">
+          <button type="button" class="da-reset-btn" onclick="daReset()">Reset Board</button>
+          <button type="button" class="card-collapse-toggle" data-target="draft-assistant-body">▼</button>
+        </div>
+      </div>
+      <div class="card-collapsible-body" id="draft-assistant-body">
+        <div class="da-toolbar">
+          <button class="da-filter active" data-pos="ALL" onclick="daFilterPos('ALL')">All</button>
+          <button class="da-filter" data-pos="QB" onclick="daFilterPos('QB')">QB</button>
+          <button class="da-filter" data-pos="RB" onclick="daFilterPos('RB')">RB</button>
+          <button class="da-filter" data-pos="WR" onclick="daFilterPos('WR')">WR</button>
+          <button class="da-filter" data-pos="TE" onclick="daFilterPos('TE')">TE</button>
+        </div>
+        <div class="da-layout">
+          <div class="da-board">
+            <div class="da-board-header">
+              <span>Prospect</span><span>Pos</span><span></span><span class="da-col-right">Value</span><span></span>
+            </div>
+            <div class="da-board-list" id="daBoardList">
+              <div class="da-loading">
+                <div class="loading-spinner" style="width:24px;height:24px;flex-shrink:0;"></div>
+                <span>Loading prospects…</span>
+              </div>
+            </div>
+          </div>
+          <aside class="da-needs" id="daNeedsPanel">
+          </aside>
+        </div>
+      </div>
+    </section>
+    """
 
 
 def build_offseason_dashboard_body(ctx: dict) -> str:
@@ -3936,20 +4188,12 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         sig_cls, sig_label = _waiver_signal(p)
 
-        rank_arrow = ""
-        chg = p["rank_change_7d"]
-        if chg and chg != 0:
-            arrow_cls = "waiver-arrow-up" if chg > 0 else "waiver-arrow-down"
-            arrow_sym = "▲" if chg > 0 else "▼"
-            rank_arrow = f'<span class="{arrow_cls}">{arrow_sym}{abs(chg)}</span>'
-
         waiver_html.append(
             f"""
             <div class="os-waiver-row">
               <div class="os-waiver-main">
                 <div class="os-waiver-name-row">
                   <span class="os-waiver-name player-clickable" style="cursor:pointer;font-weight:600;" data-player-id='{p['player_id']}' data-player-name='{p['name']}'>{p['name']}</span>
-                  {rank_arrow}
                 </div>
                 <div class="os-waiver-sub">{subline}</div>
               </div>
@@ -4158,21 +4402,30 @@ _TIER_CAPS  = _build_tier_caps(_NUM_TIERS)
 _FALLBACK_THRESHOLDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
 
 
+def _market_scale(fmt: str = "1qb") -> float:
+    """Return the normalization scale factor written by market_calibration."""
+    try:
+        from utils.paths import DATA_DIR
+        import json as _json
+        p = DATA_DIR / "market_calibration_scale.json"
+        if p.exists():
+            return float(_json.loads(p.read_text()).get(f"scale_{fmt}", 1.0))
+    except Exception:
+        pass
+    return 1.0
+
+
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
-    Quantile-based tier boundaries with geometric growth and local gap snapping.
+    Derive tier breakpoints from gap significance across the full player list.
 
-    Each tier is ~TIER_GROWTH_RATIO× larger than the previous, producing a
-    pyramid: T1 is the smallest elite bucket; T9 (everything below the last
-    boundary) is the large catch-all. COVERAGE controls what fraction of active
-    players live in T1-T8; the rest fall into T9.
+    Primary method: score each gap by how large it is relative to nearby gaps
+    (local significance), then select the top (num_tiers-1) boundaries.
 
-    Each boundary is placed at its target quantile position then snapped to
-    the largest nearby gap within ±SNAP_WINDOW players, so boundaries prefer
-    natural value breaks when they exist close to the target rank.
-
-    Python _asset_tier and JS prGetTier both clamp at _NUM_TIERS (9).
+    Constraint: no tier may contain more than max_tier_size players. If the
+    initial gap-detection leaves an oversized tier, it is force-split at its
+    largest internal gap until the constraint is met or num_tiers is exhausted.
     """
     TIER_GROWTH_RATIO = 1.6   # each tier is ~1.6× larger than the previous one
     COVERAGE          = 0.50  # fraction of active players in T1-T(num_tiers-1)
@@ -4200,17 +4453,21 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
     if n < num_tiers * 2:
         return _FALLBACK_THRESHOLDS
 
-    # Compute target tier sizes: geometric series scaled to cover COVERAGE of players
-    n_bounds = num_tiers - 1
-    raw = [TIER_GROWTH_RATIO ** i for i in range(n_bounds)]
-    scale = (COVERAGE * n) / sum(raw)
-    target_sizes = [max(2, round(r * scale)) for r in raw]
+    # Score each gap by how large it is relative to nearby gaps (local significance)
+    window  = 12
+    min_grp = 3
+    scored  = []
+    for i in range(len(vals) - 1):
+        gap = vals[i] - vals[i + 1]
+        lo  = max(0, i - window)
+        hi  = min(len(vals) - 1, i + window)
+        nbrs = [vals[j] - vals[j + 1] for j in range(lo, hi) if j != i]
+        local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
+        scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
 
-    # Gap sizes between adjacent players (for snapping)
-    gaps = [vals[i] - vals[i + 1] for i in range(n - 1)]
-
-    start = 0
-    used  = set()
+    # Select top (num_tiers-1) gaps with minimum group spacing
+    scored.sort(key=lambda x: x[0], reverse=True)
+    chosen_pos = []
     boundaries = []
     for size in target_sizes:
         target_pos = min(start + size - 1, n - 2)
@@ -4224,7 +4481,47 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         boundaries.append(round((vals[best_pos] + vals[best_pos + 1]) / 2.0, 1))
         start = best_pos + 1
 
-    return sorted(boundaries, reverse=True) if boundaries else _FALLBACK_THRESHOLDS
+    if not boundaries:
+        return _FALLBACK_THRESHOLDS
+
+    # Enforce max tier size: no tier should contain more than this many players.
+    # Oversized tiers are force-split at their largest internal gap.
+    max_tier_size = max(8, len(vals) // num_tiers)
+
+    def _tier_ranges(bounds):
+        """Return list of (start_idx, end_idx) for each tier given sorted bounds."""
+        sb = sorted(bounds, reverse=True)
+        ranges = []
+        start = 0
+        for b in sb:
+            end = next((i for i, v in enumerate(vals) if v < b), len(vals))
+            if end > start:
+                ranges.append((start, end))
+            start = end
+        ranges.append((start, len(vals)))
+        return ranges
+
+    while len(boundaries) < num_tiers - 1:
+        ranges = _tier_ranges(boundaries)
+        # Find the largest tier
+        largest = max(ranges, key=lambda r: r[1] - r[0])
+        if largest[1] - largest[0] <= max_tier_size:
+            break  # all tiers within limit
+        s, e = largest
+        # Split at the largest gap within this tier
+        best_gap, best_mid = -1.0, None
+        for i in range(s, e - 1):
+            g = vals[i] - vals[i + 1]
+            if g > best_gap:
+                best_gap = g
+                best_mid = (vals[i] + vals[i + 1]) / 2.0
+        if best_mid is None or any(abs(best_mid - b) < 1.0 for b in boundaries):
+            # No useful gap found — force midpoint split
+            mid = (s + e) // 2
+            best_mid = (vals[mid] + vals[min(mid + 1, e - 1)]) / 2.0
+        boundaries.append(best_mid)
+
+    return sorted(boundaries, reverse=True)
 
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
@@ -4236,7 +4533,8 @@ def _asset_tier(value: float, thresholds: list = None) -> int:
 
 
 def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
-                                 tier_thresholds: list = None) -> None:
+                                 tier_thresholds: list = None,
+                                 is_sf: bool = False) -> None:
     """
     Tier-aware trade evaluation.
 
@@ -4245,33 +4543,56 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
     where tier_cap is driven by that player's individual tier derived from the
     live value-table gaps. Stacking lower-tier players against an elite anchor
     produces compounding discounts; adding a quality T2 player is barely penalised.
+
+    In SF leagues, QBs fill up to 3 starting slots (QB / SFLEX / FLEX), so
+    each QB in a package uses its own QB-specific depth index rather than its
+    global value-rank index — preventing the second and third QBs from being
+    over-penalised relative to their actual roster utility.
     """
     thresholds = tier_thresholds if tier_thresholds is not None else _FALLBACK_THRESHOLDS
     tier_caps  = _build_tier_caps(len(thresholds) + 1)
+    # In SF, QBs have 3 starting slots before the depth penalty steepens
+    qb_starter_slots = 3 if is_sf else 1
 
     def _compute_side(side):
         bd = side.get("breakdown") or []
         if bd:
-            vals = sorted([item.get("value", 0.0) for item in bd], reverse=True)
+            items = sorted(
+                [(item.get("value", 0.0), str(item.get("position") or "").upper()) for item in bd],
+                reverse=True,
+            )
         else:
-            # Fallback for call sites that omit per-asset breakdown
-            vals = sorted(list(side.get("player_values", []) or []), reverse=True)
+            # Fallback: no position info available
+            raw_vals = sorted(list(side.get("player_values", []) or []), reverse=True)
             raw_picks = float(side.get("raw_picks_total", 0.0) or 0.0)
             if raw_picks > 0.0:
-                vals.append(raw_picks)
-                vals.sort(reverse=True)
+                raw_vals.append(raw_picks)
+                raw_vals.sort(reverse=True)
+            items = [(v, "") for v in raw_vals]
 
-        if not vals:
+        if not items:
             return float(side.get("raw_total", 0.0) or 0.0), 0.0
 
-        effective = 0.0
-        for i, v in enumerate(vals):
-            if i == 0:
-                effective += v  # anchor — always full value
-            else:
-                depth_m = _DEPTH_MULTS[min(i, len(_DEPTH_MULTS) - 1)]
+        effective  = 0.0
+        global_idx = 0
+        qb_idx     = 0  # separate counter so SF QBs use their own depth slot
+
+        for v, pos in items:
+            if global_idx == 0:
+                effective += v  # anchor always full value
+            elif is_sf and pos == "QB" and qb_idx < qb_starter_slots:
+                # QB still within SF starting depth — use QB-specific depth index
+                depth_m = _DEPTH_MULTS[min(qb_idx, len(_DEPTH_MULTS) - 1)]
                 tier_m  = tier_caps.get(_asset_tier(v, thresholds), 0.38)
                 effective += v * min(depth_m, tier_m)
+            else:
+                depth_m = _DEPTH_MULTS[min(global_idx, len(_DEPTH_MULTS) - 1)]
+                tier_m  = tier_caps.get(_asset_tier(v, thresholds), 0.38)
+                effective += v * min(depth_m, tier_m)
+
+            if pos == "QB":
+                qb_idx += 1
+            global_idx += 1
 
         return effective, effective - float(side.get("raw_total", 0.0) or 0.0)
 
@@ -4289,13 +4610,19 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
         if not bd:
             continue
         sorted_bd = sorted(bd, key=lambda x: x.get("value", 0.0), reverse=True)
+        qb_idx = 0
         for idx, item in enumerate(sorted_bd):
             val  = item.get("value", 0.0)
+            pos  = str(item.get("position") or "").upper()
             tier = _asset_tier(val, thresholds)
             if idx == 0:
                 m = 1.0
+            elif is_sf and pos == "QB" and qb_idx < qb_starter_slots:
+                m = min(_DEPTH_MULTS[min(qb_idx, len(_DEPTH_MULTS) - 1)], tier_caps.get(tier, 0.38))
             else:
                 m = min(_DEPTH_MULTS[min(idx, len(_DEPTH_MULTS) - 1)], tier_caps.get(tier, 0.38))
+            if pos == "QB":
+                qb_idx += 1
             item["tier"]            = tier
             item["stack_mult"]      = round(m, 3)
             item["effective_value"] = round(val * m, 1)
@@ -11898,6 +12225,9 @@ def index():
             target=_preload_history, args=(platform, league_id, season), daemon=True
         ).start()
 
+        next_url = (request.form.get("next") or "").strip()
+        if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+            return redirect(next_url)
         return redirect(url_for(
             "page_dashboard",
             platform=platform,
@@ -11905,11 +12235,16 @@ def index():
             league_id=league_id,
         ))
 
+    next_url = (request.args.get("next") or "").strip()
+    # Reject open redirects — only allow local paths
+    if not (next_url.startswith("/") and not next_url.startswith("//")):
+        next_url = ""
     body_html = render_template_string(
         FORM_BODY,
         username="",
         viewed_season=viewed_season,
         error=None,
+        next_url=next_url,
         recent_updates=generate_recent_updates_html(),
     )
     return render_page("BR Fantasy Dashboard", None, "home", body_html)
@@ -12709,7 +13044,7 @@ def api_trade_eval():
     side_b = build_side(side_b_players, side_b_picks)
 
     tier_thresholds = compute_tier_thresholds(value_table, league_type, league_size)
-    apply_tier_stack_adjustment(side_a, side_b, tier_thresholds)
+    apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"))
 
     a_eff = side_a["effective_total"]
     b_eff = side_b["effective_total"]
@@ -12757,8 +13092,8 @@ def api_trade_eval():
             viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
             if viewer_roster:
                 model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
-                viewer_gives = side_b if viewer_side == "b" else side_a
-                viewer_gets = side_a if viewer_side == "a" else side_b
+                viewer_gives = side_a if viewer_side == "b" else side_b
+                viewer_gets  = side_b if viewer_side == "b" else side_a
                 sending = [a for a in (viewer_gives.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
                 receiving = [a for a in (viewer_gets.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
                 depth_warnings = calculate_roster_depth_warning(viewer_roster, model_value_lookup, sending, receiving)
@@ -12874,6 +13209,28 @@ def api_league_players():
     
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
+
+    # Strip any PICK entries that came from the DB (stale) and replace with picks
+    # from model_values.json, which is built nightly from WLS trade data and already
+    # has correct slot picks (2026 1.01) and bucket picks (2027 1st (Mid)).
+    model_value_table = [p for p in model_value_table
+                         if str(p.get("position") or "").upper() != "PICK"]
+    try:
+        import json as _json_picks, glob as _glob_picks, os as _os_picks
+        _picks_path = _os_picks.path.join("data", "model_values.json")
+        if not _os_picks.path.exists(_picks_path):
+            _candidates = sorted(_glob_picks.glob("data/model_values_*.json"), reverse=True)
+            if _candidates:
+                _picks_path = _candidates[0]
+        if _os_picks.path.exists(_picks_path):
+            with open(_picks_path) as _f_picks:
+                _all_assets = _json_picks.load(_f_picks)
+            _picks = [p for p in _all_assets
+                      if str(p.get("position") or "").upper() == "PICK"]
+            model_value_table.extend(_picks)
+            print(f"[api/league-players] Injected {len(_picks)} picks from {_picks_path}")
+    except Exception as _e_picks:
+        print(f"[api/league-players] pick injection skipped: {_e_picks}")
 
     # Compute rank_change_7d from player-only pool (QB/RB/WR/TE) so that picks
     # and newly-added rookies don't distort movement arrows on the rankings page.
@@ -14621,11 +14978,25 @@ def api_team_details(roster_id: str):
                         all_picks.append({
                             "year": year,
                             "round": rnd,
-                            "via": via
+                            "via": via,
+                            "original_owner": pick_info["original_owner"],
                         })
 
         # Sort picks by year then round
         all_picks.sort(key=lambda p: (p["year"], p["round"]))
+
+        # Add pick values to total (match offseason snapshot calculation)
+        try:
+            from dashboard_services.picks import load_pick_value_table
+            pick_by_key = load_pick_value_table() or {}
+            picks_for_value = [
+                {"season": p["year"], "round": p["round"], "original_owner": p.get("original_owner")}
+                for p in all_picks
+            ]
+            total_value += _team_pick_value(picks_for_value, pick_by_key, platform=platform,
+                                            league_id=league_id, season=season)
+        except Exception:
+            pass
 
         # Get graph data for team modal
         graphs_data = {}
@@ -14808,6 +15179,182 @@ def api_subscription_status():
         print(f"[api_subscription_status] Error: {e}")
         return jsonify({"has_premium": False, "subscription_type": None, "error": str(e)}), 500
 
+@app.route("/api/team-trades/<roster_id>")
+def api_team_trades(roster_id: str):
+    """Return all trades for a specific team in the current league season."""
+    try:
+        from dashboard_services.service import get_transactions_by_week
+        from utils.utils import load_players_index
+
+        league_id = request.args.get("league_id")
+        platform = request.args.get("platform", "sleeper")
+        season = int(request.args.get("season") or datetime.now().year)
+
+        if not league_id:
+            return jsonify({"error": "league_id required"}), 400
+
+        players_index = load_players_index() or {}
+
+        weeks = list(range(1, 19))
+        tx_by_week = get_transactions_by_week(league_id, weeks, platform=platform, season=season) or {}
+
+        def _pinfo(pid):
+            meta = players_index.get(str(pid)) or {}
+            return {
+                "player_id": str(pid),
+                "name": meta.get("name") or str(pid),
+                "position": meta.get("pos") or "",
+            }
+
+        trades = []
+        for week in sorted(tx_by_week):
+            for t in (tx_by_week[week] or []):
+                if t.get("type") != "trade":
+                    continue
+
+                adds = t.get("adds") or {}
+                drops = t.get("drops") or {}
+                draft_picks = t.get("draft_picks") or []
+                base_rids = set(str(r) for r in (t.get("roster_ids") or []))
+                all_rids = base_rids | {str(v) for v in adds.values()} | {str(v) for v in drops.values()}
+
+                if str(roster_id) not in all_rids:
+                    continue
+
+                ts_raw = t.get("status_updated") or t.get("created")
+                date_str = ""
+                if ts_raw:
+                    from datetime import timezone as _tz
+                    _dt = datetime.fromtimestamp(ts_raw / 1000.0, tz=_tz.utc)
+                    date_str = _dt.strftime("%-m/%-d/%y")
+
+                my_gets = [_pinfo(pid) for pid, to_rid in adds.items() if str(to_rid) == str(roster_id)]
+                my_sends = [_pinfo(pid) for pid, from_rid in drops.items() if str(from_rid) == str(roster_id)]
+                my_pick_gets = [p for p in draft_picks if str(p.get("owner_id")) == str(roster_id)]
+                my_pick_sends = [p for p in draft_picks if str(p.get("previous_owner_id")) == str(roster_id)]
+
+                trades.append({
+                    "week": week,
+                    "date": date_str,
+                    "my_gets": my_gets,
+                    "my_sends": my_sends,
+                    "my_pick_gets": my_pick_gets,
+                    "my_pick_sends": my_pick_sends,
+                })
+
+        trades.sort(key=lambda x: x["week"], reverse=True)
+        return jsonify({"trades": trades, "total": len(trades)})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/draft-needs")
+def api_draft_needs():
+    """
+    Returns positional needs for a team relative to league averages.
+    Uses the same weighted positional strength + z-score approach as the Teams page.
+    Need levels: -2 stacked, -1 depth, 0 neutral, 1 need, 2 major need.
+    """
+    try:
+        from utils.utils import load_players_index, load_model_value_table
+        league_id = request.args.get("league_id")
+        platform  = request.args.get("platform", "sleeper")
+        season    = int(request.args.get("season") or datetime.now().year)
+        roster_id = request.args.get("roster_id") or ""
+
+        # Fall back to the session viewer when roster_id is absent or the sentinel
+        if not roster_id or roster_id == "viewer":
+            roster_id = session.get("viewer_roster_id") or ""
+
+        if not league_id or not roster_id:
+            return jsonify({"error": "league_id and roster_id required"}), 400
+
+        rosters = get_rosters(platform, league_id, season) or []
+        league  = get_league(platform, league_id, season) or {}
+        players_index = load_players_index() or {}
+        value_table   = load_model_value_table() or []
+
+        roster_positions = (league.get("roster_positions") or [])
+        is_sf  = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in roster_positions)
+        vfield = "sf_value" if is_sf else "value"
+
+        values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
+
+        CORE = ("QB", "RB", "WR", "TE")
+
+        # Count roster slots for _weighted_pos_strength
+        slot_counts: dict[str, int] = {}
+        for rp in roster_positions:
+            rp_str = str(rp).upper()
+            slot_counts[rp_str] = slot_counts.get(rp_str, 0) + 1
+
+        # Build per-roster positional value lists (same as teams page)
+        roster_pos_vals: dict[str, dict[str, list]] = {}
+        for r in rosters:
+            rid = str(r.get("roster_id", ""))
+            pv: dict[str, list] = {p: [] for p in CORE}
+            for pid in (r.get("players") or []):
+                meta = players_index.get(str(pid)) or {}
+                pos  = str(meta.get("pos") or "").upper()
+                if pos not in CORE:
+                    continue
+                vrow = values_by_id.get(str(pid)) or {}
+                val  = float(vrow.get(vfield) or vrow.get("value") or 0)
+                pv[pos].append(val)
+            roster_pos_vals[rid] = pv
+
+        if not roster_pos_vals:
+            return jsonify({"needs": {}, "league_type": "sf" if is_sf else "1qb"})
+
+        # Compute weighted positional strength per roster (mirrors _weighted_pos_strength)
+        roster_strength: dict[str, dict[str, float]] = {}
+        for rid, pv in roster_pos_vals.items():
+            roster_strength[rid] = {
+                pos: _weighted_pos_strength(pv[pos], pos, slot_counts)
+                for pos in CORE
+            }
+
+        # League avg + std per position
+        import math
+        n = len(roster_strength)
+        league_avg = {pos: sum(rv[pos] for rv in roster_strength.values()) / n for pos in CORE}
+        league_std = {}
+        for pos in CORE:
+            variance = sum((rv[pos] - league_avg[pos]) ** 2 for rv in roster_strength.values()) / n
+            league_std[pos] = math.sqrt(variance) if variance > 0 else 1.0
+
+        viewer = roster_strength.get(str(roster_id), {p: 0.0 for p in CORE})
+
+        needs: dict = {}
+        for pos in CORE:
+            mu    = league_avg[pos]
+            sigma = league_std[pos]
+            z     = (viewer[pos] - mu) / sigma if sigma > 0 else 0.0
+            # Map z-score to need level (same thresholds as teams page z-score usage)
+            if   z >= 1.0:  level = -2   # stacked
+            elif z >= 0.35: level = -1   # depth
+            elif z >= -0.35:level =  0   # neutral
+            elif z >= -1.0: level =  1   # need
+            else:           level =  2   # major need
+            needs[pos]              = level
+            needs[f"{pos}_count"]   = len(roster_pos_vals.get(str(roster_id), {}).get(pos, []))
+            needs[f"{pos}_value"]   = round(viewer[pos], 1)
+            needs[f"{pos}_avg"]     = round(league_avg[pos], 1)
+
+        return jsonify({
+            "needs": needs,
+            "league_type": "sf" if is_sf else "1qb",
+            "league_size": len(rosters),
+        })
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+# /api/subscription-status → routes/billing_bp.py :: api_subscription_status()
 
 @app.route("/api/sleeper-user-leagues")
 def api_sleeper_user_leagues():
@@ -15698,7 +16245,7 @@ def api_trade_intel_trending():
                 "market_value": market_val or None,
                 "model_value": model_val or None,
                 "value_delta": delta,
-                "market_trend": float(r["market_trend_1qb"]) if r["market_trend_1qb"] is not None else None,
+                "market_trend": round(float(r["market_trend_1qb"]) * _market_scale(), 1) if r["market_trend_1qb"] is not None else None,
             })
 
         # Calculate pagination info
@@ -16309,6 +16856,739 @@ def api_trade_intel_similar_trades():
 
     except Exception:
         logger.exception("[trade-intel/similar-trades] error")
+        return jsonify({"error": "Internal error"}), 500
+
+
+@app.route("/api/trade-intel/player-packages/<player_id>")
+def api_player_packages(player_id: str):
+    """
+    Personalized trade packages for acquiring a single target player,
+    filtered and ranked against the viewer's actual roster.
+    """
+    try:
+        # ── 1. Market & Roster Context ────────────────────────────────────────
+        season           = int(request.args.get("season") or datetime.now().year)
+        league_type      = (request.args.get("league_type") or "all").strip().lower()
+        league_id        = (request.args.get("league_id") or "").strip()
+        platform         = (request.args.get("platform") or "sleeper").strip()
+        viewer_roster_id = (request.args.get("viewer_roster_id") or "").strip()
+        limit            = min(int(request.args.get("limit") or 100), 200)
+        _debug           = request.args.get("debug") == "1"
+
+        user_id = session.get("viewer_username")
+        if not has_premium_access(user_id, league_id or None, platform):
+            return jsonify({"paywall": True}), 403
+
+        _is_sf    = (league_type == "sf")
+        sf_param  = True if _is_sf else (False if league_type == "1qb" else None)
+        sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
+
+        from dashboard_services.db import get_conn
+        from utils.utils import load_players_index
+        from collections import defaultdict
+
+        players_map = load_players_index() or {}
+        player_info = players_map.get(str(player_id)) or {}
+        player_name = player_info.get("name") or str(player_id)
+        focus_pid   = str(player_id)
+
+        # Load viewer's roster, draft picks, and locate the target player's owner
+        viewer_player_ids: set = set()
+        viewer_pick_list:  list = []
+        target_owner_pids: set  = set()
+        if league_id and viewer_roster_id:
+            try:
+                ctx     = get_league_ctx_from_cache(platform, league_id, season)
+                rosters = ctx.get("rosters") or []
+                viewer_roster = next(
+                    (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+                    None,
+                )
+                if viewer_roster:
+                    viewer_player_ids = {str(p) for p in (viewer_roster.get("players") or [])}
+
+                picks_by_roster = ctx.get("picks_by_roster") or {}
+                cur_yr = datetime.now().year
+                for pk in picks_by_roster.get(str(viewer_roster_id), []):
+                    try:
+                        yr = int(pk.get("season") or cur_yr + 1)
+                        rd = int(pk.get("round")  or 4)
+                    except (TypeError, ValueError):
+                        continue
+                    if yr > cur_yr + 2:
+                        continue
+                    suffix   = {1: "1st", 2: "2nd", 3: "3rd"}.get(rd, f"{rd}th")
+                    pick_val = {1: 250, 2: 120, 3: 60}.get(rd, 30)
+                    viewer_pick_list.append({
+                        "name": f"{yr} {suffix} Round Pick",
+                        "is_pick": True, "value": pick_val,
+                        "pick_round": rd, "pick_season": yr,
+                    })
+                viewer_pick_list.sort(key=lambda x: -x["value"])
+
+                for r in rosters:
+                    r_pids = {str(p) for p in (r.get("players") or [])}
+                    if focus_pid in r_pids and str(r.get("roster_id")) != str(viewer_roster_id):
+                        target_owner_pids = r_pids - {focus_pid}
+                        break
+            except Exception:
+                pass
+
+        # Market signal map for profile enrichment (built from DB query below)
+        market_signals: dict = {}
+
+        def _player_profile(pid: str, age=None) -> str:
+            """Combine age tier + market momentum into a profile label."""
+            try:
+                a = float(age or 99)
+            except Exception:
+                a = 99
+            age_cat = "young" if a <= 24 else ("prime" if a <= 27 else "vet")
+            sig       = market_signals.get(str(pid)) or {}
+            rank_chg  = sig.get("rank_change_7d")
+            mkt_trend = sig.get("market_trend") or 0.0
+            bsr       = sig.get("buy_sell_ratio") or 1.0
+            score = 0
+            if rank_chg is not None:
+                if rank_chg >= 4:    score += 2
+                elif rank_chg >= 2:  score += 1
+                elif rank_chg <= -4: score -= 2
+                elif rank_chg <= -2: score -= 1
+            if mkt_trend > 40:    score += 1
+            elif mkt_trend < -40: score -= 1
+            if bsr >= 1.3:    score += 1
+            elif bsr <= 0.75: score -= 1
+            momentum = "rising" if score >= 2 else ("falling" if score <= -2 else "stable")
+            return f"{age_cat}-{momentum}"
+
+        def _value_label(ratio: float) -> str:
+            if ratio >= 1.08: return "Overpay"
+            if ratio >= 0.92: return "Fair value"
+            return "Great deal"
+
+        def _enrich_asset(asset: dict, values_by_id: dict) -> None:
+            """Attach profile and position to a player asset dict in-place."""
+            if asset.get("is_pick") or not asset.get("player_id"):
+                return
+            info = values_by_id.get(str(asset["player_id"])) or {}
+            asset["profile"]  = _player_profile(str(asset["player_id"]), info.get("age"))
+            asset["position"] = info.get("position", asset.get("position", ""))
+
+        # ── 2. Historical Market Returns ──────────────────────────────────────
+        # Pull all trades involving the target player over the last 18 months,
+        # fetch every asset, and index by trade ID for pattern extraction.
+
+        with get_conn() as conn:
+            # SF vs 1QB value columns — wrong column would misprice QBs by ~2x
+            if _is_sf:
+                val_col   = "COALESCE(tips.weighted_market_value_sf, pv.calibrated_value_sf, pv.value_sf)"
+                trend_col = "tips.market_trend_sf"
+            else:
+                val_col   = "COALESCE(tips.weighted_market_value_1qb, pv.calibrated_value_1qb, pv.value_1qb)"
+                trend_col = "tips.market_trend_1qb"
+
+            val_rows = conn.execute(
+                f"""
+                SELECT pv.player_id,
+                    {val_col} AS val,
+                    pv.rank_change_7d,
+                    {trend_col} AS market_trend,
+                    tips.buy_sell_ratio
+                FROM player_values pv
+                LEFT JOIN trade_intel_player_stats tips ON tips.player_id = pv.player_id
+                """,
+            ).fetchall()
+
+            value_map   = {str(r["player_id"]): float(r["val"] or 0) for r in val_rows}
+            focus_value = value_map.get(focus_pid, 0)
+            for r in val_rows:
+                market_signals[str(r["player_id"])] = {
+                    "rank_change_7d": r["rank_change_7d"],
+                    "market_trend":   round(float(r["market_trend"] or 0) * _market_scale(), 1) if r["market_trend"] is not None else None,
+                    "buy_sell_ratio": float(r["buy_sell_ratio"] or 1.0) if r["buy_sell_ratio"] is not None else None,
+                }
+
+            base_args = [focus_pid] + ([sf_param] if sf_param is not None else [])
+            count_row = conn.execute(
+                f"""
+                SELECT COUNT(DISTINCT t.id) AS n
+                FROM trade_intel_trades t
+                JOIN trade_intel_assets a ON a.trade_id = t.id
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                WHERE a.player_id = %s AND a.asset_type = 'player'
+                  AND t.created_at > NOW() - INTERVAL '18 months'
+                  {sf_clause}
+                """,
+                base_args,
+            ).fetchone()
+            total_trades = int(count_row["n"]) if count_row else 0
+
+            trade_id_rows = conn.execute(
+                f"""
+                SELECT DISTINCT t.id
+                FROM trade_intel_trades t
+                JOIN trade_intel_assets a ON a.trade_id = t.id
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                WHERE a.player_id = %s AND a.asset_type = 'player'
+                  AND t.created_at > NOW() - INTERVAL '18 months'
+                  {sf_clause}
+                ORDER BY t.id DESC
+                LIMIT 3000
+                """,
+                base_args,
+            ).fetchall()
+            trade_ids = [r["id"] for r in trade_id_rows]
+
+            asset_rows = (conn.execute(
+                """
+                SELECT trade_id, side, asset_type, player_id,
+                       pick_season, pick_round, pick_order, pick_slot
+                FROM trade_intel_assets
+                WHERE trade_id = ANY(%s)
+                ORDER BY trade_id, side, id
+                """,
+                (trade_ids,),
+            ).fetchall()) if trade_ids else []
+
+        # Index assets by trade for pattern analysis
+        by_trade: dict = {}
+        for a in asset_rows:
+            tid = a["trade_id"]
+            if tid not in by_trade:
+                by_trade[tid] = {"a": [], "b": []}
+            by_trade[tid][a["side"]].append(a)
+
+        def _describe_asset(a) -> dict:
+            if a["asset_type"] == "player":
+                pid  = str(a["player_id"])
+                info = players_map.get(pid) or {}
+                return {
+                    "type": "player", "player_id": pid,
+                    "name": info.get("name") or pid,
+                    "position": info.get("pos") or "?",
+                    "value": value_map.get(pid, 0),
+                    "profile": _player_profile(pid, info.get("age")),
+                }
+            s    = str(a["pick_season"] or "?")
+            rd   = str(a["pick_round"] or "?")
+            slot = a.get("pick_slot")
+            order = a.get("pick_order") or ""
+            name = (f"{s} Pick {rd}.{str(slot).zfill(2)}" if slot
+                    else f"{s} Round {rd}" + (f" ({order})" if order else ""))
+            return {
+                "type": "pick", "name": name, "value": 0,
+                "pick_season": s, "pick_round": rd, "pick_order": order,
+                "pick_slot": str(slot).zfill(2) if slot else None,
+            }
+
+        def _pick_approx_value(a) -> float:
+            return {1: 4500, 2: 2000, 3: 800}.get(int(a.get("pick_round") or 4), 400)
+
+        # Group real trades into canonical packages (keyed by sorted asset set)
+        def _acceptance_weight(ratio: float) -> float:
+            if ratio < 0.80:  return 0.15
+            if ratio < 0.92:  return 0.55
+            if ratio <= 1.12: return 1.00
+            if ratio <= 1.28: return 0.70
+            return 0.35
+
+        package_groups: dict = defaultdict(list)
+        for tid, sides in by_trade.items():
+            focus_side = next(
+                (sk for sk in ("a", "b")
+                 if any(x["asset_type"] == "player" and str(x["player_id"]) == focus_pid
+                        for x in sides[sk])),
+                None,
+            )
+            if not focus_side:
+                continue
+            other_key  = "b" if focus_side == "a" else "a"
+            other_side = [
+                _describe_asset(x) for x in sides[other_key]
+                if not (x["asset_type"] == "player" and str(x["player_id"]) == focus_pid)
+            ]
+            if not other_side:
+                continue
+            canonical = tuple(sorted(
+                f"p:{x['player_id']}" if x["type"] == "player" else f"pick:{x['name']}"
+                for x in other_side
+            ))
+            package_groups[canonical].append(other_side)
+
+        # Score and filter market return packages — these go into `market_results`
+        # and are deduplicated against personalized packages before final assembly.
+        market_results = []
+        for canonical, occurrences in package_groups.items():
+            assets = occurrences[0]
+            freq   = len(occurrences)
+
+            if viewer_player_ids:
+                if any(a["type"] == "player" and a["player_id"] not in viewer_player_ids
+                       for a in assets):
+                    continue
+
+            recv_val = sum(
+                a["value"] if a["type"] == "player" and a["value"] > 0
+                else _pick_approx_value(a)
+                for a in assets
+            )
+            if focus_value > 0:
+                ratio = recv_val / focus_value
+                if ratio > 1.10 or ratio < 0.90:
+                    continue
+                max_single = max(
+                    (a["value"] for a in assets if a["type"] == "player" and a["value"] > 0),
+                    default=0,
+                )
+                if max_single > focus_value * 1.10:
+                    continue
+                value_lbl = ("Slight overpay" if ratio >= 1.08 else
+                             "Fair value"     if ratio >= 0.92 else "Great deal")
+                score = freq * _acceptance_weight(ratio)
+            else:
+                ratio, value_lbl, score = 1.0, "Unknown", float(freq)
+
+            n = len(assets)
+            market_results.append({
+                "assets": assets, "frequency": freq,
+                "value_label": value_lbl,
+                "size_label": "1-for-1" if n == 1 else f"{n}-for-1",
+                "receive_value": round(recv_val),
+                "_score": score,
+            })
+
+        market_results.sort(key=lambda x: -x["_score"])
+        for r in market_results:
+            del r["_score"]
+
+        # ── 3. Personalized Trade Packages ────────────────────────────────────
+        # Three layers of roster-specific suggestions, run in priority order:
+        #   Layer C — Pattern-Learned Roster Fits   (market-informed, surfaces first)
+        #   Layer A — Market-Matched Packages       (real trade signature reconstruction)
+        #   Layer B — Value-Based Package Generation (mathematical fallback)
+
+        personalized_packages: list = []
+        market_reference_deals: list = []
+        total_real_trades: int       = 0
+        combo_packages: list         = []
+        _pattern_debug: dict         = {}
+
+        if viewer_player_ids and focus_value > 0:
+            try:
+                from utils.utils import load_model_value_table as _lmvt
+                val_table = _lmvt() or []
+                val_key   = "sf_value" if _is_sf else "value"
+
+                # Build a rich values_by_id lookup for the viewer's roster context
+                values_by_id: dict = {}
+                for p in val_table:
+                    pid = str(p.get("id") or "")
+                    if pid:
+                        values_by_id[pid] = {
+                            "name":           p.get("name", ""),
+                            "position":       str(p.get("position") or "").upper(),
+                            "value":          float(p.get(val_key) or p.get("value") or 0),
+                            "pos_rank_label": p.get("pos_rank_label") or "",
+                            "age":            p.get("age"),
+                            "rank_change_7d": p.get("rank_change_7d"),
+                            "market_trend":   (market_signals.get(pid) or {}).get("market_trend"),
+                            "buy_sell_ratio": (market_signals.get(pid) or {}).get("buy_sell_ratio"),
+                        }
+
+                # ── Fix 2: Viewer positional surplus ──────────────────────────
+                # Positions where the viewer has more depth than a typical roster.
+                # Packages that send from surplus positions are more tradeable —
+                # the viewer gives up less and the trade is easier to justify.
+                _TYPICAL_ROSTER = {"QB": 2, "RB": 7, "WR": 8, "TE": 2}
+                viewer_pos_counts: dict = {}
+                for pid in viewer_player_ids:
+                    pos = (values_by_id.get(pid) or {}).get("position", "").upper()
+                    if pos in _TYPICAL_ROSTER:
+                        viewer_pos_counts[pos] = viewer_pos_counts.get(pos, 0) + 1
+                viewer_pos_surplus = {
+                    pos: max(0, viewer_pos_counts.get(pos, 0) - _TYPICAL_ROSTER[pos])
+                    for pos in _TYPICAL_ROSTER
+                }
+
+                # Viewer's roster players: sort by value, using surplus as a
+                # tiebreaker within ~50-point value bands so we prefer sending
+                # from overstocked positions.
+                def _surplus_sort_key(p):
+                    pos = (p.get("position") or "").upper()
+                    band = round(p["value"] / 50)      # ~50-point grouping
+                    surplus = viewer_pos_surplus.get(pos, 0)
+                    return (-band, -surplus, -p["value"])
+
+                viewer_players = sorted(
+                    [
+                        {"player_id": pid, **{k: values_by_id[pid][k] for k in
+                          ("name", "position", "value", "pos_rank_label",
+                           "age", "rank_change_7d", "market_trend", "buy_sell_ratio")}}
+                        for pid in viewer_player_ids
+                        if pid in values_by_id and values_by_id[pid]["value"] >= 50
+                    ],
+                    key=_surplus_sort_key,
+                )
+
+                # ── Fix 1: Target owner positional needs ──────────────────────
+                # Positions the target owner is thin at — packages containing
+                # those positions are more attractive to them and should rank first.
+                target_pos_counts: dict = {}
+                for pid in target_owner_pids:
+                    pos = (values_by_id.get(pid) or {}).get("position", "").upper()
+                    if pos in _TYPICAL_ROSTER:
+                        target_pos_counts[pos] = target_pos_counts.get(pos, 0) + 1
+                _TYPICAL_DEPTH = {"QB": 2, "RB": 6, "WR": 7, "TE": 2}
+                target_pos_needs: dict = {
+                    pos: max(0, _TYPICAL_DEPTH.get(pos, 4) - target_pos_counts.get(pos, 0))
+                    for pos in _TYPICAL_DEPTH
+                }
+
+                def _need_appeal(assets: list) -> int:
+                    """Sum of target owner's positional needs for each player in the package."""
+                    return sum(
+                        target_pos_needs.get((a.get("position") or "").upper(), 0)
+                        for a in assets
+                        if not a.get("is_pick") and a.get("player_id")
+                    )
+
+                # ── Fix 3: Position-aware scarcity multiplier for tiers ────────
+                # RBs are scarcer than WRs at the same value tier — fewer starter
+                # slots and faster aging means a T3 RB holds more trade capital
+                # than a T3 WR. Apply a per-position factor when computing the
+                # effective send value for anchor/floor validation.
+                _POS_SCARCITY = {"QB": 1.0, "RB": 1.08, "WR": 0.92, "TE": 1.04}
+                if _is_sf:
+                    # In SF, QBs are more plentiful (3 starter slots) so their
+                    # scarcity premium drops and WR/TE shift up slightly.
+                    _POS_SCARCITY = {"QB": 0.90, "RB": 1.08, "WR": 0.95, "TE": 1.06}
+
+                def _effective_send_value(assets: list) -> float:
+                    """Value-sum adjusted for positional scarcity."""
+                    total = 0.0
+                    for a in assets:
+                        if a.get("is_pick"):
+                            total += a.get("value", 0)
+                        else:
+                            pos   = (a.get("position") or "").upper()
+                            total += a.get("value", 0) * _POS_SCARCITY.get(pos, 1.0)
+                    return total
+
+                # Tier thresholds for anchor validation
+                def _tier(v: float) -> int:
+                    return (1 if v >= 800 else 2 if v >= 500 else 3 if v >= 300 else
+                            4 if v >= 200 else 5 if v >= 130 else 6 if v >= 80 else
+                            7 if v >= 40 else 8)
+
+                target_tier = _tier(focus_value)
+                sec_floor   = {1: 300, 2: 200, 3: 130, 4: 80}.get(target_tier, 40)
+                ter_floor   = {1: 200, 2: 130, 3: 80,  4: 40}.get(target_tier, 40)
+
+                # Shared dedup key set — grows as each layer adds packages
+                seen_player_sets: set = set()
+
+                def _pkg_key(assets: list) -> tuple:
+                    return tuple(sorted(
+                        a.get("player_id", "") for a in assets
+                        if a.get("player_id") and not a.get("is_pick")
+                    ))
+
+                # ── Layer C: Pattern-Learned Roster Fits ──────────────────────
+                # Learns position+tier signatures from real trade history, then
+                # fills those slots from the viewer's actual roster. Surfaces first
+                # because it is most reflective of how this player actually trades.
+                _pat_thresholds = compute_tier_thresholds(
+                    val_table, "sf" if _is_sf else "1qb"
+                )
+                _pat_result = _pattern_based_packages(
+                    focus_pid, focus_value, by_trade, viewer_players,
+                    value_map, players_map, max_packages=9,
+                    pos_scarcity=_POS_SCARCITY, debug=_debug,
+                    tier_thresholds=_pat_thresholds,
+                )
+                pattern_pkgs, _pattern_debug = _pat_result if _debug else (_pat_result, {})
+                for pkg in pattern_pkgs:
+                    key = _pkg_key(pkg["send"])
+                    if key in seen_player_sets:
+                        continue
+                    ratio = pkg["send_value"] / focus_value if focus_value > 0 else 1.0
+                    for asset in pkg["send"]:
+                        _enrich_asset(asset, values_by_id)
+                    seen_player_sets.add(key)
+                    personalized_packages.append({
+                        "assets":           pkg["send"],
+                        "frequency":        0,
+                        "value_label":      _value_label(ratio),
+                        "size_label":       pkg["type"],
+                        "receive_value":    round(pkg["send_value"]),
+                        "is_profile_match": True,
+                        "is_synthetic":     True,
+                        "pattern_learned":  True,
+                        "pattern_sig":      pkg.get("pattern_sig", ""),
+                        "throw_in_sig":     pkg.get("throw_in_sig", ""),
+                    })
+
+                # ── Layer A: Market-Matched Packages ──────────────────────────
+                # Reconstructs packages from real trade signatures for this exact
+                # player, matched to assets on the viewer's roster. Also exports
+                # reference deals for the "Based on real trades" UI section.
+                market_result = _real_trade_packages_for_target(
+                    focus_pid, _is_sf, 12, viewer_players, viewer_pick_list,
+                    values_by_id, max_packages=3,
+                    tier_thresholds=_pat_thresholds,
+                )
+                total_real_trades = market_result.get("total_real_trades", 0)
+
+                for pkg in market_result.get("packages", []):
+                    send_val = pkg.get("send_value", 0)
+                    for asset in pkg.get("send", []):
+                        _enrich_asset(asset, values_by_id)
+
+                    # Export to market reference section (±10% only)
+                    ratio = send_val / focus_value if focus_value > 0 else 1.0
+                    if 0.90 <= ratio <= 1.10:
+                        market_reference_deals.append({
+                            "send":             pkg.get("send", []),
+                            "send_value":       round(send_val, 1),
+                            "trades_like_this": pkg.get("trades_like_this", 0),
+                            "is_reference":     pkg.get("is_reference", False),
+                        })
+
+                    # Fix 5: reference packages (fallback assets the viewer doesn't own)
+                    # go to market_reference_deals only — never into personalized_packages.
+                    if pkg.get("is_reference"):
+                        continue
+
+                    # Add to personalized packages if roster-matched and anchor-valid
+                    if ratio > 1.10 or ratio < 0.90:
+                        continue
+                    player_vals = sorted(
+                        [a.get("value", 0) for a in pkg.get("send", []) if not a.get("is_pick")],
+                        reverse=True,
+                    )
+                    if not player_vals or player_vals[0] < focus_value * 0.65:
+                        continue
+                    if len(player_vals) >= 2 and player_vals[1] < sec_floor:
+                        continue
+                    if len(player_vals) >= 3 and player_vals[2] < ter_floor:
+                        continue
+                    key = _pkg_key(pkg["send"])
+                    if key in seen_player_sets:
+                        continue
+                    seen_player_sets.add(key)
+                    personalized_packages.append({
+                        "assets":           pkg["send"],
+                        "frequency":        pkg.get("trades_like_this", 0),
+                        "value_label":      _value_label(ratio),
+                        "size_label":       "from-your-roster",
+                        "receive_value":    round(send_val),
+                        "is_profile_match": True,
+                    })
+
+                # ── Layer B: Value-Based Package Generation ───────────────────
+                # Pure mathematical packages built from the viewer's roster values.
+                # Guarantees suggestions even when no historical trades match.
+                value_pkgs = _generate_roster_packages(
+                    focus_value, viewer_players, viewer_pick_list, max_packages=6,
+                    pos_scarcity=_POS_SCARCITY,
+                )
+                for pkg in value_pkgs:
+                    key = _pkg_key(pkg["send"])
+                    if key in seen_player_sets:
+                        continue
+                    ratio = pkg["send_value"] / focus_value if focus_value > 0 else 1.0
+                    for asset in pkg["send"]:
+                        _enrich_asset(asset, values_by_id)
+                    seen_player_sets.add(key)
+                    personalized_packages.append({
+                        "assets":           pkg["send"],
+                        "frequency":        0,
+                        "value_label":      _value_label(ratio),
+                        "size_label":       pkg["type"],
+                        "receive_value":    round(pkg["send_value"]),
+                        "is_profile_match": True,
+                        "is_synthetic":     True,
+                    })
+
+                # ── 4. Market Reference Deals ─────────────────────────────────
+                # (market_reference_deals already built in Layer A above)
+
+                # ── 5. Expanded Acquisition Packages ─────────────────────────
+                # "Get [target] + [throw-in] for [your package]"
+                # Scans target owner's roster for T4–T6 players, then generates
+                # viewer packages priced at focus_value + throw_in_value.
+                combo_seen: set = set()
+                # Viewer's positional needs: positions where viewer is below typical depth.
+                viewer_pos_needs_for_combo = {
+                    pos: max(0, _TYPICAL_ROSTER.get(pos, 4) - viewer_pos_counts.get(pos, 0))
+                    for pos in _TYPICAL_ROSTER
+                }
+                throw_in_candidates = sorted(
+                    [
+                        {
+                            "player_id": pid,
+                            "name":      values_by_id[pid]["name"],
+                            "position":  values_by_id[pid]["position"],
+                            "value":     values_by_id[pid]["value"],
+                            "profile":   _player_profile(pid, values_by_id[pid].get("age")),
+                        }
+                        for pid in target_owner_pids
+                        if pid in values_by_id and 80 <= values_by_id[pid]["value"] <= 500
+                    ],
+                    # Prefer throw-ins at positions the viewer needs; break ties by cheapest
+                    # (easier for target owner to include, better deal for viewer).
+                    key=lambda x: (
+                        -viewer_pos_needs_for_combo.get(x["position"].upper(), 0),
+                        x["value"],
+                    ),
+                )[:6]
+
+                for throw_in in throw_in_candidates:
+                    combo_target_val = focus_value + throw_in["value"]
+                    for pkg in _generate_roster_packages(
+                        combo_target_val, viewer_players, viewer_pick_list, max_packages=2,
+                        pos_scarcity=_POS_SCARCITY,
+                    ):
+                        send_val = pkg["send_value"]
+                        ratio    = send_val / combo_target_val if combo_target_val > 0 else 1.0
+                        if not (0.90 <= ratio <= 1.10):
+                            continue
+                        combo_key = (
+                            throw_in["player_id"],
+                            tuple(sorted(
+                                a.get("player_id") or a.get("name", "")
+                                for a in pkg["send"]
+                            )),
+                        )
+                        if combo_key in combo_seen:
+                            continue
+                        combo_seen.add(combo_key)
+                        # Skip if same send-side player set already appears in personalized
+                        send_key = _pkg_key(pkg["send"])
+                        if send_key in seen_player_sets:
+                            continue
+                        for asset in pkg["send"]:
+                            _enrich_asset(asset, values_by_id)
+                        combo_packages.append({
+                            "extra_receive": throw_in,
+                            "assets":        pkg["send"],
+                            "send_value":    round(send_val, 1),
+                            "receive_value": round(combo_target_val, 1),
+                            "type":          pkg["type"],
+                            "value_label":   _value_label(ratio),
+                        })
+
+                # ── Depletion guard ───────────────────────────────────────────
+                # Reject any package that sends 2+ players from the same position
+                # if doing so would leave the viewer below typical depth there.
+                # e.g. don't trade both top WRs for an RB — that creates a WR hole.
+                _TYPICAL_ROSTER_DEPTH = {"QB": 2, "RB": 7, "WR": 8, "TE": 2}
+
+                def _depletes_position(send_assets: list) -> bool:
+                    pos_sends: dict = {}
+                    for a in send_assets:
+                        if a.get("is_pick"):
+                            continue
+                        pos = (a.get("position") or "").upper()
+                        pos_sends[pos] = pos_sends.get(pos, 0) + 1
+                    for pos, cnt in pos_sends.items():
+                        if cnt < 2:
+                            continue
+                        remaining = viewer_pos_counts.get(pos, 0) - cnt
+                        if remaining < _TYPICAL_ROSTER_DEPTH.get(pos, 4):
+                            return True
+                    return False
+
+                personalized_packages = [
+                    p for p in personalized_packages
+                    if not _depletes_position(p.get("assets", []))
+                ]
+                combo_packages = [
+                    p for p in combo_packages
+                    if not _depletes_position(p.get("assets", []))
+                ]
+
+                # ── Progressive fallback ──────────────────────────────────────
+                # If the strict ±10% window produced fewer than 4 suggestions,
+                # widen to ±15% and re-run Layer B to fill gaps.
+                if len(personalized_packages) < 4:
+                    fallback_pkgs = _generate_roster_packages(
+                        focus_value, viewer_players, viewer_pick_list,
+                        max_packages=8, pos_scarcity=_POS_SCARCITY, tolerance=0.15,
+                    )
+                    for pkg in fallback_pkgs:
+                        if len(personalized_packages) >= 6:
+                            break
+                        key = _pkg_key(pkg["send"])
+                        if key in seen_player_sets:
+                            continue
+                        if _depletes_position(pkg["send"]):
+                            continue
+                        ratio = pkg["send_value"] / focus_value if focus_value > 0 else 1.0
+                        for asset in pkg["send"]:
+                            _enrich_asset(asset, values_by_id)
+                        seen_player_sets.add(key)
+                        personalized_packages.append({
+                            "assets":           pkg["send"],
+                            "frequency":        0,
+                            "value_label":      _value_label(ratio),
+                            "size_label":       pkg["type"],
+                            "receive_value":    round(pkg["send_value"]),
+                            "is_profile_match": True,
+                            "is_synthetic":     True,
+                        })
+
+                # ── Re-sort personalized packages ─────────────────────────────
+                # Priority: pattern-learned first, then by (need appeal ↓, scarcity-
+                # adjusted send value proximity ↑). This surfaces packages the target
+                # owner is most likely to accept AND that the viewer can most easily part with.
+                personalized_packages.sort(key=lambda p: (
+                    0 if p.get("pattern_learned") else 1,
+                    -_need_appeal(p.get("assets", [])),
+                    abs(_effective_send_value(p.get("assets", [])) - focus_value),
+                ))
+
+            except Exception:
+                pass
+
+        # ── 6. Final Response Assembly ────────────────────────────────────────
+        # Deduplicate market_results against personalized_packages, then merge.
+        personalized_keys = {
+            tuple(sorted(
+                a["player_id"] for a in pkg["assets"]
+                if a.get("player_id") and not a.get("is_pick")
+            ))
+            for pkg in personalized_packages
+        }
+        filtered_market_results = [
+            r for r in market_results
+            if tuple(sorted(
+                a["player_id"] for a in r["assets"] if a.get("type") == "player"
+            )) not in personalized_keys
+        ]
+
+        payload = {
+            "packages":          personalized_packages + filtered_market_results[:limit],
+            "real_packages":     market_reference_deals,
+            "total_real_trades": total_real_trades,
+            "combo_packages":    combo_packages[:6],
+            "total_trades":      total_trades,
+            "total_packages":    len(filtered_market_results),
+            "player_name":       player_name,
+            "player_id":         player_id,
+            "focus_value":       round(focus_value),
+        }
+        if _debug:
+            payload["_debug_patterns"] = _pattern_debug
+        resp = jsonify(payload)
+        if not _debug:
+            # Trade values update daily — cache for 1 hour in browser, 6 hours
+            # shared across users via any CDN/reverse-proxy.
+            resp.headers["Cache-Control"] = "public, max-age=3600, s-maxage=21600"
+        return resp
+
+    except Exception:
+        logger.exception("[player-packages] error")
         return jsonify({"error": "Internal error"}), 500
 
 
@@ -17180,11 +18460,20 @@ def _real_trade_packages_for_target(
                     candidates = [
                         {"player_id": pid, "name": info["name"], "position": pos,
                          "value": info["value"], "pos_rank_label": info.get("pos_rank_label", ""),
-                         "is_reference": True}
+                         "is_reference": True, **{k: info.get(k) for k in ("age","rank_change_7d","market_trend","buy_sell_ratio")}}
                         for pid, info in values_by_id.items()
                         if info["position"] == pos
                         and abs(_asset_tier(float(info.get("value") or 0)) - req_tier) <= 1
                     ]
+
+                    def _ref_prof_score(p, wa=want_age, wm=want_mom, mv=mid_val):
+                        got = _player_profile(p)
+                        gp = got.split("-")
+                        age_ok = (not wa or wa == gp[0])
+                        mom_ok = (not wm or wm == (gp[1] if len(gp) > 1 else ""))
+                        return (0 if (age_ok and mom_ok) else 1 if age_ok else 2 if mom_ok else 3,
+                                abs(p["value"] - mv))
+
                     if candidates:
                         best = min(candidates, key=lambda p: abs(_asset_tier(p["value"]) - req_tier))
                         fallback_assets.append(best)
@@ -17192,6 +18481,7 @@ def _real_trade_packages_for_target(
                     rnd = int(rest[0])
                     slot_bucket = rest[1] if len(rest) > 1 else "Mid"
                     suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
+                    pick_yr = datetime.now().year + 1
                     fallback_assets.append({
                         "name": f"{suffix} Round ({slot_bucket})", "is_pick": True,
                         "pick_round": rnd,
@@ -17212,6 +18502,31 @@ def _real_trade_packages_for_target(
             continue
 
         send_value = round(sum(a.get("value", 0) for a in matched), 1)
+
+        if send_value > max_send_value or send_value < min_send_value:
+            continue
+
+        # Anchor check: best single player sent must be ≥ 65% of target value.
+        # Prevents historical multi-scraps patterns from mapping onto the viewer's roster.
+        player_vals = sorted(
+            [a.get("value", 0) for a in matched if not a.get("is_pick")],
+            reverse=True,
+        )
+        if not player_vals or player_vals[0] < target_value * 0.65:
+            continue
+
+        # Secondary tier floor: add-ons must be at least one tier above target tier.
+        # Mirrors the same rule in the value-based package generator.
+        def _t(v): return (1 if v>=800 else 2 if v>=500 else 3 if v>=300 else
+                           4 if v>=200 else 5 if v>=130 else 6 if v>=80 else 7 if v>=40 else 8)
+        tgt_tier = _t(target_value)
+        _sec_floor = {1: 300, 2: 200, 3: 130, 4: 80}.get(tgt_tier, 40)
+        _ter_floor = {1: 200, 2: 130, 3: 80,  4: 40}.get(tgt_tier, 40)
+        non_anchor_vals = player_vals[1:]  # everything after best player
+        if len(non_anchor_vals) >= 1 and non_anchor_vals[0] < _sec_floor:
+            continue
+        if len(non_anchor_vals) >= 2 and non_anchor_vals[1] < _ter_floor:
+            continue
 
         result_packages.append({
             "type":             "real-trade",
@@ -17279,7 +18594,25 @@ def api_trade_ideas_for_target():
                     "pos_rank_label": p.get("pos_rank_label") or "",
                     "team":           p.get("team") or "",
                     "age":            p.get("age"),
+                    "rank_change_7d": p.get("rank_change_7d"),
                 }
+
+        # Enrich with market momentum from trade_intel_player_stats
+        try:
+            from dashboard_services.db import get_conn as _gc
+            with _gc() as _conn:
+                _trend_col = "market_trend_sf" if league_type == "sf" else "market_trend_1qb"
+                _mkt_rows = _conn.execute(
+                    f"SELECT player_id, buy_sell_ratio, {_trend_col} AS market_trend "
+                    "FROM trade_intel_player_stats WHERE trade_count > 0"
+                ).fetchall()
+            for _r in _mkt_rows:
+                _pid = str(_r["player_id"])
+                if _pid in values_by_id:
+                    values_by_id[_pid]["buy_sell_ratio"] = float(_r["buy_sell_ratio"] or 1.0)
+                    values_by_id[_pid]["market_trend"]   = round(float(_r["market_trend"] or 0.0) * _market_scale(), 1)
+        except Exception:
+            pass  # market signals optional — fall back to rank_change_7d only
 
         target_info = values_by_id.get(target_player_id)
         if not target_info:
@@ -17345,6 +18678,10 @@ def api_trade_ideas_for_target():
                     "position":       values_by_id[pid]["position"],
                     "value":          values_by_id[pid]["value"],
                     "pos_rank_label": values_by_id[pid]["pos_rank_label"],
+                    "age":            values_by_id[pid].get("age"),
+                    "rank_change_7d": values_by_id[pid].get("rank_change_7d"),
+                    "market_trend":   values_by_id[pid].get("market_trend"),
+                    "buy_sell_ratio": values_by_id[pid].get("buy_sell_ratio"),
                 }
                 for pid in [str(p) for p in (viewer_roster_obj.get("players") or [])]
                 if pid in values_by_id and values_by_id[pid]["value"] >= 50
@@ -17436,6 +18773,38 @@ def api_trade_ideas_for_target():
         def _key(*assets):
             return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
 
+        def _tier(v: float) -> int:
+            if v >= 800: return 1
+            if v >= 500: return 2
+            if v >= 300: return 3
+            if v >= 200: return 4
+            if v >= 130: return 5
+            if v >= 80:  return 6
+            if v >= 40:  return 7
+            return 8
+
+        target_tier = _tier(effective_target)
+        # Anchor floors: lead player must be this fraction of target value.
+        # 2-for-1: 75% — near-equal piece + sweetener
+        # 3-for-1: 65% — strong piece + two contributors
+        # player+pick: 65% — strong piece + pick
+        ANCHOR_2 = effective_target * 0.75
+        ANCHOR_3 = effective_target * 0.65
+
+        # Per-tier minimum value for non-anchor (secondary/tertiary) assets.
+        # The add-on must be one tier above what the target tier alone would imply,
+        # making elite players progressively harder to acquire via multi-player deals.
+        # T1 target → secondary ≥ T3 (300)
+        # T2 target → secondary ≥ T4 (200)
+        # T3 target → secondary ≥ T5 (130)
+        # T4 target → secondary ≥ T6 (80)
+        # T5+        → secondary ≥ T7 (40)
+        _secondary_floor = {1: 300, 2: 200, 3: 130, 4: 80}.get(target_tier, 40)
+        secondary_min = _secondary_floor
+        # Tertiary (3rd player) drops one tier below secondary
+        _tertiary_floor = {1: 200, 2: 130, 3: 80, 4: 40}.get(target_tier, 40)
+        tertiary_min = _tertiary_floor
+
         # 1-for-1: single player in range
         for p in viewer_players:
             if lo <= p["value"] <= hi:
@@ -17446,12 +18815,14 @@ def api_trade_ideas_for_target():
                                      "send_value": p["value"],
                                      "_delta": abs(p["value"] - effective_target)})
 
-        # 2-for-1: neither player alone covers >75% of effective_target
+        # 2-for-1: anchor ≥ 75% of target, secondary meets tier-scaled floor
         for i, p1 in enumerate(viewer_players):
-            if p1["value"] > effective_target * 0.75:
-                continue
+            if p1["value"] < ANCHOR_2:
+                break
+            if p1["value"] > effective_target * 0.93:
+                continue  # close enough for 1-for-1
             for p2 in viewer_players[i + 1:]:
-                if p2["value"] < 60:
+                if p2["value"] < secondary_min:
                     break
                 combined = p1["value"] + p2["value"]
                 if combined > hi:
@@ -17465,11 +18836,42 @@ def api_trade_ideas_for_target():
                                          "_delta": abs(combined - effective_target)})
                     break
 
-        # Player + pick
+        # 3-for-1: anchor ≥ 65% of target, p2 ≥ secondary_min, p3 ≥ tertiary_min
+        for i, p1 in enumerate(viewer_players):
+            if p1["value"] < ANCHOR_3:
+                break
+            if p1["value"] >= ANCHOR_2:
+                continue  # 2-for-1 territory
+            for j, p2 in enumerate(viewer_players[i + 1:], i + 1):
+                if p2["value"] < secondary_min:
+                    break
+                for p3 in viewer_players[j + 1:]:
+                    if p3["value"] < tertiary_min:
+                        break
+                    combined = p1["value"] + p2["value"] + p3["value"]
+                    if combined > hi:
+                        continue
+                    if combined >= lo:
+                        k = _key(p1, p2, p3)
+                        if k not in seen:
+                            seen.add(k)
+                            packages.append({"type": "3-for-1", "send": [p1, p2, p3],
+                                             "send_value": combined,
+                                             "_delta": abs(combined - effective_target)})
+                        break
+                else:
+                    continue
+                break
+
+        # Player + pick: player ≥ 65% of target, pick value meets secondary_min
         for p in viewer_players:
-            if p["value"] > effective_target * 0.85:
-                continue
+            if p["value"] < ANCHOR_3:
+                break
+            if p["value"] > effective_target * 0.93:
+                continue  # close enough for 1-for-1
             for pick in viewer_picks:
+                if pick["value"] < secondary_min:
+                    continue
                 combined = p["value"] + pick["value"]
                 if lo <= combined <= hi:
                     k = _key(p, {"player_id": pick["name"]})
@@ -17509,6 +18911,7 @@ def api_trade_ideas_for_target():
                                 "sf_value":         round(info.get("sf_value", info["value"]), 1),
                                 "pos_rank_label":   info["pos_rank_label"],
                                 "sf_pos_rank_label": info["pos_rank_label"],
+                                "profile":          _player_profile(info),
                             })
 
         _enrich_pkg_assets(packages)
