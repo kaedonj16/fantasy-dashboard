@@ -4163,10 +4163,9 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
     """
     Derive tier breakpoints from normalized gap significance across the full player list.
 
-    Each gap is scored relative to the local median gap in a sliding window so that
-    the algorithm detects meaningful separations regardless of value density. Boundaries
-    are chosen with a minimum spacing (min_group players) so no tier ends up with a
-    single isolated player.
+    T1-T8 each have a max of 12 players. Everything below the T8 boundary falls into
+    T9 (the large catch-all tier). Tier boundaries are chosen from the most significant
+    gaps; if a tier would be too large, the biggest gap inside it is force-split.
     """
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -4190,9 +4189,10 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         return _FALLBACK_THRESHOLDS
 
     # Score each gap by how large it is relative to nearby gaps (local significance)
-    window  = 12
-    min_grp = 3   # minimum players per tier
-    scored  = []
+    window   = 12
+    min_grp  = 3   # minimum players per tier
+    max_tier = 12  # maximum players in T1-T8 before force-splitting
+    scored   = []
     for i in range(len(vals) - 1):
         gap = vals[i] - vals[i + 1]
         lo  = max(0, i - window)
@@ -4218,7 +4218,38 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
     if not boundaries:
         return _FALLBACK_THRESHOLDS
 
-    return sorted(boundaries, reverse=True)
+    boundaries = sorted(boundaries, reverse=True)
+
+    # Force-split any T1-T8 tier that exceeds max_tier players
+    # (T9 is intentionally large — it's the catch-all)
+    for attempt in range(num_tiers - 2):
+        if len(boundaries) >= num_tiers - 1:
+            break
+        thresholds = boundaries
+        tier_starts = [0] + [
+            next((j for j in range(len(vals)) if vals[j] < t), len(vals))
+            for t in thresholds
+        ]
+        for t_idx in range(len(thresholds)):  # only check T1..T(n-1), not T9
+            start = tier_starts[t_idx]
+            end   = tier_starts[t_idx + 1]
+            size  = end - start
+            if size <= max_tier:
+                continue
+            # Find the biggest raw gap inside this tier and split there
+            best_gap, best_i, best_mid = 0.0, -1, 0.0
+            for j in range(start, end - 1):
+                g = vals[j] - vals[j + 1]
+                if g > best_gap and j >= start + min_grp and j <= end - 1 - min_grp:
+                    if not any(abs(j - cp) < min_grp for cp in chosen_pos):
+                        best_gap, best_i, best_mid = g, j, (vals[j] + vals[j + 1]) / 2.0
+            if best_i >= 0:
+                chosen_pos.append(best_i)
+                boundaries.append(best_mid)
+                boundaries = sorted(boundaries, reverse=True)
+                break
+
+    return boundaries
 
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
@@ -9212,7 +9243,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         for (let i = 0; i < tbl.length; i++) {
           if (val >= tbl[i]) return i + 1;
         }
-        return tbl.length + 1;
+        return 9; // clamp — everything below T8 boundary is T9
       }
 
       // Load data
