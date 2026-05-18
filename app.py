@@ -16817,8 +16817,71 @@ def api_trade_intel_player_packages(player_id: str):
             except Exception:
                 pass  # League context is best-effort
 
-        # ── Value-matched packages from viewer roster ──────────────────────
+        # ── Archetype helpers ──────────────────────────────────────────────
+        def _age_bracket(age) -> str:
+            try:
+                a = float(age)
+            except (TypeError, ValueError):
+                return "Prime"
+            if a <= 24:
+                return "Young"
+            if a <= 28:
+                return "Prime"
+            return "Vet"
+
+        def _asset_archetype_label(asset: dict) -> str:
+            if asset.get("is_pick") or asset.get("type") == "pick":
+                rnd = asset.get("pick_round") or asset.get("round") or ""
+                try:
+                    suffix = {1: "R1", 2: "R2", 3: "R3"}.get(int(rnd), f"R{rnd}")
+                except (TypeError, ValueError):
+                    suffix = None
+                return f"PICK:{suffix}" if suffix else "PICK"
+            info = values_by_id.get(asset.get("player_id") or asset.get("id") or "")
+            if not info:
+                return "?"
+            pos   = info.get("position", "?")
+            val   = info.get("value", 0.0)
+            tier  = _asset_tier(val)
+            age_b = _age_bracket(info.get("age"))
+            return f"{pos}-T{tier}-{age_b}"
+
+        THROW_IN_VALUE_THRESHOLD = 150.0
+
+        def _pattern_sigs(assets: list) -> tuple:
+            """Return (core_sig, throw_in_sig) archetype strings for a package."""
+            labeled = [
+                (_asset_archetype_label(a), float(a.get("value") or a.get("send_value") or 0))
+                for a in assets
+            ]
+            if len(labeled) >= 2:
+                max_val = max(v for _, v in labeled)
+                core    = [(lbl, v) for lbl, v in labeled if v >= THROW_IN_VALUE_THRESHOLD or v >= max_val * 0.35]
+                throwin = [(lbl, v) for lbl, v in labeled if (lbl, v) not in core]
+            else:
+                core    = labeled
+                throwin = []
+            core.sort(key=lambda x: -x[1])
+            return " + ".join(lbl for lbl, _ in core), " + ".join(lbl for lbl, _ in throwin) if throwin else ""
+
+        # ── Real trade packages from the DB (run first — used to build archetypes) ──
+        roster_positions = ctx.get("roster_positions") or []
+        _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
+        _is_sf   = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        num_teams = len(ctx.get("rosters") or []) or 12
+
+        real_result = _real_trade_packages_for_target(
+            target_player_id=str(player_id),
+            is_sf=_is_sf,
+            num_teams=num_teams,
+            viewer_players=viewer_players,
+            viewer_picks=viewer_picks,
+            values_by_id=values_by_id,
+        )
+
+        # ── Archetype helpers (needed by both real-trade and roster sections) ──
         import math as _math
+
         def _dynasty_premium(info: dict) -> float:
             pos = info.get("position", "")
             if pos in ("PICK", "K", "DEF") or (pos == "QB" and league_type == "1qb"):
@@ -16832,52 +16895,6 @@ def api_trade_intel_player_packages(player_id: str):
         effective_target = focus_value * _dynasty_premium(target_info)
         lo = effective_target * 0.85
         hi = effective_target * 1.15
-        packages: list[dict] = []
-        seen: set = set()
-
-        def _key(*assets):
-            return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
-
-        for p in viewer_players:
-            if lo <= p["value"] <= hi:
-                k = _key(p)
-                if k not in seen:
-                    seen.add(k)
-                    packages.append({"type": "1-for-1", "send": [p],
-                                     "send_value": p["value"],
-                                     "_delta": abs(p["value"] - effective_target)})
-
-        for i, p1 in enumerate(viewer_players):
-            if p1["value"] > effective_target * 0.75:
-                continue
-            for p2 in viewer_players[i + 1:]:
-                if p2["value"] < 60:
-                    break
-                combined = p1["value"] + p2["value"]
-                if lo <= combined <= hi:
-                    k = _key(p1, p2)
-                    if k not in seen:
-                        seen.add(k)
-                        packages.append({"type": "2-for-1", "send": [p1, p2],
-                                         "send_value": combined,
-                                         "_delta": abs(combined - effective_target)})
-                    break
-
-        for p in viewer_players:
-            if p["value"] > effective_target * 0.85:
-                continue
-            for pick in viewer_picks:
-                combined = p["value"] + pick["value"]
-                if lo <= combined <= hi:
-                    k = _key(p, {"player_id": pick["name"]})
-                    if k not in seen:
-                        seen.add(k)
-                        packages.append({"type": "player + pick", "send": [p, pick],
-                                         "send_value": combined,
-                                         "_delta": abs(combined - effective_target)})
-                    break
-
-        packages.sort(key=lambda x: (x["_delta"], len(x["send"])))
 
         def _value_label(send_val: float, target_val: float) -> str:
             ratio = send_val / target_val if target_val else 1.0
@@ -16887,7 +16904,112 @@ def api_trade_intel_player_packages(player_id: str):
                 return "Fair value"
             return "Overpay"
 
-        # Rename send→assets and add JS-required display fields
+        def _player_matches_label(p: dict, label: str) -> bool:
+            """Check if a roster player matches an archetype label like 'WR-T3-Prime'."""
+            parts = label.split("-")
+            if len(parts) < 2:
+                return False
+            req_pos    = parts[0]
+            req_tier   = int(parts[1][1:]) if parts[1].startswith("T") else None
+            req_bracket = parts[2] if len(parts) > 2 else None
+            if p.get("position", "") != req_pos:
+                return False
+            if req_tier is not None:
+                # Allow ±1 tier flexibility
+                player_tier = _asset_tier(p.get("value", 0))
+                if abs(player_tier - req_tier) > 1:
+                    return False
+            if req_bracket:
+                player_bracket = _age_bracket(values_by_id.get(p.get("player_id") or "", {}).get("age"))
+                if player_bracket != req_bracket:
+                    return False
+            return True
+
+        def _key(*assets):
+            return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
+
+        # ── Archetype-matched packages from viewer roster ──────────────────
+        # Extract archetype patterns from real trades first, then match roster
+        # assets to those templates so suggestions reflect real market patterns.
+        raw_archetype_patterns: list[tuple[str, str, int]] = []  # (core_sig, throw_sig, count)
+        for pkg in real_result["packages"]:
+            core_sig, throw_sig = _pattern_sigs(pkg["send"])
+            raw_archetype_patterns.append((core_sig, throw_sig, pkg.get("trades_like_this", 1)))
+        raw_archetype_patterns.sort(key=lambda x: -x[2])
+
+        packages: list[dict] = []
+        seen: set = set()
+
+        for core_sig, _throw_sig, _count in raw_archetype_patterns:
+            if not core_sig:
+                continue
+            labels    = core_sig.split(" + ")
+            available = list(viewer_players)
+            matched_assets: list[dict] = []
+            ok = True
+
+            for label in labels:
+                if label == "PICK" or label.startswith("PICK:"):
+                    # Match any available pick
+                    pick = viewer_picks[0] if viewer_picks else None
+                    if pick:
+                        matched_assets.append(pick)
+                    else:
+                        ok = False
+                        break
+                else:
+                    found = next((p for p in available if _player_matches_label(p, label)), None)
+                    if found:
+                        matched_assets.append(found)
+                        available.remove(found)
+                    else:
+                        ok = False
+                        break
+
+            if not ok or not matched_assets:
+                continue
+
+            send_value = sum(a.get("value", 0) for a in matched_assets)
+            k = _key(*matched_assets)
+            if k in seen:
+                continue
+            seen.add(k)
+            packages.append({
+                "send": matched_assets,
+                "send_value": send_value,
+                "_delta": abs(send_value - effective_target),
+                "_archetype": core_sig,
+            })
+
+        # Fall back to pure value-matching when no archetype patterns exist
+        if not packages and viewer_players:
+            for p in viewer_players:
+                if lo <= p["value"] <= hi:
+                    k = _key(p)
+                    if k not in seen:
+                        seen.add(k)
+                        packages.append({"send": [p], "send_value": p["value"],
+                                         "_delta": abs(p["value"] - effective_target),
+                                         "_archetype": None})
+            for i, p1 in enumerate(viewer_players):
+                if p1["value"] > effective_target * 0.75:
+                    continue
+                for p2 in viewer_players[i + 1:]:
+                    if p2["value"] < 60:
+                        break
+                    combined = p1["value"] + p2["value"]
+                    if lo <= combined <= hi:
+                        k = _key(p1, p2)
+                        if k not in seen:
+                            seen.add(k)
+                            packages.append({"send": [p1, p2], "send_value": combined,
+                                             "_delta": abs(combined - effective_target),
+                                             "_archetype": None})
+                        break
+
+        packages.sort(key=lambda x: x["_delta"])
+
+        # Enrich assets and build final package list
         out_packages = []
         for pkg in packages:
             assets = pkg["send"]
@@ -16908,69 +17030,9 @@ def api_trade_intel_player_packages(player_id: str):
                 "value_label":      _value_label(pkg["send_value"], focus_value),
                 "is_profile_match": True,
                 "frequency":        0,
+                "archetype":        pkg.get("_archetype"),
             })
         packages = out_packages
-
-        # ── Real trade packages from the DB ────────────────────────────────
-        roster_positions = ctx.get("roster_positions") or []
-        _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
-        _is_sf   = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
-        num_teams = len(ctx.get("rosters") or []) or 12
-
-        real_result = _real_trade_packages_for_target(
-            target_player_id=str(player_id),
-            is_sf=_is_sf,
-            num_teams=num_teams,
-            viewer_players=viewer_players,
-            viewer_picks=viewer_picks,
-            values_by_id=values_by_id,
-        )
-        # ── Archetype helpers ──────────────────────────────────────────────
-        def _age_bracket(age) -> str:
-            try:
-                a = float(age)
-            except (TypeError, ValueError):
-                return "Prime"
-            if a <= 24:
-                return "Young"
-            if a <= 28:
-                return "Prime"
-            return "Vet"
-
-        def _asset_archetype_label(asset: dict) -> str:
-            if asset.get("is_pick") or asset.get("type") == "pick":
-                rnd = asset.get("pick_round") or asset.get("round") or ""
-                suffix = {1: "R1", 2: "R2", 3: "R3"}.get(int(rnd), f"R{rnd}") if rnd else "Pick"
-                return f"PICK:{suffix}"
-            info = values_by_id.get(asset.get("player_id") or asset.get("id") or "")
-            if not info:
-                return "?"
-            pos   = info.get("position", "?")
-            val   = info.get("value", 0.0)
-            tier  = _asset_tier(val)
-            age_b = _age_bracket(info.get("age"))
-            return f"{pos}-T{tier}-{age_b}"
-
-        THROW_IN_VALUE_THRESHOLD = 150.0  # assets below this in a multi-asset package = throw-in
-
-        def _pattern_sigs(assets: list) -> tuple[str, str]:
-            """Return (core_sig, throw_in_sig) archetype strings for a package."""
-            labeled = [
-                (_asset_archetype_label(a), float(a.get("value") or a.get("send_value") or 0))
-                for a in assets
-            ]
-            # Separate throw-ins only in multi-asset packages
-            if len(labeled) >= 2:
-                max_val = max(v for _, v in labeled)
-                core    = [(lbl, v) for lbl, v in labeled if v >= THROW_IN_VALUE_THRESHOLD or v >= max_val * 0.35]
-                throwin = [(lbl, v) for lbl, v in labeled if (lbl, v) not in core]
-            else:
-                core    = labeled
-                throwin = []
-            core.sort(key=lambda x: -x[1])
-            core_sig    = " + ".join(lbl for lbl, _ in core)
-            throw_sig   = " + ".join(lbl for lbl, _ in throwin) if throwin else ""
-            return core_sig, throw_sig
 
         # ── Enrich real packages + compute archetype patterns ─────────────
         from collections import defaultdict as _dfd

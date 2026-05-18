@@ -2733,33 +2733,62 @@ window.initTradePage = function initTradePage(root = document) {
         'vet-falling':   { text: '↓ Declining Vet',  color: '#ef4444' },
       };
 
-      // ── "Based on real trades" section (always shown below the paginated cards) ──
+      // ── Shared helper: render one archetype label (e.g. "RB-T4-Prime" or "PICK:R1") ──
+      function archetypeChip(lbl) {
+        if (!lbl || lbl === '?') return '';
+        if (lbl === 'PICK' || lbl.startsWith('PICK:')) {
+          const rndPart = lbl.includes(':') ? lbl.split(':')[1] : '';
+          const text = rndPart && rndPart !== 'Pick' ? rndPart : 'Pick';
+          return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.2);">
+            <span style="font-size:10px;font-weight:700;color:#6366f1;">PICK</span>
+            <span style="font-size:10px;color:#a78bfa;">${text}</span>
+          </span>`;
+        }
+        const parts   = lbl.split('-');
+        const pos     = parts[0] || '';
+        const tier    = parts[1] || '';
+        const bracket = parts[2] || '';
+        const col     = posColor(pos);
+        return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:${col}12;border:1px solid ${col}30;">
+          <span style="font-size:10px;font-weight:700;color:${col};">${pos}</span>
+          <span style="font-size:10px;font-weight:600;color:var(--text);">${tier}</span>
+          ${bracket ? `<span style="font-size:10px;color:var(--text-muted);">· ${bracket}</span>` : ''}
+        </span>`;
+      }
+
+      function archetypeSigHtml(pattern_sig, throw_in_sig) {
+        if (!pattern_sig) return '';
+        const chips = pattern_sig.split(' + ').map(archetypeChip).join(
+          `<span style="color:var(--text-muted);font-size:11px;margin:0 1px;">+</span>`
+        );
+        const throwIn = throw_in_sig && !throw_in_sig.includes('Pick')
+          ? `<span style="font-size:10px;color:var(--text-muted);white-space:nowrap;">
+               <span style="opacity:.5;margin:0 3px;">·</span>throw-in: ${throw_in_sig}
+             </span>`
+          : '';
+        return chips + throwIn;
+      }
+
+      // ── "Based on real trades" section ─────────────────────────────────────────
       let realTradeHtml = "";
       if (_pkgRealPkgs.length || _pkgArchetypes.length) {
-        realTradeHtml += `<div style="margin-top:12px;padding-top:8px;border-top:2px solid var(--border);">
-          <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:6px;letter-spacing:.04em;">
+        realTradeHtml += `<div style="margin-top:14px;padding-top:10px;border-top:2px solid var(--border);">
+          <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:8px;letter-spacing:.05em;">
             BASED ON ${_pkgRealTotal} REAL TRADES IN SIMILAR LEAGUES
           </div>`;
 
         // ── Common archetype patterns ─────────────────────────────
         if (_pkgArchetypes.length) {
-          realTradeHtml += `<div style="margin-bottom:8px;">
-            <div style="font-size:10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Common archetypes sent</div>`;
-          _pkgArchetypes.forEach(ap => {
-            const sigParts = ap.pattern_sig.split(' + ').map(lbl => {
-              if (lbl.startsWith('PICK:')) {
-                return `<span style="font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(99,102,241,.12);color:#6366f1;">${lbl}</span>`;
-              }
-              const [pos, tier, bracket] = lbl.split('-');
-              const col = posColor(pos);
-              return `<span style="font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;background:${col}18;color:${col};">${pos}</span><span style="font-size:11px;font-weight:600;color:var(--text-muted);">${tier}</span><span style="font-size:11px;color:var(--text-muted);">-${bracket || ''}</span>`;
-            }).join('<span style="color:var(--text-muted);margin:0 3px;font-size:12px;">+</span>');
-            const throwLine = ap.throw_in_sig
-              ? `<span style="font-size:10px;color:var(--text-muted);margin-left:6px;">+ throw-in: ${ap.throw_in_sig}</span>`
-              : '';
-            const pct = ap.pct > 0 ? `<span style="font-size:10px;font-weight:700;color:#a78bfa;margin-left:auto;flex-shrink:0;">${ap.pct}%</span>` : '';
-            realTradeHtml += `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;padding:3px 0;border-top:1px solid var(--border);">
-              ${sigParts}${throwLine}${pct}
+          realTradeHtml += `<div style="margin-bottom:10px;border-radius:8px;border:1px solid var(--border);overflow:hidden;">
+            <div style="padding:6px 10px;background:var(--surface-2,rgba(0,0,0,.04));border-bottom:1px solid var(--border);font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">
+              Common archetypes sent
+            </div>`;
+          _pkgArchetypes.forEach((ap, idx) => {
+            const sigHtml = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
+            const pct     = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;">${ap.pct}%</span>` : '';
+            realTradeHtml += `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;${idx > 0 ? 'border-top:1px solid var(--border);' : ''}">
+              <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;">${sigHtml}</div>
+              ${pct}
             </div>`;
           });
           realTradeHtml += `</div>`;
@@ -2767,40 +2796,40 @@ window.initTradePage = function initTradePage(root = document) {
 
         // ── Individual real-trade examples ────────────────────────
         if (_pkgRealPkgs.length) {
-          realTradeHtml += `<div style="font-size:10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Example trades</div>`;
+          realTradeHtml += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px;">Example trades</div>`;
           _pkgRealPkgs.forEach(pkg => {
-            const sv      = pkg.send_value.toFixed(1);
-            const count   = pkg.trades_like_this || 0;
-            const isRef   = !!pkg.is_reference;
+            const sv    = pkg.send_value.toFixed(0);
+            const count = pkg.trades_like_this || 0;
+            const isRef = !!pkg.is_reference;
             const assetsHtml = (pkg.send || []).map(a => {
               if (a.is_pick || a.type === "pick") {
-                return `<span style="font-weight:600;color:var(--text-muted);">${a.name || "Pick"}</span>`;
+                return `<span style="font-weight:700;color:#6366f1;">${a.name || "Pick"}</span>`;
               }
-              const prof = a.profile ? PROF_LBL[a.profile] : null;
-              const profTag = prof
-                ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
-                : '';
-              return `<span style="font-weight:600;color:${isRef ? 'var(--text-muted)' : 'var(--text)'};">${a.name}</span>${profTag}`;
-            }).join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
-            const patternLabel = isRef
-              ? `send ~${sv} (example assets)`
-              : `send ${sv}`;
-            const patternSig = pkg.pattern_sig
-              ? `<span style="font-size:10px;color:#a78bfa;margin-left:4px;">${pkg.pattern_sig}${pkg.throw_in_sig ? ' | throw-in: ' + pkg.throw_in_sig : ''}</span>`
-              : '';
+              const col = posColor(a.position);
+              return `<span style="display:inline-flex;align-items:center;gap:4px;">
+                <span style="font-size:10px;font-weight:700;padding:1px 4px;border-radius:3px;background:${col}18;color:${col};">${a.position || ''}</span>
+                <span style="font-weight:600;color:${isRef ? 'var(--text-muted)' : 'var(--text)'};">${a.name}</span>
+              </span>`;
+            }).join(`<span style="color:var(--text-muted);margin:0 2px;font-size:12px;">+</span>`);
+
+            const archSig = archetypeSigHtml(pkg.pattern_sig, pkg.throw_in_sig);
             const analyzeBtn = `<button class="otc-sugg-pkg-load-btn"
               data-focus-id="${_pkgPlayerId}"
               data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}"
-              style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid #a78bfa;background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;margin-top:4px;">
+              style="font-size:10px;padding:3px 10px;border-radius:5px;border:1px solid rgba(167,139,250,.4);background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;flex-shrink:0;">
               Analyze
             </button>`;
-            realTradeHtml += `<div style="padding:5px 0;border-top:1px solid var(--border);">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
-                <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetsHtml}</div>
+
+            realTradeHtml += `<div style="padding:8px 0;border-top:1px solid var(--border);">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:5px;">
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;">${assetsHtml}</div>
                 <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;flex-shrink:0;">${count}× seen</span>
               </div>
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;flex-wrap:wrap;gap:3px;">
-                <span style="font-size:10px;color:var(--text-muted);">${patternLabel}${patternSig}</span>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
+                <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+                  <span style="font-size:10px;color:var(--text-muted);">~${sv} val</span>
+                  ${archSig ? `<span style="color:var(--text-muted);opacity:.4;font-size:10px;">·</span>${archSig}` : ''}
+                </div>
                 ${analyzeBtn}
               </div>
             </div>`;
