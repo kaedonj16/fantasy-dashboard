@@ -16705,15 +16705,58 @@ def api_trade_intel_player_packages(player_id: str):
             pid = str(p.get("id") or "")
             if pid:
                 values_by_id[pid] = {
-                    "name":           p.get("name", ""),
-                    "position":       str(p.get("position") or "").upper(),
-                    "value":          float(p.get(val_key) or p.get("value") or 0),
-                    "sf_value":       float(p.get("sf_value") or p.get("value") or 0),
-                    "pos_rank":       int(p.get("pos_rank") or 99),
-                    "pos_rank_label": p.get("pos_rank_label") or "",
-                    "team":           p.get("team") or "",
-                    "age":            p.get("age"),
+                    "name":              p.get("name", ""),
+                    "position":          str(p.get("position") or "").upper(),
+                    "value":             float(p.get(val_key) or p.get("value") or 0),
+                    "sf_value":          float(p.get("sf_value") or p.get("value") or 0),
+                    "pos_rank":          int(p.get("pos_rank") or 99),
+                    "pos_rank_label":    p.get("pos_rank_label") or "",
+                    "team":              p.get("team") or "",
+                    "age":               p.get("age"),
+                    "pos_rank_change_7d": p.get("pos_rank_change_7d"),
                 }
+
+        def _compute_profile(info: dict) -> str | None:
+            pos = info.get("position", "")
+            if pos in ("PICK", "K", "DEF"):
+                return None
+            age = float(info.get("age") or 0)
+            if age <= 0:
+                return None
+            rank   = int(info.get("pos_rank") or 99)
+            change = info.get("pos_rank_change_7d")  # negative = improving (rank went up)
+
+            # Age bracket
+            if age <= 24:
+                bracket = "young"
+            elif age <= 28:
+                bracket = "prime"
+            else:
+                bracket = "vet"
+
+            # Trend: prefer rank_change if available, otherwise infer from pos_rank
+            if change is not None:
+                try:
+                    c = float(change)
+                    if c <= -3:
+                        trend = "rising"
+                    elif c >= 3:
+                        trend = "falling"
+                    else:
+                        trend = "stable"
+                except (TypeError, ValueError):
+                    trend = None
+
+            if change is None or trend is None:
+                # Infer from absolute rank (higher rank = still performing)
+                if bracket == "young":
+                    trend = "rising" if rank <= 5 else ("stable" if rank <= 15 else "falling")
+                elif bracket == "prime":
+                    trend = "rising" if rank <= 3 else ("stable" if rank <= 10 else "falling")
+                else:  # vet
+                    trend = "rising" if rank <= 3 else ("stable" if rank <= 7 else "falling")
+
+            return f"{bracket}-{trend}"
 
         target_info = values_by_id.get(str(player_id))
         if not target_info:
@@ -16878,26 +16921,98 @@ def api_trade_intel_player_packages(player_id: str):
             viewer_picks=viewer_picks,
             values_by_id=values_by_id,
         )
+        # ── Archetype helpers ──────────────────────────────────────────────
+        def _age_bracket(age) -> str:
+            try:
+                a = float(age)
+            except (TypeError, ValueError):
+                return "Prime"
+            if a <= 24:
+                return "Young"
+            if a <= 28:
+                return "Prime"
+            return "Vet"
+
+        def _asset_archetype_label(asset: dict) -> str:
+            if asset.get("is_pick") or asset.get("type") == "pick":
+                rnd = asset.get("pick_round") or asset.get("round") or ""
+                suffix = {1: "R1", 2: "R2", 3: "R3"}.get(int(rnd), f"R{rnd}") if rnd else "Pick"
+                return f"PICK:{suffix}"
+            info = values_by_id.get(asset.get("player_id") or asset.get("id") or "")
+            if not info:
+                return "?"
+            pos   = info.get("position", "?")
+            val   = info.get("value", 0.0)
+            tier  = _asset_tier(val)
+            age_b = _age_bracket(info.get("age"))
+            return f"{pos}-T{tier}-{age_b}"
+
+        THROW_IN_VALUE_THRESHOLD = 150.0  # assets below this in a multi-asset package = throw-in
+
+        def _pattern_sigs(assets: list) -> tuple[str, str]:
+            """Return (core_sig, throw_in_sig) archetype strings for a package."""
+            labeled = [
+                (_asset_archetype_label(a), float(a.get("value") or a.get("send_value") or 0))
+                for a in assets
+            ]
+            # Separate throw-ins only in multi-asset packages
+            if len(labeled) >= 2:
+                max_val = max(v for _, v in labeled)
+                core    = [(lbl, v) for lbl, v in labeled if v >= THROW_IN_VALUE_THRESHOLD or v >= max_val * 0.35]
+                throwin = [(lbl, v) for lbl, v in labeled if (lbl, v) not in core]
+            else:
+                core    = labeled
+                throwin = []
+            core.sort(key=lambda x: -x[1])
+            core_sig    = " + ".join(lbl for lbl, _ in core)
+            throw_sig   = " + ".join(lbl for lbl, _ in throwin) if throwin else ""
+            return core_sig, throw_sig
+
+        # ── Enrich real packages + compute archetype patterns ─────────────
+        from collections import defaultdict as _dfd
+        pattern_counts: dict = _dfd(int)
+
         for pkg in real_result["packages"]:
             for asset in pkg["send"]:
                 if not asset.get("is_pick"):
                     info = values_by_id.get(asset.get("player_id") or "")
                     if info:
                         asset.update({
-                            "id": asset["player_id"],
-                            "position": info["position"],
-                            "team": info.get("team", ""),
-                            "sf_value": round(info.get("sf_value", info["value"]), 1),
+                            "id":             asset["player_id"],
+                            "position":       info["position"],
+                            "team":           info.get("team", ""),
+                            "sf_value":       round(info.get("sf_value", info["value"]), 1),
                             "pos_rank_label": info["pos_rank_label"],
                         })
+            core_sig, throw_sig = _pattern_sigs(pkg["send"])
+            pkg["pattern_sig"]   = core_sig
+            pkg["throw_in_sig"]  = throw_sig
+            canon = f"{core_sig}|{throw_sig}"
+            pattern_counts[canon] += pkg.get("trades_like_this", 1)
+
+        total_trade_count = real_result["total_real_trades"] or 1
+        archetype_patterns = sorted(
+            [
+                {
+                    "pattern_sig":  canon.split("|")[0],
+                    "throw_in_sig": canon.split("|")[1],
+                    "count":        cnt,
+                    "pct":          round(cnt / total_trade_count * 100),
+                }
+                for canon, cnt in pattern_counts.items()
+                if canon.split("|")[0]
+            ],
+            key=lambda x: -x["count"],
+        )[:5]
 
         return jsonify({
-            "player_name":       player_name,
-            "focus_value":       focus_value,
-            "packages":          packages[:4],
-            "total_packages":    len(packages),
-            "real_packages":     real_result["packages"],
-            "total_real_trades": real_result["total_real_trades"],
+            "player_name":        player_name,
+            "focus_value":        focus_value,
+            "packages":           packages[:4],
+            "total_packages":     len(packages),
+            "real_packages":      real_result["packages"],
+            "total_real_trades":  real_result["total_real_trades"],
+            "archetype_patterns": archetype_patterns,
         })
 
     except Exception as e:

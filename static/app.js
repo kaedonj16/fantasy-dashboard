@@ -2571,7 +2571,8 @@ window.initTradePage = function initTradePage(root = document) {
         renderPackages(
           [...(data.packages || []), ...(data.combo_packages || [])],
           data.player_name, playerId, data.focus_value,
-          data.real_packages, data.total_real_trades
+          data.real_packages, data.total_real_trades,
+          data.archetype_patterns
         );
 
       } catch (err) {
@@ -2585,13 +2586,14 @@ window.initTradePage = function initTradePage(root = document) {
     const PAGE_SIZE = 5;
     let _pkgPage = 0;
     let _pkgAll  = [];
-    let _pkgPlayerId   = null;
-    let _pkgPlayerName = null;
-    let _pkgRealPkgs   = [];
-    let _pkgRealTotal  = 0;
-    let _pkgComboPkgs  = [];
+    let _pkgPlayerId       = null;
+    let _pkgPlayerName     = null;
+    let _pkgRealPkgs       = [];
+    let _pkgRealTotal      = 0;
+    let _pkgComboPkgs      = [];
+    let _pkgArchetypes     = [];
 
-    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal) {
+    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal, archetypes) {
       _pkgAll        = packages;
       _pkgPage       = 0;
       _pkgPlayerId   = playerId;
@@ -2599,6 +2601,7 @@ window.initTradePage = function initTradePage(root = document) {
       _pkgRealPkgs   = realPkgs   || [];
       _pkgRealTotal  = realTotal  || 0;
       _pkgComboPkgs  = [];
+      _pkgArchetypes = archetypes || [];
       renderPackagePage();
     }
 
@@ -2732,45 +2735,77 @@ window.initTradePage = function initTradePage(root = document) {
 
       // ── "Based on real trades" section (always shown below the paginated cards) ──
       let realTradeHtml = "";
-      if (_pkgRealPkgs.length) {
+      if (_pkgRealPkgs.length || _pkgArchetypes.length) {
         realTradeHtml += `<div style="margin-top:12px;padding-top:8px;border-top:2px solid var(--border);">
-          <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px;letter-spacing:.04em;">
+          <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:6px;letter-spacing:.04em;">
             BASED ON ${_pkgRealTotal} REAL TRADES IN SIMILAR LEAGUES
           </div>`;
-        _pkgRealPkgs.forEach(pkg => {
-          const sv      = pkg.send_value.toFixed(1);
-          const count   = pkg.trades_like_this || 0;
-          const isRef   = !!pkg.is_reference;
-          const assetsHtml = (pkg.send || []).map(a => {
-            if (a.is_pick || a.type === "pick") {
-              return `<span style="font-weight:600;color:var(--text-muted);">${a.name || "Pick"}</span>`;
-            }
-            const prof = a.profile ? PROF_LBL[a.profile] : null;
-            const profTag = prof
-              ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
+
+        // ── Common archetype patterns ─────────────────────────────
+        if (_pkgArchetypes.length) {
+          realTradeHtml += `<div style="margin-bottom:8px;">
+            <div style="font-size:10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Common archetypes sent</div>`;
+          _pkgArchetypes.forEach(ap => {
+            const sigParts = ap.pattern_sig.split(' + ').map(lbl => {
+              if (lbl.startsWith('PICK:')) {
+                return `<span style="font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(99,102,241,.12);color:#6366f1;">${lbl}</span>`;
+              }
+              const [pos, tier, bracket] = lbl.split('-');
+              const col = posColor(pos);
+              return `<span style="font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;background:${col}18;color:${col};">${pos}</span><span style="font-size:11px;font-weight:600;color:var(--text-muted);">${tier}</span><span style="font-size:11px;color:var(--text-muted);">-${bracket || ''}</span>`;
+            }).join('<span style="color:var(--text-muted);margin:0 3px;font-size:12px;">+</span>');
+            const throwLine = ap.throw_in_sig
+              ? `<span style="font-size:10px;color:var(--text-muted);margin-left:6px;">+ throw-in: ${ap.throw_in_sig}</span>`
               : '';
-            return `<span style="font-weight:600;color:${isRef ? 'var(--text-muted)' : 'var(--text)'};">${a.name}</span>${profTag}`;
-          }).join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
-          const patternLabel = isRef
-            ? `market pattern · send ~${sv} (example assets)`
-            : `market pattern · send ${sv}`;
-          const analyzeBtn = `<button class="otc-sugg-pkg-load-btn"
-            data-focus-id="${_pkgPlayerId}"
-            data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}"
-            style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid #a78bfa;background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;margin-top:4px;">
-            Analyze
-          </button>`;
-          realTradeHtml += `<div style="padding:5px 0;border-top:1px solid var(--border);">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
-              <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetsHtml}</div>
-              <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;flex-shrink:0;">${count}× seen</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
-              <span style="font-size:10px;color:var(--text-muted);">${patternLabel}</span>
-              ${analyzeBtn}
-            </div>
-          </div>`;
-        });
+            const pct = ap.pct > 0 ? `<span style="font-size:10px;font-weight:700;color:#a78bfa;margin-left:auto;flex-shrink:0;">${ap.pct}%</span>` : '';
+            realTradeHtml += `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;padding:3px 0;border-top:1px solid var(--border);">
+              ${sigParts}${throwLine}${pct}
+            </div>`;
+          });
+          realTradeHtml += `</div>`;
+        }
+
+        // ── Individual real-trade examples ────────────────────────
+        if (_pkgRealPkgs.length) {
+          realTradeHtml += `<div style="font-size:10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Example trades</div>`;
+          _pkgRealPkgs.forEach(pkg => {
+            const sv      = pkg.send_value.toFixed(1);
+            const count   = pkg.trades_like_this || 0;
+            const isRef   = !!pkg.is_reference;
+            const assetsHtml = (pkg.send || []).map(a => {
+              if (a.is_pick || a.type === "pick") {
+                return `<span style="font-weight:600;color:var(--text-muted);">${a.name || "Pick"}</span>`;
+              }
+              const prof = a.profile ? PROF_LBL[a.profile] : null;
+              const profTag = prof
+                ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
+                : '';
+              return `<span style="font-weight:600;color:${isRef ? 'var(--text-muted)' : 'var(--text)'};">${a.name}</span>${profTag}`;
+            }).join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
+            const patternLabel = isRef
+              ? `send ~${sv} (example assets)`
+              : `send ${sv}`;
+            const patternSig = pkg.pattern_sig
+              ? `<span style="font-size:10px;color:#a78bfa;margin-left:4px;">${pkg.pattern_sig}${pkg.throw_in_sig ? ' | throw-in: ' + pkg.throw_in_sig : ''}</span>`
+              : '';
+            const analyzeBtn = `<button class="otc-sugg-pkg-load-btn"
+              data-focus-id="${_pkgPlayerId}"
+              data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}"
+              style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid #a78bfa;background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;margin-top:4px;">
+              Analyze
+            </button>`;
+            realTradeHtml += `<div style="padding:5px 0;border-top:1px solid var(--border);">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
+                <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetsHtml}</div>
+                <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;flex-shrink:0;">${count}× seen</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;flex-wrap:wrap;gap:3px;">
+                <span style="font-size:10px;color:var(--text-muted);">${patternLabel}${patternSig}</span>
+                ${analyzeBtn}
+              </div>
+            </div>`;
+          });
+        }
         realTradeHtml += `</div>`;
       }
 
