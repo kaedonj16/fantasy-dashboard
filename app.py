@@ -59,6 +59,7 @@ from dashboard_services.matchups import (
     render_matchup_slide,
 )
 from dashboard_services.pages.graphs_page import build_graphs_body, build_career_graphs_body
+from dashboard_services.pages.waivers_page import build_waivers_body
 from dashboard_services.pages.history_page import (
     build_history_body,
     build_regular_season_team_stats,
@@ -1122,7 +1123,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Standings", "page_standings", "standings", False),
         ("Teams",     "page_teams",     "teams",     False),
         ("Activity",  "page_activity",  "activity",  False),
-    ], ["standings", "teams", "activity"], "teamsNavDropdown"))
+        ("Waivers",   "page_waivers",   "waivers",   False),
+    ], ["standings", "teams", "activity", "waivers"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
@@ -7892,6 +7894,13 @@ def page_standings(platform: str, season: int, league_id: str):
         body = build_standings_body(ctx)
 
     return render_page("BR Fantasy Standings", league_id, "standings", body, platform, season)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/waivers")
+def page_waivers(platform: str, season: int, league_id: str):
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    body = build_waivers_body(platform, season, league_id, ctx)
+    return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/weekly")
