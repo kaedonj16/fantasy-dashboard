@@ -2546,30 +2546,22 @@ window.initTradePage = function initTradePage(root = document) {
 
         const data = await res.json();
 
-        const hasProfilePkgs = data.packages && data.packages.length;
-        const hasRealPkgs    = data.real_packages && data.real_packages.length;
-        if (!hasProfilePkgs && !hasRealPkgs) {
-          const noRoster = !viewerRosterId;
+        const hasRealPkgs = (data.real_packages && data.real_packages.length) || (data.archetype_patterns && data.archetype_patterns.length);
+        if (!hasRealPkgs) {
           resultsList.innerHTML = `<div class="otc-sugg-empty">
-            <div class="otc-sugg-empty-title">No packages found</div>
-            <div class="otc-sugg-empty-sub">${noRoster
-              ? "Connect a league to see trade suggestions from your roster."
-              : "Your roster may not have players at the right value to trade for " + playerName + "."
-            }</div>
+            <div class="otc-sugg-empty-title">No trade data yet</div>
+            <div class="otc-sugg-empty-sub">Not enough real trades for ${playerName} in similar leagues yet.</div>
           </div>`;
           return;
         }
 
-        if (hasProfilePkgs) {
-          const roosterFiltered = viewerRosterId && data.packages.length < data.total_packages;
-          resultsMeta.textContent = roosterFiltered
-            ? `${data.packages.length} packages from your roster · sorted by likelihood`
-            : `${data.packages.length} packages · sorted by likelihood`;
+        if (data.total_real_trades > 0) {
+          resultsMeta.textContent = `Based on ${data.total_real_trades} real trades in similar leagues`;
           resultsMeta.style.display = "block";
         }
 
         renderPackages(
-          [...(data.packages || []), ...(data.combo_packages || [])],
+          [],
           data.player_name, playerId, data.focus_value,
           data.real_packages, data.total_real_trades,
           data.archetype_patterns
