@@ -18113,12 +18113,36 @@ def api_trade_intel_player_packages(player_id: str):
             core.sort(key=lambda x: -x[1])
             return " + ".join(lbl for lbl, _ in core), " + ".join(lbl for lbl, _ in throwin) if throwin else ""
 
-        # ── Real trade packages from the DB ───────────────────────────────
+        # ── League context for DB queries ─────────────────────────────────
         roster_positions = ctx.get("roster_positions") or []
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
         _is_sf   = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
         num_teams = len(ctx.get("rosters") or []) or 12
 
+        # ── ML model: primary package suggestions ─────────────────────────
+        ml_pkgs: list = []
+        try:
+            from data_building.trade_intel.trade_pattern_model import (
+                load_model       as _tm_load,
+                suggest_packages as _tm_suggest,
+            )
+            _tm_model = _tm_load()
+            if _tm_model:
+                _focus_pos = (values_by_id.get(str(player_id)) or {}).get("position", "WR")
+                ml_pkgs = _tm_suggest(
+                    model          = _tm_model,
+                    target_pos     = _focus_pos,
+                    target_value   = float(focus_value or 0),
+                    viewer_players = viewer_players,
+                    viewer_picks   = viewer_picks,
+                    values_by_id   = values_by_id,
+                    n              = 5,
+                )
+                logger.info("[api-trade-intel-player-packages] ML model: %d packages", len(ml_pkgs))
+        except Exception as _ml_err:
+            logger.warning("[api-trade-intel-player-packages] ML model error: %s", _ml_err)
+
+        # ── Rule-based DB result: archetype stats + fallback packages ─────
         real_result = _real_trade_packages_for_target(
             target_player_id=str(player_id),
             is_sf=_is_sf,
@@ -18129,37 +18153,11 @@ def api_trade_intel_player_packages(player_id: str):
             focus_value=float(focus_value or 0),
         )
 
-        # ── ML model: supplement when real data is sparse ─────────────────
-        ml_pkgs: list = []
-        if len(real_result["packages"]) < 3:
-            try:
-                from data_building.trade_intel.trade_pattern_model import (
-                    load_model      as _tm_load,
-                    suggest_packages as _tm_suggest,
-                )
-                _tm_model = _tm_load()
-                if _tm_model:
-                    _focus_pos = (values_by_id.get(str(player_id)) or {}).get("position", "WR")
-                    ml_pkgs = _tm_suggest(
-                        model          = _tm_model,
-                        target_pos     = _focus_pos,
-                        target_value   = float(focus_value or 0),
-                        viewer_players = viewer_players,
-                        viewer_picks   = viewer_picks,
-                        values_by_id   = values_by_id,
-                        n              = 5 - len(real_result["packages"]),
-                    )
-                    logger.info(
-                        "[api-trade-intel-player-packages] ML model added %d packages "
-                        "(real had %d)",
-                        len(ml_pkgs),
-                        len(real_result["packages"]),
-                    )
-            except Exception as _ml_err:
-                logger.warning("[api-trade-intel-player-packages] ML model error: %s", _ml_err)
+        # ML is primary; rule-based fills in only when ML has nothing
+        primary_pkgs  = ml_pkgs if ml_pkgs else real_result["packages"]
+        package_source = "ml" if ml_pkgs else "rule"
 
-        # ── Archetype patterns — built from ALL sig_counts, not just top N pkgs ──
-        total_trade_count = real_result["total_real_trades"] or 1
+        # ── Shared enrichment ─────────────────────────────────────────────
         def _sig_to_archetype(sig_str: str) -> tuple:
             import ast as _ast
             try:
@@ -18183,8 +18181,7 @@ def api_trade_intel_player_packages(player_id: str):
             picks   = sorted(lbl for lbl in labeled if lbl.startswith("PICK"))
             return " + ".join(players + picks), ""
 
-        # ── Enrich real packages ──────────────────────────────────────────
-        for pkg in real_result["packages"]:
+        def _enrich_pkg(pkg: dict) -> None:
             for asset in pkg["send"]:
                 if not asset.get("is_pick"):
                     info = values_by_id.get(asset.get("player_id") or "")
@@ -18204,13 +18201,17 @@ def api_trade_intel_player_packages(player_id: str):
             pkg["pattern_sig"]  = core_sig
             pkg["throw_in_sig"] = throw_sig
 
+        for pkg in primary_pkgs:
+            _enrich_pkg(pkg)
+
+        # ── Archetype patterns — always from real DB sig_counts ───────────
+        total_trade_count = real_result["total_real_trades"] or 1
         from collections import defaultdict as _dfd
         merged: dict = _dfd(int)
         for sig_str, cnt in (real_result.get("sig_counts") or {}).items():
             core_sig, throw_sig = _sig_to_archetype(sig_str)
             if core_sig:
-                canon = f"{core_sig}|{throw_sig}"
-                merged[canon] += cnt
+                merged[f"{core_sig}|{throw_sig}"] += cnt
 
         archetype_patterns = sorted(
             [
@@ -18226,38 +18227,15 @@ def api_trade_intel_player_packages(player_id: str):
             key=lambda x: -x["count"],
         )[:6]
 
-        # ── Enrich ML packages the same way as real packages ─────────────
-        for pkg in ml_pkgs:
-            for asset in pkg["send"]:
-                if not asset.get("is_pick"):
-                    info = values_by_id.get(asset.get("player_id") or "")
-                    if info:
-                        asset.update({
-                            "id":             asset["player_id"],
-                            "position":       info["position"],
-                            "team":           info.get("team", ""),
-                            "sf_value":       round(info.get("sf_value", info["value"]), 1),
-                            "pos_rank_label": info["pos_rank_label"],
-                        })
-            raw_sig = pkg.get("sig")
-            if raw_sig:
-                core_sig, throw_sig = _sig_to_archetype(str(tuple(raw_sig)))
-            else:
-                core_sig, throw_sig = _pattern_sigs(pkg["send"])
-            pkg["pattern_sig"]  = core_sig
-            pkg["throw_in_sig"] = throw_sig
-
-        combined_real = real_result["packages"] + ml_pkgs
-
         return jsonify({
             "player_name":        player_name,
             "focus_value":        focus_value,
             "packages":           [],
             "total_packages":     0,
-            "real_packages":      combined_real,
+            "real_packages":      primary_pkgs,
             "total_real_trades":  real_result["total_real_trades"],
             "archetype_patterns": archetype_patterns,
-            "ml_packages":        len(ml_pkgs),
+            "package_source":     package_source,
         })
 
     except Exception as e:
