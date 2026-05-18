@@ -16831,22 +16831,38 @@ def api_trade_intel_player_packages(player_id: str):
                     break
 
         packages.sort(key=lambda x: (x["_delta"], len(x["send"])))
-        for pkg in packages:
-            del pkg["_delta"]
 
-        # Enrich send assets with extra fields the trade calculator uses
+        def _value_label(send_val: float, target_val: float) -> str:
+            ratio = send_val / target_val if target_val else 1.0
+            if ratio < 0.97:
+                return "Great deal"
+            if ratio <= 1.03:
+                return "Fair value"
+            return "Overpay"
+
+        # Rename send→assets and add JS-required display fields
+        out_packages = []
         for pkg in packages:
-            for asset in pkg["send"]:
+            assets = pkg["send"]
+            for asset in assets:
                 if not asset.get("is_pick"):
                     info = values_by_id.get(asset.get("player_id") or "")
                     if info:
                         asset.update({
-                            "id": asset["player_id"],
-                            "position": info["position"],
-                            "team": info["team"],
-                            "sf_value": round(info.get("sf_value", info["value"]), 1),
+                            "id":             asset["player_id"],
+                            "position":       info["position"],
+                            "team":           info.get("team", ""),
+                            "sf_value":       round(info.get("sf_value", info["value"]), 1),
                             "pos_rank_label": info["pos_rank_label"],
                         })
+            out_packages.append({
+                "assets":           assets,
+                "send_value":       pkg["send_value"],
+                "value_label":      _value_label(pkg["send_value"], focus_value),
+                "is_profile_match": True,
+                "frequency":        0,
+            })
+        packages = out_packages
 
         # ── Real trade packages from the DB ────────────────────────────────
         roster_positions = ctx.get("roster_positions") or []
