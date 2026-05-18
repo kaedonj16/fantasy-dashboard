@@ -1232,13 +1232,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     )
 
     signin_modal = (
-        f"<div id='signinModal' style='display:none;position:fixed;inset:0;"
-        f"background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;'>"
-        f"  <div style='background:var(--card-bg,#1e2432);border:1px solid var(--border-color,#2d3748);"
-        f"border-radius:12px;padding:28px 24px;width:320px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,0.4);'>"
-        f"    <h3 style='margin:0 0 4px;font-size:18px;'>Sign In to your team</h3>"
-        f"    <p style='margin:0 0 16px;font-size:13px;color:var(--text-muted,#94a3b8);'>"
-        f"      Enter your Sleeper username to restore personalized features.</p>"
+        f"<div id='signinModal' class='signin-modal-overlay'>"
+        f"  <div class='signin-modal-box'>"
+        f"    <h3 class='signin-modal-title'>Sign in to your team</h3>"
+        f"    <p class='signin-modal-sub'>Enter your Sleeper username to restore personalized features.</p>"
         f"    <form method='POST' action='/set-viewer'>"
         f"      <input type='hidden' name='platform' value='{platform}'>"
         f"      <input type='hidden' name='season' value='{season}'>"
@@ -12346,6 +12343,9 @@ def set_viewer():
     save_viewer_session(viewer)
     if platform == "sleeper" and viewer.get("viewer_user_id"):
         _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
+    next_url = (request.form.get("next") or "").strip()
+    if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+        return redirect(next_url)
     return redirect(url_for("page_dashboard", platform=platform, season=season, league_id=league_id))
 
 
