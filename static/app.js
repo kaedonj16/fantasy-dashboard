@@ -2855,7 +2855,7 @@ window.initTradePage = function initTradePage(root = document) {
               </div>
               <div class="otc-rt-footer">
                 <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
-                  <span class="otc-rt-count">${count}× traded</span>
+                  <span class="otc-rt-count">${count} ${count === 1 ? 'trade' : 'trades'}</span>
                   ${chipHtml}
                 </div>
                 <button class="otc-sugg-pkg-load-btn"
