@@ -230,8 +230,9 @@ def _kmeans(
 def train(
     trade_rows: list[dict],
     values_by_id: dict,
-    k_max: int = 6,
-    min_per_cluster: int = 8,
+    k_max: int = 4,
+    min_trades_player: int = 5,
+    min_per_cluster: int = 5,
 ) -> dict:
     """
     Build the trade pattern model from pre-processed trade rows.
@@ -241,11 +242,16 @@ def train(
       target_value      float
       sent_assets       list[{asset_type, sent_player_id, pick_round, pick_season, pick_order}]
 
+    Clusters per individual player first; falls back to pos×tier class clusters
+    for players with fewer than min_trades_player trades.
+
     Returns a model dict ready to pass to save_model().
     """
     from collections import defaultdict
 
-    class_trades: dict[str, list[dict]] = defaultdict(list)
+    # Bucket trades by player_id AND by class (for fallback)
+    player_trades: dict[str, list[dict]] = defaultdict(list)
+    class_trades:  dict[str, list[dict]] = defaultdict(list)
 
     for trade in trade_rows:
         target_id   = str(trade.get("target_player_id") or "")
@@ -272,53 +278,70 @@ def train(
             for a in sent if a.get("asset_type") == "pick"
         )
 
-        class_trades[cls].append({
-            "trade_id":      trade.get("trade_id"),
-            "target_value":  target_val,
-            "sent_value":    sent_val,
-            "sent_assets":   sent,
-            "feature_vec":   vec,
-        })
+        row = {
+            "trade_id":     trade.get("trade_id"),
+            "target_value": target_val,
+            "sent_value":   sent_val,
+            "sent_assets":  sent,
+            "feature_vec":  vec,
+        }
+        player_trades[target_id].append(row)
+        class_trades[cls].append(row)
 
-    logger.info("[trade_model] %d target classes found", len(class_trades))
+    logger.info(
+        "[trade_model] %d players, %d classes",
+        len(player_trades), len(class_trades),
+    )
 
-    model_classes: dict[str, dict] = {}
-
-    for cls, trades in class_trades.items():
+    def _fit_clusters(trades: list[dict], label: str) -> list[dict]:
         n = len(trades)
-        logger.info("[trade_model] Class %-8s  %d trades", cls, n)
-
         X = np.array([t["feature_vec"] for t in trades], dtype=float)
         k = max(1, min(k_max, n // min_per_cluster))
-
         if k <= 1:
-            clusters = [{
-                "centroid": X.mean(axis=0).tolist(),
-                "size":     n,
-                "examples": _closest_examples(trades, X.mean(axis=0), X),
-            }]
-        else:
-            centroids, labels = _kmeans(X, k)
-            clusters = []
-            for j in range(k):
-                mask           = labels == j
-                cluster_trades = [trades[i] for i in range(n) if mask[i]]
-                cluster_X      = X[mask]
-                if not cluster_trades:
-                    continue
-                clusters.append({
-                    "centroid": centroids[j].tolist(),
-                    "size":     len(cluster_trades),
-                    "examples": _closest_examples(cluster_trades, centroids[j], cluster_X),
-                })
-            clusters.sort(key=lambda c: -c["size"])
+            centroid = X.mean(axis=0)
+            return [{"centroid": centroid.tolist(), "size": n,
+                     "examples": _closest_examples(trades, centroid, X)}]
+        centroids, labels = _kmeans(X, k)
+        clusters = []
+        for j in range(k):
+            mask = labels == j
+            ct   = [trades[i] for i in range(n) if mask[i]]
+            if not ct:
+                continue
+            clusters.append({
+                "centroid": centroids[j].tolist(),
+                "size":     len(ct),
+                "examples": _closest_examples(ct, centroids[j], X[mask]),
+            })
+        clusters.sort(key=lambda c: -c["size"])
+        return clusters
 
-        model_classes[cls] = {"clusters": clusters}
+    # ── Per-player clusters ───────────────────────────────────────────────
+    model_players: dict[str, dict] = {}
+    for pid, trades in player_trades.items():
+        if len(trades) < min_trades_player:
+            continue
+        info = values_by_id.get(pid) or {}
+        model_players[pid] = {
+            "name":     info.get("name", pid),
+            "class":    _target_class(str(info.get("position") or "WR").upper(),
+                                      float(info.get("value") or 0)),
+            "clusters": _fit_clusters(trades, pid),
+        }
 
+    logger.info("[trade_model] %d players with clusters", len(model_players))
+
+    # ── Class fallback clusters ───────────────────────────────────────────
+    model_classes: dict[str, dict] = {}
+    for cls, trades in class_trades.items():
+        model_classes[cls] = {"clusters": _fit_clusters(trades, cls)}
+
+    total = sum(len(v) for v in player_trades.values())
     return {
-        "version":    1,
+        "version":    2,
         "trained_at": datetime.now(timezone.utc).isoformat(),
-        "n_trades":   sum(len(v) for v in class_trades.values()),
+        "n_trades":   total,
+        "players":    model_players,
         "classes":    model_classes,
     }
 
@@ -378,6 +401,7 @@ def load_model(path: str = MODEL_PATH) -> Optional[dict]:
 
 def suggest_packages(
     model: dict,
+    target_player_id: str,
     target_pos: str,
     target_value: float,
     viewer_players: list[dict],
@@ -389,26 +413,32 @@ def suggest_packages(
     """
     Given a loaded model and viewer's roster, return suggested packages.
 
+    Looks up clusters for the specific player first; falls back to the
+    pos×tier class clusters when the player has insufficient trade history.
+
     Returns list of package dicts compatible with _real_trade_packages_for_target:
       {send: [...], trades_like_this: N, sig: [...], pattern_source: 'ml'}
     """
-    cls        = _target_class(target_pos, target_value)
-    class_data = (model.get("classes") or {}).get(cls)
-
-    if not class_data:
-        # Expand to adjacent tier
-        tier = _value_to_tier(target_value)
-        for adj in [tier - 1, tier + 1, tier - 2]:
-            if 1 <= adj <= 9:
-                adj_cls    = f"{target_pos.upper()}-T{adj}"
-                class_data = (model.get("classes") or {}).get(adj_cls)
-                if class_data:
-                    break
-
-    if not class_data:
-        return []
-
-    clusters = class_data.get("clusters") or []
+    # 1. Try player-specific clusters
+    player_data = (model.get("players") or {}).get(str(target_player_id))
+    if player_data:
+        clusters = player_data.get("clusters") or []
+    else:
+        # 2. Fall back to pos×tier class
+        cls        = _target_class(target_pos, target_value)
+        class_data = (model.get("classes") or {}).get(cls)
+        if not class_data:
+            tier = _value_to_tier(target_value)
+            for adj in [tier - 1, tier + 1, tier - 2]:
+                if 1 <= adj <= 9:
+                    class_data = (model.get("classes") or {}).get(
+                        f"{target_pos.upper()}-T{adj}"
+                    )
+                    if class_data:
+                        break
+        if not class_data:
+            return []
+        clusters = class_data.get("clusters") or []
     packages: list[dict] = []
     seen_shapes: set[str] = set()
 

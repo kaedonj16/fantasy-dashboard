@@ -16418,13 +16418,14 @@ def api_trade_intel_player_packages(player_id: str):
             if _tm_model:
                 _focus_pos = (values_by_id.get(str(player_id)) or {}).get("position", "WR")
                 ml_pkgs = _tm_suggest(
-                    model          = _tm_model,
-                    target_pos     = _focus_pos,
-                    target_value   = float(focus_value or 0),
-                    viewer_players = viewer_players,
-                    viewer_picks   = viewer_picks,
-                    values_by_id   = values_by_id,
-                    n              = 5,
+                    model             = _tm_model,
+                    target_player_id  = str(player_id),
+                    target_pos        = _focus_pos,
+                    target_value      = float(focus_value or 0),
+                    viewer_players    = viewer_players,
+                    viewer_picks      = viewer_picks,
+                    values_by_id      = values_by_id,
+                    n                 = 5,
                 )
                 logger.info("[api-trade-intel-player-packages] ML model: %d packages", len(ml_pkgs))
         except Exception as _ml_err:
