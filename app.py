@@ -16023,14 +16023,6 @@ def _real_trade_packages_for_target(
                         and abs(_asset_tier(float(info.get("value") or 0)) - req_tier) <= 1
                     ]
 
-                    def _ref_prof_score(p, wa=want_age, wm=want_mom, mv=mid_val):
-                        got = _player_profile(p)
-                        gp = got.split("-")
-                        age_ok = (not wa or wa == gp[0])
-                        mom_ok = (not wm or wm == (gp[1] if len(gp) > 1 else ""))
-                        return (0 if (age_ok and mom_ok) else 1 if age_ok else 2 if mom_ok else 3,
-                                abs(p["value"] - mv))
-
                     if candidates:
                         best = min(candidates, key=lambda p: abs(_asset_tier(p["value"]) - req_tier))
                         fallback_assets.append(best)
