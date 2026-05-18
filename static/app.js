@@ -2794,61 +2794,61 @@ window.initTradePage = function initTradePage(root = document) {
           realTradeHtml += `</div></div>`;
         }
 
-        // ── Individual real-trade examples (card style matching top packages) ──
+        // ── Individual real-trade examples ──
         if (_pkgRealPkgs.length) {
-          realTradeHtml += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px;">Example trades</div>`;
+          realTradeHtml += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px;">Example trades</div>`;
           _pkgRealPkgs.forEach(pkg => {
             const count  = pkg.trades_like_this || 0;
             const isRef  = !!pkg.is_reference;
-            const archSig = archetypeSigHtml(pkg.pattern_sig, pkg.throw_in_sig);
 
-            function tradeAssetHtml(a) {
+            function tradeAssetRow(a) {
               if (a.is_pick || a.type === "pick") {
-                return `<div class="otc-sugg-pkg-asset" style="overflow:hidden;">
-                  <span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;flex-shrink:0;">PICK</span>
-                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.name || "Pick"}</span>
+                return `<div class="otc-rt-asset">
+                  <span class="otc-rt-pos" style="background:rgba(99,102,241,.1);color:#6366f1;">PICK</span>
+                  <span class="otc-rt-name">${a.name || "Pick"}</span>
                 </div>`;
               }
               const col = posColor(a.position);
-              return `<div class="otc-sugg-pkg-asset" style="overflow:hidden;">
-                <span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};flex-shrink:0;">${a.position}</span>
-                <span style="color:${isRef ? 'var(--text-muted)' : 'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${a.name}</span>
+              return `<div class="otc-rt-asset">
+                <span class="otc-rt-pos" style="background:${col}18;color:${col};">${a.position}</span>
+                <span class="otc-rt-name" style="${isRef ? 'color:var(--text-muted);' : ''}">${a.name}</span>
               </div>`;
             }
 
-            const giveHtml = (pkg.send || []).map(tradeAssetHtml).join('');
             const focusPos = focusPlayer?.position || 'WR';
             const focusCol = posColor(focusPos);
-            const countBadge = `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid rgba(167,139,250,.2);">${count}×</span>`;
-            const refBadge = isRef ? `<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">ref</span>` : '';
+
+            // Archetype chips — cap at 3 to avoid overflow
+            const allChips = (pkg.pattern_sig || '').split(' + ').filter(Boolean);
+            const visChips = allChips.slice(0, 3);
+            const overflow = allChips.length - visChips.length;
+            const chipHtml = visChips.map(archetypeChip).join(
+              `<span style="color:var(--text-muted);font-size:10px;">+</span>`
+            ) + (overflow > 0 ? `<span style="font-size:10px;color:var(--text-muted);">+${overflow}</span>` : '');
 
             realTradeHtml += `<div class="otc-real-trade-card">
-              <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
-                ${countBadge}${refBadge}
-                ${archSig ? `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px;margin-left:2px;">${archSig}</div>` : ''}
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 20px 1fr;align-items:start;gap:4px;">
-                <div>
-                  <div class="otc-sugg-pkg-side-label">YOU GET</div>
-                  <div class="otc-sugg-pkg-assets">
-                    <div class="otc-sugg-pkg-asset">
-                      <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
-                      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">${_pkgPlayerName}</span>
-                    </div>
+              <div class="otc-rt-body">
+                <div class="otc-rt-side">
+                  <div class="otc-rt-label">YOU GET</div>
+                  <div class="otc-rt-asset">
+                    <span class="otc-rt-pos" style="background:${focusCol}18;color:${focusCol};">${focusPos}</span>
+                    <span class="otc-rt-name" style="font-weight:700;">${_pkgPlayerName}</span>
                   </div>
                 </div>
-                <div style="display:flex;align-items:flex-start;justify-content:center;padding-top:17px;color:var(--text-muted);font-size:11px;">⟵</div>
-                <div>
-                  <div class="otc-sugg-pkg-side-label">YOU GIVE</div>
-                  <div class="otc-sugg-pkg-assets">${giveHtml}</div>
+                <div class="otc-rt-divider"></div>
+                <div class="otc-rt-side">
+                  <div class="otc-rt-label">YOU GIVE</div>
+                  ${(pkg.send || []).map(tradeAssetRow).join('')}
                 </div>
               </div>
-              <div style="margin-top:8px;display:flex;justify-content:flex-end;">
+              <div class="otc-rt-footer">
+                <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
+                  <span class="otc-rt-count">${count}×</span>
+                  ${chipHtml}
+                </div>
                 <button class="otc-sugg-pkg-load-btn"
                   data-focus-id="${_pkgPlayerId}"
                   data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}">Analyze</button>
-              </div>
-            </div>`;
           });
         }
         realTradeHtml += `</div>`;
