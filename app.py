@@ -4161,12 +4161,21 @@ _FALLBACK_THRESHOLDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
-    Gap-based tier boundaries. We compute gaps for _FIND_TIERS internal tiers
-    so the algorithm carves finer splits in the value distribution, keeping each
-    displayed tier small. The JS prGetTier clamps display to T9, so anything
-    below the 8th boundary collapses into one large T9 catch-all tier.
+    Gap-based tier boundaries.
+
+    Finds up to (_FIND_TIERS - 1) boundaries by scoring each gap as
+    gap / local_median_gap (relative significance). Two guards prevent
+    micro-tiers in the displayed range:
+      - min_grp: boundaries must be at least 2 player-positions apart
+      - MIN_TIER_PLAYERS: the tier above a new boundary must have >= 10 players
+        (the top ELITE_EXEMPT_POS positions are exempt so T1 can be small)
+
+    Python _asset_tier and JS prGetTier both clamp at _NUM_TIERS (9), so
+    everything below the last boundary becomes a single large T9 catch-all.
     """
-    _FIND_TIERS = 13  # find this many tiers internally; display clamps to 9
+    _FIND_TIERS       = 13   # internal search depth; JS+Python clamp display to 9
+    MIN_TIER_PLAYERS  = 10   # skip boundaries that would create a tier with < 10 players
+    ELITE_EXEMPT_POS  = 10   # top-N player positions exempt from min-tier check (T1)
 
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -4210,6 +4219,13 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
             continue
         if any(abs(pos - p) < min_grp for p in chosen_pos):
             continue
+        # Skip if the tier above this boundary would have too few players.
+        # The elite zone (top ELITE_EXEMPT_POS positions) is exempt so T1
+        # can still be a small group of elite assets.
+        if pos >= ELITE_EXEMPT_POS:
+            above = [p for p in chosen_pos if p < pos]
+            if above and (pos - max(above)) < MIN_TIER_PLAYERS:
+                continue
         chosen_pos.append(pos)
         boundaries.append(midpoint)
 
@@ -4220,8 +4236,8 @@ def _asset_tier(value: float, thresholds: list = None) -> int:
     t = thresholds if thresholds is not None else _FALLBACK_THRESHOLDS
     for i, threshold in enumerate(t):
         if value >= threshold:
-            return i + 1
-    return len(t) + 1
+            return min(i + 1, _NUM_TIERS)
+    return _NUM_TIERS  # catch-all T9
 
 
 def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
@@ -9205,9 +9221,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         if (!tbl.length) return null;
         const val = prGetValue(p);
         for (let i = 0; i < tbl.length; i++) {
-          if (val >= tbl[i]) return i + 1;
+          if (val >= tbl[i]) return Math.min(i + 1, 9);
         }
-        return 9; // clamp — everything below T8 boundary is T9
+        return 9; // T9 catch-all — matches Python _asset_tier clamp
       }
 
       // Load data
