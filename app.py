@@ -4161,21 +4161,22 @@ _FALLBACK_THRESHOLDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
-    Gap-based tier boundaries.
+    Quantile-based tier boundaries with geometric growth and local gap snapping.
 
-    Finds up to (_FIND_TIERS - 1) boundaries by scoring each gap as
-    gap / local_median_gap (relative significance). Two guards prevent
-    micro-tiers in the displayed range:
-      - min_grp: boundaries must be at least 2 player-positions apart
-      - MIN_TIER_PLAYERS: the tier above a new boundary must have >= 10 players
-        (the top ELITE_EXEMPT_POS positions are exempt so T1 can be small)
+    Each tier is ~TIER_GROWTH_RATIO× larger than the previous, producing a
+    pyramid: T1 is the smallest elite bucket; T9 (everything below the last
+    boundary) is the large catch-all. COVERAGE controls what fraction of active
+    players live in T1-T8; the rest fall into T9.
 
-    Python _asset_tier and JS prGetTier both clamp at _NUM_TIERS (9), so
-    everything below the last boundary becomes a single large T9 catch-all.
+    Each boundary is placed at its target quantile position then snapped to
+    the largest nearby gap within ±SNAP_WINDOW players, so boundaries prefer
+    natural value breaks when they exist close to the target rank.
+
+    Python _asset_tier and JS prGetTier both clamp at _NUM_TIERS (9).
     """
-    _FIND_TIERS       = 13   # internal search depth; JS+Python clamp display to 9
-    MIN_TIER_PLAYERS  = 10   # skip boundaries that would create a tier with < 10 players
-    ELITE_EXEMPT_POS  = 10   # top-N player positions exempt from min-tier check (T1)
+    TIER_GROWTH_RATIO = 1.6   # each tier is ~1.6× larger than the previous one
+    COVERAGE          = 0.50  # fraction of active players in T1-T(num_tiers-1)
+    SNAP_WINDOW       = 5     # snap each boundary to nearby gap (±this many players)
 
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -4194,40 +4195,34 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
             vals.append(v)
 
     vals.sort(reverse=True)
+    n = len(vals)
 
-    if len(vals) < _FIND_TIERS * 2:
+    if n < num_tiers * 2:
         return _FALLBACK_THRESHOLDS
 
-    window  = 10
-    min_grp = 2
-    scored  = []
-    for i in range(len(vals) - 1):
-        gap = vals[i] - vals[i + 1]
-        lo  = max(0, i - window)
-        hi  = min(len(vals) - 1, i + window)
-        nbrs = [vals[j] - vals[j + 1] for j in range(lo, hi) if j != i]
-        local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
-        scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
+    # Compute target tier sizes: geometric series scaled to cover COVERAGE of players
+    n_bounds = num_tiers - 1
+    raw = [TIER_GROWTH_RATIO ** i for i in range(n_bounds)]
+    scale = (COVERAGE * n) / sum(raw)
+    target_sizes = [max(2, round(r * scale)) for r in raw]
 
-    scored.sort(key=lambda x: x[0], reverse=True)
-    chosen_pos = []
+    # Gap sizes between adjacent players (for snapping)
+    gaps = [vals[i] - vals[i + 1] for i in range(n - 1)]
+
+    start = 0
+    used  = set()
     boundaries = []
-    for _sig, pos, midpoint in scored:
-        if len(boundaries) >= _FIND_TIERS - 1:
-            break
-        if pos < min_grp or pos > len(vals) - 1 - min_grp:
-            continue
-        if any(abs(pos - p) < min_grp for p in chosen_pos):
-            continue
-        # Skip if the tier above this boundary would have too few players.
-        # The elite zone (top ELITE_EXEMPT_POS positions) is exempt so T1
-        # can still be a small group of elite assets.
-        if pos >= ELITE_EXEMPT_POS:
-            above = [p for p in chosen_pos if p < pos]
-            if above and (pos - max(above)) < MIN_TIER_PLAYERS:
-                continue
-        chosen_pos.append(pos)
-        boundaries.append(midpoint)
+    for size in target_sizes:
+        target_pos = min(start + size - 1, n - 2)
+        lo = max(start, target_pos - SNAP_WINDOW)
+        hi = min(n - 2, target_pos + SNAP_WINDOW)
+        best_gap, best_pos = -1.0, target_pos
+        for p in range(lo, hi + 1):
+            if p not in used and gaps[p] > best_gap:
+                best_gap, best_pos = gaps[p], p
+        used.add(best_pos)
+        boundaries.append(round((vals[best_pos] + vals[best_pos + 1]) / 2.0, 1))
+        start = best_pos + 1
 
     return sorted(boundaries, reverse=True) if boundaries else _FALLBACK_THRESHOLDS
 
