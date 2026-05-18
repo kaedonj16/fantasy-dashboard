@@ -1077,7 +1077,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         is_active = active in active_keys
         btn_cls = "nav-pill active" if is_active else "nav-pill"
         item_html = ""
-        for item_label, endpoint, item_key, disabled in items:
+        for item_tuple in items:
+            item_label, endpoint, item_key = item_tuple[0], item_tuple[1], item_tuple[2]
+            disabled = item_tuple[3] if len(item_tuple) > 3 else False
             if disabled:
                 item_html += (
                     f"<span class='nav-pill-dropdown-item disabled'>"
@@ -1122,11 +1124,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Activity",  "page_activity",  "activity",  False, False),
         ("Waivers",   "page_waivers",   "waivers",   False, False),
     ], ["standings", "teams", "activity", "waivers"], "teamsNavDropdown"))
-    nav_pills.append(nav_pill_dropdown("Trades", [
-        ("Trade Calculator", "trade.page_trade",          "trade",          False, False),
-        ("Trade Database",   "trade.page_trade_database", "trade-database", False, False),
-        ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False, True),
-    ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
