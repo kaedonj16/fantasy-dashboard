@@ -2725,15 +2725,19 @@ window.initTradePage = function initTradePage(root = document) {
         'vet-falling':   { text: '↓ Declining Vet',  color: '#ef4444' },
       };
 
-      // ── Shared helper: render one archetype label (e.g. "RB-T4-Prime" or "PICK:R1") ──
+      // ── Shared helper: render one archetype label ──────────────────────
+      // Formats: "RB-T4-Prime"  "PICK:R1:Early"  "PICK:R1"  "PICK"
       function archetypeChip(lbl) {
         if (!lbl || lbl === '?') return '';
         if (lbl === 'PICK' || lbl.startsWith('PICK:')) {
-          const rndPart = lbl.includes(':') ? lbl.split(':')[1] : '';
-          const text = rndPart && rndPart !== 'Pick' ? rndPart : 'Pick';
+          const segs   = lbl.split(':');           // ['PICK','R1','Early']
+          const rnd    = segs[1] || '';
+          const slot   = segs[2] || '';
+          const slotColor = slot === 'Early' ? '#10b981' : slot === 'Late' ? '#ef4444' : '#a78bfa';
           return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.2);">
             <span style="font-size:10px;font-weight:700;color:#6366f1;">PICK</span>
-            <span style="font-size:10px;color:#a78bfa;">${text}</span>
+            ${rnd ? `<span style="font-size:10px;font-weight:600;color:#a78bfa;">${rnd}</span>` : ''}
+            ${slot ? `<span style="font-size:10px;color:${slotColor};">${slot}</span>` : ''}
           </span>`;
         }
         const parts   = lbl.split('-');
@@ -2741,10 +2745,11 @@ window.initTradePage = function initTradePage(root = document) {
         const tier    = parts[1] || '';
         const bracket = parts[2] || '';
         const col     = posColor(pos);
+        const bracketColor = bracket === 'Young' ? '#10b981' : bracket === 'Vet' ? '#9ca3af' : '#6366f1';
         return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:${col}12;border:1px solid ${col}30;">
           <span style="font-size:10px;font-weight:700;color:${col};">${pos}</span>
           <span style="font-size:10px;font-weight:600;color:var(--text);">${tier}</span>
-          ${bracket ? `<span style="font-size:10px;color:var(--text-muted);">· ${bracket}</span>` : ''}
+          ${bracket ? `<span style="font-size:10px;color:${bracketColor};">· ${bracket}</span>` : ''}
         </span>`;
       }
 
@@ -2753,7 +2758,7 @@ window.initTradePage = function initTradePage(root = document) {
         const chips = pattern_sig.split(' + ').map(archetypeChip).join(
           `<span style="color:var(--text-muted);font-size:11px;margin:0 1px;">+</span>`
         );
-        const throwIn = throw_in_sig && !throw_in_sig.includes('Pick')
+        const throwIn = throw_in_sig
           ? `<span style="font-size:10px;color:var(--text-muted);white-space:nowrap;">
                <span style="opacity:.5;margin:0 3px;">·</span>throw-in: ${throw_in_sig}
              </span>`

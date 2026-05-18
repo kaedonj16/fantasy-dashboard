@@ -16901,27 +16901,30 @@ def api_trade_intel_player_packages(player_id: str):
         # a representative trade from that sig's trade_ids, then using _pattern_sigs.
         # Faster approach: convert the sig parts directly to archetype labels.
         total_trade_count = real_result["total_real_trades"] or 1
-        VALUE_BUCKET_TO_TIER = {"elite": 1, "high": 2, "mid": 4, "low": 6}
-
         def _sig_to_archetype(sig_str: str) -> tuple:
-            """Convert a sig like \"('K:1', 'P:RB:high')\" to (core_sig, throw_sig)."""
+            """Convert sig tuple-string to (core_sig, throw_sig) display labels.
+
+            New format: P:{pos}:T{tier}:{bracket}  K:{round}:{slot_bucket}
+            e.g. ('P:RB:T4:Prime', 'K:1:Early') -> 'RB-T4-Prime + PICK:R1:Early'
+            """
             import ast as _ast
             try:
                 parts = list(_ast.literal_eval(sig_str))
             except Exception:
                 return "", ""
             labeled = []
-            for part in sorted(parts):
+            for part in parts:
                 kind, *rest = part.split(":")
-                if kind == "P" and len(rest) == 2:
-                    pos, bucket = rest
-                    tier = VALUE_BUCKET_TO_TIER.get(bucket, 5)
-                    labeled.append(f"{pos}-T{tier}")
+                if kind == "P" and len(rest) >= 2:
+                    pos     = rest[0]
+                    tier    = rest[1]                           # e.g. "T4"
+                    bracket = rest[2] if len(rest) > 2 else "" # e.g. "Prime"
+                    labeled.append(f"{pos}-{tier}-{bracket}" if bracket else f"{pos}-{tier}")
                 elif kind == "K" and rest:
-                    rnd_str = rest[0]
-                    suffix = {"1": "R1", "2": "R2", "3": "R3"}.get(rnd_str, f"R{rnd_str}")
-                    labeled.append(f"PICK:{suffix}")
-            # Sort picks to end, players by label
+                    rnd_str  = rest[0]
+                    slot_str = rest[1] if len(rest) > 1 else ""
+                    rnd_lbl  = {"1": "R1", "2": "R2", "3": "R3"}.get(rnd_str, f"R{rnd_str}")
+                    labeled.append(f"PICK:{rnd_lbl}:{slot_str}" if slot_str else f"PICK:{rnd_lbl}")
             players = sorted(lbl for lbl in labeled if not lbl.startswith("PICK"))
             picks   = sorted(lbl for lbl in labeled if lbl.startswith("PICK"))
             return " + ".join(players + picks), ""
@@ -17052,21 +17055,39 @@ def _real_trade_packages_for_target(
     if not total_real_trades:
         return {"packages": [], "total_real_trades": 0}
 
-    # Build position/value signature for each trade package, then count frequencies
+    # Build precise signature: P:{pos}:T{tier}:{bracket}  K:{round}:{slot_bucket}
+    def _pick_slot_bucket(order) -> str:
+        if order is None:
+            return "Mid"
+        try:
+            o = int(order)
+        except (TypeError, ValueError):
+            return "Mid"
+        return "Early" if o <= 4 else ("Mid" if o <= 8 else "Late")
+
+    def _player_age_bracket(info: dict) -> str:
+        try:
+            age = float(info.get("age") or 0)
+        except (TypeError, ValueError):
+            age = 0
+        if age <= 0:
+            return "Unk"
+        return "Young" if age <= 24 else ("Prime" if age <= 28 else "Vet")
+
     def _sig(assets: list[dict]) -> Optional[tuple]:
         parts = []
-        for a in sorted(assets, key=lambda x: x["asset_type"]):
+        for a in assets:
             if a["asset_type"] == "player" and a["sent_player_id"]:
                 info = values_by_id.get(str(a["sent_player_id"]))
                 if not info:
                     continue
-                pos = info["position"]
-                val = info["value"]
-                # Bucket value so similar-value swaps collapse to the same signature
-                bucket = "elite" if val >= 900 else "high" if val >= 550 else "mid" if val >= 300 else "low"
-                parts.append(f"P:{pos}:{bucket}")
+                pos    = info["position"]
+                tier   = _asset_tier(float(info.get("value") or 0))
+                bracket = _player_age_bracket(info)
+                parts.append(f"P:{pos}:T{tier}:{bracket}")
             elif a["asset_type"] == "pick" and a["pick_round"]:
-                parts.append(f"K:{a['pick_round']}")
+                bucket = _pick_slot_bucket(a.get("pick_order"))
+                parts.append(f"K:{a['pick_round']}:{bucket}")
         return tuple(sorted(parts)) if parts else None
 
     sig_counts: dict = defaultdict(list)
@@ -17075,7 +17096,7 @@ def _real_trade_packages_for_target(
         if s:
             sig_counts[s].append(trade_id)
 
-    # Viewer helpers: players by position, picks by round
+    # Viewer helpers
     vp_by_pos: dict = defaultdict(list)
     for vp in viewer_players:
         vp_by_pos[vp["position"]].append(vp)
@@ -17088,17 +17109,8 @@ def _real_trade_packages_for_target(
                 vk_by_round[rnd].append(pk)
                 break
 
-    VALUE_RANGES = {
-        "elite": (700, 1400),
-        "high":  (400, 800),
-        "mid":   (220, 600),
-        "low":   (100, 400),
-    }
-
     result_packages = []
     used_pids: set = set()
-
-    # Track which sigs we fall back on so we don't double-count
     fallback_packages = []
 
     for sig, trade_ids in sorted(sig_counts.items(), key=lambda x: -len(x[1])):
@@ -17110,55 +17122,60 @@ def _real_trade_packages_for_target(
         for part in sig:
             kind, *rest = part.split(":")
             if kind == "P":
-                pos, bucket = rest
-                lo, hi = VALUE_RANGES.get(bucket, (100, 2000))
+                pos, tier_str, bracket = rest[0], rest[1], rest[2]
+                req_tier = int(tier_str[1:]) if tier_str.startswith("T") else 5
+                # Find viewer player matching pos and within ±1 tier
                 candidates = [
                     vp for vp in vp_by_pos.get(pos, [])
                     if vp["player_id"] not in used_pids
                     and vp["player_id"] not in temp_used
-                    and lo <= vp["value"] <= hi
+                    and abs(_asset_tier(vp["value"]) - req_tier) <= 1
                 ]
                 if not candidates:
                     ok = False
                     break
-                mid_val = (lo + hi) / 2
-                best = min(candidates, key=lambda p: abs(p["value"] - mid_val))
+                # Pick closest tier match, break ties by closest age bracket
+                best = min(candidates, key=lambda p: (
+                    abs(_asset_tier(p["value"]) - req_tier),
+                    abs(float(values_by_id.get(p.get("player_id",""), {}).get("age") or 99) - 26)
+                ))
                 matched.append(best)
                 temp_used.add(best["player_id"])
             elif kind == "K":
                 rnd = int(rest[0])
-                available = [pk for pk in vk_by_round.get(rnd, [])]
+                available = vk_by_round.get(rnd, [])
                 if not available:
                     ok = False
                     break
                 matched.append(available[0])
 
         if not ok or not matched:
-            # Build a fallback package describing the pattern (no viewer-specific players)
+            # Fallback: reference players/picks describing the pattern
             fallback_assets = []
             for part in sig:
                 kind, *rest = part.split(":")
                 if kind == "P":
-                    pos, bucket = rest
-                    lo, hi = VALUE_RANGES.get(bucket, (100, 2000))
-                    mid_val = (lo + hi) / 2
-                    # Find any player in values_by_id matching this pos + value range
+                    pos, tier_str, bracket = rest[0], rest[1], rest[2]
+                    req_tier = int(tier_str[1:]) if tier_str.startswith("T") else 5
                     candidates = [
                         {"player_id": pid, "name": info["name"], "position": pos,
                          "value": info["value"], "pos_rank_label": info.get("pos_rank_label", ""),
                          "is_reference": True}
                         for pid, info in values_by_id.items()
-                        if info["position"] == pos and lo <= info["value"] <= hi
+                        if info["position"] == pos
+                        and abs(_asset_tier(float(info.get("value") or 0)) - req_tier) <= 1
                     ]
                     if candidates:
-                        best = min(candidates, key=lambda p: abs(p["value"] - mid_val))
+                        best = min(candidates, key=lambda p: abs(_asset_tier(p["value"]) - req_tier))
                         fallback_assets.append(best)
                 elif kind == "K":
                     rnd = int(rest[0])
+                    slot_bucket = rest[1] if len(rest) > 1 else "Mid"
                     suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
                     fallback_assets.append({
-                        "name": f"{suffix} Round Pick", "is_pick": True,
-                        "value": _pick_val(rnd, pick_season),
+                        "name": f"{suffix} Round ({slot_bucket})", "is_pick": True,
+                        "pick_round": rnd,
+                        "value": _pick_val(rnd),
                         "is_reference": True,
                     })
             if fallback_assets:
