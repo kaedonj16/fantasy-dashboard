@@ -4161,11 +4161,12 @@ _FALLBACK_THRESHOLDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
-    Derive tier breakpoints from normalized gap significance across the full player list.
+    Build tier boundaries by fixed player-count cutoffs so T1-T8 stay small
+    and T9 is the large catch-all. Boundary is placed at the midpoint between
+    the last player in the tier and the first player in the next tier.
 
-    T1-T8 each have a max of 12 players. Everything below the T8 boundary falls into
-    T9 (the large catch-all tier). Tier boundaries are chosen from the most significant
-    gaps; if a tier would be too large, the biggest gap inside it is force-split.
+    Cutoffs (cumulative player counts):  T1≤4  T2≤8  T3≤14  T4≤24
+                                         T5≤40  T6≤65  T7≤100  T8≤150  T9=rest
     """
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -4185,71 +4186,19 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
 
     vals.sort(reverse=True)
 
-    if len(vals) < num_tiers * 3:
+    if len(vals) < 20:
         return _FALLBACK_THRESHOLDS
 
-    # Score each gap by how large it is relative to nearby gaps (local significance)
-    window   = 12
-    min_grp  = 3   # minimum players per tier
-    max_tier = 12  # maximum players in T1-T8 before force-splitting
-    scored   = []
-    for i in range(len(vals) - 1):
-        gap = vals[i] - vals[i + 1]
-        lo  = max(0, i - window)
-        hi  = min(len(vals) - 1, i + window)
-        nbrs = [vals[j] - vals[j + 1] for j in range(lo, hi) if j != i]
-        local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
-        scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
-
-    # Select top (num_tiers-1) gaps, enforcing minimum group spacing
-    scored.sort(key=lambda x: x[0], reverse=True)
-    chosen_pos = []
+    # Cumulative player-count cutoffs for T1 through T8
+    cutoffs = [4, 8, 14, 24, 40, 65, 100, 150]
     boundaries = []
-    for _sig, pos, midpoint in scored:
-        if len(boundaries) >= num_tiers - 1:
+    for cut in cutoffs:
+        if cut >= len(vals):
             break
-        if pos < min_grp or pos > len(vals) - 1 - min_grp:
-            continue
-        if any(abs(pos - p) < min_grp for p in chosen_pos):
-            continue
-        chosen_pos.append(pos)
-        boundaries.append(midpoint)
+        mid = (vals[cut - 1] + vals[cut]) / 2.0
+        boundaries.append(round(mid, 1))
 
-    if not boundaries:
-        return _FALLBACK_THRESHOLDS
-
-    boundaries = sorted(boundaries, reverse=True)
-
-    # Force-split any T1-T8 tier that exceeds max_tier players
-    # (T9 is intentionally large — it's the catch-all)
-    for attempt in range(num_tiers - 2):
-        if len(boundaries) >= num_tiers - 1:
-            break
-        thresholds = boundaries
-        tier_starts = [0] + [
-            next((j for j in range(len(vals)) if vals[j] < t), len(vals))
-            for t in thresholds
-        ]
-        for t_idx in range(len(thresholds)):  # only check T1..T(n-1), not T9
-            start = tier_starts[t_idx]
-            end   = tier_starts[t_idx + 1]
-            size  = end - start
-            if size <= max_tier:
-                continue
-            # Find the biggest raw gap inside this tier and split there
-            best_gap, best_i, best_mid = 0.0, -1, 0.0
-            for j in range(start, end - 1):
-                g = vals[j] - vals[j + 1]
-                if g > best_gap and j >= start + min_grp and j <= end - 1 - min_grp:
-                    if not any(abs(j - cp) < min_grp for cp in chosen_pos):
-                        best_gap, best_i, best_mid = g, j, (vals[j] + vals[j + 1]) / 2.0
-            if best_i >= 0:
-                chosen_pos.append(best_i)
-                boundaries.append(best_mid)
-                boundaries = sorted(boundaries, reverse=True)
-                break
-
-    return boundaries
+    return boundaries if boundaries else _FALLBACK_THRESHOLDS
 
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
