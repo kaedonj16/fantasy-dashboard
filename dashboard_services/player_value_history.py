@@ -180,11 +180,6 @@ def get_player_value_history(
     if not latest_date:
         return []
 
-    # Cap at last known-good snapshot date to exclude corrupted pipeline runs
-    LAST_GOOD_DATE = "2026-05-15"
-    if latest_date > LAST_GOOD_DATE:
-        latest_date = LAST_GOOD_DATE
-
     cutoff = (date.fromisoformat(latest_date) - timedelta(days=max(days, 1) - 1)).isoformat()
     col = _value_col(league_type, league_size)
 
@@ -203,10 +198,9 @@ def get_player_value_history(
             WHERE source = %s
               AND player_id = %s
               AND as_of_date >= %s
-              AND as_of_date <= %s
             ORDER BY as_of_date ASC
             """,
-            (source, str(player_id), cutoff, LAST_GOOD_DATE),
+            (source, str(player_id), cutoff),
         ).fetchall()
 
     out: list[dict] = []
