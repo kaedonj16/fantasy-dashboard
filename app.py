@@ -4418,14 +4418,18 @@ def _market_scale(fmt: str = "1qb") -> float:
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
-    Derive tier breakpoints from gap significance across the full player list.
+    Quantile-based tier boundaries with geometric growth and local gap snapping.
 
-    Primary method: score each gap by how large it is relative to nearby gaps
-    (local significance), then select the top (num_tiers-1) boundaries.
+    Each tier is ~TIER_GROWTH_RATIO× larger than the previous, producing a
+    pyramid: T1 is the smallest elite bucket; T9 (everything below the last
+    boundary) is the large catch-all. COVERAGE controls what fraction of active
+    players live in T1-T8; the rest fall into T9.
 
-    Constraint: no tier may contain more than max_tier_size players. If the
-    initial gap-detection leaves an oversized tier, it is force-split at its
-    largest internal gap until the constraint is met or num_tiers is exhausted.
+    Each boundary is placed at its target quantile position then snapped to
+    the largest nearby gap within ±SNAP_WINDOW players, so boundaries prefer
+    natural value breaks when they exist close to the target rank.
+
+    Python _asset_tier and JS prGetTier both clamp at _NUM_TIERS (9).
     """
     TIER_GROWTH_RATIO = 1.6   # each tier is ~1.6× larger than the previous one
     COVERAGE          = 0.50  # fraction of active players in T1-T(num_tiers-1)
@@ -4453,21 +4457,17 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
     if n < num_tiers * 2:
         return _FALLBACK_THRESHOLDS
 
-    # Score each gap by how large it is relative to nearby gaps (local significance)
-    window  = 12
-    min_grp = 3
-    scored  = []
-    for i in range(len(vals) - 1):
-        gap = vals[i] - vals[i + 1]
-        lo  = max(0, i - window)
-        hi  = min(len(vals) - 1, i + window)
-        nbrs = [vals[j] - vals[j + 1] for j in range(lo, hi) if j != i]
-        local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
-        scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
+    # Compute target tier sizes: geometric series scaled to cover COVERAGE of players
+    n_bounds = num_tiers - 1
+    raw = [TIER_GROWTH_RATIO ** i for i in range(n_bounds)]
+    scale = (COVERAGE * n) / sum(raw)
+    target_sizes = [max(2, round(r * scale)) for r in raw]
 
-    # Select top (num_tiers-1) gaps with minimum group spacing
-    scored.sort(key=lambda x: x[0], reverse=True)
-    chosen_pos = []
+    # Gap sizes between adjacent players (for snapping)
+    gaps = [vals[i] - vals[i + 1] for i in range(n - 1)]
+
+    start = 0
+    used  = set()
     boundaries = []
     for size in target_sizes:
         target_pos = min(start + size - 1, n - 2)
@@ -4481,48 +4481,7 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         boundaries.append(round((vals[best_pos] + vals[best_pos + 1]) / 2.0, 1))
         start = best_pos + 1
 
-    if not boundaries:
-        return _FALLBACK_THRESHOLDS
-
-    # Enforce max tier size: no tier should contain more than this many players.
-    # Oversized tiers are force-split at their largest internal gap.
-    max_tier_size = max(8, len(vals) // num_tiers)
-
-    def _tier_ranges(bounds):
-        """Return list of (start_idx, end_idx) for each tier given sorted bounds."""
-        sb = sorted(bounds, reverse=True)
-        ranges = []
-        start = 0
-        for b in sb:
-            end = next((i for i, v in enumerate(vals) if v < b), len(vals))
-            if end > start:
-                ranges.append((start, end))
-            start = end
-        ranges.append((start, len(vals)))
-        return ranges
-
-    while len(boundaries) < num_tiers - 1:
-        ranges = _tier_ranges(boundaries)
-        # Find the largest tier
-        largest = max(ranges, key=lambda r: r[1] - r[0])
-        if largest[1] - largest[0] <= max_tier_size:
-            break  # all tiers within limit
-        s, e = largest
-        # Split at the largest gap within this tier
-        best_gap, best_mid = -1.0, None
-        for i in range(s, e - 1):
-            g = vals[i] - vals[i + 1]
-            if g > best_gap:
-                best_gap = g
-                best_mid = (vals[i] + vals[i + 1]) / 2.0
-        if best_mid is None or any(abs(best_mid - b) < 1.0 for b in boundaries):
-            # No useful gap found — force midpoint split
-            mid = (s + e) // 2
-            best_mid = (vals[mid] + vals[min(mid + 1, e - 1)]) / 2.0
-        boundaries.append(best_mid)
-
-    return sorted(boundaries, reverse=True)
-
+    return sorted(boundaries, reverse=True) if boundaries else _FALLBACK_THRESHOLDS
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
     t = thresholds if thresholds is not None else _FALLBACK_THRESHOLDS
