@@ -791,26 +791,11 @@ def _load_values_for_model(season: int) -> dict:
     """
     Load a richer values dict for ML training:
       player_id → {position, value, age, ...}
-
-    Uses the model-value table where available, falls back to pick estimates.
     """
-    from collections import defaultdict
-
     with get_conn() as conn:
-        # Player values
-        try:
-            player_rows = conn.execute(
-                """
-                SELECT player_id, position, value_1qb AS value, age
-                FROM player_values
-                WHERE season = %s
-                """,
-                (season,),
-            ).fetchall()
-        except Exception:
-            player_rows = conn.execute(
-                "SELECT player_id, position, value_1qb AS value, age FROM player_values"
-            ).fetchall()
+        player_rows = conn.execute(
+            "SELECT player_id, position, value_1qb AS value, age FROM player_values"
+        ).fetchall()
 
     values: dict[str, dict] = {}
     for r in player_rows:
