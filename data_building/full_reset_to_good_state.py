@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger(__name__)
 
 # The last known-good snapshot date
-GOOD_DATE = date(2026, 5, 5)
+GOOD_DATE = date(2026, 5, 15)
 
 
 def restore_player_values() -> int:
