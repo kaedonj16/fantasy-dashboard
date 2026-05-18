@@ -2786,44 +2786,63 @@ window.initTradePage = function initTradePage(root = document) {
           realTradeHtml += `</div>`;
         }
 
-        // ── Individual real-trade examples ────────────────────────
+        // ── Individual real-trade examples (card style matching top packages) ──
         if (_pkgRealPkgs.length) {
-          realTradeHtml += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px;">Example trades</div>`;
+          realTradeHtml += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px;">Example trades</div>`;
           _pkgRealPkgs.forEach(pkg => {
-            const sv    = pkg.send_value.toFixed(0);
-            const count = pkg.trades_like_this || 0;
-            const isRef = !!pkg.is_reference;
-            const assetsHtml = (pkg.send || []).map(a => {
+            const count  = pkg.trades_like_this || 0;
+            const isRef  = !!pkg.is_reference;
+            const archSig = archetypeSigHtml(pkg.pattern_sig, pkg.throw_in_sig);
+
+            function tradeAssetHtml(a) {
               if (a.is_pick || a.type === "pick") {
-                return `<span style="font-weight:700;color:#6366f1;">${a.name || "Pick"}</span>`;
+                return `<div class="otc-sugg-pkg-asset">
+                  <span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>
+                  ${a.name || "Pick"}
+                </div>`;
               }
               const col = posColor(a.position);
-              return `<span style="display:inline-flex;align-items:center;gap:4px;">
-                <span style="font-size:10px;font-weight:700;padding:1px 4px;border-radius:3px;background:${col}18;color:${col};">${a.position || ''}</span>
-                <span style="font-weight:600;color:${isRef ? 'var(--text-muted)' : 'var(--text)'};">${a.name}</span>
-              </span>`;
-            }).join(`<span style="color:var(--text-muted);margin:0 2px;font-size:12px;">+</span>`);
+              return `<div class="otc-sugg-pkg-asset">
+                <span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${a.position}</span>
+                <span style="color:${isRef ? 'var(--text-muted)' : 'var(--text)'}">${a.name}</span>
+              </div>`;
+            }
 
-            const archSig = archetypeSigHtml(pkg.pattern_sig, pkg.throw_in_sig);
+            const giveHtml = (pkg.send || []).map(tradeAssetHtml).join('');
+            const focusPos = focusPlayer?.position || 'WR';
+            const focusCol = posColor(focusPos);
             const analyzeBtn = `<button class="otc-sugg-pkg-load-btn"
               data-focus-id="${_pkgPlayerId}"
               data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}"
-              style="font-size:10px;padding:3px 10px;border-radius:5px;border:1px solid rgba(167,139,250,.4);background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;flex-shrink:0;">
-              Analyze
-            </button>`;
+              style="margin-top:8px;">Analyze</button>`;
+            const freqLabel = `<span class="otc-sugg-pkg-freq" style="color:#a78bfa;">${count}× seen</span>`;
+            const archLine  = archSig
+              ? `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px;">${archSig}</div>`
+              : '';
 
-            realTradeHtml += `<div style="padding:8px 0;border-top:1px solid var(--border);">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:5px;">
-                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;">${assetsHtml}</div>
-                <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;flex-shrink:0;">${count}× seen</span>
+            realTradeHtml += `<div class="otc-sugg-package">
+              <div class="otc-sugg-pkg-meta">
+                <span class="otc-sugg-pkg-value fair">Market pattern</span>
+                ${freqLabel}
               </div>
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
-                <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
-                  <span style="font-size:10px;color:var(--text-muted);">~${sv} val</span>
-                  ${archSig ? `<span style="color:var(--text-muted);opacity:.4;font-size:10px;">·</span>${archSig}` : ''}
+              <div class="otc-sugg-pkg-sides">
+                <div class="otc-sugg-pkg-side">
+                  <div class="otc-sugg-pkg-side-label">You get</div>
+                  <div class="otc-sugg-pkg-assets">
+                    <div class="otc-sugg-pkg-asset">
+                      <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
+                      ${_pkgPlayerName}
+                    </div>
+                  </div>
                 </div>
-                ${analyzeBtn}
+                <div class="otc-sugg-pkg-divider">←</div>
+                <div class="otc-sugg-pkg-side">
+                  <div class="otc-sugg-pkg-side-label">You give</div>
+                  <div class="otc-sugg-pkg-assets">${giveHtml}</div>
+                </div>
               </div>
+              ${archLine}
+              ${analyzeBtn}
             </div>`;
           });
         }

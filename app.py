@@ -16878,10 +16878,7 @@ def api_trade_intel_player_packages(player_id: str):
             values_by_id=values_by_id,
         )
 
-        # ── Enrich real packages + compute archetype patterns ─────────────
-        from collections import defaultdict as _dfd
-        pattern_counts: dict = _dfd(int)
-
+        # ── Enrich real packages ──────────────────────────────────────────
         for pkg in real_result["packages"]:
             for asset in pkg["send"]:
                 if not asset.get("is_pick"):
@@ -16895,12 +16892,48 @@ def api_trade_intel_player_packages(player_id: str):
                             "pos_rank_label": info["pos_rank_label"],
                         })
             core_sig, throw_sig = _pattern_sigs(pkg["send"])
-            pkg["pattern_sig"]   = core_sig
-            pkg["throw_in_sig"]  = throw_sig
-            canon = f"{core_sig}|{throw_sig}"
-            pattern_counts[canon] += pkg.get("trades_like_this", 1)
+            pkg["pattern_sig"]  = core_sig
+            pkg["throw_in_sig"] = throw_sig
 
+        # ── Archetype patterns — built from ALL sig_counts, not just top N pkgs ──
+        # sig_counts keys are tuples-as-strings like "('K:1', 'P:RB:high')"
+        # We translate each sig into a human-readable archetype label by looking up
+        # a representative trade from that sig's trade_ids, then using _pattern_sigs.
+        # Faster approach: convert the sig parts directly to archetype labels.
         total_trade_count = real_result["total_real_trades"] or 1
+        VALUE_BUCKET_TO_TIER = {"elite": 1, "high": 2, "mid": 4, "low": 6}
+
+        def _sig_to_archetype(sig_str: str) -> tuple:
+            """Convert a sig like \"('K:1', 'P:RB:high')\" to (core_sig, throw_sig)."""
+            import ast as _ast
+            try:
+                parts = list(_ast.literal_eval(sig_str))
+            except Exception:
+                return "", ""
+            labeled = []
+            for part in sorted(parts):
+                kind, *rest = part.split(":")
+                if kind == "P" and len(rest) == 2:
+                    pos, bucket = rest
+                    tier = VALUE_BUCKET_TO_TIER.get(bucket, 5)
+                    labeled.append(f"{pos}-T{tier}")
+                elif kind == "K" and rest:
+                    rnd_str = rest[0]
+                    suffix = {"1": "R1", "2": "R2", "3": "R3"}.get(rnd_str, f"R{rnd_str}")
+                    labeled.append(f"PICK:{suffix}")
+            # Sort picks to end, players by label
+            players = sorted(lbl for lbl in labeled if not lbl.startswith("PICK"))
+            picks   = sorted(lbl for lbl in labeled if lbl.startswith("PICK"))
+            return " + ".join(players + picks), ""
+
+        from collections import defaultdict as _dfd
+        merged: dict = _dfd(int)
+        for sig_str, cnt in (real_result.get("sig_counts") or {}).items():
+            core_sig, throw_sig = _sig_to_archetype(sig_str)
+            if core_sig:
+                canon = f"{core_sig}|{throw_sig}"
+                merged[canon] += cnt
+
         archetype_patterns = sorted(
             [
                 {
@@ -16909,11 +16942,11 @@ def api_trade_intel_player_packages(player_id: str):
                     "count":        cnt,
                     "pct":          round(cnt / total_trade_count * 100),
                 }
-                for canon, cnt in pattern_counts.items()
-                if canon.split("|")[0]
+                for canon, cnt in merged.items()
+                if cnt >= 2
             ],
             key=lambda x: -x["count"],
-        )[:5]
+        )[:6]
 
         return jsonify({
             "player_name":        player_name,
@@ -16937,16 +16970,36 @@ def _real_trade_packages_for_target(
     viewer_players: list[dict],
     viewer_picks: list[dict],
     values_by_id: dict,
-    max_packages: int = 3,
+    max_packages: int = 5,
 ) -> dict:
     """
     Find real trades where target_player_id was acquired in comparable leagues,
     then match the sent-asset patterns against the viewer's roster.
 
-    Returns {"packages": [...], "total_real_trades": N}
+    Returns {"packages": [...], "total_real_trades": N, "sig_counts": {...}}
     Each package has the same shape as value-based packages plus "trades_like_this".
+    sig_counts is the full pattern→trade_ids dict (used for archetype computation).
     """
     from collections import defaultdict
+
+    # Build pick value lookup from values_by_id (position=="PICK", id like "2026_1")
+    _pick_val_map = {
+        pid: info["value"]
+        for pid, info in values_by_id.items()
+        if info.get("position") == "PICK" and info.get("value", 0) > 0
+    }
+
+    def _pick_val(rnd: int, season=None) -> float:
+        if season:
+            v = _pick_val_map.get(f"{season}_{rnd}") or _pick_val_map.get(f"{season}_{rnd:02d}")
+            if v:
+                return float(v)
+        # fallback: find any key matching round
+        for k, v in _pick_val_map.items():
+            if k.endswith(f"_{rnd}") or k.endswith(f"_{rnd:02d}"):
+                return float(v)
+        return 450.0 if rnd == 1 else 175.0 if rnd == 2 else 70.0
+
     try:
         from dashboard_services.db import get_conn as _gc
         with _gc() as conn:
@@ -17105,7 +17158,7 @@ def _real_trade_packages_for_target(
                     suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
                     fallback_assets.append({
                         "name": f"{suffix} Round Pick", "is_pick": True,
-                        "value": 200 if rnd == 1 else 100,
+                        "value": _pick_val(rnd, pick_season),
                         "is_reference": True,
                     })
             if fallback_assets:
@@ -17137,7 +17190,11 @@ def _real_trade_packages_for_target(
     if not result_packages and fallback_packages:
         result_packages = sorted(fallback_packages, key=lambda x: -x["trades_like_this"])[:max_packages]
 
-    return {"packages": result_packages, "total_real_trades": total_real_trades}
+    return {
+        "packages":          result_packages,
+        "total_real_trades": total_real_trades,
+        "sig_counts":        {str(k): len(v) for k, v in sig_counts.items()},
+    }
 
 
 @app.route("/api/trade-ideas-for-target", methods=["POST"])
