@@ -16674,6 +16674,221 @@ def api_trade_targets():
     })
 
 
+@app.route("/api/trade-intel/player-packages/<player_id>")
+@limiter.limit("30 per minute")
+def api_trade_intel_player_packages(player_id: str):
+    """
+    GET handler called by the "Find packages" button on the player modal.
+
+    Returns value-matched packages from the viewer's roster (if league context
+    is provided) and real historical trade packages from the trade DB.
+
+    Query params: season, league_type, league_id, platform, viewer_roster_id
+    """
+    season           = int(request.args.get("season") or datetime.now().year)
+    league_type      = str(request.args.get("league_type") or "1qb").strip().lower()
+    league_id        = str(request.args.get("league_id") or "").strip()
+    platform         = str(request.args.get("platform") or "sleeper").strip()
+    viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
+
+    user_id = session.get("viewer_username")
+    if not has_premium_access(user_id, league_id, platform):
+        return jsonify({"error": "Premium required"}), 403
+
+    try:
+        from utils.utils import load_model_value_table
+        val_key    = "sf_value" if league_type == "sf" else "value"
+        value_table = load_model_value_table() or []
+
+        values_by_id: dict = {}
+        for p in value_table:
+            pid = str(p.get("id") or "")
+            if pid:
+                values_by_id[pid] = {
+                    "name":           p.get("name", ""),
+                    "position":       str(p.get("position") or "").upper(),
+                    "value":          float(p.get(val_key) or p.get("value") or 0),
+                    "sf_value":       float(p.get("sf_value") or p.get("value") or 0),
+                    "pos_rank":       int(p.get("pos_rank") or 99),
+                    "pos_rank_label": p.get("pos_rank_label") or "",
+                    "team":           p.get("team") or "",
+                    "age":            p.get("age"),
+                }
+
+        target_info = values_by_id.get(str(player_id))
+        if not target_info:
+            return jsonify({"error": "Player not found"}), 404
+
+        focus_value  = round(target_info["value"], 1)
+        player_name  = target_info["name"]
+
+        # ── Viewer roster context (optional) ──────────────────────────────
+        viewer_players: list[dict] = []
+        viewer_picks:   list[dict] = []
+        ctx = {}
+        if league_id and viewer_roster_id:
+            try:
+                ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+                rosters = ctx.get("rosters") or []
+                viewer_roster_obj = next(
+                    (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
+                )
+                if viewer_roster_obj:
+                    viewer_players = sorted(
+                        [
+                            {
+                                "player_id":      pid,
+                                "name":           values_by_id[pid]["name"],
+                                "position":       values_by_id[pid]["position"],
+                                "value":          values_by_id[pid]["value"],
+                                "pos_rank_label": values_by_id[pid]["pos_rank_label"],
+                            }
+                            for pid in [str(p) for p in (viewer_roster_obj.get("players") or [])]
+                            if pid in values_by_id and values_by_id[pid]["value"] >= 50
+                        ],
+                        key=lambda x: x["value"],
+                        reverse=True,
+                    )
+                    picks_by_roster = ctx.get("picks_by_roster") or {}
+                    raw_picks = picks_by_roster.get(viewer_roster_id, [])
+                    pick_val_lookup = {
+                        str(p.get("id") or ""): float(p.get("value") or 0)
+                        for p in value_table
+                        if str(p.get("position") or "").upper() == "PICK"
+                    }
+                    for pk in raw_picks:
+                        yr  = int(pk.get("season") or season)
+                        rnd = int(pk.get("round") or 4)
+                        if yr > season + 1:
+                            continue
+                        suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
+                        pk_name = f"{yr} {suffix}"
+                        pval = pick_val_lookup.get(f"{yr}_{rnd}", 0) or (
+                            220 if rnd == 1 else 130 if rnd == 2 else 70
+                        )
+                        viewer_picks.append({"name": pk_name, "value": pval, "is_pick": True})
+            except Exception:
+                pass  # League context is best-effort
+
+        # ── Value-matched packages from viewer roster ──────────────────────
+        import math as _math
+        def _dynasty_premium(info: dict) -> float:
+            pos = info.get("position", "")
+            if pos in ("PICK", "K", "DEF") or (pos == "QB" and league_type == "1qb"):
+                return 1.0
+            age = float(info.get("age") or 99)
+            if age >= 30:
+                return 1.0
+            rank_factor = _math.exp(-0.12 * max(0.0, int(info.get("pos_rank") or 99) - 1))
+            return round(1.0 + _math.exp(-0.25 * max(0.0, age - 22)) * rank_factor * 0.15, 3)
+
+        effective_target = focus_value * _dynasty_premium(target_info)
+        lo = effective_target * 0.85
+        hi = effective_target * 1.15
+        packages: list[dict] = []
+        seen: set = set()
+
+        def _key(*assets):
+            return tuple(sorted(a.get("player_id") or a.get("name", "") for a in assets))
+
+        for p in viewer_players:
+            if lo <= p["value"] <= hi:
+                k = _key(p)
+                if k not in seen:
+                    seen.add(k)
+                    packages.append({"type": "1-for-1", "send": [p],
+                                     "send_value": p["value"],
+                                     "_delta": abs(p["value"] - effective_target)})
+
+        for i, p1 in enumerate(viewer_players):
+            if p1["value"] > effective_target * 0.75:
+                continue
+            for p2 in viewer_players[i + 1:]:
+                if p2["value"] < 60:
+                    break
+                combined = p1["value"] + p2["value"]
+                if lo <= combined <= hi:
+                    k = _key(p1, p2)
+                    if k not in seen:
+                        seen.add(k)
+                        packages.append({"type": "2-for-1", "send": [p1, p2],
+                                         "send_value": combined,
+                                         "_delta": abs(combined - effective_target)})
+                    break
+
+        for p in viewer_players:
+            if p["value"] > effective_target * 0.85:
+                continue
+            for pick in viewer_picks:
+                combined = p["value"] + pick["value"]
+                if lo <= combined <= hi:
+                    k = _key(p, {"player_id": pick["name"]})
+                    if k not in seen:
+                        seen.add(k)
+                        packages.append({"type": "player + pick", "send": [p, pick],
+                                         "send_value": combined,
+                                         "_delta": abs(combined - effective_target)})
+                    break
+
+        packages.sort(key=lambda x: (x["_delta"], len(x["send"])))
+        for pkg in packages:
+            del pkg["_delta"]
+
+        # Enrich send assets with extra fields the trade calculator uses
+        for pkg in packages:
+            for asset in pkg["send"]:
+                if not asset.get("is_pick"):
+                    info = values_by_id.get(asset.get("player_id") or "")
+                    if info:
+                        asset.update({
+                            "id": asset["player_id"],
+                            "position": info["position"],
+                            "team": info["team"],
+                            "sf_value": round(info.get("sf_value", info["value"]), 1),
+                            "pos_rank_label": info["pos_rank_label"],
+                        })
+
+        # ── Real trade packages from the DB ────────────────────────────────
+        roster_positions = ctx.get("roster_positions") or []
+        _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
+        _is_sf   = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        num_teams = len(ctx.get("rosters") or []) or 12
+
+        real_result = _real_trade_packages_for_target(
+            target_player_id=str(player_id),
+            is_sf=_is_sf,
+            num_teams=num_teams,
+            viewer_players=viewer_players,
+            viewer_picks=viewer_picks,
+            values_by_id=values_by_id,
+        )
+        for pkg in real_result["packages"]:
+            for asset in pkg["send"]:
+                if not asset.get("is_pick"):
+                    info = values_by_id.get(asset.get("player_id") or "")
+                    if info:
+                        asset.update({
+                            "id": asset["player_id"],
+                            "position": info["position"],
+                            "team": info.get("team", ""),
+                            "sf_value": round(info.get("sf_value", info["value"]), 1),
+                            "pos_rank_label": info["pos_rank_label"],
+                        })
+
+        return jsonify({
+            "player_name":       player_name,
+            "focus_value":       focus_value,
+            "packages":          packages[:4],
+            "total_packages":    len(packages),
+            "real_packages":     real_result["packages"],
+            "total_real_trades": real_result["total_real_trades"],
+        })
+
+    except Exception as e:
+        logger.exception("[api-trade-intel-player-packages] %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
 def _real_trade_packages_for_target(
     target_player_id: str,
     is_sf: bool,
