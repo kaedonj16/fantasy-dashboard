@@ -4161,13 +4161,13 @@ _FALLBACK_THRESHOLDS = [850.0, 700.0, 550.0, 420.0, 300.0, 200.0, 120.0, 60.0]
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
-    Build tier boundaries by fixed player-count cutoffs so T1-T8 stay small
-    and T9 is the large catch-all. Boundary is placed at the midpoint between
-    the last player in the tier and the first player in the next tier.
-
-    Cutoffs (cumulative player counts):  T1≤4  T2≤8  T3≤14  T4≤24
-                                         T5≤40  T6≤65  T7≤100  T8≤150  T9=rest
+    Gap-based tier boundaries. We compute gaps for _FIND_TIERS internal tiers
+    so the algorithm carves finer splits in the value distribution, keeping each
+    displayed tier small. The JS prGetTier clamps display to T9, so anything
+    below the 8th boundary collapses into one large T9 catch-all tier.
     """
+    _FIND_TIERS = 13  # find this many tiers internally; display clamps to 9
+
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
     else:
@@ -4186,19 +4186,34 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
 
     vals.sort(reverse=True)
 
-    if len(vals) < 20:
+    if len(vals) < _FIND_TIERS * 2:
         return _FALLBACK_THRESHOLDS
 
-    # Cumulative player-count cutoffs for T1 through T8
-    cutoffs = [4, 8, 14, 24, 40, 65, 100, 150]
-    boundaries = []
-    for cut in cutoffs:
-        if cut >= len(vals):
-            break
-        mid = (vals[cut - 1] + vals[cut]) / 2.0
-        boundaries.append(round(mid, 1))
+    window  = 10
+    min_grp = 2
+    scored  = []
+    for i in range(len(vals) - 1):
+        gap = vals[i] - vals[i + 1]
+        lo  = max(0, i - window)
+        hi  = min(len(vals) - 1, i + window)
+        nbrs = [vals[j] - vals[j + 1] for j in range(lo, hi) if j != i]
+        local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
+        scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
 
-    return boundaries if boundaries else _FALLBACK_THRESHOLDS
+    scored.sort(key=lambda x: x[0], reverse=True)
+    chosen_pos = []
+    boundaries = []
+    for _sig, pos, midpoint in scored:
+        if len(boundaries) >= _FIND_TIERS - 1:
+            break
+        if pos < min_grp or pos > len(vals) - 1 - min_grp:
+            continue
+        if any(abs(pos - p) < min_grp for p in chosen_pos):
+            continue
+        chosen_pos.append(pos)
+        boundaries.append(midpoint)
+
+    return sorted(boundaries, reverse=True) if boundaries else _FALLBACK_THRESHOLDS
 
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
