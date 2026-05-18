@@ -2819,38 +2819,35 @@ window.initTradePage = function initTradePage(root = document) {
             const giveHtml = (pkg.send || []).map(tradeAssetHtml).join('');
             const focusPos = focusPlayer?.position || 'WR';
             const focusCol = posColor(focusPos);
-            const analyzeBtn = `<button class="otc-sugg-pkg-load-btn"
-              data-focus-id="${_pkgPlayerId}"
-              data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}"
-              style="margin-top:8px;">Analyze</button>`;
-            const freqLabel = `<span class="otc-sugg-pkg-freq" style="color:#a78bfa;">${count}× seen</span>`;
-            const archLine  = archSig
-              ? `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:4px;">${archSig}</div>`
-              : '';
+            const countBadge = `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid rgba(167,139,250,.2);">${count}×</span>`;
+            const refBadge = isRef ? `<span style="font-size:10px;color:var(--text-muted);margin-left:4px;">ref</span>` : '';
 
-            realTradeHtml += `<div class="otc-sugg-package">
-              <div class="otc-sugg-pkg-meta">
-                <span class="otc-sugg-pkg-value fair">${count}× traded</span>
-                ${isRef ? '<span class="otc-sugg-pkg-freq" style="color:var(--text-muted);">Reference</span>' : ''}
+            realTradeHtml += `<div class="otc-real-trade-card">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                ${countBadge}${refBadge}
+                ${archSig ? `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:3px;margin-left:2px;">${archSig}</div>` : ''}
               </div>
-              <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:6px;margin-top:6px;">
+              <div style="display:grid;grid-template-columns:1fr 20px 1fr;align-items:start;gap:4px;">
                 <div>
                   <div class="otc-sugg-pkg-side-label">YOU GET</div>
                   <div class="otc-sugg-pkg-assets">
                     <div class="otc-sugg-pkg-asset">
                       <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
-                      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_pkgPlayerName}</span>
+                      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">${_pkgPlayerName}</span>
                     </div>
                   </div>
                 </div>
-                <div class="otc-sugg-pkg-divider" style="padding-top:18px;">←</div>
+                <div style="display:flex;align-items:flex-start;justify-content:center;padding-top:17px;color:var(--text-muted);font-size:11px;">⟵</div>
                 <div>
                   <div class="otc-sugg-pkg-side-label">YOU GIVE</div>
                   <div class="otc-sugg-pkg-assets">${giveHtml}</div>
                 </div>
               </div>
-              ${archLine}
-              ${analyzeBtn}
+              <div style="margin-top:8px;display:flex;justify-content:flex-end;">
+                <button class="otc-sugg-pkg-load-btn"
+                  data-focus-id="${_pkgPlayerId}"
+                  data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}">Analyze</button>
+              </div>
             </div>`;
           });
         }

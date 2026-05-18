@@ -16877,6 +16877,7 @@ def api_trade_intel_player_packages(player_id: str):
             viewer_players=viewer_players,
             viewer_picks=viewer_picks,
             values_by_id=values_by_id,
+            focus_value=float(focus_value or 0),
         )
 
         # ── Enrich real packages ──────────────────────────────────────────
@@ -16892,7 +16893,12 @@ def api_trade_intel_player_packages(player_id: str):
                             "sf_value":       round(info.get("sf_value", info["value"]), 1),
                             "pos_rank_label": info["pos_rank_label"],
                         })
-            core_sig, throw_sig = _pattern_sigs(pkg["send"])
+            # Use the stored sig for consistent display with the archetypes section
+            raw_sig = pkg.get("sig")
+            if raw_sig:
+                core_sig, throw_sig = _sig_to_archetype(str(tuple(raw_sig)))
+            else:
+                core_sig, throw_sig = _pattern_sigs(pkg["send"])
             pkg["pattern_sig"]  = core_sig
             pkg["throw_in_sig"] = throw_sig
 
@@ -16975,6 +16981,7 @@ def _real_trade_packages_for_target(
     viewer_picks: list[dict],
     values_by_id: dict,
     max_packages: int = 5,
+    focus_value: float = 0,
 ) -> dict:
     """
     Find real trades where target_player_id was acquired in comparable leagues,
@@ -17003,6 +17010,22 @@ def _real_trade_packages_for_target(
             if k.endswith(f"_{rnd}") or k.endswith(f"_{rnd:02d}"):
                 return float(v)
         return 450.0 if rnd == 1 else 175.0 if rnd == 2 else 70.0
+
+    # Rough value by tier for pre-filtering low-value patterns
+    _TIER_VAL_EST = {1: 1300, 2: 900, 3: 640, 4: 440, 5: 310, 6: 200, 7: 110, 8: 55, 9: 20}
+
+    def _sig_estimate_value(sig: tuple) -> float:
+        total = 0.0
+        for part in sig:
+            kind, *rest = part.split(":")
+            if kind == "P" and rest:
+                tier_str = rest[1] if len(rest) > 1 else "T5"
+                req_tier = int(tier_str[1:]) if tier_str.startswith("T") else 5
+                total += _TIER_VAL_EST.get(req_tier, 200)
+            elif kind == "K" and rest:
+                rnd = int(rest[0]) if rest[0].isdigit() else 3
+                total += _pick_val(rnd)
+        return total
 
     try:
         from dashboard_services.db import get_conn as _gc
@@ -17110,6 +17133,12 @@ def _real_trade_packages_for_target(
                 vk_by_round[rnd].append(pk)
                 break
 
+    # Pre-filter sig_counts: drop patterns whose total estimated value is < 55% of target
+    _value_floor = focus_value * 0.55 if focus_value > 0 else 0
+    if _value_floor > 0:
+        sig_counts = {k: v for k, v in sig_counts.items()
+                      if _sig_estimate_value(k) >= _value_floor}
+
     result_packages = []
     used_pids: set = set()
     fallback_packages = []
@@ -17188,6 +17217,7 @@ def _real_trade_packages_for_target(
                     "send":             fallback_assets,
                     "send_value":       round(sum(a.get("value", 0) for a in fallback_assets), 1),
                     "is_reference":     True,
+                    "sig":              list(sig),
                 })
             continue
 
@@ -17198,6 +17228,7 @@ def _real_trade_packages_for_target(
             "trades_like_this": trades_like_this,
             "send":             matched,
             "send_value":       send_value,
+            "sig":              list(sig),
         })
         for a in matched:
             if not a.get("is_pick"):

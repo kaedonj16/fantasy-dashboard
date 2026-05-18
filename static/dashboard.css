@@ -3908,6 +3908,19 @@ thead th {
   color: var(--accent);
 }
 
+/* Real-trade example cards */
+.otc-real-trade-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  transition: border-color .15s;
+}
+.otc-real-trade-card:hover {
+  border-color: rgba(167,139,250,.4);
+}
+
 @media (max-width: 600px) {
   .otc-sugg-package {
     flex-wrap: wrap;
