@@ -12855,18 +12855,15 @@ def api_players():
 
 @app.route("/api/league-players")
 def api_league_players():
-    # Force loading from database to get correct position ranks
-    try:
-        from dashboard_services.player_value_history import load_current_values_from_db
-        model_value_table = load_current_values_from_db()
-        if model_value_table:
-            print(f"[api/league-players] Loaded {len(model_value_table)} players from database")
-        else:
-            print("[api/league-players] No data from database, falling back to JSON")
-            model_value_table = list(load_model_value_table() or [])
-    except Exception as e:
-        print(f"[api/league-players] Database load failed: {e}, falling back to JSON")
-        model_value_table = list(load_model_value_table() or [])
+    # Use the same cached JSON-backed table as trade-eval so values are consistent.
+    # DB load is kept as a fallback only (DB values may be stale/corrupted).
+    model_value_table = list(get_model_value_table_cached() or [])
+    if not model_value_table:
+        try:
+            from dashboard_services.player_value_history import load_current_values_from_db
+            model_value_table = load_current_values_from_db() or []
+        except Exception as e:
+            print(f"[api/league-players] Database load failed: {e}")
     
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
