@@ -2769,16 +2769,17 @@ window.initTradePage = function initTradePage(root = document) {
       // ── "Based on real trades" section ─────────────────────────────────────────
       let realTradeHtml = "";
       if (_pkgRealPkgs.length || _pkgArchetypes.length) {
-        realTradeHtml += `<div style="margin-top:14px;padding-top:10px;border-top:2px solid var(--border);">
-          <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:8px;letter-spacing:.05em;">
-            BASED ON ${_pkgRealTotal} REAL TRADES IN SIMILAR LEAGUES
+        realTradeHtml += `<div style="margin-top:14px;padding-top:12px;border-top:2px solid var(--border);">
+          <div style="margin-bottom:10px;">
+            <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;">How people have acquired ${_pkgPlayerName}</div>
+            <div style="font-size:11px;color:var(--text-muted);">Patterns from ${_pkgRealTotal} real trades in similar leagues</div>
           </div>`;
 
         // ── Common archetype patterns ─────────────────────────────
         if (_pkgArchetypes.length) {
           realTradeHtml += `<div style="margin-bottom:12px;border-radius:8px;border:1px solid var(--border);overflow:hidden;">
             <div style="padding:6px 10px;background:var(--surface-2,rgba(0,0,0,.04));border-bottom:1px solid var(--border);font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">
-              Common archetypes sent
+              What teams typically send
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">`;
           _pkgArchetypes.forEach((ap, idx) => {
@@ -2796,35 +2797,46 @@ window.initTradePage = function initTradePage(root = document) {
 
         // ── Individual real-trade examples ──
         if (_pkgRealPkgs.length) {
-          realTradeHtml += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px;">Example trades</div>`;
+          realTradeHtml += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px;">Real trades — adapted to your roster</div>`;
           _pkgRealPkgs.forEach(pkg => {
             const count  = pkg.trades_like_this || 0;
             const isRef  = !!pkg.is_reference;
+            const focusPos = focusPlayer?.position || 'WR';
+            const focusCol = posColor(focusPos);
 
-            function tradeAssetRow(a) {
+            // Deduplicate assets: group identical names → "2× 2026 1st"
+            const assetCounts = new Map();
+            (pkg.send || []).forEach(a => {
+              const key = a.name || "Pick";
+              if (!assetCounts.has(key)) assetCounts.set(key, { asset: a, n: 0 });
+              assetCounts.get(key).n++;
+            });
+            const giveHtml = Array.from(assetCounts.values()).map(({ asset: a, n }) => {
+              const prefix = n > 1 ? `<span style="font-size:10px;font-weight:700;color:var(--text-muted);margin-right:1px;">${n}×</span>` : '';
               if (a.is_pick || a.type === "pick") {
                 return `<div class="otc-rt-asset">
-                  <span class="otc-rt-pos" style="background:rgba(99,102,241,.1);color:#6366f1;">PICK</span>
+                  ${prefix}<span class="otc-rt-pos" style="background:rgba(99,102,241,.1);color:#6366f1;">PICK</span>
                   <span class="otc-rt-name">${a.name || "Pick"}</span>
                 </div>`;
               }
               const col = posColor(a.position);
               return `<div class="otc-rt-asset">
-                <span class="otc-rt-pos" style="background:${col}18;color:${col};">${a.position}</span>
+                ${prefix}<span class="otc-rt-pos" style="background:${col}18;color:${col};">${a.position}</span>
                 <span class="otc-rt-name" style="${isRef ? 'color:var(--text-muted);' : ''}">${a.name}</span>
               </div>`;
-            }
+            }).join('');
 
-            const focusPos = focusPlayer?.position || 'WR';
-            const focusCol = posColor(focusPos);
-
-            // Archetype chips — cap at 3 to avoid overflow
-            const allChips = (pkg.pattern_sig || '').split(' + ').filter(Boolean);
-            const visChips = allChips.slice(0, 3);
-            const overflow = allChips.length - visChips.length;
-            const chipHtml = visChips.map(archetypeChip).join(
-              `<span style="color:var(--text-muted);font-size:10px;">+</span>`
-            ) + (overflow > 0 ? `<span style="font-size:10px;color:var(--text-muted);">+${overflow}</span>` : '');
+            // Archetype chips — group duplicates (e.g. 4× PICK R1 Mid)
+            const chipCounts = new Map();
+            (pkg.pattern_sig || '').split(' + ').filter(Boolean).forEach(lbl => {
+              chipCounts.set(lbl, (chipCounts.get(lbl) || 0) + 1);
+            });
+            const chipHtml = Array.from(chipCounts.entries()).map(([lbl, n]) => {
+              const chip = archetypeChip(lbl);
+              return n > 1
+                ? `<span style="display:inline-flex;align-items:center;gap:2px;"><span style="font-size:10px;font-weight:700;color:var(--text-muted);">${n}×</span>${chip}</span>`
+                : chip;
+            }).join(`<span style="color:var(--text-muted);font-size:10px;margin:0 1px;">+</span>`);
 
             realTradeHtml += `<div class="otc-real-trade-card">
               <div class="otc-rt-body">
@@ -2838,17 +2850,19 @@ window.initTradePage = function initTradePage(root = document) {
                 <div class="otc-rt-divider"></div>
                 <div class="otc-rt-side">
                   <div class="otc-rt-label">YOU GIVE</div>
-                  ${(pkg.send || []).map(tradeAssetRow).join('')}
+                  ${giveHtml}
                 </div>
               </div>
               <div class="otc-rt-footer">
                 <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
-                  <span class="otc-rt-count">${count}×</span>
+                  <span class="otc-rt-count">${count}× traded</span>
                   ${chipHtml}
                 </div>
                 <button class="otc-sugg-pkg-load-btn"
                   data-focus-id="${_pkgPlayerId}"
                   data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}">Analyze</button>
+              </div>
+            </div>`;
           });
         }
         realTradeHtml += `</div>`;
