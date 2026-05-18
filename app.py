@@ -16880,6 +16880,31 @@ def api_trade_intel_player_packages(player_id: str):
             focus_value=float(focus_value or 0),
         )
 
+        # ── Archetype patterns — built from ALL sig_counts, not just top N pkgs ──
+        total_trade_count = real_result["total_real_trades"] or 1
+        def _sig_to_archetype(sig_str: str) -> tuple:
+            import ast as _ast
+            try:
+                parts = list(_ast.literal_eval(sig_str))
+            except Exception:
+                return "", ""
+            labeled = []
+            for part in parts:
+                kind, *rest = part.split(":")
+                if kind == "P" and len(rest) >= 2:
+                    pos     = rest[0]
+                    tier    = rest[1]
+                    bracket = rest[2] if len(rest) > 2 else ""
+                    labeled.append(f"{pos}-{tier}-{bracket}" if bracket else f"{pos}-{tier}")
+                elif kind == "K" and rest:
+                    rnd_str  = rest[0]
+                    slot_str = rest[1] if len(rest) > 1 else ""
+                    rnd_lbl  = {"1": "R1", "2": "R2", "3": "R3"}.get(rnd_str, f"R{rnd_str}")
+                    labeled.append(f"PICK:{rnd_lbl}:{slot_str}" if slot_str else f"PICK:{rnd_lbl}")
+            players = sorted(lbl for lbl in labeled if not lbl.startswith("PICK"))
+            picks   = sorted(lbl for lbl in labeled if lbl.startswith("PICK"))
+            return " + ".join(players + picks), ""
+
         # ── Enrich real packages ──────────────────────────────────────────
         for pkg in real_result["packages"]:
             for asset in pkg["send"]:
@@ -16893,7 +16918,6 @@ def api_trade_intel_player_packages(player_id: str):
                             "sf_value":       round(info.get("sf_value", info["value"]), 1),
                             "pos_rank_label": info["pos_rank_label"],
                         })
-            # Use the stored sig for consistent display with the archetypes section
             raw_sig = pkg.get("sig")
             if raw_sig:
                 core_sig, throw_sig = _sig_to_archetype(str(tuple(raw_sig)))
@@ -16901,40 +16925,6 @@ def api_trade_intel_player_packages(player_id: str):
                 core_sig, throw_sig = _pattern_sigs(pkg["send"])
             pkg["pattern_sig"]  = core_sig
             pkg["throw_in_sig"] = throw_sig
-
-        # ── Archetype patterns — built from ALL sig_counts, not just top N pkgs ──
-        # sig_counts keys are tuples-as-strings like "('K:1', 'P:RB:high')"
-        # We translate each sig into a human-readable archetype label by looking up
-        # a representative trade from that sig's trade_ids, then using _pattern_sigs.
-        # Faster approach: convert the sig parts directly to archetype labels.
-        total_trade_count = real_result["total_real_trades"] or 1
-        def _sig_to_archetype(sig_str: str) -> tuple:
-            """Convert sig tuple-string to (core_sig, throw_sig) display labels.
-
-            New format: P:{pos}:T{tier}:{bracket}  K:{round}:{slot_bucket}
-            e.g. ('P:RB:T4:Prime', 'K:1:Early') -> 'RB-T4-Prime + PICK:R1:Early'
-            """
-            import ast as _ast
-            try:
-                parts = list(_ast.literal_eval(sig_str))
-            except Exception:
-                return "", ""
-            labeled = []
-            for part in parts:
-                kind, *rest = part.split(":")
-                if kind == "P" and len(rest) >= 2:
-                    pos     = rest[0]
-                    tier    = rest[1]                           # e.g. "T4"
-                    bracket = rest[2] if len(rest) > 2 else "" # e.g. "Prime"
-                    labeled.append(f"{pos}-{tier}-{bracket}" if bracket else f"{pos}-{tier}")
-                elif kind == "K" and rest:
-                    rnd_str  = rest[0]
-                    slot_str = rest[1] if len(rest) > 1 else ""
-                    rnd_lbl  = {"1": "R1", "2": "R2", "3": "R3"}.get(rnd_str, f"R{rnd_str}")
-                    labeled.append(f"PICK:{rnd_lbl}:{slot_str}" if slot_str else f"PICK:{rnd_lbl}")
-            players = sorted(lbl for lbl in labeled if not lbl.startswith("PICK"))
-            picks   = sorted(lbl for lbl in labeled if lbl.startswith("PICK"))
-            return " + ".join(players + picks), ""
 
         from collections import defaultdict as _dfd
         merged: dict = _dfd(int)
