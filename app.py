@@ -15966,6 +15966,11 @@ def _real_trade_packages_for_target(
         sig_counts = {k: v for k, v in sig_counts.items()
                       if _sig_estimate_value(k) >= _value_floor}
 
+    # Value range for matching packages against the viewer's roster
+    max_send_value = focus_value * 1.30 if focus_value > 0 else float("inf")
+    min_send_value = focus_value * 0.65 if focus_value > 0 else 0.0
+    target_value   = focus_value  # alias used in anchor / tier checks below
+
     result_packages = []
     used_pids: set = set()
     fallback_packages = []
