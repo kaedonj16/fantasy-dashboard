@@ -341,8 +341,16 @@ def load_current_values_from_db() -> list[dict]:
                     """
                     SELECT
                         player_id  AS id,
-                        calibrated_value_1qb AS value,
-                        calibrated_value_sf  AS sf_value,
+                        CASE
+                            WHEN value_1qb > 0 AND calibrated_value_1qb > value_1qb * 3 THEN value_1qb
+                            WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_1qb > 100   THEN value_1qb
+                            ELSE calibrated_value_1qb
+                        END AS value,
+                        CASE
+                            WHEN value_1qb > 0 AND calibrated_value_sf > value_1qb * 3 THEN COALESCE(value_sf, value_1qb)
+                            WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_sf > 100    THEN COALESCE(value_sf, value_1qb)
+                            ELSE calibrated_value_sf
+                        END AS sf_value,
                         value_1qb  AS model_value,
                         value_sf   AS model_sf_value,
                         COALESCE(calibrated_value_8,      value_8)      AS value_8,
@@ -498,8 +506,16 @@ def load_calibration_overrides() -> dict[str, dict]:
             rows = conn.execute(
                 """
                 SELECT player_id,
-                       calibrated_value_1qb AS value,
-                       COALESCE(calibrated_value_sf, calibrated_value_1qb) AS sf_value,
+                       CASE
+                           WHEN value_1qb > 0 AND calibrated_value_1qb > value_1qb * 3 THEN value_1qb
+                           WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_1qb > 100   THEN value_1qb
+                           ELSE calibrated_value_1qb
+                       END AS value,
+                       CASE
+                           WHEN value_1qb > 0 AND calibrated_value_sf > value_1qb * 3 THEN COALESCE(value_sf, value_1qb)
+                           WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_sf > 100    THEN COALESCE(value_sf, value_1qb)
+                           ELSE COALESCE(calibrated_value_sf, calibrated_value_1qb)
+                       END AS sf_value,
                        calibrated_value_8,   calibrated_sf_value_8,
                        calibrated_value_12,  calibrated_sf_value_12,
                        calibrated_value_14,  calibrated_sf_value_14
