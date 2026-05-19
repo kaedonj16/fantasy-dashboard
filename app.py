@@ -15505,9 +15505,17 @@ def api_trade_intel_player_packages(player_id: str):
         return jsonify({"error": "Premium required"}), 403
 
     try:
-        from utils.utils import load_model_value_table
-        val_key    = "sf_value" if league_type == "sf" else "value"
-        value_table = load_model_value_table() or []
+        val_key = "sf_value" if league_type == "sf" else "value"
+        # Always prefer live DB values; fall back to cached JSON only if DB unavailable
+        value_table = []
+        try:
+            from dashboard_services.player_value_history import load_current_values_from_db as _load_db_vals
+            value_table = _load_db_vals() or []
+        except Exception:
+            pass
+        if not value_table:
+            from utils.utils import load_model_value_table
+            value_table = load_model_value_table() or []
 
         values_by_id: dict = {}
         for p in value_table:
