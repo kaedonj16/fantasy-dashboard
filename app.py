@@ -15610,7 +15610,16 @@ def api_trade_intel_player_packages(player_id: str):
                         reverse=True,
                     )
                     picks_by_roster = ctx.get("picks_by_roster") or {}
-                    raw_picks = picks_by_roster.get(viewer_roster_id, [])
+                    raw_picks = (
+                        picks_by_roster.get(viewer_roster_id)
+                        or picks_by_roster.get(str(viewer_roster_id))
+                        or picks_by_roster.get(int(viewer_roster_id) if viewer_roster_id.isdigit() else viewer_roster_id)
+                        or []
+                    )
+                    logger.info(
+                        "[trade-intel-picks] roster_id=%r pbr_keys=%s raw_picks=%d",
+                        viewer_roster_id, list(picks_by_roster.keys())[:5], len(raw_picks),
+                    )
                     pick_val_lookup = {
                         str(p.get("id") or ""): float(p.get("value") or 0)
                         for p in value_table
@@ -16027,6 +16036,8 @@ def api_trade_intel_player_packages(player_id: str):
             "package_source":     package_source,
             "model_stale_days":   _model_stale_days,
             "_debug_viewer_picks": viewer_picks,
+            "_debug_viewer_roster_id": viewer_roster_id,
+            "_debug_picks_by_roster_keys": list((ctx.get("picks_by_roster") or {}).keys())[:15],
         })
 
     except Exception as e:
