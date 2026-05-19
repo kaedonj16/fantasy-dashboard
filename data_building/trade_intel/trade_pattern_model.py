@@ -638,7 +638,7 @@ def _match_viewer_to_cluster(
     sig: list[str] = []
     for a in sent_assets:
         if a.get("is_pick"):
-            sig.append(f"K:{a.get('pick_round', 3)}:Mid")
+            sig.append(f"K:{a.get('pick_round', 3)}")
         else:
             tier = _value_to_tier(float(a.get("value") or 0))
             pos  = str(a.get("position") or "WR").upper()
