@@ -2368,6 +2368,8 @@ window.initTradePage = function initTradePage(root = document) {
     let suggTargetsLoaded = false;
     let suggCurrentPlayerId = null;
     let _fetchAbortCtrl = null;  // cancels in-flight fetchPackages requests
+    let _untouchableIds = new Set(JSON.parse(localStorage.getItem('ti-untouchable') || '[]'));
+    function _saveUntouchable() { localStorage.setItem('ti-untouchable', JSON.stringify([..._untouchableIds])); }
 
     function switchTab(name) {
       if (name === "suggestions") {
@@ -2529,7 +2531,8 @@ window.initTradePage = function initTradePage(root = document) {
         const res = await fetch(
           `/api/trade-intel/player-packages/${encodeURIComponent(playerId)}` +
           `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
-          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`,
+          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
+          `&untouchable_ids=${encodeURIComponent([..._untouchableIds].join(','))}`,
           { signal }
         );
 
@@ -2789,7 +2792,7 @@ window.initTradePage = function initTradePage(root = document) {
         realTradeHtml += `<div style="margin-top:14px;padding-top:12px;border-top:2px solid var(--border);">
           <div style="margin-bottom:10px;">
             <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;">How people have acquired ${_pkgPlayerName}</div>
-            <div style="font-size:11px;color:var(--text-muted);">Patterns from ${_pkgRealTotal} real trades in similar leagues</div>
+            <div style="font-size:11px;color:var(--text-muted);">Patterns from ${_pkgRealTotal} real trades in similar leagues · last 2 years</div>
           </div>`;
 
         // ── Common archetype patterns ─────────────────────────────

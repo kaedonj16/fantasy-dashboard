@@ -15499,6 +15499,8 @@ def api_trade_intel_player_packages(player_id: str):
     league_id        = str(request.args.get("league_id") or "").strip()
     platform         = str(request.args.get("platform") or "sleeper").strip()
     viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
+    _untouchable_raw = str(request.args.get("untouchable_ids") or "").strip()
+    untouchable_ids  = set(x.strip() for x in _untouchable_raw.split(",") if x.strip())
 
     user_id = session.get("viewer_username")
     if not has_premium_access(user_id, league_id, platform):
@@ -15585,6 +15587,7 @@ def api_trade_intel_player_packages(player_id: str):
         # ── Viewer roster context (optional) ──────────────────────────────
         viewer_players: list[dict] = []
         viewer_picks:   list[dict] = []
+        rosters: list = []
         ctx = {}
         if league_id and viewer_roster_id:
             try:
@@ -15609,6 +15612,8 @@ def api_trade_intel_player_packages(player_id: str):
                         key=lambda x: x["value"],
                         reverse=True,
                     )
+                    if untouchable_ids:
+                        viewer_players = [p for p in viewer_players if p["player_id"] not in untouchable_ids]
                     # Always rebuild with draft_ended=False so current-season picks
                     # (including traded picks) are included regardless of whether
                     # the cached ctx was built after the startup draft timestamp.
@@ -15952,6 +15957,36 @@ def api_trade_intel_player_packages(player_id: str):
             picks   = sorted(lbl for lbl in labeled if lbl.startswith("PICK"))
             return " + ".join(players + picks), ""
 
+        def _likely_takers(sent_positions):
+            if not rosters or not sent_positions:
+                return []
+            need = {}
+            names = {}
+            for roster in rosters:
+                rid = str(roster.get("roster_id", ""))
+                if rid == viewer_roster_id:
+                    continue
+                owner = roster.get("display_name") or roster.get("owner_name") or f"Team {rid}"
+                names[rid] = owner
+                pos_vals: dict = {}
+                for pid in (roster.get("players") or []):
+                    info = values_by_id.get(str(pid))
+                    if info:
+                        p_pos = info.get("position", "")
+                        pos_vals.setdefault(p_pos, []).append(float(info.get("value", 0)))
+                score = 0
+                for pos in set(sent_positions):
+                    vals = sorted(pos_vals.get(pos, []), reverse=True)
+                    if not vals:
+                        score += 3
+                    elif len(vals) < 2 or (len(vals) >= 2 and vals[1] < 150):
+                        score += 2
+                    elif vals[0] < 350:
+                        score += 1
+                need[rid] = score
+            top = sorted(need.items(), key=lambda x: -x[1])[:3]
+            return [names[rid] for rid, s in top if s > 0]
+
         def _enrich_pkg(pkg: dict) -> None:
             for asset in pkg["send"]:
                 if not asset.get("is_pick"):
@@ -15971,9 +16006,25 @@ def api_trade_intel_player_packages(player_id: str):
                 core_sig, throw_sig = _pattern_sigs(pkg["send"])
             pkg["pattern_sig"]  = core_sig
             pkg["throw_in_sig"] = throw_sig
+            send_total = sum(float(a.get("value") or a.get("send_value") or 0) for a in pkg["send"])
+            pkg["send_value"]   = round(send_total, 1)
+            pkg["value_delta"]  = round(send_total - focus_value, 1)
+            _pct = (send_total - focus_value) / max(focus_value, 1) * 100
+            if _pct <= -10:
+                pkg["value_grade"] = "steal"
+            elif _pct <= 8:
+                pkg["value_grade"] = "fair"
+            elif _pct <= 22:
+                pkg["value_grade"] = "overpay"
+            else:
+                pkg["value_grade"] = "big_overpay"
 
         for pkg in primary_pkgs:
             _enrich_pkg(pkg)
+
+        for pkg in primary_pkgs:
+            sent_pos = [a.get("position") for a in pkg.get("send", []) if not a.get("is_pick") and a.get("position")]
+            pkg["likely_takers"] = _likely_takers(sent_pos)
 
         # ── Archetype patterns — always from real DB sig_counts ───────────
         total_trade_count = real_result["total_real_trades"] or 1
@@ -16041,6 +16092,7 @@ def api_trade_intel_player_packages(player_id: str):
             "archetype_patterns": archetype_patterns,
             "package_source":     package_source,
             "model_stale_days":   _model_stale_days,
+            "query_window_days":  730,
         })
 
     except Exception as e:
