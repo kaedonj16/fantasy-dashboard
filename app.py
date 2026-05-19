@@ -15682,10 +15682,10 @@ def api_trade_intel_player_packages(player_id: str):
             info = values_by_id.get(asset.get("player_id") or asset.get("id") or "")
             if not info:
                 return "?"
+            pos   = info.get("position", "?")
             val   = info.get("value", 0.0)
             tier  = _asset_tier(val)
-            age_b = _age_bracket(info.get("age"))
-            return f"T{tier}-{age_b}"
+            return f"{pos}-T{tier}"
 
         THROW_IN_VALUE_THRESHOLD = 150.0
 
@@ -15905,9 +15905,9 @@ def api_trade_intel_player_packages(player_id: str):
             for part in parts:
                 kind, *rest = part.split(":")
                 if kind == "P" and len(rest) >= 2:
-                    tier    = rest[1]
-                    bracket = rest[2] if len(rest) > 2 else ""
-                    labeled.append(f"{tier}-{bracket}" if bracket else tier)
+                    pos  = rest[0]
+                    tier = rest[1]
+                    labeled.append(f"{pos}-{tier}")
                 elif kind == "K" and rest:
                     rnd_str  = rest[0]
                     slot_str = rest[1] if len(rest) > 1 else ""
