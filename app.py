@@ -16023,11 +16023,11 @@ def _real_trade_packages_for_target(
     # Build precise signature: P:{pos}:T{tier}:{bracket}  K:{round}:{slot_bucket}
     def _pick_slot_bucket(order) -> str:
         if order is None:
-            return "Mid"
+            return ""
         try:
             o = int(order)
         except (TypeError, ValueError):
-            return "Mid"
+            return ""
         return "Early" if o <= 4 else ("Mid" if o <= 8 else "Late")
 
     def _player_age_bracket(info: dict) -> str:

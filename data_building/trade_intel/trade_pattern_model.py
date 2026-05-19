@@ -474,13 +474,10 @@ def suggest_packages(
                 break
             seen_pkg_keys.add(pkg_key)
 
-            # Exclude the highest-value player used so next iteration picks a different anchor
-            player_assets = sorted(
-                [a for a in pkg["send"] if not a.get("is_pick")],
-                key=lambda a: -float(a.get("value") or 0),
-            )
-            if player_assets:
-                local_exclude.add(str(player_assets[0].get("player_id") or ""))
+            # Exclude ALL non-pick players used so every variation is fully distinct
+            for a in pkg["send"]:
+                if not a.get("is_pick"):
+                    local_exclude.add(str(a.get("player_id") or ""))
 
             pkg["trades_like_this"] = cluster.get("size", 1)
             pkg["pattern_source"]   = "ml"
