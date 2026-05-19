@@ -16017,6 +16017,61 @@ def api_trade_intel_player_packages(player_id: str):
             top = sorted(need.items(), key=lambda x: -x[1])[:3]
             return [names[rid] for rid, s in top if s > 0]
 
+        # Pre-build a map of player_id → roster for ownership lookup
+        _player_owner_map: dict = {}
+        for _r in (rosters or []):
+            for _pid in (_r.get("players") or []):
+                _player_owner_map[str(_pid)] = _r
+
+        def _acceptance_prob(pkg: dict, total_trades: int) -> int:
+            """
+            Estimate acceptance probability (0–100) that the owner of the
+            focus player accepts this package.
+
+            Factors:
+              1. Value balance  — from the receiver's POV: overpay = they're
+                                  getting good value = more likely to say yes.
+              2. Historical rate — trades_like_this / total_real_trades shows
+                                  how often this exact pattern gets done.
+              3. Receiver need  — does the team that owns the focus player
+                                  have a positional hole for what you're sending?
+            """
+            # 1. Value base (receiver's perspective)
+            grade = pkg.get("value_grade", "fair")
+            base = {"steal": 14, "fair": 46, "overpay": 66, "big_overpay": 82}.get(grade, 46)
+
+            # 2. Historical frequency boost (how often this pattern is actually done)
+            count = pkg.get("trades_like_this", 0)
+            denom = max(total_trades, 1)
+            freq  = count / denom          # fraction of all trades this pattern represents
+            freq_boost = min(int(freq * 60), 12)   # up to +12 pts at 20%+ frequency
+
+            # 3. Receiver's positional need for what you're sending
+            owner_roster = _player_owner_map.get(str(player_id))
+            need_boost = 0
+            if owner_roster and rosters:
+                sent_pos = [
+                    a.get("position") for a in pkg.get("send", [])
+                    if not a.get("is_pick") and a.get("position")
+                ]
+                pos_vals: dict = {}
+                for pid in (owner_roster.get("players") or []):
+                    info = values_by_id.get(str(pid))
+                    if info:
+                        p = info.get("position", "")
+                        pos_vals.setdefault(p, []).append(float(info.get("value", 0)))
+                for pos in set(sent_pos):
+                    vals = sorted(pos_vals.get(pos, []), reverse=True)
+                    if not vals:
+                        need_boost += 10   # they have nobody at this position
+                    elif len(vals) < 2 or (len(vals) >= 2 and vals[1] < 150):
+                        need_boost += 6    # thin depth
+                    elif vals[0] < 350:
+                        need_boost += 3    # weak starter
+                need_boost = min(need_boost, 15)
+
+            return min(93, max(8, base + freq_boost + need_boost))
+
         def _enrich_pkg(pkg: dict) -> None:
             for asset in pkg["send"]:
                 if not asset.get("is_pick"):
@@ -16057,9 +16112,11 @@ def api_trade_intel_player_packages(player_id: str):
         _max_send = (focus_value or 1) * 1.3
         primary_pkgs = [p for p in primary_pkgs if p.get("send_value", 0) <= _max_send]
 
+        _total_real = real_result.get("total_real_trades") or 1
         for pkg in primary_pkgs:
             sent_pos = [a.get("position") for a in pkg.get("send", []) if not a.get("is_pick") and a.get("position")]
-            pkg["likely_takers"] = _likely_takers(sent_pos)
+            pkg["likely_takers"]   = _likely_takers(sent_pos)
+            pkg["acceptance_prob"] = _acceptance_prob(pkg, _total_real)
 
         # ── Archetype patterns — always from real DB sig_counts ───────────
         total_trade_count = real_result["total_real_trades"] or 1
