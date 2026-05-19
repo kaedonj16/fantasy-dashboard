@@ -15621,9 +15621,17 @@ def api_trade_intel_player_packages(player_id: str):
                             traded=ctx.get("traded") or [],
                             draft_ended=False,
                         )
-                    except Exception:
+                    except Exception as _pbr_err:
+                        logger.warning("[trade-intel] build_picks_by_roster failed: %s", _pbr_err)
                         _fresh_pbr = ctx.get("picks_by_roster") or {}
                     raw_picks = _fresh_pbr.get(viewer_roster_id) or []
+                    logger.info(
+                        "[trade-intel] viewer=%s fresh_pbr_keys=%s raw_picks=%d traded=%d",
+                        viewer_roster_id,
+                        list(_fresh_pbr.keys())[:5],
+                        len(raw_picks),
+                        len(ctx.get("traded") or []),
+                    )
                     pick_val_lookup = {
                         str(p.get("id") or ""): float(p.get("value") or 0)
                         for p in value_table
