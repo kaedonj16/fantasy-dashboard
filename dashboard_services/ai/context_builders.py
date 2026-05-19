@@ -483,11 +483,53 @@ def calculate_roster_grade(
 # Roster Depth Warning (replaces league-wide positional scarcity)
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Minimum value to count as "starter-caliber" at each position (0-999 scale)
+# Fallback thresholds used when no league context is available
 _STARTER_THRESHOLD = {"QB": 500, "RB": 350, "WR": 350, "TE": 400}
-
-# How many starter-caliber players you need to feel safe at each position
 _DEPTH_FLOOR = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
+
+
+def _derive_league_thresholds(
+    roster_positions: list[str],
+    num_teams: int,
+) -> tuple[dict[str, int], dict[str, int]]:
+    """
+    Derive starter-caliber value thresholds and depth floors from actual
+    league settings.
+
+    Depth floor  = number of that position in the starting lineup
+                   (including FLEX, split evenly across RB/WR).
+    Value threshold scales down with league size: larger leagues spread
+    talent thinner, so a lower absolute value still constitutes a starter.
+    """
+    pos_counts: dict[str, int] = {}
+    flex_count = 0
+    for slot in roster_positions:
+        s = str(slot).upper()
+        if s in ("QB", "RB", "WR", "TE"):
+            pos_counts[s] = pos_counts.get(s, 0) + 1
+        elif s in ("FLEX", "RB_WR_FLEX", "RB_WR_TE", "WR_RB", "WR_TE", "RB_WR"):
+            flex_count += 1
+
+    # Distribute FLEX evenly across RB and WR (most common usage)
+    rb_flex = flex_count // 2
+    wr_flex = flex_count - rb_flex
+    floor: dict[str, int] = {
+        "QB": max(1, pos_counts.get("QB", 1)),
+        "RB": max(1, pos_counts.get("RB", 1) + rb_flex),
+        "WR": max(1, pos_counts.get("WR", 1) + wr_flex),
+        "TE": max(1, pos_counts.get("TE", 1)),
+    }
+
+    # Value threshold: base on 12-team league, scale linearly with team count.
+    # More teams = talent diluted = lower bar to be a starter.
+    scale = 12 / max(num_teams, 6)
+    threshold: dict[str, int] = {
+        "QB": round(500 * scale),
+        "RB": round(350 * scale),
+        "WR": round(350 * scale),
+        "TE": round(400 * scale),
+    }
+    return threshold, floor
 
 
 def calculate_roster_depth_warning(
@@ -495,6 +537,8 @@ def calculate_roster_depth_warning(
         model_value_lookup: dict[str, dict],
         sending_assets: list[dict],
         receiving_assets: list[dict],
+        roster_positions: list[str] | None = None,
+        num_teams: int = 12,
 ) -> dict[str, dict]:
     """
     Warn when a trade leaves the viewer dangerously thin at a position.
@@ -506,6 +550,12 @@ def calculate_roster_depth_warning(
     where the trade changes depth or triggers a warning.
     severity: 'danger' | 'caution' | None
     """
+    # Derive league-specific thresholds
+    if roster_positions:
+        starter_threshold, depth_floor = _derive_league_thresholds(roster_positions, num_teams)
+    else:
+        starter_threshold, depth_floor = _STARTER_THRESHOLD, _DEPTH_FLOOR
+
     # Build current roster value map
     roster_values: dict[str, dict] = {}
     for pid in viewer_roster.get("players") or []:
@@ -513,7 +563,7 @@ def calculate_roster_depth_warning(
         mv = model_value_lookup.get(spid) or {}
         pos = str(mv.get("position") or "").upper()
         val = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"))
-        if pos in _STARTER_THRESHOLD and val > 0:
+        if pos in starter_threshold and val > 0:
             roster_values[spid] = {"pos": pos, "val": val, "name": str(mv.get("name") or spid)}
 
     sending_ids = {str(a.get("id") or "") for a in sending_assets if a.get("id")}

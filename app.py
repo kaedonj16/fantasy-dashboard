@@ -11525,7 +11525,11 @@ def api_trade_eval():
                 viewer_gets  = side_b if viewer_side == "b" else side_a
                 sending = [a for a in (viewer_gives.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
                 receiving = [a for a in (viewer_gets.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
-                depth_warnings = calculate_roster_depth_warning(viewer_roster, model_value_lookup, sending, receiving)
+                depth_warnings = calculate_roster_depth_warning(
+                    viewer_roster, model_value_lookup, sending, receiving,
+                    roster_positions=ctx.get("roster_positions") or [],
+                    num_teams=len(rosters) or 12,
+                )
         except Exception as e:
             print(f"[trade-ai] skipped: {e}")
             analysis_html = ""
