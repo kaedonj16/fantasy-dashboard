@@ -15609,8 +15609,21 @@ def api_trade_intel_player_packages(player_id: str):
                         key=lambda x: x["value"],
                         reverse=True,
                     )
-                    picks_by_roster = ctx.get("picks_by_roster") or {}
-                    raw_picks = picks_by_roster.get(viewer_roster_id) or []
+                    # Always rebuild with draft_ended=False so current-season picks
+                    # (including traded picks) are included regardless of whether
+                    # the cached ctx was built after the startup draft timestamp.
+                    try:
+                        from dashboard_services.service import build_picks_by_roster as _bpbr
+                        _fresh_pbr = _bpbr(
+                            num_future_seasons=3,
+                            league=ctx.get("league") or {},
+                            rosters=rosters,
+                            traded=ctx.get("traded_picks") or [],
+                            draft_ended=False,
+                        )
+                    except Exception:
+                        _fresh_pbr = ctx.get("picks_by_roster") or {}
+                    raw_picks = _fresh_pbr.get(viewer_roster_id) or []
                     pick_val_lookup = {
                         str(p.get("id") or ""): float(p.get("value") or 0)
                         for p in value_table
