@@ -16033,6 +16033,11 @@ def api_trade_intel_player_packages(player_id: str):
             "archetype_patterns": archetype_patterns,
             "package_source":     package_source,
             "model_stale_days":   _model_stale_days,
+            "_debug": {
+                "viewer_picks":    viewer_picks,
+                "viewer_players":  [p["name"] for p in viewer_players[:5]],
+                "ml_pkgs_count":   len(ml_pkgs),
+            },
         })
 
     except Exception as e:
