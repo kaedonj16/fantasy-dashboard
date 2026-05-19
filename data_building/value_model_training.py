@@ -1528,6 +1528,25 @@ def rewrite_value_table_with_model() -> Path:
                 pick_asset[f"sf_value_{n}"] = float(val)
         cleaned_assets.append(pick_asset)
 
+    # Normalize 1QB value scale to match SF ceiling.
+    # The model is trained with SF as the reference (elite QBs anchor the SF max at ~999.9).
+    # Non-QB 1QB values end up below the SF ceiling because the SF QB premium sets the
+    # max. Scale all 1QB value fields so the top 1QB player matches the SF max.
+    _SKILL_POS = {"QB", "RB", "WR", "TE"}
+    _1qb_keys  = ["value", "value_8", "value_12", "value_14"]
+    _max_sf  = max((float(a.get("sf_value") or 0) for a in cleaned_assets
+                    if str(a.get("position") or "").upper() in _SKILL_POS), default=0.0)
+    _max_1qb = max((float(a.get("value") or 0) for a in cleaned_assets
+                    if str(a.get("position") or "").upper() in _SKILL_POS), default=0.0)
+    if _max_sf > _max_1qb > 0:
+        _1qb_scale = _max_sf / _max_1qb
+        for _a in cleaned_assets:
+            if str(_a.get("position") or "").upper() not in _SKILL_POS:
+                continue
+            for _k in _1qb_keys:
+                if _a.get(_k) is not None:
+                    _a[_k] = round(min(float(_a[_k]) * _1qb_scale, 999.9), 1)
+
     pos_to_indices: dict[str, list[int]] = {}
 
     for idx, asset in enumerate(cleaned_assets):
