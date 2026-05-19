@@ -15618,7 +15618,7 @@ def api_trade_intel_player_packages(player_id: str):
                             num_future_seasons=3,
                             league=ctx.get("league") or {},
                             rosters=rosters,
-                            traded=ctx.get("traded_picks") or [],
+                            traded=ctx.get("traded") or [],
                             draft_ended=False,
                         )
                     except Exception:
