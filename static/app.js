@@ -2582,6 +2582,21 @@ window.initTradePage = function initTradePage(root = document) {
     let _pkgComboPkgs      = [];
     let _pkgArchetypes     = [];
 
+    window.archToggle = function(uid, mode) {
+      const allGrid  = document.getElementById('arch-grid-all-'  + uid);
+      const teamGrid = document.getElementById('arch-grid-team-' + uid);
+      const allBtn   = document.getElementById('arch-btn-all-'   + uid);
+      const teamBtn  = document.getElementById('arch-btn-team-'  + uid);
+      if (!allGrid || !teamGrid) return;
+      const showAll = mode === 'all';
+      allGrid.style.display  = showAll ? 'grid' : 'none';
+      teamGrid.style.display = showAll ? 'none' : 'grid';
+      allBtn.style.background  = showAll ? 'var(--accent,#6366f1)' : 'transparent';
+      allBtn.style.color       = showAll ? '#fff' : 'var(--text-muted)';
+      teamBtn.style.background = showAll ? 'transparent' : 'var(--accent,#6366f1)';
+      teamBtn.style.color      = showAll ? 'var(--text-muted)' : '#fff';
+    };
+
     function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal, archetypes) {
       _pkgAll        = packages;
       _pkgPage       = 0;
@@ -2781,21 +2796,37 @@ window.initTradePage = function initTradePage(root = document) {
 
         // ── Common archetype patterns ─────────────────────────────
         if (_pkgArchetypes.length) {
+          const archUid = String(playerId || Date.now());
+          const teamArchetypes = _pkgArchetypes.filter(ap => ap.fits_your_team);
+
+          function buildArchCells(list) {
+            if (!list.length) return `<div style="grid-column:1/-1;padding:12px 10px;font-size:12px;color:var(--text-muted);">No top patterns match your current roster.</div>`;
+            return list.map((ap, idx) => {
+              const sigHtml     = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
+              const pct         = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${ap.pct}%</span>` : '';
+              const borderRight = idx % 2 === 0 ? 'border-right:1px solid var(--border);' : '';
+              const fitDot      = ap.fits_your_team
+                ? `<span title="Fits your roster" style="width:6px;height:6px;border-radius:50%;background:#10b981;flex-shrink:0;margin-top:2px;"></span>`
+                : '';
+              return `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;padding:7px 10px;border-bottom:1px solid var(--border);${borderRight}min-width:0;">
+                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;min-width:0;">${fitDot}${sigHtml}</div>
+                ${pct}
+              </div>`;
+            }).join('');
+          }
+
+          const btnBase = 'border:none;cursor:pointer;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;transition:background .15s,color .15s;';
           realTradeHtml += `<div style="margin-bottom:12px;border-radius:8px;border:1px solid var(--border);overflow:hidden;">
-            <div style="padding:6px 10px;background:var(--surface-2,rgba(0,0,0,.04));border-bottom:1px solid var(--border);font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">
-              What teams typically send
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surface-2,rgba(0,0,0,.04));border-bottom:1px solid var(--border);">
+              <span style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">What teams typically send</span>
+              <div style="display:flex;gap:4px;align-items:center;">
+                <button id="arch-btn-all-${archUid}" onclick="archToggle('${archUid}','all')" style="${btnBase}background:var(--accent,#6366f1);color:#fff;">Top patterns</button>
+                <button id="arch-btn-team-${archUid}" onclick="archToggle('${archUid}','team')" style="${btnBase}background:transparent;color:var(--text-muted);">Your team</button>
+              </div>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">`;
-          _pkgArchetypes.forEach((ap, idx) => {
-            const sigHtml = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
-            const pct     = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${ap.pct}%</span>` : '';
-            const borderRight = idx % 2 === 0 ? 'border-right:1px solid var(--border);' : '';
-            realTradeHtml += `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;padding:7px 10px;border-bottom:1px solid var(--border);${borderRight}min-width:0;">
-              <div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;min-width:0;">${sigHtml}</div>
-              ${pct}
-            </div>`;
-          });
-          realTradeHtml += `</div></div>`;
+            <div id="arch-grid-all-${archUid}" style="display:grid;grid-template-columns:1fr 1fr;gap:0;">${buildArchCells(_pkgArchetypes)}</div>
+            <div id="arch-grid-team-${archUid}" style="display:none;grid-template-columns:1fr 1fr;gap:0;">${buildArchCells(teamArchetypes)}</div>
+          </div>`;
         }
 
         // ── Individual real-trade examples ──

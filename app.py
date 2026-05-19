@@ -15991,35 +15991,34 @@ def api_trade_intel_player_packages(player_id: str):
             for canon, cnt in merged.items()
         }
 
+        pkg_sigs = {pkg.get("pattern_sig") or "" for pkg in primary_pkgs}
+
         archetype_patterns = sorted(
             [
                 {
-                    "pattern_sig":  canon.split("|")[0],
-                    "throw_in_sig": canon.split("|")[1],
-                    "count":        cnt,
-                    "pct":          round(cnt / total_trade_count * 100),
+                    "pattern_sig":    canon.split("|")[0],
+                    "throw_in_sig":   canon.split("|")[1],
+                    "count":          cnt,
+                    "pct":            round(cnt / total_trade_count * 100),
+                    "fits_your_team": canon.split("|")[0] in pkg_sigs,
                 }
                 for canon, cnt in merged.items()
                 if cnt >= 2
             ],
             key=lambda x: -x["count"],
-        )[:6]
+        )[:8]
 
-        # Keep only archetype patterns that have a matching suggestion, then
-        # add an entry for any suggestion whose pattern isn't already covered.
+        # Backfill any suggestion patterns not already in the top 8.
         existing_sigs = {ap["pattern_sig"] for ap in archetype_patterns}
-        archetype_patterns = [
-            ap for ap in archetype_patterns
-            if ap["pattern_sig"] in {pkg.get("pattern_sig") or "" for pkg in primary_pkgs}
-        ]
         for pkg in primary_pkgs:
             sig = pkg.get("pattern_sig") or ""
             if sig and sig not in existing_sigs:
                 archetype_patterns.append({
-                    "pattern_sig":  sig,
-                    "throw_in_sig": pkg.get("throw_in_sig") or "",
-                    "count":        pkg.get("trades_like_this") or 1,
-                    "pct":          pct_lookup.get(sig, 0),
+                    "pattern_sig":    sig,
+                    "throw_in_sig":   pkg.get("throw_in_sig") or "",
+                    "count":          pkg.get("trades_like_this") or 1,
+                    "pct":            pct_lookup.get(sig, 0),
+                    "fits_your_team": True,
                 })
                 existing_sigs.add(sig)
 
