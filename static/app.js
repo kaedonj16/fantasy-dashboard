@@ -3042,7 +3042,7 @@ window.initTradePage = function initTradePage(root = document) {
               const yr   = String(a.pick_season || "").replace(/\D/g, "");
               const rd   = String(a.pick_round  || "").replace(/\D/g, "");
               const slot = a.pick_slot ? String(a.pick_slot).replace(/\D/g, "").padStart(2, "0") : null;
-              const order = (a.pick_order || "").toLowerCase().replace(/[^a-z]/g, "") || "mid";
+              const order = (String(a.pick_order || "")).toLowerCase().replace(/[^a-z]/g, "") || "mid";
               // Slot picks use numeric third segment (e.g. 2026_1_01), bucket picks use word (e.g. 2026_1_early)
               const pickId = yr && rd ? `${yr}_${rd}_${slot || order}` : null;
               const pickObj = pickId && (

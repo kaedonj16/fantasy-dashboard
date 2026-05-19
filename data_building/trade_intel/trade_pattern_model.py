@@ -530,7 +530,8 @@ def suggest_packages(
         centroid_n_players = max(0, round(float(cluster["centroid"][1]) * 4))
         centroid_n_picks   = max(0, round(float(cluster["centroid"][2]) * 4))
         floor_ratio = 0.60 if centroid_n_players == 0 else value_floor_ratio
-        floor = target_value * floor_ratio
+        floor   = target_value * floor_ratio
+        ceiling = target_value * 1.9
         pkg = _match_viewer_to_cluster(
             centroid       = cluster["centroid"],
             target_value   = target_value,
@@ -538,6 +539,7 @@ def suggest_packages(
             viewer_picks   = viewer_picks,
             values_by_id   = values_by_id,
             value_floor    = floor,
+            value_ceiling  = ceiling,
         )
         if pkg is None:
             continue
@@ -572,6 +574,7 @@ def _match_viewer_to_cluster(
     viewer_picks: list[dict],
     values_by_id: dict,
     value_floor: float = 0.0,
+    value_ceiling: float = 0.0,
     exclude_pids: Optional[set] = None,
 ) -> Optional[dict]:
     """
@@ -695,9 +698,11 @@ def _match_viewer_to_cluster(
     if not sent_assets:
         return None
 
-    # Value gate
+    # Value gate — floor and ceiling
     total_val = sum(float(a.get("value") or a.get("send_value") or 0) for a in sent_assets)
     if value_floor and total_val < value_floor:
+        return None
+    if value_ceiling and total_val > value_ceiling:
         return None
 
     # Build sig tokens for display

@@ -16022,6 +16022,11 @@ def api_trade_intel_player_packages(player_id: str):
         for pkg in primary_pkgs:
             _enrich_pkg(pkg)
 
+        # Drop packages where the viewer is sending more than 2× the target's value.
+        # Real trades include extreme overpays — those are not useful suggestions.
+        _max_send = (focus_value or 1) * 2.0
+        primary_pkgs = [p for p in primary_pkgs if p.get("send_value", 0) <= _max_send]
+
         for pkg in primary_pkgs:
             sent_pos = [a.get("position") for a in pkg.get("send", []) if not a.get("is_pick") and a.get("position")]
             pkg["likely_takers"] = _likely_takers(sent_pos)
