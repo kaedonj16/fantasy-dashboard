@@ -2555,10 +2555,7 @@ window.initTradePage = function initTradePage(root = document) {
           return;
         }
 
-        if (data.total_real_trades > 0) {
-          resultsMeta.textContent = `Based on ${data.total_real_trades} real trades in similar leagues`;
-          resultsMeta.style.display = "block";
-        }
+        resultsMeta.style.display = "none";
 
         renderPackages(
           [],
