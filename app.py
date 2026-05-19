@@ -1070,11 +1070,27 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ], ["players", "prospects", "breakouts"], "playersNavDropdown"),
         ]
 
+        player_search_html = (
+            "<div class='nav-search-wrapper' id='navSearchWrapper'>"
+            "  <div class='nav-search-inner'>"
+            "    <img src='/static/images/magnifying-glass-solid.png' class='nav-search-icon' alt='Search'>"
+            "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
+            "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
+            "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
+            "  </div>"
+            "  <div class='nav-search-dropdown' id='navSearchDropdown'></div>"
+            "</div>"
+        )
+
         # Build utility bar for home screen (just settings gear with dark mode)
         home_utility_bar = (
             "<div class='nav-utility-bar'>"
+            f"  {player_search_html}"
             f"  {changelog_bell}"
             f"  {settings_gear}"
+            "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
+            "    <i class='fa-solid fa-bars' aria-hidden='true'></i>"
+            "  </button>"
             "</div>"
         )
 
@@ -1094,7 +1110,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "    </a>"
             "  </div>"
             "  <div class='nav-center'>"
-            "    <button class='nav-hamburger' id='navToggle'>☰</button>"
             f"    {home_pills_container}"
             "  </div>"
             "  <div class='nav-right'>"
@@ -1251,12 +1266,28 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     watchlist_btn = ""  # disabled
 
+    player_search_html = (
+        "<div class='nav-search-wrapper' id='navSearchWrapper'>"
+        "  <div class='nav-search-inner'>"
+        "    <img src='/static/images/magnifying-glass-solid.png' class='nav-search-icon' alt='Search'>"
+        "    <input type='text' id='navPlayerSearch' class='nav-search-input'"
+        "           placeholder='Search players…' autocomplete='off' spellcheck='false' aria-label='Search players'/>"
+        "    <button type='button' class='nav-search-clear' id='navSearchClear' aria-label='Clear search'>×</button>"
+        "  </div>"
+        "  <div class='nav-search-dropdown' id='navSearchDropdown'></div>"
+        "</div>"
+    )
+
     # Build utility bar (desktop right side, mobile header)
     utility_bar = (
         "<div class='nav-utility-bar'>"
+        f"  {player_search_html}"
         f"  {watchlist_btn}"
         f"  {changelog_bell}"
         f"  {settings_gear}"
+        "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
+        "    <i class='fa-solid fa-bars' aria-hidden='true'></i>"
+        "  </button>"
         "</div>"
     )
 
@@ -1297,7 +1328,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "    </a>"
         "  </div>"
         "  <div class='nav-center'>"
-        "    <button class='nav-hamburger' id='navToggle'>☰</button>"
         f"    {pills_container}"
         "  </div>"
         "  <div class='nav-right'>"
