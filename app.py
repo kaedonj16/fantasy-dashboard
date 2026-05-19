@@ -15984,6 +15984,13 @@ def api_trade_intel_player_packages(player_id: str):
             if core_sig:
                 merged[f"{core_sig}|{throw_sig}"] += cnt
 
+        # Full pct lookup across all patterns (not just top 6) so backfilled
+        # entries can still show a real percentage when the DB has data.
+        pct_lookup = {
+            canon.split("|")[0]: round(cnt / total_trade_count * 100)
+            for canon, cnt in merged.items()
+        }
+
         archetype_patterns = sorted(
             [
                 {
@@ -16012,7 +16019,7 @@ def api_trade_intel_player_packages(player_id: str):
                     "pattern_sig":  sig,
                     "throw_in_sig": pkg.get("throw_in_sig") or "",
                     "count":        pkg.get("trades_like_this") or 1,
-                    "pct":          0,
+                    "pct":          pct_lookup.get(sig, 0),
                 })
                 existing_sigs.add(sig)
 

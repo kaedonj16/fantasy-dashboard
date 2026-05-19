@@ -2752,9 +2752,16 @@ window.initTradePage = function initTradePage(root = document) {
 
       function archetypeSigHtml(pattern_sig, throw_in_sig) {
         if (!pattern_sig) return '';
-        const chips = pattern_sig.split(' + ').map(archetypeChip).join(
-          `<span style="color:var(--text-muted);font-size:11px;margin:0 1px;">+</span>`
-        );
+        const chipCounts = new Map();
+        pattern_sig.split(' + ').filter(Boolean).forEach(lbl => {
+          chipCounts.set(lbl, (chipCounts.get(lbl) || 0) + 1);
+        });
+        const chips = Array.from(chipCounts.entries()).map(([lbl, n]) => {
+          const chip = archetypeChip(lbl);
+          return n > 1
+            ? `<span style="display:inline-flex;align-items:center;gap:2px;"><span style="font-size:10px;font-weight:700;color:var(--text-muted);">${n}×</span>${chip}</span>`
+            : chip;
+        }).join(`<span style="color:var(--text-muted);font-size:11px;margin:0 1px;">+</span>`);
         const throwIn = throw_in_sig
           ? `<span style="font-size:10px;color:var(--text-muted);white-space:nowrap;">
                <span style="opacity:.5;margin:0 3px;">·</span>throw-in: ${throw_in_sig}
