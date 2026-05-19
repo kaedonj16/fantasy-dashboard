@@ -3987,6 +3987,37 @@ thead th {
 }
 
 @media (max-width: 600px) {
+  /* Real-trade cards */
+  .otc-real-trade-card {
+    margin-bottom: 8px;
+  }
+  .otc-rt-side {
+    padding: 8px 10px;
+  }
+  .otc-rt-label {
+    font-size: 8px;
+    margin-bottom: 4px;
+  }
+  .otc-rt-pos {
+    min-width: 22px;
+    font-size: 9px;
+    padding: 1px 4px;
+  }
+  .otc-rt-name {
+    font-size: 12px;
+  }
+  .otc-rt-footer {
+    flex-wrap: wrap;
+    padding: 7px 10px;
+    gap: 6px;
+  }
+  .otc-rt-footer .otc-sugg-pkg-load-btn {
+    width: 100%;
+    text-align: center;
+    padding: 7px 0;
+  }
+
+  /* ML suggestion packages */
   .otc-sugg-package {
     flex-wrap: wrap;
     gap: 8px;
