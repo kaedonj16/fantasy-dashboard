@@ -2853,8 +2853,7 @@ window.initTradePage = function initTradePage(root = document) {
             return list.map((ap, idx) => {
               const sigHtml     = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
               const pct         = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${ap.pct}%</span>` : '';
-              const borderRight = idx % 2 === 0 ? 'border-right:1px solid var(--border);' : '';
-              return `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;padding:7px 10px;border-bottom:1px solid var(--border);${borderRight}min-width:0;">
+              return `<div class="otc-arch-cell">
                 <div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;min-width:0;">${sigHtml}</div>
                 ${pct}
               </div>`;
@@ -2862,15 +2861,15 @@ window.initTradePage = function initTradePage(root = document) {
           }
 
           realTradeHtml += `<div style="margin-bottom:12px;border-radius:8px;border:1px solid var(--border);overflow:hidden;">
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surface-2,rgba(0,0,0,.04));border-bottom:1px solid var(--border);">
+            <div class="otc-arch-header">
               <span style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">What teams typically send</span>
               <div class="otc-main-tabs compact" style="margin-bottom:0;">
                 <button id="arch-btn-all-${archUid}" class="otc-main-tab is-active" onclick="archToggle('${archUid}','all')">Top patterns</button>
                 <button id="arch-btn-team-${archUid}" class="otc-main-tab" onclick="archToggle('${archUid}','team')">Your team</button>
               </div>
             </div>
-            <div id="arch-grid-all-${archUid}" style="display:grid;grid-template-columns:1fr 1fr;gap:0;">${buildArchCells(_pkgArchetypes)}</div>
-            <div id="arch-grid-team-${archUid}" style="display:none;grid-template-columns:1fr 1fr;gap:0;">${buildArchCells(teamArchetypes)}</div>
+            <div id="arch-grid-all-${archUid}" class="otc-arch-grid">${buildArchCells(_pkgArchetypes)}</div>
+            <div id="arch-grid-team-${archUid}" class="otc-arch-grid" style="display:none;">${buildArchCells(teamArchetypes)}</div>
           </div>`;
         }
 

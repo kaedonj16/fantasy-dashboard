@@ -4083,6 +4083,55 @@ thead th {
   50%       { opacity: 1;   }
 }
 
+/* Archetype pattern grid */
+.otc-arch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--surface-2, rgba(0,0,0,.04));
+  border-bottom: 1px solid var(--border);
+  gap: 6px;
+}
+
+.otc-arch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+.otc-arch-cell {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.otc-arch-cell:nth-child(odd) {
+  border-right: 1px solid var(--border);
+}
+
+@media (max-width: 600px) {
+  .otc-arch-header {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 8px;
+  }
+  .otc-arch-header span {
+    font-size: 9px !important;
+  }
+  .otc-arch-grid {
+    grid-template-columns: 1fr;
+  }
+  .otc-arch-cell {
+    padding: 6px 8px;
+    border-right: none !important;
+  }
+}
+
 /* Compact tab variant for inline use (e.g. archetype toggle) */
 .otc-main-tabs.compact {
   padding: 2px;
