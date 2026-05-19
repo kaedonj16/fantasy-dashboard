@@ -2468,6 +2468,13 @@ window.initTradePage = function initTradePage(root = document) {
     const resultsList    = root.querySelector("#suggResultsList");
     if (!playerInput) return;
 
+    // Restore last searched player
+    const _lastPlayer = (() => { try { return JSON.parse(localStorage.getItem('ti-last-player') || 'null'); } catch(_) { return null; } })();
+    if (_lastPlayer && _lastPlayer.id) {
+      playerInput.value = _lastPlayer.name || '';
+      fetchPackages(_lastPlayer.id, _lastPlayer.name || '');
+    }
+
     function posColor(pos) {
       return { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" }[pos] || "var(--accent)";
     }
@@ -2614,6 +2621,8 @@ window.initTradePage = function initTradePage(root = document) {
           data.real_packages, data.total_real_trades,
           data.archetype_patterns
         );
+
+        localStorage.setItem('ti-last-player', JSON.stringify({ id: playerId, name: playerName }));
 
       } catch (err) {
         if (err.name === "AbortError") return;  // superseded by a newer search
@@ -2899,7 +2908,7 @@ window.initTradePage = function initTradePage(root = document) {
 
           _sortedGroups.forEach(([sig, pkgs]) => {
             // Render a group header using the archetype chips
-            const groupHeader = sig
+            const groupHeader = (sig && _sortedGroups.length > 1)
               ? `<div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px;">
                    <div style="flex:1;height:1px;background:var(--border);"></div>
                    <div style="display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--card);flex-shrink:0;">
@@ -2962,10 +2971,6 @@ window.initTradePage = function initTradePage(root = document) {
               ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`
               : '';
 
-            const takersHtml = (pkg.likely_takers && pkg.likely_takers.length)
-              ? `<span style="font-size:10px;color:var(--text-muted);">· Likely: ${pkg.likely_takers.join(', ')}</span>`
-              : '';
-
             realTradeHtml += `<div class="otc-real-trade-card">
               <div class="otc-rt-body">
                 <div class="otc-rt-side">
@@ -2985,7 +2990,6 @@ window.initTradePage = function initTradePage(root = document) {
                 <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
                   <span class="otc-rt-count">${count} ${count === 1 ? 'trade' : 'trades'}</span>
                   ${gradeHtml}
-                  ${takersHtml}
                 </div>
                 <button class="otc-sugg-pkg-load-btn"
                   data-focus-id="${_pkgPlayerId}"
@@ -3013,6 +3017,9 @@ window.initTradePage = function initTradePage(root = document) {
       resultsList.querySelectorAll(".otc-sugg-pkg-load-btn").forEach(btn => {
         btn.addEventListener("click", async () => {
           await ensurePlayersLoaded();
+          btn.textContent = 'Loading…';
+          btn.disabled = true;
+          try {
           const focusId    = btn.dataset.focusId;
           const assets     = JSON.parse(decodeURIComponent(btn.dataset.assets));
           const extraRaw   = btn.dataset.extraReceive
@@ -3068,6 +3075,10 @@ window.initTradePage = function initTradePage(root = document) {
           switchToCalc();
           const shell = root.querySelector(".otc-shell");
           if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
+          } finally {
+            btn.textContent = 'Analyze';
+            btn.disabled = false;
+          }
         });
       });
     }
