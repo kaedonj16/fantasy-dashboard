@@ -86,6 +86,17 @@ def _target_class(position: str, value: float) -> str:
     return f"{pos}-T{tier}"
 
 
+def _size_bucket(num_teams: int) -> str:
+    """Map team count to canonical size bucket."""
+    if num_teams <= 9:
+        return "8"
+    if num_teams <= 11:
+        return "10"
+    if num_teams == 12:
+        return "12"
+    return "14"
+
+
 # ---------------------------------------------------------------------------
 # Feature extraction
 # ---------------------------------------------------------------------------
@@ -346,6 +357,51 @@ def train(
     }
 
 
+def train_bucketed(
+    trade_rows: list[dict],
+    values_by_id: dict,
+    k_max: int = 4,
+    min_trades_player: int = 5,
+    min_per_cluster: int = 5,
+) -> dict:
+    """
+    Train one model per league-size bucket and return a combined model dict.
+
+    trade_rows must include a 'num_teams' field (added by analytics.py).
+    Produces {"version": 3, "trained_at": ..., "n_trades": N, "buckets": {
+        "8":  {players, classes},
+        "10": {players, classes},
+        "12": {players, classes},
+        "14": {players, classes},
+    }}
+    """
+    from collections import defaultdict
+
+    by_bucket: dict[str, list[dict]] = defaultdict(list)
+    for row in trade_rows:
+        bucket = _size_bucket(int(row.get("num_teams") or 12))
+        by_bucket[bucket].append(row)
+
+    buckets_out: dict[str, dict] = {}
+    for bucket in ["8", "10", "12", "14"]:
+        rows = by_bucket.get(bucket) or []
+        logger.info("[trade_model] bucket=%s  %d trades", bucket, len(rows))
+        if len(rows) < 10:
+            logger.warning("[trade_model] bucket=%s too few trades — skipping", bucket)
+            continue
+        m = train(rows, values_by_id, k_max=k_max,
+                  min_trades_player=min_trades_player,
+                  min_per_cluster=min_per_cluster)
+        buckets_out[bucket] = {"players": m["players"], "classes": m["classes"]}
+
+    return {
+        "version":    3,
+        "trained_at": datetime.now(timezone.utc).isoformat(),
+        "n_trades":   len(trade_rows),
+        "buckets":    buckets_out,
+    }
+
+
 def _closest_examples(
     trades: list[dict],
     centroid: np.ndarray,
@@ -419,6 +475,7 @@ def suggest_packages(
     values_by_id: dict,
     n: int = 5,
     value_floor_ratio: float = 0.80,
+    num_teams: int = 12,
 ) -> list[dict]:
     """
     Given a loaded model and viewer's roster, return suggested packages.
@@ -429,6 +486,19 @@ def suggest_packages(
     Returns list of package dicts compatible with _real_trade_packages_for_target:
       {send: [...], trades_like_this: N, sig: [...], pattern_source: 'ml'}
     """
+    # Resolve the right bucket sub-model for this league size (v3 format).
+    # Falls back to adjacent buckets, then the top-level model (v2 format).
+    if "buckets" in model:
+        bucket = _size_bucket(num_teams)
+        buckets = model["buckets"]
+        # Try exact bucket, then adjacent sizes, then any available bucket
+        for b in [bucket, "12", "10", "14", "8"]:
+            if b in buckets:
+                model = buckets[b]
+                break
+        else:
+            model = next(iter(buckets.values())) if buckets else model
+
     # 1. Try player-specific clusters
     player_data = (model.get("players") or {}).get(str(target_player_id))
     if player_data:

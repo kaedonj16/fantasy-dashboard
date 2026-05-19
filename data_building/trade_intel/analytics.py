@@ -828,14 +828,16 @@ def run_trade_model(
     try:
         from data_building.trade_intel.trade_pattern_model import (
             MODEL_PATH,
-            train        as _train,
-            save_model   as _save,
+            train          as _train,
+            train_bucketed as _train_bucketed,
+            save_model     as _save,
         )
     except ImportError:
         from trade_pattern_model import (
             MODEL_PATH,
-            train        as _train,
-            save_model   as _save,
+            train          as _train,
+            train_bucketed as _train_bucketed,
+            save_model     as _save,
         )
 
     # Skip if model is fresh and force=False
@@ -919,6 +921,7 @@ def run_trade_model(
             "target_player_id": best_pid,
             "target_value":     best_val,
             "sent_assets":      sent_assets,
+            "num_teams":        int(trade.get("num_teams") or 12),
         })
 
     logger.info("[trade_model] %d usable trade rows assembled", len(trade_rows))
@@ -927,7 +930,7 @@ def run_trade_model(
         logger.warning("[trade_model] Too few trades (%d) — aborting", len(trade_rows))
         return {"skipped": True, "reason": "too_few_trades", "n": len(trade_rows)}
 
-    model = _train(trade_rows, values)
+    model = _train_bucketed(trade_rows, values)
     _save(model)
 
     n_classes = len(model.get("classes") or {})

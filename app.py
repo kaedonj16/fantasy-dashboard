@@ -15744,6 +15744,7 @@ def api_trade_intel_player_packages(player_id: str):
                     viewer_picks      = viewer_picks,
                     values_by_id      = values_by_id,
                     n                 = 10,
+                    num_teams         = num_teams,
                 )
                 logger.info("[api-trade-intel-player-packages] ML model: %d packages", len(ml_pkgs))
                 _model_stale_days = _tm_model.get("model_stale_days")
