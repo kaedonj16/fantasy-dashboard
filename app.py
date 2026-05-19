@@ -16112,8 +16112,8 @@ def _real_trade_packages_for_target(
                     WHERE l.league_type = 2
                       AND COALESCE(l.is_superflex, FALSE) = %s
                       AND COALESCE(l.num_teams, 12) BETWEEN %s AND %s
-                      AND t.created_at > NOW() - INTERVAL '365 days'
-                    LIMIT 300
+                      AND t.created_at > NOW() - INTERVAL '730 days'
+                    LIMIT 500
                 )
                 SELECT
                     acq.trade_id,
@@ -16128,7 +16128,7 @@ def _real_trade_packages_for_target(
                     AND a.side != acq.recv_side
                 ORDER BY acq.trade_id
                 """,
-                (target_player_id, is_sf, num_teams - 2, num_teams + 2),
+                (target_player_id, is_sf, num_teams - 4, num_teams + 4),
             ).fetchall()
     except Exception:
         return {"packages": [], "total_real_trades": 0}
