@@ -32,6 +32,7 @@
 .fa-gem               { background-image: url('images/medal-solid.png'); filter: brightness(0) saturate(100%) invert(72%) sepia(78%) saturate(865%) hue-rotate(354deg) brightness(101%) contrast(105%); }
 .fa-hand-holding-dollar { background-image: url('images/hand-holding-dollar-solid.png'); filter: brightness(0) saturate(100%) invert(59%) sepia(56%) saturate(527%) hue-rotate(87deg) brightness(98%) contrast(89%); }
 .fa-lock              { background-image: url('images/lock-solid.png'); filter: brightness(0) saturate(100%) invert(16%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(95%) contrast(100%); }
+.fa-lock-open         { background-image: url('images/lock-open-solid.png'); filter: brightness(0) saturate(100%) invert(16%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(95%) contrast(100%); }
 .fa-magnifying-glass  { background-image: url('images/magnifying-glass-solid.png'); filter: brightness(0) saturate(100%) invert(16%) sepia(0%) saturate(0%) hue-rotate(0deg) brightness(95%) contrast(100%); }
 .fa-medal             { background-image: url('images/medal-solid.png'); filter: brightness(0) saturate(100%) invert(72%) sepia(78%) saturate(865%) hue-rotate(354deg) brightness(101%) contrast(105%); }
 .fa-rocket            { background-image: url('images/rocket-solid.png'); filter: brightness(0) saturate(100%) invert(59%) sepia(56%) saturate(527%) hue-rotate(87deg) brightness(98%) contrast(89%); }

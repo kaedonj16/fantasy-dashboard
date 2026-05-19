@@ -3890,11 +3890,11 @@ thead th {
 /* Right load button */
 .otc-sugg-pkg-load-btn {
   flex-shrink: 0;
-  padding: 6px 10px;
+  padding: 6px 14px;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--row);
-  color: var(--text-muted);
+  border: 1px solid rgba(99,102,241,.25);
+  background: rgba(99,102,241,.07);
+  color: var(--accent);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
@@ -3903,9 +3903,87 @@ thead th {
 }
 
 .otc-sugg-pkg-load-btn:hover {
-  background: var(--accent-soft);
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
+  color: #fff;
+}
+
+/* Real-trade example cards */
+.otc-real-trade-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 6px;
+  transition: box-shadow .15s, border-color .15s;
+}
+.otc-real-trade-card:hover {
+  border-color: rgba(167,139,250,.4);
+  box-shadow: 0 4px 18px rgba(0,0,0,.07);
+}
+.otc-rt-body {
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  gap: 0;
+}
+.otc-rt-side {
+  padding: 12px 14px;
+  min-width: 0;
+}
+.otc-rt-divider {
+  background: var(--border);
+  align-self: stretch;
+}
+.otc-rt-label {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.otc-rt-asset {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  min-width: 0;
+}
+.otc-rt-pos {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  min-width: 26px;
+  text-align: center;
+}
+.otc-rt-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.otc-rt-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--row);
+}
+.otc-rt-count {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: rgba(167,139,250,.08);
+  color: #a78bfa;
+  border: 1px solid rgba(167,139,250,.18);
+  flex-shrink: 0;
 }
 
 @media (max-width: 600px) {
@@ -3971,6 +4049,17 @@ thead th {
 @keyframes otcSuggShimmer {
   0%, 100% { opacity: 0.5; }
   50%       { opacity: 1;   }
+}
+
+/* Compact tab variant for inline use (e.g. archetype toggle) */
+.otc-main-tabs.compact {
+  padding: 2px;
+  border-radius: 7px;
+}
+.otc-main-tabs.compact .otc-main-tab {
+  padding: 3px 10px;
+  font-size: 11px;
+  border-radius: 5px;
 }
 
 /* Targets side column */
@@ -7090,6 +7179,7 @@ thead th {
   border-radius: var(--radius);
   padding: 20px;
   overflow: hidden;
+  max-height: 403px;
   display: flex;
   flex-direction: column;
 }
@@ -15409,7 +15499,9 @@ tr.team-clickable {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: 10001;
   align-items: center;
   justify-content: center;
@@ -15421,11 +15513,12 @@ tr.team-clickable {
   padding: 32px 28px 28px;
   width: 360px;
   max-width: 92vw;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.3);
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.25);
+  animation: scaleIn 0.22s ease forwards;
 }
 .signin-modal-title {
   margin: 0 0 6px;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 700;
   color: var(--text);
 }
@@ -15440,17 +15533,16 @@ tr.team-clickable {
   box-sizing: border-box;
   padding: 10px 13px;
   border-radius: 9px;
-  border: 1px solid var(--border);
-  background: var(--bg-alt);
+  border: 1.5px solid var(--border);
+  background: var(--card-soft);
   color: var(--text);
   font-size: 14px;
   margin-bottom: 16px;
   outline: none;
   transition: border-color 0.15s;
 }
-.signin-modal-input:focus {
-  border-color: var(--accent);
-}
+.signin-modal-input::placeholder { color: var(--text-subtle); }
+.signin-modal-input:focus { border-color: var(--accent); }
 .signin-modal-actions {
   display: flex;
   gap: 10px;
@@ -15467,17 +15559,17 @@ tr.team-clickable {
   cursor: pointer;
   transition: opacity 0.12s;
 }
-.signin-modal-submit:hover { opacity: 0.88; }
+.signin-modal-submit:hover { opacity: 0.85; }
 .signin-modal-cancel {
   flex: 1;
   padding: 10px;
   border-radius: 9px;
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   background: transparent;
   color: var(--text-muted);
   font-size: 14px;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .signin-modal-cancel:hover {
   background: var(--accent-soft);

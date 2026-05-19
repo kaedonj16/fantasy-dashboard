@@ -439,6 +439,11 @@ def build_trade_calculator_body(
                 <div id="otcSuggTargetsBody" style="display:flex;flex-direction:column;gap:8px;">
                   <div class="otc-movers-empty">Select your team above to see targets.</div>
                 </div>
+                <!-- Excluded players bar -->
+                <div id="otcExcludedBar" style="display:none;border-top:1px solid var(--border);">
+                  <div style="padding:8px 14px 4px;font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">Excluded from suggestions</div>
+                  <div id="otcExcludedChips"></div>
+                </div>
               </div>
 
             </div>

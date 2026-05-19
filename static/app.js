@@ -1588,19 +1588,25 @@ window.initTradePage = function initTradePage(root = document) {
       })
       .sort((a, b) => getPlayerValue(b) - getPlayerValue(a));
 
-    const _TC = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
-    const _TL = ['','Elite','Star','High-End Starter','Starter','Flex','Bench','Deep Bench','Handcuff','Fringe'];
+    function _tcColor(t) {
+      const s=['#10b981','#22d3ee','#3b82f6','#818cf8','#a855f7','#d946ef','#f59e0b','#f97316','#ef4444','#94a3b8','#64748b','#475569','#334155','#1e293b','#0f172a'];
+      return s[Math.min(t-1,s.length-1)];
+    }
+    function _tcLabel(t) {
+      const l=['Elite','Star','High-End Starter','Starter','Flex','Bench Depth','Deep Bench','Handcuff','Fringe','Speculative'];
+      return l[t-1]||('Tier '+t);
+    }
     let prevTier = null;
 
     items.forEach(p => {
-      const tier = activePosFilter === "ALL" ? _getOtcTier(p) : null;
+      const tier = activePosFilter === "ALL" ? Math.min(_getOtcTier(p) ?? Infinity, 9) || null : null;
       if (tier && tier !== prevTier) {
-        const tc = _TC[tier] || '#64748b';
+        const tc = _tcColor(tier);
         const div = document.createElement("div");
         div.className = "otc-tier-divider";
         div.innerHTML =
           `<div class="otc-tier-divider-line" style="background:${tc};"></div>` +
-          `<span class="otc-tier-divider-label" style="color:${tc};" title="${_TL[tier] || ''}">T${tier}</span>` +
+          `<span class="otc-tier-divider-label" style="color:${tc};" title="${_tcLabel(tier)}">T${tier}</span>` +
           `<div class="otc-tier-divider-line" style="background:${tc};"></div>`;
         container.appendChild(div);
       }
@@ -2362,6 +2368,37 @@ window.initTradePage = function initTradePage(root = document) {
     let suggTargetsLoaded = false;
     let suggCurrentPlayerId = null;
     let _fetchAbortCtrl = null;  // cancels in-flight fetchPackages requests
+    let _untouchableIds   = new Set(JSON.parse(localStorage.getItem('ti-untouchable') || '[]'));
+    let _untouchableInfo  = JSON.parse(localStorage.getItem('ti-untouchable-info') || '{}');
+    function _saveUntouchable() {
+      localStorage.setItem('ti-untouchable',      JSON.stringify([..._untouchableIds]));
+      localStorage.setItem('ti-untouchable-info', JSON.stringify(_untouchableInfo));
+    }
+    function _renderUntouchableBar() {
+      const bar   = root.querySelector('#otcExcludedBar');
+      const chips = root.querySelector('#otcExcludedChips');
+      if (!bar || !chips) return;
+      const ids = [..._untouchableIds];
+      bar.style.display = ids.length ? '' : 'none';
+      chips.innerHTML = ids.map(pid => {
+        const info = _untouchableInfo[pid] || {};
+        const name = info.name || pid;
+        const pos  = info.pos  || '';
+        const col  = pos ? posColor(pos) : 'var(--text-muted)';
+        const posBadge = pos
+          ? `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:${col}18;color:${col};min-width:22px;text-align:center;">${pos}</span>`
+          : '';
+        return `<div style="display:flex;align-items:center;gap:6px;padding:5px 14px;border-bottom:1px solid var(--border);">
+          ${posBadge}
+          <span style="font-size:12px;font-weight:600;color:var(--text);flex:1;">${name}</span>
+          <button onclick="window._toggleUntouchable('${pid}')" title="Allow ${name} in suggestions"
+            style="border:none;background:none;cursor:pointer;padding:2px;display:inline-flex;align-items:center;opacity:.4;border-radius:4px;"
+            onmouseenter="this.style.opacity=1;this.style.background='var(--row)'" onmouseleave="this.style.opacity='.4';this.style.background='none'">
+            <span class="fa-solid fa-xmark" style="width:9px;height:9px;"></span>
+          </button>
+        </div>`;
+      }).join('');
+    }
 
     function switchTab(name) {
       if (name === "suggestions") {
@@ -2472,6 +2509,25 @@ window.initTradePage = function initTradePage(root = document) {
     });
 
     // ── Fetch packages from API ──────────────────────────────────
+    // Exposed so inline lock-icon handlers can trigger a re-fetch after toggling untouchable
+    window._refetchTradeIntel = () => {
+      if (suggCurrentPlayerId) fetchPackages(suggCurrentPlayerId, _pkgPlayerName);
+    };
+    window._toggleUntouchable = (pid, name, pos) => {
+      if (_untouchableIds.has(pid)) {
+        _untouchableIds.delete(pid);
+        delete _untouchableInfo[pid];
+      } else {
+        _untouchableIds.add(pid);
+        _untouchableInfo[pid] = { name: name || pid, pos: pos || '' };
+      }
+      _saveUntouchable();
+      _renderUntouchableBar();
+      window._refetchTradeIntel();
+    };
+    localStorage.removeItem('ti-untouchable-names'); // migrated to ti-untouchable-info
+    _renderUntouchableBar();
+
     async function fetchPackages(playerId, playerName) {
       if (!playerId) return;
 
@@ -2523,7 +2579,8 @@ window.initTradePage = function initTradePage(root = document) {
         const res = await fetch(
           `/api/trade-intel/player-packages/${encodeURIComponent(playerId)}` +
           `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
-          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`,
+          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
+          `&untouchable_ids=${encodeURIComponent([..._untouchableIds].join(','))}`,
           { signal }
         );
 
@@ -2540,32 +2597,22 @@ window.initTradePage = function initTradePage(root = document) {
 
         const data = await res.json();
 
-        const hasProfilePkgs = data.packages && data.packages.length;
-        const hasRealPkgs    = data.real_packages && data.real_packages.length;
-        if (!hasProfilePkgs && !hasRealPkgs) {
-          const noRoster = !viewerRosterId;
+        const hasRealPkgs = (data.real_packages && data.real_packages.length) || (data.archetype_patterns && data.archetype_patterns.length);
+        if (!hasRealPkgs) {
           resultsList.innerHTML = `<div class="otc-sugg-empty">
-            <div class="otc-sugg-empty-title">No packages found</div>
-            <div class="otc-sugg-empty-sub">${noRoster
-              ? "Connect a league to see trade suggestions from your roster."
-              : "Your roster may not have players at the right value to trade for " + playerName + "."
-            }</div>
+            <div class="otc-sugg-empty-title">No trade data yet</div>
+            <div class="otc-sugg-empty-sub">Not enough real trades for ${playerName} in similar leagues yet.</div>
           </div>`;
           return;
         }
 
-        if (hasProfilePkgs) {
-          const roosterFiltered = viewerRosterId && data.packages.length < data.total_packages;
-          resultsMeta.textContent = roosterFiltered
-            ? `${data.packages.length} packages from your roster · sorted by likelihood`
-            : `${data.packages.length} packages · sorted by likelihood`;
-          resultsMeta.style.display = "block";
-        }
+        resultsMeta.style.display = "none";
 
         renderPackages(
-          [...(data.packages || []), ...(data.combo_packages || [])],
+          [],
           data.player_name, playerId, data.focus_value,
-          data.real_packages, data.total_real_trades
+          data.real_packages, data.total_real_trades,
+          data.archetype_patterns
         );
 
       } catch (err) {
@@ -2579,13 +2626,27 @@ window.initTradePage = function initTradePage(root = document) {
     const PAGE_SIZE = 5;
     let _pkgPage = 0;
     let _pkgAll  = [];
-    let _pkgPlayerId   = null;
-    let _pkgPlayerName = null;
-    let _pkgRealPkgs   = [];
-    let _pkgRealTotal  = 0;
-    let _pkgComboPkgs  = [];
+    let _pkgPlayerId       = null;
+    let _pkgPlayerName     = null;
+    let _pkgRealPkgs       = [];
+    let _pkgRealTotal      = 0;
+    let _pkgComboPkgs      = [];
+    let _pkgArchetypes     = [];
 
-    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal) {
+    window.archToggle = function(uid, mode) {
+      const allGrid  = document.getElementById('arch-grid-all-'  + uid);
+      const teamGrid = document.getElementById('arch-grid-team-' + uid);
+      const allBtn   = document.getElementById('arch-btn-all-'   + uid);
+      const teamBtn  = document.getElementById('arch-btn-team-'  + uid);
+      if (!allGrid || !teamGrid) return;
+      const showAll = mode === 'all';
+      allGrid.style.display  = showAll ? 'grid' : 'none';
+      teamGrid.style.display = showAll ? 'none' : 'grid';
+      allBtn.classList.toggle('is-active',  showAll);
+      teamBtn.classList.toggle('is-active', !showAll);
+    };
+
+    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal, archetypes) {
       _pkgAll        = packages;
       _pkgPage       = 0;
       _pkgPlayerId   = playerId;
@@ -2593,6 +2654,7 @@ window.initTradePage = function initTradePage(root = document) {
       _pkgRealPkgs   = realPkgs   || [];
       _pkgRealTotal  = realTotal  || 0;
       _pkgComboPkgs  = [];
+      _pkgArchetypes = archetypes || [];
       renderPackagePage();
     }
 
@@ -2676,20 +2738,20 @@ window.initTradePage = function initTradePage(root = document) {
             <span class="otc-sugg-pkg-value ${vc}">${pkg.value_label}</span>
             ${freqLabel}
           </div>
-          <div class="otc-sugg-pkg-sides">
-            <div class="otc-sugg-pkg-side">
-              <div class="otc-sugg-pkg-side-label">You get</div>
+          <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:6px;margin-top:6px;">
+            <div>
+              <div class="otc-sugg-pkg-side-label">YOU GET</div>
               <div class="otc-sugg-pkg-assets">
-                <div class="otc-sugg-pkg-asset">
-                  <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
-                  ${playerName}
+                <div class="otc-sugg-pkg-asset" style="overflow:hidden;">
+                  <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};flex-shrink:0;">${focusPos}</span>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${playerName}</span>
                 </div>
                 ${extraAssetHtml}
               </div>
             </div>
-            <div class="otc-sugg-pkg-divider">←</div>
-            <div class="otc-sugg-pkg-side">
-              <div class="otc-sugg-pkg-side-label">You give</div>
+            <div class="otc-sugg-pkg-divider" style="padding-top:18px;">←</div>
+            <div>
+              <div class="otc-sugg-pkg-side-label">YOU GIVE</div>
               <div class="otc-sugg-pkg-assets">${pkg.assets.map(assetHtml).join("")}</div>
             </div>
           </div>
@@ -2724,47 +2786,217 @@ window.initTradePage = function initTradePage(root = document) {
         'vet-falling':   { text: '↓ Declining Vet',  color: '#ef4444' },
       };
 
-      // ── "Based on real trades" section (always shown below the paginated cards) ──
-      let realTradeHtml = "";
-      if (_pkgRealPkgs.length) {
-        realTradeHtml += `<div style="margin-top:12px;padding-top:8px;border-top:2px solid var(--border);">
-          <div style="font-size:10px;font-weight:700;color:#a78bfa;margin-bottom:4px;letter-spacing:.04em;">
-            BASED ON ${_pkgRealTotal} REAL TRADES IN SIMILAR LEAGUES
-          </div>`;
-        _pkgRealPkgs.forEach(pkg => {
-          const sv      = pkg.send_value.toFixed(1);
-          const count   = pkg.trades_like_this || 0;
-          const isRef   = !!pkg.is_reference;
-          const assetsHtml = (pkg.send || []).map(a => {
-            if (a.is_pick || a.type === "pick") {
-              return `<span style="font-weight:600;color:var(--text-muted);">${a.name || "Pick"}</span>`;
-            }
-            const prof = a.profile ? PROF_LBL[a.profile] : null;
-            const profTag = prof
-              ? `<span style="font-size:10px;color:${prof.color};margin-left:3px;">${prof.text}</span>`
-              : '';
-            return `<span style="font-weight:600;color:${isRef ? 'var(--text-muted)' : 'var(--text)'};">${a.name}</span>${profTag}`;
-          }).join('<span style="color:var(--text-muted);margin:0 3px;">+</span>');
-          const patternLabel = isRef
-            ? `market pattern · send ~${sv} (example assets)`
-            : `market pattern · send ${sv}`;
-          const analyzeBtn = `<button class="otc-sugg-pkg-load-btn"
-            data-focus-id="${_pkgPlayerId}"
-            data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}"
-            style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid #a78bfa;background:transparent;color:#a78bfa;cursor:pointer;white-space:nowrap;margin-top:4px;">
-            Analyze
-          </button>`;
-          realTradeHtml += `<div style="padding:5px 0;border-top:1px solid var(--border);">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;">
-              <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:2px;">${assetsHtml}</div>
-              <span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;flex-shrink:0;">${count}× seen</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
-              <span style="font-size:10px;color:var(--text-muted);">${patternLabel}</span>
-              ${analyzeBtn}
-            </div>
-          </div>`;
+      // ── Shared helper: render one archetype label ──────────────────────
+      // Formats: "RB-T4-Prime"  "PICK:R1:Early"  "PICK:R1"  "PICK"
+      function archetypeChip(lbl) {
+        if (!lbl || lbl === '?') return '';
+        if (lbl === 'PICK' || lbl.startsWith('PICK:')) {
+          const segs   = lbl.split(':');           // ['PICK','R1','Early']
+          const rnd    = segs[1] || '';
+          const slot   = segs[2] || '';
+          const slotColor = slot === 'Early' ? '#10b981' : slot === 'Late' ? '#ef4444' : '#a78bfa';
+          return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.2);">
+            <span style="font-size:10px;font-weight:700;color:#6366f1;">PICK</span>
+            ${rnd ? `<span style="font-size:10px;font-weight:600;color:#a78bfa;">${rnd}</span>` : ''}
+            ${slot ? `<span style="font-size:10px;color:${slotColor};">${slot}</span>` : ''}
+          </span>`;
+        }
+        const parts   = lbl.split('-');
+        const pos     = parts[0] || '';
+        const tier    = parts[1] || '';
+        const bracket = parts[2] || '';
+        const col     = posColor(pos);
+        const bracketColor = bracket === 'Young' ? '#10b981' : bracket === 'Vet' ? '#9ca3af' : '#6366f1';
+        return `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;background:${col}12;border:1px solid ${col}30;">
+          <span style="font-size:10px;font-weight:700;color:${col};">${pos}</span>
+          <span style="font-size:10px;font-weight:600;color:var(--text);">${tier}</span>
+          ${bracket ? `<span style="font-size:10px;color:${bracketColor};">· ${bracket}</span>` : ''}
+        </span>`;
+      }
+
+      function archetypeSigHtml(pattern_sig, throw_in_sig) {
+        if (!pattern_sig) return '';
+        const chipCounts = new Map();
+        pattern_sig.split(' + ').filter(Boolean).forEach(lbl => {
+          chipCounts.set(lbl, (chipCounts.get(lbl) || 0) + 1);
         });
+        const chips = Array.from(chipCounts.entries()).map(([lbl, n]) => {
+          const chip = archetypeChip(lbl);
+          return n > 1
+            ? `<span style="display:inline-flex;align-items:center;gap:2px;"><span style="font-size:10px;font-weight:700;color:var(--text-muted);">${n}×</span>${chip}</span>`
+            : chip;
+        }).join(`<span style="color:var(--text-muted);font-size:11px;margin:0 1px;">+</span>`);
+        const throwIn = throw_in_sig
+          ? `<span style="font-size:10px;color:var(--text-muted);white-space:nowrap;">
+               <span style="opacity:.5;margin:0 3px;">·</span>throw-in: ${throw_in_sig}
+             </span>`
+          : '';
+        return chips + throwIn;
+      }
+
+      // ── "Based on real trades" section ─────────────────────────────────────────
+      let realTradeHtml = "";
+      if (_pkgRealPkgs.length || _pkgArchetypes.length) {
+        realTradeHtml += `<div style="margin-top:14px;padding-top:12px;border-top:2px solid var(--border);">
+          <div style="margin-bottom:10px;">
+            <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:3px;">How people acquire ${_pkgPlayerName}</div>
+            <div style="font-size:11px;color:var(--text-muted);">${_pkgRealTotal} real trades in similar leagues</div>
+          </div>`;
+
+        // ── Common archetype patterns ─────────────────────────────
+        if (_pkgArchetypes.length) {
+          const archUid = String(playerId || Date.now());
+          const teamArchetypes = _pkgArchetypes.filter(ap => ap.fits_your_team);
+
+          function buildArchCells(list) {
+            if (!list.length) return `<div style="grid-column:1/-1;padding:12px 10px;font-size:12px;color:var(--text-muted);">No top patterns match your current roster.</div>`;
+            return list.map((ap, idx) => {
+              const sigHtml     = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
+              const pct         = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${ap.pct}%</span>` : '';
+              const borderRight = idx % 2 === 0 ? 'border-right:1px solid var(--border);' : '';
+              return `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;padding:7px 10px;border-bottom:1px solid var(--border);${borderRight}min-width:0;">
+                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;min-width:0;">${sigHtml}</div>
+                ${pct}
+              </div>`;
+            }).join('');
+          }
+
+          realTradeHtml += `<div style="margin-bottom:12px;border-radius:8px;border:1px solid var(--border);overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surface-2,rgba(0,0,0,.04));border-bottom:1px solid var(--border);">
+              <span style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">What teams typically send</span>
+              <div class="otc-main-tabs compact" style="margin-bottom:0;">
+                <button id="arch-btn-all-${archUid}" class="otc-main-tab is-active" onclick="archToggle('${archUid}','all')">Top patterns</button>
+                <button id="arch-btn-team-${archUid}" class="otc-main-tab" onclick="archToggle('${archUid}','team')">Your team</button>
+              </div>
+            </div>
+            <div id="arch-grid-all-${archUid}" style="display:grid;grid-template-columns:1fr 1fr;gap:0;">${buildArchCells(_pkgArchetypes)}</div>
+            <div id="arch-grid-team-${archUid}" style="display:none;grid-template-columns:1fr 1fr;gap:0;">${buildArchCells(teamArchetypes)}</div>
+          </div>`;
+        }
+
+        // ── Individual real-trade examples ──
+        if (_pkgRealPkgs.length) {
+          realTradeHtml += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+            <span style="font-size:12px;font-weight:800;color:var(--text);">Real trades</span>
+            <span style="font-size:11px;color:var(--text-muted);">adapted to your roster</span>
+          </div>`;
+
+          // Group packages by pattern_sig
+          const _archGroups = new Map();
+          _pkgRealPkgs.forEach(pkg => {
+            const sig = pkg.pattern_sig || '';
+            if (!_archGroups.has(sig)) _archGroups.set(sig, []);
+            _archGroups.get(sig).push(pkg);
+          });
+
+          // Sort groups: archetypes with known patterns first (matching _pkgArchetypes order), then others
+          const _archOrder = _pkgArchetypes.map(ap => ap.pattern_sig);
+          const _sortedGroups = [..._archGroups.entries()].sort(([a], [b]) => {
+            const ai = _archOrder.indexOf(a), bi = _archOrder.indexOf(b);
+            if (ai === -1 && bi === -1) return 0;
+            if (ai === -1) return 1;
+            if (bi === -1) return -1;
+            return ai - bi;
+          });
+
+          _sortedGroups.forEach(([sig, pkgs]) => {
+            // Render a group header using the archetype chips
+            const groupHeader = sig
+              ? `<div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px;">
+                   <div style="flex:1;height:1px;background:var(--border);"></div>
+                   <div style="display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--card);flex-shrink:0;">
+                     ${archetypeSigHtml(sig, '')}
+                   </div>
+                   <div style="flex:1;height:1px;background:var(--border);"></div>
+                 </div>`
+              : '';
+            realTradeHtml += groupHeader;
+
+            pkgs.forEach(pkg => {
+            const count  = pkg.trades_like_this || 0;
+            const isRef  = !!pkg.is_reference;
+            const focusPos = focusPlayer?.position || 'WR';
+            const focusCol = posColor(focusPos);
+
+            // Deduplicate assets: group identical names → "2× 2026 1st"
+            const assetCounts = new Map();
+            (pkg.send || []).forEach(a => {
+              const key = a.name || "Pick";
+              if (!assetCounts.has(key)) assetCounts.set(key, { asset: a, n: 0 });
+              assetCounts.get(key).n++;
+            });
+            const giveHtml = Array.from(assetCounts.values()).map(({ asset: a, n }) => {
+              const prefix = n > 1 ? `<span style="font-size:10px;font-weight:700;color:var(--text-muted);margin-right:1px;">${n}×</span>` : '';
+              if (a.is_pick || a.type === "pick") {
+                return `<div class="otc-rt-asset">
+                  ${prefix}<span class="otc-rt-pos" style="background:rgba(99,102,241,.1);color:#6366f1;">PICK</span>
+                  <span class="otc-rt-name">${a.name || "Pick"}</span>
+                </div>`;
+              }
+              const pid = a.player_id || a.id || '';
+              const locked = pid && _untouchableIds.has(pid);
+              const safeName = (a.name || '').replace(/'/g, "\\'");
+              const safePos  = (a.position || '').replace(/'/g, "\\'");
+              const lockTitle = locked ? `Allow ${a.name} in suggestions` : `Exclude ${a.name} from suggestions`;
+              const lockBtn = pid
+                ? `<button onclick="window._toggleUntouchable('${pid}','${safeName}','${safePos}')" title="${lockTitle}"
+                     style="border:none;background:none;cursor:pointer;padding:0 0 0 5px;line-height:1;display:inline-flex;align-items:center;opacity:${locked?0.75:0.2};transition:opacity .15s;"
+                     onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity='${locked?0.75:0.2}'">
+                     <span class="fa-solid ${locked?'fa-lock':'fa-lock-open'}" style="width:11px;height:11px;"></span>
+                   </button>`
+                : '';
+              const col = posColor(a.position);
+              return `<div class="otc-rt-asset" style="display:flex;align-items:center;">
+                ${prefix}<span class="otc-rt-pos" style="background:${col}18;color:${col};">${a.position}</span>
+                <span class="otc-rt-name" style="${isRef ? 'color:var(--text-muted);' : ''}">${a.name}</span>
+                ${lockBtn}
+              </div>`;
+            }).join('');
+
+            const gradeMap = {
+              steal:      { label: 'Steal',         color: '#10b981' },
+              fair:       { label: 'Fair value',    color: '#6366f1' },
+              overpay:    { label: 'Slight overpay',color: '#f59e0b' },
+              big_overpay:{ label: 'Overpay',       color: '#ef4444' },
+            };
+            const gradeInfo = gradeMap[pkg.value_grade];
+            const gradeHtml = gradeInfo
+              ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`
+              : '';
+
+            const takersHtml = (pkg.likely_takers && pkg.likely_takers.length)
+              ? `<span style="font-size:10px;color:var(--text-muted);">· Likely: ${pkg.likely_takers.join(', ')}</span>`
+              : '';
+
+            realTradeHtml += `<div class="otc-real-trade-card">
+              <div class="otc-rt-body">
+                <div class="otc-rt-side">
+                  <div class="otc-rt-label">YOU GET</div>
+                  <div class="otc-rt-asset">
+                    <span class="otc-rt-pos" style="background:${focusCol}18;color:${focusCol};">${focusPos}</span>
+                    <span class="otc-rt-name" style="font-weight:700;">${_pkgPlayerName}</span>
+                  </div>
+                </div>
+                <div class="otc-rt-divider"></div>
+                <div class="otc-rt-side">
+                  <div class="otc-rt-label">YOU GIVE</div>
+                  ${giveHtml}
+                </div>
+              </div>
+              <div class="otc-rt-footer">
+                <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
+                  <span class="otc-rt-count">${count} ${count === 1 ? 'trade' : 'trades'}</span>
+                  ${gradeHtml}
+                  ${takersHtml}
+                </div>
+                <button class="otc-sugg-pkg-load-btn"
+                  data-focus-id="${_pkgPlayerId}"
+                  data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}">Analyze</button>
+              </div>
+            </div>`;
+          }); // pkgs.forEach
+          }); // _sortedGroups.forEach
+        }
         realTradeHtml += `</div>`;
       }
 
@@ -2781,7 +3013,8 @@ window.initTradePage = function initTradePage(root = document) {
       });
 
       resultsList.querySelectorAll(".otc-sugg-pkg-load-btn").forEach(btn => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", async () => {
+          await ensurePlayersLoaded();
           const focusId    = btn.dataset.focusId;
           const assets     = JSON.parse(decodeURIComponent(btn.dataset.assets));
           const extraRaw   = btn.dataset.extraReceive
@@ -2809,7 +3042,7 @@ window.initTradePage = function initTradePage(root = document) {
               const yr   = String(a.pick_season || "").replace(/\D/g, "");
               const rd   = String(a.pick_round  || "").replace(/\D/g, "");
               const slot = a.pick_slot ? String(a.pick_slot).replace(/\D/g, "").padStart(2, "0") : null;
-              const order = (a.pick_order || "").toLowerCase().replace(/[^a-z]/g, "") || "mid";
+              const order = (String(a.pick_order || "")).toLowerCase().replace(/[^a-z]/g, "") || "mid";
               // Slot picks use numeric third segment (e.g. 2026_1_01), bucket picks use word (e.g. 2026_1_early)
               const pickId = yr && rd ? `${yr}_${rd}_${slot || order}` : null;
               const pickObj = pickId && (
@@ -2822,7 +3055,8 @@ window.initTradePage = function initTradePage(root = document) {
                 state.sideBPicks.push({ id: pickId, display: a.name || formatPickId(pickId) });
               }
             } else {
-              const pObj = allPlayers.find(p => String(p.id) === String(a.player_id));
+              const pid2 = a.player_id || a.id;
+              const pObj = allPlayers.find(p => String(p.id) === String(pid2));
               if (pObj) state.sideBPlayers.push(pObj);
             }
           });

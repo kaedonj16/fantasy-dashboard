@@ -1,6 +1,14 @@
 # AI Cache
 cache/ai_cache
 
+# Sleeper stats cache (generated at runtime)
+cache/sleeper_stats/
+cache/target_share/
+
+# Generated data files
+data/engine_values.csv
+data/usage_table.json
+
 # Rookie sources
 data/cache/rookie_sources
 
@@ -36,3 +44,4 @@ Thumbs.db
 # Generated outputs
 results.txt
 data/fc_rookie_adp_*.json
+data/fantasy.db

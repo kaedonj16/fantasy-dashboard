@@ -783,6 +783,179 @@ def run_analytics(season: int | None = None) -> dict:
     return {"player_stats": n_stats, "packages": n_pkgs, "pick_stats": n_picks}
 
 
+# ---------------------------------------------------------------------------
+# ML trade pattern model
+# ---------------------------------------------------------------------------
+
+def _load_values_for_model(season: int) -> dict:
+    """
+    Load a richer values dict for ML training:
+      player_id → {position, value, age, ...}
+    """
+    with get_conn() as conn:
+        player_rows = conn.execute(
+            "SELECT player_id, position, value_1qb AS value, age FROM player_values"
+        ).fetchall()
+
+    values: dict[str, dict] = {}
+    for r in player_rows:
+        values[str(r["player_id"])] = {
+            "position": r["position"] or "WR",
+            "value":    float(r["value"] or 0),
+            "age":      float(r["age"] or 0) if r["age"] else 0,
+        }
+    return values
+
+
+def run_trade_model(
+    season: int | None = None,
+    force: bool = False,
+    max_age_hours: float = 24.0,
+) -> dict:
+    """
+    Train and save the trade pattern ML model.
+
+    Queries all completed trades, identifies the focus player in each trade
+    (the highest-value player), extracts sent-package features, runs K-Means
+    per target class, and saves the model JSON.
+
+    Returns a summary dict: {skipped, n_classes, n_trades, path}.
+    """
+    import os
+    import time
+    from collections import defaultdict
+
+    try:
+        from data_building.trade_intel.trade_pattern_model import (
+            MODEL_PATH,
+            train          as _train,
+            train_bucketed as _train_bucketed,
+            save_model     as _save,
+        )
+    except ImportError:
+        from trade_pattern_model import (
+            MODEL_PATH,
+            train          as _train,
+            train_bucketed as _train_bucketed,
+            save_model     as _save,
+        )
+
+    # Skip if model is fresh and force=False
+    if not force and os.path.exists(MODEL_PATH):
+        age_h = (time.time() - os.path.getmtime(MODEL_PATH)) / 3600
+        if age_h < max_age_hours:
+            logger.info("[trade_model] Model is %.1f h old — skipping retrain", age_h)
+            return {"skipped": True, "age_hours": age_h}
+
+    if season is None:
+        season = _most_recent_trade_season()
+        if season is None:
+            season = 2024
+
+    logger.info("[trade_model] Loading trade data for season %d …", season)
+    raw_trades = _load_trades(season)
+    logger.info("[trade_model] %d raw trades loaded", len(raw_trades))
+
+    values = _load_values_for_model(season)
+    logger.info("[trade_model] %d player values loaded", len(values))
+
+    if not raw_trades or not values:
+        logger.warning("[trade_model] No data — aborting")
+        return {"skipped": True, "reason": "no_data"}
+
+    # ------------------------------------------------------------------
+    # Identify focus player (highest value) per trade, build training rows
+    # ------------------------------------------------------------------
+    trade_rows: list[dict] = []
+
+    for trade in raw_trades:
+        assets = trade.get("assets") or []
+        if not assets:
+            continue
+
+        # Split by side
+        by_side: dict[str, list] = defaultdict(list)
+        for a in assets:
+            by_side[a["side"]].append(a)
+
+        # Find the single highest-value player across the entire trade
+        best_val   = 0.0
+        best_side  = None
+        best_pid   = None
+
+        for side, side_assets in by_side.items():
+            for a in side_assets:
+                if a.get("asset_type") != "player":
+                    continue
+                pid  = str(a.get("player_id") or "")
+                info = values.get(pid)
+                if not info:
+                    continue
+                val = float(info.get("value") or 0)
+                if val > best_val:
+                    best_val  = val
+                    best_side = side
+                    best_pid  = pid
+
+        if best_pid is None or best_val < 200:
+            continue  # skip low-value or unidentified trades
+
+        # The sent package = assets going the OTHER direction
+        other_side  = "b" if best_side == "a" else "a"
+        sent_assets = [
+            {
+                "asset_type":      a["asset_type"],
+                "sent_player_id":  a.get("player_id"),
+                "pick_round":      a.get("pick_round"),
+                "pick_season":     a.get("pick_season"),
+                "pick_order":      a.get("pick_order"),
+            }
+            for a in by_side.get(other_side, [])
+        ]
+
+        if not sent_assets:
+            continue
+
+        trade_rows.append({
+            "trade_id":         trade["trade_id"],
+            "target_player_id": best_pid,
+            "target_value":     best_val,
+            "sent_assets":      sent_assets,
+            "num_teams":        int(trade.get("num_teams") or 12),
+        })
+
+    logger.info("[trade_model] %d usable trade rows assembled", len(trade_rows))
+
+    if len(trade_rows) < 10:
+        logger.warning("[trade_model] Too few trades (%d) — aborting", len(trade_rows))
+        return {"skipped": True, "reason": "too_few_trades", "n": len(trade_rows)}
+
+    model = _train_bucketed(trade_rows, values)
+    _save(model)
+
+    n_classes = len(model.get("classes") or {})
+    logger.info("[trade_model] Done — %d classes, %d trades", n_classes, model.get("n_trades", 0))
+
+    return {
+        "skipped":   False,
+        "n_classes": n_classes,
+        "n_trades":  model.get("n_trades", 0),
+        "path":      MODEL_PATH,
+    }
+
+
 if __name__ == "__main__":
+    import argparse
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    print(run_analytics())
+
+    parser = argparse.ArgumentParser(description="Trade Intel analytics + ML model runner")
+    parser.add_argument("--model-only", action="store_true", help="Train ML model only (skip player/package stats)")
+    parser.add_argument("--force", action="store_true", help="Force retrain even if model is fresh")
+    parser.add_argument("--season", type=int, default=None, help="Season year (default: auto-detect)")
+    args = parser.parse_args()
+
+    if args.model_only:
+        print(run_trade_model(season=args.season, force=args.force))
+    else:
+        print(run_analytics(season=args.season))
+        print(run_trade_model(season=args.season, force=args.force))
