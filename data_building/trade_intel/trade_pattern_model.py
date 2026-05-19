@@ -389,7 +389,17 @@ def load_model(path: str = MODEL_PATH) -> Optional[dict]:
         return None
     try:
         with open(path) as f:
-            return json.load(f)
+            model = json.load(f)
+        trained_at = model.get("trained_at")
+        if trained_at:
+            try:
+                age = datetime.now(timezone.utc) - datetime.fromisoformat(trained_at)
+                model["model_stale_days"] = age.days
+                if age.days > 14:
+                    logger.warning("[trade_model] Model is %d days old", age.days)
+            except Exception:
+                pass
+        return model
     except Exception as exc:
         logger.warning("[trade_model] Failed to load model from %s: %s", path, exc)
         return None
@@ -440,7 +450,7 @@ def suggest_packages(
             return []
         clusters = class_data.get("clusters") or []
     packages: list[dict] = []
-    seen_pkg_keys: set[frozenset] = set()
+    seen_shapes: set[str] = set()
 
     for cluster in clusters:
         if len(packages) >= n:
@@ -459,12 +469,10 @@ def suggest_packages(
         )
         if pkg is None:
             continue
-        pkg_key = frozenset(
-            str(a.get("player_id") or "") for a in pkg["send"] if not a.get("is_pick")
-        )
-        if pkg_key in seen_pkg_keys:
+        shape = _shape_key(pkg["send"])
+        if shape in seen_shapes:
             continue
-        seen_pkg_keys.add(pkg_key)
+        seen_shapes.add(shape)
         pkg["trades_like_this"] = cluster.get("size", 1)
         pkg["pattern_source"]   = "ml"
         packages.append(pkg)
@@ -576,7 +584,10 @@ def _match_viewer_to_cluster(
     _pick_players(["RB", "WR", "TE", "QB"], flex_slot_target, n_flex)
 
     # ── Select picks ──────────────────────────────────────────────────────
-    pick_pool      = sorted(viewer_picks, key=lambda p: int(p.get("pick_round") or 3))
+    pick_pool = sorted(
+        viewer_picks,
+        key=lambda p: (int(p.get("pick_round") or 3), -float(p.get("value") or 0)),
+    )
     used_names: set[str] = set()
     r1_added = r2_added = extra_added = 0
 

@@ -15713,6 +15713,7 @@ def api_trade_intel_player_packages(player_id: str):
 
         # ── ML model: primary package suggestions ─────────────────────────
         ml_pkgs: list = []
+        _model_stale_days = None
         try:
             from data_building.trade_intel.trade_pattern_model import (
                 load_model       as _tm_load,
@@ -15732,6 +15733,7 @@ def api_trade_intel_player_packages(player_id: str):
                     n                 = 5,
                 )
                 logger.info("[api-trade-intel-player-packages] ML model: %d packages", len(ml_pkgs))
+                _model_stale_days = _tm_model.get("model_stale_days")
         except Exception as _ml_err:
             logger.warning("[api-trade-intel-player-packages] ML model error: %s", _ml_err)
 
@@ -15780,11 +15782,15 @@ def api_trade_intel_player_packages(player_id: str):
                         return True
                     return False
 
-                # 1-player
+                # 1-player — at most 2 per position for variety
+                pos_count: dict = {}
                 for p in sorted_p:
                     if len(out) >= limit: break
                     if lo <= float(p.get("value") or 0) <= hi:
-                        _add([p])
+                        pos = str(p.get("position") or "")
+                        if pos_count.get(pos, 0) < 2:
+                            if _add([p]):
+                                pos_count[pos] = pos_count.get(pos, 0) + 1
 
                 # Single pick
                 for pk in sorted_k:
@@ -15833,7 +15839,19 @@ def api_trade_intel_player_packages(player_id: str):
                         if lo <= v + p2v <= hi:
                             _add([p, p2]); break
 
-                # 2-player
+                # 2-player — prefer different positions
+                for i, p1 in enumerate(sorted_p):
+                    if len(out) >= limit: break
+                    v1 = float(p1.get("value") or 0)
+                    if v1 >= hi: continue
+                    for p2 in sorted_p[i + 1:]:
+                        if len(out) >= limit: break
+                        if p2.get("position") == p1.get("position"):
+                            continue  # prefer positional variety
+                        if lo <= v1 + float(p2.get("value") or 0) <= hi:
+                            _add([p1, p2])
+                            break
+                # 2-player same position (only if limit not met)
                 for i, p1 in enumerate(sorted_p):
                     if len(out) >= limit: break
                     v1 = float(p1.get("value") or 0)
@@ -15842,6 +15860,7 @@ def api_trade_intel_player_packages(player_id: str):
                         if len(out) >= limit: break
                         if lo <= v1 + float(p2.get("value") or 0) <= hi:
                             _add([p1, p2])
+                            break
 
                 return out
 
@@ -15946,6 +15965,10 @@ def api_trade_intel_player_packages(player_id: str):
             key=lambda x: -x["count"],
         )[:6]
 
+        # Only show archetype patterns that have a matching suggestion
+        pkg_sigs = {pkg.get("pattern_sig") or "" for pkg in primary_pkgs}
+        archetype_patterns = [ap for ap in archetype_patterns if ap["pattern_sig"] in pkg_sigs]
+
         # Sort suggestions by archetype popularity so the most common pattern
         # surfaces first (e.g. single-pick before two-pick, etc.)
         if archetype_patterns and primary_pkgs:
@@ -15964,6 +15987,7 @@ def api_trade_intel_player_packages(player_id: str):
             "total_real_trades":  real_result["total_real_trades"],
             "archetype_patterns": archetype_patterns,
             "package_source":     package_source,
+            "model_stale_days":   _model_stale_days,
         })
 
     except Exception as e:
