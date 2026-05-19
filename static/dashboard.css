@@ -3987,6 +3987,37 @@ thead th {
 }
 
 @media (max-width: 600px) {
+  /* Real-trade cards */
+  .otc-real-trade-card {
+    margin-bottom: 8px;
+  }
+  .otc-rt-side {
+    padding: 8px 10px;
+  }
+  .otc-rt-label {
+    font-size: 8px;
+    margin-bottom: 4px;
+  }
+  .otc-rt-pos {
+    min-width: 22px;
+    font-size: 9px;
+    padding: 1px 4px;
+  }
+  .otc-rt-name {
+    font-size: 12px;
+  }
+  .otc-rt-footer {
+    flex-wrap: wrap;
+    padding: 7px 10px;
+    gap: 6px;
+  }
+  .otc-rt-footer .otc-sugg-pkg-load-btn {
+    width: 100%;
+    text-align: center;
+    padding: 7px 0;
+  }
+
+  /* ML suggestion packages */
   .otc-sugg-package {
     flex-wrap: wrap;
     gap: 8px;
@@ -4050,6 +4081,55 @@ thead th {
 @keyframes otcSuggShimmer {
   0%, 100% { opacity: 0.5; }
   50%       { opacity: 1;   }
+}
+
+/* Archetype pattern grid */
+.otc-arch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--surface-2, rgba(0,0,0,.04));
+  border-bottom: 1px solid var(--border);
+  gap: 6px;
+}
+
+.otc-arch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+.otc-arch-cell {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.otc-arch-cell:nth-child(odd) {
+  border-right: 1px solid var(--border);
+}
+
+@media (max-width: 600px) {
+  .otc-arch-header {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 8px;
+  }
+  .otc-arch-header span {
+    font-size: 9px !important;
+  }
+  .otc-arch-grid {
+    grid-template-columns: 1fr;
+  }
+  .otc-arch-cell {
+    padding: 6px 8px;
+    border-right: none !important;
+  }
 }
 
 /* Compact tab variant for inline use (e.g. archetype toggle) */
