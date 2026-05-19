@@ -2480,6 +2480,17 @@ window.initTradePage = function initTradePage(root = document) {
     });
 
     // ── Fetch packages from API ──────────────────────────────────
+    // Exposed so inline lock-icon handlers can trigger a re-fetch after toggling untouchable
+    window._refetchTradeIntel = () => {
+      if (suggCurrentPlayerId) fetchPackages(suggCurrentPlayerId, _pkgPlayerName);
+    };
+    window._toggleUntouchable = (pid) => {
+      if (_untouchableIds.has(pid)) _untouchableIds.delete(pid);
+      else _untouchableIds.add(pid);
+      _saveUntouchable();
+      window._refetchTradeIntel();
+    };
+
     async function fetchPackages(playerId, playerName) {
       if (!playerId) return;
 
@@ -2792,7 +2803,7 @@ window.initTradePage = function initTradePage(root = document) {
         realTradeHtml += `<div style="margin-top:14px;padding-top:12px;border-top:2px solid var(--border);">
           <div style="margin-bottom:10px;">
             <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;">How people have acquired ${_pkgPlayerName}</div>
-            <div style="font-size:11px;color:var(--text-muted);">Patterns from ${_pkgRealTotal} real trades in similar leagues · last 2 years</div>
+            <div style="font-size:11px;color:var(--text-muted);">Patterns from ${_pkgRealTotal} real trades in similar leagues</div>
           </div>`;
 
         // ── Common archetype patterns ─────────────────────────────
@@ -2878,24 +2889,16 @@ window.initTradePage = function initTradePage(root = document) {
                   <span class="otc-rt-name">${a.name || "Pick"}</span>
                 </div>`;
               }
+              const pid = a.player_id || a.id || '';
+              const locked = pid && _untouchableIds.has(pid);
+              const lockBtn = pid ? `<button onclick="window._toggleUntouchable('${pid}')" title="${locked?'Remove from excluded':'Exclude from suggestions'}" style="border:none;background:none;cursor:pointer;padding:0 0 0 3px;font-size:11px;opacity:${locked?1:0.3};line-height:1;">${locked?'🔒':'🔓'}</button>` : '';
               const col = posColor(a.position);
-              return `<div class="otc-rt-asset">
+              return `<div class="otc-rt-asset" style="display:flex;align-items:center;">
                 ${prefix}<span class="otc-rt-pos" style="background:${col}18;color:${col};">${a.position}</span>
                 <span class="otc-rt-name" style="${isRef ? 'color:var(--text-muted);' : ''}">${a.name}</span>
+                ${lockBtn}
               </div>`;
             }).join('');
-
-            // Archetype chips — group duplicates (e.g. 4× PICK R1 Mid)
-            const chipCounts = new Map();
-            (pkg.pattern_sig || '').split(' + ').filter(Boolean).forEach(lbl => {
-              chipCounts.set(lbl, (chipCounts.get(lbl) || 0) + 1);
-            });
-            const chipHtml = Array.from(chipCounts.entries()).map(([lbl, n]) => {
-              const chip = archetypeChip(lbl);
-              return n > 1
-                ? `<span style="display:inline-flex;align-items:center;gap:2px;"><span style="font-size:10px;font-weight:700;color:var(--text-muted);">${n}×</span>${chip}</span>`
-                : chip;
-            }).join(`<span style="color:var(--text-muted);font-size:10px;margin:0 1px;">+</span>`);
 
             const gradeMap = {
               steal:      { label: 'Steal 🟢',    color: '#10b981' },
@@ -2930,7 +2933,6 @@ window.initTradePage = function initTradePage(root = document) {
               <div class="otc-rt-footer">
                 <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
                   <span class="otc-rt-count">${count} ${count === 1 ? 'trade' : 'trades'}</span>
-                  ${chipHtml}
                   ${gradeHtml}
                   ${takersHtml}
                 </div>

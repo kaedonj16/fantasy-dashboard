@@ -16057,9 +16057,9 @@ def api_trade_intel_player_packages(player_id: str):
                 if cnt >= 2
             ],
             key=lambda x: -x["count"],
-        )[:6]
+        )[:4]
 
-        # Backfill any suggestion patterns not already in the top 8.
+        # Backfill any suggestion patterns not already in the top 4.
         existing_sigs = {ap["pattern_sig"] for ap in archetype_patterns}
         for pkg in primary_pkgs:
             sig = pkg.get("pattern_sig") or ""
