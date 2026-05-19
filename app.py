@@ -15765,49 +15765,78 @@ def api_trade_intel_player_packages(player_id: str):
                 sorted_k = sorted(picks,   key=lambda k:  int(k.get("pick_round") or 3))
                 lo, hi   = target * 0.82, target * 1.25
 
-                # 1-player packages
-                for p in sorted_p:
-                    if len(out) >= limit:
-                        break
-                    v = float(p.get("value") or 0)
-                    if lo <= v <= hi:
-                        key = frozenset([str(p.get("player_id") or "")])
-                        if key not in _used_sets:
-                            _used_sets.add(key)
-                            out.append([p])
+                def _add(assets):
+                    key = frozenset(
+                        str(a.get("player_id") or a.get("name") or "") for a in assets
+                    )
+                    if key not in _used_sets:
+                        _used_sets.add(key)
+                        out.append(assets)
+                        return True
+                    return False
 
-                # 1-player + 1-pick (before 2-player so picks surface earlier)
+                # 1-player
                 for p in sorted_p:
-                    if len(out) >= limit:
-                        break
+                    if len(out) >= limit: break
+                    if lo <= float(p.get("value") or 0) <= hi:
+                        _add([p])
+
+                # Single pick
+                for pk in sorted_k:
+                    if len(out) >= limit: break
+                    if lo <= float(pk.get("value") or 0) <= hi:
+                        _add([pk])
+
+                # 2 picks
+                for i, pk1 in enumerate(sorted_k):
+                    if len(out) >= limit: break
+                    v1 = float(pk1.get("value") or 0)
+                    for pk2 in sorted_k[i + 1:]:
+                        if len(out) >= limit: break
+                        if lo <= v1 + float(pk2.get("value") or 0) <= hi:
+                            _add([pk1, pk2])
+                            break
+
+                # 1 player + 1 pick
+                for p in sorted_p:
+                    if len(out) >= limit: break
                     v = float(p.get("value") or 0)
                     for pk in sorted_k:
-                        if len(out) >= limit:
+                        if len(out) >= limit: break
+                        if lo <= v + float(pk.get("value") or 0) <= hi:
+                            _add([p, pk])
                             break
+
+                # Throw-in: player slightly under floor + cheap sweetener (pick or player)
+                # Main piece in [65%, 82%) of target — below floor on its own
+                for p in sorted_p:
+                    if len(out) >= limit: break
+                    v = float(p.get("value") or 0)
+                    if not (target * 0.65 <= v < lo): continue
+                    needed = lo - v
+                    # Try cheapest pick first
+                    for pk in sorted_k:
                         pv = float(pk.get("value") or 0)
                         if lo <= v + pv <= hi:
-                            key = frozenset([str(p.get("player_id") or ""), str(pk.get("name") or "")])
-                            if key not in _used_sets:
-                                _used_sets.add(key)
-                                out.append([p, pk])
-                            break  # one pick variant per player
+                            _add([p, pk]); break
+                    if len(out) >= limit: break
+                    # Try cheapest player
+                    for p2 in reversed(sorted_p):
+                        if p2 is p: continue
+                        p2v = float(p2.get("value") or 0)
+                        if p2v < needed * 0.5: continue
+                        if lo <= v + p2v <= hi:
+                            _add([p, p2]); break
 
-                # 2-player packages
+                # 2-player
                 for i, p1 in enumerate(sorted_p):
-                    if len(out) >= limit:
-                        break
+                    if len(out) >= limit: break
                     v1 = float(p1.get("value") or 0)
-                    if v1 >= hi:
-                        continue
+                    if v1 >= hi: continue
                     for p2 in sorted_p[i + 1:]:
-                        if len(out) >= limit:
-                            break
-                        v2 = float(p2.get("value") or 0)
-                        if lo <= v1 + v2 <= hi:
-                            key = frozenset([str(p1.get("player_id") or ""), str(p2.get("player_id") or "")])
-                            if key not in _used_sets:
-                                _used_sets.add(key)
-                                out.append([p1, p2])
+                        if len(out) >= limit: break
+                        if lo <= v1 + float(p2.get("value") or 0) <= hi:
+                            _add([p1, p2])
 
                 return out
 
