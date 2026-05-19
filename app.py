@@ -16023,54 +16023,121 @@ def api_trade_intel_player_packages(player_id: str):
             for _pid in (_r.get("players") or []):
                 _player_owner_map[str(_pid)] = _r
 
+        def _roster_window(roster: dict) -> str:
+            """Classify a roster as 'rebuild', 'competitive', or 'win_now'
+            based on the average age of its top-8 players by value."""
+            entries = []
+            for pid in (roster.get("players") or []):
+                info = values_by_id.get(str(pid))
+                if info and info.get("position") in ("QB", "RB", "WR", "TE"):
+                    val = float(info.get("value") or 0)
+                    age = float(info.get("age") or 25)
+                    entries.append((val, age))
+            top = sorted(entries, key=lambda x: -x[0])[:8]
+            if not top:
+                return "competitive"
+            avg_age = sum(a for _, a in top) / len(top)
+            if avg_age < 24.5:
+                return "rebuild"
+            if avg_age > 26.5:
+                return "win_now"
+            return "competitive"
+
         def _acceptance_prob(pkg: dict, total_trades: int) -> int:
             """
             Estimate acceptance probability (0–100) that the owner of the
             focus player accepts this package.
 
             Factors:
-              1. Value balance  — from the receiver's POV: overpay = they're
-                                  getting good value = more likely to say yes.
-              2. Historical rate — trades_like_this / total_real_trades shows
-                                  how often this exact pattern gets done.
-              3. Receiver need  — does the team that owns the focus player
-                                  have a positional hole for what you're sending?
+              1. Value balance      – from receiver's POV (overpay = high)
+              2. Historical rate    – trades_like_this / total_real_trades
+              3. Positional index   – tier of the receiver's best player at
+                                      each position being sent, not just depth
+              4. Win/rebuild window – rebuild teams prize youth + picks;
+                                      win-now teams prize proven vets
             """
             # 1. Value base (receiver's perspective)
             grade = pkg.get("value_grade", "fair")
             base = {"steal": 14, "fair": 46, "overpay": 66, "big_overpay": 82}.get(grade, 46)
 
-            # 2. Historical frequency boost (how often this pattern is actually done)
+            # 2. Historical frequency boost
             count = pkg.get("trades_like_this", 0)
-            denom = max(total_trades, 1)
-            freq  = count / denom          # fraction of all trades this pattern represents
-            freq_boost = min(int(freq * 60), 12)   # up to +12 pts at 20%+ frequency
+            freq  = count / max(total_trades, 1)
+            freq_boost = min(int(freq * 60), 12)
 
-            # 3. Receiver's positional need for what you're sending
             owner_roster = _player_owner_map.get(str(player_id))
-            need_boost = 0
-            if owner_roster and rosters:
-                sent_pos = [
-                    a.get("position") for a in pkg.get("send", [])
-                    if not a.get("is_pick") and a.get("position")
-                ]
-                pos_vals: dict = {}
+            need_adj  = 0
+            window_adj = 0
+
+            if owner_roster:
+                # Build positional value index for the receiving team
+                pos_vals: dict[str, list[float]] = {}
                 for pid in (owner_roster.get("players") or []):
                     info = values_by_id.get(str(pid))
-                    if info:
-                        p = info.get("position", "")
-                        pos_vals.setdefault(p, []).append(float(info.get("value", 0)))
-                for pos in set(sent_pos):
-                    vals = sorted(pos_vals.get(pos, []), reverse=True)
-                    if not vals:
-                        need_boost += 10   # they have nobody at this position
-                    elif len(vals) < 2 or (len(vals) >= 2 and vals[1] < 150):
-                        need_boost += 6    # thin depth
-                    elif vals[0] < 350:
-                        need_boost += 3    # weak starter
-                need_boost = min(need_boost, 15)
+                    if info and info.get("position") in ("QB", "RB", "WR", "TE"):
+                        p = info["position"]
+                        pos_vals.setdefault(p, []).append(float(info.get("value") or 0))
+                for p in pos_vals:
+                    pos_vals[p].sort(reverse=True)
 
-            return min(93, max(8, base + freq_boost + need_boost))
+                # 3. Positional index: score each sent position against receiver's depth
+                sent_players = [a for a in pkg.get("send", []) if not a.get("is_pick")]
+                for a in sent_players:
+                    pos  = a.get("position", "")
+                    aval = float(a.get("value") or a.get("send_value") or 0)
+                    if not pos:
+                        continue
+                    existing = pos_vals.get(pos, [])
+                    starter_val = existing[0] if existing else 0
+                    depth_val   = existing[1] if len(existing) > 1 else 0
+
+                    if not existing:
+                        need_adj += 12              # hole at this position
+                    elif starter_val < 200:
+                        need_adj += 9               # barely-rostered starter
+                    elif starter_val < 400:
+                        need_adj += 5               # mediocre starter
+                        if aval > starter_val * 1.1:
+                            need_adj += 3           # upgrade on their best
+                    elif depth_val < 150:
+                        need_adj += 2               # strong starter, thin depth
+                    else:
+                        need_adj -= 3               # stacked at this pos — harder sell
+
+                need_adj = max(-10, min(need_adj, 18))
+
+                # 4. Win/rebuild window adjustment
+                window = _roster_window(owner_roster)
+
+                sent_picks = [a for a in pkg.get("send", []) if a.get("is_pick")]
+                sent_ages  = []
+                sent_vals  = []
+                for a in sent_players:
+                    info = values_by_id.get(a.get("player_id") or "")
+                    if info:
+                        sent_ages.append(float(info.get("age") or 25))
+                        sent_vals.append(float(info.get("value") or 0))
+
+                avg_sent_age = sum(sent_ages) / len(sent_ages) if sent_ages else 25
+                avg_sent_val = sum(sent_vals) / len(sent_vals) if sent_vals else 0
+                n_picks      = len(sent_picks)
+
+                if window == "rebuild":
+                    # Rebuilding teams want youth and picks
+                    youth_bonus  = max(0, int((26 - avg_sent_age) * 2.5))  # young = good
+                    pick_bonus   = n_picks * 6
+                    upside_bonus = min(int(avg_sent_val / 60), 8) if avg_sent_age < 24 else 0
+                    window_adj   = min(youth_bonus + pick_bonus + upside_bonus, 20)
+                elif window == "win_now":
+                    # Win-now teams want proven contributors now
+                    vet_bonus    = max(0, int((avg_sent_age - 23) * 2))
+                    tier_bonus   = min(int(avg_sent_val / 100), 8)
+                    pick_penalty = n_picks * -4  # picks less useful when chasing now
+                    window_adj   = max(-15, min(vet_bonus + tier_bonus + pick_penalty, 12))
+                # competitive: neutral (window_adj stays 0)
+
+            prob = base + freq_boost + need_adj + window_adj
+            return min(93, max(8, round(prob)))
 
         def _enrich_pkg(pkg: dict) -> None:
             for asset in pkg["send"]:
