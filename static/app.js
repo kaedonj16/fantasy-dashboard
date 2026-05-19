@@ -2785,10 +2785,8 @@ window.initTradePage = function initTradePage(root = document) {
           _pkgArchetypes.forEach((ap, idx) => {
             const sigHtml = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
             const pct     = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${ap.pct}%</span>` : '';
-            const isLastRow = idx >= _pkgArchetypes.length - 2;
-            const borderBottom = isLastRow ? '' : 'border-bottom:1px solid var(--border);';
-            const borderRight  = idx % 2 === 0 ? 'border-right:1px solid var(--border);' : '';
-            realTradeHtml += `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;padding:7px 10px;${borderBottom}${borderRight}min-width:0;">
+            const borderRight = idx % 2 === 0 ? 'border-right:1px solid var(--border);' : '';
+            realTradeHtml += `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;padding:7px 10px;border-bottom:1px solid var(--border);${borderRight}min-width:0;">
               <div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;min-width:0;">${sigHtml}</div>
               ${pct}
             </div>`;

@@ -15747,9 +15747,29 @@ def api_trade_intel_player_packages(player_id: str):
             focus_value=float(focus_value or 0),
         )
 
-        # ML is primary; rule-based fills in only when ML has nothing
-        primary_pkgs   = ml_pkgs if ml_pkgs else real_result["packages"]
+        # ML is primary; supplement with rule-based packages before value fallback
+        primary_pkgs   = list(ml_pkgs) if ml_pkgs else list(real_result["packages"])
         package_source = "ml" if ml_pkgs else "rule"
+
+        # Fill remaining slots (up to 5) with rule-based packages not already covered
+        if ml_pkgs and len(primary_pkgs) < 5:
+            _used_shapes = {
+                frozenset(
+                    str(a.get("player_id") or a.get("name") or "")
+                    for a in pkg.get("send", [])
+                )
+                for pkg in primary_pkgs
+            }
+            for rule_pkg in real_result.get("packages") or []:
+                if len(primary_pkgs) >= 5:
+                    break
+                rule_key = frozenset(
+                    str(a.get("player_id") or a.get("name") or "")
+                    for a in rule_pkg.get("send", [])
+                )
+                if rule_key not in _used_shapes:
+                    _used_shapes.add(rule_key)
+                    primary_pkgs.append(rule_pkg)
 
         # ── Value-based fallback: always fill to at least 5 packages ─────
         # Combines viewer players (and picks) whose total value sits within
