@@ -2386,15 +2386,17 @@ window.initTradePage = function initTradePage(root = document) {
         const pos  = info.pos  || '';
         const col  = pos ? posColor(pos) : 'var(--text-muted)';
         const posBadge = pos
-          ? `<span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:${col}18;color:${col};">${pos}</span>`
-          : `<span class="fa-solid fa-lock" style="width:9px;height:9px;opacity:.4;flex-shrink:0;"></span>`;
-        return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 6px 3px 5px;border-radius:12px;background:var(--surface-2,rgba(0,0,0,.05));border:1px solid var(--border);font-size:12px;font-weight:600;color:var(--text);">
+          ? `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:${col}18;color:${col};min-width:22px;text-align:center;">${pos}</span>`
+          : '';
+        return `<div style="display:flex;align-items:center;gap:6px;padding:5px 14px;border-bottom:1px solid var(--border);">
           ${posBadge}
-          ${name}
-          <button onclick="window._toggleUntouchable('${pid}')" title="Allow ${name} in suggestions" style="border:none;background:none;cursor:pointer;padding:0;margin-left:1px;display:inline-flex;align-items:center;opacity:.45;line-height:1;">
+          <span style="font-size:12px;font-weight:600;color:var(--text);flex:1;">${name}</span>
+          <button onclick="window._toggleUntouchable('${pid}')" title="Allow ${name} in suggestions"
+            style="border:none;background:none;cursor:pointer;padding:2px;display:inline-flex;align-items:center;opacity:.4;border-radius:4px;"
+            onmouseenter="this.style.opacity=1;this.style.background='var(--row)'" onmouseleave="this.style.opacity='.4';this.style.background='none'">
             <span class="fa-solid fa-xmark" style="width:9px;height:9px;"></span>
           </button>
-        </span>`;
+        </div>`;
       }).join('');
     }
 
@@ -3011,7 +3013,8 @@ window.initTradePage = function initTradePage(root = document) {
       });
 
       resultsList.querySelectorAll(".otc-sugg-pkg-load-btn").forEach(btn => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", async () => {
+          await ensurePlayersLoaded();
           const focusId    = btn.dataset.focusId;
           const assets     = JSON.parse(decodeURIComponent(btn.dataset.assets));
           const extraRaw   = btn.dataset.extraReceive
@@ -3052,7 +3055,8 @@ window.initTradePage = function initTradePage(root = document) {
                 state.sideBPicks.push({ id: pickId, display: a.name || formatPickId(pickId) });
               }
             } else {
-              const pObj = allPlayers.find(p => String(p.id) === String(a.player_id));
+              const pid2 = a.player_id || a.id;
+              const pObj = allPlayers.find(p => String(p.id) === String(pid2));
               if (pObj) state.sideBPlayers.push(pObj);
             }
           });
