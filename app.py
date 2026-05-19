@@ -15643,9 +15643,14 @@ def api_trade_intel_player_packages(player_id: str):
                             pk_name = f"{yr} {rnd}.{slot:02d}"
                         else:
                             pk_name = f"{yr} {suffix}"
-                        pval = pick_val_lookup.get(f"{yr}_{rnd}", 0) or (
-                            220 if rnd == 1 else 130 if rnd == 2 else 70
-                        )
+                        if slot:
+                            pval = (
+                                pick_val_lookup.get(f"{yr}_{rnd}_{slot:02d}")
+                                or pick_val_lookup.get(f"{yr}_{rnd}", 0)
+                            )
+                        else:
+                            pval = pick_val_lookup.get(f"{yr}_{rnd}", 0)
+                        pval = pval or (220 if rnd == 1 else 130 if rnd == 2 else 70)
                         viewer_picks.append({
                             "name": pk_name, "value": pval, "is_pick": True,
                             "pick_season": yr, "pick_round": rnd,

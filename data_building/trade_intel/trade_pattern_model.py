@@ -445,13 +445,17 @@ def suggest_packages(
     for cluster in clusters:
         if len(packages) >= n:
             break
+        # Pick-only clusters get a looser floor since a single 1st-rounder
+        # won't hit 80% of a top player's value on its own.
+        centroid_n_players = max(0, round(float(cluster["centroid"][1]) * 4))
+        floor_ratio = 0.60 if centroid_n_players == 0 else value_floor_ratio
         pkg = _match_viewer_to_cluster(
             centroid       = cluster["centroid"],
             target_value   = target_value,
             viewer_players = viewer_players,
             viewer_picks   = viewer_picks,
             values_by_id   = values_by_id,
-            value_floor    = target_value * value_floor_ratio,
+            value_floor    = target_value * floor_ratio,
         )
         if pkg is None:
             continue
@@ -511,10 +515,14 @@ def _match_viewer_to_cluster(
 
     target_sent = target_value * value_ratio
 
-    # Estimate pick contribution so we know how much value players must supply
-    _r1_val = 450.0
-    _r2_val = 175.0
-    _r3_val = 70.0
+    # Estimate pick contribution using actual viewer pick values (sorted best-first)
+    _sorted_picks = sorted(viewer_picks, key=lambda p: float(p.get("value") or 0), reverse=True)
+    _r1_picks = [p for p in _sorted_picks if int(p.get("pick_round") or 3) == 1]
+    _r2_picks = [p for p in _sorted_picks if int(p.get("pick_round") or 3) == 2]
+    _r3_picks = [p for p in _sorted_picks if int(p.get("pick_round") or 3) >= 3]
+    _r1_val = float(_r1_picks[0].get("value") or 450.0) if _r1_picks else 450.0
+    _r2_val = float(_r2_picks[0].get("value") or 175.0) if _r2_picks else 175.0
+    _r3_val = float(_r3_picks[0].get("value") or 70.0) if _r3_picks else 70.0
     pick_contribution = n_r1 * _r1_val + n_r2 * _r2_val + max(0, n_picks - n_r1 - n_r2) * _r3_val
     player_target_total = max(target_sent - pick_contribution, target_value * 0.5)
 
@@ -598,6 +606,7 @@ def _match_viewer_to_cluster(
             "is_pick":     True,
             "pick_round":  rnd,
             "pick_season": pk.get("pick_season"),
+            "pick_order":  pk.get("pick_order"),
         })
 
     if not sent_assets:
