@@ -440,48 +440,49 @@ def suggest_packages(
             return []
         clusters = class_data.get("clusters") or []
     packages: list[dict] = []
-    # Dedup by exact player set so same-shape packages with different players both show
     seen_pkg_keys: set[frozenset] = set()
+    # Track per-cluster local_exclude across passes so second pass doesn't repeat
+    cluster_excludes: list[set] = [set() for _ in clusters]
 
-    for cluster in clusters:
+    def _try_cluster(idx: int) -> bool:
+        """Try to add one package from cluster[idx]. Returns True if one was added."""
+        cluster = clusters[idx]
+        pkg = _match_viewer_to_cluster(
+            centroid       = cluster["centroid"],
+            target_value   = target_value,
+            viewer_players = viewer_players,
+            viewer_picks   = viewer_picks,
+            values_by_id   = values_by_id,
+            value_floor    = target_value * value_floor_ratio,
+            exclude_pids   = cluster_excludes[idx],
+        )
+        if pkg is None:
+            return False
+        pkg_key = frozenset(
+            str(a.get("player_id") or "") for a in pkg["send"] if not a.get("is_pick")
+        )
+        if pkg_key in seen_pkg_keys:
+            return False
+        seen_pkg_keys.add(pkg_key)
+        for a in pkg["send"]:
+            if not a.get("is_pick"):
+                cluster_excludes[idx].add(str(a.get("player_id") or ""))
+        pkg["trades_like_this"] = cluster.get("size", 1)
+        pkg["pattern_source"]   = "ml"
+        packages.append(pkg)
+        return True
+
+    # Pass 1: one suggestion per cluster (spread across archetypes)
+    for i in range(len(clusters)):
         if len(packages) >= n:
             break
+        _try_cluster(i)
 
-        # For each cluster, iterate through eligible players to surface all roster variations.
-        # local_exclude grows with each anchor we've already used for this cluster.
-        local_exclude: set[str] = set()
-
-        for _ in range(n):
-            if len(packages) >= n:
-                break
-
-            pkg = _match_viewer_to_cluster(
-                centroid       = cluster["centroid"],
-                target_value   = target_value,
-                viewer_players = viewer_players,
-                viewer_picks   = viewer_picks,
-                values_by_id   = values_by_id,
-                value_floor    = target_value * value_floor_ratio,
-                exclude_pids   = local_exclude,
-            )
-            if pkg is None:
-                break
-
-            pkg_key = frozenset(
-                str(a.get("player_id") or "") for a in pkg["send"] if not a.get("is_pick")
-            )
-            if pkg_key in seen_pkg_keys:
-                break
-            seen_pkg_keys.add(pkg_key)
-
-            # Exclude ALL non-pick players used so every variation is fully distinct
-            for a in pkg["send"]:
-                if not a.get("is_pick"):
-                    local_exclude.add(str(a.get("player_id") or ""))
-
-            pkg["trades_like_this"] = cluster.get("size", 1)
-            pkg["pattern_source"]   = "ml"
-            packages.append(pkg)
+    # Pass 2: fill remaining slots, cycling through clusters again
+    for i in range(len(clusters)):
+        if len(packages) >= n:
+            break
+        _try_cluster(i)
 
     return packages
 
@@ -635,7 +636,14 @@ def _match_viewer_to_cluster(
     sig: list[str] = []
     for a in sent_assets:
         if a.get("is_pick"):
-            sig.append(f"K:{a.get('pick_round', 3)}")
+            order = a.get("pick_order")
+            try:
+                o = int(order)
+                bucket = "Early" if o <= 4 else ("Mid" if o <= 8 else "Late")
+            except (TypeError, ValueError):
+                bucket = ""
+            rnd = a.get("pick_round", 3)
+            sig.append(f"K:{rnd}:{bucket}" if bucket else f"K:{rnd}")
         else:
             tier = _value_to_tier(float(a.get("value") or 0))
             pos  = str(a.get("position") or "WR").upper()

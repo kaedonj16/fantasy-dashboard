@@ -15616,18 +15616,41 @@ def api_trade_intel_player_packages(player_id: str):
                         for p in value_table
                         if str(p.get("position") or "").upper() == "PICK"
                     }
+                    # Slot map for current season: {original_roster_id -> slot_number}
+                    _slot_map: dict = {}
+                    try:
+                        _slot_map = build_historical_pick_slot_map(
+                            platform, league_id, season, season - 1
+                        ) or {}
+                    except Exception:
+                        pass
+
+                    def _pick_bucket(slot: int | None) -> str:
+                        if not slot:
+                            return ""
+                        return "Early" if slot <= 4 else ("Mid" if slot <= 8 else "Late")
+
                     for pk in raw_picks:
                         yr  = int(pk.get("season") or season)
                         rnd = int(pk.get("round") or 4)
                         if yr > season + 1:
                             continue
+                        orig = pk.get("original_owner")
+                        # Slot only meaningful for the current season
+                        slot = _slot_map.get(int(orig)) if (yr == season and orig) else None
                         suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
-                        pk_name = f"{yr} {suffix}"
+                        if slot:
+                            pk_name = f"{yr} {rnd}.{slot:02d}"
+                        else:
+                            pk_name = f"{yr} {suffix}"
                         pval = pick_val_lookup.get(f"{yr}_{rnd}", 0) or (
                             220 if rnd == 1 else 130 if rnd == 2 else 70
                         )
-                        viewer_picks.append({"name": pk_name, "value": pval, "is_pick": True,
-                                             "pick_season": yr, "pick_round": rnd})
+                        viewer_picks.append({
+                            "name": pk_name, "value": pval, "is_pick": True,
+                            "pick_season": yr, "pick_round": rnd,
+                            "pick_order": slot,
+                        })
             except Exception:
                 pass  # League context is best-effort
 
