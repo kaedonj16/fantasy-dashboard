@@ -441,6 +441,7 @@ def suggest_packages(
         clusters = class_data.get("clusters") or []
     packages: list[dict] = []
     seen_shapes: set[str] = set()
+    used_pids_global: set[str] = set()  # prevent same player across packages
 
     for cluster in clusters:
         if len(packages) >= n:
@@ -453,6 +454,7 @@ def suggest_packages(
             viewer_picks   = viewer_picks,
             values_by_id   = values_by_id,
             value_floor    = target_value * value_floor_ratio,
+            exclude_pids   = used_pids_global,
         )
         if pkg is None:
             continue
@@ -461,6 +463,10 @@ def suggest_packages(
         if shape in seen_shapes:
             continue
         seen_shapes.add(shape)
+
+        for a in pkg["send"]:
+            if not a.get("is_pick"):
+                used_pids_global.add(str(a.get("player_id") or ""))
 
         pkg["trades_like_this"] = cluster.get("size", 1)
         pkg["pattern_source"]   = "ml"
@@ -489,6 +495,7 @@ def _match_viewer_to_cluster(
     viewer_picks: list[dict],
     values_by_id: dict,
     value_floor: float = 0.0,
+    exclude_pids: Optional[set] = None,
 ) -> Optional[dict]:
     """
     Assemble the best matching package from the viewer's roster given a
@@ -497,51 +504,80 @@ def _match_viewer_to_cluster(
     centroid layout: see module docstring.
     """
     target_value = max(target_value, 100.0)
+    exclude_pids = exclude_pids or set()
 
-    # Denormalise centroid targets
-    value_ratio = float(centroid[0])
+    # Denormalise centroid targets; cap value_ratio so stale training data
+    # (when the target player was cheaper) doesn't inflate the send value.
+    value_ratio = min(float(centroid[0]), 1.15)
     n_players   = max(0, round(float(centroid[1]) * 4))
     n_picks     = max(0, round(float(centroid[2]) * 4))
     n_r1        = max(0, round(float(centroid[5]) * 3))
     n_r2        = max(0, round(float(centroid[6]) * 3))
+    rb_frac     = float(centroid[7])
+    wr_frac     = float(centroid[8])
 
     target_sent = target_value * value_ratio
 
-    # ── Select players ────────────────────────────────────────────────────
-    avail = sorted(viewer_players, key=lambda p: -float(p.get("value") or 0))
-    sent_assets: list[dict] = []
-    used_pids: set[str] = set()
-    remaining = target_sent
+    # Estimate pick contribution so we know how much value players must supply
+    _r1_val = 450.0
+    _r2_val = 175.0
+    _r3_val = 70.0
+    pick_contribution = n_r1 * _r1_val + n_r2 * _r2_val + max(0, n_picks - n_r1 - n_r2) * _r3_val
+    player_target_total = max(target_sent - pick_contribution, target_value * 0.5)
 
-    for _ in range(n_players):
-        best_p    = None
-        best_score = float("inf")
-        for p in avail:
-            pid = str(p.get("player_id") or "")
-            if pid in used_pids:
-                continue
-            val = float(p.get("value") or 0)
-            if val < 30:
-                continue
-            score = abs(val - remaining)
-            if score < best_score:
-                best_p    = p
-                best_score = score
-        if best_p is None:
-            break
-        pid  = str(best_p.get("player_id") or "")
-        val  = float(best_p.get("value") or 0)
-        info = values_by_id.get(pid) or {}
-        used_pids.add(pid)
-        remaining -= val
-        sent_assets.append({
-            "player_id":  pid,
-            "name":       best_p.get("name") or info.get("name") or "",
-            "position":   best_p.get("position") or info.get("position") or "",
-            "value":      val,
-            "send_value": val,
-            "is_pick":    False,
-        })
+    # Per-slot value target for each position
+    def _slot_target(pos_frac: float, n_slots: int) -> float:
+        if n_slots <= 0 or n_players <= 0:
+            return player_target_total
+        return player_target_total * (pos_frac / max(rb_frac + wr_frac, 0.01)) / n_slots
+
+    n_rb = round(n_players * rb_frac) if rb_frac > 0.15 else 0
+    n_wr = round(n_players * wr_frac) if wr_frac > 0.15 else 0
+    n_flex = max(0, n_players - n_rb - n_wr)
+
+    rb_slot_target = _slot_target(rb_frac, n_rb)
+    wr_slot_target = _slot_target(wr_frac, n_wr)
+    flex_slot_target = player_target_total / max(n_players, 1)
+
+    # ── Select players by tier-match, position-aware ──────────────────────
+    used_pids: set[str] = set(exclude_pids)
+    sent_assets: list[dict] = []
+
+    def _pick_players(positions: list[str], slot_target: float, n: int) -> None:
+        """Pick n players matching any of positions, prioritising exact tier then ±1."""
+        req_tier = _value_to_tier(slot_target)
+        for _ in range(n):
+            chosen = None
+            for tier_delta in (0, 1, 2):
+                candidates = [
+                    p for p in viewer_players
+                    if (not positions or p.get("position") in positions)
+                    and str(p.get("player_id") or "") not in used_pids
+                    and float(p.get("value") or 0) >= 30
+                    and abs(_value_to_tier(float(p.get("value") or 0)) - req_tier) <= tier_delta
+                ]
+                if candidates:
+                    # Among tier-eligible, pick closest in value to slot_target
+                    chosen = min(candidates, key=lambda p: abs(float(p.get("value") or 0) - slot_target))
+                    break
+            if chosen is None:
+                break
+            pid  = str(chosen.get("player_id") or "")
+            val  = float(chosen.get("value") or 0)
+            info = values_by_id.get(pid) or {}
+            used_pids.add(pid)
+            sent_assets.append({
+                "player_id":  pid,
+                "name":       chosen.get("name") or info.get("name") or "",
+                "position":   chosen.get("position") or info.get("position") or "",
+                "value":      val,
+                "send_value": val,
+                "is_pick":    False,
+            })
+
+    _pick_players(["RB"], rb_slot_target, n_rb)
+    _pick_players(["WR"], wr_slot_target, n_wr)
+    _pick_players(["RB", "WR", "TE", "QB"], flex_slot_target, n_flex)
 
     # ── Select picks ──────────────────────────────────────────────────────
     pick_pool      = sorted(viewer_picks, key=lambda p: int(p.get("pick_round") or 3))
