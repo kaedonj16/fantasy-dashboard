@@ -15719,8 +15719,105 @@ def api_trade_intel_player_packages(player_id: str):
         )
 
         # ML is primary; rule-based fills in only when ML has nothing
-        primary_pkgs  = ml_pkgs if ml_pkgs else real_result["packages"]
+        primary_pkgs   = ml_pkgs if ml_pkgs else real_result["packages"]
         package_source = "ml" if ml_pkgs else "rule"
+
+        # ── Value-based fallback: always fill to at least 5 packages ─────
+        # Combines viewer players (and picks) whose total value sits within
+        # [85%, 125%] of focus_value. Works even with no trade history.
+        if viewer_players and len(primary_pkgs) < 5:
+            _fv      = float(focus_value or 0)
+            _lo, _hi = _fv * 0.82, _fv * 1.25
+            _used_sets = {
+                frozenset(
+                    str(a.get("player_id") or a.get("name") or "")
+                    for a in pkg.get("send", [])
+                )
+                for pkg in primary_pkgs
+            }
+
+            def _vb_packages(target: float, players: list, picks: list, limit: int) -> list:
+                out: list = []
+                sorted_p = sorted(players, key=lambda p: -float(p.get("value") or 0))
+                sorted_k = sorted(picks,   key=lambda k:  int(k.get("pick_round") or 3))
+                lo, hi   = target * 0.82, target * 1.25
+
+                # 1-player packages
+                for p in sorted_p:
+                    if len(out) >= limit:
+                        break
+                    v = float(p.get("value") or 0)
+                    if lo <= v <= hi:
+                        assets = [p]
+                        key = frozenset([str(p.get("player_id") or "")])
+                        if key not in _used_sets:
+                            _used_sets.add(key)
+                            out.append(assets)
+
+                # 2-player packages
+                for i, p1 in enumerate(sorted_p):
+                    if len(out) >= limit:
+                        break
+                    v1 = float(p1.get("value") or 0)
+                    if v1 >= hi:
+                        continue
+                    for p2 in sorted_p[i + 1:]:
+                        if len(out) >= limit:
+                            break
+                        v2 = float(p2.get("value") or 0)
+                        if lo <= v1 + v2 <= hi:
+                            key = frozenset([str(p1.get("player_id") or ""), str(p2.get("player_id") or "")])
+                            if key not in _used_sets:
+                                _used_sets.add(key)
+                                out.append([p1, p2])
+
+                # 1-player + 1-pick packages
+                for p in sorted_p:
+                    if len(out) >= limit:
+                        break
+                    v = float(p.get("value") or 0)
+                    for pk in sorted_k:
+                        if len(out) >= limit:
+                            break
+                        pv = float(pk.get("value") or 0)
+                        if lo <= v + pv <= hi:
+                            key = frozenset([str(p.get("player_id") or ""), str(pk.get("name") or "")])
+                            if key not in _used_sets:
+                                _used_sets.add(key)
+                                out.append([p, pk])
+                            break  # one pick variant per player
+                return out
+
+            need = 5 - len(primary_pkgs)
+            vb_asset_lists = _vb_packages(_fv, viewer_players, viewer_picks, need)
+            for assets in vb_asset_lists:
+                send = []
+                for a in assets:
+                    if a.get("is_pick"):
+                        send.append({
+                            "name":       a.get("name", ""),
+                            "value":      float(a.get("value") or 0),
+                            "send_value": float(a.get("value") or 0),
+                            "is_pick":    True,
+                            "pick_round": a.get("pick_round"),
+                            "pick_season": a.get("pick_season"),
+                        })
+                    else:
+                        send.append({
+                            "player_id":  str(a.get("player_id") or ""),
+                            "name":       a.get("name", ""),
+                            "position":   a.get("position", ""),
+                            "value":      float(a.get("value") or 0),
+                            "send_value": float(a.get("value") or 0),
+                            "is_pick":    False,
+                        })
+                primary_pkgs.append({
+                    "send":             send,
+                    "send_value":       round(sum(float(x.get("value") or 0) for x in send), 1),
+                    "trades_like_this": 0,
+                    "pattern_source":   "value",
+                    "sig":              [],
+                })
 
         # ── Shared enrichment ─────────────────────────────────────────────
         def _sig_to_archetype(sig_str: str) -> tuple:
