@@ -15625,13 +15625,6 @@ def api_trade_intel_player_packages(player_id: str):
                         logger.warning("[trade-intel] build_picks_by_roster failed: %s", _pbr_err)
                         _fresh_pbr = ctx.get("picks_by_roster") or {}
                     raw_picks = _fresh_pbr.get(viewer_roster_id) or []
-                    logger.info(
-                        "[trade-intel] viewer=%s fresh_pbr_keys=%s raw_picks=%d traded=%d",
-                        viewer_roster_id,
-                        list(_fresh_pbr.keys())[:5],
-                        len(raw_picks),
-                        len(ctx.get("traded") or []),
-                    )
                     pick_val_lookup = {
                         str(p.get("id") or ""): float(p.get("value") or 0)
                         for p in value_table
@@ -15646,7 +15639,7 @@ def api_trade_intel_player_packages(player_id: str):
                     except Exception:
                         pass
 
-                    def _pick_bucket(slot: int | None) -> str:
+                    def _pick_bucket(slot):
                         if not slot:
                             return ""
                         return "Early" if slot <= 4 else ("Mid" if slot <= 8 else "Late")
@@ -16041,11 +16034,6 @@ def api_trade_intel_player_packages(player_id: str):
             "archetype_patterns": archetype_patterns,
             "package_source":     package_source,
             "model_stale_days":   _model_stale_days,
-            "_debug": {
-                "viewer_picks":    viewer_picks,
-                "viewer_players":  [p["name"] for p in viewer_players[:5]],
-                "ml_pkgs_count":   len(ml_pkgs),
-            },
         })
 
     except Exception as e:
