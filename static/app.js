@@ -2829,7 +2829,35 @@ window.initTradePage = function initTradePage(root = document) {
         // ── Individual real-trade examples ──
         if (_pkgRealPkgs.length) {
           realTradeHtml += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px;">Real trades — adapted to your roster</div>`;
+
+          // Group packages by pattern_sig
+          const _archGroups = new Map();
           _pkgRealPkgs.forEach(pkg => {
+            const sig = pkg.pattern_sig || '';
+            if (!_archGroups.has(sig)) _archGroups.set(sig, []);
+            _archGroups.get(sig).push(pkg);
+          });
+
+          // Sort groups: archetypes with known patterns first (matching _pkgArchetypes order), then others
+          const _archOrder = _pkgArchetypes.map(ap => ap.pattern_sig);
+          const _sortedGroups = [..._archGroups.entries()].sort(([a], [b]) => {
+            const ai = _archOrder.indexOf(a), bi = _archOrder.indexOf(b);
+            if (ai === -1 && bi === -1) return 0;
+            if (ai === -1) return 1;
+            if (bi === -1) return -1;
+            return ai - bi;
+          });
+
+          _sortedGroups.forEach(([sig, pkgs]) => {
+            // Render a group header using the archetype chips
+            const groupHeader = sig
+              ? `<div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;margin:12px 0 6px;display:flex;align-items:center;gap:6px;">
+                   ${archetypeSigHtml(sig, '')}
+                 </div>`
+              : '';
+            realTradeHtml += groupHeader;
+
+            pkgs.forEach(pkg => {
             const count  = pkg.trades_like_this || 0;
             const isRef  = !!pkg.is_reference;
             const focusPos = focusPlayer?.position || 'WR';
@@ -2869,6 +2897,21 @@ window.initTradePage = function initTradePage(root = document) {
                 : chip;
             }).join(`<span style="color:var(--text-muted);font-size:10px;margin:0 1px;">+</span>`);
 
+            const gradeMap = {
+              steal:      { label: 'Steal 🟢',    color: '#10b981' },
+              fair:       { label: 'Fair',         color: '#6366f1' },
+              overpay:    { label: 'Slight overpay', color: '#f59e0b' },
+              big_overpay:{ label: 'Overpay',      color: '#ef4444' },
+            };
+            const gradeInfo = gradeMap[pkg.value_grade];
+            const gradeHtml = gradeInfo
+              ? `<span style="font-size:10px;font-weight:700;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`
+              : '';
+
+            const takersHtml = (pkg.likely_takers && pkg.likely_takers.length)
+              ? `<span style="font-size:10px;color:var(--text-muted);">· Likely: ${pkg.likely_takers.join(', ')}</span>`
+              : '';
+
             realTradeHtml += `<div class="otc-real-trade-card">
               <div class="otc-rt-body">
                 <div class="otc-rt-side">
@@ -2888,13 +2931,16 @@ window.initTradePage = function initTradePage(root = document) {
                 <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
                   <span class="otc-rt-count">${count} ${count === 1 ? 'trade' : 'trades'}</span>
                   ${chipHtml}
+                  ${gradeHtml}
+                  ${takersHtml}
                 </div>
                 <button class="otc-sugg-pkg-load-btn"
                   data-focus-id="${_pkgPlayerId}"
                   data-assets="${encodeURIComponent(JSON.stringify(pkg.send || []))}">Analyze</button>
               </div>
             </div>`;
-          });
+          }); // pkgs.forEach
+          }); // _sortedGroups.forEach
         }
         realTradeHtml += `</div>`;
       }
