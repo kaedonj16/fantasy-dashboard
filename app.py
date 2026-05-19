@@ -15656,8 +15656,14 @@ def api_trade_intel_player_packages(player_id: str):
                             "pick_season": yr, "pick_round": rnd,
                             "pick_order": slot,
                         })
-            except Exception:
-                pass  # League context is best-effort
+            except Exception as _ctx_err:
+                logger.warning("[trade-intel-picks] ctx error: %s", _ctx_err)
+
+        logger.info(
+            "[trade-intel-picks] viewer_picks=%s viewer_players=%d",
+            [(p["name"], p["value"]) for p in viewer_picks],
+            len(viewer_players),
+        )
 
         # ── Archetype helpers ──────────────────────────────────────────────
         def _age_bracket(age) -> str:
@@ -16020,6 +16026,7 @@ def api_trade_intel_player_packages(player_id: str):
             "archetype_patterns": archetype_patterns,
             "package_source":     package_source,
             "model_stale_days":   _model_stale_days,
+            "_debug_viewer_picks": viewer_picks,
         })
 
     except Exception as e:

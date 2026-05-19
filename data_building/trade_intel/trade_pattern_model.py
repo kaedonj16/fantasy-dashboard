@@ -458,14 +458,21 @@ def suggest_packages(
         # Pick-only clusters get a looser floor since a single 1st-rounder
         # won't hit 80% of a top player's value on its own.
         centroid_n_players = max(0, round(float(cluster["centroid"][1]) * 4))
+        centroid_n_picks   = max(0, round(float(cluster["centroid"][2]) * 4))
         floor_ratio = 0.60 if centroid_n_players == 0 else value_floor_ratio
+        floor = target_value * floor_ratio
         pkg = _match_viewer_to_cluster(
             centroid       = cluster["centroid"],
             target_value   = target_value,
             viewer_players = viewer_players,
             viewer_picks   = viewer_picks,
             values_by_id   = values_by_id,
-            value_floor    = target_value * floor_ratio,
+            value_floor    = floor,
+        )
+        logger.debug(
+            "[suggest] cluster players=%d picks=%d floor=%.0f pkg=%s",
+            centroid_n_players, centroid_n_picks, floor,
+            None if pkg is None else [a.get("name") for a in pkg["send"]],
         )
         if pkg is None:
             continue
