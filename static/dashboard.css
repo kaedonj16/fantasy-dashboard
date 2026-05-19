@@ -4101,10 +4101,6 @@ thead th {
 }
 
 .otc-arch-cell {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 6px;
   padding: 7px 10px;
   border-bottom: 1px solid var(--border);
   min-width: 0;

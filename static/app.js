@@ -2851,11 +2851,10 @@ window.initTradePage = function initTradePage(root = document) {
           function buildArchCells(list) {
             if (!list.length) return `<div style="grid-column:1/-1;padding:12px 10px;font-size:12px;color:var(--text-muted);">No top patterns match your current roster.</div>`;
             return list.map((ap, idx) => {
-              const sigHtml     = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
-              const pct         = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${ap.pct}%</span>` : '';
+              const sigHtml = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
+              const pct     = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;margin-left:2px;">${ap.pct}%</span>` : '';
               return `<div class="otc-arch-cell">
-                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;min-width:0;">${sigHtml}</div>
-                ${pct}
+                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;min-width:0;">${sigHtml}${pct}</div>
               </div>`;
             }).join('');
           }
