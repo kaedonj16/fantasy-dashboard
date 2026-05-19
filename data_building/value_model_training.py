@@ -282,7 +282,10 @@ def load_advanced_metrics_df() -> pd.DataFrame:
 # ------------------------------------------------
 
 def load_internal_stats_df() -> pd.DataFrame:
-    value_path = DATA_DIR / f"usage_table_{date.today().isoformat()}.json"
+    # Try undated path first; fall back to today's dated path for old installs
+    value_path = DATA_DIR / "usage_table.json"
+    if not value_path.exists():
+        value_path = DATA_DIR / f"usage_table_{date.today().isoformat()}.json"
 
     if not value_path.exists():
         raise FileNotFoundError(f"No internal value table found at {value_path}")
