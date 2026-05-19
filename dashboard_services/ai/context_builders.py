@@ -24,12 +24,25 @@ def _safe_int(v, default: int = 0) -> int:
         return default
 
 
-def build_model_value_lookup(model_value_table: list[dict]) -> dict[str, dict]:
+def _ctx_is_sf(ctx: dict) -> bool:
+    """Return True if the league context indicates a SuperFlex format."""
+    rp = ctx.get("roster_positions") or []
+    if isinstance(rp, list):
+        return any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in rp)
+    return False
+
+
+def build_model_value_lookup(model_value_table: list[dict], is_sf: bool = False) -> dict[str, dict]:
+    """Return pid→row lookup. When is_sf=True, rewrites each row's 'value' to the
+    sf_value so all downstream callers automatically use the right format."""
     out: dict[str, dict] = {}
     for row in model_value_table or []:
         pid = str(row.get("id") or row.get("player_id") or "")
-        if pid:
-            out[pid] = row
+        if not pid:
+            continue
+        if is_sf and row.get("sf_value") is not None:
+            row = {**row, "value": row["sf_value"]}
+        out[pid] = row
     return out
 
 
@@ -49,7 +62,7 @@ def summarize_roster_players(
         pos = meta.get("position") or meta.get("pos") or mv.get("position") or "?"
         team = meta.get("team") or mv.get("team") or "FA"
         age = meta.get("age") or mv.get("age")
-        value = _safe_float(mv.get("value") or mv.get("model_value") or mv.get("trade_value"), 0.0)
+        value = _safe_float(mv.get("value") or mv.get("sf_value") or mv.get("model_value") or mv.get("trade_value"), 0.0)
 
         out.append({
             "id": spid,
@@ -115,7 +128,7 @@ def build_team_gm_context(ctx: dict, viewer_roster_id: str) -> Union[dict, None]
     roster_map = ctx.get("roster_map") or {}
     team_name = roster_map.get(str(viewer_roster_id)) or f"Roster {viewer_roster_id}"
 
-    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
+    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx))
     roster_players = summarize_roster_players(
         roster=roster,
         players_index=ctx.get("players_index") or {},
@@ -796,7 +809,7 @@ def build_trade_suggestions_context(
     if not roster:
         return None
 
-    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
+    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx))
     roster_map = ctx.get("roster_map") or {}
     picks_by_roster = ctx.get("picks_by_roster") or {}
 
@@ -1148,7 +1161,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
     rosters = ctx.get("rosters") or []
     standings_map = ctx.get("standings_map") or {}
     roster_map = ctx.get("roster_map") or {}
-    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
+    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx))
 
     team_data = []
     for roster in rosters:

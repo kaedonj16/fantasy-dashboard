@@ -11507,7 +11507,7 @@ def api_trade_eval():
 
     if league_id and viewer_roster_id:
         try:
-            from dashboard_services.ai.context_builders import calculate_roster_depth_warning, build_model_value_lookup
+            from dashboard_services.ai.context_builders import calculate_roster_depth_warning, build_model_value_lookup, _ctx_is_sf
             ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
             analysis_html = get_trade_ai_analysis(
                 ctx=ctx,
@@ -11520,7 +11520,7 @@ def api_trade_eval():
             rosters = ctx.get("rosters") or []
             viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
             if viewer_roster:
-                model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
+                model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx))
                 viewer_gives = side_a if viewer_side == "b" else side_b
                 viewer_gets  = side_b if viewer_side == "b" else side_a
                 sending = [a for a in (viewer_gives.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
@@ -11773,19 +11773,24 @@ def api_league_players():
         print(f"[api/league-players] rookies skipped: {_e}")
 
     # --- Depth-decay pass ---
-    # Recompute pos_rank from current calibrated values first so decay tiers
-    # use correct ranks rather than stale DB values.
+    # Recompute pos_rank and sf_pos_rank from current calibrated values first
+    # so decay tiers use correct ranks rather than stale DB values.
     from collections import defaultdict as _dd_prl
-    _pos_groups: dict = _dd_prl(list)
-    for _i, _p in enumerate(model_value_table):
-        _pos = str(_p.get("position") or "").upper()
-        if _pos and _pos != "PICK":
-            _pos_groups[_pos].append(_i)
-    for _pos, _idxs in _pos_groups.items():
-        _idxs.sort(key=lambda _i: float(model_value_table[_i].get("value") or 0), reverse=True)
-        for _rank, _i in enumerate(_idxs, 1):
-            model_value_table[_i]["pos_rank"] = _rank
-            model_value_table[_i]["pos_rank_label"] = f"{_pos}{_rank}"
+
+    def _recompute_ranks(table, val_key, rank_key, label_key):
+        _groups: dict = _dd_prl(list)
+        for _i, _p in enumerate(table):
+            _pos = str(_p.get("position") or "").upper()
+            if _pos and _pos != "PICK":
+                _groups[_pos].append(_i)
+        for _pos, _idxs in _groups.items():
+            _idxs.sort(key=lambda _i: float(table[_i].get(val_key) or 0), reverse=True)
+            for _rank, _i in enumerate(_idxs, 1):
+                table[_i][rank_key]  = _rank
+                table[_i][label_key] = f"{_pos}{_rank}"
+
+    _recompute_ranks(model_value_table, "value",    "pos_rank",    "pos_rank_label")
+    _recompute_ranks(model_value_table, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
 
     # Decay tables: (rank_threshold, multiplier). Beyond the last threshold the
     # final multiplier applies.  QB only decays 1QB value (sf_value untouched).
@@ -11802,6 +11807,8 @@ def api_league_players():
         "value_8", "value_12", "value_14",
         "sf_value_8", "sf_value_12", "sf_value_14",
     ]
+    # QB SF decay uses sf_pos_rank (SF ordering differs from 1QB for QBs)
+    _QB_SF_VAL_KEYS = ["sf_value", "sf_value_8", "sf_value_12", "sf_value_14"]
     for _p in model_value_table:
         if _p.get("is_rookie"):
             continue
@@ -11809,34 +11816,42 @@ def api_league_players():
         _tiers = _DEPTH_DECAY.get(_pos)
         if not _tiers:
             continue
-        _rank = int(_p.get("pos_rank") or 999)
-        _keys = _QB_VAL_KEYS if _pos == "QB" else _SKILL_VAL_KEYS
-        for _thresh, _factor in _tiers:
-            if _rank <= _thresh:
-                if _factor < 1.0:
-                    for _vk in _keys:
-                        if _p.get(_vk) is not None:
-                            _p[_vk] = round(float(_p[_vk]) * _factor, 1)
-                break
+        if _pos == "QB":
+            # 1QB decay based on 1QB rank
+            _rank = int(_p.get("pos_rank") or 999)
+            for _thresh, _factor in _tiers:
+                if _rank <= _thresh:
+                    if _factor < 1.0:
+                        if _p.get("value") is not None:
+                            _p["value"] = round(float(_p["value"]) * _factor, 1)
+                    break
+            # SF decay based on SF rank (independent — deep QBs in SF may differ from 1QB)
+            _sf_rank = int(_p.get("sf_pos_rank") or 999)
+            for _thresh, _factor in _tiers:
+                if _sf_rank <= _thresh:
+                    if _factor < 1.0:
+                        for _vk in _QB_SF_VAL_KEYS:
+                            if _p.get(_vk) is not None:
+                                _p[_vk] = round(float(_p[_vk]) * _factor, 1)
+                    break
+        else:
+            _rank = int(_p.get("pos_rank") or 999)
+            for _thresh, _factor in _tiers:
+                if _rank <= _thresh:
+                    if _factor < 1.0:
+                        for _vk in _SKILL_VAL_KEYS:
+                            if _p.get(_vk) is not None:
+                                _p[_vk] = round(float(_p[_vk]) * _factor, 1)
+                    break
 
-    # Recompute pos_rank / pos_rank_label a second time so ranks reflect
-    # post-decay values (ordering within a tier is preserved, but this keeps
-    # labels accurate if cross-tier compression shifts any players).
-    _pos_groups2: dict = _dd_prl(list)
-    for _i, _p in enumerate(model_value_table):
-        _pos = str(_p.get("position") or "").upper()
-        if _pos and _pos != "PICK":
-            _pos_groups2[_pos].append(_i)
-    for _pos, _idxs in _pos_groups2.items():
-        _idxs.sort(key=lambda _i: float(model_value_table[_i].get("value") or 0), reverse=True)
-        for _rank, _i in enumerate(_idxs, 1):
-            model_value_table[_i]["pos_rank"] = _rank
-            model_value_table[_i]["pos_rank_label"] = f"{_pos}{_rank}"
+    # Recompute both rank sets post-decay so labels stay accurate.
+    _recompute_ranks(model_value_table, "value",    "pos_rank",    "pos_rank_label")
+    _recompute_ranks(model_value_table, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
 
     # Sort players: first by value (descending), then by pos_rank (ascending for ties)
     model_value_table.sort(key=lambda p: (
-        -(float(p.get("value") or 0)),  # Negative for descending sort by value
-        int(p.get("pos_rank") or 9999)  # Lower pos_rank = better position
+        -(float(p.get("value") or 0)),
+        int(p.get("pos_rank") or 9999)
     ))
 
     # Add birthday data for precise age calculation in frontend
