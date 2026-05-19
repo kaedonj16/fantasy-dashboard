@@ -5798,13 +5798,11 @@ function openPlayerModal(playerId, playerName, opts) {
       if (data.value_history && data.value_history.length > 0) {
         const chartDiv = document.getElementById('playerValueChart');
         if (chartDiv && typeof Plotly !== 'undefined') {
-          // Robust date formatters (handle YYYY-MM-DD and YYYY-MM-DDTHH:MM:SS)
           const formatDateLabel = (dateStr) => {
             if (!dateStr) return '';
             const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
             if (!m) return '';
             const [, year, month, day] = m;
-            // Use hardcoded month names to avoid locale/timezone issues
             const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             return `${monthNames[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
           };
@@ -5812,14 +5810,18 @@ function openPlayerModal(playerId, playerName, opts) {
           const xData = data.value_history.map(d => formatDateLabel(d.as_of_date));
           const n = xData.length;
 
-          // Tight Y-axis range based on actual data
-          const yValues = data.value_history.map(d => d.value);
-          const yMin = Math.min(...yValues);
-          const yMax = Math.max(...yValues);
+          const y1qb = data.value_history.map(d => d.value_1qb ?? d.value);
+          const ysf  = data.value_history.map(d => d.value_sf  ?? d.value);
+
+          // Check if 1QB and SF values are meaningfully different (e.g. QBs differ; non-QBs may be same)
+          const hasDualSeries = y1qb.some((v, i) => Math.abs(v - ysf[i]) > 1);
+
+          const allY = hasDualSeries ? [...y1qb, ...ysf] : y1qb;
+          const yMin = Math.min(...allY);
+          const yMax = Math.max(...allY);
           const yRange = yMax - yMin;
           const yPad = Math.max(yRange * 0.15, 30);
 
-          // Ticks at their actual positions (first / middle / last)
           const midIdx = Math.floor((n - 1) / 2);
           const firstDateStr  = formatDateLabel(data.value_history[0].as_of_date);
           const midDateStr    = formatDateLabel(data.value_history[midIdx].as_of_date);
@@ -5831,31 +5833,38 @@ function openPlayerModal(playerId, playerName, opts) {
                           : n <= 2 ? [firstDateStr, latestDateStr]
                           : [firstDateStr, midDateStr, latestDateStr];
 
-          // Read theme text color so ticks are visible in both light and dark mode
           const mutedColor = getComputedStyle(document.documentElement)
             .getPropertyValue('--text-muted').trim() || '#6b7280';
 
-          // Add empty space after the data to center the last point
-          const extendedX = [...xData, '', '', '', ''];
-          const extendedY = [...yValues, null, null, null, null];
+          const extendedX    = [...xData, '', '', '', ''];
+          const extended1qb  = [...y1qb, null, null, null, null];
+          const extendedsf   = [...ysf,  null, null, null, null];
 
-          // Create hover text for actual data points only
-          const hoverText = [...xData.map(date => `<b>${date}</b><br>Value: ${yValues[xData.indexOf(date)]?.toFixed(1) || ''}`), '', '', '', ''];
+          const hover1qb = [...xData.map((date, i) => `<b>${date}</b><br>1QB: ${y1qb[i]?.toFixed(1) || ''}`), '', '', '', ''];
+          const hoverSF  = [...xData.map((date, i) => `<b>${date}</b><br>SF: ${ysf[i]?.toFixed(1) || ''}`), '', '', '', ''];
 
-          const trace = {
-            x: extendedX,
-            y: extendedY,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Value',
+          const trace1qb = {
+            x: extendedX, y: extended1qb,
+            type: 'scatter', mode: 'lines', name: '1QB',
             line: { color: '#3b82f6', width: 2, shape: 'spline', smoothing: 1.2 },
-            fill: 'tozeroy',
+            fill: hasDualSeries ? 'none' : 'tozeroy',
             fillcolor: 'rgba(59, 130, 246, 0.1)',
             hovertemplate: '%{text}<extra></extra>',
-            text: hoverText
+            text: hover1qb,
+          };
+          const traceSF = {
+            x: extendedX, y: extendedsf,
+            type: 'scatter', mode: 'lines', name: 'SF',
+            line: { color: '#f59e0b', width: 2, shape: 'spline', smoothing: 1.2 },
+            fill: 'none',
+            hovertemplate: '%{text}<extra></extra>',
+            text: hoverSF,
           };
 
-          // Adjust chart height based on screen size
+          const traces = hasDualSeries ? [trace1qb, traceSF] : [
+            { ...trace1qb, name: 'Value', text: [...xData.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`), '', '', '', ''] }
+          ];
+
           const isMobile = window.innerWidth <= 768;
           const chartHeight = isMobile ? 200 : 250;
 
@@ -5864,6 +5873,8 @@ function openPlayerModal(playerId, playerName, opts) {
             height: chartHeight,
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
+            showlegend: hasDualSeries,
+            legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.1, font: { size: 11, color: mutedColor } },
             xaxis: {
               showgrid: false,
               type: 'category',
@@ -5884,7 +5895,7 @@ function openPlayerModal(playerId, playerName, opts) {
             hovermode: 'closest',
           };
 
-          Plotly.newPlot('playerValueChart', [trace], layout, {
+          Plotly.newPlot('playerValueChart', traces, layout, {
             displayModeBar: false,
             responsive: true
           });
