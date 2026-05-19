@@ -2368,11 +2368,11 @@ window.initTradePage = function initTradePage(root = document) {
     let suggTargetsLoaded = false;
     let suggCurrentPlayerId = null;
     let _fetchAbortCtrl = null;  // cancels in-flight fetchPackages requests
-    let _untouchableIds = new Set(JSON.parse(localStorage.getItem('ti-untouchable') || '[]'));
-    let _untouchableNames = JSON.parse(localStorage.getItem('ti-untouchable-names') || '{}');
+    let _untouchableIds   = new Set(JSON.parse(localStorage.getItem('ti-untouchable') || '[]'));
+    let _untouchableInfo  = JSON.parse(localStorage.getItem('ti-untouchable-info') || '{}');
     function _saveUntouchable() {
-      localStorage.setItem('ti-untouchable', JSON.stringify([..._untouchableIds]));
-      localStorage.setItem('ti-untouchable-names', JSON.stringify(_untouchableNames));
+      localStorage.setItem('ti-untouchable',      JSON.stringify([..._untouchableIds]));
+      localStorage.setItem('ti-untouchable-info', JSON.stringify(_untouchableInfo));
     }
     function _renderUntouchableBar() {
       const bar   = root.querySelector('#otcExcludedBar');
@@ -2381,11 +2381,17 @@ window.initTradePage = function initTradePage(root = document) {
       const ids = [..._untouchableIds];
       bar.style.display = ids.length ? '' : 'none';
       chips.innerHTML = ids.map(pid => {
-        const name = _untouchableNames[pid] || pid;
-        return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 6px;border-radius:12px;background:var(--surface-2,rgba(0,0,0,.05));border:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text);">
-          <span class="fa-solid fa-lock" style="width:9px;height:9px;opacity:.5;"></span>
+        const info = _untouchableInfo[pid] || {};
+        const name = info.name || pid;
+        const pos  = info.pos  || '';
+        const col  = pos ? posColor(pos) : 'var(--text-muted)';
+        const posBadge = pos
+          ? `<span style="font-size:10px;font-weight:700;padding:1px 5px;border-radius:3px;background:${col}18;color:${col};">${pos}</span>`
+          : `<span class="fa-solid fa-lock" style="width:9px;height:9px;opacity:.4;flex-shrink:0;"></span>`;
+        return `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 6px 3px 5px;border-radius:12px;background:var(--surface-2,rgba(0,0,0,.05));border:1px solid var(--border);font-size:12px;font-weight:600;color:var(--text);">
+          ${posBadge}
           ${name}
-          <button onclick="window._toggleUntouchable('${pid}')" style="border:none;background:none;cursor:pointer;padding:0;margin-left:2px;display:inline-flex;align-items:center;opacity:.5;" title="Remove exclusion">
+          <button onclick="window._toggleUntouchable('${pid}')" title="Allow ${name} in suggestions" style="border:none;background:none;cursor:pointer;padding:0;margin-left:1px;display:inline-flex;align-items:center;opacity:.45;line-height:1;">
             <span class="fa-solid fa-xmark" style="width:9px;height:9px;"></span>
           </button>
         </span>`;
@@ -2505,18 +2511,19 @@ window.initTradePage = function initTradePage(root = document) {
     window._refetchTradeIntel = () => {
       if (suggCurrentPlayerId) fetchPackages(suggCurrentPlayerId, _pkgPlayerName);
     };
-    window._toggleUntouchable = (pid, name) => {
+    window._toggleUntouchable = (pid, name, pos) => {
       if (_untouchableIds.has(pid)) {
         _untouchableIds.delete(pid);
-        delete _untouchableNames[pid];
+        delete _untouchableInfo[pid];
       } else {
         _untouchableIds.add(pid);
-        if (name) _untouchableNames[pid] = name;
+        _untouchableInfo[pid] = { name: name || pid, pos: pos || '' };
       }
       _saveUntouchable();
       _renderUntouchableBar();
       window._refetchTradeIntel();
     };
+    localStorage.removeItem('ti-untouchable-names'); // migrated to ti-untouchable-info
     _renderUntouchableBar();
 
     async function fetchPackages(playerId, playerName) {
@@ -2920,8 +2927,15 @@ window.initTradePage = function initTradePage(root = document) {
               const pid = a.player_id || a.id || '';
               const locked = pid && _untouchableIds.has(pid);
               const safeName = (a.name || '').replace(/'/g, "\\'");
-              const lockTitle = locked ? `Click to allow ${a.name} in suggestions` : `Click to exclude ${a.name} from suggestions`;
-              const lockBtn = pid ? `<button onclick="window._toggleUntouchable('${pid}','${safeName}')" title="${lockTitle}" style="border:none;background:none;cursor:pointer;padding:0 0 0 4px;line-height:1;display:inline-flex;align-items:center;opacity:${locked?0.85:0.25};"><span class="fa-solid ${locked?'fa-lock':'fa-lock-open'}" style="width:10px;height:10px;"></span></button>` : '';
+              const safePos  = (a.position || '').replace(/'/g, "\\'");
+              const lockTitle = locked ? `Allow ${a.name} in suggestions` : `Exclude ${a.name} from suggestions`;
+              const lockBtn = pid
+                ? `<button onclick="window._toggleUntouchable('${pid}','${safeName}','${safePos}')" title="${lockTitle}"
+                     style="border:none;background:none;cursor:pointer;padding:0 0 0 5px;line-height:1;display:inline-flex;align-items:center;opacity:${locked?0.75:0.2};transition:opacity .15s;"
+                     onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity='${locked?0.75:0.2}'">
+                     <span class="fa-solid ${locked?'fa-lock':'fa-lock-open'}" style="width:11px;height:11px;"></span>
+                   </button>`
+                : '';
               const col = posColor(a.position);
               return `<div class="otc-rt-asset" style="display:flex;align-items:center;">
                 ${prefix}<span class="otc-rt-pos" style="background:${col}18;color:${col};">${a.position}</span>
