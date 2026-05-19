@@ -3890,11 +3890,11 @@ thead th {
 /* Right load button */
 .otc-sugg-pkg-load-btn {
   flex-shrink: 0;
-  padding: 6px 10px;
+  padding: 6px 14px;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--row);
-  color: var(--text-muted);
+  border: 1px solid rgba(99,102,241,.25);
+  background: rgba(99,102,241,.07);
+  color: var(--accent);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
@@ -3903,22 +3903,23 @@ thead th {
 }
 
 .otc-sugg-pkg-load-btn:hover {
-  background: var(--accent-soft);
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
+  color: #fff;
 }
 
 /* Real-trade example cards */
 .otc-real-trade-card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
-  margin-bottom: 8px;
-  transition: border-color .15s;
+  margin-bottom: 6px;
+  transition: box-shadow .15s, border-color .15s;
 }
 .otc-real-trade-card:hover {
-  border-color: rgba(167,139,250,.45);
+  border-color: rgba(167,139,250,.4);
+  box-shadow: 0 4px 18px rgba(0,0,0,.07);
 }
 .otc-rt-body {
   display: grid;
@@ -3926,7 +3927,7 @@ thead th {
   gap: 0;
 }
 .otc-rt-side {
-  padding: 10px 12px;
+  padding: 12px 14px;
   min-width: 0;
 }
 .otc-rt-divider {
@@ -3935,30 +3936,30 @@ thead th {
 }
 .otc-rt-label {
   font-size: 9px;
-  font-weight: 700;
-  letter-spacing: .07em;
+  font-weight: 800;
+  letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin-bottom: 5px;
+  margin-bottom: 6px;
 }
 .otc-rt-asset {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin-bottom: 3px;
+  gap: 6px;
+  margin-bottom: 4px;
   min-width: 0;
 }
 .otc-rt-pos {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
-  padding: 1px 4px;
-  border-radius: 3px;
+  padding: 2px 5px;
+  border-radius: 4px;
   flex-shrink: 0;
-  min-width: 24px;
+  min-width: 26px;
   text-align: center;
 }
 .otc-rt-name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text);
   overflow: hidden;
@@ -3970,18 +3971,18 @@ thead th {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 7px 12px;
+  padding: 8px 14px;
   border-top: 1px solid var(--border);
-  background: var(--card-soft);
+  background: var(--row);
 }
 .otc-rt-count {
   font-size: 10px;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 2px 8px;
   border-radius: 20px;
-  background: rgba(167,139,250,.1);
+  background: rgba(167,139,250,.08);
   color: #a78bfa;
-  border: 1px solid rgba(167,139,250,.2);
+  border: 1px solid rgba(167,139,250,.18);
   flex-shrink: 0;
 }
 
@@ -4048,6 +4049,17 @@ thead th {
 @keyframes otcSuggShimmer {
   0%, 100% { opacity: 0.5; }
   50%       { opacity: 1;   }
+}
+
+/* Compact tab variant for inline use (e.g. archetype toggle) */
+.otc-main-tabs.compact {
+  padding: 2px;
+  border-radius: 7px;
+}
+.otc-main-tabs.compact .otc-main-tab {
+  padding: 3px 10px;
+  font-size: 11px;
+  border-radius: 5px;
 }
 
 /* Targets side column */

@@ -2837,8 +2837,8 @@ window.initTradePage = function initTradePage(root = document) {
       if (_pkgRealPkgs.length || _pkgArchetypes.length) {
         realTradeHtml += `<div style="margin-top:14px;padding-top:12px;border-top:2px solid var(--border);">
           <div style="margin-bottom:10px;">
-            <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;">How people have acquired ${_pkgPlayerName}</div>
-            <div style="font-size:11px;color:var(--text-muted);">Patterns from ${_pkgRealTotal} real trades in similar leagues</div>
+            <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:3px;">How people acquire ${_pkgPlayerName}</div>
+            <div style="font-size:11px;color:var(--text-muted);">${_pkgRealTotal} real trades in similar leagues</div>
           </div>`;
 
         // ── Common archetype patterns ─────────────────────────────
@@ -2862,7 +2862,7 @@ window.initTradePage = function initTradePage(root = document) {
           realTradeHtml += `<div style="margin-bottom:12px;border-radius:8px;border:1px solid var(--border);overflow:hidden;">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--surface-2,rgba(0,0,0,.04));border-bottom:1px solid var(--border);">
               <span style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">What teams typically send</span>
-              <div class="otc-main-tabs" style="margin-bottom:0;">
+              <div class="otc-main-tabs compact" style="margin-bottom:0;">
                 <button id="arch-btn-all-${archUid}" class="otc-main-tab is-active" onclick="archToggle('${archUid}','all')">Top patterns</button>
                 <button id="arch-btn-team-${archUid}" class="otc-main-tab" onclick="archToggle('${archUid}','team')">Your team</button>
               </div>
@@ -2874,7 +2874,10 @@ window.initTradePage = function initTradePage(root = document) {
 
         // ── Individual real-trade examples ──
         if (_pkgRealPkgs.length) {
-          realTradeHtml += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px;">Real trades — adapted to your roster</div>`;
+          realTradeHtml += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+            <span style="font-size:12px;font-weight:800;color:var(--text);">Real trades</span>
+            <span style="font-size:11px;color:var(--text-muted);">adapted to your roster</span>
+          </div>`;
 
           // Group packages by pattern_sig
           const _archGroups = new Map();
@@ -2897,8 +2900,12 @@ window.initTradePage = function initTradePage(root = document) {
           _sortedGroups.forEach(([sig, pkgs]) => {
             // Render a group header using the archetype chips
             const groupHeader = sig
-              ? `<div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;margin:12px 0 6px;display:flex;align-items:center;gap:6px;">
-                   ${archetypeSigHtml(sig, '')}
+              ? `<div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px;">
+                   <div style="flex:1;height:1px;background:var(--border);"></div>
+                   <div style="display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--card);flex-shrink:0;">
+                     ${archetypeSigHtml(sig, '')}
+                   </div>
+                   <div style="flex:1;height:1px;background:var(--border);"></div>
                  </div>`
               : '';
             realTradeHtml += groupHeader;
@@ -2945,14 +2952,14 @@ window.initTradePage = function initTradePage(root = document) {
             }).join('');
 
             const gradeMap = {
-              steal:      { label: 'Steal 🟢',    color: '#10b981' },
-              fair:       { label: 'Fair',         color: '#6366f1' },
-              overpay:    { label: 'Slight overpay', color: '#f59e0b' },
-              big_overpay:{ label: 'Overpay',      color: '#ef4444' },
+              steal:      { label: 'Steal',         color: '#10b981' },
+              fair:       { label: 'Fair value',    color: '#6366f1' },
+              overpay:    { label: 'Slight overpay',color: '#f59e0b' },
+              big_overpay:{ label: 'Overpay',       color: '#ef4444' },
             };
             const gradeInfo = gradeMap[pkg.value_grade];
             const gradeHtml = gradeInfo
-              ? `<span style="font-size:10px;font-weight:700;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`
+              ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`
               : '';
 
             const takersHtml = (pkg.likely_takers && pkg.likely_takers.length)
