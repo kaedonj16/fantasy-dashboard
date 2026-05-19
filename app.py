@@ -15889,6 +15889,15 @@ def api_trade_intel_player_packages(player_id: str):
             key=lambda x: -x["count"],
         )[:6]
 
+        # Sort suggestions by archetype popularity so the most common pattern
+        # surfaces first (e.g. single-pick before two-pick, etc.)
+        if archetype_patterns and primary_pkgs:
+            arch_rank = {ap["pattern_sig"]: i for i, ap in enumerate(archetype_patterns)}
+            def _pkg_rank(pkg):
+                sig = pkg.get("pattern_sig") or ""
+                return (arch_rank.get(sig, len(archetype_patterns)), -pkg.get("trades_like_this", 0))
+            primary_pkgs.sort(key=_pkg_rank)
+
         return jsonify({
             "player_name":        player_name,
             "focus_value":        focus_value,
