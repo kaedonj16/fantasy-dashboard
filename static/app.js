@@ -2369,7 +2369,28 @@ window.initTradePage = function initTradePage(root = document) {
     let suggCurrentPlayerId = null;
     let _fetchAbortCtrl = null;  // cancels in-flight fetchPackages requests
     let _untouchableIds = new Set(JSON.parse(localStorage.getItem('ti-untouchable') || '[]'));
-    function _saveUntouchable() { localStorage.setItem('ti-untouchable', JSON.stringify([..._untouchableIds])); }
+    let _untouchableNames = JSON.parse(localStorage.getItem('ti-untouchable-names') || '{}');
+    function _saveUntouchable() {
+      localStorage.setItem('ti-untouchable', JSON.stringify([..._untouchableIds]));
+      localStorage.setItem('ti-untouchable-names', JSON.stringify(_untouchableNames));
+    }
+    function _renderUntouchableBar() {
+      const bar   = root.querySelector('#otcExcludedBar');
+      const chips = root.querySelector('#otcExcludedChips');
+      if (!bar || !chips) return;
+      const ids = [..._untouchableIds];
+      bar.style.display = ids.length ? '' : 'none';
+      chips.innerHTML = ids.map(pid => {
+        const name = _untouchableNames[pid] || pid;
+        return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 6px;border-radius:12px;background:var(--surface-2,rgba(0,0,0,.05));border:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text);">
+          <span class="fa-solid fa-lock" style="width:9px;height:9px;opacity:.5;"></span>
+          ${name}
+          <button onclick="window._toggleUntouchable('${pid}')" style="border:none;background:none;cursor:pointer;padding:0;margin-left:2px;display:inline-flex;align-items:center;opacity:.5;" title="Remove exclusion">
+            <span class="fa-solid fa-xmark" style="width:9px;height:9px;"></span>
+          </button>
+        </span>`;
+      }).join('');
+    }
 
     function switchTab(name) {
       if (name === "suggestions") {
@@ -2484,12 +2505,19 @@ window.initTradePage = function initTradePage(root = document) {
     window._refetchTradeIntel = () => {
       if (suggCurrentPlayerId) fetchPackages(suggCurrentPlayerId, _pkgPlayerName);
     };
-    window._toggleUntouchable = (pid) => {
-      if (_untouchableIds.has(pid)) _untouchableIds.delete(pid);
-      else _untouchableIds.add(pid);
+    window._toggleUntouchable = (pid, name) => {
+      if (_untouchableIds.has(pid)) {
+        _untouchableIds.delete(pid);
+        delete _untouchableNames[pid];
+      } else {
+        _untouchableIds.add(pid);
+        if (name) _untouchableNames[pid] = name;
+      }
       _saveUntouchable();
+      _renderUntouchableBar();
       window._refetchTradeIntel();
     };
+    _renderUntouchableBar();
 
     async function fetchPackages(playerId, playerName) {
       if (!playerId) return;
@@ -2891,7 +2919,9 @@ window.initTradePage = function initTradePage(root = document) {
               }
               const pid = a.player_id || a.id || '';
               const locked = pid && _untouchableIds.has(pid);
-              const lockBtn = pid ? `<button onclick="window._toggleUntouchable('${pid}')" title="${locked?'Remove from excluded':'Exclude from suggestions'}" style="border:none;background:none;cursor:pointer;padding:0 0 0 4px;line-height:1;display:inline-flex;align-items:center;opacity:${locked?0.85:0.25};"><span class="fa-solid ${locked?'fa-lock':'fa-lock-open'}" style="width:10px;height:10px;"></span></button>` : '';
+              const safeName = (a.name || '').replace(/'/g, "\\'");
+              const lockTitle = locked ? `Click to allow ${a.name} in suggestions` : `Click to exclude ${a.name} from suggestions`;
+              const lockBtn = pid ? `<button onclick="window._toggleUntouchable('${pid}','${safeName}')" title="${lockTitle}" style="border:none;background:none;cursor:pointer;padding:0 0 0 4px;line-height:1;display:inline-flex;align-items:center;opacity:${locked?0.85:0.25};"><span class="fa-solid ${locked?'fa-lock':'fa-lock-open'}" style="width:10px;height:10px;"></span></button>` : '';
               const col = posColor(a.position);
               return `<div class="otc-rt-asset" style="display:flex;align-items:center;">
                 ${prefix}<span class="otc-rt-pos" style="background:${col}18;color:${col};">${a.position}</span>
