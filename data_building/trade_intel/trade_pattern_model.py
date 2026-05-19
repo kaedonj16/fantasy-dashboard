@@ -469,11 +469,6 @@ def suggest_packages(
             values_by_id   = values_by_id,
             value_floor    = floor,
         )
-        logger.debug(
-            "[suggest] cluster players=%d picks=%d floor=%.0f pkg=%s",
-            centroid_n_players, centroid_n_picks, floor,
-            None if pkg is None else [a.get("name") for a in pkg["send"]],
-        )
         if pkg is None:
             continue
         shape = _shape_key(pkg["send"])
