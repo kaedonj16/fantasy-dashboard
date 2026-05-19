@@ -531,7 +531,7 @@ def suggest_packages(
         centroid_n_picks   = max(0, round(float(cluster["centroid"][2]) * 4))
         floor_ratio = 0.60 if centroid_n_players == 0 else value_floor_ratio
         floor   = target_value * floor_ratio
-        ceiling = target_value * 1.9
+        ceiling = target_value * 1.3
         pkg = _match_viewer_to_cluster(
             centroid       = cluster["centroid"],
             target_value   = target_value,
