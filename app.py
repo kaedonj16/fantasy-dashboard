@@ -15553,6 +15553,7 @@ def api_trade_intel_player_packages(player_id: str):
             from utils.utils import load_model_value_table
             value_table = load_model_value_table() or []
 
+        _use_sf_ranks = (val_key == "sf_value")
         values_by_id: dict = {}
         for p in value_table:
             pid = str(p.get("id") or "")
@@ -15562,8 +15563,8 @@ def api_trade_intel_player_packages(player_id: str):
                     "position":          str(p.get("position") or "").upper(),
                     "value":             float(p.get(val_key) or p.get("value") or 0),
                     "sf_value":          float(p.get("sf_value") or p.get("value") or 0),
-                    "pos_rank":          int(p.get("pos_rank") or 99),
-                    "pos_rank_label":    p.get("pos_rank_label") or "",
+                    "pos_rank":          int((p.get("sf_pos_rank") if _use_sf_ranks else p.get("pos_rank")) or 99),
+                    "pos_rank_label":    (p.get("sf_pos_rank_label") if _use_sf_ranks else p.get("pos_rank_label")) or "",
                     "team":              p.get("team") or "",
                     "age":               p.get("age"),
                     "pos_rank_change_7d": p.get("pos_rank_change_7d"),
@@ -15762,6 +15763,54 @@ def api_trade_intel_player_packages(player_id: str):
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
         _is_sf   = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
         num_teams = len(ctx.get("rosters") or []) or 12
+
+        # Resync val_key with the actual league format detected from roster_positions.
+        # The initial val_key was set from the URL param; the real league may differ
+        # (e.g. league has SUPER_FLEX but URL says league_type=1qb).
+        _correct_val_key = "sf_value" if _is_sf else "value"
+        if _correct_val_key != val_key and ctx:
+            val_key = _correct_val_key
+            _rsf = _is_sf
+            _rebuilt: dict = {}
+            for _p in value_table:
+                _pid = str(_p.get("id") or "")
+                if _pid:
+                    _rebuilt[_pid] = {
+                        "name":               _p.get("name", ""),
+                        "position":           str(_p.get("position") or "").upper(),
+                        "value":              float(_p.get(val_key) or _p.get("value") or 0),
+                        "sf_value":           float(_p.get("sf_value") or _p.get("value") or 0),
+                        "pos_rank":           int((_p.get("sf_pos_rank") if _rsf else _p.get("pos_rank")) or 99),
+                        "pos_rank_label":     (_p.get("sf_pos_rank_label") if _rsf else _p.get("pos_rank_label")) or "",
+                        "team":               _p.get("team") or "",
+                        "age":                _p.get("age"),
+                        "pos_rank_change_7d": _p.get("pos_rank_change_7d"),
+                    }
+            values_by_id = _rebuilt
+            # Rebuild viewer_players with updated values
+            _rvo = next((r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None)
+            if _rvo:
+                viewer_players = sorted(
+                    [
+                        {
+                            "player_id":      _pid,
+                            "name":           values_by_id[_pid]["name"],
+                            "position":       values_by_id[_pid]["position"],
+                            "value":          values_by_id[_pid]["value"],
+                            "pos_rank_label": values_by_id[_pid]["pos_rank_label"],
+                        }
+                        for _pid in [str(_pp) for _pp in (_rvo.get("players") or [])]
+                        if _pid in values_by_id and values_by_id[_pid]["value"] >= 50
+                    ],
+                    key=lambda x: x["value"],
+                    reverse=True,
+                )
+                if untouchable_ids:
+                    viewer_players = [p for p in viewer_players if p["player_id"] not in untouchable_ids]
+            # Update focus_value and target_info with corrected values
+            target_info = values_by_id.get(str(player_id))
+            if target_info:
+                focus_value = round(target_info["value"], 1)
 
         # ── ML model: primary package suggestions ─────────────────────────
         ml_pkgs: list = []
