@@ -2619,7 +2619,8 @@ window.initTradePage = function initTradePage(root = document) {
           [],
           data.player_name, playerId, data.focus_value,
           data.real_packages, data.total_real_trades,
-          data.archetype_patterns
+          data.archetype_patterns,
+          data.receiver_win_window || ''
         );
 
         localStorage.setItem('ti-last-player', JSON.stringify({ id: playerId, name: playerName }));
@@ -2641,6 +2642,7 @@ window.initTradePage = function initTradePage(root = document) {
     let _pkgRealTotal      = 0;
     let _pkgComboPkgs      = [];
     let _pkgArchetypes     = [];
+    let _pkgReceiverWindow = '';
 
     window.archToggle = function(uid, mode) {
       const allGrid  = document.getElementById('arch-grid-all-'  + uid);
@@ -2655,15 +2657,16 @@ window.initTradePage = function initTradePage(root = document) {
       teamBtn.classList.toggle('is-active', !showAll);
     };
 
-    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal, archetypes) {
-      _pkgAll        = packages;
-      _pkgPage       = 0;
-      _pkgPlayerId   = playerId;
-      _pkgPlayerName = playerName;
-      _pkgRealPkgs   = realPkgs   || [];
-      _pkgRealTotal  = realTotal  || 0;
-      _pkgComboPkgs  = [];
-      _pkgArchetypes = archetypes || [];
+    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal, archetypes, receiverWindow) {
+      _pkgAll            = packages;
+      _pkgPage           = 0;
+      _pkgPlayerId       = playerId;
+      _pkgPlayerName     = playerName;
+      _pkgRealPkgs       = realPkgs   || [];
+      _pkgRealTotal      = realTotal  || 0;
+      _pkgComboPkgs      = [];
+      _pkgArchetypes     = archetypes || [];
+      _pkgReceiverWindow = receiverWindow || '';
       renderPackagePage();
     }
 
@@ -2844,11 +2847,32 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       // ── "Based on real trades" section ─────────────────────────────────────────
+      const _windowColors = {
+        'Full Rebuild':      '#6366f1',
+        'Retooling':         '#a78bfa',
+        'Building':          '#a78bfa',
+        'Holding Pattern':   '#94a3b8',
+        'Rising Contender':  '#f59e0b',
+        '2-3 Year Window':   '#f59e0b',
+        'Contender Window':  '#10b981',
+        'Win-Now Window':    '#10b981',
+        'Aging Contender':   '#ef4444',
+      };
+      const _windowBadge = _pkgReceiverWindow
+        ? (() => {
+            const col = _windowColors[_pkgReceiverWindow] || 'var(--text-muted)';
+            return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${col}15;border:1px solid ${col}30;color:${col};white-space:nowrap;">${_pkgReceiverWindow}</span>`;
+          })()
+        : '';
+
       let realTradeHtml = "";
       if (_pkgRealPkgs.length || _pkgArchetypes.length) {
         realTradeHtml += `<div style="margin-top:14px;padding-top:12px;border-top:2px solid var(--border);">
           <div style="margin-bottom:10px;">
-            <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:3px;">How people acquire ${_pkgPlayerName}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px;">
+              <span style="font-size:15px;font-weight:800;color:var(--text);">How people acquire ${_pkgPlayerName}</span>
+              ${_windowBadge}
+            </div>
             <div style="font-size:11px;color:var(--text-muted);">${_pkgRealTotal} real trades in similar leagues</div>
           </div>`;
 

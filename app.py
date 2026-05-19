@@ -16023,25 +16023,27 @@ def api_trade_intel_player_packages(player_id: str):
             for _pid in (_r.get("players") or []):
                 _player_owner_map[str(_pid)] = _r
 
-        def _roster_window(roster: dict) -> str:
-            """Classify a roster as 'rebuild', 'competitive', or 'win_now'
-            based on the average age of its top-8 players by value."""
-            entries = []
+        from dashboard_services.ai.context_builders import (
+            calculate_roster_grade as _calc_grade,
+            detect_team_direction as _detect_direction,
+        )
+
+        def _roster_grade(roster: dict) -> dict:
+            """Return calculate_roster_grade output for any roster,
+            using the same logic as the Teams page."""
+            rid = str(roster.get("roster_id", ""))
+            flat = []
             for pid in (roster.get("players") or []):
                 info = values_by_id.get(str(pid))
                 if info and info.get("position") in ("QB", "RB", "WR", "TE"):
-                    val = float(info.get("value") or 0)
-                    age = float(info.get("age") or 25)
-                    entries.append((val, age))
-            top = sorted(entries, key=lambda x: -x[0])[:8]
-            if not top:
-                return "competitive"
-            avg_age = sum(a for _, a in top) / len(top)
-            if avg_age < 24.5:
-                return "rebuild"
-            if avg_age > 26.5:
-                return "win_now"
-            return "competitive"
+                    flat.append({
+                        "position": info["position"],
+                        "value":    float(info.get("value") or 0),
+                        "age":      info.get("age"),
+                    })
+            flat.sort(key=lambda x: x["value"], reverse=True)
+            picks = (_fresh_pbr or {}).get(rid, [])
+            return _calc_grade(flat, picks)
 
         def _acceptance_prob(pkg: dict, total_trades: int) -> int:
             """
@@ -16106,8 +16108,16 @@ def api_trade_intel_player_packages(player_id: str):
 
                 need_adj = max(-10, min(need_adj, 18))
 
-                # 4. Win/rebuild window adjustment
-                window = _roster_window(owner_roster)
+                # 4. Win/rebuild window — use same grade as Teams page
+                grade_data = _roster_grade(owner_roster)
+                win_window = grade_data.get("win_window", "")
+                # Map Teams-page labels to rebuild / win_now / competitive
+                if win_window in ("Full Rebuild", "Retooling"):
+                    window = "rebuild"
+                elif win_window in ("Win-Now Window", "Aging Contender", "Contender Window"):
+                    window = "win_now"
+                else:
+                    window = "competitive"
 
                 sent_picks = [a for a in pkg.get("send", []) if a.get("is_pick")]
                 sent_ages  = []
@@ -16180,6 +16190,12 @@ def api_trade_intel_player_packages(player_id: str):
         primary_pkgs = [p for p in primary_pkgs if p.get("send_value", 0) <= _max_send]
 
         _total_real = real_result.get("total_real_trades") or 1
+
+        # Grade the receiving team once (same data as Teams page)
+        _owner_roster = _player_owner_map.get(str(player_id))
+        _receiver_grade = _roster_grade(_owner_roster) if _owner_roster else {}
+        _receiver_win_window = _receiver_grade.get("win_window", "")
+
         for pkg in primary_pkgs:
             sent_pos = [a.get("position") for a in pkg.get("send", []) if not a.get("is_pick") and a.get("position")]
             pkg["likely_takers"]   = _likely_takers(sent_pos)
@@ -16242,16 +16258,17 @@ def api_trade_intel_player_packages(player_id: str):
             primary_pkgs.sort(key=_pkg_rank)
 
         return jsonify({
-            "player_name":        player_name,
-            "focus_value":        focus_value,
-            "packages":           [],
-            "total_packages":     0,
-            "real_packages":      primary_pkgs,
-            "total_real_trades":  real_result["total_real_trades"],
-            "archetype_patterns": archetype_patterns,
-            "package_source":     package_source,
-            "model_stale_days":   _model_stale_days,
-            "query_window_days":  730,
+            "player_name":          player_name,
+            "focus_value":          focus_value,
+            "packages":             [],
+            "total_packages":       0,
+            "real_packages":        primary_pkgs,
+            "total_real_trades":    real_result["total_real_trades"],
+            "archetype_patterns":   archetype_patterns,
+            "package_source":       package_source,
+            "model_stale_days":     _model_stale_days,
+            "query_window_days":    730,
+            "receiver_win_window":  _receiver_win_window,
         })
 
     except Exception as e:
