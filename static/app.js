@@ -2971,6 +2971,18 @@ window.initTradePage = function initTradePage(root = document) {
               ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`
               : '';
 
+            // Acceptance probability: value grade is the primary driver (from the receiver's POV —
+            // a "steal" for you means a bad deal for them, so low acceptance).
+            // Trade frequency boosts confidence: more real trades = more commonly accepted pattern.
+            const _baseProb = { steal: 18, fair: 52, overpay: 70, big_overpay: 84 }[pkg.value_grade] ?? 50;
+            const _freqBoost = count >= 10 ? 8 : count >= 5 ? 4 : count >= 3 ? 2 : 0;
+            const _acceptProb = Math.min(93, Math.max(8, _baseProb + _freqBoost));
+            const _probColor = _acceptProb >= 70 ? '#10b981' : _acceptProb >= 50 ? '#6366f1' : '#f59e0b';
+            const acceptHtml = `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${_probColor}15;border:1px solid ${_probColor}30;color:${_probColor};white-space:nowrap;">
+              <span style="width:5px;height:5px;border-radius:50%;background:${_probColor};flex-shrink:0;"></span>
+              ${_acceptProb}% accept
+            </span>`;
+
             realTradeHtml += `<div class="otc-real-trade-card">
               <div class="otc-rt-body">
                 <div class="otc-rt-side">
@@ -2990,6 +3002,7 @@ window.initTradePage = function initTradePage(root = document) {
                 <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
                   <span class="otc-rt-count">${count} ${count === 1 ? 'trade' : 'trades'}</span>
                   ${gradeHtml}
+                  ${acceptHtml}
                 </div>
                 <button class="otc-sugg-pkg-load-btn"
                   data-focus-id="${_pkgPlayerId}"
