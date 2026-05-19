@@ -1105,6 +1105,22 @@ def rewrite_value_table_with_model() -> Path:
     bundle = load_trained_bundle()
     inference_df = build_inference_dataframe()
 
+    # Load WLS calibrated SF values (produced by trade_value_model.py).
+    # These are market-derived QB SF values from real dynasty trades.
+    # Used instead of a hardcoded boost so QB SF values reflect actual trade markets.
+    wls_sf_values: dict[str, float] = {}
+    try:
+        from dashboard_services.db import get_conn as _get_conn
+        with _get_conn() as _conn:
+            _wls_rows = _conn.execute(
+                "SELECT player_id, calibrated_value_sf FROM player_values "
+                "WHERE calibrated_value_sf IS NOT NULL AND calibrated_value_sf > 0"
+            ).fetchall()
+        wls_sf_values = {str(r["player_id"]): float(r["calibrated_value_sf"]) for r in _wls_rows}
+        print(f"[rewrite_value_table] Loaded {len(wls_sf_values)} WLS SF values from DB")
+    except Exception as _wls_err:
+        print(f"[rewrite_value_table] WLS SF load skipped: {_wls_err}")
+
     # CRITICAL FIX: Load vendor values to use directly when available
     fc_df = load_fantasycalc_df()
     dp_df = load_dynastyprocess_df()
@@ -1293,12 +1309,6 @@ def rewrite_value_table_with_model() -> Path:
                 sf_wsum += SF_W_ENGINE * sf_eng_val;  sf_wtot += SF_W_ENGINE
             sf_value = sf_wsum / sf_wtot if sf_wtot > 0 else 0.0
 
-            # CRITICAL FIX: Boost QBs significantly in Superflex so top QBs reach ~999
-            # In Superflex, elite QBs should be valued like elite RBs/WRs
-            pos = meta.get("pos", "").upper()
-            if pos == "QB":
-                sf_value = sf_value * 1.5  # 50% boost for QBs
-
             sf_vendor_values[pid] = sf_value
 
     df_by_id: dict[str, pd.Series] = {}
@@ -1394,6 +1404,9 @@ def rewrite_value_table_with_model() -> Path:
         position = player.get("position")
         if position != "QB":
             sf_value = max(sf_value, final_value)
+        elif pid in wls_sf_values:
+            # Use market-derived WLS value for QBs in SF — reflects actual trade markets
+            sf_value = wls_sf_values[pid]
 
         age = player.get("age")
         if age is None and row is not None:
