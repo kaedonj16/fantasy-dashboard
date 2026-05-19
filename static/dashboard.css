@@ -4025,33 +4025,6 @@ thead th {
     margin: 2px 0;
   }
 
-  /* Real-trade cards: stack sides vertically on small screens */
-  .otc-rt-body {
-    grid-template-columns: 1fr;
-  }
-  .otc-rt-divider {
-    height: 1px;
-    background: var(--border);
-  }
-  .otc-rt-side {
-    padding: 10px 12px;
-  }
-  .otc-rt-name {
-    font-size: 14px;
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-  }
-  .otc-rt-footer {
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 8px 12px;
-  }
-  .otc-sugg-pkg-load-btn[data-focus-id],
-  .otc-rt-footer .otc-sugg-pkg-load-btn {
-    width: 100%;
-    text-align: center;
-  }
 }
 
 /* Loading skeleton */
