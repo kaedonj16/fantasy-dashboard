@@ -440,37 +440,51 @@ def suggest_packages(
             return []
         clusters = class_data.get("clusters") or []
     packages: list[dict] = []
-    seen_shapes: set[str] = set()
-    used_pids_global: set[str] = set()  # prevent same player across packages
+    # Dedup by exact player set so same-shape packages with different players both show
+    seen_pkg_keys: set[frozenset] = set()
 
     for cluster in clusters:
         if len(packages) >= n:
             break
 
-        pkg = _match_viewer_to_cluster(
-            centroid       = cluster["centroid"],
-            target_value   = target_value,
-            viewer_players = viewer_players,
-            viewer_picks   = viewer_picks,
-            values_by_id   = values_by_id,
-            value_floor    = target_value * value_floor_ratio,
-            exclude_pids   = used_pids_global,
-        )
-        if pkg is None:
-            continue
+        # For each cluster, iterate through eligible players to surface all roster variations.
+        # local_exclude grows with each anchor we've already used for this cluster.
+        local_exclude: set[str] = set()
 
-        shape = _shape_key(pkg["send"])
-        if shape in seen_shapes:
-            continue
-        seen_shapes.add(shape)
+        for _ in range(n):
+            if len(packages) >= n:
+                break
 
-        for a in pkg["send"]:
-            if not a.get("is_pick"):
-                used_pids_global.add(str(a.get("player_id") or ""))
+            pkg = _match_viewer_to_cluster(
+                centroid       = cluster["centroid"],
+                target_value   = target_value,
+                viewer_players = viewer_players,
+                viewer_picks   = viewer_picks,
+                values_by_id   = values_by_id,
+                value_floor    = target_value * value_floor_ratio,
+                exclude_pids   = local_exclude,
+            )
+            if pkg is None:
+                break
 
-        pkg["trades_like_this"] = cluster.get("size", 1)
-        pkg["pattern_source"]   = "ml"
-        packages.append(pkg)
+            pkg_key = frozenset(
+                str(a.get("player_id") or "") for a in pkg["send"] if not a.get("is_pick")
+            )
+            if pkg_key in seen_pkg_keys:
+                break
+            seen_pkg_keys.add(pkg_key)
+
+            # Exclude the highest-value player used so next iteration picks a different anchor
+            player_assets = sorted(
+                [a for a in pkg["send"] if not a.get("is_pick")],
+                key=lambda a: -float(a.get("value") or 0),
+            )
+            if player_assets:
+                local_exclude.add(str(player_assets[0].get("player_id") or ""))
+
+            pkg["trades_like_this"] = cluster.get("size", 1)
+            pkg["pattern_source"]   = "ml"
+            packages.append(pkg)
 
     return packages
 
