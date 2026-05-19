@@ -356,6 +356,42 @@ def load_model_value_table(apply_calibration: bool = True):
         except Exception as _e:
             print(f"[load_model_value_table] Calibration overlay skipped: {_e}")
 
+    # Normalize 1QB value scale to match SF ceiling.
+    # The model is trained with SF as the reference (Josh Allen anchors at ~999.9).
+    # Non-QB positions end up with 1QB values below the SF ceiling because QBs
+    # anchor the SF max.  Scale all 1QB value fields so the top player in 1QB
+    # matches the SF max — relative ordering is preserved.
+    if result:
+        try:
+            _SKILL_POS = {"QB", "RB", "WR", "TE"}
+            _1qb_keys = ["value", "value_8", "value_12", "value_14"]
+            _max_sf  = max((float(p.get("sf_value") or 0) for p in result
+                            if str(p.get("position") or "").upper() in _SKILL_POS), default=0.0)
+            _max_1qb = max((float(p.get("value") or 0) for p in result
+                            if str(p.get("position") or "").upper() in _SKILL_POS), default=0.0)
+            if _max_sf > _max_1qb > 0:
+                _scale = _max_sf / _max_1qb
+                for _p in result:
+                    if str(_p.get("position") or "").upper() not in _SKILL_POS:
+                        continue
+                    for _k in _1qb_keys:
+                        if _p.get(_k) is not None:
+                            _p[_k] = round(float(_p[_k]) * _scale, 1)
+                # Recompute 1QB pos_rank after rescaling
+                from collections import defaultdict as _dd2
+                _pg: dict = _dd2(list)
+                for _i, _p in enumerate(result):
+                    _pos = str(_p.get("position") or "").upper()
+                    if _pos and _pos != "PICK":
+                        _pg[_pos].append(_i)
+                for _pos, _idxs in _pg.items():
+                    _idxs.sort(key=lambda _i: float(result[_i].get("value") or 0), reverse=True)
+                    for _rank, _i in enumerate(_idxs, 1):
+                        result[_i]["pos_rank"]       = _rank
+                        result[_i]["pos_rank_label"] = f"{_pos}{_rank}"
+        except Exception as _e:
+            print(f"[load_model_value_table] 1QB normalization skipped: {_e}")
+
     return result
 
 

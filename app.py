@@ -11848,29 +11848,6 @@ def api_league_players():
     _recompute_ranks(model_value_table, "value",    "pos_rank",    "pos_rank_label")
     _recompute_ranks(model_value_table, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
 
-    # --- 1QB value normalization ---
-    # The model outputs 1QB values normalized against the SF scale, so the top
-    # non-QB player (e.g. Jahmyr Gibbs at 961) falls short of the SF ceiling
-    # (e.g. Josh Allen at 999.9). Scale all 1QB value fields up so the max
-    # 1QB value matches the SF max, keeping the relative ordering intact.
-    _1qb_val_keys = ["value", "value_8", "value_12", "value_14"]
-    _sf_val_keys  = ["sf_value", "sf_value_8", "sf_value_12", "sf_value_14"]
-    _PLAYER_POS   = {"QB", "RB", "WR", "TE"}
-    _max_sf  = max((float(p.get("sf_value") or 0) for p in model_value_table
-                    if str(p.get("position") or "").upper() in _PLAYER_POS), default=0.0)
-    _max_1qb = max((float(p.get("value") or 0) for p in model_value_table
-                    if str(p.get("position") or "").upper() in _PLAYER_POS), default=0.0)
-    if _max_sf > _max_1qb > 0:
-        _1qb_scale = _max_sf / _max_1qb
-        for _p in model_value_table:
-            if str(_p.get("position") or "").upper() not in _PLAYER_POS:
-                continue
-            for _vk in _1qb_val_keys:
-                if _p.get(_vk) is not None:
-                    _p[_vk] = round(float(_p[_vk]) * _1qb_scale, 1)
-        # Recompute 1QB ranks after rescaling
-        _recompute_ranks(model_value_table, "value", "pos_rank", "pos_rank_label")
-
     # Sort players: first by value (descending), then by pos_rank (ascending for ties)
     model_value_table.sort(key=lambda p: (
         -(float(p.get("value") or 0)),
