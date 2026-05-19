@@ -2891,7 +2891,7 @@ window.initTradePage = function initTradePage(root = document) {
               }
               const pid = a.player_id || a.id || '';
               const locked = pid && _untouchableIds.has(pid);
-              const lockBtn = pid ? `<button onclick="window._toggleUntouchable('${pid}')" title="${locked?'Remove from excluded':'Exclude from suggestions'}" style="border:none;background:none;cursor:pointer;padding:0 0 0 3px;font-size:11px;opacity:${locked?1:0.3};line-height:1;">${locked?'🔒':'🔓'}</button>` : '';
+              const lockBtn = pid ? `<button onclick="window._toggleUntouchable('${pid}')" title="${locked?'Remove from excluded':'Exclude from suggestions'}" style="border:none;background:none;cursor:pointer;padding:0 0 0 4px;line-height:1;display:inline-flex;align-items:center;opacity:${locked?0.85:0.25};"><span class="fa-solid ${locked?'fa-lock':'fa-lock-open'}" style="width:10px;height:10px;"></span></button>` : '';
               const col = posColor(a.position);
               return `<div class="otc-rt-asset" style="display:flex;align-items:center;">
                 ${prefix}<span class="otc-rt-pos" style="background:${col}18;color:${col};">${a.position}</span>
