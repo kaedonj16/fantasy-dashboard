@@ -3910,7 +3910,7 @@ thead th {
 
 /* Real-trade example cards */
 .otc-real-trade-card {
-  background: var(--surface);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
@@ -3918,7 +3918,7 @@ thead th {
   transition: border-color .15s;
 }
 .otc-real-trade-card:hover {
-  border-color: rgba(167,139,250,.35);
+  border-color: rgba(167,139,250,.45);
 }
 .otc-rt-body {
   display: grid;
@@ -3972,7 +3972,7 @@ thead th {
   gap: 8px;
   padding: 7px 12px;
   border-top: 1px solid var(--border);
-  background: var(--surface-2, rgba(0,0,0,.02));
+  background: var(--card-soft);
 }
 .otc-rt-count {
   font-size: 10px;

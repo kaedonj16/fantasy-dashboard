@@ -15771,11 +15771,26 @@ def api_trade_intel_player_packages(player_id: str):
                         break
                     v = float(p.get("value") or 0)
                     if lo <= v <= hi:
-                        assets = [p]
                         key = frozenset([str(p.get("player_id") or "")])
                         if key not in _used_sets:
                             _used_sets.add(key)
-                            out.append(assets)
+                            out.append([p])
+
+                # 1-player + 1-pick (before 2-player so picks surface earlier)
+                for p in sorted_p:
+                    if len(out) >= limit:
+                        break
+                    v = float(p.get("value") or 0)
+                    for pk in sorted_k:
+                        if len(out) >= limit:
+                            break
+                        pv = float(pk.get("value") or 0)
+                        if lo <= v + pv <= hi:
+                            key = frozenset([str(p.get("player_id") or ""), str(pk.get("name") or "")])
+                            if key not in _used_sets:
+                                _used_sets.add(key)
+                                out.append([p, pk])
+                            break  # one pick variant per player
 
                 # 2-player packages
                 for i, p1 in enumerate(sorted_p):
@@ -15794,21 +15809,6 @@ def api_trade_intel_player_packages(player_id: str):
                                 _used_sets.add(key)
                                 out.append([p1, p2])
 
-                # 1-player + 1-pick packages
-                for p in sorted_p:
-                    if len(out) >= limit:
-                        break
-                    v = float(p.get("value") or 0)
-                    for pk in sorted_k:
-                        if len(out) >= limit:
-                            break
-                        pv = float(pk.get("value") or 0)
-                        if lo <= v + pv <= hi:
-                            key = frozenset([str(p.get("player_id") or ""), str(pk.get("name") or "")])
-                            if key not in _used_sets:
-                                _used_sets.add(key)
-                                out.append([p, pk])
-                            break  # one pick variant per player
                 return out
 
             need = 5 - len(primary_pkgs)

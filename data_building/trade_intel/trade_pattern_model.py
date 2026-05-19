@@ -559,21 +559,16 @@ def _match_viewer_to_cluster(
         """Pick n players matching any of positions, prioritising exact tier then ±1."""
         req_tier = _value_to_tier(slot_target)
         for _ in range(n):
-            chosen = None
-            for tier_delta in (0, 1, 2):
-                candidates = [
-                    p for p in viewer_players
-                    if (not positions or p.get("position") in positions)
-                    and str(p.get("player_id") or "") not in used_pids
-                    and float(p.get("value") or 0) >= 30
-                    and abs(_value_to_tier(float(p.get("value") or 0)) - req_tier) <= tier_delta
-                ]
-                if candidates:
-                    # Among tier-eligible, pick closest in value to slot_target
-                    chosen = min(candidates, key=lambda p: abs(float(p.get("value") or 0) - slot_target))
-                    break
-            if chosen is None:
+            candidates = [
+                p for p in viewer_players
+                if (not positions or p.get("position") in positions)
+                and str(p.get("player_id") or "") not in used_pids
+                and float(p.get("value") or 0) >= 30
+                and _value_to_tier(float(p.get("value") or 0)) == req_tier
+            ]
+            if not candidates:
                 break
+            chosen = min(candidates, key=lambda p: abs(float(p.get("value") or 0) - slot_target))
             pid  = str(chosen.get("player_id") or "")
             val  = float(chosen.get("value") or 0)
             info = values_by_id.get(pid) or {}
