@@ -643,6 +643,9 @@ def _match_viewer_to_cluster(
         else:
             tier = _value_to_tier(float(a.get("value") or 0))
             pos  = str(a.get("position") or "WR").upper()
-            sig.append(f"P:{pos}:T{tier}:Prime")
+            info = values_by_id.get(str(a.get("player_id") or "")) or {}
+            age  = float(info.get("age") or 0)
+            age_bracket = "Young" if 0 < age <= 24 else ("Vet" if age > 28 else "Prime")
+            sig.append(f"P:{pos}:T{tier}:{age_bracket}")
 
     return {"send": sent_assets, "sig": sig}
