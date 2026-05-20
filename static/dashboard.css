@@ -4110,6 +4110,11 @@ thead th {
   border-right: 1px solid var(--border);
 }
 
+.otc-arch-cell:last-child,
+.otc-arch-cell:nth-last-child(2):nth-child(odd) {
+  border-bottom: none;
+}
+
 @media (max-width: 600px) {
   .otc-arch-header {
     flex-wrap: wrap;

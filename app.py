@@ -1060,14 +1060,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             simple_pill("Home", "/", "home"),
             simple_dropdown("Trades", [
                 ("Trade Calculator", "/trade",          "trade"),
-                ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade"),
+                ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
                 ("Trade Database",   "/trade-database", "trade-database"),
                 ("Trade Intel",      "/trade-intel",    "trade-intel"),
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
                 ("Prospects",       "/prospects",   "prospects"),
-                ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "/prospects?tab=draft", "prospects"),
+                ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "/prospects?tab=draft", "prospects-draft"),
                 ("Breakouts",       "/breakouts", "breakouts"),
             ], ["players", "prospects", "breakouts"], "playersNavDropdown"),
         ]
@@ -1167,7 +1167,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade",          "trade",          False),
-        ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade", False, "?tab=suggestions"),
+        ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False, "?tab=suggestions"),
         ("Trade Database",   "trade.page_trade_database", "trade-database", False),
         ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
@@ -1184,7 +1184,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
-        ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "page_prospects", "prospects", False, "?tab=draft"),
+        ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Breakout Engine",   "page_breakouts",  "breakouts", False),
     ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
@@ -11788,25 +11788,41 @@ def api_league_players():
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    # Strip any PICK entries that came from the DB (stale) and replace with picks
-    # from model_values.json, which is built nightly from WLS trade data and already
-    # has correct slot picks (2026 1.01) and bucket picks (2027 1st (Mid)).
+    # Strip any PICK entries that came from the DB (stale) and replace with fresh
+    # slot + bucket picks from the WLS file (pick_values_wls_latest.json).
     model_value_table = [p for p in model_value_table
                          if str(p.get("position") or "").upper() != "PICK"]
     try:
-        import json as _json_picks, glob as _glob_picks, os as _os_picks
-        _picks_path = _os_picks.path.join("data", "model_values.json")
-        if not _os_picks.path.exists(_picks_path):
-            _candidates = sorted(_glob_picks.glob("data/model_values_*.json"), reverse=True)
-            if _candidates:
-                _picks_path = _candidates[0]
-        if _os_picks.path.exists(_picks_path):
-            with open(_picks_path) as _f_picks:
-                _all_assets = _json_picks.load(_f_picks)
-            _picks = [p for p in _all_assets
-                      if str(p.get("position") or "").upper() == "PICK"]
-            model_value_table.extend(_picks)
-            print(f"[api/league-players] Injected {len(_picks)} picks from {_picks_path}")
+        from dashboard_services.picks import load_pick_value_table as _lpvt
+        _pick_values = _lpvt()
+        _injected_picks = []
+        _seen_ids: set = set()
+        for _pk_id, _pk_val in _pick_values.items():
+            if _pk_id in _seen_ids or float(_pk_val) <= 0:
+                continue
+            _seen_ids.add(_pk_id)
+            # Format display name: "2026_1_01" → "2026 1.01", "2026_1_early" → "2026 1st (Early)"
+            _parts = _pk_id.split("_")
+            if len(_parts) >= 3:
+                _yr, _rnd_s, _third = _parts[0], _parts[1], "_".join(_parts[2:])
+                try:
+                    _rnd = int(_rnd_s)
+                    _sfx = {1:"st",2:"nd",3:"rd"}.get(_rnd,"th")
+                    _bkt = {"early":"Early","mid":"Mid","late":"Late"}.get(_third.lower())
+                    if _bkt:
+                        _name = f"{_yr} {_rnd}{_sfx} ({_bkt})"
+                    else:
+                        _name = f"{_yr} {_rnd}.{int(_third):02d}"
+                except (ValueError, TypeError):
+                    _name = _pk_id.replace("_", " ")
+            else:
+                _name = _pk_id.replace("_", " ")
+            _injected_picks.append({
+                "id": _pk_id, "name": _name, "position": "PICK",
+                "value": round(float(_pk_val), 1), "team": "",
+            })
+        model_value_table.extend(_injected_picks)
+        print(f"[api/league-players] Injected {len(_injected_picks)} picks from WLS")
     except Exception as _e_picks:
         print(f"[api/league-players] pick injection skipped: {_e_picks}")
 
