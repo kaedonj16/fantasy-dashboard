@@ -9865,9 +9865,11 @@ function setupFunAwardsGrid() {
       const gbg    = GRADE_BG[grade] || 'transparent';
       const adpTxt = adp ? `ADP ${adp.toFixed(1)}` : '';
       const pickTxt = `Pick ${actualPick}`;
-      const diffTxt = adpDiff !== null
-        ? (adpDiff >= 0 ? `+${adpDiff.toFixed(1)} value` : `${adpDiff.toFixed(1)} reach`)
-        : '';
+      const diffTxt = adpDiff !== null && adpDiff < -1
+        ? `${adpDiff.toFixed(1)} reach`
+        : adpDiff !== null && adpDiff >= 0
+          ? `+${adpDiff.toFixed(1)} value`
+          : '';
       const diffCol = adpDiff !== null ? (adpDiff >= 0 ? '#10b981' : '#ef4444') : 'var(--text-muted)';
       const tierTxt = tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : '';
       const bpaTxt  = isBpa ? '<span style="font-size:10px;font-weight:700;color:#10b981;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.25);border-radius:4px;padding:1px 5px;margin-left:4px;">BPA</span>' : '';
