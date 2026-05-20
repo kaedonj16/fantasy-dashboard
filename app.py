@@ -1060,6 +1060,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             simple_pill("Home", "/", "home"),
             simple_dropdown("Trades", [
                 ("Trade Calculator", "/trade",          "trade"),
+                ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade"),
                 ("Trade Database",   "/trade-database", "trade-database"),
                 ("Trade Intel",      "/trade-intel",    "trade-intel"),
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
@@ -1133,6 +1134,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         for item_tuple in items:
             item_label, endpoint, item_key = item_tuple[0], item_tuple[1], item_tuple[2]
             disabled = item_tuple[3] if len(item_tuple) > 3 else False
+            href_suffix = item_tuple[4] if len(item_tuple) > 4 else ""
             if disabled:
                 item_html += (
                     f"<span class='nav-pill-dropdown-item disabled'>"
@@ -1140,7 +1142,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                     f"</span>"
                 )
             else:
-                href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
+                href = url_for(endpoint, platform=platform, season=season, league_id=league_id) + href_suffix
                 item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
                 item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
         btn_id  = dropdown_id.replace("Dropdown", "Btn")
@@ -1164,6 +1166,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade",          "trade",          False),
+        ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade", False, "?tab=suggestions"),
         ("Trade Database",   "trade.page_trade_database", "trade-database", False),
         ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))

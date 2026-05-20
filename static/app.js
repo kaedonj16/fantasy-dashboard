@@ -2418,6 +2418,11 @@ window.initTradePage = function initTradePage(root = document) {
 
     tabs.forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
 
+    // Auto-open suggestions tab when arriving via ?tab=suggestions link
+    if (new URLSearchParams(window.location.search).get("tab") === "suggestions") {
+      switchTab("suggestions");
+    }
+
     // Retry targets automatically once a roster ID becomes available.
     // Covers both teamSelect changes and cases where viewerRosterIdInput is set late.
     const teamSelEl    = root.querySelector("#teamSelect");
