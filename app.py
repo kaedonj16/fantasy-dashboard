@@ -9073,7 +9073,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         count.style.display = 'block';
         count.textContent = 'Showing ' + (start + 1) + '–' + end + ' of ' + total + ' player' + (total !== 1 ? 's' : '');
 
-        const rankMap = prBuildRankMap();
         const _PR_TIER_COLORS = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
         const _PR_TIER_LABELS = ['','Elite','Star','High-End Starter','Starter','Flex','Bench','Deep Bench','Handcuff','Fringe'];
 
@@ -9093,7 +9092,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             list.appendChild(div);
           }
           if (_tier) prevTier = _tier;
-          const idx = start + i;
           const row = document.createElement('div');
           row.className = 'pr-player-row pr-grid-row';
           row.style.cursor = 'pointer';
@@ -9112,7 +9110,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           };
 
           const _drafted = p.is_rookie && p.team && p.team !== 'FA';
-          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (rankMap.get(String(p.id)) || (idx + 1));
+          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (start + i + 1);
           const posRank = prLeagueType === 'sf'
             ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
             : (p.pos_rank_label || p.position);
