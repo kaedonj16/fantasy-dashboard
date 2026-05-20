@@ -2414,6 +2414,14 @@ window.initTradePage = function initTradePage(root = document) {
       if (name === "suggestions" && !suggTargetsLoaded) {
         loadSuggTargets();
       }
+      // Sync URL so refreshing/sharing lands on the same tab
+      const url = new URL(window.location.href);
+      if (name === "suggestions") {
+        url.searchParams.set("tab", "suggestions");
+      } else {
+        url.searchParams.delete("tab");
+      }
+      history.replaceState(null, "", url);
     }
 
     tabs.forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
@@ -9968,6 +9976,14 @@ function setupFunAwardsGrid() {
       daInitialized = true;
       initDA();
     }
+    // Sync URL so refreshing/sharing lands on the same tab
+    const _url = new URL(window.location.href);
+    if (tab === 'draft') {
+      _url.searchParams.set('tab', 'draft');
+    } else {
+      _url.searchParams.delete('tab');
+    }
+    history.replaceState(null, '', _url);
   };
 
   // Auto-open Draft Board tab when arriving via ?tab=draft link
