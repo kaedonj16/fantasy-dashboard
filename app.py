@@ -13458,27 +13458,27 @@ def api_player_game_logs(player_id: str):
                 stats = (stats_by_week.get(week_num) or {}).get(player_id)
                 if stats:
                     pts = 0.0
-                    pts += (stats.get("pass_yd") or 0) * scoring_settings.get("passYards", 0.04)
-                    pts += (stats.get("pass_td") or 0) * scoring_settings.get("passTD", 4.0)
-                    pts += (stats.get("pass_int") or 0) * scoring_settings.get("passInterceptions", -2.0)
-                    pts += (stats.get("rush_yd") or 0) * scoring_settings.get("rushYards", 0.1)
-                    pts += (stats.get("rush_td") or 0) * scoring_settings.get("rushTD", 6.0)
-                    pts += (stats.get("rec") or 0) * scoring_settings.get("pointsPerReception", 1.0)
-                    pts += (stats.get("rec_yd") or 0) * scoring_settings.get("receivingYards", 0.1)
-                    pts += (stats.get("rec_td") or 0) * scoring_settings.get("receivingTD", 6.0)
-                    pts += (stats.get("fum_lost") or 0) * scoring_settings.get("fumbles", -2.0)
+                    pts += (stats.get("pass_yd") or 0) * (scoring_settings.get("passYards") or 0.04)
+                    pts += (stats.get("pass_td") or 0) * (scoring_settings.get("passTD") or 4.0)
+                    pts += (stats.get("pass_int") or 0) * (scoring_settings.get("passInterceptions") or -2.0)
+                    pts += (stats.get("rush_yd") or 0) * (scoring_settings.get("rushYards") or 0.1)
+                    pts += (stats.get("rush_td") or 0) * (scoring_settings.get("rushTD") or 6.0)
+                    pts += (stats.get("rec") or 0) * (scoring_settings.get("pointsPerReception") or 0)
+                    pts += (stats.get("rec_yd") or 0) * (scoring_settings.get("receivingYards") or 0.1)
+                    pts += (stats.get("rec_td") or 0) * (scoring_settings.get("receivingTD") or 6.0)
+                    pts += (stats.get("fum_lost") or 0) * (scoring_settings.get("fumbles") or -2.0)
                     pass_yds = stats.get("pass_yd") or 0
                     rush_yds = stats.get("rush_yd") or 0
                     rec_yds  = stats.get("rec_yd") or 0
                     rush_rec = rush_yds + rec_yds
-                    if pass_yds >= 400: pts += scoring_settings.get("bonus_pass_yd_400", 0)
-                    elif pass_yds >= 300: pts += scoring_settings.get("bonus_pass_yd_300", 0)
-                    if rush_yds >= 200: pts += scoring_settings.get("bonus_rush_yd_200", 0)
-                    elif rush_yds >= 100: pts += scoring_settings.get("bonus_rush_yd_100", 0)
-                    if rec_yds >= 200: pts += scoring_settings.get("bonus_rec_yd_200", 0)
-                    elif rec_yds >= 100: pts += scoring_settings.get("bonus_rec_yd_100", 0)
-                    if rush_rec >= 200: pts += scoring_settings.get("bonus_rush_rec_yd_200", 0)
-                    elif rush_rec >= 100: pts += scoring_settings.get("bonus_rush_rec_yd_100", 0)
+                    if pass_yds >= 400: pts += (scoring_settings.get("bonus_pass_yd_400") or 0)
+                    elif pass_yds >= 300: pts += (scoring_settings.get("bonus_pass_yd_300") or 0)
+                    if rush_yds >= 200: pts += (scoring_settings.get("bonus_rush_yd_200") or 0)
+                    elif rush_yds >= 100: pts += (scoring_settings.get("bonus_rush_yd_100") or 0)
+                    if rec_yds >= 200: pts += (scoring_settings.get("bonus_rec_yd_200") or 0)
+                    elif rec_yds >= 100: pts += (scoring_settings.get("bonus_rec_yd_100") or 0)
+                    if rush_rec >= 200: pts += (scoring_settings.get("bonus_rush_rec_yd_200") or 0)
+                    elif rush_rec >= 100: pts += (scoring_settings.get("bonus_rush_rec_yd_100") or 0)
                     game_logs.append({
                         "week": week_num,
                         "date": game_date,

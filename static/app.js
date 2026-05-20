@@ -9802,6 +9802,7 @@ function setupFunAwardsGrid() {
       else if (pos === 'QB' && !isSF && qbCount >= 1) score = Math.max(score - 1, 0);
     }
     if (adpDiff >= -3)            score = Math.max(score, 1);
+    if (adpDiff >= 0)             score = Math.max(score, 2);  // positive value → min C
     if (need && adpDiff >= -4)    score = Math.max(score, 2);
     return ({5:'A+',4:'A',3:'B',2:'C',1:'D',0:'F'})[Math.min(score, 5)] || 'F';
   }
