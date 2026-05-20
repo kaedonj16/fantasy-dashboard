@@ -8,7 +8,7 @@ CHANGELOG = [
         "date": "2026-05-19",
         "tag": "new",
         "text": "Trade Suggestions: Trade Intel now suggests real trade packages adapted to your roster. See what players have actually been traded for your target, filter out untouchables, and load any package into the Trade Calculator in one click.",
-        "link": "/trade"
+        "link": "/trade?tab=suggestions"
     },
     {
         "date": "2026-05-15",

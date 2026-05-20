@@ -989,6 +989,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     active (league pages): 'dashboard','standings','power','weekly','teams','activity','injuries','trade','graphs'
     active (global pages): 'home','privacy','faq','contact','support'
     """
+    # Refine active key based on ?tab= param so sub-tab nav items highlight correctly
+    _tab_param = request.args.get("tab", "")
+    if active == "trade" and _tab_param == "suggestions":
+        active = "trade-suggestions"
+    elif active == "prospects" and _tab_param == "draft":
+        active = "prospects-draft"
+
     nfl_state = get_nfl_state() or {}
     offseason_mode = ((nfl_state.get("season_type") or "").lower() == "off") and (
             int(nfl_state.get("season") or datetime.now().year) == int(season or 0)
