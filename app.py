@@ -12130,9 +12130,9 @@ def api_players():
     """Compact player list for comparison search. No league context required.
 
     Query params:
-        page  (int, default 1)   — 1-based page number
-        limit (int, default 0)   — results per page; 0 = return all (legacy)
-        q     (str, optional)    — prefix/substring filter applied before paging
+        page  (int, default 1)   -- 1-based page number
+        limit (int, default 0)   -- results per page; 0 = return all (legacy)
+        q     (str, optional)    -- prefix/substring filter applied before paging
     """
     try:
         from utils.utils import load_players_index
@@ -13058,7 +13058,7 @@ def api_offseason_breakout_candidates():
 
     Identifies players who will benefit from departed teammates (FA, trades, retirements).
     Examples:
-    - Mike Evans leaves TB → Egbuka gets targets
+    - Mike Evans leaves TB -> Egbuka gets targets
     - Second-year WR moves up depth chart
     - Backup RB becomes lead back
 
@@ -13773,7 +13773,7 @@ def api_player_details(player_id: str):
 
 @app.route("/api/player-game-logs/<player_id>")
 def api_player_game_logs(player_id: str):
-    """Game logs for the Stats tab — lazy-loaded separately from player-details."""
+    """Game logs for the Stats tab -- lazy-loaded separately from player-details."""
     try:
         import glob
         from utils.utils import load_relevant_index
