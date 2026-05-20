@@ -64,8 +64,30 @@ def load_pick_value_table(
                     pass
                 wls_final[key] = float(val)
             if wls_final:
-                # WLS values are already on the calibrated scale — return directly
-                return wls_final
+                # Enforce monotonic ordering for slot picks: within each (year, round),
+                # slot picks must decrease in value as slot number increases.
+                # WLS data can have noise that makes e.g. 1.11 > 1.02 which is impossible.
+                from collections import defaultdict
+                slot_groups: Dict[str, list] = defaultdict(list)
+                bucket_entries: Dict[str, float] = {}
+                for key, val in wls_final.items():
+                    parts = key.split("_")
+                    try:
+                        int(parts[2])  # slot picks have numeric third part
+                        slot_groups[f"{parts[0]}_{parts[1]}"].append((int(parts[2]), key, val))
+                    except (ValueError, IndexError):
+                        bucket_entries[key] = val
+
+                fixed: Dict[str, float] = {}
+                for group_key, slots in slot_groups.items():
+                    slots.sort(key=lambda x: x[0])  # sort by slot number
+                    running_max = float("inf")
+                    for slot_num, key, val in slots:
+                        capped = min(val, running_max)
+                        fixed[key] = round(capped, 1)
+                        running_max = capped
+                fixed.update(bucket_entries)
+                return fixed
         except Exception:
             pass
 
