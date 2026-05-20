@@ -8366,6 +8366,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                 <option value="value">Value</option>
                 <option value="age">Age</option>
                 <option value="pos_rank">Pos Rank</option>
+                <option value="ppg">PPG</option>
+                <option value="total_pts">Total Points</option>
               </select>
             </div>
           </div>
@@ -8958,12 +8960,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
       // Map sort key → { header label, cell value function }
       const PR_SORT_META = {
-        rank:     { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
-        value:    { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
-        age:      { label: 'Age',      cell: p => p.age != null ? Number(p.age).toFixed(1) : '—' },
-        pos_rank: { label: 'Pos Rank', cell: p => prLeagueType === 'sf'
+        rank:      { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
+        value:     { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
+        age:       { label: 'Age',      cell: p => p.age != null ? Number(p.age).toFixed(1) : '—' },
+        pos_rank:  { label: 'Pos Rank', cell: p => prLeagueType === 'sf'
           ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
           : (p.pos_rank_label || p.position) },
+        ppg:       { label: 'PPG',       cell: p => p.ppg != null ? p.ppg.toFixed(1) : '—' },
+        total_pts: { label: 'Total Pts', cell: p => p.total_pts != null ? p.total_pts.toFixed(1) : '—' },
       };
 
       // Sort and filter players, then render rows into the main table
@@ -9029,6 +9033,10 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               const rA = prLeagueType === 'sf' ? (a.sf_pos_rank || a.pos_rank || 9999) : (a.pos_rank || 9999);
               const rB = prLeagueType === 'sf' ? (b.sf_pos_rank || b.pos_rank || 9999) : (b.pos_rank || 9999);
               return rA - rB;
+            } else if (sortBy === 'ppg') {
+              return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
+            } else if (sortBy === 'total_pts') {
+              return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
             } else {
               return prGetValue(b) - prGetValue(a);
             }
@@ -9339,6 +9347,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               search_name:      p.search_name || '',
               is_rookie:        p.is_rookie === true,
               rank_change_7d:   p.rank_change_7d != null ? Number(p.rank_change_7d) : null,
+              ppg:              p.ppg != null ? Number(p.ppg) : null,
+              total_pts:        p.total_pts != null ? Number(p.total_pts) : null,
+              ppg_season:       p.ppg_season || null,
             };
           })
           .filter(p => ['QB','RB','WR','TE','PICK'].includes(p.position) || p.is_rookie)
@@ -10963,6 +10974,82 @@ _PLAYER_DETAIL_YEARS_CACHE: set = set()
 _PLAYER_DETAIL_YEARS_CACHE_TS = 0.0
 _PLAYER_DETAIL_YEARS_TTL = 300
 
+# Cache for bulk PPG stats (2-hour TTL) — computed from sleeper_stats files
+_PPG_STATS_CACHE: dict = {}   # player_id → {ppg, total_pts, games, season}
+_PPG_STATS_CACHE_TS = 0.0
+_PPG_STATS_CACHE_TTL = 7200
+
+
+def _compute_bulk_ppg_stats() -> dict:
+    """Read all sleeper_stats files for the most recent season and compute PPG (standard PPR) per player.
+
+    Returns a dict keyed by player_id (str) with keys: ppg, total_pts, games, season.
+    Uses standard PPR scoring so the numbers are consistent across the app.
+    """
+    global _PPG_STATS_CACHE, _PPG_STATS_CACHE_TS
+    now = time.time()
+    if _PPG_STATS_CACHE and now - _PPG_STATS_CACHE_TS < _PPG_STATS_CACHE_TTL:
+        return _PPG_STATS_CACHE
+
+    # Find the most recent season that has stats files
+    stats_base = os.path.join("cache", "sleeper_stats")
+    all_files = glob.glob(os.path.join(stats_base, "sleeper_stats_s*_w*.json"))
+    season_years: set = set()
+    for f in all_files:
+        m = re.match(r'sleeper_stats_s(\d+)_w(\d+)', os.path.basename(f))
+        if m:
+            season_years.add(int(m.group(1)))
+
+    if not season_years:
+        return {}
+
+    latest_season = max(season_years)
+
+    # Aggregate pts per player across all weeks of the latest season
+    player_totals: dict = {}  # player_id → {"pts": float, "games": int}
+    week_files = glob.glob(os.path.join(stats_base, f"sleeper_stats_s{latest_season}_w*.json"))
+
+    for wf in week_files:
+        try:
+            with open(wf) as fh:
+                week_stats = json.load(fh)
+        except Exception:
+            continue
+        if not isinstance(week_stats, dict):
+            continue
+        for pid, stats in week_stats.items():
+            if not isinstance(stats, dict):
+                continue
+            pts = 0.0
+            pts += (stats.get("pass_yd") or 0) * 0.04
+            pts += (stats.get("pass_td") or 0) * 4.0
+            pts += (stats.get("pass_int") or 0) * -2.0
+            pts += (stats.get("rush_yd") or 0) * 0.1
+            pts += (stats.get("rush_td") or 0) * 6.0
+            pts += (stats.get("rec") or 0) * 1.0        # full PPR
+            pts += (stats.get("rec_yd") or 0) * 0.1
+            pts += (stats.get("rec_td") or 0) * 6.0
+            pts += (stats.get("fum_lost") or 0) * -2.0
+            if pts > 0:
+                rec = player_totals.setdefault(pid, {"pts": 0.0, "games": 0})
+                rec["pts"] += pts
+                rec["games"] += 1
+
+    result = {}
+    for pid, d in player_totals.items():
+        g = d["games"]
+        if g > 0:
+            result[str(pid)] = {
+                "ppg":       round(d["pts"] / g, 1),
+                "total_pts": round(d["pts"], 1),
+                "games":     g,
+                "season":    latest_season,
+            }
+
+    _PPG_STATS_CACHE = result
+    _PPG_STATS_CACHE_TS = now
+    return result
+
 def get_model_value_table_cached():
     global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
     now = time.time()
@@ -11898,6 +11985,20 @@ def api_league_players():
                 player["bDay"] = player_data.get("bDay")
     except Exception as e:
         print(f"[api/league-players] Could not add birthday data: {e}")
+
+    # Merge PPG stats (from sleeper_stats files) into each player object
+    try:
+        _ppg_map = _compute_bulk_ppg_stats()
+        if _ppg_map:
+            for player in model_value_table:
+                _pid = str(player.get("id") or "")
+                _ps = _ppg_map.get(_pid)
+                if _ps:
+                    player["ppg"]       = _ps["ppg"]
+                    player["total_pts"] = _ps["total_pts"]
+                    player["ppg_season"] = _ps["season"]
+    except Exception as _ppg_e:
+        print(f"[api/league-players] PPG merge failed: {_ppg_e}")
 
     # Compute tier thresholds for every league-type × size combination so the
     # frontend can display each player's tier badge without a second API call.

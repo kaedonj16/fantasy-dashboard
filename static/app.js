@@ -7674,6 +7674,12 @@ function openComparisonView(p1, p2) {
 
       <hr class="pm-section-divider">
 
+      ${_buildComparePPGRow(p1, p2) ? `
+        <div class="pm-section-header"><span class="pm-section-label">Scoring</span></div>
+        ${_buildComparePPGRow(p1, p2)}
+        <hr class="pm-section-divider">
+      ` : ''}
+
       <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
       <div id="compareValueChart" class="player-modal-chart-container" style="min-height:200px;"></div>
 
