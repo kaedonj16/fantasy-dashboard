@@ -13059,6 +13059,17 @@ def api_player_details(player_id: str):
             except Exception as _fe:
                 logger.debug("[api_player_details] roster lookup failed: %s", _fe)
 
+        # Compute PPG and total points from the most recent season with game data
+        _ppg = _total_pts = _ppg_season = None
+        if game_logs_by_year:
+            _latest_year = max(game_logs_by_year.keys())
+            _logs = game_logs_by_year[_latest_year]
+            _scored = [g["fantasy_pts"] for g in _logs if (g.get("fantasy_pts") or 0) > 0]
+            if _scored:
+                _ppg_season = _latest_year
+                _total_pts  = round(sum(_scored), 1)
+                _ppg        = round(sum(_scored) / len(_scored), 1)
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
@@ -13076,6 +13087,11 @@ def api_player_details(player_id: str):
                 "pos_rank": player_value.get("pos_rank"),
                 "pos_rank_label": player_value.get("pos_rank_label"),
                 "years_exp": player_meta.get("years_exp"),
+                "ppg": _ppg,
+                "total_pts": _total_pts,
+                "ppg_season": _ppg_season,
+                "ppg_rank": None,
+                "total_pts_rank": None,
             },
             "value_history": value_history,
             "game_logs_by_year": game_logs_by_year,
