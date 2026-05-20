@@ -463,7 +463,6 @@ def build_trade_calculator_body(
                   <button class="otc-mini-tab is-active" data-tab="movers">Movers</button>
                   <button class="otc-mini-tab" data-tab="breakouts">Breakouts</button>
                   <button class="otc-mini-tab" data-tab="targets">Targets <i class="fa-solid fa-lock" style="font-size:9px;opacity:0.6;" id="targetsLockIcon"></i></button>
-                  <button class="otc-mini-tab" data-tab="intel">Intel</button>
                 </div>
               </div>
               <div class="otc-mini-sub" id="moversSub">Biggest 7-day changes in BR value</div>
@@ -507,20 +506,6 @@ def build_trade_calculator_body(
                 <div id="tradeTargetsBody" class="otc-mini-list" style="padding:8px 12px;display:flex;flex-direction:column;gap:8px;">
                   <div class="otc-movers-empty">Set your team to see targets.</div>
                 </div>
-              </div>
-            </div>
-
-            <div id="intelTabContent" class="otc-tab-content">
-              <div class="otc-mini-section" style="padding:10px 12px 0;">
-                <div style="position:relative;">
-                  <input id="intelPlayerInput" type="text" autocomplete="off"
-                    placeholder="Search player…"
-                    style="width:100%;box-sizing:border-box;background:var(--input-bg,#1e293b);border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12px;color:var(--text);outline:none;" />
-                  <div id="intelPlayerDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--card-bg,#1e293b);border:1px solid var(--border);border-radius:0 0 8px 8px;z-index:200;max-height:180px;overflow-y:auto;"></div>
-                </div>
-              </div>
-              <div id="intelPlayerResult" style="padding:10px 12px;">
-                <div class="otc-movers-empty">Search a player to see trade intelligence.</div>
               </div>
             </div>
           </div>
