@@ -41,13 +41,24 @@ def load_pick_value_table(
         if candidates:
             wls_path = candidates[0]
 
+    # Dynasty rookie drafts are at most 5 rounds; cap to avoid noise from
+    # later rounds (WLS tracks up to 50 rounds of slot data).
+    _MAX_ROUND = 5
+
     if wls_path.exists():
         try:
             wls_data = json.loads(wls_path.read_text())
             wls_1qb = wls_data.get("1qb", {})
             for key, val in wls_1qb.items():
-                if val and float(val) > 0:
-                    final[key] = float(val)
+                if not val or float(val) <= 0:
+                    continue
+                parts = key.split("_")
+                try:
+                    if len(parts) >= 2 and int(parts[1]) > _MAX_ROUND:
+                        continue
+                except (ValueError, IndexError):
+                    pass
+                final[key] = float(val)
         except Exception:
             pass
 
