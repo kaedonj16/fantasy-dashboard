@@ -15934,9 +15934,18 @@ def api_trade_intel_player_packages(player_id: str):
                     )
                     if untouchable_ids:
                         viewer_players = [p for p in viewer_players if p["player_id"] not in untouchable_ids]
-                    # Always rebuild with draft_ended=False so current-season picks
-                    # (including traded picks) are included regardless of whether
-                    # the cached ctx was built after the startup draft timestamp.
+                    # Use draft_ended=True if the fantasy rookie draft for this season
+                    # is already complete — those picks no longer exist as assets.
+                    try:
+                        _drafts_for_check = ctx.get("drafts") or []
+                        _latest_d = get_most_recent_valid_draft_for_season(_drafts_for_check, season)
+                        _fantasy_draft_done = (
+                            bool(_latest_d)
+                            and str((_latest_d or {}).get("status") or "").lower() == "complete"
+                            and int(((_latest_d or {}).get("settings") or {}).get("rounds") or 99) <= 5
+                        )
+                    except Exception:
+                        _fantasy_draft_done = False
                     try:
                         from dashboard_services.service import build_picks_by_roster as _bpbr
                         _fresh_pbr = _bpbr(
@@ -15944,7 +15953,7 @@ def api_trade_intel_player_packages(player_id: str):
                             league=ctx.get("league") or {},
                             rosters=rosters,
                             traded=ctx.get("traded") or [],
-                            draft_ended=False,
+                            draft_ended=_fantasy_draft_done,
                         )
                     except Exception as _pbr_err:
                         logger.warning("[trade-intel] build_picks_by_roster failed: %s", _pbr_err)

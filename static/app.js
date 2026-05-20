@@ -2858,12 +2858,7 @@ window.initTradePage = function initTradePage(root = document) {
         'Win-Now Window':    '#10b981',
         'Aging Contender':   '#ef4444',
       };
-      const _windowBadge = _pkgReceiverWindow
-        ? (() => {
-            const col = _windowColors[_pkgReceiverWindow] || 'var(--text-muted)';
-            return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${col}15;border:1px solid ${col}30;color:${col};white-space:nowrap;">${_pkgReceiverWindow}</span>`;
-          })()
-        : '';
+      const _windowBadge = '';
 
       let realTradeHtml = "";
       if (_pkgRealPkgs.length || _pkgArchetypes.length) {
