@@ -13437,70 +13437,67 @@ def api_player_game_logs(player_id: str):
             if not any(player_id in ws for ws in stats_by_week.values()):
                 continue
 
-            for week_num in sorted(schedule_by_week.keys()):
-                games = schedule_by_week[week_num]
-                if not isinstance(games, list):
-                    continue
-                opponent = ""
-                is_away  = False
-                game_date = ""
-                for game in games:
-                    if not isinstance(game, dict):
-                        continue
-                    home_team = game.get("home", "")
-                    away_team = game.get("away", "")
-                    if player_team == home_team:
-                        opponent = away_team; is_away = False; game_date = game.get("gameDate", ""); break
-                    elif player_team == away_team:
-                        opponent = home_team; is_away = True;  game_date = game.get("gameDate", ""); break
-                if not opponent:
-                    continue
+            # Build a lookup helper to compute pts for a stats dict
+            def _calc_pts(s):
+                p = 0.0
+                p += (s.get("pass_yd") or 0) * (scoring_settings.get("passYards") or 0.04)
+                p += (s.get("pass_td") or 0) * (scoring_settings.get("passTD") or 4.0)
+                p += (s.get("pass_int") or 0) * (scoring_settings.get("passInterceptions") or -2.0)
+                p += (s.get("rush_yd") or 0) * (scoring_settings.get("rushYards") or 0.1)
+                p += (s.get("rush_td") or 0) * (scoring_settings.get("rushTD") or 6.0)
+                p += (s.get("rec") or 0) * (scoring_settings.get("pointsPerReception") or 0)
+                p += (s.get("rec_yd") or 0) * (scoring_settings.get("receivingYards") or 0.1)
+                p += (s.get("rec_td") or 0) * (scoring_settings.get("receivingTD") or 6.0)
+                p += (s.get("fum_lost") or 0) * (scoring_settings.get("fumbles") or -2.0)
+                py = s.get("pass_yd") or 0
+                ry = s.get("rush_yd") or 0
+                ey = s.get("rec_yd") or 0
+                rr = ry + ey
+                if py >= 400: p += (scoring_settings.get("bonus_pass_yd_400") or 0)
+                elif py >= 300: p += (scoring_settings.get("bonus_pass_yd_300") or 0)
+                if ry >= 200: p += (scoring_settings.get("bonus_rush_yd_200") or 0)
+                elif ry >= 100: p += (scoring_settings.get("bonus_rush_yd_100") or 0)
+                if ey >= 200: p += (scoring_settings.get("bonus_rec_yd_200") or 0)
+                elif ey >= 100: p += (scoring_settings.get("bonus_rec_yd_100") or 0)
+                if rr >= 200: p += (scoring_settings.get("bonus_rush_rec_yd_200") or 0)
+                elif rr >= 100: p += (scoring_settings.get("bonus_rush_rec_yd_100") or 0)
+                return round(p, 1)
 
-                stats = (stats_by_week.get(week_num) or {}).get(player_id)
-                if stats:
-                    pts = 0.0
-                    pts += (stats.get("pass_yd") or 0) * (scoring_settings.get("passYards") or 0.04)
-                    pts += (stats.get("pass_td") or 0) * (scoring_settings.get("passTD") or 4.0)
-                    pts += (stats.get("pass_int") or 0) * (scoring_settings.get("passInterceptions") or -2.0)
-                    pts += (stats.get("rush_yd") or 0) * (scoring_settings.get("rushYards") or 0.1)
-                    pts += (stats.get("rush_td") or 0) * (scoring_settings.get("rushTD") or 6.0)
-                    pts += (stats.get("rec") or 0) * (scoring_settings.get("pointsPerReception") or 0)
-                    pts += (stats.get("rec_yd") or 0) * (scoring_settings.get("receivingYards") or 0.1)
-                    pts += (stats.get("rec_td") or 0) * (scoring_settings.get("receivingTD") or 6.0)
-                    pts += (stats.get("fum_lost") or 0) * (scoring_settings.get("fumbles") or -2.0)
-                    pass_yds = stats.get("pass_yd") or 0
-                    rush_yds = stats.get("rush_yd") or 0
-                    rec_yds  = stats.get("rec_yd") or 0
-                    rush_rec = rush_yds + rec_yds
-                    if pass_yds >= 400: pts += (scoring_settings.get("bonus_pass_yd_400") or 0)
-                    elif pass_yds >= 300: pts += (scoring_settings.get("bonus_pass_yd_300") or 0)
-                    if rush_yds >= 200: pts += (scoring_settings.get("bonus_rush_yd_200") or 0)
-                    elif rush_yds >= 100: pts += (scoring_settings.get("bonus_rush_yd_100") or 0)
-                    if rec_yds >= 200: pts += (scoring_settings.get("bonus_rec_yd_200") or 0)
-                    elif rec_yds >= 100: pts += (scoring_settings.get("bonus_rec_yd_100") or 0)
-                    if rush_rec >= 200: pts += (scoring_settings.get("bonus_rush_rec_yd_200") or 0)
-                    elif rush_rec >= 100: pts += (scoring_settings.get("bonus_rush_rec_yd_100") or 0)
-                    game_logs.append({
-                        "week": week_num,
-                        "date": game_date,
+            def _stats_dict(s):
+                return {k: s.get(k) for k in ["pass_yd","pass_td","pass_int","rush_att","rush_yd","rush_td","rec","rec_tgt","rec_yd","rec_td","fum_lost"]}
+
+            if schedule_by_week:
+                # Full path: schedule available — include opponent and date
+                for week_num in sorted(schedule_by_week.keys()):
+                    games = schedule_by_week[week_num]
+                    if not isinstance(games, list):
+                        continue
+                    opponent = ""
+                    is_away  = False
+                    game_date = ""
+                    for game in games:
+                        if not isinstance(game, dict):
+                            continue
+                        home_team = game.get("home", "")
+                        away_team = game.get("away", "")
+                        if player_team and player_team == home_team:
+                            opponent = away_team; is_away = False; game_date = game.get("gameDate", ""); break
+                        elif player_team and player_team == away_team:
+                            opponent = home_team; is_away = True;  game_date = game.get("gameDate", ""); break
+                    stats = (stats_by_week.get(week_num) or {}).get(player_id)
+                    if not stats:
+                        continue
+                    game_logs.append({"week": week_num, "date": game_date,
                         "opponent": f"@{opponent}" if is_away else opponent,
-                        "fantasy_pts": round(pts, 1),
-                        "stats": {
-                            "pass_yd": stats.get("pass_yd"), "pass_td": stats.get("pass_td"),
-                            "pass_int": stats.get("pass_int"), "rush_att": stats.get("rush_att"),
-                            "rush_yd": stats.get("rush_yd"), "rush_td": stats.get("rush_td"),
-                            "rec": stats.get("rec"), "rec_tgt": stats.get("rec_tgt"),
-                            "rec_yd": stats.get("rec_yd"), "rec_td": stats.get("rec_td"),
-                            "fum_lost": stats.get("fum_lost"),
-                        },
-                    })
-                else:
-                    game_logs.append({
-                        "week": week_num, "date": game_date,
-                        "opponent": f"@{opponent}" if is_away else opponent,
-                        "fantasy_pts": 0.0,
-                        "stats": {k: None for k in ["pass_yd","pass_td","pass_int","rush_att","rush_yd","rush_td","rec","rec_tgt","rec_yd","rec_td","fum_lost"]},
-                    })
+                        "fantasy_pts": _calc_pts(stats), "stats": _stats_dict(stats)})
+            else:
+                # Fallback: no schedule files — show stats without opponent/date
+                for week_num in sorted(stats_by_week.keys()):
+                    stats = stats_by_week[week_num].get(player_id)
+                    if stats:
+                        game_logs.append({"week": week_num, "date": "",
+                            "opponent": "", "fantasy_pts": _calc_pts(stats),
+                            "stats": _stats_dict(stats)})
 
             if game_logs:
                 game_logs.sort(key=lambda g: g.get("date", "") or "")
