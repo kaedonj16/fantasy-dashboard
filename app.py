@@ -11610,7 +11610,12 @@ def api_trade_eval():
     side_b = build_side(side_b_players, side_b_picks)
 
     tier_thresholds = compute_tier_thresholds(value_table, league_type, league_size)
-    apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"))
+    # Only apply depth adjustment when asset counts differ — equal counts penalise both
+    # sides symmetrically and just confuse the result.
+    side_a_count = len(side_a_players) + len(side_a_picks)
+    side_b_count = len(side_b_players) + len(side_b_picks)
+    if side_a_count != side_b_count:
+        apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"))
 
     a_eff = side_a["effective_total"]
     b_eff = side_b["effective_total"]
