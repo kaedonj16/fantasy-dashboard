@@ -7686,12 +7686,12 @@ function openComparisonView(p1, p2) {
 
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();
-    openPlayerModal(p1.player_id, p1.name);
+    setTimeout(() => openPlayerModal(p1.player_id, p1.name), 220);
   });
 
   document.getElementById('compareP2ProfileBtn')?.addEventListener('click', () => {
     closePlayerModal();
-    openPlayerModal(p2.player_id, p2.name);
+    setTimeout(() => openPlayerModal(p2.player_id, p2.name), 220);
   });
 
   // Fetch NFL state to determine if it's offseason
