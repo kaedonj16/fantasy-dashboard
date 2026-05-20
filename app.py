@@ -12194,11 +12194,35 @@ def api_league_players():
     except Exception as e:
         print(f"[api/league-players] Database load failed: {e}, falling back to JSON")
         model_value_table = list(get_model_value_table_cached() or [])
-    
+
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    # Supplement DB pick entries with WLS file picks for any IDs not already in the DB.
+    # Supplement DB player records with sf_value (and size variants) from the JSON
+    # model table, which is the authoritative source for SF values.  The DB only
+    # stores value_sf when it has been explicitly calibrated; uncalibrated players
+    # fall back to COALESCE(value_sf, value_1qb), making sf_value == value.
+    # api_trade_eval uses the JSON table and gets correct sf_value; we must too.
+    try:
+        _json_table = get_model_value_table_cached() or []
+        _json_by_id = {str(p.get("id") or ""): p for p in _json_table if p.get("id")}
+        _SF_KEYS = ("sf_value", "sf_value_8", "sf_value_12", "sf_value_14")
+        for _p in model_value_table:
+            _pid = str(_p.get("id") or "")
+            _jp = _json_by_id.get(_pid)
+            if not _jp:
+                continue
+            _base_val = float(_p.get("value") or 0)
+            for _k in _SF_KEYS:
+                _db_v = float(_p.get(_k) or 0)
+                _js_v = float(_jp.get(_k) or 0)
+                # If DB sf_value is missing, zero, or suspiciously equal to the 1QB value,
+                # use the JSON value which may have a proper SF premium baked in.
+                if _js_v > 0 and (_db_v == 0 or abs(_db_v - _base_val) < 0.5):
+                    _p[_k] = _js_v
+    except Exception as _e_sf:
+        print(f"[api/league-players] sf_value supplement skipped: {_e_sf}")
+
     # DB values are preferred (more accurate); WLS fills in bucket picks or any gaps.
     try:
         from dashboard_services.picks import load_pick_value_table as _lpvt
