@@ -1,8 +1,7 @@
 # AI Cache
 cache/ai_cache
 
-# Sleeper stats cache (generated at runtime)
-cache/sleeper_stats/
+# Target share cache (generated at runtime)
 cache/target_share/
 
 # Generated data files
