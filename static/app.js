@@ -2380,7 +2380,7 @@ window.initTradePage = function initTradePage(root = document) {
       if (!bar || !chips) return;
       const ids = [..._untouchableIds];
       bar.style.display = ids.length ? '' : 'none';
-      chips.innerHTML = ids.map(pid => {
+      chips.innerHTML = ids.map((pid, i) => {
         const info = _untouchableInfo[pid] || {};
         const name = info.name || pid;
         const pos  = info.pos  || '';
@@ -2388,7 +2388,8 @@ window.initTradePage = function initTradePage(root = document) {
         const posBadge = pos
           ? `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:${col}18;color:${col};min-width:22px;text-align:center;">${pos}</span>`
           : '';
-        return `<div style="display:flex;align-items:center;gap:6px;padding:5px 14px;border-bottom:1px solid var(--border);">
+        const borderStyle = i < ids.length - 1 ? 'border-bottom:1px solid var(--border);' : '';
+        return `<div style="display:flex;align-items:center;gap:6px;padding:5px 14px;${borderStyle}">
           ${posBadge}
           <span style="font-size:12px;font-weight:600;color:var(--text);flex:1;">${name}</span>
           <button onclick="window._toggleUntouchable('${pid}')" title="Allow ${name} in suggestions"
