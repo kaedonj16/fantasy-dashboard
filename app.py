@@ -4525,7 +4525,38 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         boundaries.append(round((vals[best_pos] + vals[best_pos + 1]) / 2.0, 1))
         start = best_pos + 1
 
-    return sorted(boundaries, reverse=True) if boundaries else _FALLBACK_THRESHOLDS
+    thresholds = sorted(boundaries, reverse=True) if boundaries else _FALLBACK_THRESHOLDS
+
+    # Enforce minimum tier size of 4.  Merge DOWN: a too-small group absorbs
+    # into the tier below it (remove its lower boundary) so that, e.g., a
+    # lone player at the top of what would be T2 stays at the head of T2
+    # rather than being pulled up into T1.  Exception: if the small group is
+    # the topmost one (value >= first threshold), merge it UP instead.
+    MIN_TIER_SIZE = 4
+    changed = True
+    while changed:
+        changed = False
+        # Check the T1 group (players above the first threshold)
+        if thresholds and sum(1 for v in vals if v >= thresholds[0]) < MIN_TIER_SIZE:
+            thresholds = thresholds[1:]  # remove upper boundary → T1 merges down into T2
+            changed = True
+            continue
+        # Check each intermediate group (between consecutive boundaries)
+        for i in range(len(thresholds)):
+            lo = thresholds[i + 1] if i + 1 < len(thresholds) else 0.0
+            hi = thresholds[i]
+            count = sum(1 for v in vals if lo <= v < hi)
+            if count < MIN_TIER_SIZE:
+                if i + 1 < len(thresholds):
+                    # Merge DOWN: remove lower boundary so this group joins the tier below
+                    thresholds = thresholds[:i + 1] + thresholds[i + 2:]
+                else:
+                    # Last intermediate group — merge UP instead
+                    thresholds = thresholds[:i] + thresholds[i + 1:]
+                changed = True
+                break
+
+    return thresholds if thresholds else _FALLBACK_THRESHOLDS
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
     t = thresholds if thresholds is not None else _FALLBACK_THRESHOLDS
@@ -11507,7 +11538,7 @@ def api_trade_eval():
 
     if league_id and viewer_roster_id:
         try:
-            from dashboard_services.ai.context_builders import calculate_roster_depth_warning, build_model_value_lookup
+            from dashboard_services.ai.context_builders import calculate_roster_depth_warning, build_model_value_lookup, _ctx_is_sf
             ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
             analysis_html = get_trade_ai_analysis(
                 ctx=ctx,
@@ -11520,12 +11551,16 @@ def api_trade_eval():
             rosters = ctx.get("rosters") or []
             viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
             if viewer_roster:
-                model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [])
+                model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx))
                 viewer_gives = side_a if viewer_side == "b" else side_b
                 viewer_gets  = side_b if viewer_side == "b" else side_a
                 sending = [a for a in (viewer_gives.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
                 receiving = [a for a in (viewer_gets.get("assets") or []) if str(a.get("position") or "").upper() != "PICK"]
-                depth_warnings = calculate_roster_depth_warning(viewer_roster, model_value_lookup, sending, receiving)
+                depth_warnings = calculate_roster_depth_warning(
+                    viewer_roster, model_value_lookup, sending, receiving,
+                    roster_positions=ctx.get("roster_positions") or [],
+                    num_teams=len(rosters) or 12,
+                )
         except Exception as e:
             print(f"[trade-ai] skipped: {e}")
             analysis_html = ""
@@ -11769,19 +11804,24 @@ def api_league_players():
         print(f"[api/league-players] rookies skipped: {_e}")
 
     # --- Depth-decay pass ---
-    # Recompute pos_rank from current calibrated values first so decay tiers
-    # use correct ranks rather than stale DB values.
+    # Recompute pos_rank and sf_pos_rank from current calibrated values first
+    # so decay tiers use correct ranks rather than stale DB values.
     from collections import defaultdict as _dd_prl
-    _pos_groups: dict = _dd_prl(list)
-    for _i, _p in enumerate(model_value_table):
-        _pos = str(_p.get("position") or "").upper()
-        if _pos and _pos != "PICK":
-            _pos_groups[_pos].append(_i)
-    for _pos, _idxs in _pos_groups.items():
-        _idxs.sort(key=lambda _i: float(model_value_table[_i].get("value") or 0), reverse=True)
-        for _rank, _i in enumerate(_idxs, 1):
-            model_value_table[_i]["pos_rank"] = _rank
-            model_value_table[_i]["pos_rank_label"] = f"{_pos}{_rank}"
+
+    def _recompute_ranks(table, val_key, rank_key, label_key):
+        _groups: dict = _dd_prl(list)
+        for _i, _p in enumerate(table):
+            _pos = str(_p.get("position") or "").upper()
+            if _pos and _pos != "PICK":
+                _groups[_pos].append(_i)
+        for _pos, _idxs in _groups.items():
+            _idxs.sort(key=lambda _i: float(table[_i].get(val_key) or 0), reverse=True)
+            for _rank, _i in enumerate(_idxs, 1):
+                table[_i][rank_key]  = _rank
+                table[_i][label_key] = f"{_pos}{_rank}"
+
+    _recompute_ranks(model_value_table, "value",    "pos_rank",    "pos_rank_label")
+    _recompute_ranks(model_value_table, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
 
     # Decay tables: (rank_threshold, multiplier). Beyond the last threshold the
     # final multiplier applies.  QB only decays 1QB value (sf_value untouched).
@@ -11798,6 +11838,8 @@ def api_league_players():
         "value_8", "value_12", "value_14",
         "sf_value_8", "sf_value_12", "sf_value_14",
     ]
+    # QB SF decay uses sf_pos_rank (SF ordering differs from 1QB for QBs)
+    _QB_SF_VAL_KEYS = ["sf_value", "sf_value_8", "sf_value_12", "sf_value_14"]
     for _p in model_value_table:
         if _p.get("is_rookie"):
             continue
@@ -11805,34 +11847,42 @@ def api_league_players():
         _tiers = _DEPTH_DECAY.get(_pos)
         if not _tiers:
             continue
-        _rank = int(_p.get("pos_rank") or 999)
-        _keys = _QB_VAL_KEYS if _pos == "QB" else _SKILL_VAL_KEYS
-        for _thresh, _factor in _tiers:
-            if _rank <= _thresh:
-                if _factor < 1.0:
-                    for _vk in _keys:
-                        if _p.get(_vk) is not None:
-                            _p[_vk] = round(float(_p[_vk]) * _factor, 1)
-                break
+        if _pos == "QB":
+            # 1QB decay based on 1QB rank
+            _rank = int(_p.get("pos_rank") or 999)
+            for _thresh, _factor in _tiers:
+                if _rank <= _thresh:
+                    if _factor < 1.0:
+                        if _p.get("value") is not None:
+                            _p["value"] = round(float(_p["value"]) * _factor, 1)
+                    break
+            # SF decay based on SF rank (independent — deep QBs in SF may differ from 1QB)
+            _sf_rank = int(_p.get("sf_pos_rank") or 999)
+            for _thresh, _factor in _tiers:
+                if _sf_rank <= _thresh:
+                    if _factor < 1.0:
+                        for _vk in _QB_SF_VAL_KEYS:
+                            if _p.get(_vk) is not None:
+                                _p[_vk] = round(float(_p[_vk]) * _factor, 1)
+                    break
+        else:
+            _rank = int(_p.get("pos_rank") or 999)
+            for _thresh, _factor in _tiers:
+                if _rank <= _thresh:
+                    if _factor < 1.0:
+                        for _vk in _SKILL_VAL_KEYS:
+                            if _p.get(_vk) is not None:
+                                _p[_vk] = round(float(_p[_vk]) * _factor, 1)
+                    break
 
-    # Recompute pos_rank / pos_rank_label a second time so ranks reflect
-    # post-decay values (ordering within a tier is preserved, but this keeps
-    # labels accurate if cross-tier compression shifts any players).
-    _pos_groups2: dict = _dd_prl(list)
-    for _i, _p in enumerate(model_value_table):
-        _pos = str(_p.get("position") or "").upper()
-        if _pos and _pos != "PICK":
-            _pos_groups2[_pos].append(_i)
-    for _pos, _idxs in _pos_groups2.items():
-        _idxs.sort(key=lambda _i: float(model_value_table[_i].get("value") or 0), reverse=True)
-        for _rank, _i in enumerate(_idxs, 1):
-            model_value_table[_i]["pos_rank"] = _rank
-            model_value_table[_i]["pos_rank_label"] = f"{_pos}{_rank}"
+    # Recompute both rank sets post-decay so labels stay accurate.
+    _recompute_ranks(model_value_table, "value",    "pos_rank",    "pos_rank_label")
+    _recompute_ranks(model_value_table, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
 
     # Sort players: first by value (descending), then by pos_rank (ascending for ties)
     model_value_table.sort(key=lambda p: (
-        -(float(p.get("value") or 0)),  # Negative for descending sort by value
-        int(p.get("pos_rank") or 9999)  # Lower pos_rank = better position
+        -(float(p.get("value") or 0)),
+        int(p.get("pos_rank") or 9999)
     ))
 
     # Add birthday data for precise age calculation in frontend
@@ -15549,6 +15599,7 @@ def api_trade_intel_player_packages(player_id: str):
             from utils.utils import load_model_value_table
             value_table = load_model_value_table() or []
 
+        _use_sf_ranks = (val_key == "sf_value")
         values_by_id: dict = {}
         for p in value_table:
             pid = str(p.get("id") or "")
@@ -15558,8 +15609,8 @@ def api_trade_intel_player_packages(player_id: str):
                     "position":          str(p.get("position") or "").upper(),
                     "value":             float(p.get(val_key) or p.get("value") or 0),
                     "sf_value":          float(p.get("sf_value") or p.get("value") or 0),
-                    "pos_rank":          int(p.get("pos_rank") or 99),
-                    "pos_rank_label":    p.get("pos_rank_label") or "",
+                    "pos_rank":          int((p.get("sf_pos_rank") if _use_sf_ranks else p.get("pos_rank")) or 99),
+                    "pos_rank_label":    (p.get("sf_pos_rank_label") if _use_sf_ranks else p.get("pos_rank_label")) or "",
                     "team":              p.get("team") or "",
                     "age":               p.get("age"),
                     "pos_rank_change_7d": p.get("pos_rank_change_7d"),
@@ -15758,6 +15809,54 @@ def api_trade_intel_player_packages(player_id: str):
         _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
         _is_sf   = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
         num_teams = len(ctx.get("rosters") or []) or 12
+
+        # Resync val_key with the actual league format detected from roster_positions.
+        # The initial val_key was set from the URL param; the real league may differ
+        # (e.g. league has SUPER_FLEX but URL says league_type=1qb).
+        _correct_val_key = "sf_value" if _is_sf else "value"
+        if _correct_val_key != val_key and ctx:
+            val_key = _correct_val_key
+            _rsf = _is_sf
+            _rebuilt: dict = {}
+            for _p in value_table:
+                _pid = str(_p.get("id") or "")
+                if _pid:
+                    _rebuilt[_pid] = {
+                        "name":               _p.get("name", ""),
+                        "position":           str(_p.get("position") or "").upper(),
+                        "value":              float(_p.get(val_key) or _p.get("value") or 0),
+                        "sf_value":           float(_p.get("sf_value") or _p.get("value") or 0),
+                        "pos_rank":           int((_p.get("sf_pos_rank") if _rsf else _p.get("pos_rank")) or 99),
+                        "pos_rank_label":     (_p.get("sf_pos_rank_label") if _rsf else _p.get("pos_rank_label")) or "",
+                        "team":               _p.get("team") or "",
+                        "age":                _p.get("age"),
+                        "pos_rank_change_7d": _p.get("pos_rank_change_7d"),
+                    }
+            values_by_id = _rebuilt
+            # Rebuild viewer_players with updated values
+            _rvo = next((r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None)
+            if _rvo:
+                viewer_players = sorted(
+                    [
+                        {
+                            "player_id":      _pid,
+                            "name":           values_by_id[_pid]["name"],
+                            "position":       values_by_id[_pid]["position"],
+                            "value":          values_by_id[_pid]["value"],
+                            "pos_rank_label": values_by_id[_pid]["pos_rank_label"],
+                        }
+                        for _pid in [str(_pp) for _pp in (_rvo.get("players") or [])]
+                        if _pid in values_by_id and values_by_id[_pid]["value"] >= 50
+                    ],
+                    key=lambda x: x["value"],
+                    reverse=True,
+                )
+                if untouchable_ids:
+                    viewer_players = [p for p in viewer_players if p["player_id"] not in untouchable_ids]
+            # Update focus_value and target_info with corrected values
+            target_info = values_by_id.get(str(player_id))
+            if target_info:
+                focus_value = round(target_info["value"], 1)
 
         # ── ML model: primary package suggestions ─────────────────────────
         ml_pkgs: list = []
@@ -16017,6 +16116,138 @@ def api_trade_intel_player_packages(player_id: str):
             top = sorted(need.items(), key=lambda x: -x[1])[:3]
             return [names[rid] for rid, s in top if s > 0]
 
+        # Pre-build a map of player_id → roster for ownership lookup
+        _player_owner_map: dict = {}
+        for _r in (rosters or []):
+            for _pid in (_r.get("players") or []):
+                _player_owner_map[str(_pid)] = _r
+
+        from dashboard_services.ai.context_builders import (
+            calculate_roster_grade as _calc_grade,
+            detect_team_direction as _detect_direction,
+        )
+
+        def _roster_grade(roster: dict) -> dict:
+            """Return calculate_roster_grade output for any roster,
+            using the same logic as the Teams page."""
+            rid = str(roster.get("roster_id", ""))
+            flat = []
+            for pid in (roster.get("players") or []):
+                info = values_by_id.get(str(pid))
+                if info and info.get("position") in ("QB", "RB", "WR", "TE"):
+                    flat.append({
+                        "position": info["position"],
+                        "value":    float(info.get("value") or 0),
+                        "age":      info.get("age"),
+                    })
+            flat.sort(key=lambda x: x["value"], reverse=True)
+            picks = (_fresh_pbr or {}).get(rid, [])
+            return _calc_grade(flat, picks)
+
+        def _acceptance_prob(pkg: dict, total_trades: int) -> int:
+            """
+            Estimate acceptance probability (0–100) that the owner of the
+            focus player accepts this package.
+
+            Factors:
+              1. Value balance      – from receiver's POV (overpay = high)
+              2. Historical rate    – trades_like_this / total_real_trades
+              3. Positional index   – tier of the receiver's best player at
+                                      each position being sent, not just depth
+              4. Win/rebuild window – rebuild teams prize youth + picks;
+                                      win-now teams prize proven vets
+            """
+            # 1. Value base (receiver's perspective)
+            grade = pkg.get("value_grade", "fair")
+            base = {"steal": 14, "fair": 46, "overpay": 66, "big_overpay": 82}.get(grade, 46)
+
+            # 2. Historical frequency boost
+            count = pkg.get("trades_like_this", 0)
+            freq  = count / max(total_trades, 1)
+            freq_boost = min(int(freq * 60), 12)
+
+            owner_roster = _player_owner_map.get(str(player_id))
+            need_adj  = 0
+            window_adj = 0
+
+            if owner_roster:
+                # Build positional value index for the receiving team
+                pos_vals: dict[str, list[float]] = {}
+                for pid in (owner_roster.get("players") or []):
+                    info = values_by_id.get(str(pid))
+                    if info and info.get("position") in ("QB", "RB", "WR", "TE"):
+                        p = info["position"]
+                        pos_vals.setdefault(p, []).append(float(info.get("value") or 0))
+                for p in pos_vals:
+                    pos_vals[p].sort(reverse=True)
+
+                # 3. Positional index: score each sent position against receiver's depth
+                sent_players = [a for a in pkg.get("send", []) if not a.get("is_pick")]
+                for a in sent_players:
+                    pos  = a.get("position", "")
+                    aval = float(a.get("value") or a.get("send_value") or 0)
+                    if not pos:
+                        continue
+                    existing = pos_vals.get(pos, [])
+                    starter_val = existing[0] if existing else 0
+                    depth_val   = existing[1] if len(existing) > 1 else 0
+
+                    if not existing:
+                        need_adj += 12              # hole at this position
+                    elif starter_val < 200:
+                        need_adj += 9               # barely-rostered starter
+                    elif starter_val < 400:
+                        need_adj += 5               # mediocre starter
+                        if aval > starter_val * 1.1:
+                            need_adj += 3           # upgrade on their best
+                    elif depth_val < 150:
+                        need_adj += 2               # strong starter, thin depth
+                    else:
+                        need_adj -= 3               # stacked at this pos — harder sell
+
+                need_adj = max(-10, min(need_adj, 18))
+
+                # 4. Win/rebuild window — use same grade as Teams page
+                grade_data = _roster_grade(owner_roster)
+                win_window = grade_data.get("win_window", "")
+                # Map Teams-page labels to rebuild / win_now / competitive
+                if win_window in ("Full Rebuild", "Retooling"):
+                    window = "rebuild"
+                elif win_window in ("Win-Now Window", "Aging Contender", "Contender Window"):
+                    window = "win_now"
+                else:
+                    window = "competitive"
+
+                sent_picks = [a for a in pkg.get("send", []) if a.get("is_pick")]
+                sent_ages  = []
+                sent_vals  = []
+                for a in sent_players:
+                    info = values_by_id.get(a.get("player_id") or "")
+                    if info:
+                        sent_ages.append(float(info.get("age") or 25))
+                        sent_vals.append(float(info.get("value") or 0))
+
+                avg_sent_age = sum(sent_ages) / len(sent_ages) if sent_ages else 25
+                avg_sent_val = sum(sent_vals) / len(sent_vals) if sent_vals else 0
+                n_picks      = len(sent_picks)
+
+                if window == "rebuild":
+                    # Rebuilding teams want youth and picks
+                    youth_bonus  = max(0, int((26 - avg_sent_age) * 2.5))  # young = good
+                    pick_bonus   = n_picks * 6
+                    upside_bonus = min(int(avg_sent_val / 60), 8) if avg_sent_age < 24 else 0
+                    window_adj   = min(youth_bonus + pick_bonus + upside_bonus, 20)
+                elif window == "win_now":
+                    # Win-now teams want proven contributors now
+                    vet_bonus    = max(0, int((avg_sent_age - 23) * 2))
+                    tier_bonus   = min(int(avg_sent_val / 100), 8)
+                    pick_penalty = n_picks * -4  # picks less useful when chasing now
+                    window_adj   = max(-15, min(vet_bonus + tier_bonus + pick_penalty, 12))
+                # competitive: neutral (window_adj stays 0)
+
+            prob = base + freq_boost + need_adj + window_adj
+            return min(93, max(8, round(prob)))
+
         def _enrich_pkg(pkg: dict) -> None:
             for asset in pkg["send"]:
                 if not asset.get("is_pick"):
@@ -16057,9 +16288,17 @@ def api_trade_intel_player_packages(player_id: str):
         _max_send = (focus_value or 1) * 1.3
         primary_pkgs = [p for p in primary_pkgs if p.get("send_value", 0) <= _max_send]
 
+        _total_real = real_result.get("total_real_trades") or 1
+
+        # Grade the receiving team once (same data as Teams page)
+        _owner_roster = _player_owner_map.get(str(player_id))
+        _receiver_grade = _roster_grade(_owner_roster) if _owner_roster else {}
+        _receiver_win_window = _receiver_grade.get("win_window", "")
+
         for pkg in primary_pkgs:
             sent_pos = [a.get("position") for a in pkg.get("send", []) if not a.get("is_pick") and a.get("position")]
-            pkg["likely_takers"] = _likely_takers(sent_pos)
+            pkg["likely_takers"]   = _likely_takers(sent_pos)
+            pkg["acceptance_prob"] = _acceptance_prob(pkg, _total_real)
 
         # ── Archetype patterns — always from real DB sig_counts ───────────
         total_trade_count = real_result["total_real_trades"] or 1
@@ -16118,16 +16357,17 @@ def api_trade_intel_player_packages(player_id: str):
             primary_pkgs.sort(key=_pkg_rank)
 
         return jsonify({
-            "player_name":        player_name,
-            "focus_value":        focus_value,
-            "packages":           [],
-            "total_packages":     0,
-            "real_packages":      primary_pkgs,
-            "total_real_trades":  real_result["total_real_trades"],
-            "archetype_patterns": archetype_patterns,
-            "package_source":     package_source,
-            "model_stale_days":   _model_stale_days,
-            "query_window_days":  730,
+            "player_name":          player_name,
+            "focus_value":          focus_value,
+            "packages":             [],
+            "total_packages":       0,
+            "real_packages":        primary_pkgs,
+            "total_real_trades":    real_result["total_real_trades"],
+            "archetype_patterns":   archetype_patterns,
+            "package_source":       package_source,
+            "model_stale_days":     _model_stale_days,
+            "query_window_days":    730,
+            "receiver_win_window":  _receiver_win_window,
         })
 
     except Exception as e:

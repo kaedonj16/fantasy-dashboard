@@ -4101,10 +4101,6 @@ thead th {
 }
 
 .otc-arch-cell {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 6px;
   padding: 7px 10px;
   border-bottom: 1px solid var(--border);
   min-width: 0;
@@ -4125,10 +4121,14 @@ thead th {
   }
   .otc-arch-grid {
     grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 4px;
+    background: transparent;
   }
   .otc-arch-cell {
-    padding: 6px 8px;
-    border-right: none !important;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
   }
 }
 

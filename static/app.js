@@ -2468,6 +2468,13 @@ window.initTradePage = function initTradePage(root = document) {
     const resultsList    = root.querySelector("#suggResultsList");
     if (!playerInput) return;
 
+    // Restore last searched player
+    const _lastPlayer = (() => { try { return JSON.parse(localStorage.getItem('ti-last-player') || 'null'); } catch(_) { return null; } })();
+    if (_lastPlayer && _lastPlayer.id) {
+      playerInput.value = _lastPlayer.name || '';
+      fetchPackages(_lastPlayer.id, _lastPlayer.name || '');
+    }
+
     function posColor(pos) {
       return { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" }[pos] || "var(--accent)";
     }
@@ -2612,8 +2619,11 @@ window.initTradePage = function initTradePage(root = document) {
           [],
           data.player_name, playerId, data.focus_value,
           data.real_packages, data.total_real_trades,
-          data.archetype_patterns
+          data.archetype_patterns,
+          data.receiver_win_window || ''
         );
+
+        localStorage.setItem('ti-last-player', JSON.stringify({ id: playerId, name: playerName }));
 
       } catch (err) {
         if (err.name === "AbortError") return;  // superseded by a newer search
@@ -2632,6 +2642,7 @@ window.initTradePage = function initTradePage(root = document) {
     let _pkgRealTotal      = 0;
     let _pkgComboPkgs      = [];
     let _pkgArchetypes     = [];
+    let _pkgReceiverWindow = '';
 
     window.archToggle = function(uid, mode) {
       const allGrid  = document.getElementById('arch-grid-all-'  + uid);
@@ -2646,15 +2657,16 @@ window.initTradePage = function initTradePage(root = document) {
       teamBtn.classList.toggle('is-active', !showAll);
     };
 
-    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal, archetypes) {
-      _pkgAll        = packages;
-      _pkgPage       = 0;
-      _pkgPlayerId   = playerId;
-      _pkgPlayerName = playerName;
-      _pkgRealPkgs   = realPkgs   || [];
-      _pkgRealTotal  = realTotal  || 0;
-      _pkgComboPkgs  = [];
-      _pkgArchetypes = archetypes || [];
+    function renderPackages(packages, playerName, playerId, focusValue, realPkgs, realTotal, archetypes, receiverWindow) {
+      _pkgAll            = packages;
+      _pkgPage           = 0;
+      _pkgPlayerId       = playerId;
+      _pkgPlayerName     = playerName;
+      _pkgRealPkgs       = realPkgs   || [];
+      _pkgRealTotal      = realTotal  || 0;
+      _pkgComboPkgs      = [];
+      _pkgArchetypes     = archetypes || [];
+      _pkgReceiverWindow = receiverWindow || '';
       renderPackagePage();
     }
 
@@ -2835,11 +2847,32 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       // ── "Based on real trades" section ─────────────────────────────────────────
+      const _windowColors = {
+        'Full Rebuild':      '#6366f1',
+        'Retooling':         '#a78bfa',
+        'Building':          '#a78bfa',
+        'Holding Pattern':   '#94a3b8',
+        'Rising Contender':  '#f59e0b',
+        '2-3 Year Window':   '#f59e0b',
+        'Contender Window':  '#10b981',
+        'Win-Now Window':    '#10b981',
+        'Aging Contender':   '#ef4444',
+      };
+      const _windowBadge = _pkgReceiverWindow
+        ? (() => {
+            const col = _windowColors[_pkgReceiverWindow] || 'var(--text-muted)';
+            return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${col}15;border:1px solid ${col}30;color:${col};white-space:nowrap;">${_pkgReceiverWindow}</span>`;
+          })()
+        : '';
+
       let realTradeHtml = "";
       if (_pkgRealPkgs.length || _pkgArchetypes.length) {
         realTradeHtml += `<div style="margin-top:14px;padding-top:12px;border-top:2px solid var(--border);">
           <div style="margin-bottom:10px;">
-            <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:3px;">How people acquire ${_pkgPlayerName}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px;">
+              <span style="font-size:15px;font-weight:800;color:var(--text);">How people acquire ${_pkgPlayerName}</span>
+              ${_windowBadge}
+            </div>
             <div style="font-size:11px;color:var(--text-muted);">${_pkgRealTotal} real trades in similar leagues</div>
           </div>`;
 
@@ -2851,11 +2884,10 @@ window.initTradePage = function initTradePage(root = document) {
           function buildArchCells(list) {
             if (!list.length) return `<div style="grid-column:1/-1;padding:12px 10px;font-size:12px;color:var(--text-muted);">No top patterns match your current roster.</div>`;
             return list.map((ap, idx) => {
-              const sigHtml     = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
-              const pct         = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;">${ap.pct}%</span>` : '';
+              const sigHtml = archetypeSigHtml(ap.pattern_sig, ap.throw_in_sig);
+              const pct     = ap.pct > 0 ? `<span style="font-size:11px;font-weight:700;color:#a78bfa;white-space:nowrap;margin-left:2px;">${ap.pct}%</span>` : '';
               return `<div class="otc-arch-cell">
-                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;min-width:0;">${sigHtml}</div>
-                ${pct}
+                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:3px;min-width:0;">${sigHtml}${pct}</div>
               </div>`;
             }).join('');
           }
@@ -2900,7 +2932,7 @@ window.initTradePage = function initTradePage(root = document) {
 
           _sortedGroups.forEach(([sig, pkgs]) => {
             // Render a group header using the archetype chips
-            const groupHeader = sig
+            const groupHeader = (sig && _sortedGroups.length > 1)
               ? `<div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px;">
                    <div style="flex:1;height:1px;background:var(--border);"></div>
                    <div style="display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--card);flex-shrink:0;">
@@ -2963,8 +2995,14 @@ window.initTradePage = function initTradePage(root = document) {
               ? `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`
               : '';
 
-            const takersHtml = (pkg.likely_takers && pkg.likely_takers.length)
-              ? `<span style="font-size:10px;color:var(--text-muted);">· Likely: ${pkg.likely_takers.join(', ')}</span>`
+            // Acceptance probability computed server-side (roster need + history + value balance)
+            const _acceptProb = pkg.acceptance_prob ?? null;
+            const _probColor = _acceptProb >= 70 ? '#10b981' : _acceptProb >= 50 ? '#6366f1' : '#f59e0b';
+            const acceptHtml = _acceptProb != null
+              ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${_probColor}15;border:1px solid ${_probColor}30;color:${_probColor};white-space:nowrap;">
+                   <span style="width:5px;height:5px;border-radius:50%;background:${_probColor};flex-shrink:0;"></span>
+                   ${_acceptProb}% accept
+                 </span>`
               : '';
 
             realTradeHtml += `<div class="otc-real-trade-card">
@@ -2986,7 +3024,7 @@ window.initTradePage = function initTradePage(root = document) {
                 <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
                   <span class="otc-rt-count">${count} ${count === 1 ? 'trade' : 'trades'}</span>
                   ${gradeHtml}
-                  ${takersHtml}
+                  ${acceptHtml}
                 </div>
                 <button class="otc-sugg-pkg-load-btn"
                   data-focus-id="${_pkgPlayerId}"
@@ -3014,6 +3052,9 @@ window.initTradePage = function initTradePage(root = document) {
       resultsList.querySelectorAll(".otc-sugg-pkg-load-btn").forEach(btn => {
         btn.addEventListener("click", async () => {
           await ensurePlayersLoaded();
+          btn.textContent = 'Loading…';
+          btn.disabled = true;
+          try {
           const focusId    = btn.dataset.focusId;
           const assets     = JSON.parse(decodeURIComponent(btn.dataset.assets));
           const extraRaw   = btn.dataset.extraReceive
@@ -3069,6 +3110,10 @@ window.initTradePage = function initTradePage(root = document) {
           switchToCalc();
           const shell = root.querySelector(".otc-shell");
           if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
+          } finally {
+            btn.textContent = 'Analyze';
+            btn.disabled = false;
+          }
         });
       });
     }
@@ -5753,13 +5798,11 @@ function openPlayerModal(playerId, playerName, opts) {
       if (data.value_history && data.value_history.length > 0) {
         const chartDiv = document.getElementById('playerValueChart');
         if (chartDiv && typeof Plotly !== 'undefined') {
-          // Robust date formatters (handle YYYY-MM-DD and YYYY-MM-DDTHH:MM:SS)
           const formatDateLabel = (dateStr) => {
             if (!dateStr) return '';
             const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
             if (!m) return '';
             const [, year, month, day] = m;
-            // Use hardcoded month names to avoid locale/timezone issues
             const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             return `${monthNames[parseInt(month, 10) - 1]} ${parseInt(day, 10)}`;
           };
@@ -5767,14 +5810,18 @@ function openPlayerModal(playerId, playerName, opts) {
           const xData = data.value_history.map(d => formatDateLabel(d.as_of_date));
           const n = xData.length;
 
-          // Tight Y-axis range based on actual data
-          const yValues = data.value_history.map(d => d.value);
-          const yMin = Math.min(...yValues);
-          const yMax = Math.max(...yValues);
+          const y1qb = data.value_history.map(d => d.value_1qb ?? d.value);
+          const ysf  = data.value_history.map(d => d.value_sf  ?? d.value);
+
+          // Check if 1QB and SF values are meaningfully different (e.g. QBs differ; non-QBs may be same)
+          const hasDualSeries = y1qb.some((v, i) => Math.abs(v - ysf[i]) > 1);
+
+          const allY = hasDualSeries ? [...y1qb, ...ysf] : y1qb;
+          const yMin = Math.min(...allY);
+          const yMax = Math.max(...allY);
           const yRange = yMax - yMin;
           const yPad = Math.max(yRange * 0.15, 30);
 
-          // Ticks at their actual positions (first / middle / last)
           const midIdx = Math.floor((n - 1) / 2);
           const firstDateStr  = formatDateLabel(data.value_history[0].as_of_date);
           const midDateStr    = formatDateLabel(data.value_history[midIdx].as_of_date);
@@ -5786,31 +5833,38 @@ function openPlayerModal(playerId, playerName, opts) {
                           : n <= 2 ? [firstDateStr, latestDateStr]
                           : [firstDateStr, midDateStr, latestDateStr];
 
-          // Read theme text color so ticks are visible in both light and dark mode
           const mutedColor = getComputedStyle(document.documentElement)
             .getPropertyValue('--text-muted').trim() || '#6b7280';
 
-          // Add empty space after the data to center the last point
-          const extendedX = [...xData, '', '', '', ''];
-          const extendedY = [...yValues, null, null, null, null];
+          const extendedX    = [...xData, '', '', '', ''];
+          const extended1qb  = [...y1qb, null, null, null, null];
+          const extendedsf   = [...ysf,  null, null, null, null];
 
-          // Create hover text for actual data points only
-          const hoverText = [...xData.map(date => `<b>${date}</b><br>Value: ${yValues[xData.indexOf(date)]?.toFixed(1) || ''}`), '', '', '', ''];
+          const hover1qb = [...xData.map((date, i) => `<b>${date}</b><br>1QB: ${y1qb[i]?.toFixed(1) || ''}`), '', '', '', ''];
+          const hoverSF  = [...xData.map((date, i) => `<b>${date}</b><br>SF: ${ysf[i]?.toFixed(1) || ''}`), '', '', '', ''];
 
-          const trace = {
-            x: extendedX,
-            y: extendedY,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Value',
+          const trace1qb = {
+            x: extendedX, y: extended1qb,
+            type: 'scatter', mode: 'lines', name: '1QB',
             line: { color: '#3b82f6', width: 2, shape: 'spline', smoothing: 1.2 },
-            fill: 'tozeroy',
+            fill: hasDualSeries ? 'none' : 'tozeroy',
             fillcolor: 'rgba(59, 130, 246, 0.1)',
             hovertemplate: '%{text}<extra></extra>',
-            text: hoverText
+            text: hover1qb,
+          };
+          const traceSF = {
+            x: extendedX, y: extendedsf,
+            type: 'scatter', mode: 'lines', name: 'SF',
+            line: { color: '#f59e0b', width: 2, shape: 'spline', smoothing: 1.2 },
+            fill: 'none',
+            hovertemplate: '%{text}<extra></extra>',
+            text: hoverSF,
           };
 
-          // Adjust chart height based on screen size
+          const traces = hasDualSeries ? [trace1qb, traceSF] : [
+            { ...trace1qb, name: 'Value', text: [...xData.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`), '', '', '', ''] }
+          ];
+
           const isMobile = window.innerWidth <= 768;
           const chartHeight = isMobile ? 200 : 250;
 
@@ -5819,6 +5873,8 @@ function openPlayerModal(playerId, playerName, opts) {
             height: chartHeight,
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
+            showlegend: hasDualSeries,
+            legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.1, font: { size: 11, color: mutedColor } },
             xaxis: {
               showgrid: false,
               type: 'category',
@@ -5839,7 +5895,7 @@ function openPlayerModal(playerId, playerName, opts) {
             hovermode: 'closest',
           };
 
-          Plotly.newPlot('playerValueChart', [trace], layout, {
+          Plotly.newPlot('playerValueChart', traces, layout, {
             displayModeBar: false,
             responsive: true
           });
@@ -7630,12 +7686,12 @@ function openComparisonView(p1, p2) {
 
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();
-    openPlayerModal(p1.player_id, p1.name);
+    setTimeout(() => openPlayerModal(p1.player_id, p1.name), 220);
   });
 
   document.getElementById('compareP2ProfileBtn')?.addEventListener('click', () => {
     closePlayerModal();
-    openPlayerModal(p2.player_id, p2.name);
+    setTimeout(() => openPlayerModal(p2.player_id, p2.name), 220);
   });
 
   // Fetch NFL state to determine if it's offseason

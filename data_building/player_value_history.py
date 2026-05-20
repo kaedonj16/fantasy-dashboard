@@ -337,9 +337,20 @@ def get_player_value_history(
         latest_date_obj = date.fromisoformat(str(latest_date))
 
     cutoff = (latest_date_obj - timedelta(days=max(days, 1) - 1)).isoformat()
-    col = _history_col(league_type, league_size)
 
-    _cal_col = "calibrated_value_1qb" if league_type == "1qb" else "calibrated_value_sf"
+    # Size-specific column names for both formats
+    if league_size == 8:
+        _1qb_col, _sf_col = "value_8", "sf_value_8"
+    elif league_size == 12:
+        _1qb_col, _sf_col = "value_12", "sf_value_12"
+    elif league_size == 14:
+        _1qb_col, _sf_col = "value_14", "sf_value_14"
+    else:
+        _1qb_col, _sf_col = "value", "value_sf"
+
+    # SF column: prefer calibrated value_sf, fall back to raw sf_value, then 1QB value
+    _sf_expr = f"COALESCE({_sf_col}, sf_value, {_1qb_col}, value)"
+
     with get_conn() as conn:
         rows = conn.execute(
             f"""
@@ -349,7 +360,8 @@ def get_player_value_history(
                 name,
                 position,
                 team,
-                COALESCE({col}, value) AS value,
+                COALESCE({_1qb_col}, value) AS value_1qb,
+                {_sf_expr}                  AS value_sf,
                 source
             FROM player_value_history
             WHERE source = %s
@@ -360,39 +372,52 @@ def get_player_value_history(
             (source, str(player_id), cutoff),
         ).fetchall()
         _cal_row = conn.execute(
-            f"SELECT {_cal_col} AS cal FROM player_values WHERE player_id = %s",
+            """SELECT calibrated_value_1qb, calibrated_value_sf
+               FROM player_values WHERE player_id = %s""",
             (str(player_id),),
         ).fetchone()
 
     # Scale historical values to the calibrated scale so the graph matches the
     # current modal value. Use the latest history row's raw value as the
     # denominator so the final graph point scales to exactly the calibrated value.
-    _cal_scale = 1.0
+    _cal_scale_1qb = 1.0
+    _cal_scale_sf  = 1.0
     try:
-        _last_raw = float(rows[-1]["value"]) if rows else 0.0
-        if _cal_row and _cal_row["cal"] and _last_raw > 0:
-            _cal_scale = float(_cal_row["cal"]) / _last_raw
+        _last_raw_1qb = float(rows[-1]["value_1qb"]) if rows else 0.0
+        _last_raw_sf  = float(rows[-1]["value_sf"])  if rows else 0.0
+        if _cal_row:
+            if _cal_row["calibrated_value_1qb"] and _last_raw_1qb > 0:
+                _cal_scale_1qb = float(_cal_row["calibrated_value_1qb"]) / _last_raw_1qb
+            if _cal_row["calibrated_value_sf"] and _last_raw_sf > 0:
+                _cal_scale_sf = float(_cal_row["calibrated_value_sf"]) / _last_raw_sf
     except Exception:
         pass
+
+    _use_sf = league_type.lower() == "sf"
 
     out: list[dict] = []
     prev_val: Optional[float] = None
     for r in rows:
-        val = float(r["value"]) * _cal_scale
-        delta = None if prev_val is None else round(val - prev_val, 1)
+        v1qb = float(r["value_1qb"]) * _cal_scale_1qb
+        vsf  = float(r["value_sf"])  * _cal_scale_sf
+        # Primary "value" follows league_type for backwards-compat callers
+        primary = vsf if _use_sf else v1qb
+        delta = None if prev_val is None else round(primary - prev_val, 1)
         out.append(
             {
-                "as_of_date": str(r["as_of_date"]),
-                "player_id": r["player_id"],
-                "name": r["name"],
-                "position": r["position"],
-                "team": r["team"],
-                "value": round(val, 1),
+                "as_of_date":    str(r["as_of_date"]),
+                "player_id":     r["player_id"],
+                "name":          r["name"],
+                "position":      r["position"],
+                "team":          r["team"],
+                "value":         round(primary, 1),
+                "value_1qb":     round(v1qb, 1),
+                "value_sf":      round(vsf, 1),
                 "delta_from_prev": delta,
-                "source": r["source"],
+                "source":        r["source"],
             }
         )
-        prev_val = val
+        prev_val = primary
 
     _player_history_cache[_cache_key] = (out, _time.time())
     return out

@@ -282,7 +282,10 @@ def load_advanced_metrics_df() -> pd.DataFrame:
 # ------------------------------------------------
 
 def load_internal_stats_df() -> pd.DataFrame:
-    value_path = DATA_DIR / f"usage_table_{date.today().isoformat()}.json"
+    # Try undated path first; fall back to today's dated path for old installs
+    value_path = DATA_DIR / "usage_table.json"
+    if not value_path.exists():
+        value_path = DATA_DIR / f"usage_table_{date.today().isoformat()}.json"
 
     if not value_path.exists():
         raise FileNotFoundError(f"No internal value table found at {value_path}")
@@ -1105,6 +1108,22 @@ def rewrite_value_table_with_model() -> Path:
     bundle = load_trained_bundle()
     inference_df = build_inference_dataframe()
 
+    # Load WLS calibrated SF values (produced by trade_value_model.py).
+    # These are market-derived QB SF values from real dynasty trades.
+    # Used instead of a hardcoded boost so QB SF values reflect actual trade markets.
+    wls_sf_values: dict[str, float] = {}
+    try:
+        from dashboard_services.db import get_conn as _get_conn
+        with _get_conn() as _conn:
+            _wls_rows = _conn.execute(
+                "SELECT player_id, calibrated_value_sf FROM player_values "
+                "WHERE calibrated_value_sf IS NOT NULL AND calibrated_value_sf > 0"
+            ).fetchall()
+        wls_sf_values = {str(r["player_id"]): float(r["calibrated_value_sf"]) for r in _wls_rows}
+        print(f"[rewrite_value_table] Loaded {len(wls_sf_values)} WLS SF values from DB")
+    except Exception as _wls_err:
+        print(f"[rewrite_value_table] WLS SF load skipped: {_wls_err}")
+
     # CRITICAL FIX: Load vendor values to use directly when available
     fc_df = load_fantasycalc_df()
     dp_df = load_dynastyprocess_df()
@@ -1293,12 +1312,6 @@ def rewrite_value_table_with_model() -> Path:
                 sf_wsum += SF_W_ENGINE * sf_eng_val;  sf_wtot += SF_W_ENGINE
             sf_value = sf_wsum / sf_wtot if sf_wtot > 0 else 0.0
 
-            # CRITICAL FIX: Boost QBs significantly in Superflex so top QBs reach ~999
-            # In Superflex, elite QBs should be valued like elite RBs/WRs
-            pos = meta.get("pos", "").upper()
-            if pos == "QB":
-                sf_value = sf_value * 1.5  # 50% boost for QBs
-
             sf_vendor_values[pid] = sf_value
 
     df_by_id: dict[str, pd.Series] = {}
@@ -1394,6 +1407,11 @@ def rewrite_value_table_with_model() -> Path:
         position = player.get("position")
         if position != "QB":
             sf_value = max(sf_value, final_value)
+        elif pid in wls_sf_values:
+            # WLS market value can only improve (never downgrade) the engine's SF value.
+            # The sf_engine already gives top QBs (Allen: 999.9) their correct SF premium.
+            # WLS refines this with real trade data but shouldn't override a higher engine value.
+            sf_value = max(sf_value, wls_sf_values[pid])
 
         age = player.get("age")
         if age is None and row is not None:
@@ -1427,8 +1445,8 @@ def rewrite_value_table_with_model() -> Path:
             "team": player.get("team"),
             "position": player.get("position"),
             "age": age,
-            "value": float(final_value),
-            "sf_value": float(sf_value),
+            "value": round(min(float(final_value), 999.9), 1),
+            "sf_value": round(min(float(sf_value), 999.9), 1),
             "search_name": normalize_name(name) if name else "",
             "pos_rank": None,
             "pos_rank_label": None,
@@ -1527,6 +1545,25 @@ def rewrite_value_table_with_model() -> Path:
                 pick_asset[f"value_{n}"] = float(val)
                 pick_asset[f"sf_value_{n}"] = float(val)
         cleaned_assets.append(pick_asset)
+
+    # Normalize 1QB value scale to match SF ceiling.
+    # The model is trained with SF as the reference (elite QBs anchor the SF max at ~999.9).
+    # Non-QB 1QB values end up below the SF ceiling because the SF QB premium sets the
+    # max. Scale all 1QB value fields so the top 1QB player matches the SF max.
+    _SKILL_POS = {"QB", "RB", "WR", "TE"}
+    _1qb_keys  = ["value", "value_8", "value_12", "value_14"]
+    _max_sf  = max((float(a.get("sf_value") or 0) for a in cleaned_assets
+                    if str(a.get("position") or "").upper() in _SKILL_POS), default=0.0)
+    _max_1qb = max((float(a.get("value") or 0) for a in cleaned_assets
+                    if str(a.get("position") or "").upper() in _SKILL_POS), default=0.0)
+    if _max_sf > _max_1qb > 0:
+        _1qb_scale = _max_sf / _max_1qb
+        for _a in cleaned_assets:
+            if str(_a.get("position") or "").upper() not in _SKILL_POS:
+                continue
+            for _k in _1qb_keys:
+                if _a.get(_k) is not None:
+                    _a[_k] = round(min(float(_a[_k]) * _1qb_scale, 999.9), 1)
 
     pos_to_indices: dict[str, list[int]] = {}
 
