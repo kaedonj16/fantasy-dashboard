@@ -11795,15 +11795,17 @@ def api_league_players():
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    # Strip any PICK entries that came from the DB (stale) and replace with fresh
-    # slot + bucket picks from the WLS file (pick_values_wls_latest.json).
-    model_value_table = [p for p in model_value_table
-                         if str(p.get("position") or "").upper() != "PICK"]
+    # Supplement DB pick entries with WLS file picks for any IDs not already in the DB.
+    # DB values are preferred (more accurate); WLS fills in bucket picks or any gaps.
     try:
         from dashboard_services.picks import load_pick_value_table as _lpvt
         _pick_values = _lpvt()
+        _db_pick_ids: set = {
+            str(p.get("id") or "") for p in model_value_table
+            if str(p.get("position") or "").upper() == "PICK"
+        }
         _injected_picks = []
-        _seen_ids: set = set()
+        _seen_ids: set = set(_db_pick_ids)
         for _pk_id, _pk_val in _pick_values.items():
             if _pk_id in _seen_ids or float(_pk_val) <= 0:
                 continue
@@ -11829,7 +11831,7 @@ def api_league_players():
                 "value": round(float(_pk_val), 1), "team": "",
             })
         model_value_table.extend(_injected_picks)
-        print(f"[api/league-players] Injected {len(_injected_picks)} picks from WLS")
+        print(f"[api/league-players] DB picks: {len(_db_pick_ids)}, WLS fallback picks: {len(_injected_picks)}")
     except Exception as _e_picks:
         print(f"[api/league-players] pick injection skipped: {_e_picks}")
 
