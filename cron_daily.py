@@ -300,7 +300,7 @@ print(f"[cron] Trade intel: discovered {{discovered}} new leagues")
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.trade_intel.trade_crawler import run_crawl
-crawl_result = run_crawl(batch_size=100)
+crawl_result = run_crawl(batch_size=100, workers=3)
 print(f"[cron] Trade intel: {{crawl_result}}")
 """, "trade_intel_crawl")
 
