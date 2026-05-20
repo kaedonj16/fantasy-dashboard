@@ -49,16 +49,23 @@ def load_pick_value_table(
         try:
             wls_data = json.loads(wls_path.read_text())
             wls_1qb = wls_data.get("1qb", {})
+            wls_final: Dict[str, float] = {}
             for key, val in wls_1qb.items():
                 if not val or float(val) <= 0:
                     continue
                 parts = key.split("_")
+                # Skip bare YYYY_R keys (no slot/bucket suffix)
+                if len(parts) < 3:
+                    continue
                 try:
-                    if len(parts) >= 2 and int(parts[1]) > _MAX_ROUND:
+                    if int(parts[1]) > _MAX_ROUND:
                         continue
                 except (ValueError, IndexError):
                     pass
-                final[key] = float(val)
+                wls_final[key] = float(val)
+            if wls_final:
+                # WLS values are already on the calibrated scale — return directly
+                return wls_final
         except Exception:
             pass
 
