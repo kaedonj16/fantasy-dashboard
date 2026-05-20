@@ -6234,7 +6234,7 @@ function _buildStatsHTML(game_logs_by_year) {
 
       gameLogs.forEach(game => {
         totalFantasyPts += game.fantasy_pts || 0;
-        const s = game.stats;
+        const s = game.stats || {};
         totalPassYd += s.pass_yd || 0;
         totalPassTd += s.pass_td || 0;
         totalPassInt += s.pass_int || 0;
@@ -6287,7 +6287,7 @@ function _buildStatsHTML(game_logs_by_year) {
       `;
 
       gameLogs.forEach(game => {
-        const stats = game.stats;
+        const stats = game.stats || null;
 
         // Format date: 20240908 -> 9/8
         let dateStr = game.date || '';
@@ -6298,27 +6298,29 @@ function _buildStatsHTML(game_logs_by_year) {
         }
 
         // Check if player has any stats at all
-        const hasAnyStats = stats.pass_yd != null || stats.rush_att != null ||
-                           stats.rec != null || stats.rec_tgt != null;
+        const hasAnyStats = stats != null && (
+          stats.pass_yd != null || stats.rush_att != null ||
+          stats.rec != null || stats.rec_tgt != null);
 
         const val = (v) => v != null && v > 0 ? v : '-';
         const rowClass = hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
+        const s = stats || {};
 
         statsHTML += `
           <tr class="${rowClass}">
             <td>${dateStr}</td>
             <td class="game-log-table-opp">${game.opponent || '-'}</td>
             <td class="game-log-table-pts">${hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '-') : '<span style="color:#9ca3af;">DNP</span>'}</td>
-            <td>${val(stats.pass_yd) !== '-' ? Math.round(stats.pass_yd) : '-'}</td>
-            <td>${val(stats.pass_td)}</td>
-            <td>${val(stats.pass_int)}</td>
-            <td>${val(stats.rush_att)}</td>
-            <td>${val(stats.rush_yd) !== '-' ? Math.round(stats.rush_yd) : '-'}</td>
-            <td>${val(stats.rush_td)}</td>
-            <td>${val(stats.rec_tgt)}</td>
-            <td>${val(stats.rec)}</td>
-            <td>${val(stats.rec_yd) !== '-' ? Math.round(stats.rec_yd) : '-'}</td>
-            <td>${val(stats.rec_td)}</td>
+            <td>${val(s.pass_yd) !== '-' ? Math.round(s.pass_yd) : '-'}</td>
+            <td>${val(s.pass_td)}</td>
+            <td>${val(s.pass_int)}</td>
+            <td>${val(s.rush_att)}</td>
+            <td>${val(s.rush_yd) !== '-' ? Math.round(s.rush_yd) : '-'}</td>
+            <td>${val(s.rush_td)}</td>
+            <td>${val(s.rec_tgt)}</td>
+            <td>${val(s.rec)}</td>
+            <td>${val(s.rec_yd) !== '-' ? Math.round(s.rec_yd) : '-'}</td>
+            <td>${val(s.rec_td)}</td>
           </tr>
         `;
       });

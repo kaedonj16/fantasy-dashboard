@@ -13487,11 +13487,14 @@ def api_player_game_logs(player_id: str):
                         elif player_team and player_team == away_team:
                             opponent = home_team; is_away = True;  game_date = game.get("gameDate", ""); break
                     stats = (stats_by_week.get(week_num) or {}).get(player_id)
-                    if not stats:
-                        continue
-                    game_logs.append({"week": week_num, "date": game_date,
-                        "opponent": f"@{opponent}" if is_away else opponent,
-                        "fantasy_pts": _calc_pts(stats), "stats": _stats_dict(stats)})
+                    if stats:
+                        game_logs.append({"week": week_num, "date": game_date,
+                            "opponent": f"@{opponent}" if is_away else opponent,
+                            "fantasy_pts": _calc_pts(stats), "stats": _stats_dict(stats)})
+                    else:
+                        game_logs.append({"week": week_num, "date": game_date,
+                            "opponent": f"@{opponent}" if is_away else opponent,
+                            "fantasy_pts": None, "stats": None})
             else:
                 # Fallback: no schedule files — show stats without opponent/date
                 for week_num in sorted(stats_by_week.keys()):
@@ -13500,6 +13503,9 @@ def api_player_game_logs(player_id: str):
                         game_logs.append({"week": week_num, "date": "",
                             "opponent": "", "fantasy_pts": _calc_pts(stats),
                             "stats": _stats_dict(stats)})
+                    else:
+                        game_logs.append({"week": week_num, "date": "",
+                            "opponent": "", "fantasy_pts": None, "stats": None})
 
             if game_logs:
                 game_logs.sort(key=lambda g: g.get("date", "") or "")
