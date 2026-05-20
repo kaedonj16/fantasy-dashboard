@@ -1407,6 +1407,7 @@ window.initTradePage = function initTradePage(root = document) {
     const moversContent = root.querySelector("#moversTabContent");
     const breakoutsContent = root.querySelector("#breakoutsTabContent");
     const targetsContent = root.querySelector("#targetsTabContent");
+    const intelContent = root.querySelector("#intelTabContent");
     const moversSub = root.querySelector("#moversSub");
     const dayFilters = root.querySelector(".otc-day-filters");
     const lockIcon = root.querySelector("#targetsLockIcon");
@@ -1429,6 +1430,7 @@ window.initTradePage = function initTradePage(root = document) {
         moversContent?.classList.remove("is-active");
         breakoutsContent?.classList.remove("is-active");
         targetsContent?.classList.remove("is-active");
+        intelContent?.classList.remove("is-active");
 
         if (tab === "movers") {
           moversContent?.classList.add("is-active");
@@ -1464,9 +1466,110 @@ window.initTradePage = function initTradePage(root = document) {
           if (targetsContent) {
             loadTradeTargets();
           }
+
+        } else if (tab === "intel") {
+          intelContent?.classList.add("is-active");
+          if (moversSub) moversSub.style.display = "none";
+          if (dayFilters) dayFilters.style.display = "none";
+          setTimeout(() => root.querySelector("#intelPlayerInput")?.focus(), 50);
         }
       });
     });
+
+    // ── Intel tab: player search + trade intel display ──────────────────
+    (function initIntelSearch() {
+      const intelInput = root.querySelector("#intelPlayerInput");
+      const intelDrop  = root.querySelector("#intelPlayerDropdown");
+      const intelResult = root.querySelector("#intelPlayerResult");
+      if (!intelInput || !intelDrop || !intelResult) return;
+
+      const posColor = p => ({ QB:"#3b82f6", RB:"#22c55e", WR:"#f59e0b", TE:"#8b5cf6" }[p] || "var(--accent)");
+
+      intelInput.addEventListener("input", async () => {
+        const q = intelInput.value.trim().toLowerCase();
+        if (q.length < 2) { intelDrop.style.display = "none"; return; }
+        await ensurePlayersLoaded();
+        const matches = allPlayers
+          .filter(p => ["QB","RB","WR","TE"].includes(p.position) && (p.name||"").toLowerCase().includes(q))
+          .sort((a,b) => getPlayerValue(b) - getPlayerValue(a))
+          .slice(0, 10);
+        if (!matches.length) { intelDrop.style.display = "none"; return; }
+        intelDrop.innerHTML = matches.map(p => {
+          const col = posColor(p.position);
+          return `<div class="otc-sugg-dropdown-item" data-id="${p.id}" data-name="${(p.name||"").replace(/"/g,"&quot;")}">
+            <span class="otc-sugg-dropdown-pos" style="background:${col}20;color:${col};">${p.position}</span>
+            <span class="otc-sugg-dropdown-name">${p.name||p.id}</span>
+            <span class="otc-sugg-dropdown-val">${Math.round(getPlayerValue(p))||""}</span>
+          </div>`;
+        }).join("");
+        intelDrop.style.display = "block";
+      });
+
+      intelDrop.addEventListener("click", e => {
+        const item = e.target.closest(".otc-sugg-dropdown-item");
+        if (!item) return;
+        intelInput.value = item.querySelector(".otc-sugg-dropdown-name").textContent;
+        intelDrop.style.display = "none";
+        loadIntelForPlayer(item.dataset.id, item.dataset.name);
+      });
+
+      document.addEventListener("click", e => {
+        if (!intelInput.contains(e.target) && !intelDrop.contains(e.target))
+          intelDrop.style.display = "none";
+      });
+
+      async function loadIntelForPlayer(playerId, playerName) {
+        const season = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
+        const leagueType = getLeagueType();
+        intelResult.innerHTML = `<div style="color:var(--text-muted);font-size:12px;padding:8px 0;">Loading…</div>`;
+        try {
+          const res = await fetch(`/api/trade-intel/player/${encodeURIComponent(playerId)}?season=${season}&league_type=${leagueType}`);
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const r = await res.json();
+          if (!r || !r.trade_count_all) {
+            intelResult.innerHTML = `<div style="color:var(--text-muted);font-size:12px;padding:8px 0;">No trade data available for ${playerName}.</div>`;
+            return;
+          }
+          const delta = r.value_delta;
+          const deltaStr = delta != null
+            ? `<span style="color:${delta>=0?"#10b981":"#ef4444"};font-weight:700;">${delta>=0?"+":""}${delta}</span>`
+            : "";
+          const bsr = r.buy_sell_ratio;
+          const bsrLabel = bsr != null
+            ? (bsr > 0.6 ? `<span style="color:#10b981;">↑ Buy pressure</span>` : bsr < 0.4 ? `<span style="color:#ef4444;">↓ Sell pressure</span>` : `<span style="color:var(--text-muted);">Neutral</span>`)
+            : "";
+          const packages = (r.common_packages || []).slice(0, 3).map(pkg => {
+            const names = (pkg.companions || []).map(c => c.name).join(" + ") || "Solo";
+            return `<div style="font-size:11px;color:var(--text-muted);padding:3px 0;border-top:1px solid var(--border);">w/ ${names} <span style="color:var(--text-faint,#475569);">(${pkg.occurrence_count}x)</span></div>`;
+          }).join("");
+
+          intelResult.innerHTML = `
+            <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;">${playerName}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+              <div style="background:var(--row,#1e293b);border-radius:6px;padding:6px 8px;">
+                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Market</div>
+                <div style="font-size:14px;font-weight:700;color:var(--text);">${r.market_value ? Math.round(r.market_value) : "—"}</div>
+              </div>
+              <div style="background:var(--row,#1e293b);border-radius:6px;padding:6px 8px;">
+                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">vs Model</div>
+                <div style="font-size:14px;font-weight:700;">${deltaStr || "—"}</div>
+              </div>
+              <div style="background:var(--row,#1e293b);border-radius:6px;padding:6px 8px;">
+                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Trades</div>
+                <div style="font-size:13px;font-weight:700;color:var(--text);">${r.trade_count_7d}x wk · ${r.trade_count_30d}x mo</div>
+              </div>
+              <div style="background:var(--row,#1e293b);border-radius:6px;padding:6px 8px;">
+                <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">Sentiment</div>
+                <div style="font-size:12px;font-weight:600;">${bsrLabel || "—"}</div>
+              </div>
+            </div>
+            ${packages ? `<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Common packages</div>${packages}` : ""}
+          `;
+        } catch(e) {
+          intelResult.innerHTML = `<div style="color:var(--text-muted);font-size:12px;padding:8px 0;">Failed to load trade intel.</div>`;
+        }
+      }
+    })();
   }
 
   function normalizePlayerRow(p) {
