@@ -92,7 +92,6 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <input id="tiSearchInput" type="text" autocomplete="off" placeholder="Search player…"
               style="width:100%;box-sizing:border-box;background:var(--input-bg,#1e293b);border:1px solid var(--border);border-radius:8px;padding:6px 10px 6px 30px;font-size:13px;color:var(--text);outline:none;">
             <i class="fa-solid fa-magnifying-glass" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-muted);pointer-events:none;"></i>
-            <div id="tiSearchDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--card-bg,#1e293b);border:1px solid var(--border);border-radius:8px;z-index:200;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.3);"></div>
           </div>
           <div class="ti-pos-filters">
             <button class="ti-pos active" data-pos="ALL" onclick="filterTI('ALL')">All</button>
@@ -712,11 +711,12 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       // ── Player search ─────────────────────────────────────────────
       (function() {{
         const input  = document.getElementById('tiSearchInput');
-        const drop   = document.getElementById('tiSearchDropdown');
         const result = document.getElementById('tiSearchResult');
-        if (!input || !drop || !result) return;
+        if (!input || !result) return;
 
         let _allPlayers = null;
+        let _searchTimer = null;
+
         async function ensurePlayers() {{
           if (_allPlayers) return;
           try {{
@@ -729,106 +729,78 @@ def page_trade_intel(platform: str, season: int, league_id: str):
 
         const posColor = p => ({{ QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6' }}[p] || '#888');
 
+        function buildCard(p, r) {{
+          const market = r.market_value != null ? r.market_value.toFixed(1) : '-';
+          const model  = r.model_value  != null ? r.model_value.toFixed(1)  : '-';
+          const delta  = r.value_delta;
+          const deltaHtml = delta != null
+            ? `<span class="${{delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}}">${{delta >= 0 ? '+' : ''}}${{Math.round(delta)}}</span>`
+            : '<span style="color:var(--text-muted)">-</span>';
+          const cnt7   = r.trade_count_7d  || 0;
+          const cnt30  = r.trade_count_30d || 0;
+          const cntAll = r.trade_count_all || 0;
+          const trend  = r.market_trend;
+          let momentumHtml = '';
+          if (trend != null) {{
+            if      (trend >= 5)  momentumHtml = '<div class="ti-momentum"><span style="color:#10b981;">▲</span> Rising</div>';
+            else if (trend <= -5) momentumHtml = '<div class="ti-momentum"><span style="color:#ef4444;">▼</span> Falling</div>';
+          }}
+          const col = posColor(p.position);
+          return `<div class="ti-card">
+            <div class="ti-card-top">
+              <div>
+                <div class="ti-name">${{p.name||p.id}}</div>
+                <div class="ti-meta"><span style="color:${{col}};font-weight:600;">${{p.position}}</span> · ${{p.team||''}}</div>
+              </div>
+              <span class="ti-chip" style="background:#3b82f620;color:#3b82f6;">${{cntAll.toLocaleString()}} trades</span>
+            </div>
+            <div class="ti-divider"></div>
+            <div class="ti-row"><span class="ti-row-label">Market</span><span class="ti-row-val">${{market}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">BR Model</span><span class="ti-row-val">${{model}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">Delta</span><span class="ti-row-val">${{deltaHtml}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
+            ${{momentumHtml}}
+          </div>`;
+        }}
+
         input.addEventListener('input', async () => {{
+          clearTimeout(_searchTimer);
           const q = input.value.trim().toLowerCase();
-          if (q.length < 2) {{ drop.style.display = 'none'; return; }}
+          if (q.length < 2) {{
+            result.style.display = 'none';
+            result.innerHTML = '';
+            return;
+          }}
           await ensurePlayers();
           const matches = _allPlayers
             .filter(p => (p.name||'').toLowerCase().includes(q))
             .sort((a,b) => (b.value||0) - (a.value||0))
-            .slice(0, 10);
-          if (!matches.length) {{ drop.style.display = 'none'; return; }}
-          drop.innerHTML = matches.map(p => {{
-            const col = posColor(p.position);
-            return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);"
-              class="ti-search-item" data-id="${{p.id}}" data-name="${{(p.name||'').replace(/"/g,'&quot;')}}" data-pos="${{p.position}}" data-team="${{p.team||''}}">
-              <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${{col}}20;color:${{col}};flex-shrink:0;">${{p.position}}</span>
-              <span style="font-size:13px;font-weight:600;color:var(--text);flex:1;">${{p.name||p.id}}</span>
-              <span style="font-size:12px;color:var(--text-muted);">${{p.value ? Math.round(p.value) : ''}}</span>
-            </div>`;
-          }}).join('');
-          drop.style.display = 'block';
-        }});
-
-        drop.addEventListener('mouseover', e => {{
-          const item = e.target.closest('.ti-search-item');
-          drop.querySelectorAll('.ti-search-item').forEach(el => el.style.background = '');
-          if (item) item.style.background = 'var(--row,rgba(255,255,255,.05))';
-        }});
-
-        drop.addEventListener('click', e => {{
-          const item = e.target.closest('.ti-search-item');
-          if (!item) return;
-          input.value = item.dataset.name;
-          drop.style.display = 'none';
-          showIntelCard(item.dataset.id, item.dataset.name, item.dataset.pos, item.dataset.team);
-        }});
-
-        document.addEventListener('click', e => {{
-          if (!input.contains(e.target) && !drop.contains(e.target))
-            drop.style.display = 'none';
-        }});
-
-        async function showIntelCard(playerId, playerName, pos, team) {{
-          result.style.display = '';
-          result.innerHTML = `<div style="color:var(--text-muted);font-size:13px;padding:12px 0;">Loading…</div>`;
-          try {{
-            const res = await fetch(`/api/trade-intel/player/${{encodeURIComponent(playerId)}}?season=${{TI_SEASON}}&league_type=${{TI_LEAGUE_TYPE}}`);
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const r = await res.json();
-
-            const market  = r.market_value  != null ? r.market_value.toFixed(1)  : '-';
-            const model   = r.model_value   != null ? r.model_value.toFixed(1)   : '-';
-            const delta   = r.value_delta;
-            const deltaHtml = delta != null
-              ? `<span style="font-weight:700;color:${{delta >= 0 ? '#10b981' : '#ef4444'}};">${{delta >= 0 ? '+' : ''}}${{Math.round(delta)}}</span>`
-              : '<span style="color:var(--text-muted);">-</span>';
-            const cnt7   = r.trade_count_7d  || 0;
-            const cnt30  = r.trade_count_30d || 0;
-            const cntAll = r.trade_count_all || 0;
-            const trend  = r.market_trend;
-            let momentumHtml = '';
-            if (trend != null) {{
-              if      (trend >= 5)  momentumHtml = '<span style="color:#10b981;font-weight:700;">▼ Rising</span>';
-              else if (trend <= -5) momentumHtml = '<span style="color:#ef4444;font-weight:700;">▼ Falling</span>';
-            }}
-            const col = posColor(pos);
-
-            result.innerHTML = `
-              <div style="border:1px solid var(--border);border-radius:12px;padding:18px 20px;background:var(--card-bg,var(--card));max-width:420px;">
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
-                  <div>
-                    <div style="font-size:16px;font-weight:700;color:var(--text);">${{playerName}}</div>
-                    <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">
-                      <span style="font-weight:600;color:${{col}};">${{pos}}</span> · ${{team}}
-                    </div>
-                  </div>
-                  <span style="font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;background:#3b82f620;color:#3b82f6;white-space:nowrap;">${{cntAll.toLocaleString()}} trades</span>
-                </div>
-                <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;flex-direction:column;gap:8px;">
-                  <div style="display:flex;justify-content:space-between;font-size:14px;">
-                    <span style="color:var(--text-muted);">Market</span>
-                    <span style="font-weight:700;color:var(--text);">${{market}}</span>
-                  </div>
-                  <div style="display:flex;justify-content:space-between;font-size:14px;">
-                    <span style="color:var(--text-muted);">BR Model</span>
-                    <span style="font-weight:700;color:var(--text);">${{model}}</span>
-                  </div>
-                  <div style="display:flex;justify-content:space-between;font-size:14px;">
-                    <span style="color:var(--text-muted);">Delta</span>
-                    <span style="font-weight:700;">${{deltaHtml}}</span>
-                  </div>
-                  <div style="display:flex;justify-content:space-between;font-size:14px;">
-                    <span style="color:var(--text-muted);">Trades 7d/30d</span>
-                    <span style="font-weight:700;color:var(--text);">${{cnt7}} / ${{cnt30}}</span>
-                  </div>
-                  ${{momentumHtml ? `<div style="font-size:14px;font-weight:700;">${{momentumHtml}}</div>` : ''}}
-                </div>
-              </div>`;
-          }} catch(e) {{
-            result.innerHTML = `<div style="color:var(--text-muted);font-size:13px;">No trade intel found for this player.</div>`;
+            .slice(0, 8);
+          if (!matches.length) {{
+            result.style.display = '';
+            result.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:4px 0;">No players found.</div>';
+            return;
           }}
-        }}
+          result.style.display = '';
+          result.innerHTML = '<div class="ti-grid">' +
+            matches.map(p => `<div class="ti-card ti-card-loading" data-id="${{p.id}}" style="min-height:160px;display:flex;align-items:center;justify-content:center;">
+              <div style="color:var(--text-muted);font-size:12px;">${{p.name}}</div>
+            </div>`).join('') +
+          '</div>';
+
+          _searchTimer = setTimeout(async () => {{
+            const fetches = matches.map(p =>
+              fetch(`/api/trade-intel/player/${{encodeURIComponent(p.id)}}?season=${{TI_SEASON}}&league_type=${{TI_LEAGUE_TYPE}}`)
+                .then(r => r.ok ? r.json() : null)
+                .catch(() => null)
+            );
+            const results = await Promise.all(fetches);
+            const cards = matches.map((p, i) => results[i] ? buildCard(p, results[i]) :
+              `<div class="ti-card"><div class="ti-name">${{p.name}}</div><div class="ti-meta" style="color:var(--text-muted);margin-top:8px;">No data</div></div>`
+            );
+            result.innerHTML = '<div class="ti-grid">' + cards.join('') + '</div>';
+          }}, 300);
+        }});
       }})();
 
       window.loadTIPage = loadTIPage;
