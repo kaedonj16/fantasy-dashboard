@@ -734,20 +734,19 @@ def _get_top_movers_from_db(
         except ValueError:
             return None
 
+    _pick_re = _re.compile(r"^\d{4}_\d+_")
     movers = []
     for row in rows:
         row_dict = dict(row)
         player_id = str(row_dict["player_id"])
-        # Try pick formatting first — the name_map may store "Player 2026_1_01" for slot picks
-        pick_label = _format_pick_id(player_id)
-        if pick_label:
-            row_dict["name"] = pick_label
-        else:
-            resolved = name_map.get(player_id)
-            if resolved:
-                row_dict["name"] = resolved
-            elif not row_dict.get("name") or row_dict["name"] == "Unknown":
-                row_dict["name"] = f"Player {player_id}"
+        # Skip picks — they're not players and their value swings are data noise
+        if _pick_re.match(player_id):
+            continue
+        resolved = name_map.get(player_id)
+        if resolved:
+            row_dict["name"] = resolved
+        elif not row_dict.get("name") or row_dict["name"] == "Unknown":
+            row_dict["name"] = f"Player {player_id}"
         movers.append(row_dict)
     
     risers = movers[:limit]
@@ -823,9 +822,13 @@ def _get_top_movers_from_parquet(days: int, limit: int) -> dict:
             df_sorted = df.sort_values('delta', ascending=False)
             
             # Process the data
+            import re as _re2
+            _pick_pat = _re2.compile(r"^\d{4}_\d+_")
             movers = []
             for _, row in df_sorted.head(limit * 2).iterrows():  # Get more to have both risers and fallers
                 player_id = str(row['sleeper_id'])
+                if _pick_pat.match(player_id):
+                    continue
                 player_info = players_index.get(player_id) or {}
                 
                 # Use player info name if available, otherwise use parquet name or create fallback

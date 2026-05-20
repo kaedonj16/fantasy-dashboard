@@ -2414,6 +2414,14 @@ window.initTradePage = function initTradePage(root = document) {
       if (name === "suggestions" && !suggTargetsLoaded) {
         loadSuggTargets();
       }
+      // Sync URL so refreshing/sharing lands on the same tab
+      const url = new URL(window.location.href);
+      if (name === "suggestions") {
+        url.searchParams.set("tab", "suggestions");
+      } else {
+        url.searchParams.delete("tab");
+      }
+      history.replaceState(null, "", url);
     }
 
     tabs.forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
@@ -3085,10 +3093,12 @@ window.initTradePage = function initTradePage(root = document) {
               const order = (String(a.pick_order || "")).toLowerCase().replace(/[^a-z]/g, "") || "mid";
               // Slot picks use numeric third segment (e.g. 2026_1_01), bucket picks use word (e.g. 2026_1_early)
               const pickId = yr && rd ? `${yr}_${rd}_${slot || order}` : null;
-              const pickObj = pickId && (
-                allPlayers.find(p => p.id === pickId) ||
-                allPlayers.find(p => yr && rd && p.id && p.id.startsWith(`${yr}_${rd}_`))
-              );
+              const isSlotPick = slot !== null;
+              // For slot picks: only add if not already present (no duplicates allowed)
+              // For bucket picks: allow multiple (e.g. two "2027 1st Early" is valid)
+              if (isSlotPick && pickId && state.sideBPicks.some(p => p.id === pickId)) return;
+              // Exact match only — no prefix fallback (prefix match always finds 1.01)
+              const pickObj = pickId ? allPlayers.find(p => p.id === pickId) : null;
               if (pickObj) {
                 state.sideBPicks.push({ id: pickObj.id, display: pickObj.name });
               } else if (pickId) {
@@ -3097,7 +3107,10 @@ window.initTradePage = function initTradePage(root = document) {
             } else {
               const pid2 = a.player_id || a.id;
               const pObj = allPlayers.find(p => String(p.id) === String(pid2));
-              if (pObj) state.sideBPlayers.push(pObj);
+              // Players can only appear once per side
+              if (pObj && !state.sideBPlayers.some(p => String(p.id) === String(pObj.id))) {
+                state.sideBPlayers.push(pObj);
+              }
             }
           });
 
@@ -9968,6 +9981,14 @@ function setupFunAwardsGrid() {
       daInitialized = true;
       initDA();
     }
+    // Sync URL so refreshing/sharing lands on the same tab
+    const _url = new URL(window.location.href);
+    if (tab === 'draft') {
+      _url.searchParams.set('tab', 'draft');
+    } else {
+      _url.searchParams.delete('tab');
+    }
+    history.replaceState(null, '', _url);
   };
 
   // Auto-open Draft Board tab when arriving via ?tab=draft link
