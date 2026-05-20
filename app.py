@@ -12350,9 +12350,7 @@ def api_league_players():
     except Exception as _e:
         print(f"[api/league-players] rookies skipped: {_e}")
 
-    # --- Depth-decay pass ---
-    # Recompute pos_rank and sf_pos_rank from current calibrated values first
-    # so decay tiers use correct ranks rather than stale DB values.
+    # --- Rank labels (no decay applied — DB values are source of truth) ---
     from collections import defaultdict as _dd_prl
 
     def _recompute_ranks(table, val_key, rank_key, label_key):
@@ -12370,59 +12368,6 @@ def api_league_players():
     _recompute_ranks(model_value_table, "value",    "pos_rank",    "pos_rank_label")
     _recompute_ranks(model_value_table, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
 
-    # Decay tables: (rank_threshold, multiplier). Beyond the last threshold the
-    # final multiplier applies.  QB only decays 1QB value (sf_value untouched).
-    # RB/WR/TE decay all value fields — depth penalty applies in any format.
-    _DEPTH_DECAY = {
-        "QB": [(12, 1.00), (18, 0.82), (24, 0.65), (36, 0.45), (48, 0.32), (9999, 0.22)],
-        "RB": [(30, 1.00), (42, 0.88), (54, 0.72), (72, 0.55), (9999, 0.40)],
-        "WR": [(36, 1.00), (48, 0.88), (60, 0.73), (80, 0.57), (9999, 0.42)],
-        "TE": [(12, 1.00), (18, 0.85), (24, 0.68), (36, 0.50), (9999, 0.36)],
-    }
-    _QB_VAL_KEYS   = ["value"]
-    _SKILL_VAL_KEYS = [
-        "value", "sf_value",
-        "value_8", "value_12", "value_14",
-        "sf_value_8", "sf_value_12", "sf_value_14",
-    ]
-    # QB SF decay uses sf_pos_rank (SF ordering differs from 1QB for QBs)
-    _QB_SF_VAL_KEYS = ["sf_value", "sf_value_8", "sf_value_12", "sf_value_14"]
-    for _p in model_value_table:
-        if _p.get("is_rookie"):
-            continue
-        _pos   = str(_p.get("position") or "").upper()
-        _tiers = _DEPTH_DECAY.get(_pos)
-        if not _tiers:
-            continue
-        if _pos == "QB":
-            # 1QB decay based on 1QB rank
-            _rank = int(_p.get("pos_rank") or 999)
-            for _thresh, _factor in _tiers:
-                if _rank <= _thresh:
-                    if _factor < 1.0:
-                        if _p.get("value") is not None:
-                            _p["value"] = round(float(_p["value"]) * _factor, 1)
-                    break
-            # SF decay based on SF rank (independent — deep QBs in SF may differ from 1QB)
-            _sf_rank = int(_p.get("sf_pos_rank") or 999)
-            for _thresh, _factor in _tiers:
-                if _sf_rank <= _thresh:
-                    if _factor < 1.0:
-                        for _vk in _QB_SF_VAL_KEYS:
-                            if _p.get(_vk) is not None:
-                                _p[_vk] = round(float(_p[_vk]) * _factor, 1)
-                    break
-        else:
-            _rank = int(_p.get("pos_rank") or 999)
-            for _thresh, _factor in _tiers:
-                if _rank <= _thresh:
-                    if _factor < 1.0:
-                        for _vk in _SKILL_VAL_KEYS:
-                            if _p.get(_vk) is not None:
-                                _p[_vk] = round(float(_p[_vk]) * _factor, 1)
-                    break
-
-    # Recompute both rank sets post-decay so labels stay accurate.
     _recompute_ranks(model_value_table, "value",    "pos_rank",    "pos_rank_label")
     _recompute_ranks(model_value_table, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
 
