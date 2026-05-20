@@ -11009,8 +11009,35 @@ _PPG_STATS_CACHE_TS = 0.0
 _PPG_STATS_CACHE_TTL = 7200
 
 
+def _score_stats(s: dict, ss: dict) -> float:
+    """Compute fantasy points from a Sleeper stats dict using Sleeper key names."""
+    p = 0.0
+    p += (s.get("pass_yd") or 0) * (ss.get("pass_yd") or 0.04)
+    p += (s.get("pass_td") or 0) * (ss.get("pass_td") or 4.0)
+    p += (s.get("pass_int") or 0) * (ss.get("pass_int") or -2.0)
+    p += (s.get("rush_yd") or 0) * (ss.get("rush_yd") or 0.1)
+    p += (s.get("rush_td") or 0) * (ss.get("rush_td") or 6.0)
+    p += (s.get("rec") or 0) * (ss.get("rec") or 0)
+    p += (s.get("rec_yd") or 0) * (ss.get("rec_yd") or 0.1)
+    p += (s.get("rec_td") or 0) * (ss.get("rec_td") or 6.0)
+    p += (s.get("fum_lost") or 0) * (ss.get("fum_lost") or -2.0)
+    py = s.get("pass_yd") or 0
+    ry = s.get("rush_yd") or 0
+    ey = s.get("rec_yd") or 0
+    rr = ry + ey
+    if py >= 400: p += (ss.get("bonus_pass_yd_400") or 0)
+    elif py >= 300: p += (ss.get("bonus_pass_yd_300") or 0)
+    if ry >= 200: p += (ss.get("bonus_rush_yd_200") or 0)
+    elif ry >= 100: p += (ss.get("bonus_rush_yd_100") or 0)
+    if ey >= 200: p += (ss.get("bonus_rec_yd_200") or 0)
+    elif ey >= 100: p += (ss.get("bonus_rec_yd_100") or 0)
+    if rr >= 200: p += (ss.get("bonus_rush_rec_yd_200") or 0)
+    elif rr >= 100: p += (ss.get("bonus_rush_rec_yd_100") or 0)
+    return p
+
+
 def _compute_bulk_ppg_stats() -> dict:
-    """Read all sleeper_stats files for the most recent season and compute PPG (standard PPR) per player.
+    """Read all sleeper_stats files for the most recent season and compute PPG per player using current league scoring."""
 
     Returns a dict keyed by player_id (str) with keys: ppg, total_pts, games, season.
     Uses standard PPR scoring so the numbers are consistent across the app.
@@ -11034,6 +11061,12 @@ def _compute_bulk_ppg_stats() -> dict:
 
     latest_season = max(season_years)
 
+    try:
+        from dashboard_services.api import get_effective_scoring_settings as _gess
+        _ss = _gess()
+    except Exception:
+        _ss = {}
+
     # Aggregate pts per player across all weeks of the latest season
     player_totals: dict = {}  # player_id → {"pts": float, "games": int}
     week_files = glob.glob(os.path.join(stats_base, f"sleeper_stats_s{latest_season}_w*.json"))
@@ -11049,16 +11082,7 @@ def _compute_bulk_ppg_stats() -> dict:
         for pid, stats in week_stats.items():
             if not isinstance(stats, dict):
                 continue
-            pts = 0.0
-            pts += (stats.get("pass_yd") or 0) * 0.04
-            pts += (stats.get("pass_td") or 0) * 4.0
-            pts += (stats.get("pass_int") or 0) * -2.0
-            pts += (stats.get("rush_yd") or 0) * 0.1
-            pts += (stats.get("rush_td") or 0) * 6.0
-            pts += (stats.get("rec") or 0) * 1.0        # full PPR
-            pts += (stats.get("rec_yd") or 0) * 0.1
-            pts += (stats.get("rec_td") or 0) * 6.0
-            pts += (stats.get("fum_lost") or 0) * -2.0
+            pts = _score_stats(stats, _ss)
             if pts > 0:
                 rec = player_totals.setdefault(pid, {"pts": 0.0, "games": 0})
                 rec["pts"] += pts
@@ -13381,9 +13405,9 @@ def api_player_game_logs(player_id: str):
             scoring_settings = get_effective_scoring_settings()
         else:
             scoring_settings = {
-                "passYards": 0.04, "passTD": 4.0, "passInterceptions": -2.0,
-                "rushYards": 0.1,  "rushTD": 6.0, "pointsPerReception": 1.0,
-                "receivingYards": 0.1, "receivingTD": 6.0, "fumbles": -2.0,
+                "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
+                "rush_yd": 0.1,  "rush_td": 6.0, "rec": 1.0,
+                "rec_yd": 0.1,   "rec_td": 6.0,  "fum_lost": -2.0,
             }
 
         players_index = load_relevant_index() or {}
@@ -13439,31 +13463,8 @@ def api_player_game_logs(player_id: str):
             if not any(player_id in ws for ws in stats_by_week.values()):
                 continue
 
-            # Build a lookup helper to compute pts for a stats dict
             def _calc_pts(s):
-                p = 0.0
-                p += (s.get("pass_yd") or 0) * (scoring_settings.get("passYards") or 0.04)
-                p += (s.get("pass_td") or 0) * (scoring_settings.get("passTD") or 4.0)
-                p += (s.get("pass_int") or 0) * (scoring_settings.get("passInterceptions") or -2.0)
-                p += (s.get("rush_yd") or 0) * (scoring_settings.get("rushYards") or 0.1)
-                p += (s.get("rush_td") or 0) * (scoring_settings.get("rushTD") or 6.0)
-                p += (s.get("rec") or 0) * (scoring_settings.get("pointsPerReception") or 0)
-                p += (s.get("rec_yd") or 0) * (scoring_settings.get("receivingYards") or 0.1)
-                p += (s.get("rec_td") or 0) * (scoring_settings.get("receivingTD") or 6.0)
-                p += (s.get("fum_lost") or 0) * (scoring_settings.get("fumbles") or -2.0)
-                py = s.get("pass_yd") or 0
-                ry = s.get("rush_yd") or 0
-                ey = s.get("rec_yd") or 0
-                rr = ry + ey
-                if py >= 400: p += (scoring_settings.get("bonus_pass_yd_400") or 0)
-                elif py >= 300: p += (scoring_settings.get("bonus_pass_yd_300") or 0)
-                if ry >= 200: p += (scoring_settings.get("bonus_rush_yd_200") or 0)
-                elif ry >= 100: p += (scoring_settings.get("bonus_rush_yd_100") or 0)
-                if ey >= 200: p += (scoring_settings.get("bonus_rec_yd_200") or 0)
-                elif ey >= 100: p += (scoring_settings.get("bonus_rec_yd_100") or 0)
-                if rr >= 200: p += (scoring_settings.get("bonus_rush_rec_yd_200") or 0)
-                elif rr >= 100: p += (scoring_settings.get("bonus_rush_rec_yd_100") or 0)
-                return round(p, 2)
+                return round(_score_stats(s, scoring_settings), 2)
 
             def _stats_dict(s):
                 return {k: s.get(k) for k in ["pass_yd","pass_td","pass_int","rush_att","rush_yd","rush_td","rec","rec_tgt","rec_yd","rec_td","fum_lost"]}
