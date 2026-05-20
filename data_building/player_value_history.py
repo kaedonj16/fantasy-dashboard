@@ -346,10 +346,10 @@ def get_player_value_history(
     elif league_size == 14:
         _1qb_col, _sf_col = "value_14", "sf_value_14"
     else:
-        _1qb_col, _sf_col = "value", "sf_value"
+        _1qb_col, _sf_col = "value", "value_sf"
 
-    # SF column: use raw model sf_value (correctly normalized); fall back to 1QB value
-    _sf_expr = f"COALESCE({_sf_col}, {_1qb_col}, value)"
+    # SF column: prefer calibrated value_sf, fall back to raw sf_value, then 1QB value
+    _sf_expr = f"COALESCE({_sf_col}, sf_value, {_1qb_col}, value)"
 
     with get_conn() as conn:
         rows = conn.execute(
@@ -371,10 +371,27 @@ def get_player_value_history(
             """,
             (source, str(player_id), cutoff),
         ).fetchall()
-    # No calibration scaling: history values are already correct as written.
-    # record_calibrated_history_snapshot (step 10) bakes calibrated values in directly.
+        _cal_row = conn.execute(
+            """SELECT calibrated_value_1qb, calibrated_value_sf
+               FROM player_values WHERE player_id = %s""",
+            (str(player_id),),
+        ).fetchone()
+
+    # Scale historical values to the calibrated scale so the graph matches the
+    # current modal value. Use the latest history row's raw value as the
+    # denominator so the final graph point scales to exactly the calibrated value.
     _cal_scale_1qb = 1.0
     _cal_scale_sf  = 1.0
+    try:
+        _last_raw_1qb = float(rows[-1]["value_1qb"]) if rows else 0.0
+        _last_raw_sf  = float(rows[-1]["value_sf"])  if rows else 0.0
+        if _cal_row:
+            if _cal_row["calibrated_value_1qb"] and _last_raw_1qb > 0:
+                _cal_scale_1qb = float(_cal_row["calibrated_value_1qb"]) / _last_raw_1qb
+            if _cal_row["calibrated_value_sf"] and _last_raw_sf > 0:
+                _cal_scale_sf = float(_cal_row["calibrated_value_sf"]) / _last_raw_sf
+    except Exception:
+        pass
 
     _use_sf = league_type.lower() == "sf"
 
