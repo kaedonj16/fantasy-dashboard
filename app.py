@@ -11416,7 +11416,7 @@ def _score_stats(s: dict, ss: dict) -> float:
 
 
 def _compute_bulk_ppg_stats() -> dict:
-    """Read all sleeper_stats files for the most recent season and compute PPG per player using current league scoring."""
+    """Read all sleeper_stats files for the most recent season and compute PPG per player using current league scoring.
 
     Returns a dict keyed by player_id (str) with keys: ppg, total_pts, games, season.
     Uses standard PPR scoring so the numbers are consistent across the app.
