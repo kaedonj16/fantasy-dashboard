@@ -9970,6 +9970,11 @@ function setupFunAwardsGrid() {
     }
   };
 
+  // Auto-open Draft Board tab when arriving via ?tab=draft link
+  if (new URLSearchParams(window.location.search).get('tab') === 'draft') {
+    rkPageTab('draft');
+  }
+
   async function initDA() {
     const _sessKey = 'da_' + location.pathname;
     try { daDrafted = new Set(JSON.parse(sessionStorage.getItem(_sessKey) || '[]')); } catch (_) {}

@@ -1067,6 +1067,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
                 ("Prospects",       "/prospects",   "prospects"),
+                ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "/prospects?tab=draft", "prospects"),
                 ("Breakouts",       "/breakouts", "breakouts"),
             ], ["players", "prospects", "breakouts"], "playersNavDropdown"),
         ]
@@ -1183,6 +1184,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
+        ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "page_prospects", "prospects", False, "?tab=draft"),
         ("Breakout Engine",   "page_breakouts",  "breakouts", False),
     ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
