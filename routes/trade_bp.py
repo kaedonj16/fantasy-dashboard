@@ -95,6 +95,12 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <button class="ti-pos" data-pos="WR"  onclick="filterTI('WR')">WR</button>
             <button class="ti-pos" data-pos="TE"  onclick="filterTI('TE')">TE</button>
           </div>
+          <div style="position:relative;flex:1;min-width:140px;max-width:220px;">
+            <input id="tiSearchInput" type="text" autocomplete="off" placeholder="Search player…"
+              style="width:100%;box-sizing:border-box;background:var(--input-bg,#1e293b);border:1px solid var(--border);border-radius:8px;padding:6px 10px 6px 30px;font-size:13px;color:var(--text);outline:none;">
+            <i class="fa-solid fa-magnifying-glass" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-muted);pointer-events:none;"></i>
+            <div id="tiSearchDropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--card-bg,#1e293b);border:1px solid var(--border);border-radius:8px;z-index:200;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.3);"></div>
+          </div>
           <div class="ti-lf-bar" style="margin:0;" id="tiLeagueTypeBar">
             <button class="ti-lf-btn {'active' if not _ti_sf else ''}" data-lf="1qb" onclick="switchTILeagueType('1qb')">1QB</button>
             <button class="ti-lf-btn {'active' if _ti_sf else ''}" data-lf="sf"  onclick="switchTILeagueType('sf')">SF</button>
@@ -697,14 +703,68 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       }}
 
       window.openTIPlayerCard = function(playerId, playerName, isRookie) {{
-        if (isRookie) {{
-          // For rookies, we need to get the player data and open rookie modal
-          // For now, fall back to regular modal with trades tab
-          openPlayerModal(playerId, playerName, {{ tab: 'trades' }});
-        }} else {{
-          openPlayerModal(playerId, playerName, {{ tab: 'trades' }});
-        }}
+        openPlayerModal(playerId, playerName, {{ tab: 'trades' }});
       }};
+
+      // ── Player search ─────────────────────────────────────────────
+      (function() {{
+        const input = document.getElementById('tiSearchInput');
+        const drop  = document.getElementById('tiSearchDropdown');
+        if (!input || !drop) return;
+
+        let _allPlayers = null;
+        async function ensurePlayers() {{
+          if (_allPlayers) return;
+          try {{
+            const res = await fetch('/api/league-players', {{ cache: 'no-store' }});
+            const raw = await res.json();
+            const data = Array.isArray(raw) ? raw : (raw.players || []);
+            _allPlayers = data.filter(p => ['QB','RB','WR','TE'].includes(p.position));
+          }} catch(_) {{ _allPlayers = []; }}
+        }}
+
+        const posColor = p => ({{ QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6' }}[p] || '#888');
+
+        input.addEventListener('input', async () => {{
+          const q = input.value.trim().toLowerCase();
+          if (q.length < 2) {{ drop.style.display = 'none'; return; }}
+          await ensurePlayers();
+          const matches = _allPlayers
+            .filter(p => (p.name||'').toLowerCase().includes(q))
+            .sort((a,b) => (b.value||0) - (a.value||0))
+            .slice(0, 10);
+          if (!matches.length) {{ drop.style.display = 'none'; return; }}
+          drop.innerHTML = matches.map(p => {{
+            const col = posColor(p.position);
+            return `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);"
+              class="ti-search-item" data-id="${{p.id}}" data-name="${{(p.name||'').replace(/"/g,'&quot;')}}">
+              <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${{col}}20;color:${{col}};flex-shrink:0;">${{p.position}}</span>
+              <span style="font-size:13px;font-weight:600;color:var(--text);flex:1;">${{p.name||p.id}}</span>
+              <span style="font-size:12px;color:var(--text-muted);">${{p.value ? Math.round(p.value) : ''}}</span>
+            </div>`;
+          }}).join('');
+          drop.style.display = 'block';
+        }});
+
+        drop.addEventListener('click', e => {{
+          const item = e.target.closest('.ti-search-item');
+          if (!item) return;
+          input.value = item.dataset.name;
+          drop.style.display = 'none';
+          openPlayerModal(item.dataset.id, item.dataset.name, {{ tab: 'trades' }});
+        }});
+
+        drop.querySelectorAll && drop.addEventListener('mouseover', e => {{
+          const item = e.target.closest('.ti-search-item');
+          drop.querySelectorAll('.ti-search-item').forEach(el => el.style.background = '');
+          if (item) item.style.background = 'var(--row,rgba(255,255,255,.05))';
+        }});
+
+        document.addEventListener('click', e => {{
+          if (!input.contains(e.target) && !drop.contains(e.target))
+            drop.style.display = 'none';
+        }});
+      }})();
 
       window.loadTIPage = loadTIPage;
     }})();
