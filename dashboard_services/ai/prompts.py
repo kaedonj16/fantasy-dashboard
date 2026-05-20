@@ -157,8 +157,13 @@ def generate_trade_ai_result(payload: dict) -> dict:
     - delta >= +250: Overwhelming value win. Accept unless a catastrophic structural flaw exists (rare).
     - delta +150 to +249: Strong value win. Accept in nearly all cases.
     - delta +50 to +149: Clear value win. Accept unless a significant structural concern exists.
-    - delta -30 to +49: Toss-up range. Issue a COUNTER or evaluate structure carefully.
-    - delta -50 to -149: Clear value loss. Decline or counter aggressively.
+    - delta +16 to +49: Slight value win. Accept — don't ask for more when you're already winning.
+    - delta -15 to +15: ESSENTIALLY FAIR — treat as market-neutral. ALWAYS verdict ACCEPT.
+      The summary must explicitly say this is a near-mirror trade, highlight how close the
+      values are, and focus the analysis on fit/preference rather than value extraction.
+      Do NOT suggest asking for sweeteners. Do NOT say "should be pushed to include more."
+    - delta -50 to -16: Slight value loss. Issue a COUNTER with a specific, modest add-on.
+    - delta -150 to -51: Clear value loss. Decline or counter aggressively.
     - delta <= -150: Severe loss. Decline immediately.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -219,9 +224,13 @@ def generate_trade_ai_result(payload: dict) -> dict:
     SECTION 8: DECISION FRAMEWORK
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Verdicts:
-      - ACCEPT  → Clear value win, elite upgrade, or perfect structural alignment
-      - DECLINE → Clear value loss, giving away a cornerstone, or major structural damage
-      - COUNTER → Close range (-30 to +49), right idea wrong price, or fixable imbalance
+      - ACCEPT  → delta >= -15: value win OR essentially fair (market-neutral). Do not ask for sweeteners on fair trades.
+      - DECLINE → delta <= -150: severe value loss, or giving away a cornerstone for scraps
+      - COUNTER → delta -16 to -149: viewer is behind but not catastrophically; propose a specific, realistic add-on
+
+    CRITICAL: If delta is between -15 and +15, the verdict MUST be ACCEPT.
+    The summary should acknowledge the trade is essentially even and let the viewer
+    decide based on preference — not suggest extracting more value from the other team.
 
     Counter field:
       - Include ONLY if verdict is COUNTER or DECLINE.
