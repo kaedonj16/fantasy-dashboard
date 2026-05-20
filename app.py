@@ -1060,14 +1060,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             simple_pill("Home", "/", "home"),
             simple_dropdown("Trades", [
                 ("Trade Calculator", "/trade",          "trade"),
-                ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade"),
+                ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
                 ("Trade Database",   "/trade-database", "trade-database"),
                 ("Trade Intel",      "/trade-intel",    "trade-intel"),
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
                 ("Prospects",       "/prospects",   "prospects"),
-                ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "/prospects?tab=draft", "prospects"),
+                ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "/prospects?tab=draft", "prospects-draft"),
                 ("Breakouts",       "/breakouts", "breakouts"),
             ], ["players", "prospects", "breakouts"], "playersNavDropdown"),
         ]
@@ -1167,7 +1167,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade",          "trade",          False),
-        ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade", False, "?tab=suggestions"),
+        ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False, "?tab=suggestions"),
         ("Trade Database",   "trade.page_trade_database", "trade-database", False),
         ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
@@ -1184,7 +1184,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
-        ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "page_prospects", "prospects", False, "?tab=draft"),
+        ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Breakout Engine",   "page_breakouts",  "breakouts", False),
     ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
