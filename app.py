@@ -11887,7 +11887,13 @@ def api_trade_eval():
     side_a_picks = payload.get("side_a_picks", []) or []
     side_b_picks = payload.get("side_b_picks", []) or []
 
-    value_table = get_model_value_table_cached()
+    # Use DB as primary source (same as api_league_players) so chip values and
+    # team totals always draw from the same number.  Fall back to JSON if DB unavailable.
+    try:
+        from dashboard_services.player_value_history import load_current_values_from_db as _lcvdb
+        value_table = _lcvdb() or get_model_value_table_cached()
+    except Exception:
+        value_table = get_model_value_table_cached()
 
     if not isinstance(value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
@@ -12194,11 +12200,10 @@ def api_league_players():
     except Exception as e:
         print(f"[api/league-players] Database load failed: {e}, falling back to JSON")
         model_value_table = list(get_model_value_table_cached() or [])
-    
+
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
 
-    # Supplement DB pick entries with WLS file picks for any IDs not already in the DB.
     # DB values are preferred (more accurate); WLS fills in bucket picks or any gaps.
     try:
         from dashboard_services.picks import load_pick_value_table as _lpvt
