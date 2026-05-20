@@ -7644,15 +7644,12 @@ function openComparisonView(p1, p2) {
   }
 
   // Build the comparison body
-  const ppgRowHTML = _buildComparePPGRow(p1, p2);
   body.innerHTML = `
     <div class="compare-body">
       <div class="compare-hero-section">
         <div class="compare-hero-player" id="compareHero1" data-name="${p1.full_name || ''}">${_buildCompareHeroHTML(p1)}</div>
         <div class="compare-hero-player" id="compareHero2" data-name="${p2.full_name || ''}">${_buildCompareHeroHTML(p2)}</div>
       </div>
-
-      ${ppgRowHTML ? `<hr class="pm-section-divider">${ppgRowHTML}` : ''}
 
       <hr class="pm-section-divider">
 
