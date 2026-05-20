@@ -1408,8 +1408,10 @@ def rewrite_value_table_with_model() -> Path:
         if position != "QB":
             sf_value = max(sf_value, final_value)
         elif pid in wls_sf_values:
-            # Use market-derived WLS value for QBs in SF — reflects actual trade markets
-            sf_value = wls_sf_values[pid]
+            # WLS market value can only improve (never downgrade) the engine's SF value.
+            # The sf_engine already gives top QBs (Allen: 999.9) their correct SF premium.
+            # WLS refines this with real trade data but shouldn't override a higher engine value.
+            sf_value = max(sf_value, wls_sf_values[pid])
 
         age = player.get("age")
         if age is None and row is not None:
