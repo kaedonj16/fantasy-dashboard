@@ -30,8 +30,8 @@ def build_prospects_body() -> str:
 
     <!-- Controls -->
     <div class="filter-controls-container">
-      <!-- Row 1 (desktop) / Rows 1-2 (mobile): Search + pills -->
-      <div class="filter-row-primary">
+      <!-- Row 1: Search + pills + settings -->
+      <div class="filter-row filter-row-primary">
         <div class="filter-search">
           <input id="rookieSearch" type="text" placeholder="Search prospects…" autocomplete="off"
             style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
@@ -51,17 +51,9 @@ def build_prospects_body() -> str:
           <button class="pos-pill" data-pos="WR"  onclick="rkTogglePos('WR')">WR</button>
           <button class="pos-pill" data-pos="TE"  onclick="rkTogglePos('TE')">TE</button>
         </div>
-      </div>
-
-      <!-- Row 2 (desktop) / Rows 3-4 (mobile): Tags + Settings + Sort -->
-      <div class="filter-row-secondary">
-        <div id="rkActiveSettings" class="active-settings-indicator">
-          <span class="active-setting-tag">10-Team</span>
-          <span class="active-setting-tag">1QB</span>
-        </div>
-        <div class="rk-settings-wrapper" style="position:relative;flex-shrink:0;">
+        <div style="position:relative;">
           <button id="rkSettingsBtn" class="filter-settings-btn" onclick="rkToggleSettings()">
-            League️ Settings
+            Settings
           </button>
           <div id="rkSettingsPanel" class="filter-settings-panel" style="display:none;">
             <div class="settings-section">
@@ -82,6 +74,14 @@ def build_prospects_body() -> str:
             </div>
             <button class="settings-reset-btn" onclick="rkResetSettings()">Reset to defaults</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Row 2: Active setting tags + sort -->
+      <div class="filter-row filter-row-secondary">
+        <div id="rkActiveSettings" class="active-settings-indicator">
+          <span class="active-setting-tag">10-Team</span>
+          <span class="active-setting-tag">1QB</span>
         </div>
         <div class="filter-sort">
           <label class="filter-label">Sort by</label>
@@ -282,16 +282,18 @@ def build_prospects_body() -> str:
     border-bottom: 1px solid var(--border);
     margin-bottom: 12px;
   }
-  .filter-row-primary {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .filter-row-secondary {
+  .filter-row {
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-wrap: wrap;
     justify-content: space-between;
+  }
+  .filter-row-primary {
+    gap: 12px;
+  }
+  .filter-row-secondary {
+    padding-top: 4px;
   }
   .filter-search {
     position: relative;

@@ -1060,12 +1060,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             simple_pill("Home", "/", "home"),
             simple_dropdown("Trades", [
                 ("Trade Calculator", "/trade",          "trade"),
+                ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade"),
                 ("Trade Database",   "/trade-database", "trade-database"),
                 ("Trade Intel",      "/trade-intel",    "trade-intel"),
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
                 ("Prospects",       "/prospects",   "prospects"),
+                ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "/prospects?tab=draft", "prospects"),
                 ("Breakouts",       "/breakouts", "breakouts"),
             ], ["players", "prospects", "breakouts"], "playersNavDropdown"),
         ]
@@ -1133,6 +1135,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         for item_tuple in items:
             item_label, endpoint, item_key = item_tuple[0], item_tuple[1], item_tuple[2]
             disabled = item_tuple[3] if len(item_tuple) > 3 else False
+            href_suffix = item_tuple[4] if len(item_tuple) > 4 else ""
             if disabled:
                 item_html += (
                     f"<span class='nav-pill-dropdown-item disabled'>"
@@ -1140,7 +1143,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                     f"</span>"
                 )
             else:
-                href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
+                href = url_for(endpoint, platform=platform, season=season, league_id=league_id) + href_suffix
                 item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
                 item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
         btn_id  = dropdown_id.replace("Dropdown", "Btn")
@@ -1164,6 +1167,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade",          "trade",          False),
+        ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade", False, "?tab=suggestions"),
         ("Trade Database",   "trade.page_trade_database", "trade-database", False),
         ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
@@ -1180,6 +1184,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
+        ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "page_prospects", "prospects", False, "?tab=draft"),
         ("Breakout Engine",   "page_breakouts",  "breakouts", False),
     ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
@@ -8317,7 +8322,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             <!-- Settings button -->
             <div style="position:relative;">
               <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
-                League️ Settings
+                Settings
               </button>
 
               <!-- Settings panel (hidden by default) -->
@@ -9073,7 +9078,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         count.style.display = 'block';
         count.textContent = 'Showing ' + (start + 1) + '–' + end + ' of ' + total + ' player' + (total !== 1 ? 's' : '');
 
-        const rankMap = prBuildRankMap();
         const _PR_TIER_COLORS = ['','#10b981','#22d3ee','#3b82f6','#8b5cf6','#a855f7','#f59e0b','#f97316','#94a3b8','#64748b'];
         const _PR_TIER_LABELS = ['','Elite','Star','High-End Starter','Starter','Flex','Bench','Deep Bench','Handcuff','Fringe'];
 
@@ -9093,7 +9097,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             list.appendChild(div);
           }
           if (_tier) prevTier = _tier;
-          const idx = start + i;
           const row = document.createElement('div');
           row.className = 'pr-player-row pr-grid-row';
           row.style.cursor = 'pointer';
@@ -9112,7 +9115,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           };
 
           const _drafted = p.is_rookie && p.team && p.team !== 'FA';
-          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (rankMap.get(String(p.id)) || (idx + 1));
+          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (start + i + 1);
           const posRank = prLeagueType === 'sf'
             ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
             : (p.pos_rank_label || p.position);
@@ -11610,7 +11613,12 @@ def api_trade_eval():
     side_b = build_side(side_b_players, side_b_picks)
 
     tier_thresholds = compute_tier_thresholds(value_table, league_type, league_size)
-    apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"))
+    # Only apply depth adjustment when asset counts differ — equal counts penalise both
+    # sides symmetrically and just confuse the result.
+    side_a_count = len(side_a_players) + len(side_a_picks)
+    side_b_count = len(side_b_players) + len(side_b_picks)
+    if side_a_count != side_b_count:
+        apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"))
 
     a_eff = side_a["effective_total"]
     b_eff = side_b["effective_total"]
@@ -13327,6 +13335,156 @@ def api_player_details(player_id: str):
         logger.exception("[api_player_details] Error")
         import traceback
         traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/player-game-logs/<player_id>")
+def api_player_game_logs(player_id: str):
+    """Game logs for the Stats tab — lazy-loaded separately from player-details."""
+    try:
+        from utils.utils import load_relevant_index
+        from dashboard_services.api import get_effective_scoring_settings
+        from dashboard_services.platform_api import sync_league_globals
+
+        league_id = request.args.get("league_id")
+        platform  = request.args.get("platform", "sleeper")
+        season    = int(request.args.get("season", datetime.now().year))
+
+        if league_id:
+            sync_league_globals(platform, league_id, season)
+            scoring_settings = get_effective_scoring_settings()
+        else:
+            scoring_settings = {
+                "passYards": 0.04, "passTD": 4.0, "passInterceptions": -2.0,
+                "rushYards": 0.1,  "rushTD": 6.0, "pointsPerReception": 1.0,
+                "receivingYards": 0.1, "receivingTD": 6.0, "fumbles": -2.0,
+            }
+
+        players_index = load_relevant_index() or {}
+        player_meta = players_index.get(player_id) or {}
+        if not player_meta:
+            players_index_full = load_players_index() or {}
+            player_meta = players_index_full.get(player_id) or {}
+        player_team = player_meta.get("team", "")
+
+        # Reuse the years cache
+        global _PLAYER_DETAIL_YEARS_CACHE, _PLAYER_DETAIL_YEARS_CACHE_TS
+        now = time.time()
+        if not _PLAYER_DETAIL_YEARS_CACHE or now - _PLAYER_DETAIL_YEARS_CACHE_TS > _PLAYER_DETAIL_YEARS_TTL:
+            stats_files = glob.glob(os.path.join("cache", "sleeper_stats", "sleeper_stats_*.json"))
+            _fresh_years: set = set()
+            for sf in stats_files:
+                bn = os.path.basename(sf)
+                if bn.startswith("sleeper_stats_s"):
+                    m = re.match(r'sleeper_stats_s(\d+)_w(\d+)', bn)
+                    if m:
+                        _fresh_years.add(int(m.group(1)))
+            _PLAYER_DETAIL_YEARS_CACHE = _fresh_years
+            _PLAYER_DETAIL_YEARS_CACHE_TS = now
+        available_years = _PLAYER_DETAIL_YEARS_CACHE
+
+        game_logs_by_year: dict = {}
+
+        for season_year in sorted(available_years, reverse=True):
+            game_logs = []
+
+            schedule_by_week: dict = {}
+            for schedule_file in glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*_d*.json")):
+                try:
+                    fn = os.path.basename(schedule_file)
+                    week_num = int(fn.split('_w')[1].split('_')[0])
+                    with open(schedule_file) as f:
+                        games = json.load(f)
+                    if isinstance(games, list) and week_num not in schedule_by_week:
+                        schedule_by_week[week_num] = games
+                except Exception:
+                    continue
+
+            stats_by_week: dict = {}
+            for week_file in glob.glob(os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season_year}_w*.json")):
+                try:
+                    m = re.match(r'sleeper_stats_s(\d+)_w(\d+)', os.path.basename(week_file))
+                    if m:
+                        with open(week_file) as f:
+                            stats_by_week[int(m.group(2))] = json.load(f)
+                except Exception:
+                    continue
+
+            if not any(player_id in ws for ws in stats_by_week.values()):
+                continue
+
+            for week_num in sorted(schedule_by_week.keys()):
+                games = schedule_by_week[week_num]
+                if not isinstance(games, list):
+                    continue
+                opponent = ""
+                is_away  = False
+                game_date = ""
+                for game in games:
+                    if not isinstance(game, dict):
+                        continue
+                    home_team = game.get("home", "")
+                    away_team = game.get("away", "")
+                    if player_team == home_team:
+                        opponent = away_team; is_away = False; game_date = game.get("gameDate", ""); break
+                    elif player_team == away_team:
+                        opponent = home_team; is_away = True;  game_date = game.get("gameDate", ""); break
+                if not opponent:
+                    continue
+
+                stats = (stats_by_week.get(week_num) or {}).get(player_id)
+                if stats:
+                    pts = 0.0
+                    pts += (stats.get("pass_yd") or 0) * scoring_settings.get("passYards", 0.04)
+                    pts += (stats.get("pass_td") or 0) * scoring_settings.get("passTD", 4.0)
+                    pts += (stats.get("pass_int") or 0) * scoring_settings.get("passInterceptions", -2.0)
+                    pts += (stats.get("rush_yd") or 0) * scoring_settings.get("rushYards", 0.1)
+                    pts += (stats.get("rush_td") or 0) * scoring_settings.get("rushTD", 6.0)
+                    pts += (stats.get("rec") or 0) * scoring_settings.get("pointsPerReception", 1.0)
+                    pts += (stats.get("rec_yd") or 0) * scoring_settings.get("receivingYards", 0.1)
+                    pts += (stats.get("rec_td") or 0) * scoring_settings.get("receivingTD", 6.0)
+                    pts += (stats.get("fum_lost") or 0) * scoring_settings.get("fumbles", -2.0)
+                    pass_yds = stats.get("pass_yd") or 0
+                    rush_yds = stats.get("rush_yd") or 0
+                    rec_yds  = stats.get("rec_yd") or 0
+                    rush_rec = rush_yds + rec_yds
+                    if pass_yds >= 400: pts += scoring_settings.get("bonus_pass_yd_400", 0)
+                    elif pass_yds >= 300: pts += scoring_settings.get("bonus_pass_yd_300", 0)
+                    if rush_yds >= 200: pts += scoring_settings.get("bonus_rush_yd_200", 0)
+                    elif rush_yds >= 100: pts += scoring_settings.get("bonus_rush_yd_100", 0)
+                    if rec_yds >= 200: pts += scoring_settings.get("bonus_rec_yd_200", 0)
+                    elif rec_yds >= 100: pts += scoring_settings.get("bonus_rec_yd_100", 0)
+                    if rush_rec >= 200: pts += scoring_settings.get("bonus_rush_rec_yd_200", 0)
+                    elif rush_rec >= 100: pts += scoring_settings.get("bonus_rush_rec_yd_100", 0)
+                    game_logs.append({
+                        "week": week_num,
+                        "date": game_date,
+                        "opponent": f"@{opponent}" if is_away else opponent,
+                        "fantasy_pts": round(pts, 1),
+                        "stats": {
+                            "pass_yd": stats.get("pass_yd"), "pass_td": stats.get("pass_td"),
+                            "pass_int": stats.get("pass_int"), "rush_att": stats.get("rush_att"),
+                            "rush_yd": stats.get("rush_yd"), "rush_td": stats.get("rush_td"),
+                            "rec": stats.get("rec"), "rec_tgt": stats.get("rec_tgt"),
+                            "rec_yd": stats.get("rec_yd"), "rec_td": stats.get("rec_td"),
+                            "fum_lost": stats.get("fum_lost"),
+                        },
+                    })
+                else:
+                    game_logs.append({
+                        "week": week_num, "date": game_date,
+                        "opponent": f"@{opponent}" if is_away else opponent,
+                        "fantasy_pts": 0.0,
+                        "stats": {k: None for k in ["pass_yd","pass_td","pass_int","rush_att","rush_yd","rush_td","rec","rec_tgt","rec_yd","rec_td","fum_lost"]},
+                    })
+
+            if game_logs:
+                game_logs.sort(key=lambda g: g.get("date", "") or "")
+                game_logs_by_year[season_year] = game_logs
+
+        return jsonify({"game_logs_by_year": game_logs_by_year})
+    except Exception as e:
+        logger.exception("[api_player_game_logs] error")
         return jsonify({"error": str(e)}), 500
 
 
@@ -15934,9 +16092,18 @@ def api_trade_intel_player_packages(player_id: str):
                     )
                     if untouchable_ids:
                         viewer_players = [p for p in viewer_players if p["player_id"] not in untouchable_ids]
-                    # Always rebuild with draft_ended=False so current-season picks
-                    # (including traded picks) are included regardless of whether
-                    # the cached ctx was built after the startup draft timestamp.
+                    # Use draft_ended=True if the fantasy rookie draft for this season
+                    # is already complete — those picks no longer exist as assets.
+                    try:
+                        _drafts_for_check = ctx.get("drafts") or []
+                        _latest_d = get_most_recent_valid_draft_for_season(_drafts_for_check, season)
+                        _fantasy_draft_done = (
+                            bool(_latest_d)
+                            and str((_latest_d or {}).get("status") or "").lower() == "complete"
+                            and int(((_latest_d or {}).get("settings") or {}).get("rounds") or 99) <= 5
+                        )
+                    except Exception:
+                        _fantasy_draft_done = False
                     try:
                         from dashboard_services.service import build_picks_by_roster as _bpbr
                         _fresh_pbr = _bpbr(
@@ -15944,7 +16111,7 @@ def api_trade_intel_player_packages(player_id: str):
                             league=ctx.get("league") or {},
                             rosters=rosters,
                             traded=ctx.get("traded") or [],
-                            draft_ended=False,
+                            draft_ended=_fantasy_draft_done,
                         )
                     except Exception as _pbr_err:
                         logger.warning("[trade-intel] build_picks_by_roster failed: %s", _pbr_err)

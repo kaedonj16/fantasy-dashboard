@@ -709,6 +709,30 @@ def _get_top_movers_from_db(
     except Exception:
         pass
 
+    def _format_pick_id(pid: str) -> str | None:
+        """Return human-readable pick label for IDs like '2026_1_01' or '2026_1_early'."""
+        import re
+        if not re.match(r"^\d{4}_\d+_", pid):
+            return None
+        parts = pid.split("_")
+        if len(parts) < 3:
+            return None
+        year, rnd_str = parts[0], parts[1]
+        third = "_".join(parts[2:])
+        try:
+            rnd = int(rnd_str)
+        except ValueError:
+            return None
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+        bucket = {"early": "Early", "mid": "Mid", "late": "Late"}.get(third.lower())
+        if bucket:
+            return f"{year} {rnd}{suffix} ({bucket})"
+        try:
+            slot = int(third)
+            return f"{year} {rnd}.{slot:02d}"
+        except ValueError:
+            return None
+
     movers = []
     for row in rows:
         row_dict = dict(row)
@@ -717,7 +741,8 @@ def _get_top_movers_from_db(
         if resolved:
             row_dict["name"] = resolved
         elif not row_dict.get("name") or row_dict["name"] == "Unknown":
-            row_dict["name"] = f"Player {player_id}"
+            pick_label = _format_pick_id(player_id)
+            row_dict["name"] = pick_label if pick_label else f"Player {player_id}"
         movers.append(row_dict)
     
     risers = movers[:limit]
