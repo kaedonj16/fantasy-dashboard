@@ -15154,12 +15154,18 @@ def api_trade_database():
         league_type = (request.args.get("league_type") or "all").strip().lower()
         season      = int(request.args.get("season") or datetime.now().year)
 
+        # ID-based filters (comma-separated player IDs)
+        _pa_raw = (request.args.get("player_a") or "").strip()
+        _pb_raw = (request.args.get("player_b") or "").strip()
+        player_a_ids = [x for x in _pa_raw.split(",") if x] if _pa_raw else []
+        player_b_ids = [x for x in _pb_raw.split(",") if x] if _pb_raw else []
+
         from dashboard_services.db import get_conn
         from utils.utils import load_players_index
 
         players_map = load_players_index() or {}
 
-        # If searching by name, resolve to player_ids first
+        # Resolve name search to IDs (legacy ?q= path)
         match_ids: list[str] = []
         if q:
             match_ids = [
@@ -15177,63 +15183,61 @@ def api_trade_database():
             sf_param = False
         sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
 
+        # Build side-specific EXISTS filters (all static SQL, no user data in f-strings)
+        filter_clauses: list = []
+        filter_params:  list = []
+
+        if player_a_ids:
+            filter_clauses.append(
+                "EXISTS (SELECT 1 FROM trade_intel_assets _fa WHERE _fa.trade_id = t.id"
+                " AND _fa.side = 'a' AND _fa.asset_type = 'player' AND _fa.player_id = ANY(%s))"
+            )
+            filter_params.append(player_a_ids)
+
+        if player_b_ids:
+            filter_clauses.append(
+                "EXISTS (SELECT 1 FROM trade_intel_assets _fb WHERE _fb.trade_id = t.id"
+                " AND _fb.side = 'b' AND _fb.asset_type = 'player' AND _fb.player_id = ANY(%s))"
+            )
+            filter_params.append(player_b_ids)
+
+        if match_ids and not (player_a_ids or player_b_ids):
+            # Legacy name-search: any-side match
+            filter_clauses.append(
+                "EXISTS (SELECT 1 FROM trade_intel_assets _fm WHERE _fm.trade_id = t.id"
+                " AND _fm.asset_type = 'player' AND _fm.player_id = ANY(%s))"
+            )
+            filter_params.append(match_ids)
+
+        filter_sql = (" AND " + " AND ".join(filter_clauses)) if filter_clauses else ""
+        sf_p       = [sf_param] if sf_param is not None else []
+
         with get_conn() as conn:
-            if match_ids:
-                base_params_count = [match_ids, season] + ([sf_param] if sf_param is not None else [])
-                count_row = conn.execute(
-                    f"""
-                    SELECT COUNT(DISTINCT t.id) AS n
-                    FROM trade_intel_trades t
-                    JOIN trade_intel_assets a ON a.trade_id = t.id
-                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
-                      AND t.season = %s {sf_clause}
-                    """,
-                    base_params_count,
-                ).fetchone()
-                total = int(count_row["n"]) if count_row else 0
+            count_params = [season] + sf_p + filter_params
+            count_row = conn.execute(
+                f"""
+                SELECT COUNT(DISTINCT t.id) AS n
+                FROM trade_intel_trades t
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                WHERE t.season = %s {sf_clause}{filter_sql}
+                """,
+                count_params,
+            ).fetchone()
+            total = int(count_row["n"]) if count_row else 0
 
-                base_params_rows = [match_ids, season] + ([sf_param] if sf_param is not None else []) + [limit + 1, page * limit]
-                trade_rows = conn.execute(
-                    f"""
-                    SELECT DISTINCT
-                        t.id, t.transaction_id, t.season, t.week, t.created_at,
-                        l.scoring_type, l.is_superflex, l.num_teams
-                    FROM trade_intel_trades t
-                    JOIN trade_intel_assets a ON a.trade_id = t.id
-                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE a.player_id = ANY(%s) AND a.asset_type = 'player'
-                      AND t.season = %s {sf_clause}
-                    ORDER BY t.created_at DESC NULLS LAST
-                    LIMIT %s OFFSET %s
-                    """,
-                    base_params_rows,
-                ).fetchall()
-            else:
-                base_params_count = [season] + ([sf_param] if sf_param is not None else [])
-                count_row = conn.execute(
-                    f"""
-                    SELECT COUNT(*) AS n FROM trade_intel_trades t
-                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s {sf_clause}
-                    """,
-                    base_params_count,
-                ).fetchone()
-                total = int(count_row["n"]) if count_row else 0
-
-                base_params_rows = [season] + ([sf_param] if sf_param is not None else []) + [limit + 1, page * limit]
-                trade_rows = conn.execute(
-                    f"""
-                    SELECT t.id, t.transaction_id, t.season, t.week, t.created_at,
-                           l.scoring_type, l.is_superflex, l.num_teams
-                    FROM trade_intel_trades t
-                    LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                    WHERE t.season = %s {sf_clause}
-                    ORDER BY t.created_at DESC NULLS LAST
-                    LIMIT %s OFFSET %s
-                    """,
-                    base_params_rows,
-                ).fetchall()
+            row_params = [season] + sf_p + filter_params + [limit + 1, page * limit]
+            trade_rows = conn.execute(
+                f"""
+                SELECT DISTINCT t.id, t.transaction_id, t.season, t.week, t.created_at,
+                       l.scoring_type, l.is_superflex, l.num_teams
+                FROM trade_intel_trades t
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                WHERE t.season = %s {sf_clause}{filter_sql}
+                ORDER BY t.created_at DESC NULLS LAST
+                LIMIT %s OFFSET %s
+                """,
+                row_params,
+            ).fetchall()
 
             has_more = len(trade_rows) > limit
             trade_rows = trade_rows[:limit]

@@ -912,8 +912,9 @@ def page_trade_database(platform: str, season: int, league_id: str):
         background: var(--card);
       }}
       .tdb-search {{
-        width: 100%; padding: 9px 12px; border: none; background: transparent;
+        width: 100%; padding: 9px 12px; border: none !important; background: transparent;
         color: var(--text); font-size: 14px; outline: none; box-sizing: border-box;
+        border-radius: 8px; appearance: none;
       }}
       .tdb-search-outer:focus-within {{ border-color: var(--accent, #3b82f6); }}
       .tdb-dropdown {{
