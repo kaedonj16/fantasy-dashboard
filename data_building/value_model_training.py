@@ -1546,18 +1546,20 @@ def rewrite_value_table_with_model() -> Path:
                 pick_asset[f"sf_value_{n}"] = float(val)
         cleaned_assets.append(pick_asset)
 
-    # Normalize 1QB value scale to match SF ceiling.
-    # The model is trained with SF as the reference (elite QBs anchor the SF max at ~999.9).
-    # Non-QB 1QB values end up below the SF ceiling because the SF QB premium sets the
-    # max. Scale all 1QB value fields so the top 1QB player matches the SF max.
-    _SKILL_POS = {"QB", "RB", "WR", "TE"}
-    _1qb_keys  = ["value", "value_8", "value_12", "value_14"]
-    _max_sf  = max((float(a.get("sf_value") or 0) for a in cleaned_assets
-                    if str(a.get("position") or "").upper() in _SKILL_POS), default=0.0)
-    _max_1qb = max((float(a.get("value") or 0) for a in cleaned_assets
-                    if str(a.get("position") or "").upper() in _SKILL_POS), default=0.0)
-    if _max_sf > _max_1qb > 0:
-        _1qb_scale = _max_sf / _max_1qb
+    # Normalize 1QB value scale so the top non-QB player always equals 999.9.
+    # In 1QB leagues QBs are not premium, so the best RB/WR/TE should anchor the
+    # ceiling.  This replaces the old _max_sf > _max_1qb approach which silently
+    # skipped normalization whenever the QB SF engine value failed to load.
+    _SKILL_POS   = {"QB", "RB", "WR", "TE"}
+    _NON_QB_POS  = {"RB", "WR", "TE"}
+    _1qb_keys    = ["value", "value_8", "value_12", "value_14"]
+    _max_non_qb  = max(
+        (float(a.get("value") or 0) for a in cleaned_assets
+         if str(a.get("position") or "").upper() in _NON_QB_POS),
+        default=0.0,
+    )
+    if 0 < _max_non_qb < 999.9:
+        _1qb_scale = 999.9 / _max_non_qb
         for _a in cleaned_assets:
             if str(_a.get("position") or "").upper() not in _SKILL_POS:
                 continue
