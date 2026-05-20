@@ -13463,7 +13463,7 @@ def api_player_game_logs(player_id: str):
                 elif ey >= 100: p += (scoring_settings.get("bonus_rec_yd_100") or 0)
                 if rr >= 200: p += (scoring_settings.get("bonus_rush_rec_yd_200") or 0)
                 elif rr >= 100: p += (scoring_settings.get("bonus_rush_rec_yd_100") or 0)
-                return round(p, 1)
+                return round(p, 2)
 
             def _stats_dict(s):
                 return {k: s.get(k) for k in ["pass_yd","pass_td","pass_int","rush_att","rush_yd","rush_td","rec","rec_tgt","rec_yd","rec_td","fum_lost"]}
