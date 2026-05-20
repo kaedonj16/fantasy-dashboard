@@ -7310,21 +7310,27 @@ function _buildCompareHeroHTML(p) {
   const total  = p.stats?.total_pts;
   const totalRank = p.stats?.total_pts_rank;
   const season = p.stats?.ppg_season ? ` · ${p.stats.ppg_season}` : '';
-  const ppgCard = ppg != null ? `
+  const hasScoringRow = ppg != null || total != null;
+
+  const scoringCols = (ppg != null ? 1 : 0) + (total != null ? 1 : 0);
+  const scoringRow = hasScoringRow ? `
+    <div class="compare-hero-row" style="grid-template-columns:repeat(${scoringCols},1fr);margin-top:6px;">
+      ${ppg != null ? `
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">PPG${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${ppg}</div>
         <div class="pm-hero-sub">${ppgRank ? `${pos}${ppgRank}` : '-'}</div>
-      </div>` : '';
-  const totalCard = total != null ? `
+      </div>` : ''}
+      ${total != null ? `
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">Total Pts${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${total}</div>
         <div class="pm-hero-sub">${totalRank ? `${pos}${totalRank}` : '-'}</div>
-      </div>` : '';
-  const cardCount = 3 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
+      </div>` : ''}
+    </div>` : '';
+
   return `
-    <div class="compare-hero-row" style="grid-template-columns:repeat(${cardCount},1fr);">
+    <div class="compare-hero-row" style="grid-template-columns:1fr 1fr 1fr;">
       <div class="pm-hero-stat pm-hero-primary" style="padding:10px 10px;">
         <div class="pm-hero-label">1QB Value</div>
         <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
@@ -7337,9 +7343,8 @@ function _buildCompareHeroHTML(p) {
         <div class="pm-hero-label">Pos Rank</div>
         <div class="pm-hero-val" style="font-size:20px;">${posRankLabel}</div>
       </div>
-      ${ppgCard}
-      ${totalCard}
     </div>
+    ${scoringRow}
   `;
 }
 
