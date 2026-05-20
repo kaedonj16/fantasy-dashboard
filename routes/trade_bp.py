@@ -88,6 +88,11 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <button class="ti-tab" data-tab="buylows"  onclick="switchTITab('buylows')"><i class="fa-solid fa-arrow-trend-down"></i> Buy Low</button>
             <button class="ti-tab" data-tab="sellhigh" onclick="switchTITab('sellhigh')"><i class="fa-solid fa-arrow-trend-up"></i> Sell High</button>
           </div>
+          <div style="position:relative;flex:1;min-width:140px;max-width:240px;">
+            <input id="tiSearchInput" type="text" autocomplete="off" placeholder="Search player…"
+              style="width:100%;box-sizing:border-box;background:var(--input-bg,#1e293b);border:1px solid var(--border);border-radius:8px;padding:6px 10px 6px 30px;font-size:13px;color:var(--text);outline:none;">
+            <i class="fa-solid fa-magnifying-glass" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-muted);pointer-events:none;"></i>
+          </div>
           <div class="ti-pos-filters">
             <button class="ti-pos active" data-pos="ALL" onclick="filterTI('ALL')">All</button>
             <button class="ti-pos" data-pos="QB"  onclick="filterTI('QB')">QB</button>
@@ -100,6 +105,9 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <button class="ti-lf-btn {'active' if _ti_sf else ''}" data-lf="sf"  onclick="switchTILeagueType('sf')">SF</button>
           </div>
         </div>
+
+        <!-- Inline player intel result (shown after search selection) -->
+        <div id="tiSearchResult" style="display:none;margin-bottom:20px;"></div>
 
         <div class="ti-key">
           <div class="ti-key-item">
@@ -697,14 +705,103 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       }}
 
       window.openTIPlayerCard = function(playerId, playerName, isRookie) {{
-        if (isRookie) {{
-          // For rookies, we need to get the player data and open rookie modal
-          // For now, fall back to regular modal with trades tab
-          openPlayerModal(playerId, playerName, {{ tab: 'trades' }});
-        }} else {{
-          openPlayerModal(playerId, playerName, {{ tab: 'trades' }});
-        }}
+        openPlayerModal(playerId, playerName, {{ tab: 'trades' }});
       }};
+
+      // ── Player search ─────────────────────────────────────────────
+      (function() {{
+        const input  = document.getElementById('tiSearchInput');
+        const result = document.getElementById('tiSearchResult');
+        if (!input || !result) return;
+
+        let _allPlayers = null;
+        let _searchTimer = null;
+
+        async function ensurePlayers() {{
+          if (_allPlayers) return;
+          try {{
+            const res = await fetch('/api/league-players', {{ cache: 'no-store' }});
+            const raw = await res.json();
+            const data = Array.isArray(raw) ? raw : (raw.players || []);
+            _allPlayers = data.filter(p => ['QB','RB','WR','TE'].includes(p.position));
+          }} catch(_) {{ _allPlayers = []; }}
+        }}
+
+        const posColor = p => ({{ QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6' }}[p] || '#888');
+
+        function buildCard(p, r) {{
+          const market = r.market_value != null ? r.market_value.toFixed(1) : '-';
+          const model  = r.model_value  != null ? r.model_value.toFixed(1)  : '-';
+          const delta  = r.value_delta;
+          const deltaHtml = delta != null
+            ? `<span class="${{delta >= 0 ? 'ti-delta-pos' : 'ti-delta-neg'}}">${{delta >= 0 ? '+' : ''}}${{Math.round(delta)}}</span>`
+            : '<span style="color:var(--text-muted)">-</span>';
+          const cnt7   = r.trade_count_7d  || 0;
+          const cnt30  = r.trade_count_30d || 0;
+          const cntAll = r.trade_count_all || 0;
+          const trend  = r.market_trend;
+          let momentumHtml = '';
+          if (trend != null) {{
+            if      (trend >= 5)  momentumHtml = '<div class="ti-momentum"><span style="color:#10b981;">▲</span> Rising</div>';
+            else if (trend <= -5) momentumHtml = '<div class="ti-momentum"><span style="color:#ef4444;">▼</span> Falling</div>';
+          }}
+          const col = posColor(p.position);
+          return `<div class="ti-card">
+            <div class="ti-card-top">
+              <div>
+                <div class="ti-name">${{p.name||p.id}}</div>
+                <div class="ti-meta"><span style="color:${{col}};font-weight:600;">${{p.position}}</span> · ${{p.team||''}}</div>
+              </div>
+              <span class="ti-chip" style="background:#3b82f620;color:#3b82f6;">${{cntAll.toLocaleString()}} trades</span>
+            </div>
+            <div class="ti-divider"></div>
+            <div class="ti-row"><span class="ti-row-label">Market</span><span class="ti-row-val">${{market}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">BR Model</span><span class="ti-row-val">${{model}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">Delta</span><span class="ti-row-val">${{deltaHtml}}</span></div>
+            <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
+            ${{momentumHtml}}
+          </div>`;
+        }}
+
+        input.addEventListener('input', async () => {{
+          clearTimeout(_searchTimer);
+          const q = input.value.trim().toLowerCase();
+          if (q.length < 2) {{
+            result.style.display = 'none';
+            result.innerHTML = '';
+            return;
+          }}
+          await ensurePlayers();
+          const matches = _allPlayers
+            .filter(p => (p.name||'').toLowerCase().includes(q))
+            .sort((a,b) => (b.value||0) - (a.value||0))
+            .slice(0, 8);
+          if (!matches.length) {{
+            result.style.display = '';
+            result.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:4px 0;">No players found.</div>';
+            return;
+          }}
+          result.style.display = '';
+          result.innerHTML = '<div class="ti-grid">' +
+            matches.map(p => `<div class="ti-card ti-card-loading" data-id="${{p.id}}" style="min-height:160px;display:flex;align-items:center;justify-content:center;">
+              <div style="color:var(--text-muted);font-size:12px;">${{p.name}}</div>
+            </div>`).join('') +
+          '</div>';
+
+          _searchTimer = setTimeout(async () => {{
+            const fetches = matches.map(p =>
+              fetch(`/api/trade-intel/player/${{encodeURIComponent(p.id)}}?season=${{TI_SEASON}}&league_type=${{TI_LEAGUE_TYPE}}`)
+                .then(r => r.ok ? r.json() : null)
+                .catch(() => null)
+            );
+            const results = await Promise.all(fetches);
+            const cards = matches.map((p, i) => results[i] ? buildCard(p, results[i]) :
+              `<div class="ti-card"><div class="ti-name">${{p.name}}</div><div class="ti-meta" style="color:var(--text-muted);margin-top:8px;">No data</div></div>`
+            );
+            result.innerHTML = '<div class="ti-grid">' + cards.join('') + '</div>';
+          }}, 300);
+        }});
+      }})();
 
       window.loadTIPage = loadTIPage;
     }})();
@@ -815,8 +912,9 @@ def page_trade_database(platform: str, season: int, league_id: str):
         background: var(--card);
       }}
       .tdb-search {{
-        width: 100%; padding: 9px 12px; border: none; background: transparent;
+        width: 100%; padding: 9px 12px; border: none !important; background: transparent;
         color: var(--text); font-size: 14px; outline: none; box-sizing: border-box;
+        border-radius: 8px; appearance: none;
       }}
       .tdb-search-outer:focus-within {{ border-color: var(--accent, #3b82f6); }}
       .tdb-dropdown {{
