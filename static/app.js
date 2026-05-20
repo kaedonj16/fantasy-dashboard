@@ -5465,7 +5465,7 @@ function openPlayerModal(playerId, playerName, opts) {
         : '';
       const totalCard = totalPts != null
         ? `<div class="pm-hero-stat">
-            <div class="pm-hero-label">Total${seasonLabel}</div>
+            <div class="pm-hero-label">Total Pts${seasonLabel}</div>
             <div class="pm-hero-val">${totalPts}</div>
             <div class="pm-hero-sub">${totalPtsRank ? `${pos}${totalPtsRank}` : '-'}</div>
           </div>`
@@ -7271,46 +7271,35 @@ function _computeSeasonStats(p) {
 }
 
 function _buildComparePPGRow(p1, p2) {
-  // game_logs_by_year is lazy-loaded and empty at compare time; use stats directly
-  const ppg1 = p1.stats?.ppg;
-  const ppg2 = p2.stats?.ppg;
-  if (ppg1 == null && ppg2 == null) return '';
+  const s1 = _computeSeasonStats(p1);
+  const s2 = _computeSeasonStats(p2);
+  if (!s1.total && !s2.total) return '';
 
-  const season = p1.stats?.ppg_season || p2.stats?.ppg_season || '';
+  const season = s1.season || s2.season || '';
 
-  function scoringBlock(p) {
-    const pos = p.position || '';
-    const ppg = p.stats?.ppg;
-    const total = p.stats?.total_pts;
-    const games = p.stats?.ppg_games;
-    const ppgRank = p.stats?.ppg_rank;
-    const totalRank = p.stats?.total_pts_rank;
-    const valLine = ppg != null
-      ? `${ppg}${total != null ? ` | ${total}` : ''}`
-      : '-';
-    const rankLine = `PPG · ${ppgRank ? `${pos}${ppgRank}` : '-'} | TOTAL · ${totalRank ? `${pos}${totalRank}` : '-'}`;
-    return {
-      cell: `<div class="compare-pts-cell">
-        <div class="compare-pts-val">${valLine}</div>
-        <div class="compare-pts-label">${rankLine}</div>
-      </div>`,
-      games,
-    };
+  function cell(val, label) {
+    return `<div class="compare-pts-cell">
+      <div class="compare-pts-val">${val !== null ? val : '—'}</div>
+      <div class="compare-pts-label">${label}</div>
+    </div>`;
   }
-
-  const b1 = scoringBlock(p1);
-  const b2 = scoringBlock(p2);
 
   return `
     <div class="compare-pts-row">
       <div class="compare-pts-player">
-        <div class="compare-pts-stats">${b1.cell}</div>
-        ${b1.games ? `<div class="compare-pts-meta">${season} · ${b1.games}g</div>` : ''}
+        <div class="compare-pts-stats">
+          ${cell(s1.ppg, 'PPG')}
+          ${cell(s1.total, 'Total Pts')}
+        </div>
+        ${s1.games ? `<div class="compare-pts-meta">${season} · ${s1.games}g</div>` : ''}
       </div>
       <div class="compare-pts-divider"></div>
       <div class="compare-pts-player compare-pts-player-right">
-        <div class="compare-pts-stats">${b2.cell}</div>
-        ${b2.games ? `<div class="compare-pts-meta">${season} · ${b2.games}g</div>` : ''}
+        <div class="compare-pts-stats">
+          ${cell(s2.ppg, 'PPG')}
+          ${cell(s2.total, 'Total Pts')}
+        </div>
+        ${s2.games ? `<div class="compare-pts-meta">${season} · ${s2.games}g</div>` : ''}
       </div>
     </div>
   `;
@@ -7334,7 +7323,7 @@ function _buildCompareHeroHTML(p) {
       </div>` : '';
   const totalCard = total != null ? `
       <div class="pm-hero-stat" style="padding:10px 10px;">
-        <div class="pm-hero-label">Total${season}</div>
+        <div class="pm-hero-label">Total Pts${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${total}</div>
         <div class="pm-hero-sub">${totalRank ? `${pos}${totalRank}` : '-'}</div>
       </div>` : '';
