@@ -6372,18 +6372,21 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
 
       const availableSeasons = metricsData.available_seasons || [];
       const activeSeason = metricsData.season;
+      const isCareer = season === 'career' || activeSeason == null;
 
       // Update year label in section header
       const seasonLabelEl = document.getElementById('advMetricsSeasonLabel');
-      if (seasonLabelEl && activeSeason) seasonLabelEl.textContent = activeSeason;
+      if (seasonLabelEl) seasonLabelEl.textContent = isCareer ? 'Career' : (activeSeason || '');
 
-      // Season pills above the layout
+      // Season pills above the layout — always show when there's at least 1 season
       const pillsEl = document.getElementById('advMetricsPills');
-      if (pillsEl && availableSeasons.length > 1) {
+      if (pillsEl && availableSeasons.length >= 1) {
+        const lidExpr = leagueId ? `'${leagueId}'` : 'null';
         let pillsHTML = '<div class="adv-metrics-season-pills">';
+        pillsHTML += `<button class="adv-season-pill${isCareer ? ' active' : ''}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, 'career')">Career</button>`;
         availableSeasons.forEach(yr => {
-          const activeClass = yr === activeSeason ? ' active' : '';
-          pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${leagueId ? `'${leagueId}'` : 'null'}, ${yr})">${yr}</button>`;
+          const activeClass = (!isCareer && yr === activeSeason) ? ' active' : '';
+          pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, ${yr})">${yr}</button>`;
         });
         pillsHTML += '</div>';
         pillsEl.innerHTML = pillsHTML;
@@ -7586,24 +7589,26 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       const m1 = data1.metrics || {};
       const m2 = data2.metrics || {};
       
-      // Get available seasons from both players
+      // Get available seasons from both players — only show years both have data for
       const seasons1 = data1.available_seasons || [];
       const seasons2 = data2.available_seasons || [];
-      const allSeasons = [...new Set([...seasons1, ...seasons2])].sort((a, b) => b - a);
+      const set2 = new Set(seasons2);
+      const allSeasons = seasons1.filter(s => set2.has(s)).sort((a, b) => b - a);
       
       // Rebuild season selector with updated active state
       let seasonSelectorHTML = '';
-      if (allSeasons.length > 1) {
+      if (allSeasons.length >= 1) {
+        const isCareer = season === null;
         seasonSelectorHTML = `
           <div class="compare-season-selector">
             <div class="compare-season-label">Season:</div>
             <div class="compare-season-pills">
-              <button class="adv-season-pill ${season === null ? 'active' : ''}" 
+              <button class="adv-season-pill ${isCareer ? 'active' : ''}"
                       onclick="loadCompareMetrics('${playerId1}', '${playerId2}', null)">
                 Career
               </button>
               ${allSeasons.map(s => `
-                <button class="adv-season-pill ${season === s ? 'active' : ''}" 
+                <button class="adv-season-pill ${(!isCareer && season === s) ? 'active' : ''}"
                         onclick="loadCompareMetrics('${playerId1}', '${playerId2}', ${s})">
                   ${s}
                 </button>
@@ -7710,27 +7715,28 @@ function openComparisonView(p1, p2) {
           const m1 = data1.metrics || {};
           const m2 = data2.metrics || {};
           
-          // Get available seasons from both players
+          // Get available seasons from both players — intersection only
           const seasons1 = data1.available_seasons || [];
           const seasons2 = data2.available_seasons || [];
-          const allSeasons = [...new Set([...seasons1, ...seasons2])].sort((a, b) => b - a);
-          
-          // Build season selector if multiple seasons available
+          const _set2 = new Set(seasons2);
+          const allSeasons = seasons1.filter(s => _set2.has(s)).sort((a, b) => b - a);
+          const isCareerActive = defaultSeason === null;
+
+          // Build season selector if any shared seasons are available
           let seasonSelectorHTML = '';
-          if (allSeasons.length > 1) {
-            const activeSeason = defaultSeason || allSeasons[0];
+          if (allSeasons.length >= 1) {
             seasonSelectorHTML = `
               <div class="compare-season-selector">
                 <div class="compare-season-label">Season:</div>
                 <div class="compare-season-pills">
-                  <button class="adv-season-pill ${activeSeason === null ? 'active' : ''}" 
+                  <button class="adv-season-pill ${isCareerActive ? 'active' : ''}"
                           onclick="loadCompareMetrics('${p1.player_id}', '${p2.player_id}', null)">
                     Career
                   </button>
-                  ${allSeasons.map(season => `
-                    <button class="adv-season-pill ${activeSeason === season ? 'active' : ''}" 
-                            onclick="loadCompareMetrics('${p1.player_id}', '${p2.player_id}', ${season})">
-                      ${season}
+                  ${allSeasons.map(s => `
+                    <button class="adv-season-pill ${(!isCareerActive && defaultSeason === s) ? 'active' : ''}"
+                            onclick="loadCompareMetrics('${p1.player_id}', '${p2.player_id}', ${s})">
+                      ${s}
                     </button>
                   `).join('')}
                 </div>
