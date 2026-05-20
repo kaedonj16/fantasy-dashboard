@@ -7693,6 +7693,385 @@ def page_waivers(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
 
 
+@app.route("/api/waiver-candidates")
+def api_waiver_candidates():
+    """
+    Returns scored waiver wire candidates for a league.
+    Query params: platform, league_id, season, position (optional filter)
+    """
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+    position_filter = (request.args.get("position") or "").strip().upper()
+
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    rosters = ctx.get("rosters") or []
+    rostered_ids = {
+        str(pid)
+        for r in rosters
+        for pid in (r.get("players") or [])
+    }
+
+    players_index = ctx.get("players_index") or {}
+    model_value_table = load_model_value_table()
+
+    _rp_wv = ctx.get("roster_positions") or []
+    _is_sf_wv = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_wv)
+    _vf_wv = "sf_value" if _is_sf_wv else "value"
+
+    candidates = []
+    for row in model_value_table:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or "")
+        pos = str(row.get("position") or row.get("pos") or "").upper()
+        if not pid or pid in rostered_ids:
+            continue
+        if pos not in {"QB", "RB", "WR", "TE"}:
+            continue
+        try:
+            val = float(row.get(_vf_wv) or row.get("value") or 0.0)
+        except Exception:
+            val = 0.0
+        if val <= 0:
+            continue
+        try:
+            age = float(row.get("age") or 0)
+        except Exception:
+            age = 0.0
+        player_name = (
+            row.get("name")
+            or players_index.get(pid, {}).get("name")
+            or f"Player {pid}"
+        )
+        candidates.append({
+            "player_id": pid,
+            "name": player_name,
+            "position": pos,
+            "team": row.get("team") or players_index.get(pid, {}).get("team") or "",
+            "value": val,
+            "age": age,
+            "pos_rank_label": row.get("pos_rank_label") or "",
+            "rank_change_7d": row.get("rank_change_7d"),
+        })
+
+    waiver_breakout: dict = {}
+    try:
+        _db_url = os.getenv("DATABASE_URL", "").strip()
+        if _db_url and not any(t in _db_url for t in ("USER", "PASSWORD", "HOST")):
+            from dashboard_services.db import get_conn as _gc
+            _pids = [c["player_id"] for c in candidates[:100]]
+            if _pids:
+                with _gc() as _conn:
+                    with _conn.cursor() as _cur:
+                        _cur.execute(
+                            """
+                            SELECT DISTINCT ON (player_id)
+                                player_id, breakout_opportunity_score
+                            FROM breakout_opportunity_scores
+                            WHERE player_id = ANY(%s)
+                            ORDER BY player_id, as_of_date DESC
+                            """,
+                            (_pids,),
+                        )
+                        for _r in _cur.fetchall():
+                            _r = dict(_r)
+                            if _r.get("breakout_opportunity_score") is not None:
+                                waiver_breakout[_r["player_id"]] = float(_r["breakout_opportunity_score"])
+    except Exception:
+        pass
+
+    _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
+
+    def _wv_score(c: dict) -> float:
+        val = c["value"]
+        age = c["age"] or 0
+        pos = c["position"]
+        rank_chg = c["rank_change_7d"] or 0
+        bscore = waiver_breakout.get(c["player_id"], 0)
+        prime = _prime_max.get(pos, 28)
+        trend_bonus = min(rank_chg * 4, 60) if rank_chg and rank_chg > 0 else 0
+        breakout_bonus = min(bscore * 0.5, 50)
+        age_bonus = 30 - max(0, (age - prime) * 10) if age else 0
+        return val + trend_bonus + breakout_bonus + age_bonus
+
+    def _wv_signal(c: dict) -> tuple:
+        rank_chg = c["rank_change_7d"] or 0
+        age = c["age"] or 0
+        pos = c["position"]
+        bscore = waiver_breakout.get(c["player_id"], 0)
+        prime = _prime_max.get(pos, 28)
+        if bscore >= 55:
+            return ("signal-breakout", "Breakout")
+        if rank_chg >= 8:
+            return ("signal-rising", "Rising Fast")
+        if rank_chg >= 3:
+            return ("signal-rising", "Trending Up")
+        if age < prime - 2 and c["value"] >= 300:
+            return ("signal-value", "Value Play")
+        if age > prime + 2:
+            return ("signal-aging", "Sell Window")
+        return ("signal-hold", "Available")
+
+    candidates.sort(key=_wv_score, reverse=True)
+    if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
+        candidates = [c for c in candidates if c["position"] == position_filter]
+
+    result = []
+    for c in candidates[:30]:
+        sig_cls, sig_label = _wv_signal(c)
+        bscore = waiver_breakout.get(c["player_id"], 0.0)
+        result.append({
+            "player_id": c["player_id"],
+            "name": c["name"],
+            "position": c["position"],
+            "team": c["team"],
+            "value": c["value"],
+            "age": c["age"],
+            "pos_rank_label": c["pos_rank_label"],
+            "rank_change_7d": c["rank_change_7d"],
+            "breakout_score": bscore,
+            "signal": sig_label,
+            "signal_class": sig_cls,
+            "composite_score": _wv_score(c),
+        })
+
+    return jsonify({"candidates": result, "total": len(result)})
+
+
+@app.route("/api/start-sit-options")
+def api_start_sit_options():
+    """
+    Returns roster options grouped by position for the viewing user.
+    Query params: platform, league_id, season
+    """
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    league_id = (request.args.get("league_id") or "").strip()
+    season = int(request.args.get("season") or datetime.now().year)
+
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    viewer = ctx.get("viewer") or {}
+    viewer_roster_id = viewer.get("viewer_roster_id")
+
+    if not viewer_roster_id:
+        return jsonify({"positions": {}})
+
+    rosters = ctx.get("rosters") or []
+    viewer_roster = next(
+        (r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)),
+        None,
+    )
+    if not viewer_roster:
+        return jsonify({"positions": {}})
+
+    player_ids = [str(pid) for pid in (viewer_roster.get("players") or [])]
+    players_index = ctx.get("players_index") or {}
+    players_full = ctx.get("players") or {}
+    model_value_table = load_model_value_table()
+
+    lineup_requirements: dict = ctx.get("lineup_requirements") or {}
+    if not lineup_requirements:
+        roster_positions = ctx.get("roster_positions") or []
+        for slot in roster_positions:
+            s = str(slot).upper()
+            if s in {"QB", "RB", "WR", "TE", "FLEX", "SUPER_FLEX", "SFLEX", "K", "DEF"}:
+                lineup_requirements[s] = lineup_requirements.get(s, 0) + 1
+
+    _rp_ss = ctx.get("roster_positions") or []
+    _is_sf_ss = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_ss)
+    _vf_ss = "sf_value" if _is_sf_ss else "value"
+
+    rows_by_id: dict = {}
+    for row in model_value_table:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("id") or "")
+        if pid:
+            rows_by_id[pid] = row
+
+    current_week = int(ctx.get("current_week") or 0)
+    def_rush_allowed: dict = {}
+    def_recv_allowed: dict = {}
+    try:
+        from utils.utils import load_week_stats as _lws
+        check_weeks = [w for w in range(max(1, current_week - 4), current_week) if w > 0]
+        for chk_week in check_weeks:
+            wstat = _lws(season, chk_week) or {}
+            for team, pos_data in wstat.items():
+                if not isinstance(pos_data, dict):
+                    continue
+                rb_rush = sum(
+                    float(p.get("rush_yds") or p.get("rushing_yds") or 0)
+                    for p in (pos_data.get("RB") or {}).values()
+                    if isinstance(p, dict)
+                )
+                wr_recv = sum(
+                    float(p.get("rec_yds") or p.get("receiving_yds") or 0)
+                    for p in (pos_data.get("WR") or {}).values()
+                    if isinstance(p, dict)
+                )
+                te_recv = sum(
+                    float(p.get("rec_yds") or p.get("receiving_yds") or 0)
+                    for p in (pos_data.get("TE") or {}).values()
+                    if isinstance(p, dict)
+                )
+                recv_allowed = wr_recv + te_recv
+                if rb_rush > 0:
+                    def_rush_allowed.setdefault(team, []).append(rb_rush)
+                if recv_allowed > 0:
+                    def_recv_allowed.setdefault(team, []).append(recv_allowed)
+    except Exception:
+        pass
+
+    def _avg(lst): return sum(lst) / len(lst) if lst else 0.0
+
+    all_rush_avgs = {t: _avg(v) for t, v in def_rush_allowed.items()}
+    all_recv_avgs = {t: _avg(v) for t, v in def_recv_allowed.items()}
+
+    def _matchup_adj(opponent_team: str, pos: str) -> float:
+        if not opponent_team:
+            return 1.0
+        avgs = all_rush_avgs if pos == "RB" else all_recv_avgs
+        if not avgs:
+            return 1.0
+        sorted_teams = sorted(avgs.keys(), key=lambda t: avgs[t])
+        n = len(sorted_teams)
+        try:
+            rank = sorted_teams.index(opponent_team)
+        except ValueError:
+            return 1.0
+        return 0.85 + 0.30 * (rank / max(n - 1, 1))
+
+    opponent_map: dict = {}
+    opp_label_map: dict = {}
+    try:
+        from utils.utils import load_week_sched as _lsched
+        if current_week > 0:
+            sched = _lsched(season, current_week) or []
+            for game in sched:
+                home = str(game.get("home") or "").upper()
+                away = str(game.get("away") or "").upper()
+                if home and away:
+                    opponent_map[home] = away
+                    opponent_map[away] = home
+                    opp_label_map[home] = f"vs {away}"
+                    opp_label_map[away] = f"@ {home}"
+    except Exception:
+        pass
+
+    recent_pts: dict = {}
+    try:
+        import glob as _glob
+        _stat_pattern = os.path.join("cache", "sleeper_stats", f"sleeper_stats_{season}_week_*.json")
+        _week_files = sorted(_glob.glob(_stat_pattern))
+        _recent_files = _week_files[-4:] if len(_week_files) >= 4 else _week_files
+        _pts_by_player: dict = {}
+        for _wf in _recent_files:
+            try:
+                with open(_wf) as _f:
+                    _wdata = json.load(_f)
+                for pid, stats in _wdata.items():
+                    if not isinstance(stats, dict):
+                        continue
+                    pts = float(stats.get("pts_half_ppr") or stats.get("pts_ppr") or 0)
+                    if pts > 0:
+                        _pts_by_player.setdefault(pid, []).append(pts)
+            except Exception:
+                continue
+        for pid, vals in _pts_by_player.items():
+            recent_pts[pid] = _avg(vals)
+    except Exception:
+        pass
+
+    positions_out: dict = {"QB": [], "RB": [], "WR": [], "TE": []}
+    for pid in player_ids:
+        row = rows_by_id.get(pid) or {}
+        meta = players_index.get(pid) or {}
+        pos = str(row.get("position") or row.get("pos") or meta.get("pos") or "").upper()
+        if pos not in positions_out:
+            continue
+        player_name = row.get("name") or meta.get("name") or f"Player {pid}"
+        team = (row.get("team") or meta.get("team") or "").upper()
+        opponent = opponent_map.get(team, "")
+        opp_label = opp_label_map.get(team, "BYE" if current_week > 0 else "")
+        on_bye = current_week > 0 and team not in opponent_map
+        avg_pts = recent_pts.get(pid, 0.0)
+        adj = _matchup_adj(opponent, pos) if not on_bye else 0.5
+        score = avg_pts * adj if avg_pts > 0 else float(row.get(_vf_ss) or row.get("value") or 0) * 0.01
+        full_player = players_full.get(pid) or {}
+        raw_status = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
+        injury_status = None if raw_status in {"", "active", "Active", "ACT"} else raw_status
+        positions_out[pos].append({
+            "player_id": pid,
+            "name": player_name,
+            "team": team,
+            "opponent": opp_label,
+            "on_bye": on_bye,
+            "avg_pts": round(avg_pts, 1),
+            "matchup_adj": round(adj, 2),
+            "pos_rank_label": row.get("pos_rank_label") or "",
+            "injury_status": injury_status,
+            "_score": score,
+        })
+
+    flex_slots = lineup_requirements.get("FLEX") or 0
+    sflex_slots = (lineup_requirements.get("SUPER_FLEX") or 0) + (lineup_requirements.get("SFLEX") or 0)
+
+    for pos in positions_out:
+        positions_out[pos].sort(key=lambda x: (not x["on_bye"], x["_score"]), reverse=True)
+        n_start = lineup_requirements.get(pos, 1)
+        eligible_for_flex = pos in ("RB", "WR", "TE")
+        for i, p in enumerate(positions_out[pos]):
+            p["start"] = i < n_start and not p["on_bye"]
+            p["flex_start"] = False
+            p["flex_eligible"] = eligible_for_flex and i >= n_start and not p["on_bye"]
+
+    if flex_slots:
+        all_flex = sorted(
+            [p for pos in positions_out for p in positions_out[pos] if p["flex_eligible"]],
+            key=lambda x: x["_score"], reverse=True
+        )
+        for p in all_flex[:flex_slots]:
+            p["start"] = True
+            p["flex_start"] = True
+
+    if sflex_slots:
+        sflex_cands = sorted(
+            [p for pos in positions_out for p in positions_out[pos]
+             if not p["start"] and not p["on_bye"] and pos in ("QB", "RB", "WR", "TE")],
+            key=lambda x: x["_score"], reverse=True
+        )
+        for p in sflex_cands[:sflex_slots]:
+            p["start"] = True
+            p["flex_start"] = True
+
+    for pos in positions_out:
+        for p in positions_out[pos]:
+            del p["_score"]
+
+    return jsonify({
+        "positions": positions_out,
+        "lineup_requirements": lineup_requirements,
+        "flex_slots": flex_slots,
+        "sflex_slots": sflex_slots,
+        "current_week": current_week,
+    })
+
+
 @app.route("/<platform>/<int:season>/<league_id>/weekly")
 def page_weekly(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)

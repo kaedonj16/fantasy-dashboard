@@ -141,6 +141,10 @@ let wvCurrentPos = 'ALL';
 let wvWaiverData = [];
 let wvStartSitData = {{}};
 
+// Ensure __brctx has the league ID so showLoginGate shows "Sign In" button, not "Get Started" link
+if (!window.__brctx) window.__brctx = {{}};
+if (!window.__brctx.leagueId) window.__brctx.leagueId = WV_LEAGUE_ID;
+
 function wvSetTab(tab) {{
   const isWaivers = tab === 'waivers';
   document.getElementById('wvSectionWaivers').classList.toggle('wv-tab-active', isWaivers);
@@ -168,6 +172,7 @@ function wvLoad() {{
     .then(r => r.json())
     .then(d => {{
       if (!d.positions || !Object.keys(d.positions).length) {{
+        // Empty positions means no viewer resolved — show sign-in prompt
         showLoginGate('wvStartSit', {{
           title: 'Sign in to see your lineup',
           description: 'Enter your Sleeper username to get personalized start/sit recommendations for your roster.'
@@ -178,10 +183,10 @@ function wvLoad() {{
       wvStartSitData._lineup_requirements = d.lineup_requirements || {{}};
       wvRenderStartSit();
     }})
-    .catch(() => showLoginGate('wvStartSit', {{
-      title: 'Sign in to see your lineup',
-      description: 'Enter your Sleeper username to get personalized start/sit recommendations for your roster.'
-    }}));
+    .catch(() => {{
+      document.getElementById('wvStartSit').innerHTML =
+        '<div style="color:var(--text-muted);text-align:center;padding:20px;">Unable to load lineup data</div>';
+    }});
 }}
 
 function wvRenderWaivers() {{
