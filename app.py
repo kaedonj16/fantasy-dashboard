@@ -13365,6 +13365,7 @@ def api_player_details(player_id: str):
 def api_player_game_logs(player_id: str):
     """Game logs for the Stats tab — lazy-loaded separately from player-details."""
     try:
+        import glob
         from utils.utils import load_relevant_index
         from dashboard_services.api import get_effective_scoring_settings
         from dashboard_services.platform_api import sync_league_globals
