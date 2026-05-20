@@ -4525,7 +4525,38 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         boundaries.append(round((vals[best_pos] + vals[best_pos + 1]) / 2.0, 1))
         start = best_pos + 1
 
-    return sorted(boundaries, reverse=True) if boundaries else _FALLBACK_THRESHOLDS
+    thresholds = sorted(boundaries, reverse=True) if boundaries else _FALLBACK_THRESHOLDS
+
+    # Enforce minimum tier size of 4.  Merge DOWN: a too-small group absorbs
+    # into the tier below it (remove its lower boundary) so that, e.g., a
+    # lone player at the top of what would be T2 stays at the head of T2
+    # rather than being pulled up into T1.  Exception: if the small group is
+    # the topmost one (value >= first threshold), merge it UP instead.
+    MIN_TIER_SIZE = 4
+    changed = True
+    while changed:
+        changed = False
+        # Check the T1 group (players above the first threshold)
+        if thresholds and sum(1 for v in vals if v >= thresholds[0]) < MIN_TIER_SIZE:
+            thresholds = thresholds[1:]  # remove upper boundary → T1 merges down into T2
+            changed = True
+            continue
+        # Check each intermediate group (between consecutive boundaries)
+        for i in range(len(thresholds)):
+            lo = thresholds[i + 1] if i + 1 < len(thresholds) else 0.0
+            hi = thresholds[i]
+            count = sum(1 for v in vals if lo <= v < hi)
+            if count < MIN_TIER_SIZE:
+                if i + 1 < len(thresholds):
+                    # Merge DOWN: remove lower boundary so this group joins the tier below
+                    thresholds = thresholds[:i + 1] + thresholds[i + 2:]
+                else:
+                    # Last intermediate group — merge UP instead
+                    thresholds = thresholds[:i] + thresholds[i + 1:]
+                changed = True
+                break
+
+    return thresholds if thresholds else _FALLBACK_THRESHOLDS
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
     t = thresholds if thresholds is not None else _FALLBACK_THRESHOLDS
