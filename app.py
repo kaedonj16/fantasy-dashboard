@@ -8317,7 +8317,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             <!-- Settings button -->
             <div style="position:relative;">
               <button id="prSettingsBtn" class="filter-settings-btn" onclick="prToggleSettings()">
-                League️ Settings
+                Settings
               </button>
 
               <!-- Settings panel (hidden by default) -->

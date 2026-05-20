@@ -53,7 +53,7 @@ def build_prospects_body() -> str:
         </div>
         <div style="position:relative;">
           <button id="rkSettingsBtn" class="filter-settings-btn" onclick="rkToggleSettings()">
-            League️ Settings
+            Settings
           </button>
           <div id="rkSettingsPanel" class="filter-settings-panel" style="display:none;">
             <div class="settings-section">
