@@ -7271,46 +7271,35 @@ function _computeSeasonStats(p) {
 }
 
 function _buildComparePPGRow(p1, p2) {
-  // game_logs_by_year is lazy-loaded and empty at compare time; use stats directly
-  const ppg1 = p1.stats?.ppg;
-  const ppg2 = p2.stats?.ppg;
-  if (ppg1 == null && ppg2 == null) return '';
+  const s1 = _computeSeasonStats(p1);
+  const s2 = _computeSeasonStats(p2);
+  if (!s1.total && !s2.total) return '';
 
-  const season = p1.stats?.ppg_season || p2.stats?.ppg_season || '';
+  const season = s1.season || s2.season || '';
 
-  function scoringBlock(p) {
-    const pos = p.position || '';
-    const ppg = p.stats?.ppg;
-    const total = p.stats?.total_pts;
-    const games = p.stats?.ppg_games;
-    const ppgRank = p.stats?.ppg_rank;
-    const totalRank = p.stats?.total_pts_rank;
-    const valLine = ppg != null
-      ? `${ppg}${total != null ? ` | ${total}` : ''}`
-      : '-';
-    const rankLine = `PPG · ${ppgRank ? `${pos}${ppgRank}` : '-'} | TOTAL · ${totalRank ? `${pos}${totalRank}` : '-'}`;
-    return {
-      cell: `<div class="compare-pts-cell">
-        <div class="compare-pts-val">${valLine}</div>
-        <div class="compare-pts-label">${rankLine}</div>
-      </div>`,
-      games,
-    };
+  function cell(val, label) {
+    return `<div class="compare-pts-cell">
+      <div class="compare-pts-val">${val !== null ? val : '—'}</div>
+      <div class="compare-pts-label">${label}</div>
+    </div>`;
   }
-
-  const b1 = scoringBlock(p1);
-  const b2 = scoringBlock(p2);
 
   return `
     <div class="compare-pts-row">
       <div class="compare-pts-player">
-        <div class="compare-pts-stats">${b1.cell}</div>
-        ${b1.games ? `<div class="compare-pts-meta">${season} · ${b1.games}g</div>` : ''}
+        <div class="compare-pts-stats">
+          ${cell(s1.ppg, 'PPG')}
+          ${cell(s1.total, 'Total Pts')}
+        </div>
+        ${s1.games ? `<div class="compare-pts-meta">${season} · ${s1.games}g</div>` : ''}
       </div>
       <div class="compare-pts-divider"></div>
       <div class="compare-pts-player compare-pts-player-right">
-        <div class="compare-pts-stats">${b2.cell}</div>
-        ${b2.games ? `<div class="compare-pts-meta">${season} · ${b2.games}g</div>` : ''}
+        <div class="compare-pts-stats">
+          ${cell(s2.ppg, 'PPG')}
+          ${cell(s2.total, 'Total Pts')}
+        </div>
+        ${s2.games ? `<div class="compare-pts-meta">${season} · ${s2.games}g</div>` : ''}
       </div>
     </div>
   `;
@@ -7655,12 +7644,15 @@ function openComparisonView(p1, p2) {
   }
 
   // Build the comparison body
+  const ppgRowHTML = _buildComparePPGRow(p1, p2);
   body.innerHTML = `
     <div class="compare-body">
       <div class="compare-hero-section">
         <div class="compare-hero-player" id="compareHero1" data-name="${p1.full_name || ''}">${_buildCompareHeroHTML(p1)}</div>
         <div class="compare-hero-player" id="compareHero2" data-name="${p2.full_name || ''}">${_buildCompareHeroHTML(p2)}</div>
       </div>
+
+      ${ppgRowHTML ? `<hr class="pm-section-divider">${ppgRowHTML}` : ''}
 
       <hr class="pm-section-divider">
 
@@ -7673,12 +7665,6 @@ function openComparisonView(p1, p2) {
       </div>
 
       <hr class="pm-section-divider">
-
-      ${_buildComparePPGRow(p1, p2) ? `
-        <div class="pm-section-header"><span class="pm-section-label">Scoring</span></div>
-        ${_buildComparePPGRow(p1, p2)}
-        <hr class="pm-section-divider">
-      ` : ''}
 
       <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
       <div id="compareValueChart" class="player-modal-chart-container" style="min-height:200px;"></div>
