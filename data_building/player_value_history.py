@@ -611,9 +611,6 @@ def get_top_movers(
     for row in rows:
         row_dict = dict(row)
         player_id = str(row_dict["player_id"])
-        # Skip draft picks — they are not players
-        if _PICK_ID_RE.match(player_id):
-            continue
         resolved = name_map.get(player_id)
         if resolved:
             row_dict["name"] = resolved
