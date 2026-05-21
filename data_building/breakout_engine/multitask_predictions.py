@@ -167,8 +167,10 @@ def calculate_cumulative_ppr(
     """
     season1 = _estimate_season_ppr(position, projected_usage, efficiency_metrics, prev_usage)
 
-    # Readiness discount: low readiness means the player may not capitalise
-    readiness_factor = 0.6 + (readiness_score / 100.0) * 0.4  # range [0.60, 1.00]
+    # Readiness discount: low readiness means the player may not capitalise.
+    # Floor raised to 0.75 — even low-readiness candidates have plausible usage
+    # and the 0.60 floor caused systematic PPG underprediction in backtests.
+    readiness_factor = 0.75 + (readiness_score / 100.0) * 0.25  # range [0.75, 1.00]
     season1 *= readiness_factor
 
     age_f = float(age or 24)
