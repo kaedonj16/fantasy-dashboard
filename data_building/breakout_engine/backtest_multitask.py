@@ -111,17 +111,6 @@ def load_position_map(outcome_season: int, from_json: str | None) -> dict[str, s
     return {}
 
 
-# PPG threshold for "breakout" — scores ≥ this AND ≥ 10 games is a genuine
-# breakout season for a non-established player (not the same as top-12 which
-# is dominated by established stars excluded from the candidate pool).
-BREAKOUT_PPG_THRESHOLD: dict[str, float] = {
-    "QB": 15.0,
-    "RB": 10.0,
-    "WR": 10.0,
-    "TE":  7.0,
-}
-
-
 def get_top12_pids(
     outcomes: dict[str, dict],
     position_map: dict[str, str] | None = None,
@@ -147,22 +136,39 @@ def get_top12_pids(
 
 def get_breakout_pids(
     outcomes: dict[str, dict],
+    source_stats: dict[str, dict] | None = None,
     position_map: dict[str, str] | None = None,
 ) -> set[str]:
     """
-    Return the set of player IDs who hit the per-position PPG breakout threshold.
-    This is a better signal for the candidate pool than strict top-12, since most
-    top-12 slots belong to established stars we correctly excluded.
+    A breakout = meaningfully better than the player's OWN prior season.
+
+    Rules (≥10 games in outcome season required):
+      - Prior baseline exists (≥6 games, ≥4 ppg):
+          actual ≥ prior × 1.15  AND  actual ≥ 7.0 ppg
+          (15% relative jump + minimum absolute floor)
+      - No meaningful prior baseline (minimal/missing source data):
+          actual ≥ 10.0 ppg  (they established themselves from scratch)
+
+    Example: player at 12.1 ppg prior → breakout at ≥ 13.9 ppg (×1.15).
     """
-    pm = position_map or {}
+    ss = source_stats or {}
     breakout: set[str] = set()
+
     for pid, o in outcomes.items():
         if o["games"] < 10:
             continue
-        pos = o["position"] or pm.get(pid, "")
-        threshold = BREAKOUT_PPG_THRESHOLD.get(pos)
-        if threshold and o["ppr_ppg"] >= threshold:
-            breakout.add(pid)
+        actual_ppg  = o["ppr_ppg"]
+        prior       = ss.get(pid, {})
+        prior_ppg   = float(prior.get("ppr_ppg") or 0)
+        prior_games = int(prior.get("games") or 0)
+
+        if prior_games >= 6 and prior_ppg >= 4.0:
+            if actual_ppg >= prior_ppg * 1.15 and actual_ppg >= 7.0:
+                breakout.add(pid)
+        else:
+            if actual_ppg >= 10.0:
+                breakout.add(pid)
+
     return breakout
 
 
@@ -451,9 +457,9 @@ def run_backtest(
 
     position_map = load_position_map(outcome_season, from_json)
     top12 = get_top12_pids(outcomes, position_map)
-    breakouts = get_breakout_pids(outcomes, position_map)
-    print(f"  {len(top12)} top-12 finishers, {len(breakouts)} breakout-threshold players "
-          f"({len(position_map)} with position data)")
+    breakouts = get_breakout_pids(outcomes, source_stats, position_map)
+    print(f"  {len(top12)} top-12 finishers, {len(breakouts)} breakout players "
+          f"(≥15% improvement from prior season; {len(position_map)} with position data)")
 
     # Reconstruct predictions and pair with outcomes
     hit_pairs_top12:    list[tuple[float, bool]] = []
@@ -491,14 +497,26 @@ def run_backtest(
 
         if verbose and hit_prob is not None:
             pos = row.get("position", "")
-            thr = BREAKOUT_PPG_THRESHOLD.get(pos, 10.0)
-            hit_flag = "✓" if is_breakout else ("~" if actual_ppg >= thr * 0.8 else "✗")
+            prior_src   = source_stats.get(pid, {})
+            prior_ppg   = float(prior_src.get("ppr_ppg") or 0)
+            prior_games = int(prior_src.get("games") or 0)
+            if is_breakout:
+                hit_flag = "✓"
+            elif prior_games >= 6 and prior_ppg >= 4.0 and actual_ppg >= prior_ppg * 1.08 and actual_ppg >= 7.0:
+                hit_flag = "~"  # near miss: 8-15% improvement
+            else:
+                hit_flag = "✗"
             season1_ppr = mt.get("season1_ppr") or (cum_ppr / 2.0 if cum_ppr else 0)
             pred_ppg = season1_ppr / 17.0
+            if prior_ppg > 0:
+                delta = actual_ppg - prior_ppg
+                outcome_str = f"prior={prior_ppg:.1f}  actual={actual_ppg:.1f} ({delta:+.1f})"
+            else:
+                outcome_str = f"actual={actual_ppg:.1f}"
             print(f"  {hit_flag} {row.get('player_name','?'):<22} {pos:<3} "
                   f"score={float(row.get('breakout_opportunity_score',0)):.0f}  "
                   f"hit_prob={hit_prob:.0%}  "
-                  f"pred={pred_ppg:.1f}  actual={actual_ppg:.1f}")
+                  f"pred={pred_ppg:.1f}  {outcome_str}")
 
         # Collect feature data for correlation / precision reports
         if hit_prob is not None:
@@ -529,9 +547,8 @@ def run_backtest(
     print(f"\n  Hit rates among candidates:")
     print(f"    Top-12 strict:       {top12_rate:.0%}  "
           f"(NFL-wide top-12; dominated by established stars)")
-    thr_str = " / ".join(f"{v}ppg {k}" for k, v in BREAKOUT_PPG_THRESHOLD.items())
-    print(f"    Breakout threshold:  {breakout_rate:.0%}  "
-          f"(≥ {thr_str}; better signal for this candidate pool)")
+    print(f"    Breakout:            {breakout_rate:.0%}  "
+          f"(≥15% improvement from prior season + ≥7 ppg floor; better signal for this candidate pool)")
 
     # --- Calibration vs breakout threshold (more meaningful) ---
     calibration_report(hit_pairs_breakout)
