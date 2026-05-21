@@ -181,6 +181,39 @@ def load_pick_value_table(
                             fixed[k2] = round(capped2, 1)
                             rm = capped2
 
+                # Override future-year bucket picks with model_values.json values.
+                # WLS bucket values are in WLS units (not 0-999.9 model scale);
+                # model_values.json has pre-calibrated bucket picks for 2027+.
+                _BUCKET_KW = {"early", "mid", "late"}
+                try:
+                    import json as _mj
+                    _mp = DATA_DIR / "model_values.json"
+                    if _mp.exists():
+                        _mdata = _mj.loads(_mp.read_text())
+                        for _mp_entry in _mdata:
+                            if str(_mp_entry.get("position", "")).upper() != "PICK":
+                                continue
+                            _mid = str(_mp_entry.get("id") or "")
+                            _mparts = _mid.split("_")
+                            if len(_mparts) != 3:
+                                continue
+                            _mbkt = _mparts[2].lower()
+                            if _mbkt not in _BUCKET_KW:
+                                continue
+                            try:
+                                _myr = int(_mparts[0])
+                            except ValueError:
+                                continue
+                            # Only override future years (not current-year — those
+                            # have FC-normalized slot picks already)
+                            if _myr <= current_year:
+                                continue
+                            _mv = float(_mp_entry.get("value") or 0)
+                            if _mv > 0:
+                                fixed[_mid] = _mv
+                except Exception:
+                    pass
+
                 return fixed
         except Exception:
             logger.warning("picks: failed to build pick table from market calibration file", exc_info=True)
