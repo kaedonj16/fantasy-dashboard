@@ -12212,18 +12212,22 @@ def api_league_players():
             str(p.get("id") or "") for p in model_value_table
             if str(p.get("position") or "").upper() == "PICK"
         }
-        # Track which (year, round) combos already have specific slot picks in the DB
-        # so we can suppress bucket picks (Early/Mid/Late) for those rounds.
-        _slot_yr_rnd: set = set()
+        # Build pick-type sets per (year, round) — slot > bucket > generic hierarchy.
         _bucket_keywords = {"early", "mid", "late"}
+        _slot_yr_rnd: set = set()
+        _bucket_yr_rnd: set = set()
         for _pid in _db_pick_ids:
             _pp = _pid.split("_")
-            if len(_pp) >= 3 and _pp[2].lower() not in _bucket_keywords:
-                try:
-                    int(_pp[2])  # slot picks have a numeric third segment
-                    _slot_yr_rnd.add((_pp[0], _pp[1]))
-                except ValueError:
-                    pass
+            if len(_pp) >= 3:
+                _key = (_pp[0], _pp[1])
+                if _pp[2].lower() in _bucket_keywords:
+                    _bucket_yr_rnd.add(_key)
+                else:
+                    try:
+                        int(_pp[2])
+                        _slot_yr_rnd.add(_key)
+                    except ValueError:
+                        pass
 
         _injected_picks = []
         _seen_ids: set = set(_db_pick_ids)
@@ -12231,9 +12235,13 @@ def api_league_players():
             if _pk_id in _seen_ids or float(_pk_val) <= 0:
                 continue
             _parts = _pk_id.split("_")
-            # Skip bucket/generic picks when slot picks exist for that year+round
-            if len(_parts) >= 2 and (_parts[0], _parts[1]) in _slot_yr_rnd:
-                if len(_parts) == 2 or (len(_parts) >= 3 and _parts[2].lower() in _bucket_keywords):
+            if len(_parts) >= 2:
+                _key = (_parts[0], _parts[1])
+                _is_generic = len(_parts) == 2
+                _is_bucket = len(_parts) >= 3 and _parts[2].lower() in _bucket_keywords
+                if _key in _slot_yr_rnd and (_is_generic or _is_bucket):
+                    continue
+                if _key in _bucket_yr_rnd and _is_generic:
                     continue
             _seen_ids.add(_pk_id)
             # Format display name: "2026_1_01" -> "2026 1.01", "2026_1_early" -> "2026 1st (Early)"
@@ -12257,6 +12265,54 @@ def api_league_players():
             })
         model_value_table.extend(_injected_picks)
         print(f"[api/league-players] DB picks: {len(_db_pick_ids)}, WLS fallback picks: {len(_injected_picks)}")
+
+        # Inject model_values.json bucket picks, preferring them over WLS for
+        # future years (WLS bucket values are in WLS units; model values are
+        # pre-calibrated to the 0-999.9 model scale).
+        # Current-year slot picks (already FC-normalized in picks.py) are kept.
+        try:
+            _cur_year = str(date.today().year)
+            _json_picks = [p for p in (get_model_value_table_cached() or [])
+                           if str(p.get("position") or "").upper() == "PICK"]
+            _all_seen = {str(p.get("id") or "") for p in model_value_table
+                         if str(p.get("position") or "").upper() == "PICK"}
+            _json_injected = 0
+            for _jp in _json_picks:
+                _jid = str(_jp.get("id") or "")
+                if not _jid:
+                    continue
+                _jparts = _jid.split("_")
+                _jyear = _jparts[0] if _jparts else ""
+                _jis_bucket = (len(_jparts) >= 3 and
+                               _jparts[2].lower() in _bucket_keywords)
+                _jis_generic = len(_jparts) == 2
+
+                # Skip if slot picks for this year+round already exist
+                if len(_jparts) >= 2:
+                    _jkey = (_jparts[0], _jparts[1])
+                    if _jkey in _slot_yr_rnd and (_jis_generic or _jis_bucket):
+                        continue
+                    if _jkey in _bucket_yr_rnd and _jis_generic:
+                        continue
+
+                # For future years, model bucket picks override WLS bucket picks.
+                # For the current year, only add picks not already present.
+                if _jid in _all_seen:
+                    if _jyear == _cur_year or not _jis_bucket:
+                        continue
+                    # Replace the WLS entry with the model value
+                    for _i, _existing in enumerate(model_value_table):
+                        if str(_existing.get("id") or "") == _jid:
+                            model_value_table[_i] = _jp
+                            break
+                else:
+                    _all_seen.add(_jid)
+                    model_value_table.append(_jp)
+                _json_injected += 1
+            if _json_injected:
+                print(f"[api/league-players] model_values.json picks injected/overridden: {_json_injected}")
+        except Exception as _e_json_picks:
+            pass
     except Exception as _e_picks:
         print(f"[api/league-players] pick injection skipped: {_e_picks}")
 
