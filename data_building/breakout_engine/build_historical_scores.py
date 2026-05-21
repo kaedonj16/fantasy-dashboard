@@ -149,135 +149,250 @@ def load_rosters(seasons: list[int]) -> tuple[dict[int, dict[str, dict]], dict[s
     return rosters_by_season, gsis_to_sleeper, pfr_to_gsis
 
 
-def load_usage_stats(seasons: list[int], pfr_to_gsis: dict[str, str]) -> dict[int, dict[str, dict]]:
+def _load_usage_season_from_cache(
+    season: int, sleeper_to_gsis: dict[str, str]
+) -> dict[str, dict]:
     """
-    Load nfl_data_py weekly + snap count data and aggregate to per-player,
-    per-season totals, keyed by GSIS player ID.
+    Load one season's usage from cache/player_history/usage_rows_{season}.json,
+    normalised to the same GSIS-keyed season-total format produced by load_usage_stats.
+    The cache files (from the live ingestion pipeline) store per-game averages;
+    this function converts them to season totals.
     """
-    import nfl_data_py as nfl
+    cache_path = Path("cache/player_history") / f"usage_rows_{season}.json"
+    if not cache_path.exists():
+        return {}
+    with open(cache_path) as f:
+        rows = json.load(f)
 
-    print(f"  Loading weekly data for {seasons}...")
-    weekly = nfl.import_weekly_data(seasons)
-    weekly = weekly[weekly["season_type"] == "REG"]
-    weekly = weekly[weekly["position"].isin(POSITIONS)]
+    result: dict[str, dict] = {}
+    for r in rows:
+        sleeper_id = str(r.get("id") or "")
+        gsis_id = sleeper_to_gsis.get(sleeper_id)
+        if not gsis_id:
+            continue
+        u = r.get("usage") or {}
+        games = max(int(u.get("games") or 1), 1)
 
-    agg = (
-        weekly.groupby(["player_id", "player_name", "position", "recent_team", "season"])
-        .agg(
-            games=("week", "nunique"),
-            targets=("targets", "sum"),
-            carries=("carries", "sum"),
-            receptions=("receptions", "sum"),
-            receiving_yards=("receiving_yards", "sum"),
-            receiving_tds=("receiving_tds", "sum"),
-            rushing_yards=("rushing_yards", "sum"),
-            rushing_tds=("rushing_tds", "sum"),
-            attempts=("attempts", "sum"),
-            passing_yards=("passing_yards", "sum"),
-            passing_tds=("passing_tds", "sum"),
-            interceptions=("interceptions", "sum"),
-            fantasy_points_ppr=("fantasy_points_ppr", "sum"),
-        )
-        .reset_index()
-    )
+        avg_targets    = float(u.get("avg_targets") or 0)
+        avg_carries    = float(u.get("avg_carries") or 0)
+        avg_pass_att   = float(u.get("avg_pass_att") or 0)
+        avg_rec_yards  = float(u.get("avg_rec_yards") or 0)
+        avg_rush_yards = float(u.get("avg_rush_yards") or 0)
+        avg_receptions = float(u.get("avg_receptions") or 0)
+        avg_rec_tds    = float(u.get("avg_rec_tds") or 0)
+        avg_rush_tds   = float(u.get("avg_rush_tds") or 0)
+        snap_share     = float(u.get("avg_off_snap_pct") or 0)
+        ppr_ppg        = float(u.get("ppr_ppg") or 0)
 
-    # Snap counts: average offense_pct per player per season (2022+)
-    snap_seasons = [s for s in seasons if s in SNAP_COUNT_SEASONS]
-    snap_by_pfr_season: dict[tuple, float] = {}
-    if snap_seasons:
-        print(f"  Loading snap counts for {snap_seasons}...")
-        snaps = nfl.import_snap_counts(snap_seasons)
-        snaps = snaps[snaps.get("game_type", "REG") == "REG"] if "game_type" in snaps.columns else snaps
-        snaps_agg = (
-            snaps[["pfr_player_id", "season", "offense_pct"]]
-            .groupby(["pfr_player_id", "season"])["offense_pct"]
-            .mean()
-            .reset_index()
-        )
-        for _, row in snaps_agg.iterrows():
-            snap_by_pfr_season[(str(row["pfr_player_id"]), int(row["season"]))] = float(_safe(row["offense_pct"], 0))
+        # Season totals — prefer explicit total_targets when available
+        targets      = int(float(u.get("total_targets") or 0) or round(avg_targets * games))
+        carries      = round(avg_carries * games)
+        pass_attempts = round(avg_pass_att * games)
 
-    # Team-level target totals for computing target_share
-    team_targets_by_season: dict[tuple, float] = {}
-    for _, row in agg.iterrows():
-        key = (str(row["recent_team"]), int(row["season"]))
-        team_targets_by_season[key] = team_targets_by_season.get(key, 0) + float(_safe(row["targets"], 0))
+        ypt = round(avg_rec_yards  / avg_targets    , 2) if avg_targets > 0    else 0.0
+        ypc = round(avg_rush_yards / avg_carries    , 2) if avg_carries > 0    else 0.0
+        cr  = round(avg_receptions / avg_targets    , 3) if avg_targets > 0    else 0.0
 
-    # Build usage dict per GSIS ID per season
-    usage_by_season: dict[int, dict] = {}
-
-    for _, row in agg.iterrows():
-        gsis_id = str(row["player_id"])
-        season = int(row["season"])
-        games = int(_safe(row["games"], 1))
-        targets = int(_safe(row["targets"], 0))
-        carries = int(_safe(row["carries"], 0))
-        receptions = int(_safe(row["receptions"], 0))
-        rec_yards = float(_safe(row["receiving_yards"], 0))
-        rec_tds = float(_safe(row["receiving_tds"], 0))
-        rush_yards = float(_safe(row["rushing_yards"], 0))
-        rush_tds = float(_safe(row["rushing_tds"], 0))
-        attempts = int(_safe(row["attempts"], 0))
-        pass_yards = float(_safe(row["passing_yards"], 0))
-        pass_tds = float(_safe(row["passing_tds"], 0))
-        ints = float(_safe(row["interceptions"], 0))
-        ppr = float(_safe(row["fantasy_points_ppr"], 0))
-        team = str(row["recent_team"])
-
-        ypc = rush_yards / carries if carries > 0 else 0.0
-        ypt = rec_yards / targets if targets > 0 else 0.0
-        catch_rate = receptions / targets if targets > 0 else 0.0
-        ppr_ppg = ppr / max(games, 1)
-
-        team_total_targets = team_targets_by_season.get((team, season), 1)
-        target_share = targets / max(team_total_targets, 1)
-
-        usage_by_season.setdefault(season, {})[gsis_id] = {
+        result[gsis_id] = {
             "gsis_id": gsis_id,
-            "name": str(row["player_name"]),
-            "team": team,
-            "position": str(row["position"]),
+            "name": r.get("name", ""),
+            "team": r.get("team", ""),
+            "position": r.get("position", ""),
             "season": season,
             "games": games,
             "targets": targets,
             "carries": carries,
-            "receptions": receptions,
-            "rec_yards": int(rec_yards),
-            "rec_tds": round(rec_tds, 1),
-            "rush_yards": int(rush_yards),
-            "rush_tds": round(rush_tds, 1),
-            "pass_attempts": attempts,
-            "pass_yards": int(pass_yards),
-            "pass_tds": round(pass_tds, 1),
-            "interceptions": round(ints, 1),
-            "ppr_ppg": round(ppr_ppg, 2),
-            "ppr_total": round(ppr, 1),
-            "yards_per_carry": round(ypc, 2),
-            "yards_per_target": round(ypt, 2),
-            "catch_rate": round(catch_rate, 3),
-            "snap_share": 0.0,          # populated below
-            "avg_off_snap_pct": 0.0,
-            "opportunity_share": target_share,
-            "target_share": round(target_share, 4),
-            "avg_targets": round(targets / max(games, 1), 2),
-            "avg_carries": round(carries / max(games, 1), 2),
-            "avg_receptions": round(receptions / max(games, 1), 2),
-            "avg_rush_yards": round(rush_yards / max(games, 1), 2),
-            "avg_rec_yards": round(rec_yards / max(games, 1), 2),
-            "avg_rush_tds": round(rush_tds / max(games, 1), 3),
-            "avg_rec_tds": round(rec_tds / max(games, 1), 3),
+            "pass_attempts": pass_attempts,
+            "snap_share": snap_share,
+            "avg_off_snap_pct": snap_share,
+            "ppr_ppg": ppr_ppg,
+            "ppr_total": round(ppr_ppg * games, 1),
+            "yards_per_target": ypt,
+            "yards_per_carry": ypc,
+            "catch_rate": cr,
+            "target_share": float(u.get("target_share") or 0),
+            "opportunity_share": float(u.get("target_share") or 0),
+            "avg_targets": avg_targets,
+            "avg_carries": avg_carries,
+            "avg_receptions": avg_receptions,
+            "avg_rec_yards": avg_rec_yards,
+            "avg_rush_yards": avg_rush_yards,
+            "avg_rec_tds": avg_rec_tds,
+            "avg_rush_tds": avg_rush_tds,
         }
+    return result
 
-    # Backfill snap_share via pfr_id → gsis_id mapping
-    # Build reverse: gsis_id → pfr_id from pfr_to_gsis
-    gsis_to_pfr = {v: k for k, v in pfr_to_gsis.items()}
-    for season, season_usage in usage_by_season.items():
-        for gsis_id, entry in season_usage.items():
-            pfr_id = gsis_to_pfr.get(gsis_id)
-            if pfr_id:
-                snap = snap_by_pfr_season.get((pfr_id, season), 0.0)
-                entry["snap_share"] = round(snap, 4)
-                entry["avg_off_snap_pct"] = round(snap, 4)
+
+def load_usage_stats(
+    seasons: list[int],
+    pfr_to_gsis: dict[str, str],
+    gsis_to_sleeper: dict[str, str] | None = None,
+) -> dict[int, dict[str, dict]]:
+    """
+    Load nfl_data_py weekly + snap count data and aggregate to per-player,
+    per-season totals, keyed by GSIS player ID.
+
+    Falls back to cache/player_history/usage_rows_{season}.json for any season
+    whose parquet file is not yet available on nfl_data_py (e.g. the current
+    season shortly after it ends).  Pass gsis_to_sleeper so the cache fallback
+    can reverse-map sleeper IDs → GSIS IDs.
+    """
+    import nfl_data_py as nfl
+
+    sleeper_to_gsis: dict[str, str] = {v: k for k, v in (gsis_to_sleeper or {}).items()}
+
+    # ── 1. Determine which seasons are available on nfl_data_py ──────────────
+    nfl_seasons   = list(sorted(seasons))
+    cache_seasons: list[int] = []
+
+    print(f"  Loading weekly data for {nfl_seasons}...")
+    try:
+        weekly_raw = nfl.import_weekly_data(nfl_seasons)
+    except Exception:
+        # Find the unavailable season(s) by probing individually
+        ok: list[int] = []
+        fail: list[int] = []
+        for s in nfl_seasons:
+            try:
+                nfl.import_weekly_data([s])
+                ok.append(s)
+            except Exception:
+                fail.append(s)
+        cache_seasons.extend(fail)
+        nfl_seasons = ok
+        if fail:
+            print(f"  nfl_data_py unavailable for seasons {fail}; loading those from local cache")
+        weekly_raw = nfl.import_weekly_data(nfl_seasons) if nfl_seasons else None
+
+    # ── 2. Aggregate nfl_data_py weekly data ─────────────────────────────────
+    usage_by_season: dict[int, dict] = {}
+
+    if weekly_raw is not None and not weekly_raw.empty:
+        weekly = weekly_raw[weekly_raw["season_type"] == "REG"]
+        weekly = weekly[weekly["position"].isin(POSITIONS)]
+
+        agg = (
+            weekly.groupby(["player_id", "player_name", "position", "recent_team", "season"])
+            .agg(
+                games=("week", "nunique"),
+                targets=("targets", "sum"),
+                carries=("carries", "sum"),
+                receptions=("receptions", "sum"),
+                receiving_yards=("receiving_yards", "sum"),
+                receiving_tds=("receiving_tds", "sum"),
+                rushing_yards=("rushing_yards", "sum"),
+                rushing_tds=("rushing_tds", "sum"),
+                attempts=("attempts", "sum"),
+                passing_yards=("passing_yards", "sum"),
+                passing_tds=("passing_tds", "sum"),
+                interceptions=("interceptions", "sum"),
+                fantasy_points_ppr=("fantasy_points_ppr", "sum"),
+            )
+            .reset_index()
+        )
+
+        snap_seasons = [s for s in nfl_seasons if s in SNAP_COUNT_SEASONS]
+        snap_by_pfr_season: dict[tuple, float] = {}
+        if snap_seasons:
+            print(f"  Loading snap counts for {snap_seasons}...")
+            snaps = nfl.import_snap_counts(snap_seasons)
+            snaps = snaps[snaps.get("game_type", "REG") == "REG"] if "game_type" in snaps.columns else snaps
+            snaps_agg = (
+                snaps[["pfr_player_id", "season", "offense_pct"]]
+                .groupby(["pfr_player_id", "season"])["offense_pct"]
+                .mean()
+                .reset_index()
+            )
+            for _, row in snaps_agg.iterrows():
+                snap_by_pfr_season[(str(row["pfr_player_id"]), int(row["season"]))] = float(_safe(row["offense_pct"], 0))
+
+        team_targets_by_season: dict[tuple, float] = {}
+        for _, row in agg.iterrows():
+            key = (str(row["recent_team"]), int(row["season"]))
+            team_targets_by_season[key] = team_targets_by_season.get(key, 0) + float(_safe(row["targets"], 0))
+
+        gsis_to_pfr = {v: k for k, v in pfr_to_gsis.items()}
+
+        for _, row in agg.iterrows():
+            gsis_id = str(row["player_id"])
+            season  = int(row["season"])
+            games   = int(_safe(row["games"], 1))
+            targets = int(_safe(row["targets"], 0))
+            carries = int(_safe(row["carries"], 0))
+            receptions  = int(_safe(row["receptions"], 0))
+            rec_yards   = float(_safe(row["receiving_yards"], 0))
+            rec_tds     = float(_safe(row["receiving_tds"], 0))
+            rush_yards  = float(_safe(row["rushing_yards"], 0))
+            rush_tds    = float(_safe(row["rushing_tds"], 0))
+            attempts    = int(_safe(row["attempts"], 0))
+            pass_yards  = float(_safe(row["passing_yards"], 0))
+            pass_tds    = float(_safe(row["passing_tds"], 0))
+            ints        = float(_safe(row["interceptions"], 0))
+            ppr         = float(_safe(row["fantasy_points_ppr"], 0))
+            team        = str(row["recent_team"])
+
+            ypc = rush_yards / carries  if carries > 0  else 0.0
+            ypt = rec_yards  / targets  if targets > 0  else 0.0
+            catch_rate   = receptions  / targets  if targets > 0  else 0.0
+            ppr_ppg      = ppr / max(games, 1)
+            team_total_t = team_targets_by_season.get((team, season), 1)
+            target_share = targets / max(team_total_t, 1)
+
+            entry = {
+                "gsis_id": gsis_id,
+                "name": str(row["player_name"]),
+                "team": team,
+                "position": str(row["position"]),
+                "season": season,
+                "games": games,
+                "targets": targets,
+                "carries": carries,
+                "receptions": receptions,
+                "rec_yards": int(rec_yards),
+                "rec_tds": round(rec_tds, 1),
+                "rush_yards": int(rush_yards),
+                "rush_tds": round(rush_tds, 1),
+                "pass_attempts": attempts,
+                "pass_yards": int(pass_yards),
+                "pass_tds": round(pass_tds, 1),
+                "interceptions": round(ints, 1),
+                "ppr_ppg": round(ppr_ppg, 2),
+                "ppr_total": round(ppr, 1),
+                "yards_per_carry": round(ypc, 2),
+                "yards_per_target": round(ypt, 2),
+                "catch_rate": round(catch_rate, 3),
+                "snap_share": 0.0,
+                "avg_off_snap_pct": 0.0,
+                "opportunity_share": target_share,
+                "target_share": round(target_share, 4),
+                "avg_targets": round(targets / max(games, 1), 2),
+                "avg_carries": round(carries / max(games, 1), 2),
+                "avg_receptions": round(receptions / max(games, 1), 2),
+                "avg_rush_yards": round(rush_yards / max(games, 1), 2),
+                "avg_rec_yards": round(rec_yards / max(games, 1), 2),
+                "avg_rush_tds": round(rush_tds / max(games, 1), 3),
+                "avg_rec_tds": round(rec_tds / max(games, 1), 3),
+            }
+            usage_by_season.setdefault(season, {})[gsis_id] = entry
+
+        # Backfill snap_share via pfr_id → gsis_id mapping
+        for season_data in usage_by_season.values():
+            s = next(iter(season_data.values()))["season"]
+            for gsis_id, entry in season_data.items():
+                pfr_id = gsis_to_pfr.get(gsis_id)
+                if pfr_id:
+                    snap = snap_by_pfr_season.get((pfr_id, entry["season"]), 0.0)
+                    entry["snap_share"] = round(snap, 4)
+                    entry["avg_off_snap_pct"] = round(snap, 4)
+
+    # ── 3. Cache fallback for unavailable seasons ─────────────────────────────
+    for s in cache_seasons:
+        cached = _load_usage_season_from_cache(s, sleeper_to_gsis)
+        if cached:
+            usage_by_season[s] = cached
+            print(f"  Loaded {len(cached)} players for season {s} from local cache")
+        else:
+            print(f"  WARNING: no data found for season {s} (nfl_data_py unavailable and no local cache)")
 
     total = sum(len(v) for v in usage_by_season.values())
     print(f"  Usage stats: {total} player-seasons")
@@ -891,7 +1006,7 @@ def run(
     print()
 
     rosters_by_season, gsis_to_sleeper, pfr_to_gsis = load_rosters(all_roster_seasons)
-    usage_by_season = load_usage_stats(all_usage_seasons, pfr_to_gsis)
+    usage_by_season = load_usage_stats(all_usage_seasons, pfr_to_gsis, gsis_to_sleeper)
 
     # Write usage_rows_{season}.json to cache/player_history/ for each source season
     # that doesn't already have one.  The backtest script reads these files to compute
