@@ -184,10 +184,17 @@ def _load_usage_season_from_cache(
         snap_share     = float(u.get("avg_off_snap_pct") or 0)
         ppr_ppg        = float(u.get("ppr_ppg") or 0)
 
-        # Season totals — prefer explicit total_targets when available
-        targets      = int(float(u.get("total_targets") or 0) or round(avg_targets * games))
-        carries      = round(avg_carries * games)
-        pass_attempts = round(avg_pass_att * games)
+        # For partial-season players (<14 games) project to a full 17-game season
+        # using the per-game average, so their usage isn't systematically under-counted.
+        # For full-season players, prefer the explicit season total when available.
+        if games < 14:
+            targets       = round(avg_targets  * 17)
+            carries       = round(avg_carries  * 17)
+            pass_attempts = round(avg_pass_att * 17)
+        else:
+            targets       = int(float(u.get("total_targets") or 0) or round(avg_targets * games))
+            carries       = round(avg_carries  * games)
+            pass_attempts = round(avg_pass_att * games)
 
         ypt = round(avg_rec_yards  / avg_targets    , 2) if avg_targets > 0    else 0.0
         ypc = round(avg_rush_yards / avg_carries    , 2) if avg_carries > 0    else 0.0
@@ -568,7 +575,10 @@ def compute_established_producers(
                 continue
             if u.get("games", 0) < ESTABLISHED_PRODUCER_MIN_GAMES:
                 continue
-            by_pos.setdefault(pos, []).append((gsis_id, u.get("ppr_total", 0.0)))
+            # Annualize PPR to a full 17-game season so partial-season players
+            # (e.g. 8 games at 14.6 ppg) rank correctly and don't slip through.
+            annualized = float(u.get("ppr_ppg", 0)) * 17
+            by_pos.setdefault(pos, []).append((gsis_id, annualized))
 
         for pos, players in by_pos.items():
             top_n = ESTABLISHED_PRODUCER_TOP_N[pos]

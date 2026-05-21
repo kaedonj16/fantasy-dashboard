@@ -266,6 +266,19 @@ def compute_multitask_predictions(
         _y2 = 0.78
     season1_ppr = round(cum_ppr / (1.0 + _y2), 1)
 
+    # Floor: a breakout candidate shouldn't be predicted to score below 92% of
+    # their prior season rate.  Applies when prior data is reliable (≥6 games).
+    if prev_usage:
+        prior_ppg   = float(prev_usage.get("ppr_ppg") or 0)
+        prior_games = int(prev_usage.get("games") or 0)
+        if prior_ppg > 0 and prior_games >= 6:
+            floor_season_ppr = prior_ppg * 17 * 0.92
+            if season1_ppr < floor_season_ppr:
+                ratio       = floor_season_ppr / max(season1_ppr, 1.0)
+                cum_ppr     = round(cum_ppr * ratio, 1)
+                peak        = round(calculate_peak_ppr(cum_ppr, role_trajectory_score, readiness_score), 1)
+                season1_ppr = round(floor_season_ppr, 1)
+
     return {
         "hit_probability": hit_prob,
         "cumulative_ppr":  cum_ppr,
