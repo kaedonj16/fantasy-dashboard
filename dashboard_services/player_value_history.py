@@ -371,6 +371,7 @@ def load_current_values_from_db() -> list[dict]:
                     FROM player_values
                     WHERE value_1qb IS NOT NULL
                       AND value_1qb > 0
+                      AND (position IS NULL OR position != 'PICK')
                     ORDER BY value_1qb DESC NULLS LAST
                     """
                 )

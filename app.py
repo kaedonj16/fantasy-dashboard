@@ -12265,6 +12265,36 @@ def api_league_players():
             })
         model_value_table.extend(_injected_picks)
         print(f"[api/league-players] DB picks: {len(_db_pick_ids)}, WLS fallback picks: {len(_injected_picks)}")
+
+        # Also inject model_values.json bucket picks for years not covered by WLS slot picks.
+        # These are more up-to-date than WLS for future years (e.g. 2027 buckets).
+        try:
+            _json_picks = [p for p in (get_model_value_table_cached() or [])
+                           if str(p.get("position") or "").upper() == "PICK"]
+            _all_seen = {str(p.get("id") or "") for p in model_value_table
+                         if str(p.get("position") or "").upper() == "PICK"}
+            _json_injected = 0
+            for _jp in _json_picks:
+                _jid = str(_jp.get("id") or "")
+                if not _jid or _jid in _all_seen:
+                    continue
+                _jparts = _jid.split("_")
+                # Apply same hierarchy: skip if slot picks cover this year+round
+                if len(_jparts) >= 2:
+                    _jkey = (_jparts[0], _jparts[1])
+                    _jis_generic = len(_jparts) == 2
+                    _jis_bucket = len(_jparts) >= 3 and _jparts[2].lower() in _bucket_keywords
+                    if _jkey in _slot_yr_rnd and (_jis_generic or _jis_bucket):
+                        continue
+                    if _jkey in _bucket_yr_rnd and _jis_generic:
+                        continue
+                _all_seen.add(_jid)
+                model_value_table.append(_jp)
+                _json_injected += 1
+            if _json_injected:
+                print(f"[api/league-players] model_values.json picks injected: {_json_injected}")
+        except Exception as _e_json_picks:
+            pass
     except Exception as _e_picks:
         print(f"[api/league-players] pick injection skipped: {_e_picks}")
 
