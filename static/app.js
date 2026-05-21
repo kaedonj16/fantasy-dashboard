@@ -5724,7 +5724,7 @@ function openPlayerModal(playerId, playerName, opts) {
         && String(pd.draft_class_year) === String(_currentNFLYear);
       if (tabProspect) tabProspect.style.display = _isCurrentYearProspect ? '' : 'none';
       const tabBreakout = document.getElementById('pmTabBreakout');
-      if (tabBreakout) tabBreakout.style.display = isBreakout(pid) ? '' : 'none';
+      if (tabBreakout) tabBreakout.style.display = (isBreakout(pid) || (opts && opts.tab === 'breakout')) ? '' : 'none';
 
       // Switch to requested tab, or Overview by default
       const _initialTab = (opts && opts.tab) || 'overview';
