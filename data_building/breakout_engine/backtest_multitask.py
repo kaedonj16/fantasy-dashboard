@@ -35,10 +35,16 @@ import sys
 from pathlib import Path
 
 # Allow running from repo root
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from dotenv import load_dotenv
 load_dotenv()
+
+# openai is transitively imported via the breakout engine's projections module.
+# Mock it so this standalone script doesn't require the full AI stack.
+from unittest.mock import MagicMock as _MagicMock
+for _mod in ("openai", "openai.types", "openai.types.chat"):
+    sys.modules.setdefault(_mod, _MagicMock())
 
 
 def load_actual_outcomes(season: int) -> dict[str, dict]:
@@ -90,13 +96,35 @@ def load_source_stats(season: int) -> dict[str, dict]:
     return result
 
 
-def get_top12_pids(outcomes: dict[str, dict]) -> set[str]:
+def load_position_map(outcome_season: int, from_json: str | None) -> dict[str, str]:
+    """
+    Load a player_id → position map.  Tries the supplemental file written by
+    build_historical_scores (most accurate), then falls back to the candidate
+    scores JSON, then gives up gracefully.
+    """
+    if from_json:
+        pos_path = Path(from_json) / f"player_positions_{outcome_season}.json"
+        if pos_path.exists():
+            with open(pos_path) as f:
+                raw = json.load(f)
+            return {pid: v["position"] for pid, v in raw.items() if v.get("position")}
+    return {}
+
+
+def get_top12_pids(
+    outcomes: dict[str, dict],
+    position_map: dict[str, str] | None = None,
+) -> set[str]:
     """Return the set of player IDs who finished top-12 at their position."""
+    pm = position_map or {}
     by_pos: dict[str, list] = {}
     for pid, o in outcomes.items():
         if o["games"] < 10:
             continue
-        by_pos.setdefault(o["position"], []).append((pid, o["total_ppr"]))
+        pos = o["position"] or pm.get(pid, "")
+        if not pos:
+            continue
+        by_pos.setdefault(pos, []).append((pid, o["total_ppr"]))
 
     top12: set[str] = set()
     for pos, players in by_pos.items():
@@ -136,6 +164,21 @@ def load_breakout_scores_from_db(season: int, min_score: float = 0.0) -> list[di
             (season, min_score),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def load_breakout_scores_from_json(
+    season: int, json_dir: str, min_score: float = 0.0
+) -> list[dict]:
+    """Load breakout scores from a JSON file produced by build_historical_scores --output-json."""
+    path = Path(json_dir) / f"breakout_scores_{season}.json"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"No JSON scores found at {path}. "
+            f"Run build_historical_scores.py --season {season} --output-json {json_dir} first."
+        )
+    with open(path) as f:
+        rows = json.load(f)
+    return [r for r in rows if float(r.get("breakout_opportunity_score") or 0) >= min_score]
 
 
 def _compute_projected_usage_from_details(
@@ -327,44 +370,33 @@ def list_available_seasons() -> list[int]:
     return [(int(r["season"]), int(r["n"])) for r in rows]
 
 
-def run_backtest(season: int, min_score: float = 0.0, verbose: bool = False) -> None:
-    # Check what seasons actually have data before proceeding
-    try:
-        available = list_available_seasons()
-    except Exception as e:
-        print(f"  ERROR connecting to DB: {e}")
-        return
-
-    if not available:
-        print("  No breakout scores found in DB at all.")
-        return
-
-    available_seasons = [s for s, _ in available]
-
-    if season not in available_seasons:
-        print(f"\n  Season {season} has no breakout scores in the DB.")
-        print(f"  Available seasons:")
-        for s, n in available:
-            outcome_file = Path("cache/player_history") / f"usage_rows_{s + 1}.json"
-            testable = "✓ testable" if outcome_file.exists() else "✗ no outcome file"
-            print(f"    {s}: {n} players  ({testable})")
-        # Auto-select the most recent testable season
-        testable = [(s, n) for s, n in available
-                    if (Path("cache/player_history") / f"usage_rows_{s + 1}.json").exists()]
-        if not testable:
-            print("\n  No testable seasons (need usage_rows_{season+1}.json in cache).")
-            return
-        season = testable[-1][0]
-        print(f"\n  Auto-selecting season {season} (most recent testable).")
-
+def run_backtest(
+    season: int,
+    min_score: float = 0.0,
+    verbose: bool = False,
+    from_json: str | None = None,
+) -> None:
     outcome_season = season + 1
     print(f"\n=== Multitask backtest: predicted for {season}, outcomes from {outcome_season} ===")
 
     print(f"Loading breakout scores for season {season}...")
     try:
-        candidates = load_breakout_scores_from_db(season, min_score)
+        if from_json:
+            candidates = load_breakout_scores_from_json(season, from_json, min_score)
+        else:
+            # DB path: check available seasons first
+            try:
+                available = list_available_seasons()
+            except Exception as e:
+                print(f"  ERROR connecting to DB: {e}")
+                return
+            available_seasons = [s for s, _ in available]
+            if season not in available_seasons:
+                print(f"  Season {season} not in DB. Available: {available_seasons}")
+                return
+            candidates = load_breakout_scores_from_db(season, min_score)
     except Exception as e:
-        print(f"  ERROR loading DB scores: {e}")
+        print(f"  ERROR loading scores: {e}")
         return
     print(f"  {len(candidates)} candidates (min_score={min_score})")
 
@@ -383,8 +415,10 @@ def run_backtest(season: int, min_score: float = 0.0, verbose: bool = False) -> 
     source_stats = load_source_stats(season)
     print(f"  {len(source_stats)} players with source stats (season {season})")
 
-    top12 = get_top12_pids(outcomes)
-    print(f"  {len(top12)} top-12 finishers across all positions")
+    position_map = load_position_map(outcome_season, from_json)
+    top12 = get_top12_pids(outcomes, position_map)
+    print(f"  {len(top12)} top-12 finishers across all positions "
+          f"({len(position_map)} players with position data)")
 
     # Reconstruct predictions and pair with outcomes
     hit_pairs: list[tuple[float, bool]] = []
@@ -490,6 +524,9 @@ if __name__ == "__main__":
                         help="Minimum breakout score to include")
     parser.add_argument("--verbose", action="store_true",
                         help="Print per-player results")
+    parser.add_argument("--from-json", metavar="DIR", default=None,
+                        help="Load scores from JSON files in DIR instead of the database "
+                             "(produced by build_historical_scores.py --output-json)")
     args = parser.parse_args()
 
-    run_backtest(args.season, args.min_score, args.verbose)
+    run_backtest(args.season, args.min_score, args.verbose, from_json=args.from_json)

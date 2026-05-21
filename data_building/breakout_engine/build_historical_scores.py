@@ -716,6 +716,7 @@ def build_season(
     gsis_to_sleeper: dict,
     min_score: float = 30.0,
     dry_run: bool = False,
+    output_json_dir: Optional[str] = None,
 ) -> int:
     """
     Generate and save historical breakout scores for one prediction season.
@@ -823,18 +824,38 @@ def build_season(
         print("  Nothing to save.")
         return 0
 
+    scored.sort(key=lambda x: -x["breakout_opportunity_score"])
+
+    print(f"  Top candidates:")
+    for r in scored[:10]:
+        suffix = f"hit_prob={r['hit_probability']:.0%}" if r["hit_probability"] is not None else "no pred"
+        print(f"    {r['player_name']:<22} {r['position']} {r['team']:<4} "
+              f"score={r['breakout_opportunity_score']:.0f}  {suffix}")
+
     if dry_run:
-        print(f"  [dry-run] Would save {len(scored)} rows to DB")
-        # Show top 10
-        scored.sort(key=lambda x: -x["breakout_opportunity_score"])
-        print(f"  Top candidates:")
-        for r in scored[:10]:
-            if r["hit_probability"] is not None:
-                suffix = f"hit_prob={r['hit_probability']:.0%}"
-            else:
-                suffix = "rookie"
-            print(f"    {r['player_name']:<22} {r['position']} {r['team']:<4} "
-                  f"score={r['breakout_opportunity_score']:.0f}  {suffix}")
+        print(f"  [dry-run] Would save {len(scored)} rows")
+        return len(scored)
+
+    if output_json_dir:
+        out_dir = Path(output_json_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"breakout_scores_{prediction_season}.json"
+        with open(out_path, "w") as f:
+            json.dump(scored, f, indent=2, default=str)
+        print(f"  Saved {len(scored)} rows → {out_path}")
+
+        # Write a supplemental positions file so the backtest can determine
+        # top-12 per position even when usage_rows_{season}.json lacks positions.
+        # Maps sleeper_id → {position, name} for all skill players in target_season.
+        pos_map: dict[str, dict] = {}
+        for gsis_id, entry in curr_rosters.items():
+            sid = gsis_to_sleeper.get(gsis_id)
+            if sid and entry.get("position") in POSITIONS:
+                pos_map[sid] = {"position": entry["position"], "name": entry.get("name", "")}
+        pos_path = out_dir / f"player_positions_{target_season}.json"
+        with open(pos_path, "w") as f:
+            json.dump(pos_map, f, indent=2)
+        print(f"  Saved {len(pos_map)} player positions → {pos_path}")
         return len(scored)
 
     from data_building.breakout_engine.db_helpers import save_breakout_scores
@@ -843,7 +864,12 @@ def build_season(
     return n_saved
 
 
-def run(seasons: list[int], min_score: float = 30.0, dry_run: bool = False) -> None:
+def run(
+    seasons: list[int],
+    min_score: float = 30.0,
+    dry_run: bool = False,
+    output_json_dir: Optional[str] = None,
+) -> None:
     # season=N uses N stats and detects N→N+1 roster changes.
     # Rosters needed: source seasons N and target seasons N+1.
     # Usage needed: source seasons N, plus 5 years of history for established-producer detection.
@@ -873,13 +899,16 @@ def run(seasons: list[int], min_score: float = 30.0, dry_run: bool = False) -> N
             gsis_to_sleeper=gsis_to_sleeper,
             min_score=min_score,
             dry_run=dry_run,
+            output_json_dir=output_json_dir,
         )
         total_saved += n
 
-    print(f"\n=== Done: {total_saved} total rows {'(dry-run)' if dry_run else 'saved'} ===")
+    dest = output_json_dir or "DB"
+    print(f"\n=== Done: {total_saved} total rows {'(dry-run)' if dry_run else f'saved to {dest}'} ===")
     if not dry_run:
+        flag = f"--from-json {output_json_dir}" if output_json_dir else ""
         print(
-            "Run backtest_multitask.py --season <N> to evaluate predictions "
+            f"Run backtest_multitask.py {flag}--season <N> to evaluate predictions "
             "against actual outcomes."
         )
 
@@ -893,8 +922,12 @@ if __name__ == "__main__":
     parser.add_argument("--min-score", type=float, default=30.0,
                         help="Minimum breakout score to save (default: 30)")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Compute scores but do not write to DB")
+                        help="Compute scores but do not write")
+    parser.add_argument("--output-json", metavar="DIR", default=None,
+                        help="Write scores to JSON files in DIR instead of the database "
+                             "(e.g. cache/backtest); creates DIR/breakout_scores_{season}.json")
     args = parser.parse_args()
 
     target_seasons = [args.season] if args.season else args.seasons
-    run(target_seasons, min_score=args.min_score, dry_run=args.dry_run)
+    run(target_seasons, min_score=args.min_score, dry_run=args.dry_run,
+        output_json_dir=args.output_json)
