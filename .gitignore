@@ -45,3 +45,4 @@ results.txt
 data/fc_rookie_adp_*.json
 data/fantasy.db
 data/dynasty_dashboard.db
+.claude/

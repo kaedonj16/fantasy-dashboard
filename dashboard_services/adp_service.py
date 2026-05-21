@@ -2,8 +2,21 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import time
 from typing import Dict
+
+logger = logging.getLogger(__name__)
+
+
+def _atomic_json_write(path, data) -> None:
+    """Write JSON to a temp file then rename — prevents partial reads on crash."""
+    import json as _json
+    tmp = str(path) + ".tmp"
+    with open(tmp, "w") as f:
+        _json.dump(data, f)
+    os.replace(tmp, str(path))
 
 
 def fetch_league_adp_from_db(
@@ -34,7 +47,7 @@ def fetch_league_adp_from_db(
             try:
                 return _json.load(open(cache_path))
             except Exception:
-                pass
+                logger.warning("adp_service: corrupt cache at %s, rebuilding", cache_path)
 
         from dashboard_services.db import get_conn
         with get_conn() as conn:
@@ -69,7 +82,7 @@ def fetch_league_adp_from_db(
                 ).fetchall()
                 pos_map = {r["player_id"]: (r["position"] or "").upper() for r in pv_rows}
         except Exception:
-            pass
+            logger.warning("adp_service: failed to load position map", exc_info=True)
 
         result: dict = {}
         pos_counters: Dict[str, int] = {}
@@ -87,11 +100,12 @@ def fetch_league_adp_from_db(
             }
 
         try:
-            _json.dump(result, open(cache_path, "w"))
+            _atomic_json_write(cache_path, result)
         except Exception:
-            pass
+            logger.warning("adp_service: failed to write cache to %s", cache_path, exc_info=True)
         return result
     except Exception:
+        logger.exception("adp_service: fetch_league_adp_from_db failed (sf=%s, season=%s, type=%s)", is_sf, season, draft_type)
         return {}
 
 
@@ -102,6 +116,7 @@ def fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
     Caches per league type per day.
     """
     import json as _json
+    from datetime import date
     from utils.paths import DATA_DIR
 
     key = f"fc_rookie_adp_{'sf' if is_sf else '1qb'}_{date.today().isoformat()}.json"
@@ -111,7 +126,7 @@ def fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
             with open(cache_path) as _f:
                 return _json.load(_f)
         except Exception:
-            pass
+            logger.warning("adp_service: corrupt rookie ADP cache at %s, rebuilding", cache_path)
 
     num_qbs = 2 if is_sf else 1
     url = f"https://fantasycalc.com/api/values/current?numQbs={num_qbs}&type=1&ppr=0.5"
@@ -121,6 +136,7 @@ def fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
         resp.raise_for_status()
         fc_data = resp.json()
     except Exception:
+        logger.warning("adp_service: FantasyCalc fetch failed (sf=%s)", is_sf, exc_info=True)
         fc_data = []
 
     fc_by_sleeper: dict = {}
@@ -181,13 +197,12 @@ def fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
                   for rank, (sid, info) in enumerate(all_entries, start=1)}
 
     except Exception:
-        pass
+        logger.exception("adp_service: rookie ADP matching failed (sf=%s, season=%s)", is_sf, season)
 
     try:
-        with open(cache_path, "w") as _f:
-            _json.dump(result, _f)
+        _atomic_json_write(cache_path, result)
     except Exception:
-        pass
+        logger.warning("adp_service: failed to write rookie ADP cache to %s", cache_path, exc_info=True)
     return result
 
 
@@ -229,4 +244,5 @@ def build_model_adp_fallback(is_sf: bool, season: int, filter_undrafted: bool = 
             }
         return result
     except Exception:
+        logger.exception("adp_service: build_model_adp_fallback failed (sf=%s, season=%s)", is_sf, season)
         return {}

@@ -638,7 +638,7 @@ def resolve_league_id_for_season(
         elif season_type in {"offseason", "pre"}:
             # We're in some form of offseason, try previous season
             effective_season = target_season - 1
-    except:
+    except Exception:
         effective_season = target_season
 
     season_map = build_league_history_map(platform, league_id, current_season)
