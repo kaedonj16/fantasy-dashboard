@@ -699,6 +699,9 @@ def score_one_player(
         "cumulative_ppr": (
             round(multitask["cumulative_ppr"], 1) if multitask["cumulative_ppr"] is not None else None
         ),
+        "season1_ppr": (
+            round(multitask["season1_ppr"], 1) if multitask.get("season1_ppr") is not None else None
+        ),
         "peak_ppr": (
             round(multitask["peak_ppr"], 1) if multitask["peak_ppr"] is not None else None
         ),
