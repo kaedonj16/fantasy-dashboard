@@ -21,6 +21,20 @@ For each prediction season N (e.g. N=2023):
 After running, backtest_multitask.py --season N compares these scores against
 actual outcomes from cache/player_history/usage_rows_{N+1}.json.
 
+Season labeling convention
+--------------------------
+The backtest script loads outcomes from usage_rows_{season+1}.json, so
+season=N scores must predict the N+1 NFL season.  This script therefore
+uses N stats and N→N+1 roster changes to build scores labelled season=N.
+
+  --season 2022 → uses 2022 stats + 2022→2023 roster changes
+                   predicts 2023 performance
+                   evaluated by: backtest --season 2022 vs usage_rows_2023.json
+
+  --season 2023 → uses 2023 stats + 2023→2024 roster changes
+                   predicts 2024 performance
+                   evaluated by: backtest --season 2023 vs usage_rows_2024.json
+
 Usage
 -----
     python data_building/breakout_engine/build_historical_scores.py
@@ -454,6 +468,55 @@ def compute_established_producers(
 # SCORE COMPUTATION
 # ==============================================================================
 
+def _compute_projected_usage(
+    position: str,
+    prev_usage: dict,
+    component_details: dict,
+) -> dict:
+    """
+    Estimate projected usage by adding the slice of vacated opportunity
+    a player is expected to absorb to their prior-season baseline.
+
+    Mirrors the opportunity_share logic in core.py so that PPG predictions
+    reflect role expansion, not just historical volume.
+    """
+    opp = component_details.get("opportunity_opened", {})
+    vac_targets = float(opp.get("vacated_targets", 0))
+    vac_carries = float(opp.get("vacated_carries", 0))
+    vac_snaps   = float(opp.get("vacated_snap_share", 0))
+
+    prev_snap = float((prev_usage or {}).get("snap_share", 0))
+
+    if position == "QB":
+        opp_share = 0.90
+    elif position == "RB":
+        if prev_snap >= 0.55:
+            opp_share = 0.48
+        elif prev_snap >= 0.30:
+            opp_share = 0.32
+        else:
+            opp_share = 0.18
+    elif position in ("WR", "TE"):
+        if prev_snap >= 0.70:
+            opp_share = 0.40
+        elif prev_snap >= 0.45:
+            opp_share = 0.27
+        else:
+            opp_share = 0.16
+    else:
+        opp_share = 0.25
+
+    prev_targets    = float((prev_usage or {}).get("targets", 0))
+    prev_carries    = float((prev_usage or {}).get("carries", 0))
+    prev_snap_share = float((prev_usage or {}).get("snap_share", 0))
+
+    return {
+        "targets":    prev_targets  + vac_targets * opp_share,
+        "carries":    prev_carries  + vac_carries * opp_share,
+        "snap_share": min(prev_snap_share + vac_snaps * opp_share, 0.95),
+    }
+
+
 def score_one_player(
     gsis_id: str,
     roster_entry: dict,
@@ -593,13 +656,15 @@ def score_one_player(
             "yards_per_carry": prev_usage.get("yards_per_carry"),
             "catch_rate": prev_usage.get("catch_rate"),
         }
+        # Project usage forward: prior stats + expected share of vacated opportunity
+        projected_usage = _compute_projected_usage(position, prev_usage, component_details)
         multitask = compute_multitask_predictions(
             position=position,
             breakout_score=aggregate,
             readiness_score=component_scores["player_readiness"],
             confidence_score=component_scores["confidence"],
             role_trajectory_score=component_scores["role_trajectory"],
-            projected_usage=prev_usage,  # use prior season as proxy for projected
+            projected_usage=projected_usage,
             efficiency_metrics=efficiency_metrics,
             prev_usage=prev_usage,
             age=age,
@@ -652,25 +717,34 @@ def build_season(
     min_score: float = 30.0,
     dry_run: bool = False,
 ) -> int:
-    """Generate and save historical breakout scores for one prediction season."""
-    prior_season = prediction_season - 1
-    as_of_date = date(prediction_season, 3, 1)
+    """
+    Generate and save historical breakout scores for one prediction season.
 
-    print(f"\n--- Season {prediction_season} (using {prior_season} stats, as_of {as_of_date}) ---")
+    season=N scores predict the N+1 NFL season:
+      - uses N stats as the "prior season" baseline
+      - detects N → N+1 roster changes for vacated/added competition
+      - as_of_date = March 1 of year N+1 (the upcoming season's offseason)
+    """
+    stats_season  = prediction_season          # Source of prior-season usage data
+    target_season = prediction_season + 1      # The season being predicted
+    as_of_date    = date(target_season, 3, 1)  # Early offseason of the upcoming season
 
-    curr_rosters = rosters_by_season.get(prediction_season, {})
-    prev_rosters = rosters_by_season.get(prior_season, {})
-    prior_usage = usage_by_season.get(prior_season, {})
-    curr_usage = usage_by_season.get(prediction_season, {})  # noqa: unused here
+    print(f"\n--- Season {prediction_season} (using {stats_season} stats → predicts {target_season}, as_of {as_of_date}) ---")
+
+    # curr_rosters = who is on what team in the season being predicted
+    # prev_rosters = who was on what team in the source stats season
+    curr_rosters = rosters_by_season.get(target_season, {})
+    prev_rosters = rosters_by_season.get(stats_season, {})
+    prior_usage  = usage_by_season.get(stats_season, {})
 
     if not curr_rosters:
-        print(f"  No roster data for {prediction_season} — skipping")
+        print(f"  No roster data for {target_season} — skipping")
         return 0
 
-    print(f"  {len(curr_rosters)} players in {prediction_season} rosters, "
-          f"{len(prev_rosters)} in {prior_season} rosters")
+    print(f"  {len(curr_rosters)} players in {target_season} rosters, "
+          f"{len(prev_rosters)} in {stats_season} rosters")
 
-    # Build caches
+    # Build competition/opportunity caches from stats_season → target_season changes
     print("  Detecting roster changes...")
     vacated_cache, departures_cache, arrivals_cache = detect_changes(
         prev_rosters, curr_rosters, prior_usage, prediction_season
@@ -682,8 +756,10 @@ def build_season(
     print("  Building team stats cache...")
     team_stats_cache = build_team_stats_cache(prior_usage)
 
-    # Established producer filter
-    established_gsis = compute_established_producers(usage_by_season, prediction_season)
+    # Established producer filter: exclude anyone who already had a great season
+    # through stats_season (inclusive) — pass stats_season+1 so the lookback window
+    # covers up to and including stats_season.
+    established_gsis = compute_established_producers(usage_by_season, stats_season + 1)
     print(f"  {len(established_gsis)} established producers excluded")
 
     # Score each eligible player
@@ -706,12 +782,14 @@ def build_season(
             skipped_no_id += 1
             continue
 
-        prev_usage = prior_usage.get(gsis_id, {})
+        # prior_usage = player's stats_season performance (the "previous season"
+        # relative to the target_season we're predicting)
+        player_prev_usage = prior_usage.get(gsis_id, {})
 
         result = score_one_player(
             gsis_id=gsis_id,
             roster_entry=roster_entry,
-            prev_usage=prev_usage,
+            prev_usage=player_prev_usage,
             prediction_season=prediction_season,
             as_of_date=as_of_date,
             vacated_cache=vacated_cache,
@@ -759,9 +837,11 @@ def build_season(
 
 
 def run(seasons: list[int], min_score: float = 30.0, dry_run: bool = False) -> None:
-    # We need rosters for prediction seasons AND their prior seasons
-    all_roster_seasons = sorted(set(seasons) | {s - 1 for s in seasons})
-    all_usage_seasons = all_roster_seasons  # same range
+    # season=N uses N stats and detects N→N+1 roster changes.
+    # Rosters needed: source seasons N and target seasons N+1.
+    # Usage needed: source seasons N only (prior-season baseline).
+    all_roster_seasons = sorted(set(seasons) | {s + 1 for s in seasons})
+    all_usage_seasons  = sorted(set(seasons))
 
     print("=== Historical Breakout Score Builder ===")
     print(f"Prediction seasons: {seasons}")
