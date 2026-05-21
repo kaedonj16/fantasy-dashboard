@@ -9912,7 +9912,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           if (score < 30) scoreColor = '#6b7280'; // gray (<30)
 
           html += `
-            <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '', {tab:'breakout'})">
+            <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '', {{tab:'breakout'}})">
               <div class="breakout-card-header">
                 <div>
                   <div class="breakout-player-name">` + name + `</div>

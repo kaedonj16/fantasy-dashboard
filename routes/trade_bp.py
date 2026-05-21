@@ -749,7 +749,8 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             else if (trend <= -5) momentumHtml = '<div class="ti-momentum"><span style="color:#ef4444;">▼</span> Falling</div>';
           }}
           const col = posColor(p.position);
-          return `<div class="ti-card">
+          const safeName = (p.name||'').replace(/'/g, "\\'");
+          return `<div class="ti-card" style="cursor:pointer;" onclick="openTIPlayerCard(${{p.id}}, '${{safeName}}', false)">
             <div class="ti-card-top">
               <div>
                 <div class="ti-name">${{p.name||p.id}}</div>
