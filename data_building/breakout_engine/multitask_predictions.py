@@ -23,33 +23,38 @@ _BASE_HIT_RATE: dict[str, float] = {
     "TE": 0.20,
 }
 
-# Positional PPR baseline: what an average breakout-level player scores
-# at their position in a "good but not elite" season.
+# Positional PPR floor used when usage data is missing entirely.
+# Set near the top-12 floor for each position (2024 actuals):
+# WR top-12 floor ~241, TE ~145, RB ~245, QB ~288.
 _BASE_SEASON_PPR: dict[str, float] = {
-    "QB":  320.0,  # roughly QB12 territory
-    "RB":  160.0,  # RB12 territory (~10 ppg)
-    "WR":  150.0,  # WR12 territory
-    "TE":  110.0,  # TE8 territory
+    "QB":  290.0,
+    "RB":  245.0,
+    "WR":  240.0,
+    "TE":  145.0,
 }
 
-# How much targets/carries/snap_share contribute to PPR per unit
+# PPR points per target/carry — fitted from 2024 season actuals
+# (players with ≥8 games; rushing pts isolated from receiving for RBs).
+# WR: 1.73 | TE: 1.76 | RB targets: 1.56 | RB carries: 0.61
 _TARGET_PPR_RATE: dict[str, float] = {
-    "WR": 7.5,   # ~7.5 PPR pts per target (target * catchrate * yardage + TDs)
-    "TE": 7.0,
-    "RB": 3.5,   # targets are worth more than carries for RBs
-    "QB": 0.0,   # QBs scored differently
+    "WR": 1.75,
+    "TE": 1.75,
+    "RB": 1.60,
+    "QB": 0.0,   # QBs scored via pass yards/TDs, not receiver targets
 }
 _CARRY_PPR_RATE: dict[str, float] = {
-    "RB": 1.8,   # ~1.8 PPR pts per carry (yards + TDs - fumbles)
-    "WR": 0.5,
-    "TE": 0.2,
+    "RB": 0.62,   # rush yards + rush TDs per carry (2024 avg: 0.61)
+    "WR": 0.15,   # end-arounds / gadget plays
+    "TE": 0.05,
     "QB": 0.0,
 }
+# Snap-share → season PPR fallback scale (fitted from 2024 actuals).
+# Used only when no target/carry projection is available.
 _SNAP_PPR_SCALE: dict[str, float] = {
-    "QB":  900.0,  # snap_share * scale ≈ season PPR for a typical QB12
-    "RB":  400.0,
-    "WR":  350.0,
-    "TE":  280.0,
+    "QB":  252.0,
+    "RB":  313.0,
+    "WR":  186.0,
+    "TE":  127.0,
 }
 
 

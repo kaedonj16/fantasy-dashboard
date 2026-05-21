@@ -73,10 +73,10 @@ class BreakoutCandidate:
     # Component details (JSONB)
     component_details: Dict
 
-    # Multitask predictions
-    hit_probability: float
-    cumulative_ppr: float
-    peak_ppr: float
+    # Multitask predictions (None for rookies — no usage history to anchor on)
+    hit_probability: Optional[float]
+    cumulative_ppr: Optional[float]
+    peak_ppr: Optional[float]
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for database storage or JSON serialization."""
@@ -396,19 +396,23 @@ class BreakoutEngine:
             position, projected_usage, component_details
         )
 
-        # Compute multitask predictions
-        from .multitask_predictions import compute_multitask_predictions
-        multitask = compute_multitask_predictions(
-            position=position,
-            breakout_score=aggregate_score,
-            readiness_score=component_scores['player_readiness'],
-            confidence_score=component_scores['confidence'],
-            role_trajectory_score=component_scores['role_trajectory'],
-            projected_usage=projected_usage,
-            efficiency_metrics=efficiency_metrics,
-            prev_usage=prev_usage,
-            age=player_metadata.get('age'),
-        )
+        # Multitask predictions require prior-season usage data to be meaningful.
+        # Rookies have none, so we skip rather than produce misleading estimates.
+        if is_drafted_rookie:
+            multitask = {'hit_probability': None, 'cumulative_ppr': None, 'peak_ppr': None}
+        else:
+            from .multitask_predictions import compute_multitask_predictions
+            multitask = compute_multitask_predictions(
+                position=position,
+                breakout_score=aggregate_score,
+                readiness_score=component_scores['player_readiness'],
+                confidence_score=component_scores['confidence'],
+                role_trajectory_score=component_scores['role_trajectory'],
+                projected_usage=projected_usage,
+                efficiency_metrics=efficiency_metrics,
+                prev_usage=prev_usage,
+                age=player_metadata.get('age'),
+            )
 
         # Create BreakoutCandidate object
         candidate = BreakoutCandidate(
@@ -434,9 +438,9 @@ class BreakoutEngine:
             added_competition_summary=transaction_summaries['added_competition_summary'],
             projected_role_tag=projected_role_tag,
             component_details=component_details,
-            hit_probability=round(multitask['hit_probability'], 3),
-            cumulative_ppr=round(multitask['cumulative_ppr'], 1),
-            peak_ppr=round(multitask['peak_ppr'], 1),
+            hit_probability=round(multitask['hit_probability'], 3) if multitask['hit_probability'] is not None else None,
+            cumulative_ppr=round(multitask['cumulative_ppr'], 1) if multitask['cumulative_ppr'] is not None else None,
+            peak_ppr=round(multitask['peak_ppr'], 1) if multitask['peak_ppr'] is not None else None,
         )
 
         return candidate
