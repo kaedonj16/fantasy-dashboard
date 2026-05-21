@@ -187,7 +187,47 @@ def ppr_accuracy_report(pairs: list[tuple[float, float, float]], label: str) -> 
           f"(bias: {mean_pred - mean_actual:+.1f})")
 
 
+def list_available_seasons() -> list[int]:
+    """Return all seasons that have breakout scores in the DB."""
+    from dashboard_services.db import get_conn
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT season, COUNT(DISTINCT player_id) as n "
+            "FROM breakout_opportunity_scores GROUP BY season ORDER BY season"
+        ).fetchall()
+    return [(int(r["season"]), int(r["n"])) for r in rows]
+
+
 def run_backtest(season: int, min_score: float = 0.0, verbose: bool = False) -> None:
+    # Check what seasons actually have data before proceeding
+    try:
+        available = list_available_seasons()
+    except Exception as e:
+        print(f"  ERROR connecting to DB: {e}")
+        return
+
+    if not available:
+        print("  No breakout scores found in DB at all.")
+        return
+
+    available_seasons = [s for s, _ in available]
+
+    if season not in available_seasons:
+        print(f"\n  Season {season} has no breakout scores in the DB.")
+        print(f"  Available seasons:")
+        for s, n in available:
+            outcome_file = Path("cache/player_history") / f"usage_rows_{s + 1}.json"
+            testable = "✓ testable" if outcome_file.exists() else "✗ no outcome file"
+            print(f"    {s}: {n} players  ({testable})")
+        # Auto-select the most recent testable season
+        testable = [(s, n) for s, n in available
+                    if (Path("cache/player_history") / f"usage_rows_{s + 1}.json").exists()]
+        if not testable:
+            print("\n  No testable seasons (need usage_rows_{season+1}.json in cache).")
+            return
+        season = testable[-1][0]
+        print(f"\n  Auto-selecting season {season} (most recent testable).")
+
     outcome_season = season + 1
     print(f"\n=== Multitask backtest: predicted for {season}, outcomes from {outcome_season} ===")
 
