@@ -111,6 +111,17 @@ def load_position_map(outcome_season: int, from_json: str | None) -> dict[str, s
     return {}
 
 
+# PPG threshold for "breakout" — scores ≥ this AND ≥ 10 games is a genuine
+# breakout season for a non-established player (not the same as top-12 which
+# is dominated by established stars excluded from the candidate pool).
+BREAKOUT_PPG_THRESHOLD: dict[str, float] = {
+    "QB": 15.0,
+    "RB": 10.0,
+    "WR": 10.0,
+    "TE":  7.0,
+}
+
+
 def get_top12_pids(
     outcomes: dict[str, dict],
     position_map: dict[str, str] | None = None,
@@ -132,6 +143,27 @@ def get_top12_pids(
         for pid, _ in sorted(players, key=lambda x: x[1], reverse=True)[:cutoff]:
             top12.add(pid)
     return top12
+
+
+def get_breakout_pids(
+    outcomes: dict[str, dict],
+    position_map: dict[str, str] | None = None,
+) -> set[str]:
+    """
+    Return the set of player IDs who hit the per-position PPG breakout threshold.
+    This is a better signal for the candidate pool than strict top-12, since most
+    top-12 slots belong to established stars we correctly excluded.
+    """
+    pm = position_map or {}
+    breakout: set[str] = set()
+    for pid, o in outcomes.items():
+        if o["games"] < 10:
+            continue
+        pos = o["position"] or pm.get(pid, "")
+        threshold = BREAKOUT_PPG_THRESHOLD.get(pos)
+        if threshold and o["ppr_ppg"] >= threshold:
+            breakout.add(pid)
+    return breakout
 
 
 def load_breakout_scores_from_db(season: int, min_score: float = 0.0) -> list[dict]:
@@ -301,9 +333,9 @@ def pearson_r(xs: list[float], ys: list[float]) -> float:
     return num / den if den > 0 else 0.0
 
 
-def feature_importance_report(feature_data: list[dict]) -> None:
+def feature_importance_report(feature_data: list[dict], hit_key: str = "is_top12") -> None:
     """
-    Pearson r of each component score vs actual_ppg and vs top-12 binary outcome.
+    Pearson r of each component score vs actual_ppg and vs a hit binary outcome.
     Higher |r| = stronger predictor.
     """
     if len(feature_data) < 5:
@@ -321,12 +353,13 @@ def feature_importance_report(feature_data: list[dict]) -> None:
         ("hit_probability",         "Hit probability (derived)"),
     ]
 
-    actual_ppg  = [d["actual_ppg"]  for d in feature_data]
-    is_top12    = [float(d["is_top12"]) for d in feature_data]
+    actual_ppg = [d["actual_ppg"] for d in feature_data]
+    hit_vals   = [float(d.get(hit_key, 0)) for d in feature_data]
+    hit_label  = "r→breakout" if hit_key == "is_breakout" else "r→top12"
 
     print("\n  Feature importance (Pearson r with actual outcomes):")
-    print(f"  {'Feature':<30} {'r→ppg':>8}  {'r→top12':>8}")
-    print("  " + "-" * 52)
+    print(f"  {'Feature':<30} {'r→ppg':>8}  {hit_label:>10}")
+    print("  " + "-" * 54)
 
     rows_out = []
     for key, label in features:
@@ -334,28 +367,29 @@ def feature_importance_report(feature_data: list[dict]) -> None:
         if any(v is None for v in vals):
             continue
         vals_f = [float(v) for v in vals]
-        r_ppg   = pearson_r(vals_f, actual_ppg)
-        r_top12 = pearson_r(vals_f, is_top12)
-        rows_out.append((abs(r_ppg), label, r_ppg, r_top12))
+        r_ppg = pearson_r(vals_f, actual_ppg)
+        r_hit  = pearson_r(vals_f, hit_vals)
+        rows_out.append((abs(r_ppg), label, r_ppg, r_hit))
 
-    for _, label, r_ppg, r_top12 in sorted(rows_out, reverse=True):
-        print(f"  {label:<30} {r_ppg:>+.3f}    {r_top12:>+.3f}")
+    for _, label, r_ppg, r_hit in sorted(rows_out, reverse=True):
+        print(f"  {label:<30} {r_ppg:>+.3f}    {r_hit:>+.3f}")
 
 
-def precision_at_k_report(feature_data: list[dict]) -> None:
+def precision_at_k_report(feature_data: list[dict], hit_key: str = "is_top12") -> None:
     """
-    Of the top-K candidates ranked by breakout_score, what fraction hit top-12?
+    Of the top-K candidates ranked by breakout_score, what fraction hit the target outcome?
     """
     ranked = sorted(feature_data, key=lambda d: -d["breakout_score"])
     n = len(ranked)
+    label = "breakout" if hit_key == "is_breakout" else "top-12"
 
-    print("\n  Precision@K (top-K by breakout score → top-12 hit rate):")
+    print(f"\n  Precision@K (top-K by breakout score → {label} hit rate):")
     print(f"  {'K':<6} {'Hits':>6} {'Precision':>10}")
     print("  " + "-" * 26)
     for k in [10, 20, 30, 50]:
         if k > n:
             break
-        hits = sum(1 for d in ranked[:k] if d["is_top12"])
+        hits = sum(1 for d in ranked[:k] if d.get(hit_key))
         print(f"  {k:<6} {hits:>6}  {hits/k:>9.0%}")
 
 
@@ -417,11 +451,13 @@ def run_backtest(
 
     position_map = load_position_map(outcome_season, from_json)
     top12 = get_top12_pids(outcomes, position_map)
-    print(f"  {len(top12)} top-12 finishers across all positions "
-          f"({len(position_map)} players with position data)")
+    breakouts = get_breakout_pids(outcomes, position_map)
+    print(f"  {len(top12)} top-12 finishers, {len(breakouts)} breakout-threshold players "
+          f"({len(position_map)} with position data)")
 
     # Reconstruct predictions and pair with outcomes
-    hit_pairs: list[tuple[float, bool]] = []
+    hit_pairs_top12:    list[tuple[float, bool]] = []
+    hit_pairs_breakout: list[tuple[float, bool]] = []
     # tuples of (predicted_ppg, actual_ppg, actual_games)
     ppg_pairs: list[tuple[float, float, float]] = []
     feature_data: list[dict] = []
@@ -438,37 +474,34 @@ def run_backtest(
             continue
 
         hit_prob = mt["hit_probability"]
-        is_top12 = pid in top12
+        is_top12   = pid in top12
+        is_breakout = pid in breakouts
         cum_ppr  = mt["cumulative_ppr"]
         actual_ppg   = actual["ppr_ppg"]
         actual_games = float(actual["games"])
 
         if hit_prob is not None:
-            hit_pairs.append((hit_prob, is_top12))
+            hit_pairs_top12.append((hit_prob, is_top12))
+            hit_pairs_breakout.append((hit_prob, is_breakout))
 
         if cum_ppr is not None and actual_ppg > 0:
-            # Use season1_ppr directly (more accurate than cum_ppr / 2 which assumes year2=1.0)
             season1_ppr = mt.get("season1_ppr") or (cum_ppr / 2.0)
             predicted_ppg = season1_ppr / 17.0
             ppg_pairs.append((predicted_ppg, actual_ppg, actual_games))
 
         if verbose and hit_prob is not None:
-            hit_flag = "✓" if is_top12 else "✗"
+            pos = row.get("position", "")
+            thr = BREAKOUT_PPG_THRESHOLD.get(pos, 10.0)
+            hit_flag = "✓" if is_breakout else ("~" if actual_ppg >= thr * 0.8 else "✗")
             season1_ppr = mt.get("season1_ppr") or (cum_ppr / 2.0 if cum_ppr else 0)
             pred_ppg = season1_ppr / 17.0
-            print(f"  {hit_flag} {row.get('player_name','?'):<22} "
+            print(f"  {hit_flag} {row.get('player_name','?'):<22} {pos:<3} "
                   f"score={float(row.get('breakout_opportunity_score',0)):.0f}  "
                   f"hit_prob={hit_prob:.0%}  "
-                  f"pred_ppg={pred_ppg:.1f}  actual_ppg={actual_ppg:.1f}")
+                  f"pred={pred_ppg:.1f}  actual={actual_ppg:.1f}")
 
         # Collect feature data for correlation / precision reports
         if hit_prob is not None:
-            cd = row.get("component_details") or {}
-            if isinstance(cd, str):
-                try:
-                    cd = json.loads(cd)
-                except Exception:
-                    cd = {}
             feature_data.append({
                 "breakout_score":           float(row.get("breakout_opportunity_score") or 0),
                 "readiness_score":          float(row.get("player_readiness_score") or 0),
@@ -481,37 +514,44 @@ def run_backtest(
                 "hit_probability":          hit_prob,
                 "actual_ppg":               actual_ppg,
                 "is_top12":                 int(is_top12),
+                "is_breakout":              int(is_breakout),
             })
 
-    if not hit_pairs:
+    if not hit_pairs_top12:
         print("\n  No matched players with outcomes — check that the outcome season has data.")
         return
 
-    print(f"\n  Matched: {len(hit_pairs)} players, unmatched: {len(missed)}")
+    n = len(hit_pairs_top12)
+    print(f"\n  Matched: {n} players, unmatched: {len(missed)}")
 
-    # --- Hit probability calibration ---
-    actual_top12_rate = sum(1 for _, h in hit_pairs if h) / len(hit_pairs)
-    print(f"\n  Overall top-12 hit rate among candidates: {actual_top12_rate:.0%} "
-          f"(base rate in full player pool ~15-22%)")
+    top12_rate    = sum(1 for _, h in hit_pairs_top12    if h) / n
+    breakout_rate = sum(1 for _, h in hit_pairs_breakout if h) / n
+    print(f"\n  Hit rates among candidates:")
+    print(f"    Top-12 strict:       {top12_rate:.0%}  "
+          f"(NFL-wide top-12; dominated by established stars)")
+    thr_str = " / ".join(f"{v}ppg {k}" for k, v in BREAKOUT_PPG_THRESHOLD.items())
+    print(f"    Breakout threshold:  {breakout_rate:.0%}  "
+          f"(≥ {thr_str}; better signal for this candidate pool)")
 
-    calibration_report(hit_pairs)
+    # --- Calibration vs breakout threshold (more meaningful) ---
+    calibration_report(hit_pairs_breakout)
 
-    # --- Brier score ---
-    brier = sum((prob - int(hit)) ** 2 for prob, hit in hit_pairs) / len(hit_pairs)
-    base_rate = actual_top12_rate
-    brier_naive = base_rate * (1 - base_rate)  # always-predict-base-rate baseline
-    print(f"\n  Brier score: {brier:.4f}  (naive baseline: {brier_naive:.4f}; "
+    # --- Brier score (breakout threshold) ---
+    brier = sum((prob - int(hit)) ** 2 for prob, hit in hit_pairs_breakout) / n
+    brier_naive = breakout_rate * (1 - breakout_rate)
+    print(f"\n  Brier score (breakout): {brier:.4f}  "
+          f"(naive baseline: {brier_naive:.4f}; "
           f"{'better' if brier < brier_naive else 'worse'} than naive by "
           f"{abs(brier_naive - brier):.4f})")
 
     # --- PPG accuracy ---
     ppr_accuracy_report(ppg_pairs, "Season-1 PPG accuracy (predicted vs actual PPG)")
 
-    # --- Feature importance ---
-    feature_importance_report(feature_data)
+    # --- Feature importance (vs breakout threshold) ---
+    feature_importance_report(feature_data, hit_key="is_breakout")
 
-    # --- Precision@K ---
-    precision_at_k_report(feature_data)
+    # --- Precision@K (by breakout threshold) ---
+    precision_at_k_report(feature_data, hit_key="is_breakout")
 
     print()
 

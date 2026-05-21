@@ -16,32 +16,37 @@ from typing import Dict
 # based on the current NFL calendar phase.
 
 PHASE_WEIGHTS: Dict[str, Dict[str, float]] = {
+    # Offseason weights re-derived from backtest Pearson r (2022+2023 avg vs actual ppg):
+    #   confidence r≈+0.51, role_trajectory r≈+0.48, readiness r≈+0.36,
+    #   competition_added r≈+0.11, opportunity_opened r≈−0.02,
+    #   team_environment r≈−0.06, competition_removed r≈−0.22
+    # Positive predictors get proportional weight; negative/zero get floor weight.
     'offseason': {
-        'opportunity_opened': 0.20,  # High - offseason focus on vacated opportunity
-        'competition_removed': 0.20,  # High - who left matters most
-        'competition_added_penalty': 0.10,  # Low - signings still happening
-        'team_environment': 0.15,
-        'player_readiness': 0.25,  # High - historical data important
-        'role_trajectory': 0.1,  # Low - no recent in-season data
-        'confidence': 0.05
+        'opportunity_opened': 0.08,
+        'competition_removed': 0.05,   # Empirically negative — reduced to floor
+        'competition_added_penalty': 0.07,
+        'team_environment': 0.05,      # Empirically negative — reduced to floor
+        'player_readiness': 0.20,
+        'role_trajectory': 0.25,       # Strong positive predictor
+        'confidence': 0.30,            # Strongest predictor — upweighted significantly
     },
     'post_free_agency': {
-        'opportunity_opened': 0.22,
-        'competition_removed': 0.18,
+        'opportunity_opened': 0.15,
+        'competition_removed': 0.08,
         'competition_added_penalty': 0.15,  # Higher - FA signings impact
-        'team_environment': 0.15,
+        'team_environment': 0.10,
         'player_readiness': 0.18,
-        'role_trajectory': 0.05,  # Still offseason
-        'confidence': 0.07
+        'role_trajectory': 0.15,
+        'confidence': 0.19
     },
     'post_draft': {
-        'opportunity_opened': 0.20,
-        'competition_removed': 0.15,
+        'opportunity_opened': 0.15,
+        'competition_removed': 0.08,
         'competition_added_penalty': 0.20,  # Highest - draft picks compete heavily
-        'team_environment': 0.15,
-        'player_readiness': 0.20,  # Draft capital boosts rookies
-        'role_trajectory': 0.05,
-        'confidence': 0.05
+        'team_environment': 0.12,
+        'player_readiness': 0.20,
+        'role_trajectory': 0.12,
+        'confidence': 0.13
     },
     'preseason': {
         'opportunity_opened': 0.15,  # Lower - opportunity mostly known
