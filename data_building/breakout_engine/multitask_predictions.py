@@ -81,6 +81,18 @@ def _estimate_season_ppr(
         proj_carries = float(prev_usage.get("carries") or 0)
         proj_snaps   = float(prev_usage.get("snap_share") or 0)
 
+    # QBs score via passing stats, not targets/carries — bypass that branch entirely
+    if pos == "QB":
+        if proj_snaps > 0:
+            return proj_snaps * _SNAP_PPR_SCALE["QB"]
+        if prev_usage:
+            prev_pass_att = float(prev_usage.get("pass_attempts") or 0)
+            if prev_pass_att > 0:
+                # Estimate snap share: a full-time starter throws ~580 attempts/season
+                est_snaps = min(prev_pass_att / 580.0, 1.0)
+                return est_snaps * _SNAP_PPR_SCALE["QB"]
+        return base * 0.5
+
     if proj_targets > 0 or proj_carries > 0:
         ppr = (
             proj_targets * _TARGET_PPR_RATE.get(pos, 7.0)
@@ -220,8 +232,21 @@ def compute_multitask_predictions(
     )
     peak = calculate_peak_ppr(cum_ppr, role_trajectory_score, readiness_score)
 
+    # Recover season-1 PPR from cumulative: cumulative = s1 * (1 + year2_factor)
+    age_f = float(age or 24)
+    if age_f < 23:
+        _y2 = 1.15
+    elif age_f < 26:
+        _y2 = 1.05
+    elif age_f < 29:
+        _y2 = 0.95
+    else:
+        _y2 = 0.78
+    season1_ppr = round(cum_ppr / (1.0 + _y2), 1)
+
     return {
         "hit_probability": hit_prob,
         "cumulative_ppr":  cum_ppr,
+        "season1_ppr":     season1_ppr,
         "peak_ppr":        peak,
     }
