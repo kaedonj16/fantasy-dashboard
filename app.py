@@ -12266,6 +12266,21 @@ def api_league_players():
         model_value_table.extend(_injected_picks)
         print(f"[api/league-players] DB picks: {len(_db_pick_ids)}, WLS fallback picks: {len(_injected_picks)}")
 
+        # Rebuild slot/bucket sets to include WLS-injected picks so the model
+        # injection below correctly suppresses bucket picks when slots exist.
+        for _p in _injected_picks:
+            _pp2 = str(_p.get("id") or "").split("_")
+            if len(_pp2) >= 3:
+                _k2 = (_pp2[0], _pp2[1])
+                if _pp2[2].lower() in _bucket_keywords:
+                    _bucket_yr_rnd.add(_k2)
+                else:
+                    try:
+                        int(_pp2[2])
+                        _slot_yr_rnd.add(_k2)
+                    except ValueError:
+                        pass
+
         # Inject model_values.json bucket picks, preferring them over WLS for
         # future years (WLS bucket values are in WLS units; model values are
         # pre-calibrated to the 0-999.9 model scale).
