@@ -12272,7 +12272,10 @@ def api_league_players():
         # Current-year slot picks (already FC-normalized in picks.py) are kept.
         try:
             _cur_year = str(date.today().year)
-            _json_picks = [p for p in (get_model_value_table_cached() or [])
+            # Load picks directly from model_values.json — get_model_value_table_cached()
+            # returns DB players (non-empty) so never falls back to model_values.json picks.
+            _raw_model = load_model_value_table(apply_calibration=False) or []
+            _json_picks = [p for p in _raw_model
                            if str(p.get("position") or "").upper() == "PICK"]
             _all_seen = {str(p.get("id") or "") for p in model_value_table
                          if str(p.get("position") or "").upper() == "PICK"}
