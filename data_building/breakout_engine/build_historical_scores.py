@@ -764,7 +764,7 @@ def build_season(
 
     # Score each eligible player
     scored: list[dict] = []
-    skipped_established = skipped_no_id = skipped_low = 0
+    skipped_established = skipped_no_id = skipped_low = skipped_rookie = 0
 
     for gsis_id, roster_entry in curr_rosters.items():
         if roster_entry["position"] not in POSITIONS:
@@ -785,6 +785,12 @@ def build_season(
         # prior_usage = player's stats_season performance (the "previous season"
         # relative to the target_season we're predicting)
         player_prev_usage = prior_usage.get(gsis_id, {})
+
+        # Skip rookies — no prior-season data makes predictions unreliable
+        years_exp = roster_entry.get("years_exp", 0)
+        if not player_prev_usage or years_exp == 0:
+            skipped_rookie += 1
+            continue
 
         result = score_one_player(
             gsis_id=gsis_id,
@@ -810,6 +816,7 @@ def build_season(
 
     print(f"  {len(scored)} candidates (score>={min_score:.0f}) | "
           f"skipped: {skipped_established} established, "
+          f"{skipped_rookie} rookies, "
           f"{skipped_no_id} no sleeper ID, {skipped_low} low score")
 
     if not scored:
@@ -839,13 +846,19 @@ def build_season(
 def run(seasons: list[int], min_score: float = 30.0, dry_run: bool = False) -> None:
     # season=N uses N stats and detects N→N+1 roster changes.
     # Rosters needed: source seasons N and target seasons N+1.
-    # Usage needed: source seasons N only (prior-season baseline).
+    # Usage needed: source seasons N, plus 5 years of history for established-producer detection.
     all_roster_seasons = sorted(set(seasons) | {s + 1 for s in seasons})
-    all_usage_seasons  = sorted(set(seasons))
+
+    earliest_source  = min(seasons)
+    lookback_start   = max(earliest_source - 5, 2016)
+    history_seasons  = list(range(lookback_start, earliest_source))
+    all_usage_seasons = sorted(set(seasons) | set(history_seasons))
 
     print("=== Historical Breakout Score Builder ===")
     print(f"Prediction seasons: {seasons}")
     print(f"Fetching roster data for seasons: {all_roster_seasons}")
+    if history_seasons:
+        print(f"Loading {len(history_seasons)}-year usage history ({history_seasons[0]}-{history_seasons[-1]}) for established-producer filter")
     print()
 
     rosters_by_season, gsis_to_sleeper, pfr_to_gsis = load_rosters(all_roster_seasons)

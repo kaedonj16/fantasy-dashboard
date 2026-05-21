@@ -10,11 +10,15 @@ How it works
    reconstruct them retroactively for any season in the DB.
 3. Load actual PPR outcomes from cache/player_history/usage_rows_{season+1}.json
    (season+1 because we're predicting next season's performance).
-4. Report:
+4. Load source stats from cache/player_history/usage_rows_{season}.json to reconstruct
+   projected_usage (vacated opportunity + baseline) for each candidate.
+5. Report:
    - Hit-rate calibration: among players predicted at each probability bucket,
      what fraction actually finished top-12?
-   - PPR accuracy: mean absolute error and % within 20% of predicted value.
-   - Feature importance: which component scores correlate most with actual outcomes.
+   - PPR accuracy: mean absolute error and % within 10/20% of predicted value.
+   - Brier score: probabilistic accuracy of hit_probability predictions.
+   - Feature importance: Pearson r of each component score vs actual outcomes.
+   - Precision@K: top-K candidates by breakout score, what % hit top-12?
 
 Usage
 -----
@@ -25,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -64,6 +69,25 @@ def load_actual_outcomes(season: int) -> dict[str, dict]:
             "name": r.get("name", ""),
         }
     return outcomes
+
+
+def load_source_stats(season: int) -> dict[str, dict]:
+    """
+    Load full usage fields for the source/prediction season (for projected_usage
+    reconstruction in reconstruct_multitask).
+    Returns player_id -> usage dict.
+    """
+    cache_path = Path("cache/player_history") / f"usage_rows_{season}.json"
+    if not cache_path.exists():
+        return {}
+    with open(cache_path) as f:
+        rows = json.load(f)
+    result = {}
+    for r in rows:
+        pid = str(r.get("id") or "")
+        if pid:
+            result[pid] = r.get("usage", {})
+    return result
 
 
 def get_top12_pids(outcomes: dict[str, dict]) -> set[str]:
@@ -114,6 +138,36 @@ def load_breakout_scores_from_db(season: int, min_score: float = 0.0) -> list[di
     return [dict(r) for r in rows]
 
 
+def _compute_projected_usage_from_details(
+    position: str, prev_usage: dict, component_details: dict
+) -> dict:
+    """
+    Reconstruct projected usage from stored component_details, mirroring the
+    logic in build_historical_scores._compute_projected_usage().
+    """
+    opp = component_details.get("opportunity_opened", {})
+    vac_targets = float(opp.get("vacated_targets", 0))
+    vac_carries = float(opp.get("vacated_carries", 0))
+    vac_snaps   = float(opp.get("vacated_snap_share", 0))
+
+    prev_snap = float((prev_usage or {}).get("snap_share", 0))
+
+    if position == "QB":
+        opp_share = 0.90
+    elif position == "RB":
+        opp_share = 0.48 if prev_snap >= 0.55 else (0.32 if prev_snap >= 0.30 else 0.18)
+    elif position in ("WR", "TE"):
+        opp_share = 0.40 if prev_snap >= 0.70 else (0.27 if prev_snap >= 0.45 else 0.16)
+    else:
+        opp_share = 0.25
+
+    return {
+        "targets":    float((prev_usage or {}).get("targets", 0))  + vac_targets * opp_share,
+        "carries":    float((prev_usage or {}).get("carries", 0))  + vac_carries * opp_share,
+        "snap_share": min(float((prev_usage or {}).get("snap_share", 0)) + vac_snaps * opp_share, 0.95),
+    }
+
+
 def reconstruct_multitask(row: dict, prev_usage: dict | None = None) -> dict:
     """Re-derive multitask predictions from stored component scores."""
     from data_building.breakout_engine.multitask_predictions import compute_multitask_predictions
@@ -135,13 +189,17 @@ def reconstruct_multitask(row: dict, prev_usage: dict | None = None) -> dict:
 
     age = readiness_details.get("age") if readiness_details else None
 
+    # Reconstruct projected_usage from stored opportunity signals + prev_usage baseline
+    position = row.get("position", "WR")
+    projected_usage = _compute_projected_usage_from_details(position, prev_usage or {}, cd)
+
     return compute_multitask_predictions(
-        position=row.get("position", "WR"),
+        position=position,
         breakout_score=float(row.get("breakout_opportunity_score") or 0),
         readiness_score=float(row.get("player_readiness_score") or 0),
         confidence_score=float(row.get("confidence_score") or 0),
         role_trajectory_score=float(row.get("role_trajectory_score") or 0),
-        projected_usage={},
+        projected_usage=projected_usage,
         efficiency_metrics=efficiency_metrics,
         prev_usage=prev_usage,
         age=age,
@@ -185,6 +243,77 @@ def ppr_accuracy_report(pairs: list[tuple[float, float, float]], label: str) -> 
           f"within ±10%: {within10:.0%},  within ±20%: {within20:.0%}")
     print(f"    mean predicted: {mean_pred:.1f} ppg,  mean actual: {mean_actual:.1f} ppg  "
           f"(bias: {mean_pred - mean_actual:+.1f})")
+
+
+def pearson_r(xs: list[float], ys: list[float]) -> float:
+    """Pearson correlation coefficient between two equal-length lists."""
+    n = len(xs)
+    if n < 3:
+        return 0.0
+    mx, my = sum(xs) / n, sum(ys) / n
+    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    den_x = sum((x - mx) ** 2 for x in xs)
+    den_y = sum((y - my) ** 2 for y in ys)
+    den = math.sqrt(den_x * den_y)
+    return num / den if den > 0 else 0.0
+
+
+def feature_importance_report(feature_data: list[dict]) -> None:
+    """
+    Pearson r of each component score vs actual_ppg and vs top-12 binary outcome.
+    Higher |r| = stronger predictor.
+    """
+    if len(feature_data) < 5:
+        return
+
+    features = [
+        ("breakout_score",          "Breakout opportunity score"),
+        ("readiness_score",         "Player readiness"),
+        ("confidence_score",        "Confidence"),
+        ("role_trajectory_score",   "Role trajectory"),
+        ("opportunity_opened_score","Opportunity opened"),
+        ("competition_removed_score","Competition removed"),
+        ("competition_added_penalty","Competition added (penalty)"),
+        ("team_environment_score",  "Team environment"),
+        ("hit_probability",         "Hit probability (derived)"),
+    ]
+
+    actual_ppg  = [d["actual_ppg"]  for d in feature_data]
+    is_top12    = [float(d["is_top12"]) for d in feature_data]
+
+    print("\n  Feature importance (Pearson r with actual outcomes):")
+    print(f"  {'Feature':<30} {'r→ppg':>8}  {'r→top12':>8}")
+    print("  " + "-" * 52)
+
+    rows_out = []
+    for key, label in features:
+        vals = [d.get(key) for d in feature_data]
+        if any(v is None for v in vals):
+            continue
+        vals_f = [float(v) for v in vals]
+        r_ppg   = pearson_r(vals_f, actual_ppg)
+        r_top12 = pearson_r(vals_f, is_top12)
+        rows_out.append((abs(r_ppg), label, r_ppg, r_top12))
+
+    for _, label, r_ppg, r_top12 in sorted(rows_out, reverse=True):
+        print(f"  {label:<30} {r_ppg:>+.3f}    {r_top12:>+.3f}")
+
+
+def precision_at_k_report(feature_data: list[dict]) -> None:
+    """
+    Of the top-K candidates ranked by breakout_score, what fraction hit top-12?
+    """
+    ranked = sorted(feature_data, key=lambda d: -d["breakout_score"])
+    n = len(ranked)
+
+    print("\n  Precision@K (top-K by breakout score → top-12 hit rate):")
+    print(f"  {'K':<6} {'Hits':>6} {'Precision':>10}")
+    print("  " + "-" * 26)
+    for k in [10, 20, 30, 50]:
+        if k > n:
+            break
+        hits = sum(1 for d in ranked[:k] if d["is_top12"])
+        print(f"  {k:<6} {hits:>6}  {hits/k:>9.0%}")
 
 
 def list_available_seasons() -> list[int]:
@@ -250,6 +379,10 @@ def run_backtest(season: int, min_score: float = 0.0, verbose: bool = False) -> 
         return
     print(f"  {len(outcomes)} players with outcomes")
 
+    # Source stats (season N) used to reconstruct projected_usage per candidate
+    source_stats = load_source_stats(season)
+    print(f"  {len(source_stats)} players with source stats (season {season})")
+
     top12 = get_top12_pids(outcomes)
     print(f"  {len(top12)} top-12 finishers across all positions")
 
@@ -257,11 +390,13 @@ def run_backtest(season: int, min_score: float = 0.0, verbose: bool = False) -> 
     hit_pairs: list[tuple[float, bool]] = []
     # tuples of (predicted_ppg, actual_ppg, actual_games)
     ppg_pairs: list[tuple[float, float, float]] = []
+    feature_data: list[dict] = []
     missed: list[str] = []
 
     for row in candidates:
         pid = str(row["player_id"])
-        mt = reconstruct_multitask(row)
+        prev_usage = source_stats.get(pid)
+        mt = reconstruct_multitask(row, prev_usage=prev_usage)
 
         actual = outcomes.get(pid)
         if actual is None or actual["games"] < 8:
@@ -269,25 +404,50 @@ def run_backtest(season: int, min_score: float = 0.0, verbose: bool = False) -> 
             continue
 
         hit_prob = mt["hit_probability"]
-        if hit_prob is not None:
-            hit_pairs.append((hit_prob, pid in top12))
-
-        cum_ppr = mt["cumulative_ppr"]
-        actual_ppg = actual["ppr_ppg"]
+        is_top12 = pid in top12
+        cum_ppr  = mt["cumulative_ppr"]
+        actual_ppg   = actual["ppr_ppg"]
         actual_games = float(actual["games"])
+
+        if hit_prob is not None:
+            hit_pairs.append((hit_prob, is_top12))
+
         if cum_ppr is not None and actual_ppg > 0:
-            # Convert cumulative 2-season estimate → per-game PPG for season 1.
-            # Assume a 17-game season; cumulative / 2 gives season-1 total.
-            predicted_ppg = (cum_ppr / 2.0) / 17.0
+            # Use season1_ppr directly (more accurate than cum_ppr / 2 which assumes year2=1.0)
+            season1_ppr = mt.get("season1_ppr") or (cum_ppr / 2.0)
+            predicted_ppg = season1_ppr / 17.0
             ppg_pairs.append((predicted_ppg, actual_ppg, actual_games))
 
         if verbose and hit_prob is not None:
-            hit_flag = "✓" if pid in top12 else "✗"
-            pred_ppg = (cum_ppr / 2.0 / 17.0) if cum_ppr else 0
+            hit_flag = "✓" if is_top12 else "✗"
+            season1_ppr = mt.get("season1_ppr") or (cum_ppr / 2.0 if cum_ppr else 0)
+            pred_ppg = season1_ppr / 17.0
             print(f"  {hit_flag} {row.get('player_name','?'):<22} "
                   f"score={float(row.get('breakout_opportunity_score',0)):.0f}  "
                   f"hit_prob={hit_prob:.0%}  "
                   f"pred_ppg={pred_ppg:.1f}  actual_ppg={actual_ppg:.1f}")
+
+        # Collect feature data for correlation / precision reports
+        if hit_prob is not None:
+            cd = row.get("component_details") or {}
+            if isinstance(cd, str):
+                try:
+                    cd = json.loads(cd)
+                except Exception:
+                    cd = {}
+            feature_data.append({
+                "breakout_score":           float(row.get("breakout_opportunity_score") or 0),
+                "readiness_score":          float(row.get("player_readiness_score") or 0),
+                "confidence_score":         float(row.get("confidence_score") or 0),
+                "role_trajectory_score":    float(row.get("role_trajectory_score") or 0),
+                "opportunity_opened_score": float(row.get("opportunity_opened_score") or 0),
+                "competition_removed_score":float(row.get("competition_removed_score") or 0),
+                "competition_added_penalty":float(row.get("competition_added_penalty") or 0),
+                "team_environment_score":   float(row.get("team_environment_score") or 0),
+                "hit_probability":          hit_prob,
+                "actual_ppg":               actual_ppg,
+                "is_top12":                 int(is_top12),
+            })
 
     if not hit_pairs:
         print("\n  No matched players with outcomes — check that the outcome season has data.")
@@ -302,8 +462,22 @@ def run_backtest(season: int, min_score: float = 0.0, verbose: bool = False) -> 
 
     calibration_report(hit_pairs)
 
+    # --- Brier score ---
+    brier = sum((prob - int(hit)) ** 2 for prob, hit in hit_pairs) / len(hit_pairs)
+    base_rate = actual_top12_rate
+    brier_naive = base_rate * (1 - base_rate)  # always-predict-base-rate baseline
+    print(f"\n  Brier score: {brier:.4f}  (naive baseline: {brier_naive:.4f}; "
+          f"{'better' if brier < brier_naive else 'worse'} than naive by "
+          f"{abs(brier_naive - brier):.4f})")
+
     # --- PPG accuracy ---
     ppr_accuracy_report(ppg_pairs, "Season-1 PPG accuracy (predicted vs actual PPG)")
+
+    # --- Feature importance ---
+    feature_importance_report(feature_data)
+
+    # --- Precision@K ---
+    precision_at_k_report(feature_data)
 
     print()
 
