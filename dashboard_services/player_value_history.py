@@ -385,34 +385,45 @@ def load_current_values_from_db() -> list[dict]:
     from utils.utils import load_players_index
     players_index = load_players_index() or {}
 
-    # Pre-scan picks: find which (year, round) combos have specific slot picks so
-    # bucket picks (Early/Mid/Late) can be suppressed for those rounds.
+    # Pre-scan picks to build pick-type sets per (year, round).
+    # Hierarchy: slot picks (1.01) > bucket picks (Early/Mid/Late) > generic (2027_1)
     _BUCKET_KWORDS = {"early", "mid", "late"}
-    _slot_yr_rnd: set = set()
+    _slot_yr_rnd: set = set()    # (yr, rnd) combos that have specific slot picks
+    _bucket_yr_rnd: set = set()  # (yr, rnd) combos that have bucket picks
     for row in rows:
         if str(dict(row).get("position") or "").upper() == "PICK":
             _pid = str(dict(row).get("id") or "")
             _pp = _pid.split("_")
-            if len(_pp) >= 3 and _pp[2].lower() not in _BUCKET_KWORDS:
-                try:
-                    int(_pp[2])
-                    _slot_yr_rnd.add((_pp[0], _pp[1]))
-                except ValueError:
-                    pass
+            if len(_pp) >= 3:
+                _key = (_pp[0], _pp[1])
+                if _pp[2].lower() in _BUCKET_KWORDS:
+                    _bucket_yr_rnd.add(_key)
+                else:
+                    try:
+                        int(_pp[2])
+                        _slot_yr_rnd.add(_key)
+                    except ValueError:
+                        pass
 
     assets = []
     for row in rows:
         asset = dict(row)
 
-        # Skip bucket/generic picks when slot picks exist for that year+round
+        # Enforce pick hierarchy: slot > bucket > generic
         if str(asset.get("position") or "").upper() == "PICK":
             _pid = str(asset.get("id") or "")
             _pp = _pid.split("_")
             if len(_pp) >= 2:
                 _yr_rnd_key = (_pp[0], _pp[1])
+                is_generic = len(_pp) == 2
+                is_bucket = len(_pp) >= 3 and _pp[2].lower() in _BUCKET_KWORDS
                 if _yr_rnd_key in _slot_yr_rnd:
-                    # Suppress bucket picks (early/mid/late) and generic round picks (2026_1)
-                    if len(_pp) == 2 or (len(_pp) >= 3 and _pp[2].lower() in _BUCKET_KWORDS):
+                    # Slot picks exist → drop bucket and generic
+                    if is_generic or is_bucket:
+                        continue
+                elif _yr_rnd_key in _bucket_yr_rnd:
+                    # Bucket picks exist but no slots → drop generic
+                    if is_generic:
                         continue
 
         # Skip players with no value
