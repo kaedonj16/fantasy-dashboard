@@ -154,6 +154,9 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             projected_role_tag,
             as_of_date,
             calculated_at,
+            hit_probability,
+            cumulative_ppr,
+            peak_ppr,
             (component_details->'player_readiness'->>'age')::numeric as age,
             (component_details->'player_readiness'->>'usage_baseline_score')::numeric as readiness_usage_baseline
         FROM breakout_opportunity_scores
@@ -282,7 +285,10 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
             projected_role_tag,
             component_details,
             as_of_date,
-            calculated_at
+            calculated_at,
+            hit_probability,
+            cumulative_ppr,
+            peak_ppr
         FROM breakout_opportunity_scores
         WHERE player_id = %s
           AND season = %s

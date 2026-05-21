@@ -505,7 +505,10 @@ def save_breakout_scores(scores: List[Dict]) -> int:
             vacated_usage_summary,
             added_competition_summary,
             projected_role_tag,
-            component_details
+            component_details,
+            hit_probability,
+            cumulative_ppr,
+            peak_ppr
         )
         VALUES (
             %(player_id)s,
@@ -529,7 +532,10 @@ def save_breakout_scores(scores: List[Dict]) -> int:
             %(vacated_usage_summary)s,
             %(added_competition_summary)s,
             %(projected_role_tag)s,
-            %(component_details)s
+            %(component_details)s,
+            %(hit_probability)s,
+            %(cumulative_ppr)s,
+            %(peak_ppr)s
         )
         ON CONFLICT (player_id, season, as_of_date)
         DO UPDATE SET
@@ -552,6 +558,9 @@ def save_breakout_scores(scores: List[Dict]) -> int:
             added_competition_summary = EXCLUDED.added_competition_summary,
             projected_role_tag = EXCLUDED.projected_role_tag,
             component_details = EXCLUDED.component_details,
+            hit_probability = EXCLUDED.hit_probability,
+            cumulative_ppr  = EXCLUDED.cumulative_ppr,
+            peak_ppr        = EXCLUDED.peak_ppr,
             calculated_at = NOW()
     """
 
