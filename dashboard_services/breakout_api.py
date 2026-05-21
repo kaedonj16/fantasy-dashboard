@@ -5,12 +5,15 @@ Provides REST API endpoints for querying breakout candidates and scores.
 Includes detailed breakout type classification (readiness vs opportunity driven).
 """
 
+import logging
 from datetime import date
 from typing import Dict, List, Optional
 
 from flask import Blueprint, jsonify, request
 
 from dashboard_services.db import get_conn
+
+logger = logging.getLogger(__name__)
 
 # Create Blueprint for breakout routes
 breakout_bp = Blueprint('breakout', __name__, url_prefix='/api/breakout')
@@ -151,6 +154,9 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             projected_role_tag,
             as_of_date,
             calculated_at,
+            hit_probability,
+            cumulative_ppr,
+            peak_ppr,
             (component_details->'player_readiness'->>'age')::numeric as age,
             (component_details->'player_readiness'->>'usage_baseline_score')::numeric as readiness_usage_baseline
         FROM breakout_opportunity_scores
@@ -193,7 +199,7 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
                 c['player_name'] = pmeta.get('full_name') or pmeta.get('name')
             c['espnHeadshot'] = pmeta.get('espnHeadshot')
     except Exception:
-        pass
+        logger.warning("breakout_api: failed to enrich candidates with player index", exc_info=True)
 
     return {
         'season': season,
@@ -279,7 +285,10 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
             projected_role_tag,
             component_details,
             as_of_date,
-            calculated_at
+            calculated_at,
+            hit_probability,
+            cumulative_ppr,
+            peak_ppr
         FROM breakout_opportunity_scores
         WHERE player_id = %s
           AND season = %s
@@ -306,7 +315,7 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
             candidate['player_name'] = player_meta.get('full_name') or player_meta.get('name')
         candidate['espnHeadshot'] = player_meta.get('espnHeadshot')
     except Exception:
-        pass
+        logger.warning("breakout_api: failed to enrich candidate %s with player index", player_id, exc_info=True)
 
     return candidate
 

@@ -6,12 +6,15 @@ Also handles: /<platform>/<season>/<league_id>/trade|trade-intel|trade-database
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Optional
 
 from flask import Blueprint, session
 
 from dashboard_services.subscriptions import has_premium_access
+
+logger = logging.getLogger(__name__)
 
 trade_bp = Blueprint("trade", __name__)
 
@@ -68,6 +71,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         _ti_lt = "sf" if _ti_sf else "1qb"
         _ti_sz = len(_ti_ctx.get("rosters") or []) or 10
     except Exception:
+        logger.warning("trade_bp: failed to load league context for trade intel page", exc_info=True)
         _ti_sf = False
         _ti_lt = "1qb"
         _ti_sz = 10
