@@ -61,16 +61,17 @@ _SNAP_PPR_SCALE: dict[str, float] = {
 }
 
 # Per-position uplift applied to the raw season-PPR estimate before returning.
-# Calibrated from 2022-2023 backtests: the model systematically underpredicts
-# by ~20% (mean predicted 4.7 ppg vs actual 5.8 ppg for the candidate pool).
-# Root cause: projected_usage reconstructed from component_details gives a
-# conservative baseline; actual breakout players typically beat the baseline by
-# more than their opportunity share alone would suggest.
+# Calibrated from 2022-2023 backtests after fixing the source-stats format bug
+# (pre-existing usage_rows files stored avg_targets per game, not season totals,
+# causing all WR/RB/TE to hit the PPR floor and appear ~20% under-predicted).
+# Once source stats are correctly populated, the base estimate is well-calibrated:
+# 2023→2024 bias is +0.2 ppg without uplift. QB retains a small uplift because
+# snap-share data is unavailable in the pre-existing format (avg_off_snap_pct=0).
 _SEASON_PPR_UPLIFT: dict[str, float] = {
-    "QB": 1.10,
-    "RB": 1.20,
-    "WR": 1.22,
-    "TE": 1.18,
+    "QB": 1.08,
+    "RB": 1.00,
+    "WR": 1.00,
+    "TE": 1.00,
 }
 
 
