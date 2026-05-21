@@ -383,20 +383,45 @@ def feature_importance_report(feature_data: list[dict], hit_key: str = "is_top12
 
 def precision_at_k_report(feature_data: list[dict], hit_key: str = "is_top12") -> None:
     """
-    Of the top-K candidates ranked by breakout_score, what fraction hit the target outcome?
+    Precision@K ranked by breakout_score vs confidence×trajectory composite.
+    Shows both rankings side-by-side so you can see whether the composite
+    ordering is a better tiebreaker within the top-K.
     """
-    ranked = sorted(feature_data, key=lambda d: -d["breakout_score"])
-    n = len(ranked)
+    by_score = sorted(feature_data, key=lambda d: -d["breakout_score"])
+    by_comp  = sorted(feature_data, key=lambda d: -d.get("ranking_score", 0.0))
+    n = len(feature_data)
     label = "breakout" if hit_key == "is_breakout" else "top-12"
 
-    print(f"\n  Precision@K (top-K by breakout score → {label} hit rate):")
-    print(f"  {'K':<6} {'Hits':>6} {'Precision':>10}")
-    print("  " + "-" * 26)
+    print(f"\n  Precision@K → {label} hit rate  (breakout score vs confidence×trajectory rank):")
+    print(f"  {'K':<6} {'Score Hits':>11} {'Score P':>9}   {'Comp Hits':>10} {'Comp P':>8}")
+    print("  " + "-" * 54)
     for k in [10, 20, 30, 50]:
         if k > n:
             break
-        hits = sum(1 for d in ranked[:k] if d.get(hit_key))
-        print(f"  {k:<6} {hits:>6}  {hits/k:>9.0%}")
+        s_hits = sum(1 for d in by_score[:k] if d.get(hit_key))
+        c_hits = sum(1 for d in by_comp[:k]  if d.get(hit_key))
+        print(f"  {k:<6} {s_hits:>11}  {s_hits/k:>8.0%}   {c_hits:>10}  {c_hits/k:>8.0%}")
+
+
+def per_position_report(feature_data: list[dict], hit_key: str = "is_breakout") -> None:
+    """Breakout hit rate and precision@10 broken out by position."""
+    by_pos: dict[str, list[dict]] = {}
+    for d in feature_data:
+        pos = d.get("position") or "?"
+        by_pos.setdefault(pos, []).append(d)
+
+    label = "breakout" if hit_key == "is_breakout" else "top-12"
+    print(f"\n  Per-position {label} rates:")
+    print(f"  {'Pos':<5} {'N':>5} {'Hits':>6} {'Rate':>8}   {'P@10':>8}")
+    print("  " + "-" * 38)
+    for pos in sorted(by_pos):
+        rows = by_pos[pos]
+        n_pos = len(rows)
+        hits  = sum(1 for d in rows if d.get(hit_key))
+        ranked = sorted(rows, key=lambda d: -d["breakout_score"])
+        p10 = sum(1 for d in ranked[:10] if d.get(hit_key)) / min(10, n_pos) if n_pos >= 5 else float("nan")
+        p10_str = f"{p10:.0%}" if not (isinstance(p10, float) and p10 != p10) else "  n/a"
+        print(f"  {pos:<5} {n_pos:>5} {hits:>6}  {hits/n_pos:>7.0%}   {p10_str:>8}")
 
 
 def list_available_seasons() -> list[int]:
@@ -520,11 +545,13 @@ def run_backtest(
 
         # Collect feature data for correlation / precision reports
         if hit_prob is not None:
+            conf  = float(row.get("confidence_score") or 0)
+            traj  = float(row.get("role_trajectory_score") or 0)
             feature_data.append({
                 "breakout_score":           float(row.get("breakout_opportunity_score") or 0),
                 "readiness_score":          float(row.get("player_readiness_score") or 0),
-                "confidence_score":         float(row.get("confidence_score") or 0),
-                "role_trajectory_score":    float(row.get("role_trajectory_score") or 0),
+                "confidence_score":         conf,
+                "role_trajectory_score":    traj,
                 "opportunity_opened_score": float(row.get("opportunity_opened_score") or 0),
                 "competition_removed_score":float(row.get("competition_removed_score") or 0),
                 "competition_added_penalty":float(row.get("competition_added_penalty") or 0),
@@ -533,6 +560,9 @@ def run_backtest(
                 "actual_ppg":               actual_ppg,
                 "is_top12":                 int(is_top12),
                 "is_breakout":              int(is_breakout),
+                "position":                 row.get("position", ""),
+                # Composite tiebreaker: the two strongest predictors (Pearson r ≈ 0.55/0.51)
+                "ranking_score":            conf * traj / 100.0,
             })
 
     if not hit_pairs_top12:
@@ -569,6 +599,9 @@ def run_backtest(
 
     # --- Precision@K (by breakout threshold) ---
     precision_at_k_report(feature_data, hit_key="is_breakout")
+
+    # --- Per-position breakdown ---
+    per_position_report(feature_data, hit_key="is_breakout")
 
     print()
 

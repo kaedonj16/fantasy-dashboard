@@ -890,6 +890,29 @@ def run(
     rosters_by_season, gsis_to_sleeper, pfr_to_gsis = load_rosters(all_roster_seasons)
     usage_by_season = load_usage_stats(all_usage_seasons, pfr_to_gsis)
 
+    # Write usage_rows_{season}.json to cache/player_history/ for each source season
+    # that doesn't already have one.  The backtest script reads these files to compute
+    # prior-season PPG for the relative breakout definition (player × 1.15).
+    _usage_cache_dir = Path("cache/player_history")
+    _usage_cache_dir.mkdir(parents=True, exist_ok=True)
+    for src_season in sorted(seasons):
+        _dest = _usage_cache_dir / f"usage_rows_{src_season}.json"
+        if _dest.exists():
+            continue
+        season_usage = usage_by_season.get(src_season, {})
+        if not season_usage:
+            continue
+        rows_out = []
+        for gsis_id, u in season_usage.items():
+            sleeper_id = gsis_to_sleeper.get(gsis_id)
+            if not sleeper_id:
+                continue
+            rows_out.append({"id": sleeper_id, "position": u.get("position", ""),
+                              "name": u.get("name", ""), "usage": u})
+        with open(_dest, "w") as _f:
+            json.dump(rows_out, _f, indent=2)
+        print(f"  Wrote {len(rows_out)} usage rows → {_dest}")
+
     total_saved = 0
     for season in sorted(seasons):
         n = build_season(

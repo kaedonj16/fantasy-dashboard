@@ -13,14 +13,17 @@ from __future__ import annotations
 
 from typing import Optional
 
-# Empirical base hit rates per position (fraction of dynasty-relevant players
-# who finish top-12 at their position in a given season).
-# QB: top-6; RB/WR: top-12; TE: top-6 (smaller positional pool).
+# Base breakout hit rates calibrated specifically for the NON-ESTABLISHED
+# candidate pool (players who haven't yet had a big season — the "emerging"
+# tier the engine targets).  These are lower than NFL-wide base rates because
+# established stars are excluded from scoring:  backtest 2022+2023 shows
+# actual breakout rate ≈ 17% overall, with the 10-20% predicted bucket
+# landing at only 2-8% actual.
 _BASE_HIT_RATE: dict[str, float] = {
-    "QB": 0.38,
-    "RB": 0.22,
-    "WR": 0.15,
-    "TE": 0.20,
+    "QB": 0.25,   # was 0.38 — QB candidates are mostly backups / 2nd-year starters
+    "RB": 0.12,   # was 0.22
+    "WR": 0.09,   # was 0.15 — largest positional pool, hardest to break through
+    "TE": 0.12,   # was 0.20
 }
 
 # Positional PPR floor used when usage data is missing entirely.
@@ -57,6 +60,19 @@ _SNAP_PPR_SCALE: dict[str, float] = {
     "TE":  127.0,
 }
 
+# Per-position uplift applied to the raw season-PPR estimate before returning.
+# Calibrated from 2022-2023 backtests: the model systematically underpredicts
+# by ~20% (mean predicted 4.7 ppg vs actual 5.8 ppg for the candidate pool).
+# Root cause: projected_usage reconstructed from component_details gives a
+# conservative baseline; actual breakout players typically beat the baseline by
+# more than their opportunity share alone would suggest.
+_SEASON_PPR_UPLIFT: dict[str, float] = {
+    "QB": 1.10,
+    "RB": 1.20,
+    "WR": 1.22,
+    "TE": 1.18,
+}
+
 
 def _estimate_season_ppr(
     position: str,
@@ -67,9 +83,12 @@ def _estimate_season_ppr(
     """
     Estimate single-season PPR from projected usage + efficiency.
     Falls back to snap-share scaling when target/carry data is thin.
+    A per-position uplift (_SEASON_PPR_UPLIFT) corrects the systematic
+    downward bias observed in 2022-2023 backtests.
     """
     pos = (position or "WR").upper()
     base = _BASE_SEASON_PPR.get(pos, 150.0)
+    uplift = _SEASON_PPR_UPLIFT.get(pos, 1.15)
 
     proj_targets = float(projected_usage.get("targets") or projected_usage.get("projected_targets") or 0)
     proj_carries = float(projected_usage.get("carries") or projected_usage.get("projected_carries") or 0)
@@ -84,14 +103,14 @@ def _estimate_season_ppr(
     # QBs score via passing stats, not targets/carries — bypass that branch entirely
     if pos == "QB":
         if proj_snaps > 0:
-            return proj_snaps * _SNAP_PPR_SCALE["QB"]
+            return proj_snaps * _SNAP_PPR_SCALE["QB"] * uplift
         if prev_usage:
             prev_pass_att = float(prev_usage.get("pass_attempts") or 0)
             if prev_pass_att > 0:
                 # Estimate snap share: a full-time starter throws ~580 attempts/season
                 est_snaps = min(prev_pass_att / 580.0, 1.0)
-                return est_snaps * _SNAP_PPR_SCALE["QB"]
-        return base * 0.5
+                return est_snaps * _SNAP_PPR_SCALE["QB"] * uplift
+        return base * 0.5 * uplift
 
     if proj_targets > 0 or proj_carries > 0:
         ppr = (
@@ -104,12 +123,12 @@ def _estimate_season_ppr(
             ypc = float(efficiency_metrics.get("yards_per_carry") or 0)
             if (pos in ("WR", "TE") and ypt >= 9.0) or (pos == "RB" and ypc >= 4.8):
                 ppr *= 1.10
-        return max(ppr, base * 0.4)  # floor at 40% of positional base
+        return max(ppr, base * 0.4) * uplift
 
     if proj_snaps > 0:
-        return proj_snaps * _SNAP_PPR_SCALE.get(pos, 350.0)
+        return proj_snaps * _SNAP_PPR_SCALE.get(pos, 350.0) * uplift
 
-    return base * 0.5  # thin data → conservative estimate
+    return base * 0.5 * uplift  # thin data → conservative estimate
 
 
 def calculate_hit_probability(
