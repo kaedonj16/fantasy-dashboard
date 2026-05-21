@@ -12231,9 +12231,9 @@ def api_league_players():
             if _pk_id in _seen_ids or float(_pk_val) <= 0:
                 continue
             _parts = _pk_id.split("_")
-            # Skip bucket picks (Early/Mid/Late) when slot picks exist for that year+round
-            if len(_parts) >= 3 and _parts[2].lower() in _bucket_keywords:
-                if (_parts[0], _parts[1]) in _slot_yr_rnd:
+            # Skip bucket/generic picks when slot picks exist for that year+round
+            if len(_parts) >= 2 and (_parts[0], _parts[1]) in _slot_yr_rnd:
+                if len(_parts) == 2 or (len(_parts) >= 3 and _parts[2].lower() in _bucket_keywords):
                     continue
             _seen_ids.add(_pk_id)
             # Format display name: "2026_1_01" -> "2026 1.01", "2026_1_early" -> "2026 1st (Early)"
