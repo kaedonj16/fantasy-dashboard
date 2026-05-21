@@ -22,6 +22,7 @@ Results are upserted into trade_intel_player_stats and trade_intel_packages.
 """
 from __future__ import annotations
 
+import gc
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -106,6 +107,8 @@ def _load_model_values(season: int) -> dict[str, dict]:
 # ---------------------------------------------------------------------------
 
 def _load_trades(season: int) -> list[dict]:
+    # 120-day window covers the 90d metrics + buffer; anything older
+    # contributes only 0.08 decay weight and is not worth the memory cost.
     with get_conn() as conn:
         rows = conn.execute(
             """
@@ -117,6 +120,7 @@ def _load_trades(season: int) -> list[dict]:
             LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
             LEFT JOIN trade_intel_assets  a ON a.trade_id  = t.id
             WHERE t.season = %s AND t.status = 'complete'
+              AND t.created_at >= NOW() - INTERVAL '120 days'
             ORDER BY t.id
             """,
             (season,),
@@ -766,18 +770,26 @@ def run_analytics(season: int | None = None) -> dict:
     logger.info("[analytics] Computing time-aware player stats...")
     player_stats = _compute_player_stats(trades, values, season)
     n_stats = _upsert_player_stats(player_stats)
+    del player_stats
+    gc.collect()
     logger.info("[analytics] Upserted %d player stat rows", n_stats)
 
     logger.info("[analytics] Computing common packages...")
     packages = _compute_packages(trades, season)
     n_pkgs = _upsert_packages(packages)
+    del packages
+    gc.collect()
     logger.info("[analytics] Upserted %d package rows", n_pkgs)
 
     logger.info("[analytics] Ensuring pick stats table...")
     _ensure_pick_stats_table()
     logger.info("[analytics] Computing pick market values...")
     pick_stats = _compute_pick_stats(trades, values, season)
+    del trades, values
+    gc.collect()
     n_picks = _upsert_pick_stats(pick_stats)
+    del pick_stats
+    gc.collect()
     logger.info("[analytics] Upserted %d pick stat rows", n_picks)
 
     return {"player_stats": n_stats, "packages": n_pkgs, "pick_stats": n_picks}

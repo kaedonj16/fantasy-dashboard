@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import glob
+import logging
 from datetime import date
 from typing import Dict
 
 from utils.paths import DATA_DIR
+
+logger = logging.getLogger(__name__)
 
 
 def load_pick_value_table(
@@ -89,7 +92,7 @@ def load_pick_value_table(
                 fixed.update(bucket_entries)
                 return fixed
         except Exception:
-            pass
+            logger.warning("picks: failed to build pick table from market calibration file", exc_info=True)
 
     # Fallback: DB bucket picks (trade_intel_pick_stats)
     if not final:
@@ -112,7 +115,7 @@ def load_pick_value_table(
                 key = f"{r['pick_season']}_{r['pick_round']}_{r['pick_bucket']}"
                 final[key] = float(r['weighted_market_value_1qb'])
         except Exception:
-            pass
+            logger.warning("picks: failed to load pick values from trade_intel_pick_stats", exc_info=True)
 
     # Apply normalization scale
     try:
@@ -122,6 +125,6 @@ def load_pick_value_table(
             if _scale and _scale != 1.0:
                 final = {k: round(v * _scale, 1) for k, v in final.items()}
     except Exception:
-        pass
+        logger.warning("picks: failed to apply normalization scale", exc_info=True)
 
     return final
