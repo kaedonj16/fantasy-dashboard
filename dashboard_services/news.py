@@ -1,28 +1,24 @@
 """
 Player news feed via ESPN's free public API.
 
-Caches results for 30 minutes to avoid hammering the endpoint.
-Supports per-player fetches (via ESPN athlete ID extracted from headshot URL)
-and a bulk NFL headline pull with name-based filtering as fallback.
+Caches results for 15 minutes. Supports concurrent batch fetching via httpx
+AsyncClient, and single-player or name-based fallback for individual lookups.
 """
 
+import asyncio
 import re
 import time
 from datetime import datetime, timezone
 from typing import Optional
 
-import requests
+import httpx
 
 _CACHE: dict = {}
-_TTL = 900   # 15 min
+_TTL = 900        # 15 min per-athlete
 _GENERAL_TTL = 600  # 10 min for bulk headline cache
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; fantasy-dashboard/1.0)"}
 _TIMEOUT = 6
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Internal helpers
-# ──────────────────────────────────────────────────────────────────────────────
 
 def _espn_id(headshot_url: str) -> Optional[str]:
     if not headshot_url:
@@ -32,7 +28,6 @@ def _espn_id(headshot_url: str) -> Optional[str]:
 
 
 def _age_label(iso: str) -> str:
-    """Convert ISO timestamp to a short human-readable age string."""
     try:
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
         delta = datetime.now(timezone.utc) - dt
@@ -79,45 +74,78 @@ def _parse(article: dict) -> dict:
     }
 
 
-def _fetch_athlete_news(espn_id: str) -> list:
+# ──────────────────────────────────────────────────────────────────────────────
+# Async internals
+# ──────────────────────────────────────────────────────────────────────────────
+
+async def _async_fetch_athlete(client: httpx.AsyncClient, espn_id: str) -> tuple[str, list]:
+    """Return (espn_id, items) — never raises."""
     now = time.time()
     key = f"athlete_{espn_id}"
-    if key in _CACHE and now - _CACHE[key][0] < _TTL:
-        return _CACHE[key][1]
+    cached = _CACHE.get(key)
+    if cached and now - cached[0] < _TTL:
+        return espn_id, cached[1]
     try:
         url = (
             f"https://site.api.espn.com/apis/site/v2/sports/football/nfl"
             f"/athletes/{espn_id}/news?limit=15"
         )
-        r = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
-        if not r.ok:
-            return []
+        r = await client.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+        if not r.is_success:
+            return espn_id, []
         data = r.json()
         items = [_parse(a) for a in (data.get("feed") or data.get("articles") or []) if a.get("headline")]
         _CACHE[key] = (now, items)
-        return items
+        return espn_id, items
     except Exception:
-        return []
+        return espn_id, []
 
 
-def _fetch_general_news() -> list:
+async def _async_fetch_general() -> list:
     now = time.time()
     key = "general_nfl"
-    if key in _CACHE and now - _CACHE[key][0] < _GENERAL_TTL:
-        return _CACHE[key][1]
+    cached = _CACHE.get(key)
+    if cached and now - cached[0] < _GENERAL_TTL:
+        return cached[1]
     try:
-        r = requests.get(
-            "https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=150",
-            headers=_HEADERS,
-            timeout=_TIMEOUT,
-        )
-        if not r.ok:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                "https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=150",
+                headers=_HEADERS,
+                timeout=_TIMEOUT,
+            )
+        if not r.is_success:
             return []
         items = [_parse(a) for a in (r.json().get("articles") or []) if a.get("headline")]
         _CACHE[key] = (now, items)
         return items
     except Exception:
         return []
+
+
+async def _async_batch_athletes(espn_ids: list[str]) -> dict[str, list]:
+    """Fetch news for multiple ESPN athlete IDs concurrently."""
+    if not espn_ids:
+        return {}
+    async with httpx.AsyncClient() as client:
+        tasks = [_async_fetch_athlete(client, eid) for eid in espn_ids]
+        pairs = await asyncio.gather(*tasks)
+    return dict(pairs)
+
+
+def _run(coro):
+    """Run a coroutine from sync context, handling already-running loops."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        # We're inside an async context (e.g. Flask async route) — use a new thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(asyncio.run, coro)
+            return future.result()
+    return asyncio.run(coro)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -134,12 +162,13 @@ def get_player_news(player_name: str, espn_headshot: str = "", limit: int = 4) -
     """
     eid = _espn_id(espn_headshot)
     if eid:
-        items = _fetch_athlete_news(eid)
+        results = _run(_async_batch_athletes([eid]))
+        items = results.get(eid, [])
         if items:
             return items[:limit]
 
     # Name-based fallback
-    general = _fetch_general_news()
+    general = _run(_async_fetch_general())
     if not general or not player_name:
         return []
 
@@ -158,6 +187,51 @@ def get_player_news(player_name: str, espn_headshot: str = "", limit: int = 4) -
     return matched[:limit]
 
 
+def get_players_news_batch(players: list[dict]) -> dict[str, list]:
+    """
+    Fetch news for multiple players concurrently.
+
+    Args:
+        players: list of dicts with keys: player_id, player_name, espn_headshot (optional)
+
+    Returns:
+        dict mapping player_id -> list of news items
+    """
+    now = time.time()
+
+    # Split into cached vs needs-fetch
+    id_to_eid: dict[str, str] = {}
+    result: dict[str, list] = {}
+
+    for p in players:
+        pid = str(p.get("player_id") or "")
+        if not pid:
+            continue
+        eid = _espn_id(p.get("espn_headshot") or p.get("espnHeadshot") or "")
+        if not eid:
+            result[pid] = []
+            continue
+        cache_key = f"athlete_{eid}"
+        cached = _CACHE.get(cache_key)
+        if cached and now - cached[0] < _TTL:
+            result[pid] = cached[1]
+        else:
+            id_to_eid[pid] = eid
+
+    if id_to_eid:
+        # Deduplicate ESPN IDs (multiple players can share an ESPN ID in edge cases)
+        eid_to_pids: dict[str, list[str]] = {}
+        for pid, eid in id_to_eid.items():
+            eid_to_pids.setdefault(eid, []).append(pid)
+
+        fetched = _run(_async_batch_athletes(list(eid_to_pids.keys())))
+        for eid, items in fetched.items():
+            for pid in eid_to_pids[eid]:
+                result[pid] = items
+
+    return result
+
+
 def get_nfl_news(limit: int = 20) -> list:
     """Return recent general NFL news headlines (for activity feed)."""
-    return _fetch_general_news()[:limit]
+    return _run(_async_fetch_general())[:limit]
