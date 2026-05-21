@@ -1,0 +1,807 @@
+"""
+Build historical breakout opportunity scores for backtesting.
+
+Uses nfl_data_py to reconstruct player usage and roster changes for past
+seasons (2022, 2023) and runs the same component calculators that power
+the live engine, producing scores you can evaluate with backtest_multitask.py.
+
+How it works
+------------
+For each prediction season N (e.g. N=2023):
+  1. Aggregate season N-1 weekly stats (targets, carries, yards, PPR) per player.
+  2. Load snap percentages from season N-1 snap counts (available 2022+).
+  3. Detect team changes (N-1 → N) from seasonal rosters — players who moved
+     teams between seasons, plus rookies entering the league.
+  4. Build vacated-opportunity, departures, and arrivals caches from step 3.
+  5. Compute team-level offensive stats from N-1 weekly data.
+  6. Run all 7 component calculators with pre-built caches (no DB reads needed
+     for the competition/opportunity signals).
+  7. Save to breakout_opportunity_scores with season=N, as_of_date=N-03-01.
+
+After running, backtest_multitask.py --season N compares these scores against
+actual outcomes from cache/player_history/usage_rows_{N+1}.json.
+
+Usage
+-----
+    python data_building/breakout_engine/build_historical_scores.py
+    python data_building/breakout_engine/build_historical_scores.py --seasons 2022 2023
+    python data_building/breakout_engine/build_historical_scores.py --season 2023 --dry-run
+    python data_building/breakout_engine/build_historical_scores.py --season 2023 --min-score 30
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import sys
+from datetime import date
+from pathlib import Path
+from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from dotenv import load_dotenv
+load_dotenv()
+
+# openai is not installed in this environment but is transitively imported
+# by the breakout engine's projections module (LLM projections). Mock it
+# so the standalone historical build script can import component calculators
+# without the full stack dependency.
+from unittest.mock import MagicMock as _MagicMock
+for _mod in ("openai", "openai.types", "openai.types.chat"):
+    sys.modules.setdefault(_mod, _MagicMock())
+
+POSITIONS = ("QB", "RB", "WR", "TE")
+
+# nfl_data_py team abbreviations (2021+ post-relocation era)
+VALID_TEAMS = frozenset({
+    "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN",
+    "DET", "GB",  "HOU", "IND", "JAX", "KC",  "LA",  "LAC", "LV",  "MIA",
+    "MIN", "NE",  "NO",  "NYG", "NYJ", "PHI", "PIT", "SEA", "SF",  "TB",
+    "TEN", "WAS",
+})
+
+# Seasons where nfl_data_py snap counts are available
+SNAP_COUNT_SEASONS = {2022, 2023, 2024}
+
+# Phase for all historical scores (pre-season offseason prediction)
+HIST_PHASE = "offseason"
+
+
+# ==============================================================================
+# DATA LOADING
+# ==============================================================================
+
+def _safe(val, default=0):
+    if val is None or (isinstance(val, float) and math.isnan(val)):
+        return default
+    return val
+
+
+def _pick_to_round(pick_number) -> int:
+    if pick_number is None or (isinstance(pick_number, float) and math.isnan(pick_number)):
+        return 7
+    return min(7, max(1, (int(pick_number) - 1) // 32 + 1))
+
+
+def load_rosters(seasons: list[int]) -> tuple[dict[int, dict[str, dict]], dict[str, str], dict[str, str]]:
+    """
+    Load seasonal rosters from nfl_data_py.
+
+    Returns:
+      rosters_by_season: {season → {gsis_id → roster_entry}}
+      gsis_to_sleeper:   {gsis_id → sleeper_id}
+      pfr_to_gsis:       {pfr_id  → gsis_id}
+    """
+    import nfl_data_py as nfl
+
+    print(f"  Loading rosters for {seasons}...")
+    rosters = nfl.import_seasonal_rosters(seasons)
+    skill = rosters[rosters["position"].isin(POSITIONS)].copy()
+    # Keep latest week per player per season to get the most recent team
+    skill = skill.sort_values("week", ascending=False).drop_duplicates(["player_id", "season"])
+
+    rosters_by_season: dict[int, dict] = {}
+    gsis_to_sleeper: dict[str, str] = {}
+    pfr_to_gsis: dict[str, str] = {}
+
+    for _, row in skill.iterrows():
+        gsis_id = str(row["player_id"])
+        season = int(row["season"])
+        sleeper_id = str(row["sleeper_id"]) if _safe(row.get("sleeper_id"), None) is not None else None
+        pfr_id = str(row["pfr_id"]) if _safe(row.get("pfr_id"), None) is not None else None
+
+        if sleeper_id and sleeper_id not in ("None", "nan"):
+            gsis_to_sleeper[gsis_id] = sleeper_id
+        if pfr_id and pfr_id not in ("None", "nan"):
+            pfr_to_gsis[pfr_id] = gsis_id
+
+        entry = {
+            "gsis_id": gsis_id,
+            "sleeper_id": sleeper_id,
+            "pfr_id": pfr_id,
+            "name": str(row["player_name"]),
+            "team": str(row["team"]),
+            "position": str(row["position"]),
+            "age": float(row["age"]) if _safe(row.get("age"), None) is not None else None,
+            "years_exp": int(_safe(row.get("years_exp"), 0)),
+            "draft_number": _safe(row.get("draft_number"), None),
+            "entry_year": _safe(row.get("entry_year"), None),
+            "rookie_year": _safe(row.get("rookie_year"), None),
+        }
+        rosters_by_season.setdefault(season, {})[gsis_id] = entry
+
+    print(f"  Rosters: {sum(len(v) for v in rosters_by_season.values())} records across {len(seasons)} seasons")
+    return rosters_by_season, gsis_to_sleeper, pfr_to_gsis
+
+
+def load_usage_stats(seasons: list[int], pfr_to_gsis: dict[str, str]) -> dict[int, dict[str, dict]]:
+    """
+    Load nfl_data_py weekly + snap count data and aggregate to per-player,
+    per-season totals, keyed by GSIS player ID.
+    """
+    import nfl_data_py as nfl
+
+    print(f"  Loading weekly data for {seasons}...")
+    weekly = nfl.import_weekly_data(seasons)
+    weekly = weekly[weekly["season_type"] == "REG"]
+    weekly = weekly[weekly["position"].isin(POSITIONS)]
+
+    agg = (
+        weekly.groupby(["player_id", "player_name", "position", "recent_team", "season"])
+        .agg(
+            games=("week", "nunique"),
+            targets=("targets", "sum"),
+            carries=("carries", "sum"),
+            receptions=("receptions", "sum"),
+            receiving_yards=("receiving_yards", "sum"),
+            receiving_tds=("receiving_tds", "sum"),
+            rushing_yards=("rushing_yards", "sum"),
+            rushing_tds=("rushing_tds", "sum"),
+            attempts=("attempts", "sum"),
+            passing_yards=("passing_yards", "sum"),
+            passing_tds=("passing_tds", "sum"),
+            interceptions=("interceptions", "sum"),
+            fantasy_points_ppr=("fantasy_points_ppr", "sum"),
+        )
+        .reset_index()
+    )
+
+    # Snap counts: average offense_pct per player per season (2022+)
+    snap_seasons = [s for s in seasons if s in SNAP_COUNT_SEASONS]
+    snap_by_pfr_season: dict[tuple, float] = {}
+    if snap_seasons:
+        print(f"  Loading snap counts for {snap_seasons}...")
+        snaps = nfl.import_snap_counts(snap_seasons)
+        snaps = snaps[snaps.get("game_type", "REG") == "REG"] if "game_type" in snaps.columns else snaps
+        snaps_agg = (
+            snaps[["pfr_player_id", "season", "offense_pct"]]
+            .groupby(["pfr_player_id", "season"])["offense_pct"]
+            .mean()
+            .reset_index()
+        )
+        for _, row in snaps_agg.iterrows():
+            snap_by_pfr_season[(str(row["pfr_player_id"]), int(row["season"]))] = float(_safe(row["offense_pct"], 0))
+
+    # Team-level target totals for computing target_share
+    team_targets_by_season: dict[tuple, float] = {}
+    for _, row in agg.iterrows():
+        key = (str(row["recent_team"]), int(row["season"]))
+        team_targets_by_season[key] = team_targets_by_season.get(key, 0) + float(_safe(row["targets"], 0))
+
+    # Build usage dict per GSIS ID per season
+    usage_by_season: dict[int, dict] = {}
+
+    for _, row in agg.iterrows():
+        gsis_id = str(row["player_id"])
+        season = int(row["season"])
+        games = int(_safe(row["games"], 1))
+        targets = int(_safe(row["targets"], 0))
+        carries = int(_safe(row["carries"], 0))
+        receptions = int(_safe(row["receptions"], 0))
+        rec_yards = float(_safe(row["receiving_yards"], 0))
+        rec_tds = float(_safe(row["receiving_tds"], 0))
+        rush_yards = float(_safe(row["rushing_yards"], 0))
+        rush_tds = float(_safe(row["rushing_tds"], 0))
+        attempts = int(_safe(row["attempts"], 0))
+        pass_yards = float(_safe(row["passing_yards"], 0))
+        pass_tds = float(_safe(row["passing_tds"], 0))
+        ints = float(_safe(row["interceptions"], 0))
+        ppr = float(_safe(row["fantasy_points_ppr"], 0))
+        team = str(row["recent_team"])
+
+        ypc = rush_yards / carries if carries > 0 else 0.0
+        ypt = rec_yards / targets if targets > 0 else 0.0
+        catch_rate = receptions / targets if targets > 0 else 0.0
+        ppr_ppg = ppr / max(games, 1)
+
+        team_total_targets = team_targets_by_season.get((team, season), 1)
+        target_share = targets / max(team_total_targets, 1)
+
+        usage_by_season.setdefault(season, {})[gsis_id] = {
+            "gsis_id": gsis_id,
+            "name": str(row["player_name"]),
+            "team": team,
+            "position": str(row["position"]),
+            "season": season,
+            "games": games,
+            "targets": targets,
+            "carries": carries,
+            "receptions": receptions,
+            "rec_yards": int(rec_yards),
+            "rec_tds": round(rec_tds, 1),
+            "rush_yards": int(rush_yards),
+            "rush_tds": round(rush_tds, 1),
+            "pass_attempts": attempts,
+            "pass_yards": int(pass_yards),
+            "pass_tds": round(pass_tds, 1),
+            "interceptions": round(ints, 1),
+            "ppr_ppg": round(ppr_ppg, 2),
+            "ppr_total": round(ppr, 1),
+            "yards_per_carry": round(ypc, 2),
+            "yards_per_target": round(ypt, 2),
+            "catch_rate": round(catch_rate, 3),
+            "snap_share": 0.0,          # populated below
+            "avg_off_snap_pct": 0.0,
+            "opportunity_share": target_share,
+            "target_share": round(target_share, 4),
+            "avg_targets": round(targets / max(games, 1), 2),
+            "avg_carries": round(carries / max(games, 1), 2),
+            "avg_receptions": round(receptions / max(games, 1), 2),
+            "avg_rush_yards": round(rush_yards / max(games, 1), 2),
+            "avg_rec_yards": round(rec_yards / max(games, 1), 2),
+            "avg_rush_tds": round(rush_tds / max(games, 1), 3),
+            "avg_rec_tds": round(rec_tds / max(games, 1), 3),
+        }
+
+    # Backfill snap_share via pfr_id → gsis_id mapping
+    # Build reverse: gsis_id → pfr_id from pfr_to_gsis
+    gsis_to_pfr = {v: k for k, v in pfr_to_gsis.items()}
+    for season, season_usage in usage_by_season.items():
+        for gsis_id, entry in season_usage.items():
+            pfr_id = gsis_to_pfr.get(gsis_id)
+            if pfr_id:
+                snap = snap_by_pfr_season.get((pfr_id, season), 0.0)
+                entry["snap_share"] = round(snap, 4)
+                entry["avg_off_snap_pct"] = round(snap, 4)
+
+    total = sum(len(v) for v in usage_by_season.values())
+    print(f"  Usage stats: {total} player-seasons")
+    return usage_by_season
+
+
+# ==============================================================================
+# ROSTER CHANGE DETECTION
+# ==============================================================================
+
+def detect_changes(
+    prev_rosters: dict[str, dict],
+    curr_rosters: dict[str, dict],
+    prev_usage: dict[str, dict],
+    prediction_season: int,
+) -> tuple[dict, dict, dict]:
+    """
+    Compare rosters season-over-season to build competition caches.
+
+    Returns:
+      vacated_cache: {(team, pos) → {targets, carries, snap_share, departed_players}}
+      departures_cache: {(old_team, pos) → [departure_dict, ...]}
+      arrivals_cache:   {(new_team, pos) → [arrival_dict, ...]}
+    """
+    vacated: dict = {}
+    departures: dict = {}
+    arrivals: dict = {}
+
+    # --- Departures and vacated opportunity ---
+    for gsis_id, prev in prev_rosters.items():
+        prev_team = prev["team"]
+        prev_pos = prev["position"]
+        if prev_pos not in POSITIONS or prev_team not in VALID_TEAMS:
+            continue
+
+        curr = curr_rosters.get(gsis_id)
+        curr_team = curr["team"] if curr else None
+
+        if curr_team != prev_team:
+            u = prev_usage.get(gsis_id, {})
+            change_type = "trade" if curr_team in VALID_TEAMS else "free_agent"
+
+            dep = {
+                "player_id": gsis_id,
+                "player_name": prev["name"],
+                "change_type": change_type,
+                "last_season_targets": u.get("targets", 0),
+                "last_season_carries": u.get("carries", 0),
+                "last_season_snap_share": u.get("snap_share", 0.0),
+                "last_season_opportunity_share": u.get("target_share", 0.0),
+            }
+            key = (prev_team, prev_pos)
+            departures.setdefault(key, []).append(dep)
+
+            v = vacated.setdefault(key, {
+                "targets": 0, "carries": 0, "snap_share": 0.0, "departed_players": []
+            })
+            v["targets"] += u.get("targets", 0)
+            v["carries"] += u.get("carries", 0)
+            v["snap_share"] = round(v["snap_share"] + u.get("snap_share", 0.0), 4)
+            v["departed_players"].append({
+                "name": prev["name"],
+                "targets": u.get("targets", 0),
+                "carries": u.get("carries", 0),
+            })
+
+            # Arrival at new team
+            if curr_team and curr_team in VALID_TEAMS:
+                arr = {
+                    "player_id": gsis_id,
+                    "player_name": prev["name"],
+                    "change_type": change_type,
+                    "last_season_targets": u.get("targets", 0),
+                    "last_season_carries": u.get("carries", 0),
+                    "last_season_snap_share": u.get("snap_share", 0.0),
+                    "draft_metadata": None,
+                }
+                arrivals.setdefault((curr_team, prev_pos), []).append(arr)
+
+    # --- Rookie arrivals (appear in curr but not prev) ---
+    for gsis_id, curr in curr_rosters.items():
+        if gsis_id in prev_rosters:
+            continue
+        curr_team = curr["team"]
+        curr_pos = curr["position"]
+        if curr_pos not in POSITIONS or curr_team not in VALID_TEAMS:
+            continue
+
+        draft_num = curr.get("draft_number")
+        is_drafted = draft_num is not None and not (isinstance(draft_num, float) and math.isnan(draft_num))
+        draft_round = _pick_to_round(draft_num) if is_drafted else None
+
+        arr = {
+            "player_id": gsis_id,
+            "player_name": curr["name"],
+            "change_type": "draft" if is_drafted else "free_agent",
+            "last_season_targets": 0,
+            "last_season_carries": 0,
+            "last_season_snap_share": 0.0,
+            "draft_metadata": (
+                {"round": draft_round, "pick": int(draft_num)} if is_drafted else None
+            ),
+        }
+        arrivals.setdefault((curr_team, curr_pos), []).append(arr)
+
+    return vacated, departures, arrivals
+
+
+# ==============================================================================
+# TEAM STATS CACHE
+# ==============================================================================
+
+def build_team_stats_cache(usage_by_gsis: dict[str, dict]) -> dict[str, dict]:
+    """Aggregate per-player weekly stats into per-team offensive environment stats."""
+    team_raw: dict[str, dict] = {}
+    for u in usage_by_gsis.values():
+        team = u["team"]
+        if team not in VALID_TEAMS:
+            continue
+        t = team_raw.setdefault(team, {
+            "pass_attempts": 0, "pass_yards": 0.0, "pass_tds": 0.0,
+            "carries": 0, "rush_yards": 0.0, "rush_tds": 0.0,
+        })
+        t["pass_attempts"] += u.get("pass_attempts", 0)
+        t["pass_yards"] += u.get("pass_yards", 0)
+        t["pass_tds"] += u.get("pass_tds", 0)
+        t["carries"] += u.get("carries", 0)
+        t["rush_yards"] += u.get("rush_yards", 0)
+        t["rush_tds"] += u.get("rush_tds", 0)
+
+    games = 17  # 2021+ season length
+    cache: dict[str, dict] = {}
+    for team, raw in team_raw.items():
+        cache[team] = {
+            "pass_att_pg": round(raw["pass_attempts"] / games, 2),
+            "rush_att_pg": round(raw["carries"] / games, 2),
+            "pass_yds_pg": round(raw["pass_yards"] / games, 2),
+            "rush_yds_pg": round(raw["rush_yards"] / games, 2),
+            "pass_td_pg": round(raw["pass_tds"] / games, 3),
+            "rush_td_pg": round(raw["rush_tds"] / games, 3),
+            "total_plays_pg": round((raw["pass_attempts"] + raw["carries"]) / games, 2),
+            "off_snaps_pg": round((raw["pass_attempts"] + raw["carries"] + 2) / games, 2),
+            "points_pg": 0.0,
+            "red_zone_trips_pg": 3.2,
+            "sacks_allowed_pg": 2.4,
+            "games_tracked": games,
+        }
+    return cache
+
+
+# ==============================================================================
+# ESTABLISHED PRODUCERS
+# ==============================================================================
+
+def compute_established_producers(
+    usage_by_season: dict[int, dict],
+    current_season: int,
+    lookback: int = 5,
+) -> set[str]:
+    """Return GSIS IDs who already had a top-N PPR season — not breakout candidates."""
+    from data_building.breakout_engine.config import (
+        ESTABLISHED_PRODUCER_TOP_N,
+        ESTABLISHED_PRODUCER_MIN_GAMES,
+    )
+
+    established: set[str] = set()
+    for season in range(current_season - lookback, current_season):
+        season_data = usage_by_season.get(season, {})
+        by_pos: dict[str, list] = {}
+        for gsis_id, u in season_data.items():
+            pos = u.get("position", "")
+            if pos not in ESTABLISHED_PRODUCER_TOP_N:
+                continue
+            if u.get("games", 0) < ESTABLISHED_PRODUCER_MIN_GAMES:
+                continue
+            by_pos.setdefault(pos, []).append((gsis_id, u.get("ppr_total", 0.0)))
+
+        for pos, players in by_pos.items():
+            top_n = ESTABLISHED_PRODUCER_TOP_N[pos]
+            players.sort(key=lambda x: -x[1])
+            for gsis_id, _ in players[:top_n]:
+                established.add(gsis_id)
+
+    return established
+
+
+# ==============================================================================
+# SCORE COMPUTATION
+# ==============================================================================
+
+def score_one_player(
+    gsis_id: str,
+    roster_entry: dict,
+    prev_usage: dict,
+    prediction_season: int,
+    as_of_date: date,
+    vacated_cache: dict,
+    departures_cache: dict,
+    arrivals_cache: dict,
+    team_stats_cache: dict,
+) -> Optional[dict]:
+    """
+    Compute all 7 component scores and multitask predictions for one player.
+    Returns a dict ready for save_breakout_scores(), or None to skip.
+    """
+    from data_building.breakout_engine.components import (
+        calculate_opportunity_opened_score,
+        calculate_competition_removed_score,
+        calculate_competition_added_penalty,
+        calculate_team_environment_score,
+        calculate_player_readiness_score,
+        calculate_role_trajectory_score,
+        calculate_confidence_score,
+    )
+    from data_building.breakout_engine.phases import PhaseDetector
+    from data_building.breakout_engine.multitask_predictions import compute_multitask_predictions
+
+    team = roster_entry["team"]
+    position = roster_entry["position"]
+    age = roster_entry.get("age")
+    years_exp = roster_entry.get("years_exp", 0)
+    draft_num = roster_entry.get("draft_number")
+    name = roster_entry.get("name", "Unknown")
+
+    if not team or team not in VALID_TEAMS:
+        return None
+    if position not in POSITIONS:
+        return None
+
+    # Rookie detection: no prior season in nfl_data_py OR years_exp == 0
+    is_rookie = (not prev_usage) or (years_exp == 0)
+
+    draft_round = _pick_to_round(draft_num) if draft_num is not None else None
+    draft_capital = {"round": draft_round} if draft_round is not None else None
+
+    player_metadata = {"age": age, "years_exp": years_exp}
+
+    component_scores: dict[str, float] = {}
+    component_details: dict[str, dict] = {}
+
+    # 1. Opportunity opened
+    s, d = calculate_opportunity_opened_score(
+        gsis_id, team, position, prediction_season,
+        vacated_cache=vacated_cache,
+    )
+    component_scores["opportunity_opened"] = s
+    component_details["opportunity_opened"] = d
+
+    # 2. Competition removed
+    s, d = calculate_competition_removed_score(
+        gsis_id, team, position, prediction_season, prev_usage,
+        departures_cache=departures_cache,
+    )
+    component_scores["competition_removed"] = s
+    component_details["competition_removed"] = d
+
+    # 3. Competition added penalty
+    s, d = calculate_competition_added_penalty(
+        gsis_id, team, position, prediction_season,
+        arrivals_cache=arrivals_cache,
+    )
+    component_scores["competition_added_penalty"] = s
+    component_details["competition_added_penalty"] = d
+
+    # 4. Team environment
+    s, d = calculate_team_environment_score(
+        team, position, prediction_season,
+        team_stats_cache=team_stats_cache,
+    )
+    component_scores["team_environment"] = s
+    component_details["team_environment"] = d
+
+    # 5. Player readiness
+    s, d = calculate_player_readiness_score(
+        gsis_id, position, prediction_season, player_metadata, prev_usage,
+        is_rookie, draft_capital,
+    )
+    component_scores["player_readiness"] = s
+    component_details["player_readiness"] = d
+
+    # 6. Role trajectory (offseason — uses prev_usage, no DB query needed)
+    s, d = calculate_role_trajectory_score(
+        gsis_id, as_of_date,
+        phase=HIST_PHASE,
+        prev_usage=prev_usage,
+        current_team=team,
+        position=position,
+    )
+    component_scores["role_trajectory"] = s
+    component_details["role_trajectory"] = d
+
+    # 7. Confidence
+    snap_share = float(prev_usage.get("snap_share", 0) if prev_usage else 0)
+    games = float(prev_usage.get("games", 0) if prev_usage else 0)
+    if games < 4:
+        usage_variance = 0.75
+    elif snap_share >= 0.80:
+        usage_variance = 0.12
+    elif snap_share >= 0.60:
+        usage_variance = 0.28
+    elif snap_share >= 0.40:
+        usage_variance = 0.45
+    else:
+        usage_variance = 0.65
+
+    dq = {
+        "has_efficiency_data": bool(
+            (prev_usage or {}).get("yards_per_target") or (prev_usage or {}).get("yards_per_carry")
+        ),
+        "has_advanced_metrics": bool(prev_usage),
+        "has_usage_history": games > 0,
+        "usage_variance": usage_variance,
+    }
+    s, d = calculate_confidence_score(gsis_id, prev_usage, HIST_PHASE, dq)
+    component_scores["confidence"] = s
+    component_details["confidence"] = d
+
+    # Aggregate score
+    aggregate = PhaseDetector.calculate_aggregate_score(component_scores, HIST_PHASE)
+
+    # Multitask predictions (skip for rookies)
+    if is_rookie:
+        multitask = {"hit_probability": None, "cumulative_ppr": None, "peak_ppr": None}
+    else:
+        efficiency_metrics = {
+            "yards_per_target": prev_usage.get("yards_per_target"),
+            "yards_per_carry": prev_usage.get("yards_per_carry"),
+            "catch_rate": prev_usage.get("catch_rate"),
+        }
+        multitask = compute_multitask_predictions(
+            position=position,
+            breakout_score=aggregate,
+            readiness_score=component_scores["player_readiness"],
+            confidence_score=component_scores["confidence"],
+            role_trajectory_score=component_scores["role_trajectory"],
+            projected_usage=prev_usage,  # use prior season as proxy for projected
+            efficiency_metrics=efficiency_metrics,
+            prev_usage=prev_usage,
+            age=age,
+        )
+
+    return {
+        "player_id": gsis_id,          # will be replaced by sleeper_id below
+        "player_name": name,
+        "season": prediction_season,
+        "as_of_date": str(as_of_date),
+        "team": team,
+        "position": position,
+        "opportunity_opened_score": round(component_scores["opportunity_opened"], 1),
+        "competition_removed_score": round(component_scores["competition_removed"], 1),
+        "competition_added_penalty": round(component_scores["competition_added_penalty"], 1),
+        "team_environment_score": round(component_scores["team_environment"], 1),
+        "player_readiness_score": round(component_scores["player_readiness"], 1),
+        "role_trajectory_score": round(component_scores["role_trajectory"], 1),
+        "confidence_score": round(component_scores["confidence"], 1),
+        "breakout_opportunity_score": round(aggregate, 1),
+        "phase": HIST_PHASE,
+        "directional_trend": "neutral",
+        "key_reasons": "",
+        "recent_transactions_affecting_player": "",
+        "vacated_usage_summary": "",
+        "added_competition_summary": "",
+        "projected_role_tag": "",
+        "component_details": json.dumps(component_details),
+        "hit_probability": (
+            round(multitask["hit_probability"], 3) if multitask["hit_probability"] is not None else None
+        ),
+        "cumulative_ppr": (
+            round(multitask["cumulative_ppr"], 1) if multitask["cumulative_ppr"] is not None else None
+        ),
+        "peak_ppr": (
+            round(multitask["peak_ppr"], 1) if multitask["peak_ppr"] is not None else None
+        ),
+    }
+
+
+# ==============================================================================
+# MAIN PIPELINE
+# ==============================================================================
+
+def build_season(
+    prediction_season: int,
+    rosters_by_season: dict,
+    usage_by_season: dict,
+    gsis_to_sleeper: dict,
+    min_score: float = 30.0,
+    dry_run: bool = False,
+) -> int:
+    """Generate and save historical breakout scores for one prediction season."""
+    prior_season = prediction_season - 1
+    as_of_date = date(prediction_season, 3, 1)
+
+    print(f"\n--- Season {prediction_season} (using {prior_season} stats, as_of {as_of_date}) ---")
+
+    curr_rosters = rosters_by_season.get(prediction_season, {})
+    prev_rosters = rosters_by_season.get(prior_season, {})
+    prior_usage = usage_by_season.get(prior_season, {})
+    curr_usage = usage_by_season.get(prediction_season, {})  # noqa: unused here
+
+    if not curr_rosters:
+        print(f"  No roster data for {prediction_season} — skipping")
+        return 0
+
+    print(f"  {len(curr_rosters)} players in {prediction_season} rosters, "
+          f"{len(prev_rosters)} in {prior_season} rosters")
+
+    # Build caches
+    print("  Detecting roster changes...")
+    vacated_cache, departures_cache, arrivals_cache = detect_changes(
+        prev_rosters, curr_rosters, prior_usage, prediction_season
+    )
+    dep_count = sum(len(v) for v in departures_cache.values())
+    arr_count = sum(len(v) for v in arrivals_cache.values())
+    print(f"  {len(vacated_cache)} vacated slots, {dep_count} departures, {arr_count} arrivals")
+
+    print("  Building team stats cache...")
+    team_stats_cache = build_team_stats_cache(prior_usage)
+
+    # Established producer filter
+    established_gsis = compute_established_producers(usage_by_season, prediction_season)
+    print(f"  {len(established_gsis)} established producers excluded")
+
+    # Score each eligible player
+    scored: list[dict] = []
+    skipped_established = skipped_no_id = skipped_low = 0
+
+    for gsis_id, roster_entry in curr_rosters.items():
+        if roster_entry["position"] not in POSITIONS:
+            continue
+        if roster_entry["team"] not in VALID_TEAMS:
+            continue
+        if roster_entry.get("age") is None:
+            continue
+        if gsis_id in established_gsis:
+            skipped_established += 1
+            continue
+
+        sleeper_id = gsis_to_sleeper.get(gsis_id)
+        if not sleeper_id:
+            skipped_no_id += 1
+            continue
+
+        prev_usage = prior_usage.get(gsis_id, {})
+
+        result = score_one_player(
+            gsis_id=gsis_id,
+            roster_entry=roster_entry,
+            prev_usage=prev_usage,
+            prediction_season=prediction_season,
+            as_of_date=as_of_date,
+            vacated_cache=vacated_cache,
+            departures_cache=departures_cache,
+            arrivals_cache=arrivals_cache,
+            team_stats_cache=team_stats_cache,
+        )
+        if result is None:
+            continue
+
+        if result["breakout_opportunity_score"] < min_score:
+            skipped_low += 1
+            continue
+
+        # Replace GSIS ID with Sleeper ID for DB storage
+        result["player_id"] = sleeper_id
+        scored.append(result)
+
+    print(f"  {len(scored)} candidates (score>={min_score:.0f}) | "
+          f"skipped: {skipped_established} established, "
+          f"{skipped_no_id} no sleeper ID, {skipped_low} low score")
+
+    if not scored:
+        print("  Nothing to save.")
+        return 0
+
+    if dry_run:
+        print(f"  [dry-run] Would save {len(scored)} rows to DB")
+        # Show top 10
+        scored.sort(key=lambda x: -x["breakout_opportunity_score"])
+        print(f"  Top candidates:")
+        for r in scored[:10]:
+            if r["hit_probability"] is not None:
+                suffix = f"hit_prob={r['hit_probability']:.0%}"
+            else:
+                suffix = "rookie"
+            print(f"    {r['player_name']:<22} {r['position']} {r['team']:<4} "
+                  f"score={r['breakout_opportunity_score']:.0f}  {suffix}")
+        return len(scored)
+
+    from data_building.breakout_engine.db_helpers import save_breakout_scores
+    n_saved = save_breakout_scores(scored)
+    print(f"  Saved {n_saved} rows to DB")
+    return n_saved
+
+
+def run(seasons: list[int], min_score: float = 30.0, dry_run: bool = False) -> None:
+    # We need rosters for prediction seasons AND their prior seasons
+    all_roster_seasons = sorted(set(seasons) | {s - 1 for s in seasons})
+    all_usage_seasons = all_roster_seasons  # same range
+
+    print("=== Historical Breakout Score Builder ===")
+    print(f"Prediction seasons: {seasons}")
+    print(f"Fetching roster data for seasons: {all_roster_seasons}")
+    print()
+
+    rosters_by_season, gsis_to_sleeper, pfr_to_gsis = load_rosters(all_roster_seasons)
+    usage_by_season = load_usage_stats(all_usage_seasons, pfr_to_gsis)
+
+    total_saved = 0
+    for season in sorted(seasons):
+        n = build_season(
+            prediction_season=season,
+            rosters_by_season=rosters_by_season,
+            usage_by_season=usage_by_season,
+            gsis_to_sleeper=gsis_to_sleeper,
+            min_score=min_score,
+            dry_run=dry_run,
+        )
+        total_saved += n
+
+    print(f"\n=== Done: {total_saved} total rows {'(dry-run)' if dry_run else 'saved'} ===")
+    if not dry_run:
+        print(
+            "Run backtest_multitask.py --season <N> to evaluate predictions "
+            "against actual outcomes."
+        )
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Build historical breakout scores for backtesting")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--season", type=int, help="Single prediction season (e.g. 2023)")
+    group.add_argument("--seasons", type=int, nargs="+", default=[2022, 2023],
+                       help="One or more prediction seasons (default: 2022 2023)")
+    parser.add_argument("--min-score", type=float, default=30.0,
+                        help="Minimum breakout score to save (default: 30)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Compute scores but do not write to DB")
+    args = parser.parse_args()
+
+    target_seasons = [args.season] if args.season else args.seasons
+    run(target_seasons, min_score=args.min_score, dry_run=args.dry_run)
