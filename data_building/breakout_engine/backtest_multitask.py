@@ -167,18 +167,24 @@ def calibration_report(predictions: list[tuple[float, bool]]) -> None:
         print(f"  {label:<10} {pred_mid:>9.0%} {actual:>9.0%} {len(vals):>6}  {delta:>+.0%}{flag}")
 
 
-def ppr_accuracy_report(pairs: list[tuple[float, float]], label: str) -> None:
-    """Print MAE and within-20% rate for a PPR prediction."""
+def ppr_accuracy_report(pairs: list[tuple[float, float, float]], label: str) -> None:
+    """
+    Print accuracy report comparing predicted vs actual PPG.
+    pairs: list of (predicted_ppg, actual_ppg, actual_games)
+    Primary metric: within ±10% of actual PPG.
+    """
     if not pairs:
         return
-    errors = [abs(pred - actual) for pred, actual in pairs]
-    pcts = [abs(pred - actual) / max(actual, 1) for pred, actual in pairs]
-    within20 = sum(1 for p in pcts if p <= 0.20) / len(pcts)
+    errors = [abs(pred - actual) for pred, actual, _ in pairs]
+    within10 = sum(1 for pred, actual, _ in pairs if abs(pred - actual) / max(actual, 0.1) <= 0.10) / len(pairs)
+    within20 = sum(1 for pred, actual, _ in pairs if abs(pred - actual) / max(actual, 0.1) <= 0.20) / len(pairs)
+    mean_pred = sum(p for p, _, _ in pairs) / len(pairs)
+    mean_actual = sum(a for _, a, _ in pairs) / len(pairs)
     print(f"\n  {label}:")
-    print(f"    N={len(pairs)}, MAE={sum(errors)/len(errors):.1f} pts, "
-          f"within 20%: {within20:.0%}, "
-          f"mean predicted: {sum(p for p,_ in pairs)/len(pairs):.0f}, "
-          f"mean actual: {sum(a for _,a in pairs)/len(pairs):.0f}")
+    print(f"    N={len(pairs)}, MAE={sum(errors)/len(errors):.2f} ppg, "
+          f"within ±10%: {within10:.0%},  within ±20%: {within20:.0%}")
+    print(f"    mean predicted: {mean_pred:.1f} ppg,  mean actual: {mean_actual:.1f} ppg  "
+          f"(bias: {mean_pred - mean_actual:+.1f})")
 
 
 def run_backtest(season: int, min_score: float = 0.0, verbose: bool = False) -> None:
@@ -209,7 +215,8 @@ def run_backtest(season: int, min_score: float = 0.0, verbose: bool = False) -> 
 
     # Reconstruct predictions and pair with outcomes
     hit_pairs: list[tuple[float, bool]] = []
-    ppr_pairs_season1: list[tuple[float, float]] = []
+    # tuples of (predicted_ppg, actual_ppg, actual_games)
+    ppg_pairs: list[tuple[float, float, float]] = []
     missed: list[str] = []
 
     for row in candidates:
@@ -226,17 +233,21 @@ def run_backtest(season: int, min_score: float = 0.0, verbose: bool = False) -> 
             hit_pairs.append((hit_prob, pid in top12))
 
         cum_ppr = mt["cumulative_ppr"]
-        actual_ppr = actual["total_ppr"]
-        if cum_ppr is not None and actual_ppr > 0:
-            # cumulative_ppr = 2 seasons; compare season-1 portion (cum / 2 * 2.0 factor)
-            ppr_pairs_season1.append((cum_ppr / 2.0, actual_ppr))
+        actual_ppg = actual["ppr_ppg"]
+        actual_games = float(actual["games"])
+        if cum_ppr is not None and actual_ppg > 0:
+            # Convert cumulative 2-season estimate → per-game PPG for season 1.
+            # Assume a 17-game season; cumulative / 2 gives season-1 total.
+            predicted_ppg = (cum_ppr / 2.0) / 17.0
+            ppg_pairs.append((predicted_ppg, actual_ppg, actual_games))
 
         if verbose and hit_prob is not None:
             hit_flag = "✓" if pid in top12 else "✗"
+            pred_ppg = (cum_ppr / 2.0 / 17.0) if cum_ppr else 0
             print(f"  {hit_flag} {row.get('player_name','?'):<22} "
                   f"score={float(row.get('breakout_opportunity_score',0)):.0f}  "
                   f"hit_prob={hit_prob:.0%}  "
-                  f"pred_ppr={cum_ppr/2:.0f}  actual_ppr={actual_ppr:.0f}")
+                  f"pred_ppg={pred_ppg:.1f}  actual_ppg={actual_ppg:.1f}")
 
     if not hit_pairs:
         print("\n  No matched players with outcomes — check that the outcome season has data.")
@@ -251,8 +262,8 @@ def run_backtest(season: int, min_score: float = 0.0, verbose: bool = False) -> 
 
     calibration_report(hit_pairs)
 
-    # --- PPR accuracy ---
-    ppr_accuracy_report(ppr_pairs_season1, "Season-1 PPR accuracy (predicted cum/2 vs actual)")
+    # --- PPG accuracy ---
+    ppr_accuracy_report(ppg_pairs, "Season-1 PPG accuracy (predicted vs actual PPG)")
 
     print()
 
