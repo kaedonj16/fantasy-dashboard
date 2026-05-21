@@ -12212,14 +12212,31 @@ def api_league_players():
             str(p.get("id") or "") for p in model_value_table
             if str(p.get("position") or "").upper() == "PICK"
         }
+        # Track which (year, round) combos already have specific slot picks in the DB
+        # so we can suppress bucket picks (Early/Mid/Late) for those rounds.
+        _slot_yr_rnd: set = set()
+        _bucket_keywords = {"early", "mid", "late"}
+        for _pid in _db_pick_ids:
+            _pp = _pid.split("_")
+            if len(_pp) >= 3 and _pp[2].lower() not in _bucket_keywords:
+                try:
+                    int(_pp[2])  # slot picks have a numeric third segment
+                    _slot_yr_rnd.add((_pp[0], _pp[1]))
+                except ValueError:
+                    pass
+
         _injected_picks = []
         _seen_ids: set = set(_db_pick_ids)
         for _pk_id, _pk_val in _pick_values.items():
             if _pk_id in _seen_ids or float(_pk_val) <= 0:
                 continue
-            _seen_ids.add(_pk_id)
-            # Format display name: "2026_1_01" → "2026 1.01", "2026_1_early" → "2026 1st (Early)"
             _parts = _pk_id.split("_")
+            # Skip bucket picks (Early/Mid/Late) when slot picks exist for that year+round
+            if len(_parts) >= 3 and _parts[2].lower() in _bucket_keywords:
+                if (_parts[0], _parts[1]) in _slot_yr_rnd:
+                    continue
+            _seen_ids.add(_pk_id)
+            # Format display name: "2026_1_01" -> "2026 1.01", "2026_1_early" -> "2026 1st (Early)"
             if len(_parts) >= 3:
                 _yr, _rnd_s, _third = _parts[0], _parts[1], "_".join(_parts[2:])
                 try:
