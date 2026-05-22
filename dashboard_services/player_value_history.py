@@ -539,6 +539,7 @@ def load_calibration_overrides() -> dict[str, dict]:
             rows = conn.execute(
                 """
                 SELECT player_id,
+                       position,
                        CASE
                            WHEN value_1qb > 0 AND calibrated_value_1qb > value_1qb * 1.5 THEN value_1qb
                            WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_1qb > 100   THEN value_1qb
@@ -548,7 +549,7 @@ def load_calibration_overrides() -> dict[str, dict]:
                            WHEN value_1qb > 0 AND calibrated_value_sf > value_1qb * 1.5 THEN COALESCE(value_sf, value_1qb)
                            WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_sf > 100    THEN COALESCE(value_sf, value_1qb)
                            ELSE COALESCE(calibrated_value_sf, calibrated_value_1qb)
-                       END AS sf_value,
+                       END AS sf_value_raw,
                        calibrated_value_8,   calibrated_sf_value_8,
                        calibrated_value_12,  calibrated_sf_value_12,
                        calibrated_value_14,  calibrated_sf_value_14
@@ -560,12 +561,18 @@ def load_calibration_overrides() -> dict[str, dict]:
             result: dict[str, dict] = {}
             for r in rows:
                 val    = r["value"]
-                sf_val = r["sf_value"]
+                sf_val = r["sf_value_raw"]
                 if val is None:
                     continue
+                val_f  = float(val)
+                # Non-QB players don't gain value in SF — cap sf at 1QB value
+                is_qb  = str(r["position"] or "").upper() == "QB"
+                sf_f   = float(sf_val) if sf_val is not None else val_f
+                if not is_qb:
+                    sf_f = min(sf_f, val_f)
                 d: dict = {
-                    "value":    float(val),
-                    "sf_value": float(sf_val) if sf_val is not None else float(val),
+                    "value":    val_f,
+                    "sf_value": sf_f,
                 }
                 for sz in (8, 12, 14):
                     v  = r[f"calibrated_value_{sz}"]
