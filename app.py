@@ -4123,7 +4123,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             continue
         pid = str(row.get("id") or "")
         pos = str(row.get("position") or row.get("pos") or "").upper()
+        team = str(row.get("team") or players_index.get(pid, {}).get("team") or "").strip().upper()
         if not pid or pid in rostered_ids:
+            continue
+        if team in ("", "FA", "FREE AGENT"):
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
@@ -7713,7 +7716,10 @@ def api_waiver_candidates():
             continue
         pid = str(row.get("id") or "")
         pos = str(row.get("position") or row.get("pos") or "").upper()
+        team = str(row.get("team") or players_index.get(pid, {}).get("team") or "").strip().upper()
         if not pid or pid in rostered_ids:
+            continue
+        if team in ("", "FA", "FREE AGENT"):
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
@@ -9910,7 +9916,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
           if (score < 30) scoreColor = '#6b7280'; // gray (<30)
 
           html += `
-            <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '', {{tab:'breakout'}})">
+            <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + name + `', {{tab:'breakout'}})">
               <div class="breakout-card-header">
                 <div>
                   <div class="breakout-player-name">` + name + `</div>
