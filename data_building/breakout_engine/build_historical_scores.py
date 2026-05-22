@@ -146,6 +146,32 @@ def load_rosters(seasons: list[int]) -> tuple[dict[int, dict[str, dict]], dict[s
         rosters_by_season.setdefault(season, {})[gsis_id] = entry
 
     print(f"  Rosters: {sum(len(v) for v in rosters_by_season.values())} records across {len(seasons)} seasons")
+
+    # Apply manual roster overrides (transactions not yet in nfl_data_py).
+    # Files: cache/roster_overrides_{season}.json — one JSON array per target season.
+    for season in seasons:
+        override_path = Path("cache") / f"roster_overrides_{season}.json"
+        if not override_path.exists():
+            continue
+        with open(override_path) as _f:
+            overrides = json.load(_f)
+        season_rosters = rosters_by_season.get(season, {})
+        applied = 0
+        for ov in overrides:
+            if ov.get("_note"):
+                pass  # comment field, skip
+            gsis_id  = ov.get("player_id")
+            to_team  = ov.get("to_team")
+            if not gsis_id or not to_team:
+                continue
+            if gsis_id in season_rosters:
+                old_team = season_rosters[gsis_id]["team"]
+                season_rosters[gsis_id]["team"] = to_team
+                print(f"  Override: {ov.get('player_name', gsis_id)} {old_team}→{to_team} ({season})")
+                applied += 1
+        if applied:
+            print(f"  Applied {applied} roster override(s) for {season}")
+
     return rosters_by_season, gsis_to_sleeper, pfr_to_gsis
 
 
@@ -415,18 +441,40 @@ def detect_changes(
     curr_rosters: dict[str, dict],
     prev_usage: dict[str, dict],
     prediction_season: int,
-) -> tuple[dict, dict, dict]:
+) -> tuple[dict, dict, dict, dict]:
     """
     Compare rosters season-over-season to build competition caches.
 
     Returns:
-      vacated_cache: {(team, pos) → {targets, carries, snap_share, departed_players}}
-      departures_cache: {(old_team, pos) → [departure_dict, ...]}
-      arrivals_cache:   {(new_team, pos) → [arrival_dict, ...]}
+      vacated_cache:     {(team, pos) → {targets, carries, snap_share, departed_players}}
+      departures_cache:  {(old_team, pos) → [departure_dict, ...]}
+      arrivals_cache:    {(new_team, pos) → [arrival_dict, ...]}
+      incumbents_cache:  {(team, pos) → [incumbent_dict, ...]}
+        Incumbents are players who STAYED at their team.  Used so that a
+        player newly arriving at a team can see their existing teammates as
+        competition (the standard arrivals_cache only contains movers, so an
+        arriving player would otherwise not see the incumbents as threats).
     """
     vacated: dict = {}
     departures: dict = {}
     arrivals: dict = {}
+    incumbents: dict = {}
+
+    def _usage_arrival_dict(gsis_id, name, change_type, u, draft_metadata=None) -> dict:
+        ppr_total = float(u.get("ppr_total") or 0) or round(
+            float(u.get("ppr_ppg") or 0) * max(int(u.get("games") or 0), 1), 1
+        )
+        return {
+            "player_id": gsis_id,
+            "player_name": name,
+            "change_type": change_type,
+            "last_season_targets": u.get("targets", 0),
+            "last_season_carries": u.get("carries", 0),
+            "last_season_snap_share": u.get("snap_share", 0.0),
+            "last_season_pass_attempts": u.get("pass_attempts", 0),
+            "last_season_fantasy_points": ppr_total,
+            "draft_metadata": draft_metadata,
+        }
 
     # --- Departures and vacated opportunity ---
     for gsis_id, prev in prev_rosters.items():
@@ -468,15 +516,7 @@ def detect_changes(
 
             # Arrival at new team
             if curr_team and curr_team in VALID_TEAMS:
-                arr = {
-                    "player_id": gsis_id,
-                    "player_name": prev["name"],
-                    "change_type": change_type,
-                    "last_season_targets": u.get("targets", 0),
-                    "last_season_carries": u.get("carries", 0),
-                    "last_season_snap_share": u.get("snap_share", 0.0),
-                    "draft_metadata": None,
-                }
+                arr = _usage_arrival_dict(gsis_id, prev["name"], change_type, u)
                 arrivals.setdefault((curr_team, prev_pos), []).append(arr)
 
     # --- Rookie arrivals (appear in curr but not prev) ---
@@ -491,21 +531,29 @@ def detect_changes(
         draft_num = curr.get("draft_number")
         is_drafted = draft_num is not None and not (isinstance(draft_num, float) and math.isnan(draft_num))
         draft_round = _pick_to_round(draft_num) if is_drafted else None
+        draft_meta = {"round": draft_round, "pick": int(draft_num)} if is_drafted else None
 
-        arr = {
-            "player_id": gsis_id,
-            "player_name": curr["name"],
-            "change_type": "draft" if is_drafted else "free_agent",
-            "last_season_targets": 0,
-            "last_season_carries": 0,
-            "last_season_snap_share": 0.0,
-            "draft_metadata": (
-                {"round": draft_round, "pick": int(draft_num)} if is_drafted else None
-            ),
-        }
+        arr = _usage_arrival_dict(gsis_id, curr["name"],
+                                  "draft" if is_drafted else "free_agent",
+                                  {}, draft_meta)
         arrivals.setdefault((curr_team, curr_pos), []).append(arr)
 
-    return vacated, departures, arrivals
+    # --- Incumbents: players who STAYED at their team ---
+    # Stored separately so arriving players can see existing teammates as
+    # competition without double-counting for players who were already there.
+    for gsis_id, prev in prev_rosters.items():
+        prev_team = prev["team"]
+        prev_pos  = prev["position"]
+        if prev_pos not in POSITIONS or prev_team not in VALID_TEAMS:
+            continue
+        curr = curr_rosters.get(gsis_id)
+        if not curr or curr["team"] != prev_team:
+            continue  # Departed — already handled above
+        u = prev_usage.get(gsis_id, {})
+        inc = _usage_arrival_dict(gsis_id, prev["name"], "incumbent", u)
+        incumbents.setdefault((prev_team, prev_pos), []).append(inc)
+
+    return vacated, departures, arrivals, incumbents
 
 
 # ==============================================================================
@@ -635,10 +683,54 @@ def _compute_projected_usage(
     prev_carries    = float((prev_usage or {}).get("carries", 0))
     prev_snap_share = float((prev_usage or {}).get("snap_share", 0))
 
+    proj_targets    = prev_targets    + vac_targets * opp_share
+    proj_carries    = prev_carries    + vac_carries * opp_share
+    proj_snap       = min(prev_snap_share + vac_snaps * opp_share, 0.95)
+
+    # Competition reduction: shrink projected usage when a significant threat
+    # arrives.  QB starters who become backups see the largest cuts; RB
+    # committee partners and WR/TE role competitors see smaller reductions.
+    comp = component_details.get("competition_added_penalty", {})
+    threats = comp.get("threats_added", [])
+    if threats:
+        total_threat = sum(float(t.get("threat_score", 0)) for t in threats)
+
+        if position == "QB":
+            if total_threat >= 0.55:
+                reduction = 0.70   # Clearly relegated to backup
+            elif total_threat >= 0.38:
+                reduction = 0.45   # Genuine QB battle
+            elif total_threat >= 0.22:
+                reduction = 0.20   # Rotation / depth risk
+            else:
+                reduction = 0.0
+        elif position == "RB":
+            if total_threat >= 0.55:
+                reduction = 0.35   # True committee — both backs split evenly
+            elif total_threat >= 0.38:
+                reduction = 0.22   # Real challenger, modest split
+            else:
+                reduction = 0.0
+        else:  # WR / TE
+            if total_threat >= 0.50:
+                reduction = 0.22   # Clear starter arriving (e.g. established TE traded in)
+            elif total_threat >= 0.35:
+                reduction = 0.14   # Real role competitor
+            else:
+                reduction = 0.0
+
+        if reduction > 0:
+            proj_targets = proj_targets * (1 - reduction)
+            proj_carries = proj_carries * (1 - reduction)
+            proj_snap    = proj_snap    * (1 - reduction)
+
     return {
-        "targets":    prev_targets  + vac_targets * opp_share,
-        "carries":    prev_carries  + vac_carries * opp_share,
-        "snap_share": min(prev_snap_share + vac_snaps * opp_share, 0.95),
+        "targets":    proj_targets,
+        "carries":    proj_carries,
+        "snap_share": min(proj_snap, 0.95),
+        # Expose total threat so compute_multitask_predictions can skip the
+        # prior-PPG floor when genuine competition is present.
+        "_competition_threat": sum(float(t.get("threat_score", 0)) for t in threats) if threats else 0.0,
     }
 
 
@@ -652,6 +744,7 @@ def score_one_player(
     departures_cache: dict,
     arrivals_cache: dict,
     team_stats_cache: dict,
+    incumbents_cache: dict | None = None,
 ) -> Optional[dict]:
     """
     Compute all 7 component scores and multitask predictions for one player.
@@ -709,9 +802,26 @@ def score_one_player(
     component_details["competition_removed"] = d
 
     # 3. Competition added penalty
+    # If this player is themselves an arrival at this team (they moved here from
+    # somewhere else), they also need to see the existing incumbents as competition.
+    # Build a merged cache that combines new arrivals + existing teammates.
+    is_arrival = any(
+        a["player_id"] == gsis_id
+        for a in arrivals_cache.get((team, position), [])
+    )
+    if is_arrival and incumbents_cache:
+        merged_arrivals = dict(arrivals_cache)
+        key = (team, position)
+        merged_arrivals[key] = (
+            arrivals_cache.get(key, []) + incumbents_cache.get(key, [])
+        )
+        comp_cache = merged_arrivals
+    else:
+        comp_cache = arrivals_cache
+
     s, d = calculate_competition_added_penalty(
         gsis_id, team, position, prediction_season,
-        arrivals_cache=arrivals_cache,
+        arrivals_cache=comp_cache,
     )
     component_scores["competition_added_penalty"] = s
     component_details["competition_added_penalty"] = d
@@ -781,8 +891,10 @@ def score_one_player(
             "yards_per_carry": prev_usage.get("yards_per_carry"),
             "catch_rate": prev_usage.get("catch_rate"),
         }
-        # Project usage forward: prior stats + expected share of vacated opportunity
+        # Project usage forward: prior stats + expected share of vacated opportunity,
+        # minus any reduction from added competition.
         projected_usage = _compute_projected_usage(position, prev_usage, component_details)
+        competition_threat = projected_usage.pop("_competition_threat", 0.0)
         multitask = compute_multitask_predictions(
             position=position,
             breakout_score=aggregate,
@@ -793,6 +905,7 @@ def score_one_player(
             efficiency_metrics=efficiency_metrics,
             prev_usage=prev_usage,
             age=age,
+            competition_threat=competition_threat,
         )
 
     return {
@@ -875,7 +988,7 @@ def build_season(
 
     # Build competition/opportunity caches from stats_season → target_season changes
     print("  Detecting roster changes...")
-    vacated_cache, departures_cache, arrivals_cache = detect_changes(
+    vacated_cache, departures_cache, arrivals_cache, incumbents_cache = detect_changes(
         prev_rosters, curr_rosters, prior_usage, prediction_season
     )
     dep_count = sum(len(v) for v in departures_cache.values())
@@ -931,6 +1044,7 @@ def build_season(
             departures_cache=departures_cache,
             arrivals_cache=arrivals_cache,
             team_stats_cache=team_stats_cache,
+            incumbents_cache=incumbents_cache,
         )
         if result is None:
             continue
