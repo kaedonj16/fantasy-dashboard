@@ -6321,7 +6321,7 @@ function _buildStatsHTML(game_logs_by_year) {
         const s = stats || {};
 
         const ptsCell = isBye
-          ? '<span style="color:#9ca3af;font-style:italic;">BYE</span>'
+          ? '-'
           : hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '-') : '<span style="color:#9ca3af;">DNP</span>';
 
         statsHTML += `
