@@ -4501,7 +4501,7 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         if not isinstance(p, dict):
             continue
         pos = (p.get("position") or "").upper()
-        if pos in ("K", "DEF"):
+        if pos in ("K", "DEF", "PICK"):  # exclude picks — their values are uncorrected and distort gap analysis
             continue
         v = float(p.get(primary) or p.get("value") or 0)
         if v >= 5:
