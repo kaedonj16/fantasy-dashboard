@@ -31,8 +31,70 @@ import math
 from collections import defaultdict
 
 from dashboard_services.db import get_conn
+from utils.paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
+
+
+def _load_external_market_values() -> dict[str, float]:
+    """
+    Load FC + DP values, normalize both to 0–999.9 scale, and return a
+    {player_id/sleeper_id: value} map.  Used as a market anchor for Case 3
+    (model_only) players who lack enough trade data.
+
+    FC is preferred over DP when both cover the same player.  Players absent
+    from both are not included (caller handles the no-coverage case).
+    """
+    result: dict[str, float] = {}
+
+    # --- FantasyCalc (sleeper_id keyed) ---
+    try:
+        import pandas as pd
+        fc_path = DATA_DIR / "fantasycalc_api_values.csv"
+        if fc_path.exists():
+            fc = pd.read_csv(fc_path)
+            non_picks = fc[~fc["name"].str.contains("Pick|1st|2nd|3rd|4th", na=False)]
+            fc_top = float(non_picks["value"].max())
+            if fc_top > 0:
+                ratio = 999.9 / fc_top
+                for _, row in non_picks.iterrows():
+                    sid = str(row.get("sleeper_id") or "").strip()
+                    val = float(row.get("value") or 0)
+                    if sid and val > 0:
+                        result[sid] = round(val * ratio, 1)
+    except Exception:
+        pass
+
+    # --- DynastyProcess (name-matched, fills gaps not in FC) ---
+    try:
+        import pandas as pd
+        dp_path = DATA_DIR / "dynastyprocess_values.csv"
+        if dp_path.exists():
+            dp = pd.read_csv(dp_path)
+            dp_top = float(dp["value_1qb"].max())
+            if dp_top > 0:
+                ratio = 999.9 / dp_top
+                # Build name→sleeper_id from player_values via DB
+                with get_conn() as conn:
+                    id_rows = conn.execute(
+                        "SELECT player_id, search_name FROM player_values WHERE search_name IS NOT NULL"
+                    ).fetchall()
+                name_to_id = {str(r["search_name"]).lower().strip(): str(r["player_id"]) for r in id_rows}
+                for _, row in dp.iterrows():
+                    pname = str(row.get("player") or "").lower().strip()
+                    # Normalize to match search_name format (letters/digits/spaces only)
+                    import re as _re
+                    pname_norm = _re.sub(r"[^a-z0-9 ]", "", pname).strip()
+                    val = float(row.get("value_1qb") or 0)
+                    if not pname_norm or val <= 0:
+                        continue
+                    pid = name_to_id.get(pname_norm) or name_to_id.get(pname)
+                    if pid and pid not in result:
+                        result[pid] = round(val * ratio, 1)
+    except Exception:
+        pass
+
+    return result
 
 MAX_BLEND                   = 0.65   # never more than 65% market influence
 MIN_TRADES_FOR_SIGNAL       = 20     # below this = model only
@@ -242,6 +304,7 @@ def _calibrate_one(
     years_exp: int | None,
     market: dict | None,
     tier_ratios: dict[tuple, float],
+    ext_market: dict[str, float] | None = None,
 ) -> dict:
     is_rookie   = years_exp is None or int(years_exp) == 0
     trade_count = (market or {}).get("trade_count", 0)
@@ -276,10 +339,27 @@ def _calibrate_one(
                 "calibration_source":   "tier_anchor",
             }
 
-    # ── Case 3: No market data - pass through unchanged ───────────────────
+    # ── Case 3: No trade data - anchor to external market (FC/DP) ────────
+    # The engine model can overrate players absent from trade history,
+    # especially those dropped from FantasyCalc (market has given up on them).
+    # Use FC-normalized value when available; DP-normalized as fallback;
+    # apply a 50% discount when neither covers the player.
+    ext_val = (ext_market or {}).get(pid)
+    if ext_val is not None:
+        cal_1qb = round(ext_val, 2)
+        # SF: scale by the same model SF/1QB ratio to preserve positional spread
+        sf_ratio = (model_sf / model_1qb) if model_1qb > 0 else 1.0
+        cal_sf   = round(ext_val * sf_ratio, 2)
+        return {
+            "calibrated_value_1qb": max(0.0, cal_1qb),
+            "calibrated_value_sf":  max(0.0, cal_sf),
+            "calibration_weight":   0.0,
+            "calibration_source":   "ext_market",
+        }
+    # No FC, no DP, no trades - discount engine value heavily to prevent inflation
     return {
-        "calibrated_value_1qb": round(model_1qb, 2),
-        "calibrated_value_sf":  round(model_sf,  2),
+        "calibrated_value_1qb": round(model_1qb * 0.5, 2),
+        "calibrated_value_sf":  round(model_sf  * 0.5, 2),
         "calibration_weight":   0.0,
         "calibration_source":   "model_only",
     }
@@ -338,8 +418,9 @@ def run_calibration(season: int | None = None) -> dict:
                 season = 2024
 
     logger.info("[calibration] Loading data for season %d...", season)
-    model_rows = _load_model_values(season)
-    market_map = _load_market_values(season)
+    model_rows  = _load_model_values(season)
+    market_map  = _load_market_values(season)
+    ext_market  = _load_external_market_values()
     logger.info(
         "[calibration] %d players in model, %d with market data",
         len(model_rows), len(market_map)
@@ -399,7 +480,7 @@ def run_calibration(season: int | None = None) -> dict:
         yexp   = row["years_exp"]
         market = market_map.get(pid)
 
-        result             = _calibrate_one(pid, pos, m1qb, msf, yexp, market, tier_ratios)
+        result             = _calibrate_one(pid, pos, m1qb, msf, yexp, market, tier_ratios, ext_market)
         result["player_id"] = pid
         out_rows.append(result)
         counts[result["calibration_source"]] += 1
