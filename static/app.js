@@ -6311,19 +6311,24 @@ function _buildStatsHTML(game_logs_by_year) {
         }
 
         // Check if player has any stats at all
-        const hasAnyStats = stats != null && (
+        const isBye = game.is_bye === true;
+        const hasAnyStats = !isBye && stats != null && (
           stats.pass_yd != null || stats.rush_att != null ||
           stats.rec != null || stats.rec_tgt != null);
 
         const val = (v) => v != null && v > 0 ? v : '-';
-        const rowClass = hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
+        const rowClass = isBye ? 'game-log-table-row game-log-bye' : hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
         const s = stats || {};
+
+        const ptsCell = isBye
+          ? '<span style="color:#9ca3af;font-style:italic;">BYE</span>'
+          : hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '-') : '<span style="color:#9ca3af;">DNP</span>';
 
         statsHTML += `
           <tr class="${rowClass}">
             <td>${dateStr}</td>
             <td class="game-log-table-opp">${game.opponent || '-'}</td>
-            <td class="game-log-table-pts">${hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '-') : '<span style="color:#9ca3af;">DNP</span>'}</td>
+            <td class="game-log-table-pts">${ptsCell}</td>
             <td>${val(s.pass_yd) !== '-' ? Math.round(s.pass_yd) : '-'}</td>
             <td>${val(s.pass_td)}</td>
             <td>${val(s.pass_int)}</td>
