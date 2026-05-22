@@ -13837,10 +13837,12 @@ def api_player_details(player_id: str):
         # Compute PPG and positional scoring rank from usage cache
         _ppg = None
         _ppg_rank = None
+        _ppg_ovr_rank = None
         _ppg_games = None
         _ppg_season_used = None
         _total_pts = None
         _total_pts_rank = None
+        _total_pts_ovr_rank = None
         try:
             import os as _os, json as _json2
             _ppr_val = scoring_settings.get("pointsPerReception", 0.5)
@@ -13897,6 +13899,34 @@ def api_player_details(player_id: str):
                         _total_pts_rank = _all_total.index(_total_pts) + 1
                     except ValueError:
                         _total_pts_rank = None
+
+                # Overall rank across all skill positions
+                _ppg_ovr_rank = None
+                _total_pts_ovr_rank = None
+                _ovr_positions = {"QB", "RB", "WR", "TE"}
+                _ovr_players = [
+                    p for p in _ud
+                    if p.get("position") in _ovr_positions
+                    and int((p.get("usage") or {}).get("games") or 0) >= 4
+                    and _pick_ppg(p.get("usage") or {}) is not None
+                ]
+                _all_ppg_ovr = sorted(
+                    [round(float(_pick_ppg(p.get("usage") or {})), 1) for p in _ovr_players],
+                    reverse=True,
+                )
+                try:
+                    _ppg_ovr_rank = _all_ppg_ovr.index(_ppg) + 1
+                except ValueError:
+                    _ppg_ovr_rank = None
+                _all_total_ovr = sorted(
+                    [round(round(float(_pick_ppg(p.get("usage") or {})), 1) * int((p.get("usage") or {}).get("games") or 0), 1)
+                     for p in _ovr_players],
+                    reverse=True,
+                )
+                try:
+                    _total_pts_ovr_rank = _all_total_ovr.index(_total_pts) + 1
+                except ValueError:
+                    _total_pts_ovr_rank = None
                 break
         except Exception:
             pass
@@ -13920,10 +13950,12 @@ def api_player_details(player_id: str):
                 "years_exp": player_meta.get("years_exp"),
                 "ppg": _ppg,
                 "ppg_rank": _ppg_rank,
+                "ppg_ovr_rank": _ppg_ovr_rank,
                 "ppg_season": _ppg_season_used,
                 "ppg_games": _ppg_games,
                 "total_pts": _total_pts,
                 "total_pts_rank": _total_pts_rank,
+                "total_pts_ovr_rank": _total_pts_ovr_rank,
             },
             "value_history": value_history,
             "game_logs_by_year": game_logs_by_year,

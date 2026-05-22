@@ -5467,22 +5467,24 @@ function openPlayerModal(playerId, playerName, opts) {
 
       const ppgVal       = data.stats?.ppg;
       const ppgRank      = data.stats?.ppg_rank;
+      const ppgOvrRank   = data.stats?.ppg_ovr_rank;
       const ppgSeason    = data.stats?.ppg_season;
       const totalPts     = data.stats?.total_pts;
       const totalPtsRank = data.stats?.total_pts_rank;
+      const totalPtsOvrRank = data.stats?.total_pts_ovr_rank;
       const seasonLabel  = ppgSeason ? ` · ${ppgSeason}` : '';
       const ppgCard = ppgVal != null
         ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">PPG${seasonLabel}</div>
             <div class="pm-hero-val">${ppgVal}</div>
-            <div class="pm-hero-sub">${ppgRank ? `${pos}${ppgRank}` : '-'}</div>
+            <div class="pm-hero-sub">${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '—'}` : '-'}</div>
           </div>`
         : '';
       const totalCard = totalPts != null
         ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">Total Pts${seasonLabel}</div>
             <div class="pm-hero-val">${totalPts}</div>
-            <div class="pm-hero-sub">${totalPtsRank ? `${pos}${totalPtsRank}` : '-'}</div>
+            <div class="pm-hero-sub">${totalPtsRank ? `POS : ${totalPtsRank} · OVR : ${totalPtsOvrRank ?? '—'}` : '-'}</div>
           </div>`
         : '';
 
@@ -7332,8 +7334,10 @@ function _buildCompareHeroHTML(p) {
   const pos    = p.position || '';
   const ppg    = p.stats?.ppg;
   const ppgRank = p.stats?.ppg_rank;
+  const ppgOvrRank = p.stats?.ppg_ovr_rank;
   const total  = p.stats?.total_pts;
   const totalRank = p.stats?.total_pts_rank;
+  const totalOvrRank = p.stats?.total_pts_ovr_rank;
   const season = p.stats?.ppg_season ? ` · ${p.stats.ppg_season}` : '';
   const hasScoringRow = ppg != null || total != null;
 
@@ -7344,13 +7348,13 @@ function _buildCompareHeroHTML(p) {
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">PPG${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${ppg}</div>
-        <div class="pm-hero-sub">${ppgRank ? `${pos}${ppgRank}` : '-'}</div>
+        <div class="pm-hero-sub">${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '—'}` : '-'}</div>
       </div>` : ''}
       ${total != null ? `
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">Total Pts${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${total}</div>
-        <div class="pm-hero-sub">${totalRank ? `${pos}${totalRank}` : '-'}</div>
+        <div class="pm-hero-sub">${totalRank ? `POS : ${totalRank} · OVR : ${totalOvrRank ?? '—'}` : '-'}</div>
       </div>` : ''}
     </div>` : '';
 
