@@ -343,8 +343,8 @@ def load_current_values_from_db() -> list[dict]:
                     """
                     SELECT
                         player_id  AS id,
-                        COALESCE(calibrated_value_1qb, value_1qb) AS value,
-                        COALESCE(calibrated_value_sf, value_sf, calibrated_value_1qb, value_1qb) AS sf_value,
+                        value_1qb AS value,
+                        COALESCE(value_sf, value_1qb) AS sf_value,
                         value_1qb  AS model_value,
                         value_sf   AS model_sf_value,
                         COALESCE(calibrated_value_8,      value_8)      AS value_8,
@@ -431,12 +431,6 @@ def load_current_values_from_db() -> list[dict]:
         value = float(asset.get("value") or 0.0)
         if value <= 0:
             continue
-
-        # Non-QB players don't gain value in SF — cap sf_value at 1QB value
-        if str(asset.get("position") or "").upper() != "QB":
-            sf = float(asset.get("sf_value") or 0.0)
-            if sf > value:
-                asset["sf_value"] = value
         
                 
         # Add name from players index
@@ -537,75 +531,125 @@ def load_current_values_from_db() -> list[dict]:
 
 def load_calibration_overrides() -> dict[str, dict]:
     """
-    Load calibrated values from player_values to override raw model_values.json.
-    Guards against bad calibration runs: skips players where calibrated > 1.5x model.
+    Apply FC/DP market corrections to model values:
+    1. If model value > 1.5x FC or DP value → set to 0.5*FC + 0.5*DP
+    2. If player has < 20 trades → set to 0.5*FC + 0.5*DP (when available)
+    SF value is scaled by the model's sf/1qb ratio so QB boosts are preserved.
     """
+    import os
+
     try:
+        from data_building.external_data.external_values_scraper import (
+            load_fantasycalc_api_values,
+            load_dynastyprocess_values,
+        )
+        from utils.utils import normalize_name
+
+        # Load and normalize FC dynasty values to 0-999.9
+        fc_rows = load_fantasycalc_api_values() or []
+        fc_by_sid: dict[str, float] = {}
+        if fc_rows:
+            max_fc = max((float(r.get("value") or 0) for r in fc_rows if r.get("value")), default=0)
+            if max_fc > 0:
+                for r in fc_rows:
+                    sid = str(r.get("sleeper_id") or "").strip()
+                    if sid:
+                        try:
+                            fc_by_sid[sid] = float(r["value"]) * 999.9 / max_fc
+                        except (TypeError, ValueError):
+                            pass
+
+        # Load and normalize DP dynasty values to 0-999.9
+        dp_rows = load_dynastyprocess_values() or []
+        dp_by_name: dict[str, float] = {}
+        if dp_rows:
+            max_dp = max((float(r.get("value_1qb") or 0) for r in dp_rows if r.get("value_1qb")), default=0)
+            if max_dp > 0:
+                for r in dp_rows:
+                    name = str(r.get("player") or "").strip()
+                    if name:
+                        try:
+                            dp_by_name[normalize_name(name)] = float(r["value_1qb"]) * 999.9 / max_dp
+                        except (TypeError, ValueError):
+                            pass
+
+        if not fc_by_sid and not dp_by_name:
+            return {}
+
+        db_url = os.getenv("DATABASE_URL", "").strip()
+        if not db_url or any(t in db_url for t in ("USER", "PASSWORD", "HOST")):
+            return {}
+
+        # Load model values
         with get_conn() as conn:
-            rows = conn.execute(
-                """
-                SELECT player_id,
-                       position,
-                       CASE
-                           WHEN value_1qb > 0 AND calibrated_value_1qb > value_1qb * 1.5 THEN value_1qb
-                           WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_1qb > 100   THEN value_1qb
-                           ELSE calibrated_value_1qb
-                       END AS value,
-                       CASE
-                           WHEN value_1qb > 0 AND calibrated_value_sf > value_1qb * 1.5 THEN COALESCE(value_sf, value_1qb)
-                           WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_sf > 100    THEN COALESCE(value_sf, value_1qb)
-                           ELSE COALESCE(calibrated_value_sf, calibrated_value_1qb)
-                       END AS sf_value_raw,
-                       calibrated_value_8,   calibrated_sf_value_8,
-                       calibrated_value_12,  calibrated_sf_value_12,
-                       calibrated_value_14,  calibrated_sf_value_14
-                FROM player_values
-                WHERE calibrated_value_1qb IS NOT NULL
-                  AND calibrated_value_1qb > 0
-                """
-            ).fetchall()
-            result: dict[str, dict] = {}
-            for r in rows:
-                val    = r["value"]
-                sf_val = r["sf_value_raw"]
-                if val is None:
-                    continue
-                val_f  = float(val)
-                # Non-QB players don't gain value in SF — cap sf at 1QB value
-                is_qb  = str(r["position"] or "").upper() == "QB"
-                sf_f   = float(sf_val) if sf_val is not None else val_f
-                if not is_qb:
-                    sf_f = min(sf_f, val_f)
-                d: dict = {
-                    "value":    val_f,
-                    "sf_value": sf_f,
-                }
-                for sz in (8, 12, 14):
-                    v  = r[f"calibrated_value_{sz}"]
-                    sf = r[f"calibrated_sf_value_{sz}"]
-                    if v  is not None: d[f"value_{sz}"]    = float(v)
-                    if sf is not None: d[f"sf_value_{sz}"] = float(sf)
-                result[str(r["player_id"])] = d
-            return result
-    except Exception as e:
-        print(f"[load_calibration_overrides] primary query failed: {e}")
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT player_id, name, value_1qb, value_sf
+                    FROM player_values
+                    WHERE value_1qb IS NOT NULL AND value_1qb > 0
+                      AND (position IS NULL OR position != 'PICK')
+                    """
+                )
+                model_rows = cur.fetchall()
+
+        # Load trade counts (best-effort — table may not exist)
+        trade_counts: dict[str, int] = {}
         try:
             with get_conn() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT player_id,
-                           calibrated_value_1qb AS value,
-                           COALESCE(calibrated_value_sf, calibrated_value_1qb) AS sf_value
-                    FROM player_values
-                    WHERE calibrated_value_1qb IS NOT NULL AND calibrated_value_1qb > 0
-                    """
-                ).fetchall()
-                return {
-                    str(r["player_id"]): {"value": float(r["value"]), "sf_value": float(r["sf_value"])}
-                    for r in rows
-                }
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT player_id, trade_count FROM trade_intel_player_stats"
+                    )
+                    for r in cur.fetchall():
+                        r = dict(r)
+                        trade_counts[str(r["player_id"])] = int(r.get("trade_count") or 0)
         except Exception:
-            return {}
+            pass  # table may not exist; treat all as zero trades
+
+        result: dict[str, dict] = {}
+
+        for row in model_rows:
+            row = dict(row)
+            pid = str(row["player_id"])
+            model_val = float(row.get("value_1qb") or 0)
+            if model_val <= 0:
+                continue
+            model_sf = float(row.get("value_sf") or model_val)
+
+            fc_val = fc_by_sid.get(pid)
+            norm_name = normalize_name(str(row.get("name") or ""))
+            dp_val = dp_by_name.get(norm_name)
+
+            # No external data — nothing to compare against
+            if fc_val is None and dp_val is None:
+                continue
+
+            available = [v for v in (fc_val, dp_val) if v is not None]
+            ext_avg = sum(available) / len(available)
+
+            # Condition 1: model is more than 1.5x either external source
+            inflated = (
+                (fc_val is not None and fc_val > 0 and model_val > 1.5 * fc_val)
+                or (dp_val is not None and dp_val > 0 and model_val > 1.5 * dp_val)
+            )
+
+            # Condition 2: not enough trade data to trust the model
+            low_trades = trade_counts.get(pid, 0) < 20
+
+            if inflated or low_trades:
+                sf_ratio = model_sf / model_val
+                result[pid] = {
+                    "value":    round(ext_avg, 2),
+                    "sf_value": round(ext_avg * sf_ratio, 2),
+                }
+
+        print(f"[load_calibration_overrides] Applied {len(result)} FC/DP market corrections")
+        return result
+
+    except Exception as e:
+        print(f"[load_calibration_overrides] Error: {e}")
+        return {}
 
 
 def _value_col(league_type: str = "1qb", league_size: int = 10) -> str:
