@@ -557,21 +557,25 @@ def load_calibration_overrides() -> dict[str, dict]:
                   AND calibrated_value_1qb > 0
                 """
             ).fetchall()
-        result: dict[str, dict] = {}
-        for r in rows:
-            d: dict = {
-                "value":    float(r["value"]),
-                "sf_value": float(r["sf_value"]),
-            }
-            for sz in (8, 12, 14):
-                v  = r[f"calibrated_value_{sz}"]
-                sf = r[f"calibrated_sf_value_{sz}"]
-                if v  is not None: d[f"value_{sz}"]    = float(v)
-                if sf is not None: d[f"sf_value_{sz}"] = float(sf)
-            result[str(r["player_id"])] = d
-        return result
-    except Exception:
-        # Fallback: new size columns may not exist yet - return only the 10-team values
+            result: dict[str, dict] = {}
+            for r in rows:
+                val    = r["value"]
+                sf_val = r["sf_value"]
+                if val is None:
+                    continue
+                d: dict = {
+                    "value":    float(val),
+                    "sf_value": float(sf_val) if sf_val is not None else float(val),
+                }
+                for sz in (8, 12, 14):
+                    v  = r[f"calibrated_value_{sz}"]
+                    sf = r[f"calibrated_sf_value_{sz}"]
+                    if v  is not None: d[f"value_{sz}"]    = float(v)
+                    if sf is not None: d[f"sf_value_{sz}"] = float(sf)
+                result[str(r["player_id"])] = d
+            return result
+    except Exception as e:
+        logger.warning("load_calibration_overrides failed: %s", e, exc_info=True)
         try:
             with get_conn() as conn:
                 rows = conn.execute(
@@ -583,10 +587,10 @@ def load_calibration_overrides() -> dict[str, dict]:
                     WHERE calibrated_value_1qb IS NOT NULL AND calibrated_value_1qb > 0
                     """
                 ).fetchall()
-            return {
-                str(r["player_id"]): {"value": float(r["value"]), "sf_value": float(r["sf_value"])}
-                for r in rows
-            }
+                return {
+                    str(r["player_id"]): {"value": float(r["value"]), "sf_value": float(r["sf_value"])}
+                    for r in rows
+                }
         except Exception:
             return {}
 
