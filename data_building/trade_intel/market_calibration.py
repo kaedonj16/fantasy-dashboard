@@ -77,9 +77,9 @@ def _load_external_market_values() -> dict[str, float]:
                 # Build name→sleeper_id from player_values via DB
                 with get_conn() as conn:
                     id_rows = conn.execute(
-                        "SELECT player_id, search_name FROM player_values WHERE search_name IS NOT NULL"
+                        "SELECT player_id, name FROM player_values WHERE name IS NOT NULL"
                     ).fetchall()
-                name_to_id = {str(r["search_name"]).lower().strip(): str(r["player_id"]) for r in id_rows}
+                name_to_id = {str(r["name"]).lower().strip(): str(r["player_id"]) for r in id_rows}
                 for _, row in dp.iterrows():
                     pname = str(row.get("player") or "").lower().strip()
                     # Normalize to match search_name format (letters/digits/spaces only)
@@ -470,7 +470,7 @@ def run_calibration(season: int | None = None) -> dict:
     }))
 
     out_rows = []
-    counts   = {"direct": 0, "tier_anchor": 0, "model_only": 0}
+    counts   = {"direct": 0, "tier_anchor": 0, "model_only": 0, "ext_market": 0}
 
     for row in model_rows:
         pid    = row["player_id"]
