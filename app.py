@@ -4474,12 +4474,11 @@ def _market_scale(fmt: str = "1qb") -> float:
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
-    Fixed player-count cutoffs so T1-T8 stay small and T9 is the large catch-all.
-    Boundary is placed at the midpoint between the last player in the tier and the
-    first player in the next tier.
+    Natural gap-significance tier boundaries.
 
-    Cutoffs (cumulative player counts):  T1≤5  T2≤10  T3≤18  T4≤30
-                                         T5≤50  T6≤80  T7≤120  T8≤175  T9=rest
+    Each gap is scored by how large it is relative to nearby gaps (local significance).
+    The top (num_tiers-1) gaps become tier boundaries. Minimum 5 players per tier;
+    tiers smaller than that are merged into the tier below. T9 is the large catch-all.
     """
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -4499,18 +4498,58 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
 
     vals.sort(reverse=True)
 
-    if len(vals) < 20:
+    if len(vals) < num_tiers * 3:
         return _FALLBACK_THRESHOLDS
 
-    cutoffs = [5, 10, 18, 30, 50, 80, 120, 175]
-    boundaries = []
-    for cut in cutoffs:
-        if cut >= len(vals):
-            break
-        mid = (vals[cut - 1] + vals[cut]) / 2.0
-        boundaries.append(round(mid, 1))
+    MIN_TIER = 5   # minimum players per tier
+    window   = 12
 
-    return boundaries if boundaries else _FALLBACK_THRESHOLDS
+    # Score each gap by local significance (gap vs median of nearby gaps)
+    scored = []
+    for i in range(len(vals) - 1):
+        gap = vals[i] - vals[i + 1]
+        lo  = max(0, i - window)
+        hi  = min(len(vals) - 1, i + window)
+        nbrs = [vals[j] - vals[j + 1] for j in range(lo, hi) if j != i]
+        local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
+        scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
+
+    # Pick top gaps enforcing minimum spacing between boundaries
+    scored.sort(key=lambda x: x[0], reverse=True)
+    chosen_pos = []
+    boundaries = []
+    for _sig, pos, midpoint in scored:
+        if len(boundaries) >= num_tiers - 1:
+            break
+        if pos < MIN_TIER or pos > len(vals) - 1 - MIN_TIER:
+            continue
+        if any(abs(pos - p) < MIN_TIER for p in chosen_pos):
+            continue
+        chosen_pos.append(pos)
+        boundaries.append(round(midpoint, 1))
+
+    if not boundaries:
+        return _FALLBACK_THRESHOLDS
+
+    thresholds = sorted(boundaries, reverse=True)
+
+    # Merge any tier smaller than MIN_TIER into the tier below it
+    changed = True
+    while changed:
+        changed = False
+        if thresholds and sum(1 for v in vals if v >= thresholds[0]) < MIN_TIER:
+            thresholds = thresholds[1:]
+            changed = True
+            continue
+        for i in range(len(thresholds) - 1):
+            lo_b = thresholds[i + 1]
+            hi_b = thresholds[i]
+            if sum(1 for v in vals if lo_b <= v < hi_b) < MIN_TIER:
+                thresholds = thresholds[:i + 1] + thresholds[i + 2:]
+                changed = True
+                break
+
+    return thresholds if thresholds else _FALLBACK_THRESHOLDS
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
     t = thresholds if thresholds is not None else _FALLBACK_THRESHOLDS
