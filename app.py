@@ -14092,6 +14092,9 @@ def api_player_game_logs(player_id: str):
                         elif player_team and player_team == away_team:
                             opponent = home_team; is_away = True;  game_date = game.get("gameDate", ""); break
                     stats = (stats_by_week.get(week_num) or {}).get(player_id)
+                    # Skip bye weeks: no game found for this team and no stats either
+                    if not opponent and not game_date and stats is None:
+                        continue
                     if stats:
                         game_logs.append({"week": week_num, "date": game_date,
                             "opponent": f"@{opponent}" if is_away else opponent,
