@@ -11497,6 +11497,40 @@ def get_model_value_table_cached():
     if not tbl:
         tbl = list(load_model_value_table() or [])
 
+    # Apply FC/DP market corrections (inflation check + low-trade override)
+    if tbl:
+        try:
+            from dashboard_services.player_value_history import load_calibration_overrides
+            from collections import defaultdict as _dd
+            _overrides = load_calibration_overrides()
+            if _overrides:
+                for _p in tbl:
+                    _pid = str(_p.get("id") or "")
+                    if _pid in _overrides:
+                        _cal = _overrides[_pid]
+                        _p["value"]    = _cal["value"]
+                        _p["sf_value"] = _cal["sf_value"]
+                # Recompute pos_rank / pos_rank_label after corrections
+                _pos_idx: dict = _dd(list)
+                _sf_pos_idx: dict = _dd(list)
+                for _i, _p in enumerate(tbl):
+                    _pos = str(_p.get("position") or "").upper()
+                    if _pos and _pos != "PICK":
+                        _pos_idx[_pos].append(_i)
+                        _sf_pos_idx[_pos].append(_i)
+                for _pos, _idxs in _pos_idx.items():
+                    _idxs.sort(key=lambda _i: float(tbl[_i].get("value") or 0), reverse=True)
+                    for _rank, _i in enumerate(_idxs, 1):
+                        tbl[_i]["pos_rank"]       = _rank
+                        tbl[_i]["pos_rank_label"] = f"{_pos}{_rank}"
+                for _pos, _idxs in _sf_pos_idx.items():
+                    _idxs.sort(key=lambda _i: float(tbl[_i].get("sf_value") or 0), reverse=True)
+                    for _rank, _i in enumerate(_idxs, 1):
+                        tbl[_i]["sf_pos_rank"]       = _rank
+                        tbl[_i]["sf_pos_rank_label"] = f"{_pos}{_rank}"
+        except Exception as _e:
+            print(f"[model-value-cache] market corrections skipped: {_e}")
+
     # Append rookie prospects (mirrors /api/league-players logic)
     try:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
