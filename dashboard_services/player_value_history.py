@@ -531,14 +531,10 @@ def load_current_values_from_db() -> list[dict]:
 
 def load_calibration_overrides() -> dict[str, dict]:
     """
-    Calibration overrides disabled — DB calibrated values are corrupted from
-    bad pipeline runs. Returns empty dict so the app always uses the clean
-    model_values.json values. Re-enable once market_calibration.py has been
-    re-run against correct model values.
+    Load calibrated values from player_values to override raw model_values.json.
+    Guards against bad calibration runs: skips players where calibrated > 1.5x model.
     """
-    return {}
-
-    try:  # noqa: unreachable
+    try:
         with get_conn() as conn:
             rows = conn.execute(
                 """
