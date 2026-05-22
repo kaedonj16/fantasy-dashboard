@@ -254,26 +254,23 @@ def apply_smoothing(df: pd.DataFrame) -> pd.DataFrame:
     # TE compression is now handled in the core value formula (_apply_te_market_compression)
     # No additional compression needed here
     
-    # Apply smoothing to players ranked 6+ (excluding TEs which are already compressed)
-    non_te_players = df_smoothed[df_smoothed['position'] != 'TE']
-    elite_threshold = 900.0  # Focus on high-value players
-    elite_non_te = non_te_players[non_te_players['value'] >= elite_threshold].sort_values('value', ascending=False)
-    
-    # Skip top 5 (already handled) and apply smoothing to rest
-    elite_remaining = elite_non_te.iloc[5:] if len(elite_non_te) > 5 else pd.DataFrame()
-    
-    if len(elite_remaining) >= 2:
-        elite_values = elite_remaining['value'].tolist()
-        
-        for i in range(len(elite_values) - 1):
-            current_val = elite_values[i]
-            next_val = elite_values[i + 1]
-            
-            # Create more spread in 900 range - only smooth very large drops
-            if current_val - next_val > 80:
-                smoothed_drop = (current_val - next_val) * 0.7  # Less aggressive smoothing
-                df_smoothed.loc[df_smoothed['value'] == current_val, 'value'] = next_val + smoothed_drop
-    
+    def _smooth_col(col: str) -> None:
+        if col not in df_smoothed.columns:
+            return
+        non_te = df_smoothed[df_smoothed['position'] != 'TE']
+        elite = non_te[non_te[col] >= 900.0].sort_values(col, ascending=False)
+        remaining = elite.iloc[5:] if len(elite) > 5 else pd.DataFrame()
+        if len(remaining) < 2:
+            return
+        vals = remaining[col].tolist()
+        for i in range(len(vals) - 1):
+            cur, nxt = vals[i], vals[i + 1]
+            if cur - nxt > 80:
+                df_smoothed.loc[df_smoothed[col] == cur, col] = nxt + (cur - nxt) * 0.7
+
+    _smooth_col('value')
+    _smooth_col('sf_value')
+
     return df_smoothed
 
 
@@ -295,7 +292,10 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
     
     snapshot_date = date.today()
     saved_count = 0
-    
+
+    _max_val = max((float(p.get("value") or 0) for p in players if isinstance(p, dict)), default=0)
+    _scale   = (999.9 / _max_val) if _max_val > 0 else 1.0
+
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -329,7 +329,7 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
                             player.get("name", ""),
                             player.get("position", ""),
                             player.get("team", ""),
-                            float(player.get("value", 0)),
+                            round(float(player.get("value", 0)) * _scale, 2),
                             "model"
                         ),
                     )

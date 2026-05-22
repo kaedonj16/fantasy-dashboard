@@ -55,6 +55,14 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
 
     saved_count = 0
 
+    # Compute per-day normalization scales so no value exceeds 999.9
+    _max_1qb = max((float(r.get("value") or 0) for r in value_table if isinstance(r, dict)), default=0)
+    _max_sf  = max((float(r.get("sf_value") or 0) for r in value_table if isinstance(r, dict)), default=0)
+    _scale_1qb = (999.9 / _max_1qb) if _max_1qb > 0 else 1.0
+    _scale_sf  = (999.9 / _max_sf)  if _max_sf  > 0 else 1.0
+
+    def _norm(v, scale): return round(float(v) * scale, 2) if v is not None else None
+
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -66,9 +74,9 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                     if not player_id:
                         continue
 
-                    # Extract values with defaults
-                    value_1qb = row.get("value")
-                    value_sf = row.get("sf_value")
+                    # Extract values, normalized so the day's top player = 999.9
+                    value_1qb = _norm(row.get("value"),    _scale_1qb)
+                    value_sf  = _norm(row.get("sf_value"), _scale_sf)
                     redraft_value_1qb = row.get("redraft_value_1qb")
                     redraft_value_sf  = row.get("redraft_value_sf")
                     position = row.get("position") or row.get("pos")
@@ -79,14 +87,14 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                     years_exp = row.get("years_exp")
                     rank_change_7d = row.get("rank_change_7d")
                     pos_rank_change_7d = row.get("pos_rank_change_7d")
-                    
-                    # League-size specific values
-                    value_8 = row.get("value_8")
-                    value_12 = row.get("value_12")
-                    value_14 = row.get("value_14")
-                    sf_value_8 = row.get("sf_value_8")
-                    sf_value_12 = row.get("sf_value_12")
-                    sf_value_14 = row.get("sf_value_14")
+
+                    # League-size specific values (normalized by same scales)
+                    value_8    = _norm(row.get("value_8"),    _scale_1qb)
+                    value_12   = _norm(row.get("value_12"),   _scale_1qb)
+                    value_14   = _norm(row.get("value_14"),   _scale_1qb)
+                    sf_value_8  = _norm(row.get("sf_value_8"),  _scale_sf)
+                    sf_value_12 = _norm(row.get("sf_value_12"), _scale_sf)
+                    sf_value_14 = _norm(row.get("sf_value_14"), _scale_sf)
                     sf_pos_rank = row.get("sf_pos_rank")
                     sf_pos_rank_label = row.get("sf_pos_rank_label")
 
