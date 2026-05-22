@@ -582,7 +582,7 @@ def load_calibration_overrides() -> dict[str, dict]:
                 result[str(r["player_id"])] = d
             return result
     except Exception as e:
-        logger.warning("load_calibration_overrides failed: %s", e, exc_info=True)
+        print(f"[load_calibration_overrides] primary query failed: {e}")
         try:
             with get_conn() as conn:
                 rows = conn.execute(
