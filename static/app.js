@@ -5837,7 +5837,10 @@ function openPlayerModal(playerId, playerName, opts) {
           const yMin = Math.min(...allY);
           const yMax = Math.max(...allY);
           const yRange = yMax - yMin;
-          const yPad = Math.max(yRange * 0.15, 30);
+          const yPad = Math.max(yRange * 0.15, 20);
+          // Floor: no tighter than (currentValue - 200), so small wiggles don't look huge
+          const currentVal = allY[allY.length - 1] ?? yMax;
+          const yFloor = Math.max(0, currentVal - 200);
 
           const midIdx = Math.floor((n - 1) / 2);
           const firstDateStr  = formatDateLabel(data.value_history[0].as_of_date);
@@ -5906,7 +5909,7 @@ function openPlayerModal(playerId, playerName, opts) {
             yaxis: {
               showgrid: true,
               showticklabels: true,
-              range: [yMin - yPad, yMax + yPad],
+              range: [Math.min(yMin - yPad, yFloor), yMax + yPad],
               tickfont: { size: 11, color: mutedColor },
             },
             hovermode: 'closest',
