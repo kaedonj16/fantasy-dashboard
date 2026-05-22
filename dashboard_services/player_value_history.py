@@ -531,75 +531,12 @@ def load_current_values_from_db() -> list[dict]:
 
 def load_calibration_overrides() -> dict[str, dict]:
     """
-    Load calibrated values from player_values to override raw model_values.json.
-    Guards against bad calibration runs: skips players where calibrated > 1.5x model.
+    FC/DP market corrections are now applied directly in get_model_value_table_cached()
+    in app.py, where the loaded player values are already available for comparison.
+    This function is kept for the load_model_value_table() call path but returns
+    empty — the cache path handles corrections without needing an extra DB round-trip.
     """
-    try:
-        with get_conn() as conn:
-            rows = conn.execute(
-                """
-                SELECT player_id,
-                       position,
-                       CASE
-                           WHEN value_1qb > 0 AND calibrated_value_1qb > value_1qb * 1.5 THEN value_1qb
-                           WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_1qb > 100   THEN value_1qb
-                           ELSE calibrated_value_1qb
-                       END AS value,
-                       CASE
-                           WHEN value_1qb > 0 AND calibrated_value_sf > value_1qb * 1.5 THEN COALESCE(value_sf, value_1qb)
-                           WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_sf > 100    THEN COALESCE(value_sf, value_1qb)
-                           ELSE COALESCE(calibrated_value_sf, calibrated_value_1qb)
-                       END AS sf_value_raw,
-                       calibrated_value_8,   calibrated_sf_value_8,
-                       calibrated_value_12,  calibrated_sf_value_12,
-                       calibrated_value_14,  calibrated_sf_value_14
-                FROM player_values
-                WHERE calibrated_value_1qb IS NOT NULL
-                  AND calibrated_value_1qb > 0
-                """
-            ).fetchall()
-            result: dict[str, dict] = {}
-            for r in rows:
-                val    = r["value"]
-                sf_val = r["sf_value_raw"]
-                if val is None:
-                    continue
-                val_f  = float(val)
-                # Non-QB players don't gain value in SF — cap sf at 1QB value
-                is_qb  = str(r["position"] or "").upper() == "QB"
-                sf_f   = float(sf_val) if sf_val is not None else val_f
-                if not is_qb:
-                    sf_f = min(sf_f, val_f)
-                d: dict = {
-                    "value":    val_f,
-                    "sf_value": sf_f,
-                }
-                for sz in (8, 12, 14):
-                    v  = r[f"calibrated_value_{sz}"]
-                    sf = r[f"calibrated_sf_value_{sz}"]
-                    if v  is not None: d[f"value_{sz}"]    = float(v)
-                    if sf is not None: d[f"sf_value_{sz}"] = float(sf)
-                result[str(r["player_id"])] = d
-            return result
-    except Exception as e:
-        print(f"[load_calibration_overrides] primary query failed: {e}")
-        try:
-            with get_conn() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT player_id,
-                           calibrated_value_1qb AS value,
-                           COALESCE(calibrated_value_sf, calibrated_value_1qb) AS sf_value
-                    FROM player_values
-                    WHERE calibrated_value_1qb IS NOT NULL AND calibrated_value_1qb > 0
-                    """
-                ).fetchall()
-                return {
-                    str(r["player_id"]): {"value": float(r["value"]), "sf_value": float(r["sf_value"])}
-                    for r in rows
-                }
-        except Exception:
-            return {}
+    return {}
 
 
 def _value_col(league_type: str = "1qb", league_size: int = 10) -> str:

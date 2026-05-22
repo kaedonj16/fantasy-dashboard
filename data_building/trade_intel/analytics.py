@@ -91,12 +91,7 @@ def _size_bucket(num_teams: int) -> str:
 def _load_model_values(season: int) -> dict[str, dict]:
     with get_conn() as conn:
         rows = conn.execute(
-            """
-            SELECT player_id,
-                   COALESCE(calibrated_value_1qb, value_1qb) AS value_1qb,
-                   COALESCE(calibrated_value_sf,  value_sf)  AS value_sf
-            FROM player_values
-            """
+            "SELECT player_id, value_1qb, value_sf FROM player_values"
         ).fetchall()
     return {
         r["player_id"]: {
