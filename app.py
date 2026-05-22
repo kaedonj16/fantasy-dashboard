@@ -4521,9 +4521,9 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
     for _sig, pos, midpoint in scored:
         if len(boundaries) >= num_tiers - 1:
             break
-        if pos < MIN_TIER or pos > len(vals) - 1 - MIN_TIER:
+        if pos < MIN_TIER - 1 or pos > len(vals) - 1 - (MIN_TIER - 1):
             continue
-        if any(abs(pos - p) < MIN_TIER for p in chosen_pos):
+        if any(abs(pos - p) < MIN_TIER - 1 for p in chosen_pos):
             continue
         chosen_pos.append(pos)
         boundaries.append(round(midpoint, 1))
