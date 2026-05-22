@@ -13489,19 +13489,29 @@ def api_player_details(player_id: str):
             league_type=_modal_lt, league_size=_modal_ls,
         )
 
-        # Scale history to match the FC/DP-corrected current value so the chart
-        # ends at the corrected value. Proportional scaling preserves trend shape.
+        # Scale history to match FC/DP-corrected current values.
+        # The history function returns value_1qb and value_sf separately;
+        # the chart uses those fields (not value), so all three must be scaled.
         if value_history and player_value:
-            _is_sf = _modal_lt == "sf"
-            _corrected_cur = player_value.get("sf_value" if _is_sf else "value")
-            if _corrected_cur is not None:
-                _latest_raw = value_history[-1]["value"]
-                if _latest_raw > 0 and abs(float(_corrected_cur) - _latest_raw) > 1.0:
-                    _ratio = float(_corrected_cur) / _latest_raw
-                    for _h in value_history:
-                        _h["value"] = round(_h["value"] * _ratio, 1)
-                        if _h.get("delta_from_prev") is not None:
-                            _h["delta_from_prev"] = round(_h["delta_from_prev"] * _ratio, 1)
+            _corr_1qb = float(player_value.get("value") or 0)
+            _corr_sf  = float(player_value.get("sf_value") or _corr_1qb)
+            _last_h   = value_history[-1]
+            _raw_1qb  = float(_last_h.get("value_1qb") or _last_h.get("value") or 0)
+            _raw_sf   = float(_last_h.get("value_sf")  or _last_h.get("value") or 0)
+            _ratio_1qb = (_corr_1qb / _raw_1qb) if _raw_1qb > 0 and abs(_corr_1qb - _raw_1qb) > 1.0 else 1.0
+            _ratio_sf  = (_corr_sf  / _raw_sf)  if _raw_sf  > 0 and abs(_corr_sf  - _raw_sf)  > 1.0 else 1.0
+            if _ratio_1qb != 1.0 or _ratio_sf != 1.0:
+                _is_sf = _modal_lt == "sf"
+                for _h in value_history:
+                    if _h.get("value_1qb") is not None:
+                        _h["value_1qb"] = round(_h["value_1qb"] * _ratio_1qb, 1)
+                    if _h.get("value_sf") is not None:
+                        _h["value_sf"] = round(_h["value_sf"] * _ratio_sf, 1)
+                    # Keep primary value in sync with whichever series the league uses
+                    _h["value"] = _h["value_sf"] if _is_sf else _h["value_1qb"]
+                    if _h.get("delta_from_prev") is not None:
+                        _ratio_primary = _ratio_sf if _is_sf else _ratio_1qb
+                        _h["delta_from_prev"] = round(_h["delta_from_prev"] * _ratio_primary, 1)
 
         # Load game logs from sleeper_stats for all available seasons
         game_logs_by_year = {}
