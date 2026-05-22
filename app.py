@@ -12295,13 +12295,10 @@ def api_players():
 @app.route("/api/league-players")
 def api_league_players():
     try:
-        from dashboard_services.player_value_history import load_current_values_from_db
-        model_value_table = load_current_values_from_db()
-        if not model_value_table:
-            model_value_table = list(get_model_value_table_cached() or [])
-    except Exception as e:
-        print(f"[api/league-players] Database load failed: {e}, falling back to JSON")
         model_value_table = list(get_model_value_table_cached() or [])
+    except Exception as e:
+        print(f"[api/league-players] Cache load failed: {e}")
+        model_value_table = []
 
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
@@ -13471,8 +13468,8 @@ def api_player_details(player_id: str):
 
         player_team = player_meta.get("team", "")
 
-        # Get value data
-        value_table = load_model_value_table() or []
+        # Get value data (use cache so FC/DP corrections are applied)
+        value_table = get_model_value_table_cached() or []
         player_value = next((p for p in value_table if str(p.get("id")) == str(player_id)), {})
 
         # Get FULL value history from database (not just 90 days)
