@@ -4474,23 +4474,13 @@ def _market_scale(fmt: str = "1qb") -> float:
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
-    Quantile-based tier boundaries with geometric growth and local gap snapping.
+    Fixed player-count cutoffs so T1-T8 stay small and T9 is the large catch-all.
+    Boundary is placed at the midpoint between the last player in the tier and the
+    first player in the next tier.
 
-    Each tier is ~TIER_GROWTH_RATIO× larger than the previous, producing a
-    pyramid: T1 is the smallest elite bucket; T9 (everything below the last
-    boundary) is the large catch-all. COVERAGE controls what fraction of active
-    players live in T1-T8; the rest fall into T9.
-
-    Each boundary is placed at its target quantile position then snapped to
-    the largest nearby gap within ±SNAP_WINDOW players, so boundaries prefer
-    natural value breaks when they exist close to the target rank.
-
-    Python _asset_tier and JS prGetTier both clamp at _NUM_TIERS (9).
+    Cutoffs (cumulative player counts):  T1≤5  T2≤10  T3≤18  T4≤30
+                                         T5≤50  T6≤80  T7≤120  T8≤175  T9=rest
     """
-    TIER_GROWTH_RATIO = 1.6   # each tier is ~1.6× larger than the previous one
-    COVERAGE          = 0.50  # fraction of active players in T1-T(num_tiers-1)
-    SNAP_WINDOW       = 5     # snap each boundary to nearby gap (±this many players)
-
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
     else:
@@ -4501,74 +4491,26 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         if not isinstance(p, dict):
             continue
         pos = (p.get("position") or "").upper()
-        if pos in ("K", "DEF", "PICK"):  # exclude picks — their values are uncorrected and distort gap analysis
+        if pos in ("K", "DEF", "PICK"):
             continue
         v = float(p.get(primary) or p.get("value") or 0)
         if v >= 5:
             vals.append(v)
 
     vals.sort(reverse=True)
-    n = len(vals)
 
-    if n < num_tiers * 2:
+    if len(vals) < 20:
         return _FALLBACK_THRESHOLDS
 
-    # Compute target tier sizes: geometric series scaled to cover COVERAGE of players
-    n_bounds = num_tiers - 1
-    raw = [TIER_GROWTH_RATIO ** i for i in range(n_bounds)]
-    scale = (COVERAGE * n) / sum(raw)
-    target_sizes = [max(2, round(r * scale)) for r in raw]
-
-    # Gap sizes between adjacent players (for snapping)
-    gaps = [vals[i] - vals[i + 1] for i in range(n - 1)]
-
-    start = 0
-    used  = set()
+    cutoffs = [5, 10, 18, 30, 50, 80, 120, 175]
     boundaries = []
-    for size in target_sizes:
-        target_pos = min(start + size - 1, n - 2)
-        lo = max(start, target_pos - SNAP_WINDOW)
-        hi = min(n - 2, target_pos + SNAP_WINDOW)
-        best_gap, best_pos = -1.0, target_pos
-        for p in range(lo, hi + 1):
-            if p not in used and gaps[p] > best_gap:
-                best_gap, best_pos = gaps[p], p
-        used.add(best_pos)
-        boundaries.append(round((vals[best_pos] + vals[best_pos + 1]) / 2.0, 1))
-        start = best_pos + 1
+    for cut in cutoffs:
+        if cut >= len(vals):
+            break
+        mid = (vals[cut - 1] + vals[cut]) / 2.0
+        boundaries.append(round(mid, 1))
 
-    thresholds = sorted(boundaries, reverse=True) if boundaries else _FALLBACK_THRESHOLDS
-
-    # Enforce minimum tier size of 4.  Merge DOWN: a too-small group absorbs
-    # into the tier below it (remove its lower boundary) so that, e.g., a
-    # lone player at the top of what would be T2 stays at the head of T2
-    # rather than being pulled up into T1.  Exception: if the small group is
-    # the topmost one (value >= first threshold), merge it UP instead.
-    MIN_TIER_SIZE = 4
-    changed = True
-    while changed:
-        changed = False
-        # Check the T1 group (players above the first threshold)
-        if thresholds and sum(1 for v in vals if v >= thresholds[0]) < MIN_TIER_SIZE:
-            thresholds = thresholds[1:]  # remove upper boundary → T1 merges down into T2
-            changed = True
-            continue
-        # Check each intermediate group (between consecutive boundaries)
-        for i in range(len(thresholds)):
-            lo = thresholds[i + 1] if i + 1 < len(thresholds) else 0.0
-            hi = thresholds[i]
-            count = sum(1 for v in vals if lo <= v < hi)
-            if count < MIN_TIER_SIZE:
-                if i + 1 < len(thresholds):
-                    # Merge DOWN: remove lower boundary so this group joins the tier below
-                    thresholds = thresholds[:i + 1] + thresholds[i + 2:]
-                else:
-                    # Last intermediate group — merge UP instead
-                    thresholds = thresholds[:i] + thresholds[i + 1:]
-                changed = True
-                break
-
-    return thresholds if thresholds else _FALLBACK_THRESHOLDS
+    return boundaries if boundaries else _FALLBACK_THRESHOLDS
 
 def _asset_tier(value: float, thresholds: list = None) -> int:
     t = thresholds if thresholds is not None else _FALLBACK_THRESHOLDS
