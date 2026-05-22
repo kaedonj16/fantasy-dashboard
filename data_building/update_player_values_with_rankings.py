@@ -292,7 +292,10 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
     
     snapshot_date = date.today()
     saved_count = 0
-    
+
+    _max_val = max((float(p.get("value") or 0) for p in players if isinstance(p, dict)), default=0)
+    _scale   = (999.9 / _max_val) if _max_val > 0 else 1.0
+
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -326,7 +329,7 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
                             player.get("name", ""),
                             player.get("position", ""),
                             player.get("team", ""),
-                            min(float(player.get("value", 0)), 999.9),
+                            round(float(player.get("value", 0)) * _scale, 2),
                             "model"
                         ),
                     )
