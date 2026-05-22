@@ -11497,21 +11497,89 @@ def get_model_value_table_cached():
     if not tbl:
         tbl = list(load_model_value_table() or [])
 
-    # Apply FC/DP market corrections (inflation check + low-trade override)
+    # Apply FC/DP market corrections directly against the loaded values.
+    # Compare model values already in tbl — no extra DB query needed.
     if tbl:
         try:
-            from dashboard_services.player_value_history import load_calibration_overrides
+            from data_building.external_data.external_values_scraper import (
+                load_fantasycalc_api_values, load_dynastyprocess_values,
+            )
+            from utils.utils import normalize_name as _nn
             from collections import defaultdict as _dd
-            _overrides = load_calibration_overrides()
-            if _overrides:
+
+            # Normalize FC to 0-999.9
+            _fc_rows = load_fantasycalc_api_values() or []
+            _fc_by_sid: dict = {}
+            if _fc_rows:
+                _max_fc = max((float(r.get("value") or 0) for r in _fc_rows if r.get("value")), default=0)
+                if _max_fc > 0:
+                    for _r in _fc_rows:
+                        _sid = str(_r.get("sleeper_id") or "").strip()
+                        if _sid:
+                            try:
+                                _fc_by_sid[_sid] = float(_r["value"]) * 999.9 / _max_fc
+                            except (TypeError, ValueError):
+                                pass
+
+            # Normalize DP to 0-999.9
+            _dp_rows = load_dynastyprocess_values() or []
+            _dp_by_name: dict = {}
+            if _dp_rows:
+                _max_dp = max((float(r.get("value_1qb") or 0) for r in _dp_rows if r.get("value_1qb")), default=0)
+                if _max_dp > 0:
+                    for _r in _dp_rows:
+                        _nm = str(_r.get("player") or "").strip()
+                        if _nm:
+                            try:
+                                _dp_by_name[_nn(_nm)] = float(_r["value_1qb"]) * 999.9 / _max_dp
+                            except (TypeError, ValueError):
+                                pass
+
+            # Load trade counts (best-effort)
+            _trade_counts: dict = {}
+            try:
+                from dashboard_services.db import get_conn as _gc
+                with _gc() as _conn:
+                    with _conn.cursor() as _cur:
+                        _cur.execute("SELECT player_id, trade_count FROM trade_intel_player_stats")
+                        for _r in _cur.fetchall():
+                            _rd = dict(_r)
+                            _trade_counts[str(_rd["player_id"])] = int(_rd.get("trade_count") or 0)
+            except Exception:
+                pass
+
+            _corrected = 0
+            if _fc_by_sid or _dp_by_name:
                 for _p in tbl:
-                    _pid = str(_p.get("id") or "")
-                    if _pid in _overrides:
-                        _cal = _overrides[_pid]
-                        _p["value"]    = _cal["value"]
-                        _p["sf_value"] = _cal["sf_value"]
+                    _pid     = str(_p.get("id") or "")
+                    _mval    = float(_p.get("value") or 0)
+                    if _mval <= 0:
+                        continue
+                    _msf     = float(_p.get("sf_value") or _mval)
+                    _fc_val  = _fc_by_sid.get(_pid)
+                    _dp_val  = _dp_by_name.get(_nn(str(_p.get("name") or "")))
+
+                    if _fc_val is None and _dp_val is None:
+                        continue
+
+                    _avail   = [v for v in (_fc_val, _dp_val) if v is not None]
+                    _ext_avg = sum(_avail) / len(_avail)
+
+                    _inflated = (
+                        (_fc_val is not None and _fc_val > 0 and _mval > 1.5 * _fc_val)
+                        or (_dp_val is not None and _dp_val > 0 and _mval > 1.5 * _dp_val)
+                    )
+                    _low_trades = _trade_counts.get(_pid, 0) < 20
+
+                    if _inflated or _low_trades:
+                        _p["value"]    = round(_ext_avg, 2)
+                        _p["sf_value"] = round(_ext_avg * (_msf / _mval), 2)
+                        _corrected += 1
+
+                print(f"[model-value-cache] applied {_corrected} FC/DP market corrections")
+
                 # Recompute pos_rank / pos_rank_label after corrections
-                _pos_idx: dict = _dd(list)
+                _pos_idx: dict    = _dd(list)
                 _sf_pos_idx: dict = _dd(list)
                 for _i, _p in enumerate(tbl):
                     _pos = str(_p.get("position") or "").upper()
