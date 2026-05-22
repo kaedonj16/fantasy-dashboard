@@ -11535,6 +11535,15 @@ def get_model_value_table_cached():
                             except (TypeError, ValueError):
                                 pass
 
+            # Build pid→name map from players_index so DP lookup works even when
+            # player dicts from load_current_values_from_db() have no name field
+            # (player_values table has no name column).
+            try:
+                from utils.utils import load_players_index as _lpi
+                _pid_to_name = {str(k): (v.get("name") or "") for k, v in (_lpi() or {}).items()}
+            except Exception:
+                _pid_to_name = {}
+
             # Load trade counts (best-effort)
             _trade_counts: dict = {}
             try:
@@ -11557,7 +11566,9 @@ def get_model_value_table_cached():
                         continue
                     _msf     = float(_p.get("sf_value") or _mval)
                     _fc_val  = _fc_by_sid.get(_pid)
-                    _dp_val  = _dp_by_name.get(_nn(str(_p.get("name") or "")))
+                    # Use name from player dict if present, else fall back to players_index
+                    _name    = str(_p.get("name") or "") or _pid_to_name.get(_pid, "")
+                    _dp_val  = _dp_by_name.get(_nn(_name))
 
                     if _fc_val is None and _dp_val is None:
                         continue
