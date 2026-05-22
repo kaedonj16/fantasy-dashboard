@@ -9404,6 +9404,23 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           players = players.filter(p => !p.is_rookie || isDrafted(p));
         }
 
+        // Compute rank numbers from the full sorted list BEFORE applying search.
+        // This keeps rank #s stable — e.g. searching for a player still shows #47, not #1.
+        const _sortedForRank = players.slice().sort((a, b) => {
+          if (sortBy === 'age')       return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
+          if (sortBy === 'pos_rank')  { const rA = prLeagueType==='sf'?(a.sf_pos_rank||a.pos_rank||9999):(a.pos_rank||9999); const rB = prLeagueType==='sf'?(b.sf_pos_rank||b.pos_rank||9999):(b.pos_rank||9999); return rA - rB; }
+          if (sortBy === 'ppg')       return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
+          if (sortBy === 'total_pts') return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
+          return prGetValue(b) - prGetValue(a);
+        });
+        const _rankMap = new Map();
+        let _rankIdx = 0;
+        _sortedForRank.forEach(p => {
+          if (p.position !== 'PICK' && !(p.is_rookie && !(p.team && p.team !== 'FA'))) {
+            _rankMap.set(String(p.id), ++_rankIdx);
+          }
+        });
+
         // Search filter — fuzzy match, sort by score when query present
         if (prSearchQuery.length > 0) {
           const scored = players
@@ -9501,7 +9518,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           };
 
           const _drafted = p.is_rookie && p.team && p.team !== 'FA';
-          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (start + i + 1);
+          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (_rankMap.get(String(p.id)) ?? (start + i + 1));
           const posRank = prLeagueType === 'sf'
             ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
             : (p.pos_rank_label || p.position);
