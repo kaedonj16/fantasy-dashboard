@@ -326,7 +326,7 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
                             player.get("name", ""),
                             player.get("position", ""),
                             player.get("team", ""),
-                            float(player.get("value", 0)),
+                            min(float(player.get("value", 0)), 999.9),
                             "model"
                         ),
                     )

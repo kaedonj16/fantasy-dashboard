@@ -67,8 +67,9 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                         continue
 
                     # Extract values with defaults
-                    value_1qb = row.get("value")
-                    value_sf = row.get("sf_value")
+                    def _cap(v): return min(float(v), 999.9) if v is not None else None
+                    value_1qb = _cap(row.get("value"))
+                    value_sf  = _cap(row.get("sf_value"))
                     redraft_value_1qb = row.get("redraft_value_1qb")
                     redraft_value_sf  = row.get("redraft_value_sf")
                     position = row.get("position") or row.get("pos")
@@ -81,12 +82,12 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                     pos_rank_change_7d = row.get("pos_rank_change_7d")
                     
                     # League-size specific values
-                    value_8 = row.get("value_8")
-                    value_12 = row.get("value_12")
-                    value_14 = row.get("value_14")
-                    sf_value_8 = row.get("sf_value_8")
-                    sf_value_12 = row.get("sf_value_12")
-                    sf_value_14 = row.get("sf_value_14")
+                    value_8    = _cap(row.get("value_8"))
+                    value_12   = _cap(row.get("value_12"))
+                    value_14   = _cap(row.get("value_14"))
+                    sf_value_8  = _cap(row.get("sf_value_8"))
+                    sf_value_12 = _cap(row.get("sf_value_12"))
+                    sf_value_14 = _cap(row.get("sf_value_14"))
                     sf_pos_rank = row.get("sf_pos_rank")
                     sf_pos_rank_label = row.get("sf_pos_rank_label")
 
