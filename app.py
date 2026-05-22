@@ -1705,7 +1705,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     scores_body = get_nfl_scores_for_date(date.today().strftime("%Y%m%d"))
     team_game_lookup = build_team_game_lookup(scores_body)
 
-    model_value_table = load_model_value_table() or []
+    model_value_table = list(get_model_value_table_cached() or [])
 
     return {
         "platform": platform,
@@ -2651,12 +2651,12 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     # ---------- Teams page ----------
     if page == "teams":
         clear_teams_cache_for_league(resolved_league_id)
-        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
     # ---------- Trade page ----------
     if page == "trade":
         # Keep the shared table fresh so the trade calc reflects newest values
-        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
         # also refresh global model-value API cache used by /api/trade-eval
         global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
@@ -2665,7 +2665,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
     # ---------- Offseason dashboard refresh ----------
     if page == "dashboard" and offseason_mode:
-        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
         if platform == "sleeper":
             try:
@@ -7701,7 +7701,7 @@ def api_waiver_candidates():
     }
 
     players_index = ctx.get("players_index") or {}
-    model_value_table = load_model_value_table()
+    model_value_table = list(get_model_value_table_cached() or [])
 
     _rp_wv = ctx.get("roster_positions") or []
     _is_sf_wv = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_wv)
@@ -7862,7 +7862,7 @@ def api_start_sit_options():
     player_ids = [str(pid) for pid in (viewer_roster.get("players") or [])]
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
-    model_value_table = load_model_value_table()
+    model_value_table = list(get_model_value_table_cached() or [])
 
     lineup_requirements: dict = ctx.get("lineup_requirements") or {}
     if not lineup_requirements:
@@ -13014,7 +13014,7 @@ def api_breakout_candidates():
                 # Fallback to value movers
                 movers_data = get_top_movers(days=7, limit=100) or {}
                 players_index = load_players_index() or {}
-                value_table = load_model_value_table() or []
+                value_table = list(get_model_value_table_cached() or [])
                 values_by_id = {str(p.get("id")): p for p in value_table}
 
                 for player in movers_data.get("risers", []):
@@ -14178,7 +14178,7 @@ def api_team_details(roster_id: str):
 
         # Get players with values
         players_index = load_players_index() or {}
-        value_table = load_model_value_table() or []
+        value_table = list(get_model_value_table_cached() or [])
         values_by_id = {str(row["id"]): row for row in value_table if isinstance(row, dict) and row.get("id")}
 
         player_ids = roster.get("players") or []
@@ -14626,7 +14626,7 @@ def api_draft_needs():
         rosters = get_rosters(platform, league_id, season) or []
         league  = get_league(platform, league_id, season) or {}
         players_index = load_players_index() or {}
-        value_table   = load_model_value_table() or []
+        value_table   = list(get_model_value_table_cached() or [])
 
         roster_positions = (league.get("roster_positions") or [])
         is_sf  = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in roster_positions)
@@ -16616,13 +16616,11 @@ def api_trade_intel_player_packages(player_id: str):
         # Always prefer live DB values; fall back to cached JSON only if DB unavailable
         value_table = []
         try:
-            from dashboard_services.player_value_history import load_current_values_from_db as _load_db_vals
-            value_table = _load_db_vals() or []
+            value_table = list(get_model_value_table_cached() or [])
         except Exception:
             pass
         if not value_table:
-            from utils.utils import load_model_value_table
-            value_table = load_model_value_table() or []
+            value_table = list(get_model_value_table_cached() or [])
 
         _use_sf_ranks = (val_key == "sf_value")
         values_by_id: dict = {}
@@ -17743,7 +17741,7 @@ def api_trade_ideas_for_target():
         ctx = get_league_ctx_from_cache(platform, league_id, season)
 
         val_key = "sf_value" if league_type == "sf" else "value"
-        value_table = load_model_value_table() or []
+        value_table = list(get_model_value_table_cached() or [])
         values_by_id = {}
         for p in value_table:
             pid = str(p.get("id") or "")
