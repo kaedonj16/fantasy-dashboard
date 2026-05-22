@@ -13489,6 +13489,20 @@ def api_player_details(player_id: str):
             league_type=_modal_lt, league_size=_modal_ls,
         )
 
+        # Scale history to match the FC/DP-corrected current value so the chart
+        # ends at the corrected value. Proportional scaling preserves trend shape.
+        if value_history and player_value:
+            _is_sf = _modal_lt == "sf"
+            _corrected_cur = player_value.get("sf_value" if _is_sf else "value")
+            if _corrected_cur is not None:
+                _latest_raw = value_history[-1]["value"]
+                if _latest_raw > 0 and abs(float(_corrected_cur) - _latest_raw) > 1.0:
+                    _ratio = float(_corrected_cur) / _latest_raw
+                    for _h in value_history:
+                        _h["value"] = round(_h["value"] * _ratio, 1)
+                        if _h.get("delta_from_prev") is not None:
+                            _h["delta_from_prev"] = round(_h["delta_from_prev"] * _ratio, 1)
+
         # Load game logs from sleeper_stats for all available seasons
         game_logs_by_year = {}
 
