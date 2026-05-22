@@ -13947,6 +13947,16 @@ def api_player_details(player_id: str):
                 "sf_value": round(player_value.get("sf_value", 0), 1) if player_value.get("sf_value") else None,
                 "pos_rank": player_value.get("pos_rank"),
                 "pos_rank_label": player_value.get("pos_rank_label"),
+                "sf_pos_rank": player_value.get("sf_pos_rank"),
+                "sf_pos_rank_label": player_value.get("sf_pos_rank_label"),
+                "value_ovr_rank": next((i + 1 for i, p in enumerate(sorted(
+                    [x for x in (value_table or []) if x.get("position") not in ("K", "DEF", "PICK") and float(x.get("value") or 0) > 0],
+                    key=lambda x: float(x.get("value") or 0), reverse=True
+                )) if str(p.get("id")) == str(player_id)), None),
+                "sf_value_ovr_rank": next((i + 1 for i, p in enumerate(sorted(
+                    [x for x in (value_table or []) if x.get("position") not in ("K", "DEF", "PICK") and float(x.get("sf_value") or 0) > 0],
+                    key=lambda x: float(x.get("sf_value") or 0), reverse=True
+                )) if str(p.get("id")) == str(player_id)), None),
                 "years_exp": player_meta.get("years_exp"),
                 "ppg": _ppg,
                 "ppg_rank": _ppg_rank,

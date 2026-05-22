@@ -5620,19 +5620,27 @@ function openPlayerModal(playerId, playerName, opts) {
       const vtTrendBadge = '';
 
       // ── Build Overview panel HTML ─────────────────────────────────────────
-      const _heroCardCount = 3 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
+      const valPosRank   = data.stats?.pos_rank;
+      const valPosLabel  = data.stats?.pos_rank_label;
+      const valOvrRank   = data.stats?.value_ovr_rank;
+      const sfPosRank    = data.stats?.sf_pos_rank;
+      const sfPosLabel   = data.stats?.sf_pos_rank_label;
+      const sfOvrRank    = data.stats?.sf_value_ovr_rank;
+
+      const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
       const heroGridStyle = `style="grid-template-columns:repeat(${_heroCardCount},1fr);"`;
       let overviewHTML = `
         <div class="pm-hero-row" ${heroGridStyle}>
           <div class="pm-hero-stat pm-hero-primary">
             <div class="pm-hero-label">1QB Value</div>
             <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
+            <div class="pm-hero-sub">${valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '—'}` : '-'}</div>
           </div>
           <div class="pm-hero-stat">
             <div class="pm-hero-label">SF Value</div>
             <div class="pm-hero-val">${valsf > 0 ? valsf : '-'}</div>
+            <div class="pm-hero-sub">${sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '—'}` : '-'}</div>
           </div>
-          ${thirdValueCard}
           ${ppgCard}
           ${totalCard}
         </div>
@@ -7333,7 +7341,10 @@ function _buildComparePPGRow(p1, p2) {
 function _buildCompareHeroHTML(p) {
   const val1qb = p.stats?.value || 0;
   const valsf  = p.stats?.sf_value || 0;
-  const posRankLabel = p.stats?.pos_rank_label || (p.stats?.pos_rank ? `${p.position}${p.stats.pos_rank}` : '-');
+  const valPosRank  = p.stats?.pos_rank;
+  const valOvrRank  = p.stats?.value_ovr_rank;
+  const sfPosRank   = p.stats?.sf_pos_rank;
+  const sfOvrRank   = p.stats?.sf_value_ovr_rank;
   const pos    = p.position || '';
   const ppg    = p.stats?.ppg;
   const ppgRank = p.stats?.ppg_rank;
@@ -7362,18 +7373,16 @@ function _buildCompareHeroHTML(p) {
     </div>` : '';
 
   return `
-    <div class="compare-hero-row" style="grid-template-columns:1fr 1fr 1fr;">
+    <div class="compare-hero-row" style="grid-template-columns:1fr 1fr;">
       <div class="pm-hero-stat pm-hero-primary" style="padding:10px 10px;">
         <div class="pm-hero-label">1QB Value</div>
         <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
+        <div class="pm-hero-sub">${valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '—'}` : '-'}</div>
       </div>
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">SF Value</div>
         <div class="pm-hero-val" style="font-size:20px;">${valsf > 0 ? valsf : '-'}</div>
-      </div>
-      <div class="pm-hero-stat" style="padding:10px 10px;">
-        <div class="pm-hero-label">Pos Rank</div>
-        <div class="pm-hero-val" style="font-size:20px;">${posRankLabel}</div>
+        <div class="pm-hero-sub">${sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '—'}` : '-'}</div>
       </div>
     </div>
     ${scoringRow}
