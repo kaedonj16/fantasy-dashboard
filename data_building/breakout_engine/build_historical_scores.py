@@ -645,6 +645,8 @@ def _compute_projected_usage(
     position: str,
     prev_usage: dict,
     component_details: dict,
+    team: str = "",
+    vacated_cache: dict | None = None,
 ) -> dict:
     """
     Estimate projected usage by adding the slice of vacated opportunity
@@ -686,6 +688,17 @@ def _compute_projected_usage(
     proj_targets    = prev_targets    + vac_targets * opp_share
     proj_carries    = prev_carries    + vac_carries * opp_share
     proj_snap       = min(prev_snap_share + vac_snaps * opp_share, 0.95)
+
+    # Cross-position spillover: TEs and WRs share the same QB target pool.
+    # When WRs depart a team, ~15% of their vacated targets flow to the TE
+    # (and a small fraction in the other direction).
+    if vacated_cache and team:
+        if position == "TE":
+            wr_vac = float(vacated_cache.get((team, "WR"), {}).get("targets", 0))
+            proj_targets += wr_vac * 0.15
+        elif position == "WR":
+            te_vac = float(vacated_cache.get((team, "TE"), {}).get("targets", 0))
+            proj_targets += te_vac * 0.08
 
     # Competition reduction: shrink projected usage when a significant threat
     # arrives.  QB starters who become backups see the largest cuts; RB
@@ -893,7 +906,10 @@ def score_one_player(
         }
         # Project usage forward: prior stats + expected share of vacated opportunity,
         # minus any reduction from added competition.
-        projected_usage = _compute_projected_usage(position, prev_usage, component_details)
+        projected_usage = _compute_projected_usage(
+            position, prev_usage, component_details,
+            team=team, vacated_cache=vacated_cache,
+        )
         competition_threat = projected_usage.pop("_competition_threat", 0.0)
         multitask = compute_multitask_predictions(
             position=position,
