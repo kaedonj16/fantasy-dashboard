@@ -7701,7 +7701,7 @@ def api_waiver_candidates():
     }
 
     players_index = ctx.get("players_index") or {}
-    model_value_table = load_model_value_table()
+    model_value_table = list(get_model_value_table_cached() or [])
 
     _rp_wv = ctx.get("roster_positions") or []
     _is_sf_wv = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_wv)
@@ -7862,7 +7862,7 @@ def api_start_sit_options():
     player_ids = [str(pid) for pid in (viewer_roster.get("players") or [])]
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
-    model_value_table = load_model_value_table()
+    model_value_table = list(get_model_value_table_cached() or [])
 
     lineup_requirements: dict = ctx.get("lineup_requirements") or {}
     if not lineup_requirements:
