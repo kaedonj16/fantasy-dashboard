@@ -11599,7 +11599,7 @@ def get_model_value_table_cached():
                     )
                     _low_trades = _trade_counts.get(_pid, 0) < 20
 
-                    if _inflated or _low_trades:
+                    if _inflated or (_low_trades and _ext_avg < _mval):
                         _p["value"]    = round(_ext_avg, 2)
                         _p["sf_value"] = round(_ext_avg * (_msf / _mval), 2)
                         _corrected += 1
