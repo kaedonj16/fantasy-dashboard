@@ -1160,6 +1160,7 @@ def score_one_player(
         "peak_ppr": (
             round(multitask["peak_ppr"], 1) if multitask["peak_ppr"] is not None else None
         ),
+        "prev_ppr_ppg": round(float(prev_usage.get("ppr_ppg") or 0), 2),
     }
 
 
