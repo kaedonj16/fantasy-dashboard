@@ -4135,6 +4135,10 @@ thead th {
     border-radius: 6px;
     padding: 8px 10px;
   }
+  .otc-arch-cell:last-child,
+  .otc-arch-cell:nth-last-child(2):nth-child(odd) {
+    border-bottom: 1px solid var(--border);
+  }
 }
 
 /* Compact tab variant for inline use (e.g. archetype toggle) */
