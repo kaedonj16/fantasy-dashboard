@@ -255,9 +255,8 @@ if today.month in (1, 2) or (today.month == 3 and today.day < 15):
 else:
     from data_building.breakout_engine.calculate_breakouts_with_real_data import main as run_breakouts
     result = run_breakouts()
-    print(f"[cron] Breakout: {{result.get('saved_count', 0)}} saved, "
-          f"{{result.get('filtered_candidates', 0)}} candidates")
-""", "build_daily_breakout_candidates")
+    print(f"[cron] Breakout: {{result}}")
+""", "build_daily_breakout_scores")
 
     # ------------------------------------------------------------------ #
     # Step 6: Weekly rookie data (Sundays only, off/pre season)          #

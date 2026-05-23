@@ -1183,6 +1183,7 @@ def build_season(
     min_score: float = 30.0,
     dry_run: bool = False,
     output_json_dir: Optional[str] = None,
+    as_of_date_override: Optional[date] = None,
 ) -> int:
     """
     Generate and save historical breakout scores for one prediction season.
@@ -1190,11 +1191,13 @@ def build_season(
     season=N scores predict the N+1 NFL season:
       - uses N stats as the "prior season" baseline
       - detects N → N+1 roster changes for vacated/added competition
-      - as_of_date = March 1 of year N+1 (the upcoming season's offseason)
+      - as_of_date defaults to March 1 of year N+1 (backtesting anchor)
+        but can be overridden to date.today() for live/cron use so these
+        records outrank any stale live-pipeline rows in the DB query.
     """
     stats_season  = prediction_season          # Source of prior-season usage data
     target_season = prediction_season + 1      # The season being predicted
-    as_of_date    = date(target_season, 3, 1)  # Early offseason of the upcoming season
+    as_of_date    = as_of_date_override or date(target_season, 3, 1)
 
     print(f"\n--- Season {prediction_season} (using {stats_season} stats → predicts {target_season}, as_of {as_of_date}) ---")
 
@@ -1375,6 +1378,7 @@ def run(
     min_score: float = 30.0,
     dry_run: bool = False,
     output_json_dir: Optional[str] = None,
+    as_of_date_override: Optional[date] = None,
 ) -> None:
     # season=N uses N stats and detects N→N+1 roster changes.
     # Rosters needed: source seasons N and target seasons N+1.
@@ -1429,6 +1433,7 @@ def run(
             min_score=min_score,
             dry_run=dry_run,
             output_json_dir=output_json_dir,
+            as_of_date_override=as_of_date_override,
         )
         total_saved += n
 
