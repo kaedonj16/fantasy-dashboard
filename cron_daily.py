@@ -244,7 +244,12 @@ print(f"[cron] Saved {n} player values")
 """, "update_player_values_with_rankings")
 
     # ------------------------------------------------------------------ #
-    # Step 5: Breakout candidates                                        #
+    # Step 5: Breakout candidates (historical pipeline, today's date)    #
+    # build_historical_scores includes all improved signals: H2          #
+    # progression, split backfield escape, age succession, regression    #
+    # filter.  Writing as_of_date=today ensures these rows outrank any   #
+    # stale records from the old live pipeline in the DB query that      #
+    # orders by as_of_date DESC.                                         #
     # ------------------------------------------------------------------ #
     _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
@@ -253,11 +258,10 @@ today = date.today()
 if today.month in (1, 2) or (today.month == 3 and today.day < 15):
     print("[cron] Breakout skipped - playoff/early offseason period")
 else:
-    from data_building.breakout_engine.calculate_breakouts_with_real_data import main as run_breakouts
-    result = run_breakouts()
-    print(f"[cron] Breakout: {{result.get('saved_count', 0)}} saved, "
-          f"{{result.get('filtered_candidates', 0)}} candidates")
-""", "build_daily_breakout_candidates")
+    from data_building.breakout_engine.build_historical_scores import run as run_breakouts
+    run_breakouts(seasons=[{season} - 1], min_score=30.0, as_of_date_override=today)
+    print("[cron] Breakout rebuild complete")
+""", "build_daily_breakout_scores")
 
     # ------------------------------------------------------------------ #
     # Step 6: Weekly rookie data (Sundays only, off/pre season)          #

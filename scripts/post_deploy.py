@@ -31,7 +31,8 @@ def _get_season() -> int:
 
 
 def _needs_rebuild(target_season: int) -> bool:
-    """True if no rows for target_season have component_details.projections set."""
+    """True if no rows for target_season with today's as_of_date have projections set."""
+    from datetime import date
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
@@ -40,9 +41,10 @@ def _needs_rebuild(target_season: int) -> bool:
                     """
                     SELECT COUNT(*) FROM breakout_opportunity_scores
                     WHERE season = %s
+                      AND as_of_date = %s
                       AND component_details->'projections' IS NOT NULL
                     """,
-                    [target_season],
+                    [target_season, date.today()],
                 )
                 row = cur.fetchone()
                 return (row[0] if row else 0) == 0
@@ -78,8 +80,9 @@ def main():
         f"— rebuilding from {stats_season} stats..."
     )
     try:
+        from datetime import date
         from data_building.breakout_engine.build_historical_scores import run
-        run(seasons=[stats_season], min_score=30.0)
+        run(seasons=[stats_season], min_score=30.0, as_of_date_override=date.today())
         print(f"[post-deploy] Rebuild complete at {datetime.now().isoformat()}")
     except Exception as e:
         print(f"[post-deploy] Rebuild failed: {e}")
