@@ -708,78 +708,17 @@ def apply_candidate_filter(candidates: List[Any], usage_by_id: Dict[str, Dict]) 
 
 def main() -> Dict[str, Any]:
     from dashboard_services.api import get_nfl_state
+    from data_building.breakout_engine.build_historical_scores import run
 
-    # Get current NFL state
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season", 2026))
-    week = int(nfl_state.get("week", 0))
-    season_type = str(nfl_state.get("season_type", "off"))
+    stats_season = season - 1
 
-    engine = BreakoutEngine(season=season, as_of_date=date.today())
+    print(f"[calculate_breakouts] Season: {season}, scoring from {stats_season} stats with as_of_date={date.today()}")
 
-    print(f"[main] Season: {season}, Week: {week}, Type: {season_type}")
+    run(seasons=[stats_season], min_score=30.0, as_of_date_override=date.today())
 
-    players_index = load_players_index() or {}
-
-    # Load season-aware usage data
-    usage_table = load_season_aware_usage_data(season, week, season_type)
-
-    usage_by_id, age_by_id = build_usage_maps(usage_table)
-
-    # Primary: pull dynasty-relevant players from player_values (top 600 by rank).
-    # This respects calibrated dynasty value rather than a hard age cutoff, so
-    # a 27-year-old WR2 who just inherited a starting role is included while a
-    # fringe backup is not - regardless of their age.
-    db_players = get_all_players_with_opportunity(season, min_value_rank=600)
-
-    if db_players:
-        all_players = db_players
-        print(f"[main] Using DB candidate pool: {len(all_players)} players from player_values")
-    else:
-        # Fallback: build from players_index if DB is unavailable or empty.
-        # Keeps the original age < 26 filter since we have no value signal here.
-        print("[main] DB candidate pool unavailable - falling back to players_index (age < 26)")
-        all_players = []
-        for player_id, player_data in players_index.items():
-            pos = player_data.get("pos")
-            team = player_data.get("team")
-
-            if pos in ["QB", "RB", "WR", "TE"] and team:
-                age = age_from_bday(player_data.get("bDay"))
-
-                if age is not None and age < 26:
-                    _draft_yr = player_data.get("draft_year")
-                    if _draft_yr:
-                        years_exp = max(0, season - int(_draft_yr))
-                    else:
-                        years_exp = max(0, int(age - 22.5))
-                    all_players.append({
-                        "player_id": player_id,
-                        "player_name": player_data.get("name", "Unknown"),
-                        "team": team,
-                        "position": pos,
-                        "age": age,
-                        "years_exp": years_exp,
-                    })
-
-    filtered_candidates, filter_summary = apply_candidate_filter(all_players, usage_by_id)
-    print("Filtered candidates:", len(filtered_candidates))
-    print(filter_summary)
-
-    candidates = engine.calculate_breakout_scores(filtered_candidates, min_score=0)
-
-    saved_count = engine.save_scores(candidates)
-
-    return {
-        "season": engine.season,
-        "phase": engine.phase,
-        "as_of_date": engine.as_of_date.isoformat(),
-        "players_loaded": len(all_players),
-        "raw_candidates": len(candidates),
-        "filtered_candidates": len(filtered_candidates),
-        "saved_count": saved_count,
-        "filter_summary": filter_summary,
-    }
+    return {"season": season, "stats_season": stats_season, "as_of_date": date.today().isoformat()}
 
 
 if __name__ == "__main__":
