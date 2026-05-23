@@ -9871,12 +9871,17 @@ def page_breakouts(platform: str, season: int, league_id: str):
         const modelPpg = s1 / 17;
         const highRaw = modelPpg * 1.075;
         const high = (prevPpg > 0 && highRaw > prevPpg * 1.4) ? prevPpg * 1.4 : highRaw;
-        const isCapped = (prevPpg > 0 && highRaw > prevPpg * 1.4);
-        const low = isCapped ? Math.max(high - 2.0, modelPpg * 0.90) : modelPpg * 0.925;
+        const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.4;
+        const rawLow = isCapped ? Math.max(high - 2.0, modelPpg * 0.93) : modelPpg * 0.95;
+        // Breakout candidates should never project below their prior baseline
+        const low = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
+        const midPpg = (low + high) / 2;
+        const delta = prevPpg > 0 ? Math.round((midPpg - prevPpg) * 10) / 10 : null;
         return {{
-          low: Math.round(low * 10) / 10,
-          high: Math.round(high * 10) / 10,
-          prevPpg: prevPpg > 0 ? Math.round(prevPpg * 10) / 10 : null,
+          lowStr:  (Math.round(low  * 10) / 10).toFixed(1),
+          highStr: (Math.round(high * 10) / 10).toFixed(1),
+          prevPpg: prevPpg > 0 ? (Math.round(prevPpg * 10) / 10).toFixed(1) : null,
+          delta,
         }};
       }}
 
@@ -9935,10 +9940,13 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
           const ppgHtml = range
             ? `<div style="font-size:22px;font-weight:800;letter-spacing:-0.5px;color:var(--text);line-height:1;">
-                 ${{range.low}}–${{range.high}}
+                 ${{range.lowStr}}–${{range.highStr}}
                  <span style="font-size:13px;font-weight:500;color:var(--text-muted);">PPG</span>
                </div>
-               ${{range.prevPpg ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">vs ${{range.prevPpg}} last season</div>` : ''}}`
+               ${{range.prevPpg ? `<div style="font-size:11px;color:var(--text-muted);margin-top:3px;display:flex;align-items:center;gap:5px;">
+                 <span>vs ${{range.prevPpg}} last season</span>
+                 ${{range.delta !== null ? `<span style="font-weight:700;color:${{range.delta >= 0 ? '#10b981' : '#f59e0b'}};">${{range.delta >= 0 ? '↑ +' : '↓ '}}${{Math.abs(range.delta).toFixed(1)}}</span>` : ''}}
+               </div>` : ''}}`
             : `<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No projection available</div>`;
 
           const hitHtml = hitProb != null
