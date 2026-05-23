@@ -16,19 +16,21 @@ from typing import Dict
 # based on the current NFL calendar phase.
 
 PHASE_WEIGHTS: Dict[str, Dict[str, float]] = {
-    # Offseason weights re-derived from backtest Pearson r (2022+2023 avg vs actual ppg):
-    #   confidence r≈+0.51, role_trajectory r≈+0.48, readiness r≈+0.36,
-    #   competition_added r≈+0.11, opportunity_opened r≈−0.02,
-    #   team_environment r≈−0.06, competition_removed r≈−0.22
-    # Positive predictors get proportional weight; negative/zero get floor weight.
+    # Offseason weights derived from backtest Pearson r (2022+2023 avg vs actual ppg):
+    #   confidence r≈+0.55, role_trajectory r≈+0.51, readiness r≈+0.32,
+    #   competition_added r≈+0.04, opportunity_opened r≈−0.02,
+    #   team_environment r≈−0.05, competition_removed r≈−0.07 (consistently negative)
+    # competition_removed and team_environment are zeroed out — both show
+    # negative empirical r and adding noise hurts ranking quality.
+    # Freed weight (0.05 + 0.05 = 0.10) redistributed to confidence and role_trajectory.
     'offseason': {
         'opportunity_opened': 0.08,
-        'competition_removed': 0.05,   # Empirically negative — reduced to floor
+        'competition_removed': 0.00,   # Negative empirical r — zeroed out
         'competition_added_penalty': 0.07,
-        'team_environment': 0.05,      # Empirically negative — reduced to floor
+        'team_environment': 0.00,      # Negative empirical r — zeroed out
         'player_readiness': 0.20,
-        'role_trajectory': 0.25,       # Strong positive predictor
-        'confidence': 0.30,            # Strongest predictor — upweighted significantly
+        'role_trajectory': 0.30,       # Strong positive predictor (+0.05 from redistribution)
+        'confidence': 0.35,            # Strongest predictor (+0.05 from redistribution)
     },
     'post_free_agency': {
         'opportunity_opened': 0.15,

@@ -662,6 +662,8 @@ def calculate_competition_added_penalty(
     raw_penalty_total = 0.0
 
     for arrival in arrivals:
+        if arrival.get("player_id") == player_id:
+            continue  # Don't count the player as their own competitor
         threat_score, threat_details = _calculate_arrival_role_threat(position, arrival)
         if threat_score <= 0:
             continue
