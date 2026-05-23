@@ -1125,6 +1125,13 @@ def score_one_player(
             competition_threat=competition_threat,
         )
 
+    component_details["projections"] = {
+        "season1_ppr": (
+            round(multitask["season1_ppr"], 1) if multitask.get("season1_ppr") is not None else None
+        ),
+        "prev_ppr_ppg": round(float(prev_usage.get("ppr_ppg") or 0), 2),
+    }
+
     return {
         "player_id": gsis_id,          # will be replaced by sleeper_id below
         "player_name": name,

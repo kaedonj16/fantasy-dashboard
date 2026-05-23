@@ -6115,11 +6115,6 @@ function _buildBkTabHTML(data, scoreColor) {
     if (score < 30) scoreColor = '#6b7280';
   }
 
-  const breakoutType = data.breakout_type || {};
-  const formattedPhase = data.phase
-    ? data.phase.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-    : '-';
-
   const reasons = (data.key_reasons || '').split('\n')
     .filter(r => r.trim() && r.startsWith('•'))
     .map(r => r.substring(1).trim());
@@ -6127,23 +6122,93 @@ function _buildBkTabHTML(data, scoreColor) {
   const txnSummary    = data.vacated_usage_summary || '';
   const addedCompSumm = data.added_competition_summary || '';
 
-  // ── Hero row ───────────────────────────────────────────────────────────────
-  let html = `
-    <div class="pm-hero-row">
+  // ── PPG range computation ──────────────────────────────────────────────────
+  const s1    = parseFloat(data.season1_ppr || 0);
+  const prevPpg = parseFloat(data.prev_ppr_ppg || 0);
+  let ppgRangeHtml = '';
+  let prevPpgHtml = '';
+  if (s1 > 0) {
+    const modelPpg = s1 / 17;
+    const highRaw  = modelPpg * 1.075;
+    const high     = (prevPpg > 0 && highRaw > prevPpg * 1.4) ? prevPpg * 1.4 : highRaw;
+    const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.4;
+    const low      = isCapped ? Math.max(high - 2.0, modelPpg * 0.90) : modelPpg * 0.925;
+    const lowStr   = (Math.round(low  * 10) / 10).toFixed(1);
+    const highStr  = (Math.round(high * 10) / 10).toFixed(1);
+    ppgRangeHtml = `${lowStr}–${highStr}`;
+    if (prevPpg > 0) {
+      prevPpgHtml = (Math.round(prevPpg * 10) / 10).toFixed(1);
+    }
+  }
+
+  const hitProb = data.hit_probability != null
+    ? Math.round(parseFloat(data.hit_probability) * 100) + '%'
+    : null;
+
+  // ── Hero row: PPG range + prior PPG + hit probability ─────────────────────
+  let html = `<div class="pm-hero-row">`;
+
+  if (ppgRangeHtml) {
+    html += `
+      <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;flex:1.4;">
+        <div class="pm-hero-label" style="color:${scoreColor};">Projected PPG Range</div>
+        <div class="pm-hero-val" style="color:${scoreColor};font-size:22px;">${ppgRangeHtml}</div>
+      </div>`;
+    if (prevPpgHtml) {
+      html += `
+      <div class="pm-hero-stat" style="text-align:center;">
+        <div class="pm-hero-label">Last Season PPG</div>
+        <div class="pm-hero-val">${prevPpgHtml}</div>
+      </div>`;
+    }
+  } else {
+    html += `
       <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
         <div class="pm-hero-label" style="color:${scoreColor};">Breakout Score</div>
         <div class="pm-hero-val" style="color:${scoreColor};">${scoreStr}</div>
+      </div>`;
+  }
+
+  if (hitProb) {
+    html += `
+      <div class="pm-hero-stat" style="text-align:center;">
+        <div class="pm-hero-label">Hit Probability</div>
+        <div class="pm-hero-val" style="color:${scoreColor};">${hitProb}</div>
+      </div>`;
+  }
+
+  html += `
+      <div class="pm-hero-stat" style="text-align:center;">
+        <div class="pm-hero-label">Score</div>
+        <div style="font-size:18px;font-weight:800;color:${scoreColor};margin:4px 0;">${scoreStr}</div>
       </div>
-      <div class="pm-hero-stat" style="text-align:center;padding-left:16px;">
-        <div class="pm-hero-label">Profile</div>
-        <div style="font-size:13px;font-weight:700;line-height:1.3;color:var(--text);margin:4px 0;">${breakoutType.profile_label || '-'}</div>
-      </div>
-      <div class="pm-hero-stat">
-        <div class="pm-hero-label">Phase</div>
-        <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;margin:4px 0;">${formattedPhase}</div>
-      </div>
-    </div>
-  `;
+  </div>`;
+
+  // ── What Changed ───────────────────────────────────────────────────────────
+  const hasContext = (txnSummary && txnSummary !== 'No departures') ||
+                     (addedCompSumm && addedCompSumm !== 'No new competition added');
+  if (hasContext) {
+    html += `
+      <hr class="pm-section-divider">
+      <div class="pm-section-header"><span class="pm-section-label">What Changed</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+    `;
+    if (txnSummary && txnSummary !== 'No departures') {
+      html += `
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <span style="font-size:14px;margin-top:1px;">&#8599;</span>
+          <div style="font-size:13px;color:var(--text-muted);line-height:1.5;">${txnSummary}</div>
+        </div>`;
+    }
+    if (addedCompSumm && addedCompSumm !== 'No new competition added') {
+      html += `
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <span style="font-size:14px;margin-top:1px;color:#ef4444;">&#8601;</span>
+          <div style="font-size:13px;color:var(--text-muted);line-height:1.5;">${addedCompSumm}</div>
+        </div>`;
+    }
+    html += `</div>`;
+  }
 
   // ── Component breakdown ────────────────────────────────────────────────────
   const components = [
@@ -6189,22 +6254,6 @@ function _buildBkTabHTML(data, scoreColor) {
     html += '</div></div>';
   }
   html += '</div>';
-
-  // ── Context boxes ──────────────────────────────────────────────────────────
-  if (txnSummary && txnSummary !== 'No departures') {
-    html += `
-      <hr class="pm-section-divider">
-      <div class="pm-section-header"><span class="pm-section-label">Vacated Opportunity</span></div>
-      <div class="pm-context-box">${txnSummary}</div>
-    `;
-  }
-  if (addedCompSumm && addedCompSumm !== 'No new competition added') {
-    html += `
-      <hr class="pm-section-divider">
-      <div class="pm-section-header"><span class="pm-section-label">Added Competition</span></div>
-      <div class="pm-context-box competition">${addedCompSumm}</div>
-    `;
-  }
 
   return html;
 }
@@ -8312,10 +8361,6 @@ function _renderBkModalContent(data, playerId) {
   const score = parseFloat(data.breakout_opportunity_score || 0);
   const scoreStr = score.toFixed(1);
 
-  const breakoutType = data.breakout_type || {};
-  const iconHtml  = breakoutType.icon_html || '<i class="fa-solid fa-chart-simple" aria-hidden="true"></i>';
-  const label  = breakoutType.profile_label || 'Breakout Candidate';
-  const driver = breakoutType.primary_driver || 'balanced';
   const formattedPhase = data.phase
     ? data.phase.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
     : '-';
@@ -8339,97 +8384,9 @@ function _renderBkModalContent(data, playerId) {
   if (score < 40) scoreColor = '#f59e0b';
   if (score < 30) scoreColor = '#6b7280';
 
-  // Key reasons
-  const reasons = (data.key_reasons || '').split('\n')
-    .filter(r => r.trim() && r.startsWith('•'))
-    .map(r => r.substring(1).trim());
+  // ── Body: delegate to shared builder ──────────────────────────────────────
+  let html = _buildBkTabHTML(data, scoreColor);
 
-  const txnSummary    = data.vacated_usage_summary || '';
-  const addedCompSumm = data.added_competition_summary || '';
-
-  // ── Hero row ──────────────────────────────────────────────────────────────
-  let html = `
-    <div class="pm-hero-row">
-      <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
-        <div class="pm-hero-label" style="color:${scoreColor};">Breakout Score</div>
-        <div class="pm-hero-val" style="color:${scoreColor};">${scoreStr}</div>
-      </div>
-      <div class="pm-hero-stat" style="text-align:center;padding-left:16px;">
-        <div class="pm-hero-label">Profile</div>
-        <div style="font-size:13px;font-weight:700;line-height:1,3;color:var(--text);margin:4px 0;">${breakoutType.profile_label}</div>
-      </div>
-      <div class="pm-hero-stat">
-        <div class="pm-hero-label">Phase</div>
-        <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;margin:4px 0;">${formattedPhase}</div>
-      </div>
-    </div>
-  `;
-
-  // ── Component breakdown with bars ─────────────────────────────────────────
-  html += `<div class='pm-two-column'>`;
-  html += `<div class='pm-left-column'>`;
-  html += `<hr class="pm-section-divider">`;
-  html += `<div class="pm-section-header"><span class="pm-section-label">Component Breakdown</span></div>`;
-
-  const components = [
-    { label: 'Opportunity',     val: data.opportunity_opened_score,  color: '#10b981' },
-    { label: 'Competition',     val: data.competition_removed_score, color: '#3b82f6' },
-    { label: 'Team Env.',       val: data.team_environment_score,    color: null      },
-    { label: 'Readiness',       val: data.player_readiness_score,    color: '#8b5cf6' },
-    { label: 'Role Trajectory', val: data.role_trajectory_score,     color: null      },
-    { label: 'Confidence',      val: data.confidence_score,          color: '#6b7280', suffix: '%' },
-  ];
-
-  html += '<div class="pm-comp-list-bo">';
-  components.forEach(c => {
-    const v    = parseFloat(c.val || 0);
-    const fill = Math.min(100, Math.max(0, v));
-    const color = c.color || (v >= 60 ? '#10b981' : v >= 35 ? '#3b82f6' : '#f59e0b');
-    const disp = c.suffix ? v.toFixed(0) + c.suffix : v.toFixed(1);
-    html += `
-      <div class="pm-comp-row">
-        <span class="pm-comp-label">${c.label}</span>
-        <div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>
-        <span class="pm-comp-val" style="color:${color};">${disp}</span>
-      </div>`;
-  });
-  html += '</div>';
-  html += '</div>';
-
-
-  // ── Key factors ───────────────────────────────────────────────────────────
-  if (reasons.length) {
-    html += `
-      <div class='pm-right-column'>
-      <hr class="pm-section-divider">
-      <div class="pm-section-header"><span class="pm-section-label">Key Factors</span></div>
-      <div style="display:flex;flex-direction:column;gap:6px;">
-    `;
-    reasons.forEach(r => {
-      html += `<div style="font-size:13px;color:var(--text-muted);display:flex;gap:15px;align-items:flex-start;">
-        <span style="color:${scoreColor};font-weight:700;flex-shrink:0;">•</span><span>${r}</span>
-      </div>`;
-    });
-    html += '</div>';
-    html += '</div>';
-    html += '</div>';
-  }
-
-  // ── Context boxes ─────────────────────────────────────────────────────────
-  if (txnSummary && txnSummary !== "No departures") {
-    html += `
-      <hr class="pm-section-divider">
-      <div class="pm-section-header"><span class="pm-section-label">Vacated Opportunity</span></div>
-      <div class="pm-context-box">${txnSummary}</div>
-    `;
-  }
-  if (addedCompSumm && addedCompSumm !== "No new competition added") {
-    html += `
-      <hr class="pm-section-divider">
-      <div class="pm-section-header"><span class="pm-section-label">Added Competition</span></div>
-      <div class="pm-context-box competition">${addedCompSumm}</div>
-    `;
-  }
   // ── Footer CTA ────────────────────────────────────────────────────────────
   html += `
     <div class="pm-footer">

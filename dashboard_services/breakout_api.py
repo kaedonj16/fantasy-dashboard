@@ -158,7 +158,9 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             cumulative_ppr,
             peak_ppr,
             (component_details->'player_readiness'->>'age')::numeric as age,
-            (component_details->'player_readiness'->>'usage_baseline_score')::numeric as readiness_usage_baseline
+            (component_details->'player_readiness'->>'usage_baseline_score')::numeric as readiness_usage_baseline,
+            (component_details->'projections'->>'season1_ppr')::numeric as cd_season1_ppr,
+            (component_details->'projections'->>'prev_ppr_ppg')::numeric as cd_prev_ppr_ppg
         FROM breakout_opportunity_scores
         WHERE season = %s
           AND breakout_opportunity_score >= %s
@@ -171,6 +173,21 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             rows = cursor.fetchall()
 
     candidates = [enrich_candidate_with_type(dict(row)) for row in rows]
+
+    # Enrich with PPG projection fields, falling back to cumulative_ppr + age derivation
+    for c in candidates:
+        age_f = float(c.get('age') or 24)
+        cum_ppr = float(c.get('cumulative_ppr') or 0)
+        cd_s1 = c.pop('cd_season1_ppr', None)
+        cd_prev = c.pop('cd_prev_ppr_ppg', None)
+        if cd_s1 is not None:
+            c['season1_ppr'] = float(cd_s1)
+        elif cum_ppr:
+            y2 = 1.15 if age_f < 23 else 1.05 if age_f < 26 else 0.95 if age_f < 29 else 0.78
+            c['season1_ppr'] = round(cum_ppr / (1.0 + y2), 1)
+        else:
+            c['season1_ppr'] = None
+        c['prev_ppr_ppg'] = float(cd_prev) if cd_prev is not None else None
 
     # Filter out QB non-breakout profiles
     filtered = []
@@ -288,7 +305,10 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
             calculated_at,
             hit_probability,
             cumulative_ppr,
-            peak_ppr
+            peak_ppr,
+            (component_details->'player_readiness'->>'age')::numeric as age,
+            (component_details->'projections'->>'season1_ppr')::numeric as cd_season1_ppr,
+            (component_details->'projections'->>'prev_ppr_ppg')::numeric as cd_prev_ppr_ppg
         FROM breakout_opportunity_scores
         WHERE player_id = %s
           AND season = %s
@@ -305,6 +325,20 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
         return {'error': 'Player not found', 'player_id': player_id, 'season': season}
 
     candidate = enrich_candidate_with_type(dict(row))
+
+    # Enrich with PPG projection fields
+    age_f = float(candidate.get('age') or 24)
+    cum_ppr = float(candidate.get('cumulative_ppr') or 0)
+    cd_s1 = candidate.pop('cd_season1_ppr', None)
+    cd_prev = candidate.pop('cd_prev_ppr_ppg', None)
+    if cd_s1 is not None:
+        candidate['season1_ppr'] = float(cd_s1)
+    elif cum_ppr:
+        y2 = 1.15 if age_f < 23 else 1.05 if age_f < 26 else 0.95 if age_f < 29 else 0.78
+        candidate['season1_ppr'] = round(cum_ppr / (1.0 + y2), 1)
+    else:
+        candidate['season1_ppr'] = None
+    candidate['prev_ppr_ppg'] = float(cd_prev) if cd_prev is not None else None
 
     # Fill missing name / headshot from players_index
     try:

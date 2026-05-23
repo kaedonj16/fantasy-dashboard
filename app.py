@@ -9860,6 +9860,32 @@ def page_breakouts(platform: str, season: int, league_id: str):
         renderBreakouts();
       }}
 
+      function _boPpgRange(candidate) {{
+        const s1 = parseFloat(candidate.season1_ppr || 0);
+        const prevPpg = parseFloat(candidate.prev_ppr_ppg || 0);
+        if (!s1) return null;
+        const modelPpg = s1 / 17;
+        const highRaw = modelPpg * 1.075;
+        const high = (prevPpg > 0 && highRaw > prevPpg * 1.4) ? prevPpg * 1.4 : highRaw;
+        const isCapped = (prevPpg > 0 && highRaw > prevPpg * 1.4);
+        const low = isCapped ? Math.max(high - 2.0, modelPpg * 0.90) : modelPpg * 0.925;
+        return {{
+          low: Math.round(low * 10) / 10,
+          high: Math.round(high * 10) / 10,
+          prevPpg: prevPpg > 0 ? Math.round(prevPpg * 10) / 10 : null,
+        }};
+      }}
+
+      function _boTopComponent(candidate) {{
+        const comps = [
+          {{ label: 'Opportunity', val: parseFloat(candidate.opportunity_opened_score || 0), color: '#10b981' }},
+          {{ label: 'Readiness',   val: parseFloat(candidate.player_readiness_score || 0),  color: '#8b5cf6' }},
+          {{ label: 'Competition', val: parseFloat(candidate.competition_removed_score || 0), color: '#3b82f6' }},
+          {{ label: 'Role Trend',  val: parseFloat(candidate.role_trajectory_score || 0),    color: '#f59e0b' }},
+        ];
+        return comps.reduce((best, c) => c.val > best.val ? c : best, comps[0]);
+      }}
+
       function renderBreakouts() {{
         const container = document.getElementById('breakoutsContainer');
         const filtered = currentFilter === 'ALL'
@@ -9885,79 +9911,67 @@ def page_breakouts(platform: str, season: int, league_id: str):
           const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
           const pos = candidate.position || '?';
-          const age = candidate.age ? parseFloat(candidate.age).toFixed(1) : '-';
-          const score = candidate.breakout_opportunity_score ? parseFloat(candidate.breakout_opportunity_score).toFixed(1) : '0';
+          const age = candidate.age ? parseFloat(candidate.age).toFixed(0) : '-';
+          const score = parseFloat(candidate.breakout_opportunity_score || 0).toFixed(1);
           const pid = candidate.player_id || '';
+          const hitProb = candidate.hit_probability != null ? Math.round(parseFloat(candidate.hit_probability) * 100) : null;
 
-          // Breakout type classification
-          const breakoutType = candidate.breakout_type || {{}};
-          const iconClass = breakoutType.icon_class || 'fa-chart-bar';
-          const label = breakoutType.profile_label || 'Breakout Candidate';
-          const driver = breakoutType.primary_driver || 'balanced';
+          let scoreColor = '#10b981';
+          if (score < 50) scoreColor = '#3b82f6';
+          if (score < 40) scoreColor = '#f59e0b';
+          if (score < 30) scoreColor = '#6b7280';
 
-          // Component scores
-          const oppScore = parseFloat(candidate.opportunity_opened_score || 0).toFixed(1);
-          const readyScore = parseFloat(candidate.player_readiness_score || 0).toFixed(1);
-          const confScore = parseFloat(candidate.confidence_score || 0).toFixed(1);
-          const teamEnv = parseFloat(candidate.team_environment_score || 0).toFixed(1);
+          const range = _boPpgRange(candidate);
+          const topComp = _boTopComponent(candidate);
 
-          // Key reasons (from engine)
-          const reasons = candidate.key_reasons || '';
-          const reasonsList = reasons.split('\\n').filter(r => r.trim() && r.startsWith('•')).map(r => r.substring(1).trim());
+          const reasons = (candidate.key_reasons || '').split('\\n')
+            .filter(r => r.trim() && r.startsWith('•'))
+            .map(r => r.substring(1).trim());
+          const topReason = reasons[0] || '';
 
-          // Score badge color based on score ranges
-          let scoreColor = '#10b981'; // green (50+)
-          if (score < 50) scoreColor = '#3b82f6'; // blue (40-49)
-          if (score < 40) scoreColor = '#f59e0b'; // amber (30-39)
-          if (score < 30) scoreColor = '#6b7280'; // gray (<30)
+          const ppgHtml = range
+            ? `<div style="font-size:22px;font-weight:800;letter-spacing:-0.5px;color:var(--text);line-height:1;">
+                 ${{range.low}}–${{range.high}}
+                 <span style="font-size:13px;font-weight:500;color:var(--text-muted);">PPG</span>
+               </div>
+               ${{range.prevPpg ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">vs ${{range.prevPpg}} last season</div>` : ''}}`
+            : `<div style="font-size:13px;color:var(--text-muted);font-style:italic;">No projection available</div>`;
 
+          const hitHtml = hitProb != null
+            ? `<div style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;background:${{scoreColor}}22;border:1px solid ${{scoreColor}}44;font-size:11px;font-weight:700;color:${{scoreColor}};">
+                 ${{hitProb}}% hit prob
+               </div>`
+            : '';
+
+          const barFill = Math.min(100, Math.max(0, topComp.val));
           html += `
             <div class="breakout-card" style="cursor:pointer;" onclick="openBreakoutModal('` + pid + `')">
-              <div class="breakout-card-header">
+              <div class="breakout-card-header" style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;">
                 <div>
                   <div class="breakout-player-name">` + name + `</div>
-                  <div class="breakout-player-meta">${{age}} • ${{team}} • ${{pos}}</div>
+                  <div class="breakout-player-meta" style="font-size:12px;color:var(--text-muted);margin-top:2px;">${{age}} yr • ${{team}} • ${{pos}}</div>
                 </div>
-                <div class="breakout-score-badge" style="background: ${{scoreColor}};">
-                  ${{score}}
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                  <div class="breakout-score-badge" style="background:${{scoreColor}};color:#fff;font-size:13px;font-weight:700;padding:3px 9px;border-radius:6px;">${{score}}</div>
+                  ${{hitHtml}}
                 </div>
               </div>
 
-              <div class="breakout-card-body">
-                <!-- Breakout Type Badge -->
-                <div class="breakout-type-badge" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--card-bg); border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--border-color);">
-                  <i class="fa-solid ${{iconClass}}" style="font-size:18px;width:20px;text-align:center;"></i>
-                  <span style="font-weight: 500; flex: 1;">${{label}}</span>
-                  <span style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">${{driver}} driven</span>
-                </div>
+              <div style="margin-bottom:12px;">
+                ${{ppgHtml}}
+              </div>
 
-                <!-- Component Scores -->
-                <div class="breakout-section">
-                  <div class="breakout-section-title">Component Breakdown</div>
-                  <div class="breakout-components" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 12px;">
-                    ${{driver === 'opportunity' || driver === 'balanced' ? `
-                      <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
-                        <div style="color: var(--text-muted); margin-bottom: 2px;">Opportunity</div>
-                        <div style="font-weight: 600; font-size: 14px; color: #10b981;">${{oppScore}}</div>
-                      </div>
-                    ` : ''}}
-                    ${{driver === 'readiness' || driver === 'balanced' ? `
-                      <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
-                        <div style="color: var(--text-muted); margin-bottom: 2px;">Talent/Readiness</div>
-                        <div style="font-weight: 600; font-size: 14px; color: #3b82f6;">${{readyScore}}</div>
-                      </div>
-                    ` : ''}}
-                    <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
-                      <div style="color: var(--text-muted); margin-bottom: 2px;">Team Environment</div>
-                      <div style="font-weight: 600; font-size: 14px;">${{teamEnv}}</div>
-                    </div>
-                    <div style="background: var(--card-bg); padding: 8px; border-radius: 4px; border: 1px solid var(--border-color);">
-                      <div style="color: var(--text-muted); margin-bottom: 2px;">Confidence</div>
-                      <div style="font-weight: 600; font-size: 14px;">${{confScore}}%</div>
-                    </div>
-                  </div>
+              <div style="margin-bottom:10px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                  <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Top Driver: ${{topComp.label}}</span>
+                  <span style="font-size:11px;font-weight:700;color:${{topComp.color}};">${{topComp.val.toFixed(1)}}</span>
+                </div>
+                <div style="height:5px;background:var(--border-color);border-radius:3px;overflow:hidden;">
+                  <div style="height:100%;width:${{barFill}}%;background:${{topComp.color}};border-radius:3px;transition:width 0.3s;"></div>
                 </div>
               </div>
+
+              ${{topReason ? `<div style="font-size:11px;color:var(--text-muted);line-height:1.4;border-top:1px solid var(--border-color);padding-top:8px;">${{topReason}}</div>` : ''}}
             </div>
           `;
         }});
