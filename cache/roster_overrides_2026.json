@@ -5,5 +5,13 @@
     "player_name": "David Njoku",
     "position": "TE",
     "to_team": "LAC"
+  },
+  {
+    "_note": "Fannin absent from nfl_data_py 2026 roster data (2025 rookie, still active at CLE)",
+    "player_id": "00-0040663",
+    "player_name": "Harold Fannin Jr.",
+    "position": "TE",
+    "to_team": "CLE",
+    "carry_forward": true
   }
 ]

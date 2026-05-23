@@ -149,13 +149,19 @@ def load_rosters(seasons: list[int]) -> tuple[dict[int, dict[str, dict]], dict[s
 
     # Apply manual roster overrides (transactions not yet in nfl_data_py).
     # Files: cache/roster_overrides_{season}.json — one JSON array per target season.
+    # Each entry may:
+    #   - change a team:   {player_id, to_team, player_name, position}
+    #   - add a returning player missing from nfl_data_py's current-season data:
+    #     {player_id, to_team, player_name, position, carry_forward: true}
+    #     The entry is copied from the immediately prior season's roster.
+    all_season_rosters = {s: rosters_by_season.get(s, {}) for s in seasons}
     for season in seasons:
         override_path = Path("cache") / f"roster_overrides_{season}.json"
         if not override_path.exists():
             continue
         with open(override_path) as _f:
             overrides = json.load(_f)
-        season_rosters = rosters_by_season.get(season, {})
+        season_rosters = rosters_by_season.setdefault(season, {})
         applied = 0
         for ov in overrides:
             if ov.get("_note"):
@@ -169,6 +175,21 @@ def load_rosters(seasons: list[int]) -> tuple[dict[int, dict[str, dict]], dict[s
                 season_rosters[gsis_id]["team"] = to_team
                 print(f"  Override: {ov.get('player_name', gsis_id)} {old_team}→{to_team} ({season})")
                 applied += 1
+            elif ov.get("carry_forward"):
+                # Player absent from nfl_data_py's season data — carry forward their
+                # entry from the prior season with the specified team.
+                prior = rosters_by_season.get(season - 1, {}).get(gsis_id)
+                if prior:
+                    entry = dict(prior)
+                    entry["team"] = to_team
+                    season_rosters[gsis_id] = entry
+                    # Maintain the sleeper↔gsis map
+                    if prior.get("sleeper_id"):
+                        gsis_to_sleeper.setdefault(gsis_id, prior["sleeper_id"])
+                    print(f"  Override (carry-fwd): {ov.get('player_name', gsis_id)} → {to_team} ({season})")
+                    applied += 1
+                else:
+                    print(f"  Override WARNING: {ov.get('player_name', gsis_id)} not in prior-season rosters, cannot carry forward")
         if applied:
             print(f"  Applied {applied} roster override(s) for {season}")
 
@@ -253,6 +274,82 @@ def _load_usage_season_from_cache(
             "avg_rec_tds": avg_rec_tds,
             "avg_rush_tds": avg_rush_tds,
         }
+
+    # Enrich with intra-season H1/H2 split for trend detection
+    split_by_team_name = _load_weekly_split_stats(season)
+    for gsis_id, entry in result.items():
+        key = (entry.get("team", ""), entry.get("name", "").lower())
+        split = split_by_team_name.get(key)
+        if split:
+            entry.update(split)
+
+    return result
+
+
+def _load_weekly_split_stats(season: int) -> dict[tuple, dict]:
+    """
+    Compute H1 (weeks 1-8) / H2 (weeks 9-17) splits from weekly cache files.
+    Returns dict keyed by (team, lowercase_player_name).
+    Used for trend detection: a player whose H2 PPR is ≥20% above H1 gets their
+    H2 per-game rates projected forward as their baseline.
+    """
+    stats_dir = Path("cache/stats")
+    raw: dict[tuple, dict] = {}
+
+    for week in range(1, 18):
+        path = stats_dir / f"week_stats_s{season}_w{week}.json"
+        if not path.exists():
+            continue
+        half = "h1" if week <= 8 else "h2"
+        with open(path) as f:
+            data = json.load(f)
+        for team, positions in data.items():
+            for _pos, players in positions.items():
+                for name, stats in players.items():
+                    key = (team, name.lower())
+                    e = raw.setdefault(key, {
+                        "h1_carries": 0, "h1_rec": 0,
+                        "h1_rush_yds": 0.0, "h1_rec_yds": 0.0,
+                        "h1_rush_td": 0.0, "h1_rec_td": 0.0, "h1_games": 0,
+                        "h2_carries": 0, "h2_rec": 0,
+                        "h2_rush_yds": 0.0, "h2_rec_yds": 0.0,
+                        "h2_rush_td": 0.0, "h2_rec_td": 0.0, "h2_games": 0,
+                    })
+                    e[f"{half}_carries"]  += int(stats.get("rush_att") or 0)
+                    e[f"{half}_rec"]      += int(stats.get("rec") or 0)
+                    e[f"{half}_rush_yds"] += float(stats.get("rush_yds") or 0)
+                    e[f"{half}_rec_yds"]  += float(stats.get("rec_yds") or 0)
+                    e[f"{half}_rush_td"]  += float(stats.get("rush_td") or 0)
+                    e[f"{half}_rec_td"]   += float(stats.get("rec_td") or 0)
+                    e[f"{half}_games"]    += 1
+
+    result: dict[tuple, dict] = {}
+    for key, e in raw.items():
+        h1g = max(e["h1_games"], 1)
+        h2g = max(e["h2_games"], 1)
+
+        def _ppr_ppg(half: str, games: int) -> float:
+            return (
+                e[f"{half}_rec"]
+                + e[f"{half}_rec_yds"] * 0.1
+                + e[f"{half}_rec_td"]  * 6
+                + e[f"{half}_rush_yds"] * 0.1
+                + e[f"{half}_rush_td"]  * 6
+            ) / games
+
+        h1_ppr = _ppr_ppg("h1", h1g)
+        h2_ppr = _ppr_ppg("h2", h2g)
+        trend_factor = round(h2_ppr / max(h1_ppr, 1.0), 3) if h1_ppr >= 1.0 else 1.0
+
+        result[key] = {
+            "h1_ppr_ppg":    round(h1_ppr, 2),
+            "h1_games":      e["h1_games"],
+            "h2_ppr_ppg":    round(h2_ppr, 2),
+            "h2_carries_pg": round(e["h2_carries"] / h2g, 2),
+            "h2_rec_pg":     round(e["h2_rec"] / h2g, 2),
+            "h2_games":      e["h2_games"],
+            "trend_factor":  trend_factor,
+        }
     return result
 
 
@@ -323,6 +420,50 @@ def load_usage_stats(
             )
             .reset_index()
         )
+
+        # H1/H2 split for trend detection (weeks 1-8 vs 9-17)
+        _h1_agg = (
+            weekly[weekly["week"] <= 8]
+            .groupby(["player_id", "season"])
+            .agg(h1_games=("week", "nunique"), h1_ppr=("fantasy_points_ppr", "sum"))
+            .reset_index()
+        )
+        _h2_agg = (
+            weekly[weekly["week"] >= 9]
+            .groupby(["player_id", "season"])
+            .agg(
+                h2_games=("week", "nunique"),
+                h2_carries=("carries", "sum"),
+                h2_receptions=("receptions", "sum"),
+                h2_ppr=("fantasy_points_ppr", "sum"),
+            )
+            .reset_index()
+        )
+        _h1_lookup: dict[tuple, dict] = {
+            (str(r["player_id"]), int(r["season"])): {
+                "h1_games":   int(_safe(r["h1_games"], 0)),
+                "h1_ppr_ppg": round(float(_safe(r["h1_ppr"], 0)) / max(int(_safe(r["h1_games"], 1)), 1), 2),
+            }
+            for _, r in _h1_agg.iterrows()
+        }
+        _h2_lookup: dict[tuple, dict] = {}
+        for _, _r in _h2_agg.iterrows():
+            _gid  = str(_r["player_id"])
+            _seas = int(_r["season"])
+            _h2g  = max(int(_safe(_r["h2_games"], 1)), 1)
+            _h2_ppr_ppg = round(float(_safe(_r["h2_ppr"], 0)) / _h2g, 2)
+            _h1_info = _h1_lookup.get((_gid, _seas), {})
+            _h1_ppr  = _h1_info.get("h1_ppr_ppg", _h2_ppr_ppg)
+            _trend   = round(_h2_ppr_ppg / max(_h1_ppr, 1.0), 3) if _h1_ppr >= 1.0 else 1.0
+            _h2_lookup[(_gid, _seas)] = {
+                "h1_ppr_ppg":    _h1_ppr,
+                "h1_games":      _h1_info.get("h1_games", 0),
+                "h2_ppr_ppg":    _h2_ppr_ppg,
+                "h2_carries_pg": round(int(_safe(_r["h2_carries"], 0)) / _h2g, 2),
+                "h2_rec_pg":     round(int(_safe(_r["h2_receptions"], 0)) / _h2g, 2),
+                "h2_games":      int(_safe(_r["h2_games"], 0)),
+                "trend_factor":  _trend,
+            }
 
         snap_seasons = [s for s in nfl_seasons if s in SNAP_COUNT_SEASONS]
         snap_by_pfr_season: dict[tuple, float] = {}
@@ -406,6 +547,11 @@ def load_usage_stats(
                 "avg_rush_tds": round(rush_tds / max(games, 1), 3),
                 "avg_rec_tds": round(rec_tds / max(games, 1), 3),
             }
+            # Enrich with H2 split stats for trend detection
+            h2_info = _h2_lookup.get((gsis_id, season))
+            if h2_info:
+                entry.update(h2_info)
+
             usage_by_season.setdefault(season, {})[gsis_id] = entry
 
         # Backfill snap_share via pfr_id → gsis_id mapping
@@ -551,6 +697,8 @@ def detect_changes(
             continue  # Departed — already handled above
         u = prev_usage.get(gsis_id, {})
         inc = _usage_arrival_dict(gsis_id, prev["name"], "incumbent", u)
+        # Age used by the succession signal in _compute_projected_usage
+        inc["player_age"] = curr.get("age") or prev.get("age")
         incumbents.setdefault((prev_team, prev_pos), []).append(inc)
 
     return vacated, departures, arrivals, incumbents
@@ -647,6 +795,9 @@ def _compute_projected_usage(
     component_details: dict,
     team: str = "",
     vacated_cache: dict | None = None,
+    incumbents_cache: dict | None = None,
+    is_arrival: bool = False,
+    player_gsis_id: str = "",
 ) -> dict:
     """
     Estimate projected usage by adding the slice of vacated opportunity
@@ -654,6 +805,11 @@ def _compute_projected_usage(
 
     Mirrors the opportunity_share logic in core.py so that PPG predictions
     reflect role expansion, not just historical volume.
+
+    Additional signals applied here:
+    - H2 progression: if trend_factor ≥ 1.20 and ≥4 H2 games, project from H2 rate
+    - Better situation: RB escaping split backfield (snap<0.55) → starter opp_share
+    - Age succession: credit a fraction of aging incumbent's opportunity
     """
     opp = component_details.get("opportunity_opened", {})
     vac_targets = float(opp.get("vacated_targets", 0))
@@ -665,7 +821,11 @@ def _compute_projected_usage(
     if position == "QB":
         opp_share = 0.90
     elif position == "RB":
-        if prev_snap >= 0.55:
+        if is_arrival and prev_snap < 0.55 and vac_carries >= 50:
+            # Escaped a split backfield and moving into a team with a clear vacancy —
+            # treat them as the presumptive starter absorbing most available opportunity.
+            opp_share = 0.48
+        elif prev_snap >= 0.55:
             opp_share = 0.48
         elif prev_snap >= 0.30:
             opp_share = 0.32
@@ -685,6 +845,25 @@ def _compute_projected_usage(
     prev_carries    = float((prev_usage or {}).get("carries", 0))
     prev_snap_share = float((prev_usage or {}).get("snap_share", 0))
 
+    # H2 progression: a player whose second-half role was significantly larger than
+    # their first-half role is trending up — use their H2 per-game rate × 17 as the
+    # projection baseline rather than the full-season average.
+    h2_games     = int((prev_usage or {}).get("h2_games") or 0)
+    trend_factor = float((prev_usage or {}).get("trend_factor") or 1.0)
+    if h2_games >= 4 and trend_factor >= 1.20:
+        h2_carries_pg = float((prev_usage or {}).get("h2_carries_pg") or 0)
+        h2_rec_pg     = float((prev_usage or {}).get("h2_rec_pg") or 0)
+        catch_rate    = float((prev_usage or {}).get("catch_rate") or 0.68)
+        h2_impl_tgt   = (h2_rec_pg / max(catch_rate, 0.40)) * 17 if h2_rec_pg > 0 else 0
+        h2_impl_car   = h2_carries_pg * 17
+        # Only apply H2 baseline when it is strictly higher than the full-season rate
+        if position in ("WR", "TE") and h2_impl_tgt > prev_targets:
+            prev_targets = h2_impl_tgt
+        if position in ("RB", "WR", "TE") and h2_impl_car > prev_carries:
+            prev_carries = h2_impl_car
+        if position == "RB" and h2_impl_tgt > prev_targets:
+            prev_targets = h2_impl_tgt
+
     proj_targets    = prev_targets    + vac_targets * opp_share
     proj_carries    = prev_carries    + vac_carries * opp_share
     proj_snap       = min(prev_snap_share + vac_snaps * opp_share, 0.95)
@@ -699,6 +878,25 @@ def _compute_projected_usage(
         elif position == "WR":
             te_vac = float(vacated_cache.get((team, "TE"), {}).get("targets", 0))
             proj_targets += te_vac * 0.08
+
+    # Age succession: a fraction of an aging teammate's volume is credited to the
+    # candidate as expected succession opportunity.  Rates reflect how quickly
+    # production typically declines by age bracket.
+    if incumbents_cache and team and position in ("RB", "WR", "TE"):
+        for inc in incumbents_cache.get((team, position), []):
+            if inc.get("player_id") == player_gsis_id:
+                continue  # Don't credit own succession
+            inc_age = float(inc.get("player_age") or 0)
+            if inc_age < 30:
+                continue
+            if inc_age >= 34:
+                succession_pct = 0.50
+            elif inc_age >= 32:
+                succession_pct = 0.30
+            else:  # 30-31
+                succession_pct = 0.15
+            proj_targets += float(inc.get("last_season_targets") or 0) * succession_pct
+            proj_carries += float(inc.get("last_season_carries") or 0) * succession_pct
 
     # Competition reduction: shrink projected usage when a significant threat
     # arrives.  QB starters who become backups see the largest cuts; RB
@@ -909,6 +1107,9 @@ def score_one_player(
         projected_usage = _compute_projected_usage(
             position, prev_usage, component_details,
             team=team, vacated_cache=vacated_cache,
+            incumbents_cache=incumbents_cache,
+            is_arrival=is_arrival,
+            player_gsis_id=gsis_id,
         )
         competition_threat = projected_usage.pop("_competition_threat", 0.0)
         multitask = compute_multitask_predictions(
@@ -1019,6 +1220,29 @@ def build_season(
     # covers up to and including stats_season.
     established_gsis = compute_established_producers(usage_by_season, stats_season + 1)
     print(f"  {len(established_gsis)} established producers excluded")
+
+    # Re-open: RBs who changed teams after playing in a split backfield (snap < 0.55)
+    # are legitimate breakout candidates at their new destination even if their annualized
+    # PPR placed them in the top-N.  A committee back escaping to a clearer role should
+    # be scored, not silently filtered.
+    reopened = 0
+    for gsis_id in list(established_gsis):
+        prev = prev_rosters.get(gsis_id)
+        curr = curr_rosters.get(gsis_id)
+        if not prev or not curr:
+            continue
+        if curr.get("position") != "RB":
+            continue
+        if curr["team"] == prev["team"]:
+            continue  # Stayed — still established
+        u = prior_usage.get(gsis_id, {})
+        if float(u.get("snap_share") or 0) < 0.55:
+            established_gsis.discard(gsis_id)
+            reopened += 1
+            print(f"  Re-opened: {prev['name']} escaped split backfield "
+                  f"({prev['team']}→{curr['team']}, snap={float(u.get('snap_share',0)):.0%})")
+    if reopened:
+        print(f"  {reopened} split-backfield RB(s) re-opened as breakout candidates")
 
     # Score each eligible player
     scored: list[dict] = []
