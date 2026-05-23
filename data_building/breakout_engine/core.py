@@ -399,7 +399,7 @@ class BreakoutEngine:
         # Multitask predictions require prior-season usage data to be meaningful.
         # Rookies have none, so we skip rather than produce misleading estimates.
         if is_drafted_rookie:
-            multitask = {'hit_probability': None, 'cumulative_ppr': None, 'peak_ppr': None}
+            multitask = {'hit_probability': None, 'cumulative_ppr': None, 'peak_ppr': None, 'season1_ppr': None}
         else:
             from .multitask_predictions import compute_multitask_predictions
             multitask = compute_multitask_predictions(
@@ -413,6 +413,16 @@ class BreakoutEngine:
                 prev_usage=prev_usage,
                 age=player_metadata.get('age'),
             )
+
+        # Persist projection values so the API and UI can derive PPG ranges
+        # without needing extra DB columns.
+        component_details['projections'] = {
+            'season1_ppr': (
+                round(multitask['season1_ppr'], 1)
+                if multitask.get('season1_ppr') is not None else None
+            ),
+            'prev_ppr_ppg': round(float(prev_usage.get('ppr_ppg') or 0), 2),
+        }
 
         # Create BreakoutCandidate object
         candidate = BreakoutCandidate(

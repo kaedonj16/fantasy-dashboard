@@ -32,13 +32,28 @@ def main():
         with open(first_run_flag, 'r') as f:
             print(f"Previously initialized: {f.read().strip()}")
 
+    # Spawn the post-deploy breakout rebuild in the background so it doesn't
+    # delay gunicorn startup.  The subprocess outlives this process (execvp
+    # replaces us with gunicorn) and writes directly to stdout/stderr which
+    # Render captures in the service logs.
+    import subprocess
+    post_deploy_script = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "scripts", "post_deploy.py"
+    )
+    if os.path.exists(post_deploy_script):
+        print("Spawning background post-deploy breakout refresh...")
+        subprocess.Popen(
+            [sys.executable, post_deploy_script],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+
     port = int(os.environ.get('PORT', 5000))
     workers = int(os.environ.get('WEB_WORKERS', 3))
     threads = int(os.environ.get('WEB_THREADS', 2))
 
     print(f"\nStarting gunicorn on port {port} ({workers} workers x {threads} threads)")
 
-    import subprocess
     cmd = [
         sys.executable, "-m", "gunicorn",
         "app:app",
