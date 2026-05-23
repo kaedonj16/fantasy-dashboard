@@ -6249,8 +6249,7 @@ function _buildStatsHTML(game_logs_by_year) {
       gameLogs.forEach(game => {
         if (game.is_bye) return;
         const s = game.stats || {};
-        const hasStats = s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null;
-        if (hasStats) gamesPlayed++;
+        if (game.fantasy_pts != null) gamesPlayed++;
         totalFantasyPts += game.fantasy_pts || 0;
         totalPassYd += s.pass_yd || 0;
         totalPassTd += s.pass_td || 0;
