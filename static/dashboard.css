@@ -4127,7 +4127,7 @@ thead th {
   .otc-arch-grid {
     grid-template-columns: 1fr;
     gap: 4px;
-    padding: 4px 4px 8px;
+    padding: 4px;
     background: transparent;
   }
   .otc-arch-cell {
