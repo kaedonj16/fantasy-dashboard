@@ -6136,44 +6136,50 @@ function _buildBkTabHTML(data, scoreColor) {
   const addedCompSumm = data.added_competition_summary || '';
 
   // ── PPG range computation ──────────────────────────────────────────────────
-  const s1    = parseFloat(data.season1_ppr || 0);
+  const s1      = parseFloat(data.season1_ppr || 0);
   const prevPpg = parseFloat(data.prev_ppr_ppg || 0);
-  let ppgRangeHtml = '';
-  let prevPpgHtml = '';
+  let ppgRange = null;
   if (s1 > 0) {
     const modelPpg = s1 / 17;
     const highRaw  = modelPpg * 1.075;
     const high     = (prevPpg > 0 && highRaw > prevPpg * 1.4) ? prevPpg * 1.4 : highRaw;
     const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.4;
-    const low      = isCapped ? Math.max(high - 2.0, modelPpg * 0.90) : modelPpg * 0.925;
-    const lowStr   = (Math.round(low  * 10) / 10).toFixed(1);
-    const highStr  = (Math.round(high * 10) / 10).toFixed(1);
-    ppgRangeHtml = `${lowStr}–${highStr}`;
-    if (prevPpg > 0) {
-      prevPpgHtml = (Math.round(prevPpg * 10) / 10).toFixed(1);
-    }
+    const rawLow   = isCapped ? Math.max(high - 2.0, modelPpg * 0.93) : modelPpg * 0.95;
+    const low      = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
+    const midPpg   = (low + high) / 2;
+    ppgRange = {
+      lowStr:  (Math.round(low  * 10) / 10).toFixed(1),
+      highStr: (Math.round(high * 10) / 10).toFixed(1),
+      prevStr: prevPpg > 0 ? (Math.round(prevPpg * 10) / 10).toFixed(1) : null,
+      delta:   prevPpg > 0 ? Math.round((midPpg - prevPpg) * 10) / 10 : null,
+    };
   }
 
   const hitProb = data.hit_probability != null
     ? Math.round(parseFloat(data.hit_probability) * 100) + '%'
     : null;
 
-  // ── Hero row: PPG range + prior PPG + hit probability ─────────────────────
-  let html = `<div class="pm-hero-row">`;
+  // ── Hero: 2-column layout — PPG Range left, Score + Hit Prob stacked right ─
+  // Fixed 2-col avoids the orphaned-score problem on mobile (3-item grids wrap).
+  let html = `<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-bottom:12px;">`;
 
-  if (ppgRangeHtml) {
+  if (ppgRange) {
+    const deltaHtml = ppgRange.delta !== null
+      ? `<span style="font-weight:700;color:${ppgRange.delta >= 0 ? '#10b981' : '#f59e0b'};">
+           ${ppgRange.delta >= 0 ? '↑ +' : '↓ '}${Math.abs(ppgRange.delta).toFixed(1)}
+         </span>`
+      : '';
     html += `
-      <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;flex:1.4;">
+      <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;text-align:left;">
         <div class="pm-hero-label" style="color:${scoreColor};">Projected PPG Range</div>
-        <div class="pm-hero-val" style="color:${scoreColor};font-size:22px;">${ppgRangeHtml}</div>
+        <div style="font-size:22px;font-weight:800;color:${scoreColor};line-height:1.1;margin:4px 0;">
+          ${ppgRange.lowStr}–${ppgRange.highStr}
+        </div>
+        ${ppgRange.prevStr ? `
+        <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px;margin-top:2px;">
+          <span>vs ${ppgRange.prevStr} last szn</span>${deltaHtml}
+        </div>` : ''}
       </div>`;
-    if (prevPpgHtml) {
-      html += `
-      <div class="pm-hero-stat" style="text-align:center;">
-        <div class="pm-hero-label">Last Season PPG</div>
-        <div class="pm-hero-val">${prevPpgHtml}</div>
-      </div>`;
-    }
   } else {
     html += `
       <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
@@ -6182,20 +6188,20 @@ function _buildBkTabHTML(data, scoreColor) {
       </div>`;
   }
 
+  // Right column: Score on top, Hit Prob below (or just Score if no hit prob)
+  html += `<div style="display:flex;flex-direction:column;gap:8px;">
+    <div class="pm-hero-stat">
+      <div class="pm-hero-label">Score</div>
+      <div class="pm-hero-val" style="color:${scoreColor};">${scoreStr}</div>
+    </div>`;
   if (hitProb) {
     html += `
-      <div class="pm-hero-stat" style="text-align:center;">
-        <div class="pm-hero-label">Hit Probability</div>
-        <div class="pm-hero-val" style="color:${scoreColor};">${hitProb}</div>
-      </div>`;
+    <div class="pm-hero-stat">
+      <div class="pm-hero-label">Hit Probability</div>
+      <div class="pm-hero-val" style="color:${scoreColor};">${hitProb}</div>
+    </div>`;
   }
-
-  html += `
-      <div class="pm-hero-stat" style="text-align:center;">
-        <div class="pm-hero-label">Score</div>
-        <div style="font-size:18px;font-weight:800;color:${scoreColor};margin:4px 0;">${scoreStr}</div>
-      </div>
-  </div>`;
+  html += `</div></div>`;
 
   // ── What Changed ───────────────────────────────────────────────────────────
   const hasContext = (txnSummary && txnSummary !== 'No departures') ||
