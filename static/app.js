@@ -6299,10 +6299,13 @@ function _buildStatsHTML(game_logs_by_year) {
       let totalRushAtt = 0, totalRushYd = 0, totalRushTd = 0;
       let totalRecTgt = 0, totalRec = 0, totalRecYd = 0, totalRecTd = 0;
       let totalFumLost = 0;
+      let gamesPlayed = 0;
 
       gameLogs.forEach(game => {
-        totalFantasyPts += game.fantasy_pts || 0;
+        if (game.is_bye) return;
         const s = game.stats || {};
+        if (game.fantasy_pts != null) gamesPlayed++;
+        totalFantasyPts += game.fantasy_pts || 0;
         totalPassYd += s.pass_yd || 0;
         totalPassTd += s.pass_td || 0;
         totalPassInt += s.pass_int || 0;
@@ -6406,7 +6409,7 @@ function _buildStatsHTML(game_logs_by_year) {
               <tfoot>
                 <tr class="game-log-table-total">
                   <td><strong>Total</strong></td>
-                  <td><strong>${gameLogs.length}G</strong></td>
+                  <td><strong>${gamesPlayed}G</strong></td>
                   <td class="game-log-table-pts"><strong>${totalFantasyPts.toFixed(1)}</strong></td>
                   <td><strong>${valTotal(totalPassYd) !== '-' ? Math.round(totalPassYd) : '-'}</strong></td>
                   <td><strong>${valTotal(totalPassTd)}</strong></td>
