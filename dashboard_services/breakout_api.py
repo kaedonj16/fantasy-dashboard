@@ -134,10 +134,6 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get('season', 2026))
 
-    # The pipeline stores records as season=prediction_season (the stats year),
-    # which is one less than the NFL season being predicted.
-    db_season = season - 1
-
     query = """
         SELECT DISTINCT ON (player_id)
             player_id,
@@ -173,7 +169,7 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
 
     with get_conn() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(query, [db_season, min_score])
+            cursor.execute(query, [season, min_score])
             rows = cursor.fetchall()
 
     candidates = [enrich_candidate_with_type(dict(row)) for row in rows]
@@ -283,8 +279,6 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get('season', 2026))
 
-    db_season = season - 1
-
     query = """
         SELECT
             player_id,
@@ -324,7 +318,7 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
 
     with get_conn() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(query, [player_id, db_season])
+            cursor.execute(query, [player_id, season])
             row = cursor.fetchone()
 
     if not row:
@@ -378,8 +372,6 @@ def get_breakout_statistics(season: Optional[int] = None) -> Dict:
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get('season', 2026))
 
-    db_season = season - 1
-
     # Get all candidates
     query = """
         SELECT DISTINCT ON (player_id)
@@ -398,7 +390,7 @@ def get_breakout_statistics(season: Optional[int] = None) -> Dict:
 
     with get_conn() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(query, [db_season])
+            cursor.execute(query, [season])
             rows = cursor.fetchall()
 
     candidates = [dict(row) for row in rows]
@@ -490,8 +482,6 @@ def get_roster_situation(team: str, season: Optional[int] = None) -> Dict:
         nfl_state = get_nfl_state() or {}
         season = int(nfl_state.get('season', 2026))
 
-    db_season = season - 1
-
     # Get departures
     dep_query = """
         SELECT
@@ -569,7 +559,7 @@ def get_roster_situation(team: str, season: Optional[int] = None) -> Dict:
             cursor.execute(vac_query, [team, season])
             vacated = [dict(row) for row in cursor.fetchall()]
 
-            cursor.execute(cand_query, [team, db_season])
+            cursor.execute(cand_query, [team, season])
             candidates = [enrich_candidate_with_type(dict(row)) for row in cursor.fetchall()]
 
     return {
