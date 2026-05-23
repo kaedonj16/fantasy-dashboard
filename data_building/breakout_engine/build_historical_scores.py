@@ -1135,7 +1135,7 @@ def score_one_player(
     return {
         "player_id": gsis_id,          # will be replaced by sleeper_id below
         "player_name": name,
-        "season": prediction_season,
+        "season": prediction_season + 1,  # the season being predicted
         "as_of_date": str(as_of_date),
         "team": team,
         "position": position,
