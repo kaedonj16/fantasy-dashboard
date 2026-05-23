@@ -834,7 +834,7 @@ def _compute_projected_usage(
     elif position in ("WR", "TE"):
         if prev_snap >= 0.70:
             opp_share = 0.40
-        elif prev_snap >= 0.45:
+        elif prev_snap >= 0.35:
             opp_share = 0.27
         else:
             opp_share = 0.16
@@ -1247,14 +1247,21 @@ def build_season(
 
     # Score each eligible player
     scored: list[dict] = []
-    skipped_established = skipped_no_id = skipped_low = skipped_rookie = 0
+    skipped_established = skipped_no_id = skipped_low = skipped_rookie = skipped_age = skipped_regression = 0
 
     for gsis_id, roster_entry in curr_rosters.items():
         if roster_entry["position"] not in POSITIONS:
             continue
         if roster_entry["team"] not in VALID_TEAMS:
             continue
-        if roster_entry.get("age") is None:
+        age = roster_entry.get("age")
+        if age is None:
+            continue
+        # Positional age ceiling: veteran players who haven't broken through by
+        # these ages are unlikely to do so and crowd out genuine emerging talent.
+        _MAX_AGE = {"RB": 30, "WR": 31, "TE": 29, "QB": 99}
+        if age >= _MAX_AGE.get(roster_entry["position"], 99):
+            skipped_age += 1
             continue
         if gsis_id in established_gsis:
             skipped_established += 1
@@ -1290,6 +1297,14 @@ def build_season(
         if result is None:
             continue
 
+        # Exclude regression candidates: a player projecting more than 10% below
+        # their prior season isn't a breakout candidate — they're declining.
+        prev_ppg  = float(result.get("prev_ppr_ppg") or 0)
+        model_ppg = (result.get("season1_ppr") or 0) / 17
+        if prev_ppg > 5.0 and model_ppg < prev_ppg * 0.90:
+            skipped_regression += 1
+            continue
+
         if result["breakout_opportunity_score"] < min_score:
             skipped_low += 1
             continue
@@ -1300,7 +1315,8 @@ def build_season(
 
     print(f"  {len(scored)} candidates (score>={min_score:.0f}) | "
           f"skipped: {skipped_established} established, "
-          f"{skipped_rookie} rookies, "
+          f"{skipped_rookie} rookies, {skipped_age} age-out, "
+          f"{skipped_regression} regression, "
           f"{skipped_no_id} no sleeper ID, {skipped_low} low score")
 
     if not scored:
