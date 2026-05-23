@@ -12168,6 +12168,20 @@ img, svg, canvas {
   background-color: #f9fafb;
 }
 
+.game-log-bye {
+  opacity: 0.45;
+  background-color: #f9fafb;
+}
+
+.game-log-bye:hover {
+  opacity: 0.6;
+  background-color: #f3f4f6;
+}
+
+.game-log-bye td:first-child {
+  background-color: #f9fafb;
+}
+
 /* ============================================
    Advanced Metrics Season Pills
    ============================================ */
@@ -12362,7 +12376,7 @@ img, svg, canvas {
 }
 @media (max-width: 600px) {
   .pm-hero-row { grid-template-columns: 1fr 1fr !important; }
-  .pm-hero-primary { grid-column: 1 / -1; }
+  .pm-hero-primary { grid-column: auto; }
   .pm-hero-label { font-size: 8px; letter-spacing: 0.02em; }
   .pm-hero-val { font-size: 20px; }
   .pm-hero-sub { font-size: 10px; }
