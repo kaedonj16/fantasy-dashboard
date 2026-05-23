@@ -5467,22 +5467,24 @@ function openPlayerModal(playerId, playerName, opts) {
 
       const ppgVal       = data.stats?.ppg;
       const ppgRank      = data.stats?.ppg_rank;
+      const ppgOvrRank   = data.stats?.ppg_ovr_rank;
       const ppgSeason    = data.stats?.ppg_season;
       const totalPts     = data.stats?.total_pts;
       const totalPtsRank = data.stats?.total_pts_rank;
+      const totalPtsOvrRank = data.stats?.total_pts_ovr_rank;
       const seasonLabel  = ppgSeason ? ` · ${ppgSeason}` : '';
       const ppgCard = ppgVal != null
         ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">PPG${seasonLabel}</div>
             <div class="pm-hero-val">${ppgVal}</div>
-            <div class="pm-hero-sub">${ppgRank ? `${pos}${ppgRank}` : '-'}</div>
+            <div class="pm-hero-sub">${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '—'}` : '-'}</div>
           </div>`
         : '';
       const totalCard = totalPts != null
         ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">Total Pts${seasonLabel}</div>
             <div class="pm-hero-val">${totalPts}</div>
-            <div class="pm-hero-sub">${totalPtsRank ? `${pos}${totalPtsRank}` : '-'}</div>
+            <div class="pm-hero-sub">${totalPtsRank ? `POS : ${totalPtsRank} · OVR : ${totalPtsOvrRank ?? '—'}` : '-'}</div>
           </div>`
         : '';
 
@@ -5618,19 +5620,27 @@ function openPlayerModal(playerId, playerName, opts) {
       const vtTrendBadge = '';
 
       // ── Build Overview panel HTML ─────────────────────────────────────────
-      const _heroCardCount = 3 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
+      const valPosRank   = data.stats?.pos_rank;
+      const valPosLabel  = data.stats?.pos_rank_label;
+      const valOvrRank   = data.stats?.value_ovr_rank;
+      const sfPosRank    = data.stats?.sf_pos_rank;
+      const sfPosLabel   = data.stats?.sf_pos_rank_label;
+      const sfOvrRank    = data.stats?.sf_value_ovr_rank;
+
+      const _heroCardCount = 2 + (ppgCard ? 1 : 0) + (totalCard ? 1 : 0);
       const heroGridStyle = `style="grid-template-columns:repeat(${_heroCardCount},1fr);"`;
       let overviewHTML = `
         <div class="pm-hero-row" ${heroGridStyle}>
           <div class="pm-hero-stat pm-hero-primary">
             <div class="pm-hero-label">1QB Value</div>
             <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
+            <div class="pm-hero-sub">${valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '—'}` : '-'}</div>
           </div>
           <div class="pm-hero-stat">
             <div class="pm-hero-label">SF Value</div>
             <div class="pm-hero-val">${valsf > 0 ? valsf : '-'}</div>
+            <div class="pm-hero-sub">${sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '—'}` : '-'}</div>
           </div>
-          ${thirdValueCard}
           ${ppgCard}
           ${totalCard}
         </div>
@@ -5724,7 +5734,7 @@ function openPlayerModal(playerId, playerName, opts) {
         && String(pd.draft_class_year) === String(_currentNFLYear);
       if (tabProspect) tabProspect.style.display = _isCurrentYearProspect ? '' : 'none';
       const tabBreakout = document.getElementById('pmTabBreakout');
-      if (tabBreakout) tabBreakout.style.display = isBreakout(pid) ? '' : 'none';
+      if (tabBreakout) tabBreakout.style.display = (isBreakout(pid) || (opts && opts.tab === 'breakout')) ? '' : 'none';
 
       // Switch to requested tab, or Overview by default
       const _initialTab = (opts && opts.tab) || 'overview';
@@ -5835,7 +5845,10 @@ function openPlayerModal(playerId, playerName, opts) {
           const yMin = Math.min(...allY);
           const yMax = Math.max(...allY);
           const yRange = yMax - yMin;
-          const yPad = Math.max(yRange * 0.15, 30);
+          const yPad = Math.max(yRange * 0.15, 20);
+          // Floor: no tighter than (currentValue - 200), so small wiggles don't look huge
+          const currentVal = allY[allY.length - 1] ?? yMax;
+          const yFloor = Math.max(0, currentVal - 200);
 
           const midIdx = Math.floor((n - 1) / 2);
           const firstDateStr  = formatDateLabel(data.value_history[0].as_of_date);
@@ -5904,7 +5917,7 @@ function openPlayerModal(playerId, playerName, opts) {
             yaxis: {
               showgrid: true,
               showticklabels: true,
-              range: [yMin - yPad, yMax + yPad],
+              range: [Math.min(yMin - yPad, yFloor), yMax + yPad],
               tickfont: { size: 11, color: mutedColor },
             },
             hovermode: 'closest',
@@ -6347,19 +6360,24 @@ function _buildStatsHTML(game_logs_by_year) {
         }
 
         // Check if player has any stats at all
-        const hasAnyStats = stats != null && (
+        const isBye = game.is_bye === true;
+        const hasAnyStats = !isBye && stats != null && (
           stats.pass_yd != null || stats.rush_att != null ||
           stats.rec != null || stats.rec_tgt != null);
 
         const val = (v) => v != null && v > 0 ? v : '-';
-        const rowClass = hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
+        const rowClass = isBye ? 'game-log-table-row game-log-bye' : hasAnyStats ? 'game-log-table-row' : 'game-log-table-row game-log-no-stats';
         const s = stats || {};
+
+        const ptsCell = isBye
+          ? '-'
+          : hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '-') : '<span style="color:#9ca3af;">DNP</span>';
 
         statsHTML += `
           <tr class="${rowClass}">
             <td>${dateStr}</td>
             <td class="game-log-table-opp">${game.opponent || '-'}</td>
-            <td class="game-log-table-pts">${hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '-') : '<span style="color:#9ca3af;">DNP</span>'}</td>
+            <td class="game-log-table-pts">${ptsCell}</td>
             <td>${val(s.pass_yd) !== '-' ? Math.round(s.pass_yd) : '-'}</td>
             <td>${val(s.pass_td)}</td>
             <td>${val(s.pass_int)}</td>
@@ -7377,12 +7395,17 @@ function _buildComparePPGRow(p1, p2) {
 function _buildCompareHeroHTML(p) {
   const val1qb = p.stats?.value || 0;
   const valsf  = p.stats?.sf_value || 0;
-  const posRankLabel = p.stats?.pos_rank_label || (p.stats?.pos_rank ? `${p.position}${p.stats.pos_rank}` : '-');
+  const valPosRank  = p.stats?.pos_rank;
+  const valOvrRank  = p.stats?.value_ovr_rank;
+  const sfPosRank   = p.stats?.sf_pos_rank;
+  const sfOvrRank   = p.stats?.sf_value_ovr_rank;
   const pos    = p.position || '';
   const ppg    = p.stats?.ppg;
   const ppgRank = p.stats?.ppg_rank;
+  const ppgOvrRank = p.stats?.ppg_ovr_rank;
   const total  = p.stats?.total_pts;
   const totalRank = p.stats?.total_pts_rank;
+  const totalOvrRank = p.stats?.total_pts_ovr_rank;
   const season = p.stats?.ppg_season ? ` · ${p.stats.ppg_season}` : '';
   const hasScoringRow = ppg != null || total != null;
 
@@ -7393,29 +7416,27 @@ function _buildCompareHeroHTML(p) {
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">PPG${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${ppg}</div>
-        <div class="pm-hero-sub">${ppgRank ? `${pos}${ppgRank}` : '-'}</div>
+        <div class="pm-hero-sub">${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '—'}` : '-'}</div>
       </div>` : ''}
       ${total != null ? `
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">Total Pts${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${total}</div>
-        <div class="pm-hero-sub">${totalRank ? `${pos}${totalRank}` : '-'}</div>
+        <div class="pm-hero-sub">${totalRank ? `POS : ${totalRank} · OVR : ${totalOvrRank ?? '—'}` : '-'}</div>
       </div>` : ''}
     </div>` : '';
 
   return `
-    <div class="compare-hero-row" style="grid-template-columns:1fr 1fr 1fr;">
+    <div class="compare-hero-row" style="grid-template-columns:1fr 1fr;">
       <div class="pm-hero-stat pm-hero-primary" style="padding:10px 10px;">
         <div class="pm-hero-label">1QB Value</div>
         <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
+        <div class="pm-hero-sub">${valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '—'}` : '-'}</div>
       </div>
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">SF Value</div>
         <div class="pm-hero-val" style="font-size:20px;">${valsf > 0 ? valsf : '-'}</div>
-      </div>
-      <div class="pm-hero-stat" style="padding:10px 10px;">
-        <div class="pm-hero-label">Pos Rank</div>
-        <div class="pm-hero-val" style="font-size:20px;">${posRankLabel}</div>
+        <div class="pm-hero-sub">${sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '—'}` : '-'}</div>
       </div>
     </div>
     ${scoringRow}

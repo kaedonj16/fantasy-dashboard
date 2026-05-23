@@ -92,10 +92,8 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <button class="ti-tab" data-tab="buylows"  onclick="switchTITab('buylows')"><i class="fa-solid fa-arrow-trend-down"></i> Buy Low</button>
             <button class="ti-tab" data-tab="sellhigh" onclick="switchTITab('sellhigh')"><i class="fa-solid fa-arrow-trend-up"></i> Sell High</button>
           </div>
-          <div style="position:relative;flex:1;min-width:140px;max-width:240px;">
-            <input id="tiSearchInput" type="text" autocomplete="off" placeholder="Search player…"
-              style="width:100%;box-sizing:border-box;background:var(--input-bg,#1e293b);border:1px solid var(--border);border-radius:8px;padding:6px 10px 6px 30px;font-size:13px;color:var(--text);outline:none;">
-            <i class="fa-solid fa-magnifying-glass" style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text-muted);pointer-events:none;"></i>
+          <div class="tdb-search-outer" style="flex:1;min-width:140px;max-width:240px;">
+            <input id="tiSearchInput" type="text" autocomplete="off" placeholder="Search player…" class="tdb-search">
           </div>
           <div class="ti-pos-filters">
             <button class="ti-pos active" data-pos="ALL" onclick="filterTI('ALL')">All</button>
@@ -109,9 +107,6 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <button class="ti-lf-btn {'active' if _ti_sf else ''}" data-lf="sf"  onclick="switchTILeagueType('sf')">SF</button>
           </div>
         </div>
-
-        <!-- Inline player intel result (shown after search selection) -->
-        <div id="tiSearchResult" style="display:none;margin-bottom:20px;"></div>
 
         <div class="ti-key">
           <div class="ti-key-item">
@@ -714,9 +709,13 @@ def page_trade_intel(platform: str, season: int, league_id: str):
 
       // ── Player search ─────────────────────────────────────────────
       (function() {{
-        const input  = document.getElementById('tiSearchInput');
-        const result = document.getElementById('tiSearchResult');
-        if (!input || !result) return;
+        const input   = document.getElementById('tiSearchInput');
+        const grid    = document.getElementById('tiGrid');
+        const loading = document.getElementById('tiLoading');
+        const empty   = document.getElementById('tiEmpty');
+        if (!input || !grid) return;
+
+        let _searching = false;
 
         let _allPlayers = null;
         let _searchTimer = null;
@@ -750,7 +749,8 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             else if (trend <= -5) momentumHtml = '<div class="ti-momentum"><span style="color:#ef4444;">▼</span> Falling</div>';
           }}
           const col = posColor(p.position);
-          return `<div class="ti-card">
+          const safeName = (p.name||'').replace(/'/g, "\\'");
+          return `<div class="ti-card" style="cursor:pointer;" onclick="openTIPlayerCard(${{p.id}}, '${{safeName}}', false)">
             <div class="ti-card-top">
               <div>
                 <div class="ti-name">${{p.name||p.id}}</div>
@@ -771,26 +771,34 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           clearTimeout(_searchTimer);
           const q = input.value.trim().toLowerCase();
           if (q.length < 2) {{
-            result.style.display = 'none';
-            result.innerHTML = '';
+            // Restore normal paginated view if search is cleared
+            if (_searching) {{
+              _searching = false;
+              grid.innerHTML = '';
+              grid.style.display = 'none';
+              if (empty) empty.style.display = 'none';
+              loadTIPage(1);
+            }}
             return;
           }}
+          _searching = true;
+          if (loading) loading.style.display = 'none';
+          if (empty)   empty.style.display   = 'none';
           await ensurePlayers();
           const matches = _allPlayers
             .filter(p => (p.name||'').toLowerCase().includes(q))
             .sort((a,b) => (b.value||0) - (a.value||0))
             .slice(0, 8);
           if (!matches.length) {{
-            result.style.display = '';
-            result.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:4px 0;">No players found.</div>';
+            grid.style.display = '';
+            grid.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:12px 0;">No players found.</div>';
             return;
           }}
-          result.style.display = '';
-          result.innerHTML = '<div class="ti-grid">' +
-            matches.map(p => `<div class="ti-card ti-card-loading" data-id="${{p.id}}" style="min-height:160px;display:flex;align-items:center;justify-content:center;">
+          grid.style.display = '';
+          grid.innerHTML = matches.map(p =>
+            `<div class="ti-card ti-card-loading" data-id="${{p.id}}" style="min-height:160px;display:flex;align-items:center;justify-content:center;">
               <div style="color:var(--text-muted);font-size:12px;">${{p.name}}</div>
-            </div>`).join('') +
-          '</div>';
+            </div>`).join('');
 
           _searchTimer = setTimeout(async () => {{
             const fetches = matches.map(p =>
@@ -802,7 +810,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             const cards = matches.map((p, i) => results[i] ? buildCard(p, results[i]) :
               `<div class="ti-card"><div class="ti-name">${{p.name}}</div><div class="ti-meta" style="color:var(--text-muted);margin-top:8px;">No data</div></div>`
             );
-            result.innerHTML = '<div class="ti-grid">' + cards.join('') + '</div>';
+            grid.innerHTML = cards.join('');
           }}, 300);
         }});
       }})();

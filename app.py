@@ -1705,7 +1705,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     scores_body = get_nfl_scores_for_date(date.today().strftime("%Y%m%d"))
     team_game_lookup = build_team_game_lookup(scores_body)
 
-    model_value_table = load_model_value_table() or []
+    model_value_table = list(get_model_value_table_cached() or [])
 
     return {
         "platform": platform,
@@ -2651,12 +2651,12 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     # ---------- Teams page ----------
     if page == "teams":
         clear_teams_cache_for_league(resolved_league_id)
-        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
     # ---------- Trade page ----------
     if page == "trade":
         # Keep the shared table fresh so the trade calc reflects newest values
-        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
         # also refresh global model-value API cache used by /api/trade-eval
         global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
@@ -2665,7 +2665,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
     # ---------- Offseason dashboard refresh ----------
     if page == "dashboard" and offseason_mode:
-        ctx["model_value_table"] = ctx.get("model_value_table") or load_model_value_table() or []
+        ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
         if platform == "sleeper":
             try:
@@ -4123,7 +4123,10 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             continue
         pid = str(row.get("id") or "")
         pos = str(row.get("position") or row.get("pos") or "").upper()
+        team = str(row.get("team") or players_index.get(pid, {}).get("team") or "").strip().upper()
         if not pid or pid in rostered_ids:
+            continue
+        if team in ("", "FA", "FREE AGENT"):
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
@@ -4474,23 +4477,12 @@ def _market_scale(fmt: str = "1qb") -> float:
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
                              num_tiers: int = _NUM_TIERS) -> list:
     """
-    Quantile-based tier boundaries with geometric growth and local gap snapping.
+    Natural gap-significance tier boundaries.
 
-    Each tier is ~TIER_GROWTH_RATIO× larger than the previous, producing a
-    pyramid: T1 is the smallest elite bucket; T9 (everything below the last
-    boundary) is the large catch-all. COVERAGE controls what fraction of active
-    players live in T1-T8; the rest fall into T9.
-
-    Each boundary is placed at its target quantile position then snapped to
-    the largest nearby gap within ±SNAP_WINDOW players, so boundaries prefer
-    natural value breaks when they exist close to the target rank.
-
-    Python _asset_tier and JS prGetTier both clamp at _NUM_TIERS (9).
+    Each gap is scored by how large it is relative to nearby gaps (local significance).
+    The top (num_tiers-1) gaps become tier boundaries. Minimum 5 players per tier;
+    tiers smaller than that are merged into the tier below. T9 is the large catch-all.
     """
-    TIER_GROWTH_RATIO = 1.6   # each tier is ~1.6× larger than the previous one
-    COVERAGE          = 0.50  # fraction of active players in T1-T(num_tiers-1)
-    SNAP_WINDOW       = 5     # snap each boundary to nearby gap (±this many players)
-
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
     else:
@@ -4501,70 +4493,62 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         if not isinstance(p, dict):
             continue
         pos = (p.get("position") or "").upper()
-        if pos in ("K", "DEF"):
+        if pos in ("K", "DEF", "PICK"):
             continue
         v = float(p.get(primary) or p.get("value") or 0)
         if v >= 5:
             vals.append(v)
 
     vals.sort(reverse=True)
-    n = len(vals)
 
-    if n < num_tiers * 2:
+    if len(vals) < num_tiers * 3:
         return _FALLBACK_THRESHOLDS
 
-    # Compute target tier sizes: geometric series scaled to cover COVERAGE of players
-    n_bounds = num_tiers - 1
-    raw = [TIER_GROWTH_RATIO ** i for i in range(n_bounds)]
-    scale = (COVERAGE * n) / sum(raw)
-    target_sizes = [max(2, round(r * scale)) for r in raw]
+    MIN_TIER = 5   # minimum players per tier
+    window   = 12
 
-    # Gap sizes between adjacent players (for snapping)
-    gaps = [vals[i] - vals[i + 1] for i in range(n - 1)]
+    # Score each gap by local significance (gap vs median of nearby gaps)
+    scored = []
+    for i in range(len(vals) - 1):
+        gap = vals[i] - vals[i + 1]
+        lo  = max(0, i - window)
+        hi  = min(len(vals) - 1, i + window)
+        nbrs = [vals[j] - vals[j + 1] for j in range(lo, hi) if j != i]
+        local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
+        scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
 
-    start = 0
-    used  = set()
+    # Pick top gaps enforcing minimum spacing between boundaries
+    scored.sort(key=lambda x: x[0], reverse=True)
+    chosen_pos = []
     boundaries = []
-    for size in target_sizes:
-        target_pos = min(start + size - 1, n - 2)
-        lo = max(start, target_pos - SNAP_WINDOW)
-        hi = min(n - 2, target_pos + SNAP_WINDOW)
-        best_gap, best_pos = -1.0, target_pos
-        for p in range(lo, hi + 1):
-            if p not in used and gaps[p] > best_gap:
-                best_gap, best_pos = gaps[p], p
-        used.add(best_pos)
-        boundaries.append(round((vals[best_pos] + vals[best_pos + 1]) / 2.0, 1))
-        start = best_pos + 1
+    for _sig, pos, midpoint in scored:
+        if len(boundaries) >= num_tiers - 1:
+            break
+        if pos < MIN_TIER - 1 or pos > len(vals) - 1 - (MIN_TIER - 1):
+            continue
+        if any(abs(pos - p) < MIN_TIER - 1 for p in chosen_pos):
+            continue
+        chosen_pos.append(pos)
+        boundaries.append(round(midpoint, 1))
 
-    thresholds = sorted(boundaries, reverse=True) if boundaries else _FALLBACK_THRESHOLDS
+    if not boundaries:
+        return _FALLBACK_THRESHOLDS
 
-    # Enforce minimum tier size of 4.  Merge DOWN: a too-small group absorbs
-    # into the tier below it (remove its lower boundary) so that, e.g., a
-    # lone player at the top of what would be T2 stays at the head of T2
-    # rather than being pulled up into T1.  Exception: if the small group is
-    # the topmost one (value >= first threshold), merge it UP instead.
-    MIN_TIER_SIZE = 4
+    thresholds = sorted(boundaries, reverse=True)
+
+    # Merge any tier smaller than MIN_TIER into the tier below it
     changed = True
     while changed:
         changed = False
-        # Check the T1 group (players above the first threshold)
-        if thresholds and sum(1 for v in vals if v >= thresholds[0]) < MIN_TIER_SIZE:
-            thresholds = thresholds[1:]  # remove upper boundary → T1 merges down into T2
+        if thresholds and sum(1 for v in vals if v >= thresholds[0]) < MIN_TIER:
+            thresholds = thresholds[1:]
             changed = True
             continue
-        # Check each intermediate group (between consecutive boundaries)
-        for i in range(len(thresholds)):
-            lo = thresholds[i + 1] if i + 1 < len(thresholds) else 0.0
-            hi = thresholds[i]
-            count = sum(1 for v in vals if lo <= v < hi)
-            if count < MIN_TIER_SIZE:
-                if i + 1 < len(thresholds):
-                    # Merge DOWN: remove lower boundary so this group joins the tier below
-                    thresholds = thresholds[:i + 1] + thresholds[i + 2:]
-                else:
-                    # Last intermediate group — merge UP instead
-                    thresholds = thresholds[:i] + thresholds[i + 1:]
+        for i in range(len(thresholds) - 1):
+            lo_b = thresholds[i + 1]
+            hi_b = thresholds[i]
+            if sum(1 for v in vals if lo_b <= v < hi_b) < MIN_TIER:
+                thresholds = thresholds[:i + 1] + thresholds[i + 2:]
                 changed = True
                 break
 
@@ -7720,7 +7704,7 @@ def api_waiver_candidates():
     }
 
     players_index = ctx.get("players_index") or {}
-    model_value_table = load_model_value_table()
+    model_value_table = list(get_model_value_table_cached() or [])
 
     _rp_wv = ctx.get("roster_positions") or []
     _is_sf_wv = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_wv)
@@ -7732,7 +7716,10 @@ def api_waiver_candidates():
             continue
         pid = str(row.get("id") or "")
         pos = str(row.get("position") or row.get("pos") or "").upper()
+        team = str(row.get("team") or players_index.get(pid, {}).get("team") or "").strip().upper()
         if not pid or pid in rostered_ids:
+            continue
+        if team in ("", "FA", "FREE AGENT"):
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
             continue
@@ -7881,7 +7868,7 @@ def api_start_sit_options():
     player_ids = [str(pid) for pid in (viewer_roster.get("players") or [])]
     players_index = ctx.get("players_index") or {}
     players_full = ctx.get("players") or {}
-    model_value_table = load_model_value_table()
+    model_value_table = list(get_model_value_table_cached() or [])
 
     lineup_requirements: dict = ctx.get("lineup_requirements") or {}
     if not lineup_requirements:
@@ -9404,6 +9391,23 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           players = players.filter(p => !p.is_rookie || isDrafted(p));
         }
 
+        // Compute rank numbers from the full sorted list BEFORE applying search.
+        // This keeps rank #s stable — e.g. searching for a player still shows #47, not #1.
+        const _sortedForRank = players.slice().sort((a, b) => {
+          if (sortBy === 'age')       return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
+          if (sortBy === 'pos_rank')  { const rA = prLeagueType==='sf'?(a.sf_pos_rank||a.pos_rank||9999):(a.pos_rank||9999); const rB = prLeagueType==='sf'?(b.sf_pos_rank||b.pos_rank||9999):(b.pos_rank||9999); return rA - rB; }
+          if (sortBy === 'ppg')       return (b.ppg != null ? b.ppg : -1) - (a.ppg != null ? a.ppg : -1);
+          if (sortBy === 'total_pts') return (b.total_pts != null ? b.total_pts : -1) - (a.total_pts != null ? a.total_pts : -1);
+          return prGetValue(b) - prGetValue(a);
+        });
+        const _rankMap = new Map();
+        let _rankIdx = 0;
+        _sortedForRank.forEach(p => {
+          if (p.position !== 'PICK' && !(p.is_rookie && !(p.team && p.team !== 'FA'))) {
+            _rankMap.set(String(p.id), ++_rankIdx);
+          }
+        });
+
         // Search filter — fuzzy match, sort by score when query present
         if (prSearchQuery.length > 0) {
           const scored = players
@@ -9501,7 +9505,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           };
 
           const _drafted = p.is_rookie && p.team && p.team !== 'FA';
-          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (start + i + 1);
+          const displayRank = (p.position === 'PICK' || (p.is_rookie && !_drafted)) ? '' : (_rankMap.get(String(p.id)) ?? (start + i + 1));
           const posRank = prLeagueType === 'sf'
             ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
             : (p.pos_rank_label || p.position);
@@ -9945,8 +9949,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
           const barFill = Math.min(100, Math.max(0, topComp.val));
           html += `
-            <div class="breakout-card" style="cursor:pointer;" onclick="openBreakoutModal('` + pid + `')">
-              <div class="breakout-card-header" style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;">
+            <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + name + `', {{tab:'breakout'}})">
+              <div class="breakout-card-header">
                 <div>
                   <div class="breakout-player-name">` + name + `</div>
                   <div class="breakout-player-meta" style="font-size:12px;color:var(--text-muted);margin-top:2px;">${{age}} yr • ${{team}} • ${{pos}}</div>
@@ -11511,6 +11515,123 @@ def get_model_value_table_cached():
     if not tbl:
         tbl = list(load_model_value_table() or [])
 
+    # Apply FC/DP market corrections directly against the loaded values.
+    # Compare model values already in tbl — no extra DB query needed.
+    if tbl:
+        try:
+            from data_building.external_data.external_values_scraper import (
+                load_fantasycalc_api_values, load_dynastyprocess_values,
+            )
+            from utils.utils import normalize_name as _nn
+            from collections import defaultdict as _dd
+
+            # Normalize FC to 0-999.9
+            _fc_rows = load_fantasycalc_api_values() or []
+            _fc_by_sid: dict = {}
+            if _fc_rows:
+                _max_fc = max((float(r.get("value") or 0) for r in _fc_rows if r.get("value")), default=0)
+                if _max_fc > 0:
+                    for _r in _fc_rows:
+                        _sid = str(_r.get("sleeper_id") or "").strip()
+                        if _sid:
+                            try:
+                                _fc_by_sid[_sid] = float(_r["value"]) * 999.9 / _max_fc
+                            except (TypeError, ValueError):
+                                pass
+
+            # Normalize DP to 0-999.9
+            _dp_rows = load_dynastyprocess_values() or []
+            _dp_by_name: dict = {}
+            if _dp_rows:
+                _max_dp = max((float(r.get("value_1qb") or 0) for r in _dp_rows if r.get("value_1qb")), default=0)
+                if _max_dp > 0:
+                    for _r in _dp_rows:
+                        _nm = str(_r.get("player") or "").strip()
+                        if _nm:
+                            try:
+                                _dp_by_name[_nn(_nm)] = float(_r["value_1qb"]) * 999.9 / _max_dp
+                            except (TypeError, ValueError):
+                                pass
+
+            # Build pid→name map from players_index so DP lookup works even when
+            # player dicts from load_current_values_from_db() have no name field
+            # (player_values table has no name column).
+            try:
+                from utils.utils import load_players_index as _lpi
+                _pid_to_name = {str(k): (v.get("name") or "") for k, v in (_lpi() or {}).items()}
+            except Exception:
+                _pid_to_name = {}
+
+            # Load trade counts (best-effort)
+            _trade_counts: dict = {}
+            try:
+                from dashboard_services.db import get_conn as _gc
+                with _gc() as _conn:
+                    with _conn.cursor() as _cur:
+                        _cur.execute("SELECT player_id, trade_count FROM trade_intel_player_stats")
+                        for _r in _cur.fetchall():
+                            _rd = dict(_r)
+                            _trade_counts[str(_rd["player_id"])] = int(_rd.get("trade_count") or 0)
+            except Exception:
+                pass
+
+            _corrected = 0
+            if _fc_by_sid or _dp_by_name:
+                for _p in tbl:
+                    _pid     = str(_p.get("id") or "")
+                    _mval    = float(_p.get("value") or 0)
+                    if _mval <= 0:
+                        continue
+                    _msf     = float(_p.get("sf_value") or _mval)
+                    _fc_val  = _fc_by_sid.get(_pid)
+                    # Use name from player dict if present, else fall back to players_index
+                    _name    = str(_p.get("name") or "") or _pid_to_name.get(_pid, "")
+                    _dp_val  = _dp_by_name.get(_nn(_name))
+
+                    if _fc_val is None and _dp_val is None:
+                        # No external market data — other sites don't value this player
+                        _p["value"]    = 0
+                        _p["sf_value"] = 0
+                        _corrected += 1
+                        continue
+
+                    _avail   = [v for v in (_fc_val, _dp_val) if v is not None]
+                    _ext_avg = sum(_avail) / len(_avail)
+
+                    _inflated = (
+                        (_fc_val is not None and _fc_val > 0 and _mval > 1.5 * _fc_val)
+                        or (_dp_val is not None and _dp_val > 0 and _mval > 1.5 * _dp_val)
+                    )
+                    _low_trades = _trade_counts.get(_pid, 0) < 20
+
+                    if _inflated or (_low_trades and _ext_avg < _mval):
+                        _p["value"]    = round(_ext_avg, 2)
+                        _p["sf_value"] = round(_ext_avg * (_msf / _mval), 2)
+                        _corrected += 1
+
+                print(f"[model-value-cache] applied {_corrected} FC/DP market corrections")
+
+                # Recompute pos_rank / pos_rank_label after corrections
+                _pos_idx: dict    = _dd(list)
+                _sf_pos_idx: dict = _dd(list)
+                for _i, _p in enumerate(tbl):
+                    _pos = str(_p.get("position") or "").upper()
+                    if _pos and _pos != "PICK":
+                        _pos_idx[_pos].append(_i)
+                        _sf_pos_idx[_pos].append(_i)
+                for _pos, _idxs in _pos_idx.items():
+                    _idxs.sort(key=lambda _i: float(tbl[_i].get("value") or 0), reverse=True)
+                    for _rank, _i in enumerate(_idxs, 1):
+                        tbl[_i]["pos_rank"]       = _rank
+                        tbl[_i]["pos_rank_label"] = f"{_pos}{_rank}"
+                for _pos, _idxs in _sf_pos_idx.items():
+                    _idxs.sort(key=lambda _i: float(tbl[_i].get("sf_value") or 0), reverse=True)
+                    for _rank, _i in enumerate(_idxs, 1):
+                        tbl[_i]["sf_pos_rank"]       = _rank
+                        tbl[_i]["sf_pos_rank_label"] = f"{_pos}{_rank}"
+        except Exception as _e:
+            print(f"[model-value-cache] market corrections skipped: {_e}")
+
     # Append rookie prospects (mirrors /api/league-players logic)
     try:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
@@ -12207,13 +12328,10 @@ def api_players():
 @app.route("/api/league-players")
 def api_league_players():
     try:
-        from dashboard_services.player_value_history import load_current_values_from_db
-        model_value_table = load_current_values_from_db()
-        if not model_value_table:
-            model_value_table = list(get_model_value_table_cached() or [])
-    except Exception as e:
-        print(f"[api/league-players] Database load failed: {e}, falling back to JSON")
         model_value_table = list(get_model_value_table_cached() or [])
+    except Exception as e:
+        print(f"[api/league-players] Cache load failed: {e}")
+        model_value_table = []
 
     if not isinstance(model_value_table, list):
         raise ValueError("model_value_table must be a list of player objects")
@@ -12226,14 +12344,39 @@ def api_league_players():
             str(p.get("id") or "") for p in model_value_table
             if str(p.get("position") or "").upper() == "PICK"
         }
+        # Build pick-type sets per (year, round) — slot > bucket > generic hierarchy.
+        _bucket_keywords = {"early", "mid", "late"}
+        _slot_yr_rnd: set = set()
+        _bucket_yr_rnd: set = set()
+        for _pid in _db_pick_ids:
+            _pp = _pid.split("_")
+            if len(_pp) >= 3:
+                _key = (_pp[0], _pp[1])
+                if _pp[2].lower() in _bucket_keywords:
+                    _bucket_yr_rnd.add(_key)
+                else:
+                    try:
+                        int(_pp[2])
+                        _slot_yr_rnd.add(_key)
+                    except ValueError:
+                        pass
+
         _injected_picks = []
         _seen_ids: set = set(_db_pick_ids)
         for _pk_id, _pk_val in _pick_values.items():
             if _pk_id in _seen_ids or float(_pk_val) <= 0:
                 continue
-            _seen_ids.add(_pk_id)
-            # Format display name: "2026_1_01" → "2026 1.01", "2026_1_early" → "2026 1st (Early)"
             _parts = _pk_id.split("_")
+            if len(_parts) >= 2:
+                _key = (_parts[0], _parts[1])
+                _is_generic = len(_parts) == 2
+                _is_bucket = len(_parts) >= 3 and _parts[2].lower() in _bucket_keywords
+                if _key in _slot_yr_rnd and (_is_generic or _is_bucket):
+                    continue
+                if _key in _bucket_yr_rnd and _is_generic:
+                    continue
+            _seen_ids.add(_pk_id)
+            # Format display name: "2026_1_01" -> "2026 1.01", "2026_1_early" -> "2026 1st (Early)"
             if len(_parts) >= 3:
                 _yr, _rnd_s, _third = _parts[0], _parts[1], "_".join(_parts[2:])
                 try:
@@ -12254,6 +12397,72 @@ def api_league_players():
             })
         model_value_table.extend(_injected_picks)
         print(f"[api/league-players] DB picks: {len(_db_pick_ids)}, WLS fallback picks: {len(_injected_picks)}")
+
+        # Rebuild slot/bucket sets to include WLS-injected picks so the model
+        # injection below correctly suppresses bucket picks when slots exist.
+        for _p in _injected_picks:
+            _pp2 = str(_p.get("id") or "").split("_")
+            if len(_pp2) >= 3:
+                _k2 = (_pp2[0], _pp2[1])
+                if _pp2[2].lower() in _bucket_keywords:
+                    _bucket_yr_rnd.add(_k2)
+                else:
+                    try:
+                        int(_pp2[2])
+                        _slot_yr_rnd.add(_k2)
+                    except ValueError:
+                        pass
+
+        # Inject model_values.json bucket picks, preferring them over WLS for
+        # future years (WLS bucket values are in WLS units; model values are
+        # pre-calibrated to the 0-999.9 model scale).
+        # Current-year slot picks (already FC-normalized in picks.py) are kept.
+        try:
+            _cur_year = str(date.today().year)
+            # Load picks directly from model_values.json — get_model_value_table_cached()
+            # returns DB players (non-empty) so never falls back to model_values.json picks.
+            _raw_model = load_model_value_table(apply_calibration=False) or []
+            _json_picks = [p for p in _raw_model
+                           if str(p.get("position") or "").upper() == "PICK"]
+            _all_seen = {str(p.get("id") or "") for p in model_value_table
+                         if str(p.get("position") or "").upper() == "PICK"}
+            _json_injected = 0
+            for _jp in _json_picks:
+                _jid = str(_jp.get("id") or "")
+                if not _jid:
+                    continue
+                _jparts = _jid.split("_")
+                _jyear = _jparts[0] if _jparts else ""
+                _jis_bucket = (len(_jparts) >= 3 and
+                               _jparts[2].lower() in _bucket_keywords)
+                _jis_generic = len(_jparts) == 2
+
+                # Skip if slot picks for this year+round already exist
+                if len(_jparts) >= 2:
+                    _jkey = (_jparts[0], _jparts[1])
+                    if _jkey in _slot_yr_rnd and (_jis_generic or _jis_bucket):
+                        continue
+                    if _jkey in _bucket_yr_rnd and _jis_generic:
+                        continue
+
+                # For future years, model bucket picks override WLS bucket picks.
+                # For the current year, only add picks not already present.
+                if _jid in _all_seen:
+                    if _jyear == _cur_year or not _jis_bucket:
+                        continue
+                    # Replace the WLS entry with the model value
+                    for _i, _existing in enumerate(model_value_table):
+                        if str(_existing.get("id") or "") == _jid:
+                            model_value_table[_i] = _jp
+                            break
+                else:
+                    _all_seen.add(_jid)
+                    model_value_table.append(_jp)
+                _json_injected += 1
+            if _json_injected:
+                print(f"[api/league-players] model_values.json picks injected/overridden: {_json_injected}")
+        except Exception as _e_json_picks:
+            pass
     except Exception as _e_picks:
         print(f"[api/league-players] pick injection skipped: {_e_picks}")
 
@@ -12829,7 +13038,7 @@ def api_breakout_candidates():
                 # Fallback to value movers
                 movers_data = get_top_movers(days=7, limit=100) or {}
                 players_index = load_players_index() or {}
-                value_table = load_model_value_table() or []
+                value_table = list(get_model_value_table_cached() or [])
                 values_by_id = {str(p.get("id")): p for p in value_table}
 
                 for player in movers_data.get("risers", []):
@@ -13292,8 +13501,8 @@ def api_player_details(player_id: str):
 
         player_team = player_meta.get("team", "")
 
-        # Get value data
-        value_table = load_model_value_table() or []
+        # Get value data (use cache so FC/DP corrections are applied)
+        value_table = get_model_value_table_cached() or []
         player_value = next((p for p in value_table if str(p.get("id")) == str(player_id)), {})
 
         # Get FULL value history from database (not just 90 days)
@@ -13301,6 +13510,30 @@ def api_player_details(player_id: str):
             player_id, days=365,
             league_type=_modal_lt, league_size=_modal_ls,
         )
+
+        # Scale history to match FC/DP-corrected current values.
+        # The history function returns value_1qb and value_sf separately;
+        # the chart uses those fields (not value), so all three must be scaled.
+        if value_history and player_value:
+            _corr_1qb = float(player_value.get("value") or 0)
+            _corr_sf  = float(player_value.get("sf_value") or _corr_1qb)
+            _last_h   = value_history[-1]
+            _raw_1qb  = float(_last_h.get("value_1qb") or _last_h.get("value") or 0)
+            _raw_sf   = float(_last_h.get("value_sf")  or _last_h.get("value") or 0)
+            _ratio_1qb = (_corr_1qb / _raw_1qb) if _raw_1qb > 0 and abs(_corr_1qb - _raw_1qb) > 1.0 else 1.0
+            _ratio_sf  = (_corr_sf  / _raw_sf)  if _raw_sf  > 0 and abs(_corr_sf  - _raw_sf)  > 1.0 else 1.0
+            if _ratio_1qb != 1.0 or _ratio_sf != 1.0:
+                _is_sf = _modal_lt == "sf"
+                for _h in value_history:
+                    if _h.get("value_1qb") is not None:
+                        _h["value_1qb"] = round(_h["value_1qb"] * _ratio_1qb, 1)
+                    if _h.get("value_sf") is not None:
+                        _h["value_sf"] = round(_h["value_sf"] * _ratio_sf, 1)
+                    # Keep primary value in sync with whichever series the league uses
+                    _h["value"] = _h["value_sf"] if _is_sf else _h["value_1qb"]
+                    if _h.get("delta_from_prev") is not None:
+                        _ratio_primary = _ratio_sf if _is_sf else _ratio_1qb
+                        _h["delta_from_prev"] = round(_h["delta_from_prev"] * _ratio_primary, 1)
 
         # Load game logs from sleeper_stats for all available seasons
         game_logs_by_year = {}
@@ -13628,10 +13861,12 @@ def api_player_details(player_id: str):
         # Compute PPG and positional scoring rank from usage cache
         _ppg = None
         _ppg_rank = None
+        _ppg_ovr_rank = None
         _ppg_games = None
         _ppg_season_used = None
         _total_pts = None
         _total_pts_rank = None
+        _total_pts_ovr_rank = None
         try:
             import os as _os, json as _json2
             _ppr_val = scoring_settings.get("pointsPerReception", 0.5)
@@ -13688,6 +13923,34 @@ def api_player_details(player_id: str):
                         _total_pts_rank = _all_total.index(_total_pts) + 1
                     except ValueError:
                         _total_pts_rank = None
+
+                # Overall rank across all skill positions
+                _ppg_ovr_rank = None
+                _total_pts_ovr_rank = None
+                _ovr_positions = {"QB", "RB", "WR", "TE"}
+                _ovr_players = [
+                    p for p in _ud
+                    if p.get("position") in _ovr_positions
+                    and int((p.get("usage") or {}).get("games") or 0) >= 4
+                    and _pick_ppg(p.get("usage") or {}) is not None
+                ]
+                _all_ppg_ovr = sorted(
+                    [round(float(_pick_ppg(p.get("usage") or {})), 1) for p in _ovr_players],
+                    reverse=True,
+                )
+                try:
+                    _ppg_ovr_rank = _all_ppg_ovr.index(_ppg) + 1
+                except ValueError:
+                    _ppg_ovr_rank = None
+                _all_total_ovr = sorted(
+                    [round(round(float(_pick_ppg(p.get("usage") or {})), 1) * int((p.get("usage") or {}).get("games") or 0), 1)
+                     for p in _ovr_players],
+                    reverse=True,
+                )
+                try:
+                    _total_pts_ovr_rank = _all_total_ovr.index(_total_pts) + 1
+                except ValueError:
+                    _total_pts_ovr_rank = None
                 break
         except Exception:
             pass
@@ -13708,13 +13971,25 @@ def api_player_details(player_id: str):
                 "sf_value": round(player_value.get("sf_value", 0), 1) if player_value.get("sf_value") else None,
                 "pos_rank": player_value.get("pos_rank"),
                 "pos_rank_label": player_value.get("pos_rank_label"),
+                "sf_pos_rank": player_value.get("sf_pos_rank"),
+                "sf_pos_rank_label": player_value.get("sf_pos_rank_label"),
+                "value_ovr_rank": next((i + 1 for i, p in enumerate(sorted(
+                    [x for x in (value_table or []) if x.get("position") not in ("K", "DEF", "PICK") and float(x.get("value") or 0) > 0],
+                    key=lambda x: float(x.get("value") or 0), reverse=True
+                )) if str(p.get("id")) == str(player_id)), None),
+                "sf_value_ovr_rank": next((i + 1 for i, p in enumerate(sorted(
+                    [x for x in (value_table or []) if x.get("position") not in ("K", "DEF", "PICK") and float(x.get("sf_value") or 0) > 0],
+                    key=lambda x: float(x.get("sf_value") or 0), reverse=True
+                )) if str(p.get("id")) == str(player_id)), None),
                 "years_exp": player_meta.get("years_exp"),
                 "ppg": _ppg,
                 "ppg_rank": _ppg_rank,
+                "ppg_ovr_rank": _ppg_ovr_rank,
                 "ppg_season": _ppg_season_used,
                 "ppg_games": _ppg_games,
                 "total_pts": _total_pts,
                 "total_pts_rank": _total_pts_rank,
+                "total_pts_ovr_rank": _total_pts_ovr_rank,
             },
             "value_history": value_history,
             "game_logs_by_year": game_logs_by_year,
@@ -13831,6 +14106,14 @@ def api_player_game_logs(player_id: str):
                         elif player_team and player_team == away_team:
                             opponent = home_team; is_away = True;  game_date = game.get("gameDate", ""); break
                     stats = (stats_by_week.get(week_num) or {}).get(player_id)
+                    # Bye week: no game found for this team and no stats
+                    if not opponent and not game_date and stats is None:
+                        # Grab the date from any game that week so it sorts correctly
+                        any_game = next((g for g in games if isinstance(g, dict) and g.get("gameDate")), None)
+                        bye_date = any_game.get("gameDate", "") if any_game else ""
+                        game_logs.append({"week": week_num, "date": bye_date,
+                            "opponent": "BYE", "fantasy_pts": None, "stats": None, "is_bye": True})
+                        continue
                     if stats:
                         game_logs.append({"week": week_num, "date": game_date,
                             "opponent": f"@{opponent}" if is_away else opponent,
@@ -13927,7 +14210,7 @@ def api_team_details(roster_id: str):
 
         # Get players with values
         players_index = load_players_index() or {}
-        value_table = load_model_value_table() or []
+        value_table = list(get_model_value_table_cached() or [])
         values_by_id = {str(row["id"]): row for row in value_table if isinstance(row, dict) and row.get("id")}
 
         player_ids = roster.get("players") or []
@@ -14375,7 +14658,7 @@ def api_draft_needs():
         rosters = get_rosters(platform, league_id, season) or []
         league  = get_league(platform, league_id, season) or {}
         players_index = load_players_index() or {}
-        value_table   = load_model_value_table() or []
+        value_table   = list(get_model_value_table_cached() or [])
 
         roster_positions = (league.get("roster_positions") or [])
         is_sf  = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in roster_positions)
@@ -16365,13 +16648,11 @@ def api_trade_intel_player_packages(player_id: str):
         # Always prefer live DB values; fall back to cached JSON only if DB unavailable
         value_table = []
         try:
-            from dashboard_services.player_value_history import load_current_values_from_db as _load_db_vals
-            value_table = _load_db_vals() or []
+            value_table = list(get_model_value_table_cached() or [])
         except Exception:
             pass
         if not value_table:
-            from utils.utils import load_model_value_table
-            value_table = load_model_value_table() or []
+            value_table = list(get_model_value_table_cached() or [])
 
         _use_sf_ranks = (val_key == "sf_value")
         values_by_id: dict = {}
@@ -17492,7 +17773,7 @@ def api_trade_ideas_for_target():
         ctx = get_league_ctx_from_cache(platform, league_id, season)
 
         val_key = "sf_value" if league_type == "sf" else "value"
-        value_table = load_model_value_table() or []
+        value_table = list(get_model_value_table_cached() or [])
         values_by_id = {}
         for p in value_table:
             pid = str(p.get("id") or "")

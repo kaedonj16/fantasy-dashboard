@@ -370,6 +370,8 @@ def load_current_values_from_db() -> list[dict]:
                         redraft_value_sf
                     FROM player_values
                     WHERE value_1qb IS NOT NULL
+                      AND value_1qb > 0
+                      AND (position IS NULL OR position != 'PICK')
                     ORDER BY value_1qb DESC NULLS LAST
                     """
                 )
@@ -383,11 +385,48 @@ def load_current_values_from_db() -> list[dict]:
     # Load players index for name matching
     from utils.utils import load_players_index
     players_index = load_players_index() or {}
-    
+
+    # Pre-scan picks to build pick-type sets per (year, round).
+    # Hierarchy: slot picks (1.01) > bucket picks (Early/Mid/Late) > generic (2027_1)
+    _BUCKET_KWORDS = {"early", "mid", "late"}
+    _slot_yr_rnd: set = set()    # (yr, rnd) combos that have specific slot picks
+    _bucket_yr_rnd: set = set()  # (yr, rnd) combos that have bucket picks
+    for row in rows:
+        if str(dict(row).get("position") or "").upper() == "PICK":
+            _pid = str(dict(row).get("id") or "")
+            _pp = _pid.split("_")
+            if len(_pp) >= 3:
+                _key = (_pp[0], _pp[1])
+                if _pp[2].lower() in _BUCKET_KWORDS:
+                    _bucket_yr_rnd.add(_key)
+                else:
+                    try:
+                        int(_pp[2])
+                        _slot_yr_rnd.add(_key)
+                    except ValueError:
+                        pass
+
     assets = []
     for row in rows:
         asset = dict(row)
-        
+
+        # Enforce pick hierarchy: slot > bucket > generic
+        if str(asset.get("position") or "").upper() == "PICK":
+            _pid = str(asset.get("id") or "")
+            _pp = _pid.split("_")
+            if len(_pp) >= 2:
+                _yr_rnd_key = (_pp[0], _pp[1])
+                is_generic = len(_pp) == 2
+                is_bucket = len(_pp) >= 3 and _pp[2].lower() in _BUCKET_KWORDS
+                if _yr_rnd_key in _slot_yr_rnd:
+                    # Slot picks exist → drop bucket and generic
+                    if is_generic or is_bucket:
+                        continue
+                elif _yr_rnd_key in _bucket_yr_rnd:
+                    # Bucket picks exist but no slots → drop generic
+                    if is_generic:
+                        continue
+
         # Skip players with no value
         value = float(asset.get("value") or 0.0)
         if value <= 0:
@@ -492,68 +531,12 @@ def load_current_values_from_db() -> list[dict]:
 
 def load_calibration_overrides() -> dict[str, dict]:
     """
-    Calibration overrides disabled — DB calibrated values are corrupted from
-    bad pipeline runs. Returns empty dict so the app always uses the clean
-    model_values.json values. Re-enable once market_calibration.py has been
-    re-run against correct model values.
+    FC/DP market corrections are now applied directly in get_model_value_table_cached()
+    in app.py, where the loaded player values are already available for comparison.
+    This function is kept for the load_model_value_table() call path but returns
+    empty — the cache path handles corrections without needing an extra DB round-trip.
     """
     return {}
-
-    try:  # noqa: unreachable
-        with get_conn() as conn:
-            rows = conn.execute(
-                """
-                SELECT player_id,
-                       CASE
-                           WHEN value_1qb > 0 AND calibrated_value_1qb > value_1qb * 1.5 THEN value_1qb
-                           WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_1qb > 100   THEN value_1qb
-                           ELSE calibrated_value_1qb
-                       END AS value,
-                       CASE
-                           WHEN value_1qb > 0 AND calibrated_value_sf > value_1qb * 1.5 THEN COALESCE(value_sf, value_1qb)
-                           WHEN COALESCE(value_1qb,0) < 10 AND calibrated_value_sf > 100    THEN COALESCE(value_sf, value_1qb)
-                           ELSE COALESCE(calibrated_value_sf, calibrated_value_1qb)
-                       END AS sf_value,
-                       calibrated_value_8,   calibrated_sf_value_8,
-                       calibrated_value_12,  calibrated_sf_value_12,
-                       calibrated_value_14,  calibrated_sf_value_14
-                FROM player_values
-                WHERE calibrated_value_1qb IS NOT NULL
-                  AND calibrated_value_1qb > 0
-                """
-            ).fetchall()
-        result: dict[str, dict] = {}
-        for r in rows:
-            d: dict = {
-                "value":    float(r["value"]),
-                "sf_value": float(r["sf_value"]),
-            }
-            for sz in (8, 12, 14):
-                v  = r[f"calibrated_value_{sz}"]
-                sf = r[f"calibrated_sf_value_{sz}"]
-                if v  is not None: d[f"value_{sz}"]    = float(v)
-                if sf is not None: d[f"sf_value_{sz}"] = float(sf)
-            result[str(r["player_id"])] = d
-        return result
-    except Exception:
-        # Fallback: new size columns may not exist yet - return only the 10-team values
-        try:
-            with get_conn() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT player_id,
-                           calibrated_value_1qb AS value,
-                           COALESCE(calibrated_value_sf, calibrated_value_1qb) AS sf_value
-                    FROM player_values
-                    WHERE calibrated_value_1qb IS NOT NULL AND calibrated_value_1qb > 0
-                    """
-                ).fetchall()
-            return {
-                str(r["player_id"]): {"value": float(r["value"]), "sf_value": float(r["sf_value"])}
-                for r in rows
-            }
-        except Exception:
-            return {}
 
 
 def _value_col(league_type: str = "1qb", league_size: int = 10) -> str:
