@@ -56,6 +56,8 @@ def _needs_rebuild(target_season: int) -> bool:
 def main():
     target_season = _get_season()
     stats_season = target_season - 1
+    # Records are stored with season=stats_season (the prediction_season convention in
+    # build_historical_scores), so freshness checks and DB queries use stats_season.
 
     # Always run migrations first — all SQL uses IF NOT EXISTS so it's safe
     # to run on every deploy even if nothing changed.
@@ -68,7 +70,7 @@ def main():
         import traceback
         traceback.print_exc()
 
-    if not _needs_rebuild(target_season):
+    if not _needs_rebuild(stats_season):
         print(
             f"[post-deploy] Breakout scores for {target_season} already contain "
             "projections data — skipping rebuild"
