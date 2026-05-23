@@ -55,6 +55,17 @@ def main():
     target_season = _get_season()
     stats_season = target_season - 1
 
+    # Always run migrations first — all SQL uses IF NOT EXISTS so it's safe
+    # to run on every deploy even if nothing changed.
+    print("[post-deploy] Running DB migrations...")
+    try:
+        from scripts.run_migrations import run_migrations
+        run_migrations()
+    except Exception as e:
+        print(f"[post-deploy] Migrations failed: {e}")
+        import traceback
+        traceback.print_exc()
+
     if not _needs_rebuild(target_season):
         print(
             f"[post-deploy] Breakout scores for {target_season} already contain "
