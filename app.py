@@ -11715,23 +11715,32 @@ def get_model_value_table_cached():
         except Exception as _e:
             print(f"[model-value-cache] market corrections skipped: {_e}")
 
-    # Append rookie prospects (mirrors /api/league-players logic)
+    # Append rookie prospects, using Sleeper ID as the canonical ID.
+    # First strip out any existing player_values entries for this year's rookies —
+    # FC/DP market values are often deflated for just-drafted rookies whose
+    # pipeline prospect values are the more accurate source.
     try:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
         from utils.utils import normalize_name as _nn
         draft_year = get_active_rookie_class()
-        for r in get_rookie_rankings_from_db(draft_year):
-            name = r.get("name") or ""
-            tbl.append({
-                "id": r.get("player_id") or f"rookie_{name}",
-                "name": name,
-                "team": r.get("team") or "FA",
-                "position": r.get("position") or "UNK",
-                "age": r.get("age"),
-                "value":    float(r.get("rookie_value") or 0),
-                "sf_value": float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
-                "is_rookie": True,
-            })
+        rk_rows = list(get_rookie_rankings_from_db(draft_year))
+        if rk_rows:
+            rk_sids = {str(r.get("sleeper_id")) for r in rk_rows if r.get("sleeper_id")}
+            # Remove stale player_values entries that are actually this year's rookies
+            tbl = [p for p in tbl if str(p.get("id") or "") not in rk_sids]
+            for r in rk_rows:
+                sid  = r.get("sleeper_id")
+                name = r.get("name") or ""
+                tbl.append({
+                    "id":       str(sid) if sid else (r.get("player_id") or f"rookie_{name}"),
+                    "name":     name,
+                    "team":     r.get("team") or "FA",
+                    "position": r.get("position") or "UNK",
+                    "age":      r.get("age"),
+                    "value":    float(r.get("rookie_value") or 0),
+                    "sf_value": float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
+                    "is_rookie": True,
+                })
     except Exception as e:
         print(f"[model-value-cache] rookies skipped: {e}")
 
