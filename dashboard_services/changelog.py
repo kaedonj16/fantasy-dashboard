@@ -7,19 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-05-24",
         "tag": "feature",
-        "text": "Breakout Engine: Peer comparisons now filter out weak historical seasons — only players who genuinely broke out (RB/WR ≥10 PPG, TE ≥8 PPG) appear as comps, so the \"Like...\" callout surfaces meaningful precedents.",
-        "link": "/breakouts"
-    },
-    {
-        "date": "2026-05-24",
-        "tag": "fix",
-        "text": "Breakout Engine: Vacated carries/targets now correctly shows all contributors — e.g. \"293 carries vacated (Pacheco, Pierce +2 more departed)\" instead of attributing the full total to only two players.",
-        "link": "/breakouts"
-    },
-    {
-        "date": "2026-05-24",
-        "tag": "fix",
-        "text": "Breakout Engine: Projected PPG range on the breakout list cards now matches the range shown in the player modal.",
+        "text": "Breakout Engine: Peer comparisons are sharper — only genuine breakout seasons appear as comps, vacated opportunity now credits all departed players, and projected PPG ranges are consistent across the board.",
         "link": "/breakouts"
     },
     {
