@@ -317,6 +317,26 @@ def _build_comp_database() -> dict:
         from dashboard_services.db import get_conn
 
         with get_conn() as conn:
+            # Find the current prediction season (highest season in DB)
+            cur_row = conn.execute(
+                "SELECT MAX(season) AS cur FROM breakout_opportunity_scores"
+            ).fetchone()
+            current_season = int(cur_row["cur"] or 2026)
+
+            # Historical range: all completed seasons before the current cycle
+            hist_max = current_season - 1
+
+            # Grab player_ids that are active candidates this cycle — exclude
+            # them from the comp pool so active candidates don't appear as comps
+            active_ids: set[str] = {
+                str(r["player_id"])
+                for r in conn.execute(
+                    "SELECT DISTINCT player_id FROM breakout_opportunity_scores "
+                    "WHERE season = %s",
+                    (current_season,),
+                ).fetchall()
+            }
+
             rows = conn.execute(
                 """
                 SELECT DISTINCT ON (player_id, season)
@@ -329,16 +349,18 @@ def _build_comp_database() -> dict:
                     breakout_opportunity_score,
                     (component_details->'projections'->>'prev_ppr_ppg')::numeric AS prior_ppg
                 FROM breakout_opportunity_scores
-                WHERE season BETWEEN 2023 AND 2025
+                WHERE season BETWEEN 2023 AND %(hist_max)s
                   AND breakout_opportunity_score >= 45
                   AND position IN ('WR', 'RB', 'TE', 'QB')
                 ORDER BY player_id, season, as_of_date DESC, calculated_at DESC
-                """
+                """,
+                {"hist_max": hist_max},
             ).fetchall()
 
-        # Load actual PPG for each prediction season
+        # Load actual PPG for each historical prediction season
+        hist_seasons = list(range(2023, hist_max + 1))
         usage: dict[int, dict[str, float]] = {
-            s: _load_usage_ppg(s) for s in [2023, 2024, 2025]
+            s: _load_usage_ppg(s) for s in hist_seasons
         }
 
         db: dict = {}
@@ -352,17 +374,27 @@ def _build_comp_database() -> dict:
 
             if not name or prior <= 0:
                 continue
+            # Skip players who are active candidates in the current cycle
+            if pid in active_ids:
+                continue
             next_ppg = usage.get(season, {}).get(pid)
             if not next_ppg or next_ppg <= 0:
                 continue
 
+            # Require a meaningful improvement — flat/declining seasons
+            # add noise and confuse the comparison
+            if next_ppg < prior * 1.10 or next_ppg < prior + 1.0:
+                continue
+
             key = (_ppg_tier(pos, prior), _opp_tier(opp_s), pos)
             db.setdefault(key, []).append({
-                "name":      name,
-                "season":    season,
-                "prior_ppg": round(prior, 1),
-                "next_ppg":  round(next_ppg, 1),
-                "team":      row["team"] or "",
+                "name":       name,
+                "player_id":  pid,
+                "season":     season,       # prediction season = breakout year
+                "prior_year": season - 1,   # stats year
+                "prior_ppg":  round(prior, 1),
+                "next_ppg":   round(next_ppg, 1),
+                "team":       row["team"] or "",
                 "opp_score": round(opp_s, 0),
             })
 
@@ -406,6 +438,7 @@ def _get_peer_comparison(
     position: str,
     opp_score: float,
     prior_ppg: float = 0.0,
+    player_id: Optional[str] = None,
 ) -> Optional[str]:
     """
     Return a combined peer comparison using named historical comps + cohort stat.
@@ -413,7 +446,7 @@ def _get_peer_comparison(
     Matches on position + opportunity tier + prior-PPG tier.  Shows up to 3 named
     comps (highest actual next-season PPG) and a cohort average from all bucket
     members.  Falls back to the adjacent prior-PPG tier when the exact bucket is
-    thin.
+    thin.  Excludes the current player so they never appear as their own comp.
     """
     pos = (position or "WR").upper()
     db  = _get_comp_database()
@@ -423,20 +456,30 @@ def _get_peer_comparison(
     key = (pt, ot, pos)
     comps = db.get(key, [])
 
+    # Exclude the current player from their own comp list
+    if player_id:
+        comps = [c for c in comps if c.get("player_id") != str(player_id)]
+
     # Fall back to adjacent prior-PPG tier if bucket is empty
     if not comps:
         for fallback in ["mid", "low", "high"]:
             if fallback != pt:
-                comps = db.get((fallback, ot, pos), [])
-                if comps:
+                candidates = db.get((fallback, ot, pos), [])
+                if player_id:
+                    candidates = [c for c in candidates if c.get("player_id") != str(player_id)]
+                if candidates:
+                    comps = candidates
                     break
 
     # Further fall back to any opp tier if still empty
     if not comps:
         for fallback_ot in ["high", "medium", "low"]:
             if fallback_ot != ot:
-                comps = db.get((pt, fallback_ot, pos), [])
-                if comps:
+                candidates = db.get((pt, fallback_ot, pos), [])
+                if player_id:
+                    candidates = [c for c in candidates if c.get("player_id") != str(player_id)]
+                if candidates:
+                    comps = candidates
                     break
 
     if not comps:
@@ -447,8 +490,9 @@ def _get_peer_comparison(
     displayed = comps[:min(3, n)]
 
     comp_strs = [
-        f"{_abbrev_name(c['name'])} '{str(c['season'])[-2:]} "
-        f"({c['prior_ppg']:.1f}→{c['next_ppg']:.1f} PPG)"
+        f"{_abbrev_name(c['name'])} "
+        f"('{str(c['prior_year'])[-2:]}→'{str(c['season'])[-2:]}: "
+        f"{c['prior_ppg']:.1f}→{c['next_ppg']:.1f} PPG)"
         for c in displayed
     ]
 
@@ -716,7 +760,8 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
     opp_score = float(candidate.get('opportunity_opened_score') or 0)
     prior_ppg = float(candidate.get('prev_ppr_ppg') or 0)
     candidate['peer_comparison'] = _get_peer_comparison(
-        candidate.get('position', 'WR'), opp_score, prior_ppg
+        candidate.get('position', 'WR'), opp_score, prior_ppg,
+        player_id=str(player_id),
     )
 
     return candidate
