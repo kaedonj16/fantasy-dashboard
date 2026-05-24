@@ -15702,16 +15702,18 @@ def api_trade_intel_trending():
             WHERE s.season = %s AND s.trade_count > 0
             """
         
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc_ti
+        _rk_year = _garc_ti()
         _q = f"""
             SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
                    {value_col_expr} AS market_value, s.buy_sell_ratio,
                    s.market_trend_1qb,
-                   COALESCE(pv.{model_col}, rk.rookie_value) AS model_value,
+                   COALESCE(rk.rookie_value, pv.{model_col}) AS model_value,
                    COALESCE(pv.position, rk.position) AS position,
                    COALESCE(pv.team, rk.team) AS team
             FROM trade_intel_player_stats s
             LEFT JOIN player_values pv ON pv.player_id = s.player_id
-            LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id
+            LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id AND rk.draft_class_year = %s
             WHERE s.season = %s AND s.trade_count > 0
             ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
             LIMIT %s OFFSET %s
@@ -15722,7 +15724,7 @@ def api_trade_intel_trending():
             total_players = count_result["total"] if count_result else 0
             
             # Get paginated results
-            rows = conn.execute(_q, (season, per_page, offset)).fetchall()
+            rows = conn.execute(_q, (_rk_year, season, per_page, offset)).fetchall()
             # Fall back to most recent season that has data
             if not rows:
                 fallback_season = conn.execute(
@@ -15732,7 +15734,7 @@ def api_trade_intel_trending():
                     # Recalculate count for fallback season
                     count_result = conn.execute(count_q, (fallback_season["season"],)).fetchone()
                     total_players = count_result["total"] if count_result else 0
-                    rows = conn.execute(_q, (fallback_season["season"], per_page, offset)).fetchall()
+                    rows = conn.execute(_q, (_rk_year, fallback_season["season"], per_page, offset)).fetchall()
 
         from utils.utils import load_players_index
         players_map = load_players_index() or {}
@@ -15806,22 +15808,24 @@ def api_trade_intel_player(player_id: str):
             value_col_expr = f"s.market_value_{fmt}"
 
         with get_conn() as conn:
+            from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc_tip
+            _rk_year_p = _garc_tip()
             stat_row = conn.execute(
                 f"""
                 SELECT
                     s.*,
-                    {value_col_expr}                                        AS market_value,
-                    COALESCE(pv.{raw_col}, rk.rookie_value)                 AS model_value,
-                    COALESCE(pv.{cal_col}, pv.{raw_col}, rk.rookie_value)   AS calibrated_value,
+                    {value_col_expr}                                                    AS market_value,
+                    COALESCE(rk.rookie_value, pv.{raw_col})                             AS model_value,
+                    COALESCE(rk.rookie_value, pv.{cal_col}, pv.{raw_col})               AS calibrated_value,
                     pv.calibration_source,
                     COALESCE(pv.position, rk.position) AS position,
                     COALESCE(pv.team, rk.team)         AS team
                 FROM trade_intel_player_stats s
                 LEFT JOIN player_values pv ON pv.player_id = s.player_id
-                LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id
+                LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id AND rk.draft_class_year = %s
                 WHERE s.player_id = %s AND s.season = %s
                 """,
-                (player_id, season)
+                (_rk_year_p, player_id, season)
             ).fetchone()
 
             package_rows = conn.execute(
