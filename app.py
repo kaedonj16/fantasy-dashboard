@@ -1204,6 +1204,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Graphs",  "page_graphs",  "graphs",  False),
         ("History", "page_history", "history", False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
+    if viewer_username:
+        _portfolio_cls = "nav-pill active" if active == "portfolio" else "nav-pill"
+        nav_pills.append(f"<a class='{_portfolio_cls}' href='/portfolio'>My Leagues</a>")
 
     # Changelog bell
     # League switcher dropdown (if user is logged in)
