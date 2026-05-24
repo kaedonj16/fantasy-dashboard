@@ -109,9 +109,71 @@ def enrich_candidate_with_type(candidate: dict) -> dict:
     }
 
 
-# =============================================================================
-# API ENDPOINTS
-# =============================================================================
+def _generate_key_reasons_from_details(row: dict) -> str:
+    """Derive key_reasons from stored component_details when the DB column is empty."""
+    cd = row.get('component_details') or {}
+    position = row.get('position', '')
+    team = row.get('team', '')
+
+    opp_score  = float(row.get('opportunity_opened_score')  or 0)
+    comp_score = float(row.get('competition_removed_score') or 0)
+    traj_score = float(row.get('role_trajectory_score')     or 0)
+    read_score = float(row.get('player_readiness_score')    or 0)
+
+    opp_d  = cd.get('opportunity_opened')  or {}
+    cr_d   = cd.get('competition_removed') or {}
+    traj_d = cd.get('role_trajectory')     or {}
+    read_d = cd.get('player_readiness')    or {}
+    proj_d = cd.get('projections')         or {}
+
+    age      = float(read_d.get('age') or row.get('age') or 24)
+    yrs_exp  = int(read_d.get('years_exp') or max(0, round(age - 22)))
+    prev_ppg = float(proj_d.get('prev_ppr_ppg') or 0)
+    prev_snap = float(traj_d.get('prev_snap_share') or 0)
+
+    reasons = []
+
+    if opp_score >= 25:
+        vac_tgt  = float(opp_d.get('vacated_targets', 0))
+        vac_car  = float(opp_d.get('vacated_carries', 0))
+        departed = opp_d.get('departed_players') or []
+        dep_names = ', '.join(d.get('name', '') for d in departed[:2] if d.get('name'))
+        if position in ('WR', 'TE') and vac_tgt >= 30:
+            suffix = f' ({dep_names} departed)' if dep_names else f' at {team}'
+            reasons.append(f'{int(vac_tgt)} targets vacated{suffix}')
+        elif position == 'RB' and vac_car >= 30:
+            suffix = f' ({dep_names} departed)' if dep_names else f' at {team}'
+            reasons.append(f'{int(vac_car)} carries vacated{suffix}')
+        elif float(opp_d.get('vacated_snap_share') or 0) >= 0.15:
+            reasons.append(f'{int(float(opp_d.get("vacated_snap_share", 0)) * 100)}% snap share opened at {team}')
+        elif opp_score >= 50:
+            reasons.append(f'Significant opportunity opened at {team}')
+
+    if comp_score >= 25:
+        key_deps = cr_d.get('key_departures') or []
+        if key_deps:
+            name = key_deps[0].get('name', '')
+            reasons.append(f'{name} departure reduces competition' if name else 'Key competition reduced')
+
+    if traj_score >= 55:
+        if yrs_exp <= 2 and prev_snap >= 0.45:
+            reasons.append(
+                f'Year {yrs_exp + 1} player ascending in established starter role ({int(prev_snap * 100)}% snaps)'
+            )
+        elif prev_snap >= 0.70 and traj_score >= 65:
+            reasons.append(f'High-volume starter ({int(prev_snap * 100)}% snaps) with strong upward trajectory')
+        elif traj_score >= 70:
+            reasons.append('Strong upward role trajectory')
+
+    if read_score >= 75 and yrs_exp <= 3:
+        dr = read_d.get('draft_round')
+        if dr and int(dr) <= 2 and not any('Year' in r for r in reasons):
+            reasons.append(f'Round {int(dr)} draft capital — high-ceiling profile')
+
+    if len(reasons) < 2 and prev_snap >= 0.55 and prev_ppg >= 8:
+        reasons.append(f'Proven starter ({int(prev_snap * 100)}% snaps, {prev_ppg:.1f} PPG last season)')
+
+    return '\n'.join(reasons[:4])
 
 def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0) -> Dict:
     """
@@ -339,6 +401,10 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
     else:
         candidate['season1_ppr'] = None
     candidate['prev_ppr_ppg'] = float(cd_prev) if cd_prev is not None else None
+
+    # Generate key_reasons on-the-fly if the DB column is empty (pre-pipeline records)
+    if not candidate.get('key_reasons'):
+        candidate['key_reasons'] = _generate_key_reasons_from_details(candidate)
 
     # Fill missing name / headshot from players_index
     try:
