@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-05-24",
         "tag": "new",
-        "text": "Breakout Engine: Peer comparisons are sharper — only genuine breakout seasons appear as comps, vacated opportunity now credits all departed players, and projected PPG ranges are consistent across the board.",
+        "text": "Breakout Engine: Historical peer comps now show only genuine breakout seasons as reference points, vacated opportunity tracks every departed player contributing to the opening, and breakout cards display a confidence-adjusted projected PPG range.",
         "link": "/breakouts"
     },
     {
