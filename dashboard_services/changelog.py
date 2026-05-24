@@ -7,12 +7,6 @@ CHANGELOG = [
     {
         "date": "2026-05-24",
         "tag": "feature",
-        "text": "Breakout Engine: Startup draft grades now use FantasyCalc dynasty rankings as the ADP source, so value vs. reach grades reflect real dynasty market consensus rather than local league averages.",
-        "link": "/breakouts"
-    },
-    {
-        "date": "2026-05-24",
-        "tag": "feature",
         "text": "Breakout Engine: Peer comparisons now filter out weak historical seasons — only players who genuinely broke out (RB/WR ≥10 PPG, TE ≥8 PPG) appear as comps, so the \"Like...\" callout surfaces meaningful precedents.",
         "link": "/breakouts"
     },
