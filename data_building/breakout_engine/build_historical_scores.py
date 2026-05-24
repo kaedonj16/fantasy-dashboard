@@ -1269,7 +1269,7 @@ def build_season(
             continue
         # Positional age ceiling: veteran players who haven't broken through by
         # these ages are unlikely to do so and crowd out genuine emerging talent.
-        _MAX_AGE = {"RB": 30, "WR": 31, "TE": 29, "QB": 99}
+        _MAX_AGE = {"RB": 27, "WR": 29, "TE": 27, "QB": 33}
         if age >= _MAX_AGE.get(roster_entry["position"], 99):
             skipped_age += 1
             continue
