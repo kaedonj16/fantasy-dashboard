@@ -6277,6 +6277,11 @@ function _buildBkTabHTML(data, scoreColor) {
       </div>`;
     });
     html += `</div>`;
+    if (data.peer_comparison) {
+      html += `<div style="margin-top:10px;padding:8px 10px;background:var(--surface-2,rgba(255,255,255,0.04));border-radius:6px;border-left:2px solid ${scoreColor}44;">
+        <div style="font-size:11px;color:var(--text-muted);line-height:1.5;">${data.peer_comparison}</div>
+      </div>`;
+    }
     html += `</div>`;
   }
 

@@ -244,50 +244,230 @@ def _get_qb_situation_note(team: str, season) -> str:
         return ''
 
 
-# Peer comparison benchmarks derived from 2022-2024 backtest data
-# (639 paired player-seasons with actual next-season outcomes).
-# Buckets: high_opp = opportunity_opened_score >= 70,
-#          med_opp  = 35-69, low_opp = <35 (role/trajectory-driven).
-_PEER_BENCHMARKS: dict[str, dict[str, dict]] = {
-    "WR": {
-        "high_opp": {"avg_ppg": 9.8,  "n": 184, "label": "WRs in high-opportunity situations"},
-        "med_opp":  {"avg_ppg": 8.4,  "n": 67,  "label": "WRs with moderate opportunity"},
-        "low_opp":  {"avg_ppg": 7.1,  "n": 32,  "label": "WRs in role-trajectory breakouts"},
-    },
-    "RB": {
-        "high_opp": {"avg_ppg": 9.5,  "n": 54,  "label": "RBs inheriting a backfield"},
-        "med_opp":  {"avg_ppg": 8.8,  "n": 35,  "label": "RBs with moderate opportunity"},
-        "low_opp":  {"avg_ppg": 7.8,  "n": 48,  "label": "RBs in role-trajectory breakouts"},
-    },
-    "TE": {
-        "high_opp": {"avg_ppg": 7.2,  "n": 23,  "label": "TEs in high-opportunity situations"},
-        "med_opp":  {"avg_ppg": 6.1,  "n": 37,  "label": "TEs with moderate opportunity"},
-        "low_opp":  {"avg_ppg": 5.8,  "n": 124, "label": "TEs in role-trajectory breakouts"},
-    },
-    "QB": {
-        "high_opp": {"avg_ppg": 16.5, "n": 15,  "label": "QBs taking over a starter role"},
-        "med_opp":  {"avg_ppg": 14.8, "n": 20,  "label": "QBs with moderate situation change"},
-        "low_opp":  {"avg_ppg": 13.5, "n": 35,  "label": "QBs in similar situations"},
-    },
+# ── Historical comp database ──────────────────────────────────────────────────
+# Built lazily from breakout_opportunity_scores + usage_rows JSON files.
+# Structure: (position, opp_tier, ppg_tier) → [comp dicts sorted by next_ppg desc]
+# Up to 7 comps per bucket; rebuilt every 6 hours.
+
+import json as _json
+import time as _time
+from pathlib import Path as _Path
+
+_COMP_DB_CACHE:     dict  = {}
+_COMP_DB_CACHED_AT: float = 0.0
+_COMP_DB_TTL:       float = 3600 * 6
+
+# Opportunity tier thresholds (opportunity_opened_score)
+_OPP_HIGH = 60
+_OPP_MED  = 30
+
+# Prior-PPG tiers by position (previous-season PPG)
+_PPG_TIERS: dict[str, list] = {
+    "WR": [(0, 6.0, "low"), (6.0, 11.0, "mid"), (11.0, 999, "high")],
+    "RB": [(0, 7.0, "low"), (7.0, 13.0, "mid"), (13.0, 999, "high")],
+    "TE": [(0, 5.0, "low"), (5.0, 10.0, "mid"), (10.0, 999, "high")],
+    "QB": [(0, 18.0, "low"), (18.0, 25.0, "mid"), (25.0, 999, "high")],
 }
 
 
-def _get_peer_comparison(position: str, opp_score: float) -> Optional[str]:
-    """Return a peer comparison sentence based on position and opportunity level."""
-    pos = (position or 'WR').upper()
-    benchmarks = _PEER_BENCHMARKS.get(pos)
-    if not benchmarks:
+def _opp_tier(opp_score: float) -> str:
+    if opp_score >= _OPP_HIGH:
+        return "high"
+    if opp_score >= _OPP_MED:
+        return "medium"
+    return "low"
+
+
+def _ppg_tier(pos: str, ppg: float) -> str:
+    for lo, hi, tier in _PPG_TIERS.get(pos, _PPG_TIERS["WR"]):
+        if lo <= ppg < hi:
+            return tier
+    return "high"
+
+
+def _load_usage_ppg(season: int, min_games: int = 8) -> dict[str, float]:
+    """Return {player_id: ppr_ppg} from usage_rows_{season}.json, min_games filter."""
+    try:
+        path = _Path("cache/player_history") / f"usage_rows_{season}.json"
+        if not path.exists():
+            return {}
+        rows = _json.loads(path.read_text())
+        out: dict[str, float] = {}
+        for r in rows:
+            pid  = str(r.get("id") or "")
+            u    = r.get("usage") or {}
+            ppg  = u.get("ppr_ppg")
+            games = int(u.get("games") or 0)
+            if pid and ppg and games >= min_games:
+                out[pid] = float(ppg)
+        return out
+    except Exception:
+        return {}
+
+
+def _build_comp_database() -> dict:
+    """
+    Build comp database from historical breakout predictions + actual next-season PPG.
+
+    For each player in breakout_opportunity_scores (seasons 2023-2025), look up
+    their actual PPG in usage_rows_{season}.json.  Bucket by
+    (position, opp_tier, ppg_tier), sort by next_ppg desc, keep top 7.
+    """
+    try:
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT ON (player_id, season)
+                    player_id,
+                    player_name,
+                    position,
+                    team,
+                    season,
+                    opportunity_opened_score,
+                    breakout_opportunity_score,
+                    (component_details->'projections'->>'prev_ppr_ppg')::numeric AS prior_ppg
+                FROM breakout_opportunity_scores
+                WHERE season BETWEEN 2023 AND 2025
+                  AND breakout_opportunity_score >= 45
+                  AND position IN ('WR', 'RB', 'TE', 'QB')
+                ORDER BY player_id, season, as_of_date DESC, calculated_at DESC
+                """
+            ).fetchall()
+
+        # Load actual PPG for each prediction season
+        usage: dict[int, dict[str, float]] = {
+            s: _load_usage_ppg(s) for s in [2023, 2024, 2025]
+        }
+
+        db: dict = {}
+        for row in rows:
+            pid      = str(row["player_id"] or "")
+            name     = (row["player_name"] or "").strip()
+            pos      = (row["position"] or "WR").upper()
+            season   = int(row["season"])
+            opp_s    = float(row["opportunity_opened_score"] or 0)
+            prior    = float(row["prior_ppg"] or 0)
+
+            if not name or prior <= 0:
+                continue
+            next_ppg = usage.get(season, {}).get(pid)
+            if not next_ppg or next_ppg <= 0:
+                continue
+
+            key = (_ppg_tier(pos, prior), _opp_tier(opp_s), pos)
+            db.setdefault(key, []).append({
+                "name":      name,
+                "season":    season,
+                "prior_ppg": round(prior, 1),
+                "next_ppg":  round(next_ppg, 1),
+                "team":      row["team"] or "",
+                "opp_score": round(opp_s, 0),
+            })
+
+        # Sort each bucket by next_ppg desc, cap at 7
+        for key in db:
+            db[key].sort(key=lambda c: c["next_ppg"], reverse=True)
+            db[key] = db[key][:7]
+
+        logger.info(
+            "breakout_api: comp database built — %d buckets, %d total comps",
+            len(db), sum(len(v) for v in db.values()),
+        )
+        return db
+
+    except Exception:
+        logger.warning("breakout_api: comp database build failed", exc_info=True)
+        return {}
+
+
+def _get_comp_database() -> dict:
+    """Return cached comp database, rebuilding when stale."""
+    global _COMP_DB_CACHE, _COMP_DB_CACHED_AT
+    if not _COMP_DB_CACHE or (_time.time() - _COMP_DB_CACHED_AT) > _COMP_DB_TTL:
+        _COMP_DB_CACHE     = _build_comp_database()
+        _COMP_DB_CACHED_AT = _time.time()
+    return _COMP_DB_CACHE
+
+
+def _abbrev_name(full: str) -> str:
+    parts = full.split()
+    if len(parts) < 2:
+        return full
+    # Handle suffixes (Jr., III, etc.)
+    suffix_re = {"jr", "sr", "ii", "iii", "iv", "v"}
+    if parts[-1].rstrip(".").lower() in suffix_re:
+        return f"{parts[0][0]}. {' '.join(parts[1:])}"
+    return f"{parts[0][0]}. {parts[-1]}"
+
+
+def _get_peer_comparison(
+    position: str,
+    opp_score: float,
+    prior_ppg: float = 0.0,
+) -> Optional[str]:
+    """
+    Return a combined peer comparison using named historical comps + cohort stat.
+
+    Matches on position + opportunity tier + prior-PPG tier.  Shows up to 3 named
+    comps (highest actual next-season PPG) and a cohort average from all bucket
+    members.  Falls back to the adjacent prior-PPG tier when the exact bucket is
+    thin.
+    """
+    pos = (position or "WR").upper()
+    db  = _get_comp_database()
+
+    ot = _opp_tier(opp_score)
+    pt = _ppg_tier(pos, prior_ppg)
+    key = (pt, ot, pos)
+    comps = db.get(key, [])
+
+    # Fall back to adjacent prior-PPG tier if bucket is empty
+    if not comps:
+        for fallback in ["mid", "low", "high"]:
+            if fallback != pt:
+                comps = db.get((fallback, ot, pos), [])
+                if comps:
+                    break
+
+    # Further fall back to any opp tier if still empty
+    if not comps:
+        for fallback_ot in ["high", "medium", "low"]:
+            if fallback_ot != ot:
+                comps = db.get((pt, fallback_ot, pos), [])
+                if comps:
+                    break
+
+    if not comps:
         return None
-    if opp_score >= 70:
-        bucket = benchmarks['high_opp']
-    elif opp_score >= 35:
-        bucket = benchmarks['med_opp']
+
+    n        = len(comps)
+    avg_next = round(sum(c["next_ppg"] for c in comps) / n, 1)
+    displayed = comps[:min(3, n)]
+
+    comp_strs = [
+        f"{_abbrev_name(c['name'])} '{str(c['season'])[-2:]} "
+        f"({c['prior_ppg']:.1f}→{c['next_ppg']:.1f} PPG)"
+        for c in displayed
+    ]
+
+    opp_label = {
+        "high":   "high-opportunity",
+        "medium": "moderate-opportunity",
+        "low":    "similar",
+    }.get(ot, "similar")
+    pos_label = {"WR": "WRs", "RB": "RBs", "TE": "TEs", "QB": "QBs"}.get(pos, f"{pos}s")
+
+    if len(comp_strs) > 1:
+        names_part = ", ".join(comp_strs[:-1]) + f" and {comp_strs[-1]}"
     else:
-        bucket = benchmarks['low_opp']
-    avg = bucket['avg_ppg']
-    n   = bucket['n']
-    label = bucket['label']
-    return f'Historically, {label} averaged {avg:.1f} PPG the following season (n={n})'
+        names_part = comp_strs[0]
+
+    return (
+        f"Like {names_part} — "
+        f"{pos_label} in {opp_label} situations averaged {avg_next:.1f} PPG (n={n})"
+    )
 
 
 def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0) -> Dict:
@@ -532,9 +712,12 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
     except Exception:
         logger.warning("breakout_api: failed to enrich candidate %s with player index", player_id, exc_info=True)
 
-    # Peer comparison sentence (improvement #5)
+    # Named + cohort peer comparison
     opp_score = float(candidate.get('opportunity_opened_score') or 0)
-    candidate['peer_comparison'] = _get_peer_comparison(candidate.get('position', 'WR'), opp_score)
+    prior_ppg = float(candidate.get('prev_ppr_ppg') or 0)
+    candidate['peer_comparison'] = _get_peer_comparison(
+        candidate.get('position', 'WR'), opp_score, prior_ppg
+    )
 
     return candidate
 
