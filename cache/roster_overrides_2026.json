@@ -13,5 +13,13 @@
     "position": "TE",
     "to_team": "CLE",
     "carry_forward": true
+  },
+  {
+    "_note": "Hunter absent from nfl_data_py 2026 roster data (2025 rookie, still active at JAX)",
+    "player_id": "00-0040718",
+    "player_name": "Travis Hunter",
+    "position": "WR",
+    "to_team": "JAX",
+    "carry_forward": true
   }
 ]
