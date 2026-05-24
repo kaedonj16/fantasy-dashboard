@@ -6172,13 +6172,13 @@ function _buildBkTabHTML(data, scoreColor) {
          </span>`
       : '';
     html += `
-      <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;text-align:left;">
-        <div class="pm-hero-label" style="color:${scoreColor};">Projected PPG Range</div>
+      <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
+        <div class="pm-hero-label" style="color:${scoreColor};">Projected PPG</div>
         <div style="font-size:22px;font-weight:800;color:${scoreColor};line-height:1.1;margin:4px 0;">
           ${ppgRange.lowStr}–${ppgRange.highStr}
         </div>
         ${ppgRange.prevStr ? `
-        <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:5px;margin-top:2px;">
+        <div style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;justify-content:center;gap:5px;margin-top:2px;">
           <span>vs ${ppgRange.prevStr} last szn</span>${deltaHtml}
         </div>` : ''}
       </div>`;
