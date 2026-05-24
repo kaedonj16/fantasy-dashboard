@@ -1063,12 +1063,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 f"</div>"
             )
 
-        _home_viewer_username = session.get("viewer_username")
         pills = [
             simple_pill("Home", "/", "home"),
         ]
-        if _home_viewer_username:
-            pills.append(simple_pill("My Leagues", "/portfolio", "portfolio"))
         pills += [
             simple_dropdown("Trades", [
                 ("Trade Calculator", "/trade",          "trade"),
