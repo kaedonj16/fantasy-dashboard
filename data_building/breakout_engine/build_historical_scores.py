@@ -973,8 +973,12 @@ def _generate_key_reasons(
         vac_car  = float(opp_d.get("vacated_carries", 0))
         vac_snap = float(opp_d.get("vacated_snap_share", 0))
         departed = opp_d.get("departed_players", [])
+        if position in ("WR", "TE"):
+            departed_sorted = sorted(departed, key=lambda d: float(d.get("targets") or 0), reverse=True)
+        else:
+            departed_sorted = sorted(departed, key=lambda d: float(d.get("carries") or 0), reverse=True)
         dep_names = ", ".join(
-            d.get("name", "") for d in departed[:2] if d.get("name")
+            d.get("name", "") for d in departed_sorted[:2] if d.get("name")
         )
         if position in ("WR", "TE") and vac_tgt >= 30:
             suffix = f" ({dep_names} departed)" if dep_names else f" at {team}"
@@ -1022,7 +1026,8 @@ def _generate_key_reasons(
     # Snap share headline if still thin on reasons
     snap_share = float((prev_usage or {}).get("snap_share") or 0)
     ppg = float((prev_usage or {}).get("ppr_ppg") or 0)
-    if len(reasons) < 2 and snap_share >= 0.55 and ppg >= 8:
+    snap_already_mentioned = any("snap" in r.lower() or "starter" in r.lower() for r in reasons)
+    if len(reasons) < 2 and not snap_already_mentioned and snap_share >= 0.55 and ppg >= 8:
         reasons.append(
             f"Proven starter ({int(snap_share * 100)}% snaps, {ppg:.1f} PPG last season)"
         )

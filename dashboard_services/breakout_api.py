@@ -137,7 +137,12 @@ def _generate_key_reasons_from_details(row: dict) -> str:
         vac_tgt  = float(opp_d.get('vacated_targets', 0))
         vac_car  = float(opp_d.get('vacated_carries', 0))
         departed = opp_d.get('departed_players') or []
-        dep_names = ', '.join(d.get('name', '') for d in departed[:2] if d.get('name'))
+        # Sort by most impactful: targets for WR/TE, carries for RB
+        if position in ('WR', 'TE'):
+            departed_sorted = sorted(departed, key=lambda d: float(d.get('targets') or 0), reverse=True)
+        else:
+            departed_sorted = sorted(departed, key=lambda d: float(d.get('carries') or 0), reverse=True)
+        dep_names = ', '.join(d.get('name', '') for d in departed_sorted[:2] if d.get('name'))
         if position in ('WR', 'TE') and vac_tgt >= 30:
             suffix = f' ({dep_names} departed)' if dep_names else f' at {team}'
             reasons.append(f'{int(vac_tgt)} targets vacated{suffix}')
@@ -170,7 +175,8 @@ def _generate_key_reasons_from_details(row: dict) -> str:
         if dr and int(dr) <= 2 and not any('Year' in r for r in reasons):
             reasons.append(f'Round {int(dr)} draft capital — high-ceiling profile')
 
-    if len(reasons) < 2 and prev_snap >= 0.55 and prev_ppg >= 8:
+    snap_already_mentioned = any('snap' in r.lower() or 'starter' in r.lower() for r in reasons)
+    if len(reasons) < 2 and not snap_already_mentioned and prev_snap >= 0.55 and prev_ppg >= 8:
         reasons.append(f'Proven starter ({int(prev_snap * 100)}% snaps, {prev_ppg:.1f} PPG last season)')
 
     return '\n'.join(reasons[:4])
