@@ -1063,8 +1063,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 f"</div>"
             )
 
+        _home_viewer_username = session.get("viewer_username")
         pills = [
             simple_pill("Home", "/", "home"),
+        ]
+        if _home_viewer_username:
+            pills.append(simple_pill("My Leagues", "/portfolio", "portfolio"))
+        pills += [
             simple_dropdown("Trades", [
                 ("Trade Calculator", "/trade",          "trade"),
                 ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
@@ -1187,7 +1192,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Teams",     "page_teams",     "teams",     False),
         ("Activity",  "page_activity",  "activity",  False),
         ("Waivers",   "page_waivers",   "waivers",   False),
-    ], ["standings", "teams", "activity", "waivers"], "teamsNavDropdown"))
+        ("Scout",     "page_scout",     "scout",     False),
+    ], ["standings", "teams", "activity", "waivers", "scout"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
@@ -7747,6 +7753,102 @@ def page_waivers(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     body = build_waivers_body(platform, season, league_id, ctx)
     return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/scout")
+def page_scout(platform: str, season: int, league_id: str):
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    if not ctx.get("offseason_mode"):
+        ensure_weekly_bits(ctx)
+    body = build_scout_body(ctx)
+    return render_page("Opponent Scout – BR Fantasy", league_id, "scout", body, platform, season)
+
+
+@app.route("/portfolio")
+def page_portfolio():
+    viewer_username = session.get("viewer_username")
+    viewer_user_id = session.get("viewer_user_id")
+    if not viewer_username or not viewer_user_id:
+        return redirect(url_for("index"))
+    season = datetime.now().year
+    try:
+        raw_leagues = get_sleeper_user_leagues(viewer_user_id, season) or []
+    except Exception:
+        raw_leagues = []
+    from concurrent.futures import ThreadPoolExecutor as _PTPE, as_completed as _pac
+
+    def _league_summary(lg):
+        lid = str(lg.get("league_id") or "")
+        if not lid:
+            return None
+        try:
+            lctx = get_league_ctx_from_cache("sleeper", lid, season)
+        except Exception:
+            return {"league_id": lid, "name": lg.get("name", "Unknown"), "error": True}
+        rosters = lctx.get("rosters") or []
+        roster_map = lctx.get("roster_map") or {}
+        standings_map = lctx.get("standings_map") or {}
+        model_value_table = lctx.get("model_value_table") or []
+        players_index = lctx.get("players_index") or {}
+        values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
+        viewer_roster = next(
+            (r for r in rosters if str(r.get("owner_id")) == str(viewer_user_id)), None
+        )
+        if not viewer_roster:
+            return {"league_id": lid, "name": lg.get("name", "Unknown"), "not_in_league": True}
+        rid = str(viewer_roster.get("roster_id"))
+        std = standings_map.get(rid) or {}
+        wins = int(std.get("wins") or 0)
+        losses = int(std.get("losses") or 0)
+        ties = int(std.get("ties") or 0)
+        pf = float(std.get("pf") or 0)
+        all_std = sorted(standings_map.items(), key=lambda x: (-int(x[1].get("wins") or 0), -float(x[1].get("pf") or 0)))
+        rank = next((i + 1 for i, (k, _) in enumerate(all_std) if k == rid), "?")
+        total_teams = int(lctx.get("total_rosters") or len(rosters) or 12)
+        player_ids = [str(p) for p in (viewer_roster.get("players") or [])]
+        player_vals = []
+        total_value = 0.0
+        for pid in player_ids:
+            v = values_by_id.get(pid) or {}
+            val = float(v.get("value") or 0)
+            total_value += val
+            if val > 0:
+                meta = players_index.get(pid) or {}
+                player_vals.append({
+                    "name": v.get("name") or meta.get("name") or f"Player {pid}",
+                    "position": (v.get("position") or meta.get("pos") or "").upper(),
+                    "value": val,
+                    "pos_rank": v.get("pos_rank_label") or "",
+                })
+        player_vals.sort(key=lambda x: x["value"], reverse=True)
+        league_obj = lctx.get("league") or {}
+        return {
+            "league_id": lid,
+            "name": league_obj.get("name") or lg.get("name") or "Unknown",
+            "platform": "sleeper",
+            "season": season,
+            "wins": wins,
+            "losses": losses,
+            "ties": ties,
+            "record": f"{wins}-{losses}" + (f"-{ties}" if ties else ""),
+            "rank": rank,
+            "total_teams": total_teams,
+            "pf": round(pf, 1),
+            "total_value": round(total_value, 1),
+            "top_players": player_vals[:5],
+            "offseason": lctx.get("offseason_mode", False),
+        }
+
+    leagues_data = []
+    with _PTPE(max_workers=min(len(raw_leagues) or 1, 8)) as pool:
+        futs = {pool.submit(_league_summary, lg): lg for lg in raw_leagues}
+        for fut in _pac(futs):
+            result = fut.result()
+            if result:
+                leagues_data.append(result)
+    leagues_data.sort(key=lambda x: x.get("name", ""))
+    body = build_portfolio_body(viewer_username, leagues_data, season)
+    return render_page("My Leagues – BR Fantasy", None, "portfolio", body)
 
 
 @app.route("/api/waiver-candidates")
@@ -18279,6 +18381,375 @@ def api_trade_ideas_for_target():
 
 
 
+
+
+def build_portfolio_body(username: str, leagues_data: list, season: int) -> str:
+    _POS_CLS = {"QB": "pos-qb", "RB": "pos-rb", "WR": "pos-wr", "TE": "pos-te"}
+
+    if not leagues_data:
+        return (
+            "<div class='card' style='text-align:center;padding:40px;'>"
+            f"<p>No leagues found for <strong>{html.escape(username)}</strong> in {season}.</p>"
+            "</div>"
+        )
+
+    cards_html = ""
+    for lg in leagues_data:
+        lid = lg.get("league_id") or ""
+        platform = lg.get("platform") or "sleeper"
+        league_href = f"/{platform}/{season}/{lid}/dashboard"
+
+        if lg.get("error"):
+            inner = "<p class='portfolio-notice'>Unable to load league data.</p>"
+        elif lg.get("not_in_league"):
+            inner = "<p class='portfolio-notice'>Team not found in this league.</p>"
+        else:
+            wins = lg.get("wins") or 0
+            losses = lg.get("losses") or 0
+            rec_cls = "color-win" if wins > losses else ("color-loss" if losses > wins else "")
+            rank = lg.get("rank") or "?"
+            total = lg.get("total_teams") or "?"
+            pf = lg.get("pf") or 0.0
+            total_value = lg.get("total_value") or 0.0
+
+            top_rows = ""
+            for p in lg.get("top_players") or []:
+                pos = p.get("position") or ""
+                pc = _POS_CLS.get(pos, "pos-k")
+                pr = f" <span class='portfolio-pos-rank'>{html.escape(p.get('pos_rank',''))}</span>" if p.get("pos_rank") else ""
+                top_rows += (
+                    f"<div class='portfolio-player-row'>"
+                    f"<span class='pos-badge {pc}'>{pos}</span>"
+                    f"<span class='portfolio-player-name'>{html.escape(p.get('name',''))}</span>"
+                    f"{pr}"
+                    f"<span class='portfolio-player-val'>{p.get('value',0):.0f}</span>"
+                    f"</div>"
+                )
+
+            inner = (
+                f"<div class='portfolio-meta'>"
+                f"<div class='portfolio-stat'><span class='portfolio-stat-lbl'>Record</span>"
+                f"<span class='portfolio-stat-val {rec_cls}'>{html.escape(lg.get('record','0-0'))}</span></div>"
+                f"<div class='portfolio-stat'><span class='portfolio-stat-lbl'>Standing</span>"
+                f"<span class='portfolio-stat-val'>{rank}<span class='portfolio-denom'> / {total}</span></span></div>"
+                f"<div class='portfolio-stat'><span class='portfolio-stat-lbl'>Points For</span>"
+                f"<span class='portfolio-stat-val'>{pf:.1f}</span></div>"
+                f"<div class='portfolio-stat'><span class='portfolio-stat-lbl'>Roster Value</span>"
+                f"<span class='portfolio-stat-val'>{total_value:.0f}</span></div>"
+                f"</div>"
+                f"<div class='portfolio-players'>"
+                f"<div class='portfolio-section-hdr'>Top Players</div>"
+                f"{top_rows}"
+                f"</div>"
+            )
+
+        offseason_badge = "<span class='badge badge-muted' style='font-size:0.7em;'>Offseason</span>" if lg.get("offseason") else ""
+        cards_html += (
+            f"<a href='{league_href}' class='portfolio-card card'>"
+            f"<div class='card-header'>"
+            f"<h2 style='font-size:0.95em;margin:0;'>{html.escape(lg.get('name','Unknown League'))}</h2>"
+            f"{offseason_badge}"
+            f"</div>"
+            f"<div class='card-body'>{inner}</div>"
+            f"</a>"
+        )
+
+    return (
+        f"<style>"
+        f".portfolio-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-top:12px;}}"
+        f".portfolio-card{{text-decoration:none;color:inherit;display:block;transition:box-shadow .15s;}}"
+        f".portfolio-card:hover{{box-shadow:0 0 0 2px var(--accent);text-decoration:none;}}"
+        f".portfolio-meta{{display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-bottom:12px;}}"
+        f".portfolio-stat{{display:flex;flex-direction:column;gap:2px;}}"
+        f".portfolio-stat-lbl{{font-size:0.72em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}}"
+        f".portfolio-stat-val{{font-size:1.05em;font-weight:600;}}"
+        f".portfolio-denom{{font-size:0.8em;font-weight:400;color:var(--muted);}}"
+        f".portfolio-section-hdr{{font-size:0.72em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}}"
+        f".portfolio-player-row{{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border);font-size:0.85em;}}"
+        f".portfolio-player-row:last-child{{border-bottom:none;}}"
+        f".portfolio-player-name{{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}"
+        f".portfolio-player-val{{font-weight:600;color:var(--accent);font-size:0.85em;min-width:30px;text-align:right;}}"
+        f".portfolio-pos-rank{{color:var(--muted);font-size:0.75em;}}"
+        f".portfolio-notice{{color:var(--muted);font-size:0.85em;font-style:italic;padding:8px 0;}}"
+        f"</style>"
+        f"<div style='margin-bottom:16px;'>"
+        f"<h1 style='font-size:1.25em;font-weight:700;margin:0 0 4px;'>My Leagues — {season}</h1>"
+        f"<p style='color:var(--muted);font-size:0.88em;margin:0;'>Signed in as <strong>{html.escape(username)}</strong></p>"
+        f"</div>"
+        f"<div class='portfolio-grid'>{cards_html}</div>"
+    )
+
+
+def build_scout_body(ctx: dict) -> str:
+    viewer = ctx.get("viewer") or {}
+    viewer_roster_id = str(viewer.get("viewer_roster_id") or "")
+    platform = ctx.get("platform") or "sleeper"
+    league_id = ctx.get("league_id") or ""
+    season = ctx.get("season") or datetime.now().year
+    current_week = ctx.get("current_week") or 0
+
+    _NOT_SIGNED_IN = (
+        "<div class='card' style='text-align:center;padding:40px;'>"
+        "<h2 style='margin-bottom:8px;'>Sign in to view your scouting report</h2>"
+        "<p style='color:var(--muted);'>Enter your Sleeper username in the menu to unlock opponent scouting.</p>"
+        "</div>"
+    )
+
+    if not viewer_roster_id:
+        return _NOT_SIGNED_IN
+
+    if ctx.get("offseason_mode"):
+        return (
+            "<div class='card' style='text-align:center;padding:40px;'>"
+            "<h2 style='margin-bottom:8px;'>Scouting report is available during the regular season</h2>"
+            "<p style='color:var(--muted);'>Check back once the season starts.</p>"
+            "</div>"
+        )
+
+    rosters = ctx.get("rosters") or []
+    roster_map = ctx.get("roster_map") or {}
+    standings_map = ctx.get("standings_map") or {}
+    model_value_table = ctx.get("model_value_table") or []
+    players_index = ctx.get("players_index") or {}
+    matchups_by_week = ctx.get("matchups_by_week") or {}
+    statuses = ctx.get("statuses") or {}
+    proj_by_roster = ctx.get("proj_by_roster") or {}
+
+    values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
+
+    # Find viewer's matchup for current week
+    current_matchups = matchups_by_week.get(current_week) or []
+    viewer_matchup = None
+    opponent_roster_id = None
+    opponent_team_block = None
+
+    for m in current_matchups:
+        t1 = m.get("team1") or {}
+        t2 = m.get("team2") or {}
+        if str(t1.get("roster_id")) == viewer_roster_id:
+            viewer_matchup = m
+            opponent_roster_id = str(t2.get("roster_id"))
+            opponent_team_block = t2
+            break
+        elif str(t2.get("roster_id")) == viewer_roster_id:
+            viewer_matchup = m
+            opponent_roster_id = str(t1.get("roster_id"))
+            opponent_team_block = t1
+            break
+
+    if not viewer_matchup or not opponent_roster_id:
+        return (
+            f"<div class='card' style='text-align:center;padding:40px;'>"
+            f"<h2 style='margin-bottom:8px;'>No matchup found for Week {current_week}</h2>"
+            f"<p style='color:var(--muted);'>Your current week matchup could not be determined.</p>"
+            f"</div>"
+        )
+
+    opponent_roster = next((r for r in rosters if str(r.get("roster_id")) == opponent_roster_id), None)
+    if not opponent_roster:
+        return "<div class='card'>Opponent roster not found.</div>"
+
+    opp_name = html.escape(roster_map.get(opponent_roster_id, f"Roster {opponent_roster_id}"))
+    opp_standing = standings_map.get(opponent_roster_id) or {}
+    opp_wins = int(opp_standing.get("wins") or 0)
+    opp_losses = int(opp_standing.get("losses") or 0)
+    opp_pf = float(opp_standing.get("pf") or 0)
+    opp_pa = float(opp_standing.get("pa") or 0)
+    opp_rec_cls = "color-win" if opp_wins > opp_losses else ("color-loss" if opp_losses > opp_wins else "")
+
+    # Starters from matchup block
+    starter_pids = {str(s.get("pid") or s) for s in (opponent_team_block.get("starters") or []) if s}
+    opp_pts = opponent_team_block.get("pts_total")
+
+    # Projected score for opponent
+    opp_proj = proj_by_roster.get((current_week, opponent_roster_id))
+
+    # Injury statuses
+    status_by_pid = (statuses.get(current_week) or {}).get("statuses", {}) or {}
+
+    # Build player list grouped by position
+    _POS_ORDER = ["QB", "RB", "WR", "TE", "K", "DEF"]
+    _POS_CLS = {"QB": "pos-qb", "RB": "pos-rb", "WR": "pos-wr", "TE": "pos-te", "K": "pos-k", "DEF": "pos-def"}
+    _INJ_CLS = {"Q": "inj-q", "D": "inj-d", "O": "inj-o", "IR": "inj-o", "Sus": "inj-o"}
+    _INJ_LABEL = {"Q": "Q", "D": "D", "O": "O", "IR": "IR", "Questionable": "Q", "Doubtful": "D", "Out": "O", "Suspended": "SUS"}
+
+    all_pids = [str(p) for p in (opponent_roster.get("players") or [])]
+    starters_by_pos: dict = {}
+    bench_players = []
+
+    for pid in all_pids:
+        v = values_by_id.get(pid) or {}
+        meta = players_index.get(pid) or {}
+        pos = (v.get("position") or meta.get("pos") or "?").upper()
+        val = float(v.get("value") or 0)
+        name = v.get("name") or meta.get("name") or f"Player {pid}"
+        team = (v.get("team") or meta.get("team") or "").upper()
+        pos_rank = v.get("pos_rank_label") or ""
+        is_starter = pid in starter_pids
+        raw_inj = str(status_by_pid.get(pid) or "")
+        inj_key = raw_inj if raw_inj in _INJ_CLS else None
+
+        entry = {
+            "pid": pid, "name": name, "pos": pos, "team": team,
+            "value": val, "pos_rank": pos_rank, "is_starter": is_starter,
+            "inj_key": inj_key,
+        }
+        if is_starter:
+            starters_by_pos.setdefault(pos, []).append(entry)
+        else:
+            bench_players.append(entry)
+
+    # Compute position group values and league-wide averages for strength/weakness
+    _STARTER_COUNTS = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
+    pos_group_vals = {}
+    for pos, players in starters_by_pos.items():
+        players.sort(key=lambda x: x["value"], reverse=True)
+        pos_group_vals[pos] = sum(p["value"] for p in players)
+
+    # League-wide average top-N value per position
+    league_pos_avgs = {}
+    for pos, top_n in _STARTER_COUNTS.items():
+        sums = []
+        for r in rosters:
+            r_pids = [str(p) for p in (r.get("players") or [])]
+            r_vals = sorted(
+                [float((values_by_id.get(p) or {}).get("value") or 0) for p in r_pids
+                 if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
+                reverse=True,
+            )
+            sums.append(sum(r_vals[:top_n]))
+        league_pos_avgs[pos] = (sum(sums) / len(sums)) if sums else 0
+
+    # Build strength/weakness summary
+    strengths, weaknesses = [], []
+    for pos in ["QB", "RB", "WR", "TE"]:
+        opp_val = pos_group_vals.get(pos) or 0
+        avg = league_pos_avgs.get(pos) or 1
+        delta_pct = ((opp_val - avg) / avg) * 100 if avg else 0
+        if delta_pct >= 12:
+            strengths.append((pos, delta_pct, opp_val))
+        elif delta_pct <= -12:
+            weaknesses.append((pos, delta_pct, opp_val))
+
+    strengths.sort(key=lambda x: -x[1])
+    weaknesses.sort(key=lambda x: x[1])
+
+    # Build HTML
+    def _player_row(p, show_bench_label=False):
+        pc = _POS_CLS.get(p["pos"], "pos-k")
+        inj_html = ""
+        if p.get("inj_key"):
+            ic = _INJ_CLS.get(p["inj_key"], "")
+            il = _INJ_LABEL.get(p["inj_key"], p["inj_key"])
+            inj_html = f"<span class='inj-badge {ic}'>{il}</span>"
+        pr_html = f"<span class='scout-pos-rank'>{html.escape(p.get('pos_rank',''))}</span>" if p.get("pos_rank") else ""
+        val_html = f"<span class='scout-val'>{p['value']:.0f}</span>" if p["value"] else ""
+        bench_cls = " scout-bench" if show_bench_label else ""
+        return (
+            f"<div class='scout-player-row{bench_cls}'>"
+            f"<span class='pos-badge {pc}'>{p['pos']}</span>"
+            f"<span class='scout-player-name'>{html.escape(p['name'])}</span>"
+            f"<span class='scout-team'>{html.escape(p['team'])}</span>"
+            f"{pr_html}{inj_html}{val_html}"
+            f"</div>"
+        )
+
+    # Starters section
+    starters_html = ""
+    for pos in _POS_ORDER:
+        for p in starters_by_pos.get(pos, []):
+            starters_html += _player_row(p)
+    # Handle any FLEX/unknown positions
+    for pos, players in starters_by_pos.items():
+        if pos not in _POS_ORDER:
+            for p in players:
+                starters_html += _player_row(p)
+
+    bench_players.sort(key=lambda x: x["value"], reverse=True)
+    bench_html = "".join(_player_row(p, show_bench_label=True) for p in bench_players[:10])
+
+    # Strengths / weaknesses cards
+    def _sw_chip(pos, delta_pct, val, is_strength):
+        color = "var(--color-win)" if is_strength else "var(--color-loss)"
+        arrow = "▲" if is_strength else "▼"
+        pc = _POS_CLS.get(pos, "pos-k")
+        return (
+            f"<div class='scout-sw-chip'>"
+            f"<span class='pos-badge {pc}'>{pos}</span>"
+            f"<span class='scout-sw-val' style='color:{color};'>{arrow} {abs(delta_pct):.0f}% vs avg</span>"
+            f"</div>"
+        )
+
+    sw_html = ""
+    if strengths or weaknesses:
+        s_chips = "".join(_sw_chip(pos, d, v, True) for pos, d, v in strengths) or "<span style='color:var(--muted);font-size:0.85em;'>None notable</span>"
+        w_chips = "".join(_sw_chip(pos, d, v, False) for pos, d, v in weaknesses) or "<span style='color:var(--muted);font-size:0.85em;'>None notable</span>"
+        sw_html = (
+            f"<div class='main-two-col' style='margin-bottom:14px;'>"
+            f"<div class='card'>"
+            f"<div class='card-header'><h2>Their Strengths</h2></div>"
+            f"<div class='card-body scout-sw-list'>{s_chips}</div>"
+            f"</div>"
+            f"<div class='card'>"
+            f"<div class='card-header'><h2>Their Weaknesses</h2></div>"
+            f"<div class='card-body scout-sw-list'>{w_chips}</div>"
+            f"</div>"
+            f"</div>"
+        )
+
+    proj_html = ""
+    if opp_proj is not None:
+        proj_html = f"<span class='scout-proj'>Proj: <strong>{opp_proj:.1f}</strong></span>"
+    pts_html = ""
+    if opp_pts is not None:
+        pts_html = f"<span class='scout-proj' style='color:var(--muted);'>Score: <strong>{opp_pts:.1f}</strong></span>"
+
+    return (
+        f"<style>"
+        f".scout-header-row{{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:4px;}}"
+        f".scout-opp-name{{font-size:1.3em;font-weight:700;}}"
+        f".scout-record{{font-size:0.9em;}}"
+        f".scout-proj{{font-size:0.9em;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:3px 8px;}}"
+        f".scout-stat-row{{display:flex;gap:20px;flex-wrap:wrap;margin-top:6px;margin-bottom:16px;}}"
+        f".scout-stat{{display:flex;flex-direction:column;gap:1px;}}"
+        f".scout-stat-lbl{{font-size:0.7em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}}"
+        f".scout-stat-val{{font-size:1em;font-weight:600;}}"
+        f".scout-player-row{{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.88em;}}"
+        f".scout-player-row:last-child{{border-bottom:none;}}"
+        f".scout-bench{{opacity:.7;}}"
+        f".scout-player-name{{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}}"
+        f".scout-team{{font-size:0.78em;color:var(--muted);min-width:28px;}}"
+        f".scout-pos-rank{{font-size:0.75em;color:var(--muted);}}"
+        f".scout-val{{font-weight:600;color:var(--accent);font-size:0.85em;min-width:32px;text-align:right;}}"
+        f".scout-sw-list{{display:flex;flex-direction:column;gap:8px;padding-top:4px;}}"
+        f".scout-sw-chip{{display:flex;align-items:center;gap:8px;}}"
+        f".scout-sw-val{{font-size:0.88em;font-weight:600;}}"
+        f".inj-badge{{font-size:0.7em;font-weight:700;padding:1px 5px;border-radius:4px;line-height:1.4;}}"
+        f".inj-q{{background:#fef08a;color:#713f12;}}"
+        f".inj-d{{background:#fed7aa;color:#7c2d12;}}"
+        f".inj-o{{background:#fecaca;color:#7f1d1d;}}"
+        f"</style>"
+        f"<div class='scout-header-row'>"
+        f"<span class='scout-opp-name'>{opp_name}</span>"
+        f"<span class='scout-record {opp_rec_cls}'>{opp_wins}-{opp_losses}</span>"
+        f"{proj_html}{pts_html}"
+        f"</div>"
+        f"<div class='scout-stat-row'>"
+        f"<div class='scout-stat'><span class='scout-stat-lbl'>Points For</span><span class='scout-stat-val'>{opp_pf:.1f}</span></div>"
+        f"<div class='scout-stat'><span class='scout-stat-lbl'>Points Against</span><span class='scout-stat-val'>{opp_pa:.1f}</span></div>"
+        f"</div>"
+        f"{sw_html}"
+        f"<div class='main-two-col'>"
+        f"<div class='card'>"
+        f"<div class='card-header'><h2>Week {current_week} Starters</h2></div>"
+        "<div class='card-body'>" + (starters_html or "<p style='color:var(--muted);font-size:0.85em;'>Lineup not yet set.</p>") + "</div>"
+        "</div>"
+        "<div class='card'>"
+        f"<div class='card-header'><h2>Bench (Top 10)</h2></div>"
+        "<div class='card-body'>" + (bench_html or "<p style='color:var(--muted);font-size:0.85em;'>No bench data.</p>") + "</div>"
+        "</div>"
+        "</div>"
+    )
 
 
 def _run_startup_daily() -> None:
