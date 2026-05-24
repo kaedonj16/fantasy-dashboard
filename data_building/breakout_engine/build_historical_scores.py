@@ -997,9 +997,11 @@ def _generate_key_reasons(
             departed_sorted = sorted(departed, key=lambda d: float(d.get("targets") or 0), reverse=True)
         else:
             departed_sorted = sorted(departed, key=lambda d: float(d.get("carries") or 0), reverse=True)
-        dep_names = ", ".join(
-            d.get("name", "") for d in departed_sorted[:2] if d.get("name")
-        )
+        named_deps = [d for d in departed_sorted[:2] if d.get("name")]
+        dep_names = ", ".join(d.get("name", "") for d in named_deps)
+        extra_deps = len([d for d in departed_sorted[2:] if d.get("name")])
+        if extra_deps > 0:
+            dep_names = dep_names + f" +{extra_deps} more"
         if position in ("WR", "TE") and vac_tgt >= 30:
             suffix = f" ({dep_names} departed)" if dep_names else f" at {team}"
             reasons.append(f"{int(vac_tgt)} targets vacated{suffix}")
