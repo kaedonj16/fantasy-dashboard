@@ -11813,6 +11813,8 @@ img, svg, canvas {
     flex-direction: column;
     gap: 20px;
   }
+  .pm-bk-comp-col    { order: 2; }
+  .pm-bk-reasons-col { order: 1; }
 }
 
 .player-modal-title-text {

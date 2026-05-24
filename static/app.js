@@ -6241,20 +6241,10 @@ function _buildBkTabHTML(data, scoreColor) {
     { label: 'Confidence',      val: data.confidence_score,          color: '#6b7280' },
   ];
 
-  // ── Key factors (full-width, above component bars) ────────────────────────
-  if (reasons.length) {
-    html += `<hr class="pm-section-divider">`;
-    html += `<div class="pm-section-header"><span class="pm-section-label">Key Factors</span></div>`;
-    html += `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:4px;">`;
-    reasons.forEach(r => {
-      html += `<div style="font-size:13px;color:var(--text-muted);display:flex;gap:15px;align-items:flex-start;">
-        <span style="color:${scoreColor};font-weight:700;flex-shrink:0;">•</span><span>${r}</span>
-      </div>`;
-    });
-    html += `</div>`;
-  }
+  html += `<div class='pm-two-column'>`;
 
-  // ── Component breakdown ────────────────────────────────────────────────────
+  // ── Component breakdown (left on desktop, below on mobile) ─────────────────
+  html += `<div class='pm-left-column pm-bk-comp-col'>`;
   html += `<hr class="pm-section-divider">`;
   html += `<div class="pm-section-header"><span class="pm-section-label">Component Breakdown</span></div>`;
   html += '<div class="pm-comp-list-bo">';
@@ -6270,7 +6260,23 @@ function _buildBkTabHTML(data, scoreColor) {
         <span class="pm-comp-val" style="color:${color};">${disp}</span>
       </div>`;
   });
-  html += '</div>';
+  html += '</div></div>';
+
+  // ── Key factors (right on desktop, above on mobile) ────────────────────────
+  if (reasons.length) {
+    html += `<div class='pm-right-column pm-bk-reasons-col'>`;
+    html += `<hr class="pm-section-divider">`;
+    html += `<div class="pm-section-header"><span class="pm-section-label">Key Factors</span></div>`;
+    html += `<div style="display:flex;flex-direction:column;gap:6px;">`;
+    reasons.forEach(r => {
+      html += `<div style="font-size:13px;color:var(--text-muted);display:flex;gap:15px;align-items:flex-start;">
+        <span style="color:${scoreColor};font-weight:700;flex-shrink:0;">•</span><span>${r}</span>
+      </div>`;
+    });
+    html += `</div></div>`;
+  }
+
+  html += `</div>`;
 
   return html;
 }
