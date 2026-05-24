@@ -1315,17 +1315,24 @@ def build_season(
             skipped_regression += 1
             continue
 
-        # Situational gate: require a real roster-level change.
-        # Confidence + trajectory alone (65% of score) can elevate a stable
-        # incumbent who isn't a breakout candidate at all. A player must show
-        # meaningful opportunity opened OR competition removed to qualify.
-        opp_score  = result.get("opportunity_opened_score", 0) or 0
-        comp_score = result.get("competition_removed_score", 0) or 0
-        is_arrival = any(
+        # Situational gate: filter out stable incumbents who score well on
+        # confidence+trajectory alone with no real path to more opportunity.
+        # A player passes if ANY of:
+        #   (a) meaningful roster-level change on their team (opp opened or comp removed)
+        #   (b) they moved to a new team
+        #   (c) strong emerging role — high snap share + strong trajectory score,
+        #       i.e. a year-1/2 starter still ascending (Jeanty going into year 2)
+        opp_score   = result.get("opportunity_opened_score", 0) or 0
+        comp_score  = result.get("competition_removed_score", 0) or 0
+        traj_score  = result.get("role_trajectory_score", 0) or 0
+        prev_snap   = float(player_prev_usage.get("snap_share") or 0)
+        is_arrival  = any(
             a["player_id"] == gsis_id
             for a in arrivals_cache.get((roster_entry["team"], roster_entry["position"]), [])
         )
-        if opp_score + comp_score < 20 and not is_arrival:
+        situational      = opp_score + comp_score >= 20 or is_arrival
+        strong_emerging  = traj_score >= 55 and prev_snap >= 0.45
+        if not situational and not strong_emerging:
             skipped_low += 1
             continue
 
