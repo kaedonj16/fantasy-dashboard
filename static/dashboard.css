@@ -12282,7 +12282,7 @@ img, svg, canvas {
 .pm-section-divider {
   border: none;
   border-top: 1px solid var(--border);
-  margin: 18px 0 14px;
+  margin: 10px 0 10px;
 }
 .pm-section-header {
   display: flex;

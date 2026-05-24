@@ -1022,7 +1022,8 @@ def _generate_key_reasons(
     # Snap share headline if still thin on reasons
     snap_share = float((prev_usage or {}).get("snap_share") or 0)
     ppg = float((prev_usage or {}).get("ppr_ppg") or 0)
-    if len(reasons) < 2 and snap_share >= 0.55 and ppg >= 8:
+    snap_already_mentioned = any("snap" in r.lower() or "starter" in r.lower() for r in reasons)
+    if len(reasons) < 2 and not snap_already_mentioned and snap_share >= 0.55 and ppg >= 8:
         reasons.append(
             f"Proven starter ({int(snap_share * 100)}% snaps, {ppg:.1f} PPG last season)"
         )
