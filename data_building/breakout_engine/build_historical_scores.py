@@ -1125,11 +1125,21 @@ def score_one_player(
             competition_threat=competition_threat,
         )
 
+    # Blend model projection 70% / prior-season PPG 30% — mirrors the playoff
+    # odds simulator's _blend_weekly_projections anchor to prior performance.
+    # This prevents extreme model outputs and keeps breakout PPG ranges
+    # consistent with the projections used elsewhere in the app.
+    prev_ppr_ppg = float(prev_usage.get("ppr_ppg") or 0)
+    raw_s1 = multitask.get("season1_ppr")
+    if raw_s1 is not None and prev_ppr_ppg > 0:
+        blended_s1 = round(0.70 * raw_s1 + 0.30 * prev_ppr_ppg * 17, 1)
+        multitask["season1_ppr"] = blended_s1
+
     component_details["projections"] = {
         "season1_ppr": (
             round(multitask["season1_ppr"], 1) if multitask.get("season1_ppr") is not None else None
         ),
-        "prev_ppr_ppg": round(float(prev_usage.get("ppr_ppg") or 0), 2),
+        "prev_ppr_ppg": round(prev_ppr_ppg, 2),
     }
 
     return {
@@ -1307,11 +1317,11 @@ def build_season(
         if result is None:
             continue
 
-        # Exclude regression candidates: a player projecting more than 10% below
+        # Exclude regression candidates: a player projecting more than 5% below
         # their prior season isn't a breakout candidate — they're declining.
         prev_ppg  = float(result.get("prev_ppr_ppg") or 0)
         model_ppg = (result.get("season1_ppr") or 0) / 17
-        if prev_ppg > 5.0 and model_ppg < prev_ppg * 0.90:
+        if prev_ppg > 5.0 and model_ppg < prev_ppg * 0.95:
             skipped_regression += 1
             continue
 

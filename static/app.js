@@ -997,7 +997,7 @@ window.initTradePage = function initTradePage(root = document) {
     if (p.age != null && p.age !== "") {
       const ageNum = parseFloat(p.age);
       if (!isNaN(ageNum)) {
-        metaBits.push(`${ageNum.toFixed(1)} yrs`);
+        metaBits.push(`${parseFloat(ageNum.toFixed(1))} yrs`);
       }
     }
 
@@ -5403,7 +5403,7 @@ function openPlayerModal(playerId, playerName, opts) {
       if (data.position && data.pos_rank) metaParts.push(`<span style="font-weight:600;color:var(--text);">${data.position}${data.pos_rank}</span>`);
       if (data.team) metaParts.push(`<span>${data.team}</span>`);
       const ageNum = parseFloat(data.age);
-      if (!isNaN(ageNum)) metaParts.push(`<span>${ageNum.toFixed(1)} yrs</span>`);
+      if (!isNaN(ageNum)) metaParts.push(`<span>${parseFloat(ageNum.toFixed(1))} yrs</span>`);
       
       // ── Value trend classification (small meta pill) ──────────────────────
       const vt = data.value_trend || {};
@@ -6146,7 +6146,8 @@ function _buildBkTabHTML(data, scoreColor) {
     const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.4;
     // When capped, base the low on the capped ceiling (not the raw model) so low never exceeds high
     const rawLow   = isCapped ? high * 0.88 : modelPpg * 0.95;
-    const low      = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
+    const lowFloor = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
+    const low      = Math.min(lowFloor, high);  // never let low exceed high
     const midPpg   = (low + high) / 2;
     ppgRange = {
       lowStr:  (Math.round(low  * 10) / 10).toFixed(1),
@@ -6237,7 +6238,7 @@ function _buildBkTabHTML(data, scoreColor) {
     { label: 'Team Env.',       val: data.team_environment_score,    color: null      },
     { label: 'Readiness',       val: data.player_readiness_score,    color: '#8b5cf6' },
     { label: 'Role Trajectory', val: data.role_trajectory_score,     color: null      },
-    { label: 'Confidence',      val: data.confidence_score,          color: '#6b7280', suffix: '%' },
+    { label: 'Confidence',      val: data.confidence_score,          color: '#6b7280' },
   ];
 
   html += `<div class='pm-two-column'><div class='pm-left-column'>`;

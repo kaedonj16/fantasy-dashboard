@@ -9874,8 +9874,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
         const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.4;
         // When capped, base the low on the capped ceiling (not the raw model) so low never exceeds high
         const rawLow = isCapped ? high * 0.88 : modelPpg * 0.95;
-        // Breakout candidates should never project below their prior baseline
-        const low = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
+        const lowFloor = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
+        const low = Math.min(lowFloor, high);  // never let low exceed high
         const midPpg = (low + high) / 2;
         const delta = prevPpg > 0 ? Math.round((midPpg - prevPpg) * 10) / 10 : null;
         return {{
