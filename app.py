@@ -7799,11 +7799,20 @@ def page_portfolio():
     viewer_user_id = session.get("viewer_user_id")
     if not viewer_username or not viewer_user_id:
         return redirect(url_for("index"))
-    season = datetime.now().year
+    nfl_state = get_nfl_state() or {}
+    season = int(nfl_state.get("season") or datetime.now().year)
     try:
         raw_leagues = get_sleeper_user_leagues(viewer_user_id, season) or []
     except Exception:
         raw_leagues = []
+    # If no leagues found for the NFL-reported season, try the previous year
+    if not raw_leagues:
+        try:
+            raw_leagues = get_sleeper_user_leagues(viewer_user_id, season - 1) or []
+            if raw_leagues:
+                season = season - 1
+        except Exception:
+            raw_leagues = []
     from concurrent.futures import ThreadPoolExecutor as _PTPE, as_completed as _pac
 
     def _league_summary(lg):
@@ -7913,7 +7922,7 @@ def page_portfolio():
     leagues_data.sort(key=lambda x: x.get("name", ""))
 
     valid_leagues = [lg for lg in leagues_data if not lg.get("error") and not lg.get("not_in_league")]
-    num_leagues = len(valid_leagues)
+    num_leagues = len(leagues_data)
     total_wins = sum(lg.get("wins", 0) for lg in valid_leagues)
     total_losses = sum(lg.get("losses", 0) for lg in valid_leagues)
     total_ties = sum(lg.get("ties", 0) for lg in valid_leagues)
