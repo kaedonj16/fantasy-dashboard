@@ -587,6 +587,7 @@ def detect_changes(
     curr_rosters: dict[str, dict],
     prev_usage: dict[str, dict],
     prediction_season: int,
+    gsis_to_sleeper: dict[str, str] | None = None,
 ) -> tuple[dict, dict, dict, dict]:
     """
     Compare rosters season-over-season to build competition caches.
@@ -633,6 +634,25 @@ def detect_changes(
         curr_team = curr["team"] if curr else None
 
         if curr_team != prev_team:
+            # If the player is absent from nfl_data_py's current-season data
+            # (curr_team is None), validate against the Sleeper players_index
+            # before treating them as departed.  Rookies and recent signings are
+            # often missing from nfl_data_py for several weeks after the season
+            # starts; Sleeper is updated in near-real-time.
+            if curr_team is None and gsis_to_sleeper:
+                try:
+                    from utils.utils import load_players_index
+                    _pi = load_players_index() or {}
+                    _sid = gsis_to_sleeper.get(gsis_id)
+                    if _sid:
+                        _pi_team = (_pi.get(str(_sid)) or {}).get("team") or ""
+                        if _pi_team.upper() == prev_team.upper():
+                            # Sleeper confirms they're still at prev_team — not departed
+                            curr_rosters[gsis_id] = {**prev_rosters[gsis_id], "team": prev_team}
+                            continue
+                except Exception:
+                    pass  # fall through to normal departure logic if index unavailable
+
             u = prev_usage.get(gsis_id, {})
             change_type = "trade" if curr_team in VALID_TEAMS else "free_agent"
 
@@ -1321,7 +1341,8 @@ def build_season(
     # Build competition/opportunity caches from stats_season → target_season changes
     print("  Detecting roster changes...")
     vacated_cache, departures_cache, arrivals_cache, incumbents_cache = detect_changes(
-        prev_rosters, curr_rosters, prior_usage, prediction_season
+        prev_rosters, curr_rosters, prior_usage, prediction_season,
+        gsis_to_sleeper=gsis_to_sleeper,
     )
     dep_count = sum(len(v) for v in departures_cache.values())
     arr_count = sum(len(v) for v in arrivals_cache.values())
