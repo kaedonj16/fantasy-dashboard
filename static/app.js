@@ -6144,7 +6144,8 @@ function _buildBkTabHTML(data, scoreColor) {
     const highRaw  = modelPpg * 1.075;
     const high     = (prevPpg > 0 && highRaw > prevPpg * 1.4) ? prevPpg * 1.4 : highRaw;
     const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.4;
-    const rawLow   = isCapped ? Math.max(high - 2.0, modelPpg * 0.93) : modelPpg * 0.95;
+    // When capped, base the low on the capped ceiling (not the raw model) so low never exceeds high
+    const rawLow   = isCapped ? high * 0.88 : modelPpg * 0.95;
     const low      = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
     const midPpg   = (low + high) / 2;
     ppgRange = {

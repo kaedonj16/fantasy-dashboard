@@ -1269,7 +1269,7 @@ def build_season(
             continue
         # Positional age ceiling: veteran players who haven't broken through by
         # these ages are unlikely to do so and crowd out genuine emerging talent.
-        _MAX_AGE = {"RB": 30, "WR": 31, "TE": 29, "QB": 99}
+        _MAX_AGE = {"RB": 27, "WR": 29, "TE": 27, "QB": 33}
         if age >= _MAX_AGE.get(roster_entry["position"], 99):
             skipped_age += 1
             continue
@@ -1313,6 +1313,27 @@ def build_season(
         model_ppg = (result.get("season1_ppr") or 0) / 17
         if prev_ppg > 5.0 and model_ppg < prev_ppg * 0.90:
             skipped_regression += 1
+            continue
+
+        # Situational gate: filter out stable incumbents who score well on
+        # confidence+trajectory alone with no real path to more opportunity.
+        # A player passes if ANY of:
+        #   (a) meaningful roster-level change on their team (opp opened or comp removed)
+        #   (b) they moved to a new team
+        #   (c) strong emerging role — high snap share + strong trajectory score,
+        #       i.e. a year-1/2 starter still ascending (Jeanty going into year 2)
+        opp_score   = result.get("opportunity_opened_score", 0) or 0
+        comp_score  = result.get("competition_removed_score", 0) or 0
+        traj_score  = result.get("role_trajectory_score", 0) or 0
+        prev_snap   = float(player_prev_usage.get("snap_share") or 0)
+        is_arrival  = any(
+            a["player_id"] == gsis_id
+            for a in arrivals_cache.get((roster_entry["team"], roster_entry["position"]), [])
+        )
+        situational      = opp_score + comp_score >= 20 or is_arrival
+        strong_emerging  = traj_score >= 55 and prev_snap >= 0.45
+        if not situational and not strong_emerging:
+            skipped_low += 1
             continue
 
         if result["breakout_opportunity_score"] < min_score:

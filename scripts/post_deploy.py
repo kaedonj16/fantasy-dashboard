@@ -82,7 +82,7 @@ def main():
     try:
         from datetime import date
         from data_building.breakout_engine.build_historical_scores import run
-        run(seasons=[stats_season], min_score=30.0, as_of_date_override=date.today())
+        run(seasons=[stats_season], min_score=55.0, as_of_date_override=date.today())
         print(f"[post-deploy] Rebuild complete at {datetime.now().isoformat()}")
     except Exception as e:
         print(f"[post-deploy] Rebuild failed: {e}")

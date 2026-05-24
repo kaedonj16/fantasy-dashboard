@@ -464,9 +464,9 @@ TOP_12_PPG_THRESHOLDS = {
 # they've already broken out and cannot be a breakout candidate.
 ESTABLISHED_PRODUCER_TOP_N = {
     'QB': 12,
-    'RB': 15,
-    'WR': 20,
-    'TE': 8,
+    'RB': 12,
+    'WR': 15,
+    'TE': 7,
 }
 ESTABLISHED_PRODUCER_MIN_GAMES = 8  # Minimum games to count a season
 
