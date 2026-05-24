@@ -1192,8 +1192,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Teams",     "page_teams",     "teams",     False),
         ("Activity",  "page_activity",  "activity",  False),
         ("Waivers",   "page_waivers",   "waivers",   False),
-        ("Scout",     "page_scout",     "scout",     False),
-    ], ["standings", "teams", "activity", "waivers", "scout"], "teamsNavDropdown"))
+    ], ["standings", "teams", "activity", "waivers"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
@@ -5031,6 +5030,19 @@ def build_weekly_hub_body(ctx: dict) -> str:
     season_js = json.dumps(season)
     league_js = json.dumps(league_id)
 
+    scout_tab_html = ""
+    try:
+        scout_tab_html = build_scout_body(ctx)
+    except Exception:
+        pass
+
+    _scout_unavail = (
+        "<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
+        "Scout report unavailable — sign in with your Sleeper username to see your opponent's breakdown."
+        "</div>"
+    )
+    scout_panel_content = scout_tab_html if scout_tab_html else _scout_unavail
+
     return f"""
     <div class="page-layout weekly-hub">
       <main class="page-main">
@@ -5047,8 +5059,21 @@ def build_weekly_hub_body(ctx: dict) -> str:
 
         <div class="standings-main two-col-standings">
           <div class="standings-col">
-            <div class="week-main-panels">
-              {main_panel_html}
+            <div class="card-tabs" id="weeklyLeftTabs">
+              <div class="tab-bar">
+                <button class="tab-btn active" data-tab="scorers">Top Scorers</button>
+                <button class="tab-btn" data-tab="scout">Scout Report</button>
+              </div>
+              <div class="tab-panels">
+                <div class="tab-panel active" data-tab="scorers">
+                  <div class="week-main-panels">
+                    {main_panel_html}
+                  </div>
+                </div>
+                <div class="tab-panel" data-tab="scout">
+                  {scout_panel_content}
+                </div>
+              </div>
             </div>
           </div>
           <div class="standings-col">
@@ -7807,19 +7832,22 @@ def page_portfolio():
         total_teams = int(lctx.get("total_rosters") or len(rosters) or 12)
         player_ids = [str(p) for p in (viewer_roster.get("players") or [])]
         player_vals = []
+        all_players = {}
         total_value = 0.0
         for pid in player_ids:
             v = values_by_id.get(pid) or {}
             val = float(v.get("value") or 0)
             total_value += val
+            meta = players_index.get(pid) or {}
+            p_info = {
+                "name": v.get("name") or meta.get("name") or f"Player {pid}",
+                "position": (v.get("position") or meta.get("pos") or "").upper(),
+                "value": val,
+                "pos_rank": v.get("pos_rank_label") or "",
+            }
+            all_players[pid] = p_info
             if val > 0:
-                meta = players_index.get(pid) or {}
-                player_vals.append({
-                    "name": v.get("name") or meta.get("name") or f"Player {pid}",
-                    "position": (v.get("position") or meta.get("pos") or "").upper(),
-                    "value": val,
-                    "pos_rank": v.get("pos_rank_label") or "",
-                })
+                player_vals.append(p_info)
         player_vals.sort(key=lambda x: x["value"], reverse=True)
         league_obj = lctx.get("league") or {}
         return {
@@ -7836,6 +7864,7 @@ def page_portfolio():
             "pf": round(pf, 1),
             "total_value": round(total_value, 1),
             "top_players": player_vals[:5],
+            "all_players": all_players,
             "offseason": lctx.get("offseason_mode", False),
         }
 
@@ -7847,7 +7876,24 @@ def page_portfolio():
             if result:
                 leagues_data.append(result)
     leagues_data.sort(key=lambda x: x.get("name", ""))
-    body = build_portfolio_body(viewer_username, leagues_data, season)
+
+    # Aggregate shares: count how many leagues each player appears in
+    shares_count: dict = {}
+    shares_meta: dict = {}
+    for lg in leagues_data:
+        for pid, p_info in (lg.get("all_players") or {}).items():
+            shares_count[pid] = shares_count.get(pid, 0) + 1
+            if pid not in shares_meta:
+                shares_meta[pid] = p_info
+    shares = [
+        {**shares_meta[pid], "pid": pid, "shares": cnt}
+        for pid, cnt in shares_count.items()
+        if cnt >= 2 and shares_meta[pid].get("value", 0) > 0
+    ]
+    shares.sort(key=lambda x: (-x["shares"], -x["value"]))
+    num_leagues = len([lg for lg in leagues_data if not lg.get("error") and not lg.get("not_in_league")])
+
+    body = build_portfolio_body(viewer_username, leagues_data, season, shares, num_leagues)
     return render_page("My Leagues – BR Fantasy", None, "portfolio", body)
 
 
@@ -18383,7 +18429,51 @@ def api_trade_ideas_for_target():
 
 
 
-def build_portfolio_body(username: str, leagues_data: list, season: int) -> str:
+def _build_shares_section(shares: list, num_leagues: int) -> str:
+    if not shares:
+        return ""
+    _POS_CLS = {"QB": "pos-qb", "RB": "pos-rb", "WR": "pos-wr", "TE": "pos-te"}
+    rows = ""
+    for p in shares[:30]:
+        pos = p.get("position") or ""
+        pc = _POS_CLS.get(pos, "pos-k")
+        pr = f" <span class='portfolio-pos-rank'>{html.escape(p.get('pos_rank',''))}</span>" if p.get("pos_rank") else ""
+        cnt = p["shares"]
+        bar_pct = int((cnt / max(num_leagues, 1)) * 100)
+        rows += (
+            f"<div class='shares-row'>"
+            f"<span class='pos-badge {pc}'>{pos}</span>"
+            f"<span class='shares-name'>{html.escape(p.get('name',''))}</span>"
+            f"{pr}"
+            f"<span class='shares-val'>{p.get('value',0):.0f}</span>"
+            f"<div class='shares-bar-wrap'>"
+            f"<div class='shares-bar-fill' style='width:{bar_pct}%'></div>"
+            f"</div>"
+            f"<span class='shares-count'>{cnt}<span class='shares-denom'>/{num_leagues}</span></span>"
+            f"</div>"
+        )
+    return (
+        "<style>"
+        ".shares-section{margin-bottom:16px;}"
+        ".shares-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.85em;}"
+        ".shares-row:last-child{border-bottom:none;}"
+        ".shares-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}"
+        ".shares-val{color:var(--accent);font-weight:600;min-width:30px;text-align:right;font-size:0.82em;}"
+        ".shares-bar-wrap{width:60px;height:6px;background:var(--border);border-radius:3px;overflow:hidden;flex-shrink:0;}"
+        ".shares-bar-fill{height:100%;background:var(--accent);border-radius:3px;}"
+        ".shares-count{font-weight:700;min-width:28px;text-align:right;font-size:0.9em;}"
+        ".shares-denom{font-weight:400;color:var(--muted);font-size:0.85em;}"
+        "</style>"
+        f"<div class='card shares-section'>"
+        f"<div class='card-header'><h2>Player Exposure</h2>"
+        f"<span style='font-size:0.8em;color:var(--muted);font-weight:400;'>Players owned in 2+ leagues</span>"
+        f"</div>"
+        f"<div class='card-body'>{rows}</div>"
+        f"</div>"
+    )
+
+
+def build_portfolio_body(username: str, leagues_data: list, season: int, shares: list = None, num_leagues: int = 0) -> str:
     _POS_CLS = {"QB": "pos-qb", "RB": "pos-rb", "WR": "pos-wr", "TE": "pos-te"}
 
     if not leagues_data:
@@ -18476,7 +18566,8 @@ def build_portfolio_body(username: str, leagues_data: list, season: int) -> str:
         f"<h1 style='font-size:1.25em;font-weight:700;margin:0 0 4px;'>My Leagues — {season}</h1>"
         f"<p style='color:var(--muted);font-size:0.88em;margin:0;'>Signed in as <strong>{html.escape(username)}</strong></p>"
         f"</div>"
-        f"<div class='portfolio-grid'>{cards_html}</div>"
+        + _build_shares_section(shares or [], num_leagues)
+        + f"<div class='portfolio-grid'>{cards_html}</div>"
     )
 
 
