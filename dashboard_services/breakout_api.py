@@ -356,13 +356,20 @@ def _build_comp_database() -> dict:
             if not next_ppg or next_ppg <= 0:
                 continue
 
+            # Require a meaningful improvement — flat/declining seasons
+            # add noise and confuse the comparison
+            if next_ppg < prior * 1.10 or next_ppg < prior + 1.0:
+                continue
+
             key = (_ppg_tier(pos, prior), _opp_tier(opp_s), pos)
             db.setdefault(key, []).append({
-                "name":      name,
-                "season":    season,
-                "prior_ppg": round(prior, 1),
-                "next_ppg":  round(next_ppg, 1),
-                "team":      row["team"] or "",
+                "name":       name,
+                "player_id":  pid,
+                "season":     season,       # prediction season = breakout year
+                "prior_year": season - 1,   # stats year
+                "prior_ppg":  round(prior, 1),
+                "next_ppg":   round(next_ppg, 1),
+                "team":       row["team"] or "",
                 "opp_score": round(opp_s, 0),
             })
 
@@ -406,6 +413,7 @@ def _get_peer_comparison(
     position: str,
     opp_score: float,
     prior_ppg: float = 0.0,
+    player_id: Optional[str] = None,
 ) -> Optional[str]:
     """
     Return a combined peer comparison using named historical comps + cohort stat.
@@ -413,7 +421,7 @@ def _get_peer_comparison(
     Matches on position + opportunity tier + prior-PPG tier.  Shows up to 3 named
     comps (highest actual next-season PPG) and a cohort average from all bucket
     members.  Falls back to the adjacent prior-PPG tier when the exact bucket is
-    thin.
+    thin.  Excludes the current player so they never appear as their own comp.
     """
     pos = (position or "WR").upper()
     db  = _get_comp_database()
@@ -423,20 +431,30 @@ def _get_peer_comparison(
     key = (pt, ot, pos)
     comps = db.get(key, [])
 
+    # Exclude the current player from their own comp list
+    if player_id:
+        comps = [c for c in comps if c.get("player_id") != str(player_id)]
+
     # Fall back to adjacent prior-PPG tier if bucket is empty
     if not comps:
         for fallback in ["mid", "low", "high"]:
             if fallback != pt:
-                comps = db.get((fallback, ot, pos), [])
-                if comps:
+                candidates = db.get((fallback, ot, pos), [])
+                if player_id:
+                    candidates = [c for c in candidates if c.get("player_id") != str(player_id)]
+                if candidates:
+                    comps = candidates
                     break
 
     # Further fall back to any opp tier if still empty
     if not comps:
         for fallback_ot in ["high", "medium", "low"]:
             if fallback_ot != ot:
-                comps = db.get((pt, fallback_ot, pos), [])
-                if comps:
+                candidates = db.get((pt, fallback_ot, pos), [])
+                if player_id:
+                    candidates = [c for c in candidates if c.get("player_id") != str(player_id)]
+                if candidates:
+                    comps = candidates
                     break
 
     if not comps:
@@ -447,8 +465,9 @@ def _get_peer_comparison(
     displayed = comps[:min(3, n)]
 
     comp_strs = [
-        f"{_abbrev_name(c['name'])} '{str(c['season'])[-2:]} "
-        f"({c['prior_ppg']:.1f}→{c['next_ppg']:.1f} PPG)"
+        f"{_abbrev_name(c['name'])} "
+        f"('{str(c['prior_year'])[-2:]}→'{str(c['season'])[-2:]}: "
+        f"{c['prior_ppg']:.1f}→{c['next_ppg']:.1f} PPG)"
         for c in displayed
     ]
 
@@ -716,7 +735,8 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) 
     opp_score = float(candidate.get('opportunity_opened_score') or 0)
     prior_ppg = float(candidate.get('prev_ppr_ppg') or 0)
     candidate['peer_comparison'] = _get_peer_comparison(
-        candidate.get('position', 'WR'), opp_score, prior_ppg
+        candidate.get('position', 'WR'), opp_score, prior_ppg,
+        player_id=str(player_id),
     )
 
     return candidate
