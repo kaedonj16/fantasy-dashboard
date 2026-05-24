@@ -6129,8 +6129,8 @@ function _buildBkTabHTML(data, scoreColor) {
   }
 
   const reasons = (data.key_reasons || '').split('\n')
-    .filter(r => r.trim() && r.startsWith('•'))
-    .map(r => r.substring(1).trim());
+    .map(r => r.replace(/^[•\-]\s*/, '').trim())
+    .filter(r => r.length > 0);
 
   const txnSummary    = data.vacated_usage_summary || '';
   const addedCompSumm = data.added_competition_summary || '';
