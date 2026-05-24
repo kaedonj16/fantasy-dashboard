@@ -6,7 +6,7 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-05-24",
-        "tag": "feature",
+        "tag": "new",
         "text": "Breakout Engine: Peer comparisons are sharper — only genuine breakout seasons appear as comps, vacated opportunity now credits all departed players, and projected PPG ranges are consistent across the board.",
         "link": "/breakouts"
     },
