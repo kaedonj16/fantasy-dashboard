@@ -7782,23 +7782,6 @@ def api_waiver_candidates():
     _is_sf_wv = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_wv)
     _vf_wv = "sf_value" if _is_sf_wv else "value"
 
-    # Rookies are only waiver-eligible after the fantasy rookie draft completes.
-    # Detect by checking if any rookie from this year's class is already rostered.
-    _rookie_sids_wv: set[str] = set()
-    try:
-        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _grc
-        _ry_wv = _grc()
-        from dashboard_services.db import get_conn as _gc_wv
-        with _gc_wv() as _cc:
-            _rr = _cc.execute(
-                "SELECT sleeper_id FROM rookie_prospects WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
-                (_ry_wv,),
-            ).fetchall()
-        _rookie_sids_wv = {str(r["sleeper_id"]) for r in _rr if r["sleeper_id"]}
-    except Exception:
-        pass
-    _rookie_draft_done_wv = bool(_rookie_sids_wv and any(sid in rostered_ids for sid in _rookie_sids_wv))
-
     candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -7811,8 +7794,6 @@ def api_waiver_candidates():
         if team in ("", "FA", "FREE AGENT"):
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
-            continue
-        if pid in _rookie_sids_wv and not _rookie_draft_done_wv:
             continue
         try:
             val = float(row.get(_vf_wv) or row.get("value") or 0.0)
@@ -11734,24 +11715,21 @@ def get_model_value_table_cached():
         except Exception as _e:
             print(f"[model-value-cache] market corrections skipped: {_e}")
 
-    # Append rookie prospects, using Sleeper ID as the canonical ID.
-    # First strip out any existing player_values entries for this year's rookies —
-    # FC/DP market values are often deflated for just-drafted rookies whose
-    # pipeline prospect values are the more accurate source.
+    # Append rookie prospects — only undrafted ones (NFL-drafted already have player_values entries)
     try:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
-        from utils.utils import normalize_name as _nn
         draft_year = get_active_rookie_class()
         rk_rows = list(get_rookie_rankings_from_db(draft_year))
         if rk_rows:
-            rk_sids = {str(r.get("sleeper_id")) for r in rk_rows if r.get("sleeper_id")}
-            # Remove stale player_values entries that are actually this year's rookies
-            tbl = [p for p in tbl if str(p.get("id") or "") not in rk_sids]
+            existing_ids = {str(p.get("id") or "") for p in tbl}
             for r in rk_rows:
-                sid  = r.get("sleeper_id")
+                sid  = str(r.get("sleeper_id")) if r.get("sleeper_id") else None
+                # NFL-drafted rookies already have a player_values entry keyed by Sleeper ID
+                if sid and sid in existing_ids:
+                    continue
                 name = r.get("name") or ""
                 tbl.append({
-                    "id":       str(sid) if sid else (r.get("player_id") or f"rookie_{name}"),
+                    "id":       sid if sid else (r.get("player_id") or f"rookie_{name}"),
                     "name":     name,
                     "team":     r.get("team") or "FA",
                     "position": r.get("position") or "UNK",
@@ -15708,12 +15686,13 @@ def api_trade_intel_trending():
             SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
                    {value_col_expr} AS market_value, s.buy_sell_ratio,
                    s.market_trend_1qb,
-                   COALESCE(rk.rookie_value, pv.{model_col}) AS model_value,
+                   COALESCE(pv.{model_col}, rk.rookie_value) AS model_value,
                    COALESCE(pv.position, rk.position) AS position,
                    COALESCE(pv.team, rk.team) AS team
             FROM trade_intel_player_stats s
             LEFT JOIN player_values pv ON pv.player_id = s.player_id
-            LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id AND rk.draft_class_year = %s
+            LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id
+                                        AND rk.draft_class_year = %s
             WHERE s.season = %s AND s.trade_count > 0
             ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
             LIMIT %s OFFSET %s
@@ -15808,24 +15787,20 @@ def api_trade_intel_player(player_id: str):
             value_col_expr = f"s.market_value_{fmt}"
 
         with get_conn() as conn:
-            from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc_tip
-            _rk_year_p = _garc_tip()
             stat_row = conn.execute(
                 f"""
                 SELECT
                     s.*,
-                    {value_col_expr}                                                    AS market_value,
-                    COALESCE(rk.rookie_value, pv.{raw_col})                             AS model_value,
-                    COALESCE(rk.rookie_value, pv.{cal_col}, pv.{raw_col})               AS calibrated_value,
+                    {value_col_expr}                            AS market_value,
+                    pv.{raw_col}                                AS model_value,
+                    COALESCE(pv.{cal_col}, pv.{raw_col})        AS calibrated_value,
                     pv.calibration_source,
-                    COALESCE(pv.position, rk.position) AS position,
-                    COALESCE(pv.team, rk.team)         AS team
+                    pv.position, pv.team
                 FROM trade_intel_player_stats s
                 LEFT JOIN player_values pv ON pv.player_id = s.player_id
-                LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id AND rk.draft_class_year = %s
                 WHERE s.player_id = %s AND s.season = %s
                 """,
-                (_rk_year_p, player_id, season)
+                (player_id, season)
             ).fetchone()
 
             package_rows = conn.execute(
