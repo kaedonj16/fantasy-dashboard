@@ -7775,6 +7775,23 @@ def api_waiver_candidates():
         for pid in (r.get("players") or [])
     }
 
+    # Detect whether the rookie draft has happened by checking if any
+    # current-year rookie Sleeper ID is already on a roster
+    _rookie_sids_wv: set[str] = set()
+    try:
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _grc_wv
+        from dashboard_services.db import get_conn as _gc_wv
+        _ry_wv = _grc_wv()
+        with _gc_wv() as _cc_wv:
+            _rr_wv = _cc_wv.execute(
+                "SELECT sleeper_id FROM rookie_prospects WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
+                (_ry_wv,),
+            ).fetchall()
+        _rookie_sids_wv = {str(r["sleeper_id"]) for r in _rr_wv if r["sleeper_id"]}
+    except Exception:
+        pass
+    _rookie_draft_done_wv = bool(_rookie_sids_wv and any(sid in rostered_ids for sid in _rookie_sids_wv))
+
     players_index = ctx.get("players_index") or {}
     model_value_table = list(get_model_value_table_cached() or [])
 
@@ -7790,6 +7807,8 @@ def api_waiver_candidates():
         pos = str(row.get("position") or row.get("pos") or "").upper()
         team = str(row.get("team") or players_index.get(pid, {}).get("team") or "").strip().upper()
         if not pid or pid in rostered_ids:
+            continue
+        if pid in _rookie_sids_wv and not _rookie_draft_done_wv:
             continue
         if team in ("", "FA", "FREE AGENT"):
             continue
