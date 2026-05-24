@@ -5,6 +5,30 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-05-24",
+        "tag": "feature",
+        "text": "Breakout Engine: Startup draft grades now use FantasyCalc dynasty rankings as the ADP source, so value vs. reach grades reflect real dynasty market consensus rather than local league averages.",
+        "link": "/breakouts"
+    },
+    {
+        "date": "2026-05-24",
+        "tag": "feature",
+        "text": "Breakout Engine: Peer comparisons now filter out weak historical seasons — only players who genuinely broke out (RB/WR ≥10 PPG, TE ≥8 PPG) appear as comps, so the \"Like...\" callout surfaces meaningful precedents.",
+        "link": "/breakouts"
+    },
+    {
+        "date": "2026-05-24",
+        "tag": "fix",
+        "text": "Breakout Engine: Vacated carries/targets now correctly shows all contributors — e.g. \"293 carries vacated (Pacheco, Pierce +2 more departed)\" instead of attributing the full total to only two players.",
+        "link": "/breakouts"
+    },
+    {
+        "date": "2026-05-24",
+        "tag": "fix",
+        "text": "Breakout Engine: Projected PPG range on the breakout list cards now matches the range shown in the player modal.",
+        "link": "/breakouts"
+    },
+    {
         "date": "2026-05-19",
         "tag": "new",
         "text": "Trade Suggestions: Trade Intel now suggests real trade packages adapted to your roster. See what players have actually been traded for your target, filter out untouchables, and load any package into the Trade Calculator in one click.",

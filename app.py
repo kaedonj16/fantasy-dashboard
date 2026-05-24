@@ -7126,6 +7126,68 @@ def build_teams_body(ctx: dict) -> str:
           .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
       }}
 
+      // For startup drafts, the server-side FC fetch is blocked (403 from server IPs).
+      // This function fetches FC dynasty rankings directly from the browser and
+      // re-maps each pick's avg_pick, adp_diff, grade, and pos_rank to FC values.
+      async function _applyFcStartupAdp(data) {{
+        var numQbs = _leagueType === 'sf' ? 2 : 1;
+        var url = 'https://fantasycalc.com/api/values/current?numQbs=' + numQbs + '&ppr=0.5';
+        try {{
+          var resp = await fetch(url);
+          if (!resp.ok) return null;
+          var fcData = await resp.json();
+          if (!fcData || !fcData.length) return null;
+
+          var fcMap = {{}};
+          var posCounts = {{}};
+          fcData
+            .filter(function(e) {{ return e.overallRank && e.player && e.player.sleeperId; }})
+            .sort(function(a, b) {{ return a.overallRank - b.overallRank; }})
+            .forEach(function(entry) {{
+              var p   = entry.player;
+              var sid = String(p.sleeperId);
+              var pos = (p.position || '').toUpperCase();
+              posCounts[pos] = (posCounts[pos] || 0) + 1;
+              fcMap[sid] = {{ avg_pick: entry.overallRank, position: pos, pos_rank: posCounts[pos] }};
+            }});
+
+          if (!Object.keys(fcMap).length) return null;
+
+          var nt       = data.num_teams || 10;
+          var bigReach = -(nt * 1.1);
+          function _regrade(diff) {{
+            if (diff === null || diff === undefined) return 'N/A';
+            if (diff >= 4)        return 'A+';
+            if (diff >= 2)        return 'A';
+            if (diff >= -3)       return 'B';
+            if (diff >= bigReach) return 'C';
+            return 'D';
+          }}
+          var gradeVals = {{'A+':5,'A':4,'B':3,'C':2,'D':1,'F':0,'N/A':2}};
+
+          (data.teams || []).forEach(function(team) {{
+            (team.picks || []).forEach(function(pick) {{
+              var fc = fcMap[pick.player_id];
+              if (!fc) return;
+              pick.avg_pick   = fc.avg_pick;
+              pick.adp_diff   = pick.pick_no - fc.avg_pick;
+              pick.pos_rank   = fc.pos_rank;
+              pick.grade      = _regrade(pick.adp_diff);
+              pick.could_wait = pick.adp_diff < -2 && fc.avg_pick > pick.pick_no + nt;
+            }});
+            var gs = (team.picks || []).map(function(p) {{
+              return gradeVals[p.grade] !== undefined ? gradeVals[p.grade] : 2;
+            }});
+            if (!gs.length) return;
+            var avg = gs.reduce(function(a,b) {{ return a+b; }}, 0) / gs.length;
+            team.grade = avg>=4.5?'A+':avg>=3.5?'A':avg>=2.5?'B':avg>=1.5?'C':avg>=0.5?'D':'F';
+          }});
+
+          data.adp_source = 'fantasycalc';
+          return data;
+        }} catch(e) {{ return null; }}
+      }}
+
       function loadDraft() {{
         if (_loaded.draft) return;
         _loaded.draft = true;
@@ -7135,8 +7197,16 @@ def build_teams_body(ctx: dict) -> str:
         fetch('/api/draft-grades?platform=' + _platform +
               '&league_id=' + _leagueId + '&season=' + _season + '&league_type=' + _leagueType)
           .then(function(r) {{ return r.json(); }})
-          .then(function(data) {{
+          .then(async function(data) {{
             if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
+
+            // For startup drafts, overlay FC dynasty rankings from the browser
+            // (server-side fetch is blocked by Cloudflare; browser requests are not)
+            if (data.draft_type === 'startup') {{
+              var upgraded = await _applyFcStartupAdp(data);
+              if (upgraded) data = upgraded;
+            }}
+
             var teams = data.teams || [];
             if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No draft data available.</p>'; return; }}
 
