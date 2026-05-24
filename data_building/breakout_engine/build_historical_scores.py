@@ -1213,6 +1213,7 @@ def score_one_player(
             prev_usage=prev_usage,
             age=age,
             competition_threat=competition_threat,
+            opportunity_score=component_scores["opportunity_opened"],
         )
 
     # Blend model projection 70% / prior-season PPG 30% — mirrors the playoff
