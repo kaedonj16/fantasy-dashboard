@@ -1315,6 +1315,20 @@ def build_season(
             skipped_regression += 1
             continue
 
+        # Situational gate: require a real roster-level change.
+        # Confidence + trajectory alone (65% of score) can elevate a stable
+        # incumbent who isn't a breakout candidate at all. A player must show
+        # meaningful opportunity opened OR competition removed to qualify.
+        opp_score  = result.get("opportunity_opened_score", 0) or 0
+        comp_score = result.get("competition_removed_score", 0) or 0
+        is_arrival = any(
+            a["player_id"] == gsis_id
+            for a in arrivals_cache.get((roster_entry["team"], roster_entry["position"]), [])
+        )
+        if opp_score + comp_score < 20 and not is_arrival:
+            skipped_low += 1
+            continue
+
         if result["breakout_opportunity_score"] < min_score:
             skipped_low += 1
             continue

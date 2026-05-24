@@ -716,7 +716,7 @@ def main() -> Dict[str, Any]:
 
     print(f"[calculate_breakouts] Season: {season}, scoring from {stats_season} stats with as_of_date={date.today()}")
 
-    run(seasons=[stats_season], min_score=50.0, as_of_date_override=date.today())
+    run(seasons=[stats_season], min_score=55.0, as_of_date_override=date.today())
 
     return {"season": season, "stats_season": stats_season, "as_of_date": date.today().isoformat()}
 
