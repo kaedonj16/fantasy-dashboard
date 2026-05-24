@@ -142,7 +142,11 @@ def _generate_key_reasons_from_details(row: dict) -> str:
             departed_sorted = sorted(departed, key=lambda d: float(d.get('targets') or 0), reverse=True)
         else:
             departed_sorted = sorted(departed, key=lambda d: float(d.get('carries') or 0), reverse=True)
-        dep_names = ', '.join(d.get('name', '') for d in departed_sorted[:2] if d.get('name'))
+        named_deps = [d for d in departed_sorted[:2] if d.get('name')]
+        dep_names = ', '.join(d.get('name', '') for d in named_deps)
+        extra_deps = len([d for d in departed_sorted[2:] if d.get('name')])
+        if extra_deps > 0:
+            dep_names = dep_names + f' +{extra_deps} more'
         if position in ('WR', 'TE') and vac_tgt >= 30:
             suffix = f' ({dep_names} departed)' if dep_names else f' at {team}'
             reasons.append(f'{int(vac_tgt)} targets vacated{suffix}')
@@ -384,6 +388,12 @@ def _build_comp_database() -> dict:
             # Require a meaningful improvement — flat/declining seasons
             # add noise and confuse the comparison
             if next_ppg < prior * 1.10 or next_ppg < prior + 1.0:
+                continue
+
+            # Require a meaningful absolute PPG floor — weak producers (e.g. a RB
+            # at 9.8 PPG) are not useful comps even if they technically "improved"
+            _MIN_COMP_PPG = {"WR": 10.0, "RB": 10.0, "TE": 8.0, "QB": 20.0}
+            if next_ppg < _MIN_COMP_PPG.get(pos, 10.0):
                 continue
 
             key = (_ppg_tier(pos, prior), _opp_tier(opp_s), pos)
