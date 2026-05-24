@@ -109,6 +109,71 @@ def fetch_league_adp_from_db(
         return {}
 
 
+def fetch_fc_startup_adp(is_sf: bool) -> dict:
+    """
+    Fetch dynasty startup ADP from FantasyCalc for all players (not just rookies).
+
+    Returns sleeper_id -> {adp_rank, pos_rank, position, avg_pick} where avg_pick
+    equals the FantasyCalc overall dynasty rank (1 = consensus #1 startup pick).
+    Caches per league type per day.
+    """
+    import json as _json
+    from datetime import date
+    from utils.paths import DATA_DIR
+
+    key = f"fc_startup_adp_{'sf' if is_sf else '1qb'}_{date.today().isoformat()}.json"
+    cache_path = DATA_DIR / key
+    if cache_path.exists():
+        try:
+            with open(cache_path) as _f:
+                return _json.load(_f)
+        except Exception:
+            logger.warning("adp_service: corrupt startup ADP cache at %s, rebuilding", cache_path)
+
+    num_qbs = 2 if is_sf else 1
+    # No type= filter → all dynasty players (startup pool)
+    url = f"https://fantasycalc.com/api/values/current?numQbs={num_qbs}&ppr=0.5"
+    try:
+        import requests as _req
+        resp = _req.get(url, timeout=15, headers={"User-Agent": "fantasy-dashboard/1.0"})
+        resp.raise_for_status()
+        fc_data = resp.json()
+    except Exception:
+        logger.warning("adp_service: FantasyCalc startup fetch failed (sf=%s)", is_sf, exc_info=True)
+        fc_data = []
+
+    if not fc_data:
+        return {}
+
+    # Sort by overallRank ascending so rank 1 = pick 1
+    sorted_entries = sorted(
+        [e for e in fc_data if isinstance(e, dict) and e.get("overallRank")],
+        key=lambda e: e["overallRank"],
+    )
+
+    result: dict = {}
+    pos_counters: dict = {}
+    for rank, entry in enumerate(sorted_entries, start=1):
+        p = entry.get("player") or {}
+        sid = str(p.get("sleeperId") or "")
+        if not sid or sid == "None":
+            continue
+        pos = str(p.get("position") or "").upper()
+        pos_counters[pos] = pos_counters.get(pos, 0) + 1
+        result[sid] = {
+            "adp_rank":  rank,
+            "avg_pick":  float(entry["overallRank"]),
+            "pos_rank":  pos_counters[pos],
+            "position":  pos,
+        }
+
+    try:
+        _atomic_json_write(cache_path, result)
+    except Exception:
+        logger.warning("adp_service: failed to write startup ADP cache to %s", cache_path, exc_info=True)
+    return result
+
+
 def fetch_fc_rookie_adp(is_sf: bool, season: int) -> dict:
     """
     Fetch dynasty rookie ADP from FantasyCalc and return a map of

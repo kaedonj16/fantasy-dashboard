@@ -137,36 +137,56 @@ def calculate_hit_probability(
     readiness_score: float,
     confidence_score: float,
     position: str,
+    opportunity_score: float = 0.0,
+    role_trajectory_score: float = 0.0,
 ) -> float:
     """
     P(player finishes top-12 at position next season).
 
-    Uses the breakout score as the primary signal (0-100 scale → 0-1),
-    weighted with readiness and confidence as modifiers, then calibrated
-    to per-position base rates via a power-law transform.
+    Calibrated from 2022-2024 backtest data (639 paired player-seasons).
+    Uses piecewise linear interpolation over empirical hit rates by score
+    bucket, then applies opportunity and trajectory modifiers.
     """
+    # Empirical hit rates by score bucket (from 2022-2024 backtest):
+    # breakout_score → p(top-12 finish at position)
+    # Smoothed to enforce monotonicity; small-sample high buckets capped conservatively.
+    _SCORE_CURVE: dict[str, list[tuple[float, float]]] = {
+        "WR": [(0, 0.00), (40, 0.02), (55, 0.03), (65, 0.07), (72, 0.25), (80, 0.33), (100, 0.40)],
+        "RB": [(0, 0.01), (40, 0.04), (55, 0.05), (65, 0.15), (72, 0.40), (80, 0.50), (100, 0.58)],
+        "TE": [(0, 0.00), (40, 0.05), (50, 0.18), (60, 0.30), (70, 0.38), (80, 0.48), (100, 0.55)],
+        "QB": [(0, 0.05), (45, 0.10), (55, 0.12), (65, 0.22), (72, 0.38), (80, 0.48), (100, 0.55)],
+    }
+
     pos = (position or "WR").upper()
-    base = _BASE_HIT_RATE.get(pos, 0.18)
+    score = max(0.0, min(100.0, float(breakout_score)))
+    curve = _SCORE_CURVE.get(pos, _SCORE_CURVE["WR"])
 
-    # Composite signal: weighted blend of three most predictive components
-    raw_signal = (
-        (breakout_score / 100.0) * 0.55
-        + (readiness_score / 100.0) * 0.30
-        + (confidence_score / 100.0) * 0.15
-    )
-
-    # Power-law scaling relative to the "neutral" breakout level (score=50)
-    # At signal=0.50 → multiplier=1.0 (stays at base rate)
-    # At signal=1.00 → multiplier≈2.8 (strong breakout)
-    # At signal=0.25 → multiplier≈0.42 (weak signal)
-    neutral = 0.50
-    if raw_signal >= neutral:
-        multiplier = (raw_signal / neutral) ** 1.5
+    # Piecewise linear interpolation
+    base_prob = curve[0][1]
+    for i in range(len(curve) - 1):
+        s0, p0 = curve[i]
+        s1, p1 = curve[i + 1]
+        if s0 <= score <= s1:
+            t = (score - s0) / (s1 - s0) if s1 > s0 else 0.0
+            base_prob = p0 + t * (p1 - p0)
+            break
     else:
-        multiplier = (raw_signal / neutral) ** 0.7
+        base_prob = curve[-1][1]
 
-    prob = base * multiplier
-    return round(min(max(prob, 0.01), 0.95), 3)
+    # Opportunity modifier: significant vacated opportunity provides additional
+    # upside for WR/TE/RB — they have a clear path to volume.
+    opp = float(opportunity_score or 0.0)
+    if opp >= 60 and pos in ("WR", "TE", "RB"):
+        opp_boost = min(0.08, (opp - 60) / 40 * 0.10)
+        base_prob = min(0.90, base_prob + opp_boost)
+
+    # Role trajectory modifier: strong ascending trajectory reduces bust risk.
+    traj = float(role_trajectory_score or 0.0)
+    if traj >= 70:
+        traj_boost = min(0.05, (traj - 70) / 30 * 0.06)
+        base_prob = min(0.90, base_prob + traj_boost)
+
+    return round(min(max(base_prob, 0.01), 0.95), 3)
 
 
 def calculate_cumulative_ppr(
@@ -241,6 +261,7 @@ def compute_multitask_predictions(
     prev_usage: Optional[dict],
     age: Optional[float],
     competition_threat: float = 0.0,
+    opportunity_score: float = 0.0,
 ) -> dict:
     """
     Compute all three multitask predictions in one call.
@@ -248,7 +269,9 @@ def compute_multitask_predictions(
     Returns dict with keys: hit_probability, cumulative_ppr, peak_ppr.
     """
     hit_prob = calculate_hit_probability(
-        breakout_score, readiness_score, confidence_score, position
+        breakout_score, readiness_score, confidence_score, position,
+        opportunity_score=opportunity_score,
+        role_trajectory_score=role_trajectory_score,
     )
     cum_ppr = calculate_cumulative_ppr(
         position, projected_usage, efficiency_metrics, prev_usage, readiness_score, age

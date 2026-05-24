@@ -15177,6 +15177,7 @@ def api_playoff_odds():
 
 from dashboard_services.adp_service import (
     fetch_fc_rookie_adp as _fetch_fc_rookie_adp,
+    fetch_fc_startup_adp as _fetch_fc_startup_adp,
     fetch_league_adp_from_db as _fetch_league_adp_from_db_impl,
     build_model_adp_fallback as _build_model_adp_fallback,
 )
@@ -15261,18 +15262,29 @@ def api_draft_grades():
         except Exception:
             _nfl_draft_done = is_draft_complete(season)
 
-        # ── ADP: league data → FantasyCalc → model fallback ─────────────────
-        # adp_info[sleeper_id] = {adp_rank, pos_rank, position, ...}
-        adp_info = _fetch_league_adp_from_db(is_sf, season, _draft_type, _num_teams)
-        if adp_info:
-            adp_source = "league"
-        else:
-            adp_info = _fetch_fc_rookie_adp(is_sf, season)
+        # ── ADP lookup ────────────────────────────────────────────────────────
+        # Startup drafts use FantasyCalc dynasty rankings as the ADP source
+        # (avg_pick = FC overallRank, so Josh Allen ≈ 1).  Rookie drafts keep
+        # the league-crawled data (Sleeper pick numbers within the rookie pool).
+        if _draft_type == "startup":
+            adp_info = _fetch_fc_startup_adp(is_sf)
             if adp_info:
                 adp_source = "fantasycalc"
             else:
-                adp_info = _build_model_adp_fallback(is_sf, season, filter_undrafted=_nfl_draft_done)
-                adp_source = "model" if adp_info else "none"
+                adp_info = _fetch_league_adp_from_db(is_sf, season, _draft_type, _num_teams)
+                adp_source = "league" if adp_info else "none"
+        else:
+            # rookie draft: league crawl → FC rookie → model
+            adp_info = _fetch_league_adp_from_db(is_sf, season, _draft_type, _num_teams)
+            if adp_info:
+                adp_source = "league"
+            else:
+                adp_info = _fetch_fc_rookie_adp(is_sf, season)
+                if adp_info:
+                    adp_source = "fantasycalc"
+                else:
+                    adp_info = _build_model_adp_fallback(is_sf, season, filter_undrafted=_nfl_draft_done)
+                    adp_source = "model" if adp_info else "none"
         users   = get_users(platform, league_id, season) or []
         roster_map = _build_roster_map(users, rosters)
 

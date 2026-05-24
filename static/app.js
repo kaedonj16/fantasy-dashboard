@@ -6141,11 +6141,14 @@ function _buildBkTabHTML(data, scoreColor) {
   let ppgRange = null;
   if (s1 > 0) {
     const modelPpg = s1 / 17;
-    const highRaw  = modelPpg * 1.075;
+    // Confidence-adjusted range: high confidence → tight band, low → wide
+    const conf = Math.min(100, Math.max(30, parseFloat(data.confidence_score || 70)));
+    // halfSpread: ±4% at conf=90, ±7% at conf=70, ±12% at conf=30
+    const halfSpread = 0.04 + (0.12 - 0.04) * (90 - conf) / 60;
+    const highRaw  = modelPpg * (1 + halfSpread);
     const high     = (prevPpg > 0 && highRaw > prevPpg * 1.4) ? prevPpg * 1.4 : highRaw;
     const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.4;
-    // When capped, base the low on the capped ceiling (not the raw model) so low never exceeds high
-    const rawLow   = isCapped ? high * 0.88 : modelPpg * 0.95;
+    const rawLow   = isCapped ? high * (1 - halfSpread) : modelPpg * (1 - halfSpread * 0.8);
     const lowFloor = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
     const low      = Math.min(lowFloor, high);  // never let low exceed high
     const midPpg   = (low + high) / 2;
@@ -6273,7 +6276,12 @@ function _buildBkTabHTML(data, scoreColor) {
         <span style="color:${scoreColor};font-weight:700;flex-shrink:0;">•</span><span>${r}</span>
       </div>`;
     });
-    html += `</div></div>`;
+    html += `</div>`;
+    // Peer comparison footnote
+    if (data.peer_comparison) {
+      html += `<div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.4;opacity:0.75;">${data.peer_comparison}</div>`;
+    }
+    html += `</div>`;
   }
 
   html += `</div>`;
