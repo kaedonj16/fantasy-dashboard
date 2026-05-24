@@ -7142,6 +7142,7 @@ def build_teams_body(ctx: dict) -> str:
 
             var numTeams    = data.num_teams || 10;
             var totalRounds = data.total_rounds || 1;
+            var isStartup   = data.draft_type === 'startup';
 
             // Build team name lookup: roster_id -> team_name
             var teamNames = {{}};
@@ -7172,7 +7173,8 @@ def build_teams_body(ctx: dict) -> str:
                     : '<span class="adp-neutral">on ADP</span>';
                 var posTag = p.pos_rank != null ? ' · ' + p.position + p.pos_rank : '';
                 var waitTag = p.could_wait ? ' <span class="adp-wait">Reach</span>' : '';
-                adpLine = '<div class="analytics-pick-adp-line">ADP ' + p.avg_pick.toFixed(2) + posTag + ' ' + diffHtml + waitTag + '</div>';
+                var adpStr = isStartup ? ('#' + Math.round(p.avg_pick)) : p.avg_pick.toFixed(2);
+                adpLine = '<div class="analytics-pick-adp-line">ADP ' + adpStr + posTag + ' ' + diffHtml + waitTag + '</div>';
               }}
 
               var bpaLine = '';
