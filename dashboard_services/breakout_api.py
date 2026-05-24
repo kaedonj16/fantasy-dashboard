@@ -317,6 +317,26 @@ def _build_comp_database() -> dict:
         from dashboard_services.db import get_conn
 
         with get_conn() as conn:
+            # Find the current prediction season (highest season in DB)
+            cur_row = conn.execute(
+                "SELECT MAX(season) AS cur FROM breakout_opportunity_scores"
+            ).fetchone()
+            current_season = int(cur_row["cur"] or 2026)
+
+            # Historical range: all completed seasons before the current cycle
+            hist_max = current_season - 1
+
+            # Grab player_ids that are active candidates this cycle — exclude
+            # them from the comp pool so active candidates don't appear as comps
+            active_ids: set[str] = {
+                str(r["player_id"])
+                for r in conn.execute(
+                    "SELECT DISTINCT player_id FROM breakout_opportunity_scores "
+                    "WHERE season = %s",
+                    (current_season,),
+                ).fetchall()
+            }
+
             rows = conn.execute(
                 """
                 SELECT DISTINCT ON (player_id, season)
@@ -329,16 +349,18 @@ def _build_comp_database() -> dict:
                     breakout_opportunity_score,
                     (component_details->'projections'->>'prev_ppr_ppg')::numeric AS prior_ppg
                 FROM breakout_opportunity_scores
-                WHERE season BETWEEN 2023 AND 2025
+                WHERE season BETWEEN 2023 AND %(hist_max)s
                   AND breakout_opportunity_score >= 45
                   AND position IN ('WR', 'RB', 'TE', 'QB')
                 ORDER BY player_id, season, as_of_date DESC, calculated_at DESC
-                """
+                """,
+                {"hist_max": hist_max},
             ).fetchall()
 
-        # Load actual PPG for each prediction season
+        # Load actual PPG for each historical prediction season
+        hist_seasons = list(range(2023, hist_max + 1))
         usage: dict[int, dict[str, float]] = {
-            s: _load_usage_ppg(s) for s in [2023, 2024, 2025]
+            s: _load_usage_ppg(s) for s in hist_seasons
         }
 
         db: dict = {}
@@ -351,6 +373,9 @@ def _build_comp_database() -> dict:
             prior    = float(row["prior_ppg"] or 0)
 
             if not name or prior <= 0:
+                continue
+            # Skip players who are active candidates in the current cycle
+            if pid in active_ids:
                 continue
             next_ppg = usage.get(season, {}).get(pid)
             if not next_ppg or next_ppg <= 0:
