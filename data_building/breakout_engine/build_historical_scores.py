@@ -945,6 +945,91 @@ def _compute_projected_usage(
     }
 
 
+def _generate_key_reasons(
+    component_scores: dict,
+    component_details: dict,
+    position: str,
+    roster_entry: dict,
+    prev_usage: dict,
+    is_arrival: bool,
+) -> str:
+    """Build a newline-separated list of human-readable breakout reasons."""
+    reasons: list[str] = []
+    team = roster_entry.get("team", "")
+    years_exp = int(roster_entry.get("years_exp") or 0)
+
+    opp       = component_scores.get("opportunity_opened", 0)
+    opp_d     = component_details.get("opportunity_opened", {})
+    comp_rem  = component_scores.get("competition_removed", 0)
+    cr_d      = component_details.get("competition_removed", {})
+    traj      = component_scores.get("role_trajectory", 0)
+    traj_d    = component_details.get("role_trajectory", {})
+    read      = component_scores.get("player_readiness", 0)
+    read_d    = component_details.get("player_readiness", {})
+
+    # Opportunity: be specific about what opened up
+    if opp >= 25:
+        vac_tgt  = float(opp_d.get("vacated_targets", 0))
+        vac_car  = float(opp_d.get("vacated_carries", 0))
+        vac_snap = float(opp_d.get("vacated_snap_share", 0))
+        departed = opp_d.get("departed_players", [])
+        dep_names = ", ".join(
+            d.get("name", "") for d in departed[:2] if d.get("name")
+        )
+        if position in ("WR", "TE") and vac_tgt >= 30:
+            suffix = f" ({dep_names} departed)" if dep_names else f" at {team}"
+            reasons.append(f"{int(vac_tgt)} targets vacated{suffix}")
+        elif position == "RB" and vac_car >= 30:
+            suffix = f" ({dep_names} departed)" if dep_names else f" at {team}"
+            reasons.append(f"{int(vac_car)} carries vacated{suffix}")
+        elif vac_snap >= 0.15:
+            reasons.append(f"{int(vac_snap * 100)}% snap share opened at {team}")
+        elif opp >= 50:
+            reasons.append(f"Significant opportunity opened at {team}")
+
+    # Arrival: new team context
+    if is_arrival and not reasons:
+        reasons.append(f"New team situation at {team}")
+
+    # Competition removed: name the biggest departure
+    if comp_rem >= 25:
+        key_deps = cr_d.get("key_departures", [])
+        if key_deps:
+            name = key_deps[0].get("name", "")
+            reasons.append(f"{name} departure reduces competition" if name else "Key competition reduced")
+
+    # Role trajectory: year-2 starter, snap trend, ascending role
+    if traj >= 55:
+        snap = float(traj_d.get("prev_snap_share") or prev_usage.get("snap_share") or 0)
+        if years_exp <= 2 and snap >= 0.45:
+            reasons.append(
+                f"Year {years_exp + 1} player ascending in established starter role "
+                f"({int(snap * 100)}% snaps)"
+            )
+        elif snap >= 0.70 and traj >= 65:
+            reasons.append(
+                f"High-volume starter ({int(snap * 100)}% snaps) with strong upward trajectory"
+            )
+        elif traj >= 70:
+            reasons.append("Strong upward role trajectory")
+
+    # Player readiness: draft capital / age upside
+    if read >= 75 and years_exp <= 3:
+        dr = read_d.get("draft_round")
+        if dr and int(dr) <= 2 and not any("Year" in r for r in reasons):
+            reasons.append(f"Round {int(dr)} draft capital — high-ceiling profile")
+
+    # Snap share headline if still thin on reasons
+    snap_share = float((prev_usage or {}).get("snap_share") or 0)
+    ppg = float((prev_usage or {}).get("ppr_ppg") or 0)
+    if len(reasons) < 2 and snap_share >= 0.55 and ppg >= 8:
+        reasons.append(
+            f"Proven starter ({int(snap_share * 100)}% snaps, {ppg:.1f} PPG last season)"
+        )
+
+    return "\n".join(reasons[:4])
+
+
 def score_one_player(
     gsis_id: str,
     roster_entry: dict,
@@ -1125,11 +1210,21 @@ def score_one_player(
             competition_threat=competition_threat,
         )
 
+    # Blend model projection 70% / prior-season PPG 30% — mirrors the playoff
+    # odds simulator's _blend_weekly_projections anchor to prior performance.
+    # This prevents extreme model outputs and keeps breakout PPG ranges
+    # consistent with the projections used elsewhere in the app.
+    prev_ppr_ppg = float(prev_usage.get("ppr_ppg") or 0)
+    raw_s1 = multitask.get("season1_ppr")
+    if raw_s1 is not None and prev_ppr_ppg > 0:
+        blended_s1 = round(0.70 * raw_s1 + 0.30 * prev_ppr_ppg * 17, 1)
+        multitask["season1_ppr"] = blended_s1
+
     component_details["projections"] = {
         "season1_ppr": (
             round(multitask["season1_ppr"], 1) if multitask.get("season1_ppr") is not None else None
         ),
-        "prev_ppr_ppg": round(float(prev_usage.get("ppr_ppg") or 0), 2),
+        "prev_ppr_ppg": round(prev_ppr_ppg, 2),
     }
 
     return {
@@ -1149,7 +1244,10 @@ def score_one_player(
         "breakout_opportunity_score": round(aggregate, 1),
         "phase": HIST_PHASE,
         "directional_trend": "neutral",
-        "key_reasons": "",
+        "key_reasons": _generate_key_reasons(
+            component_scores, component_details, position,
+            roster_entry, prev_usage, is_arrival,
+        ),
         "recent_transactions_affecting_player": "",
         "vacated_usage_summary": "",
         "added_competition_summary": "",
@@ -1307,11 +1405,10 @@ def build_season(
         if result is None:
             continue
 
-        # Exclude regression candidates: a player projecting more than 10% below
-        # their prior season isn't a breakout candidate — they're declining.
+        # A breakout requires projecting above last season — any decline disqualifies.
         prev_ppg  = float(result.get("prev_ppr_ppg") or 0)
         model_ppg = (result.get("season1_ppr") or 0) / 17
-        if prev_ppg > 5.0 and model_ppg < prev_ppg * 0.90:
+        if prev_ppg > 5.0 and model_ppg < prev_ppg:
             skipped_regression += 1
             continue
 
