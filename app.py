@@ -9871,13 +9871,15 @@ def page_breakouts(platform: str, season: int, league_id: str):
         const prevPpg = parseFloat(candidate.prev_ppr_ppg || 0);
         if (!s1) return null;
         const modelPpg = s1 / 17;
-        const highRaw = modelPpg * 1.075;
+        // Confidence-adjusted spread — matches the modal formula in app.js
+        const conf = Math.min(100, Math.max(30, parseFloat(candidate.confidence_score || 70)));
+        const halfSpread = 0.04 + (0.12 - 0.04) * (90 - conf) / 60;
+        const highRaw = modelPpg * (1 + halfSpread);
         const high = (prevPpg > 0 && highRaw > prevPpg * 1.4) ? prevPpg * 1.4 : highRaw;
         const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.4;
-        // When capped, base the low on the capped ceiling (not the raw model) so low never exceeds high
-        const rawLow = isCapped ? high * 0.88 : modelPpg * 0.95;
+        const rawLow = isCapped ? high * (1 - halfSpread) : modelPpg * (1 - halfSpread * 0.8);
         const lowFloor = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
-        const low = Math.min(lowFloor, high);  // never let low exceed high
+        const low = Math.min(lowFloor, high);
         const midPpg = (low + high) / 2;
         const delta = prevPpg > 0 ? Math.round((midPpg - prevPpg) * 10) / 10 : null;
         return {{
