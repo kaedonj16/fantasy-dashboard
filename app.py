@@ -11715,18 +11715,17 @@ def get_model_value_table_cached():
         except Exception as _e:
             print(f"[model-value-cache] market corrections skipped: {_e}")
 
-    # Append rookie prospects — only undrafted ones (NFL-drafted already have player_values entries)
+    # Append rookie prospects — pipeline values take priority over player_values for current class
     try:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
         draft_year = get_active_rookie_class()
         rk_rows = list(get_rookie_rankings_from_db(draft_year))
         if rk_rows:
-            existing_ids = {str(p.get("id") or "") for p in tbl}
+            rk_sids = {str(r.get("sleeper_id")) for r in rk_rows if r.get("sleeper_id")}
+            # Remove any player_values entries for this draft class so pipeline wins
+            tbl = [p for p in tbl if str(p.get("id") or "") not in rk_sids]
             for r in rk_rows:
                 sid  = str(r.get("sleeper_id")) if r.get("sleeper_id") else None
-                # NFL-drafted rookies already have a player_values entry keyed by Sleeper ID
-                if sid and sid in existing_ids:
-                    continue
                 name = r.get("name") or ""
                 tbl.append({
                     "id":       sid if sid else (r.get("player_id") or f"rookie_{name}"),

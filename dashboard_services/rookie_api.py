@@ -282,28 +282,6 @@ def rankings():
         except Exception:
             pass
 
-        # Overlay player_values (FC/DP) for NFL-drafted prospects so the prospects
-        # page shows the same values as the rest of the site.
-        try:
-            from dashboard_services.player_value_history import load_current_values_from_db
-            _pv_rows = load_current_values_from_db() or []
-            _pv_map = {str(r.get("id") or ""): r for r in _pv_rows}
-            _is_sf = league_type == "sf"
-            _val_keys = ("value", "sf_value",
-                         "value_8", "value_12", "value_14",
-                         "sf_value_8", "sf_value_12", "sf_value_14")
-            for d in result:
-                _sid = str(d.get("sleeper_id") or "")
-                if _sid and _sid in _pv_map:
-                    _pv = _pv_map[_sid]
-                    _disp_key = "sf_value" if _is_sf else "value"
-                    if _pv.get(_disp_key) is not None:
-                        d["display_value"] = float(_pv[_disp_key])
-                    for _vk in _val_keys:
-                        if _pv.get(_vk) is not None:
-                            d[_vk] = float(_pv[_vk])
-        except Exception:
-            pass
 
         # Sort: tier ascending, then display_value descending within each tier
         result.sort(key=lambda x: (x.get("tier") or 99, -(x.get("display_value") or 0)))
