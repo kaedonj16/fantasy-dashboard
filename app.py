@@ -11718,19 +11718,23 @@ def get_model_value_table_cached():
     # Append rookie prospects — pipeline values take priority over player_values for current class
     try:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
+        from utils.utils import load_players_index as _mvc_lpi
         draft_year = get_active_rookie_class()
         rk_rows = list(get_rookie_rankings_from_db(draft_year))
         if rk_rows:
+            _mvc_idx = _mvc_lpi() or {}
             rk_sids = {str(r.get("sleeper_id")) for r in rk_rows if r.get("sleeper_id")}
             # Remove any player_values entries for this draft class so pipeline wins
             tbl = [p for p in tbl if str(p.get("id") or "") not in rk_sids]
             for r in rk_rows:
                 sid  = str(r.get("sleeper_id")) if r.get("sleeper_id") else None
                 name = r.get("name") or ""
+                _idx_team = _mvc_idx.get(sid, {}).get("team", "") if sid else ""
+                _team = r.get("actual_nfl_team") or _idx_team or r.get("team") or "FA"
                 tbl.append({
                     "id":       sid if sid else (r.get("player_id") or f"rookie_{name}"),
                     "name":     name,
-                    "team":     r.get("team") or "FA",
+                    "team":     _team,
                     "position": r.get("position") or "UNK",
                     "age":      r.get("age"),
                     "value":    float(r.get("rookie_value") or 0),
@@ -12607,8 +12611,9 @@ def api_league_players():
             get_rookie_rankings_from_db,
             get_active_rookie_class,
         )
-        from utils.utils import normalize_name as _nn
+        from utils.utils import normalize_name as _nn, load_players_index as _lpi
         draft_year = get_active_rookie_class()
+        _pl_idx = _lpi() or {}
 
         # Build a normalized-name → index map for the model table
         name_to_idx: dict = {}
@@ -12620,10 +12625,14 @@ def api_league_players():
         for r in get_rookie_rankings_from_db(draft_year):
             name = r.get("name") or ""
             norm = _nn(name)
+            sid  = str(r.get("sleeper_id") or "")
+            # Pull NFL team from players_index (Sleeper) as the most reliable source
+            _idx_team = _pl_idx.get(sid, {}).get("team", "") if sid else ""
+            _team = r.get("actual_nfl_team") or _idx_team or r.get("team") or "FA"
             rookie_entry = {
-                "id": r.get("player_id") or f"rookie_{name}",
+                "id": sid or r.get("player_id") or f"rookie_{name}",
                 "name": name,
-                "team": r.get("actual_nfl_team") or r.get("team") or "FA",
+                "team": _team,
                 "position": r.get("position") or "UNK",
                 "age": r.get("age"),
                 "value":       float(r.get("rookie_value")       or 0),
@@ -12643,18 +12652,20 @@ def api_league_players():
 
             if norm and norm in name_to_idx:
                 # Player already in model table (drafted + linked to Sleeper).
-                # Mark as rookie and back-fill rookie values so they appear in
-                # the ROOKIE tab with correct values; don't add a second entry.
+                # Mark as rookie, ensure team is set from Sleeper index, and
+                # override values with pipeline values.
                 existing = model_value_table[name_to_idx[norm]]
                 existing["is_rookie"] = True
-                existing.setdefault("value",       rookie_entry["value"])
-                existing.setdefault("sf_value",    rookie_entry["sf_value"])
-                existing.setdefault("value_8",     rookie_entry["value_8"])
-                existing.setdefault("value_12",    rookie_entry["value_12"])
-                existing.setdefault("value_14",    rookie_entry["value_14"])
-                existing.setdefault("sf_value_8",  rookie_entry["sf_value_8"])
-                existing.setdefault("sf_value_12", rookie_entry["sf_value_12"])
-                existing.setdefault("sf_value_14", rookie_entry["sf_value_14"])
+                if _team and _team != "FA":
+                    existing["team"] = _team
+                existing["value"]      = rookie_entry["value"]
+                existing["sf_value"]   = rookie_entry["sf_value"]
+                existing["value_8"]    = rookie_entry["value_8"]
+                existing["value_12"]   = rookie_entry["value_12"]
+                existing["value_14"]   = rookie_entry["value_14"]
+                existing["sf_value_8"] = rookie_entry["sf_value_8"]
+                existing["sf_value_12"]= rookie_entry["sf_value_12"]
+                existing["sf_value_14"]= rookie_entry["sf_value_14"]
             else:
                 model_value_table.append(rookie_entry)
 
