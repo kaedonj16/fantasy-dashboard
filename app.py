@@ -7782,6 +7782,23 @@ def api_waiver_candidates():
     _is_sf_wv = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_wv)
     _vf_wv = "sf_value" if _is_sf_wv else "value"
 
+    # Rookies are only waiver-eligible after the fantasy rookie draft completes.
+    # Detect by checking if any rookie from this year's class is already rostered.
+    _rookie_sids_wv: set[str] = set()
+    try:
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _grc
+        _ry_wv = _grc()
+        from dashboard_services.db import get_conn as _gc_wv
+        with _gc_wv() as _cc:
+            _rr = _cc.execute(
+                "SELECT sleeper_id FROM rookie_prospects WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
+                (_ry_wv,),
+            ).fetchall()
+        _rookie_sids_wv = {str(r["sleeper_id"]) for r in _rr if r["sleeper_id"]}
+    except Exception:
+        pass
+    _rookie_draft_done_wv = bool(_rookie_sids_wv and any(sid in rostered_ids for sid in _rookie_sids_wv))
+
     candidates = []
     for row in model_value_table:
         if not isinstance(row, dict):
@@ -7794,6 +7811,8 @@ def api_waiver_candidates():
         if team in ("", "FA", "FREE AGENT"):
             continue
         if pos not in {"QB", "RB", "WR", "TE"}:
+            continue
+        if pid in _rookie_sids_wv and not _rookie_draft_done_wv:
             continue
         try:
             val = float(row.get(_vf_wv) or row.get("value") or 0.0)
