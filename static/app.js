@@ -6163,7 +6163,7 @@ function _buildBkTabHTML(data, scoreColor) {
 
   // ── Hero: 2-column layout — PPG Range left, Score + Hit Prob stacked right ─
   // Fixed 2-col avoids the orphaned-score problem on mobile (3-item grids wrap).
-  let html = `<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-bottom:6px;">`;
+  let html = `<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-bottom:6px;align-items:start;">`;
 
   if (ppgRange) {
     const deltaHtml = ppgRange.delta !== null
