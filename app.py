@@ -1204,6 +1204,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Graphs",  "page_graphs",  "graphs",  False),
         ("History", "page_history", "history", False),
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
+    if viewer_username:
+        _portfolio_cls = "nav-pill active" if active == "portfolio" else "nav-pill"
+        nav_pills.append(f"<a class='{_portfolio_cls}' href='/portfolio'>My Leagues</a>")
 
     # Changelog bell
     # League switcher dropdown (if user is logged in)
@@ -1238,6 +1241,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</button>"
             f"{dark_mode_toggle_html}"
             f"{league_switcher_html}"
+            "<a href='/portfolio' class='settings-menu-item'>"
+            "  <img src='/static/images/magnifying-glass-solid.png' class='settings-menu-icon' alt='My Leagues'>"
+            "  <span class='settings-menu-label'>My Leagues</span>"
+            "</a>"
             "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
             "  <img src='/static/logout.png' class='settings-menu-icon' alt='Logout'>"
             "  <span class='settings-menu-label'>Logout</span>"
