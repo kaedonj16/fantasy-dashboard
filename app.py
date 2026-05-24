@@ -15325,24 +15325,24 @@ def api_draft_grades():
             key=lambda p: int(p.get("pick_no") or 0)
         )
 
-        # For rookie drafts, restrict the board to players who are actually
-        # eligible — i.e., were actually picked in this draft or are confirmed
-        # rookies for this season.  This prevents veterans (e.g. Isaiah Likely)
-        # from appearing in adp_info (sourced from startup drafts) from polluting
-        # the rookie draft board.
-        eligible_sids: set[str] = set(drafted_player_ids)
-        try:
-            from dashboard_services.db import get_conn as _gcb
-            with _gcb() as _cc:
-                _rp = _cc.execute(
-                    "SELECT sleeper_id FROM rookie_prospects "
-                    "WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
-                    (season,),
-                ).fetchall()
-            for _r in _rp:
-                eligible_sids.add(str(_r["sleeper_id"]))
-        except Exception:
-            pass  # fall back to full board if DB unavailable
+        # For rookie drafts only, restrict the board to confirmed rookies so
+        # veterans don't pollute the BPA comparison.  Startup drafts use the
+        # full FC dynasty pool — no filtering needed.
+        eligible_sids: set[str] = set()
+        if _draft_type == "rookie":
+            eligible_sids = set(drafted_player_ids)
+            try:
+                from dashboard_services.db import get_conn as _gcb
+                with _gcb() as _cc:
+                    _rp = _cc.execute(
+                        "SELECT sleeper_id FROM rookie_prospects "
+                        "WHERE draft_class_year = %s AND sleeper_id IS NOT NULL",
+                        (season,),
+                    ).fetchall()
+                for _r in _rp:
+                    eligible_sids.add(str(_r["sleeper_id"]))
+            except Exception:
+                pass  # fall back to full board if DB unavailable
 
         # All eligible players with ADP data, sorted best → worst
         board_all: list[str] = sorted(

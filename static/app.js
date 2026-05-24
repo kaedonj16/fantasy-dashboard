@@ -6166,7 +6166,7 @@ function _buildBkTabHTML(data, scoreColor) {
 
   // ── Hero: 2-column layout — PPG Range left, Score + Hit Prob stacked right ─
   // Fixed 2-col avoids the orphaned-score problem on mobile (3-item grids wrap).
-  let html = `<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-bottom:6px;align-items:start;">`;
+  let html = `<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-bottom:6px;align-items:stretch;">`;
 
   if (ppgRange) {
     const deltaHtml = ppgRange.delta !== null
@@ -6175,7 +6175,7 @@ function _buildBkTabHTML(data, scoreColor) {
          </span>`
       : '';
     html += `
-      <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;">
+      <div class="pm-hero-stat" style="background:${scoreColor}1a;border-color:${scoreColor}33;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;">
         <div class="pm-hero-label" style="color:${scoreColor};">Projected PPG</div>
         <div style="font-size:22px;font-weight:800;color:${scoreColor};line-height:1.1;margin:4px 0;">
           ${ppgRange.lowStr}–${ppgRange.highStr}
@@ -6277,10 +6277,6 @@ function _buildBkTabHTML(data, scoreColor) {
       </div>`;
     });
     html += `</div>`;
-    // Peer comparison footnote
-    if (data.peer_comparison) {
-      html += `<div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.4;opacity:0.75;">${data.peer_comparison}</div>`;
-    }
     html += `</div>`;
   }
 
