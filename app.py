@@ -1063,8 +1063,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 f"</div>"
             )
 
+        _home_viewer_username = session.get("viewer_username")
         pills = [
             simple_pill("Home", "/", "home"),
+        ]
+        if _home_viewer_username:
+            pills.append(simple_pill("My Leagues", "/portfolio", "portfolio"))
+        pills += [
             simple_dropdown("Trades", [
                 ("Trade Calculator", "/trade",          "trade"),
                 ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
@@ -5025,6 +5030,19 @@ def build_weekly_hub_body(ctx: dict) -> str:
     season_js = json.dumps(season)
     league_js = json.dumps(league_id)
 
+    scout_tab_html = ""
+    try:
+        scout_tab_html = build_scout_body(ctx)
+    except Exception:
+        pass
+
+    _scout_unavail = (
+        "<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
+        "Scout report unavailable — sign in with your Sleeper username to see your opponent's breakdown."
+        "</div>"
+    )
+    scout_panel_content = scout_tab_html if scout_tab_html else _scout_unavail
+
     return f"""
     <div class="page-layout weekly-hub">
       <main class="page-main">
@@ -5041,8 +5059,21 @@ def build_weekly_hub_body(ctx: dict) -> str:
 
         <div class="standings-main two-col-standings">
           <div class="standings-col">
-            <div class="week-main-panels">
-              {main_panel_html}
+            <div class="card-tabs" id="weeklyLeftTabs">
+              <div class="tab-bar">
+                <button class="tab-btn active" data-tab="scorers">Top Scorers</button>
+                <button class="tab-btn" data-tab="scout">Scout Report</button>
+              </div>
+              <div class="tab-panels">
+                <div class="tab-panel active" data-tab="scorers">
+                  <div class="week-main-panels">
+                    {main_panel_html}
+                  </div>
+                </div>
+                <div class="tab-panel" data-tab="scout">
+                  {scout_panel_content}
+                </div>
+              </div>
             </div>
           </div>
           <div class="standings-col">
@@ -7747,6 +7778,201 @@ def page_waivers(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     body = build_waivers_body(platform, season, league_id, ctx)
     return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/scout")
+def page_scout(platform: str, season: int, league_id: str):
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    if not ctx.get("offseason_mode"):
+        ensure_weekly_bits(ctx)
+    body = build_scout_body(ctx)
+    return render_page("Opponent Scout – BR Fantasy", league_id, "scout", body, platform, season)
+
+
+@app.route("/portfolio")
+def page_portfolio():
+    viewer_username = session.get("viewer_username")
+    viewer_user_id = session.get("viewer_user_id")
+    if not viewer_username or not viewer_user_id:
+        return redirect(url_for("index"))
+    season = datetime.now().year
+    try:
+        raw_leagues = get_sleeper_user_leagues(viewer_user_id, season) or []
+    except Exception:
+        raw_leagues = []
+    from concurrent.futures import ThreadPoolExecutor as _PTPE, as_completed as _pac
+
+    def _league_summary(lg):
+        lid = str(lg.get("league_id") or "")
+        if not lid:
+            return None
+        try:
+            lctx = get_league_ctx_from_cache("sleeper", lid, season)
+        except Exception:
+            return {"league_id": lid, "name": lg.get("name", "Unknown"), "error": True}
+        rosters = lctx.get("rosters") or []
+        roster_map = lctx.get("roster_map") or {}
+        standings_map = lctx.get("standings_map") or {}
+        model_value_table = lctx.get("model_value_table") or []
+        players_index = lctx.get("players_index") or {}
+        values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
+        viewer_roster = next(
+            (r for r in rosters if str(r.get("owner_id")) == str(viewer_user_id)), None
+        )
+        if not viewer_roster:
+            return {"league_id": lid, "name": lg.get("name", "Unknown"), "not_in_league": True}
+        rid = str(viewer_roster.get("roster_id"))
+        std = standings_map.get(rid) or {}
+        wins = int(std.get("wins") or 0)
+        losses = int(std.get("losses") or 0)
+        ties = int(std.get("ties") or 0)
+        pf = float(std.get("pf") or 0)
+        all_std = sorted(standings_map.items(), key=lambda x: (-int(x[1].get("wins") or 0), -float(x[1].get("pf") or 0)))
+        rank = next((i + 1 for i, (k, _) in enumerate(all_std) if k == rid), "?")
+        total_teams = int(lctx.get("total_rosters") or len(rosters) or 12)
+        player_ids = [str(p) for p in (viewer_roster.get("players") or [])]
+        all_players = {}
+        total_value = 0.0
+        _pos_buckets = {"QB": [], "RB": [], "WR": [], "TE": []}
+        for pid in player_ids:
+            v = values_by_id.get(pid) or {}
+            val = float(v.get("value") or 0)
+            total_value += val
+            meta = players_index.get(pid) or {}
+            pos = (v.get("position") or meta.get("pos") or "").upper()
+            nfl_team = (v.get("team") or meta.get("team") or "").upper()
+            all_players[pid] = {
+                "name": v.get("name") or meta.get("name") or f"Player {pid}",
+                "position": pos,
+                "value": val,
+                "pos_rank": v.get("pos_rank_label") or "",
+                "nfl_team": nfl_team,
+            }
+            if val > 0 and pos in _pos_buckets:
+                _pos_buckets[pos].append(val)
+        _top_n = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
+        pos_user_vals = {p: sum(sorted(_pos_buckets[p], reverse=True)[:n]) for p, n in _top_n.items()}
+        pos_league_avgs = {}
+        for pos, top_n in _top_n.items():
+            r_sums = []
+            for r in rosters:
+                r_pids = [str(p) for p in (r.get("players") or [])]
+                r_pos_vals = sorted(
+                    [float((values_by_id.get(p) or {}).get("value") or 0)
+                     for p in r_pids if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
+                    reverse=True,
+                )
+                r_sums.append(sum(r_pos_vals[:top_n]))
+            pos_league_avgs[pos] = (sum(r_sums) / len(r_sums)) if r_sums else 1
+        # Recent streak from df_weekly (last 3 finalized weeks for this roster)
+        streak = []
+        try:
+            df_w = lctx.get("df_weekly")
+            if df_w is not None and not df_w.empty and "finalized" in df_w.columns:
+                my_rows = df_w[(df_w["roster_id"].astype(str) == rid) & (df_w["finalized"] == True)]
+                if not my_rows.empty and "week" in my_rows.columns:
+                    my_rows = my_rows.sort_values("week", ascending=False).head(3)
+                    for _, row in my_rows.iterrows():
+                        pts = float(row.get("pts") or row.get("PF") or 0)
+                        opp = float(row.get("opp_pts") or row.get("PA") or 0)
+                        streak.append("W" if pts > opp else "L")
+        except Exception:
+            pass
+        league_obj = lctx.get("league") or {}
+        # Urgency score: lower = needs more attention
+        urgency = wins - losses + (rank if isinstance(rank, int) else 0) * -0.1
+        return {
+            "league_id": lid,
+            "name": league_obj.get("name") or lg.get("name") or "Unknown",
+            "platform": "sleeper",
+            "season": season,
+            "wins": wins, "losses": losses, "ties": ties,
+            "record": f"{wins}-{losses}" + (f"-{ties}" if ties else ""),
+            "rank": rank, "total_teams": total_teams,
+            "pf": round(pf, 1),
+            "total_value": round(total_value, 1),
+            "all_players": all_players,
+            "streak": streak,
+            "urgency": urgency,
+            "pos_user_vals": pos_user_vals,
+            "pos_league_avgs": pos_league_avgs,
+            "offseason": lctx.get("offseason_mode", False),
+        }
+
+    leagues_data = []
+    with _PTPE(max_workers=min(len(raw_leagues) or 1, 8)) as pool:
+        futs = {pool.submit(_league_summary, lg): lg for lg in raw_leagues}
+        for fut in _pac(futs):
+            result = fut.result()
+            if result:
+                leagues_data.append(result)
+    leagues_data.sort(key=lambda x: x.get("name", ""))
+
+    valid_leagues = [lg for lg in leagues_data if not lg.get("error") and not lg.get("not_in_league")]
+    num_leagues = len(valid_leagues)
+    total_wins = sum(lg.get("wins", 0) for lg in valid_leagues)
+    total_losses = sum(lg.get("losses", 0) for lg in valid_leagues)
+    total_ties = sum(lg.get("ties", 0) for lg in valid_leagues)
+
+    # Cross-league avg positional value vs league average
+    cross_pos = {}
+    for pos in ["QB", "RB", "WR", "TE"]:
+        ratios = []
+        for lg in valid_leagues:
+            u = (lg.get("pos_user_vals") or {}).get(pos, 0)
+            a = (lg.get("pos_league_avgs") or {}).get(pos) or 1
+            ratios.append(u / a)
+        cross_pos[pos] = round((sum(ratios) / len(ratios)) if ratios else 1.0, 2)
+
+    # Sort valid leagues by urgency: losing records and low standings first
+    valid_leagues.sort(key=lambda lg: (
+        lg.get("wins", 0) - lg.get("losses", 0),
+        -(lg.get("rank") if isinstance(lg.get("rank"), int) else 999),
+    ))
+
+    # NFL team concentration: group all player holdings by their NFL team
+    nfl_team_data: dict = {}  # team -> {players: [...], league_ids: set}
+    pid_meta: dict = {}
+    pid_leagues: dict = {}  # pid -> [league_name_abbrev]
+    for lg in valid_leagues:
+        lg_abbrev = (lg.get("name") or "?")[:12]
+        for pid, p in (lg.get("all_players") or {}).items():
+            if not p.get("value"):
+                continue
+            nfl = p.get("nfl_team") or ""
+            if nfl and nfl not in ("", "FA", "N/A"):
+                if nfl not in nfl_team_data:
+                    nfl_team_data[nfl] = {"players": [], "league_ids": set()}
+                nfl_team_data[nfl]["players"].append(p.get("name", ""))
+                nfl_team_data[nfl]["league_ids"].add(lg.get("league_id", ""))
+            if pid not in pid_meta or p.get("value", 0) > pid_meta[pid].get("value", 0):
+                pid_meta[pid] = p
+            pid_leagues.setdefault(pid, []).append(lg_abbrev)
+
+    # Top NFL teams by player count
+    nfl_exposure = sorted(
+        [{"team": t, "count": len(set(d["players"])), "leagues": len(d["league_ids"])}
+         for t, d in nfl_team_data.items()],
+        key=lambda x: (-x["count"], -x["leagues"]),
+    )[:12]
+
+    # Player holdings across leagues
+    holdings = []
+    for pid, p in pid_meta.items():
+        if p.get("value", 0) > 0:
+            holdings.append({
+                **p, "pid": pid,
+                "shares": len(pid_leagues.get(pid, [])),
+                "in_leagues": pid_leagues.get(pid, []),
+            })
+    holdings.sort(key=lambda x: (-x["shares"], -x["value"]))
+
+    body = build_portfolio_body(
+        viewer_username, valid_leagues, leagues_data, season,
+        holdings, num_leagues, nfl_exposure, cross_pos,
+        total_wins, total_losses, total_ties,
+    )
+    return render_page("My Leagues – BR Fantasy", None, "portfolio", body)
 
 
 @app.route("/api/waiver-candidates")
@@ -18279,6 +18505,588 @@ def api_trade_ideas_for_target():
 
 
 
+
+
+_POS_CLS_MAP = {"QB": "pos-qb", "RB": "pos-rb", "WR": "pos-wr", "TE": "pos-te"}
+
+
+def build_portfolio_body(
+    username: str,
+    valid_leagues: list,
+    all_leagues_data: list,
+    season: int,
+    holdings: list = None,
+    num_leagues: int = 0,
+    nfl_exposure: list = None,
+    cross_pos: dict = None,
+    total_wins: int = 0,
+    total_losses: int = 0,
+    total_ties: int = 0,
+) -> str:
+    _POS_COLORS = {"QB": "#10b981", "RB": "#3b82f6", "WR": "#ec4899", "TE": "#a855f7"}
+    _ARCH_COLORS = {"Win Now": "#ef4444", "Contender": "#f97316", "Building": "#3b82f6", "Rebuilding": "#8b5cf6"}
+
+    if not all_leagues_data:
+        return (
+            "<div class='card' style='text-align:center;padding:40px;'>"
+            f"<p>No leagues found for <strong>{html.escape(username)}</strong> in {season}.</p>"
+            "</div>"
+        )
+
+    css = (
+        "<style>"
+        # header
+        ".pf-hdr{margin-bottom:14px;}"
+        ".pf-hdr h1{font-size:1.2em;font-weight:700;margin:0 0 2px;}"
+        ".pf-hdr p{font-size:0.84em;color:var(--muted);margin:0;}"
+        ".pf-top-strip{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;padding:12px 16px;"
+        "background:var(--card);border:1px solid var(--border);border-radius:var(--radius);}"
+        ".pf-kpi{display:flex;flex-direction:column;gap:2px;}"
+        ".pf-kpi-lbl{font-size:0.65em;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}"
+        ".pf-kpi-val{font-size:1.05em;font-weight:700;}"
+        # two-col layout for leagues + pos bars
+        ".pf-two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}"
+        "@media(max-width:640px){.pf-two{grid-template-columns:1fr;}}"
+        # league list
+        ".pf-lg-row{display:flex;align-items:center;gap:10px;padding:9px 0;"
+        "border-bottom:1px solid var(--border);}"
+        ".pf-lg-row:last-child{border-bottom:none;}"
+        ".pf-lg-left{flex:1;min-width:0;}"
+        ".pf-lg-name{font-weight:600;font-size:0.9em;overflow:hidden;text-overflow:ellipsis;"
+        "white-space:nowrap;text-decoration:none;color:inherit;}"
+        ".pf-lg-name:hover{color:var(--accent);}"
+        ".pf-lg-meta{font-size:0.72em;color:var(--muted);margin-top:1px;}"
+        ".pf-arch{font-size:0.65em;font-weight:700;padding:1px 6px;border-radius:8px;"
+        "color:#fff;white-space:nowrap;flex-shrink:0;}"
+        ".pf-streak{display:flex;gap:3px;flex-shrink:0;}"
+        ".pf-dot{width:9px;height:9px;border-radius:50%;}"
+        ".pf-rec{font-size:0.88em;font-weight:600;white-space:nowrap;}"
+        # horizontal positional bars
+        ".pf-pos-row{display:flex;align-items:center;gap:10px;padding:7px 0;"
+        "border-bottom:1px solid var(--border);}"
+        ".pf-pos-row:last-child{border-bottom:none;}"
+        ".pf-pos-lbl{min-width:28px;}"
+        ".pf-pos-bar-wrap{flex:1;height:10px;background:var(--border);border-radius:5px;overflow:hidden;position:relative;}"
+        ".pf-pos-bar{height:100%;border-radius:5px;}"
+        ".pf-pos-avg-tick{position:absolute;top:0;bottom:0;width:2px;background:var(--muted);opacity:.5;}"
+        ".pf-pos-delta{font-size:0.78em;font-weight:600;min-width:46px;text-align:right;}"
+        # NFL concentration
+        ".nfl-row{display:flex;align-items:center;gap:8px;padding:5px 0;"
+        "border-bottom:1px solid var(--border);font-size:0.84em;}"
+        ".nfl-row:last-child{border-bottom:none;}"
+        ".nfl-abbr{min-width:40px;font-weight:600;font-size:0.8em;color:var(--muted);}"
+        ".nfl-bar-wrap{flex:1;height:7px;background:var(--border);border-radius:4px;overflow:hidden;}"
+        ".nfl-bar{height:100%;border-radius:4px;background:var(--accent);}"
+        ".nfl-cnt{font-weight:700;font-size:0.88em;min-width:18px;text-align:right;}"
+        ".nfl-note{font-size:0.72em;color:var(--muted);}"
+        # holdings table
+        ".pf-tbl{width:100%;border-collapse:collapse;font-size:0.84em;}"
+        ".pf-tbl th{font-size:0.66em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;"
+        "padding:4px 6px;border-bottom:1px solid var(--border);font-weight:600;}"
+        ".pf-tbl th.r{text-align:right;}"
+        ".pf-tbl td{padding:5px 6px;border-bottom:1px solid var(--border);vertical-align:middle;}"
+        ".pf-tbl tr:last-child td{border-bottom:none;}"
+        ".pf-tbl tr.pf-hide{display:none;}"
+        ".pf-pname{font-weight:500;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        ".pf-prank{color:var(--muted);font-size:0.78em;text-align:right;}"
+        ".pf-pval{text-align:right;font-weight:600;color:var(--accent);}"
+        ".pf-pshares{text-align:right;font-weight:700;}"
+        ".pf-plgs{font-size:0.72em;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        ".pf-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}"
+        ".pf-fbtn{font-size:0.76em;padding:3px 10px;border-radius:10px;border:1px solid var(--border);"
+        "background:transparent;cursor:pointer;color:inherit;transition:background .12s,color .12s;}"
+        ".pf-fbtn.on{background:var(--accent);color:#fff;border-color:var(--accent);}"
+        ".pf-fsearch{flex:1;min-width:80px;max-width:180px;font-size:0.82em;padding:3px 8px;"
+        "border:1px solid var(--border);border-radius:6px;background:var(--card);color:inherit;}"
+        ".pf-fcount{font-size:0.78em;color:var(--muted);margin-left:auto;}"
+        "</style>"
+    )
+
+    # ── Top strip ─────────────────────────────────────────────────────────────
+    rec_str = f"{total_wins}-{total_losses}" + (f"-{total_ties}" if total_ties else "")
+    rec_cls = "color-win" if total_wins > total_losses else ("color-loss" if total_losses > total_wins else "")
+    top_strip = (
+        f"<div class='pf-top-strip'>"
+        f"<div class='pf-kpi'><span class='pf-kpi-lbl'>Leagues</span><span class='pf-kpi-val'>{num_leagues}</span></div>"
+        f"<div class='pf-kpi'><span class='pf-kpi-lbl'>Combined Record</span><span class='pf-kpi-val {rec_cls}'>{rec_str}</span></div>"
+        f"<div class='pf-kpi'><span class='pf-kpi-lbl'>Season</span><span class='pf-kpi-val'>{season}</span></div>"
+        f"</div>"
+    )
+
+    # ── League list (left col) ─────────────────────────────────────────────────
+    league_rows = ""
+    all_rows = valid_leagues + [lg for lg in all_leagues_data if lg.get("error") or lg.get("not_in_league")]
+    for lg in all_rows:
+        lid = lg.get("league_id") or ""
+        platform = lg.get("platform") or "sleeper"
+        href = f"/{platform}/{season}/{lid}/dashboard"
+        name = html.escape(lg.get("name") or "?")
+
+        if lg.get("error") or lg.get("not_in_league"):
+            league_rows += (
+                f"<div class='pf-lg-row'>"
+                f"<div class='pf-lg-left'><span class='pf-lg-name'>{name}</span>"
+                f"<div class='pf-lg-meta'>unavailable</div></div>"
+                f"</div>"
+            )
+            continue
+
+        wins = lg.get("wins") or 0
+        losses = lg.get("losses") or 0
+        rank = lg.get("rank") or "?"
+        total = lg.get("total_teams") or "?"
+        rec = lg.get("record") or f"{wins}-{losses}"
+        rec_cls2 = "color-win" if wins > losses else ("color-loss" if losses > wins else "")
+
+        streak = lg.get("streak") or []
+        dots = ""
+        for _ in range(3 - len(streak)):
+            dots += "<div class='pf-dot' style='background:var(--border);'></div>"
+        for r in streak:
+            color = "var(--color-win)" if r == "W" else "var(--color-loss)"
+            dots += f"<div class='pf-dot' style='background:{color};'></div>"
+
+        # archetype from avg age stored in league (recompute inline since we have all_players)
+        all_p = lg.get("all_players") or {}
+        by_val = sorted(all_p.values(), key=lambda x: x.get("value", 0), reverse=True)
+        ages = [p.get("age", 0) for p in by_val[:10] if p.get("age")]
+        avg_age = (sum(ages) / len(ages)) if ages else 0
+        if avg_age == 0:     arch = "Unknown"
+        elif avg_age < 24:   arch = "Rebuilding"
+        elif avg_age < 25.5: arch = "Building"
+        elif avg_age < 27:   arch = "Contender"
+        else:                arch = "Win Now"
+        arch_color = _ARCH_COLORS.get(arch, "#6b7280")
+        arch_badge = f"<span class='pf-arch' style='background:{arch_color};'>{arch}</span>"
+
+        off_note = " (Off)" if lg.get("offseason") else ""
+        league_rows += (
+            f"<div class='pf-lg-row'>"
+            f"<div class='pf-lg-left'>"
+            f"<a href='{href}' class='pf-lg-name'>{name}{off_note}</a>"
+            f"<div class='pf-lg-meta'>{rank}/{total} &middot; {lg.get('pf', 0):.0f} pts</div>"
+            f"</div>"
+            f"<div class='pf-streak'>{dots}</div>"
+            f"<span class='pf-rec {rec_cls2}'>{rec}</span>"
+            f"{arch_badge}"
+            f"</div>"
+        )
+    league_card = (
+        f"<div class='card'>"
+        f"<div class='card-header'><h2>My Leagues</h2></div>"
+        f"<div class='card-body'>{league_rows}</div>"
+        f"</div>"
+    )
+
+    # ── Positional bars (right col, horizontal) ───────────────────────────────
+    pos_card = ""
+    if cross_pos:
+        pos_rows = ""
+        max_ratio = max(cross_pos.values()) if cross_pos else 2.0
+        max_ratio = max(max_ratio, 1.5)
+        for pos in ["QB", "RB", "WR", "TE"]:
+            ratio = cross_pos.get(pos, 1.0)
+            color = _POS_COLORS.get(pos, "#6b7280")
+            bar_w = min(100, int((ratio / max_ratio) * 100))
+            avg_tick = min(98, int((1.0 / max_ratio) * 100))
+            delta = (ratio - 1.0) * 100
+            if delta > 8:
+                d_str, d_color = f"+{delta:.0f}%", "var(--color-win)"
+            elif delta < -8:
+                d_str, d_color = f"{delta:.0f}%", "var(--color-loss)"
+            else:
+                d_str, d_color = "avg", "var(--muted)"
+            pos_rows += (
+                f"<div class='pf-pos-row'>"
+                f"<span class='pf-pos-lbl'><span class='pos-badge {_POS_CLS_MAP.get(pos,'pos-k')}'>{pos}</span></span>"
+                f"<div class='pf-pos-bar-wrap'>"
+                f"<div class='pf-pos-bar' style='width:{bar_w}%;background:{color};'></div>"
+                f"<div class='pf-pos-avg-tick' style='left:{avg_tick}%;'></div>"
+                f"</div>"
+                f"<span class='pf-pos-delta' style='color:{d_color};'>{d_str}</span>"
+                f"</div>"
+            )
+        pos_card = (
+            f"<div class='card'>"
+            f"<div class='card-header'><h2>Positional Strength</h2>"
+            f"<span style='font-size:0.76em;color:var(--muted);font-weight:400;'>vs. your league averages · dynasty value</span>"
+            f"</div>"
+            f"<div class='card-body'>{pos_rows}</div>"
+            f"</div>"
+        )
+
+    two_col = f"<div class='pf-two'>{league_card}{pos_card}</div>" if pos_card else league_card
+
+    # ── NFL Concentration ─────────────────────────────────────────────────────
+    nfl_html = ""
+    if nfl_exposure:
+        max_cnt = max(t["count"] for t in nfl_exposure) or 1
+        nfl_rows = ""
+        for t in nfl_exposure:
+            bw = int((t["count"] / max_cnt) * 100)
+            note = f"{t['leagues']}L"
+            nfl_rows += (
+                f"<div class='nfl-row'>"
+                f"<span class='nfl-abbr'>{html.escape(t['team'])}</span>"
+                f"<div class='nfl-bar-wrap'><div class='nfl-bar' style='width:{bw}%;'></div></div>"
+                f"<span class='nfl-cnt'>{t['count']}</span>"
+                f"<span class='nfl-note'>{note}</span>"
+                f"</div>"
+            )
+        nfl_html = (
+            f"<div class='card' style='margin-bottom:14px;'>"
+            f"<div class='card-header'><h2>NFL Exposure</h2>"
+            f"<span style='font-size:0.76em;color:var(--muted);font-weight:400;'>which game results hit your whole portfolio</span>"
+            f"</div>"
+            f"<div class='card-body'>{nfl_rows}</div>"
+            f"</div>"
+        )
+
+    # ── Player Holdings ───────────────────────────────────────────────────────
+    holdings_html = ""
+    if holdings:
+        h_rows = ""
+        for p in holdings:
+            pos = p.get("position") or ""
+            pc = _POS_CLS_MAP.get(pos, "pos-k")
+            name_e = html.escape(p.get("name") or "")
+            val = p.get("value") or 0
+            cnt = p.get("shares") or 1
+            pr = html.escape(p.get("pos_rank") or "")
+            lgs_str = html.escape(", ".join(p.get("in_leagues") or []))
+            h_rows += (
+                f"<tr class='pf-row' data-pos='{pos}' data-name='{name_e.lower()}'>"
+                f"<td><span class='pos-badge {pc}'>{pos}</span></td>"
+                f"<td><div class='pf-pname'>{name_e}</div><div class='pf-plgs'>{lgs_str}</div></td>"
+                f"<td class='pf-prank'>{pr}</td>"
+                f"<td class='pf-pshares'>{cnt}<span style='color:var(--muted);font-weight:400;font-size:0.82em;'>/{num_leagues}</span></td>"
+                f"<td class='pf-pval'>{val:.0f}</td>"
+                f"</tr>"
+            )
+        total_h = len(holdings)
+        holdings_html = (
+            f"<div class='card'>"
+            f"<div class='card-header'><h2>Player Holdings</h2>"
+            f"<span style='font-size:0.76em;color:var(--muted);font-weight:400;'>which leagues each player is in</span>"
+            f"</div>"
+            f"<div class='card-body'>"
+            f"<div class='pf-controls'>"
+            f"<button class='pf-fbtn on' data-pos='ALL'>All</button>"
+            f"<button class='pf-fbtn' data-pos='QB'>QB</button>"
+            f"<button class='pf-fbtn' data-pos='RB'>RB</button>"
+            f"<button class='pf-fbtn' data-pos='WR'>WR</button>"
+            f"<button class='pf-fbtn' data-pos='TE'>TE</button>"
+            f"<input class='pf-fsearch' type='text' placeholder='Search player…' id='pfSearch'>"
+            f"<span class='pf-fcount' id='pfCount'>{total_h} players</span>"
+            f"</div>"
+            f"<div style='overflow-x:auto;'>"
+            f"<table class='pf-tbl'><thead><tr>"
+            f"<th></th><th>Player</th><th class='r'>Rank</th><th class='r'>Shares</th><th class='r'>Value</th>"
+            f"</tr></thead><tbody id='pfBody'>{h_rows}</tbody></table>"
+            f"</div></div></div>"
+            f"<script>(function(){{"
+            f"var fp='ALL',fn='';"
+            f"function go(){{"
+            f"var rows=document.querySelectorAll('.pf-row'),v=0;"
+            f"rows.forEach(function(r){{"
+            f"var ok=(fp==='ALL'||r.dataset.pos===fp)&&(!fn||r.dataset.name.includes(fn));"
+            f"r.classList.toggle('pf-hide',!ok);if(ok)v++;"
+            f"}});"
+            f"var c=document.getElementById('pfCount');if(c)c.textContent=v+' players';"
+            f"}}"
+            f"document.querySelectorAll('.pf-fbtn').forEach(function(b){{"
+            f"b.addEventListener('click',function(){{"
+            f"document.querySelectorAll('.pf-fbtn').forEach(function(x){{x.classList.remove('on');}});"
+            f"b.classList.add('on');fp=b.dataset.pos;go();"
+            f"}});}}); "
+            f"var s=document.getElementById('pfSearch');"
+            f"if(s)s.addEventListener('input',function(){{fn=this.value.toLowerCase();go();}});"
+            f"}})();</script>"
+        )
+
+    return (
+        css
+        + f"<div class='pf-hdr'>"
+        + f"<h1>My Leagues — {season}</h1>"
+        + f"<p>Signed in as <strong>{html.escape(username)}</strong></p>"
+        + f"</div>"
+        + top_strip
+        + two_col
+        + nfl_html
+        + holdings_html
+    )
+
+
+def build_scout_body(ctx: dict) -> str:
+    viewer = ctx.get("viewer") or {}
+    viewer_roster_id = str(viewer.get("viewer_roster_id") or "")
+    platform = ctx.get("platform") or "sleeper"
+    league_id = ctx.get("league_id") or ""
+    season = ctx.get("season") or datetime.now().year
+    current_week = ctx.get("current_week") or 0
+
+    _NOT_SIGNED_IN = (
+        "<div class='card' style='text-align:center;padding:40px;'>"
+        "<h2 style='margin-bottom:8px;'>Sign in to view your scouting report</h2>"
+        "<p style='color:var(--muted);'>Enter your Sleeper username in the menu to unlock opponent scouting.</p>"
+        "</div>"
+    )
+
+    if not viewer_roster_id:
+        return _NOT_SIGNED_IN
+
+    if ctx.get("offseason_mode"):
+        return (
+            "<div class='card' style='text-align:center;padding:40px;'>"
+            "<h2 style='margin-bottom:8px;'>Scouting report is available during the regular season</h2>"
+            "<p style='color:var(--muted);'>Check back once the season starts.</p>"
+            "</div>"
+        )
+
+    rosters = ctx.get("rosters") or []
+    roster_map = ctx.get("roster_map") or {}
+    standings_map = ctx.get("standings_map") or {}
+    model_value_table = ctx.get("model_value_table") or []
+    players_index = ctx.get("players_index") or {}
+    matchups_by_week = ctx.get("matchups_by_week") or {}
+    statuses = ctx.get("statuses") or {}
+    proj_by_roster = ctx.get("proj_by_roster") or {}
+
+    values_by_id = {str(r.get("id") or ""): r for r in model_value_table if r.get("id")}
+
+    # Find viewer's matchup for current week
+    current_matchups = matchups_by_week.get(current_week) or []
+    viewer_matchup = None
+    opponent_roster_id = None
+    opponent_team_block = None
+
+    for m in current_matchups:
+        t1 = m.get("team1") or {}
+        t2 = m.get("team2") or {}
+        if str(t1.get("roster_id")) == viewer_roster_id:
+            viewer_matchup = m
+            opponent_roster_id = str(t2.get("roster_id"))
+            opponent_team_block = t2
+            break
+        elif str(t2.get("roster_id")) == viewer_roster_id:
+            viewer_matchup = m
+            opponent_roster_id = str(t1.get("roster_id"))
+            opponent_team_block = t1
+            break
+
+    if not viewer_matchup or not opponent_roster_id:
+        return (
+            f"<div class='card' style='text-align:center;padding:40px;'>"
+            f"<h2 style='margin-bottom:8px;'>No matchup found for Week {current_week}</h2>"
+            f"<p style='color:var(--muted);'>Your current week matchup could not be determined.</p>"
+            f"</div>"
+        )
+
+    opponent_roster = next((r for r in rosters if str(r.get("roster_id")) == opponent_roster_id), None)
+    if not opponent_roster:
+        return "<div class='card'>Opponent roster not found.</div>"
+
+    opp_name = html.escape(roster_map.get(opponent_roster_id, f"Roster {opponent_roster_id}"))
+    opp_standing = standings_map.get(opponent_roster_id) or {}
+    opp_wins = int(opp_standing.get("wins") or 0)
+    opp_losses = int(opp_standing.get("losses") or 0)
+    opp_pf = float(opp_standing.get("pf") or 0)
+    opp_pa = float(opp_standing.get("pa") or 0)
+    opp_rec_cls = "color-win" if opp_wins > opp_losses else ("color-loss" if opp_losses > opp_wins else "")
+
+    # Starters from matchup block
+    starter_pids = {str(s.get("pid") or s) for s in (opponent_team_block.get("starters") or []) if s}
+    opp_pts = opponent_team_block.get("pts_total")
+
+    # Projected score for opponent
+    opp_proj = proj_by_roster.get((current_week, opponent_roster_id))
+
+    # Injury statuses
+    status_by_pid = (statuses.get(current_week) or {}).get("statuses", {}) or {}
+
+    # Build player list grouped by position
+    _POS_ORDER = ["QB", "RB", "WR", "TE", "K", "DEF"]
+    _POS_CLS = {"QB": "pos-qb", "RB": "pos-rb", "WR": "pos-wr", "TE": "pos-te", "K": "pos-k", "DEF": "pos-def"}
+    _INJ_CLS = {"Q": "inj-q", "D": "inj-d", "O": "inj-o", "IR": "inj-o", "Sus": "inj-o"}
+    _INJ_LABEL = {"Q": "Q", "D": "D", "O": "O", "IR": "IR", "Questionable": "Q", "Doubtful": "D", "Out": "O", "Suspended": "SUS"}
+
+    all_pids = [str(p) for p in (opponent_roster.get("players") or [])]
+    starters_by_pos: dict = {}
+    bench_players = []
+
+    for pid in all_pids:
+        v = values_by_id.get(pid) or {}
+        meta = players_index.get(pid) or {}
+        pos = (v.get("position") or meta.get("pos") or "?").upper()
+        val = float(v.get("value") or 0)
+        name = v.get("name") or meta.get("name") or f"Player {pid}"
+        team = (v.get("team") or meta.get("team") or "").upper()
+        pos_rank = v.get("pos_rank_label") or ""
+        is_starter = pid in starter_pids
+        raw_inj = str(status_by_pid.get(pid) or "")
+        inj_key = raw_inj if raw_inj in _INJ_CLS else None
+
+        entry = {
+            "pid": pid, "name": name, "pos": pos, "team": team,
+            "value": val, "pos_rank": pos_rank, "is_starter": is_starter,
+            "inj_key": inj_key,
+        }
+        if is_starter:
+            starters_by_pos.setdefault(pos, []).append(entry)
+        else:
+            bench_players.append(entry)
+
+    # Compute position group values and league-wide averages for strength/weakness
+    _STARTER_COUNTS = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
+    pos_group_vals = {}
+    for pos, players in starters_by_pos.items():
+        players.sort(key=lambda x: x["value"], reverse=True)
+        pos_group_vals[pos] = sum(p["value"] for p in players)
+
+    # League-wide average top-N value per position
+    league_pos_avgs = {}
+    for pos, top_n in _STARTER_COUNTS.items():
+        sums = []
+        for r in rosters:
+            r_pids = [str(p) for p in (r.get("players") or [])]
+            r_vals = sorted(
+                [float((values_by_id.get(p) or {}).get("value") or 0) for p in r_pids
+                 if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
+                reverse=True,
+            )
+            sums.append(sum(r_vals[:top_n]))
+        league_pos_avgs[pos] = (sum(sums) / len(sums)) if sums else 0
+
+    # Build strength/weakness summary
+    strengths, weaknesses = [], []
+    for pos in ["QB", "RB", "WR", "TE"]:
+        opp_val = pos_group_vals.get(pos) or 0
+        avg = league_pos_avgs.get(pos) or 1
+        delta_pct = ((opp_val - avg) / avg) * 100 if avg else 0
+        if delta_pct >= 12:
+            strengths.append((pos, delta_pct, opp_val))
+        elif delta_pct <= -12:
+            weaknesses.append((pos, delta_pct, opp_val))
+
+    strengths.sort(key=lambda x: -x[1])
+    weaknesses.sort(key=lambda x: x[1])
+
+    # Build HTML
+    def _player_row(p, show_bench_label=False):
+        pc = _POS_CLS.get(p["pos"], "pos-k")
+        inj_html = ""
+        if p.get("inj_key"):
+            ic = _INJ_CLS.get(p["inj_key"], "")
+            il = _INJ_LABEL.get(p["inj_key"], p["inj_key"])
+            inj_html = f"<span class='inj-badge {ic}'>{il}</span>"
+        pr_html = f"<span class='scout-pos-rank'>{html.escape(p.get('pos_rank',''))}</span>" if p.get("pos_rank") else ""
+        val_html = f"<span class='scout-val'>{p['value']:.0f}</span>" if p["value"] else ""
+        bench_cls = " scout-bench" if show_bench_label else ""
+        return (
+            f"<div class='scout-player-row{bench_cls}'>"
+            f"<span class='pos-badge {pc}'>{p['pos']}</span>"
+            f"<span class='scout-player-name'>{html.escape(p['name'])}</span>"
+            f"<span class='scout-team'>{html.escape(p['team'])}</span>"
+            f"{pr_html}{inj_html}{val_html}"
+            f"</div>"
+        )
+
+    # Starters section
+    starters_html = ""
+    for pos in _POS_ORDER:
+        for p in starters_by_pos.get(pos, []):
+            starters_html += _player_row(p)
+    # Handle any FLEX/unknown positions
+    for pos, players in starters_by_pos.items():
+        if pos not in _POS_ORDER:
+            for p in players:
+                starters_html += _player_row(p)
+
+    bench_players.sort(key=lambda x: x["value"], reverse=True)
+    bench_html = "".join(_player_row(p, show_bench_label=True) for p in bench_players[:10])
+
+    # Strengths / weaknesses cards
+    def _sw_chip(pos, delta_pct, val, is_strength):
+        color = "var(--color-win)" if is_strength else "var(--color-loss)"
+        arrow = "▲" if is_strength else "▼"
+        pc = _POS_CLS.get(pos, "pos-k")
+        return (
+            f"<div class='scout-sw-chip'>"
+            f"<span class='pos-badge {pc}'>{pos}</span>"
+            f"<span class='scout-sw-val' style='color:{color};'>{arrow} {abs(delta_pct):.0f}% vs avg</span>"
+            f"</div>"
+        )
+
+    sw_html = ""
+    if strengths or weaknesses:
+        s_chips = "".join(_sw_chip(pos, d, v, True) for pos, d, v in strengths) or "<span style='color:var(--muted);font-size:0.85em;'>None notable</span>"
+        w_chips = "".join(_sw_chip(pos, d, v, False) for pos, d, v in weaknesses) or "<span style='color:var(--muted);font-size:0.85em;'>None notable</span>"
+        sw_html = (
+            f"<div class='main-two-col' style='margin-bottom:14px;'>"
+            f"<div class='card'>"
+            f"<div class='card-header'><h2>Their Strengths</h2></div>"
+            f"<div class='card-body scout-sw-list'>{s_chips}</div>"
+            f"</div>"
+            f"<div class='card'>"
+            f"<div class='card-header'><h2>Their Weaknesses</h2></div>"
+            f"<div class='card-body scout-sw-list'>{w_chips}</div>"
+            f"</div>"
+            f"</div>"
+        )
+
+    proj_html = ""
+    if opp_proj is not None:
+        proj_html = f"<span class='scout-proj'>Proj: <strong>{opp_proj:.1f}</strong></span>"
+    pts_html = ""
+    if opp_pts is not None:
+        pts_html = f"<span class='scout-proj' style='color:var(--muted);'>Score: <strong>{opp_pts:.1f}</strong></span>"
+
+    return (
+        f"<style>"
+        f".scout-header-row{{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:4px;}}"
+        f".scout-opp-name{{font-size:1.3em;font-weight:700;}}"
+        f".scout-record{{font-size:0.9em;}}"
+        f".scout-proj{{font-size:0.9em;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:3px 8px;}}"
+        f".scout-stat-row{{display:flex;gap:20px;flex-wrap:wrap;margin-top:6px;margin-bottom:16px;}}"
+        f".scout-stat{{display:flex;flex-direction:column;gap:1px;}}"
+        f".scout-stat-lbl{{font-size:0.7em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}}"
+        f".scout-stat-val{{font-size:1em;font-weight:600;}}"
+        f".scout-player-row{{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.88em;}}"
+        f".scout-player-row:last-child{{border-bottom:none;}}"
+        f".scout-bench{{opacity:.7;}}"
+        f".scout-player-name{{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;}}"
+        f".scout-team{{font-size:0.78em;color:var(--muted);min-width:28px;}}"
+        f".scout-pos-rank{{font-size:0.75em;color:var(--muted);}}"
+        f".scout-val{{font-weight:600;color:var(--accent);font-size:0.85em;min-width:32px;text-align:right;}}"
+        f".scout-sw-list{{display:flex;flex-direction:column;gap:8px;padding-top:4px;}}"
+        f".scout-sw-chip{{display:flex;align-items:center;gap:8px;}}"
+        f".scout-sw-val{{font-size:0.88em;font-weight:600;}}"
+        f".inj-badge{{font-size:0.7em;font-weight:700;padding:1px 5px;border-radius:4px;line-height:1.4;}}"
+        f".inj-q{{background:#fef08a;color:#713f12;}}"
+        f".inj-d{{background:#fed7aa;color:#7c2d12;}}"
+        f".inj-o{{background:#fecaca;color:#7f1d1d;}}"
+        f"</style>"
+        f"<div class='scout-header-row'>"
+        f"<span class='scout-opp-name'>{opp_name}</span>"
+        f"<span class='scout-record {opp_rec_cls}'>{opp_wins}-{opp_losses}</span>"
+        f"{proj_html}{pts_html}"
+        f"</div>"
+        f"<div class='scout-stat-row'>"
+        f"<div class='scout-stat'><span class='scout-stat-lbl'>Points For</span><span class='scout-stat-val'>{opp_pf:.1f}</span></div>"
+        f"<div class='scout-stat'><span class='scout-stat-lbl'>Points Against</span><span class='scout-stat-val'>{opp_pa:.1f}</span></div>"
+        f"</div>"
+        f"{sw_html}"
+        f"<div class='main-two-col'>"
+        f"<div class='card'>"
+        f"<div class='card-header'><h2>Week {current_week} Starters</h2></div>"
+        "<div class='card-body'>" + (starters_html or "<p style='color:var(--muted);font-size:0.85em;'>Lineup not yet set.</p>") + "</div>"
+        "</div>"
+        "<div class='card'>"
+        f"<div class='card-header'><h2>Bench (Top 10)</h2></div>"
+        "<div class='card-body'>" + (bench_html or "<p style='color:var(--muted);font-size:0.85em;'>No bench data.</p>") + "</div>"
+        "</div>"
+        "</div>"
+    )
 
 
 def _run_startup_daily() -> None:
