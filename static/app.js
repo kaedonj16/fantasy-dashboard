@@ -1078,7 +1078,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     const metaBits = buildMetaBits(p);
     if (isRookie(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     } else if (p.is_rookie) {
       metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
@@ -1127,7 +1127,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     const metaBits = buildMetaBits(p);
     if (isRookie(p.id)) {
-      metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>');
+      metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     } else if (p.is_rookie) {
       metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>');
     }
@@ -1755,16 +1755,14 @@ window.initTradePage = function initTradePage(root = document) {
       const metaBits = buildMetaBits(p);
 
       // Add rookie/breakout/elite/prospect badges
-      if (isRookie(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i></span>');
-      } else if (p.is_rookie) {
+      if (isRookie(p.id) || p.is_rookie) {
         metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
       }
       if (isElite(p.id)) {
         metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
       }
       if (!p.is_rookie && isProspect(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i></span>');
+        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
       }
       if (isBreakout(p.id)) {
         metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i></span>');
@@ -5386,7 +5384,7 @@ function openPlayerModal(playerId, playerName, opts) {
         badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
       }
       if (isProspect(pid)) {
-        badges += '<span class="player-badge player-badge-prospect"><i class="fa-solid fa-seedling" aria-hidden="true"></i> PROSPECT</span>';
+        badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
       }
       if (isBreakout(pid)) {
         badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
