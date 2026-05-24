@@ -15706,9 +15706,12 @@ def api_trade_intel_trending():
             SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
                    {value_col_expr} AS market_value, s.buy_sell_ratio,
                    s.market_trend_1qb,
-                   pv.{model_col} AS model_value, pv.position, pv.team
+                   COALESCE(pv.{model_col}, rk.rookie_value) AS model_value,
+                   COALESCE(pv.position, rk.position) AS position,
+                   COALESCE(pv.team, rk.team) AS team
             FROM trade_intel_player_stats s
             LEFT JOIN player_values pv ON pv.player_id = s.player_id
+            LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id
             WHERE s.season = %s AND s.trade_count > 0
             ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
             LIMIT %s OFFSET %s
@@ -15807,13 +15810,15 @@ def api_trade_intel_player(player_id: str):
                 f"""
                 SELECT
                     s.*,
-                    {value_col_expr}                            AS market_value,
-                    pv.{raw_col}                                AS model_value,
-                    COALESCE(pv.{cal_col}, pv.{raw_col})        AS calibrated_value,
+                    {value_col_expr}                                        AS market_value,
+                    COALESCE(pv.{raw_col}, rk.rookie_value)                 AS model_value,
+                    COALESCE(pv.{cal_col}, pv.{raw_col}, rk.rookie_value)   AS calibrated_value,
                     pv.calibration_source,
-                    pv.position, pv.team
+                    COALESCE(pv.position, rk.position) AS position,
+                    COALESCE(pv.team, rk.team)         AS team
                 FROM trade_intel_player_stats s
                 LEFT JOIN player_values pv ON pv.player_id = s.player_id
+                LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id
                 WHERE s.player_id = %s AND s.season = %s
                 """,
                 (player_id, season)
