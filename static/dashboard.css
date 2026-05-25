@@ -628,8 +628,8 @@ ul {
 }
 
 
-/* When #weeklyLeftTabs is moved into the sidebar on mobile, prevent overflow */
-@media (max-width: 960px) {
+/* When #weeklyLeftTabs is moved into the sidebar, prevent overflow */
+@media (max-width: 1180px) {
   .week-side-panels #weeklyLeftTabs,
   .page-sidebar-body #weeklyLeftTabs {
     width: 100%;
@@ -660,11 +660,6 @@ ul {
   }
 }
 
-/* Mobile-only nav items: hidden on desktop, visible in mobile expanded menu */
-.nav-mobile-only { display: none !important; }
-@media (max-width: 768px) {
-  .nav-mobile-only { display: flex !important; }
-}
 
 .refresh-icon {
   display: inline-flex !important;
