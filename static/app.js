@@ -4944,6 +4944,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const option = document.createElement('option');
             option.value = league.league_id;
             option.textContent = league.label;
+            option.dataset.season = league.season || currentSeason;
             if (league.league_id === currentLeagueId) {
               option.selected = true;
             }
@@ -4969,8 +4970,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const pathParts = window.location.pathname.split('/');
         const currentPage = pathParts[pathParts.length - 1] || 'dashboard';
 
+        // Use the selected league's own season (not the current page's season)
+        const selectedOption = this.options[this.selectedIndex];
+        const selectedSeason = selectedOption.dataset.season || currentSeason;
+
         // Redirect to new league with same page
-        window.location.href = `/${currentPlatform}/${currentSeason}/${selectedLeagueId}/${currentPage}`;
+        window.location.href = `/${currentPlatform}/${selectedSeason}/${selectedLeagueId}/${currentPage}`;
       }
     });
   }
