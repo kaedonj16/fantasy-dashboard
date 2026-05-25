@@ -7800,7 +7800,6 @@ def page_scout(platform: str, season: int, league_id: str):
 
 @app.route("/portfolio")
 def page_portfolio():
-    from flask import copy_current_request_context
     viewer_username = session.get("viewer_username")
     viewer_user_id = session.get("viewer_user_id")
     if not viewer_username or not viewer_user_id:
@@ -7827,8 +7826,6 @@ def page_portfolio():
                 season = season - 1
         except Exception:
             raw_leagues = []
-    from concurrent.futures import ThreadPoolExecutor as _PTPE, as_completed as _pac
-
     def _league_summary(lg):
         lid = str(lg.get("league_id") or "")
         if not lid:
@@ -7928,13 +7925,10 @@ def page_portfolio():
         }
 
     leagues_data = []
-    _safe_summary = copy_current_request_context(_league_summary)
-    with _PTPE(max_workers=min(len(raw_leagues) or 1, 8)) as pool:
-        futs = {pool.submit(_safe_summary, lg): lg for lg in raw_leagues}
-        for fut in _pac(futs):
-            result = fut.result()
-            if result:
-                leagues_data.append(result)
+    for _lg in raw_leagues:
+        _result = _league_summary(_lg)
+        if _result:
+            leagues_data.append(_result)
     leagues_data.sort(key=lambda x: x.get("name", ""))
 
     valid_leagues = [lg for lg in leagues_data if not lg.get("error") and not lg.get("not_in_league")]
