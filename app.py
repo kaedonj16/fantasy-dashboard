@@ -7819,8 +7819,9 @@ def page_portfolio():
         lid = str(lg.get("league_id") or "")
         if not lid:
             return None
+        lg_season = int(lg.get("season") or season)
         try:
-            lctx = get_league_ctx_from_cache("sleeper", lid, season)
+            lctx = get_league_ctx_from_cache("sleeper", lid, lg_season)
         except Exception:
             return {"league_id": lid, "name": lg.get("name", "Unknown"), "error": True}
         rosters = lctx.get("rosters") or []
@@ -18536,7 +18537,7 @@ def build_portfolio_body(
     total_losses: int = 0,
     total_ties: int = 0,
 ) -> str:
-    _POS_COLORS = {"QB": "#10b981", "RB": "#3b82f6", "WR": "#ec4899", "TE": "#a855f7"}
+    _POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#8b5cf6"}
     _ARCH_COLORS = {"Win Now": "#ef4444", "Contender": "#f97316", "Building": "#3b82f6", "Rebuilding": "#8b5cf6"}
 
     if not all_leagues_data:
