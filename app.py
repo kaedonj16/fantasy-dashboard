@@ -1203,7 +1203,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
     if session.get("viewer_username"):
         _portfolio_cls = "nav-pill active" if active == "portfolio" else "nav-pill"
-        nav_pills.append(f"<a class='{_portfolio_cls}' href='/portfolio'>My Leagues</a>")
+        _portfolio_href = f"/portfolio?from_league={league_id}&platform={platform}&season={season}"
+        nav_pills.append(f"<a class='{_portfolio_cls}' href='{_portfolio_href}'>My Leagues</a>")
 
     # Changelog bell
     # League switcher dropdown (if user is logged in)
@@ -7795,10 +7796,19 @@ def page_scout(platform: str, season: int, league_id: str):
 
 @app.route("/portfolio")
 def page_portfolio():
+    from flask import copy_current_request_context
     viewer_username = session.get("viewer_username")
     viewer_user_id = session.get("viewer_user_id")
     if not viewer_username or not viewer_user_id:
         return redirect(url_for("index"))
+    # Preserve league nav context if navigated from a league page
+    from_league = request.args.get("from_league", "").strip() or None
+    from_platform = request.args.get("platform", "sleeper").strip()
+    from_season_raw = request.args.get("season", "")
+    try:
+        from_season = int(from_season_raw) if from_season_raw else None
+    except ValueError:
+        from_season = None
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
     try:
@@ -7914,8 +7924,9 @@ def page_portfolio():
         }
 
     leagues_data = []
+    _safe_summary = copy_current_request_context(_league_summary)
     with _PTPE(max_workers=min(len(raw_leagues) or 1, 8)) as pool:
-        futs = {pool.submit(_league_summary, lg): lg for lg in raw_leagues}
+        futs = {pool.submit(_safe_summary, lg): lg for lg in raw_leagues}
         for fut in _pac(futs):
             result = fut.result()
             if result:
@@ -7986,7 +7997,7 @@ def page_portfolio():
         holdings, num_leagues, nfl_exposure, cross_pos,
         total_wins, total_losses, total_ties,
     )
-    return render_page("My Leagues – BR Fantasy", None, "portfolio", body)
+    return render_page("My Leagues – BR Fantasy", from_league, "portfolio", body, from_platform, from_season or season)
 
 
 @app.route("/api/waiver-candidates")
