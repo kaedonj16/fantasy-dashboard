@@ -1120,10 +1120,12 @@ def render_matchup_slide(
                 cell = (
                     f"<div class='p {side}'>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
-                    f"<div style='display: flex;flex-direction: column;'>"
-                    f"<div><span{clickable_attrs}>{name} </span>"
-                    f"<span class='meta'> {meta_content}</span></div>"
-                    f"<span class='meta'>{game_line}</span></div>"
+                    f"<div style='display:flex;flex-direction:column;min-width:0;overflow:hidden;flex:1;'>"
+                    f"<div style='min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;'>"
+                    f"<span{clickable_attrs}>{name}</span>"
+                    f"<span class='meta'>{meta_content}</span></div>"
+                    f"<span class='meta' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;'>{game_line}</span>"
+                    f"</div>"
                     f"</div>"
                 )
         else:
@@ -1138,10 +1140,12 @@ def render_matchup_slide(
             else:
                 cell = (
                     f"<div class='p {side}' style='justify-content:flex-end;'>"
-                    f"<div style='display:flex;flex-direction:column-reverse;'>"
-                    f"<span class='meta'>{game_line}</span>"
-                    f"<div><span class='meta'>{meta_content} </span>"
-                    f"<span{clickable_attrs}> {name}</span></div></div>"
+                    f"<div style='display:flex;flex-direction:column;min-width:0;overflow:hidden;text-align:right;flex:1;'>"
+                    f"<div style='min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;'>"
+                    f"<span class='meta'>{meta_content}</span>"
+                    f"<span{clickable_attrs}> {name}</span></div>"
+                    f"<span class='meta' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;'>{game_line}</span>"
+                    f"</div>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
                     f"</div>"
                 )
