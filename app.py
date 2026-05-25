@@ -1185,11 +1185,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if not offseason_mode:
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
     nav_pills.append(nav_pill_dropdown("League", [
-        ("Standings", "page_standings", "standings", False),
-        ("Teams",     "page_teams",     "teams",     False),
-        ("Activity",  "page_activity",  "activity",  False),
-        ("Waivers",   "page_waivers",   "waivers",   False),
-    ], ["standings", "teams", "activity", "waivers"], "teamsNavDropdown"))
+        ("Standings",    "page_standings",    "standings",    False),
+        ("Teams",        "page_teams",        "teams",        False),
+        ("Activity",     "page_activity",     "activity",     False),
+        ("Waivers",      "page_waivers",      "waivers",      False),
+        ("Playoff Schedule", "page_playoff_schedule", "schedule", False),
+        ("Commissioner", "page_commissioner", "commissioner", False),
+    ], ["standings", "teams", "activity", "waivers", "schedule", "commissioner"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
@@ -1197,10 +1199,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Breakout Engine",   "page_breakouts",  "breakouts", False),
     ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
-        ("Awards",  "page_awards",  "awards",  False),
-        ("Graphs",  "page_graphs",  "graphs",  False),
-        ("History", "page_history", "history", False),
-    ], ["awards", "graphs", "history"], "statsNavDropdown"))
+        ("Awards",          "page_awards",   "awards",   False),
+        ("Graphs",          "page_graphs",   "graphs",   False),
+        ("History",         "page_history",  "history",  False),
+        ("Optimal Lineup",  "page_optimal",  "optimal",  False),
+    ], ["awards", "graphs", "history", "optimal"], "statsNavDropdown"))
     if session.get("viewer_username"):
         _portfolio_cls = "nav-pill active" if active == "portfolio" else "nav-pill"
         _portfolio_href = f"/portfolio?from_league={league_id}&platform={platform}&season={season}"
@@ -11443,6 +11446,540 @@ def page_history(platform: str, season: int, league_id: str):
         platform,
         season,
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPTIMAL LINEUP TRACKER
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _compute_optimal_lineup(pts_map, player_positions, roster_positions, all_pids):
+    """
+    Greedy optimal-lineup solver.
+    Returns (set_of_optimal_starter_ids, optimal_total_pts).
+    """
+    from collections import defaultdict as _dd
+    slot_counts = _dd(int)
+    for s in roster_positions:
+        slot_counts[str(s).upper()] += 1
+
+    by_pos = _dd(list)
+    for pid in all_pids:
+        pos = str(player_positions.get(pid) or "").upper()
+        by_pos[pos].append((pid, float(pts_map.get(pid) or 0)))
+    for pos in by_pos:
+        by_pos[pos].sort(key=lambda x: x[1], reverse=True)
+
+    used, starters = set(), []
+
+    # Fill mandatory single-position slots first
+    for pos in ["QB", "RB", "WR", "TE", "K", "DEF", "DL", "LB", "DB"]:
+        n = slot_counts.get(pos, 0)
+        for pid, _ in by_pos[pos]:
+            if n <= 0:
+                break
+            if pid not in used:
+                starters.append(pid)
+                used.add(pid)
+                n -= 1
+
+    # FLEX: RB / WR / TE
+    flex_n = slot_counts.get("FLEX", 0)
+    flex_pool = sorted(
+        [(pid, pts) for pos in ["RB", "WR", "TE"] for pid, pts in by_pos[pos] if pid not in used],
+        key=lambda x: x[1], reverse=True
+    )
+    for pid, _ in flex_pool[:flex_n]:
+        starters.append(pid); used.add(pid)
+
+    # SUPER_FLEX / SFLEX: QB / RB / WR / TE
+    sf_n = slot_counts.get("SUPER_FLEX", 0) + slot_counts.get("SFLEX", 0)
+    sf_pool = sorted(
+        [(pid, pts) for pos in ["QB", "RB", "WR", "TE"] for pid, pts in by_pos[pos] if pid not in used],
+        key=lambda x: x[1], reverse=True
+    )
+    for pid, _ in sf_pool[:sf_n]:
+        starters.append(pid); used.add(pid)
+
+    opt_set = set(starters)
+    opt_pts = sum(float(pts_map.get(pid) or 0) for pid in opt_set)
+    return opt_set, round(opt_pts, 2)
+
+
+def build_optimal_body(ctx):
+    from dashboard_services.platform_api import get_matchups as _gm
+
+    platform = ctx.get("platform") or "sleeper"
+    season   = ctx.get("season") or 2025
+    league_id = ctx.get("league_id") or ""
+    viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    roster_positions = ctx.get("roster_positions") or []
+    nfl_state = ctx.get("state") or {}
+    settings  = (ctx.get("league") or {}).get("settings") or {}
+    playoff_start = int(settings.get("playoff_week_start") or 14)
+    current_week  = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
+    players_idx   = get_players_index_global() or {}
+
+    if ctx.get("offseason_mode"):
+        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
+                "<p style='color:var(--muted)'>Optimal Lineup Tracker is available during the active season.</p>"
+                "</div></div>")
+
+    if not viewer_rid:
+        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
+                "<p style='color:var(--muted)'>Sign in to see your optimal lineup history.</p>"
+                "</div></div>")
+
+    max_week = min(current_week - 1, playoff_start - 1)
+    if max_week < 1:
+        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
+                "<p style='color:var(--muted)'>No completed weeks yet — check back after Week 1.</p>"
+                "</div></div>")
+
+    weeks_data = []
+    season_left = 0.0
+    season_actual = 0.0
+    season_optimal = 0.0
+
+    for w in range(1, max_week + 1):
+        try:
+            raw = _gm(platform, league_id, w, season) or []
+            row = next((m for m in raw if str(m.get("roster_id")) == viewer_rid), None)
+            if not row:
+                continue
+            starters_raw = [str(p) for p in (row.get("starters") or []) if p and str(p) != "0"]
+            all_pids     = [str(p) for p in (row.get("players")  or []) if p and str(p) != "0"]
+            pts_map      = {str(k): float(v or 0) for k, v in (row.get("players_points") or {}).items()}
+            if not starters_raw or not all_pids:
+                continue
+            actual_pts = float(row.get("points") or 0)
+            pos_map    = {pid: (players_idx.get(pid) or {}).get("pos") or "" for pid in all_pids}
+            opt_set, opt_pts = _compute_optimal_lineup(pts_map, pos_map, roster_positions, all_pids)
+            left = round(max(opt_pts - actual_pts, 0), 1)
+            season_actual  += actual_pts
+            season_optimal += opt_pts
+            season_left    += left
+
+            # Build player rows
+            starter_set = set(starters_raw)
+            players_out = []
+            for pid in all_pids:
+                info = players_idx.get(pid) or {}
+                players_out.append({
+                    "pid": pid,
+                    "name": info.get("name") or pid,
+                    "pos":  (info.get("pos") or "").upper(),
+                    "pts":  float(pts_map.get(pid) or 0),
+                    "actual_start": pid in starter_set,
+                    "optimal_start": pid in opt_set,
+                })
+            players_out.sort(key=lambda p: (-p["pts"],))
+
+            weeks_data.append({
+                "week":       w,
+                "actual_pts": round(actual_pts, 2),
+                "opt_pts":    round(opt_pts, 2),
+                "left":       left,
+                "players":    players_out,
+            })
+        except Exception:
+            continue
+
+    if not weeks_data:
+        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
+                "<p style='color:var(--muted)'>No lineup data found.</p></div></div>")
+
+    season_left = round(season_left, 1)
+    efficiency  = round((season_actual / season_optimal * 100) if season_optimal else 0, 1)
+    worst_week  = max(weeks_data, key=lambda x: x["left"])
+    best_week   = min(weeks_data, key=lambda x: x["left"])
+
+    # ── Summary cards ────────────────────────────────────────────────────────
+    summary_html = f"""
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
+  <div class="card" style="padding:16px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:var(--accent);">{season_left}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">PTS LEFT ON BENCH (SEASON)</div>
+  </div>
+  <div class="card" style="padding:16px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:var(--text);">{efficiency}%</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">LINEUP EFFICIENCY</div>
+  </div>
+  <div class="card" style="padding:16px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#ef4444;">Wk {worst_week['week']}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">WORST WEEK (+{worst_week['left']} left)</div>
+  </div>
+  <div class="card" style="padding:16px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#22c55e;">Wk {best_week['week']}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">BEST WEEK (+{best_week['left']} left)</div>
+  </div>
+</div>"""
+
+    # ── Week-by-week table ───────────────────────────────────────────────────
+    rows_html = ""
+    for wd in reversed(weeks_data):
+        left_color = "#ef4444" if wd["left"] > 15 else ("#f59e0b" if wd["left"] > 7 else "#22c55e")
+        rows_html += f"""
+    <tr style="cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'table-row':'none'">
+      <td style="font-weight:600;">Week {wd['week']}</td>
+      <td>{wd['actual_pts']}</td>
+      <td>{wd['opt_pts']}</td>
+      <td style="font-weight:700;color:{left_color};">+{wd['left']}</td>
+    </tr>
+    <tr style="display:none;background:var(--surface2);">
+      <td colspan="4" style="padding:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Click a row to expand • <span style='color:#ef4444'>&#9660; Should have benched</span> &nbsp; <span style='color:#22c55e'>&#9650; Should have started</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">"""
+        for p in wd["players"]:
+            if p["actual_start"] == p["optimal_start"]:
+                badge_style = "background:var(--surface);border:1px solid var(--border);"
+                icon = ""
+            elif p["actual_start"] and not p["optimal_start"]:
+                badge_style = "background:#ef444420;border:1px solid #ef4444;color:#ef4444;"
+                icon = "&#9660; "
+            else:
+                badge_style = "background:#22c55e20;border:1px solid #22c55e;color:#22c55e;"
+                icon = "&#9650; "
+            pos_color = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#a855f7"}.get(p["pos"], "#6b7280")
+            rows_html += (f"<span style='padding:4px 8px;border-radius:6px;font-size:12px;{badge_style}'>"
+                          f"<span style='color:{pos_color};font-weight:700;'>{p['pos']}</span> "
+                          f"{html.escape(p['name'])} {icon}<b>{p['pts']:.1f}</b></span>")
+        rows_html += "</div></td></tr>"
+
+    table_html = f"""
+<div class="card" style="overflow:auto;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <h3>Week-by-Week Breakdown</h3>
+    <span style="font-size:12px;color:var(--muted);">Click a row to see player details</span>
+  </div>
+  <table style="width:100%;border-collapse:collapse;">
+    <thead><tr style="border-bottom:1px solid var(--border);">
+      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">WEEK</th>
+      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">ACTUAL PTS</th>
+      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">OPTIMAL PTS</th>
+      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">LEFT ON BENCH</th>
+    </tr></thead>
+    <tbody>{rows_html}</tbody>
+  </table>
+</div>"""
+
+    return summary_html + table_html
+
+
+@app.route("/<platform>/<int:season>/<league_id>/optimal")
+def page_optimal(platform: str, season: int, league_id: str):
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    body = build_optimal_body(ctx)
+    return render_page("Optimal Lineup Tracker", league_id, "optimal", body, platform, season)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PLAYOFF SCHEDULE HIGHLIGHTER
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_playoff_schedule_body(ctx):
+    from dashboard_services.matchups import build_defense_rankings
+
+    platform  = ctx.get("platform") or "sleeper"
+    season    = ctx.get("season") or 2025
+    league_id = ctx.get("league_id") or ""
+    viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    rosters   = ctx.get("rosters") or []
+    players_idx = get_players_index_global() or {}
+    teams_idx = load_teams_index() or {}
+
+    settings       = (ctx.get("league") or {}).get("settings") or {}
+    playoff_start  = int(settings.get("playoff_week_start") or 14)
+    playoff_weeks  = list(range(playoff_start, playoff_start + 4))
+
+    # Build defense rankings
+    def_ranks = build_defense_rankings(teams_idx) if teams_idx else {}
+
+    def _rank_color(rank, total):
+        if not rank or not total:
+            return "#6b7280", "var(--surface)"
+        pct = rank / total
+        if pct <= 0.25:   return "#22c55e", "#22c55e18"
+        if pct <= 0.50:   return "#84cc16", "#84cc1618"
+        if pct <= 0.75:   return "#f59e0b", "#f59e0b18"
+        return "#ef4444", "#ef444418"
+
+    total_teams = len(teams_idx) or 32
+
+    # Build schedule lookup per week
+    schedules = {}
+    for w in playoff_weeks:
+        games = load_week_schedule(season, w) or []
+        lookup = {}
+        for g in games:
+            home = (g.get("home") or "").upper()
+            away = (g.get("away") or "").upper()
+            if home: lookup[home] = {"opp": away, "is_home": True}
+            if away: lookup[away] = {"opp": home, "is_home": False}
+        schedules[w] = lookup
+
+    # Get the viewer's roster players
+    viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == viewer_rid), None)
+    roster_pids = [str(p) for p in (viewer_roster.get("players") if viewer_roster else []) or []]
+    if not roster_pids:
+        # show all rosters or fallback
+        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
+                "<p style='color:var(--muted)'>Sign in to see your team's playoff schedule.</p></div></div>")
+
+    # Build player rows
+    _pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
+    players = []
+    for pid in roster_pids:
+        info = players_idx.get(pid) or {}
+        pos  = (info.get("pos") or "").upper()
+        nfl  = (info.get("team") or "").upper()
+        players.append({"pid": pid, "name": info.get("name") or pid, "pos": pos, "nfl": nfl})
+    players.sort(key=lambda p: (_pos_order.get(p["pos"], 9), p["name"]))
+
+    # ── Build grid ───────────────────────────────────────────────────────────
+    header_cells = "".join(f"<th style='padding:10px 14px;text-align:center;'>WK {w}</th>" for w in playoff_weeks)
+    grid_rows = ""
+    for p in players:
+        nfl = p["nfl"]
+        pos_color = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#a855f7"}.get(p["pos"], "#6b7280")
+        pos_key   = "opp_pass_yds_pg" if p["pos"] == "QB" else "opp_rush_yds_pg" if p["pos"] == "RB" else "opp_pass_yds_pg"
+        cells = ""
+        for w in playoff_weeks:
+            game = schedules[w].get(nfl)
+            if not game:
+                cells += "<td style='padding:10px;text-align:center;color:var(--muted);'>BYE</td>"
+                continue
+            opp = game["opp"]
+            at  = "" if game["is_home"] else "@"
+            rank = (def_ranks.get(opp) or {}).get(pos_key)
+            txt_color, bg_color = _rank_color(rank, total_teams)
+            rank_label = f"#{rank}" if rank else "?"
+            cells += (f"<td style='padding:8px;text-align:center;background:{bg_color};'>"
+                      f"<div style='font-weight:600;'>{at}{opp}</div>"
+                      f"<div style='font-size:11px;color:{txt_color};font-weight:700;'>{rank_label}</div>"
+                      f"</td>")
+        grid_rows += f"""
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:10px 14px;white-space:nowrap;">
+    <span style="background:{pos_color}22;color:{pos_color};font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">{html.escape(p['pos'])}</span>
+    <span class="player-clickable" data-player-id="{p['pid']}" style="cursor:pointer;">{html.escape(p['name'])}</span>
+    <span style="font-size:11px;color:var(--muted);margin-left:6px;">{html.escape(p['nfl'])}</span>
+  </td>
+  {cells}
+</tr>"""
+
+    legend = """
+<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;margin-bottom:16px;">
+  <span><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px;margin-right:4px;"></span>Elite matchup (top 25%)</span>
+  <span><span style="display:inline-block;width:10px;height:10px;background:#84cc16;border-radius:2px;margin-right:4px;"></span>Good matchup</span>
+  <span><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px;margin-right:4px;"></span>Tough matchup</span>
+  <span><span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:2px;margin-right:4px;"></span>Brutal matchup (bottom 25%)</span>
+  <span style="color:var(--muted)">Defensive rank = pass yds allowed/game (QBs/WRs/TEs) or rush yds allowed/game (RBs)</span>
+</div>"""
+
+    week_labels = " · ".join(f"Wk {w}" for w in playoff_weeks)
+    table = f"""
+<div class="card" style="overflow:auto;">
+  <div class="card-header"><h3>Fantasy Playoff Schedule — {week_labels}</h3></div>
+  <div style="padding:12px 16px;">{legend}</div>
+  <table style="width:100%;border-collapse:collapse;">
+    <thead><tr style="border-bottom:2px solid var(--border);">
+      <th style="padding:10px 14px;text-align:left;">Player</th>
+      {header_cells}
+    </tr></thead>
+    <tbody>{grid_rows}</tbody>
+  </table>
+</div>"""
+    return table
+
+
+@app.route("/<platform>/<int:season>/<league_id>/schedule")
+def page_playoff_schedule(platform: str, season: int, league_id: str):
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    body = build_playoff_schedule_body(ctx)
+    return render_page("Playoff Schedule", league_id, "schedule", body, platform, season)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMMISSIONER DASHBOARD
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_commissioner_body(ctx):
+    platform   = ctx.get("platform") or "sleeper"
+    season     = ctx.get("season") or 2025
+    league_id  = ctx.get("league_id") or ""
+    rosters    = ctx.get("rosters") or []
+    users      = ctx.get("users") or []
+    roster_map = ctx.get("roster_map") or {}
+    traded     = ctx.get("traded") or []
+    nfl_state  = ctx.get("state") or {}
+    current_week = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
+    settings   = (ctx.get("league") or {}).get("settings") or {}
+    playoff_start = int(settings.get("playoff_week_start") or 14)
+    players_idx = get_players_index_global() or {}
+    model_vals  = ctx.get("model_value_table") or get_model_value_table_cached() or []
+    val_by_pid  = {str(p.get("id") or ""): float(p.get("value") or 0) for p in model_vals if p.get("id")}
+    is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in (ctx.get("roster_positions") or []))
+
+    owner_by_rid = {}
+    for u in users:
+        uid = u.get("user_id")
+        name = u.get("display_name") or u.get("username") or uid
+        for r in rosters:
+            if r.get("owner_id") == uid:
+                owner_by_rid[str(r.get("roster_id"))] = name
+
+    # ── 1. Roster values & inactive detection ─────────────────────────────
+    roster_infos = []
+    for r in rosters:
+        rid = str(r.get("roster_id"))
+        pids = [str(p) for p in (r.get("players") or [])]
+        val  = sum(val_by_pid.get(pid, 0) for pid in pids)
+        r_st = r.get("settings") or {}
+        wins = r_st.get("wins", 0)
+        losses = r_st.get("losses", 0)
+        waiver_pos = r_st.get("waiver_position", 0)
+        # Transaction count in last 2 weeks proxy: use waiver_budget_used as activity signal
+        txns = int(r_st.get("total_moves") or 0)
+        roster_infos.append({
+            "rid": rid,
+            "name": roster_map.get(rid, f"Team {rid}"),
+            "owner": owner_by_rid.get(rid, "Unknown"),
+            "wins": wins, "losses": losses,
+            "value": round(val, 0),
+            "txns": txns,
+            "waiver_pos": waiver_pos,
+            "inactive": txns == 0 and (wins + losses) > 2,
+        })
+    roster_infos.sort(key=lambda x: -x["value"])
+
+    # ── 2. Trade fairness ─────────────────────────────────────────────────
+    trade_rows = []
+    sf_key = "sf_value" if is_sf else "value"
+    sf_val_by_pid = {str(p.get("id") or ""): float(p.get(sf_key) or p.get("value") or 0)
+                     for p in model_vals if p.get("id")}
+
+    for tx in (traded or []):
+        adds   = tx.get("adds") or {}    # {player_id: roster_id}
+        drops  = tx.get("drops") or {}
+        # Group by involved rosters
+        involved = set(list(adds.values()) + list(drops.values()))
+        involved = {str(r) for r in involved}
+        if len(involved) < 2:
+            continue
+        val_by_team = {rid: 0.0 for rid in involved}
+        for pid, rid in adds.items():
+            rid = str(rid)
+            val_by_team[rid] = val_by_team.get(rid, 0) + sf_val_by_pid.get(str(pid), 0)
+        for pid, rid in drops.items():
+            rid = str(rid)
+            val_by_team[rid] = val_by_team.get(rid, 0) - sf_val_by_pid.get(str(pid), 0)
+        vals = list(val_by_team.items())
+        if len(vals) >= 2:
+            (r1, v1), (r2, v2) = vals[0], vals[1]
+            diff = abs(v1 - v2)
+            trade_rows.append({
+                "team_a": roster_map.get(str(r1), f"Team {r1}"),
+                "team_b": roster_map.get(str(r2), f"Team {r2}"),
+                "val_a": round(v1, 0),
+                "val_b": round(v2, 0),
+                "diff": round(diff, 0),
+                "lopsided": diff > 200,
+            })
+    trade_rows.sort(key=lambda x: -x["diff"])
+
+    # ── 3. League health score ────────────────────────────────────────────
+    n = len(roster_infos) or 1
+    inactive_count = sum(1 for r in roster_infos if r["inactive"])
+    lopsided_count = sum(1 for t in trade_rows if t["lopsided"])
+    activity_score = round(100 - (inactive_count / n * 50) - (lopsided_count * 5), 0)
+    activity_score = max(0, min(100, activity_score))
+    score_color = "#22c55e" if activity_score >= 80 else ("#f59e0b" if activity_score >= 60 else "#ef4444")
+    score_label = "Healthy" if activity_score >= 80 else ("Watch" if activity_score >= 60 else "At Risk")
+
+    # ── Render ─────────────────────────────────────────────────────────────
+    health_html = f"""
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
+  <div class="card" style="padding:16px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{score_color};">{int(activity_score)}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">LEAGUE HEALTH SCORE</div>
+    <div style="font-size:13px;font-weight:600;color:{score_color};margin-top:2px;">{score_label}</div>
+  </div>
+  <div class="card" style="padding:16px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{'#ef4444' if inactive_count else '#22c55e'};">{inactive_count}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">INACTIVE TEAMS</div>
+  </div>
+  <div class="card" style="padding:16px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{'#f59e0b' if lopsided_count else '#22c55e'};">{lopsided_count}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">LOPSIDED TRADES</div>
+  </div>
+  <div class="card" style="padding:16px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:var(--text);">{len(trade_rows)}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">TOTAL TRADES</div>
+  </div>
+</div>"""
+
+    # Roster table
+    roster_rows = ""
+    for r in roster_infos:
+        inactive_badge = " <span style='background:#ef444420;color:#ef4444;font-size:10px;padding:2px 6px;border-radius:4px;'>INACTIVE</span>" if r["inactive"] else ""
+        val_color = "#22c55e" if r["value"] > 4000 else ("#f59e0b" if r["value"] > 2500 else "#ef4444")
+        roster_rows += f"""
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:10px 14px;">{html.escape(r['name'])}{inactive_badge}<div style="font-size:11px;color:var(--muted);">{html.escape(r['owner'])}</div></td>
+  <td style="padding:10px;text-align:center;">{r['wins']}-{r['losses']}</td>
+  <td style="padding:10px;text-align:center;font-weight:600;color:{val_color};">{int(r['value'])}</td>
+  <td style="padding:10px;text-align:center;">{r['txns']}</td>
+</tr>"""
+
+    roster_table = f"""
+<div class="card" style="overflow:auto;margin-bottom:20px;">
+  <div class="card-header"><h3>Team Overview</h3></div>
+  <table style="width:100%;border-collapse:collapse;">
+    <thead><tr style="border-bottom:2px solid var(--border);">
+      <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">TEAM</th>
+      <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">RECORD</th>
+      <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">ROSTER VALUE</th>
+      <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">MOVES</th>
+    </tr></thead>
+    <tbody>{roster_rows}</tbody>
+  </table>
+</div>"""
+
+    # Trade fairness table
+    if trade_rows:
+        trade_table_rows = ""
+        for t in trade_rows[:20]:
+            diff_color = "#ef4444" if t["lopsided"] else ("#f59e0b" if t["diff"] > 100 else "#22c55e")
+            lopsided_tag = " <span style='background:#ef444420;color:#ef4444;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:4px;'>LOPSIDED</span>" if t["lopsided"] else ""
+            trade_table_rows += f"""
+<tr style="border-bottom:1px solid var(--border);">
+  <td style="padding:10px 14px;">{html.escape(t['team_a'])} <span style="color:var(--muted)">received</span> <b>{int(t['val_a'])}</b></td>
+  <td style="padding:10px 14px;">{html.escape(t['team_b'])} <span style="color:var(--muted)">received</span> <b>{int(t['val_b'])}</b></td>
+  <td style="padding:10px;text-align:center;font-weight:700;color:{diff_color};">±{int(t['diff'])}{lopsided_tag}</td>
+</tr>"""
+        trade_card = f"""
+<div class="card" style="overflow:auto;">
+  <div class="card-header"><h3>Trade Fairness Log <span style="font-size:12px;color:var(--muted);font-weight:400;">Value differential per trade (±200 flagged as lopsided)</span></h3></div>
+  <table style="width:100%;border-collapse:collapse;">
+    <thead><tr style="border-bottom:2px solid var(--border);">
+      <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">SIDE A</th>
+      <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">SIDE B</th>
+      <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">VALUE DIFF</th>
+    </tr></thead>
+    <tbody>{trade_table_rows}</tbody>
+  </table>
+</div>"""
+    else:
+        trade_card = "<div class='card'><div class='card-body' style='padding:20px;color:var(--muted);'>No trades recorded yet.</div></div>"
+
+    return health_html + roster_table + trade_card
+
+
+@app.route("/<platform>/<int:season>/<league_id>/commissioner")
+def page_commissioner(platform: str, season: int, league_id: str):
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    body = build_commissioner_body(ctx)
+    return render_page("Commissioner Dashboard", league_id, "commissioner", body, platform, season)
 
 
 @app.before_request
