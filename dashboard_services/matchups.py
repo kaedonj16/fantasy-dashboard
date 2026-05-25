@@ -803,6 +803,7 @@ def render_matchup_slide(
         players: dict,
         teams: dict,
         team_game_lookup: dict,
+        fpts_against: Optional[dict] = None,
 ) -> str:
     """One slide with rows like:
        [Left Name] [Left Pts/Proj] [Right Pts/Proj] [Right Name]
@@ -811,8 +812,22 @@ def render_matchup_slide(
 
     # Heavy stuff: do once per call
     teams_index = load_teams_index()
-    defense_ranks = build_defense_rankings(teams_index)
     offense_ranks = build_offense_rankings(teams_index)
+
+    # FPTS-against position rankings (rank 1 = most pts allowed = easiest)
+    _fpts_data = fpts_against or {}
+    _fpts_pos_cache: dict = {}
+
+    def _get_fpts_rank(team: str, pos: str):
+        if not _fpts_data:
+            return None, 0.0
+        if pos not in _fpts_pos_cache:
+            vals = [(t, _fpts_data.get(t, {}).get(pos, 0)) for t in _fpts_data]
+            vals.sort(key=lambda x: x[1], reverse=True)
+            _fpts_pos_cache[pos] = {t: i + 1 for i, (t, _) in enumerate(vals)}
+        rank = _fpts_pos_cache.get(pos, {}).get(team)
+        fpts_val = float(_fpts_data.get(team, {}).get(pos, 0))
+        return rank, fpts_val
     week_stats = load_week_stats(season, w)
     team_schedule_lookup = build_team_schedule_lookup(load_week_schedule(season, w))
 
@@ -959,18 +974,18 @@ def render_matchup_slide(
             elif display_time.endswith("a"):
                 display_time = display_time[:-1] + " am"
 
-            opp_ranks = defense_ranks.get(opp, {})
             off_ranks = offense_ranks.get(opp, {})
 
-            opp_rank = None
-            if pos in ["QB", "WR", "TE"]:
-                opp_rank = opp_ranks.get("opp_pass_yds_pg")
-            elif pos == "RB":
-                opp_rank = opp_ranks.get("opp_rush_yds_pg")
+            suffix = ""
+            if pos in ("QB", "WR", "TE", "RB", "K"):
+                fpts_pos = pos
+                opp_rank, fpts_val = _get_fpts_rank(opp, fpts_pos)
+                if opp_rank is not None:
+                    suffix = f" (#{opp_rank} / {fpts_val:.1f})"
             elif pos == "DEF":
                 opp_rank = off_ranks.get("total_off_rank")
-
-            suffix = f" (#{opp_rank})" if opp_rank is not None else ""
+                if opp_rank is not None:
+                    suffix = f" (#{opp_rank})"
             prefix = ("@ " + opp + suffix) if not is_home else ("vs " + opp + suffix)
             return " ".join(x for x in [dow, display_time, prefix] if x).strip()
 
