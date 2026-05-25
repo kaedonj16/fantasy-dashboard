@@ -193,6 +193,7 @@ def _static_hash(filename: str) -> str:
 
 _APP_JS_V = _static_hash("app.js")
 _PAYWALL_JS_V = _static_hash("paywall.js")
+_CSS_V = _static_hash("dashboard.css")
 
 
 @app.after_request
@@ -529,7 +530,7 @@ BASE_HTML = """
     <meta name="mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-title" content="BR Fantasy">
 
-    <link rel="stylesheet" href="/static/dashboard.css">
+    <link rel="stylesheet" href="/static/dashboard.css?v={css_v}">
     <link rel="stylesheet" href="/static/icons.css">
     <link rel="stylesheet" href="/static/font-awesome.css">
     <link rel="stylesheet" href="/static/paywall.css">
@@ -1408,6 +1409,7 @@ def render_page(
         yt_url="https://youtube.com/@hoodiekj",
         app_js_v=_APP_JS_V,
         paywall_js_v=_PAYWALL_JS_V,
+        css_v=_CSS_V,
     )
 
 
