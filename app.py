@@ -1198,9 +1198,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Teams",         "page_teams",        "teams",        False),
         ("Activity",      "page_activity",     "activity",     False),
         ("League Health", "page_commissioner", "commissioner", False),
-        ("Top Scorers",   "page_weekly",       "weekly",       False, "?tab=scorers",  True),
-        ("Scout Report",  "page_weekly",       "weekly",       False, "?tab=scout",    True),
-        ("Optimal Lineup","page_weekly",       "weekly",       False, "?tab=optimal",  True),
     ], ["standings", "teams", "activity", "commissioner"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
@@ -19524,11 +19521,8 @@ def build_portfolio_body(
 
         league_rows += (
             f"<tr>"
-            f"<td class='team' style='white-space:normal;'>"
-            f"<div style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;'>"
-            f"<a href='{href}' style='text-decoration:none;color:inherit;'>{name}</a>{off_note}"
-            f"</div>"
-            f"{rank_row}"
+            f"<td class='team'>"
+            f"<a href='{href}' style='text-decoration:none;color:inherit;font-weight:600;'>{name}</a>{off_note}"
             f"</td>"
             f"<td><span class='{rec_cls2}'>{rec}</span></td>"
             f"<td>{rank}/{total}</td>"
@@ -19536,6 +19530,14 @@ def build_portfolio_body(
             f"<td>{arch_badge}</td>"
             f"</tr>"
         )
+        if rank_chips:
+            league_rows += (
+                f"<tr style='height:auto;'>"
+                f"<td colspan='5' style='border-top:none;padding-top:0;padding-bottom:10px;text-align:left;'>"
+                f"<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;'>{rank_chips}</div>"
+                f"</td>"
+                f"</tr>"
+            )
 
     league_card = (
         f"<div class='card'>"
