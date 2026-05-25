@@ -19352,7 +19352,8 @@ def build_portfolio_body(
         "<style>"
         # header
         ".pf-hdr{margin-bottom:14px;}"
-        ".pf-hdr h1{font-size:1.2em;font-weight:700;margin:0 0 2px;}"
+        ".pf-hdr h1{font-size:1.2em;font-weight:700;margin:0 0 2px;text-align:left;color:var(--text);letter-spacing:normal;}"
+        ".pf-hdr h1::after{display:none;}"
         ".pf-hdr p{font-size:0.84em;color:var(--muted);margin:0;}"
         ".pf-top-strip{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;padding:12px 16px;"
         "background:var(--card);border:1px solid var(--border);border-radius:var(--radius);}"
