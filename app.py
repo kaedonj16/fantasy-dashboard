@@ -11519,11 +11519,6 @@ def build_optimal_body(ctx):
     current_week  = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
     players_idx   = get_players_index_global() or {}
 
-    if ctx.get("offseason_mode"):
-        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
-                "<p style='color:var(--muted)'>Optimal Lineup Tracker is available during the active season.</p>"
-                "</div></div>")
-
     if not viewer_rid:
         return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
                 "<p style='color:var(--muted)'>Sign in to see your optimal lineup history.</p>"
@@ -11531,9 +11526,9 @@ def build_optimal_body(ctx):
 
     max_week = min(current_week - 1, playoff_start - 1)
     if max_week < 1:
-        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
-                "<p style='color:var(--muted)'>No completed weeks yet — check back after Week 1.</p>"
-                "</div></div>")
+        return ("<div style='padding:32px;text-align:center;color:var(--muted);'>"
+                "<p>No completed weeks yet. Optimal lineup data will appear here once the season starts.</p>"
+                "</div>")
 
     weeks_data = []
     season_left = 0.0
@@ -12093,13 +12088,34 @@ def page_commissioner(platform: str, season: int, league_id: str):
 
     # Gate: only the league commissioner can view this page
     league_obj      = ctx.get("league") or {}
-    commissioner_id = league_obj.get("commissioner_id") or ""
+    commissioner_id = str(league_obj.get("commissioner_id") or "").strip()
     rosters         = ctx.get("rosters") or []
-    viewer_rid      = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
-    viewer_roster   = next((r for r in rosters if str(r.get("roster_id")) == viewer_rid), None)
-    viewer_owner_id = (viewer_roster or {}).get("owner_id") or ""
+    users           = ctx.get("users") or []
+    viewer_info     = ctx.get("viewer") or {}
+    viewer_rid      = str(viewer_info.get("viewer_roster_id") or "").strip()
+    viewer_username = str(viewer_info.get("viewer_username") or "").strip()
 
-    is_commissioner = bool(commissioner_id and viewer_owner_id and commissioner_id == viewer_owner_id)
+    is_commissioner = False
+
+    # Primary: roster owner_id == commissioner_id
+    if commissioner_id and viewer_rid:
+        _vr = next((r for r in rosters if str(r.get("roster_id")) == viewer_rid), None)
+        if _vr:
+            is_commissioner = str(_vr.get("owner_id") or "").strip() == commissioner_id
+
+    # Fallback: resolve username → user_id and compare
+    if not is_commissioner and commissioner_id and viewer_username:
+        _vu = next(
+            (u for u in users if u.get("display_name") == viewer_username
+             or u.get("username") == viewer_username),
+            None,
+        )
+        if _vu:
+            is_commissioner = str(_vu.get("user_id") or "").strip() == commissioner_id
+
+    # If commissioner_id can't be determined, allow any signed-in user
+    if not commissioner_id:
+        is_commissioner = bool(viewer_username)
 
     if not is_commissioner:
         body = ("<div class='card central' style='max-width:500px;margin:60px auto;'>"
