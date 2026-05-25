@@ -19519,21 +19519,26 @@ def build_portfolio_body(
                 )
         rank_row = f"<div style='display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:4px;'>{rank_chips}</div>" if rank_chips else ""
 
-        vt = "vertical-align:top;"
+        nb = "border-bottom:none;" if rank_chips else ""
         league_rows += (
-            f"<tr>"
-            f"<td class='team' style='white-space:normal;{vt}'>"
-            f"<div style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;'>"
-            f"<a href='{href}' style='text-decoration:none;color:inherit;'>{name}</a>{off_note}"
-            f"</div>"
-            f"{rank_row}"
+            f"<tr style='height:auto;'>"
+            f"<td class='team' style='{nb}'>"
+            f"<a href='{href}' style='text-decoration:none;color:inherit;font-weight:600;'>{name}</a>{off_note}"
             f"</td>"
-            f"<td style='{vt}'><span class='{rec_cls2}'>{rec}</span></td>"
-            f"<td style='{vt}'>{rank}/{total}</td>"
-            f"<td style='{vt}'><div class='pf-streak'>{dots}</div></td>"
-            f"<td style='{vt}'>{arch_badge}</td>"
+            f"<td style='{nb}'><span class='{rec_cls2}'>{rec}</span></td>"
+            f"<td style='{nb}'>{rank}/{total}</td>"
+            f"<td style='{nb}'><div class='pf-streak'>{dots}</div></td>"
+            f"<td style='{nb}'>{arch_badge}</td>"
             f"</tr>"
         )
+        if rank_chips:
+            league_rows += (
+                f"<tr style='height:auto;'>"
+                f"<td colspan='5' style='border-top:none;padding-top:0;padding-bottom:10px;text-align:left;'>"
+                f"<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;'>{rank_chips}</div>"
+                f"</td>"
+                f"</tr>"
+            )
 
     league_card = (
         f"<div class='card'>"

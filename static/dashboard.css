@@ -2249,7 +2249,7 @@ button:hover {
 }
 
 .standings-table tr {
-  height: 46px;
+  min-height: 46px;
 }
 
 @media (max-width: 640px) {
