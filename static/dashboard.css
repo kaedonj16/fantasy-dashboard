@@ -627,30 +627,6 @@ ul {
   }
 }
 
-/* Weekly sidebar quick-tab links — only visible when sidebar is a toggle (≤1180px) */
-.wk-tab-links { display: none; }
-@media (max-width: 1180px) {
-  .wk-tab-links {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-bottom: 14px;
-  }
-  .wk-tab-link {
-    display: block;
-    padding: 10px 14px;
-    background: var(--card-soft);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--accent);
-    font-weight: 600;
-    font-size: 13px;
-    cursor: pointer;
-    text-decoration: none;
-    transition: background 0.15s;
-  }
-  .wk-tab-link:hover { background: var(--accent-soft); }
-}
 
 /* Mobile-only nav items: hidden on desktop, visible in mobile expanded menu */
 .nav-mobile-only { display: none !important; }

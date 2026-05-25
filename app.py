@@ -5134,17 +5134,22 @@ def build_weekly_hub_body(ctx: dict) -> str:
 
       <aside class="page-sidebar" data-sidebar-label="Weekly Tools">
         <div class="week-side-panels">
-          <div class="wk-tab-links">
-            <a class="wk-tab-link" onclick="wkActivateTab('scorers')">&#9650; Top Scorers</a>
-            <a class="wk-tab-link" onclick="wkActivateTab('scout')">&#9650; Scout Report</a>
-            <a class="wk-tab-link" onclick="wkActivateTab('optimal')">&#9650; Optimal Lineup</a>
-          </div>
           {side_panel_html}
         </div>
       </aside>
     </div>
 
 <script>
+// On mobile: move #weeklyLeftTabs into the sidebar BEFORE initMobileSidebar wraps it,
+// so the real tab panel (with buttons + content) lives inside the Weekly Tools toggle.
+(function() {{
+  if (window.innerWidth > 960) return;
+  var tabs = document.getElementById('weeklyLeftTabs');
+  var sidePanels = document.querySelector('.week-side-panels');
+  if (!tabs || !sidePanels) return;
+  sidePanels.insertBefore(tabs, sidePanels.firstChild);
+}})();
+
 (function() {{
   var leagueId  = {league_js};
   var platform  = {platform_js};
@@ -5240,7 +5245,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
   }});
 }})();
 
-// Activate a weekly left-tab by name and scroll to it (used by sidebar quick-links)
+// Activate a weekly left-tab by name and switch its panel
 function wkActivateTab(tab) {{
   var container = document.getElementById('weeklyLeftTabs');
   if (!container) return;
@@ -5250,7 +5255,6 @@ function wkActivateTab(tab) {{
   var panel = container.querySelector('.tab-panel[data-tab="' + tab + '"]');
   if (btn)   btn.classList.add('active');
   if (panel) panel.classList.add('active');
-  container.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
 }}
 
 // Activate left tab from ?tab= query param (e.g. ?tab=scout, ?tab=optimal)
