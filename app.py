@@ -19473,8 +19473,12 @@ def build_portfolio_body(
         if lg.get("error") or lg.get("not_in_league"):
             league_rows += (
                 f"<tr>"
-                f"<td class='team' style='color:var(--text-muted);'>{name}</td>"
-                f"<td colspan='4' style='color:var(--text-subtle);font-size:12px;'>unavailable</td>"
+                f"<td colspan='5'>"
+                f"<div style='display:flex;align-items:center;gap:8px;'>"
+                f"<span style='flex:1;color:var(--text-muted);font-weight:600;'>{name}</span>"
+                f"<span style='color:var(--text-subtle);font-size:12px;'>unavailable</span>"
+                f"</div>"
+                f"</td>"
                 f"</tr>"
             )
             continue
@@ -19517,38 +19521,41 @@ def build_portfolio_body(
                     f"#{_pr}"
                     f"</span>"
                 )
-        rank_row = f"<div style='display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:4px;'>{rank_chips}</div>" if rank_chips else ""
 
-        nb = "border-bottom:none;" if rank_chips else ""
+        badges_div = (
+            f"<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px;'>{rank_chips}</div>"
+            if rank_chips else ""
+        )
+
         league_rows += (
-            f"<tr style='height:auto;'>"
-            f"<td class='team' style='{nb}'>"
-            f"<a href='{href}' style='text-decoration:none;color:inherit;font-weight:600;'>{name}</a>{off_note}"
+            f"<tr>"
+            f"<td colspan='5' style='padding:8px 6px;'>"
+            f"<div style='display:flex;align-items:center;gap:8px;'>"
+            f"<div style='flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:600;'>"
+            f"<a href='{href}' style='text-decoration:none;color:inherit;'>{name}</a>{off_note}"
+            f"</div>"
+            f"<div style='white-space:nowrap;font-size:14px;font-weight:600;'><span class='{rec_cls2}'>{rec}</span></div>"
+            f"<div style='white-space:nowrap;font-size:14px;font-weight:600;'>{rank}/{total}</div>"
+            f"<div style='display:flex;gap:3px;'>{dots}</div>"
+            f"<div style='flex-shrink:0;'>{arch_badge}</div>"
+            f"</div>"
+            f"{badges_div}"
             f"</td>"
-            f"<td style='{nb}'><span class='{rec_cls2}'>{rec}</span></td>"
-            f"<td style='{nb}'>{rank}/{total}</td>"
-            f"<td style='{nb}'><div class='pf-streak'>{dots}</div></td>"
-            f"<td style='{nb}'>{arch_badge}</td>"
             f"</tr>"
         )
-        if rank_chips:
-            league_rows += (
-                f"<tr style='height:auto;'>"
-                f"<td colspan='5' style='border-top:none;padding-top:0;padding-bottom:10px;text-align:left;'>"
-                f"<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;'>{rank_chips}</div>"
-                f"</td>"
-                f"</tr>"
-            )
 
     league_card = (
         f"<div class='card'>"
         f"<div class='card-header'><h2>My Leagues</h2></div>"
         f"<div style='overflow-x:auto;'>"
         f"<table class='standings-table'>"
-        f"<thead><tr>"
-        f"<th style='text-align:left;'>League</th>"
-        f"<th>Record</th><th>Rank</th><th>Streak</th><th>Type</th>"
-        f"</tr></thead>"
+        f"<thead><tr><th colspan='5' style='text-align:left;display:flex;gap:8px;'>"
+        f"<span style='flex:1;'>League</span>"
+        f"<span style='min-width:52px;text-align:center;'>Record</span>"
+        f"<span style='min-width:40px;text-align:center;'>Rank</span>"
+        f"<span style='min-width:48px;text-align:center;'>Streak</span>"
+        f"<span style='min-width:80px;text-align:right;'>Type</span>"
+        f"</th></tr></thead>"
         f"<tbody>{league_rows}</tbody>"
         f"</table>"
         f"</div>"
