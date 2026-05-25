@@ -1376,6 +1376,10 @@ def render_page(
         *args,
         **kwargs,
 ) -> str:
+    if league_id and platform and season:
+        session["last_league_id"] = league_id
+        session["last_platform"] = platform
+        session["last_season"] = season
     nav_html = build_nav(league_id, active, platform, season)
     wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
 
@@ -7801,12 +7805,12 @@ def page_portfolio():
     viewer_user_id = session.get("viewer_user_id")
     if not viewer_username or not viewer_user_id:
         return redirect(url_for("index"))
-    # Preserve league nav context if navigated from a league page
-    from_league = request.args.get("from_league", "").strip() or None
-    from_platform = request.args.get("platform", "sleeper").strip()
+    # Use league nav context from query param, falling back to last visited league
+    from_league = request.args.get("from_league", "").strip() or session.get("last_league_id") or None
+    from_platform = request.args.get("platform", "").strip() or session.get("last_platform") or "sleeper"
     from_season_raw = request.args.get("season", "")
     try:
-        from_season = int(from_season_raw) if from_season_raw else None
+        from_season = int(from_season_raw) if from_season_raw else int(session.get("last_season") or 0) or None
     except ValueError:
         from_season = None
     nfl_state = get_nfl_state() or {}
