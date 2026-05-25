@@ -19350,107 +19350,92 @@ def build_portfolio_body(
 
     css = (
         "<style>"
-        # header
-        ".pf-hdr{margin-bottom:14px;}"
-        ".pf-hdr h1{font-size:1.2em;font-weight:700;margin:0 0 2px;}"
-        ".pf-hdr p{font-size:0.84em;color:var(--muted);margin:0;}"
-        ".pf-top-strip{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;padding:12px 16px;"
-        "background:var(--card);border:1px solid var(--border);border-radius:var(--radius);}"
-        ".pf-kpi{display:flex;flex-direction:column;gap:2px;}"
-        ".pf-kpi-lbl{font-size:0.65em;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}"
-        ".pf-kpi-val{font-size:1.05em;font-weight:700;}"
-        # two-col layout for leagues + pos bars
-        ".pf-two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}"
-        "@media(max-width:640px){.pf-two{grid-template-columns:1fr;}}"
-        # league list
-        ".pf-lg-row{display:flex;align-items:center;gap:10px;padding:9px 0;"
-        "border-bottom:1px solid var(--border);}"
-        ".pf-lg-row:last-child{border-bottom:none;}"
-        ".pf-lg-left{flex:1;min-width:0;}"
-        ".pf-lg-name{font-weight:600;font-size:0.9em;overflow:hidden;text-overflow:ellipsis;"
-        "white-space:nowrap;text-decoration:none;color:inherit;}"
-        ".pf-lg-name:hover{color:var(--accent);}"
-        ".pf-lg-meta{font-size:0.72em;color:var(--muted);margin-top:1px;}"
-        ".pf-arch{font-size:0.65em;font-weight:700;padding:1px 6px;border-radius:8px;"
-        "color:#fff;white-space:nowrap;flex-shrink:0;}"
-        ".pf-streak{display:flex;gap:3px;flex-shrink:0;}"
-        ".pf-dot{width:9px;height:9px;border-radius:50%;}"
-        ".pf-rec{font-size:0.88em;font-weight:600;white-space:nowrap;}"
-        # horizontal positional bars
-        ".pf-pos-row{display:flex;align-items:center;gap:10px;padding:7px 0;"
-        "border-bottom:1px solid var(--border);}"
-        ".pf-pos-row:last-child{border-bottom:none;}"
-        ".pf-pos-lbl{min-width:28px;}"
-        ".pf-pos-bar-wrap{flex:1;height:10px;background:var(--border);border-radius:5px;overflow:hidden;position:relative;}"
-        ".pf-pos-bar{height:100%;border-radius:5px;}"
-        ".pf-pos-avg-tick{position:absolute;top:0;bottom:0;width:2px;background:var(--muted);opacity:.5;}"
-        ".pf-pos-delta{font-size:0.78em;font-weight:600;min-width:46px;text-align:right;}"
-        # NFL concentration
-        ".nfl-row{display:flex;align-items:center;gap:8px;padding:5px 0;"
-        "border-bottom:1px solid var(--border);font-size:0.84em;}"
-        ".nfl-row:last-child{border-bottom:none;}"
-        ".nfl-abbr{min-width:40px;font-weight:600;font-size:0.8em;color:var(--muted);}"
-        ".nfl-bar-wrap{flex:1;height:7px;background:var(--border);border-radius:4px;overflow:hidden;}"
-        ".nfl-bar{height:100%;border-radius:4px;background:var(--accent);}"
-        ".nfl-cnt{font-weight:700;font-size:0.88em;min-width:18px;text-align:right;}"
-        ".nfl-note{font-size:0.72em;color:var(--muted);}"
-        # holdings table
-        ".pf-tbl{width:100%;border-collapse:collapse;font-size:0.84em;}"
-        ".pf-tbl th{font-size:0.66em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;"
-        "padding:4px 6px;border-bottom:1px solid var(--border);font-weight:600;}"
-        ".pf-tbl th.r{text-align:right;}"
-        ".pf-tbl td{padding:5px 6px;border-bottom:1px solid var(--border);vertical-align:middle;}"
-        ".pf-tbl tr:last-child td{border-bottom:none;}"
-        ".pf-tbl tr.pf-hide{display:none;}"
-        ".pf-pname{font-weight:500;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
-        ".pf-prank{color:var(--muted);font-size:0.78em;text-align:right;}"
-        ".pf-pval{text-align:right;font-weight:600;color:var(--accent);}"
-        ".pf-pshares{text-align:right;font-weight:700;}"
-        ".pf-plgs{font-size:0.72em;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
-        ".pf-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}"
-        ".pf-fbtn{font-size:0.76em;padding:3px 10px;border-radius:10px;border:1px solid var(--border);"
-        "background:transparent;cursor:pointer;color:inherit;transition:background .12s,color .12s;}"
-        ".pf-fbtn.on{background:var(--accent);color:#fff;border-color:var(--accent);}"
-        ".pf-fsearch{flex:1;min-width:80px;max-width:180px;font-size:0.82em;padding:3px 8px;"
-        "border:1px solid var(--border);border-radius:6px;background:var(--card);color:inherit;}"
-        ".pf-fcount{font-size:0.78em;color:var(--muted);margin-left:auto;}"
+        # only the bits not already in the global stylesheet
+        ".pf-grid{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:14px;}"
+        "@media(max-width:700px){.pf-grid{grid-template-columns:1fr;}}"
+        ".pf-arch{font-size:0.63em;font-weight:700;padding:2px 7px;border-radius:10px;"
+        "color:#fff;white-space:nowrap;letter-spacing:.02em;}"
+        ".pf-streak{display:flex;gap:3px;align-items:center;}"
+        ".pf-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}"
+        ".pf-pos-row{display:flex;align-items:center;gap:10px;padding:8px 0;"
+        "border-top:1px solid var(--grid);}"
+        ".pf-pos-row:first-child{border-top:none;}"
+        ".pf-pos-bar-wrap{flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden;position:relative;}"
+        ".pf-pos-bar{height:100%;border-radius:4px;}"
+        ".pf-pos-avg-tick{position:absolute;top:0;bottom:0;width:2px;background:var(--text-subtle);opacity:.4;}"
+        ".pf-pos-delta{font-size:0.78em;font-weight:700;min-width:44px;text-align:right;}"
+        ".nfl-row{padding:6px 0;border-top:1px solid var(--grid);cursor:pointer;}"
+        ".nfl-row:first-child{border-top:none;}"
+        ".nfl-row-main{display:flex;align-items:center;gap:8px;}"
+        ".nfl-abbr{min-width:34px;font-size:13px;font-weight:700;}"
+        ".nfl-bar-wrap{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;}"
+        ".nfl-bar{height:100%;border-radius:3px;}"
+        ".nfl-cnt{font-size:13px;font-weight:700;min-width:18px;text-align:right;}"
+        ".nfl-note{font-size:11px;color:var(--text-subtle);min-width:20px;}"
+        # filter pill buttons matching tab-btn style
+        ".pf-pill{font-size:13px;font-weight:700;padding:5px 14px;border-radius:9999px;"
+        "border:none;background:transparent;color:var(--text-muted);cursor:pointer;"
+        "transition:background .12s,color .12s;}"
+        ".pf-pill:hover{background:var(--accent-soft);color:var(--accent);}"
+        ".pf-pill.on{background:var(--accent-soft);color:var(--accent);}"
+        ".pf-fsearch{font-size:13px;padding:5px 12px;border:1px solid var(--border);"
+        "border-radius:9999px;background:var(--card);color:inherit;outline:none;"
+        "transition:border-color .12s;}"
+        ".pf-fsearch:focus{border-color:var(--accent);}"
         "</style>"
     )
 
-    # ── Top strip ─────────────────────────────────────────────────────────────
+    # ── Summary card ────────────────────────────────────────────────────────
     rec_str = f"{total_wins}-{total_losses}" + (f"-{total_ties}" if total_ties else "")
     rec_cls = "color-win" if total_wins > total_losses else ("color-loss" if total_losses > total_wins else "")
     top_strip = (
-        f"<div class='pf-top-strip'>"
-        f"<div class='pf-kpi'><span class='pf-kpi-lbl'>Leagues</span><span class='pf-kpi-val'>{num_leagues}</span></div>"
-        f"<div class='pf-kpi'><span class='pf-kpi-lbl'>Combined Record</span><span class='pf-kpi-val {rec_cls}'>{rec_str}</span></div>"
-        f"<div class='pf-kpi'><span class='pf-kpi-lbl'>Season</span><span class='pf-kpi-val'>{season}</span></div>"
+        f"<div class='card' style='margin-bottom:14px;'>"
+        f"<div class='card-header-row'>"
+        f"<div>"
+        f"<div style='font-size:15px;font-weight:700;'>My Leagues &mdash; {season}</div>"
+        f"<div style='font-size:13px;color:var(--text-muted);margin-top:2px;'>Signed in as <strong>{html.escape(username)}</strong></div>"
+        f"</div>"
+        f"<div style='display:flex;gap:28px;'>"
+        f"<div style='text-align:right;'>"
+        f"<div style='font-size:11px;color:var(--text-subtle);text-transform:uppercase;letter-spacing:.06em;font-weight:600;'>Leagues</div>"
+        f"<div style='font-size:20px;font-weight:700;'>{num_leagues}</div>"
+        f"</div>"
+        f"<div style='text-align:right;'>"
+        f"<div style='font-size:11px;color:var(--text-subtle);text-transform:uppercase;letter-spacing:.06em;font-weight:600;'>Record</div>"
+        f"<div style='font-size:20px;font-weight:700;' class='{rec_cls}'>{rec_str}</div>"
+        f"</div>"
+        f"<div style='text-align:right;'>"
+        f"<div style='font-size:11px;color:var(--text-subtle);text-transform:uppercase;letter-spacing:.06em;font-weight:600;'>Season</div>"
+        f"<div style='font-size:20px;font-weight:700;'>{season}</div>"
+        f"</div>"
+        f"</div>"
+        f"</div>"
         f"</div>"
     )
 
-    # ── League list (left col) ─────────────────────────────────────────────────
+    # ── League list — standings-table ─────────────────────────────────────
     league_rows = ""
     all_rows = valid_leagues + [lg for lg in all_leagues_data if lg.get("error") or lg.get("not_in_league")]
     for lg in all_rows:
-        lid = lg.get("league_id") or ""
-        platform = lg.get("platform") or "sleeper"
-        href = f"/{platform}/{season}/{lid}/dashboard"
+        lid  = lg.get("league_id") or ""
+        plat = lg.get("platform") or "sleeper"
+        href = f"/{plat}/{season}/{lid}/dashboard"
         name = html.escape(lg.get("name") or "?")
 
         if lg.get("error") or lg.get("not_in_league"):
             league_rows += (
-                f"<div class='pf-lg-row'>"
-                f"<div class='pf-lg-left'><span class='pf-lg-name'>{name}</span>"
-                f"<div class='pf-lg-meta'>unavailable</div></div>"
-                f"</div>"
+                f"<tr>"
+                f"<td class='team' style='color:var(--text-muted);'>{name}</td>"
+                f"<td colspan='4' style='color:var(--text-subtle);font-size:12px;'>unavailable</td>"
+                f"</tr>"
             )
             continue
 
-        wins = lg.get("wins") or 0
+        wins   = lg.get("wins") or 0
         losses = lg.get("losses") or 0
-        rank = lg.get("rank") or "?"
-        total = lg.get("total_teams") or "?"
-        rec = lg.get("record") or f"{wins}-{losses}"
+        rank   = lg.get("rank") or "?"
+        total  = lg.get("total_teams") or "?"
+        rec    = lg.get("record") or f"{wins}-{losses}"
         rec_cls2 = "color-win" if wins > losses else ("color-loss" if losses > wins else "")
 
         streak = lg.get("streak") or []
@@ -19458,75 +19443,65 @@ def build_portfolio_body(
         for _ in range(3 - len(streak)):
             dots += "<div class='pf-dot' style='background:var(--border);'></div>"
         for r in streak:
-            color = "var(--color-win)" if r == "W" else "var(--color-loss)"
+            color = "var(--win)" if r == "W" else "var(--loss)"
             dots += f"<div class='pf-dot' style='background:{color};'></div>"
 
-        # archetype from positional value ratios vs league average
-        _uvs = lg.get("pos_user_vals") or {}
+        _uvs  = lg.get("pos_user_vals") or {}
         _avgs = lg.get("pos_league_avgs") or {}
         _ratios = {p: (_uvs.get(p, 0) / (_avgs.get(p) or 1)) for p in ["QB", "RB", "WR", "TE"]}
         _best_pos = max(_ratios, key=_ratios.get) if _ratios else "QB"
         _arch_map = {"QB": "QB-Heavy", "RB": "RB Corps", "WR": "WR-Spread", "TE": "TE-Premium"}
         arch = _arch_map.get(_best_pos, "Balanced") if _ratios.get(_best_pos, 1.0) > 1.10 else "Balanced"
-        arch_color = _ARCH_COLORS.get(arch, "#6b7280")
-        arch_badge = f"<span class='pf-arch' style='background:{arch_color};'>{arch}</span>"
+        _arch_color = _ARCH_COLORS.get(arch, "#6b7280")
+        arch_badge = f"<span class='pf-arch' style='background:{_arch_color};'>{arch}</span>"
 
-        # Positional rank chips
-        pos_ranks = lg.get("pos_user_rank") or {}
-        rank_chips = ""
-        for _pos in ["QB", "RB", "WR", "TE"]:
-            _pr = pos_ranks.get(_pos)
-            if _pr:
-                _pc = _POS_CLS_MAP.get(_pos, "pos-k")
-                rank_chips += (
-                    f"<span style='font-size:0.68em;color:var(--muted);white-space:nowrap;'>"
-                    f"<span class='pos-badge {_pc}' style='font-size:0.7em;padding:0 4px;'>{_pos}</span>"
-                    f"&nbsp;#{_pr}"
-                    f"</span>"
-                )
-        pos_rank_row = f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:3px;'>{rank_chips}</div>" if rank_chips else ""
-
-        off_note = " (Off)" if lg.get("offseason") else ""
+        off_note = f"<span style='font-size:11px;color:var(--text-subtle);margin-left:4px;'>(Off)</span>" if lg.get("offseason") else ""
         league_rows += (
-            f"<div class='pf-lg-row'>"
-            f"<div class='pf-lg-left'>"
-            f"<a href='{href}' class='pf-lg-name'>{name}{off_note}</a>"
-            f"<div class='pf-lg-meta'>{rank}/{total} &middot; {lg.get('pf', 0):.0f} pts</div>"
-            f"{pos_rank_row}"
-            f"</div>"
-            f"<div class='pf-streak'>{dots}</div>"
-            f"<span class='pf-rec {rec_cls2}'>{rec}</span>"
-            f"{arch_badge}"
-            f"</div>"
+            f"<tr>"
+            f"<td class='team'><a href='{href}' style='text-decoration:none;color:inherit;font-weight:600;'>{name}</a>{off_note}</td>"
+            f"<td><span class='{rec_cls2}'>{rec}</span></td>"
+            f"<td>{rank}/{total}</td>"
+            f"<td><div class='pf-streak'>{dots}</div></td>"
+            f"<td>{arch_badge}</td>"
+            f"</tr>"
         )
+
     league_card = (
         f"<div class='card'>"
         f"<div class='card-header'><h2>My Leagues</h2></div>"
-        f"<div class='card-body'>{league_rows}</div>"
+        f"<div style='overflow-x:auto;'>"
+        f"<table class='standings-table'>"
+        f"<thead><tr>"
+        f"<th style='text-align:left;'>League</th>"
+        f"<th>Record</th><th>Rank</th><th>Streak</th><th>Type</th>"
+        f"</tr></thead>"
+        f"<tbody>{league_rows}</tbody>"
+        f"</table>"
+        f"</div>"
         f"</div>"
     )
 
-    # ── Positional bars (right col, horizontal) ───────────────────────────────
+    # ── Positional strength ───────────────────────────────────────────────
     pos_card = ""
     if cross_pos:
         pos_rows = ""
-        max_ratio = max(cross_pos.values()) if cross_pos else 2.0
-        max_ratio = max(max_ratio, 1.5)
+        max_ratio = max(max(cross_pos.values()), 1.5)
         for pos in ["QB", "RB", "WR", "TE"]:
-            ratio = cross_pos.get(pos, 1.0)
-            color = _POS_COLORS.get(pos, "#6b7280")
-            bar_w = min(100, int((ratio / max_ratio) * 100))
+            ratio   = cross_pos.get(pos, 1.0)
+            color   = _POS_COLORS.get(pos, "#6b7280")
+            bar_w   = min(100, int((ratio / max_ratio) * 100))
             avg_tick = min(98, int((1.0 / max_ratio) * 100))
-            delta = (ratio - 1.0) * 100
+            delta   = (ratio - 1.0) * 100
             if delta > 8:
-                d_str, d_color = f"+{delta:.0f}%", "var(--color-win)"
+                d_str, d_color = f"+{delta:.0f}%", "var(--win)"
             elif delta < -8:
-                d_str, d_color = f"{delta:.0f}%", "var(--color-loss)"
+                d_str, d_color = f"{delta:.0f}%", "var(--loss)"
             else:
-                d_str, d_color = "avg", "var(--muted)"
+                d_str, d_color = "avg", "var(--text-muted)"
+            _pos_cls = _POS_CLS_MAP.get(pos, "pos-k")
             pos_rows += (
                 f"<div class='pf-pos-row'>"
-                f"<span class='pf-pos-lbl'><span class='pos-badge {_POS_CLS_MAP.get(pos,'pos-k')}'>{pos}</span></span>"
+                f"<span style='min-width:32px;'><span class='pos-badge {_pos_cls}'>{pos}</span></span>"
                 f"<div class='pf-pos-bar-wrap'>"
                 f"<div class='pf-pos-bar' style='width:{bar_w}%;background:{color};'></div>"
                 f"<div class='pf-pos-avg-tick' style='left:{avg_tick}%;'></div>"
@@ -19536,127 +19511,123 @@ def build_portfolio_body(
             )
         pos_card = (
             f"<div class='card'>"
-            f"<div class='card-header'><h2>Positional Strength</h2>"
-            f"<span style='font-size:0.76em;color:var(--muted);font-weight:400;'>vs. your league averages · dynasty value</span>"
+            f"<div class='card-header'>"
+            f"<h2>Positional Strength</h2>"
+            f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>vs. league averages</span>"
             f"</div>"
             f"<div class='card-body'>{pos_rows}</div>"
             f"</div>"
         )
 
-    two_col = f"<div class='pf-two'>{league_card}{pos_card}</div>" if pos_card else league_card
+    two_col = f"<div class='pf-grid'>{league_card}{pos_card}</div>" if pos_card else league_card
 
-    # ── NFL Concentration ─────────────────────────────────────────────────────
+    # ── NFL Exposure ──────────────────────────────────────────────────────
     nfl_html = ""
     if nfl_exposure:
         max_cnt = max(t["count"] for t in nfl_exposure) or 1
         nfl_rows = ""
         for idx, t in enumerate(nfl_exposure):
             bw = int((t["count"] / max_cnt) * 100)
-            note = f"{t['leagues']}L"
             team_color = _NFL_COLORS.get(t["team"], "var(--accent)")
             dd_id = f"nflDd{idx}"
-            # Build dropdown player list
             pl_rows = ""
             for pl in (t.get("players") or []):
-                pl_pos = pl.get("position") or ""
-                pl_pc = _POS_CLS_MAP.get(pl_pos, "K")
+                pl_pos  = pl.get("position") or ""
+                pl_pc   = _POS_CLS_MAP.get(pl_pos, "K")
                 pl_name = html.escape(pl.get("name") or "")
-                pl_pid = pl.get("pid") or ""
-                pl_lg = html.escape(pl.get("league") or "")
-                pl_val = pl.get("value") or 0
-                pl_pr = html.escape(pl.get("pos_rank") or "")
+                pl_pid  = pl.get("pid") or ""
+                pl_lg   = html.escape(pl.get("league") or "")
+                pl_val  = pl.get("value") or 0
+                pl_pr   = html.escape(pl.get("pos_rank") or "")
                 pl_rows += (
-                    f"<div style='display:flex;align-items:center;gap:8px;padding:4px 0;"
-                    f"border-bottom:1px solid var(--border);font-size:0.82em;'>"
-                    f"<span class='pos-badge {pl_pc}' style='font-size:0.7em;height:18px;width:28px;'>{pl_pos}</span>"
-                    f"<span class='player-clickable' data-player-id='{pl_pid}' data-player-name='{pl_name}'"
-                    f" style='flex:1;font-weight:500;cursor:pointer;'>{pl_name}</span>"
-                    f"<span style='color:var(--muted);font-size:0.78em;'>{pl_pr}</span>"
-                    f"<span style='color:var(--muted);font-size:0.75em;white-space:nowrap;'>{pl_lg}</span>"
-                    f"<span style='font-weight:600;color:var(--accent);min-width:28px;text-align:right;'>{pl_val:.0f}</span>"
-                    f"</div>"
+                    f"<tr>"
+                    f"<td><span class='pos-badge {pl_pc}' style='font-size:0.7em;height:18px;width:28px;'>{pl_pos}</span></td>"
+                    f"<td class='team'><span class='player-clickable' data-player-id='{pl_pid}' data-player-name='{pl_name}' style='cursor:pointer;font-weight:500;'>{pl_name}</span></td>"
+                    f"<td style='color:var(--text-muted);font-size:12px;'>{pl_pr}</td>"
+                    f"<td style='color:var(--text-muted);font-size:12px;white-space:nowrap;'>{pl_lg}</td>"
+                    f"<td style='font-weight:700;color:var(--accent);text-align:right;'>{pl_val:.0f}</td>"
+                    f"</tr>"
                 )
+            pl_table = f"<table class='standings-table' style='margin:4px 0 4px 36px;width:calc(100% - 36px);'><tbody>{pl_rows}</tbody></table>" if pl_rows else ""
             nfl_rows += (
-                f"<div class='nfl-row' style='flex-direction:column;align-items:stretch;cursor:pointer;' onclick=\""
-                f"var d=document.getElementById('{dd_id}');d.style.display=d.style.display==='none'?'block':'none';\">"
-                f"<div style='display:flex;align-items:center;gap:8px;'>"
-                f"<span class='nfl-abbr' style='color:{team_color};font-weight:700;'>{html.escape(t['team'])}</span>"
+                f"<div class='nfl-row' onclick=\"var d=document.getElementById('{dd_id}');d.style.display=d.style.display==='none'?'block':'none';\">"
+                f"<div class='nfl-row-main'>"
+                f"<span class='nfl-abbr' style='color:{team_color};'>{html.escape(t['team'])}</span>"
                 f"<div class='nfl-bar-wrap'><div class='nfl-bar' style='width:{bw}%;background:{team_color};'></div></div>"
                 f"<span class='nfl-cnt'>{t['count']}</span>"
-                f"<span class='nfl-note'>{note}</span>"
-                f"<span style='font-size:0.7em;color:var(--muted);margin-left:4px;'>&#9660;</span>"
+                f"<span class='nfl-note'>{t['leagues']}L</span>"
+                f"<span style='font-size:11px;color:var(--text-subtle);'>&#9660;</span>"
                 f"</div>"
-                f"<div id='{dd_id}' style='display:none;padding:6px 0 2px 44px;'>{pl_rows}</div>"
+                f"<div id='{dd_id}' style='display:none;'>{pl_table}</div>"
                 f"</div>"
             )
         nfl_html = (
             f"<div class='card' style='margin-bottom:14px;'>"
             f"<div class='card-header'><h2>NFL Exposure</h2>"
-            f"<span style='font-size:0.76em;color:var(--muted);font-weight:400;'>which game results hit your whole portfolio</span>"
+            f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>which games affect your whole portfolio</span>"
             f"</div>"
             f"<div class='card-body'>{nfl_rows}</div>"
             f"</div>"
         )
 
-    # ── Player Holdings (paginated, 10/page) ─────────────────────────────────
+    # ── Player Holdings ───────────────────────────────────────────────────
     holdings_html = ""
     if holdings:
         h_rows = ""
         for p in holdings:
-            pos = p.get("position") or ""
-            pc = _POS_CLS_MAP.get(pos, "K")
+            pos    = p.get("position") or ""
+            pc     = _POS_CLS_MAP.get(pos, "K")
             name_e = html.escape(p.get("name") or "")
-            pid = p.get("pid") or ""
-            val = p.get("value") or 0
-            cnt = p.get("shares") or 1
-            pr = html.escape(p.get("pos_rank") or "")
+            pid    = p.get("pid") or ""
+            val    = p.get("value") or 0
+            cnt    = p.get("shares") or 1
+            pr     = html.escape(p.get("pos_rank") or "")
             lgs_str = html.escape(", ".join(p.get("in_leagues") or []))
             h_rows += (
                 f"<tr class='pf-row' data-pos='{pos}' data-name='{name_e.lower()}'>"
                 f"<td><span class='pos-badge {pc}'>{pos}</span></td>"
-                f"<td>"
-                f"<div class='pf-pname player-clickable' data-player-id='{pid}' data-player-name='{name_e}' style='cursor:pointer;'>{name_e}</div>"
-                f"<div class='pf-plgs'>{lgs_str}</div>"
+                f"<td class='team'>"
+                f"<div class='player-clickable' data-player-id='{pid}' data-player-name='{name_e}' style='cursor:pointer;font-weight:600;'>{name_e}</div>"
+                f"<div style='font-size:11px;color:var(--text-subtle);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;'>{lgs_str}</div>"
                 f"</td>"
-                f"<td class='pf-prank'>{pr}</td>"
-                f"<td class='pf-pshares'>{cnt}<span style='color:var(--muted);font-weight:400;font-size:0.82em;'>/{num_leagues}</span></td>"
-                f"<td class='pf-pval'>{val:.0f}</td>"
+                f"<td>{pr}</td>"
+                f"<td>{cnt}<span style='color:var(--text-muted);font-weight:400;'>/{num_leagues}</span></td>"
+                f"<td style='font-weight:700;color:var(--accent);'>{val:.0f}</td>"
                 f"</tr>"
             )
-        total_h = len(holdings)
         holdings_html = (
             f"<div class='card'>"
             f"<div class='card-header'><h2>Player Holdings</h2>"
-            f"<span style='font-size:0.76em;color:var(--muted);font-weight:400;'>which leagues each player is in</span>"
+            f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>ownership across your leagues</span>"
             f"</div>"
             f"<div class='card-body'>"
-            f"<div class='pf-controls'>"
-            f"<button class='pf-fbtn on' data-pos='ALL'>All</button>"
-            f"<button class='pf-fbtn' data-pos='QB'>QB</button>"
-            f"<button class='pf-fbtn' data-pos='RB'>RB</button>"
-            f"<button class='pf-fbtn' data-pos='WR'>WR</button>"
-            f"<button class='pf-fbtn' data-pos='TE'>TE</button>"
-            f"<input class='pf-fsearch' type='text' placeholder='Search player…' id='pfSearch'>"
-            f"<span class='pf-fcount' id='pfCount'></span>"
+            f"<div style='display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;'>"
+            f"<button class='pf-pill on' data-pos='ALL'>All</button>"
+            f"<button class='pf-pill' data-pos='QB'>QB</button>"
+            f"<button class='pf-pill' data-pos='RB'>RB</button>"
+            f"<button class='pf-pill' data-pos='WR'>WR</button>"
+            f"<button class='pf-pill' data-pos='TE'>TE</button>"
+            f"<input class='pf-fsearch' type='text' placeholder='Search player…' id='pfSearch' style='margin-left:4px;'>"
+            f"<span style='font-size:12px;color:var(--text-subtle);margin-left:auto;' id='pfCount'></span>"
             f"</div>"
             f"<div style='overflow-x:auto;'>"
-            f"<table class='pf-tbl'><thead><tr>"
-            f"<th></th><th>Player</th><th class='r'>Rank</th><th class='r'>Shares</th><th class='r'>Value</th>"
-            f"</tr></thead><tbody id='pfBody'>{h_rows}</tbody></table>"
+            f"<table class='standings-table' id='pfTable'>"
+            f"<thead><tr><th></th><th style='text-align:left;'>Player</th><th>Rank</th><th>Shares</th><th>Value</th></tr></thead>"
+            f"<tbody id='pfBody'>{h_rows}</tbody>"
+            f"</table>"
             f"</div>"
-            f"<div class='pf-pagination' id='pfPager' style='display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;'>"
-            f"<button class='pf-fbtn' id='pfPrev'>&#8592; Prev</button>"
-            f"<span id='pfPageInfo' style='font-size:0.8em;color:var(--muted);'></span>"
-            f"<button class='pf-fbtn' id='pfNext'>Next &#8594;</button>"
+            f"<div style='display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;'>"
+            f"<button class='pf-pill' id='pfPrev'>&#8592; Prev</button>"
+            f"<span style='font-size:13px;color:var(--text-muted);' id='pfPageInfo'></span>"
+            f"<button class='pf-pill' id='pfNext'>Next &#8594;</button>"
             f"</div>"
             f"</div></div>"
             f"<script>(function(){{"
             f"var PAGE=10,fp='ALL',fn='',pg=1,filtered=[];"
             f"function applyFilters(){{"
             f"var rows=Array.from(document.querySelectorAll('.pf-row'));"
-            f"filtered=rows.filter(function(r){{"
-            f"return(fp==='ALL'||r.dataset.pos===fp)&&(!fn||r.dataset.name.includes(fn));"
-            f"}});pg=1;render();}}"
+            f"filtered=rows.filter(function(r){{return(fp==='ALL'||r.dataset.pos===fp)&&(!fn||r.dataset.name.includes(fn));}});"
+            f"pg=1;render();}}"
             f"function render(){{"
             f"var total=filtered.length,pages=Math.max(1,Math.ceil(total/PAGE));"
             f"if(pg>pages)pg=pages;"
@@ -19666,12 +19637,10 @@ def build_portfolio_body(
             f"var c=document.getElementById('pfCount');if(c)c.textContent=total+' players';"
             f"var pi=document.getElementById('pfPageInfo');if(pi)pi.textContent='Page '+pg+' of '+pages;"
             f"var prev=document.getElementById('pfPrev'),next=document.getElementById('pfNext');"
-            f"if(prev)prev.disabled=pg<=1;"
-            f"if(next)next.disabled=pg>=pages;"
-            f"}}"
-            f"document.querySelectorAll('.pf-fbtn[data-pos]').forEach(function(b){{"
+            f"if(prev)prev.disabled=pg<=1;if(next)next.disabled=pg>=pages;}}"
+            f"document.querySelectorAll('.pf-pill[data-pos]').forEach(function(b){{"
             f"b.addEventListener('click',function(){{"
-            f"document.querySelectorAll('.pf-fbtn[data-pos]').forEach(function(x){{x.classList.remove('on');}});"
+            f"document.querySelectorAll('.pf-pill[data-pos]').forEach(function(x){{x.classList.remove('on');}});"
             f"b.classList.add('on');fp=b.dataset.pos;applyFilters();}});}}); "
             f"var s=document.getElementById('pfSearch');"
             f"if(s)s.addEventListener('input',function(){{fn=this.value.toLowerCase();applyFilters();}});"
@@ -19682,17 +19651,7 @@ def build_portfolio_body(
             f"}})();</script>"
         )
 
-    return (
-        css
-        + f"<div class='pf-hdr'>"
-        + f"<h1>My Leagues — {season}</h1>"
-        + f"<p>Signed in as <strong>{html.escape(username)}</strong></p>"
-        + f"</div>"
-        + top_strip
-        + two_col
-        + nfl_html
-        + holdings_html
-    )
+    return css + top_strip + two_col + nfl_html + holdings_html
 
 
 def build_scout_body(ctx: dict) -> str:
