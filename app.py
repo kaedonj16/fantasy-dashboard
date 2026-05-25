@@ -8310,58 +8310,26 @@ def api_start_sit_options():
             rows_by_id[pid] = row
 
     current_week = int(ctx.get("current_week") or 0)
-    def_rush_allowed: dict = {}
-    def_recv_allowed: dict = {}
+
+    # ── FPTS-against defense ranks (replaces yardage-based matchup adj) ──────
+    fpts_against: dict = {}
     try:
-        from utils.utils import load_week_stats as _lws
-        check_weeks = [w for w in range(max(1, current_week - 4), current_week) if w > 0]
-        for chk_week in check_weeks:
-            wstat = _lws(season, chk_week) or {}
-            for team, pos_data in wstat.items():
-                if not isinstance(pos_data, dict):
-                    continue
-                rb_rush = sum(
-                    float(p.get("rush_yds") or p.get("rushing_yds") or 0)
-                    for p in (pos_data.get("RB") or {}).values()
-                    if isinstance(p, dict)
-                )
-                wr_recv = sum(
-                    float(p.get("rec_yds") or p.get("receiving_yds") or 0)
-                    for p in (pos_data.get("WR") or {}).values()
-                    if isinstance(p, dict)
-                )
-                te_recv = sum(
-                    float(p.get("rec_yds") or p.get("receiving_yds") or 0)
-                    for p in (pos_data.get("TE") or {}).values()
-                    if isinstance(p, dict)
-                )
-                recv_allowed = wr_recv + te_recv
-                if rb_rush > 0:
-                    def_rush_allowed.setdefault(team, []).append(rb_rush)
-                if recv_allowed > 0:
-                    def_recv_allowed.setdefault(team, []).append(recv_allowed)
+        fpts_against = _compute_fpts_against(season)
     except Exception:
         pass
 
-    def _avg(lst): return sum(lst) / len(lst) if lst else 0.0
+    _def_rank_cache: dict = {}
+    def _get_def_rank(team: str, pos: str):
+        if pos not in _def_rank_cache:
+            vals = [(t, fpts_against.get(t, {}).get(pos, 0.0)) for t in fpts_against]
+            vals.sort(key=lambda x: x[1], reverse=True)
+            _def_rank_cache[pos] = {t: i + 1 for i, (t, _) in enumerate(vals)}
+        rank  = _def_rank_cache.get(pos, {}).get(team)
+        total = len(fpts_against) or 32
+        fpts_val = round(fpts_against.get(team, {}).get(pos, 0.0), 1)
+        return rank, total, fpts_val
 
-    all_rush_avgs = {t: _avg(v) for t, v in def_rush_allowed.items()}
-    all_recv_avgs = {t: _avg(v) for t, v in def_recv_allowed.items()}
-
-    def _matchup_adj(opponent_team: str, pos: str) -> float:
-        if not opponent_team:
-            return 1.0
-        avgs = all_rush_avgs if pos == "RB" else all_recv_avgs
-        if not avgs:
-            return 1.0
-        sorted_teams = sorted(avgs.keys(), key=lambda t: avgs[t])
-        n = len(sorted_teams)
-        try:
-            rank = sorted_teams.index(opponent_team)
-        except ValueError:
-            return 1.0
-        return 0.85 + 0.30 * (rank / max(n - 1, 1))
-
+    # ── Opponent map from current week schedule ───────────────────────────────
     opponent_map: dict = {}
     opp_label_map: dict = {}
     try:
@@ -8379,59 +8347,86 @@ def api_start_sit_options():
     except Exception:
         pass
 
-    recent_pts: dict = {}
+    # ── Season-long PPG from all cached stat files ────────────────────────────
+    season_ppg: dict = {}
     try:
         import glob as _glob
-        _stat_pattern = os.path.join("cache", "sleeper_stats", f"sleeper_stats_{season}_week_*.json")
-        _week_files = sorted(_glob.glob(_stat_pattern))
-        _recent_files = _week_files[-4:] if len(_week_files) >= 4 else _week_files
-        _pts_by_player: dict = {}
-        for _wf in _recent_files:
+        _stat_files = sorted(_glob.glob(
+            os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
+        ))
+        _season_pts: dict = {}
+        for _sf in _stat_files:
             try:
-                with open(_wf) as _f:
-                    _wdata = json.load(_f)
-                for pid, stats in _wdata.items():
-                    if not isinstance(stats, dict):
-                        continue
-                    pts = float(stats.get("pts_half_ppr") or stats.get("pts_ppr") or 0)
+                _sdata = json.load(open(_sf))
+                for pid, stats in _sdata.items():
+                    pts = float(stats.get("pts_ppr") or 0)
                     if pts > 0:
-                        _pts_by_player.setdefault(pid, []).append(pts)
+                        _season_pts.setdefault(str(pid), []).append(pts)
             except Exception:
                 continue
-        for pid, vals in _pts_by_player.items():
-            recent_pts[pid] = _avg(vals)
+        season_ppg = {pid: round(sum(v) / len(v), 1) for pid, v in _season_pts.items() if v}
+    except Exception:
+        pass
+
+    # ── Projections for current week ──────────────────────────────────────────
+    proj_map: dict = {}
+    try:
+        from utils.utils import load_week_projection as _lwp
+        if current_week > 0:
+            proj_map = _lwp(season, current_week) or {}
     except Exception:
         pass
 
     positions_out: dict = {"QB": [], "RB": [], "WR": [], "TE": []}
     for pid in player_ids:
-        row = rows_by_id.get(pid) or {}
+        row  = rows_by_id.get(pid) or {}
         meta = players_index.get(pid) or {}
-        pos = str(row.get("position") or row.get("pos") or meta.get("pos") or "").upper()
+        pos  = str(row.get("position") or row.get("pos") or meta.get("pos") or "").upper()
         if pos not in positions_out:
             continue
-        player_name = row.get("name") or meta.get("name") or f"Player {pid}"
-        team = (row.get("team") or meta.get("team") or "").upper()
-        opponent = opponent_map.get(team, "")
-        opp_label = opp_label_map.get(team, "BYE" if current_week > 0 else "")
-        on_bye = current_week > 0 and team not in opponent_map
-        avg_pts = recent_pts.get(pid, 0.0)
-        adj = _matchup_adj(opponent, pos) if not on_bye else 0.5
-        score = avg_pts * adj if avg_pts > 0 else float(row.get(_vf_ss) or row.get("value") or 0) * 0.01
-        full_player = players_full.get(pid) or {}
-        raw_status = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
+        player_name   = row.get("name") or meta.get("name") or f"Player {pid}"
+        team          = (row.get("team") or meta.get("team") or "").upper()
+        opponent      = opponent_map.get(team, "")
+        opp_label     = opp_label_map.get(team, "BYE" if current_week > 0 else "")
+        on_bye        = current_week > 0 and team not in opponent_map
+
+        s_ppg         = season_ppg.get(pid, 0.0)
+        proj_pts      = round(float(proj_map.get(pid) or proj_map.get(str(pid)) or 0.0), 1)
+        def_rank, def_total, fpts_vs = _get_def_rank(opponent, pos) if opponent else (None, 32, 0.0)
+
+        # Matchup score: prefer FPTS-against when available
+        if not on_bye and fpts_vs > 0 and s_ppg > 0:
+            league_avg_fpts = round(
+                sum(fpts_against.get(t, {}).get(pos, 0.0) for t in fpts_against) / max(len(fpts_against), 1), 1
+            )
+            adj = min(1.25, max(0.75, fpts_vs / max(league_avg_fpts, 1.0)))
+            score = s_ppg * adj
+        elif not on_bye and s_ppg > 0:
+            score = s_ppg
+        elif on_bye:
+            score = 0.0
+        else:
+            score = float(row.get(_vf_ss) or row.get("value") or 0) * 0.01
+
+        full_player  = players_full.get(pid) or {}
+        raw_status   = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
         injury_status = None if raw_status in {"", "active", "Active", "ACT"} else raw_status
+
         positions_out[pos].append({
-            "player_id": pid,
-            "name": player_name,
-            "team": team,
-            "opponent": opp_label,
-            "on_bye": on_bye,
-            "avg_pts": round(avg_pts, 1),
-            "matchup_adj": round(adj, 2),
+            "player_id":     pid,
+            "name":          player_name,
+            "team":          team,
+            "opponent":      opp_label,
+            "opponent_team": opponent,
+            "on_bye":        on_bye,
+            "season_ppg":    round(s_ppg, 1),
+            "proj_pts":      proj_pts,
+            "fpts_against":  fpts_vs,
+            "def_rank":      def_rank,
+            "def_total":     def_total,
             "pos_rank_label": row.get("pos_rank_label") or "",
             "injury_status": injury_status,
-            "_score": score,
+            "_score":        score,
         })
 
     flex_slots = lineup_requirements.get("FLEX") or 0
