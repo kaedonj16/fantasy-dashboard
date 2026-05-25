@@ -1199,11 +1199,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Breakout Engine",   "page_breakouts",  "breakouts", False),
     ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
-        ("Awards",          "page_awards",   "awards",   False),
-        ("Graphs",          "page_graphs",   "graphs",   False),
-        ("History",         "page_history",  "history",  False),
-        ("Optimal Lineup",  "page_optimal",  "optimal",  False),
-    ], ["awards", "graphs", "history", "optimal"], "statsNavDropdown"))
+        ("Awards",   "page_awards",   "awards",   False),
+        ("Graphs",   "page_graphs",   "graphs",   False),
+        ("History",  "page_history",  "history",  False),
+    ], ["awards", "graphs", "history"], "statsNavDropdown"))
     if session.get("viewer_username"):
         _portfolio_cls = "nav-pill active" if active == "portfolio" else "nav-pill"
         _portfolio_href = f"/portfolio?from_league={league_id}&platform={platform}&season={season}"
@@ -5051,6 +5050,13 @@ def build_weekly_hub_body(ctx: dict) -> str:
     )
     scout_panel_content = scout_tab_html if scout_tab_html else _scout_unavail
 
+    optimal_panel_content = ""
+    try:
+        optimal_panel_content = build_optimal_body(ctx)
+    except Exception:
+        optimal_panel_content = ("<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
+                                 "Optimal lineup data unavailable.</div>")
+
     return f"""
     <div class="page-layout weekly-hub">
       <main class="page-main">
@@ -5071,6 +5077,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
               <div class="tab-bar">
                 <button class="tab-btn active" data-tab="scorers">Top Scorers</button>
                 <button class="tab-btn" data-tab="scout">Scout Report</button>
+                <button class="tab-btn" data-tab="optimal">Optimal Lineup</button>
               </div>
               <div class="tab-panels">
                 <div class="tab-panel active" data-tab="scorers">
@@ -5080,6 +5087,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
                 </div>
                 <div class="tab-panel" data-tab="scout">
                   {scout_panel_content}
+                </div>
+                <div class="tab-panel" data-tab="optimal">
+                  {optimal_panel_content}
                 </div>
               </div>
             </div>
@@ -11676,34 +11686,145 @@ def page_optimal(platform: str, season: int, league_id: str):
 # PLAYOFF SCHEDULE HIGHLIGHTER
 # ══════════════════════════════════════════════════════════════════════════════
 
-def build_playoff_schedule_body(ctx):
-    from dashboard_services.matchups import build_defense_rankings
+_FPTS_AGAINST_CACHE: dict = {}
+_FPTS_AGAINST_CACHE_TS: dict = {}
+_FPTS_AGAINST_TTL = 3600  # 1 hour
 
+def _compute_fpts_against(season: int) -> dict:
+    """
+    Compute fantasy points allowed per game by each NFL defense, broken down by position.
+    Uses cached weekly stats (pts_ppr per player) + schedule files to attribute
+    each player's output to the opposing defense.
+
+    Returns: {
+      "NE": {"QB": 22.1, "RB": 18.4, "WR": 28.6, "TE": 9.2, "games": 9},
+      ...
+    }
+    """
+    import glob as _glob
+    global _FPTS_AGAINST_CACHE, _FPTS_AGAINST_CACHE_TS
+
+    cache_key = str(season)
+    now = time.time()
+    if _FPTS_AGAINST_CACHE.get(cache_key) and now - _FPTS_AGAINST_CACHE_TS.get(cache_key, 0) < _FPTS_AGAINST_TTL:
+        return _FPTS_AGAINST_CACHE[cache_key]
+
+    players_idx = get_players_index_global() or {}
+    # Build fast pid→(team, pos) lookup
+    pid_to_info: dict = {}
+    for pid, info in players_idx.items():
+        team = (info.get("team") or "").upper()
+        pos  = (info.get("pos") or "").upper()
+        if team and pos in {"QB", "RB", "WR", "TE", "K"}:
+            pid_to_info[str(pid)] = (team, pos)
+
+    # Weekly stats files: sleeper_stats_s{year}_w{week}_*.json
+    stat_files = sorted(_glob.glob(
+        os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
+    ))
+
+    # totals[team][pos] = list of fpts scored against them
+    from collections import defaultdict as _dd
+    totals: dict = _dd(lambda: _dd(list))
+    games_played: dict = _dd(set)   # games_played[team] = set of (week, opponent) seen
+
+    for stat_file in stat_files:
+        try:
+            import re as _re
+            basename = os.path.basename(stat_file)
+            m = _re.match(r"sleeper_stats_s(\d+)_w(\d+)", basename)
+            if not m:
+                continue
+            week = int(m.group(2))
+
+            # Load schedule for this week to build team→opponent map
+            sched_files = _glob.glob(
+                os.path.join("cache", "schedule", f"schedule_s{season}_w{week}_*.json")
+            )
+            if not sched_files:
+                continue
+            games = json.load(open(sched_files[0]))
+            opp_map: dict = {}  # team → opponent for this week
+            for g in games:
+                home = (g.get("home") or "").upper()
+                away = (g.get("away") or "").upper()
+                if home and away:
+                    opp_map[home] = away
+                    opp_map[away] = home
+                    games_played[home].add((week, away))
+                    games_played[away].add((week, home))
+
+            # Load stats
+            stats_data = json.load(open(stat_file))
+            if not isinstance(stats_data, dict):
+                continue
+
+            for pid, stats in stats_data.items():
+                info = pid_to_info.get(str(pid))
+                if not info:
+                    continue
+                player_team, pos = info
+                opp = opp_map.get(player_team)
+                if not opp:
+                    continue  # on bye or no schedule data
+                pts = float(stats.get("pts_ppr") or 0)
+                if pts == 0:
+                    continue
+                totals[opp][pos].append(pts)
+        except Exception:
+            continue
+
+    result = {}
+    for team, pos_dict in totals.items():
+        n_games = max(len(games_played.get(team, set())), 1)
+        result[team] = {"games": n_games}
+        for pos, pts_list in pos_dict.items():
+            result[team][pos] = round(sum(pts_list) / n_games, 1)
+
+    _FPTS_AGAINST_CACHE[cache_key] = result
+    _FPTS_AGAINST_CACHE_TS[cache_key] = now
+    return result
+
+def build_playoff_schedule_body(ctx):
     platform  = ctx.get("platform") or "sleeper"
     season    = ctx.get("season") or 2025
     league_id = ctx.get("league_id") or ""
     viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     rosters   = ctx.get("rosters") or []
     players_idx = get_players_index_global() or {}
-    teams_idx = load_teams_index() or {}
 
     settings       = (ctx.get("league") or {}).get("settings") or {}
     playoff_start  = int(settings.get("playoff_week_start") or 14)
     playoff_weeks  = list(range(playoff_start, playoff_start + 4))
 
-    # Build defense rankings
-    def_ranks = build_defense_rankings(teams_idx) if teams_idx else {}
+    # FPTS allowed per game by each defense, by position
+    fpts_against = _compute_fpts_against(season)
+
+    # Build per-position rank ordering (lower FPTS allowed = better for offense)
+    # rank 1 = easiest matchup (most pts allowed)
+    _pos_rank_cache: dict = {}
+    def _fpts_rank(team: str, pos: str) -> tuple:
+        """Return (rank, total, fpts_per_game) for team vs pos. Lower rank = harder."""
+        if pos not in _pos_rank_cache:
+            vals = [(t, fpts_against.get(t, {}).get(pos, 0)) for t in fpts_against]
+            vals.sort(key=lambda x: x[1], reverse=True)  # most pts allowed = rank 1 (easiest)
+            _pos_rank_cache[pos] = {t: (i + 1, len(vals)) for i, (t, _) in enumerate(vals)}
+        entry = _pos_rank_cache.get(pos, {}).get(team)
+        fpts_val = fpts_against.get(team, {}).get(pos, 0)
+        if entry:
+            return entry[0], entry[1], fpts_val
+        return None, None, fpts_val
 
     def _rank_color(rank, total):
         if not rank or not total:
             return "#6b7280", "var(--surface)"
         pct = rank / total
-        if pct <= 0.25:   return "#22c55e", "#22c55e18"
+        if pct <= 0.25:   return "#22c55e", "#22c55e18"  # easiest (most pts allowed)
         if pct <= 0.50:   return "#84cc16", "#84cc1618"
         if pct <= 0.75:   return "#f59e0b", "#f59e0b18"
-        return "#ef4444", "#ef444418"
+        return "#ef4444", "#ef444418"                    # hardest (fewest pts allowed)
 
-    total_teams = len(teams_idx) or 32
+    total_teams = max(len(fpts_against), 32)
 
     # Build schedule lookup per week
     schedules = {}
@@ -11741,7 +11862,6 @@ def build_playoff_schedule_body(ctx):
     for p in players:
         nfl = p["nfl"]
         pos_color = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#a855f7"}.get(p["pos"], "#6b7280")
-        pos_key   = "opp_pass_yds_pg" if p["pos"] == "QB" else "opp_rush_yds_pg" if p["pos"] == "RB" else "opp_pass_yds_pg"
         cells = ""
         for w in playoff_weeks:
             game = schedules[w].get(nfl)
@@ -11750,12 +11870,14 @@ def build_playoff_schedule_body(ctx):
                 continue
             opp = game["opp"]
             at  = "" if game["is_home"] else "@"
-            rank = (def_ranks.get(opp) or {}).get(pos_key)
-            txt_color, bg_color = _rank_color(rank, total_teams)
-            rank_label = f"#{rank}" if rank else "?"
+            rank, total, fpts_val = _fpts_rank(opp, p["pos"])
+            txt_color, bg_color = _rank_color(rank, total)
+            rank_label = f"#{rank}" if rank else "–"
+            fpts_label = f"{fpts_val:.1f} pts" if fpts_val else ""
             cells += (f"<td style='padding:8px;text-align:center;background:{bg_color};'>"
                       f"<div style='font-weight:600;'>{at}{opp}</div>"
                       f"<div style='font-size:11px;color:{txt_color};font-weight:700;'>{rank_label}</div>"
+                      f"<div style='font-size:10px;color:var(--muted);'>{fpts_label}</div>"
                       f"</td>")
         grid_rows += f"""
 <tr style="border-bottom:1px solid var(--border);">
@@ -11773,7 +11895,7 @@ def build_playoff_schedule_body(ctx):
   <span><span style="display:inline-block;width:10px;height:10px;background:#84cc16;border-radius:2px;margin-right:4px;"></span>Good matchup</span>
   <span><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px;margin-right:4px;"></span>Tough matchup</span>
   <span><span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:2px;margin-right:4px;"></span>Brutal matchup (bottom 25%)</span>
-  <span style="color:var(--muted)">Defensive rank = pass yds allowed/game (QBs/WRs/TEs) or rush yds allowed/game (RBs)</span>
+  <span style="color:var(--muted)">Rank = fantasy pts allowed per game at that position (PPR) — #1 = most pts allowed = easiest matchup</span>
 </div>"""
 
     week_labels = " · ".join(f"Wk {w}" for w in playoff_weeks)
@@ -11978,6 +12100,26 @@ def build_commissioner_body(ctx):
 @app.route("/<platform>/<int:season>/<league_id>/commissioner")
 def page_commissioner(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
+
+    # Gate: only the league commissioner can view this page
+    league_obj      = ctx.get("league") or {}
+    commissioner_id = league_obj.get("commissioner_id") or ""
+    rosters         = ctx.get("rosters") or []
+    viewer_rid      = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    viewer_roster   = next((r for r in rosters if str(r.get("roster_id")) == viewer_rid), None)
+    viewer_owner_id = (viewer_roster or {}).get("owner_id") or ""
+
+    is_commissioner = bool(commissioner_id and viewer_owner_id and commissioner_id == viewer_owner_id)
+
+    if not is_commissioner:
+        body = ("<div class='card central' style='max-width:500px;margin:60px auto;'>"
+                "<div class='card-body' style='padding:32px;text-align:center;'>"
+                "<div style='font-size:32px;margin-bottom:12px;'>🔒</div>"
+                "<h3 style='margin-bottom:8px;'>Commissioner Only</h3>"
+                "<p style='color:var(--muted);'>This page is only accessible to the league commissioner.</p>"
+                "</div></div>")
+        return render_page("Commissioner Dashboard", league_id, "commissioner", body, platform, season)
+
     body = build_commissioner_body(ctx)
     return render_page("Commissioner Dashboard", league_id, "commissioner", body, platform, season)
 
