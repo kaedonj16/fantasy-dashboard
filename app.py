@@ -19389,13 +19389,13 @@ def build_portfolio_body(
     rec_str = f"{total_wins}-{total_losses}" + (f"-{total_ties}" if total_ties else "")
     rec_cls = "color-win" if total_wins > total_losses else ("color-loss" if total_losses > total_wins else "")
     top_strip = (
-        f"<div class='card' style='margin-bottom:14px;'>"
-        f"<div class='card-header-row'>"
+        f"<div class='card' style='margin-bottom:14px;padding:14px 16px;'>"
+        f"<div style='display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;'>"
         f"<div>"
         f"<div style='font-size:15px;font-weight:700;'>My Leagues &mdash; {season}</div>"
-        f"<div style='font-size:13px;color:var(--text-muted);margin-top:2px;'>Signed in as <strong>{html.escape(username)}</strong></div>"
+        f"<div style='font-size:13px;color:var(--text-muted);margin-top:3px;'>Signed in as <strong>{html.escape(username)}</strong></div>"
         f"</div>"
-        f"<div style='display:flex;gap:28px;'>"
+        f"<div style='display:flex;gap:24px;flex-shrink:0;'>"
         f"<div style='text-align:right;'>"
         f"<div style='font-size:11px;color:var(--text-subtle);text-transform:uppercase;letter-spacing:.06em;font-weight:600;'>Leagues</div>"
         f"<div style='font-size:20px;font-weight:700;'>{num_leagues}</div>"
@@ -19456,9 +19456,27 @@ def build_portfolio_body(
         arch_badge = f"<span class='pf-arch' style='background:{_arch_color};'>{arch}</span>"
 
         off_note = f"<span style='font-size:11px;color:var(--text-subtle);margin-left:4px;'>(Off)</span>" if lg.get("offseason") else ""
+
+        pos_ranks = lg.get("pos_user_rank") or {}
+        rank_chips = ""
+        for _pos in ["QB", "RB", "WR", "TE"]:
+            _pr = pos_ranks.get(_pos)
+            if _pr:
+                _pc = _POS_CLS_MAP.get(_pos, "pos-k")
+                rank_chips += (
+                    f"<span style='display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--text-muted);white-space:nowrap;'>"
+                    f"<span class='pos-badge {_pc}' style='font-size:0.65em;padding:0 4px;height:14px;line-height:14px;'>{_pos}</span>"
+                    f"#{_pr}"
+                    f"</span>"
+                )
+        rank_row = f"<div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;'>{rank_chips}</div>" if rank_chips else ""
+
         league_rows += (
             f"<tr>"
-            f"<td class='team'><a href='{href}' style='text-decoration:none;color:inherit;font-weight:600;'>{name}</a>{off_note}</td>"
+            f"<td class='team'>"
+            f"<a href='{href}' style='text-decoration:none;color:inherit;font-weight:600;'>{name}</a>{off_note}"
+            f"{rank_row}"
+            f"</td>"
             f"<td><span class='{rec_cls2}'>{rec}</span></td>"
             f"<td>{rank}/{total}</td>"
             f"<td><div class='pf-streak'>{dots}</div></td>"
@@ -19496,8 +19514,10 @@ def build_portfolio_body(
                 d_str, d_color = f"+{delta:.0f}%", "var(--win)"
             elif delta < -8:
                 d_str, d_color = f"{delta:.0f}%", "var(--loss)"
+            elif delta >= 0:
+                d_str, d_color = f"+{delta:.0f}%", "var(--text-muted)"
             else:
-                d_str, d_color = "avg", "var(--text-muted)"
+                d_str, d_color = f"{delta:.0f}%", "var(--text-muted)"
             _pos_cls = _POS_CLS_MAP.get(pos, "pos-k")
             pos_rows += (
                 f"<div class='pf-pos-row'>"
