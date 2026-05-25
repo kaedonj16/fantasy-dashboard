@@ -12066,6 +12066,24 @@ def get_model_value_table_cached():
     except Exception as e:
         print(f"[model-value-cache] rookies skipped: {e}")
 
+    # Recompute pos_rank after rookies are appended (rookies were added after the
+    # earlier rank pass, so they would otherwise always have pos_rank=None)
+    if tbl:
+        from collections import defaultdict as _dd2
+        def _rerank(table, val_key, rank_key, label_key):
+            _grp = _dd2(list)
+            for _i, _p in enumerate(table):
+                _pos = str(_p.get("position") or "").upper()
+                if _pos and _pos != "PICK":
+                    _grp[_pos].append(_i)
+            for _pos, _idxs in _grp.items():
+                _idxs.sort(key=lambda _i: float(table[_i].get(val_key) or 0), reverse=True)
+                for _rank, _i in enumerate(_idxs, 1):
+                    table[_i][rank_key]  = _rank
+                    table[_i][label_key] = f"{_pos}{_rank}"
+        _rerank(tbl, "value",    "pos_rank",    "pos_rank_label")
+        _rerank(tbl, "sf_value", "sf_pos_rank", "sf_pos_rank_label")
+
     _MODEL_VALUE_CACHE = tbl
     _MODEL_VALUE_CACHE_TS = now
     return tbl
