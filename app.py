@@ -1180,9 +1180,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Trade Database",   "trade.page_trade_database", "trade-database", False),
         ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
-    # Weekly Hub only makes sense once games are being played
+    # Weekly Hub is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
-    if not offseason_mode:
+    if draft_ended or not offseason_mode:
         nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",    "page_standings",    "standings",    False),
@@ -8470,17 +8470,7 @@ def api_start_sit_options():
 def page_weekly(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
 
-    if ctx.get("offseason_mode"):
-        body = """
-        <div class="card central">
-          <div class="card-header"><h2>Weekly Hub Unavailable</h2></div>
-          <div class="card-body">
-            <p>The Weekly Hub becomes active once the season begins and games are being played.</p>
-            <p>Use the Dashboard, Teams, and Trade tools for offseason planning.</p>
-          </div>
-        </div>
-        """
-    elif not has_draft_ended(league_id, platform, season):
+    if not has_draft_ended(league_id, platform, season):
         body = """
         <div class="card central">
           <div class="card-header"><h2>Weekly Hub Unavailable</h2></div>
