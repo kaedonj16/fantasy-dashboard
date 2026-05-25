@@ -32,9 +32,15 @@ def from_players_map(pid: str, players_map: Optional[Dict[str, Any]] = None) -> 
     """Get player info from the provided players_map."""
     info = players_map.get(pid) if players_map else None
     if info:
-        name = info.get("name") or pid
+        # support both processed maps (name) and raw Sleeper data (full_name)
+        name = info.get("name") or info.get("full_name") or pid
+        if name == pid:
+            first = info.get("first_name") or ""
+            last  = info.get("last_name") or ""
+            if first or last:
+                name = " ".join(x for x in (first, last) if x)
         nfl = info.get("team") or "FA"
-        pos = info.get("pos") or (
+        pos = info.get("pos") or info.get("position") or (
             info.get("fantasy_positions", [""])[0]
             if info.get("fantasy_positions")
             else ""
