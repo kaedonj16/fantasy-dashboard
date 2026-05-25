@@ -9074,8 +9074,56 @@ img, svg, canvas {
 
 @media (max-width: 900px) {
   .m-row {
-    grid-template-columns: 1fr 56px 56px 1fr;
+    grid-template-columns: 1fr 52px 52px 1fr;
   }
+  /* collapse the stat-stack children so they don't wrap to a second row */
+  .m-row > :nth-child(2),
+  .m-row > :nth-child(5) {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Header: tighter padding, smaller avatar, smaller score number */
+  .m-nav h2 { font-size: 15px; }
+  .m-btn { padding: 4px 8px; font-size: 12px; }
+
+  .m-head {
+    grid-template-columns: 1fr 28px 1fr;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .m-vs { font-size: 0.8rem; }
+  .m-team { gap: 6px; min-width: 0; }
+  .m-team > div { min-width: 0; overflow: hidden; }
+  .m-team .avatar { width: 40px; height: 40px; flex-shrink: 0; }
+  .m-team .name {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .m-team .num { font-size: 20px; letter-spacing: 0.5px; }
+  .m-team .proj { font-size: 11px; }
+
+  /* Player rows: tighter grid and smaller text */
+  .m-row {
+    grid-template-columns: 1fr 38px 38px 1fr;
+    column-gap: 4px;
+    padding: 0 4px;
+  }
+  .num.mid { min-width: 34px; font-size: 12px; }
+
+  .m-combo .p { gap: 4px; padding: 3px 0; }
+  .m-combo .pos-badge { font-size: 9px; padding: 1px 4px; flex-shrink: 0; }
+  .m-combo .meta { font-size: 10px; line-height: 1.25; }
+  .m-combo .pname { font-size: 12px; }
+}
+
+@media (max-width: 400px) {
+  /* On very small phones hide the avatar entirely */
+  .m-team .avatar { display: none; }
+  .m-head { grid-template-columns: 1fr 24px 1fr; }
 }
 
 @media (max-width: 720px) {
