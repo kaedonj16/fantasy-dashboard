@@ -19,17 +19,14 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-pos-btn {
   padding: 5px 14px; border-radius: 16px; font-size: 12px; font-weight: 700;
   border: 1px solid var(--border); background: var(--card); color: var(--text-muted); cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
 }
 .wv-pos-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* Mobile tab bar */
 .wv-tab-bar {
-  display: none;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  margin-bottom: 16px;
-  background: var(--card);
+  display: none; border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border); margin-bottom: 16px; background: var(--card);
 }
 .wv-tab-btn {
   flex: 1; padding: 10px 0; font-size: 13px; font-weight: 700;
@@ -50,6 +47,8 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 @media(min-width: 769px) { .wv-section { display: block !important; } }
 .wv-section-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
 .wv-loading { display: flex; justify-content: center; padding: 40px; }
+
+/* Waiver wire rows */
 .wv-player-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 12px; border-radius: 8px; background: var(--card);
@@ -62,31 +61,87 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .wv-value { font-size: 13px; font-weight: 700; color: var(--text); }
 .wv-signal { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
 .signal-breakout { background: #10b98120; color: #10b981; }
-.signal-rising { background: #3b82f620; color: #3b82f6; }
-.signal-value { background: #8b5cf620; color: #8b5cf6; }
-.signal-aging { background: #f59e0b20; color: #f59e0b; }
-.signal-hold { background: var(--row); color: var(--text-muted); }
+.signal-rising   { background: #3b82f620; color: #3b82f6; }
+.signal-value    { background: #8b5cf620; color: #8b5cf6; }
+.signal-aging    { background: #f59e0b20; color: #f59e0b; }
+.signal-hold     { background: var(--row); color: var(--text-muted); }
+
+/* Start/Sit player cards */
 .wv-ss-pos-group { margin-bottom: 16px; }
 .wv-ss-pos-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
 .wv-ss-player {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 9px 12px; border-radius: 8px; background: var(--card);
-  border: 1px solid var(--border); margin-bottom: 6px; cursor: pointer;
+  padding: 10px 12px; border-radius: 8px; background: var(--card);
+  border: 1px solid var(--border); margin-bottom: 6px;
 }
-.wv-ss-player.wv-ss-start { border-color: #10b981; background: #10b98108; }
-.wv-ss-player.wv-ss-bye { opacity: .55; }
-.wv-ss-left { flex: 1; min-width: 0; }
+.wv-ss-player.wv-ss-start  { border-color: #10b981; background: #10b98108; }
+.wv-ss-player.wv-ss-bye    { opacity: .55; }
+.wv-ss-player.wv-ss-selected { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* Top row: name + badge */
+.wv-ss-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wv-ss-name-block { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; cursor: pointer; }
+.wv-ss-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* Stats row under the name */
+.wv-ss-stats { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+.wv-ss-stat { display: flex; flex-direction: column; gap: 1px; }
+.wv-ss-stat-lbl { font-size: 10px; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.wv-ss-stat-val { font-size: 13px; font-weight: 700; color: var(--text); }
+.wv-ss-stat-val.muted { color: var(--text-muted); }
+
+/* Matchup chip */
+.wv-mu { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; }
+.wv-mu-easy { background: #22c55e20; color: #22c55e; }
+.wv-mu-ok   { background: #84cc1620; color: #84cc16; }
+.wv-mu-avg  { background: #f59e0b20; color: #f59e0b; }
+.wv-mu-hard { background: #ef444420; color: #ef4444; }
+
+/* Badges */
 .wv-ss-start-badge      { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #10b98120; color: #10b981; flex-shrink: 0; }
 .wv-ss-flex-start-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #10b98120; color: #10b981; border: 1px solid #10b98140; flex-shrink: 0; }
 .wv-ss-flex-badge       { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #3b82f620; color: #3b82f6; flex-shrink: 0; }
 .wv-ss-sit-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--row); color: var(--text-muted); flex-shrink: 0; }
 .wv-ss-bye-badge        { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: #f59e0b20; color: #f59e0b; flex-shrink: 0; }
-.wv-ss-opp  { color: var(--accent, #3b82f6); font-weight: 600; }
-.wv-ss-pts  { color: var(--text-muted); }
-.wv-ss-slot-count { font-size: 10px; font-weight: 500; color: var(--text-muted); }
-.wv-inj-out  { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #ef444420; color: #ef4444; margin-left: 4px; }
-.wv-inj-q    { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #f59e0b20; color: #f59e0b; margin-left: 4px; }
-.wv-inj-d    { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #f97316a0; color: #f97316; margin-left: 4px; }
+.wv-inj-out { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #ef444420; color: #ef4444; }
+.wv-inj-q   { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #f59e0b20; color: #f59e0b; }
+.wv-inj-d   { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #f9731620; color: #f97316; }
+
+/* Compare button */
+.wv-cmp-btn {
+  font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+  cursor: pointer; transition: background .12s, color .12s, border-color .12s; flex-shrink: 0;
+}
+.wv-cmp-btn:hover { border-color: var(--accent); color: var(--accent); }
+.wv-cmp-btn.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Compare panel */
+.wv-compare-panel {
+  background: var(--card); border: 1px solid var(--accent); border-radius: 10px;
+  margin-bottom: 16px; overflow: hidden;
+}
+.wv-compare-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-muted);
+}
+.wv-compare-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+}
+.wv-compare-col { padding: 14px; }
+.wv-compare-col:first-child { border-right: 1px solid var(--border); }
+.wv-compare-player-name { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+.wv-compare-player-sub  { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.wv-compare-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.wv-compare-row:last-child { border-bottom: none; }
+.wv-compare-lbl { color: var(--text-muted); font-size: 12px; }
+.wv-compare-val { font-weight: 700; }
+.wv-compare-win { color: #22c55e; }
+.wv-compare-lose { color: #ef4444; }
 </style>
 """
 
@@ -105,13 +160,13 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     </div>
   </div>
 
-  <!-- Mobile tab bar (hidden on desktop via CSS) -->
+  <!-- Mobile tab bar -->
   <div class="wv-tab-bar">
     <button class="wv-tab-btn active" id="wvTabWaivers" onclick="wvSetTab('waivers')">Waiver Wire</button>
     <button class="wv-tab-btn" id="wvTabStartSit" onclick="wvSetTab('startsit')">Start/Sit</button>
   </div>
 
-  <!-- Two-column layout (tabs on mobile) -->
+  <!-- Two-column layout -->
   <div class="wv-layout">
     <!-- Left: Waiver Wire -->
     <div class="wv-section wv-tab-active" id="wvSectionWaivers">
@@ -124,6 +179,8 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
     <!-- Right: Start/Sit -->
     <div class="wv-section" id="wvSectionStartSit">
       <div class="wv-section-title">Start/Sit Advisor</div>
+      <!-- Compare panel (hidden until 2 players selected) -->
+      <div id="wvComparePanel" style="display:none;"></div>
       <div id="wvStartSit">
         <div class="wv-loading"><div class="loading-spinner"></div></div>
       </div>
@@ -140,8 +197,8 @@ const WV_LEAGUE_ID = '{league_id}';
 let wvCurrentPos = 'ALL';
 let wvWaiverData = [];
 let wvStartSitData = {{}};
+let wvCompare = [null, null]; // [playerA, playerB]
 
-// Ensure __brctx has the league ID so showLoginGate shows "Sign In" button, not "Get Started" link
 if (!window.__brctx) window.__brctx = {{}};
 if (!window.__brctx.leagueId) window.__brctx.leagueId = WV_LEAGUE_ID;
 
@@ -160,19 +217,45 @@ function wvSetPos(pos) {{
   wvRenderStartSit();
 }}
 
+// ── Matchup chip helper ───────────────────────────────────────────────────────
+function wvMuChip(rank, total) {{
+  if (!rank || !total) return '';
+  const pct = rank / total;
+  if (pct <= 0.25) return `<span class="wv-mu wv-mu-easy">#${{rank}} easiest</span>`;
+  if (pct <= 0.50) return `<span class="wv-mu wv-mu-ok">#${{rank}} favorable</span>`;
+  if (pct <= 0.75) return `<span class="wv-mu wv-mu-avg">#${{rank}} tough</span>`;
+  return `<span class="wv-mu wv-mu-hard">#${{rank}} hardest</span>`;
+}}
+
+function wvMuClass(rank, total) {{
+  if (!rank || !total) return '';
+  const pct = rank / total;
+  if (pct <= 0.25) return 'wv-compare-win';
+  if (pct <= 0.75) return '';
+  return 'wv-compare-lose';
+}}
+
+// ── Injury badge ──────────────────────────────────────────────────────────────
+function wvInjBadge(inj) {{
+  if (!inj) return '';
+  const u = inj.toUpperCase();
+  if (['IR','OUT','PUP','SUSP'].includes(u)) return `<span class="wv-inj-out">${{u}}</span>`;
+  if (['DOUBTFUL','D'].includes(u))          return `<span class="wv-inj-d">D</span>`;
+  if (['QUESTIONABLE','Q','GTD'].includes(u)) return `<span class="wv-inj-q">Q</span>`;
+  return `<span class="wv-inj-q">${{inj}}</span>`;
+}}
+
+// ── Load ──────────────────────────────────────────────────────────────────────
 function wvLoad() {{
-  // Load waiver candidates
   fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
     .then(d => {{ wvWaiverData = d.candidates || []; wvRenderWaivers(); }})
     .catch(() => {{ document.getElementById('wvWaiverList').innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px;">Unable to load</div>'; }});
 
-  // Load start-sit options
   fetch(`/api/start-sit-options?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
     .then(d => {{
       if (!d.positions || !Object.keys(d.positions).length) {{
-        // Empty positions means no viewer resolved — show sign-in prompt
         showLoginGate('wvStartSit', {{
           title: 'Sign in to see your lineup',
           description: 'Enter your Sleeper username to get personalized start/sit recommendations for your roster.'
@@ -189,6 +272,7 @@ function wvLoad() {{
     }});
 }}
 
+// ── Waiver list ───────────────────────────────────────────────────────────────
 function wvRenderWaivers() {{
   const list = document.getElementById('wvWaiverList');
   let players = wvWaiverData;
@@ -208,18 +292,108 @@ function wvRenderWaivers() {{
   `).join('');
 }}
 
+// ── Compare slot management ───────────────────────────────────────────────────
+function wvToggleCompare(p) {{
+  const id = p.player_id;
+  const inSlot0 = wvCompare[0] && wvCompare[0].player_id === id;
+  const inSlot1 = wvCompare[1] && wvCompare[1].player_id === id;
+
+  if (inSlot0) {{ wvCompare[0] = null; }}
+  else if (inSlot1) {{ wvCompare[1] = null; }}
+  else if (!wvCompare[0]) {{ wvCompare[0] = p; }}
+  else if (!wvCompare[1]) {{ wvCompare[1] = p; }}
+  else {{ wvCompare[0] = wvCompare[1]; wvCompare[1] = p; }}
+
+  wvRenderCompare();
+  wvRenderStartSit();
+}}
+
+function wvIsSelected(id) {{
+  return (wvCompare[0] && wvCompare[0].player_id === id) ||
+         (wvCompare[1] && wvCompare[1].player_id === id);
+}}
+
+function wvRenderCompare() {{
+  const panel = document.getElementById('wvComparePanel');
+  const a = wvCompare[0], b = wvCompare[1];
+  if (!a || !b) {{ panel.style.display = 'none'; return; }}
+  panel.style.display = 'block';
+
+  function col(p, other) {{
+    const muChip = wvMuChip(p.def_rank, p.def_total);
+    const defLabel = p.fpts_against > 0
+      ? `${{p.fpts_against}} pts/gm allowed`
+      : (p.on_bye ? 'BYE' : '—');
+    const ppgWin  = (other && p.season_ppg > 0 && other.season_ppg > 0) ? (p.season_ppg > other.season_ppg ? 'wv-compare-win' : 'wv-compare-lose') : '';
+    const projWin = (other && p.proj_pts > 0 && other.proj_pts > 0)     ? (p.proj_pts  > other.proj_pts  ? 'wv-compare-win' : 'wv-compare-lose') : '';
+    const muCls   = wvMuClass(p.def_rank, p.def_total);
+    return `
+      <div class="wv-compare-col">
+        <div class="wv-compare-player-name">${{p.name}}</div>
+        <div class="wv-compare-player-sub">${{[p.team, p.pos_rank_label, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ')}}</div>
+        <div class="wv-compare-row">
+          <span class="wv-compare-lbl">PPG (season)</span>
+          <span class="wv-compare-val ${{ppgWin}}">${{p.season_ppg > 0 ? p.season_ppg : '—'}}</span>
+        </div>
+        <div class="wv-compare-row">
+          <span class="wv-compare-lbl">Projected</span>
+          <span class="wv-compare-val ${{projWin}}">${{p.proj_pts > 0 ? p.proj_pts : '—'}}</span>
+        </div>
+        <div class="wv-compare-row">
+          <span class="wv-compare-lbl">Opponent</span>
+          <span class="wv-compare-val">${{p.opponent || (p.on_bye ? 'BYE' : '—')}}</span>
+        </div>
+        <div class="wv-compare-row">
+          <span class="wv-compare-lbl">Def vs pos</span>
+          <span class="wv-compare-val ${{muCls}}">${{defLabel}}</span>
+        </div>
+        <div class="wv-compare-row">
+          <span class="wv-compare-lbl">Matchup rank</span>
+          <span class="wv-compare-val">${{muChip || (p.on_bye ? '—' : 'No data')}}</span>
+        </div>
+        <div class="wv-compare-row">
+          <span class="wv-compare-lbl">Dynasty rank</span>
+          <span class="wv-compare-val">${{p.pos_rank_label || '—'}}</span>
+        </div>
+      </div>`;
+  }}
+
+  panel.innerHTML = `
+    <div class="wv-compare-panel">
+      <div class="wv-compare-header">
+        <span>Compare</span>
+        <button onclick="wvClearCompare()" style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;">Clear</button>
+      </div>
+      <div class="wv-compare-grid">
+        ${{col(a, b)}}
+        ${{col(b, a)}}
+      </div>
+    </div>`;
+}}
+
+function wvClearCompare() {{
+  wvCompare = [null, null];
+  wvRenderCompare();
+  wvRenderStartSit();
+}}
+
+// ── Start/Sit list ────────────────────────────────────────────────────────────
 function wvRenderStartSit() {{
   const el = document.getElementById('wvStartSit');
   const positions = wvCurrentPos === 'ALL' ? ['QB','RB','WR','TE'] : [wvCurrentPos];
   const reqs = wvStartSitData._lineup_requirements || {{}};
+
   const sections = positions.map(pos => {{
     const players = (wvStartSitData.positions || {{}})[pos] || [];
     if (!players.length) return '';
-    const rows = players.slice(0, 6).map(p => {{
+
+    const rows = players.slice(0, 8).map(p => {{
       const isStart     = p.start === true;
       const isFlexStart = p.flex_start === true;
       const isFlex      = p.flex_eligible === true && !isStart;
       const isBye       = p.on_bye === true;
+      const isSelected  = wvIsSelected(p.player_id);
+
       const badge = isBye
         ? '<span class="wv-ss-bye-badge">BYE</span>'
         : isFlexStart
@@ -229,29 +403,43 @@ function wvRenderStartSit() {{
             : isFlex
               ? '<span class="wv-ss-flex-badge">FLEX?</span>'
               : '<span class="wv-ss-sit-badge">SIT</span>';
-      const inj = (p.injury_status || '').toUpperCase();
-      const injBadge = !inj ? '' :
-        (inj === 'IR' || inj === 'OUT' || inj === 'PUP' || inj === 'SUSP')
-          ? `<span class="wv-inj-out">${{inj}}</span>`
-          : (inj === 'DOUBTFUL' || inj === 'D')
-            ? `<span class="wv-inj-d">D</span>`
-            : (inj === 'QUESTIONABLE' || inj === 'Q' || inj === 'GTD')
-              ? `<span class="wv-inj-q">Q</span>`
-              : `<span class="wv-inj-q">${{inj}}</span>`;
-      const matchup = p.opponent ? `<span class="wv-ss-opp">${{p.opponent}}</span>` : '';
-      const pts = p.avg_pts > 0 ? `<span class="wv-ss-pts">${{p.avg_pts}} avg</span>` : '';
+
+      const injBadge = wvInjBadge(p.injury_status);
+      const muChip   = !isBye ? wvMuChip(p.def_rank, p.def_total) : '';
+      const cmpCls   = isSelected ? 'selected' : '';
+
+      const statsRow = `
+        <div class="wv-ss-stats">
+          ${{p.season_ppg > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">PPG</span><span class="wv-ss-stat-val">${{p.season_ppg}}</span></div>` : ''}}
+          ${{p.proj_pts > 0   ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Proj</span><span class="wv-ss-stat-val">${{p.proj_pts}}</span></div>` : ''}}
+          ${{p.opponent       ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Opp</span><span class="wv-ss-stat-val muted">${{p.opponent}}</span></div>` : ''}}
+          ${{p.fpts_against > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Def allows</span><span class="wv-ss-stat-val muted">${{p.fpts_against}} pts</span></div>` : ''}}
+          ${{muChip ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Matchup</span><span class="wv-ss-stat-val">${{muChip}}</span></div>` : ''}}
+        </div>`;
+
       return `
-        <div class="wv-ss-player ${{isStart ? 'wv-ss-start' : ''}} ${{isBye ? 'wv-ss-bye' : ''}}" onclick="openPlayerModal('${{p.player_id}}', '${{(p.name||'').replace(/'/g,"\\'")}}')">
-          <div class="wv-ss-left">
-            <div class="wv-player-name">${{p.name}}${{injBadge}}</div>
-            <div class="wv-player-sub">${{[p.team, p.pos_rank_label, matchup, pts].filter(Boolean).join(' · ')}}</div>
+        <div class="wv-ss-player ${{isStart ? 'wv-ss-start' : ''}} ${{isBye ? 'wv-ss-bye' : ''}} ${{isSelected ? 'wv-ss-selected' : ''}}">
+          <div class="wv-ss-top">
+            <div class="wv-ss-name-block" onclick="openPlayerModal('${{p.player_id}}', '${{(p.name||'').replace(/'/g,"\\'")}}')">
+              <span class="wv-player-name">${{p.name}}</span>
+              ${{injBadge}}
+              ${{badge}}
+            </div>
+            <div class="wv-ss-actions">
+              <button class="wv-cmp-btn ${{isSelected ? 'selected' : ''}}"
+                onclick="event.stopPropagation();wvToggleCompare(${{JSON.stringify(p).replace(/"/g,'&quot;')}})">
+                ${{isSelected ? '✓' : '+'}} Compare
+              </button>
+            </div>
           </div>
-          ${{badge}}
+          ${{statsRow}}
         </div>`;
     }}).join('');
+
     const slotCount = reqs[pos] || 1;
-    return `<div class="wv-ss-pos-group"><div class="wv-ss-pos-label">${{pos}} <span class="wv-ss-slot-count">(${{slotCount}} starter${{slotCount > 1 ? 's' : ''}})</span></div>${{rows}}</div>`;
+    return `<div class="wv-ss-pos-group"><div class="wv-ss-pos-label">${{pos}} <span style="font-size:10px;font-weight:500;color:var(--text-muted);">(${{slotCount}} starter${{slotCount > 1 ? 's' : ''}})</span></div>${{rows}}</div>`;
   }}).join('');
+
   el.innerHTML = sections || '<div style="color:var(--text-muted);text-align:center;padding:20px;">No roster data found</div>';
 }}
 
