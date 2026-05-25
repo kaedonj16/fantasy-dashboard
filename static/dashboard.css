@@ -15516,6 +15516,59 @@ tr.team-clickable {
 }
 .pm-panel { display: none; }
 .pm-panel.pm-panel-active { display: block; }
+
+/* ── Weekly Hub tab bar — underline style matching pm-tab-bar ─────────────── */
+#weeklyLeftTabs {
+  background: var(--card);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+#weeklyLeftTabs .tab-bar {
+  display: flex;
+  background: var(--bg-alt, rgba(0,0,0,.03));
+  border-bottom: 1px solid var(--border);
+  padding: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  gap: 0;
+}
+#weeklyLeftTabs .tab-bar::-webkit-scrollbar { display: none; }
+#weeklyLeftTabs .tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 11px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  white-space: nowrap;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  border-radius: 0;
+  margin-bottom: -1px;
+}
+#weeklyLeftTabs .tab-btn:hover {
+  color: var(--text);
+  background: rgba(0,0,0,.04);
+}
+#weeklyLeftTabs .tab-btn.active {
+  color: var(--accent, #3b82f6);
+  border-bottom-color: var(--accent, #3b82f6);
+  background: transparent;
+}
+#weeklyLeftTabs .tab-panels {
+  padding: 0;
+}
+#weeklyLeftTabs .tab-panel {
+  display: none;
+}
+#weeklyLeftTabs .tab-panel.active {
+  display: block;
+}
+
 .pm-trade-card {
   border: 1px solid var(--border);
   border-radius: 10px;
