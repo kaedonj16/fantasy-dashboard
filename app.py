@@ -2342,8 +2342,20 @@ def ensure_weekly_bits(ctx: dict) -> None:
     if ctx.get("offseason_mode"):
         ctx["proj_by_week"] = {}
         ctx["statuses"] = {}
-        ctx["matchups_by_week"] = {}
         ctx["proj_by_roster"] = {}
+        # Still build historical matchups so Weekly Hub shows past-season scores
+        if "matchups_by_week" not in ctx:
+            try:
+                ctx["matchups_by_week"] = build_matchups_by_week(
+                    ctx.get("resolved_league_id", ctx["league_id"]),
+                    range(1, int(ctx.get("weeks") or 18) + 1),
+                    ctx.get("roster_map") or {},
+                    ctx.get("players") or {},
+                    int(ctx["season"]),
+                    ctx["platform"],
+                )
+            except Exception:
+                ctx["matchups_by_week"] = {}
         return
 
     def _apply_proj_column() -> None:
@@ -11911,6 +11923,8 @@ def page_playoff_schedule(platform: str, season: int, league_id: str):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def build_commissioner_body(ctx):
+    from dashboard_services.service import get_transactions_by_week
+
     platform   = ctx.get("platform") or "sleeper"
     season     = ctx.get("season") or 2025
     league_id  = ctx.get("league_id") or ""
@@ -11922,10 +11936,11 @@ def build_commissioner_body(ctx):
     current_week = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
     settings   = (ctx.get("league") or {}).get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
-    players_idx = get_players_index_global() or {}
     model_vals  = ctx.get("model_value_table") or get_model_value_table_cached() or []
-    val_by_pid  = {str(p.get("id") or ""): float(p.get("value") or 0) for p in model_vals if p.get("id")}
     is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in (ctx.get("roster_positions") or []))
+    val_key = "sf_value" if is_sf else "value"
+    val_by_pid = {str(p.get("id") or ""): float(p.get(val_key) or p.get("value") or 0)
+                  for p in model_vals if p.get("id")}
 
     owner_by_rid = {}
     for u in users:
@@ -11935,107 +11950,152 @@ def build_commissioner_body(ctx):
             if r.get("owner_id") == uid:
                 owner_by_rid[str(r.get("roster_id"))] = name
 
-    # ── 1. Roster values & inactive detection ─────────────────────────────
+    # ── 1. Fetch full-season transactions for real activity data ──────────
+    reg_season_weeks = min(current_week or playoff_start - 1, playoff_start - 1)
+    tx_by_week: dict = {}
+    try:
+        tx_by_week = get_transactions_by_week(
+            league_id, range(1, max(reg_season_weeks + 1, 2)), platform=platform, season=season
+        ) or {}
+    except Exception:
+        pass
+
+    # Per-roster move counts from actual transactions (not roster snapshot)
+    txn_by_rid: dict = {}
+    trade_count_by_rid: dict = {}
+    for wk, txns in tx_by_week.items():
+        for tx in (txns or []):
+            rids = {str(r) for r in (tx.get("roster_ids") or [])}
+            rids |= {str(v) for v in (tx.get("adds") or {}).values()}
+            rids |= {str(v) for v in (tx.get("drops") or {}).values()}
+            for rid in rids:
+                if tx.get("type") == "trade":
+                    trade_count_by_rid[rid] = trade_count_by_rid.get(rid, 0) + 1
+                else:
+                    txn_by_rid[rid] = txn_by_rid.get(rid, 0) + 1
+
+    # ── 2. Roster values & activity ───────────────────────────────────────
     roster_infos = []
     for r in rosters:
-        rid = str(r.get("roster_id"))
-        pids = [str(p) for p in (r.get("players") or [])]
-        val  = sum(val_by_pid.get(pid, 0) for pid in pids)
-        r_st = r.get("settings") or {}
-        wins = r_st.get("wins", 0)
+        rid   = str(r.get("roster_id"))
+        pids  = [str(p) for p in (r.get("players") or [])]
+        val   = sum(val_by_pid.get(pid, 0) for pid in pids)
+        r_st  = r.get("settings") or {}
+        wins  = r_st.get("wins", 0)
         losses = r_st.get("losses", 0)
-        waiver_pos = r_st.get("waiver_position", 0)
-        # Transaction count in last 2 weeks proxy: use waiver_budget_used as activity signal
-        txns = int(r_st.get("total_moves") or 0)
+        # Prefer transaction-API counts; fall back to roster snapshot
+        txns  = txn_by_rid.get(rid) or int(r_st.get("total_moves") or 0)
+        trades = trade_count_by_rid.get(rid, 0)
+        games_played = wins + losses
+        inactive = txns == 0 and games_played > 3
         roster_infos.append({
-            "rid": rid,
-            "name": roster_map.get(rid, f"Team {rid}"),
+            "rid": rid, "name": roster_map.get(rid, f"Team {rid}"),
             "owner": owner_by_rid.get(rid, "Unknown"),
             "wins": wins, "losses": losses,
-            "value": round(val, 0),
-            "txns": txns,
-            "waiver_pos": waiver_pos,
-            "inactive": txns == 0 and (wins + losses) > 2,
+            "value": round(val, 0), "txns": txns, "trades": trades,
+            "inactive": inactive,
         })
-    roster_infos.sort(key=lambda x: -x["value"])
 
-    # ── 2. Trade fairness ─────────────────────────────────────────────────
+    # Value share % relative to league total (matches teams page display)
+    league_val_total = sum(r["value"] for r in roster_infos) or 1.0
+    fair_share = 100.0 / max(len(roster_infos), 1)
+    for r in roster_infos:
+        r["value_pct"] = round(r["value"] / league_val_total * 100, 1)
+    roster_infos.sort(key=lambda x: -x["value_pct"])
+
+    def _val_bar(pct: float) -> str:
+        width = min(pct / (fair_share * 2) * 100, 100)
+        color = "var(--accent)" if pct >= fair_share else "var(--text-muted)"
+        return (f'<div style="height:6px;border-radius:3px;background:var(--border);width:100%;min-width:60px;">'
+                f'<div style="height:6px;border-radius:3px;background:{color};width:{width:.1f}%"></div></div>')
+
+    # ── 3. Trade fairness ─────────────────────────────────────────────────
     trade_rows = []
-    sf_key = "sf_value" if is_sf else "value"
-    sf_val_by_pid = {str(p.get("id") or ""): float(p.get(sf_key) or p.get("value") or 0)
-                     for p in model_vals if p.get("id")}
-
     for tx in (traded or []):
-        adds   = tx.get("adds") or {}    # {player_id: roster_id}
-        drops  = tx.get("drops") or {}
-        # Group by involved rosters
-        involved = set(list(adds.values()) + list(drops.values()))
-        involved = {str(r) for r in involved}
+        adds  = tx.get("adds") or {}
+        drops = tx.get("drops") or {}
+        involved = {str(r) for r in (list(adds.values()) + list(drops.values()))}
         if len(involved) < 2:
             continue
-        val_by_team = {rid: 0.0 for rid in involved}
+        val_by_team: dict = {rid: 0.0 for rid in involved}
         for pid, rid in adds.items():
-            rid = str(rid)
-            val_by_team[rid] = val_by_team.get(rid, 0) + sf_val_by_pid.get(str(pid), 0)
+            val_by_team[str(rid)] = val_by_team.get(str(rid), 0) + val_by_pid.get(str(pid), 0)
         for pid, rid in drops.items():
-            rid = str(rid)
-            val_by_team[rid] = val_by_team.get(rid, 0) - sf_val_by_pid.get(str(pid), 0)
-        vals = list(val_by_team.items())
+            val_by_team[str(rid)] = val_by_team.get(str(rid), 0) - val_by_pid.get(str(pid), 0)
+        vals = sorted(val_by_team.items(), key=lambda x: -x[1])
         if len(vals) >= 2:
             (r1, v1), (r2, v2) = vals[0], vals[1]
             diff = abs(v1 - v2)
             trade_rows.append({
-                "team_a": roster_map.get(str(r1), f"Team {r1}"),
-                "team_b": roster_map.get(str(r2), f"Team {r2}"),
-                "val_a": round(v1, 0),
-                "val_b": round(v2, 0),
-                "diff": round(diff, 0),
-                "lopsided": diff > 200,
+                "team_a": roster_map.get(r1, f"Team {r1}"),
+                "team_b": roster_map.get(r2, f"Team {r2}"),
+                "val_a": round(v1, 0), "val_b": round(v2, 0),
+                "diff": round(diff, 0), "lopsided": diff > 200,
             })
     trade_rows.sort(key=lambda x: -x["diff"])
 
-    # ── 3. League health score ────────────────────────────────────────────
+    # ── 4. League health (based on full season activity) ──────────────────
     n = len(roster_infos) or 1
     inactive_count = sum(1 for r in roster_infos if r["inactive"])
     lopsided_count = sum(1 for t in trade_rows if t["lopsided"])
-    activity_score = round(100 - (inactive_count / n * 50) - (lopsided_count * 5), 0)
-    activity_score = max(0, min(100, activity_score))
+    total_txns     = sum(r["txns"] for r in roster_infos)
+    total_trades   = sum(r["trades"] for r in roster_infos) // 2  # each trade counted per team
+    avg_txns = total_txns / n
+
+    # Score: penalise inactive teams, lopsided trades; reward activity
+    activity_score = 100
+    activity_score -= inactive_count / n * 40
+    activity_score -= lopsided_count * 4
+    activity_score -= max(0, 5 - avg_txns) * 5  # penalise low avg moves
+    activity_score  = round(max(0, min(100, activity_score)), 0)
     score_color = "#22c55e" if activity_score >= 80 else ("#f59e0b" if activity_score >= 60 else "#ef4444")
     score_label = "Healthy" if activity_score >= 80 else ("Watch" if activity_score >= 60 else "At Risk")
 
-    # ── Render ─────────────────────────────────────────────────────────────
     health_html = f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px;">
   <div class="card" style="padding:16px;text-align:center;">
     <div style="font-size:28px;font-weight:700;color:{score_color};">{int(activity_score)}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">LEAGUE HEALTH SCORE</div>
-    <div style="font-size:13px;font-weight:600;color:{score_color};margin-top:2px;">{score_label}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">HEALTH SCORE</div>
+    <div style="font-size:13px;font-weight:600;color:{score_color};">{score_label}</div>
   </div>
   <div class="card" style="padding:16px;text-align:center;">
     <div style="font-size:28px;font-weight:700;color:{'#ef4444' if inactive_count else '#22c55e'};">{inactive_count}</div>
     <div style="font-size:11px;color:var(--muted);margin-top:4px;">INACTIVE TEAMS</div>
   </div>
   <div class="card" style="padding:16px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:var(--text);">{total_trades}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">TRADES THIS SEASON</div>
+  </div>
+  <div class="card" style="padding:16px;text-align:center;">
     <div style="font-size:28px;font-weight:700;color:{'#f59e0b' if lopsided_count else '#22c55e'};">{lopsided_count}</div>
     <div style="font-size:11px;color:var(--muted);margin-top:4px;">LOPSIDED TRADES</div>
   </div>
   <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:28px;font-weight:700;color:var(--text);">{len(trade_rows)}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">TOTAL TRADES</div>
+    <div style="font-size:28px;font-weight:700;color:var(--text);">{total_txns}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">TOTAL MOVES</div>
   </div>
 </div>"""
 
-    # Roster table
+    # ── Roster table with value bar ───────────────────────────────────────
     roster_rows = ""
     for r in roster_infos:
-        inactive_badge = " <span style='background:#ef444420;color:#ef4444;font-size:10px;padding:2px 6px;border-radius:4px;'>INACTIVE</span>" if r["inactive"] else ""
-        val_color = "#22c55e" if r["value"] > 4000 else ("#f59e0b" if r["value"] > 2500 else "#ef4444")
+        inactive_badge = (" <span style='background:#ef444420;color:#ef4444;font-size:10px;"
+                          "padding:2px 5px;border-radius:4px;'>INACTIVE</span>") if r["inactive"] else ""
         roster_rows += f"""
 <tr style="border-bottom:1px solid var(--border);">
-  <td style="padding:10px 14px;">{html.escape(r['name'])}{inactive_badge}<div style="font-size:11px;color:var(--muted);">{html.escape(r['owner'])}</div></td>
-  <td style="padding:10px;text-align:center;">{r['wins']}-{r['losses']}</td>
-  <td style="padding:10px;text-align:center;font-weight:600;color:{val_color};">{int(r['value'])}</td>
+  <td style="padding:10px 14px;">
+    <div style="font-weight:600;">{html.escape(r['name'])}{inactive_badge}</div>
+    <div style="font-size:11px;color:var(--muted);">{html.escape(r['owner'])}</div>
+  </td>
+  <td style="padding:10px 14px;text-align:center;">{r['wins']}-{r['losses']}</td>
+  <td style="padding:10px 14px;min-width:140px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      {_val_bar(r['value_pct'])}
+      <span style="font-size:12px;font-weight:700;min-width:38px;text-align:right;">{r['value_pct']:.1f}%</span>
+    </div>
+  </td>
   <td style="padding:10px;text-align:center;">{r['txns']}</td>
+  <td style="padding:10px;text-align:center;">{r['trades']}</td>
 </tr>"""
 
     roster_table = f"""
@@ -12045,28 +12105,33 @@ def build_commissioner_body(ctx):
     <thead><tr style="border-bottom:2px solid var(--border);">
       <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">TEAM</th>
       <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">RECORD</th>
-      <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">ROSTER VALUE</th>
+      <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">ROSTER VALUE SHARE</th>
       <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">MOVES</th>
+      <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">TRADES</th>
     </tr></thead>
     <tbody>{roster_rows}</tbody>
   </table>
 </div>"""
 
-    # Trade fairness table
+    # ── Trade fairness ────────────────────────────────────────────────────
     if trade_rows:
         trade_table_rows = ""
-        for t in trade_rows[:20]:
-            diff_color = "#ef4444" if t["lopsided"] else ("#f59e0b" if t["diff"] > 100 else "#22c55e")
-            lopsided_tag = " <span style='background:#ef444420;color:#ef4444;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:4px;'>LOPSIDED</span>" if t["lopsided"] else ""
+        for t in trade_rows[:25]:
+            diff_color  = "#ef4444" if t["lopsided"] else ("#f59e0b" if t["diff"] > 100 else "#22c55e")
+            lopsided_tag = (" <span style='background:#ef444420;color:#ef4444;font-size:10px;"
+                            "padding:2px 5px;border-radius:4px;'>LOPSIDED</span>") if t["lopsided"] else ""
             trade_table_rows += f"""
 <tr style="border-bottom:1px solid var(--border);">
-  <td style="padding:10px 14px;">{html.escape(t['team_a'])} <span style="color:var(--muted)">received</span> <b>{int(t['val_a'])}</b></td>
-  <td style="padding:10px 14px;">{html.escape(t['team_b'])} <span style="color:var(--muted)">received</span> <b>{int(t['val_b'])}</b></td>
+  <td style="padding:10px 14px;">{html.escape(t['team_a'])} <span style="color:var(--muted)">got</span> {int(t['val_a'])} val</td>
+  <td style="padding:10px 14px;">{html.escape(t['team_b'])} <span style="color:var(--muted)">got</span> {int(t['val_b'])} val</td>
   <td style="padding:10px;text-align:center;font-weight:700;color:{diff_color};">±{int(t['diff'])}{lopsided_tag}</td>
 </tr>"""
         trade_card = f"""
 <div class="card" style="overflow:auto;">
-  <div class="card-header"><h3>Trade Fairness Log <span style="font-size:12px;color:var(--muted);font-weight:400;">Value differential per trade (±200 flagged as lopsided)</span></h3></div>
+  <div class="card-header">
+    <h3>Trade Fairness Log</h3>
+    <span style="font-size:12px;color:var(--muted);">Value diff per trade · ±200 = lopsided</span>
+  </div>
   <table style="width:100%;border-collapse:collapse;">
     <thead><tr style="border-bottom:2px solid var(--border);">
       <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">SIDE A</th>
@@ -12077,7 +12142,8 @@ def build_commissioner_body(ctx):
   </table>
 </div>"""
     else:
-        trade_card = "<div class='card'><div class='card-body' style='padding:20px;color:var(--muted);'>No trades recorded yet.</div></div>"
+        trade_card = ("<div class='card'><div class='card-body' style='padding:20px;color:var(--muted);'>"
+                      "No trades recorded yet.</div></div>")
 
     return health_html + roster_table + trade_card
 
@@ -12112,10 +12178,6 @@ def page_commissioner(platform: str, season: int, league_id: str):
         )
         if _vu:
             is_commissioner = str(_vu.get("user_id") or "").strip() == commissioner_id
-
-    # If commissioner_id can't be determined, allow any signed-in user
-    if not commissioner_id:
-        is_commissioner = bool(viewer_username)
 
     if not is_commissioner:
         body = ("<div class='card central' style='max-width:500px;margin:60px auto;'>"
