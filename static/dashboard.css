@@ -637,6 +637,20 @@ ul {
     box-sizing: border-box;
     overflow-x: hidden;
   }
+  .week-side-panels #weeklyLeftTabs .tab-bar,
+  .page-sidebar-body #weeklyLeftTabs .tab-bar {
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: auto;
+    gap: 2px;
+  }
+  .week-side-panels #weeklyLeftTabs .tab-btn,
+  .page-sidebar-body #weeklyLeftTabs .tab-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+    flex: 1 1 0;
+    text-align: center;
+  }
   .week-side-panels .week-main-panels,
   .week-side-panels .week-main-panel,
   .page-sidebar-body .week-main-panels,
@@ -8998,6 +9012,9 @@ img, svg, canvas {
   .page-sidebar {
     position: static;
     flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
   }
 
   /* Mobile sidebar: float above main content as a collapsible drawer */
@@ -9045,6 +9062,8 @@ img, svg, canvas {
   .page-sidebar-body,
   .otc-side-body {
     overflow: hidden;
+    overflow-x: hidden;
+    max-width: 100%;
     transition: max-height 0.3s ease;
     max-height: 0;
   }

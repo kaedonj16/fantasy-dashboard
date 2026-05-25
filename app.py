@@ -2864,6 +2864,7 @@ def build_dashboard_body(ctx: dict) -> str:
     else:
         last_final_week = current_week
 
+    _fpts_against_dash = _compute_fpts_against(season)
     slides = [
         render_matchup_slide(
             season,
@@ -2875,6 +2876,7 @@ def build_dashboard_body(ctx: dict) -> str:
             players=players_index,
             teams=teams_index,
             team_game_lookup=team_game_lookup,
+            fpts_against=_fpts_against_dash,
         )
         for m in matchups_by_week.get(current_week, [])
     ]
@@ -4319,6 +4321,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
         matchups_for_week = matchups_by_week.get(week_to_show, [])
 
         if matchups_for_week:
+            _fpts_against_os = _compute_fpts_against(season)
             slides = [
                 render_matchup_slide(
                     season,
@@ -4330,6 +4333,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
                     players=players_index,
                     teams=teams_index,
                     team_game_lookup=team_game_lookup,
+                    fpts_against=_fpts_against_os,
                 )
                 for m in matchups_for_week
             ]
@@ -4990,6 +4994,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         default_week = clamp_week(current_week or 1)
 
     default_matchups = matchups_by_week.get(default_week, []) or []
+    _fpts_against_weekly = _compute_fpts_against(season)
     slides = [
         render_matchup_slide(
             season,
@@ -5001,6 +5006,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
             players=players_index,
             teams=teams_index,
             team_game_lookup=team_game_lookup,
+            fpts_against=_fpts_against_weekly,
         )
         for m in default_matchups
     ]
@@ -12412,6 +12418,7 @@ def api_weekly_week():
 
     matchups = matchups_by_week.get(week, []) or []
     status_by_pid = (statuses.get(week) or {}).get("statuses", {}) or {}
+    _fpts_against_api = _compute_fpts_against(season)
 
     slides = [
         render_matchup_slide(
@@ -12424,6 +12431,7 @@ def api_weekly_week():
             players=players_index,
             teams=teams_index,
             team_game_lookup=team_game_lookup,
+            fpts_against=_fpts_against_api,
         )
         for m in matchups
     ]
