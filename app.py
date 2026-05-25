@@ -5135,9 +5135,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
       <aside class="page-sidebar" data-sidebar-label="Weekly Tools">
         <div class="week-side-panels">
           <div class="wk-tab-links">
-            <a class="wk-tab-link" onclick="wkActivateTab('scorers')">&#9650; Top Scorers</a>
-            <a class="wk-tab-link" onclick="wkActivateTab('scout')">&#9650; Scout Report</a>
-            <a class="wk-tab-link" onclick="wkActivateTab('optimal')">&#9650; Optimal Lineup</a>
+            <a class="wk-tab-link" onclick="wkActivateTab('scorers')">Top Scorers</a>
+            <a class="wk-tab-link" onclick="wkActivateTab('scout')">Scout Report</a>
+            <a class="wk-tab-link" onclick="wkActivateTab('optimal')">Optimal Lineup</a>
           </div>
           {side_panel_html}
         </div>
@@ -5240,10 +5240,11 @@ def build_weekly_hub_body(ctx: dict) -> str:
   }});
 }})();
 
-// Activate a weekly left-tab by name and scroll to it (used by sidebar quick-links)
+// Activate a weekly left-tab by name, reveal it on mobile, and scroll to it
 function wkActivateTab(tab) {{
   var container = document.getElementById('weeklyLeftTabs');
   if (!container) return;
+  container.classList.add('wk-active');
   container.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
   container.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
   var btn   = container.querySelector('.tab-btn[data-tab="' + tab + '"]');
@@ -5261,6 +5262,7 @@ function wkActivateTab(tab) {{
   if (!container) return;
   var btn = container.querySelector('.tab-btn[data-tab="' + tabParam + '"]');
   if (!btn) return;
+  container.classList.add('wk-active');
   container.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
   container.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
   btn.classList.add('active');

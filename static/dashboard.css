@@ -652,6 +652,11 @@ ul {
   .wk-tab-link:hover { background: var(--accent-soft); }
 }
 
+/* On mobile, hide the left-panel tabs by default — accessible via Weekly Tools sidebar */
+@media (max-width: 960px) {
+  #weeklyLeftTabs:not(.wk-active) { display: none; }
+}
+
 /* Mobile-only nav items: hidden on desktop, visible in mobile expanded menu */
 .nav-mobile-only { display: none !important; }
 @media (max-width: 768px) {
