@@ -1203,7 +1203,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["awards", "graphs", "history"], "statsNavDropdown"))
     if session.get("viewer_username"):
         _portfolio_cls = "nav-pill active" if active == "portfolio" else "nav-pill"
-        nav_pills.append(f"<a class='{_portfolio_cls}' href='/portfolio'>My Leagues</a>")
+        _portfolio_href = f"/portfolio?from_league={league_id}&platform={platform}&season={season}"
+        nav_pills.append(f"<a class='{_portfolio_cls}' href='{_portfolio_href}'>My Leagues</a>")
 
     # Changelog bell
     # League switcher dropdown (if user is logged in)
@@ -1375,6 +1376,10 @@ def render_page(
         *args,
         **kwargs,
 ) -> str:
+    if league_id and platform and season:
+        session["last_league_id"] = league_id
+        session["last_platform"] = platform
+        session["last_season"] = season
     nav_html = build_nav(league_id, active, platform, season)
     wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
 
@@ -7795,10 +7800,19 @@ def page_scout(platform: str, season: int, league_id: str):
 
 @app.route("/portfolio")
 def page_portfolio():
+    from flask import copy_current_request_context
     viewer_username = session.get("viewer_username")
     viewer_user_id = session.get("viewer_user_id")
     if not viewer_username or not viewer_user_id:
         return redirect(url_for("index"))
+    # Use league nav context from query param, falling back to last visited league
+    from_league = request.args.get("from_league", "").strip() or session.get("last_league_id") or None
+    from_platform = request.args.get("platform", "").strip() or session.get("last_platform") or "sleeper"
+    from_season_raw = request.args.get("season", "")
+    try:
+        from_season = int(from_season_raw) if from_season_raw else int(session.get("last_season") or 0) or None
+    except ValueError:
+        from_season = None
     nfl_state = get_nfl_state() or {}
     season = int(nfl_state.get("season") or datetime.now().year)
     try:
@@ -7914,8 +7928,9 @@ def page_portfolio():
         }
 
     leagues_data = []
+    _safe_summary = copy_current_request_context(_league_summary)
     with _PTPE(max_workers=min(len(raw_leagues) or 1, 8)) as pool:
-        futs = {pool.submit(_league_summary, lg): lg for lg in raw_leagues}
+        futs = {pool.submit(_safe_summary, lg): lg for lg in raw_leagues}
         for fut in _pac(futs):
             result = fut.result()
             if result:
@@ -7986,7 +8001,16 @@ def page_portfolio():
         holdings, num_leagues, nfl_exposure, cross_pos,
         total_wins, total_losses, total_ties,
     )
-    return render_page("My Leagues – BR Fantasy", None, "portfolio", body)
+    # Always render with a league nav context — fall back to first valid league
+    nav_league_id = from_league
+    nav_platform = from_platform
+    nav_season = from_season or season
+    if not nav_league_id and valid_leagues:
+        first = valid_leagues[0]
+        nav_league_id = first.get("league_id")
+        nav_platform = first.get("platform") or "sleeper"
+        nav_season = first.get("season") or season
+    return render_page("My Leagues – BR Fantasy", nav_league_id, "portfolio", body, nav_platform, nav_season)
 
 
 @app.route("/api/waiver-candidates")
