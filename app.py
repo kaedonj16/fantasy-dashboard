@@ -1137,7 +1137,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         return f"<a class='{cls}' href='{href}'>{label}</a>"
 
     def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
-        """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled)."""
+        """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix, mobile_only)."""
         is_active = active in active_keys
         btn_cls = "nav-pill active" if is_active else "nav-pill"
         item_html = ""
@@ -1145,15 +1145,19 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             item_label, endpoint, item_key = item_tuple[0], item_tuple[1], item_tuple[2]
             disabled = item_tuple[3] if len(item_tuple) > 3 else False
             href_suffix = item_tuple[4] if len(item_tuple) > 4 else ""
+            mobile_only = item_tuple[5] if len(item_tuple) > 5 else False
             if disabled:
+                extra_cls = " nav-mobile-only" if mobile_only else ""
                 item_html += (
-                    f"<span class='nav-pill-dropdown-item disabled'>"
+                    f"<span class='nav-pill-dropdown-item disabled{extra_cls}'>"
                     f"{item_label} <span style='font-size:10px;margin-left:4px;'>Soon</span>"
                     f"</span>"
                 )
             else:
                 href = url_for(endpoint, platform=platform, season=season, league_id=league_id) + href_suffix
-                item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
+                item_active = " active" if item_key == active else ""
+                item_mobile = " nav-mobile-only" if mobile_only else ""
+                item_cls = f"nav-pill-dropdown-item{item_active}{item_mobile}"
                 item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
         btn_id  = dropdown_id.replace("Dropdown", "Btn")
         menu_id = dropdown_id.replace("Dropdown", "Menu")
@@ -1180,18 +1184,23 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Trade Database",   "trade.page_trade_database", "trade-database", False),
         ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
-    # Weekly Hub is available as soon as the draft is done
+    # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
-        nav_pills.append(nav_pill("Weekly Hub", "page_weekly", "weekly"))
+        nav_pills.append(nav_pill_dropdown("Weekly", [
+            ("Matchups",             "page_weekly",             "weekly",   False),
+            ("Waivers & Start/Sit",  "page_waivers",            "waivers",  False),
+            ("Playoff Schedule",     "page_playoff_schedule",   "schedule", False),
+        ], ["weekly", "waivers", "schedule"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
-        ("Standings",    "page_standings",    "standings",    False),
-        ("Teams",        "page_teams",        "teams",        False),
-        ("Activity",     "page_activity",     "activity",     False),
-        ("Waivers",      "page_waivers",      "waivers",      False),
-        ("Playoff Schedule", "page_playoff_schedule", "schedule", False),
+        ("Standings",     "page_standings",    "standings",    False),
+        ("Teams",         "page_teams",        "teams",        False),
+        ("Activity",      "page_activity",     "activity",     False),
         ("League Health", "page_commissioner", "commissioner", False),
-    ], ["standings", "teams", "activity", "waivers", "schedule", "commissioner"], "teamsNavDropdown"))
+        ("Top Scorers",   "page_weekly",       "weekly",       False, "?tab=scorers",  True),
+        ("Scout Report",  "page_weekly",       "weekly",       False, "?tab=scout",    True),
+        ("Optimal Lineup","page_weekly",       "weekly",       False, "?tab=optimal",  True),
+    ], ["standings", "teams", "activity", "commissioner"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
@@ -5222,6 +5231,21 @@ def build_weekly_hub_body(ctx: dict) -> str:
         if (mySeq === requestSeq) hideLoading();
       }});
   }});
+}})();
+
+// Activate left tab from ?tab= query param (e.g. ?tab=scout, ?tab=optimal)
+(function() {{
+  var tabParam = new URLSearchParams(window.location.search).get('tab');
+  if (!tabParam) return;
+  var container = document.getElementById('weeklyLeftTabs');
+  if (!container) return;
+  var btn = container.querySelector('.tab-btn[data-tab="' + tabParam + '"]');
+  if (!btn) return;
+  container.querySelectorAll('.tab-btn').forEach(function(b) {{ b.classList.remove('active'); }});
+  container.querySelectorAll('.tab-panel').forEach(function(p) {{ p.classList.remove('active'); }});
+  btn.classList.add('active');
+  var panel = container.querySelector('.tab-panel[data-tab="' + tabParam + '"]');
+  if (panel) panel.classList.add('active');
 }})();
 </script>
 """

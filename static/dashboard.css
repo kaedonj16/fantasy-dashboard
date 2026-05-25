@@ -627,6 +627,12 @@ ul {
   }
 }
 
+/* Mobile-only nav items: hidden on desktop, visible in mobile expanded menu */
+.nav-mobile-only { display: none; }
+@media (max-width: 768px) {
+  .nav-mobile-only { display: block; }
+}
+
 .refresh-icon {
   display: inline-flex !important;
   align-items: center;
