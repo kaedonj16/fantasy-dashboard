@@ -14529,18 +14529,6 @@ tr.team-clickable {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
 }
-.draft-round-btn {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 12px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-}
-.draft-round-btn:disabled { opacity: 0.35; cursor: default; }
-.draft-round-btn:not(:disabled):hover { background: var(--hover, rgba(0,0,0,0.05)); }
 .draft-round-label {
   font-size: 13px;
   font-weight: 700;
@@ -15595,11 +15583,18 @@ tr.team-clickable {
   font-size: 11px;
   color: var(--text-muted, #94a3b8);
   z-index: 50;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   box-shadow: 0 2px 8px rgba(0,0,0,.18);
   white-space: nowrap;
 }
 #cache-freshness.cf-visible { display: block; }
+
+/* ── Disabled button state ───────────────────────────────────────────────── */
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 /* ── Player Modal Tab Bar ─────────────────────────────────────────────────── */
 .pm-tab-bar {

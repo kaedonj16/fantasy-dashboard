@@ -137,6 +137,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def _api_err(msg: str = "Request failed", e: Exception = None, code: int = 500):
+    """Return a safe API error response — logs the real exception, sends generic message to client."""
+    if e is not None:
+        logger.warning("API error: %s", msg, exc_info=True)
+    return jsonify({"error": msg, "ok": False}), code
+
+
 # ── Sentry error tracking ─────────────────────────────────────────────────────
 _sentry_dsn = os.environ.get("SENTRY_DSN", "")
 if _sentry_dsn:
@@ -548,7 +556,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <main id="page-root" class="overview-layout">
+      <main id="page-root" class="overview-layout" data-cache-ts="{cache_ts}">
         {body}
       </main>
 
@@ -753,7 +761,7 @@ def _background_seed_user(user_id: str, username: Optional[str]) -> None:
     try:
         _tiu_save_users([user_id], source="login", usernames={user_id: username} if username else None)
     except Exception:
-        pass
+        logger.warning("login: failed to save user to TIU index", exc_info=True)
 
     def _run():
         if not _SEED_SEMAPHORE.acquire(blocking=False):
@@ -761,7 +769,7 @@ def _background_seed_user(user_id: str, username: Optional[str]) -> None:
         try:
             _seed_user_leagues(user_id, username=username)
         except Exception:
-            pass
+            logger.warning("login: failed to seed user leagues", exc_info=True)
         finally:
             _SEED_SEMAPHORE.release()
     threading.Thread(target=_run, daemon=True).start()
@@ -1392,6 +1400,7 @@ def render_page(
         title=title,
         nav=nav_html,
         body=wrapped_body,
+        cache_ts=int(time.time() * 1000),
         adsense_script="" if is_premium else _AD_SCRIPT,
         ad_top="" if is_premium else _AD_TOP,
         ad_bottom="" if is_premium else _AD_BOTTOM,
@@ -2229,7 +2238,7 @@ def api_history_summary(platform: str, season: int, league_id: str):
 
     except Exception as e:
         logger.exception("[api_history_summary] Error")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/history/<platform>/<int:season>/<league_id>/standings")
@@ -2268,7 +2277,7 @@ def api_history_standings(platform: str, season: int, league_id: str):
 
     except Exception as e:
         logger.exception("[api_history_standings] Error")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/history/<platform>/<int:season>/<league_id>/chart")
@@ -2325,7 +2334,7 @@ def api_history_chart(platform: str, season: int, league_id: str):
 
     except Exception as e:
         logger.exception("[api_history_chart] Error")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 def render_simple_ai_copy(title: str, subtitle: str, text: str) -> str:
@@ -2843,12 +2852,12 @@ def build_dashboard_body(ctx: dict) -> str:
         try:
             gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
         except Exception:
-            pass
+            logger.debug("dashboard: gm memo failed", exc_info=True)
     else:
         try:
             front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
         except Exception:
-            pass
+            logger.debug("dashboard: front office briefing failed", exc_info=True)
 
     standings_html = render_standings(team_stats, 5)
 
@@ -5064,7 +5073,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     try:
         scout_tab_html = build_scout_body(ctx)
     except Exception:
-        pass
+        logger.debug("weekly: scout body build failed", exc_info=True)
 
     _scout_unavail = (
         "<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
@@ -7430,9 +7439,9 @@ def build_teams_body(ctx: dict) -> str:
               var nextDis = round >= totalRounds ? ' disabled' : '';
 
               var html = '<div class="draft-round-nav">' +
-                '<button class="draft-round-btn"' + prevDis + ' id="draftRoundPrev">&#8592; Prev</button>' +
+                '<button class="pf-pill"' + prevDis + ' id="draftRoundPrev">&#8592; Prev</button>' +
                 '<span class="draft-round-label">' + label + '</span>' +
-                '<button class="draft-round-btn"' + nextDis + ' id="draftRoundNext">Next &#8594;</button>' +
+                '<button class="pf-pill"' + nextDis + ' id="draftRoundNext">Next &#8594;</button>' +
               '</div>' +
               '<div class="draft-acc-picks">';
 
@@ -8144,7 +8153,7 @@ def api_waiver_candidates():
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
     rosters = ctx.get("rosters") or []
     rostered_ids = {
@@ -8318,7 +8327,7 @@ def api_start_sit_options():
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
@@ -9454,46 +9463,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         letter-spacing: 0.04em;
       }
 
-      /* Pagination */
-      .pr-pagination {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 0;
-        border-top: 1px solid var(--border);
-        margin-top: 12px;
-      }
-      .pr-pagination-info {
-        font-size: 13px;
-        color: var(--text-muted);
-      }
-      .pr-pagination-controls {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .pr-pagination-btn {
-        padding: 6px 10px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--card-bg);
-        color: var(--text);
-        font-size: 13px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: background 0.12s, border-color 0.12s;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-      }
-      .pr-pagination-btn:hover:not(:disabled) {
-        background: var(--bg-alt);
-        border-color: var(--accent-color);
-      }
-      .pr-pagination-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
       .pr-tier-divider {
         display: flex;
         align-items: center;
@@ -9513,43 +9482,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         opacity: 0.75;
         white-space: nowrap;
       }
-      @media (max-width: 540px) {
-        .pr-pagination {
-          flex-direction: column;
-          gap: 8px;
-          align-items: center;
-        }
-        .pr-pagination-btn .pr-btn-label {
-          display: none;
-        }
-        .pr-pagination-btn {
-          padding: 6px 10px;
-          min-width: 36px;
-          justify-content: center;
-        }
-      }
-      .pr-page-numbers {
-        display: flex;
-        gap: 4px;
-      }
-      .pr-page-num {
-        min-width: 32px;
-        height: 32px;
-        padding: 0 6px;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: var(--card-bg);
-        color: var(--text);
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: background 0.12s, border-color 0.12s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .pr-page-num:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-      .pr-page-num.pr-page-active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
       /* Mobile responsive */
       @media (max-width: 768px) {
@@ -10018,66 +9950,28 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         if (!bar) {
           bar = document.createElement('div');
           bar.id = 'prPagination';
-          bar.className = 'pr-pagination';
+          bar.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;';
           document.getElementById('prList').insertAdjacentElement('afterend', bar);
-          bar.innerHTML = `
-            <div class="pr-pagination-info">
-              <span id="prPaginationText">Showing 1-50 of 100 players</span>
-            </div>
-            <div class="pr-pagination-controls">
-              <button id="prPrevBtn" class="pr-pagination-btn" onclick="prGoPage('prev')" disabled>
-                <i class="fa-solid fa-chevron-left"></i><span class="pr-btn-label"> Previous</span>
-              </button>
-              <div id="prPageNumbers" class="pr-page-numbers"></div>
-              <button id="prNextBtn" class="pr-pagination-btn" onclick="prGoPage('next')" disabled>
-                <span class="pr-btn-label">Next </span><i class="fa-solid fa-chevron-right"></i>
-              </button>
-            </div>
-          `;
+          bar.innerHTML =
+            '<button class="pf-pill" id="prPrevBtn" onclick="prGoPage(\'prev\')" disabled>&#8592; Prev</button>' +
+            '<span style="font-size:13px;color:var(--text-muted);" id="prPaginationText"></span>' +
+            '<button class="pf-pill" id="prNextBtn" onclick="prGoPage(\'next\')" disabled>Next &#8594;</button>';
         }
-        
-        if (totalPages <= 1) { 
-          bar.style.display = 'none'; 
+
+        if (totalPages <= 1) {
+          bar.style.display = 'none';
           return;
         }
 
         bar.style.display = 'flex';
 
-        // Update info text
         const start = (page - 1) * prPageSize + 1;
         const end = Math.min(page * prPageSize, window.prFilteredPlayers.length);
         const total = window.prFilteredPlayers.length;
         document.getElementById('prPaginationText').textContent = `Showing ${start}–${end} of ${total} players`;
 
-        // Update Previous/Next buttons
-        const prevBtn = document.getElementById('prPrevBtn');
-        const nextBtn = document.getElementById('prNextBtn');
-        prevBtn.disabled = page === 1;
-        nextBtn.disabled = page === totalPages;
-
-        // Update page numbers
-        const pageNumbers = document.getElementById('prPageNumbers');
-        const isMobile = window.innerWidth <= 540;
-        const maxPages = isMobile ? 3 : 5;
-        const wing = isMobile ? 1 : 2;
-        let pages = [];
-
-        if (totalPages <= maxPages) {
-          for (let i = 1; i <= totalPages; i++) pages.push(i);
-        } else {
-          pages = [1];
-          let lo = Math.max(2, page - wing), hi = Math.min(totalPages - 1, page + wing);
-          if (lo > 2) pages.push('…');
-          for (let i = lo; i <= hi; i++) pages.push(i);
-          if (hi < totalPages - 1) pages.push('…');
-          pages.push(totalPages);
-        }
-
-        pageNumbers.innerHTML = pages.map(p => {
-          if (p === '…') return '<span style="color: var(--text-muted); font-size: 13px; padding: 0 4px; line-height: 32px;">…</span>';
-          const active = p === page ? ' pr-page-active' : '';
-          return `<button class="pr-page-num${active}" onclick="prGoPage(${p})">${p}</button>`;
-        }).join('');
+        document.getElementById('prPrevBtn').disabled = page === 1;
+        document.getElementById('prNextBtn').disabled = page === totalPages;
       }
 
       function prGoPage(p) {
@@ -13511,7 +13405,7 @@ def api_players():
         return jsonify(results)
     except Exception as e:
         logger.exception("[api-players] Unexpected error")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/league-players")
@@ -14161,7 +14055,7 @@ def api_prospect_profile(player_id: str):
         return jsonify({"error": "not found"}), 404
     except Exception as e:
         print(f"[api/prospect] {e}")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/breakout-candidates")
@@ -15198,7 +15092,7 @@ def api_player_details(player_id: str):
         logger.exception("[api_player_details] Error")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/player-game-logs/<player_id>")
@@ -15337,7 +15231,7 @@ def api_player_game_logs(player_id: str):
         return jsonify({"game_logs_by_year": game_logs_by_year})
     except Exception as e:
         logger.exception("[api_player_game_logs] error")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 def clean_nan_for_json(obj):
@@ -15755,7 +15649,7 @@ def api_team_details(roster_id: str):
         logger.exception("[api_team_details] Error")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 
@@ -15827,7 +15721,7 @@ def api_team_trades(roster_id: str):
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/draft-needs")
@@ -15931,7 +15825,7 @@ def api_draft_needs():
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 # /api/subscription-status → routes/billing_bp.py :: api_subscription_status()
@@ -17524,7 +17418,7 @@ def api_roster_intel():
     try:
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
     rosters    = ctx.get("rosters") or []
     roster_map = ctx.get("roster_map") or {}
@@ -17668,7 +17562,7 @@ def api_trade_targets():
     try:
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
     rosters           = ctx.get("rosters") or []
     roster_map        = ctx.get("roster_map") or {}
@@ -18650,7 +18544,7 @@ def api_trade_intel_player_packages(player_id: str):
 
     except Exception as e:
         logger.exception("[api-trade-intel-player-packages] %s", e)
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 def _real_trade_packages_for_target(
