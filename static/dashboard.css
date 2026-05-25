@@ -15517,7 +15517,7 @@ tr.team-clickable {
 .pm-panel { display: none; }
 .pm-panel.pm-panel-active { display: block; }
 
-/* ── Weekly Hub tab bar — underline style matching pm-tab-bar ─────────────── */
+/* ── Weekly Hub tab bar — matches trade calculator otc-main-tabs style ──────── */
 #weeklyLeftTabs {
   background: var(--card);
   border-radius: 8px;
@@ -15526,38 +15526,33 @@ tr.team-clickable {
 }
 #weeklyLeftTabs .tab-bar {
   display: flex;
-  background: var(--bg-alt, rgba(0,0,0,.03));
-  border-bottom: 1px solid var(--border);
-  padding: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  gap: 0;
+  gap: 4px;
+  background: var(--row);
+  padding: 3px;
+  border-radius: 10px;
+  width: fit-content;
+  margin: 14px 16px 10px;
 }
-#weeklyLeftTabs .tab-bar::-webkit-scrollbar { display: none; }
 #weeklyLeftTabs .tab-btn {
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 11px 16px;
-  font-size: 12px;
+  padding: 7px 16px;
+  font-size: 13px;
   font-weight: 700;
-  color: var(--text-muted, #64748b);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 8px;
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
   white-space: nowrap;
-  letter-spacing: .03em;
-  text-transform: uppercase;
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
-  border-radius: 0;
-  margin-bottom: -1px;
 }
 #weeklyLeftTabs .tab-btn:hover {
   color: var(--text);
-  background: rgba(0,0,0,.04);
+  background: var(--border);
 }
 #weeklyLeftTabs .tab-btn.active {
-  color: var(--accent, #3b82f6);
-  border-bottom-color: var(--accent, #3b82f6);
-  background: transparent;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
 }
 #weeklyLeftTabs .tab-panels {
   padding: 0;
