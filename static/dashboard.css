@@ -628,6 +628,24 @@ ul {
 }
 
 
+/* When #weeklyLeftTabs is moved into the sidebar on mobile, prevent overflow */
+@media (max-width: 960px) {
+  .week-side-panels #weeklyLeftTabs,
+  .page-sidebar-body #weeklyLeftTabs {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+  .week-side-panels .week-main-panels,
+  .week-side-panels .week-main-panel,
+  .page-sidebar-body .week-main-panels,
+  .page-sidebar-body .week-main-panel {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+}
+
 /* Mobile-only nav items: hidden on desktop, visible in mobile expanded menu */
 .nav-mobile-only { display: none !important; }
 @media (max-width: 768px) {
