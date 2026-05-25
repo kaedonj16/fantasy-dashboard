@@ -5254,10 +5254,13 @@ document.addEventListener('DOMContentLoaded', function() {
 function openPlayerModal(playerId, playerName, opts) {
 
   // Extract league context from URL path: /<platform>/<season>/<league_id>/<page>
+  // For non-league pages (portfolio, home, etc.) fall back to query params.
   const pathParts = window.location.pathname.split('/').filter(p => p);
-  const platform = pathParts[0] || 'sleeper';
-  const season = pathParts[1] || new Date().getFullYear();
-  const leagueId = pathParts[2] || null;
+  const urlParams = new URLSearchParams(window.location.search);
+  const _isLeaguePath = pathParts.length >= 3 && !isNaN(parseInt(pathParts[1]));
+  const platform = _isLeaguePath ? pathParts[0] : (urlParams.get('platform') || 'sleeper');
+  const season = _isLeaguePath ? pathParts[1] : (urlParams.get('season') || new Date().getFullYear());
+  const leagueId = _isLeaguePath ? pathParts[2] : (urlParams.get('from_league') || null);
 
   // Use page-level league settings when available (set for logged-in users)
   const modalLt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
@@ -5380,10 +5383,7 @@ function openPlayerModal(playerId, playerName, opts) {
         badges += '<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i> ELITE</span>';
       }
       // Show rookie badge for both years_exp === 0 AND players with no game logs (rookies without NFL stats)
-      if ((yearsExp != null && yearsExp === 0) || isRookieWithoutGameLogs) {
-        badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
-      }
-      if (isProspect(pid)) {
+      if ((yearsExp != null && yearsExp === 0) || isRookieWithoutGameLogs || isProspect(pid)) {
         badges += '<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i> ROOKIE</span>';
       }
       if (isBreakout(pid)) {
