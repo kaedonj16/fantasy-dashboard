@@ -7889,21 +7889,36 @@ def page_portfolio():
                 )
                 r_sums.append(sum(r_pos_vals[:top_n]))
             pos_league_avgs[pos] = (sum(r_sums) / len(r_sums)) if r_sums else 1
-        # Positional rank within league (1 = best)
+        # Positional rank within league using same weighted-strength + z-score as teams page
+        roster_positions = lctx.get("roster_positions") or []
+        try:
+            slot_counts = count_roster_positions(roster_positions)
+        except Exception:
+            slot_counts = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "FLEX": 1}
         pos_user_rank = {}
-        for pos, top_n in _top_n.items():
-            user_val = pos_user_vals.get(pos, 0)
-            all_roster_vals = []
+        for pos in ["QB", "RB", "WR", "TE"]:
+            all_strengths = []
+            user_strength = 0.0
             for r in rosters:
                 r_pids = [str(p) for p in (r.get("players") or [])]
-                r_pos_vals = sorted(
+                r_vals = sorted(
                     [float((values_by_id.get(p) or {}).get("value") or 0)
                      for p in r_pids if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
                     reverse=True,
                 )
-                all_roster_vals.append(sum(r_pos_vals[:top_n]))
-            all_roster_vals.sort(reverse=True)
-            pos_user_rank[pos] = next((i + 1 for i, v in enumerate(all_roster_vals) if v <= user_val + 0.01), len(all_roster_vals))
+                strength = _weighted_pos_strength(r_vals, pos, slot_counts)
+                all_strengths.append((str(r.get("roster_id")), strength))
+                if str(r.get("roster_id")) == rid:
+                    user_strength = strength
+            if len(all_strengths) > 1:
+                vals_only = [s for _, s in all_strengths]
+                mu = sum(vals_only) / len(vals_only)
+                sigma = (sum((v - mu) ** 2 for v in vals_only) / len(vals_only)) ** 0.5
+                user_z = (user_strength - mu) / sigma if sigma > 0 else 0.0
+                ranked = sorted(all_strengths, key=lambda x: -x[1])
+                pos_user_rank[pos] = next((i + 1 for i, (r_id, _) in enumerate(ranked) if r_id == rid), "?")
+            else:
+                pos_user_rank[pos] = 1
         # Recent streak from df_weekly (last 3 finalized weeks for this roster)
         streak = []
         try:
@@ -7970,30 +7985,48 @@ def page_portfolio():
     ))
 
     # NFL team concentration: group all player holdings by their NFL team
-    nfl_team_data: dict = {}  # team -> {players: [...], league_ids: set}
+    nfl_team_data: dict = {}  # team -> {player_list: [...], league_ids: set}
     pid_meta: dict = {}
     pid_leagues: dict = {}  # pid -> [league_name_abbrev]
     for lg in valid_leagues:
-        lg_abbrev = (lg.get("name") or "?")[:12]
+        lg_abbrev = (lg.get("name") or "?")[:14]
         for pid, p in (lg.get("all_players") or {}).items():
             if not p.get("value"):
                 continue
             nfl = p.get("nfl_team") or ""
             if nfl and nfl not in ("", "FA", "N/A"):
                 if nfl not in nfl_team_data:
-                    nfl_team_data[nfl] = {"players": [], "league_ids": set()}
-                nfl_team_data[nfl]["players"].append(p.get("name", ""))
+                    nfl_team_data[nfl] = {"player_list": [], "league_ids": set()}
+                nfl_team_data[nfl]["player_list"].append({
+                    "pid": pid,
+                    "name": p.get("name", ""),
+                    "position": p.get("position", ""),
+                    "value": p.get("value", 0),
+                    "pos_rank": p.get("pos_rank", ""),
+                    "league": lg_abbrev,
+                })
                 nfl_team_data[nfl]["league_ids"].add(lg.get("league_id", ""))
             if pid not in pid_meta or p.get("value", 0) > pid_meta[pid].get("value", 0):
                 pid_meta[pid] = p
             pid_leagues.setdefault(pid, []).append(lg_abbrev)
 
-    # Top NFL teams by player count
-    nfl_exposure = sorted(
-        [{"team": t, "count": len(set(d["players"])), "leagues": len(d["league_ids"])}
-         for t, d in nfl_team_data.items()],
-        key=lambda x: (-x["count"], -x["leagues"]),
-    )[:12]
+    # Top NFL teams by player count — deduplicate players, sort by value
+    nfl_exposure = []
+    for t, d in nfl_team_data.items():
+        seen_pids: set = set()
+        unique_players = []
+        for pl in sorted(d["player_list"], key=lambda x: -x["value"]):
+            if pl["pid"] not in seen_pids:
+                seen_pids.add(pl["pid"])
+                unique_players.append(pl)
+        nfl_exposure.append({
+            "team": t,
+            "count": len(unique_players),
+            "leagues": len(d["league_ids"]),
+            "players": unique_players,
+        })
+    nfl_exposure.sort(key=lambda x: (-x["count"], -x["leagues"]))
+    nfl_exposure = nfl_exposure[:12]
 
     # Player holdings across leagues
     holdings = []
@@ -18555,7 +18588,7 @@ def api_trade_ideas_for_target():
 
 
 
-_POS_CLS_MAP = {"QB": "pos-qb", "RB": "pos-rb", "WR": "pos-wr", "TE": "pos-te"}
+_POS_CLS_MAP = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE"}
 
 
 def build_portfolio_body(
@@ -18575,12 +18608,12 @@ def build_portfolio_body(
     _ARCH_COLORS = {"QB-Heavy": "#3b82f6", "RB Corps": "#22c55e", "WR-Spread": "#f59e0b", "TE-Premium": "#8b5cf6", "Balanced": "#6b7280"}
     _NFL_COLORS = {
         "ARI": "#97233F", "ATL": "#A71930", "BAL": "#241773", "BUF": "#00338D",
-        "CAR": "#0085CA", "CHI": "#0B162A", "CIN": "#FB4F14", "CLE": "#FF3C00",
-        "DAL": "#003594", "DEN": "#FB4F14", "DET": "#0076B6", "GB":  "#203731",
-        "HOU": "#03202F", "IND": "#002C5F", "JAX": "#006778", "KC":  "#E31837",
-        "LAC": "#0080C6", "LAR": "#003594", "LV":  "#A5ACAF", "MIA": "#008E97",
-        "MIN": "#4F2683", "NE":  "#002244", "NO":  "#9F8958", "NYG": "#0B2265",
-        "NYJ": "#125740", "PHI": "#004C54", "PIT": "#FFB612", "SEA": "#002244",
+        "CAR": "#0085CA", "CHI": "#C83803", "CIN": "#FB4F14", "CLE": "#FF3C00",
+        "DAL": "#003594", "DEN": "#FB4F14", "DET": "#0076B6", "GB":  "#2D5016",
+        "HOU": "#A71930", "IND": "#002C5F", "JAX": "#006778", "KC":  "#E31837",
+        "LAC": "#0080C6", "LAR": "#003594", "LV":  "#1A1A1A", "MIA": "#008E97",
+        "MIN": "#4F2683", "NE":  "#C60C30", "NO":  "#9F8958", "NYG": "#0B2265",
+        "NYJ": "#125740", "PHI": "#004C54", "PIT": "#FFB612", "SEA": "#69BE28",
         "SF":  "#AA0000", "TB":  "#D50A0A", "TEN": "#4B92DB", "WAS": "#773141",
     }
 
@@ -18793,16 +18826,43 @@ def build_portfolio_body(
     if nfl_exposure:
         max_cnt = max(t["count"] for t in nfl_exposure) or 1
         nfl_rows = ""
-        for t in nfl_exposure:
+        for idx, t in enumerate(nfl_exposure):
             bw = int((t["count"] / max_cnt) * 100)
             note = f"{t['leagues']}L"
-            team_color = _NFL_COLORS.get(t['team'], "var(--accent)")
+            team_color = _NFL_COLORS.get(t["team"], "var(--accent)")
+            dd_id = f"nflDd{idx}"
+            # Build dropdown player list
+            pl_rows = ""
+            for pl in (t.get("players") or []):
+                pl_pos = pl.get("position") or ""
+                pl_pc = _POS_CLS_MAP.get(pl_pos, "K")
+                pl_name = html.escape(pl.get("name") or "")
+                pl_pid = pl.get("pid") or ""
+                pl_lg = html.escape(pl.get("league") or "")
+                pl_val = pl.get("value") or 0
+                pl_pr = html.escape(pl.get("pos_rank") or "")
+                pl_rows += (
+                    f"<div style='display:flex;align-items:center;gap:8px;padding:4px 0;"
+                    f"border-bottom:1px solid var(--border);font-size:0.82em;'>"
+                    f"<span class='pos-badge {pl_pc}' style='font-size:0.7em;height:18px;width:28px;'>{pl_pos}</span>"
+                    f"<span class='player-clickable' data-player-id='{pl_pid}' data-player-name='{pl_name}'"
+                    f" style='flex:1;font-weight:500;cursor:pointer;'>{pl_name}</span>"
+                    f"<span style='color:var(--muted);font-size:0.78em;'>{pl_pr}</span>"
+                    f"<span style='color:var(--muted);font-size:0.75em;white-space:nowrap;'>{pl_lg}</span>"
+                    f"<span style='font-weight:600;color:var(--accent);min-width:28px;text-align:right;'>{pl_val:.0f}</span>"
+                    f"</div>"
+                )
             nfl_rows += (
-                f"<div class='nfl-row'>"
-                f"<span class='nfl-abbr'>{html.escape(t['team'])}</span>"
+                f"<div class='nfl-row' style='flex-direction:column;align-items:stretch;cursor:pointer;' onclick=\""
+                f"var d=document.getElementById('{dd_id}');d.style.display=d.style.display==='none'?'block':'none';\">"
+                f"<div style='display:flex;align-items:center;gap:8px;'>"
+                f"<span class='nfl-abbr' style='color:{team_color};font-weight:700;'>{html.escape(t['team'])}</span>"
                 f"<div class='nfl-bar-wrap'><div class='nfl-bar' style='width:{bw}%;background:{team_color};'></div></div>"
                 f"<span class='nfl-cnt'>{t['count']}</span>"
                 f"<span class='nfl-note'>{note}</span>"
+                f"<span style='font-size:0.7em;color:var(--muted);margin-left:4px;'>&#9660;</span>"
+                f"</div>"
+                f"<div id='{dd_id}' style='display:none;padding:6px 0 2px 44px;'>{pl_rows}</div>"
                 f"</div>"
             )
         nfl_html = (
@@ -18820,8 +18880,9 @@ def build_portfolio_body(
         h_rows = ""
         for p in holdings:
             pos = p.get("position") or ""
-            pc = _POS_CLS_MAP.get(pos, "pos-k")
+            pc = _POS_CLS_MAP.get(pos, "K")
             name_e = html.escape(p.get("name") or "")
+            pid = p.get("pid") or ""
             val = p.get("value") or 0
             cnt = p.get("shares") or 1
             pr = html.escape(p.get("pos_rank") or "")
@@ -18829,7 +18890,10 @@ def build_portfolio_body(
             h_rows += (
                 f"<tr class='pf-row' data-pos='{pos}' data-name='{name_e.lower()}'>"
                 f"<td><span class='pos-badge {pc}'>{pos}</span></td>"
-                f"<td><div class='pf-pname'>{name_e}</div><div class='pf-plgs'>{lgs_str}</div></td>"
+                f"<td>"
+                f"<div class='pf-pname player-clickable' data-player-id='{pid}' data-player-name='{name_e}' style='cursor:pointer;'>{name_e}</div>"
+                f"<div class='pf-plgs'>{lgs_str}</div>"
+                f"</td>"
                 f"<td class='pf-prank'>{pr}</td>"
                 f"<td class='pf-pshares'>{cnt}<span style='color:var(--muted);font-weight:400;font-size:0.82em;'>/{num_leagues}</span></td>"
                 f"<td class='pf-pval'>{val:.0f}</td>"
@@ -18996,7 +19060,7 @@ def build_scout_body(ctx: dict) -> str:
 
     # Build player list grouped by position
     _POS_ORDER = ["QB", "RB", "WR", "TE", "K", "DEF"]
-    _POS_CLS = {"QB": "pos-qb", "RB": "pos-rb", "WR": "pos-wr", "TE": "pos-te", "K": "pos-k", "DEF": "pos-def"}
+    _POS_CLS = {"QB": "QB", "RB": "RB", "WR": "WR", "TE": "TE", "K": "K", "DEF": "DEF"}
     _INJ_CLS = {"Q": "inj-q", "D": "inj-d", "O": "inj-o", "IR": "inj-o", "Sus": "inj-o"}
     _INJ_LABEL = {"Q": "Q", "D": "D", "O": "O", "IR": "IR", "Questionable": "Q", "Doubtful": "D", "Out": "O", "Suspended": "SUS"}
 
