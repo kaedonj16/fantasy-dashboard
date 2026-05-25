@@ -19350,82 +19350,96 @@ def build_portfolio_body(
 
     css = (
         "<style>"
-        # header
-        ".pf-hdr{margin-bottom:14px;}"
-        ".pf-hdr h1{font-size:1.2em;font-weight:700;margin:0 0 2px;text-align:left;color:var(--text);letter-spacing:normal;}"
-        ".pf-hdr h1::after{display:none;}"
-        ".pf-hdr p{font-size:0.84em;color:var(--muted);margin:0;}"
-        ".pf-top-strip{display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;padding:12px 16px;"
-        "background:var(--card);border:1px solid var(--border);border-radius:var(--radius);}"
-        ".pf-kpi{display:flex;flex-direction:column;gap:2px;}"
-        ".pf-kpi-lbl{font-size:0.65em;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}"
-        ".pf-kpi-val{font-size:1.05em;font-weight:700;}"
-        # two-col layout for leagues + pos bars
+        # summary card
+        ".pf-summary{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;"
+        "padding:16px 18px;margin-bottom:14px;background:var(--card);"
+        "border:1px solid var(--border);border-radius:var(--radius);}"
+        ".pf-summary-left{min-width:0;}"
+        ".pf-summary-title{font-size:1.05em;font-weight:700;color:var(--text);margin:0 0 2px;}"
+        ".pf-summary-sub{font-size:0.8em;color:var(--text-muted);}"
+        ".pf-kpis{display:flex;gap:24px;flex-wrap:wrap;}"
+        ".pf-kpi{display:flex;flex-direction:column;gap:2px;text-align:right;}"
+        ".pf-kpi-lbl{font-size:0.63em;color:var(--text-subtle);text-transform:uppercase;letter-spacing:.06em;font-weight:600;}"
+        ".pf-kpi-val{font-size:1.1em;font-weight:700;color:var(--text);}"
+        # two-col layout
         ".pf-two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;}"
         "@media(max-width:640px){.pf-two{grid-template-columns:1fr;}}"
-        # league list
-        ".pf-lg-row{display:flex;align-items:center;gap:10px;padding:9px 0;"
-        "border-bottom:1px solid var(--border);}"
+        # league rows
+        ".pf-lg-row{display:flex;align-items:center;gap:10px;padding:10px 0;"
+        "border-bottom:1px solid var(--border);transition:background .12s;}"
         ".pf-lg-row:last-child{border-bottom:none;}"
+        ".pf-lg-row:hover{background:var(--row);margin:0 -12px;padding:10px 12px;border-radius:8px;}"
         ".pf-lg-left{flex:1;min-width:0;}"
-        ".pf-lg-name{font-weight:600;font-size:0.9em;overflow:hidden;text-overflow:ellipsis;"
-        "white-space:nowrap;text-decoration:none;color:inherit;}"
+        ".pf-lg-name{font-weight:600;font-size:0.92em;overflow:hidden;text-overflow:ellipsis;"
+        "white-space:nowrap;text-decoration:none;color:var(--text);display:block;}"
         ".pf-lg-name:hover{color:var(--accent);}"
-        ".pf-lg-meta{font-size:0.72em;color:var(--muted);margin-top:1px;}"
-        ".pf-arch{font-size:0.65em;font-weight:700;padding:1px 6px;border-radius:8px;"
-        "color:#fff;white-space:nowrap;flex-shrink:0;}"
-        ".pf-streak{display:flex;gap:3px;flex-shrink:0;}"
-        ".pf-dot{width:9px;height:9px;border-radius:50%;}"
-        ".pf-rec{font-size:0.88em;font-weight:600;white-space:nowrap;}"
-        # horizontal positional bars
-        ".pf-pos-row{display:flex;align-items:center;gap:10px;padding:7px 0;"
+        ".pf-lg-meta{font-size:0.74em;color:var(--text-muted);margin-top:2px;}"
+        ".pf-arch{font-size:0.63em;font-weight:700;padding:2px 7px;border-radius:10px;"
+        "color:#fff;white-space:nowrap;flex-shrink:0;letter-spacing:.02em;}"
+        ".pf-streak{display:flex;gap:3px;flex-shrink:0;align-items:center;}"
+        ".pf-dot{width:8px;height:8px;border-radius:50%;}"
+        ".pf-rec{font-size:0.85em;font-weight:700;white-space:nowrap;min-width:36px;text-align:right;}"
+        # positional bars
+        ".pf-pos-row{display:flex;align-items:center;gap:10px;padding:8px 0;"
         "border-bottom:1px solid var(--border);}"
         ".pf-pos-row:last-child{border-bottom:none;}"
-        ".pf-pos-lbl{min-width:28px;}"
-        ".pf-pos-bar-wrap{flex:1;height:10px;background:var(--border);border-radius:5px;overflow:hidden;position:relative;}"
-        ".pf-pos-bar{height:100%;border-radius:5px;}"
-        ".pf-pos-avg-tick{position:absolute;top:0;bottom:0;width:2px;background:var(--muted);opacity:.5;}"
-        ".pf-pos-delta{font-size:0.78em;font-weight:600;min-width:46px;text-align:right;}"
-        # NFL concentration
-        ".nfl-row{display:flex;align-items:center;gap:8px;padding:5px 0;"
-        "border-bottom:1px solid var(--border);font-size:0.84em;}"
+        ".pf-pos-lbl{min-width:32px;}"
+        ".pf-pos-bar-wrap{flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden;position:relative;}"
+        ".pf-pos-bar{height:100%;border-radius:4px;}"
+        ".pf-pos-avg-tick{position:absolute;top:0;bottom:0;width:2px;background:var(--text-subtle);opacity:.4;}"
+        ".pf-pos-delta{font-size:0.78em;font-weight:700;min-width:46px;text-align:right;}"
+        # NFL exposure
+        ".nfl-row{display:flex;align-items:center;gap:8px;padding:6px 0;"
+        "border-bottom:1px solid var(--border);font-size:0.84em;cursor:pointer;}"
         ".nfl-row:last-child{border-bottom:none;}"
-        ".nfl-abbr{min-width:40px;font-weight:600;font-size:0.8em;color:var(--muted);}"
-        ".nfl-bar-wrap{flex:1;height:7px;background:var(--border);border-radius:4px;overflow:hidden;}"
-        ".nfl-bar{height:100%;border-radius:4px;background:var(--accent);}"
-        ".nfl-cnt{font-weight:700;font-size:0.88em;min-width:18px;text-align:right;}"
-        ".nfl-note{font-size:0.72em;color:var(--muted);}"
+        ".nfl-abbr{min-width:36px;font-weight:700;font-size:0.82em;}"
+        ".nfl-bar-wrap{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;}"
+        ".nfl-bar{height:100%;border-radius:3px;}"
+        ".nfl-cnt{font-weight:700;font-size:0.88em;min-width:20px;text-align:right;}"
+        ".nfl-note{font-size:0.7em;color:var(--text-subtle);min-width:20px;}"
         # holdings table
         ".pf-tbl{width:100%;border-collapse:collapse;font-size:0.84em;}"
-        ".pf-tbl th{font-size:0.66em;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;"
-        "padding:4px 6px;border-bottom:1px solid var(--border);font-weight:600;}"
+        ".pf-tbl th{font-size:0.65em;color:var(--text-subtle);text-transform:uppercase;letter-spacing:.05em;"
+        "padding:5px 6px;border-bottom:1px solid var(--border);font-weight:600;}"
         ".pf-tbl th.r{text-align:right;}"
-        ".pf-tbl td{padding:5px 6px;border-bottom:1px solid var(--border);vertical-align:middle;}"
+        ".pf-tbl td{padding:6px 6px;border-bottom:1px solid var(--border);vertical-align:middle;}"
         ".pf-tbl tr:last-child td{border-bottom:none;}"
         ".pf-tbl tr.pf-hide{display:none;}"
-        ".pf-pname{font-weight:500;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
-        ".pf-prank{color:var(--muted);font-size:0.78em;text-align:right;}"
-        ".pf-pval{text-align:right;font-weight:600;color:var(--accent);}"
+        ".pf-tbl tbody tr:hover td{background:var(--row);}"
+        ".pf-pname{font-weight:500;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        ".pf-prank{color:var(--text-muted);font-size:0.78em;text-align:right;}"
+        ".pf-pval{text-align:right;font-weight:700;color:var(--accent);}"
         ".pf-pshares{text-align:right;font-weight:700;}"
-        ".pf-plgs{font-size:0.72em;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
-        ".pf-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}"
-        ".pf-fbtn{font-size:0.76em;padding:3px 10px;border-radius:10px;border:1px solid var(--border);"
-        "background:transparent;cursor:pointer;color:inherit;transition:background .12s,color .12s;}"
+        ".pf-plgs{font-size:0.71em;color:var(--text-subtle);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}"
+        ".pf-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}"
+        ".pf-fbtn{font-size:0.76em;padding:4px 12px;border-radius:999px;border:1px solid var(--border);"
+        "background:transparent;cursor:pointer;color:var(--text-muted);font-weight:600;"
+        "transition:background .12s,color .12s,border-color .12s;}"
+        ".pf-fbtn:hover{background:var(--accent-soft);color:var(--accent);border-color:var(--accent);}"
         ".pf-fbtn.on{background:var(--accent);color:#fff;border-color:var(--accent);}"
-        ".pf-fsearch{flex:1;min-width:80px;max-width:180px;font-size:0.82em;padding:3px 8px;"
-        "border:1px solid var(--border);border-radius:6px;background:var(--card);color:inherit;}"
-        ".pf-fcount{font-size:0.78em;color:var(--muted);margin-left:auto;}"
+        ".pf-fsearch{flex:1;min-width:80px;max-width:200px;font-size:0.82em;padding:4px 10px;"
+        "border:1px solid var(--border);border-radius:999px;background:var(--card);color:inherit;outline:none;}"
+        ".pf-fsearch:focus{border-color:var(--accent);}"
+        ".pf-fcount{font-size:0.76em;color:var(--text-subtle);margin-left:auto;}"
+        # card-header subtitle helper
+        ".card-header-sub{font-size:0.75em;color:var(--text-muted);font-weight:400;}"
         "</style>"
     )
 
-    # ── Top strip ─────────────────────────────────────────────────────────────
+    # ── Summary card (replaces pf-hdr + top-strip) ───────────────────────────
     rec_str = f"{total_wins}-{total_losses}" + (f"-{total_ties}" if total_ties else "")
     rec_cls = "color-win" if total_wins > total_losses else ("color-loss" if total_losses > total_wins else "")
     top_strip = (
-        f"<div class='pf-top-strip'>"
+        f"<div class='pf-summary'>"
+        f"<div class='pf-summary-left'>"
+        f"<div class='pf-summary-title'>My Leagues &mdash; {season}</div>"
+        f"<div class='pf-summary-sub'>Signed in as <strong>{html.escape(username)}</strong></div>"
+        f"</div>"
+        f"<div class='pf-kpis'>"
         f"<div class='pf-kpi'><span class='pf-kpi-lbl'>Leagues</span><span class='pf-kpi-val'>{num_leagues}</span></div>"
-        f"<div class='pf-kpi'><span class='pf-kpi-lbl'>Combined Record</span><span class='pf-kpi-val {rec_cls}'>{rec_str}</span></div>"
+        f"<div class='pf-kpi'><span class='pf-kpi-lbl'>Record</span><span class='pf-kpi-val {rec_cls}'>{rec_str}</span></div>"
         f"<div class='pf-kpi'><span class='pf-kpi-lbl'>Season</span><span class='pf-kpi-val'>{season}</span></div>"
+        f"</div>"
         f"</div>"
     )
 
@@ -19538,7 +19552,7 @@ def build_portfolio_body(
         pos_card = (
             f"<div class='card'>"
             f"<div class='card-header'><h2>Positional Strength</h2>"
-            f"<span style='font-size:0.76em;color:var(--muted);font-weight:400;'>vs. your league averages · dynasty value</span>"
+            f"<span class='card-header-sub'>vs. league averages · dynasty value</span>"
             f"</div>"
             f"<div class='card-body'>{pos_rows}</div>"
             f"</div>"
@@ -19593,7 +19607,7 @@ def build_portfolio_body(
         nfl_html = (
             f"<div class='card' style='margin-bottom:14px;'>"
             f"<div class='card-header'><h2>NFL Exposure</h2>"
-            f"<span style='font-size:0.76em;color:var(--muted);font-weight:400;'>which game results hit your whole portfolio</span>"
+            f"<span class='card-header-sub'>which game results affect your whole portfolio</span>"
             f"</div>"
             f"<div class='card-body'>{nfl_rows}</div>"
             f"</div>"
@@ -19628,7 +19642,7 @@ def build_portfolio_body(
         holdings_html = (
             f"<div class='card'>"
             f"<div class='card-header'><h2>Player Holdings</h2>"
-            f"<span style='font-size:0.76em;color:var(--muted);font-weight:400;'>which leagues each player is in</span>"
+            f"<span class='card-header-sub'>which leagues each player appears in</span>"
             f"</div>"
             f"<div class='card-body'>"
             f"<div class='pf-controls'>"
@@ -19685,10 +19699,6 @@ def build_portfolio_body(
 
     return (
         css
-        + f"<div class='pf-hdr'>"
-        + f"<h1>My Leagues — {season}</h1>"
-        + f"<p>Signed in as <strong>{html.escape(username)}</strong></p>"
-        + f"</div>"
         + top_strip
         + two_col
         + nfl_html
