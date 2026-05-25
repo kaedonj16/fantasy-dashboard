@@ -8001,7 +8001,16 @@ def page_portfolio():
         holdings, num_leagues, nfl_exposure, cross_pos,
         total_wins, total_losses, total_ties,
     )
-    return render_page("My Leagues – BR Fantasy", from_league, "portfolio", body, from_platform, from_season or season)
+    # Always render with a league nav context — fall back to first valid league
+    nav_league_id = from_league
+    nav_platform = from_platform
+    nav_season = from_season or season
+    if not nav_league_id and valid_leagues:
+        first = valid_leagues[0]
+        nav_league_id = first.get("league_id")
+        nav_platform = first.get("platform") or "sleeper"
+        nav_season = first.get("season") or season
+    return render_page("My Leagues – BR Fantasy", nav_league_id, "portfolio", body, nav_platform, nav_season)
 
 
 @app.route("/api/waiver-candidates")
