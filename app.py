@@ -7800,7 +7800,6 @@ def page_scout(platform: str, season: int, league_id: str):
 
 @app.route("/portfolio")
 def page_portfolio():
-    from flask import copy_current_request_context
     viewer_username = session.get("viewer_username")
     viewer_user_id = session.get("viewer_user_id")
     if not viewer_username or not viewer_user_id:
@@ -7827,8 +7826,6 @@ def page_portfolio():
                 season = season - 1
         except Exception:
             raw_leagues = []
-    from concurrent.futures import ThreadPoolExecutor as _PTPE, as_completed as _pac
-
     def _league_summary(lg):
         lid = str(lg.get("league_id") or "")
         if not lid:
@@ -7892,6 +7889,21 @@ def page_portfolio():
                 )
                 r_sums.append(sum(r_pos_vals[:top_n]))
             pos_league_avgs[pos] = (sum(r_sums) / len(r_sums)) if r_sums else 1
+        # Positional rank within league (1 = best)
+        pos_user_rank = {}
+        for pos, top_n in _top_n.items():
+            user_val = pos_user_vals.get(pos, 0)
+            all_roster_vals = []
+            for r in rosters:
+                r_pids = [str(p) for p in (r.get("players") or [])]
+                r_pos_vals = sorted(
+                    [float((values_by_id.get(p) or {}).get("value") or 0)
+                     for p in r_pids if (values_by_id.get(p) or {}).get("position", "").upper() == pos],
+                    reverse=True,
+                )
+                all_roster_vals.append(sum(r_pos_vals[:top_n]))
+            all_roster_vals.sort(reverse=True)
+            pos_user_rank[pos] = next((i + 1 for i, v in enumerate(all_roster_vals) if v <= user_val + 0.01), len(all_roster_vals))
         # Recent streak from df_weekly (last 3 finalized weeks for this roster)
         streak = []
         try:
@@ -7924,17 +7936,15 @@ def page_portfolio():
             "urgency": urgency,
             "pos_user_vals": pos_user_vals,
             "pos_league_avgs": pos_league_avgs,
+            "pos_user_rank": pos_user_rank,
             "offseason": lctx.get("offseason_mode", False),
         }
 
     leagues_data = []
-    _safe_summary = copy_current_request_context(_league_summary)
-    with _PTPE(max_workers=min(len(raw_leagues) or 1, 8)) as pool:
-        futs = {pool.submit(_safe_summary, lg): lg for lg in raw_leagues}
-        for fut in _pac(futs):
-            result = fut.result()
-            if result:
-                leagues_data.append(result)
+    for _lg in raw_leagues:
+        _result = _league_summary(_lg)
+        if _result:
+            leagues_data.append(_result)
     leagues_data.sort(key=lambda x: x.get("name", ""))
 
     valid_leagues = [lg for lg in leagues_data if not lg.get("error") and not lg.get("not_in_league")]
@@ -18562,7 +18572,17 @@ def build_portfolio_body(
     total_ties: int = 0,
 ) -> str:
     _POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#8b5cf6"}
-    _ARCH_COLORS = {"Win Now": "#ef4444", "Contender": "#f97316", "Building": "#3b82f6", "Rebuilding": "#8b5cf6"}
+    _ARCH_COLORS = {"QB-Heavy": "#3b82f6", "RB Corps": "#22c55e", "WR-Spread": "#f59e0b", "TE-Premium": "#8b5cf6", "Balanced": "#6b7280"}
+    _NFL_COLORS = {
+        "ARI": "#97233F", "ATL": "#A71930", "BAL": "#241773", "BUF": "#00338D",
+        "CAR": "#0085CA", "CHI": "#0B162A", "CIN": "#FB4F14", "CLE": "#FF3C00",
+        "DAL": "#003594", "DEN": "#FB4F14", "DET": "#0076B6", "GB":  "#203731",
+        "HOU": "#03202F", "IND": "#002C5F", "JAX": "#006778", "KC":  "#E31837",
+        "LAC": "#0080C6", "LAR": "#003594", "LV":  "#A5ACAF", "MIA": "#008E97",
+        "MIN": "#4F2683", "NE":  "#002244", "NO":  "#9F8958", "NYG": "#0B2265",
+        "NYJ": "#125740", "PHI": "#004C54", "PIT": "#FFB612", "SEA": "#002244",
+        "SF":  "#AA0000", "TB":  "#D50A0A", "TEN": "#4B92DB", "WAS": "#773141",
+    }
 
     if not all_leagues_data:
         return (
@@ -18684,18 +18704,30 @@ def build_portfolio_body(
             color = "var(--color-win)" if r == "W" else "var(--color-loss)"
             dots += f"<div class='pf-dot' style='background:{color};'></div>"
 
-        # archetype from avg age stored in league (recompute inline since we have all_players)
-        all_p = lg.get("all_players") or {}
-        by_val = sorted(all_p.values(), key=lambda x: x.get("value", 0), reverse=True)
-        ages = [p.get("age", 0) for p in by_val[:10] if p.get("age")]
-        avg_age = (sum(ages) / len(ages)) if ages else 0
-        if avg_age == 0:     arch = "Unknown"
-        elif avg_age < 24:   arch = "Rebuilding"
-        elif avg_age < 25.5: arch = "Building"
-        elif avg_age < 27:   arch = "Contender"
-        else:                arch = "Win Now"
+        # archetype from positional value ratios vs league average
+        _uvs = lg.get("pos_user_vals") or {}
+        _avgs = lg.get("pos_league_avgs") or {}
+        _ratios = {p: (_uvs.get(p, 0) / (_avgs.get(p) or 1)) for p in ["QB", "RB", "WR", "TE"]}
+        _best_pos = max(_ratios, key=_ratios.get) if _ratios else "QB"
+        _arch_map = {"QB": "QB-Heavy", "RB": "RB Corps", "WR": "WR-Spread", "TE": "TE-Premium"}
+        arch = _arch_map.get(_best_pos, "Balanced") if _ratios.get(_best_pos, 1.0) > 1.10 else "Balanced"
         arch_color = _ARCH_COLORS.get(arch, "#6b7280")
         arch_badge = f"<span class='pf-arch' style='background:{arch_color};'>{arch}</span>"
+
+        # Positional rank chips
+        pos_ranks = lg.get("pos_user_rank") or {}
+        rank_chips = ""
+        for _pos in ["QB", "RB", "WR", "TE"]:
+            _pr = pos_ranks.get(_pos)
+            if _pr:
+                _pc = _POS_CLS_MAP.get(_pos, "pos-k")
+                rank_chips += (
+                    f"<span style='font-size:0.68em;color:var(--muted);white-space:nowrap;'>"
+                    f"<span class='pos-badge {_pc}' style='font-size:0.7em;padding:0 4px;'>{_pos}</span>"
+                    f"&nbsp;#{_pr}"
+                    f"</span>"
+                )
+        pos_rank_row = f"<div style='display:flex;gap:8px;flex-wrap:wrap;margin-top:3px;'>{rank_chips}</div>" if rank_chips else ""
 
         off_note = " (Off)" if lg.get("offseason") else ""
         league_rows += (
@@ -18703,6 +18735,7 @@ def build_portfolio_body(
             f"<div class='pf-lg-left'>"
             f"<a href='{href}' class='pf-lg-name'>{name}{off_note}</a>"
             f"<div class='pf-lg-meta'>{rank}/{total} &middot; {lg.get('pf', 0):.0f} pts</div>"
+            f"{pos_rank_row}"
             f"</div>"
             f"<div class='pf-streak'>{dots}</div>"
             f"<span class='pf-rec {rec_cls2}'>{rec}</span>"
@@ -18763,10 +18796,11 @@ def build_portfolio_body(
         for t in nfl_exposure:
             bw = int((t["count"] / max_cnt) * 100)
             note = f"{t['leagues']}L"
+            team_color = _NFL_COLORS.get(t['team'], "var(--accent)")
             nfl_rows += (
                 f"<div class='nfl-row'>"
                 f"<span class='nfl-abbr'>{html.escape(t['team'])}</span>"
-                f"<div class='nfl-bar-wrap'><div class='nfl-bar' style='width:{bw}%;'></div></div>"
+                f"<div class='nfl-bar-wrap'><div class='nfl-bar' style='width:{bw}%;background:{team_color};'></div></div>"
                 f"<span class='nfl-cnt'>{t['count']}</span>"
                 f"<span class='nfl-note'>{note}</span>"
                 f"</div>"
@@ -18780,7 +18814,7 @@ def build_portfolio_body(
             f"</div>"
         )
 
-    # ── Player Holdings ───────────────────────────────────────────────────────
+    # ── Player Holdings (paginated, 10/page) ─────────────────────────────────
     holdings_html = ""
     if holdings:
         h_rows = ""
@@ -18815,30 +18849,48 @@ def build_portfolio_body(
             f"<button class='pf-fbtn' data-pos='WR'>WR</button>"
             f"<button class='pf-fbtn' data-pos='TE'>TE</button>"
             f"<input class='pf-fsearch' type='text' placeholder='Search player…' id='pfSearch'>"
-            f"<span class='pf-fcount' id='pfCount'>{total_h} players</span>"
+            f"<span class='pf-fcount' id='pfCount'></span>"
             f"</div>"
             f"<div style='overflow-x:auto;'>"
             f"<table class='pf-tbl'><thead><tr>"
             f"<th></th><th>Player</th><th class='r'>Rank</th><th class='r'>Shares</th><th class='r'>Value</th>"
             f"</tr></thead><tbody id='pfBody'>{h_rows}</tbody></table>"
-            f"</div></div></div>"
+            f"</div>"
+            f"<div class='pf-pagination' id='pfPager' style='display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;'>"
+            f"<button class='pf-fbtn' id='pfPrev'>&#8592; Prev</button>"
+            f"<span id='pfPageInfo' style='font-size:0.8em;color:var(--muted);'></span>"
+            f"<button class='pf-fbtn' id='pfNext'>Next &#8594;</button>"
+            f"</div>"
+            f"</div></div>"
             f"<script>(function(){{"
-            f"var fp='ALL',fn='';"
-            f"function go(){{"
-            f"var rows=document.querySelectorAll('.pf-row'),v=0;"
-            f"rows.forEach(function(r){{"
-            f"var ok=(fp==='ALL'||r.dataset.pos===fp)&&(!fn||r.dataset.name.includes(fn));"
-            f"r.classList.toggle('pf-hide',!ok);if(ok)v++;"
-            f"}});"
-            f"var c=document.getElementById('pfCount');if(c)c.textContent=v+' players';"
+            f"var PAGE=10,fp='ALL',fn='',pg=1,filtered=[];"
+            f"function applyFilters(){{"
+            f"var rows=Array.from(document.querySelectorAll('.pf-row'));"
+            f"filtered=rows.filter(function(r){{"
+            f"return(fp==='ALL'||r.dataset.pos===fp)&&(!fn||r.dataset.name.includes(fn));"
+            f"}});pg=1;render();}}"
+            f"function render(){{"
+            f"var total=filtered.length,pages=Math.max(1,Math.ceil(total/PAGE));"
+            f"if(pg>pages)pg=pages;"
+            f"var start=(pg-1)*PAGE,end=start+PAGE;"
+            f"document.querySelectorAll('.pf-row').forEach(function(r){{r.style.display='none';}});"
+            f"filtered.slice(start,end).forEach(function(r){{r.style.display='';}});"
+            f"var c=document.getElementById('pfCount');if(c)c.textContent=total+' players';"
+            f"var pi=document.getElementById('pfPageInfo');if(pi)pi.textContent='Page '+pg+' of '+pages;"
+            f"var prev=document.getElementById('pfPrev'),next=document.getElementById('pfNext');"
+            f"if(prev)prev.disabled=pg<=1;"
+            f"if(next)next.disabled=pg>=pages;"
             f"}}"
-            f"document.querySelectorAll('.pf-fbtn').forEach(function(b){{"
+            f"document.querySelectorAll('.pf-fbtn[data-pos]').forEach(function(b){{"
             f"b.addEventListener('click',function(){{"
-            f"document.querySelectorAll('.pf-fbtn').forEach(function(x){{x.classList.remove('on');}});"
-            f"b.classList.add('on');fp=b.dataset.pos;go();"
-            f"}});}}); "
+            f"document.querySelectorAll('.pf-fbtn[data-pos]').forEach(function(x){{x.classList.remove('on');}});"
+            f"b.classList.add('on');fp=b.dataset.pos;applyFilters();}});}}); "
             f"var s=document.getElementById('pfSearch');"
-            f"if(s)s.addEventListener('input',function(){{fn=this.value.toLowerCase();go();}});"
+            f"if(s)s.addEventListener('input',function(){{fn=this.value.toLowerCase();applyFilters();}});"
+            f"var prev=document.getElementById('pfPrev'),next=document.getElementById('pfNext');"
+            f"if(prev)prev.addEventListener('click',function(){{if(pg>1){{pg--;render();}}}}); "
+            f"if(next)next.addEventListener('click',function(){{var pages=Math.ceil(filtered.length/PAGE);if(pg<pages){{pg++;render();}}}}); "
+            f"applyFilters();"
             f"}})();</script>"
         )
 
