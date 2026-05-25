@@ -19464,12 +19464,12 @@ def build_portfolio_body(
             if _pr:
                 _pc = _POS_CLS_MAP.get(_pos, "pos-k")
                 rank_chips += (
-                    f"<span style='display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--text-muted);white-space:nowrap;'>"
-                    f"<span class='pos-badge {_pc}' style='font-size:0.65em;padding:0 4px;height:14px;line-height:14px;'>{_pos}</span>"
+                    f"<span style='display:inline-flex;align-items:center;gap:2px;font-size:11px;color:var(--text-muted);white-space:nowrap;flex-shrink:0;'>"
+                    f"<span class='pos-badge {_pc}' style='font-size:0.62em;padding:0 3px;height:13px;line-height:13px;'>{_pos}</span>"
                     f"#{_pr}"
                     f"</span>"
                 )
-        rank_row = f"<div style='display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;'>{rank_chips}</div>" if rank_chips else ""
+        rank_row = f"<div style='display:flex;gap:5px;flex-wrap:nowrap;overflow:hidden;margin-top:3px;'>{rank_chips}</div>" if rank_chips else ""
 
         league_rows += (
             f"<tr>"
