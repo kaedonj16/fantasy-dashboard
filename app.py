@@ -19520,7 +19520,7 @@ def build_portfolio_body(
                     f"#{_pr}"
                     f"</span>"
                 )
-        rank_row = f"<div style='display:flex;gap:5px;flex-wrap:nowrap;overflow:hidden;margin-top:3px;'>{rank_chips}</div>" if rank_chips else ""
+        rank_row = f"<div style='display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:4px;'>{rank_chips}</div>" if rank_chips else ""
 
         league_rows += (
             f"<tr>"

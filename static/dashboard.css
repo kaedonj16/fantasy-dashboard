@@ -7961,6 +7961,8 @@ thead th {
   align-items: center;
   gap: 8px;
   padding: 6px 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .p .pname {
