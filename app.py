@@ -1190,7 +1190,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Activity",     "page_activity",     "activity",     False),
         ("Waivers",      "page_waivers",      "waivers",      False),
         ("Playoff Schedule", "page_playoff_schedule", "schedule", False),
-        ("Commissioner", "page_commissioner", "commissioner", False),
+        ("League Health", "page_commissioner", "commissioner", False),
     ], ["standings", "teams", "activity", "waivers", "schedule", "commissioner"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
@@ -12151,45 +12151,8 @@ def build_commissioner_body(ctx):
 @app.route("/<platform>/<int:season>/<league_id>/commissioner")
 def page_commissioner(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-
-    # Gate: only the league commissioner can view this page
-    league_obj      = ctx.get("league") or {}
-    commissioner_id = str(league_obj.get("commissioner_id") or "").strip()
-    rosters         = ctx.get("rosters") or []
-    users           = ctx.get("users") or []
-    viewer_info     = ctx.get("viewer") or {}
-    viewer_rid      = str(viewer_info.get("viewer_roster_id") or "").strip()
-    viewer_username = str(viewer_info.get("viewer_username") or "").strip()
-
-    is_commissioner = False
-
-    # Primary: roster owner_id == commissioner_id
-    if commissioner_id and viewer_rid:
-        _vr = next((r for r in rosters if str(r.get("roster_id")) == viewer_rid), None)
-        if _vr:
-            is_commissioner = str(_vr.get("owner_id") or "").strip() == commissioner_id
-
-    # Fallback: resolve username → user_id and compare
-    if not is_commissioner and commissioner_id and viewer_username:
-        _vu = next(
-            (u for u in users if u.get("display_name") == viewer_username
-             or u.get("username") == viewer_username),
-            None,
-        )
-        if _vu:
-            is_commissioner = str(_vu.get("user_id") or "").strip() == commissioner_id
-
-    if not is_commissioner:
-        body = ("<div class='card central' style='max-width:500px;margin:60px auto;'>"
-                "<div class='card-body' style='padding:32px;text-align:center;'>"
-                "<div style='font-size:32px;margin-bottom:12px;'>🔒</div>"
-                "<h3 style='margin-bottom:8px;'>Commissioner Only</h3>"
-                "<p style='color:var(--muted);'>This page is only accessible to the league commissioner.</p>"
-                "</div></div>")
-        return render_page("Commissioner Dashboard", league_id, "commissioner", body, platform, season)
-
     body = build_commissioner_body(ctx)
-    return render_page("Commissioner Dashboard", league_id, "commissioner", body, platform, season)
+    return render_page("League Health", league_id, "commissioner", body, platform, season)
 
 
 @app.before_request
