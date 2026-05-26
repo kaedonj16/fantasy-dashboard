@@ -12253,36 +12253,38 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         return f"""
 <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0;">
   <div style="display:flex;align-items:center;gap:6px;">
-    <span style="font-size:15px;">{icon}</span>
+    <i class="{icon}" style="font-size:13px;color:{accent};width:16px;text-align:center;"></i>
     <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
   </div>
   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
     <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-      {ava_img(name, rid, 30)}
+      {ava_img(name, rid, 32)}
       <div style="min-width:0;">
         <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
         <div style="font-size:11px;color:var(--muted);">@{html.escape(name)}</div>
       </div>
     </div>
-    <div style="font-size:26px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;">{pts:.2f}</div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:26px;font-weight:800;color:{accent};letter-spacing:-.5px;line-height:1;">{pts:.2f}</div>
+      <div style="font-size:10px;color:{accent};font-weight:600;margin-top:2px;">{html.escape(sub)}</div>
+    </div>
   </div>
-  <div style="font-size:11px;color:{accent};font-weight:600;">{html.escape(sub)}</div>
 </div>"""
 
-    def matchup_card(icon, label, m, accent):
+    def matchup_card(icon, label, m):
         w_team = team_name(m["winner"], m["w_rid"])
         l_team = team_name(m["loser"],  m["l_rid"])
         return f"""
 <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0;">
   <div style="display:flex;align-items:center;gap:6px;">
-    <span style="font-size:15px;">{icon}</span>
+    <i class="{icon}" style="font-size:13px;color:var(--accent);width:16px;text-align:center;"></i>
     <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
   </div>
   <div style="display:flex;flex-direction:column;gap:7px;">
     <div style="display:flex;align-items:center;gap:8px;">
       {ava_img(m["winner"], m["w_rid"], 28)}
       <div style="flex:1;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
-      <div style="font-size:22px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;">{m['w_pts']:.1f}</div>
+      <div style="font-size:22px;font-weight:800;color:var(--accent);flex-shrink:0;letter-spacing:-.5px;">{m['w_pts']:.1f}</div>
     </div>
     <div style="height:1px;background:var(--border);"></div>
     <div style="display:flex;align-items:center;gap:8px;">
@@ -12291,7 +12293,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
       <div style="font-size:22px;font-weight:800;color:var(--muted);flex-shrink:0;letter-spacing:-.5px;">{m['l_pts']:.1f}</div>
     </div>
   </div>
-  <div style="font-size:11px;color:{accent};font-weight:600;">margin {m['margin']:.1f}</div>
+  <div style="font-size:11px;color:var(--muted);font-weight:600;">margin {m['margin']:.1f}</div>
 </div>"""
 
     high_sub = "Season high" if season_high else f"+{float(high_row['points']) - league_avg:.1f} vs avg"
@@ -12299,14 +12301,14 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     cards_html = f"""
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
-  {scorer_card("🔥", "HIGH SCORER", high_row["owner"],
+  {scorer_card("fa-solid fa-fire", "HIGH SCORER", high_row["owner"],
                float(high_row["points"]), str(high_row.get("roster_id","")),
                high_sub, "#22c55e")}
-  {scorer_card("📉", "LOW SCORER", low_row["owner"],
+  {scorer_card("fa-solid fa-arrow-trend-down", "LOW SCORER", low_row["owner"],
                float(low_row["points"]), str(low_row.get("roster_id","")),
                low_sub, "#ef4444")}
-  {matchup_card("💥", "BIGGEST WIN", blowout, "#22c55e") if blowout else ""}
-  {matchup_card("⚡", "CLOSEST GAME", closest, "#f59e0b") if closest else ""}
+  {matchup_card("fa-solid fa-trophy", "BIGGEST WIN", blowout) if blowout else ""}
+  {matchup_card("fa-solid fa-bolt", "CLOSEST GAME", closest) if closest else ""}
 </div>"""
 
     # ── Scoreboard ─────────────────────────────────────────────────────────
