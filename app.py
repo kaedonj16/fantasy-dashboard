@@ -554,6 +554,8 @@ BASE_HTML = """
     <div id="app-scale">
       {nav}
 
+      {recap_banner}
+
       {ad_top}
 
       <main id="page-root" class="overview-layout" data-cache-ts="{cache_ts}">
@@ -1442,7 +1444,7 @@ def render_page(
     if session.get("viewer_username"):
         banner_html = _recap_ready_banner(league_id or "", platform or "", season or 0)
 
-    wrapped_body = f"{banner_html}<div class='page-shell' data-page='{active}'>{body_html}</div>"
+    wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
 
     user_id = session.get("viewer_username")
     is_premium = has_premium_access(user_id, league_id, platform or "sleeper")
@@ -1450,6 +1452,7 @@ def render_page(
     return BASE_HTML.format(
         title=title,
         nav=nav_html,
+        recap_banner=banner_html,
         body=wrapped_body,
         cache_ts=int(time.time() * 1000),
         adsense_script="" if is_premium else _AD_SCRIPT,
