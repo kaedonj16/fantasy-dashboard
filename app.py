@@ -12084,25 +12084,25 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
 <div style="border-bottom:1px solid var(--border);">
   <div style="display:flex;align-items:center;gap:10px;padding:10px 14px 5px;">
     <div style="width:30px;height:30px;border-radius:50%;background:#ef444420;display:flex;align-items:center;
-                justify-content:center;font-size:11px;font-weight:700;color:#ef4444;flex-shrink:0;">T</div>
+                justify-content:center;font-size:11px;font-weight:700;color:#ef4444;flex-shrink:0;">C</div>
     <div style="flex:1;min-width:0;">
-      <div style="font-weight:700;font-size:13px;">Tee Higgins</div>
-      <div style="font-size:11px;color:var(--muted);">WR · CIN &nbsp;·&nbsp; {team0}</div>
+      <div style="font-weight:700;font-size:13px;">Cooper Kupp</div>
+      <div style="font-size:11px;color:var(--muted);">WR · LAR &nbsp;·&nbsp; {team0}</div>
     </div>
     <div style="text-align:right;flex-shrink:0;">
-      <div style="font-size:16px;font-weight:800;color:#ef4444;">3.20</div>
+      <div style="font-size:16px;font-weight:800;color:#ef4444;">2.60</div>
       <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">STARTED</div>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:10px;padding:5px 14px 10px;">
     <div style="width:30px;height:30px;border-radius:50%;background:#22c55e20;display:flex;align-items:center;
-                justify-content:center;font-size:11px;font-weight:700;color:#22c55e;flex-shrink:0;">T</div>
+                justify-content:center;font-size:11px;font-weight:700;color:#22c55e;flex-shrink:0;">S</div>
     <div style="flex:1;min-width:0;">
-      <div style="font-weight:700;font-size:13px;">Tank Dell</div>
-      <div style="font-size:11px;color:var(--muted);">WR · HOU &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:600;">-14.2 pts</span></div>
+      <div style="font-weight:700;font-size:13px;">Stefon Diggs</div>
+      <div style="font-size:11px;color:var(--muted);">WR · BUF &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:600;">-18.4 pts</span></div>
     </div>
     <div style="text-align:right;flex-shrink:0;">
-      <div style="font-size:16px;font-weight:800;color:#22c55e;">17.40</div>
+      <div style="font-size:16px;font-weight:800;color:#22c55e;">21.00</div>
       <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">BENCHED</div>
     </div>
   </div>
