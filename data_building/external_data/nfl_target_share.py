@@ -3,7 +3,6 @@
 import concurrent.futures
 import json
 import time
-from datetime import date
 from io import StringIO
 from pathlib import Path
 from typing import Dict, Tuple
@@ -169,7 +168,7 @@ def enrich_value_table_with_target_share(season: int) -> None:
 
     Matching is done on (team, name) to minimize collisions.
     """
-    value_table_path = DATA_DIR / f"usage_table_{date.today().isoformat()}.json"
+    value_table_path = DATA_DIR / "usage_table.json"
     if not value_table_path.exists():
         raise FileNotFoundError(f"No usage table found at {value_table_path}")
 

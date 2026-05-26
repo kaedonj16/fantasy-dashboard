@@ -1171,12 +1171,8 @@ def get_seed_prospects(draft_year: int) -> List[Dict[str, Any]]:
     project_root = Path(__file__).parent.parent.parent
     data_dir = project_root / "data"
     
-    # Check for available rookie profile files, preferring latest but falling back to earlier ones
     profile_files = [
         data_dir / "rookie_profiles_latest.json",
-        data_dir / f"rookie_profiles_{datetime.date.today().isoformat()}.json",
-        data_dir / "rookie_profiles_2026-04-11.json",
-        data_dir / "rookie_profiles_2026-04-10.json",
     ]
     
     for file_path in profile_files:
