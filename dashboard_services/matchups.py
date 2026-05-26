@@ -1245,16 +1245,26 @@ def render_matchup_slide(
                 </div>"""
         )
 
-    win_bar_html = ""
+    # Win probability: live/projection weeks use simulation; completed weeks
+    # show 100/0 based on the final score.
     if proj:
         l_prob = compute_win_prob(m["left"], m["right"], status_by_pid, week_proj_map)
-        r_prob = 1.0 - l_prob
-        lp = round(l_prob * 100)
-        rp = 100 - lp
-        l_leading = l_prob >= 0.5
-        l_col = "#22c55e" if l_leading else "var(--text-muted)"
-        r_col = "#22c55e" if not l_leading else "var(--text-muted)"
-        win_bar_html = f"""<div class="m-win-bar">
+    else:
+        l_pts = float(m["left"].get("pts_total") or 0)
+        r_pts = float(m["right"].get("pts_total") or 0)
+        if l_pts > r_pts:
+            l_prob = 1.0
+        elif r_pts > l_pts:
+            l_prob = 0.0
+        else:
+            l_prob = 0.5
+
+    lp = round(l_prob * 100)
+    rp = 100 - lp
+    l_leading = l_prob >= 0.5
+    l_col = "#22c55e" if l_leading else "var(--text-muted)"
+    r_col = "#22c55e" if not l_leading else "var(--text-muted)"
+    win_bar_html = f"""<div class="m-win-bar">
   <span class="m-wp-pct" style="color:{l_col};">{lp}%</span>
   <div class="m-wp-track">
     <div class="m-wp-fill" style="width:{lp}%;background:{l_col};"></div>
@@ -1266,7 +1276,7 @@ def render_matchup_slide(
     <div class="m-slide">
       <div class="m-head">
         {team_head(m['left'], proj)}
-        <div class="m-vs">{'vs' if not proj else ''}</div>
+        <div class="m-vs"></div>
         {team_head_2nd(m['right'], proj)}
       </div>
       {win_bar_html}

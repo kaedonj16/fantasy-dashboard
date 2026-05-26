@@ -11869,6 +11869,28 @@ def page_playoff_schedule(platform: str, season: int, league_id: str):
 # WEEKLY RECAP
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _build_recap_preview_df(team_names: list[str]) -> pd.DataFrame:
+    """Generates a single week of mock recap data so users can see the
+    page layout before any weeks complete."""
+    import random as _rand
+    rng = _rand.Random(7)
+    rows = []
+    n = len(team_names)
+    if n % 2:
+        n -= 1
+    pairs = [(team_names[i], team_names[i + 1]) for i in range(0, n, 2)]
+    for mid, (a, b) in enumerate(pairs, start=1):
+        pa = round(rng.gauss(115, 18), 2)
+        pb = round(rng.gauss(108, 18), 2)
+        rows += [
+            {"week": 1, "matchup_id": mid, "roster_id": str(2 * mid - 1),
+             "owner": a, "points": pa, "points_against": pb, "finalized": True},
+            {"week": 1, "matchup_id": mid, "roster_id": str(2 * mid),
+             "owner": b, "points": pb, "points_against": pa, "finalized": True},
+        ]
+    return pd.DataFrame(rows)
+
+
 def build_recap_body(ctx: dict, selected_week: int | None = None) -> str:
     df_weekly  = ctx.get("df_weekly")
     roster_map = ctx.get("roster_map") or {}
@@ -11876,6 +11898,32 @@ def build_recap_body(ctx: dict, selected_week: int | None = None) -> str:
     league     = ctx.get("league") or {}
     settings   = league.get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
+
+    # ── Preview mode: no finalized weeks yet → use mock data ───────────────
+    preview_mode = False
+    has_real_finalized = (
+        df_weekly is not None
+        and not df_weekly.empty
+        and "finalized" in df_weekly.columns
+        and bool((df_weekly["finalized"] == True).any())
+    )
+    if not has_real_finalized:
+        preview_mode = True
+        # Build mock data from real team names if available, else defaults
+        if roster_map:
+            team_names = [str(n) for n in roster_map.values()][:10]
+            # Map mock roster_ids to real ones so avatars resolve
+            real_rids = list(roster_map.keys())
+            df_weekly = _build_recap_preview_df(team_names)
+            # Overwrite roster_id with real ones to enable avatar lookup
+            for i, rid in enumerate(df_weekly["roster_id"].tolist()):
+                if i < len(real_rids):
+                    df_weekly.at[i, "roster_id"] = str(real_rids[i % len(real_rids)])
+        else:
+            team_names = ["Dynasty Kings", "Gridiron Ghosts", "Blitz Brigade",
+                          "Redzone Rebels", "Endzone Elite", "Pocket Protectors"]
+            df_weekly = _build_recap_preview_df(team_names)
+            roster_map = {str(i + 1): n for i, n in enumerate(team_names)}
 
     # avatar by owner name
     owner_avatar: dict = {}
@@ -11890,12 +11938,7 @@ def build_recap_body(ctx: dict, selected_week: int | None = None) -> str:
     # team name by roster_id
     team_by_rid: dict = {str(rid): name for rid, name in roster_map.items()}
 
-    if df_weekly is None or df_weekly.empty or "finalized" not in df_weekly.columns:
-        return "<div class='card card-body' style='padding:24px;color:var(--muted);'>No completed weeks yet.</div>"
-
     fin_df = df_weekly[df_weekly["finalized"] == True].copy()
-    if fin_df.empty:
-        return "<div class='card card-body' style='padding:24px;color:var(--muted);'>No completed weeks yet.</div>"
 
     available_weeks = sorted(fin_df["week"].unique().tolist())
     reg_weeks = [w for w in available_weeks if w < playoff_start]
@@ -12088,7 +12131,18 @@ def build_recap_body(ctx: dict, selected_week: int | None = None) -> str:
   {standing_rows_html}
 </div>"""
 
-    return week_selector + cards_html + scoreboard_html + standings_html
+    preview_banner = ""
+    if preview_mode:
+        preview_banner = """
+<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;margin-bottom:16px;
+            border:1px solid var(--accent);border-radius:8px;background:rgba(99,102,241,0.08);">
+  <span style="font-size:18px;">👁️</span>
+  <div style="font-size:13px;color:var(--text);">
+    <strong>Preview</strong> — this is sample data. Your real weekly recap will appear here after Week 1 completes.
+  </div>
+</div>"""
+
+    return preview_banner + week_selector + cards_html + scoreboard_html + standings_html
 
 
 @app.route("/<platform>/<int:season>/<league_id>/recap")
