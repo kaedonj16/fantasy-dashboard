@@ -266,24 +266,21 @@ def _generate_ai_storyline(payload: dict) -> dict:
     }
 
     system_prompt = """
-You are someone in a long-running fantasy football group chat writing the Tuesday recap. You're observational, a little dry, occasionally use current internet/social slang naturally — not forced. Think less "ESPN host doing a bit" and more "one of your actually funny friends texting at 9am".
+You are someone in a long-running fantasy football group chat writing a quick Tuesday recap. Casual, low-key, matter-of-fact. Like a friend who watched the games and has a few things to say — not performing, just talking.
 
 Voice:
-- Low-key, dry, observational. Not trying too hard to be funny.
-- Use real internet slang where it fits naturally: "ngl", "lowkey", "no cap", "not gonna lie", "#noticing", "it's giving", "respectfully", "that's crazy behavior", "actually wild", "unhinged", "rent free".
-- Don't string five slang terms together — one or two per paragraph feels natural, more feels try-hard.
-- Contractions, fragments, run-ons are all fine. Sound like someone typing, not writing.
-- Use team names. Use specific numbers — scores, records, win streaks. That's the substance.
-- Observations > jokes. Point something out and let it land, you don't need a punchline.
-- If someone's struggling, acknowledge it without piling on. If someone's cooking, give them their flowers.
+- Plain and direct. Say what happened, add a short take if it's worth it.
+- Occasional slang is fine if it comes naturally — "ngl", "lowkey", "#noticing" — but use it once or twice at most. Don't chase it.
+- No punchlines, no bits. Just observations.
+- Contractions and fragments are fine. Short sentences are fine.
+- Use team names and specific numbers — scores, records, streaks. That's the substance.
 
 Hard rules:
-- Lead with the week's most compelling storyline — an upset, a blowout, a streak, a collapse.
-- 2-4 paragraphs, 2-4 sentences each. NEVER more than 4 paragraphs.
-- DO NOT invent facts, scores, or players that aren't in the data.
-- No markdown, no bullet points, no headers in the output.
-- Don't open with generic hype ("What a week", "Here's the recap", "Wow"). Just start talking.
-- Not mean-spirited — this is group chat energy, not a roast battle.
+- 2-4 paragraphs, 2-4 sentences each.
+- DO NOT invent facts, scores, or players not in the data.
+- No markdown, bullets, or headers.
+- Don't open with filler ("What a week", "Here's your recap"). Start with the actual news.
+- Grounded tone — not mean, not hype, just real.
 """.strip()
 
     user_prompt = f"""
@@ -387,11 +384,11 @@ def get_weekly_ai_recap(
 def get_weekly_ai_recap_preview() -> str:
     """Static sample for preview mode."""
     return _render_recap_html({
-        "headline": "#noticing that Dynasty Kings is 4-1 and nobody's said anything",
+        "headline": "Dynasty Kings are quietly 4-1 and the Ghosts are in trouble",
         "paragraphs": [
-            "Ngl the Gridiron Ghosts situation is a little concerning. 94 points in Week 5, 3-2 record, and somehow they're the low scorer on a week where the league average was 118. That's not bad luck at this point, that's a roster problem. Respectfully.",
-            "Dynasty Kings are quietly 4-1 and it's giving sleeper contender. They haven't posted about it, they haven't trash talked, they're just out here winning games. #noticing. The rest of the top half should probably start paying attention.",
-            "The Blitz Brigade loss actually hurt to watch — 127 points and a loss because their opponent dropped 131 on a random Sunday in October. That's unhinged variance. They're 2-3 but their points total is top three in the league, which is either a really good sign or a really bad one.",
-            "Three weeks until the trade deadline and the playoff picture is already getting real. That 5th and 6th seed are gonna be decided on points for at least two teams, no cap.",
+            "Gridiron Ghosts put up 94 points in Week 5 and lost by 34. That's a rough one. They're 2-3 now and the schedule doesn't get easier — at some point the roster just isn't good enough and this might be that point.",
+            "Dynasty Kings won again. They're 4-1, top of the standings, and ngl nobody's really been talking about them. They don't blow teams out, they just keep winning close ones. Worth paying attention to.",
+            "Blitz Brigade scored 127 and lost because their opponent put up 131. They're 2-3 but their points total is third in the league. At some point the wins catch up — or they don't, and it's a really frustrating season.",
+            "Four weeks left before the playoff picture locks in. The 5th and 6th seeds are going to come down to points for a couple of these teams.",
         ],
     })
