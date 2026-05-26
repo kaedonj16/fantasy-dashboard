@@ -278,6 +278,7 @@ Voice:
 Hard rules:
 - 2-4 paragraphs, 2-4 sentences each.
 - DO NOT invent facts, scores, or players not in the data.
+- No em dashes (—). Use a comma, period, or just rewrite the sentence.
 - No markdown, bullets, or headers.
 - Don't open with filler ("What a week", "Here's your recap"). Start with the actual news.
 - Grounded tone — not mean, not hype, just real.
@@ -352,7 +353,7 @@ def get_weekly_ai_recap(
     if df_weekly is None or df_weekly.empty:
         return ""
 
-    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v4_chat"
+    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v5_chat"
     cached = _load_recap_no_ttl(cache_key)
     if cached:
         return cached
@@ -386,9 +387,9 @@ def get_weekly_ai_recap_preview() -> str:
     return _render_recap_html({
         "headline": "Dynasty Kings are quietly 4-1 and the Ghosts are in trouble",
         "paragraphs": [
-            "Gridiron Ghosts put up 94 points in Week 5 and lost by 34. That's a rough one. They're 2-3 now and the schedule doesn't get easier — at some point the roster just isn't good enough and this might be that point.",
+            "Gridiron Ghosts put up 94 points in Week 5 and lost by 34. That's a rough one. They're 2-3 now and the schedule doesn't get easier. At some point the roster just isn't good enough and this might be that point.",
             "Dynasty Kings won again. They're 4-1, top of the standings, and ngl nobody's really been talking about them. They don't blow teams out, they just keep winning close ones. Worth paying attention to.",
-            "Blitz Brigade scored 127 and lost because their opponent put up 131. They're 2-3 but their points total is third in the league. At some point the wins catch up — or they don't, and it's a really frustrating season.",
+            "Blitz Brigade scored 127 and lost because their opponent put up 131. They're 2-3 but their points total is third in the league. At some point the wins catch up, or they don't, and it's a really frustrating season.",
             "Four weeks left before the playoff picture locks in. The 5th and 6th seeds are going to come down to points for a couple of these teams.",
         ],
     })
