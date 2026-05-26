@@ -12251,7 +12251,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     # ── Headline cards ─────────────────────────────────────────────────────
     def scorer_card(icon, label, name, pts, rid, sub, accent):
         return f"""
-<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;min-width:0;">
+<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-width:0;">
   <div style="display:flex;align-items:center;gap:6px;">
     <i class="{icon}" style="font-size:13px;color:{accent};width:16px;text-align:center;"></i>
     <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
@@ -12275,7 +12275,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         w_team = team_name(m["winner"], m["w_rid"])
         l_team = team_name(m["loser"],  m["l_rid"])
         return f"""
-<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;min-width:0;">
+<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-width:0;">
   <div style="display:flex;align-items:center;gap:6px;">
     <i class="{icon}" style="font-size:13px;color:var(--accent);width:16px;text-align:center;"></i>
     <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
