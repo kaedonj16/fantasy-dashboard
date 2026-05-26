@@ -121,16 +121,13 @@ def _build_team_storylines(
         before = snap_before[rid]
         after = snap_after[rid]
 
-        # Last 3 weeks of context (inclusive of selected_week)
-        all_idx = [i for i, w in enumerate(t["weeks"]) if w <= selected_week]
-        recent_idx = all_idx[-3:]
-        recent_weeks = [
+        season_weeks = [
             {
                 "week": t["weeks"][i],
                 "result": t["results"][i],
                 "pts": round(t["pts_by_week"][i], 1),
             }
-            for i in recent_idx
+            for i in range(len(t["weeks"]))
         ]
 
         storylines.append({
@@ -147,11 +144,72 @@ def _build_team_storylines(
             "streak": after["streak"],
             "streak_before": before["streak"],
             "pf_after": round(after["pf"], 1),
-            "recent_weeks": recent_weeks,
+            "season_weeks": season_weeks,
         })
 
     storylines.sort(key=lambda x: x["rank_after"] or 99)
     return storylines
+
+
+def _build_matchup_context(
+        df_weekly: pd.DataFrame,
+        selected_week: int,
+        team_by_rid: dict,
+) -> list[dict]:
+    """For each matchup this week, compute h2h record and prior meetings this season."""
+    fin_df = df_weekly[df_weekly["finalized"] == True].copy()
+    if fin_df.empty:
+        return []
+
+    # (week, matchup_id) -> [(rid, pts)]
+    pairs: dict[tuple, list] = {}
+    for _, row in fin_df.iterrows():
+        key = (int(row["week"]), int(row.get("matchup_id") or 0))
+        pairs.setdefault(key, []).append((str(row["roster_id"]), float(row["points"])))
+
+    this_week = {k: v for k, v in pairs.items() if k[0] == selected_week and len(v) == 2}
+
+    result = []
+    for (_w, _mid), sides in this_week.items():
+        rid_a, pts_a = sides[0]
+        rid_b, pts_b = sides[1]
+        team_a = team_by_rid.get(rid_a, rid_a)
+        team_b = team_by_rid.get(rid_b, rid_b)
+
+        prior = []
+        for (w, _m), s in pairs.items():
+            if w >= selected_week or len(s) != 2:
+                continue
+            if {s[0][0], s[1][0]} == {rid_a, rid_b}:
+                a_side = next(x for x in s if x[0] == rid_a)
+                b_side = next(x for x in s if x[0] == rid_b)
+                prior.append({
+                    "week": w,
+                    "a_pts": round(a_side[1], 1),
+                    "b_pts": round(b_side[1], 1),
+                    "winner": team_a if a_side[1] > b_side[1] else team_b,
+                })
+
+        prior.sort(key=lambda x: x["week"])
+        a_wins = sum(1 for p in prior if p["winner"] == team_a)
+        b_wins = sum(1 for p in prior if p["winner"] == team_b)
+
+        entry: dict = {
+            "team_a": team_a,
+            "team_b": team_b,
+            "team_a_pts": round(pts_a, 1),
+            "team_b_pts": round(pts_b, 1),
+            "winner": team_a if pts_a > pts_b else team_b,
+        }
+        if prior:
+            entry["h2h"] = {
+                "team_a_wins": a_wins,
+                "team_b_wins": b_wins,
+                "prior_meetings": prior,
+            }
+        result.append(entry)
+
+    return result
 
 
 def build_weekly_recap_payload(
@@ -162,6 +220,7 @@ def build_weekly_recap_payload(
         league: dict,
 ) -> dict:
     storylines = _build_team_storylines(df_weekly, selected_week, team_by_rid)
+    matchup_context = _build_matchup_context(df_weekly, selected_week, team_by_rid)
 
     settings = (league or {}).get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
@@ -245,7 +304,7 @@ def build_weekly_recap_payload(
                 "pts": round(s["this_week_pts"], 1) if s["this_week_pts"] is not None else None,
                 "opp_pts": round(s["opp_pts"], 1) if s["opp_pts"] is not None else None,
                 "rank_change": s["rank_change"],
-                "recent_weeks": s["recent_weeks"],
+                "season_weeks": s["season_weeks"],
             } for s in storylines
         ],
         "high_scorer": {"team": high_scorer["team"], "pts": round(high_scorer["this_week_pts"], 1)} if high_scorer and high_scorer["this_week_pts"] else None,
@@ -259,6 +318,7 @@ def build_weekly_recap_payload(
             for s in big_movers
         ],
         "playoff_race": playoff_race,
+        "matchups": matchup_context,
     }
 
 
@@ -304,7 +364,10 @@ Write a weekly recap column for {payload['league_name']}, Week {payload['week']}
 
 Weeks until playoffs: {payload['weeks_until_playoffs']} (playoffs start week {payload['week'] + payload['weeks_until_playoffs'] + 1 if payload['weeks_until_playoffs'] else payload['week']})
 
-Standings (sorted by rank after this week). Each team includes their last 3 weeks of scores so you can reference trends — e.g. "they've scored under 100 three weeks running" or "they just had their best week of the season":
+This week's matchups with head-to-head season history (a_pts/b_pts in prior_meetings correspond to team_a/team_b):
+{json.dumps(payload['matchups'], indent=2)}
+
+Standings (sorted by rank after this week). season_weeks shows every game this season so you can reference scoring trends and see if a team has been consistent, improving, or declining:
 {json.dumps(payload['teams'], indent=2)}
 
 High scorer: {json.dumps(payload['high_scorer'])}
@@ -316,7 +379,7 @@ Cold streaks (2+ losses in a row): {json.dumps(payload['cold_streaks'])}
 Big movers (rank moved 2+ spots): {json.dumps(payload['big_movers'])}
 Playoff race: {json.dumps(payload['playoff_race'])}
 
-Use the recent_weeks data to add context about trends where it makes the story more interesting. Lead with whatever storyline is most compelling.
+Use the h2h and season_weeks data where it adds something real to the story — rematches, revenge games, scoring trends, a team peaking or fading. Lead with the most compelling storyline.
 """.strip()
 
     resp = client.responses.create(
@@ -368,7 +431,7 @@ def get_weekly_ai_recap(
     if df_weekly is None or df_weekly.empty:
         return ""
 
-    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v6_chat"
+    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v7_chat"
     cached = _load_recap_no_ttl(cache_key)
     if cached:
         return cached
