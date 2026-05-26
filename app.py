@@ -1396,30 +1396,48 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
     dismiss_key = f"recap-banner-{now.year}-w{iso_week}"
 
     return f"""
-<div id="recapReadyBanner"
-     style="display:none;align-items:center;gap:12px;padding:10px 20px;
-            background:var(--accent);color:#fff;cursor:pointer;
-            font-size:13px;font-weight:500;position:relative;"
-     onclick="window.location.href='{recap_url}'">
-  <i class="fa-solid fa-newspaper" style="font-size:14px;flex-shrink:0;"></i>
-  <span>This week's recap is ready.</span>
-  <span style="opacity:.75;font-weight:400;">See what happened around the league.</span>
-  <a href="{recap_url}"
-     style="margin-left:auto;color:#fff;font-weight:700;white-space:nowrap;text-decoration:none;
-            border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:3px 10px;font-size:12px;"
-     onclick="event.stopPropagation();">View recap</a>
-  <button onclick="event.stopPropagation();
-                   document.getElementById('recapReadyBanner').style.display='none';
-                   localStorage.setItem('{dismiss_key}','1');"
-          style="background:none;border:none;color:#fff;font-size:20px;line-height:1;
-                 cursor:pointer;opacity:.65;padding:0;margin-left:4px;flex-shrink:0;"
-          aria-label="Dismiss">&times;</button>
+<div id="recapReadyBanner" style="
+     display:none;
+     position:fixed;bottom:24px;right:24px;z-index:9999;
+     background:var(--card);border:1px solid var(--border);
+     border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.18);
+     padding:18px 20px;width:300px;
+     flex-direction:column;gap:12px;">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <i class="fa-solid fa-newspaper" style="font-size:15px;color:var(--accent);margin-top:1px;"></i>
+      <span style="font-size:14px;font-weight:700;color:var(--text);">Recap is ready</span>
+    </div>
+    <button id="recapReadyClose"
+            style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
+                   cursor:pointer;padding:0;flex-shrink:0;"
+            aria-label="Dismiss">&times;</button>
+  </div>
+  <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">
+    This week's recap is ready. See who scored big, who got cooked, and where things stand.
+  </p>
+  <a id="recapReadyLink" href="{recap_url}"
+     style="display:block;text-align:center;background:var(--accent);color:#fff;
+            font-weight:700;font-size:13px;text-decoration:none;
+            padding:9px 0;border-radius:8px;">
+    View Recap
+  </a>
 </div>
 <script>
 (function(){{
-  if (localStorage.getItem('{dismiss_key}')) return;
+  var key = '{dismiss_key}';
+  if (localStorage.getItem(key)) return;
   var el = document.getElementById('recapReadyBanner');
-  if (el) el.style.display = 'flex';
+  if (!el) return;
+  el.style.display = 'flex';
+
+  function dismiss() {{
+    el.style.display = 'none';
+    localStorage.setItem(key, '1');
+  }}
+
+  document.getElementById('recapReadyClose').addEventListener('click', dismiss);
+  document.getElementById('recapReadyLink').addEventListener('click', dismiss);
 }})();
 </script>"""
 
