@@ -11891,7 +11891,7 @@ def _build_recap_preview_df(team_names: list[str]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def build_recap_body(ctx: dict, selected_week: int | None = None) -> str:
+def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     df_weekly  = ctx.get("df_weekly")
     roster_map = ctx.get("roster_map") or {}
     users      = ctx.get("users") or []
