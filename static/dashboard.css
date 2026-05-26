@@ -2241,6 +2241,10 @@ button:hover {
   padding: 8px 6px;
   color: var(--accent);
   font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--card);
 }
 
 .standings-table tr {
@@ -15910,4 +15914,65 @@ button:disabled {
   background: var(--accent-soft);
   color: var(--text);
   border-color: var(--accent);
+}
+
+/* ── Generic skeleton shimmer ─────────────────────────────────────────────── */
+@keyframes skShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+.sk-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-alt, #1e293b) 25%,
+    var(--border, #334155) 50%,
+    var(--bg-alt, #1e293b) 75%
+  );
+  background-size: 200% 100%;
+  animation: skShimmer 1.4s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+.sk-line {
+  height: 12px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+.sk-line.sk-line--lg { height: 18px; }
+.sk-line.sk-line--sm { height: 9px; }
+.sk-line.sk-line--w75 { width: 75%; }
+.sk-line.sk-line--w50 { width: 50%; }
+.sk-line.sk-line--w60 { width: 60%; }
+
+.sk-avatar {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Movers skeleton rows */
+.sk-mover-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Recap page mobile layout ─────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .recap-scoreboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .recap-lineup-grid {
+    grid-template-columns: 1fr !important;
+  }
 }

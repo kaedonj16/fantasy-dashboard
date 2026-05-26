@@ -1258,8 +1258,17 @@ window.initTradePage = function initTradePage(root = document) {
     if (moversPanel) {
       moversPanel.classList.add("otc-movers-loading");
     }
-    if (risersEl) risersEl.innerHTML = '<div class="otc-movers-empty"><div class="loading-spinner"></div></div>';
-    if (fallersEl) fallersEl.innerHTML = '<div class="otc-movers-empty"><div class="loading-spinner"></div></div>';
+    const moverSkeleton = () => [1,2,3,4,5].map((_, i) => `
+      <div class="sk-mover-row">
+        <div class="sk-shimmer sk-avatar" style="width:28px;height:28px;animation-delay:${i*0.08}s;"></div>
+        <div style="flex:1;min-width:0;">
+          <div class="sk-shimmer sk-line" style="width:${55+i*8}%;animation-delay:${i*0.08}s;"></div>
+          <div class="sk-shimmer sk-line sk-line--sm sk-line--w50" style="animation-delay:${i*0.08+0.05}s;"></div>
+        </div>
+        <div class="sk-shimmer sk-line" style="width:40px;height:16px;animation-delay:${i*0.08}s;"></div>
+      </div>`).join('');
+    if (risersEl) risersEl.innerHTML = moverSkeleton();
+    if (fallersEl) fallersEl.innerHTML = moverSkeleton();
 
     try {
       const leagueType = getLeagueType();
@@ -1323,7 +1332,15 @@ window.initTradePage = function initTradePage(root = document) {
     if (moversPanel) {
       moversPanel.classList.add("otc-movers-loading");
     }
-    breakoutsEl.innerHTML = '<div class="otc-movers-empty"><div class="loading-spinner"></div></div>';
+    breakoutsEl.innerHTML = [1,2,3,4,5].map((_, i) => `
+      <div class="sk-mover-row">
+        <div class="sk-shimmer sk-avatar" style="width:28px;height:28px;animation-delay:${i*0.08}s;"></div>
+        <div style="flex:1;min-width:0;">
+          <div class="sk-shimmer sk-line" style="width:${55+i*7}%;animation-delay:${i*0.08}s;"></div>
+          <div class="sk-shimmer sk-line sk-line--sm sk-line--w50" style="animation-delay:${i*0.08+0.05}s;"></div>
+        </div>
+        <div class="sk-shimmer sk-line" style="width:36px;height:16px;animation-delay:${i*0.08}s;"></div>
+      </div>`).join('');
 
     try {
       const leagueType = getLeagueType();

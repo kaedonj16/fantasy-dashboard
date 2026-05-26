@@ -526,6 +526,7 @@ BASE_HTML = """
     <meta charset="utf-8">
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <title>{title}</title>
+    {og_tags}
     <meta name="viewport" content="width=device-width, initial-scale=1">
     
     <!-- Google AdSense -->
@@ -1243,12 +1244,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
         # Update settings dropdown content for logged-in users with full menu
         settings_content = (
-            f"<button type='button' id='refreshBtn' class='settings-menu-item' "
-            f"        data-page='{active}' data-league='{league_id}' "
-            f"        data-platform='{platform}' data-season='{season}'>"
-            "  <img src='/static/refresh.png' class='settings-menu-icon' alt='Refresh'>"
-            "  <span class='settings-menu-label'>Refresh Data</span>"
-            "</button>"
             "<button type='button' class='settings-menu-item' id='settingsChangelogBtn'>"
             "  <img src='/static/bell.png' class='settings-menu-icon' alt='Changelog'>"
             "  <span class='settings-menu-label'>Notifications</span>"
@@ -1476,6 +1471,7 @@ def render_page(
         platform: Optional[str] = None,
         season: Optional[int] = None,
         *args,
+        og_tags: str = "",
         **kwargs,
 ) -> str:
     if league_id and platform and season:
@@ -1495,6 +1491,7 @@ def render_page(
 
     return BASE_HTML.format(
         title=title,
+        og_tags=og_tags,
         nav=nav_html,
         recap_banner=banner_html,
         body=wrapped_body,
@@ -12126,7 +12123,7 @@ def _build_lineup_analysis_html(
                     or "<div style='padding:18px;color:var(--muted);font-size:13px;text-align:center;'>No major lineup mistakes this week — nice job, league.</div>"
 
     return f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;">
+<div class="recap-lineup-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;">
   <div class="card" style="overflow:hidden;">
     <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
     {bust_rows or '<div style="padding:14px;color:var(--muted);">—</div>'}
@@ -12206,7 +12203,7 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
 </div>"""
 
     return f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;">
+<div class="recap-lineup-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;">
   <div class="card" style="overflow:hidden;">
     <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
     {bust_rows}
@@ -12253,6 +12250,10 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     league     = ctx.get("league") or {}
     settings   = league.get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
+    _platform  = ctx.get("platform") or "sleeper"
+    _season    = ctx.get("season") or ""
+    _league_id = ctx.get("league_id") or ""
+    history_url = f"/{_platform}/{_season}/{_league_id}/history" if _league_id else ""
 
     # ── Preview mode: no finalized weeks yet → use mock data ───────────────
     preview_mode = False
@@ -12354,6 +12355,21 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         f"<option value='{w}' {'selected' if w == selected_week else ''}>Week {w}</option>"
         for w in reversed(reg_weeks)
     )
+    history_banner = ""
+    if history_url:
+        history_banner = f"""
+<div id="historyRecapBanner" style="display:flex;align-items:center;gap:10px;padding:11px 16px;
+     margin-bottom:16px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);">
+  <i class="fa-solid fa-trophy" style="font-size:13px;color:var(--accent);flex-shrink:0;"></i>
+  <span style="font-size:13px;color:var(--text);flex:1;">
+    Want the full season breakdown? View it on the
+    <a href="{history_url}" style="color:var(--accent);font-weight:600;text-decoration:none;">History page</a>.
+  </span>
+  <button onclick="this.parentElement.style.display='none'"
+          style="background:none;border:none;color:var(--muted);cursor:pointer;padding:0 2px;
+                 font-size:16px;line-height:1;flex-shrink:0;" aria-label="Dismiss">&#x2715;</button>
+</div>"""
+
     week_selector = f"""
 <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
   <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
@@ -12362,6 +12378,12 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                  background:var(--card);color:var(--text);font-size:13px;cursor:pointer;">
     {week_opts}
   </select>
+  <button onclick="(function(b){{var u=window.location.href;navigator.clipboard.writeText(u).then(function(){{var o=b.innerHTML;b.innerHTML='Copied!';setTimeout(function(){{b.innerHTML=o;}},2000);}})}})(this)"
+          style="display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
+                 border:1px solid var(--border);background:var(--card);color:var(--text);
+                 font-size:13px;cursor:pointer;font-weight:600;">
+    <i class="fa-solid fa-link" style="font-size:11px;"></i> Share
+  </button>
 </div>"""
 
     # ── Headline cards ─────────────────────────────────────────────────────
@@ -12554,12 +12576,12 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 </div>"""
 
     scoreboard_and_recap = f"""
-<div style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:20px;align-items:start;">
+<div class="recap-scoreboard-grid" style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:20px;align-items:start;">
   {scoreboard_html.replace("margin-bottom:20px;", "")}
   {ai_column_html.replace("margin-bottom:20px;", "")}
 </div>"""
 
-    return (preview_banner + week_selector + cards_html
+    return (preview_banner + history_banner + week_selector + cards_html
             + scoreboard_and_recap + lineup_html + standings_html)
 
 
@@ -12571,7 +12593,20 @@ def page_recap(platform: str, season: int, league_id: str):
     except (ValueError, TypeError):
         week = None
     body = build_recap_body(ctx, selected_week=week)
-    return render_page("Weekly Recap", league_id, "recap", body, platform, season)
+    league_name = html.escape((ctx.get("league") or {}).get("name") or "Fantasy League")
+    week_label = f"Week {week} Recap" if week else "Weekly Recap"
+    page_url = request.url
+    og_tags = (
+        f"<meta property='og:title' content='{week_label} — {league_name} | BR Fantasy'>"
+        f"<meta property='og:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
+        f"<meta property='og:image' content='/static/BR_Logo.png'>"
+        f"<meta property='og:type' content='website'>"
+        f"<meta property='og:url' content='{html.escape(page_url)}'>"
+        f"<meta name='twitter:card' content='summary'>"
+        f"<meta name='twitter:title' content='{week_label} — {league_name} | BR Fantasy'>"
+        f"<meta name='twitter:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
+    )
+    return render_page("Weekly Recap", league_id, "recap", body, platform, season, og_tags=og_tags)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
