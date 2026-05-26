@@ -11949,23 +11949,39 @@ def build_commissioner_body(ctx):
                 f'<div style="height:6px;border-radius:3px;background:{color};width:{width:.1f}%"></div></div>')
 
     # ── 3. Trade fairness ─────────────────────────────────────────────────
-    # ctx["traded"] is traded draft picks, not transactions. Use the trade
-    # transactions already fetched in tx_by_week instead.
+    # Round-based future pick value estimates
+    _PICK_VALS = {1: 1500, 2: 800, 3: 400, 4: 200}
     trade_txns = [tx for txns in tx_by_week.values() for tx in (txns or [])
                   if tx.get("type") == "trade"]
     trade_rows = []
+    seen_txn_ids: set = set()
     for tx in trade_txns:
-        adds  = tx.get("adds") or {}
-        drops = tx.get("drops") or {}
-        involved = {str(r) for r in (list(adds.values()) + list(drops.values()))}
+        tx_id = tx.get("transaction_id") or tx.get("id")
+        if tx_id:
+            if tx_id in seen_txn_ids:
+                continue
+            seen_txn_ids.add(tx_id)
+        adds = tx.get("adds") or {}
+        draft_picks = tx.get("draft_picks") or []
+        # Determine involved rosters from adds and draft picks only (not drops)
+        involved = {str(rid) for rid in adds.values()}
+        for pick in draft_picks:
+            for key in ("roster_id", "owner_id", "previous_owner_id"):
+                v = str(pick.get(key) or "")
+                if v:
+                    involved.add(v)
         if len(involved) < 2:
             continue
-        val_by_team: dict = {rid: 0.0 for rid in involved}
+        # Value received by each team (adds only — picks go to new owner)
+        received: dict = {rid: 0.0 for rid in involved}
         for pid, rid in adds.items():
-            val_by_team[str(rid)] = val_by_team.get(str(rid), 0) + val_by_pid.get(str(pid), 0)
-        for pid, rid in drops.items():
-            val_by_team[str(rid)] = val_by_team.get(str(rid), 0) - val_by_pid.get(str(pid), 0)
-        vals = sorted(val_by_team.items(), key=lambda x: -x[1])
+            received[str(rid)] = received.get(str(rid), 0) + val_by_pid.get(str(pid), 0)
+        for pick in draft_picks:
+            rid = str(pick.get("roster_id") or pick.get("owner_id") or "")
+            rnd = int(pick.get("round") or 4)
+            if rid in received:
+                received[rid] = received.get(rid, 0) + _PICK_VALS.get(rnd, 150)
+        vals = sorted(received.items(), key=lambda x: -x[1])
         if len(vals) >= 2:
             (r1, v1), (r2, v2) = vals[0], vals[1]
             diff = abs(v1 - v2)
@@ -12065,8 +12081,8 @@ def build_commissioner_body(ctx):
                             "padding:2px 5px;border-radius:4px;'>LOPSIDED</span>") if t["lopsided"] else ""
             trade_table_rows += f"""
 <tr style="border-bottom:1px solid var(--border);">
-  <td style="padding:10px 14px;">{html.escape(t['team_a'])} <span style="color:var(--muted)">got</span> {int(t['val_a'])} val</td>
-  <td style="padding:10px 14px;">{html.escape(t['team_b'])} <span style="color:var(--muted)">got</span> {int(t['val_b'])} val</td>
+  <td style="padding:10px 14px;">{html.escape(t['team_a'])} <span style="color:var(--muted)">received</span> {int(t['val_a'])}</td>
+  <td style="padding:10px 14px;">{html.escape(t['team_b'])} <span style="color:var(--muted)">received</span> {int(t['val_b'])}</td>
   <td style="padding:10px;text-align:center;font-weight:700;color:{diff_color};">±{int(t['diff'])}{lopsided_tag}</td>
 </tr>"""
         trade_card = f"""
