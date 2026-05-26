@@ -16648,6 +16648,31 @@ def api_draft_grades():
 # Trade Intelligence Engine API
 # ---------------------------------------------------------------------------
 
+# Cache of which optional columns exist on trade_intel_player_stats. The
+# size-bucketed market_value_*_8/10/12/14 columns are created lazily by the
+# analytics pipeline (data_building/trade_intel/analytics._ensure_size_columns)
+# so deployments that haven't run the pipeline yet won't have them — we check
+# once per process and skip the bucketed column in the SELECT if missing.
+_TRADE_INTEL_COL_CACHE: dict = {}
+
+
+def _trade_intel_col_exists(conn, col: str) -> bool:
+    if col in _TRADE_INTEL_COL_CACHE:
+        return _TRADE_INTEL_COL_CACHE[col]
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'trade_intel_player_stats' "
+            "  AND column_name = %s LIMIT 1",
+            (col,),
+        ).fetchone()
+        exists = row is not None
+    except Exception:
+        exists = False
+    _TRADE_INTEL_COL_CACHE[col] = exists
+    return exists
+
+
 @app.route("/api/trade-intel/trending")
 def api_trade_intel_trending():
     """
@@ -16669,36 +16694,36 @@ def api_trade_intel_trending():
         # Map league_size to the size-bucketed column, fall back to all-leagues
         _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
         sz_suffix = _SZ_MAP.get(league_size, "")
-        if sz_suffix:
-            value_col_expr = f"COALESCE(s.market_value_{fmt}_{sz_suffix}, s.market_value_{fmt})"
-        else:
-            value_col_expr = f"s.market_value_{fmt}"
 
-        # First get total count for pagination
-        count_q = f"""
-            SELECT COUNT(*) as total
-            FROM trade_intel_player_stats s
-            WHERE s.season = %s AND s.trade_count > 0
-            """
-        
         from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc_ti
         _rk_year = _garc_ti()
-        _q = f"""
-            SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
-                   {value_col_expr} AS market_value, s.buy_sell_ratio,
-                   s.market_trend_1qb,
-                   COALESCE(pv.{model_col}, rk.rookie_value) AS model_value,
-                   COALESCE(pv.position, rk.position) AS position,
-                   COALESCE(pv.team, rk.team) AS team
-            FROM trade_intel_player_stats s
-            LEFT JOIN player_values pv ON pv.player_id = s.player_id
-            LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id
-                                        AND rk.draft_class_year = %s
-            WHERE s.season = %s AND s.trade_count > 0
-            ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
-            LIMIT %s OFFSET %s
-            """
         with get_conn() as conn:
+            sz_col = f"market_value_{fmt}_{sz_suffix}" if sz_suffix else ""
+            if sz_col and _trade_intel_col_exists(conn, sz_col):
+                value_col_expr = f"COALESCE(s.{sz_col}, s.market_value_{fmt})"
+            else:
+                value_col_expr = f"s.market_value_{fmt}"
+
+            count_q = """
+                SELECT COUNT(*) as total
+                FROM trade_intel_player_stats s
+                WHERE s.season = %s AND s.trade_count > 0
+                """
+            _q = f"""
+                SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
+                       {value_col_expr} AS market_value, s.buy_sell_ratio,
+                       s.market_trend_1qb,
+                       COALESCE(pv.{model_col}, rk.rookie_value) AS model_value,
+                       COALESCE(pv.position, rk.position) AS position,
+                       COALESCE(pv.team, rk.team) AS team
+                FROM trade_intel_player_stats s
+                LEFT JOIN player_values pv ON pv.player_id = s.player_id
+                LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id
+                                            AND rk.draft_class_year = %s
+                WHERE s.season = %s AND s.trade_count > 0
+                ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
+                LIMIT %s OFFSET %s
+                """
             # Get total count
             count_result = conn.execute(count_q, (season,)).fetchone()
             total_players = count_result["total"] if count_result else 0
@@ -16758,7 +16783,20 @@ def api_trade_intel_trending():
 
     except Exception:
         logger.exception("[trade-intel/trending] error")
-        return jsonify({"error": "Internal error"}), 500
+        # Return empty result set instead of a 500 so the UI shows
+        # "no data yet" rather than a hard "trade data unavailable" error.
+        return jsonify({
+            "season": int(request.args.get("season") or datetime.now().year),
+            "players": [],
+            "pagination": {
+                "current_page": 1,
+                "per_page": 20,
+                "total_players": 0,
+                "total_pages": 0,
+                "has_next": False,
+                "has_prev": False,
+            },
+        })
 
 
 @app.route("/api/trade-intel/player/<player_id>")
@@ -16782,12 +16820,14 @@ def api_trade_intel_player(player_id: str):
 
         _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
         sz_suffix = _SZ_MAP.get(league_size, "")
-        if sz_suffix:
-            value_col_expr = f"COALESCE(s.market_value_{fmt}_{sz_suffix}, s.market_value_{fmt})"
-        else:
-            value_col_expr = f"s.market_value_{fmt}"
 
         with get_conn() as conn:
+            sz_col = f"market_value_{fmt}_{sz_suffix}" if sz_suffix else ""
+            if sz_col and _trade_intel_col_exists(conn, sz_col):
+                value_col_expr = f"COALESCE(s.{sz_col}, s.market_value_{fmt})"
+            else:
+                value_col_expr = f"s.market_value_{fmt}"
+
             stat_row = conn.execute(
                 f"""
                 SELECT

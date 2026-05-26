@@ -487,6 +487,10 @@ def page_trade_intel(platform: str, season: int, league_id: str):
 
       function updatePaginationControls() {{
         if (!paginationData) return;
+        if (!paginationData.total_players) {{
+          document.getElementById('tiPagination').style.display = 'none';
+          return;
+        }}
         const prevBtn = document.getElementById('tiPrevBtn');
         const nextBtn = document.getElementById('tiNextBtn');
         const pageNumbers = document.getElementById('tiPageNumbers');
