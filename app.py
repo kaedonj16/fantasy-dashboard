@@ -9953,9 +9953,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           bar.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;';
           document.getElementById('prList').insertAdjacentElement('afterend', bar);
           bar.innerHTML =
-            '<button class="pf-pill" id="prPrevBtn" onclick="prGoPage(\'prev\')" disabled>&#8592; Prev</button>' +
-            '<span style="font-size:13px;color:var(--text-muted);" id="prPaginationText"></span>' +
-            '<button class="pf-pill" id="prNextBtn" onclick="prGoPage(\'next\')" disabled>Next &#8594;</button>';
+            `<button class="pf-pill" id="prPrevBtn" onclick="prGoPage('prev')" disabled>&#8592; Prev</button>` +
+            `<span style="font-size:13px;color:var(--text-muted);" id="prPaginationText"></span>` +
+            `<button class="pf-pill" id="prNextBtn" onclick="prGoPage('next')" disabled>Next &#8594;</button>`;
         }
 
         if (totalPages <= 1) {
