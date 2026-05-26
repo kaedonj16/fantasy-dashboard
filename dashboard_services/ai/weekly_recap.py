@@ -463,11 +463,11 @@ def get_weekly_ai_recap(
 def get_weekly_ai_recap_preview() -> str:
     """Static sample for preview mode."""
     return _render_recap_html({
-        "headline": "Dynasty Kings are quietly 4-1 and the Ghosts are in trouble",
+        "headline": "Gridiron Ghosts got the rematch and it went worse than the first time",
         "paragraphs": [
-            "Gridiron Ghosts put up 94 points in Week 5 and lost by 34. That's a rough one. They're 2-3 now and the schedule doesn't get easier. At some point the roster just isn't good enough and this might be that point.",
-            "Dynasty Kings won again. They're 4-1, top of the standings, and ngl nobody's really been talking about them. They don't blow teams out, they just keep winning close ones. Worth paying attention to.",
-            "Blitz Brigade scored 127 and lost because their opponent put up 131. They're 2-3 but their points total is third in the league. At some point the wins catch up, or they don't, and it's a really frustrating season.",
-            "Four weeks left before the playoff picture locks in. The 5th and 6th seeds are going to come down to points for a couple of these teams.",
+            "Gridiron Ghosts lost to Dynasty Kings again. Week 7 rematch, same result, bigger margin this time. They're 0-2 against them on the season and the two losses account for the entire gap between their records. Not ideal.",
+            "Slim Reaper Lemonade is doing that thing where they keep putting up big scores and losing anyway. Top-three scorer three weeks in a row, 1-2 in that stretch. Their points total is second in the league and they're sitting at 3-4. At some point that has to even out.",
+            "Three teams are tied at 4-3 with five weeks left and two of them play each other in Week 8. Someone's going to separate. The bubble is real and a couple people in this league haven't fully processed that yet.",
+            "Also Rebuild from Hell scored 98 this week after putting up 134 last week. No notes. Fantasy is what it is.",
         ],
     })
