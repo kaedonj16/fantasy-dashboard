@@ -467,43 +467,6 @@ def parse_game_datetime(game_time_str: str) -> datetime:
     return dt
 
 
-def build_defense_rankings(teams_index: dict) -> dict:
-    """
-    Returns a dictionary ranking all teams by defensive metrics:
-      - opp_pass_yds_pg (lower = better)
-      - opp_rush_yds_pg (lower = better)
-
-    Output:
-      {
-        "ATL": {"opp_pass_yds_pg": 14, "opp_rush_yds_pg": 17},
-        "DAL": {...},
-        ...
-      }
-    """
-    pass_list = []
-    rush_list = []
-
-    for abbr, info in teams_index.items():
-        opp_pass = info.get("opp_pass_yds_pg")
-        opp_rush = info.get("opp_rush_yds_pg")
-
-        if opp_pass is not None:
-            pass_list.append((abbr, float(opp_pass)))
-        if opp_rush is not None:
-            rush_list.append((abbr, float(opp_rush)))
-
-    pass_sorted = sorted(pass_list, key=lambda x: x[1])
-    rush_sorted = sorted(rush_list, key=lambda x: x[1])
-
-    rankings = {abbr: {} for abbr in teams_index.keys()}
-
-    for rank, (abbr, _) in enumerate(pass_sorted, start=1):
-        rankings[abbr]["opp_pass_yds_pg"] = rank
-
-    for rank, (abbr, _) in enumerate(rush_sorted, start=1):
-        rankings[abbr]["opp_rush_yds_pg"] = rank
-
-    return rankings
 
 
 def has_any_stats(stats: Dict[str, Any]) -> bool:

@@ -117,12 +117,32 @@ function showLoginGate(target, opts) {
       if (mins < 1) label = 'Data just updated';
       else if (mins < 60) label = 'Data • ' + mins + 'm ago';
       else label = 'Data • ' + Math.floor(mins / 60) + 'h ago';
-      chip.textContent = label;
+      chip.textContent = label + ' · Refresh';
       chip.classList.add('cf-visible');
       chip.classList.toggle('cf-stale', diff > STALE_MS);
     }
     update();
     setInterval(update, 60000);
+
+    chip.addEventListener('click', function() {
+      // Parse league context from URL: /<platform>/<season>/<league_id>/...
+      var parts = window.location.pathname.split('/').filter(Boolean);
+      if (parts.length < 3) { window.location.reload(); return; }
+      var platform = parts[0];
+      var season = parts[1];
+      var leagueId = parts[2];
+      chip.textContent = 'Refreshing…';
+      chip.style.opacity = '0.6';
+      fetch('/api/refresh-league', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: platform, season: parseInt(season, 10), league_id: leagueId })
+      }).then(function() {
+        window.location.reload();
+      }).catch(function() {
+        window.location.reload();
+      });
+    });
   }
   document.addEventListener('DOMContentLoaded', initFreshness);
 })();

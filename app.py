@@ -137,6 +137,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def _api_err(msg: str = "Request failed", e: Exception = None, code: int = 500):
+    """Return a safe API error response — logs the real exception, sends generic message to client."""
+    if e is not None:
+        logger.warning("API error: %s", msg, exc_info=True)
+    return jsonify({"error": msg, "ok": False}), code
+
+
 # ── Sentry error tracking ─────────────────────────────────────────────────────
 _sentry_dsn = os.environ.get("SENTRY_DSN", "")
 if _sentry_dsn:
@@ -548,7 +556,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <main id="page-root" class="overview-layout">
+      <main id="page-root" class="overview-layout" data-cache-ts="{cache_ts}">
         {body}
       </main>
 
@@ -753,7 +761,7 @@ def _background_seed_user(user_id: str, username: Optional[str]) -> None:
     try:
         _tiu_save_users([user_id], source="login", usernames={user_id: username} if username else None)
     except Exception:
-        pass
+        logger.warning("login: failed to save user to TIU index", exc_info=True)
 
     def _run():
         if not _SEED_SEMAPHORE.acquire(blocking=False):
@@ -761,7 +769,7 @@ def _background_seed_user(user_id: str, username: Optional[str]) -> None:
         try:
             _seed_user_leagues(user_id, username=username)
         except Exception:
-            pass
+            logger.warning("login: failed to seed user leagues", exc_info=True)
         finally:
             _SEED_SEMAPHORE.release()
     threading.Thread(target=_run, daemon=True).start()
@@ -1138,7 +1146,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         return f"<a class='{cls}' href='{href}'>{label}</a>"
 
     def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
-        """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix, mobile_only)."""
+        """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix)."""
         is_active = active in active_keys
         btn_cls = "nav-pill active" if is_active else "nav-pill"
         item_html = ""
@@ -1146,19 +1154,16 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             item_label, endpoint, item_key = item_tuple[0], item_tuple[1], item_tuple[2]
             disabled = item_tuple[3] if len(item_tuple) > 3 else False
             href_suffix = item_tuple[4] if len(item_tuple) > 4 else ""
-            mobile_only = item_tuple[5] if len(item_tuple) > 5 else False
             if disabled:
-                extra_cls = " nav-mobile-only" if mobile_only else ""
                 item_html += (
-                    f"<span class='nav-pill-dropdown-item disabled{extra_cls}'>"
+                    f"<span class='nav-pill-dropdown-item disabled'>"
                     f"{item_label} <span style='font-size:10px;margin-left:4px;'>Soon</span>"
                     f"</span>"
                 )
             else:
                 href = url_for(endpoint, platform=platform, season=season, league_id=league_id) + href_suffix
                 item_active = " active" if item_key == active else ""
-                item_mobile = " nav-mobile-only" if mobile_only else ""
-                item_cls = f"nav-pill-dropdown-item{item_active}{item_mobile}"
+                item_cls = f"nav-pill-dropdown-item{item_active}"
                 item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
         btn_id  = dropdown_id.replace("Dropdown", "Btn")
         menu_id = dropdown_id.replace("Dropdown", "Menu")
@@ -1395,6 +1400,7 @@ def render_page(
         title=title,
         nav=nav_html,
         body=wrapped_body,
+        cache_ts=int(time.time() * 1000),
         adsense_script="" if is_premium else _AD_SCRIPT,
         ad_top="" if is_premium else _AD_TOP,
         ad_bottom="" if is_premium else _AD_BOTTOM,
@@ -2232,7 +2238,7 @@ def api_history_summary(platform: str, season: int, league_id: str):
 
     except Exception as e:
         logger.exception("[api_history_summary] Error")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/history/<platform>/<int:season>/<league_id>/standings")
@@ -2271,7 +2277,7 @@ def api_history_standings(platform: str, season: int, league_id: str):
 
     except Exception as e:
         logger.exception("[api_history_standings] Error")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/history/<platform>/<int:season>/<league_id>/chart")
@@ -2328,7 +2334,7 @@ def api_history_chart(platform: str, season: int, league_id: str):
 
     except Exception as e:
         logger.exception("[api_history_chart] Error")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 def render_simple_ai_copy(title: str, subtitle: str, text: str) -> str:
@@ -2846,12 +2852,12 @@ def build_dashboard_body(ctx: dict) -> str:
         try:
             gm_memo_html = get_team_gm_memo(ctx, str(viewer_roster_id))
         except Exception:
-            pass
+            logger.debug("dashboard: gm memo failed", exc_info=True)
     else:
         try:
             front_office_html = get_front_office_briefing(ctx, str(viewer_roster_id))
         except Exception:
-            pass
+            logger.debug("dashboard: front office briefing failed", exc_info=True)
 
     standings_html = render_standings(team_stats, 5)
 
@@ -5067,7 +5073,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     try:
         scout_tab_html = build_scout_body(ctx)
     except Exception:
-        pass
+        logger.debug("weekly: scout body build failed", exc_info=True)
 
     _scout_unavail = (
         "<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
@@ -5143,10 +5149,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
     </div>
 
 <script>
-// On mobile: move #weeklyLeftTabs into the sidebar BEFORE initMobileSidebar wraps it,
-// so the real tab panel (with buttons + content) lives inside the Weekly Tools toggle.
+// On mobile/tablet: move #weeklyLeftTabs into the sidebar BEFORE initMobileSidebar wraps it,
+// so the real tab panel lives inside the Weekly Tools toggle.
+// Threshold matches the CSS @media (max-width: 1180px) breakpoint where page-layout
+// collapses to single-column and initMobileSidebar activates.
 (function() {{
-  if (window.innerWidth > 960) return;
+  if (window.innerWidth > 1180) return;
   var tabs = document.getElementById('weeklyLeftTabs');
   var sidePanels = document.querySelector('.week-side-panels');
   if (!tabs || !sidePanels) return;
@@ -7431,9 +7439,9 @@ def build_teams_body(ctx: dict) -> str:
               var nextDis = round >= totalRounds ? ' disabled' : '';
 
               var html = '<div class="draft-round-nav">' +
-                '<button class="draft-round-btn"' + prevDis + ' id="draftRoundPrev">&#8592; Prev</button>' +
+                '<button class="pf-pill"' + prevDis + ' id="draftRoundPrev">&#8592; Prev</button>' +
                 '<span class="draft-round-label">' + label + '</span>' +
-                '<button class="draft-round-btn"' + nextDis + ' id="draftRoundNext">Next &#8594;</button>' +
+                '<button class="pf-pill"' + nextDis + ' id="draftRoundNext">Next &#8594;</button>' +
               '</div>' +
               '<div class="draft-acc-picks">';
 
@@ -8145,7 +8153,7 @@ def api_waiver_candidates():
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
     rosters = ctx.get("rosters") or []
     rostered_ids = {
@@ -8319,7 +8327,7 @@ def api_start_sit_options():
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
@@ -9455,46 +9463,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         letter-spacing: 0.04em;
       }
 
-      /* Pagination */
-      .pr-pagination {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 0;
-        border-top: 1px solid var(--border);
-        margin-top: 12px;
-      }
-      .pr-pagination-info {
-        font-size: 13px;
-        color: var(--text-muted);
-      }
-      .pr-pagination-controls {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .pr-pagination-btn {
-        padding: 6px 10px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--card-bg);
-        color: var(--text);
-        font-size: 13px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: background 0.12s, border-color 0.12s;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-      }
-      .pr-pagination-btn:hover:not(:disabled) {
-        background: var(--bg-alt);
-        border-color: var(--accent-color);
-      }
-      .pr-pagination-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
       .pr-tier-divider {
         display: flex;
         align-items: center;
@@ -9514,43 +9482,6 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         opacity: 0.75;
         white-space: nowrap;
       }
-      @media (max-width: 540px) {
-        .pr-pagination {
-          flex-direction: column;
-          gap: 8px;
-          align-items: center;
-        }
-        .pr-pagination-btn .pr-btn-label {
-          display: none;
-        }
-        .pr-pagination-btn {
-          padding: 6px 10px;
-          min-width: 36px;
-          justify-content: center;
-        }
-      }
-      .pr-page-numbers {
-        display: flex;
-        gap: 4px;
-      }
-      .pr-page-num {
-        min-width: 32px;
-        height: 32px;
-        padding: 0 6px;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: var(--card-bg);
-        color: var(--text);
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: background 0.12s, border-color 0.12s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .pr-page-num:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-      .pr-page-num.pr-page-active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
       /* Mobile responsive */
       @media (max-width: 768px) {
@@ -10019,66 +9950,28 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         if (!bar) {
           bar = document.createElement('div');
           bar.id = 'prPagination';
-          bar.className = 'pr-pagination';
+          bar.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;';
           document.getElementById('prList').insertAdjacentElement('afterend', bar);
-          bar.innerHTML = `
-            <div class="pr-pagination-info">
-              <span id="prPaginationText">Showing 1-50 of 100 players</span>
-            </div>
-            <div class="pr-pagination-controls">
-              <button id="prPrevBtn" class="pr-pagination-btn" onclick="prGoPage('prev')" disabled>
-                <i class="fa-solid fa-chevron-left"></i><span class="pr-btn-label"> Previous</span>
-              </button>
-              <div id="prPageNumbers" class="pr-page-numbers"></div>
-              <button id="prNextBtn" class="pr-pagination-btn" onclick="prGoPage('next')" disabled>
-                <span class="pr-btn-label">Next </span><i class="fa-solid fa-chevron-right"></i>
-              </button>
-            </div>
-          `;
+          bar.innerHTML =
+            '<button class="pf-pill" id="prPrevBtn" onclick="prGoPage(\'prev\')" disabled>&#8592; Prev</button>' +
+            '<span style="font-size:13px;color:var(--text-muted);" id="prPaginationText"></span>' +
+            '<button class="pf-pill" id="prNextBtn" onclick="prGoPage(\'next\')" disabled>Next &#8594;</button>';
         }
-        
-        if (totalPages <= 1) { 
-          bar.style.display = 'none'; 
+
+        if (totalPages <= 1) {
+          bar.style.display = 'none';
           return;
         }
 
         bar.style.display = 'flex';
 
-        // Update info text
         const start = (page - 1) * prPageSize + 1;
         const end = Math.min(page * prPageSize, window.prFilteredPlayers.length);
         const total = window.prFilteredPlayers.length;
         document.getElementById('prPaginationText').textContent = `Showing ${start}–${end} of ${total} players`;
 
-        // Update Previous/Next buttons
-        const prevBtn = document.getElementById('prPrevBtn');
-        const nextBtn = document.getElementById('prNextBtn');
-        prevBtn.disabled = page === 1;
-        nextBtn.disabled = page === totalPages;
-
-        // Update page numbers
-        const pageNumbers = document.getElementById('prPageNumbers');
-        const isMobile = window.innerWidth <= 540;
-        const maxPages = isMobile ? 3 : 5;
-        const wing = isMobile ? 1 : 2;
-        let pages = [];
-
-        if (totalPages <= maxPages) {
-          for (let i = 1; i <= totalPages; i++) pages.push(i);
-        } else {
-          pages = [1];
-          let lo = Math.max(2, page - wing), hi = Math.min(totalPages - 1, page + wing);
-          if (lo > 2) pages.push('…');
-          for (let i = lo; i <= hi; i++) pages.push(i);
-          if (hi < totalPages - 1) pages.push('…');
-          pages.push(totalPages);
-        }
-
-        pageNumbers.innerHTML = pages.map(p => {
-          if (p === '…') return '<span style="color: var(--text-muted); font-size: 13px; padding: 0 4px; line-height: 32px;">…</span>';
-          const active = p === page ? ' pr-page-active' : '';
-          return `<button class="pr-page-num${active}" onclick="prGoPage(${p})">${p}</button>`;
-        }).join('');
+        document.getElementById('prPrevBtn').disabled = page === 1;
+        document.getElementById('prNextBtn').disabled = page === totalPages;
       }
 
       function prGoPage(p) {
@@ -13512,7 +13405,7 @@ def api_players():
         return jsonify(results)
     except Exception as e:
         logger.exception("[api-players] Unexpected error")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/league-players")
@@ -14162,7 +14055,7 @@ def api_prospect_profile(player_id: str):
         return jsonify({"error": "not found"}), 404
     except Exception as e:
         print(f"[api/prospect] {e}")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/breakout-candidates")
@@ -15199,7 +15092,7 @@ def api_player_details(player_id: str):
         logger.exception("[api_player_details] Error")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/player-game-logs/<player_id>")
@@ -15338,7 +15231,7 @@ def api_player_game_logs(player_id: str):
         return jsonify({"game_logs_by_year": game_logs_by_year})
     except Exception as e:
         logger.exception("[api_player_game_logs] error")
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 def clean_nan_for_json(obj):
@@ -15756,7 +15649,7 @@ def api_team_details(roster_id: str):
         logger.exception("[api_team_details] Error")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 
@@ -15828,7 +15721,7 @@ def api_team_trades(roster_id: str):
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 @app.route("/api/draft-needs")
@@ -15932,7 +15825,7 @@ def api_draft_needs():
 
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 # /api/subscription-status → routes/billing_bp.py :: api_subscription_status()
@@ -16755,6 +16648,31 @@ def api_draft_grades():
 # Trade Intelligence Engine API
 # ---------------------------------------------------------------------------
 
+# Cache of which optional columns exist on trade_intel_player_stats. The
+# size-bucketed market_value_*_8/10/12/14 columns are created lazily by the
+# analytics pipeline (data_building/trade_intel/analytics._ensure_size_columns)
+# so deployments that haven't run the pipeline yet won't have them — we check
+# once per process and skip the bucketed column in the SELECT if missing.
+_TRADE_INTEL_COL_CACHE: dict = {}
+
+
+def _trade_intel_col_exists(conn, col: str) -> bool:
+    if col in _TRADE_INTEL_COL_CACHE:
+        return _TRADE_INTEL_COL_CACHE[col]
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'trade_intel_player_stats' "
+            "  AND column_name = %s LIMIT 1",
+            (col,),
+        ).fetchone()
+        exists = row is not None
+    except Exception:
+        exists = False
+    _TRADE_INTEL_COL_CACHE[col] = exists
+    return exists
+
+
 @app.route("/api/trade-intel/trending")
 def api_trade_intel_trending():
     """
@@ -16776,36 +16694,38 @@ def api_trade_intel_trending():
         # Map league_size to the size-bucketed column, fall back to all-leagues
         _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
         sz_suffix = _SZ_MAP.get(league_size, "")
-        if sz_suffix:
-            value_col_expr = f"COALESCE(s.market_value_{fmt}_{sz_suffix}, s.market_value_{fmt})"
-        else:
-            value_col_expr = f"s.market_value_{fmt}"
 
-        # First get total count for pagination
-        count_q = f"""
-            SELECT COUNT(*) as total
-            FROM trade_intel_player_stats s
-            WHERE s.season = %s AND s.trade_count > 0
-            """
-        
         from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc_ti
         _rk_year = _garc_ti()
-        _q = f"""
-            SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
-                   {value_col_expr} AS market_value, s.buy_sell_ratio,
-                   s.market_trend_1qb,
-                   COALESCE(pv.{model_col}, rk.rookie_value) AS model_value,
-                   COALESCE(pv.position, rk.position) AS position,
-                   COALESCE(pv.team, rk.team) AS team
-            FROM trade_intel_player_stats s
-            LEFT JOIN player_values pv ON pv.player_id = s.player_id
-            LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id
-                                        AND rk.draft_class_year = %s
-            WHERE s.season = %s AND s.trade_count > 0
-            ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
-            LIMIT %s OFFSET %s
-            """
         with get_conn() as conn:
+            sz_col = f"market_value_{fmt}_{sz_suffix}" if sz_suffix else ""
+            if sz_col and _trade_intel_col_exists(conn, sz_col):
+                value_col_expr = f"COALESCE(s.{sz_col}, s.market_value_{fmt})"
+            else:
+                value_col_expr = f"s.market_value_{fmt}"
+
+            count_q = """
+                SELECT COUNT(*) as total
+                FROM trade_intel_player_stats s
+                WHERE s.season = %s AND s.trade_count > 0
+                """
+            _q = f"""
+                SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
+                       {value_col_expr} AS market_value, s.buy_sell_ratio,
+                       s.market_trend_1qb,
+                       COALESCE(rk.rookie_value, pv.{model_col}) AS model_value,
+                       COALESCE(pv.position, rp.position) AS position,
+                       COALESCE(pv.team, rp.actual_nfl_team) AS team
+                FROM trade_intel_player_stats s
+                LEFT JOIN player_values pv ON pv.player_id = s.player_id
+                LEFT JOIN rookie_prospects rp ON rp.sleeper_id = s.player_id
+                                             AND rp.draft_class_year = %s
+                LEFT JOIN rookie_rankings rk ON rk.player_id = rp.player_id
+                                            AND rk.draft_class_year = rp.draft_class_year
+                WHERE s.season = %s AND s.trade_count > 0
+                ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
+                LIMIT %s OFFSET %s
+                """
             # Get total count
             count_result = conn.execute(count_q, (season,)).fetchone()
             total_players = count_result["total"] if count_result else 0
@@ -16865,7 +16785,20 @@ def api_trade_intel_trending():
 
     except Exception:
         logger.exception("[trade-intel/trending] error")
-        return jsonify({"error": "Internal error"}), 500
+        # Return empty result set instead of a 500 so the UI shows
+        # "no data yet" rather than a hard "trade data unavailable" error.
+        return jsonify({
+            "season": int(request.args.get("season") or datetime.now().year),
+            "players": [],
+            "pagination": {
+                "current_page": 1,
+                "per_page": 20,
+                "total_players": 0,
+                "total_pages": 0,
+                "has_next": False,
+                "has_prev": False,
+            },
+        })
 
 
 @app.route("/api/trade-intel/player/<player_id>")
@@ -16889,26 +16822,36 @@ def api_trade_intel_player(player_id: str):
 
         _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
         sz_suffix = _SZ_MAP.get(league_size, "")
-        if sz_suffix:
-            value_col_expr = f"COALESCE(s.market_value_{fmt}_{sz_suffix}, s.market_value_{fmt})"
-        else:
-            value_col_expr = f"s.market_value_{fmt}"
+
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc_tip
+        _rk_year_p = _garc_tip()
 
         with get_conn() as conn:
+            sz_col = f"market_value_{fmt}_{sz_suffix}" if sz_suffix else ""
+            if sz_col and _trade_intel_col_exists(conn, sz_col):
+                value_col_expr = f"COALESCE(s.{sz_col}, s.market_value_{fmt})"
+            else:
+                value_col_expr = f"s.market_value_{fmt}"
+
             stat_row = conn.execute(
                 f"""
                 SELECT
                     s.*,
-                    {value_col_expr}                            AS market_value,
-                    pv.{raw_col}                                AS model_value,
-                    COALESCE(pv.{cal_col}, pv.{raw_col})        AS calibrated_value,
+                    {value_col_expr}                                                AS market_value,
+                    COALESCE(rk.rookie_value, pv.{raw_col})                         AS model_value,
+                    COALESCE(rk.rookie_value, pv.{cal_col}, pv.{raw_col})           AS calibrated_value,
                     pv.calibration_source,
-                    pv.position, pv.team
+                    COALESCE(pv.position, rp.position)       AS position,
+                    COALESCE(pv.team, rp.actual_nfl_team)    AS team
                 FROM trade_intel_player_stats s
                 LEFT JOIN player_values pv ON pv.player_id = s.player_id
+                LEFT JOIN rookie_prospects rp ON rp.sleeper_id = s.player_id
+                                             AND rp.draft_class_year = %s
+                LEFT JOIN rookie_rankings rk ON rk.player_id = rp.player_id
+                                            AND rk.draft_class_year = rp.draft_class_year
                 WHERE s.player_id = %s AND s.season = %s
                 """,
-                (player_id, season)
+                (_rk_year_p, player_id, season)
             ).fetchone()
 
             package_rows = conn.execute(
@@ -17525,7 +17468,7 @@ def api_roster_intel():
     try:
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
     rosters    = ctx.get("rosters") or []
     roster_map = ctx.get("roster_map") or {}
@@ -17669,7 +17612,7 @@ def api_trade_targets():
     try:
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
     rosters           = ctx.get("rosters") or []
     roster_map        = ctx.get("roster_map") or {}
@@ -18651,7 +18594,7 @@ def api_trade_intel_player_packages(player_id: str):
 
     except Exception as e:
         logger.exception("[api-trade-intel-player-packages] %s", e)
-        return jsonify({"error": str(e)}), 500
+        return _api_err("Request failed", e)
 
 
 def _real_trade_packages_for_target(
@@ -19401,6 +19344,8 @@ def build_portfolio_body(
         # only the bits not already in the global stylesheet
         ".pf-grid{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:14px;}"
         "@media(max-width:700px){.pf-grid{grid-template-columns:1fr;}}"
+        ".pf-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:start;}"
+        "@media(max-width:700px){.pf-grid-2{grid-template-columns:1fr;}}"
         ".pf-arch{font-size:0.63em;font-weight:700;padding:2px 7px;border-radius:10px;"
         "color:#fff;white-space:nowrap;letter-spacing:.02em;}"
         ".pf-streak{display:flex;gap:3px;align-items:center;}"
@@ -19645,7 +19590,7 @@ def build_portfolio_body(
                 f"</div>"
             )
         nfl_html = (
-            f"<div class='card' style='margin-bottom:14px;'>"
+            f"<div class='card'>"
             f"<div class='card-header'><h2>NFL Exposure</h2>"
             f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>which games affect your whole portfolio</span>"
             f"</div>"
@@ -19734,7 +19679,11 @@ def build_portfolio_body(
             f"}})();</script>"
         )
 
-    return css + top_strip + two_col + nfl_html + holdings_html
+    if nfl_html and holdings_html:
+        bottom_row = f"<div class='pf-grid-2'>{nfl_html}{holdings_html}</div>"
+    else:
+        bottom_row = nfl_html + holdings_html
+    return css + top_strip + two_col + bottom_row
 
 
 def build_scout_body(ctx: dict) -> str:
