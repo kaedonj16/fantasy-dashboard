@@ -12074,31 +12074,44 @@ def build_commissioner_body(ctx):
 
     # ── Trade fairness ────────────────────────────────────────────────────
     if trade_rows:
-        trade_table_rows = ""
+        trade_items = ""
         for t in trade_rows[:25]:
-            diff_color  = "#ef4444" if t["lopsided"] else ("#f59e0b" if t["diff"] > 100 else "#22c55e")
-            lopsided_tag = (" <span style='background:#ef444420;color:#ef4444;font-size:10px;"
-                            "padding:2px 5px;border-radius:4px;'>LOPSIDED</span>") if t["lopsided"] else ""
-            trade_table_rows += f"""
-<tr style="border-bottom:1px solid var(--border);">
-  <td style="padding:10px 14px;">{html.escape(t['team_a'])} <span style="color:var(--muted)">received</span> {int(t['val_a'])}</td>
-  <td style="padding:10px 14px;">{html.escape(t['team_b'])} <span style="color:var(--muted)">received</span> {int(t['val_b'])}</td>
-  <td style="padding:10px;text-align:center;font-weight:700;color:{diff_color};">±{int(t['diff'])}{lopsided_tag}</td>
-</tr>"""
+            diff_color = "#ef4444" if t["lopsided"] else ("#f59e0b" if t["diff"] > 100 else "#22c55e")
+            diff_label = "LOPSIDED" if t["lopsided"] else ("UNEVEN" if t["diff"] > 100 else "FAIR")
+            max_val = max(t["val_a"], t["val_b"], 1)
+            pct_a = t["val_a"] / max_val * 100
+            pct_b = t["val_b"] / max_val * 100
+            trade_items += f"""
+<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);border-left:3px solid {diff_color};">
+  <div style="flex:1;min-width:0;">
+    <div style="font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-bottom:3px;">SIDE A</div>
+    <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{html.escape(t['team_a'])}</div>
+    <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.15;margin:2px 0;">{int(t['val_a']):,}</div>
+    <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;">
+      <div style="height:3px;background:var(--accent);border-radius:2px;width:{pct_a:.0f}%;"></div>
+    </div>
+  </div>
+  <div style="text-align:center;flex-shrink:0;">
+    <div style="font-size:15px;color:var(--muted);margin-bottom:5px;">&#8644;</div>
+    <div style="background:{diff_color}22;color:{diff_color};font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px;white-space:nowrap;">&#177;{int(t['diff']):,}</div>
+    <div style="font-size:9px;color:{diff_color};margin-top:3px;font-weight:700;letter-spacing:.06em;">{diff_label}</div>
+  </div>
+  <div style="flex:1;min-width:0;text-align:right;">
+    <div style="font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-bottom:3px;">SIDE B</div>
+    <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{html.escape(t['team_b'])}</div>
+    <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.15;margin:2px 0;">{int(t['val_b']):,}</div>
+    <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;display:flex;justify-content:flex-end;">
+      <div style="height:3px;background:var(--accent);border-radius:2px;width:{pct_b:.0f}%;"></div>
+    </div>
+  </div>
+</div>"""
         trade_card = f"""
-<div class="card" style="overflow:auto;">
+<div class="card" style="overflow:hidden;">
   <div class="card-header">
     <h3>Trade Fairness Log</h3>
-    <span style="font-size:12px;color:var(--muted);">Value diff per trade · ±200 = lopsided</span>
+    <span style="font-size:12px;color:var(--muted);">Received value per side &middot; &#177;200 = lopsided</span>
   </div>
-  <table style="width:100%;border-collapse:collapse;">
-    <thead><tr style="border-bottom:2px solid var(--border);">
-      <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">SIDE A</th>
-      <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">SIDE B</th>
-      <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">VALUE DIFF</th>
-    </tr></thead>
-    <tbody>{trade_table_rows}</tbody>
-  </table>
+  {trade_items}
 </div>"""
     else:
         trade_card = ("<div class='card'><div class='card-body' style='padding:20px;color:var(--muted);'>"
