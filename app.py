@@ -11949,8 +11949,12 @@ def build_commissioner_body(ctx):
                 f'<div style="height:6px;border-radius:3px;background:{color};width:{width:.1f}%"></div></div>')
 
     # ── 3. Trade fairness ─────────────────────────────────────────────────
+    # ctx["traded"] is traded draft picks, not transactions. Use the trade
+    # transactions already fetched in tx_by_week instead.
+    trade_txns = [tx for txns in tx_by_week.values() for tx in (txns or [])
+                  if tx.get("type") == "trade"]
     trade_rows = []
-    for tx in (traded or []):
+    for tx in trade_txns:
         adds  = tx.get("adds") or {}
         drops = tx.get("drops") or {}
         involved = {str(r) for r in (list(adds.values()) + list(drops.values()))}
@@ -19651,7 +19655,7 @@ def build_portfolio_body(
             f"</div>"
             f"</div></div>"
             f"<script>(function(){{"
-            f"var PAGE=10,fp='ALL',fn='',pg=1,filtered=[];"
+            f"var PAGE=5,fp='ALL',fn='',pg=1,filtered=[];"
             f"function applyFilters(){{"
             f"var rows=Array.from(document.querySelectorAll('.pf-row'));"
             f"filtered=rows.filter(function(r){{return(fp==='ALL'||r.dataset.pos===fp)&&(!fn||r.dataset.name.includes(fn));}});"
