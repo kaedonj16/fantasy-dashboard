@@ -5463,12 +5463,17 @@ def resolve_exact_pick_slot(
     if source_season <= 0:
         return None
 
-    prev_owner = pick.get("previous_owner_id")
-    if prev_owner is None:
-        prev_owner = pick.get("owner_id")
+    # roster_id = original pick owner whose standing determines the draft slot.
+    # previous_owner_id = who is SENDING the pick in this transaction — wrong
+    # for traded picks (they may have a different standing than the original owner).
+    orig_owner = pick.get("roster_id")
+    if orig_owner is None:
+        orig_owner = pick.get("previous_owner_id")
+    if orig_owner is None:
+        orig_owner = pick.get("owner_id")
 
     try:
-        prev_owner = int(prev_owner)
+        orig_owner = int(orig_owner)
     except Exception:
         return None
 
@@ -5479,7 +5484,7 @@ def resolve_exact_pick_slot(
         source_season=source_season,
     )
 
-    return slot_map.get(prev_owner)
+    return slot_map.get(orig_owner)
 
 
 def format_pick_round_label(pick: dict) -> str:
@@ -5557,11 +5562,13 @@ def build_activity_body(ctx: dict) -> str:
 
     def player_value(p: dict) -> tuple[float, str]:
         name = str(p.get("name") or "").strip()
-        name_lower = name.lower()
         pos = str(p.get("pos") or p.get("position") or "").strip().upper()
         team = str(p.get("team") or "").strip().upper()
         if not name or not pos:
             return 0.0, ""
+
+        # Normalize to match search_name format (no periods, lowercase)
+        name_lower = name.lower().replace(".", "")
 
         val = float(
             player_val_by_key.get((name_lower, pos, team))
