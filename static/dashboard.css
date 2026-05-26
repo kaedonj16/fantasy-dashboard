@@ -9120,16 +9120,6 @@ img, svg, canvas {
   }
 }
 
-/* On the weekly hub page the matchup carousel sits in a narrower column (~420px).
-   Scope the stat-cell hiding strictly to .matchups-shell so the left column's
-   optimal-lineup m-rows are unaffected. */
-.weekly-hub .matchups-shell .m-row {
-  grid-template-columns: 1.8fr 58px 58px 1.8fr;
-}
-.weekly-hub .matchups-shell .m-row > :nth-child(2),
-.weekly-hub .matchups-shell .m-row > :nth-child(5) {
-  display: none !important;
-}
 
 @media (max-width: 640px) {
   /* ── Matchup carousel header ─────────────────────────── */
