@@ -1178,6 +1178,10 @@ html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
   height: auto;
 }
 
+[data-theme="dark"] .site-logo {
+  content: url('/static/Website_Logo_dark.png');
+}
+
 .top-nav {
   display: grid;
   grid-template-columns: auto 1fr auto;

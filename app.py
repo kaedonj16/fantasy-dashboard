@@ -12696,18 +12696,19 @@ def recap_og_image(platform: str, season: int, league_id: str):
     f_med    = _font("Inter-SemiBold.ttf", 28)
     f_small  = _font("Inter-Regular.ttf",  24)
     f_label  = _font("Inter-Regular.ttf",  20)
-    f_pill   = _font("Inter-SemiBold.ttf", 20)
+    f_pill   = _font("Inter-SemiBold.ttf", 20)  # fallback only
 
     # ── Colors ─────────────────────────────────────────────────────────────
-    C_BG      = (11,  17,  32)
-    C_SURFACE = (22,  33,  56)
-    C_SURFACE2= (28,  42,  72)
-    C_ACCENT  = (99,  102, 241)
-    C_TEXT    = (248, 250, 252)
-    C_MUTED   = (100, 116, 139)
+    C_BG      = (2,   6,   23)   # #020617
+    C_SURFACE = (15,  23,  42)   # #0f172a
+    C_SURFACE2= (17,  27,  50)
+    C_ACCENT  = (56,  189, 248)  # #38bdf8
+    C_TEXT    = (229, 231, 235)  # #e5e7eb
+    C_MUTED   = (148, 163, 184)  # #94a3b8
+    C_SUBTLE  = (71,  85,  105)  # #475569
     C_GREEN   = (34,  197, 94)
     C_RED     = (239, 68,  68)
-    C_BORDER  = (36,  54,  88)
+    C_BORDER  = (31,  41,  55)   # #1f2937
 
     W, H = 1200, 630
     img  = Image.new("RGB", (W, H), color=C_BG)
@@ -12715,19 +12716,24 @@ def recap_og_image(platform: str, season: int, league_id: str):
 
     # ── Subtle grid lines ──────────────────────────────────────────────────
     for x in range(0, W, 64):
-        draw.line([(x, 0), (x, H)], fill=(22, 33, 56), width=1)
+        draw.line([(x, 0), (x, H)], fill=(15, 23, 42), width=1)
     for y in range(0, H, 64):
-        draw.line([(0, y), (W, y)], fill=(22, 33, 56), width=1)
+        draw.line([(0, y), (W, y)], fill=(15, 23, 42), width=1)
 
     # ── Top accent bar ─────────────────────────────────────────────────────
-    draw.rectangle([0, 0, W, 6], fill=C_ACCENT)
+    draw.rectangle([0, 0, W, 5], fill=C_ACCENT)
 
     PAD = 72
 
-    # ── Brand pill ─────────────────────────────────────────────────────────
-    py = 52
-    draw.rounded_rectangle([PAD, py, PAD + 154, py + 38], radius=19, fill=C_SURFACE2)
-    draw.text((PAD + 16, py + 9), "BR Fantasy", fill=C_ACCENT, font=f_pill)
+    # ── Logo ───────────────────────────────────────────────────────────────
+    try:
+        logo = Image.open(_os.path.join(_os.path.dirname(__file__), "static", "Website_Logo_dark.png")).convert("RGBA")
+        logo_h = 40
+        logo_w = int(logo.width * logo_h / logo.height)
+        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+        img.paste(logo, (PAD, 52), logo)
+    except Exception:
+        draw.text((PAD, 58), "BR Fantasy", fill=C_ACCENT, font=f_pill)
 
     # ── Week headline ──────────────────────────────────────────────────────
     draw.text((PAD, 118), week_label, fill=C_TEXT, font=f_huge)
@@ -12740,9 +12746,8 @@ def recap_og_image(platform: str, season: int, league_id: str):
 
     # ── Stat callouts ──────────────────────────────────────────────────────
     def stat_row(y, label, name, value, color):
-        draw.text((PAD, y),       label,               fill=C_MUTED,  font=f_label)
-        draw.text((PAD, y + 24),  name[:22],            fill=C_TEXT,   font=f_med)
-        # value right-aligned within left column (max x=640)
+        draw.text((PAD, y),       label,    fill=C_SUBTLE, font=f_label)
+        draw.text((PAD, y + 24),  name[:22], fill=C_TEXT,   font=f_med)
         bb = draw.textbbox((0, 0), value, font=f_med)
         vw = bb[2] - bb[0]
         draw.text((580 - vw, y + 24), value, fill=color, font=f_med)
