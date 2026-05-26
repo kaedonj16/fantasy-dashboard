@@ -1078,6 +1078,9 @@ def render_matchup_slide(
         # Add clickable attributes
         clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{name}'" if pid else " class='pname'"
 
+        stats_inline_l = f"<span class='meta m-cell-stats'>{stats}</span>" if stats else ""
+        stats_inline_r = f"<span class='meta m-cell-stats' style='text-align:right;'>{stats}</span>" if stats else ""
+
         if left_side:
             if is_bye:
                 cell = (
@@ -1096,6 +1099,7 @@ def render_matchup_slide(
                     f"<span{clickable_attrs}>{name}</span>"
                     f"<span class='meta'>{meta_content}</span></div>"
                     f"<span class='meta' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;'>{game_line}</span>"
+                    f"{stats_inline_l}"
                     f"</div>"
                     f"</div>"
                 )
@@ -1116,6 +1120,7 @@ def render_matchup_slide(
                     f"<span class='meta'>{meta_content}</span>"
                     f"<span{clickable_attrs}> {name}</span></div>"
                     f"<span class='meta' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;'>{game_line}</span>"
+                    f"{stats_inline_r}"
                     f"</div>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
                     f"</div>"
