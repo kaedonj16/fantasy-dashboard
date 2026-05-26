@@ -12630,7 +12630,10 @@ def recap_og_image(platform: str, season: int, league_id: str):
     except (ValueError, TypeError):
         week = None
 
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        ctx = {}
     league      = ctx.get("league") or {}
     df_weekly   = ctx.get("df_weekly")
     roster_map  = ctx.get("roster_map") or {}
