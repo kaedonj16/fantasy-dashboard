@@ -1396,11 +1396,20 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
     dismiss_key = f"recap-banner-{now.year}-w{iso_week}"
 
     return f"""
+<style>
+@keyframes recapSlideUp {{
+  from {{ opacity:0; transform:translateY(16px); }}
+  to   {{ opacity:1; transform:translateY(0); }}
+}}
+#recapReadyBanner {{ animation: recapSlideUp .3s ease forwards; }}
+</style>
 <div id="recapReadyBanner" style="
      display:none;
      position:fixed;bottom:24px;right:24px;z-index:9999;
-     background:var(--card);border:1px solid var(--border);
-     border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.18);
+     background:var(--card);
+     border:1px solid var(--border);
+     border-top:3px solid var(--accent);
+     border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);
      padding:18px 20px;width:300px;
      flex-direction:column;gap:12px;">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
@@ -1426,14 +1435,31 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
 <script>
 (function(){{
   var key = '{dismiss_key}';
-  if (localStorage.getItem(key)) return;
-  var el = document.getElementById('recapReadyBanner');
+  var el  = document.getElementById('recapReadyBanner');
   if (!el) return;
-  el.style.display = 'flex';
 
   function dismiss() {{
     el.style.display = 'none';
     localStorage.setItem(key, '1');
+    var dot = document.getElementById('recapNavDot');
+    if (dot) dot.remove();
+  }}
+
+  function addNavDot() {{
+    var weekly = Array.from(document.querySelectorAll('.nav-pill, .nav-dropdown-btn'))
+                      .find(function(n) {{ return n.textContent.trim().startsWith('Weekly'); }});
+    if (!weekly) return;
+    var dot = document.createElement('span');
+    dot.id = 'recapNavDot';
+    dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:#ef4444;'
+                      + 'display:inline-block;margin-left:5px;vertical-align:middle;'
+                      + 'position:relative;top:-1px;flex-shrink:0;';
+    weekly.appendChild(dot);
+  }}
+
+  if (!localStorage.getItem(key)) {{
+    el.style.display = 'flex';
+    addNavDot();
   }}
 
   document.getElementById('recapReadyClose').addEventListener('click', dismiss);
