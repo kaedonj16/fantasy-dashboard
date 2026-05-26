@@ -16713,13 +16713,15 @@ def api_trade_intel_trending():
                 SELECT s.player_id, s.trade_count_7d, s.trade_count_30d, s.trade_count,
                        {value_col_expr} AS market_value, s.buy_sell_ratio,
                        s.market_trend_1qb,
-                       COALESCE(pv.{model_col}, rk.rookie_value) AS model_value,
-                       COALESCE(pv.position, rk.position) AS position,
-                       COALESCE(pv.team, rk.team) AS team
+                       COALESCE(rk.rookie_value, pv.{model_col}) AS model_value,
+                       COALESCE(pv.position, rp.position) AS position,
+                       COALESCE(pv.team, rp.actual_nfl_team) AS team
                 FROM trade_intel_player_stats s
                 LEFT JOIN player_values pv ON pv.player_id = s.player_id
-                LEFT JOIN rookie_rankings rk ON rk.sleeper_id::text = s.player_id
-                                            AND rk.draft_class_year = %s
+                LEFT JOIN rookie_prospects rp ON rp.sleeper_id = s.player_id
+                                             AND rp.draft_class_year = %s
+                LEFT JOIN rookie_rankings rk ON rk.player_id = rp.player_id
+                                            AND rk.draft_class_year = rp.draft_class_year
                 WHERE s.season = %s AND s.trade_count > 0
                 ORDER BY COALESCE(s.trade_count_7d, 0) DESC, s.trade_count DESC
                 LIMIT %s OFFSET %s
@@ -16821,6 +16823,9 @@ def api_trade_intel_player(player_id: str):
         _SZ_MAP = {8: "8", 9: "8", 10: "10", 11: "10", 12: "12", 13: "14", 14: "14"}
         sz_suffix = _SZ_MAP.get(league_size, "")
 
+        from data_building.rookie_pipeline.pipeline import get_active_rookie_class as _garc_tip
+        _rk_year_p = _garc_tip()
+
         with get_conn() as conn:
             sz_col = f"market_value_{fmt}_{sz_suffix}" if sz_suffix else ""
             if sz_col and _trade_intel_col_exists(conn, sz_col):
@@ -16832,16 +16837,21 @@ def api_trade_intel_player(player_id: str):
                 f"""
                 SELECT
                     s.*,
-                    {value_col_expr}                            AS market_value,
-                    pv.{raw_col}                                AS model_value,
-                    COALESCE(pv.{cal_col}, pv.{raw_col})        AS calibrated_value,
+                    {value_col_expr}                                                AS market_value,
+                    COALESCE(rk.rookie_value, pv.{raw_col})                         AS model_value,
+                    COALESCE(rk.rookie_value, pv.{cal_col}, pv.{raw_col})           AS calibrated_value,
                     pv.calibration_source,
-                    pv.position, pv.team
+                    COALESCE(pv.position, rp.position)       AS position,
+                    COALESCE(pv.team, rp.actual_nfl_team)    AS team
                 FROM trade_intel_player_stats s
                 LEFT JOIN player_values pv ON pv.player_id = s.player_id
+                LEFT JOIN rookie_prospects rp ON rp.sleeper_id = s.player_id
+                                             AND rp.draft_class_year = %s
+                LEFT JOIN rookie_rankings rk ON rk.player_id = rp.player_id
+                                            AND rk.draft_class_year = rp.draft_class_year
                 WHERE s.player_id = %s AND s.season = %s
                 """,
-                (player_id, season)
+                (_rk_year_p, player_id, season)
             ).fetchone()
 
             package_rows = conn.execute(
