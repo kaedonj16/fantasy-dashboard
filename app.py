@@ -12378,7 +12378,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                  background:var(--card);color:var(--text);font-size:13px;cursor:pointer;">
     {week_opts}
   </select>
-  <button onclick="(function(b){{var u=window.location.href;navigator.clipboard.writeText(u).then(function(){{var o=b.innerHTML;b.innerHTML='Copied!';setTimeout(function(){{b.innerHTML=o;}},2000);}})}})(this)"
+  <button onclick="(function(b){{var u=window.location.href,o=b.innerHTML;if(navigator.clipboard&&navigator.clipboard.writeText){{navigator.clipboard.writeText(u).then(function(){{b.innerHTML='Copied!';setTimeout(function(){{b.innerHTML=o;}},2000);}},function(){{prompt('Copy this link:',u);}});}}else{{prompt('Copy this link:',u);}}}})(this)"
           style="display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
                  border:1px solid var(--border);background:var(--card);color:var(--text);
                  font-size:13px;cursor:pointer;font-weight:600;">
@@ -12596,15 +12596,18 @@ def page_recap(platform: str, season: int, league_id: str):
     league_name = html.escape((ctx.get("league") or {}).get("name") or "Fantasy League")
     week_label = f"Week {week} Recap" if week else "Weekly Recap"
     page_url = request.url
+    base_url = request.host_url.rstrip("/")
+    og_image = f"{base_url}/static/BR_Logo.png"
     og_tags = (
         f"<meta property='og:title' content='{week_label} — {league_name} | BR Fantasy'>"
         f"<meta property='og:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
-        f"<meta property='og:image' content='/static/BR_Logo.png'>"
+        f"<meta property='og:image' content='{og_image}'>"
         f"<meta property='og:type' content='website'>"
         f"<meta property='og:url' content='{html.escape(page_url)}'>"
         f"<meta name='twitter:card' content='summary'>"
         f"<meta name='twitter:title' content='{week_label} — {league_name} | BR Fantasy'>"
         f"<meta name='twitter:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
+        f"<meta name='twitter:image' content='{og_image}'>"
     )
     return render_page("Weekly Recap", league_id, "recap", body, platform, season, og_tags=og_tags)
 
