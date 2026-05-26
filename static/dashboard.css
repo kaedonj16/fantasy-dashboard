@@ -9120,15 +9120,18 @@ img, svg, canvas {
   }
 }
 
-/* Weekly hub matchup column is ~420px wide — hide stat-stack cells so
-   player names aren't truncated. Scoped to .matchups-shell so the left
-   column's optimal-lineup rows are unaffected. */
-.weekly-hub .matchups-shell .m-row {
-  grid-template-columns: 1.8fr 58px 58px 1.8fr;
+/* Weekly hub: give the matchup column 2/3 of page-main so the full
+   6-column stat-stack layout fits on desktop. The left (top scorers)
+   column gets the remaining 1/3. At ≤900px the existing media query
+   collapses the two-col to single column and hides stat-stacks anyway. */
+.weekly-hub .standings-main.two-col-standings {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
 }
-.weekly-hub .matchups-shell .m-row > :nth-child(2),
-.weekly-hub .matchups-shell .m-row > :nth-child(5) {
-  display: none !important;
+.weekly-hub .matchups-shell .m-row {
+  column-gap: 6px;
+}
+.weekly-hub .matchups-shell .p .meta {
+  font-size: 11px;
 }
 
 @media (max-width: 640px) {
