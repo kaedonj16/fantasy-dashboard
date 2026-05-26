@@ -11949,8 +11949,50 @@ def build_commissioner_body(ctx):
                 f'<div style="height:6px;border-radius:3px;background:{color};width:{width:.1f}%"></div></div>')
 
     # ── 3. Trade fairness ─────────────────────────────────────────────────
-    # Round-based future pick value estimates
-    _PICK_VALS = {1: 1500, 2: 800, 3: 400, 4: 200}
+    # Use the same pick value table and logic as the activity page.
+    # In Sleeper draft_picks: owner_id = receiver, previous_owner_id = sender,
+    # roster_id = original pick owner (not always the sender).
+    _pick_tbl = load_pick_value_table() or {}
+    _standings_map = ctx.get("standings_map") or {}
+    _num_teams = len(rosters) or 10
+
+    def _pick_val_comm(pick: dict) -> float:
+        year = int(pick.get("season") or 0)
+        rnd  = int(pick.get("round") or 0)
+        if not year or not rnd:
+            return 0.0
+        exact_slot = resolve_exact_pick_slot(
+            platform=platform, root_league_id=league_id,
+            current_season=season, pick=pick,
+        )
+        if exact_slot is not None:
+            k = f"{year}_{rnd}_{exact_slot:02d}"
+            if k in _pick_tbl:
+                return float(_pick_tbl[k])
+        prev = pick.get("previous_owner_id")
+        seed = None
+        try:
+            if prev is not None:
+                seed = _standings_map.get(int(prev))
+        except Exception:
+            pass
+        if seed is not None:
+            if 1 <= seed <= 3:
+                bucket = "early"
+            elif seed <= 7:
+                bucket = "mid"
+            else:
+                bucket = "late"
+            k = f"{year}_{rnd}_{bucket}"
+            if k in _pick_tbl:
+                return float(_pick_tbl[k])
+        for b in ("mid", "early", "late"):
+            k = f"{year}_{rnd}_{b}"
+            if k in _pick_tbl:
+                return float(_pick_tbl[k])
+        k = f"{year}_{rnd}"
+        return float(_pick_tbl[k]) if k in _pick_tbl else 0.0
+
     trade_txns = [tx for txns in tx_by_week.values() for tx in (txns or [])
                   if tx.get("type") == "trade"]
     trade_rows = []
@@ -11963,24 +12005,23 @@ def build_commissioner_body(ctx):
             seen_txn_ids.add(tx_id)
         adds = tx.get("adds") or {}
         draft_picks = tx.get("draft_picks") or []
-        # Determine involved rosters from adds and draft picks only (not drops)
+        # involved = teams who sent or received something (not the original pick owner)
         involved = {str(rid) for rid in adds.values()}
         for pick in draft_picks:
-            for key in ("roster_id", "owner_id", "previous_owner_id"):
+            for key in ("owner_id", "previous_owner_id"):
                 v = str(pick.get(key) or "")
-                if v:
+                if v and v != "0":
                     involved.add(v)
         if len(involved) < 2:
             continue
-        # Value received by each team (adds only — picks go to new owner)
+        # Value received by each team: player adds + picks (owner_id = receiver)
         received: dict = {rid: 0.0 for rid in involved}
         for pid, rid in adds.items():
             received[str(rid)] = received.get(str(rid), 0) + val_by_pid.get(str(pid), 0)
         for pick in draft_picks:
-            rid = str(pick.get("roster_id") or pick.get("owner_id") or "")
-            rnd = int(pick.get("round") or 4)
-            if rid in received:
-                received[rid] = received.get(rid, 0) + _PICK_VALS.get(rnd, 150)
+            rid = str(pick.get("owner_id") or "")
+            if rid and rid in received:
+                received[rid] = received.get(rid, 0) + _pick_val_comm(pick)
         vals = sorted(received.items(), key=lambda x: -x[1])
         if len(vals) >= 2:
             (r1, v1), (r2, v2) = vals[0], vals[1]
@@ -11989,7 +12030,7 @@ def build_commissioner_body(ctx):
                 "team_a": roster_map.get(r1, f"Team {r1}"),
                 "team_b": roster_map.get(r2, f"Team {r2}"),
                 "val_a": round(v1, 0), "val_b": round(v2, 0),
-                "diff": round(diff, 0), "lopsided": diff > 200,
+                "diff": round(diff, 0), "lopsided": diff > 75,
             })
     trade_rows.sort(key=lambda x: -x["diff"])
 
@@ -12076,8 +12117,8 @@ def build_commissioner_body(ctx):
     if trade_rows:
         trade_items = ""
         for t in trade_rows[:25]:
-            diff_color = "#ef4444" if t["lopsided"] else ("#f59e0b" if t["diff"] > 100 else "#22c55e")
-            diff_label = "LOPSIDED" if t["lopsided"] else ("UNEVEN" if t["diff"] > 100 else "FAIR")
+            diff_color = "#ef4444" if t["lopsided"] else ("#f59e0b" if t["diff"] > 40 else "#22c55e")
+            diff_label = "LOPSIDED" if t["lopsided"] else ("UNEVEN" if t["diff"] > 40 else "FAIR")
             max_val = max(t["val_a"], t["val_b"], 1)
             pct_a = t["val_a"] / max_val * 100
             pct_b = t["val_b"] / max_val * 100
@@ -12109,7 +12150,7 @@ def build_commissioner_body(ctx):
 <div class="card" style="overflow:hidden;">
   <div class="card-header">
     <h3>Trade Fairness Log</h3>
-    <span style="font-size:12px;color:var(--muted);">Received value per side &middot; &#177;200 = lopsided</span>
+    <span style="font-size:12px;color:var(--muted);">Received value per side &middot; &#177;75 = lopsided</span>
   </div>
   {trade_items}
 </div>"""
