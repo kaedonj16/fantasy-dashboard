@@ -12597,19 +12597,218 @@ def page_recap(platform: str, season: int, league_id: str):
     week_label = f"Week {week} Recap" if week else "Weekly Recap"
     page_url = request.url
     base_url = request.host_url.rstrip("/")
-    og_image = f"{base_url}/static/BR_Logo.png"
+    week_param = f"?week={week}" if week else ""
+    og_image = f"{base_url}/{platform}/{season}/{league_id}/recap/og.png{week_param}"
     og_tags = (
         f"<meta property='og:title' content='{week_label} — {league_name} | BR Fantasy'>"
         f"<meta property='og:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
         f"<meta property='og:image' content='{og_image}'>"
+        f"<meta property='og:image:width' content='1200'>"
+        f"<meta property='og:image:height' content='630'>"
         f"<meta property='og:type' content='website'>"
         f"<meta property='og:url' content='{html.escape(page_url)}'>"
-        f"<meta name='twitter:card' content='summary'>"
+        f"<meta name='twitter:card' content='summary_large_image'>"
         f"<meta name='twitter:title' content='{week_label} — {league_name} | BR Fantasy'>"
         f"<meta name='twitter:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
         f"<meta name='twitter:image' content='{og_image}'>"
     )
     return render_page("Weekly Recap", league_id, "recap", body, platform, season, og_tags=og_tags)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/recap/og.png")
+def recap_og_image(platform: str, season: int, league_id: str):
+    """Generate a 1200×630 social-share preview image for the weekly recap."""
+    import os as _os
+    import io as _io
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return "", 404
+
+    try:
+        week = int(request.args.get("week") or 0) or None
+    except (ValueError, TypeError):
+        week = None
+
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    league      = ctx.get("league") or {}
+    df_weekly   = ctx.get("df_weekly")
+    roster_map  = ctx.get("roster_map") or {}
+    users       = ctx.get("users") or []
+    settings    = league.get("settings") or {}
+    playoff_start = int(settings.get("playoff_week_start") or 14)
+    league_name = (league.get("name") or "Fantasy League")[:32]
+
+    # ── Resolve week and pull stats ────────────────────────────────────────
+    high_name, high_pts = "—", 0.0
+    low_name,  low_pts  = "—", 0.0
+    matchups_display    = []
+
+    if df_weekly is not None and not df_weekly.empty and "finalized" in df_weekly.columns:
+        fin_df = df_weekly[df_weekly["finalized"] == True].copy()
+        if not fin_df.empty:
+            available = sorted(fin_df["week"].unique().tolist())
+            reg_weeks = [w for w in available if w < playoff_start] or available
+            if week is None or week not in available:
+                week = reg_weeks[-1]
+
+            week_df = fin_df[fin_df["week"] == week].copy()
+            team_by_rid = {str(rid): name for rid, name in roster_map.items()}
+
+            if not week_df.empty:
+                high_row = week_df.loc[week_df["points"].idxmax()]
+                low_row  = week_df.loc[week_df["points"].idxmin()]
+                high_name = team_by_rid.get(str(high_row.get("roster_id", ""))) or str(high_row["owner"])
+                high_pts  = float(high_row["points"])
+                low_name  = team_by_rid.get(str(low_row.get("roster_id", ""))) or str(low_row["owner"])
+                low_pts   = float(low_row["points"])
+
+                for _, grp in week_df.groupby("matchup_id"):
+                    if len(grp) != 2:
+                        continue
+                    grp = grp.sort_values("points", ascending=False)
+                    w_row, l_row = grp.iloc[0], grp.iloc[1]
+                    w_team = team_by_rid.get(str(w_row.get("roster_id", ""))) or str(w_row["owner"])
+                    l_team = team_by_rid.get(str(l_row.get("roster_id", ""))) or str(l_row["owner"])
+                    matchups_display.append({
+                        "w": w_team, "w_pts": float(w_row["points"]),
+                        "l": l_team, "l_pts": float(l_row["points"]),
+                        "margin": float(w_row["points"]) - float(l_row["points"]),
+                    })
+                matchups_display.sort(key=lambda x: -x["margin"])
+
+    week_label = f"Week {week} Recap" if week else "Weekly Recap"
+
+    # ── Fonts ──────────────────────────────────────────────────────────────
+    font_dir   = _os.path.join(_os.path.dirname(__file__), "static", "fonts")
+    def _font(name, size):
+        path = _os.path.join(font_dir, name)
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            return ImageFont.load_default()
+
+    f_huge   = _font("Inter-Bold.ttf",     78)
+    f_large  = _font("Inter-Bold.ttf",     38)
+    f_med    = _font("Inter-SemiBold.ttf", 28)
+    f_small  = _font("Inter-Regular.ttf",  24)
+    f_label  = _font("Inter-Regular.ttf",  20)
+    f_pill   = _font("Inter-SemiBold.ttf", 20)
+
+    # ── Colors ─────────────────────────────────────────────────────────────
+    C_BG      = (11,  17,  32)
+    C_SURFACE = (22,  33,  56)
+    C_SURFACE2= (28,  42,  72)
+    C_ACCENT  = (99,  102, 241)
+    C_TEXT    = (248, 250, 252)
+    C_MUTED   = (100, 116, 139)
+    C_GREEN   = (34,  197, 94)
+    C_RED     = (239, 68,  68)
+    C_BORDER  = (36,  54,  88)
+
+    W, H = 1200, 630
+    img  = Image.new("RGB", (W, H), color=C_BG)
+    draw = ImageDraw.Draw(img)
+
+    # ── Subtle grid lines ──────────────────────────────────────────────────
+    for x in range(0, W, 64):
+        draw.line([(x, 0), (x, H)], fill=(22, 33, 56), width=1)
+    for y in range(0, H, 64):
+        draw.line([(0, y), (W, y)], fill=(22, 33, 56), width=1)
+
+    # ── Top accent bar ─────────────────────────────────────────────────────
+    draw.rectangle([0, 0, W, 6], fill=C_ACCENT)
+
+    PAD = 72
+
+    # ── Brand pill ─────────────────────────────────────────────────────────
+    py = 52
+    draw.rounded_rectangle([PAD, py, PAD + 154, py + 38], radius=19, fill=C_SURFACE2)
+    draw.text((PAD + 16, py + 9), "BR Fantasy", fill=C_ACCENT, font=f_pill)
+
+    # ── Week headline ──────────────────────────────────────────────────────
+    draw.text((PAD, 118), week_label, fill=C_TEXT, font=f_huge)
+
+    # ── League name ────────────────────────────────────────────────────────
+    draw.text((PAD, 222), league_name, fill=C_MUTED, font=f_large)
+
+    # ── Accent rule ────────────────────────────────────────────────────────
+    draw.rounded_rectangle([PAD, 282, PAD + 64, 286], radius=2, fill=C_ACCENT)
+
+    # ── Stat callouts ──────────────────────────────────────────────────────
+    def stat_row(y, label, name, value, color):
+        draw.text((PAD, y),       label,               fill=C_MUTED,  font=f_label)
+        draw.text((PAD, y + 24),  name[:22],            fill=C_TEXT,   font=f_med)
+        # value right-aligned within left column (max x=640)
+        bb = draw.textbbox((0, 0), value, font=f_med)
+        vw = bb[2] - bb[0]
+        draw.text((580 - vw, y + 24), value, fill=color, font=f_med)
+
+    sy = 308
+    stat_row(sy,       "HIGH SCORE",   high_name, f"{high_pts:.2f}",  C_GREEN)
+    if matchups_display:
+        best = matchups_display[0]
+        stat_row(sy + 76,  "BIGGEST WIN",  best["w"], f"+{best['margin']:.1f}", C_ACCENT)
+    stat_row(sy + 152, "LOW SCORE",    low_name,  f"{low_pts:.2f}",   C_RED)
+
+    # ── Scoreboard card ────────────────────────────────────────────────────
+    CX, CY, CW, CH = 680, 56, 456, 510
+    draw.rounded_rectangle([CX, CY, CX + CW, CY + CH], radius=16, fill=C_SURFACE)
+
+    # Card header
+    draw.text((CX + 24, CY + 20), "Scoreboard", fill=C_TEXT,  font=f_med)
+    draw.text((CX + 24, CY + 52), f"Week {week}", fill=C_MUTED, font=f_label)
+    draw.rectangle([CX, CY + 80, CX + CW, CY + 81], fill=C_BORDER)
+
+    # Matchup rows (up to 5)
+    ry = CY + 94
+    row_h = 82
+    for i, m in enumerate(matchups_display[:5]):
+        if ry + row_h > CY + CH - 10:
+            break
+
+        # Winner
+        w_name = m["w"][:18]
+        l_name = m["l"][:18]
+        draw.text((CX + 20, ry),      w_name, fill=C_TEXT,  font=f_small)
+        draw.text((CX + 20, ry + 28), l_name, fill=C_MUTED, font=f_small)
+
+        # Scores right-aligned
+        w_str = f"{m['w_pts']:.1f}"
+        l_str = f"{m['l_pts']:.1f}"
+        bb = draw.textbbox((0, 0), w_str, font=f_small)
+        sw = bb[2] - bb[0]
+        draw.text((CX + CW - 20 - sw, ry),      w_str, fill=C_GREEN,  font=f_small)
+        bb = draw.textbbox((0, 0), l_str, font=f_small)
+        sw = bb[2] - bb[0]
+        draw.text((CX + CW - 20 - sw, ry + 28), l_str, fill=C_MUTED,  font=f_small)
+
+        # Margin badge
+        mg_str = f"+{m['margin']:.1f}"
+        draw.text((CX + 20, ry + 54), mg_str, fill=C_ACCENT, font=f_label)
+
+        ry += row_h
+        if i < len(matchups_display) - 1 and ry < CY + CH - 10:
+            draw.rectangle([CX + 16, ry - 4, CX + CW - 16, ry - 3], fill=C_BORDER)
+
+    # ── Bottom bar ─────────────────────────────────────────────────────────
+    draw.rectangle([0, H - 50, W, H], fill=C_SURFACE)
+    draw.text((PAD, H - 32), "brfantasy.com", fill=C_MUTED, font=f_label)
+    draw.text((PAD + 170, H - 32), "·  AI-powered weekly recap", fill=(60, 80, 110), font=f_label)
+
+    season_str = f"Season {season}"
+    bb = draw.textbbox((0, 0), season_str, font=f_label)
+    draw.text((W - PAD - (bb[2] - bb[0]), H - 32), season_str, fill=C_MUTED, font=f_label)
+
+    # ── Render to bytes ────────────────────────────────────────────────────
+    buf = _io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    buf.seek(0)
+    return buf.read(), 200, {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=3600",
+        "X-Content-Type-Options": "nosniff",
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
