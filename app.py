@@ -1195,9 +1195,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if draft_ended or not offseason_mode:
         nav_pills.append(nav_pill_dropdown("Weekly", [
             ("Matchups",             "page_weekly",             "weekly",   False),
+            ("Weekly Recap",         "page_recap",              "recap",    False),
             ("Waivers & Start/Sit",  "page_waivers",            "waivers",  False),
             ("Playoff Schedule",     "page_playoff_schedule",   "schedule", False),
-        ], ["weekly", "waivers", "schedule"], "weeklyNavDropdown"))
+        ], ["weekly", "recap", "waivers", "schedule"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",     "page_standings",    "standings",    False),
         ("Teams",         "page_teams",        "teams",        False),
@@ -11862,6 +11863,243 @@ def page_playoff_schedule(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     body = build_playoff_schedule_body(ctx)
     return render_page("Playoff Schedule", league_id, "schedule", body, platform, season)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WEEKLY RECAP
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_recap_body(ctx: dict, selected_week: int | None = None) -> str:
+    df_weekly  = ctx.get("df_weekly")
+    roster_map = ctx.get("roster_map") or {}
+    users      = ctx.get("users") or []
+    league     = ctx.get("league") or {}
+    settings   = league.get("settings") or {}
+    playoff_start = int(settings.get("playoff_week_start") or 14)
+
+    # avatar by owner name
+    owner_avatar: dict = {}
+    for u in users:
+        name = u.get("display_name") or u.get("username") or ""
+        ava  = u.get("metadata", {}).get("avatar") or u.get("avatar") or ""
+        if name and ava:
+            if not ava.startswith("http"):
+                ava = f"https://sleepercdn.com/avatars/thumbs/{ava}"
+            owner_avatar[name] = ava
+
+    # team name by roster_id
+    team_by_rid: dict = {str(rid): name for rid, name in roster_map.items()}
+
+    if df_weekly is None or df_weekly.empty or "finalized" not in df_weekly.columns:
+        return "<div class='card card-body' style='padding:24px;color:var(--muted);'>No completed weeks yet.</div>"
+
+    fin_df = df_weekly[df_weekly["finalized"] == True].copy()
+    if fin_df.empty:
+        return "<div class='card card-body' style='padding:24px;color:var(--muted);'>No completed weeks yet.</div>"
+
+    available_weeks = sorted(fin_df["week"].unique().tolist())
+    reg_weeks = [w for w in available_weeks if w < playoff_start]
+    if not reg_weeks:
+        reg_weeks = available_weeks
+
+    if selected_week is None or selected_week not in available_weeks:
+        selected_week = reg_weeks[-1]
+
+    week_df = fin_df[fin_df["week"] == selected_week].copy()
+
+    # ── Matchup pairs ──────────────────────────────────────────────────────
+    matchups: list[dict] = []
+    for _, grp in week_df.groupby("matchup_id"):
+        if len(grp) != 2:
+            continue
+        grp = grp.sort_values("points", ascending=False)
+        w_row, l_row = grp.iloc[0], grp.iloc[1]
+        margin = float(w_row["points"]) - float(l_row["points"])
+        matchups.append({
+            "winner": w_row["owner"],
+            "loser":  l_row["owner"],
+            "w_rid":  str(w_row.get("roster_id", "")),
+            "l_rid":  str(l_row.get("roster_id", "")),
+            "w_pts":  float(w_row["points"]),
+            "l_pts":  float(l_row["points"]),
+            "margin": margin,
+        })
+    matchups.sort(key=lambda x: -x["margin"])
+
+    # ── Highlights ─────────────────────────────────────────────────────────
+    high_row = week_df.loc[week_df["points"].idxmax()]
+    low_row  = week_df.loc[week_df["points"].idxmin()]
+    blowout  = matchups[0] if matchups else None
+    closest  = matchups[-1] if matchups else None
+
+    league_avg = float(week_df["points"].mean()) if not week_df.empty else 0
+    league_total = float(week_df["points"].sum()) if not week_df.empty else 0
+
+    # Season high/low context
+    fin_max = float(fin_df["points"].max())
+    season_high = float(high_row["points"]) >= fin_max
+
+    def ava_img(owner_name, rid="", size=32):
+        ava = owner_avatar.get(owner_name, "")
+        if ava:
+            return f"<img src='{ava}' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+        initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
+        return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
+                f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:{max(10, size//3)}px;"
+                f"flex-shrink:0;'>{initials}</div>")
+
+    def team_name(owner, rid=""):
+        return html.escape(team_by_rid.get(rid) or owner or "—")
+
+    # ── Week selector ──────────────────────────────────────────────────────
+    week_opts = "".join(
+        f"<option value='{w}' {'selected' if w == selected_week else ''}>Week {w}</option>"
+        for w in reversed(reg_weeks)
+    )
+    week_selector = f"""
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+  <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
+  <select onchange="window.location.search='?week='+this.value"
+          style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);
+                 background:var(--card);color:var(--text);font-size:13px;cursor:pointer;">
+    {week_opts}
+  </select>
+</div>"""
+
+    # ── Headline cards ─────────────────────────────────────────────────────
+    def headline_card(icon, label, name, pts, rid="", sub="", badge_color="var(--accent)"):
+        return f"""
+<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:6px;min-width:0;">
+  <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+    <span style="font-size:16px;">{icon}</span>
+    <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;">
+    {ava_img(name, rid, 36)}
+    <div style="min-width:0;">
+      <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
+      <div style="font-size:11px;color:var(--muted);">@{html.escape(name)}</div>
+    </div>
+  </div>
+  <div style="font-size:24px;font-weight:800;color:var(--text);line-height:1;">{pts:.2f}</div>
+  {f'<div style="font-size:11px;color:{badge_color};font-weight:600;">{html.escape(sub)}</div>' if sub else ''}
+</div>"""
+
+    high_sub = "Season high score" if season_high else f"+{float(high_row['points']) - league_avg:.1f} vs avg"
+    low_sub  = f"{float(low_row['points']) - league_avg:.1f} vs avg"
+
+    cards_html = f"""
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
+  {headline_card("🔥", "HIGH SCORER", high_row["owner"],
+                 float(high_row["points"]), str(high_row.get("roster_id","")),
+                 high_sub, "#22c55e")}
+  {headline_card("📉", "LOW SCORER", low_row["owner"],
+                 float(low_row["points"]), str(low_row.get("roster_id","")),
+                 low_sub, "#ef4444")}
+  {headline_card("💥", "BIGGEST WIN", blowout["winner"],
+                 blowout["w_pts"], blowout["w_rid"],
+                 f"Won by {blowout['margin']:.2f}", "#22c55e") if blowout else ""}
+  {headline_card("⚡", "CLOSEST GAME", closest["winner"],
+                 closest["w_pts"], closest["w_rid"],
+                 f"Won by {closest['margin']:.2f}", "#f59e0b") if closest else ""}
+</div>"""
+
+    # ── Scoreboard ─────────────────────────────────────────────────────────
+    def matchup_result_row(m):
+        w_team = team_name(m["winner"], m["w_rid"])
+        l_team = team_name(m["loser"],  m["l_rid"])
+        margin_color = "#ef4444" if m["margin"] > 50 else ("#f59e0b" if m["margin"] > 20 else "#22c55e")
+        return f"""
+<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);">
+  <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;">
+    {ava_img(m["winner"], m["w_rid"], 30)}
+    <div style="min-width:0;">
+      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
+      <div style="font-size:10px;color:var(--muted);">@{html.escape(m["winner"])}</div>
+    </div>
+  </div>
+  <div style="text-align:center;flex-shrink:0;min-width:110px;">
+    <div style="font-size:15px;font-weight:800;">{m['w_pts']:.2f} <span style="color:var(--muted);font-weight:400;font-size:12px;">—</span> {m['l_pts']:.2f}</div>
+    <div style="font-size:10px;color:{margin_color};font-weight:700;">+{m['margin']:.2f}</div>
+  </div>
+  <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;justify-content:flex-end;">
+    <div style="min-width:0;text-align:right;">
+      <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
+      <div style="font-size:10px;color:var(--muted);">@{html.escape(m["loser"])}</div>
+    </div>
+    {ava_img(m["loser"], m["l_rid"], 30)}
+  </div>
+</div>"""
+
+    scoreboard_rows = "".join(matchup_result_row(m) for m in matchups)
+    scoreboard_html = f"""
+<div class="card" style="overflow:hidden;margin-bottom:20px;">
+  <div class="card-header">
+    <h3>Scoreboard</h3>
+    <span style="font-size:12px;color:var(--muted);">
+      Avg: {league_avg:.1f} &nbsp;·&nbsp; Total: {league_total:.1f}
+    </span>
+  </div>
+  {scoreboard_rows}
+</div>"""
+
+    # ── Season standings snapshot ──────────────────────────────────────────
+    # Compute cumulative wins/losses/PF through selected_week
+    cum_df = fin_df[fin_df["week"] <= selected_week].copy()
+    cum_df["win"] = cum_df["points"] > cum_df["points_against"]
+    standings_rows_data = []
+    for rid, grp in cum_df.groupby("roster_id"):
+        owner = grp["owner"].iloc[0]
+        wins  = int(grp["win"].sum())
+        losses = len(grp) - wins
+        pf    = float(grp["points"].sum())
+        standings_rows_data.append({
+            "rid": str(rid), "owner": owner,
+            "wins": wins, "losses": losses, "pf": pf,
+        })
+    standings_rows_data.sort(key=lambda x: (-x["wins"], -x["pf"]))
+
+    def standing_row(rank, s):
+        bar_pct = s["pf"] / max(r["pf"] for r in standings_rows_data) * 100 if standings_rows_data else 0
+        rank_color = "#f59e0b" if rank == 1 else ("var(--muted)" if rank > 3 else "var(--text)")
+        return f"""
+<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);">
+  <div style="font-size:13px;font-weight:800;color:{rank_color};min-width:20px;text-align:center;">{rank}</div>
+  {ava_img(s["owner"], s["rid"], 28)}
+  <div style="flex:1;min-width:0;">
+    <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(s['owner'], s['rid'])}</div>
+    <div style="height:3px;background:var(--border);border-radius:2px;margin-top:3px;overflow:hidden;">
+      <div style="height:3px;background:var(--accent);border-radius:2px;width:{bar_pct:.0f}%;"></div>
+    </div>
+  </div>
+  <div style="text-align:right;flex-shrink:0;">
+    <div style="font-size:13px;font-weight:700;">{s['wins']}-{s['losses']}</div>
+    <div style="font-size:11px;color:var(--muted);">{s['pf']:.1f} PF</div>
+  </div>
+</div>"""
+
+    standing_rows_html = "".join(standing_row(i + 1, s) for i, s in enumerate(standings_rows_data))
+    standings_html = f"""
+<div class="card" style="overflow:hidden;">
+  <div class="card-header">
+    <h3>Standings</h3>
+    <span style="font-size:12px;color:var(--muted);">Through week {selected_week}</span>
+  </div>
+  {standing_rows_html}
+</div>"""
+
+    return week_selector + cards_html + scoreboard_html + standings_html
+
+
+@app.route("/<platform>/<int:season>/<league_id>/recap")
+def page_recap(platform: str, season: int, league_id: str):
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    try:
+        week = int(request.args.get("week") or 0) or None
+    except (ValueError, TypeError):
+        week = None
+    body = build_recap_body(ctx, selected_week=week)
+    return render_page("Weekly Recap", league_id, "recap", body, platform, season)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
