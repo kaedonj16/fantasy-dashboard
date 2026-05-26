@@ -1378,10 +1378,10 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
     """Dismissible 'Recap is ready' banner shown on Tuesdays during NFL season."""
     import datetime as _dt
     now = _dt.datetime.now()
-    if now.weekday() != 1:           # only Tuesday
-        return ""
-    if now.month not in {9, 10, 11, 12, 1}:  # only during NFL season
-        return ""
+    # if now.weekday() != 1:           # only Tuesday
+    #     return ""
+    # if now.month not in {9, 10, 11, 12, 1}:  # only during NFL season
+    #     return ""
     if not (league_id and platform and season):
         return ""
 
