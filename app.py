@@ -11987,26 +11987,40 @@ def _build_lineup_analysis_html(
 
     def mistake_row(item):
         s = item["starter"]; b = item["bench"]
-        ava = _ava_small(item["owner"], item["rid"], 28)
+        team = html.escape(item["team"])
+        s_name = html.escape(str(s.get("name") or ""))
+        s_pos  = html.escape(str(s.get("pos") or ""))
+        s_nfl  = html.escape(str(s.get("nfl") or ""))
+        s_pts  = float(s.get("pts") or 0)
+        b_name = html.escape(str(b.get("name") or ""))
+        b_pos  = html.escape(str(b.get("pos") or ""))
+        b_nfl  = html.escape(str(b.get("nfl") or ""))
+        b_pts  = float(b.get("pts") or 0)
+        gap    = item["gap"]
         return f"""
-<div style="padding:12px 14px;border-bottom:1px solid var(--border);">
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-    {ava}
-    <span style="font-weight:700;font-size:12px;">{html.escape(item['team'])}</span>
-    <span style="margin-left:auto;font-size:11px;font-weight:700;color:#f59e0b;background:#f59e0b20;
-                 padding:2px 8px;border-radius:10px;">-{item['gap']:.2f} pts</span>
-  </div>
-  <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;font-size:12px;">
-    <div>
-      <div style="font-size:9px;color:var(--muted);font-weight:700;">STARTED</div>
-      <div style="font-weight:600;">{html.escape(str(s.get('name') or ''))}</div>
-      <div style="color:var(--muted);font-size:11px;">{html.escape(str(s.get('pos') or ''))} · <span style="color:#ef4444;font-weight:700;">{float(s.get('pts') or 0):.2f}</span></div>
+<div style="border-bottom:1px solid var(--border);">
+  <div style="display:flex;align-items:center;gap:10px;padding:10px 14px 5px;">
+    <div style="width:30px;height:30px;border-radius:50%;background:#ef444420;display:flex;align-items:center;
+                justify-content:center;font-size:11px;font-weight:700;color:#ef4444;flex-shrink:0;">{s_name[0] if s_name else "?"}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{s_name}</div>
+      <div style="font-size:11px;color:var(--muted);">{s_pos} · {s_nfl} &nbsp;·&nbsp; {team}</div>
     </div>
-    <div style="color:var(--muted);font-size:14px;">→</div>
-    <div style="text-align:right;">
-      <div style="font-size:9px;color:var(--muted);font-weight:700;">SHOULD'VE STARTED</div>
-      <div style="font-weight:600;">{html.escape(str(b.get('name') or ''))}</div>
-      <div style="color:var(--muted);font-size:11px;">{html.escape(str(b.get('pos') or ''))} · <span style="color:#22c55e;font-weight:700;">{float(b.get('pts') or 0):.2f}</span></div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:16px;font-weight:800;color:#ef4444;">{s_pts:.2f}</div>
+      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">STARTED</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;padding:5px 14px 10px;">
+    <div style="width:30px;height:30px;border-radius:50%;background:#22c55e20;display:flex;align-items:center;
+                justify-content:center;font-size:11px;font-weight:700;color:#22c55e;flex-shrink:0;">{b_name[0] if b_name else "?"}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{b_name}</div>
+      <div style="font-size:11px;color:var(--muted);">{b_pos} · {b_nfl} &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:600;">-{gap:.1f} pts</span></div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:16px;font-weight:800;color:#22c55e;">{b_pts:.2f}</div>
+      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">BENCHED</div>
     </div>
   </div>
 </div>"""
@@ -12065,26 +12079,31 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
     bust_rows = "".join(row(p, "BUST", "#ef4444") for p in busts)
     sleeper_rows = "".join(row(p, "SLEEPER", "#22c55e") for p in sleepers)
 
+    team0 = html.escape(team_names[0] if team_names else "Team A")
     mock_mistake = f"""
-<div style="padding:12px 14px;border-bottom:1px solid var(--border);">
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-    <div style="width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;
-                display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;">{(team_names[0][0] if team_names else 'A')}</div>
-    <span style="font-weight:700;font-size:12px;">{html.escape(team_names[0] if team_names else 'Team A')}</span>
-    <span style="margin-left:auto;font-size:11px;font-weight:700;color:#f59e0b;background:#f59e0b20;
-                 padding:2px 8px;border-radius:10px;">-14.20 pts</span>
-  </div>
-  <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;font-size:12px;">
-    <div>
-      <div style="font-size:9px;color:var(--muted);font-weight:700;">STARTED</div>
-      <div style="font-weight:600;">Tee Higgins</div>
-      <div style="color:var(--muted);font-size:11px;">WR · <span style="color:#ef4444;font-weight:700;">3.20</span></div>
+<div style="border-bottom:1px solid var(--border);">
+  <div style="display:flex;align-items:center;gap:10px;padding:10px 14px 5px;">
+    <div style="width:30px;height:30px;border-radius:50%;background:#ef444420;display:flex;align-items:center;
+                justify-content:center;font-size:11px;font-weight:700;color:#ef4444;flex-shrink:0;">T</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:700;font-size:13px;">Tee Higgins</div>
+      <div style="font-size:11px;color:var(--muted);">WR · CIN &nbsp;·&nbsp; {team0}</div>
     </div>
-    <div style="color:var(--muted);font-size:14px;">→</div>
-    <div style="text-align:right;">
-      <div style="font-size:9px;color:var(--muted);font-weight:700;">SHOULD'VE STARTED</div>
-      <div style="font-weight:600;">Tank Dell</div>
-      <div style="color:var(--muted);font-size:11px;">WR · <span style="color:#22c55e;font-weight:700;">17.40</span></div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:16px;font-weight:800;color:#ef4444;">3.20</div>
+      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">STARTED</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;padding:5px 14px 10px;">
+    <div style="width:30px;height:30px;border-radius:50%;background:#22c55e20;display:flex;align-items:center;
+                justify-content:center;font-size:11px;font-weight:700;color:#22c55e;flex-shrink:0;">T</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:700;font-size:13px;">Tank Dell</div>
+      <div style="font-size:11px;color:var(--muted);">WR · HOU &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:600;">-14.2 pts</span></div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:16px;font-weight:800;color:#22c55e;">17.40</div>
+      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">BENCHED</div>
     </div>
   </div>
 </div>"""
