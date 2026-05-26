@@ -12251,22 +12251,22 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     # ── Headline cards ─────────────────────────────────────────────────────
     def scorer_card(icon, label, name, pts, rid, sub, accent):
         return f"""
-<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0;">
+<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;min-width:0;">
   <div style="display:flex;align-items:center;gap:6px;">
     <i class="{icon}" style="font-size:13px;color:{accent};width:16px;text-align:center;"></i>
     <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
   </div>
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-    <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-      {ava_img(name, rid, 32)}
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+      {ava_img(name, rid, 44)}
       <div style="min-width:0;">
-        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
-        <div style="font-size:11px;color:var(--muted);">@{html.escape(name)}</div>
+        <div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
+        <div style="font-size:12px;color:var(--muted);">@{html.escape(name)}</div>
       </div>
     </div>
     <div style="text-align:right;flex-shrink:0;">
-      <div style="font-size:26px;font-weight:800;color:{accent};letter-spacing:-.5px;line-height:1;">{pts:.2f}</div>
-      <div style="font-size:10px;color:{accent};font-weight:600;margin-top:2px;">{html.escape(sub)}</div>
+      <div style="font-size:32px;font-weight:800;color:{accent};letter-spacing:-.5px;line-height:1;">{pts:.2f}</div>
+      <div style="font-size:11px;color:{accent};font-weight:600;margin-top:4px;">{html.escape(sub)}</div>
     </div>
   </div>
 </div>"""
@@ -12275,22 +12275,26 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
         w_team = team_name(m["winner"], m["w_rid"])
         l_team = team_name(m["loser"],  m["l_rid"])
         return f"""
-<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0;">
+<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;justify-content:space-between;gap:14px;min-width:0;">
   <div style="display:flex;align-items:center;gap:6px;">
     <i class="{icon}" style="font-size:13px;color:var(--accent);width:16px;text-align:center;"></i>
     <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
   </div>
-  <div style="display:flex;flex-direction:column;gap:7px;">
-    <div style="display:flex;align-items:center;gap:8px;">
-      {ava_img(m["winner"], m["w_rid"], 28)}
-      <div style="flex:1;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
-      <div style="font-size:22px;font-weight:800;color:var(--accent);flex-shrink:0;letter-spacing:-.5px;">{m['w_pts']:.1f}</div>
+  <div style="display:flex;flex-direction:column;gap:8px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      {ava_img(m["winner"], m["w_rid"], 36)}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
+      </div>
+      <div style="font-size:24px;font-weight:800;color:var(--accent);flex-shrink:0;letter-spacing:-.5px;">{m['w_pts']:.1f}</div>
     </div>
     <div style="height:1px;background:var(--border);"></div>
-    <div style="display:flex;align-items:center;gap:8px;">
-      {ava_img(m["loser"], m["l_rid"], 28)}
-      <div style="flex:1;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
-      <div style="font-size:22px;font-weight:800;color:var(--muted);flex-shrink:0;letter-spacing:-.5px;">{m['l_pts']:.1f}</div>
+    <div style="display:flex;align-items:center;gap:10px;opacity:0.45;">
+      {ava_img(m["loser"], m["l_rid"], 36)}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
+      </div>
+      <div style="font-size:24px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;">{m['l_pts']:.1f}</div>
     </div>
   </div>
   <div style="font-size:11px;color:var(--muted);font-weight:600;">margin {m['margin']:.1f}</div>
