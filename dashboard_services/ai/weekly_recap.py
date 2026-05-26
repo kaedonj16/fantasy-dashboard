@@ -266,24 +266,24 @@ def _generate_ai_storyline(payload: dict) -> dict:
     }
 
     system_prompt = """
-You are one of the guys in a long-running fantasy football group chat, doing the Tuesday morning recap. Write 2-4 short paragraphs like you're roasting and hyping up your friends after the week.
+You are someone in a long-running fantasy football group chat writing the Tuesday recap. You're observational, a little dry, occasionally use current internet/social slang naturally — not forced. Think less "ESPN host doing a bit" and more "one of your actually funny friends texting at 9am".
 
 Voice:
-- Casual, group-chat energy. Friends ribbing each other.
-- Drop jokes, light trash talk, sarcasm, and the occasional victory lap.
-- Sound like a person texting, not a sportswriter. Contractions, slang, run-ons are fine.
-- Use team names directly — call people out by team.
-- It's okay to be a little dramatic ("absolute disaster", "got cooked", "back on his bullshit", "the wheels are coming off").
-- Use specific numbers (scores, records, streak lengths) — that's where the jabs land.
-- If someone's on a cold streak or just got blown out, give them shit (kindly). If someone's hot, hype them up.
+- Low-key, dry, observational. Not trying too hard to be funny.
+- Use real internet slang where it fits naturally: "ngl", "lowkey", "no cap", "not gonna lie", "#noticing", "it's giving", "respectfully", "that's crazy behavior", "actually wild", "unhinged", "rent free".
+- Don't string five slang terms together — one or two per paragraph feels natural, more feels try-hard.
+- Contractions, fragments, run-ons are all fine. Sound like someone typing, not writing.
+- Use team names. Use specific numbers — scores, records, win streaks. That's the substance.
+- Observations > jokes. Point something out and let it land, you don't need a punchline.
+- If someone's struggling, acknowledge it without piling on. If someone's cooking, give them their flowers.
 
 Hard rules:
-- Lead with whatever's funniest or most embarrassing for someone — that's what the group chat opens with.
+- Lead with the week's most compelling storyline — an upset, a blowout, a streak, a collapse.
 - 2-4 paragraphs, 2-4 sentences each. NEVER more than 4 paragraphs.
 - DO NOT invent facts, scores, or players that aren't in the data.
-- No markdown, no bullet points, no headers.
-- No corporate openers like "What a week!" or "Here's your recap". Just dive in.
-- Avoid being mean-spirited or personal — this is friends busting balls, not an attack.
+- No markdown, no bullet points, no headers in the output.
+- Don't open with generic hype ("What a week", "Here's the recap", "Wow"). Just start talking.
+- Not mean-spirited — this is group chat energy, not a roast battle.
 """.strip()
 
     user_prompt = f"""
@@ -355,7 +355,7 @@ def get_weekly_ai_recap(
     if df_weekly is None or df_weekly.empty:
         return ""
 
-    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v3_chat"
+    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v4_chat"
     cached = _load_recap_no_ttl(cache_key)
     if cached:
         return cached
@@ -387,11 +387,11 @@ def get_weekly_ai_recap(
 def get_weekly_ai_recap_preview() -> str:
     """Static sample for preview mode."""
     return _render_recap_html({
-        "headline": "Pocket Protectors got absolutely cooked, and Blitz Brigade can't catch a break",
+        "headline": "#noticing that Dynasty Kings is 4-1 and nobody's said anything",
         "paragraphs": [
-            "Alright, we have to talk about Pocket Protectors getting hung 132 on by Dynasty Kings in Week 1. 98 points. Almost a 35-point loss. Bro you drafted Travis Etienne in the second round, what did you expect. The chat was QUIET on Sunday night and we all noticed.",
-            "Meanwhile Blitz Brigade is over here putting up 118 points and STILL losing — that's basically a top-3 score in the league and they walk away 0-1. Tough scenes. They're going to be the most dangerous 0-3 team in the league by Week 3, watch.",
-            "Endzone Elite quietly dropped 124 and nobody's talking about it because everyone's busy laughing at Pocket Protectors. Could be a slow burn — that roster looked top-heavy before the season and now it looks like maybe we underestimated the floor.",
-            "One week in and there's already two guys complaining about kickers. Welcome back, see you in the group chat.",
+            "Ngl the Gridiron Ghosts situation is a little concerning. 94 points in Week 5, 3-2 record, and somehow they're the low scorer on a week where the league average was 118. That's not bad luck at this point, that's a roster problem. Respectfully.",
+            "Dynasty Kings are quietly 4-1 and it's giving sleeper contender. They haven't posted about it, they haven't trash talked, they're just out here winning games. #noticing. The rest of the top half should probably start paying attention.",
+            "The Blitz Brigade loss actually hurt to watch — 127 points and a loss because their opponent dropped 131 on a random Sunday in October. That's unhinged variance. They're 2-3 but their points total is top three in the league, which is either a really good sign or a really bad one.",
+            "Three weeks until the trade deadline and the playoff picture is already getting real. That 5th and 6th seed are gonna be decided on points for at least two teams, no cap.",
         ],
     })
