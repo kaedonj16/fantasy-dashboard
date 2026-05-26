@@ -252,21 +252,24 @@ def _generate_ai_storyline(payload: dict) -> dict:
     }
 
     system_prompt = """
-You are a fantasy football beat writer for a small league. Write a 2-4 paragraph weekly recap column that captures the storylines from this week — like ESPN's weekend wrap.
+You are one of the guys in a long-running fantasy football group chat, doing the Tuesday morning recap. Write 2-4 short paragraphs like you're roasting and hyping up your friends after the week.
 
-Guidelines:
-- Tell a STORY. Don't list facts. Connect events into a narrative.
-- Lead with the most compelling storyline (a hot/cold streak, an upset, a #1 seed in trouble, etc.).
-- Reference teams by name and use specific numbers (scores, records, streak lengths).
-- Conversational but sharp. Use active voice and strong verbs.
-- If late in the season, weave in playoff implications.
-- 2-4 paragraphs, each 2-4 sentences. NEVER more than 4 paragraphs.
+Voice:
+- Casual, group-chat energy. Friends ribbing each other.
+- Drop jokes, light trash talk, sarcasm, and the occasional victory lap.
+- Sound like a person texting, not a sportswriter. Contractions, slang, run-ons are fine.
+- Use team names directly — call people out by team.
+- It's okay to be a little dramatic ("absolute disaster", "got cooked", "back on his bullshit", "the wheels are coming off").
+- Use specific numbers (scores, records, streak lengths) — that's where the jabs land.
+- If someone's on a cold streak or just got blown out, give them shit (kindly). If someone's hot, hype them up.
 
-Do NOT:
-- Invent facts not in the data.
-- Use markdown formatting or bullet points.
-- Generic openers like "What a week!"
-- Repeat the same stat in multiple paragraphs.
+Hard rules:
+- Lead with whatever's funniest or most embarrassing for someone — that's what the group chat opens with.
+- 2-4 paragraphs, 2-4 sentences each. NEVER more than 4 paragraphs.
+- DO NOT invent facts, scores, or players that aren't in the data.
+- No markdown, no bullet points, no headers.
+- No corporate openers like "What a week!" or "Here's your recap". Just dive in.
+- Avoid being mean-spirited or personal — this is friends busting balls, not an attack.
 """.strip()
 
     user_prompt = f"""
@@ -316,7 +319,7 @@ def _render_recap_html(result: dict) -> str:
 
     return f"""
 <div class="card" style="padding:18px 20px;margin-bottom:20px;">
-  <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--accent);margin-bottom:6px;">THE COLUMN</div>
+  <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--accent);margin-bottom:6px;">FROM THE GROUP CHAT</div>
   <div style="font-size:18px;font-weight:800;margin-bottom:12px;line-height:1.25;">{headline}</div>
   <div style="font-size:13px;line-height:1.55;color:var(--text);">
     {paragraphs_html}
@@ -338,7 +341,7 @@ def get_weekly_ai_recap(
     if df_weekly is None or df_weekly.empty:
         return ""
 
-    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v2"
+    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v3_chat"
     cached = load_cached_ai_text(cache_key)
     if cached:
         return cached
@@ -370,10 +373,11 @@ def get_weekly_ai_recap(
 def get_weekly_ai_recap_preview() -> str:
     """Static sample for preview mode."""
     return _render_recap_html({
-        "headline": "Dynasty Kings cling to the top as Endzone Elite roar back",
+        "headline": "Pocket Protectors got absolutely cooked, and Blitz Brigade can't catch a break",
         "paragraphs": [
-            "Week 1 served notice that this league won't have a runaway leader. Dynasty Kings opened the season with a convincing 132.4–98.7 win to claim early bragging rights, but the real story was Endzone Elite, who responded to a sluggish preseason with a 124.2 point outburst and a statement victory over Pocket Protectors.",
-            "Blitz Brigade are already looking like the league's hard-luck team — their 118-point effort would have beaten three other squads, but it ran into a buzzsaw and now they're 0-1 staring at a tough Week 2 slate. Redzone Rebels, by contrast, snuck out a single-score win and will take it.",
-            "Watch the trade wire over the next two weeks: with bye weeks looming and playoff seeding lines this tight, the manager who flips Week 1's overreactions into real moves will be the one we're writing about in November.",
+            "Alright, we have to talk about Pocket Protectors getting hung 132 on by Dynasty Kings in Week 1. 98 points. Almost a 35-point loss. Bro you drafted Travis Etienne in the second round, what did you expect. The chat was QUIET on Sunday night and we all noticed.",
+            "Meanwhile Blitz Brigade is over here putting up 118 points and STILL losing — that's basically a top-3 score in the league and they walk away 0-1. Tough scenes. They're going to be the most dangerous 0-3 team in the league by Week 3, watch.",
+            "Endzone Elite quietly dropped 124 and nobody's talking about it because everyone's busy laughing at Pocket Protectors. Could be a slow burn — that roster looked top-heavy before the season and now it looks like maybe we underestimated the floor.",
+            "One week in and there's already two guys complaining about kickers. Welcome back, see you in the group chat.",
         ],
     })
