@@ -12367,6 +12367,22 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   {standing_rows_html}
 </div>"""
 
+    # ── AI weekly storyline column ─────────────────────────────────────────
+    if preview_mode:
+        from dashboard_services.ai.weekly_recap import get_weekly_ai_recap_preview
+        ai_column_html = get_weekly_ai_recap_preview()
+    else:
+        from dashboard_services.ai.weekly_recap import get_weekly_ai_recap
+        ai_column_html = get_weekly_ai_recap(
+            df_weekly=df_weekly,
+            matchups_by_week=ctx.get("matchups_by_week") or {},
+            selected_week=selected_week,
+            team_by_rid=team_by_rid,
+            league=league,
+            league_id=ctx.get("league_id") or "",
+            season=ctx.get("season") or "",
+        )
+
     # ── Lineup analysis: busts, sleepers, coaching mistakes ────────────────
     if preview_mode:
         lineup_html = _mock_lineup_analysis_html(team_names)
@@ -12389,7 +12405,8 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   </div>
 </div>"""
 
-    return preview_banner + week_selector + cards_html + scoreboard_html + lineup_html + standings_html
+    return (preview_banner + week_selector + ai_column_html
+            + cards_html + scoreboard_html + lineup_html + standings_html)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/recap")
