@@ -19344,6 +19344,8 @@ def build_portfolio_body(
         # only the bits not already in the global stylesheet
         ".pf-grid{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:14px;}"
         "@media(max-width:700px){.pf-grid{grid-template-columns:1fr;}}"
+        ".pf-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:start;}"
+        "@media(max-width:700px){.pf-grid-2{grid-template-columns:1fr;}}"
         ".pf-arch{font-size:0.63em;font-weight:700;padding:2px 7px;border-radius:10px;"
         "color:#fff;white-space:nowrap;letter-spacing:.02em;}"
         ".pf-streak{display:flex;gap:3px;align-items:center;}"
@@ -19588,7 +19590,7 @@ def build_portfolio_body(
                 f"</div>"
             )
         nfl_html = (
-            f"<div class='card' style='margin-bottom:14px;'>"
+            f"<div class='card'>"
             f"<div class='card-header'><h2>NFL Exposure</h2>"
             f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>which games affect your whole portfolio</span>"
             f"</div>"
@@ -19677,7 +19679,11 @@ def build_portfolio_body(
             f"}})();</script>"
         )
 
-    return css + top_strip + two_col + nfl_html + holdings_html
+    if nfl_html and holdings_html:
+        bottom_row = f"<div class='pf-grid-2'>{nfl_html}{holdings_html}</div>"
+    else:
+        bottom_row = nfl_html + holdings_html
+    return css + top_strip + two_col + bottom_row
 
 
 def build_scout_body(ctx: dict) -> str:

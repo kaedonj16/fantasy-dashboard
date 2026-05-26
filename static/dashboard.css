@@ -9119,6 +9119,24 @@ img, svg, canvas {
   }
 }
 
+/* On the weekly hub page the matchup sits inside a ~480px column (half the
+   main area after the 320px sidebar). The .5fr stat cells eat too much space
+   and truncate player names. Hide them and give names the full 1fr each. */
+.weekly-hub .m-row {
+  grid-template-columns: 1.8fr 58px 58px 1.8fr;
+}
+.weekly-hub .m-row > :nth-child(2),
+.weekly-hub .m-row > :nth-child(5) {
+  display: none !important;
+}
+
+/* Also remove the fixed height on the matchup card in the weekly hub —
+   let it grow to fit all starters without clipping. */
+.weekly-hub .matchup-card {
+  height: auto;
+  min-height: 420px;
+}
+
 @media (max-width: 640px) {
   /* ── Matchup carousel header ─────────────────────────── */
   .m-nav h2 { font-size: 15px; }
