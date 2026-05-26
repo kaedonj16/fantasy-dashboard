@@ -11869,6 +11869,242 @@ def page_playoff_schedule(platform: str, season: int, league_id: str):
 # WEEKLY RECAP
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _player_row(p: dict, owner: str, team_label: str, ava_html: str,
+                tag: str, tag_color: str) -> str:
+    name = html.escape(str(p.get("name") or "Unknown"))
+    pos  = html.escape(str(p.get("pos") or "—"))
+    nfl  = html.escape(str(p.get("nfl") or ""))
+    pts  = float(p.get("pts") or 0)
+    return f"""
+<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);">
+  {ava_html}
+  <div style="flex:1;min-width:0;">
+    <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</div>
+    <div style="font-size:11px;color:var(--muted);">{pos} · {nfl} &nbsp;·&nbsp; {html.escape(team_label)}</div>
+  </div>
+  <div style="text-align:right;flex-shrink:0;">
+    <div style="font-size:16px;font-weight:800;color:{tag_color};">{pts:.2f}</div>
+    <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">{tag}</div>
+  </div>
+</div>"""
+
+
+def _build_lineup_analysis_html(
+        matchups_by_week: dict,
+        selected_week: int,
+        team_by_rid: dict,
+        owner_avatar: dict,
+) -> str:
+    """Compute league-wide bust/sleeper/coaching mistake from raw matchup data."""
+    week_matchups = matchups_by_week.get(selected_week) or []
+    if not week_matchups:
+        return ""
+
+    def _ava_small(owner_name: str, rid: str = "", size: int = 30) -> str:
+        ava = owner_avatar.get(owner_name, "")
+        if ava:
+            return f"<img src='{ava}' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+        initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
+        return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
+                f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;'>{initials}</div>")
+
+    # Flatten: collect all starters and bench across the league for this week
+    all_starters: list = []  # (team_rid, team_name, owner, player_dict)
+    all_bench: list = []
+    bench_misses: list = []  # per team: best bench miss
+
+    for m in week_matchups:
+        for side in ("left", "right"):
+            team = m.get(side) or {}
+            rid = str(team.get("roster_id") or "")
+            owner = str(team.get("username") or "")
+            tname = team.get("name") or owner
+
+            starters = team.get("starters") or []
+            bench = team.get("bench") or []
+
+            for p in starters:
+                if p.get("pts") is not None:
+                    all_starters.append((rid, tname, owner, p))
+            for p in bench:
+                if p.get("pts") is not None:
+                    all_bench.append((rid, tname, owner, p))
+
+            # Coaching mistake: for each starter, find best bench player at same pos
+            bench_by_pos: dict = {}
+            for p in bench:
+                pos = str(p.get("pos") or "").upper()
+                if pos and p.get("pts") is not None:
+                    bench_by_pos.setdefault(pos, []).append(p)
+
+            biggest_swap = None
+            biggest_gap = 0.0
+            for s in starters:
+                pos = str(s.get("pos") or "").upper()
+                s_pts = float(s.get("pts") or 0)
+                candidates = bench_by_pos.get(pos, [])
+                if not candidates:
+                    continue
+                best = max(candidates, key=lambda x: float(x.get("pts") or 0))
+                gap = float(best.get("pts") or 0) - s_pts
+                if gap > biggest_gap:
+                    biggest_gap = gap
+                    biggest_swap = (s, best)
+
+            if biggest_swap and biggest_gap >= 1.0:
+                bench_misses.append({
+                    "rid": rid, "team": tname, "owner": owner,
+                    "starter": biggest_swap[0], "bench": biggest_swap[1],
+                    "gap": biggest_gap,
+                })
+
+    if not all_starters:
+        return ""
+
+    # Bust = worst starter (lowest scoring, exclude K/DEF where lows are common)
+    skill_starters = [s for s in all_starters if str(s[3].get("pos") or "").upper() in {"QB", "RB", "WR", "TE"}]
+    bust_pool = skill_starters or all_starters
+    bust_pool.sort(key=lambda x: float(x[3].get("pts") or 0))
+    busts = bust_pool[:3]
+
+    # Sleeper = best bench player
+    all_bench.sort(key=lambda x: -float(x[3].get("pts") or 0))
+    sleepers = all_bench[:3]
+
+    bench_misses.sort(key=lambda x: -x["gap"])
+    coaching_mistakes = bench_misses[:3]
+
+    bust_rows = "".join(
+        _player_row(p, owner, team, _ava_small(owner, rid),
+                    "BUST", "#ef4444")
+        for (rid, team, owner, p) in busts
+    )
+    sleeper_rows = "".join(
+        _player_row(p, owner, team, _ava_small(owner, rid),
+                    "SLEEPER", "#22c55e")
+        for (rid, team, owner, p) in sleepers
+    )
+
+    def mistake_row(item):
+        s = item["starter"]; b = item["bench"]
+        ava = _ava_small(item["owner"], item["rid"], 28)
+        return f"""
+<div style="padding:12px 14px;border-bottom:1px solid var(--border);">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+    {ava}
+    <span style="font-weight:700;font-size:12px;">{html.escape(item['team'])}</span>
+    <span style="margin-left:auto;font-size:11px;font-weight:700;color:#f59e0b;background:#f59e0b20;
+                 padding:2px 8px;border-radius:10px;">-{item['gap']:.2f} pts</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;font-size:12px;">
+    <div>
+      <div style="font-size:9px;color:var(--muted);font-weight:700;">STARTED</div>
+      <div style="font-weight:600;">{html.escape(str(s.get('name') or ''))}</div>
+      <div style="color:var(--muted);font-size:11px;">{html.escape(str(s.get('pos') or ''))} · <span style="color:#ef4444;font-weight:700;">{float(s.get('pts') or 0):.2f}</span></div>
+    </div>
+    <div style="color:var(--muted);font-size:14px;">→</div>
+    <div style="text-align:right;">
+      <div style="font-size:9px;color:var(--muted);font-weight:700;">SHOULD'VE STARTED</div>
+      <div style="font-weight:600;">{html.escape(str(b.get('name') or ''))}</div>
+      <div style="color:var(--muted);font-size:11px;">{html.escape(str(b.get('pos') or ''))} · <span style="color:#22c55e;font-weight:700;">{float(b.get('pts') or 0):.2f}</span></div>
+    </div>
+  </div>
+</div>"""
+
+    mistakes_rows = "".join(mistake_row(item) for item in coaching_mistakes) \
+                    or "<div style='padding:18px;color:var(--muted);font-size:13px;text-align:center;'>No major lineup mistakes this week — nice job, league.</div>"
+
+    return f"""
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:20px;">
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
+    {bust_rows or '<div style="padding:14px;color:var(--muted);">—</div>'}
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Sleepers</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
+    {sleeper_rows or '<div style="padding:14px;color:var(--muted);">—</div>'}
+  </div>
+</div>
+<div class="card" style="overflow:hidden;margin-bottom:20px;">
+  <div class="card-header"><h3>Coaching Mistakes</h3>
+    <span style="font-size:12px;color:var(--muted);">Biggest bench vs starter gaps (same position)</span>
+  </div>
+  {mistakes_rows}
+</div>"""
+
+
+def _mock_lineup_analysis_html(team_names: list[str]) -> str:
+    """Sample lineup-analysis output for the preview state."""
+    busts = [
+        {"name": "Tee Higgins", "pos": "WR", "nfl": "CIN", "pts": 3.2, "team": team_names[0] if team_names else "Team A"},
+        {"name": "Najee Harris", "pos": "RB", "nfl": "PIT", "pts": 4.1, "team": team_names[2] if len(team_names) > 2 else "Team C"},
+        {"name": "Dak Prescott", "pos": "QB", "nfl": "DAL", "pts": 8.4, "team": team_names[1] if len(team_names) > 1 else "Team B"},
+    ]
+    sleepers = [
+        {"name": "Tank Dell", "pos": "WR", "nfl": "HOU", "pts": 26.8, "team": team_names[3] if len(team_names) > 3 else "Team D"},
+        {"name": "Jaylen Warren", "pos": "RB", "nfl": "PIT", "pts": 22.4, "team": team_names[1] if len(team_names) > 1 else "Team B"},
+        {"name": "Trey McBride", "pos": "TE", "nfl": "ARI", "pts": 19.1, "team": team_names[4] if len(team_names) > 4 else "Team E"},
+    ]
+
+    def row(p, tag, color):
+        name = html.escape(p['name']); pos = p['pos']; nfl = p['nfl']
+        return f"""
+<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);">
+  <div style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;
+              display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;">{name[0]}</div>
+  <div style="flex:1;min-width:0;">
+    <div style="font-weight:700;font-size:13px;">{name}</div>
+    <div style="font-size:11px;color:var(--muted);">{pos} · {nfl} &nbsp;·&nbsp; {html.escape(p['team'])}</div>
+  </div>
+  <div style="text-align:right;flex-shrink:0;">
+    <div style="font-size:16px;font-weight:800;color:{color};">{p['pts']:.2f}</div>
+    <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">{tag}</div>
+  </div>
+</div>"""
+
+    bust_rows = "".join(row(p, "BUST", "#ef4444") for p in busts)
+    sleeper_rows = "".join(row(p, "SLEEPER", "#22c55e") for p in sleepers)
+
+    return f"""
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:20px;">
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
+    {bust_rows}
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Sleepers</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
+    {sleeper_rows}
+  </div>
+</div>
+<div class="card" style="overflow:hidden;margin-bottom:20px;">
+  <div class="card-header"><h3>Coaching Mistakes</h3>
+    <span style="font-size:12px;color:var(--muted);">Biggest bench vs starter gaps (same position)</span>
+  </div>
+  <div style="padding:12px 14px;border-bottom:1px solid var(--border);">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <div style="width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;
+                  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;">{(team_names[0][0] if team_names else 'A')}</div>
+      <span style="font-weight:700;font-size:12px;">{html.escape(team_names[0] if team_names else 'Team A')}</span>
+      <span style="margin-left:auto;font-size:11px;font-weight:700;color:#f59e0b;background:#f59e0b20;
+                   padding:2px 8px;border-radius:10px;">-14.20 pts</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;font-size:12px;">
+      <div>
+        <div style="font-size:9px;color:var(--muted);font-weight:700;">STARTED</div>
+        <div style="font-weight:600;">Tee Higgins</div>
+        <div style="color:var(--muted);font-size:11px;">WR · <span style="color:#ef4444;font-weight:700;">3.20</span></div>
+      </div>
+      <div style="color:var(--muted);font-size:14px;">→</div>
+      <div style="text-align:right;">
+        <div style="font-size:9px;color:var(--muted);font-weight:700;">SHOULD'VE STARTED</div>
+        <div style="font-weight:600;">Tank Dell</div>
+        <div style="color:var(--muted);font-size:11px;">WR · <span style="color:#22c55e;font-weight:700;">17.40</span></div>
+      </div>
+    </div>
+  </div>
+</div>"""
+
+
 def _build_recap_preview_df(team_names: list[str]) -> pd.DataFrame:
     """Generates a single week of mock recap data so users can see the
     page layout before any weeks complete."""
@@ -12131,6 +12367,17 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   {standing_rows_html}
 </div>"""
 
+    # ── Lineup analysis: busts, sleepers, coaching mistakes ────────────────
+    if preview_mode:
+        lineup_html = _mock_lineup_analysis_html(team_names)
+    else:
+        lineup_html = _build_lineup_analysis_html(
+            ctx.get("matchups_by_week") or {},
+            selected_week,
+            team_by_rid,
+            owner_avatar,
+        )
+
     preview_banner = ""
     if preview_mode:
         preview_banner = """
@@ -12142,7 +12389,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   </div>
 </div>"""
 
-    return preview_banner + week_selector + cards_html + scoreboard_html + standings_html
+    return preview_banner + week_selector + cards_html + scoreboard_html + lineup_html + standings_html
 
 
 @app.route("/<platform>/<int:season>/<league_id>/recap")

@@ -105,8 +105,12 @@ def build_matchup_preview(
     def _team_block_from_match_row(row: dict) -> dict:
         rid = str(row.get("roster_id"))
         starters_raw = [s for s in (row.get("starters") or []) if s]
+        starter_set = {str(s) for s in starters_raw}
+        all_players = [str(p) for p in (row.get("players") or []) if p]
+        bench_raw = [p for p in all_players if p not in starter_set]
         pts_map = {str(k): v for k, v in (row.get("players_points") or {}).items()}
         s_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in starters_raw]
+        b_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in bench_raw]
         pts_total = float(row["points"]) if isinstance(row.get("points"), (int, float)) else None
 
         wins, losses = record_by_rid.get(rid, (0, 0))
@@ -117,6 +121,7 @@ def build_matchup_preview(
             "name": roster_map.get(rid, f"Roster {rid}"),
             "roster_id": rid,
             "starters": s_infos,
+            "bench": b_infos,
             "pts_total": pts_total,
             "avatar": get_avatar(owner_id),
             "record": f"{wins}-{losses}",
