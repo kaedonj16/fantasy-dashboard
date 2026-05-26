@@ -9120,6 +9120,16 @@ img, svg, canvas {
   }
 }
 
+/* Weekly hub matchup column is ~420px wide — hide stat-stack cells so
+   player names aren't truncated. Scoped to .matchups-shell so the left
+   column's optimal-lineup rows are unaffected. */
+.weekly-hub .matchups-shell .m-row {
+  grid-template-columns: 1.8fr 58px 58px 1.8fr;
+}
+.weekly-hub .matchups-shell .m-row > :nth-child(2),
+.weekly-hub .matchups-shell .m-row > :nth-child(5) {
+  display: none !important;
+}
 
 @media (max-width: 640px) {
   /* ── Matchup carousel header ─────────────────────────── */
