@@ -12249,41 +12249,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 </div>"""
 
     # ── Headline cards ─────────────────────────────────────────────────────
-    week_min = float(week_df["points"].min()) if not week_df.empty else 0
-    week_max = float(week_df["points"].max()) if not week_df.empty else 0
-    week_range = week_max - week_min
-
     def scorer_card(icon, label, name, pts, rid, sub, accent):
-        pct = ((pts - week_min) / week_range * 100) if week_range > 0 else 50
-        return f"""
-<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:8px;min-width:0;">
-  <div style="display:flex;align-items:center;gap:6px;">
-    <span style="font-size:15px;">{icon}</span>
-    <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
-  </div>
-  <div style="display:flex;align-items:center;gap:8px;">
-    {ava_img(name, rid, 32)}
-    <div style="min-width:0;">
-      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
-      <div style="font-size:11px;color:var(--muted);">@{html.escape(name)}</div>
-    </div>
-  </div>
-  <div style="font-size:26px;font-weight:800;line-height:1;color:{accent};">{pts:.2f}</div>
-  <div>
-    <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:4px;">
-      <div style="height:100%;width:{pct:.0f}%;background:{accent};border-radius:2px;"></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);">
-      <span>{week_min:.0f} low</span><span style="color:{accent};font-weight:600;">{html.escape(sub)}</span><span>{week_max:.0f} high</span>
-    </div>
-  </div>
-</div>"""
-
-    def matchup_card(icon, label, m, accent):
-        w_team = team_name(m["winner"], m["w_rid"])
-        l_team = team_name(m["loser"],  m["l_rid"])
-        total = m["w_pts"] + m["l_pts"]
-        w_pct = (m["w_pts"] / total * 100) if total > 0 else 50
         return f"""
 <div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0;">
   <div style="display:flex;align-items:center;gap:6px;">
@@ -12291,31 +12257,41 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
   </div>
   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-    <div style="display:flex;align-items:center;gap:7px;flex:1;min-width:0;">
-      {ava_img(m["winner"], m["w_rid"], 28)}
+    <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+      {ava_img(name, rid, 30)}
       <div style="min-width:0;">
-        <div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
-        <div style="font-size:20px;font-weight:800;line-height:1.1;color:{accent};">{m['w_pts']:.1f}</div>
+        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
+        <div style="font-size:11px;color:var(--muted);">@{html.escape(name)}</div>
       </div>
     </div>
-    <div style="font-size:10px;color:var(--muted);flex-shrink:0;">vs</div>
-    <div style="display:flex;align-items:center;gap:7px;flex:1;min-width:0;justify-content:flex-end;">
-      <div style="min-width:0;text-align:right;">
-        <div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
-        <div style="font-size:20px;font-weight:800;line-height:1.1;color:var(--muted);">{m['l_pts']:.1f}</div>
-      </div>
+    <div style="font-size:26px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;">{pts:.2f}</div>
+  </div>
+  <div style="font-size:11px;color:{accent};font-weight:600;">{html.escape(sub)}</div>
+</div>"""
+
+    def matchup_card(icon, label, m, accent):
+        w_team = team_name(m["winner"], m["w_rid"])
+        l_team = team_name(m["loser"],  m["l_rid"])
+        return f"""
+<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0;">
+  <div style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:15px;">{icon}</span>
+    <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:7px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      {ava_img(m["winner"], m["w_rid"], 28)}
+      <div style="flex:1;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
+      <div style="font-size:22px;font-weight:800;color:{accent};flex-shrink:0;letter-spacing:-.5px;">{m['w_pts']:.1f}</div>
+    </div>
+    <div style="height:1px;background:var(--border);"></div>
+    <div style="display:flex;align-items:center;gap:8px;">
       {ava_img(m["loser"], m["l_rid"], 28)}
+      <div style="flex:1;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
+      <div style="font-size:22px;font-weight:800;color:var(--muted);flex-shrink:0;letter-spacing:-.5px;">{m['l_pts']:.1f}</div>
     </div>
   </div>
-  <div>
-    <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:4px;">
-      <div style="height:100%;width:{w_pct:.0f}%;background:{accent};border-radius:2px;"></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);">
-      <span style="color:{accent};font-weight:600;">margin {m['margin']:.1f}</span>
-      <span>{m['w_pts']:.1f} of {total:.1f} pts</span>
-    </div>
-  </div>
+  <div style="font-size:11px;color:{accent};font-weight:600;">margin {m['margin']:.1f}</div>
 </div>"""
 
     high_sub = "Season high" if season_high else f"+{float(high_row['points']) - league_avg:.1f} vs avg"
