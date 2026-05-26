@@ -107,7 +107,7 @@ for i, m in enumerate(matchups[:5]):
         draw.rectangle([CX + 16, ry - 4, CX + CW - 16, ry - 3], fill=C_BORDER)
 
 draw.rectangle([0, H - 50, W, H], fill=C_SURFACE)
-draw.text((PAD, H - 32), "brfantasy.com", fill=C_MUTED, font=f_label)
+draw.text((PAD, H - 32), "brfantasy.onrender.com", fill=C_MUTED, font=f_label)
 draw.text((PAD + 170, H - 32), "·  AI-powered weekly recap", fill=C_SUBTLE, font=f_label)
 season_str = f"Season {season}"
 bb = draw.textbbox((0, 0), season_str, font=f_label)

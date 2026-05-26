@@ -12801,7 +12801,7 @@ def recap_og_image(platform: str, season: int, league_id: str):
 
     # ── Bottom bar ─────────────────────────────────────────────────────────
     draw.rectangle([0, H - 50, W, H], fill=C_SURFACE)
-    draw.text((PAD, H - 32), "brfantasy.com", fill=C_MUTED, font=f_label)
+    draw.text((PAD, H - 32), "brfantasy.onrender.com", fill=C_MUTED, font=f_label)
     draw.text((PAD + 170, H - 32), "·  AI-powered weekly recap", fill=(60, 80, 110), font=f_label)
 
     season_str = f"Season {season}"
