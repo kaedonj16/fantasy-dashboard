@@ -6,7 +6,7 @@ import logging
 
 import pandas as pd
 
-from dashboard_services.ai.cache import build_ai_cache_key, load_cached_ai_text, save_cached_ai_text
+from dashboard_services.ai.cache import AI_CACHE_DIR, save_cached_ai_text
 from dashboard_services.ai.client import (
     AIRateLimitError,
     AIUnavailableError,
@@ -15,6 +15,20 @@ from dashboard_services.ai.client import (
 from dashboard_services.ai.renderer import ai_available
 
 logger = logging.getLogger(__name__)
+
+
+def _load_recap_no_ttl(cache_key: str) -> str | None:
+    """Load a cached weekly recap without applying the global TTL.
+    The cache key includes the league/season/week, so once a week's
+    recap is written it remains valid until that week regenerates."""
+    path = AI_CACHE_DIR / f"{cache_key}.json"
+    if not path.exists():
+        return None
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+        return obj.get("content")
+    except Exception:
+        return None
 
 
 def _streak_for(results: list[str]) -> str:
@@ -342,7 +356,7 @@ def get_weekly_ai_recap(
         return ""
 
     cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v3_chat"
-    cached = load_cached_ai_text(cache_key)
+    cached = _load_recap_no_ttl(cache_key)
     if cached:
         return cached
 
