@@ -12249,41 +12249,74 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 </div>"""
 
     # ── Headline cards ─────────────────────────────────────────────────────
-    def headline_card(icon, label, name, pts, rid="", sub="", badge_color="var(--accent)"):
+    week_min = float(week_df["points"].min()) if not week_df.empty else 0
+    week_max = float(week_df["points"].max()) if not week_df.empty else 0
+    week_range = week_max - week_min
+
+    def scorer_card(icon, label, name, pts, rid, sub, accent):
+        pct = ((pts - week_min) / week_range * 100) if week_range > 0 else 50
         return f"""
-<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:6px;min-width:0;">
-  <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-    <span style="font-size:16px;">{icon}</span>
+<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:8px;min-width:0;">
+  <div style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:15px;">{icon}</span>
     <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
   </div>
   <div style="display:flex;align-items:center;gap:8px;">
-    {ava_img(name, rid, 36)}
+    {ava_img(name, rid, 32)}
     <div style="min-width:0;">
-      <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
+      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
       <div style="font-size:11px;color:var(--muted);">@{html.escape(name)}</div>
     </div>
   </div>
-  <div style="font-size:24px;font-weight:800;color:var(--text);line-height:1;">{pts:.2f}</div>
-  {f'<div style="font-size:11px;color:{badge_color};font-weight:600;">{html.escape(sub)}</div>' if sub else ''}
+  <div style="font-size:26px;font-weight:800;line-height:1;color:{accent};">{pts:.2f}</div>
+  <div>
+    <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:4px;">
+      <div style="height:100%;width:{pct:.0f}%;background:{accent};border-radius:2px;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);">
+      <span>{week_min:.0f} low</span><span style="color:{accent};font-weight:600;">{html.escape(sub)}</span><span>{week_max:.0f} high</span>
+    </div>
+  </div>
 </div>"""
 
-    high_sub = "Season high score" if season_high else f"+{float(high_row['points']) - league_avg:.1f} vs avg"
+    def matchup_card(icon, label, m, accent):
+        w_team = team_name(m["winner"], m["w_rid"])
+        l_team = team_name(m["loser"],  m["l_rid"])
+        return f"""
+<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0;">
+  <div style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:15px;">{icon}</span>
+    <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;">
+      {ava_img(m["winner"], m["w_rid"], 30)}
+      <div style="font-size:11px;font-weight:700;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;">{w_team}</div>
+    </div>
+    <div style="text-align:center;flex-shrink:0;padding:0 4px;">
+      <div style="font-size:18px;font-weight:800;white-space:nowrap;letter-spacing:-.5px;">{m['w_pts']:.1f}<span style="color:var(--muted);font-weight:300;margin:0 3px;">–</span>{m['l_pts']:.1f}</div>
+      <div style="font-size:10px;font-weight:700;color:{accent};margin-top:2px;">margin {m['margin']:.1f}</div>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;">
+      {ava_img(m["loser"], m["l_rid"], 30)}
+      <div style="font-size:11px;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;">{l_team}</div>
+    </div>
+  </div>
+</div>"""
+
+    high_sub = "Season high" if season_high else f"+{float(high_row['points']) - league_avg:.1f} vs avg"
     low_sub  = f"{float(low_row['points']) - league_avg:.1f} vs avg"
 
     cards_html = f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
-  {headline_card("🔥", "HIGH SCORER", high_row["owner"],
-                 float(high_row["points"]), str(high_row.get("roster_id","")),
-                 high_sub, "#22c55e")}
-  {headline_card("📉", "LOW SCORER", low_row["owner"],
-                 float(low_row["points"]), str(low_row.get("roster_id","")),
-                 low_sub, "#ef4444")}
-  {headline_card("💥", "BIGGEST WIN", blowout["winner"],
-                 blowout["w_pts"], blowout["w_rid"],
-                 f"Won by {blowout['margin']:.2f}", "#22c55e") if blowout else ""}
-  {headline_card("⚡", "CLOSEST GAME", closest["winner"],
-                 closest["w_pts"], closest["w_rid"],
-                 f"Won by {closest['margin']:.2f}", "#f59e0b") if closest else ""}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
+  {scorer_card("🔥", "HIGH SCORER", high_row["owner"],
+               float(high_row["points"]), str(high_row.get("roster_id","")),
+               high_sub, "#22c55e")}
+  {scorer_card("📉", "LOW SCORER", low_row["owner"],
+               float(low_row["points"]), str(low_row.get("roster_id","")),
+               low_sub, "#ef4444")}
+  {matchup_card("💥", "BIGGEST WIN", blowout, "#22c55e") if blowout else ""}
+  {matchup_card("⚡", "CLOSEST GAME", closest, "#f59e0b") if closest else ""}
 </div>"""
 
     # ── Scoreboard ─────────────────────────────────────────────────────────
