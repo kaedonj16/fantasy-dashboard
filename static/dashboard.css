@@ -9109,7 +9109,8 @@ img, svg, canvas {
 
 @media (max-width: 900px) {
   .m-row {
-    grid-template-columns: 1fr 52px 52px 1fr;
+    grid-template-columns: 1fr 44px 44px 1fr;
+    column-gap: 6px;
   }
   /* collapse the stat-stack children so they don't wrap to a second row;
      !important overrides any inline style="display:grid" on stat-stack divs */
@@ -9188,14 +9189,14 @@ img, svg, canvas {
 
   /* ── Player rows ─────────────────────────────────────── */
   .m-row {
-    grid-template-columns: 1fr 36px 36px 1fr;
-    column-gap: 4px;
+    grid-template-columns: 1fr 30px 30px 1fr;
+    column-gap: 2px;
     padding: 0 2px;
   }
-  .num.mid { min-width: 32px; font-size: 11px; }
+  .num.mid { min-width: 26px; font-size: 11px; }
 
   .m-combo .p { gap: 4px; padding: 3px 0; }
-  .m-combo .pos-badge { font-size: 9px; padding: 1px 3px; flex-shrink: 0; }
+  .m-combo .pos-badge { font-size: 9px; padding: 1px 2px; flex-shrink: 0; width: 26px; height: 20px; }
   .m-combo .meta { font-size: 10px; line-height: 1.25; }
   .m-combo .pname { font-size: 12px; }
 }
