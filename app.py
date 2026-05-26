@@ -1377,6 +1377,51 @@ _AD_BOTTOM = """<div class="ad-container ad-bottom-content"><ins class="adsbygoo
 _AD_INIT = """window.addEventListener('load', function() { setTimeout(function() { try { (adsbygoogle = window.adsbygoogle || []).push({}); (adsbygoogle = window.adsbygoogle || []).push({}); } catch(e) { console.warn('AdSense initialization error:', e); } }, 100); });"""
 
 
+def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
+    """Dismissible 'Recap is ready' banner shown on Tuesdays during NFL season."""
+    import datetime as _dt
+    now = _dt.datetime.now()
+    if now.weekday() != 1:           # only Tuesday
+        return ""
+    if now.month not in {9, 10, 11, 12, 1}:  # only during NFL season
+        return ""
+    if not (league_id and platform and season):
+        return ""
+
+    recap_url = f"/{platform}/{season}/{league_id}/recap"
+    # Key includes ISO week so dismissal resets automatically the following Tuesday
+    iso_week = now.isocalendar()[1]
+    dismiss_key = f"recap-banner-{now.year}-w{iso_week}"
+
+    return f"""
+<div id="recapReadyBanner"
+     style="display:none;align-items:center;gap:12px;padding:10px 20px;
+            background:var(--accent);color:#fff;cursor:pointer;
+            font-size:13px;font-weight:500;position:relative;"
+     onclick="window.location.href='{recap_url}'">
+  <i class="fa-solid fa-newspaper" style="font-size:14px;flex-shrink:0;"></i>
+  <span>This week's recap is ready.</span>
+  <span style="opacity:.75;font-weight:400;">See what happened around the league.</span>
+  <a href="{recap_url}"
+     style="margin-left:auto;color:#fff;font-weight:700;white-space:nowrap;text-decoration:none;
+            border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:3px 10px;font-size:12px;"
+     onclick="event.stopPropagation();">View recap</a>
+  <button onclick="event.stopPropagation();
+                   document.getElementById('recapReadyBanner').style.display='none';
+                   localStorage.setItem('{dismiss_key}','1');"
+          style="background:none;border:none;color:#fff;font-size:20px;line-height:1;
+                 cursor:pointer;opacity:.65;padding:0;margin-left:4px;flex-shrink:0;"
+          aria-label="Dismiss">&times;</button>
+</div>
+<script>
+(function(){{
+  if (localStorage.getItem('{dismiss_key}')) return;
+  var el = document.getElementById('recapReadyBanner');
+  if (el) el.style.display = 'flex';
+}})();
+</script>"""
+
+
 def render_page(
         title: str,
         league_id: Optional[str],
@@ -1392,7 +1437,12 @@ def render_page(
         session["last_platform"] = platform
         session["last_season"] = season
     nav_html = build_nav(league_id, active, platform, season)
-    wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
+
+    banner_html = ""
+    if session.get("viewer_username"):
+        banner_html = _recap_ready_banner(league_id or "", platform or "", season or 0)
+
+    wrapped_body = f"{banner_html}<div class='page-shell' data-page='{active}'>{body_html}</div>"
 
     user_id = session.get("viewer_username")
     is_premium = has_premium_access(user_id, league_id, platform or "sleeper")
