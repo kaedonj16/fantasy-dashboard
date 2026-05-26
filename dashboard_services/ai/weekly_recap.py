@@ -120,6 +120,19 @@ def _build_team_storylines(
         wr = week_result_by_rid.get(rid, {})
         before = snap_before[rid]
         after = snap_after[rid]
+
+        # Last 3 weeks of context (inclusive of selected_week)
+        all_idx = [i for i, w in enumerate(t["weeks"]) if w <= selected_week]
+        recent_idx = all_idx[-3:]
+        recent_weeks = [
+            {
+                "week": t["weeks"][i],
+                "result": t["results"][i],
+                "pts": round(t["pts_by_week"][i], 1),
+            }
+            for i in recent_idx
+        ]
+
         storylines.append({
             "team": t["team"],
             "owner": t["owner"],
@@ -134,6 +147,7 @@ def _build_team_storylines(
             "streak": after["streak"],
             "streak_before": before["streak"],
             "pf_after": round(after["pf"], 1),
+            "recent_weeks": recent_weeks,
         })
 
     storylines.sort(key=lambda x: x["rank_after"] or 99)
@@ -231,6 +245,7 @@ def build_weekly_recap_payload(
                 "pts": round(s["this_week_pts"], 1) if s["this_week_pts"] is not None else None,
                 "opp_pts": round(s["opp_pts"], 1) if s["opp_pts"] is not None else None,
                 "rank_change": s["rank_change"],
+                "recent_weeks": s["recent_weeks"],
             } for s in storylines
         ],
         "high_scorer": {"team": high_scorer["team"], "pts": round(high_scorer["this_week_pts"], 1)} if high_scorer and high_scorer["this_week_pts"] else None,
@@ -289,7 +304,7 @@ Write a weekly recap column for {payload['league_name']}, Week {payload['week']}
 
 Weeks until playoffs: {payload['weeks_until_playoffs']} (playoffs start week {payload['week'] + payload['weeks_until_playoffs'] + 1 if payload['weeks_until_playoffs'] else payload['week']})
 
-Standings (sorted by rank after this week):
+Standings (sorted by rank after this week). Each team includes their last 3 weeks of scores so you can reference trends — e.g. "they've scored under 100 three weeks running" or "they just had their best week of the season":
 {json.dumps(payload['teams'], indent=2)}
 
 High scorer: {json.dumps(payload['high_scorer'])}
@@ -301,7 +316,7 @@ Cold streaks (2+ losses in a row): {json.dumps(payload['cold_streaks'])}
 Big movers (rank moved 2+ spots): {json.dumps(payload['big_movers'])}
 Playoff race: {json.dumps(payload['playoff_race'])}
 
-Write the column now. Lead with whatever storyline is most compelling.
+Use the recent_weeks data to add context about trends where it makes the story more interesting. Lead with whatever storyline is most compelling.
 """.strip()
 
     resp = client.responses.create(
@@ -353,7 +368,7 @@ def get_weekly_ai_recap(
     if df_weekly is None or df_weekly.empty:
         return ""
 
-    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v5_chat"
+    cache_key = f"weekly_recap_{league_id}_{season}_w{selected_week}_v6_chat"
     cached = _load_recap_no_ttl(cache_key)
     if cached:
         return cached
