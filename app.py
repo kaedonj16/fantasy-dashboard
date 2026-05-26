@@ -12015,7 +12015,7 @@ def _build_lineup_analysis_html(
                     or "<div style='padding:18px;color:var(--muted);font-size:13px;text-align:center;'>No major lineup mistakes this week — nice job, league.</div>"
 
     return f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:20px;">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;">
   <div class="card" style="overflow:hidden;">
     <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
     {bust_rows or '<div style="padding:14px;color:var(--muted);">—</div>'}
@@ -12024,12 +12024,12 @@ def _build_lineup_analysis_html(
     <div class="card-header"><h3>Sleepers</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
     {sleeper_rows or '<div style="padding:14px;color:var(--muted);">—</div>'}
   </div>
-</div>
-<div class="card" style="overflow:hidden;margin-bottom:20px;">
-  <div class="card-header"><h3>Coaching Mistakes</h3>
-    <span style="font-size:12px;color:var(--muted);">Biggest bench vs starter gaps (same position)</span>
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Coaching Mistakes</h3>
+      <span style="font-size:12px;color:var(--muted);">Bench vs starter (same pos)</span>
+    </div>
+    {mistakes_rows}
   </div>
-  {mistakes_rows}
 </div>"""
 
 
@@ -12065,8 +12065,32 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
     bust_rows = "".join(row(p, "BUST", "#ef4444") for p in busts)
     sleeper_rows = "".join(row(p, "SLEEPER", "#22c55e") for p in sleepers)
 
+    mock_mistake = f"""
+<div style="padding:12px 14px;border-bottom:1px solid var(--border);">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+    <div style="width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;
+                display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;">{(team_names[0][0] if team_names else 'A')}</div>
+    <span style="font-weight:700;font-size:12px;">{html.escape(team_names[0] if team_names else 'Team A')}</span>
+    <span style="margin-left:auto;font-size:11px;font-weight:700;color:#f59e0b;background:#f59e0b20;
+                 padding:2px 8px;border-radius:10px;">-14.20 pts</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;font-size:12px;">
+    <div>
+      <div style="font-size:9px;color:var(--muted);font-weight:700;">STARTED</div>
+      <div style="font-weight:600;">Tee Higgins</div>
+      <div style="color:var(--muted);font-size:11px;">WR · <span style="color:#ef4444;font-weight:700;">3.20</span></div>
+    </div>
+    <div style="color:var(--muted);font-size:14px;">→</div>
+    <div style="text-align:right;">
+      <div style="font-size:9px;color:var(--muted);font-weight:700;">SHOULD'VE STARTED</div>
+      <div style="font-weight:600;">Tank Dell</div>
+      <div style="color:var(--muted);font-size:11px;">WR · <span style="color:#22c55e;font-weight:700;">17.40</span></div>
+    </div>
+  </div>
+</div>"""
+
     return f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:20px;">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;">
   <div class="card" style="overflow:hidden;">
     <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
     {bust_rows}
@@ -12075,32 +12099,11 @@ def _mock_lineup_analysis_html(team_names: list[str]) -> str:
     <div class="card-header"><h3>Sleepers</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
     {sleeper_rows}
   </div>
-</div>
-<div class="card" style="overflow:hidden;margin-bottom:20px;">
-  <div class="card-header"><h3>Coaching Mistakes</h3>
-    <span style="font-size:12px;color:var(--muted);">Biggest bench vs starter gaps (same position)</span>
-  </div>
-  <div style="padding:12px 14px;border-bottom:1px solid var(--border);">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-      <div style="width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;
-                  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;">{(team_names[0][0] if team_names else 'A')}</div>
-      <span style="font-weight:700;font-size:12px;">{html.escape(team_names[0] if team_names else 'Team A')}</span>
-      <span style="margin-left:auto;font-size:11px;font-weight:700;color:#f59e0b;background:#f59e0b20;
-                   padding:2px 8px;border-radius:10px;">-14.20 pts</span>
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Coaching Mistakes</h3>
+      <span style="font-size:12px;color:var(--muted);">Bench vs starter (same pos)</span>
     </div>
-    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;font-size:12px;">
-      <div>
-        <div style="font-size:9px;color:var(--muted);font-weight:700;">STARTED</div>
-        <div style="font-weight:600;">Tee Higgins</div>
-        <div style="color:var(--muted);font-size:11px;">WR · <span style="color:#ef4444;font-weight:700;">3.20</span></div>
-      </div>
-      <div style="color:var(--muted);font-size:14px;">→</div>
-      <div style="text-align:right;">
-        <div style="font-size:9px;color:var(--muted);font-weight:700;">SHOULD'VE STARTED</div>
-        <div style="font-weight:600;">Tank Dell</div>
-        <div style="color:var(--muted);font-size:11px;">WR · <span style="color:#22c55e;font-weight:700;">17.40</span></div>
-      </div>
-    </div>
+    {mock_mistake}
   </div>
 </div>"""
 
@@ -12312,7 +12315,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
 
     scoreboard_rows = "".join(matchup_result_row(m) for m in matchups)
     scoreboard_html = f"""
-<div class="card" style="overflow:hidden;margin-bottom:20px;">
+<div class="card" style="overflow:hidden;">
   <div class="card-header">
     <h3>Scoreboard</h3>
     <span style="font-size:12px;color:var(--muted);">
@@ -12405,8 +12408,14 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
   </div>
 </div>"""
 
-    return (preview_banner + week_selector + ai_column_html
-            + cards_html + scoreboard_html + lineup_html + standings_html)
+    scoreboard_and_recap = f"""
+<div style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:20px;align-items:start;">
+  {scoreboard_html.replace("margin-bottom:20px;", "")}
+  {ai_column_html.replace("margin-bottom:20px;", "")}
+</div>"""
+
+    return (preview_banner + week_selector + cards_html
+            + scoreboard_and_recap + lineup_html + standings_html)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/recap")
