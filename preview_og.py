@@ -62,17 +62,17 @@ PAD = 72
 
 try:
     logo = Image.open(os.path.join(BASE, "static", "Website_Logo_dark.png")).convert("RGBA")
-    logo_h = 40
+    logo_h = 90
     logo_w = int(logo.width * logo_h / logo.height)
     logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
-    img.paste(logo, (PAD, 52), logo)
+    img.paste(logo, (PAD, 38), logo)
 except Exception as e:
     draw.text((PAD, 58), "BR Fantasy", fill=C_ACCENT, font=f_pill)
     print(f"Logo load failed: {e}")
 
-draw.text((PAD, 118), week_label,  fill=C_TEXT,  font=f_huge)
-draw.text((PAD, 222), league_name, fill=C_MUTED, font=f_large)
-draw.rounded_rectangle([PAD, 282, PAD + 64, 286], radius=2, fill=C_ACCENT)
+draw.text((PAD, 152), week_label,  fill=C_TEXT,  font=f_huge)
+draw.text((PAD, 256), league_name, fill=C_MUTED, font=f_large)
+draw.rounded_rectangle([PAD, 314, PAD + 64, 318], radius=2, fill=C_ACCENT)
 
 def stat_row(y, label, name, value, color):
     draw.text((PAD, y),       label,     fill=C_SUBTLE, font=f_label)
@@ -80,11 +80,11 @@ def stat_row(y, label, name, value, color):
     bb = draw.textbbox((0, 0), value, font=f_med)
     draw.text((580 - (bb[2] - bb[0]), y + 24), value, fill=color, font=f_med)
 
-stat_row(308,       "HIGH SCORE",  high_name, f"{high_pts:.2f}", C_GREEN)
+stat_row(336,       "HIGH SCORE",  high_name, f"{high_pts:.2f}", C_GREEN)
 if matchups:
     best = matchups[0]
-    stat_row(308 + 76,  "BIGGEST WIN", best["w"], f"+{best['margin']:.1f}", C_ACCENT)
-stat_row(308 + 152, "LOW SCORE",   low_name,  f"{low_pts:.2f}",  C_RED)
+    stat_row(336 + 76,  "BIGGEST WIN", best["w"], f"+{best['margin']:.1f}", C_ACCENT)
+stat_row(336 + 152, "LOW SCORE",   low_name,  f"{low_pts:.2f}",  C_RED)
 
 CX, CY, CW, CH = 680, 56, 456, 510
 draw.rounded_rectangle([CX, CY, CX + CW, CY + CH], radius=16, fill=C_SURFACE)

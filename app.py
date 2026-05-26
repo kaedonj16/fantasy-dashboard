@@ -12728,21 +12728,21 @@ def recap_og_image(platform: str, season: int, league_id: str):
     # ── Logo ───────────────────────────────────────────────────────────────
     try:
         logo = Image.open(_os.path.join(_os.path.dirname(__file__), "static", "Website_Logo_dark.png")).convert("RGBA")
-        logo_h = 40
+        logo_h = 90
         logo_w = int(logo.width * logo_h / logo.height)
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
-        img.paste(logo, (PAD, 52), logo)
+        img.paste(logo, (PAD, 38), logo)
     except Exception:
         draw.text((PAD, 58), "BR Fantasy", fill=C_ACCENT, font=f_pill)
 
     # ── Week headline ──────────────────────────────────────────────────────
-    draw.text((PAD, 118), week_label, fill=C_TEXT, font=f_huge)
+    draw.text((PAD, 152), week_label, fill=C_TEXT, font=f_huge)
 
     # ── League name ────────────────────────────────────────────────────────
-    draw.text((PAD, 222), league_name, fill=C_MUTED, font=f_large)
+    draw.text((PAD, 256), league_name, fill=C_MUTED, font=f_large)
 
     # ── Accent rule ────────────────────────────────────────────────────────
-    draw.rounded_rectangle([PAD, 282, PAD + 64, 286], radius=2, fill=C_ACCENT)
+    draw.rounded_rectangle([PAD, 314, PAD + 64, 318], radius=2, fill=C_ACCENT)
 
     # ── Stat callouts ──────────────────────────────────────────────────────
     def stat_row(y, label, name, value, color):
@@ -12752,7 +12752,7 @@ def recap_og_image(platform: str, season: int, league_id: str):
         vw = bb[2] - bb[0]
         draw.text((580 - vw, y + 24), value, fill=color, font=f_med)
 
-    sy = 308
+    sy = 336
     stat_row(sy,       "HIGH SCORE",   high_name, f"{high_pts:.2f}",  C_GREEN)
     if matchups_display:
         best = matchups_display[0]
