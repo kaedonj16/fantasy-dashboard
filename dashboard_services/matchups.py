@@ -827,10 +827,12 @@ def render_matchup_slide(
             rid = t.get('roster_id', '')
             return f"""
         <div class="m-team">
-          {img}
-          <div>
-            <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-            <div>{t['record']} • @{t['username']}</div>
+          <div class="m-team-identity">
+            {img}
+            <div>
+              <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
+              <div>{t['record']} • @{t['username']}</div>
+            </div>
           </div>
           <span class="num">{points}</span>
         </div>
@@ -845,10 +847,12 @@ def render_matchup_slide(
         rid = t.get('roster_id', '')
         return f"""
         <div class="m-team">
-          {img}
-          <div>
-            <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-            <div>{t['record']} • @{t['username']}</div>
+          <div class="m-team-identity">
+            {img}
+            <div>
+              <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
+              <div>{t['record']} • @{t['username']}</div>
+            </div>
           </div>
           <div style="display:grid;grid-template-columns:1;justify-items: center;">
             <span class="num">{actual_total:.1f}</span>
@@ -867,11 +871,13 @@ def render_matchup_slide(
             return f"""
         <div class="m-team">
           <span class="num">{points}</span>
-          <div class="right">
-            <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-            <div>@{t['username']} • {t['record']}</div>
+          <div class="m-team-identity">
+            <div class="right">
+              <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
+              <div>@{t['username']} • {t['record']}</div>
+            </div>
+            {img}
           </div>
-          {img}
         </div>
         """
 
@@ -887,11 +893,13 @@ def render_matchup_slide(
             <span class="num">{actual_total:.1f}</span>
             <span class="proj" style="opacity:0.4;text-align:center;">{live_proj_total:.1f}</span>
           </div>
-          <div class="right">
-            <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-            <div>@{t['username']} • {t['record']}</div>
+          <div class="m-team-identity">
+            <div class="right">
+              <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
+              <div>@{t['username']} • {t['record']}</div>
+            </div>
+            {img}
           </div>
-          {img}
         </div>
         """
 

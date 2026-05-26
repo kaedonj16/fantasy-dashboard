@@ -7679,6 +7679,13 @@ thead th {
   justify-content: space-between;
 }
 
+.m-team-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .m-team .name {
   font-weight: 800;
   text-overflow: ellipsis;
