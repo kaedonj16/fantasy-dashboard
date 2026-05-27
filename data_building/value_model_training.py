@@ -1095,22 +1095,15 @@ def build_ml_value_table() -> Dict[str, float]:
 
 def rewrite_value_table_with_model() -> Path:
     """
-    Build model_values.json from FC + DP external market data only.
+    Build model_values.json from FantasyCalc trade data only.
 
-    Both sources are trade-derived, so this is a consensus of two independent
-    real-trade datasets rather than a blend of market data with a usage ML model.
+    FC is a real-trade dataset with the most reliable dynasty rankings.
+    Values are normalised 0→0, max→999.9 (Sleeper-ID matched).
 
-    Blend:
-      1QB value : 65% FantasyCalc + 35% DynastyProcess (renorm when either
-                  is missing; DP excluded for TEs which DP systematically
-                  undervalues vs actual trade markets).
-      Normalisation: 0→0, max→999.9 (floor is 0, not 100).
-      SF  value : For QBs: 65% FC + 35% DP value_2qb, with WLS
-                  calibrated_value_sf used as a floor (real trade data).
-                  For RB/WR/TE: same as 1QB value (QBs take the SF premium,
-                  skill positions are unchanged).
-      Size variants: same 10-team value for 8/12/14 (engine-based scarcity
-                     scaling removed; can be re-added via FC multi-size API).
+    SF value : For QBs: same FC value + WLS calibrated_value_sf floor
+               (real trade data for QB SF premium).
+               For RB/WR/TE: identical to 1QB value.
+    Size variants: same 10-team value for 8/12/14.
     """
     source_path = DATA_DIR / "usage_table.json"
     if not source_path.exists():
@@ -1119,7 +1112,7 @@ def rewrite_value_table_with_model() -> Path:
     with source_path.open("r", encoding="utf-8") as f:
         players = json.load(f)
 
-    # ── FC values (0→0, max→999.9 normalisation) ────────────────────────────
+    # ── FC values (0→0, max→999.9 normalisation, keyed by Sleeper ID) ────────
     fc_by_sid: dict[str, float] = {}
     fc_df = load_fantasycalc_df()
     if not fc_df.empty and "fc_value" in fc_df.columns and "sleeper_id" in fc_df.columns:
@@ -1133,37 +1126,6 @@ def rewrite_value_table_with_model() -> Path:
                 if _sid and _val > 0:
                     fc_by_sid[_sid] = _val / _fc_range * 999.9
     print(f"[rewrite_value_table] FC: {len(fc_by_sid)} players")
-
-    # ── DP values (0→0, max→999.9, matched by player name) ──────────────────
-    dp_1qb_by_name: dict[str, float] = {}   # normalize_name(name) → normalised value
-    dp_2qb_by_name: dict[str, float] = {}   # for QB SF premium
-    try:
-        _dp_raw = pd.read_csv(DATA_DIR / "dynastyprocess_values.csv")
-        # 1QB
-        if "player" in _dp_raw.columns and "value_1qb" in _dp_raw.columns:
-            _dp_nz = _dp_raw["value_1qb"][_dp_raw["value_1qb"] > 0]
-            if len(_dp_nz):
-                _dp_max = float(_dp_nz.max())
-                _dp_range = max(_dp_max, 1.0)
-                for _, _r in _dp_raw.iterrows():
-                    _nm = str(_r.get("player") or "").strip()
-                    _v  = float(_r.get("value_1qb") or 0)
-                    if _nm and _v > 0:
-                        dp_1qb_by_name[normalize_name(_nm)] = _v / _dp_range * 999.9
-        # 2QB (SF)
-        if "player" in _dp_raw.columns and "value_2qb" in _dp_raw.columns:
-            _dp2_nz = _dp_raw["value_2qb"][_dp_raw["value_2qb"] > 0]
-            if len(_dp2_nz):
-                _dp2_max = float(_dp2_nz.max())
-                _dp2_range = max(_dp2_max, 1.0)
-                for _, _r in _dp_raw.iterrows():
-                    _nm = str(_r.get("player") or "").strip()
-                    _v  = float(_r.get("value_2qb") or 0)
-                    if _nm and _v > 0:
-                        dp_2qb_by_name[normalize_name(_nm)] = _v / _dp2_range * 999.9
-    except Exception as _dp_err:
-        print(f"[rewrite_value_table] DP load failed: {_dp_err}")
-    print(f"[rewrite_value_table] DP 1QB: {len(dp_1qb_by_name)} | 2QB: {len(dp_2qb_by_name)} players")
 
     # ── WLS SF values — floor for QB SF calibration ─────────────────────────
     wls_sf_values: dict[str, float] = {}
@@ -1179,8 +1141,7 @@ def rewrite_value_table_with_model() -> Path:
     except Exception as _wls_err:
         print(f"[rewrite_value_table] WLS SF load skipped: {_wls_err}")
 
-    # ── Per-player blend ─────────────────────────────────────────────────────
-    W_FC, W_DP = 0.65, 0.35
+    # ── Per-player values ────────────────────────────────────────────────────
     LEAGUE_SIZES = [8, 10, 12, 14]
     cleaned_assets: list[dict] = []
 
@@ -1191,37 +1152,19 @@ def rewrite_value_table_with_model() -> Path:
             continue
 
         name      = player.get("name") or ""
-        norm_name = normalize_name(name)
 
         fc_val = fc_by_sid.get(pid, 0.0)
+        if fc_val <= 0:
+            continue  # no FC market data — skip
 
-        # DP undervalues TEs vs actual trade markets — exclude DP for that position.
-        dp_1qb = dp_1qb_by_name.get(norm_name, 0.0) if position != "TE" else 0.0
-        dp_2qb = dp_2qb_by_name.get(norm_name, 0.0)
+        value_1qb = fc_val
 
-        # 1QB blend (renorm when one source is missing)
-        if fc_val > 0 and dp_1qb > 0:
-            value_1qb = W_FC * fc_val + W_DP * dp_1qb
-        elif fc_val > 0:
-            value_1qb = fc_val
-        elif dp_1qb > 0:
-            value_1qb = dp_1qb
-        else:
-            continue  # no external market data — skip
-
-        # SF blend
+        # SF: QBs get WLS SF floor on top of their FC value; skill positions unchanged.
         if position == "QB":
-            if fc_val > 0 and dp_2qb > 0:
-                sf_value = W_FC * fc_val + W_DP * dp_2qb
-            elif dp_2qb > 0:
-                sf_value = dp_2qb
-            else:
-                sf_value = value_1qb
-            # Real trade data floor — WLS can only lift QB SF value, not lower it.
+            sf_value = value_1qb
             if pid in wls_sf_values:
                 sf_value = max(sf_value, wls_sf_values[pid])
         else:
-            # QBs take the SF premium; skill positions are unchanged.
             sf_value = value_1qb
 
         age = player.get("age")
