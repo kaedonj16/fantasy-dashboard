@@ -271,6 +271,22 @@ build_daily_model_values()
 """, "build_daily_model_values")
 
     # ------------------------------------------------------------------ #
+    # Step 3b: EMA snapshot — always run so sf_value is always written   #
+    # even on days when model_values.json is already fresh (step 3       #
+    # skipped).  record_model_value_snapshot's min_change_pct guard      #
+    # skips rows whose values haven't moved, so double-running on model- #
+    # rebuild days is safe.                                               #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from utils.utils import load_model_value_table
+from data_building.player_value_history import record_model_value_snapshot
+tbl = load_model_value_table(apply_calibration=False) or []
+n = record_model_value_snapshot(tbl)
+print(f"[cron] EMA snapshot wrote {n} rows (value + sf_value + size variants)")
+""", "record_model_value_snapshot")
+
+    # ------------------------------------------------------------------ #
     # Step 4: Save player values to DB                                   #
     # ------------------------------------------------------------------ #
     if _player_values_fresh():
