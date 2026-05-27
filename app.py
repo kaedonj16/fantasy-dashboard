@@ -145,6 +145,30 @@ def _api_err(msg: str = "Request failed", e: Exception = None, code: int = 500):
     return jsonify({"error": msg, "ok": False}), code
 
 
+def _rel_time(dt) -> str:
+    """Human-relative timestamp: 'Today 3:42 PM', '2d ago', 'May 12'."""
+    now = datetime.now(EASTERN)
+    dt_et = dt.astimezone(EASTERN)
+    diff = now - dt_et
+    secs = diff.total_seconds()
+    if secs < 60:
+        return "Just now"
+    if secs < 3600:
+        mins = int(secs // 60)
+        return f"{mins}m ago"
+    today = now.date()
+    if dt_et.date() == today:
+        return f"Today {dt_et.strftime('%-I:%M %p')}"
+    if dt_et.date() == (now - timedelta(days=1)).date():
+        return f"Yesterday"
+    days = (today - dt_et.date()).days
+    if days < 7:
+        return f"{days}d ago"
+    if days < 30:
+        return f"{days // 7}w ago"
+    return dt_et.strftime("%b %d")
+
+
 # ── Sentry error tracking ─────────────────────────────────────────────────────
 _sentry_dsn = os.environ.get("SENTRY_DSN", "")
 if _sentry_dsn:
@@ -6050,11 +6074,7 @@ def build_activity_body(ctx: dict) -> str:
                     biggest_trade_delta = delta
                     biggest_trade_label = f"{net_values[0][0]} vs {net_values[1][0]}"
 
-            when = (
-                txrow["ts"].astimezone(ZoneInfo("America/New_York")).strftime("%b %d, %I:%M %p")
-                if pd.notna(txrow["ts"])
-                else ""
-            )
+            when = _rel_time(txrow["ts"]) if pd.notna(txrow["ts"]) else ""
             # Build data payload for outcome check (sent/received per team)
             trade_date_str = ""
             if pd.notna(txrow["ts"]):
@@ -6198,11 +6218,7 @@ def build_activity_body(ctx: dict) -> str:
                 )
             adds = "".join(adds_parts) or "<div class='bract-empty-mini'>No adds recorded</div>"
 
-            when = (
-                txrow["ts"].astimezone(ZoneInfo("America/New_York")).strftime("%b %d, %I:%M %p")
-                if pd.notna(txrow["ts"])
-                else ""
-            )
+            when = _rel_time(txrow["ts"]) if pd.notna(txrow["ts"]) else ""
             return (
                 "<div class='tx activity-item' data-kind='waiver'>"
                 f"  <div class='meta'>{pill('Waiver')} • {when}</div>"
@@ -6257,25 +6273,25 @@ def build_activity_body(ctx: dict) -> str:
         injury_html = render_injury_accordion(injury_df)
     else:
         injury_html = (
-            "<div class='card'>"
-            "  <div class='card-body'>"
-            "    <div class='bract-empty-state'>"
-            "      <div class='bract-empty-title'>No injury data right now</div>"
-            "      <div class='bract-empty-copy'>Either the feed is quiet or there are no currently tracked injury updates for this view.</div>"
+            "<div class=’card’>"
+            "  <div class=’card-body’>"
+            "    <div class=’bract-empty-state’>"
+            "      <div class=’bract-empty-icon’><i class=’fa-solid fa-shield-halved’ style=’font-size:28px;color:var(--muted);opacity:.5;’></i></div>"
+            "      <div class=’bract-empty-title’>No injury updates right now</div>"
+            "      <div class=’bract-empty-copy’>Either the feed is quiet or there are no currently tracked injury updates for this view.</div>"
             "    </div>"
             "  </div>"
             "</div>"
         )
 
     if not activity_html:
-        _empty_title = "No recent activity yet"
-        _empty_copy = "When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns."
         activity_html = (
             "<div class=’card’>"
             "  <div class=’card-body’>"
             "    <div class=’bract-empty-state’>"
-            f"      <div class=’bract-empty-title’>{_empty_title}</div>"
-            f"      <div class=’bract-empty-copy’>{_empty_copy}</div>"
+            "      <div class=’bract-empty-icon’><i class=’fa-solid fa-arrows-rotate’ style=’font-size:28px;color:var(--muted);opacity:.5;’></i></div>"
+            "      <div class=’bract-empty-title’>No recent activity yet</div>"
+            "      <div class=’bract-empty-copy’>When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns.</div>"
             "    </div>"
             "  </div>"
             "</div>"
@@ -7199,19 +7215,19 @@ def build_teams_body(ctx: dict) -> str:
         </div>
         <div class="tab-panels">
           <div class="tab-panel active" data-tab="btm" id="btmPanel">
-            <div class="analytics-loading">Loading…</div>
+            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
           </div>
           <div class="tab-panel" data-tab="roster-intel" id="rosterIntelPanel">
-            <div class="analytics-loading">Loading…</div>
+            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:55%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
           </div>
           <div class="tab-panel" data-tab="power-rankings" id="powerRankingsPanel">
-            <div class="analytics-loading">Loading…</div>
+            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:70%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
           </div>
           <div class="tab-panel" data-tab="sos" id="sosPanel">
-            <div class="analytics-loading">Loading…</div>
+            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:65%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
           </div>
           <div class="tab-panel" data-tab="draft" id="draftPanel">
-            <div class="analytics-loading">Loading…</div>
+            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
           </div>
         </div>
       </div>
@@ -7338,7 +7354,7 @@ def build_teams_body(ctx: dict) -> str:
         }}
 
         function fetchBtm(days) {{
-          panel.innerHTML = '<div class="analytics-loading">Loading…</div>';
+          panel.innerHTML = '<div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>';
           fetch('/api/beat-the-market?platform=' + _platform +
                 '&league_id=' + _leagueId + '&season=' + _season +
                 '&league_type=' + _leagueType + '&league_size=' + _leagueSize + '&days=' + days)
@@ -7458,7 +7474,7 @@ def build_teams_body(ctx: dict) -> str:
         _loaded.draft = true;
         var panel = document.getElementById('draftPanel');
         if (!panel) return;
-        panel.innerHTML = '<div class="analytics-loading">Loading…</div>';
+        panel.innerHTML = '<div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>';
         fetch('/api/draft-grades?platform=' + _platform +
               '&league_id=' + _leagueId + '&season=' + _season + '&league_type=' + _leagueType)
           .then(function(r) {{ return r.json(); }})
@@ -9676,6 +9692,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     <script>
       var prAllPlayers = [];
       var prIndicators = {};
+      var prSparklines = {};
       var prLeagueType   = '1qb';
       var prLeagueSize   = 10;
       var prScoringType  = 'dynasty';  // 'dynasty' | 'redraft'
@@ -9684,6 +9701,26 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       var prLoaded = false;
       var prPage = 1;
       var prPageSize = 50;
+
+      function _prDrawSparkline(canvas, data) {
+        if (!canvas || !data || data.length < 2) return;
+        const ctx2d = canvas.getContext('2d');
+        const w = canvas.width, h = canvas.height;
+        ctx2d.clearRect(0, 0, w, h);
+        const min = Math.min(...data), max = Math.max(...data);
+        const range = max - min || 1;
+        const pts = data.map((v, i) => ({
+          x: (i / (data.length - 1)) * (w - 2) + 1,
+          y: (h - 2) - ((v - min) / range) * (h - 2) + 1
+        }));
+        const isUp = data[data.length - 1] >= data[0];
+        ctx2d.strokeStyle = isUp ? '#22c55e' : '#ef4444';
+        ctx2d.lineWidth = 1.5;
+        ctx2d.lineJoin = 'round';
+        ctx2d.beginPath();
+        pts.forEach((p, i) => i === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y));
+        ctx2d.stroke();
+      }
 
       // ---- Fuzzy search (mirrors trade calc logic) ----
       function prFuzzyScore(name, query) {
@@ -10075,6 +10112,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             sortDisplayHTML = sortDisplay;
           }
 
+          const sparkData = prSparklines[p.id];
+          const sparkCanvas = (sparkData && sparkData.length >= 2)
+            ? `<canvas class="pr-sparkline" width="44" height="14" data-pid="${p.id}"></canvas>`
+            : '';
+
           row.innerHTML =
             '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
             '<span class="pr-arrows">' + rankArrow + '</span>' +
@@ -10082,7 +10124,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '—') + '</span>' +
-            '<span class="pr-value">' + sortDisplayHTML + '</span>';
+            '<span class="pr-value">' + sortDisplayHTML + sparkCanvas + '</span>';
+
+          if (sparkData && sparkData.length >= 2) {
+            const cnv = row.querySelector('.pr-sparkline');
+            if (cnv) _prDrawSparkline(cnv, sparkData);
+          }
 
           list.appendChild(row);
         });
@@ -10284,6 +10331,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         document.getElementById('prLoading').style.display = 'none';
         prLoaded = true;
         prRender();
+        // Lazy-load sparklines — re-render with sparkline data once ready
+        fetch('/api/sparklines').then(r => r.json()).then(function(data) {
+          prSparklines = data || {};
+          prRender();
+        }).catch(function() {});
       }).catch(err => {
         console.error('Error loading player rankings:', err);
         document.getElementById('prLoading').innerHTML =
@@ -11623,6 +11675,71 @@ def _compute_optimal_lineup(pts_map, player_positions, roster_positions, all_pid
     return opt_set, round(opt_pts, 2)
 
 
+_OPT_POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#a855f7"}
+
+
+def _opt_player_badges(players_out: list) -> str:
+    parts = []
+    for p in players_out:
+        if p["actual_start"] == p["optimal_start"]:
+            badge_style = "background:var(--surface);border:1px solid var(--border);"
+            icon = ""
+        elif p["actual_start"] and not p["optimal_start"]:
+            badge_style = "background:#ef444420;border:1px solid #ef4444;color:#ef4444;"
+            icon = "&#9660; "
+        else:
+            badge_style = "background:#22c55e20;border:1px solid #22c55e;color:#22c55e;"
+            icon = "&#9650; "
+        pos_color = _OPT_POS_COLORS.get(p["pos"], "#6b7280")
+        parts.append(
+            f"<span style='padding:4px 8px;border-radius:6px;font-size:12px;{badge_style}'>"
+            f"<span style='color:{pos_color};font-weight:700;'>{p['pos']}</span> "
+            f"{html.escape(p['name'])} {icon}<b>{p['pts']:.1f}</b></span>"
+        )
+    return "".join(parts)
+
+
+def _opt_pos_breakdown(weeks_data: list) -> str:
+    pos_left: dict = {}
+    pos_misses: dict = {}
+    for wd in weeks_data:
+        for p in wd["players"]:
+            if not p["actual_start"] and p["optimal_start"]:
+                bucket = p["pos"] if p["pos"] in ("QB", "RB", "WR", "TE") else "OTHER"
+                pos_left[bucket] = pos_left.get(bucket, 0.0) + p["pts"]
+                pos_misses[bucket] = pos_misses.get(bucket, 0) + 1
+    if not pos_left:
+        return ""
+    rows_html = ""
+    for pos in ["QB", "RB", "WR", "TE", "OTHER"]:
+        if pos not in pos_left:
+            continue
+        left = round(pos_left[pos], 1)
+        misses = pos_misses[pos]
+        pos_color = _OPT_POS_COLORS.get(pos, "#6b7280")
+        label = "K/DEF/FLEX" if pos == "OTHER" else pos
+        rows_html += (
+            f"<tr>"
+            f"<td style='padding:8px 12px;'><span style='font-weight:700;color:{pos_color};'>{label}</span></td>"
+            f"<td style='padding:8px 12px;font-weight:600;color:#ef4444;'>+{left}</td>"
+            f"<td style='padding:8px 12px;color:var(--muted);'>{misses}×</td>"
+            f"</tr>"
+        )
+    return (
+        "<div class='card' style='margin-top:16px;'>"
+        "<div class='card-header'><h3>Points Left by Position</h3></div>"
+        "<table style='width:100%;border-collapse:collapse;'>"
+        "<thead><tr style='border-bottom:1px solid var(--border);'>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>POS</th>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>LEFT ON BENCH</th>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>MISSED STARTS</th>"
+        "</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        "</table>"
+        "</div>"
+    )
+
+
 def build_optimal_body(ctx):
     from dashboard_services.platform_api import get_matchups as _gm
 
@@ -11636,11 +11753,15 @@ def build_optimal_body(ctx):
     playoff_start = int(settings.get("playoff_week_start") or 14)
     current_week  = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
     players_idx   = get_players_index_global() or {}
+    roster_map    = ctx.get("roster_map") or {}
+    rosters       = ctx.get("rosters") or []
 
-    if not viewer_rid:
-        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
-                "<p style='color:var(--muted)'>Sign in to see your optimal lineup history.</p>"
-                "</div></div>")
+    view   = request.args.get("view", "user")
+    period = request.args.get("period", "season")
+    try:
+        sel_week = int(request.args.get("week", 0))
+    except (ValueError, TypeError):
+        sel_week = 0
 
     max_week = min(current_week - 1, playoff_start - 1)
     if max_week < 1:
@@ -11648,141 +11769,311 @@ def build_optimal_body(ctx):
                 "<p>No completed weeks yet. Optimal lineup data will appear here once the season starts.</p>"
                 "</div>")
 
-    weeks_data = []
-    season_left = 0.0
-    season_actual = 0.0
-    season_optimal = 0.0
+    if sel_week < 1 or sel_week > max_week:
+        sel_week = max_week
 
+    base_url = f"/{platform}/{season}/{league_id}/optimal"
+
+    # ── Navigation ────────────────────────────────────────────────────────────
+    def _tab(label, tv, tp, active):
+        wk = f"&week={sel_week}" if tp == "weekly" else ""
+        cls = "opt-tab active" if active else "opt-tab"
+        return f"<a class='{cls}' href='{base_url}?view={tv}&period={tp}{wk}'>{label}</a>"
+
+    week_opts = "".join(
+        f"<option value='{w}'{' selected' if w == sel_week else ''}>Week {w}</option>"
+        for w in range(1, max_week + 1)
+    )
+    week_picker = (
+        f"<select class='opt-week-select' "
+        f"onchange=\"window.location='{base_url}?view={view}&period=weekly&week='+this.value\">"
+        f"{week_opts}</select>"
+    ) if period == "weekly" else ""
+
+    nav_html = (
+        "<div class='opt-nav'>"
+        f"  <div class='opt-tab-group'>"
+        f"    {_tab('My Team', 'user', period, view == 'user')}"
+        f"    {_tab('League', 'league', period, view == 'league')}"
+        f"  </div>"
+        f"  <div class='opt-tab-group'>"
+        f"    {_tab('Season', view, 'season', period == 'season')}"
+        f"    {_tab('Weekly', view, 'weekly', period == 'weekly')}"
+        f"  </div>"
+        f"  {week_picker}"
+        "</div>"
+    )
+
+    # ── Fetch all weeks at once — shared across views ─────────────────────────
+    all_matchups: dict = {}
     for w in range(1, max_week + 1):
         try:
-            raw = _gm(platform, league_id, w, season) or []
-            row = next((m for m in raw if str(m.get("roster_id")) == viewer_rid), None)
+            all_matchups[w] = _gm(platform, league_id, w, season) or []
+        except Exception:
+            all_matchups[w] = []
+
+    def _roster_weeks(rid: str) -> list:
+        weeks = []
+        for w in range(1, max_week + 1):
+            try:
+                row = next((m for m in all_matchups[w] if str(m.get("roster_id")) == str(rid)), None)
+                if not row:
+                    continue
+                starters_raw = [str(p) for p in (row.get("starters") or []) if p and str(p) != "0"]
+                all_pids     = [str(p) for p in (row.get("players")  or []) if p and str(p) != "0"]
+                pts_map      = {str(k): float(v or 0) for k, v in (row.get("players_points") or {}).items()}
+                if not starters_raw or not all_pids:
+                    continue
+                actual_pts = float(row.get("points") or 0)
+                pos_map    = {pid: (players_idx.get(pid) or {}).get("pos") or "" for pid in all_pids}
+                opt_set, opt_pts = _compute_optimal_lineup(pts_map, pos_map, roster_positions, all_pids)
+                left = round(max(opt_pts - actual_pts, 0), 1)
+                starter_set = set(starters_raw)
+                players_out = sorted([
+                    {
+                        "pid": pid,
+                        "name": (players_idx.get(pid) or {}).get("name") or pid,
+                        "pos":  ((players_idx.get(pid) or {}).get("pos") or "").upper(),
+                        "pts":  float(pts_map.get(pid) or 0),
+                        "actual_start": pid in starter_set,
+                        "optimal_start": pid in opt_set,
+                    }
+                    for pid in all_pids
+                ], key=lambda p: -p["pts"])
+                weeks.append({"week": w, "actual_pts": round(actual_pts, 2),
+                               "opt_pts": round(opt_pts, 2), "left": left, "players": players_out})
+            except Exception:
+                continue
+        return weeks
+
+    def _wk_table_row(wd: dict) -> str:
+        left_color = "#ef4444" if wd["left"] > 15 else ("#f59e0b" if wd["left"] > 7 else "#22c55e")
+        badges = _opt_player_badges(wd["players"])
+        return (
+            f"<tr style='cursor:pointer;' onclick='this.nextElementSibling.style.display="
+            f"this.nextElementSibling.style.display===\"none\"?\"table-row\":\"none\"'>"
+            f"<td style='padding:10px 12px;font-weight:600;'>Week {wd['week']}</td>"
+            f"<td style='padding:10px 12px;'>{wd['actual_pts']}</td>"
+            f"<td style='padding:10px 12px;'>{wd['opt_pts']}</td>"
+            f"<td style='padding:10px 12px;font-weight:700;color:{left_color};'>+{wd['left']}</td>"
+            f"</tr>"
+            f"<tr style='display:none;background:var(--surface2);'>"
+            f"<td colspan='4' style='padding:12px;'>"
+            f"<div style='font-size:12px;color:var(--muted);margin-bottom:8px;'>"
+            f"<span style='color:#ef4444'>&#9660; Should have benched</span> &nbsp; "
+            f"<span style='color:#22c55e'>&#9650; Should have started</span></div>"
+            f"<div style='display:flex;flex-wrap:wrap;gap:6px;'>{badges}</div>"
+            f"</td></tr>"
+        )
+
+    _TH = "<th style='padding:10px 12px;text-align:left;font-size:11px;color:var(--muted);'>"
+    _no_data = ("<div class='card'><div class='card-body' style='padding:24px;text-align:center;"
+                "color:var(--muted);'>No data available.</div></div>")
+
+    # ── League season view ────────────────────────────────────────────────────
+    if view == "league" and period == "season":
+        team_rows = []
+        for r in rosters:
+            rid = str(r.get("roster_id") or "")
+            if not rid:
+                continue
+            tname = roster_map.get(rid) or f"Team {rid}"
+            weeks = _roster_weeks(rid)
+            if not weeks:
+                continue
+            s_actual = sum(w["actual_pts"] for w in weeks)
+            s_opt    = sum(w["opt_pts"]    for w in weeks)
+            s_left   = round(sum(w["left"] for w in weeks), 1)
+            eff = round((s_actual / s_opt * 100) if s_opt else 0, 1)
+            team_rows.append({"name": tname, "actual": round(s_actual, 1),
+                               "opt": round(s_opt, 1), "left": s_left, "eff": eff})
+        team_rows.sort(key=lambda x: -x["eff"])
+
+        rows_html = ""
+        for i, tr in enumerate(team_rows):
+            eff_color = "#22c55e" if tr["eff"] >= 92 else ("#f59e0b" if tr["eff"] >= 86 else "#ef4444")
+            rows_html += (
+                f"<tr style='border-bottom:1px solid var(--border);'>"
+                f"<td style='padding:10px 12px;color:var(--muted);font-weight:600;'>#{i+1}</td>"
+                f"<td style='padding:10px 12px;font-weight:600;'>{html.escape(tr['name'])}</td>"
+                f"<td style='padding:10px 12px;font-weight:700;color:{eff_color};'>{tr['eff']}%</td>"
+                f"<td style='padding:10px 12px;'>{tr['actual']}</td>"
+                f"<td style='padding:10px 12px;'>{tr['opt']}</td>"
+                f"<td style='padding:10px 12px;color:#ef4444;font-weight:600;'>+{tr['left']}</td>"
+                f"</tr>"
+            )
+        body_html = (
+            f"<div class='card' style='overflow:auto;'>"
+            f"<div class='card-header'><h3>League Lineup Efficiency — Season</h3></div>"
+            f"<table style='width:100%;border-collapse:collapse;'>"
+            f"<thead><tr style='border-bottom:2px solid var(--border);'>"
+            f"{_TH}#</th>{_TH}TEAM</th>{_TH}EFFICIENCY</th>"
+            f"{_TH}ACTUAL PTS</th>{_TH}OPTIMAL PTS</th>{_TH}LEFT ON BENCH</th>"
+            f"</tr></thead><tbody>{rows_html}</tbody></table></div>"
+        ) if team_rows else _no_data
+        return nav_html + body_html
+
+    # ── League weekly view ────────────────────────────────────────────────────
+    if view == "league" and period == "weekly":
+        wk_rows = []
+        for r in rosters:
+            rid = str(r.get("roster_id") or "")
+            if not rid:
+                continue
+            tname = roster_map.get(rid) or f"Team {rid}"
+            row = next((m for m in all_matchups.get(sel_week, []) if str(m.get("roster_id")) == str(rid)), None)
             if not row:
                 continue
-            starters_raw = [str(p) for p in (row.get("starters") or []) if p and str(p) != "0"]
-            all_pids     = [str(p) for p in (row.get("players")  or []) if p and str(p) != "0"]
-            pts_map      = {str(k): float(v or 0) for k, v in (row.get("players_points") or {}).items()}
-            if not starters_raw or not all_pids:
+            try:
+                starters_raw = [str(p) for p in (row.get("starters") or []) if p and str(p) != "0"]
+                all_pids     = [str(p) for p in (row.get("players")  or []) if p and str(p) != "0"]
+                pts_map      = {str(k): float(v or 0) for k, v in (row.get("players_points") or {}).items()}
+                if not starters_raw or not all_pids:
+                    continue
+                actual_pts = float(row.get("points") or 0)
+                pos_map    = {pid: (players_idx.get(pid) or {}).get("pos") or "" for pid in all_pids}
+                opt_set, opt_pts = _compute_optimal_lineup(pts_map, pos_map, roster_positions, all_pids)
+                left = round(max(opt_pts - actual_pts, 0), 1)
+                starter_set = set(starters_raw)
+                players_out = sorted([
+                    {"pid": pid, "name": (players_idx.get(pid) or {}).get("name") or pid,
+                     "pos": ((players_idx.get(pid) or {}).get("pos") or "").upper(),
+                     "pts": float(pts_map.get(pid) or 0),
+                     "actual_start": pid in starter_set, "optimal_start": pid in opt_set}
+                    for pid in all_pids
+                ], key=lambda p: -p["pts"])
+                wk_rows.append({"name": tname, "actual": round(actual_pts, 2),
+                                 "opt": round(opt_pts, 2), "left": left, "players": players_out})
+            except Exception:
                 continue
-            actual_pts = float(row.get("points") or 0)
-            pos_map    = {pid: (players_idx.get(pid) or {}).get("pos") or "" for pid in all_pids}
-            opt_set, opt_pts = _compute_optimal_lineup(pts_map, pos_map, roster_positions, all_pids)
-            left = round(max(opt_pts - actual_pts, 0), 1)
-            season_actual  += actual_pts
-            season_optimal += opt_pts
-            season_left    += left
+        wk_rows.sort(key=lambda x: -x["left"])
 
-            # Build player rows
-            starter_set = set(starters_raw)
-            players_out = []
-            for pid in all_pids:
-                info = players_idx.get(pid) or {}
-                players_out.append({
-                    "pid": pid,
-                    "name": info.get("name") or pid,
-                    "pos":  (info.get("pos") or "").upper(),
-                    "pts":  float(pts_map.get(pid) or 0),
-                    "actual_start": pid in starter_set,
-                    "optimal_start": pid in opt_set,
-                })
-            players_out.sort(key=lambda p: (-p["pts"],))
+        rows_html = ""
+        for tr in wk_rows:
+            left_color = "#ef4444" if tr["left"] > 15 else ("#f59e0b" if tr["left"] > 7 else "#22c55e")
+            badges = _opt_player_badges(tr["players"])
+            rows_html += (
+                f"<tr style='cursor:pointer;border-bottom:1px solid var(--border);' "
+                f"onclick='this.nextElementSibling.style.display="
+                f"this.nextElementSibling.style.display===\"none\"?\"table-row\":\"none\"'>"
+                f"<td style='padding:10px 12px;font-weight:600;'>{html.escape(tr['name'])}</td>"
+                f"<td style='padding:10px 12px;'>{tr['actual']}</td>"
+                f"<td style='padding:10px 12px;'>{tr['opt']}</td>"
+                f"<td style='padding:10px 12px;font-weight:700;color:{left_color};'>+{tr['left']}</td>"
+                f"</tr>"
+                f"<tr style='display:none;background:var(--surface2);'>"
+                f"<td colspan='4' style='padding:12px;'>"
+                f"<div style='font-size:12px;color:var(--muted);margin-bottom:8px;'>"
+                f"<span style='color:#ef4444'>&#9660; Should have benched</span> &nbsp; "
+                f"<span style='color:#22c55e'>&#9650; Should have started</span></div>"
+                f"<div style='display:flex;flex-wrap:wrap;gap:6px;'>{badges}</div>"
+                f"</td></tr>"
+            )
+        body_html = (
+            f"<div class='card' style='overflow:auto;'>"
+            f"<div class='card-header'><h3>Week {sel_week} — League Efficiency</h3></div>"
+            f"<table style='width:100%;border-collapse:collapse;'>"
+            f"<thead><tr style='border-bottom:2px solid var(--border);'>"
+            f"{_TH}TEAM</th>{_TH}ACTUAL</th>{_TH}OPTIMAL</th>{_TH}LEFT ON BENCH</th>"
+            f"</tr></thead><tbody>{rows_html}</tbody></table></div>"
+        ) if wk_rows else _no_data
+        return nav_html + body_html
 
-            weeks_data.append({
-                "week":       w,
-                "actual_pts": round(actual_pts, 2),
-                "opt_pts":    round(opt_pts, 2),
-                "left":       left,
-                "players":    players_out,
-            })
-        except Exception:
-            continue
+    # ── User views ────────────────────────────────────────────────────────────
+    if not viewer_rid:
+        return (nav_html +
+                "<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
+                "<p style='color:var(--muted)'>Sign in to see your optimal lineup history.</p>"
+                "</div></div>")
 
+    weeks_data = _roster_weeks(viewer_rid)
     if not weeks_data:
-        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
+        return (nav_html +
+                "<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
                 "<p style='color:var(--muted)'>No lineup data found.</p></div></div>")
 
-    season_left = round(season_left, 1)
-    efficiency  = round((season_actual / season_optimal * 100) if season_optimal else 0, 1)
-    worst_week  = max(weeks_data, key=lambda x: x["left"])
-    best_week   = min(weeks_data, key=lambda x: x["left"])
-
-    # ── Summary cards ────────────────────────────────────────────────────────
-    summary_html = f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:24px;font-weight:700;color:var(--accent);">{season_left}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">PTS LEFT ON BENCH (SEASON)</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:24px;font-weight:700;color:var(--text);">{efficiency}%</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">LINEUP EFFICIENCY</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:24px;font-weight:700;color:#ef4444;">Wk {worst_week['week']}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">WORST WEEK (+{worst_week['left']} left)</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:24px;font-weight:700;color:#22c55e;">Wk {best_week['week']}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">BEST WEEK (+{best_week['left']} left)</div>
-  </div>
-</div>"""
-
-    # ── Week-by-week table ───────────────────────────────────────────────────
-    rows_html = ""
-    for wd in reversed(weeks_data):
+    # ── User weekly view ──────────────────────────────────────────────────────
+    if period == "weekly":
+        wd = next((w for w in weeks_data if w["week"] == sel_week), None)
+        if not wd:
+            return nav_html + _no_data
         left_color = "#ef4444" if wd["left"] > 15 else ("#f59e0b" if wd["left"] > 7 else "#22c55e")
-        rows_html += f"""
-    <tr style="cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'table-row':'none'">
-      <td style="font-weight:600;">Week {wd['week']}</td>
-      <td>{wd['actual_pts']}</td>
-      <td>{wd['opt_pts']}</td>
-      <td style="font-weight:700;color:{left_color};">+{wd['left']}</td>
-    </tr>
-    <tr style="display:none;background:var(--surface2);">
-      <td colspan="4" style="padding:12px;">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Click a row to expand • <span style='color:#ef4444'>&#9660; Should have benched</span> &nbsp; <span style='color:#22c55e'>&#9650; Should have started</span></div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">"""
-        for p in wd["players"]:
-            if p["actual_start"] == p["optimal_start"]:
-                badge_style = "background:var(--surface);border:1px solid var(--border);"
-                icon = ""
-            elif p["actual_start"] and not p["optimal_start"]:
-                badge_style = "background:#ef444420;border:1px solid #ef4444;color:#ef4444;"
-                icon = "&#9660; "
-            else:
-                badge_style = "background:#22c55e20;border:1px solid #22c55e;color:#22c55e;"
-                icon = "&#9650; "
-            pos_color = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#a855f7"}.get(p["pos"], "#6b7280")
-            rows_html += (f"<span style='padding:4px 8px;border-radius:6px;font-size:12px;{badge_style}'>"
-                          f"<span style='color:{pos_color};font-weight:700;'>{p['pos']}</span> "
-                          f"{html.escape(p['name'])} {icon}<b>{p['pts']:.1f}</b></span>")
-        rows_html += "</div></td></tr>"
+        badges = _opt_player_badges(wd["players"])
+        pos_html = _opt_pos_breakdown([wd])
+        summary = (
+            f"<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));"
+            f"gap:12px;margin-bottom:16px;'>"
+            f"<div class='card' style='padding:16px;text-align:center;'>"
+            f"<div style='font-size:22px;font-weight:700;'>{wd['actual_pts']}</div>"
+            f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>ACTUAL PTS</div></div>"
+            f"<div class='card' style='padding:16px;text-align:center;'>"
+            f"<div style='font-size:22px;font-weight:700;'>{wd['opt_pts']}</div>"
+            f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>OPTIMAL PTS</div></div>"
+            f"<div class='card' style='padding:16px;text-align:center;'>"
+            f"<div style='font-size:22px;font-weight:700;color:{left_color};'>+{wd['left']}</div>"
+            f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>LEFT ON BENCH</div></div>"
+            f"</div>"
+        )
+        detail = (
+            f"<div class='card'>"
+            f"<div class='card-header'><h3>Week {sel_week} — Player Breakdown</h3></div>"
+            f"<div style='padding:12px;'>"
+            f"<div style='font-size:12px;color:var(--muted);margin-bottom:8px;'>"
+            f"<span style='color:#ef4444'>&#9660; Should have benched</span> &nbsp; "
+            f"<span style='color:#22c55e'>&#9650; Should have started</span></div>"
+            f"<div style='display:flex;flex-wrap:wrap;gap:6px;'>{badges}</div>"
+            f"</div></div>"
+        )
+        return nav_html + summary + detail + pos_html
 
-    table_html = f"""
-<div class="card" style="overflow:auto;">
-  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-    <h3>Week-by-Week Breakdown</h3>
-    <span style="font-size:12px;color:var(--muted);">Click a row to see player details</span>
-  </div>
-  <table style="width:100%;border-collapse:collapse;">
-    <thead><tr style="border-bottom:1px solid var(--border);">
-      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">WEEK</th>
-      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">ACTUAL PTS</th>
-      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">OPTIMAL PTS</th>
-      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">LEFT ON BENCH</th>
-    </tr></thead>
-    <tbody>{rows_html}</tbody>
-  </table>
-</div>"""
+    # ── User season view ──────────────────────────────────────────────────────
+    season_actual  = sum(w["actual_pts"] for w in weeks_data)
+    season_optimal = sum(w["opt_pts"]    for w in weeks_data)
+    season_left    = round(sum(w["left"] for w in weeks_data), 1)
+    efficiency     = round((season_actual / season_optimal * 100) if season_optimal else 0, 1)
+    worst_week     = max(weeks_data, key=lambda x: x["left"])
+    best_week      = min(weeks_data, key=lambda x: x["left"])
 
-    return summary_html + table_html
+    summary_html = (
+        f"<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));"
+        f"gap:12px;margin-bottom:20px;'>"
+        f"<div class='card' style='padding:16px;text-align:center;'>"
+        f"<div style='font-size:24px;font-weight:700;color:var(--accent);'>{season_left}</div>"
+        f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>PTS LEFT ON BENCH</div></div>"
+        f"<div class='card' style='padding:16px;text-align:center;'>"
+        f"<div style='font-size:24px;font-weight:700;color:var(--text);'>{efficiency}%</div>"
+        f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>LINEUP EFFICIENCY</div></div>"
+        f"<div class='card' style='padding:16px;text-align:center;'>"
+        f"<div style='font-size:24px;font-weight:700;color:#ef4444;'>Wk {worst_week['week']}</div>"
+        f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>WORST (+{worst_week['left']} left)</div></div>"
+        f"<div class='card' style='padding:16px;text-align:center;'>"
+        f"<div style='font-size:24px;font-weight:700;color:#22c55e;'>Wk {best_week['week']}</div>"
+        f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>BEST (+{best_week['left']} left)</div></div>"
+        f"</div>"
+    )
+
+    rows_html = "".join(_wk_table_row(wd) for wd in reversed(weeks_data))
+    table_html = (
+        f"<div class='card' style='overflow:auto;'>"
+        f"<div class='card-header' style='display:flex;justify-content:space-between;align-items:center;'>"
+        f"<h3>Week-by-Week Breakdown</h3>"
+        f"<span style='font-size:12px;color:var(--muted);'>Click row to expand</span></div>"
+        f"<table style='width:100%;border-collapse:collapse;'>"
+        f"<thead><tr style='border-bottom:1px solid var(--border);'>"
+        f"{_TH}WEEK</th>{_TH}ACTUAL PTS</th>{_TH}OPTIMAL PTS</th>{_TH}LEFT ON BENCH</th>"
+        f"</tr></thead><tbody>{rows_html}</tbody></table></div>"
+    )
+
+    pos_html = _opt_pos_breakdown(weeks_data)
+
+    return nav_html + summary_html + table_html + pos_html
 
 
 @app.route("/<platform>/<int:season>/<league_id>/optimal")
 def page_optimal(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     body = build_optimal_body(ctx)
-    return render_page("Optimal Lineup Tracker", league_id, "optimal", body, platform, season)
+    return render_page("Lineup Efficiency Tracker", league_id, "optimal", body, platform, season)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -14577,6 +14868,35 @@ def api_players():
     except Exception as e:
         logger.exception("[api-players] Unexpected error")
         return _api_err("Request failed", e)
+
+
+@app.route("/api/sparklines")
+def api_sparklines():
+    """Batch 7-day value history for sparkline rendering on the players page."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT player_id, as_of_date, value
+                FROM player_value_history
+                WHERE source = 'model'
+                  AND as_of_date >= CURRENT_DATE - INTERVAL '8 days'
+                ORDER BY player_id, as_of_date ASC
+                """
+            ).fetchall()
+        by_pid: dict = {}
+        for row in rows:
+            pid = row[0]
+            val = float(row[2] or 0)
+            by_pid.setdefault(pid, []).append(round(val, 1))
+        # Only include players with at least 2 data points
+        result = {pid: vals for pid, vals in by_pid.items() if len(vals) >= 2}
+        resp = jsonify(result)
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+        return resp
+    except Exception as e:
+        return _api_err("Sparklines unavailable", e)
 
 
 @app.route("/api/league-players")

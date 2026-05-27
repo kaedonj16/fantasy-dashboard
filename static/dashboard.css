@@ -16232,3 +16232,68 @@ button:disabled {
   padding-top: 2px;
 }
 .notif-toast-action:hover { text-decoration: underline; }
+
+/* ── Analytics panel skeleton ────────────────────────────────────────────── */
+.analytics-skeleton {
+  padding: 12px 4px;
+}
+.analytics-skeleton .sk-line {
+  height: 13px;
+  border-radius: 4px;
+  margin-bottom: 0;
+}
+
+/* ── Empty state icon ─────────────────────────────────────────────────────── */
+.bract-empty-icon {
+  margin-bottom: 10px;
+  line-height: 1;
+}
+
+/* ── Sparkline canvas in player rankings ──────────────────────────────────── */
+.pr-sparkline {
+  display: block;
+  margin: 3px auto 0;
+  opacity: 0.85;
+}
+
+/* ── Optimal Lineup Tracker navigation ────────────────────────────────────── */
+.opt-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.opt-tab-group {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.opt-tab {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.opt-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+.opt-tab:not(.active):hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+.opt-week-select {
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
