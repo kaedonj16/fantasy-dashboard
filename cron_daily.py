@@ -60,7 +60,17 @@ def _file_fresh_today(path: Path) -> bool:
 
 
 def _model_values_fresh() -> bool:
-    return _file_fresh_today(DATA_DIR / "model_values.json")
+    mv = DATA_DIR / "model_values.json"
+    if not _file_fresh_today(mv):
+        return False
+    # If any vendor CSV is newer than model_values.json, the model needs a rebuild
+    # even if it was already written today (it was built from stale data).
+    mv_mtime = mv.stat().st_mtime
+    for _csv in ("fantasycalc_api_values.csv", "dynastyprocess_values.csv"):
+        _p = DATA_DIR / _csv
+        if _p.exists() and _p.stat().st_mtime > mv_mtime:
+            return False
+    return True
 
 
 def _vendor_values_fresh() -> bool:
