@@ -13737,7 +13737,11 @@ def get_model_value_table_cached():
         except Exception as _e:
             print(f"[model-value-cache] market corrections skipped: {_e}")
 
-    # Append rookie prospects — pipeline values take priority over player_values for current class
+    # Append rookie prospects for players not already tracked in player_values.
+    # player_values (EMA-synced from player_value_history) takes priority when a
+    # rookie already has a history value — this keeps rankings consistent with
+    # the values shown everywhere else on the site.  The pipeline only fills in
+    # true gaps: undrafted prospects or newly-signed players not yet in the DB.
     try:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
         from utils.utils import load_players_index as _mvc_lpi
@@ -13745,22 +13749,25 @@ def get_model_value_table_cached():
         rk_rows = list(get_rookie_rankings_from_db(draft_year))
         if rk_rows:
             _mvc_idx = _mvc_lpi() or {}
-            rk_sids = {str(r.get("sleeper_id")) for r in rk_rows if r.get("sleeper_id")}
-            # Remove any player_values entries for this draft class so pipeline wins
-            tbl = [p for p in tbl if str(p.get("id") or "") not in rk_sids]
+            # IDs already present in player_values with a real value
+            _existing_ids = {str(p.get("id") or "") for p in tbl if float(p.get("value") or 0) > 0}
             for r in rk_rows:
                 sid  = str(r.get("sleeper_id")) if r.get("sleeper_id") else None
                 name = r.get("name") or ""
+                _rid = sid if sid else (r.get("player_id") or f"rookie_{name}")
+                # Skip if already tracked in player_values (EMA history wins)
+                if str(_rid) in _existing_ids:
+                    continue
                 _idx_team = _mvc_idx.get(sid, {}).get("team", "") if sid else ""
                 _team = r.get("actual_nfl_team") or _idx_team or r.get("team") or "FA"
                 tbl.append({
-                    "id":       sid if sid else (r.get("player_id") or f"rookie_{name}"),
-                    "name":     name,
-                    "team":     _team,
-                    "position": r.get("position") or "UNK",
-                    "age":      r.get("age"),
-                    "value":    float(r.get("rookie_value") or 0),
-                    "sf_value": float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
+                    "id":        _rid,
+                    "name":      name,
+                    "team":      _team,
+                    "position":  r.get("position") or "UNK",
+                    "age":       r.get("age"),
+                    "value":     float(r.get("rookie_value") or 0),
+                    "sf_value":  float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
                     "is_rookie": True,
                 })
     except Exception as e:
