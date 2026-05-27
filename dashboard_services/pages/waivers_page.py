@@ -247,6 +247,10 @@ function wvInjBadge(inj) {{
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 function wvLoad() {{
+  // Auto-switch to the tab specified in the URL (?tab=startsit)
+  const _initTab = new URLSearchParams(window.location.search).get('tab');
+  if (_initTab) wvSetTab(_initTab);
+
   fetch(`/api/waiver-candidates?platform=${{WV_PLATFORM}}&league_id=${{WV_LEAGUE_ID}}&season=${{WV_SEASON}}`)
     .then(r => r.json())
     .then(d => {{ wvWaiverData = d.candidates || []; wvRenderWaivers(); }})

@@ -1203,11 +1203,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
         nav_pills.append(nav_pill_dropdown("Weekly", [
-            ("Matchups",             "page_weekly",             "weekly",   False),
-            ("Weekly Recap",         "page_recap",              "recap",    False),
-            ("Waivers & Start/Sit",  "page_waivers",            "waivers",  False),
-            ("Playoff Schedule",     "page_playoff_schedule",   "schedule", False),
-        ], ["weekly", "recap", "waivers", "schedule"], "weeklyNavDropdown"))
+            ("Matchups",           "page_weekly",           "weekly",   False),
+            ("Weekly Recap",       "page_recap",            "recap",    False),
+            ("Playoff Schedule",   "page_playoff_schedule", "schedule", False),
+        ], ["weekly", "recap", "schedule"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",     "page_standings",    "standings",    False),
         ("Teams",         "page_teams",        "teams",        False),
@@ -1219,7 +1218,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Breakout Engine",   "page_breakouts",  "breakouts", False),
-    ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
+        ("Waivers",           "page_waivers",    "waivers",   False),
+        ("Start/Sit",         "page_waivers",    "waivers",   False, "?tab=startsit"),
+    ], ["players", "prospects", "breakouts", "waivers"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
