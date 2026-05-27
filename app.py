@@ -13480,7 +13480,7 @@ def api_refresh_page():
 # ---------- global cache for model value table used by trade eval ----------
 _MODEL_VALUE_CACHE = None
 _MODEL_VALUE_CACHE_TS = 0
-_MODEL_VALUE_TTL = 60 * 60  # 1 hour
+_MODEL_VALUE_TTL = 60 * 15  # 15 minutes (short enough to reflect daily cron updates promptly)
 
 # Caches for advanced-metrics endpoints (10-minute TTL)
 _ROLE_PLAYERS_CACHE: dict = {}
@@ -13776,6 +13776,86 @@ def get_model_value_table_cached():
     _MODEL_VALUE_CACHE = tbl
     _MODEL_VALUE_CACHE_TS = now
     return tbl
+
+
+@app.route("/api/flush-value-cache", methods=["POST"])
+@limiter.limit("10 per minute")
+def api_flush_value_cache():
+    """
+    Clear the in-memory model value cache so the next request fetches fresh data
+    from the DB. Useful right after a cron run without restarting the app.
+
+    Caller must pass the correct CRON_SECRET (same env var used by the cron job).
+    """
+    secret = os.environ.get("CRON_SECRET", "")
+    provided = (request.get_json(force=True, silent=True) or {}).get("secret", "")
+    if secret and provided != secret:
+        return jsonify({"error": "unauthorized"}), 403
+
+    global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
+    _MODEL_VALUE_CACHE    = None
+    _MODEL_VALUE_CACHE_TS = 0
+    return jsonify({"ok": True, "message": "Model value cache cleared — next request will reload from DB."})
+
+
+@app.route("/api/debug-values")
+@limiter.limit("30 per minute")
+def api_debug_values():
+    """
+    Diagnostic endpoint: returns DB values vs calibrated values for the top 10
+    players by value_1qb. Useful for confirming whether WLS calibration is
+    actually being written to the DB and whether values are changing.
+    """
+    try:
+        from dashboard_services.db import get_conn as _gc
+        with _gc() as _conn:
+            rows = _conn.execute(
+                """
+                SELECT
+                    player_id,
+                    position,
+                    value_1qb,
+                    calibrated_value_1qb,
+                    calibrated_value_sf,
+                    calibration_source,
+                    calibration_weight,
+                    last_updated
+                FROM player_values
+                WHERE value_1qb IS NOT NULL AND value_1qb > 0
+                  AND (position IS NULL OR position != 'PICK')
+                ORDER BY value_1qb DESC NULLS LAST
+                LIMIT 20
+                """
+            ).fetchall()
+        from pathlib import Path as _Path
+        import time as _time
+        _mv_path = _Path("data/model_values.json")
+        _mv_mtime = (
+            datetime.fromtimestamp(_mv_path.stat().st_mtime).isoformat()
+            if _mv_path.exists() else "missing"
+        )
+        _cache_age = round(_time.time() - _MODEL_VALUE_CACHE_TS) if _MODEL_VALUE_CACHE_TS else None
+        return jsonify({
+            "model_values_json_mtime": _mv_mtime,
+            "in_memory_cache_age_seconds": _cache_age,
+            "in_memory_cache_size": len(_MODEL_VALUE_CACHE) if _MODEL_VALUE_CACHE else 0,
+            "top_players": [
+                {
+                    "player_id":              str(r["player_id"]),
+                    "position":               str(r["position"] or ""),
+                    "value_1qb":              float(r["value_1qb"] or 0),
+                    "calibrated_value_1qb":   float(r["calibrated_value_1qb"]) if r["calibrated_value_1qb"] is not None else None,
+                    "calibrated_value_sf":    float(r["calibrated_value_sf"])  if r["calibrated_value_sf"]  is not None else None,
+                    "calibration_source":     str(r["calibration_source"] or ""),
+                    "calibration_weight":     float(r["calibration_weight"]) if r["calibration_weight"] is not None else None,
+                    "last_updated":           r["last_updated"].isoformat() if r["last_updated"] else None,
+                    "coalesce_gives":         float(r["calibrated_value_1qb"] if r["calibrated_value_1qb"] is not None else r["value_1qb"] or 0),
+                }
+                for r in rows
+            ],
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/gm-memo", methods=["POST"])
