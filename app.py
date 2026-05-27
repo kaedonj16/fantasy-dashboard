@@ -4623,13 +4623,16 @@ def _market_scale(fmt: str = "1qb") -> float:
 
 
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
-                             num_tiers: int = _NUM_TIERS) -> list:
+                             num_tiers: int = _NUM_TIERS, t1_size: int = None) -> list:
     """
     Natural gap-significance tier boundaries.
 
     Each gap is scored by how large it is relative to nearby gaps (local significance).
     The top (num_tiers-1) gaps become tier boundaries. Minimum 5 players per tier;
     tiers smaller than that are merged into the tier below. T9 is the large catch-all.
+
+    t1_size: override the number of players pinned to T1 (defaults to MIN_TIER=5 for
+             1QB, 6 for SF so QBs get their own elite tier with room for the top arms).
     """
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -4654,6 +4657,8 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
 
     MIN_TIER = 5   # minimum players per tier
     window   = 12
+    # T1 size: 1QB defaults to 5, SF defaults to 6 (room for elite QBs + top skills)
+    _T1_SIZE = t1_size if t1_size is not None else (6 if league_type == "sf" else MIN_TIER)
 
     # Score each gap by local significance (gap vs median of nearby gaps)
     scored = []
@@ -4665,11 +4670,11 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
         scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
 
-    # T1 is always the top MIN_TIER players (fixed elite tier)
+    # T1 is always the top _T1_SIZE players (fixed elite tier)
     scored.sort(key=lambda x: x[0], reverse=True)
-    if len(vals) > MIN_TIER:
-        _t1_mid = round((vals[MIN_TIER - 1] + vals[MIN_TIER]) / 2.0, 1)
-        chosen_pos = [MIN_TIER - 1]
+    if len(vals) > _T1_SIZE:
+        _t1_mid = round((vals[_T1_SIZE - 1] + vals[_T1_SIZE]) / 2.0, 1)
+        chosen_pos = [_T1_SIZE - 1]
         boundaries = [_t1_mid]
     else:
         chosen_pos = []
