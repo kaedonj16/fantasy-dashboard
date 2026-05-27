@@ -5798,16 +5798,21 @@ def build_activity_body(ctx: dict) -> str:
         owner_txt = f"from {orig_name}" if orig_name else "Traded Pick"
         return f"{bucket_label} • {owner_txt}" if bucket_label else owner_txt
 
-    def verdict_from_net(net_total: float) -> tuple[str, str]:
-        if net_total >= 20:
-            return "bract-verdict-win", "Strong win"
-        if net_total >= 8:
-            return "bract-verdict-win", "Slight win"
-        if net_total <= -20:
-            return "bract-verdict-loss", "Strong loss"
-        if net_total <= -8:
-            return "bract-verdict-loss", "Slight loss"
-        return "bract-verdict-even", "Fair"
+    def verdict_from_net(net_total: float, baseline: float = 300.0) -> tuple[str, str]:
+        # Dynamic fair band that scales with trade size — matches /api/trade-eval logic.
+        if baseline >= 600:
+            fair_pct = 0.05
+        elif baseline >= 300:
+            fair_pct = 0.07
+        else:
+            fair_pct = 0.10
+        fair = max(baseline * fair_pct, 25.0)
+        abs_net = abs(net_total)
+        if abs_net <= fair:
+            return "bract-verdict-even", "Fair"
+        if net_total > 0:
+            return ("bract-verdict-win", "Strong win") if abs_net > fair * 2 else ("bract-verdict-win", "Slight win")
+        return ("bract-verdict-loss", "Strong loss") if abs_net > fair * 2 else ("bract-verdict-loss", "Slight loss")
 
     trade_count = 0
     waiver_count = 0
@@ -5937,6 +5942,7 @@ def build_activity_body(ctx: dict) -> str:
                     "raw_players_total": raw_players_total,
                     "raw_picks_total": raw_picks_total,
                     "player_values": in_player_vals,
+                    "asset_count": len(in_players) + len(in_picks),
                     "breakdown": [],
                     "adjustment": 0.0,
                     "effective_total": raw_total,
@@ -5946,7 +5952,21 @@ def build_activity_body(ctx: dict) -> str:
                 rid_list = list(side_map.keys())
                 side_a = side_map[rid_list[0]]
                 side_b = side_map[rid_list[1]]
-                apply_multi_for_one_adjustment(side_a, side_b)
+                # Match /api/trade-eval: only apply depth penalty when one side
+                # sends more assets than the other.  Penalising both sides of an
+                # equal-count trade just zeroes out the adjustment and produces
+                # misleadingly negative totals for both teams.
+                if side_a["asset_count"] != side_b["asset_count"]:
+                    apply_tier_stack_adjustment(side_a, side_b)
+                # Pre-compute zero-sum net values so both sides are mirrors of
+                # each other — exactly how trade-eval reports the result.
+                a_eff = side_a["effective_total"]
+                b_eff = side_b["effective_total"]
+                baseline_val = max(a_eff, b_eff, 1.0)
+                side_a["net_total"] = a_eff - b_eff
+                side_b["net_total"] = b_eff - a_eff
+                side_a["baseline"] = baseline_val
+                side_b["baseline"] = baseline_val
 
             net_values = []
 
@@ -5981,19 +6001,11 @@ def build_activity_body(ctx: dict) -> str:
                 sends = sends_players + sends_picks
 
                 side_info = side_map.get(roster_id)
-                eff_in = side_info["effective_total"] if side_info else 0.0
-
-                out_total = 0.0
-                for p in (tm.get("sends") or []):
-                    out_total += player_value(p)[0]
-                if roster_id is not None:
-                    for pick in picks_by_sender.get(roster_id, []):
-                        out_total += pick_value(pick, standings_map)
-
-                net_total = eff_in - out_total
+                net_total  = side_info["net_total"]  if side_info else 0.0
+                baseline   = side_info["baseline"]   if side_info else 300.0
                 net_values.append((tm.get("name", ""), net_total))
 
-                verdict_cls, verdict_txt = verdict_from_net(net_total)
+                verdict_cls, verdict_txt = verdict_from_net(net_total, baseline)
                 net_num_cls = (
                     "bract-net-pos" if net_total > 0 else
                     "bract-net-neg" if net_total < 0 else
@@ -10075,12 +10087,19 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         if (!bar) {
           bar = document.createElement('div');
           bar.id = 'prPagination';
-          bar.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;';
+          bar.className = 'pr-pagination';
           document.getElementById('prList').insertAdjacentElement('afterend', bar);
           bar.innerHTML =
-            `<button class="pf-pill" id="prPrevBtn" onclick="prGoPage('prev')" disabled>&#8592; Prev</button>` +
-            `<span style="font-size:13px;color:var(--text-muted);" id="prPaginationText"></span>` +
-            `<button class="pf-pill" id="prNextBtn" onclick="prGoPage('next')" disabled>Next &#8594;</button>`;
+            `<div class="pr-pagination-info"><span id="prPaginationText"></span></div>` +
+            `<div class="pr-pagination-controls">` +
+              `<button class="pr-pagination-btn" id="prPrevBtn" onclick="prGoPage('prev')" disabled>` +
+                `<i class="fa-solid fa-chevron-left"></i> Previous` +
+              `</button>` +
+              `<div class="pr-page-numbers" id="prPageNumbers"></div>` +
+              `<button class="pr-pagination-btn" id="prNextBtn" onclick="prGoPage('next')" disabled>` +
+                `Next <i class="fa-solid fa-chevron-right"></i>` +
+              `</button>` +
+            `</div>`;
         }
 
         if (totalPages <= 1) {
@@ -10093,10 +10112,25 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         const start = (page - 1) * prPageSize + 1;
         const end = Math.min(page * prPageSize, window.prFilteredPlayers.length);
         const total = window.prFilteredPlayers.length;
-        document.getElementById('prPaginationText').textContent = `Showing ${start}–${end} of ${total} players`;
+        document.getElementById('prPaginationText').textContent = `Showing ${start}-${end} of ${total} players`;
 
         document.getElementById('prPrevBtn').disabled = page === 1;
         document.getElementById('prNextBtn').disabled = page === totalPages;
+
+        // Page number buttons — show up to 5, centred on current page
+        const pageNumbers = document.getElementById('prPageNumbers');
+        pageNumbers.innerHTML = '';
+        const maxPages = 5;
+        let startPage = Math.max(1, page - Math.floor(maxPages / 2));
+        let endPage = Math.min(totalPages, startPage + maxPages - 1);
+        if (endPage - startPage < maxPages - 1) startPage = Math.max(1, endPage - maxPages + 1);
+        for (let i = startPage; i <= endPage; i++) {
+          const btn = document.createElement('button');
+          btn.className = 'pr-page-number' + (i === page ? ' active' : '');
+          btn.textContent = i;
+          btn.onclick = (function(n){ return function(){ prGoPage(n); }; })(i);
+          pageNumbers.appendChild(btn);
+        }
       }
 
       function prGoPage(p) {
@@ -20504,6 +20538,22 @@ def build_portfolio_body(
         "border-radius:9999px;background:var(--card);color:inherit;outline:none;"
         "transition:border-color .12s;}"
         ".pf-fsearch:focus{border-color:var(--accent);}"
+        ".pr-pagination{display:flex;justify-content:space-between;align-items:center;"
+        "margin:20px 0;padding:12px 0;border-top:1px solid var(--border);flex-wrap:wrap;gap:8px;}"
+        ".pr-pagination-info{font-size:13px;color:var(--text-muted);}"
+        ".pr-pagination-controls{display:flex;align-items:center;gap:12px;}"
+        ".pr-pagination-btn{padding:6px 12px;border:1px solid var(--border);border-radius:6px;"
+        "background:var(--card);color:var(--text);cursor:pointer;font-size:12px;font-weight:500;"
+        "transition:all .15s;display:flex;align-items:center;gap:4px;}"
+        ".pr-pagination-btn:hover:not(:disabled){background:var(--bg-alt);border-color:var(--accent);}"
+        ".pr-pagination-btn:disabled{opacity:.5;cursor:not-allowed;}"
+        ".pr-page-numbers{display:flex;gap:4px;}"
+        ".pr-page-number{padding:4px 8px;border:1px solid var(--border);border-radius:4px;"
+        "background:var(--card);color:var(--text);cursor:pointer;font-size:12px;font-weight:500;"
+        "min-width:28px;text-align:center;}"
+        ".pr-page-number:hover{background:var(--bg-alt);}"
+        ".pr-page-number.active{background:var(--accent,#3b82f6);color:var(--card);"
+        "border-color:var(--accent,#3b82f6);font-weight:700;}"
         "</style>"
     )
 
