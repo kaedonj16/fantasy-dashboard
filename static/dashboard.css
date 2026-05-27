@@ -14853,6 +14853,10 @@ tr.team-clickable {
 
 /* Teams sidebar sticky positioning - desktop only */
 @media (min-width: 1181px) {
+  .teams-page.page-layout {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+
   .teams-sidebar {
     position: sticky;
     top: 90px;
@@ -14865,7 +14869,7 @@ tr.team-clickable {
 
 /* Slim (sidebar) variant */
 .btm-col-header.btm-slim,
-.btm-row.btm-slim { grid-template-columns: 28px 1fr 58px 58px; }
+.btm-row.btm-slim { grid-template-columns: 28px minmax(0, 1fr) 64px 64px; }
 .teams-sidebar .btm-meta { padding: 6px 12px 8px; }
 .teams-sidebar .teams-analytics-card { margin: 0; }
 
