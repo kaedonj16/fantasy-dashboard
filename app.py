@@ -13620,6 +13620,55 @@ def get_model_value_table_cached():
     if not tbl:
         tbl = list(load_model_value_table() or [])
 
+    # Zero out players not tracked by any external market source (FC or DP).
+    # The ML model assigns some value to every player in the index; without this
+    # guard, washed-up vets and low-usage players leak into the rankings.
+    # We only do the presence check — DB values for tracked players are untouched.
+    if tbl:
+        try:
+            from data_building.external_data.external_values_scraper import (
+                load_fantasycalc_api_values, load_dynastyprocess_values,
+            )
+            from utils.utils import normalize_name as _nn
+
+            _fc_sids: set = set()
+            for _r in (load_fantasycalc_api_values() or []):
+                _sid = str(_r.get("sleeper_id") or "").strip()
+                if _sid:
+                    _fc_sids.add(_sid)
+
+            _dp_names: set = set()
+            for _r in (load_dynastyprocess_values() or []):
+                _nm = str(_r.get("player") or "").strip()
+                if _nm:
+                    _dp_names.add(_nn(_nm))
+
+            if _fc_sids or _dp_names:
+                try:
+                    from utils.utils import load_players_index as _lpi2
+                    _pid_to_name = {str(k): (v.get("name") or "") for k, v in (_lpi2() or {}).items()}
+                except Exception:
+                    _pid_to_name = {}
+
+                _zeroed = 0
+                for _p in tbl:
+                    _pid  = str(_p.get("id") or "")
+                    _pos  = str(_p.get("position") or "").upper()
+                    if _pos == "PICK":
+                        continue  # picks have no FC entry, always keep
+                    if _pid in _fc_sids:
+                        continue  # tracked by FC
+                    _name = str(_p.get("name") or "") or _pid_to_name.get(_pid, "")
+                    if _name and _nn(_name) in _dp_names:
+                        continue  # tracked by DP
+                    _p["value"]    = 0
+                    _p["sf_value"] = 0
+                    _zeroed += 1
+                if _zeroed:
+                    print(f"[model-value-cache] zeroed {_zeroed} players not in FC/DP")
+        except Exception as _e:
+            print(f"[model-value-cache] FC/DP presence filter skipped: {_e}")
+
     # Append rookie prospects for players not already tracked in player_values.
     # player_values (EMA-synced from player_value_history) takes priority when a
     # rookie already has a history value — this keeps rankings consistent with
