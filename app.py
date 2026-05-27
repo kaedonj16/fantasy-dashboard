@@ -532,9 +532,15 @@ BASE_HTML = """
     <!-- Google AdSense -->
     {adsense_script}
 
-    <link rel="icon" href="/static/BR_Logo.png" type="image/x-icon">
+    <link rel="icon" href="/static/BR_Logo.png" type="image/png">
+    <link rel="shortcut icon" href="/static/BR_Logo.png" type="image/png">
+    <link rel="apple-touch-icon" href="/static/BR_Logo.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/BR_Logo.png">
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#38bdf8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="BR Fantasy">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-title" content="BR Fantasy">
@@ -1089,13 +1095,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Trade Calculator", "/trade",          "trade"),
                 ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
                 ("Trade Database",   "/trade-database", "trade-database"),
-                ("Trade Intel",      "/trade-intel",    "trade-intel"),
+                ("Trade Intel <span class='nav-pro-badge'>PRO</span>",      "/trade-intel",    "trade-intel"),
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
                 ("Prospects",       "/prospects",   "prospects"),
-                ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "/prospects?tab=draft", "prospects-draft"),
-                ("Breakouts",       "/breakouts", "breakouts"),
+                ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
+                ("Breakouts <span class='nav-pro-badge'>PRO</span>",       "/breakouts", "breakouts"),
             ], ["players", "prospects", "breakouts"], "playersNavDropdown"),
         ]
 
@@ -1197,7 +1203,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Trade Calculator", "trade.page_trade",          "trade",          False),
         ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False, "?tab=suggestions"),
         ("Trade Database",   "trade.page_trade_database", "trade-database", False),
-        ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False),
+        ("Trade Intel <span class='nav-pro-badge'>PRO</span>",      "trade.page_trade_intel",    "trade-intel",    False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
@@ -1216,8 +1222,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
-        ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "page_prospects", "prospects-draft", False, "?tab=draft"),
-        ("Breakout Engine",   "page_breakouts",  "breakouts", False),
+        ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
+        ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
     ], ["players", "prospects", "breakouts", "waivers"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
