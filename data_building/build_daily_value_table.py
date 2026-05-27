@@ -339,6 +339,7 @@ def sync_history_to_player_values() -> int:
                 SET value_1qb            = ph.value,
                     value_sf             = COALESCE(ph.sf_value, ph.value_sf, ph.value),
                     calibrated_value_1qb = NULL,
+                    calibrated_value_sf  = NULL,
                     last_updated         = NOW()
                 FROM player_value_history ph
                 WHERE ph.player_id  = pv.player_id
