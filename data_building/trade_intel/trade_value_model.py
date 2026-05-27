@@ -584,11 +584,25 @@ def run_trade_value_model(
     v_1qb_norm = _normalize(v_1qb_pos)
     v_sf_norm  = _normalize(v_sf_pos)
 
-    # Non-QB players should never be worth MORE in SF than in 1QB.
-    # The SF premium belongs entirely to QBs (extra starting slot value).
+    # For non-QB players: derive the SF calibrated value by applying the WLS
+    # 1QB calibration factor to the model's SF prior.  The model already
+    # encodes the SF positional discount (skill players are slightly lower in
+    # SF than in 1QB); the WLS captures the calibration magnitude.
+    #
+    # Formula: cal_sf_nonqb = cal_1qb * (prior_sf / prior_1qb)
+    #
+    # This lets skill positions show slightly different SF vs 1QB values
+    # (matching the model's ~2-5% discount) rather than being forced equal
+    # by a min() cap.  QBs keep their WLS-calibrated SF value untouched.
     for i, pid in enumerate(player_ids):
-        if player_prior[pid].get("position", "") != "QB":
-            v_sf_norm[i] = min(v_sf_norm[i], v_1qb_norm[i])
+        pos = player_prior[pid].get("position", "")
+        if pos != "QB":
+            p1 = player_prior[pid]["value_1qb"]
+            ps = player_prior[pid]["value_sf"]
+            if p1 > 0 and ps > 0:
+                v_sf_norm[i] = v_1qb_norm[i] * (ps / p1)
+            else:
+                v_sf_norm[i] = v_1qb_norm[i]  # fallback: equal to 1QB
 
     # --- Player output ---
     out_rows = []
