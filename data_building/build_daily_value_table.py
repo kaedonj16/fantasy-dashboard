@@ -49,10 +49,22 @@ def build_daily_data(season: int, week: int):
         live_game_ids = get_live_game_ids_for_today(load_week_schedule(season, week))
         build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
 
-    # Always refresh vendor CSVs so the model is built from today's market data.
-    # Previously this was gated on "file missing" — which meant FC/DP/KTC CSVs
-    # were never re-downloaded after the first run, silently producing stale values.
-    scrape_all_vendor_values()
+    # Refresh vendor CSVs only when they are stale (not written today).
+    # Originally ungated to fix a bug where CSVs were never re-downloaded;
+    # the freshness guard below preserves daily freshness while avoiding
+    # redundant vendor API hits on every app restart within the same day.
+    from datetime import date as _date
+    _data_dir = Path(__file__).resolve().parents[1] / "data"
+    def _csvs_fresh_today():
+        for _name in ("fantasycalc_api_values.csv", "dynastyprocess_values.csv"):
+            _p = _data_dir / _name
+            if not _p.exists() or _date.fromtimestamp(_p.stat().st_mtime) != _date.today():
+                return False
+        return True
+    if _csvs_fresh_today():
+        print("[build_daily_data] Vendor CSVs already fresh today, skipping scrape")
+    else:
+        scrape_all_vendor_values()
 
     # Only fetch weeks 1 through current week (or max 18)
     # In offseason, fetch last season's full data

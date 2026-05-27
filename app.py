@@ -13800,7 +13800,9 @@ def api_flush_value_cache():
     """
     secret = os.environ.get("CRON_SECRET", "")
     provided = (request.get_json(force=True, silent=True) or {}).get("secret", "")
-    if secret and provided != secret:
+    # Require the secret to be set AND match — when CRON_SECRET is unset the
+    # old `if secret and …` guard would pass any request (short-circuit on falsy).
+    if not secret or provided != secret:
         return jsonify({"error": "unauthorized"}), 403
 
     global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
@@ -13840,7 +13842,7 @@ def api_debug_values():
             ).fetchall()
         from pathlib import Path as _Path
         import time as _time
-        _mv_path = _Path("data/model_values.json")
+        _mv_path = DATA_DIR / "model_values.json"
         _mv_mtime = (
             datetime.fromtimestamp(_mv_path.stat().st_mtime).isoformat()
             if _mv_path.exists() else "missing"
@@ -21112,13 +21114,16 @@ threading.Thread(target=_run_startup_daily, daemon=True).start()
 
 @app.route("/robots.txt")
 def robots_txt():
+    # Build sitemap URL from the actual request host so staging/dev never
+    # advertises the production sitemap URL.
+    host = request.host_url.rstrip("/")
     txt = (
         "User-agent: *\n"
         "Allow: /\n"
         "Disallow: /api/\n"
         "Disallow: /admin/\n"
         "\n"
-        f"Sitemap: https://brfantasy.com/sitemap.xml\n"
+        f"Sitemap: {host}/sitemap.xml\n"
     )
     return app.response_class(txt, mimetype="text/plain")
 

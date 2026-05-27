@@ -1190,6 +1190,12 @@ def rewrite_value_table_with_model() -> Path:
         # SF blend (use previous sf_value when available, else fall back to 1QB blend)
         if fc_val > 0 and prev_sfv > 0:
             sf_value = W_FC * fc_val + W_MODEL * prev_sfv
+        elif fc_val > 0 and position == "QB":
+            # Cold-start for QBs: no previous SF value in model_values.json.
+            # Apply a fixed ~30 % SF premium so QBs aren't ranked like 1QB league
+            # assets.  This is overwritten on the second daily run once prev_sfv
+            # has a real blended value stored.
+            sf_value = fc_val * 1.30
         elif fc_val > 0:
             sf_value = fc_val
         elif prev_sfv > 0:

@@ -143,6 +143,11 @@ function emptyState(container, message, iconClass) {
   var bannerShown = false;
   var DISMISS_KEY = 'pwa-install-dismissed-v1';
 
+  // iOS Safari never fires beforeinstallprompt — detect it separately.
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  var isStandalone = (navigator.standalone === true) ||
+                     window.matchMedia('(display-mode: standalone)').matches;
+
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault();
     deferredPrompt = e;
@@ -151,6 +156,11 @@ function emptyState(container, message, iconClass) {
     // Delay slightly so it doesn't interrupt page load
     setTimeout(showInstallBanner, 8000);
   });
+
+  // iOS: show Add-to-Home-Screen instructions after the same delay
+  if (isIOS && !isStandalone && !localStorage.getItem(DISMISS_KEY)) {
+    setTimeout(showIOSBanner, 8000);
+  }
 
   function showInstallBanner() {
     if (bannerShown || !deferredPrompt) return;
@@ -178,11 +188,47 @@ function emptyState(container, message, iconClass) {
 
     document.getElementById('pwa-install-btn').addEventListener('click', function () {
       hideBanner();
-      deferredPrompt.prompt();
-      deferredPrompt.userChoice.then(function (choice) {
-        if (choice.outcome === 'accepted') localStorage.setItem(DISMISS_KEY, '1');
-        deferredPrompt = null;
-      });
+      // Capture and null-out before async call so a second tap can't double-fire.
+      var p = deferredPrompt;
+      deferredPrompt = null;
+      if (!p) return;
+      try {
+        p.prompt();
+        p.userChoice.then(function (choice) {
+          if (choice.outcome === 'accepted') localStorage.setItem(DISMISS_KEY, '1');
+        }).catch(function () {});
+      } catch (err) {
+        console.warn('[pwa] prompt() failed:', err);
+      }
+    });
+
+    document.getElementById('pwa-dismiss-btn').addEventListener('click', function () {
+      hideBanner();
+      localStorage.setItem(DISMISS_KEY, '1');
+    });
+  }
+
+  function showIOSBanner() {
+    if (bannerShown) return;
+    bannerShown = true;
+
+    var banner = document.createElement('div');
+    banner.id = 'pwa-install-banner';
+    banner.innerHTML =
+      '<div class="pwa-banner-left">' +
+        '<img src="/static/BR_Logo.png" class="pwa-banner-icon" alt="BR Fantasy">' +
+        '<div>' +
+          '<div class="pwa-banner-title">Add to Home Screen</div>' +
+          '<div class="pwa-banner-sub">Tap <strong>Share</strong> then <strong>Add to Home Screen</strong></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pwa-banner-actions">' +
+        '<button id="pwa-dismiss-btn" class="pwa-btn pwa-btn-dismiss">Got it</button>' +
+      '</div>';
+    document.body.appendChild(banner);
+
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { banner.classList.add('pwa-banner-visible'); });
     });
 
     document.getElementById('pwa-dismiss-btn').addEventListener('click', function () {
@@ -4852,14 +4898,26 @@ function _showNotifToast(entry) {
   var popup = document.createElement('div');
   popup.className = 'notif-toast';
 
-  var tagClass = 'notif-toast-tag notif-toast-tag-' + (entry.tag || 'update');
+  // Sanitize tag to alphanumerics/hyphens only — prevents CSS class injection.
+  var safeTag = (entry.tag || 'update').replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'update';
+  var tagClass = 'notif-toast-tag notif-toast-tag-' + safeTag;
 
-  // Resolve link with league context if available
+  // Resolve link with league context if available.
+  // Prefer window.__brctx (server-injected) over a URL heuristic to avoid false
+  // positives on paths like /2024/some-page where a year looks like a league segment.
   var link = entry.link || null;
   if (link && link.startsWith('/')) {
-    var pathParts = window.location.pathname.split('/').filter(function(p) { return p; });
-    var isLoggedIn = pathParts.length >= 3 && pathParts[0] && !isNaN(pathParts[1]);
-    if (isLoggedIn) link = '/' + pathParts[0] + '/' + pathParts[1] + '/' + pathParts[2] + link;
+    var _ctx = window.__brctx || {};
+    var isLoggedIn = (_ctx.is_logged_in != null)
+      ? Boolean(_ctx.is_logged_in)
+      : (function() {
+          var pp = window.location.pathname.split('/').filter(function(p) { return p; });
+          return pp.length >= 3 && pp[0] && !isNaN(pp[1]);
+        })();
+    if (isLoggedIn) {
+      var pp = window.location.pathname.split('/').filter(function(p) { return p; });
+      link = '/' + pp[0] + '/' + pp[1] + '/' + pp[2] + link;
+    }
   }
 
   popup.innerHTML =
@@ -4869,7 +4927,7 @@ function _showNotifToast(entry) {
       '<button class="notif-toast-close" aria-label="Dismiss">&times;</button>' +
     '</div>' +
     '<div class="notif-toast-body">' +
-      '<span class="' + tagClass + '">' + (entry.tag || 'update') + '</span>' +
+      '<span class="' + tagClass + '">' + safeTag + '</span>' +
       '<p class="notif-toast-text">' + (entry.text || '') + '</p>' +
     '</div>' +
     (link
@@ -4936,9 +4994,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (!changelogData || changelogData.length === 0) return;
 
-      // Detect if user is logged in (check for league context in URL)
+      // Detect if user is logged in — prefer server-injected __brctx; fall back to
+      // URL heuristic only when the context object is absent.
+      const _ictx = window.__brctx || {};
       const pathParts = window.location.pathname.split('/').filter(p => p);
-      const isLoggedIn = pathParts.length >= 3 && pathParts[0] && !isNaN(pathParts[1]);
+      const isLoggedIn = (_ictx.is_logged_in != null)
+        ? Boolean(_ictx.is_logged_in)
+        : (pathParts.length >= 3 && Boolean(pathParts[0]) && !isNaN(pathParts[1]));
 
       // Filter out history page entries if not logged in
       if (!isLoggedIn) {
@@ -4970,9 +5032,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Build the dropdown HTML
   function buildDropdown() {
-    // Detect league context from URL
+    // Detect league context — prefer server-injected __brctx over URL heuristic.
+    const _bctx = window.__brctx || {};
     const pathParts = window.location.pathname.split('/').filter(p => p);
-    const isLoggedIn = pathParts.length >= 3 && pathParts[0] && !isNaN(pathParts[1]);
+    const isLoggedIn = (_bctx.is_logged_in != null)
+      ? Boolean(_bctx.is_logged_in)
+      : (pathParts.length >= 3 && Boolean(pathParts[0]) && !isNaN(pathParts[1]));
     const leaguePrefix = isLoggedIn ? `/${pathParts[0]}/${pathParts[1]}/${pathParts[2]}` : '';
 
     const entries = changelogData.slice(0, 5).map(entry => {
@@ -6578,7 +6643,7 @@ function _buildStatsHTML(game_logs_by_year) {
 
       // Build season summary for header
       const seasonSummaryParts = [];
-      seasonSummaryParts.push(`${totalFantasyPts.toFixed(1)} pts`);
+      seasonSummaryParts.push(`${fmtPts(totalFantasyPts)} pts`);
       if (totalPassYd > 0) seasonSummaryParts.push(`${Math.round(totalPassYd)} pass yds`);
       if (totalRushYd > 0) seasonSummaryParts.push(`${Math.round(totalRushYd)} rush yds`);
       if (totalRec > 0) seasonSummaryParts.push(`${totalRec} rec`);

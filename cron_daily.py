@@ -103,9 +103,12 @@ def _player_values_fresh() -> bool:
             if db_date != _today():
                 return False
             # Also stale if model_values.json was rewritten after the last DB save.
-            # Convert the DB timestamp to a Unix timestamp for comparison.
-            import calendar
-            db_ts = calendar.timegm(t.timetuple()) if hasattr(t, "timetuple") else 0
+            # Use .timestamp() so timezone-aware datetimes convert correctly;
+            # calendar.timegm(timetuple()) strips tz info and is wrong on non-UTC hosts.
+            try:
+                db_ts = t.timestamp()
+            except Exception:
+                db_ts = 0
             if _model_mtime() > db_ts:
                 return False
             return True
@@ -145,8 +148,12 @@ def _wls_fresh() -> bool:
                 return False
             # Also stale if model_values.json was rebuilt after the last WLS run
             # (the new model would make a different prior for WLS).
-            import calendar
-            wls_ts = calendar.timegm(t.timetuple()) if hasattr(t, "timetuple") else 0
+            # Use .timestamp() so timezone-aware datetimes convert correctly;
+            # calendar.timegm(timetuple()) strips tz info and is wrong on non-UTC hosts.
+            try:
+                wls_ts = t.timestamp()
+            except Exception:
+                wls_ts = 0
             if _model_mtime() > wls_ts:
                 return False
             return True
