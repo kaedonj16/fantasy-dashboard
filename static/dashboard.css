@@ -15980,3 +15980,142 @@ button:disabled {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ── Toast notifications ──────────────────────────────────────────────────── */
+#toast-container {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: #1e293b;
+  box-shadow: 0 4px 20px rgba(0,0,0,.3);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity .22s ease, transform .22s ease;
+  pointer-events: auto;
+  white-space: nowrap;
+  max-width: 90vw;
+}
+.toast.toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.toast.toast-success { background: #16a34a; }
+.toast.toast-error   { background: #dc2626; }
+.toast.toast-info    { background: #0ea5e9; }
+
+/* ── Async card fade-in ───────────────────────────────────────────────────── */
+@keyframes cardFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+.card-fade-in {
+  animation: cardFadeIn .3s ease forwards;
+}
+
+/* ── Consistent empty state ──────────────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px 16px;
+  text-align: center;
+}
+.empty-state-icon {
+  font-size: 26px;
+  color: var(--muted, #64748b);
+  opacity: .5;
+}
+.empty-state-msg {
+  font-size: 13px;
+  color: var(--text-muted, #94a3b8);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── PWA install banner ───────────────────────────────────────────────────── */
+#pwa-install-banner {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  z-index: 9990;
+  background: var(--card, #1e293b);
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.3);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: clamp(280px, 90vw, 400px);
+  opacity: 0;
+  transition: opacity .3s ease, transform .3s ease;
+}
+#pwa-install-banner.pwa-banner-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.pwa-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.pwa-banner-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.pwa-banner-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #f1f5f9);
+}
+.pwa-banner-sub {
+  font-size: 11px;
+  color: var(--muted, #94a3b8);
+  margin-top: 2px;
+}
+.pwa-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.pwa-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pwa-btn-install {
+  background: var(--accent, #38bdf8);
+  color: #fff;
+}
+.pwa-btn-install:hover { opacity: .9; }
+.pwa-btn-dismiss {
+  background: var(--row, rgba(255,255,255,.05));
+  color: var(--muted, #94a3b8);
+}
+.pwa-btn-dismiss:hover { opacity: .8; }

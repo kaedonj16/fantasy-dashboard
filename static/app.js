@@ -57,6 +57,148 @@ document.body.scrollTop = 0;
   window.addEventListener('DOMContentLoaded', finishBar);
 })();
 
+// ── Global utilities ──────────────────────────────────────────────────────────
+
+/**
+ * Format a numeric score with a thousands separator and 1 decimal place.
+ * e.g. 1234.5 → "1,234.5"   99.8 → "99.8"
+ */
+function fmtPts(v) {
+  const n = parseFloat(v);
+  if (isNaN(n)) return '—';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+/**
+ * Format a whole number with thousands separator.
+ * e.g. 12500 → "12,500"
+ */
+function fmtInt(v) {
+  const n = parseInt(v, 10);
+  if (isNaN(n)) return '—';
+  return n.toLocaleString('en-US');
+}
+
+/**
+ * Toast notification system.
+ * Usage: showToast('Copied!') / showToast('Error', 'error') / showToast('Saved', 'success', 3000)
+ */
+window.showToast = (function () {
+  var container = null;
+  function getContainer() {
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'toast-container';
+      document.body.appendChild(container);
+    }
+    return container;
+  }
+  return function showToast(message, type, duration) {
+    type = type || 'info';
+    duration = duration == null ? 3000 : duration;
+    var c = getContainer();
+    var t = document.createElement('div');
+    t.className = 'toast toast-' + type;
+    t.textContent = message;
+    c.appendChild(t);
+    // Trigger enter animation
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { t.classList.add('toast-visible'); });
+    });
+    setTimeout(function () {
+      t.classList.remove('toast-visible');
+      t.addEventListener('transitionend', function () { t.remove(); }, { once: true });
+    }, duration);
+  };
+})();
+
+/**
+ * Apply a fade-in animation to a container after async content loads.
+ * Usage: fadeInCard(el)
+ */
+function fadeInCard(el) {
+  if (!el) return;
+  el.classList.remove('card-fade-in');
+  void el.offsetWidth; // reflow
+  el.classList.add('card-fade-in');
+}
+
+/**
+ * Render a consistent empty state inside a container.
+ * Usage: emptyState(el, 'No players found', 'fa-user-slash')
+ */
+function emptyState(container, message, iconClass) {
+  if (!container) return;
+  iconClass = iconClass || 'fa-inbox';
+  container.innerHTML =
+    '<div class="empty-state">' +
+      '<i class="fa-solid ' + iconClass + ' empty-state-icon"></i>' +
+      '<p class="empty-state-msg">' + (message || 'Nothing here yet.') + '</p>' +
+    '</div>';
+}
+
+// ── PWA install prompt ────────────────────────────────────────────────────────
+(function () {
+  var deferredPrompt = null;
+  var bannerShown = false;
+  var DISMISS_KEY = 'pwa-install-dismissed-v1';
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    // Don't show if already dismissed or installed
+    if (localStorage.getItem(DISMISS_KEY)) return;
+    // Delay slightly so it doesn't interrupt page load
+    setTimeout(showInstallBanner, 8000);
+  });
+
+  function showInstallBanner() {
+    if (bannerShown || !deferredPrompt) return;
+    bannerShown = true;
+
+    var banner = document.createElement('div');
+    banner.id = 'pwa-install-banner';
+    banner.innerHTML =
+      '<div class="pwa-banner-left">' +
+        '<img src="/static/BR_Logo.png" class="pwa-banner-icon" alt="BR Fantasy">' +
+        '<div>' +
+          '<div class="pwa-banner-title">Add to Home Screen</div>' +
+          '<div class="pwa-banner-sub">Install BR Fantasy for quick access</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pwa-banner-actions">' +
+        '<button id="pwa-install-btn" class="pwa-btn pwa-btn-install">Install</button>' +
+        '<button id="pwa-dismiss-btn" class="pwa-btn pwa-btn-dismiss">Not now</button>' +
+      '</div>';
+    document.body.appendChild(banner);
+
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { banner.classList.add('pwa-banner-visible'); });
+    });
+
+    document.getElementById('pwa-install-btn').addEventListener('click', function () {
+      hideBanner();
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(function (choice) {
+        if (choice.outcome === 'accepted') localStorage.setItem(DISMISS_KEY, '1');
+        deferredPrompt = null;
+      });
+    });
+
+    document.getElementById('pwa-dismiss-btn').addEventListener('click', function () {
+      hideBanner();
+      localStorage.setItem(DISMISS_KEY, '1');
+    });
+  }
+
+  function hideBanner() {
+    var b = document.getElementById('pwa-install-banner');
+    if (!b) return;
+    b.classList.remove('pwa-banner-visible');
+    b.addEventListener('transitionend', function () { b.remove(); }, { once: true });
+  }
+})();
+
 // ── Login / subscribe gate ────────────────────────────────────────────────────
 /**
  * Render a sign-in or subscribe prompt inside a container element.
@@ -434,6 +576,7 @@ function initPlayoffOdds(root = document) {
             return;
           }
           panel.innerHTML = _renderPlayoffOdds(data);
+          fadeInCard(panel);
         })
         .catch(() => {
           panel.innerHTML = '<p class="po-error">Unable to load playoff odds.</p>';
@@ -967,7 +1110,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
     }).catch(err => {
       console.error("Failed to copy to clipboard:", err);
-      alert("Failed to copy link. Please try again.");
+      showToast("Failed to copy link. Please try again.", "error");
     });
   }
 
@@ -1305,6 +1448,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       renderMovers(data);
+      fadeInCard(moversPanel);
 
       // Visual feedback - pulse animation
       if (moversPanel) {
@@ -5525,7 +5669,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const totalCard = totalPts != null
         ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">Total Pts${seasonLabel}</div>
-            <div class="pm-hero-val">${totalPts}</div>
+            <div class="pm-hero-val">${fmtPts(totalPts)}</div>
             <div class="pm-hero-sub">${totalPtsRank ? `POS : ${totalPtsRank} · OVR : ${totalPtsOvrRank ?? '—'}` : '-'}</div>
           </div>`
         : '';
@@ -6435,7 +6579,7 @@ function _buildStatsHTML(game_logs_by_year) {
 
         const ptsCell = isBye
           ? '-'
-          : hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '-') : '<span style="color:#9ca3af;">DNP</span>';
+          : hasAnyStats ? (game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '-') : '<span style="color:#9ca3af;">DNP</span>';
 
         statsHTML += `
           <tr class="${rowClass}">
@@ -6465,7 +6609,7 @@ function _buildStatsHTML(game_logs_by_year) {
                 <tr class="game-log-table-total">
                   <td><strong>Total</strong></td>
                   <td><strong>${gamesPlayed}G</strong></td>
-                  <td class="game-log-table-pts"><strong>${totalFantasyPts.toFixed(1)}</strong></td>
+                  <td class="game-log-table-pts"><strong>${fmtPts(totalFantasyPts)}</strong></td>
                   <td><strong>${valTotal(totalPassYd) !== '-' ? Math.round(totalPassYd) : '-'}</strong></td>
                   <td><strong>${valTotal(totalPassTd)}</strong></td>
                   <td><strong>${valTotal(totalPassInt)}</strong></td>

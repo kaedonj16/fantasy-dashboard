@@ -580,7 +580,7 @@ BASE_HTML = """
           <a href="{contact_url}">Contact</a>
         </div>
         <div class="site-footer-note">
-          © 2025 BR Fantasy. All rights reserved.
+          © <span id="footer-year"></span> BR Fantasy. All rights reserved.
         </div>
       </div>
     </footer>
@@ -665,6 +665,12 @@ BASE_HTML = """
           shown = false;
           overlay.style.display = 'none';
         }});
+      }})();
+
+      // Dynamic copyright year
+      (function() {{
+        var el = document.getElementById('footer-year');
+        if (el) el.textContent = new Date().getFullYear();
       }})();
     </script>
   </body>
@@ -1375,20 +1381,24 @@ _AD_INIT = """window.addEventListener('load', function() { setTimeout(function()
 
 
 def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
-    """Dismissible 'Recap is ready' banner shown on Tuesdays during NFL season."""
+    """Dismissible end-of-season 'Recap is ready' banner.
+
+    Only shown in January (when the final season recap is available).
+    Dismissal is remembered for the entire off-season via a season-scoped
+    localStorage key — it only resets when the *next* season's recap drops.
+    """
     import datetime as _dt
     now = _dt.datetime.now()
-    # if now.weekday() != 1:           # only Tuesday
-    #     return ""
-    # if now.month not in {9, 10, 11, 12, 1}:  # only during NFL season
-    #     return ""
+    # Only show in January — that's when the final season recap is available.
+    if now.month != 1:
+        return ""
     if not (league_id and platform and season):
         return ""
 
     recap_url = f"/{platform}/{season}/{league_id}/recap"
-    # Key includes ISO week so dismissal resets automatically the following Tuesday
-    iso_week = now.isocalendar()[1]
-    dismiss_key = f"recap-banner-{now.year}-w{iso_week}"
+    # Key is scoped to the season so dismissal persists through the off-season
+    # and only resets when the next year's recap banner is rendered.
+    dismiss_key = f"recap-banner-season-{season}"
 
     return f"""
 <style>
@@ -21097,6 +21107,19 @@ def _run_startup_daily() -> None:
 
 
 threading.Thread(target=_run_startup_daily, daemon=True).start()
+
+
+@app.route("/robots.txt")
+def robots_txt():
+    txt = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /api/\n"
+        "Disallow: /admin/\n"
+        "\n"
+        f"Sitemap: https://brfantasy.com/sitemap.xml\n"
+    )
+    return app.response_class(txt, mimetype="text/plain")
 
 
 if __name__ == "__main__":
