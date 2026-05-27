@@ -1203,11 +1203,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
         nav_pills.append(nav_pill_dropdown("Weekly", [
-            ("Matchups",             "page_weekly",             "weekly",   False),
-            ("Weekly Recap",         "page_recap",              "recap",    False),
-            ("Waivers & Start/Sit",  "page_waivers",            "waivers",  False),
-            ("Playoff Schedule",     "page_playoff_schedule",   "schedule", False),
-        ], ["weekly", "recap", "waivers", "schedule"], "weeklyNavDropdown"))
+            ("Matchups",           "page_weekly",           "weekly",   False),
+            ("Weekly Recap",       "page_recap",            "recap",    False),
+            ("Playoff Schedule",   "page_playoff_schedule", "schedule", False),
+        ], ["weekly", "recap", "schedule"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",     "page_standings",    "standings",    False),
         ("Teams",         "page_teams",        "teams",        False),
@@ -1219,7 +1218,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Breakout Engine",   "page_breakouts",  "breakouts", False),
-    ], ["players", "prospects", "breakouts"], "playersNavDropdown"))
+        ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
+    ], ["players", "prospects", "breakouts", "waivers"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -13809,6 +13809,56 @@ def api_flush_value_cache():
     _MODEL_VALUE_CACHE    = None
     _MODEL_VALUE_CACHE_TS = 0
     return jsonify({"ok": True, "message": "Model value cache cleared — next request will reload from DB."})
+
+
+@app.route("/api/run-daily-cron", methods=["POST"])
+@limiter.limit("5 per hour")
+def api_run_daily_cron():
+    """
+    Trigger a full cron_daily run in a background thread.
+
+    Caller must pass the correct CRON_SECRET:
+        curl -X POST /api/run-daily-cron -H 'Content-Type: application/json' \\
+             -d '{"secret": "<CRON_SECRET>"}'
+
+    Optional: pass "force": true to delete model_values.json first so all
+    freshness guards are bypassed and values are fully rebuilt from scratch.
+
+    Returns immediately; the cron runs in the background (check server logs).
+    """
+    secret   = os.environ.get("CRON_SECRET", "")
+    body     = request.get_json(force=True, silent=True) or {}
+    provided = body.get("secret", "")
+    if not secret or provided != secret:
+        return jsonify({"error": "unauthorized"}), 403
+
+    force = bool(body.get("force", False))
+
+    def _run_cron(force_rebuild: bool):
+        try:
+            if force_rebuild:
+                # Remove model_values.json so freshness guards are all bypassed
+                _mv = DATA_DIR / "model_values.json"
+                if _mv.exists():
+                    _mv.unlink()
+                    logger.info("[run-daily-cron] Deleted %s to force full rebuild", _mv)
+            from cron_daily import main as _cron_main
+            logger.info("[run-daily-cron] Starting (force=%s)", force_rebuild)
+            _cron_main()
+            # Flush the in-memory cache so the fresh values are served immediately
+            global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
+            _MODEL_VALUE_CACHE    = None
+            _MODEL_VALUE_CACHE_TS = 0
+            logger.info("[run-daily-cron] Completed — cache flushed")
+        except Exception as _e:
+            logger.error("[run-daily-cron] Failed: %s", _e, exc_info=True)
+
+    threading.Thread(target=_run_cron, args=(force,), daemon=True).start()
+    return jsonify({
+        "ok":     True,
+        "force":  force,
+        "message": "Daily cron triggered in background — check server logs for progress.",
+    })
 
 
 @app.route("/api/debug-values")

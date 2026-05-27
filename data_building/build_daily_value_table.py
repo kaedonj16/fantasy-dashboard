@@ -299,6 +299,62 @@ def record_calibrated_history_snapshot() -> int:
     return written
 
 
+def sync_history_to_player_values() -> int:
+    """
+    Copy the most recent player_value_history snapshot (source='model') into
+    player_values.value_1qb / value_sf, and clear calibrated columns so the
+    EMA-smoothed values are immediately visible on the site.
+
+    Picks are left untouched — they don't appear in player_value_history.
+
+    Call this AFTER record_model_value_snapshot() and
+    update_player_values_with_rankings() so step 4 metadata (pos_rank, age,
+    team, etc.) is preserved but value_1qb is replaced with the EMA value.
+
+    This ensures the site serves smoothed values rather than raw model output.
+    """
+    from dashboard_services.db import get_conn
+
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT MAX(as_of_date) AS latest_date
+            FROM player_value_history
+            WHERE source = 'model' AND value > 0
+            """
+        ).fetchone()
+
+    if not row or not row["latest_date"]:
+        print("[sync_history_to_player_values] No history rows found — skipping")
+        return 0
+
+    latest_date = str(row["latest_date"])
+    print(f"[sync_history_to_player_values] Syncing EMA values from as_of_date={latest_date}")
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE player_values pv
+                SET value_1qb            = ph.value,
+                    value_sf             = COALESCE(ph.sf_value, ph.value_sf, ph.value),
+                    calibrated_value_1qb = NULL,
+                    calibrated_value_sf  = NULL,
+                    last_updated         = NOW()
+                FROM player_value_history ph
+                WHERE ph.player_id  = pv.player_id
+                  AND ph.source     = 'model'
+                  AND ph.as_of_date = %s
+                  AND ph.value      > 0
+                """,
+                (latest_date,),
+            )
+            updated = cur.rowcount
+
+    print(f"[sync_history_to_player_values] Updated {updated} player rows in player_values")
+    return updated
+
+
 def build_daily_market_pulse_for_league_type(league_type: str = "1qb"):
     """
     Build market pulse for a specific league type.
