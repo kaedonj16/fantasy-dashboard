@@ -4844,6 +4844,59 @@ document.addEventListener("DOMContentLoaded", () => {
 // Global variable to track notification state
 let hasNewNotifications = false;
 
+// Show a rich notification toast for a new changelog entry
+function _showNotifToast(entry) {
+  if (!entry) return;
+
+  // Build a richer popup than a plain text toast
+  var popup = document.createElement('div');
+  popup.className = 'notif-toast';
+
+  var tagClass = 'notif-toast-tag notif-toast-tag-' + (entry.tag || 'update');
+
+  // Resolve link with league context if available
+  var link = entry.link || null;
+  if (link && link.startsWith('/')) {
+    var pathParts = window.location.pathname.split('/').filter(function(p) { return p; });
+    var isLoggedIn = pathParts.length >= 3 && pathParts[0] && !isNaN(pathParts[1]);
+    if (isLoggedIn) link = '/' + pathParts[0] + '/' + pathParts[1] + '/' + pathParts[2] + link;
+  }
+
+  popup.innerHTML =
+    '<div class="notif-toast-header">' +
+      '<i class="fa-solid fa-bell notif-toast-bell"></i>' +
+      '<span class="notif-toast-title">What\'s New</span>' +
+      '<button class="notif-toast-close" aria-label="Dismiss">&times;</button>' +
+    '</div>' +
+    '<div class="notif-toast-body">' +
+      '<span class="' + tagClass + '">' + (entry.tag || 'update') + '</span>' +
+      '<p class="notif-toast-text">' + (entry.text || '') + '</p>' +
+    '</div>' +
+    (link
+      ? '<a href="' + link + '" class="notif-toast-action">View update &rsaquo;</a>'
+      : '') ;
+
+  document.body.appendChild(popup);
+
+  // Trigger enter animation
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() { popup.classList.add('notif-toast-visible'); });
+  });
+
+  function dismiss() {
+    popup.classList.remove('notif-toast-visible');
+    popup.addEventListener('transitionend', function() { popup.remove(); }, { once: true });
+  }
+
+  popup.querySelector('.notif-toast-close').addEventListener('click', dismiss);
+  if (link) {
+    popup.querySelector('.notif-toast-action').addEventListener('click', dismiss);
+  }
+
+  // Auto-dismiss after 8 seconds
+  setTimeout(dismiss, 8000);
+}
+
 // Global function for notification dots (accessible from settings dropdown)
 function setChangelogDot(hasNew, showSettingsDot = false) {
   // Update the global notification state
@@ -4894,13 +4947,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (changelogData.length === 0) return;
 
-      // Check if we should show the red dot
+      // Check if we should show the red dot + notification toast
       const latestDate = changelogData[0].date;
       const lastSeen = localStorage.getItem("changelog_last_seen");
 
-
       if (!lastSeen || latestDate > lastSeen) {
         setChangelogDot(true);
+        // Show a toast once per session for new notifications
+        const sessionKey = "changelog_toast_shown_" + latestDate;
+        if (!sessionStorage.getItem(sessionKey)) {
+          sessionStorage.setItem(sessionKey, "1");
+          _showNotifToast(changelogData[0]);
+        }
       }
 
       // Build dropdown HTML

@@ -16119,3 +16119,90 @@ button:disabled {
   color: var(--muted, #94a3b8);
 }
 .pwa-btn-dismiss:hover { opacity: .8; }
+
+/* ── Notification toast (changelog new-entry popup) ──────────────────────── */
+.notif-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99998;
+  width: clamp(260px, 90vw, 320px);
+  background: var(--card, #1e293b);
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+  border-top: 3px solid var(--accent, #38bdf8);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.28);
+  padding: 14px 16px 12px;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity .25s ease, transform .25s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.notif-toast.notif-toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.notif-toast-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.notif-toast-bell {
+  font-size: 13px;
+  color: var(--accent, #38bdf8);
+  flex-shrink: 0;
+}
+.notif-toast-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #f1f5f9);
+  flex: 1;
+}
+.notif-toast-close {
+  background: none;
+  border: none;
+  color: var(--muted, #94a3b8);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.notif-toast-close:hover { color: var(--text, #f1f5f9); }
+.notif-toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.notif-toast-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  align-self: flex-start;
+}
+/* Mirror changelog tag colours */
+.notif-toast-tag-new     { background: rgba(56,189,248,.15); color: #38bdf8; }
+.notif-toast-tag-fix     { background: rgba(34,197, 94,.15); color: #22c55e; }
+.notif-toast-tag-update  { background: rgba(251,191, 36,.15); color: #fbbf24; }
+.notif-toast-tag-feature { background: rgba(168,85,247,.15);  color: #a855f7; }
+.notif-toast-text {
+  font-size: 13px;
+  color: var(--muted, #94a3b8);
+  margin: 0;
+  line-height: 1.5;
+}
+.notif-toast-action {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent, #38bdf8);
+  text-decoration: none;
+  padding-top: 2px;
+}
+.notif-toast-action:hover { text-decoration: underline; }
