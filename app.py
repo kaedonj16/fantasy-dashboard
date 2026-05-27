@@ -1383,14 +1383,15 @@ _AD_INIT = """window.addEventListener('load', function() { setTimeout(function()
 def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
     """Dismissible end-of-season 'Recap is ready' banner.
 
-    Only shown in January (when the final season recap is available).
+    Only shown on Tuesdays in January (when the final season recap is available).
     Dismissal is remembered for the entire off-season via a season-scoped
     localStorage key — it only resets when the *next* season's recap drops.
     """
     import datetime as _dt
     now = _dt.datetime.now()
-    # Only show in January — that's when the final season recap is available.
-    if now.month != 1:
+    if now.weekday() != 1:           # Tuesday only (0=Mon … 6=Sun)
+        return ""
+    if now.month != 1:               # January only — final season recap window
         return ""
     if not (league_id and platform and season):
         return ""
