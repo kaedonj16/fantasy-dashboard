@@ -1116,27 +1116,24 @@ def rewrite_value_table_with_model() -> Path:
     with source_path.open("r", encoding="utf-8") as f:
         players = json.load(f)
 
-    # ── Scale constant ────────────────────────────────────────────────────────
-    # FC max normalises to this; WLS (0-999) is scaled to match.
-    # Values above 999 are intentional for elite players.
-    FC_MAX_SCALE = 1050.0
-    WLS_SCALE    = FC_MAX_SCALE / 999.9   # ≈ 1.0501
+    # ── FC values (fixed divisor — no max-normalisation so no hard ceiling) ────
+    # Dividing raw FC values by 10 produces a natural dynasty scale
+    # (~1000-1100 for elite players, ~500-700 for starters) without any player
+    # being forced to an artificial maximum.
+    FC_DIVISOR = 10.0
 
-    # ── FC values (0→FC_MAX_SCALE, keyed by Sleeper ID) ──────────────────────
     fc_by_sid: dict[str, float] = {}
     fc_df = load_fantasycalc_df()
     if not fc_df.empty and "fc_value" in fc_df.columns and "sleeper_id" in fc_df.columns:
-        _fc_nz = fc_df["fc_value"][fc_df["fc_value"] > 0]
-        if len(_fc_nz):
-            _fc_max = float(_fc_nz.max())
-            for _, _r in fc_df.iterrows():
-                _sid = str(_r.get("sleeper_id") or "").strip()
-                _val = float(_r.get("fc_value") or 0)
-                if _sid and _val > 0:
-                    fc_by_sid[_sid] = _val / _fc_max * FC_MAX_SCALE
+        for _, _r in fc_df.iterrows():
+            _sid = str(_r.get("sleeper_id") or "").strip()
+            _val = float(_r.get("fc_value") or 0)
+            if _sid and _val > 0:
+                fc_by_sid[_sid] = _val / FC_DIVISOR
     print(f"[rewrite_value_table] FC: {len(fc_by_sid)} players")
 
     # ── WLS calibrated values from DB (scaled to match FC range) ─────────────
+    # WLS is in 0-999 scale; scale it so WLS top player ≈ FC top player.
     wls_1qb: dict[str, float] = {}
     wls_sf:  dict[str, float] = {}
     try:
@@ -1147,12 +1144,15 @@ def rewrite_value_table_with_model() -> Path:
                 "FROM player_values "
                 "WHERE calibrated_value_1qb IS NOT NULL AND calibrated_value_1qb > 0"
             ).fetchall()
-        for _r in _wls_rows:
-            _pid = str(_r["player_id"])
-            wls_1qb[_pid] = float(_r["calibrated_value_1qb"]) * WLS_SCALE
-            if _r["calibrated_value_sf"] and float(_r["calibrated_value_sf"]) > 0:
-                wls_sf[_pid] = float(_r["calibrated_value_sf"]) * WLS_SCALE
-        print(f"[rewrite_value_table] WLS 1QB: {len(wls_1qb)} | SF: {len(wls_sf)} players")
+        _fc_top = max(fc_by_sid.values()) if fc_by_sid else 999.0
+        _wls_raw = {str(_r["player_id"]): (float(_r["calibrated_value_1qb"]), _r["calibrated_value_sf"]) for _r in _wls_rows}
+        _wls_max = max(v for v, _ in _wls_raw.values()) if _wls_raw else 999.0
+        _wls_scale = _fc_top / _wls_max  # align WLS top player to FC top player
+        for _pid, (_v1, _vsf) in _wls_raw.items():
+            wls_1qb[_pid] = _v1 * _wls_scale
+            if _vsf and float(_vsf) > 0:
+                wls_sf[_pid] = float(_vsf) * _wls_scale
+        print(f"[rewrite_value_table] WLS 1QB: {len(wls_1qb)} | SF: {len(wls_sf)} players (scale={_wls_scale:.3f})")
     except Exception as _wls_err:
         print(f"[rewrite_value_table] WLS load skipped: {_wls_err}")
 
