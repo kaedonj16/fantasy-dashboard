@@ -6,7 +6,7 @@ from typing import Optional, List, Dict
 
 import requests
 
-from utils.utils import DATA_DIR, path_fantasycalc_values, path_dynastyprocess_values, path_ktc_values
+from utils.utils import DATA_DIR, path_fantasycalc_values, path_fantasycalc_sf_values, path_dynastyprocess_values, path_ktc_values
 
 # ---------------------------
 # Paths / constants
@@ -233,6 +233,20 @@ def load_fantasycalc_api_values(
     return None
 
 
+def load_fantasycalc_sf_api_values(
+        csv_path: Path = None,
+) -> Optional[List[dict]]:
+    """Load the FantasyCalc SF (numQbs=2) CSV if it exists; otherwise return None."""
+    if csv_path is None:
+        csv_path = Path(path_fantasycalc_sf_values())
+    csv_path = Path(csv_path)
+    if not csv_path.exists():
+        return None
+    with csv_path.open("r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        return list(reader)
+
+
 def download_dynastyprocess_values_csv(
         out_csv: Path = path_dynastyprocess_values(),
 ) -> None:
@@ -302,7 +316,7 @@ def scrape_all_vendor_values(
         else:
             num_teams = 10
 
-    print(f"[external_values] Fetching FantasyCalc API values… (numTeams={num_teams})")
+    print(f"[external_values] Fetching FantasyCalc API values (1QB, numTeams={num_teams})…")
     fc_data = fetch_fantasycalc_api_values(
         is_dynasty=is_dynasty,
         num_qbs=num_qbs,
@@ -310,6 +324,19 @@ def scrape_all_vendor_values(
         ppr=ppr,
     )
     write_fantasycalc_api_to_csv(fc_data, out_csv=path_fantasycalc_values())
+
+    print(f"[external_values] Fetching FantasyCalc API values (SF/2QB, numTeams={num_teams})…")
+    try:
+        fc_sf_data = fetch_fantasycalc_api_values(
+            is_dynasty=is_dynasty,
+            num_qbs=2,
+            num_teams=num_teams,
+            ppr=ppr,
+        )
+        write_fantasycalc_api_to_csv(fc_sf_data, out_csv=path_fantasycalc_sf_values())
+        print(f"[external_values] FC SF: {len(fc_sf_data)} players saved.")
+    except Exception as _e:
+        print(f"[external_values] FC SF fetch failed (non-fatal): {_e}")
 
     print("[external_values] Downloading DynastyProcess values.csv…")
     download_dynastyprocess_values_csv(out_csv=path_dynastyprocess_values())

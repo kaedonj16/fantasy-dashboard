@@ -193,6 +193,10 @@ def path_fantasycalc_values() -> str:
     return os.path.join(DATA_DIR, "fantasycalc_api_values.csv")
 
 
+def path_fantasycalc_sf_values() -> str:
+    return os.path.join(DATA_DIR, "fantasycalc_sf_api_values.csv")
+
+
 def path_dynastyprocess_values() -> str:
     return os.path.join(DATA_DIR, "dynastyprocess_values.csv")
 

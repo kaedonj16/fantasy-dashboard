@@ -13620,124 +13620,11 @@ def get_model_value_table_cached():
     if not tbl:
         tbl = list(load_model_value_table() or [])
 
-    # Apply FC/DP market corrections directly against the loaded values.
-    # Compare model values already in tbl — no extra DB query needed.
-    if tbl:
-        try:
-            from data_building.external_data.external_values_scraper import (
-                load_fantasycalc_api_values, load_dynastyprocess_values,
-            )
-            from utils.utils import normalize_name as _nn
-            from collections import defaultdict as _dd
-
-            # Normalize FC to 0-999.9
-            _fc_rows = load_fantasycalc_api_values() or []
-            _fc_by_sid: dict = {}
-            if _fc_rows:
-                _max_fc = max((float(r.get("value") or 0) for r in _fc_rows if r.get("value")), default=0)
-                if _max_fc > 0:
-                    for _r in _fc_rows:
-                        _sid = str(_r.get("sleeper_id") or "").strip()
-                        if _sid:
-                            try:
-                                _fc_by_sid[_sid] = float(_r["value"]) * 999.9 / _max_fc
-                            except (TypeError, ValueError):
-                                pass
-
-            # Normalize DP to 0-999.9
-            _dp_rows = load_dynastyprocess_values() or []
-            _dp_by_name: dict = {}
-            if _dp_rows:
-                _max_dp = max((float(r.get("value_1qb") or 0) for r in _dp_rows if r.get("value_1qb")), default=0)
-                if _max_dp > 0:
-                    for _r in _dp_rows:
-                        _nm = str(_r.get("player") or "").strip()
-                        if _nm:
-                            try:
-                                _dp_by_name[_nn(_nm)] = float(_r["value_1qb"]) * 999.9 / _max_dp
-                            except (TypeError, ValueError):
-                                pass
-
-            # Build pid→name map from players_index so DP lookup works even when
-            # player dicts from load_current_values_from_db() have no name field
-            # (player_values table has no name column).
-            try:
-                from utils.utils import load_players_index as _lpi
-                _pid_to_name = {str(k): (v.get("name") or "") for k, v in (_lpi() or {}).items()}
-            except Exception:
-                _pid_to_name = {}
-
-            # Load trade counts (best-effort)
-            _trade_counts: dict = {}
-            try:
-                from dashboard_services.db import get_conn as _gc
-                with _gc() as _conn:
-                    with _conn.cursor() as _cur:
-                        _cur.execute("SELECT player_id, trade_count FROM trade_intel_player_stats")
-                        for _r in _cur.fetchall():
-                            _rd = dict(_r)
-                            _trade_counts[str(_rd["player_id"])] = int(_rd.get("trade_count") or 0)
-            except Exception:
-                pass
-
-            _corrected = 0
-            if _fc_by_sid or _dp_by_name:
-                for _p in tbl:
-                    _pid     = str(_p.get("id") or "")
-                    _mval    = float(_p.get("value") or 0)
-                    if _mval <= 0:
-                        continue
-                    _msf     = float(_p.get("sf_value") or _mval)
-                    _fc_val  = _fc_by_sid.get(_pid)
-                    # Use name from player dict if present, else fall back to players_index
-                    _name    = str(_p.get("name") or "") or _pid_to_name.get(_pid, "")
-                    _dp_val  = _dp_by_name.get(_nn(_name))
-
-                    if _fc_val is None and _dp_val is None:
-                        # No external market data — other sites don't value this player
-                        _p["value"]    = 0
-                        _p["sf_value"] = 0
-                        _corrected += 1
-                        continue
-
-                    _avail   = [v for v in (_fc_val, _dp_val) if v is not None]
-                    _ext_avg = sum(_avail) / len(_avail)
-
-                    _inflated = (
-                        (_fc_val is not None and _fc_val > 0 and _mval > 1.5 * _fc_val)
-                        or (_dp_val is not None and _dp_val > 0 and _mval > 1.5 * _dp_val)
-                    )
-                    _low_trades = _trade_counts.get(_pid, 0) < 20
-
-                    if _inflated or (_low_trades and _ext_avg < _mval):
-                        _p["value"]    = round(_ext_avg, 2)
-                        _p["sf_value"] = round(_ext_avg * (_msf / _mval), 2)
-                        _corrected += 1
-
-                print(f"[model-value-cache] applied {_corrected} FC/DP market corrections")
-
-                # Recompute pos_rank / pos_rank_label after corrections
-                _pos_idx: dict    = _dd(list)
-                _sf_pos_idx: dict = _dd(list)
-                for _i, _p in enumerate(tbl):
-                    _pos = str(_p.get("position") or "").upper()
-                    if _pos and _pos != "PICK":
-                        _pos_idx[_pos].append(_i)
-                        _sf_pos_idx[_pos].append(_i)
-                for _pos, _idxs in _pos_idx.items():
-                    _idxs.sort(key=lambda _i: float(tbl[_i].get("value") or 0), reverse=True)
-                    for _rank, _i in enumerate(_idxs, 1):
-                        tbl[_i]["pos_rank"]       = _rank
-                        tbl[_i]["pos_rank_label"] = f"{_pos}{_rank}"
-                for _pos, _idxs in _sf_pos_idx.items():
-                    _idxs.sort(key=lambda _i: float(tbl[_i].get("sf_value") or 0), reverse=True)
-                    for _rank, _i in enumerate(_idxs, 1):
-                        tbl[_i]["sf_pos_rank"]       = _rank
-                        tbl[_i]["sf_pos_rank_label"] = f"{_pos}{_rank}"
-        except Exception as _e:
-            print(f"[model-value-cache] market corrections skipped: {_e}")
-
-    # Append rookie prospects — pipeline values take priority over player_values for current class
+    # Append rookie prospects for players not already tracked in player_values.
+    # player_values (EMA-synced from player_value_history) takes priority when a
+    # rookie already has a history value — this keeps rankings consistent with
+    # the values shown everywhere else on the site.  The pipeline only fills in
+    # true gaps: undrafted prospects or newly-signed players not yet in the DB.
     try:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
         from utils.utils import load_players_index as _mvc_lpi
@@ -13745,22 +13632,25 @@ def get_model_value_table_cached():
         rk_rows = list(get_rookie_rankings_from_db(draft_year))
         if rk_rows:
             _mvc_idx = _mvc_lpi() or {}
-            rk_sids = {str(r.get("sleeper_id")) for r in rk_rows if r.get("sleeper_id")}
-            # Remove any player_values entries for this draft class so pipeline wins
-            tbl = [p for p in tbl if str(p.get("id") or "") not in rk_sids]
+            # IDs already present in player_values with a real value
+            _existing_ids = {str(p.get("id") or "") for p in tbl if float(p.get("value") or 0) > 0}
             for r in rk_rows:
                 sid  = str(r.get("sleeper_id")) if r.get("sleeper_id") else None
                 name = r.get("name") or ""
+                _rid = sid if sid else (r.get("player_id") or f"rookie_{name}")
+                # Skip if already tracked in player_values (EMA history wins)
+                if str(_rid) in _existing_ids:
+                    continue
                 _idx_team = _mvc_idx.get(sid, {}).get("team", "") if sid else ""
                 _team = r.get("actual_nfl_team") or _idx_team or r.get("team") or "FA"
                 tbl.append({
-                    "id":       sid if sid else (r.get("player_id") or f"rookie_{name}"),
-                    "name":     name,
-                    "team":     _team,
-                    "position": r.get("position") or "UNK",
-                    "age":      r.get("age"),
-                    "value":    float(r.get("rookie_value") or 0),
-                    "sf_value": float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
+                    "id":        _rid,
+                    "name":      name,
+                    "team":      _team,
+                    "position":  r.get("position") or "UNK",
+                    "age":       r.get("age"),
+                    "value":     float(r.get("rookie_value") or 0),
+                    "sf_value":  float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
                     "is_rookie": True,
                 })
     except Exception as e:
