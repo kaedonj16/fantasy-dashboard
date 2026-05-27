@@ -85,6 +85,12 @@ def _usage_table_fresh() -> bool:
     return _file_fresh_today(DATA_DIR / "usage_table.json")
 
 
+def _model_mtime() -> float:
+    """Return mtime of model_values.json, or 0 if missing."""
+    mv = DATA_DIR / "model_values.json"
+    return mv.stat().st_mtime if mv.exists() else 0.0
+
+
 def _player_values_fresh() -> bool:
     try:
         from dashboard_services.db import get_conn
@@ -94,7 +100,16 @@ def _player_values_fresh() -> bool:
             ).fetchone()
         if row and row["t"]:
             t = row["t"]
-            return (t.date() if hasattr(t, "date") else t) == _today()
+            db_date = t.date() if hasattr(t, "date") else t
+            if db_date != _today():
+                return False
+            # Also stale if model_values.json was rewritten after the last DB save.
+            # Convert the DB timestamp to a Unix timestamp for comparison.
+            import calendar
+            db_ts = calendar.timegm(t.timetuple()) if hasattr(t, "timetuple") else 0
+            if _model_mtime() > db_ts:
+                return False
+            return True
     except Exception:
         pass
     return False
@@ -126,7 +141,16 @@ def _wls_fresh() -> bool:
             ).fetchone()
         if row and row["t"]:
             t = row["t"]
-            return (t.date() if hasattr(t, "date") else t) == _today()
+            wls_date = t.date() if hasattr(t, "date") else t
+            if wls_date != _today():
+                return False
+            # Also stale if model_values.json was rebuilt after the last WLS run
+            # (the new model would make a different prior for WLS).
+            import calendar
+            wls_ts = calendar.timegm(t.timetuple()) if hasattr(t, "timetuple") else 0
+            if _model_mtime() > wls_ts:
+                return False
+            return True
     except Exception:
         pass
     return False
