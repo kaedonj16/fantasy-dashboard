@@ -4665,10 +4665,17 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
         scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
 
-    # Pick top gaps enforcing minimum spacing between boundaries
+    # T1 is always the top MIN_TIER players (fixed elite tier)
     scored.sort(key=lambda x: x[0], reverse=True)
-    chosen_pos = []
-    boundaries = []
+    if len(vals) > MIN_TIER:
+        _t1_mid = round((vals[MIN_TIER - 1] + vals[MIN_TIER]) / 2.0, 1)
+        chosen_pos = [MIN_TIER - 1]
+        boundaries = [_t1_mid]
+    else:
+        chosen_pos = []
+        boundaries = []
+
+    # Find remaining boundaries naturally from T2 onward
     for _sig, pos, midpoint in scored:
         if len(boundaries) >= num_tiers - 1:
             break
