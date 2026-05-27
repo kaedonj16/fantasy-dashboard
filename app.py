@@ -1381,25 +1381,25 @@ _AD_INIT = """window.addEventListener('load', function() { setTimeout(function()
 
 
 def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
-    """Dismissible end-of-season 'Recap is ready' banner.
+    """Dismissible weekly 'Recap is ready' banner.
 
-    Only shown on Tuesdays in January (when the final season recap is available).
-    Dismissal is remembered for the entire off-season via a season-scoped
-    localStorage key — it only resets when the *next* season's recap drops.
+    Shown on Tuesdays during the NFL season (Sep–Jan) only.
+    Dismissal resets each week via an ISO-week-scoped localStorage key,
+    so the banner reappears the following Tuesday.
     """
     import datetime as _dt
     now = _dt.datetime.now()
-    if now.weekday() != 1:           # Tuesday only (0=Mon … 6=Sun)
+    if now.weekday() != 1:                            # Tuesday only (0=Mon … 6=Sun)
         return ""
-    if now.month != 1:               # January only — final season recap window
+    if now.month not in {9, 10, 11, 12, 1}:          # NFL season only
         return ""
     if not (league_id and platform and season):
         return ""
 
     recap_url = f"/{platform}/{season}/{league_id}/recap"
-    # Key is scoped to the season so dismissal persists through the off-season
-    # and only resets when the next year's recap banner is rendered.
-    dismiss_key = f"recap-banner-season-{season}"
+    # Week-scoped key — dismissal resets automatically the following Tuesday
+    iso_week = now.isocalendar()[1]
+    dismiss_key = f"recap-banner-{now.year}-w{iso_week}"
 
     return f"""
 <style>
