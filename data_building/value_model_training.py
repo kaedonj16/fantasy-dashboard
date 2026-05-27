@@ -1094,6 +1094,23 @@ def build_ml_value_table() -> Dict[str, float]:
 # ------------------------------------------------
 
 def rewrite_value_table_with_model() -> Path:
+    """
+    Build model_values.json from FC + DP external market data only.
+
+    Both sources are trade-derived, so this is a consensus of two independent
+    real-trade datasets rather than a blend of market data with a usage ML model.
+
+    Blend:
+      1QB value : 65% FantasyCalc + 35% DynastyProcess (renorm when either
+                  is missing; DP excluded for TEs which DP systematically
+                  undervalues vs actual trade markets).
+      SF  value : For QBs: 65% FC + 35% DP value_2qb, with WLS
+                  calibrated_value_sf used as a floor (real trade data).
+                  For RB/WR/TE: same as 1QB value (QBs take the SF premium,
+                  skill positions are unchanged).
+      Size variants: same 10-team value for 8/12/14 (engine-based scarcity
+                     scaling removed; can be re-added via FC multi-size API).
+    """
     source_path = DATA_DIR / "usage_table.json"
     if not source_path.exists():
         raise FileNotFoundError(f"No usage table file at {source_path}")
@@ -1101,12 +1118,56 @@ def rewrite_value_table_with_model() -> Path:
     with source_path.open("r", encoding="utf-8") as f:
         players = json.load(f)
 
-    bundle = load_trained_bundle()
-    inference_df = build_inference_dataframe()
+    # ── FC values (floor-at-100 normalisation: min→100, max→999.9) ─────────
+    fc_by_sid: dict[str, float] = {}
+    fc_df = load_fantasycalc_df()
+    if not fc_df.empty and "fc_value" in fc_df.columns and "sleeper_id" in fc_df.columns:
+        _fc_nz = fc_df["fc_value"][fc_df["fc_value"] > 0]
+        if len(_fc_nz):
+            _fc_max = float(_fc_nz.max())
+            _fc_min = float(_fc_nz.min())
+            _fc_range = max(_fc_max - _fc_min, 1.0)
+            for _, _r in fc_df.iterrows():
+                _sid = str(_r.get("sleeper_id") or "").strip()
+                _val = float(_r.get("fc_value") or 0)
+                if _sid and _val > 0:
+                    fc_by_sid[_sid] = (_val - _fc_min) / _fc_range * 899.9 + 100.0
+    print(f"[rewrite_value_table] FC: {len(fc_by_sid)} players")
 
-    # Load WLS calibrated SF values (produced by trade_value_model.py).
-    # These are market-derived QB SF values from real dynasty trades.
-    # Used instead of a hardcoded boost so QB SF values reflect actual trade markets.
+    # ── DP values (floor-at-100, matched by player name) ────────────────────
+    dp_1qb_by_name: dict[str, float] = {}   # normalize_name(name) → normalised value
+    dp_2qb_by_name: dict[str, float] = {}   # for QB SF premium
+    try:
+        _dp_raw = pd.read_csv(DATA_DIR / "dynastyprocess_values.csv")
+        # 1QB
+        if "player" in _dp_raw.columns and "value_1qb" in _dp_raw.columns:
+            _dp_nz = _dp_raw["value_1qb"][_dp_raw["value_1qb"] > 0]
+            if len(_dp_nz):
+                _dp_max = float(_dp_nz.max())
+                _dp_min = float(_dp_nz.min())
+                _dp_range = max(_dp_max - _dp_min, 1.0)
+                for _, _r in _dp_raw.iterrows():
+                    _nm = str(_r.get("player") or "").strip()
+                    _v  = float(_r.get("value_1qb") or 0)
+                    if _nm and _v > 0:
+                        dp_1qb_by_name[normalize_name(_nm)] = (_v - _dp_min) / _dp_range * 899.9 + 100.0
+        # 2QB (SF)
+        if "player" in _dp_raw.columns and "value_2qb" in _dp_raw.columns:
+            _dp2_nz = _dp_raw["value_2qb"][_dp_raw["value_2qb"] > 0]
+            if len(_dp2_nz):
+                _dp2_max = float(_dp2_nz.max())
+                _dp2_min = float(_dp2_nz.min())
+                _dp2_range = max(_dp2_max - _dp2_min, 1.0)
+                for _, _r in _dp_raw.iterrows():
+                    _nm = str(_r.get("player") or "").strip()
+                    _v  = float(_r.get("value_2qb") or 0)
+                    if _nm and _v > 0:
+                        dp_2qb_by_name[normalize_name(_nm)] = (_v - _dp2_min) / _dp2_range * 899.9 + 100.0
+    except Exception as _dp_err:
+        print(f"[rewrite_value_table] DP load failed: {_dp_err}")
+    print(f"[rewrite_value_table] DP 1QB: {len(dp_1qb_by_name)} | 2QB: {len(dp_2qb_by_name)} players")
+
+    # ── WLS SF values — floor for QB SF calibration ─────────────────────────
     wls_sf_values: dict[str, float] = {}
     try:
         from dashboard_services.db import get_conn as _get_conn
@@ -1116,343 +1177,78 @@ def rewrite_value_table_with_model() -> Path:
                 "WHERE calibrated_value_sf IS NOT NULL AND calibrated_value_sf > 0"
             ).fetchall()
         wls_sf_values = {str(r["player_id"]): float(r["calibrated_value_sf"]) for r in _wls_rows}
-        print(f"[rewrite_value_table] Loaded {len(wls_sf_values)} WLS SF values from DB")
+        print(f"[rewrite_value_table] WLS SF: {len(wls_sf_values)} players")
     except Exception as _wls_err:
         print(f"[rewrite_value_table] WLS SF load skipped: {_wls_err}")
 
-    # CRITICAL FIX: Load vendor values to use directly when available
-    fc_df = load_fantasycalc_df()
-    dp_df = load_dynastyprocess_df()
-
-    # Build vendor value lookup for 1QB
-    vendor_values: dict[str, float] = {}
-
-    # Get FC values normalized to 999.9 scale
-    print(f"[DEBUG] fc_df.empty: {fc_df.empty}")
-    print(f"[DEBUG] 'fc_value' in fc_df.columns: {'fc_value' in fc_df.columns}")
-    print(f"[DEBUG] 'sleeper_id' in fc_df.columns: {'sleeper_id' in fc_df.columns}")
-    print(f"[DEBUG] fc_df shape: {fc_df.shape}")
-    
-    if not fc_df.empty and "fc_value" in fc_df.columns and "sleeper_id" in fc_df.columns:
-        fc_values_nonzero = fc_df["fc_value"][fc_df["fc_value"] > 0]
-        fc_max = fc_values_nonzero.max()
-        fc_min = fc_values_nonzero.min()
-        fc_range = max(fc_max - fc_min, 1.0)
-
-        for _, row in fc_df.iterrows():
-            pid = str(row.get("sleeper_id"))
-            fc_val = row.get("fc_value")
-            if pid and pd.notna(fc_val) and float(fc_val) > 0:
-                # Floor-at-100 normalization: lowest FC player → 100, highest → 999.9
-                vendor_values[pid] = (float(fc_val) - fc_min) / fc_range * 899.9 + 100.0
-    else:
-        print("[DEBUG] vendor_values section SKIPPED due to missing conditions")
-
-    # Blend KTC rankings into 1QB vendor values (25% weight) when available.
-    # KTC uses player names rather than Sleeper IDs so we match by normalised name.
-    # Wrapped in broad try/except so a KTC format change never breaks the pipeline.
-    try:
-        from data_building.external_data.external_values_scraper import load_ktc_values
-        from utils.utils import load_players_index as _load_pi
-        ktc_rows = load_ktc_values()
-        if ktc_rows:
-            ktc_raw_vals = [
-                float(r["ktc_value_1qb"])
-                for r in ktc_rows
-                if r.get("ktc_value_1qb") and float(r["ktc_value_1qb"]) > 0
-            ]
-            if ktc_raw_vals:
-                ktc_max = max(ktc_raw_vals)
-                ktc_min = min(ktc_raw_vals)
-                ktc_range = max(ktc_max - ktc_min, 1.0)
-                # Build normalised name → value lookup
-                ktc_name_map: dict[str, float] = {}
-                for r in ktc_rows:
-                    raw_name = (r.get("name") or "").strip().lower()
-                    raw_val = r.get("ktc_value_1qb")
-                    if raw_name and raw_val and float(raw_val) > 0:
-                        ktc_name_map[raw_name] = (
-                            (float(raw_val) - ktc_min) / ktc_range * 899.9 + 100.0
-                        )
-                # Blend: if we have both FC and KTC use 50/50; if only KTC use it solo
-                for pid_str, meta in (_load_pi() or {}).items():
-                    pid = str(pid_str)
-                    pname = (meta.get("name") or "").strip().lower()
-                    ktc_val = ktc_name_map.get(pname)
-                    if not ktc_val:
-                        continue
-                    if pid in vendor_values:
-                        vendor_values[pid] = vendor_values[pid] * 0.50 + ktc_val * 0.50
-                    else:
-                        vendor_values[pid] = ktc_val
-                print(f"[DEBUG] KTC blend applied: {len(ktc_name_map)} players from KTC")
-            else:
-                print("[DEBUG] KTC rows present but no valid ktc_value_1qb entries")
-        else:
-            print("[DEBUG] KTC CSV not found - skipping KTC blend")
-    except Exception as _ktc_err:
-        print(f"[DEBUG] KTC blend skipped: {_ktc_err}")
-
-    # Build Superflex vendor value lookup using sf_engine_value + value_2qb
-    sf_vendor_values: dict[str, float] = {}
-
-    # Load engine_values CSV (contains both 1QB + SF values for all league sizes)
-    engine_values_path = DATA_DIR / "engine_values.csv"
-    sf_engine_map: dict[str, float] = {}
-    # Per-league-size engine maps: {size: {pid: value}}
-    engine_size_map: dict[int, dict[str, float]] = {}
-    sf_engine_size_map: dict[int, dict[str, float]] = {}
+    # ── Per-player blend ─────────────────────────────────────────────────────
+    W_FC, W_DP = 0.65, 0.35
     LEAGUE_SIZES = [8, 10, 12, 14]
-    for n in LEAGUE_SIZES:
-        engine_size_map[n] = {}
-        sf_engine_size_map[n] = {}
-    if engine_values_path.exists():
-        try:
-            engine_df = pd.read_csv(engine_values_path)
-            for _, row in engine_df.iterrows():
-                pid = str(row.get("player_id"))
-                if not pid:
-                    continue
-                sf_eng_val = row.get("sf_engine_value")
-                if pd.notna(sf_eng_val):
-                    sf_engine_map[pid] = float(sf_eng_val)
-                for n in LEAGUE_SIZES:
-                    col_1qb = f"engine_value_{n}"
-                    col_sf = f"sf_engine_value_{n}"
-                    if col_1qb in engine_df.columns and pd.notna(row.get(col_1qb)):
-                        engine_size_map[n][pid] = float(row[col_1qb])
-                    if col_sf in engine_df.columns and pd.notna(row.get(col_sf)):
-                        sf_engine_size_map[n][pid] = float(row[col_sf])
-        except Exception as e:
-            print(f"[ERROR] Failed to load engine_values: {e}")
-
-    # Load base 10-team engine values for blending with FC vendor values (1QB)
-    engine_1qb_map: dict[str, float] = {}
-    if engine_values_path.exists():
-        try:
-            engine_df_base = pd.read_csv(engine_values_path)
-            for _, row in engine_df_base.iterrows():
-                pid = str(row.get("player_id"))
-                eng_val = row.get("engine_value_10")
-                if pid and pd.notna(eng_val):
-                    engine_1qb_map[pid] = float(eng_val)
-        except Exception as e:
-            print(f"[ERROR] Failed to load engine_1qb_map: {e}")
-
-    # Load value_2qb from dynastyprocess (need to match by name+team)
-    dp_2qb_map: dict[tuple[str, str], float] = {}  # (name, team) -> value_2qb
-    dp_df_full = pd.DataFrame()  # Full DP dataframe for outlier detection
-    # Always try to load DP dataframe for outlier detection
-    try:
-        dp_raw = pd.read_csv(DATA_DIR / "dynastyprocess_values.csv")
-        if "player" in dp_raw.columns and "value_1qb" in dp_raw.columns:
-            dp_df_full = dp_raw
-    except Exception as e:
-        print(f"[ERROR] Failed to load dp_df_full: {e}")
-
-    # Pre-compute DP normalisation bounds (floor-at-100: min→100, max→999.9)
-    _dp_1qb_vals = dp_df_full["value_1qb"].dropna() if not dp_df_full.empty and "value_1qb" in dp_df_full.columns else pd.Series(dtype=float)
-    _dp_1qb_vals = _dp_1qb_vals[_dp_1qb_vals > 0]
-    DP_1QB_MIN: float = float(_dp_1qb_vals.min()) if len(_dp_1qb_vals) else 1.0
-    DP_1QB_MAX: float = float(_dp_1qb_vals.max()) if len(_dp_1qb_vals) else 10256.0
-    DP_1QB_RANGE: float = max(DP_1QB_MAX - DP_1QB_MIN, 1.0)
-
-    # NOTE: dp_df_full intentionally kept from the load above - it is used below
-    # to look up per-player DP value_1qb for vendor consensus.  Do NOT reset it here.
-    try:
-        dp_raw = pd.read_csv(DATA_DIR / "dynastyprocess_values.csv")
-        dp_df_full = dp_raw.copy()  # Populate dp_df_full with the actual data
-        if "player" in dp_raw.columns and "value_2qb" in dp_raw.columns:
-            for _, row in dp_raw.iterrows():
-                name = str(row.get("player", "")).strip()
-                team = str(row.get("team", "")).strip()
-                val_2qb = row.get("value_2qb")
-                if name and pd.notna(val_2qb):
-                    dp_2qb_map[(name, team)] = float(val_2qb)
-    except Exception as e:
-        print(f"[ERROR] Failed to load value_2qb from dynastyprocess: {e}")
-
-    # Calculate Superflex vendor values: blend FC (50%), DP 2QB (35%), SF Engine (15%)
-    # First, normalize DP 2QB values to 999.9 scale
-    dp_2qb_max = max(dp_2qb_map.values()) if dp_2qb_map else 1.0
-
-    # Build sf_vendor_values for each player
-    players_index = load_players_index() or {}
-    for pid_key, meta in players_index.items():
-        pid = str(pid_key)
-        name = meta.get("name", "").strip()
-        team = meta.get("team", "").strip()
-
-        # Get FC value (same for 1QB and SF)
-        fc_val_norm = vendor_values.get(pid, 0.0)
-
-        # Get SF engine value
-        sf_eng_val = sf_engine_map.get(pid, 0.0)
-
-        # Get DP 2QB value (normalized)
-        dp_2qb_raw = dp_2qb_map.get((name, team), 0.0)
-        dp_2qb_norm = (dp_2qb_raw / dp_2qb_max * 999.9) if dp_2qb_max > 0 else 0.0
-
-        # Superflex blend: 35% vendor (FC+KTC), 40% DP 2QB, 25% SF engine.
-        # DP 2QB is the strongest signal for QB scarcity in SF formats.
-        # Renormalize when a source is missing so values aren't deflated.
-        if fc_val_norm > 0 or sf_eng_val > 0 or dp_2qb_norm > 0:
-            SF_W_VENDOR, SF_W_DP, SF_W_ENGINE = 0.35, 0.40, 0.25
-            sf_wsum = 0.0
-            sf_wtot = 0.0
-            if fc_val_norm > 0:
-                sf_wsum += SF_W_VENDOR * fc_val_norm; sf_wtot += SF_W_VENDOR
-            if dp_2qb_norm > 0:
-                sf_wsum += SF_W_DP * dp_2qb_norm;    sf_wtot += SF_W_DP
-            if sf_eng_val > 0:
-                sf_wsum += SF_W_ENGINE * sf_eng_val;  sf_wtot += SF_W_ENGINE
-            sf_value = sf_wsum / sf_wtot if sf_wtot > 0 else 0.0
-
-            sf_vendor_values[pid] = sf_value
-
-    df_by_id: dict[str, pd.Series] = {}
-    for _, row in inference_df.iterrows():
-        pid = str(row.get("sleeper_id"))
-        if pid:
-            df_by_id[pid] = row
-
     cleaned_assets: list[dict] = []
 
     for player in players:
-        pid = str(player.get("id"))
-        row = df_by_id.get(pid)
+        pid           = str(player.get("id"))
+        position      = str(player.get("position") or "").upper()
+        if position not in ("QB", "RB", "WR", "TE"):
+            continue
 
-        # Get ML model prediction first
-        ml_prediction = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
-        
-        # Store ML predictions for later ranking
-        if not hasattr(rewrite_value_table_with_model, '_ml_predictions'):
-            rewrite_value_table_with_model._ml_predictions = []
-        rewrite_value_table_with_model._ml_predictions.append({
-            'pid': pid,
-            'ml_prediction': ml_prediction,
-            'name': player.get('name', ''),
-            'position': player.get('position', '')
-        })
-        
-        # Gather all three value sources on the same 0-999.9 scale:
-        #   FC (vendor), DP (vendor, non-TEs only), internal engine.
-        # Outlier rule: if any source deviates >15% from the avg of the other two,
-        # use the mean of all three - which pulls the outlier toward the centre and
-        # prevents any single inflated/stale value from dominating.
-        # When all three agree (no outlier) the mean is the final value too.
-        player_position = str(player.get("position") or "").upper()
+        name      = player.get("name") or ""
+        norm_name = normalize_name(name)
 
-        # Resolve DP value for this player (matched by name + team, no sleeper_id in DP)
-        dp_val_raw = 0.0
-        player_row = df_by_id.get(pid)
-        if player_row is not None:
-            p_name = str(player_row.get('name', '')).strip()
-            p_team = str(player_row.get('team', '')).strip()
-            if not dp_df_full.empty:
-                dp_match = dp_df_full[
-                    (dp_df_full['player'].str.lower() == p_name.lower()) &
-                    (dp_df_full['team'].str.lower() == p_team.lower())
-                ]
-                if not dp_match.empty:
-                    dp_val_raw = float(dp_match.iloc[0]['value_1qb'])
-        # Normalise DP: floor-at-100 (min → 100, max → 999.9)
-        dp_norm = ((dp_val_raw - DP_1QB_MIN) / DP_1QB_RANGE * 899.9 + 100.0) if dp_val_raw > 0 else 0.0
+        fc_val = fc_by_sid.get(pid, 0.0)
 
-        fc_val  = vendor_values.get(pid, 0.0)
-        # DP undervalues TEs vs market consensus; exclude for that position.
-        dp_val  = dp_norm if (dp_norm > 0 and player_position != "TE") else 0.0
-        # Use None to distinguish "no data" (rookie/prospect) from "0 production" (known bad).
-        # Players in the engine table with 0 production should have that zero count against them.
-        eng_val = float(engine_1qb_map[pid]) if pid in engine_1qb_map else None
+        # DP undervalues TEs vs actual trade markets — exclude DP for that position.
+        dp_1qb = dp_1qb_by_name.get(norm_name, 0.0) if position != "TE" else 0.0
+        dp_2qb = dp_2qb_by_name.get(norm_name, 0.0)
 
-        # Fixed weights: 40% vendor (FC+KTC blend), 40% engine, 20% DP.
-        # DP and FC are dropped (renormalized) when missing - they may simply not cover a player.
-        # Engine is dropped only when the player has NO engine record (pure prospect with no NFL data).
-        # If a player IS in the engine table with 0 production, that zero is included in the blend
-        # so FC hype can't inflate them past what their usage actually supports.
-        W_VENDOR, W_ENGINE, W_DP = 0.40, 0.40, 0.20
-        weighted_sum = 0.0
-        total_weight = 0.0
-        if fc_val > 0:
-            weighted_sum += W_VENDOR * fc_val
-            total_weight += W_VENDOR
-        if eng_val is not None:
-            weighted_sum += W_ENGINE * eng_val
-            total_weight += W_ENGINE
-        if dp_val > 0:
-            weighted_sum += W_DP * dp_val
-            total_weight += W_DP
-
-        if total_weight > 0:
-            final_value = weighted_sum / total_weight
+        # 1QB blend (renorm when one source is missing)
+        if fc_val > 0 and dp_1qb > 0:
+            value_1qb = W_FC * fc_val + W_DP * dp_1qb
+        elif fc_val > 0:
+            value_1qb = fc_val
+        elif dp_1qb > 0:
+            value_1qb = dp_1qb
         else:
-            final_value = ml_prediction
+            continue  # no external market data — skip
 
-        # Calculate Superflex value - use engine values as primary source
-        if pid in sf_engine_map:
-            sf_value = sf_engine_map[pid]
-        elif pid in sf_vendor_values:
-            sf_value = sf_vendor_values[pid]
+        # SF blend
+        if position == "QB":
+            if fc_val > 0 and dp_2qb > 0:
+                sf_value = W_FC * fc_val + W_DP * dp_2qb
+            elif dp_2qb > 0:
+                sf_value = dp_2qb
+            else:
+                sf_value = value_1qb
+            # Real trade data floor — WLS can only lift QB SF value, not lower it.
+            if pid in wls_sf_values:
+                sf_value = max(sf_value, wls_sf_values[pid])
         else:
-            # Fallback to ML model for SF (same as 1QB for now)
-            sf_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
-
-        # Non-QB players are not less valuable in SF - QBs go up, everyone else stays the same.
-        # Floor non-QB sf_value at their 1QB value to prevent the DP 2QB blend from pulling them down.
-        position = player.get("position")
-        if position != "QB":
-            sf_value = max(sf_value, final_value)
-        elif pid in wls_sf_values:
-            # WLS market value can only improve (never downgrade) the engine's SF value.
-            # The sf_engine already gives top QBs (Allen: 999.9) their correct SF premium.
-            # WLS refines this with real trade data but shouldn't override a higher engine value.
-            sf_value = max(sf_value, wls_sf_values[pid])
+            # QBs take the SF premium; skill positions are unchanged.
+            sf_value = value_1qb
 
         age = player.get("age")
-        if age is None and row is not None:
-            if "age" in row and not pd.isna(row["age"]):
-                age = row["age"]
-            elif "fc_age" in row and not pd.isna(row["fc_age"]):
-                age = row["fc_age"]
 
-        name = player.get("name")
-
-        # Per-league-size values: scale the blended model value by the ratio
-        # of engine values between the target size and the default 10-team size.
-        # This preserves vendor-consensus anchoring while adjusting for scarcity.
-        eng_base = engine_size_map[10].get(pid) or 0.0
-        sf_eng_base = sf_engine_size_map[10].get(pid) or 0.0
-        size_values: dict[str, float] = {}
-        sf_size_values: dict[str, float] = {}
-        for n in LEAGUE_SIZES:
-            if n == 10:
-                continue
-            eng_n = engine_size_map[n].get(pid) or 0.0
-            sf_eng_n = sf_engine_size_map[n].get(pid) or 0.0
-            ratio = (eng_n / eng_base) if eng_base > 0 else 1.0
-            sf_ratio = (sf_eng_n / sf_eng_base) if sf_eng_base > 0 else 1.0
-            size_values[f"value_{n}"] = round(min(float(final_value) * ratio, 999.9), 1)
-            sf_size_values[f"sf_value_{n}"] = round(min(float(sf_value) * sf_ratio, 999.9), 1)
-
-        asset = {
-            "id": player.get("id"),
-            "name": name,
-            "team": player.get("team"),
-            "position": player.get("position"),
-            "age": age,
-            "value": round(min(float(final_value), 999.9), 1),
-            "sf_value": round(min(float(sf_value), 999.9), 1),
-            "search_name": normalize_name(name) if name else "",
-            "pos_rank": None,
-            "pos_rank_label": None,
-            "sf_pos_rank": None,
+        asset: dict = {
+            "id":               pid,
+            "name":             name,
+            "team":             player.get("team") or "",
+            "position":         position,
+            "age":              age,
+            "value":            round(min(float(value_1qb), 999.9), 1),
+            "sf_value":         round(min(float(sf_value),  999.9), 1),
+            "search_name":      normalize_name(name) if name else "",
+            "pos_rank":         None,
+            "pos_rank_label":   None,
+            "sf_pos_rank":      None,
             "sf_pos_rank_label": None,
-            "rank_change_7d": None,
+            "rank_change_7d":   None,
             "pos_rank_change_7d": None,
         }
-        asset.update(size_values)
-        asset.update(sf_size_values)
+        # Size variants: same 10-team value for 8/12/14.
+        for n in LEAGUE_SIZES:
+            if n != 10:
+                asset[f"value_{n}"]    = asset["value"]
+                asset[f"sf_value_{n}"] = asset["sf_value"]
         cleaned_assets.append(asset)
 
     pick_values = load_pick_value_table() or {}

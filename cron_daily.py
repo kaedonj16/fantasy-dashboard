@@ -76,8 +76,7 @@ def _model_values_fresh() -> bool:
 def _vendor_values_fresh() -> bool:
     return (
         _file_fresh_today(DATA_DIR / "fantasycalc_api_values.csv") and
-        _file_fresh_today(DATA_DIR / "dynastyprocess_values.csv") and
-        _file_fresh_today(DATA_DIR / "engine_values.csv")
+        _file_fresh_today(DATA_DIR / "dynastyprocess_values.csv")
     )
 
 

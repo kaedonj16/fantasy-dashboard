@@ -11,7 +11,6 @@ from data_building.external_data.team_enrichment import (
     enrich_teams_index_with_rushing,
 )
 from data_building.player_value_history import record_model_value_snapshot
-from data_building.value_exports import export_engine_values
 from data_building.value_model_training import rewrite_value_table_with_model
 from utils.utils import (
     path_teams_index,
@@ -84,8 +83,6 @@ def build_daily_data(season: int, week: int):
         )
     except Exception as exc:
         print(f"[build_daily_data] Rookie evaluation pipeline failed: {exc}")
-
-    export_engine_values()
 
 
 def build_daily_model_values():
