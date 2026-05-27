@@ -1095,19 +1095,21 @@ def build_ml_value_table() -> Dict[str, float]:
 
 def rewrite_value_table_with_model() -> Path:
     """
-    Build model_values.json blending FantasyCalc + WLS calibrated values.
+    Build model_values.json blending FantasyCalc + previous model values.
 
     Blend:
-      1QB value : 65% FC (Sleeper-ID matched) + 35% WLS calibrated_value_1qb
-                  from the DB.  Falls back to FC-only when WLS is unavailable
-                  (first run, no trades yet, etc.).
-      SF  value : same blend using calibrated_value_sf; QBs additionally
-                  get a WLS-SF floor so the SF premium is preserved.
-      Normalisation: FC scaled to 0→1050 (max→1050) so elite players can
-                  naturally exceed 999.  WLS already in 0–999 scale; scaled
-                  to match (×1050/999).  No hard cap — values reflect the
-                  actual market gap at the top.
+      1QB value : 65% FC (Sleeper-ID matched) + 35% previous model value
+                  (read from the existing model_values.json). Falls back to
+                  FC-only on the first run when there is no previous model.
+      SF  value : same 65/35 blend using previous sf_value.
+      Normalisation: FC raw values divided by FC_DIVISOR (=10). No max
+                  normalisation, no hard ceiling — elite players naturally
+                  exceed 999, deep bench naturally near 0.
       Size variants: same 10-team value for 8/12/14.
+
+    The blend smooths day-to-day FC market swings: a sudden 10% FC drop
+    only moves the displayed value by ~6.5%, while still tracking the
+    trend over a few daily cron runs.
     """
     source_path = DATA_DIR / "usage_table.json"
     if not source_path.exists():
@@ -1132,32 +1134,33 @@ def rewrite_value_table_with_model() -> Path:
                 fc_by_sid[_sid] = _val / FC_DIVISOR
     print(f"[rewrite_value_table] FC: {len(fc_by_sid)} players")
 
-    # ── WLS calibrated values from DB (scaled to match FC range) ─────────────
-    # WLS is in 0-999 scale; scale it so WLS top player ≈ FC top player.
-    wls_1qb: dict[str, float] = {}
-    wls_sf:  dict[str, float] = {}
-    try:
-        from dashboard_services.db import get_conn as _get_conn
-        with _get_conn() as _conn:
-            _wls_rows = _conn.execute(
-                "SELECT player_id, calibrated_value_1qb, calibrated_value_sf "
-                "FROM player_values "
-                "WHERE calibrated_value_1qb IS NOT NULL AND calibrated_value_1qb > 0"
-            ).fetchall()
-        _fc_top = max(fc_by_sid.values()) if fc_by_sid else 999.0
-        _wls_raw = {str(_r["player_id"]): (float(_r["calibrated_value_1qb"]), _r["calibrated_value_sf"]) for _r in _wls_rows}
-        _wls_max = max(v for v, _ in _wls_raw.values()) if _wls_raw else 999.0
-        _wls_scale = _fc_top / _wls_max  # align WLS top player to FC top player
-        for _pid, (_v1, _vsf) in _wls_raw.items():
-            wls_1qb[_pid] = _v1 * _wls_scale
-            if _vsf and float(_vsf) > 0:
-                wls_sf[_pid] = float(_vsf) * _wls_scale
-        print(f"[rewrite_value_table] WLS 1QB: {len(wls_1qb)} | SF: {len(wls_sf)} players (scale={_wls_scale:.3f})")
-    except Exception as _wls_err:
-        print(f"[rewrite_value_table] WLS load skipped: {_wls_err}")
+    # ── Previous model values (read existing model_values.json) ──────────────
+    prev_1qb: dict[str, float] = {}
+    prev_sf:  dict[str, float] = {}
+    _prev_path = DATA_DIR / "model_values.json"
+    if _prev_path.exists():
+        try:
+            with _prev_path.open("r", encoding="utf-8") as _pf:
+                _prev_data = json.load(_pf)
+            if isinstance(_prev_data, list):
+                for _entry in _prev_data:
+                    if not isinstance(_entry, dict):
+                        continue
+                    _pid = str(_entry.get("id") or "").strip()
+                    if not _pid:
+                        continue
+                    _v1 = _entry.get("value")
+                    _vs = _entry.get("sf_value")
+                    if _v1 is not None and float(_v1) > 0:
+                        prev_1qb[_pid] = float(_v1)
+                    if _vs is not None and float(_vs) > 0:
+                        prev_sf[_pid] = float(_vs)
+            print(f"[rewrite_value_table] Previous model: {len(prev_1qb)} 1QB | {len(prev_sf)} SF players")
+        except Exception as _prev_err:
+            print(f"[rewrite_value_table] Previous model load skipped: {_prev_err}")
 
     # ── Per-player blend ──────────────────────────────────────────────────────
-    W_FC, W_WLS = 0.65, 0.35
+    W_FC, W_MODEL = 0.65, 0.35
     LEAGUE_SIZES = [8, 10, 12, 14]
     cleaned_assets: list[dict] = []
 
@@ -1169,34 +1172,30 @@ def rewrite_value_table_with_model() -> Path:
 
         name      = player.get("name") or ""
 
-        fc_val  = fc_by_sid.get(pid, 0.0)
-        wls_val = wls_1qb.get(pid, 0.0)
+        fc_val   = fc_by_sid.get(pid, 0.0)
+        prev_v   = prev_1qb.get(pid, 0.0)
+        prev_sfv = prev_sf.get(pid, 0.0)
 
-        if fc_val <= 0 and wls_val <= 0:
+        if fc_val <= 0 and prev_v <= 0:
             continue  # no market data at all — skip
 
         # 1QB blend (fall back to single source when the other is missing)
-        if fc_val > 0 and wls_val > 0:
-            value_1qb = W_FC * fc_val + W_WLS * wls_val
+        if fc_val > 0 and prev_v > 0:
+            value_1qb = W_FC * fc_val + W_MODEL * prev_v
         elif fc_val > 0:
             value_1qb = fc_val
         else:
-            value_1qb = wls_val
+            value_1qb = prev_v
 
-        # SF blend — QBs additionally get WLS-SF floor
-        fc_sf  = fc_val                          # FC doesn't distinguish SF/1QB
-        wls_sf_val = wls_sf.get(pid, wls_val)   # use SF-specific WLS if available
-
-        if fc_sf > 0 and wls_sf_val > 0:
-            sf_value = W_FC * fc_sf + W_WLS * wls_sf_val
-        elif fc_sf > 0:
-            sf_value = fc_sf
+        # SF blend (use previous sf_value when available, else fall back to 1QB blend)
+        if fc_val > 0 and prev_sfv > 0:
+            sf_value = W_FC * fc_val + W_MODEL * prev_sfv
+        elif fc_val > 0:
+            sf_value = fc_val
+        elif prev_sfv > 0:
+            sf_value = prev_sfv
         else:
-            sf_value = wls_sf_val
-
-        # QBs: WLS-SF is the floor (never let blend drag SF value below real trade price)
-        if position == "QB" and pid in wls_sf and sf_value < wls_sf[pid]:
-            sf_value = wls_sf[pid]
+            sf_value = value_1qb
 
         age = player.get("age")
 
