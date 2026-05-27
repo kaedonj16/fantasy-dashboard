@@ -284,6 +284,20 @@ print(f"[cron] Saved {n} player values")
 """, "update_player_values_with_rankings")
 
     # ------------------------------------------------------------------ #
+    # Step 4b: Sync EMA values from player_value_history → player_values #
+    # EMA-smoothed values from record_model_value_snapshot() (step 3)   #
+    # are copied into player_values.value_1qb, replacing the raw model  #
+    # values written by step 4.  Calibrated columns are cleared so the  #
+    # EMA values are immediately visible site-wide.                      #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.build_daily_value_table import sync_history_to_player_values
+n = sync_history_to_player_values()
+print(f"[cron] Synced {n} EMA values from player_value_history to player_values")
+""", "sync_ema_to_player_values")
+
+    # ------------------------------------------------------------------ #
     # Step 5: Breakout candidates                                        #
     # ------------------------------------------------------------------ #
     _run_step(f"""
