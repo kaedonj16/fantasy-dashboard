@@ -1104,6 +1104,7 @@ def rewrite_value_table_with_model() -> Path:
       1QB value : 65% FantasyCalc + 35% DynastyProcess (renorm when either
                   is missing; DP excluded for TEs which DP systematically
                   undervalues vs actual trade markets).
+      Normalisation: 0→0, max→999.9 (floor is 0, not 100).
       SF  value : For QBs: 65% FC + 35% DP value_2qb, with WLS
                   calibrated_value_sf used as a floor (real trade data).
                   For RB/WR/TE: same as 1QB value (QBs take the SF premium,
@@ -1118,23 +1119,22 @@ def rewrite_value_table_with_model() -> Path:
     with source_path.open("r", encoding="utf-8") as f:
         players = json.load(f)
 
-    # ── FC values (floor-at-100 normalisation: min→100, max→999.9) ─────────
+    # ── FC values (0→0, max→999.9 normalisation) ────────────────────────────
     fc_by_sid: dict[str, float] = {}
     fc_df = load_fantasycalc_df()
     if not fc_df.empty and "fc_value" in fc_df.columns and "sleeper_id" in fc_df.columns:
         _fc_nz = fc_df["fc_value"][fc_df["fc_value"] > 0]
         if len(_fc_nz):
             _fc_max = float(_fc_nz.max())
-            _fc_min = float(_fc_nz.min())
-            _fc_range = max(_fc_max - _fc_min, 1.0)
+            _fc_range = max(_fc_max, 1.0)
             for _, _r in fc_df.iterrows():
                 _sid = str(_r.get("sleeper_id") or "").strip()
                 _val = float(_r.get("fc_value") or 0)
                 if _sid and _val > 0:
-                    fc_by_sid[_sid] = (_val - _fc_min) / _fc_range * 899.9 + 100.0
+                    fc_by_sid[_sid] = _val / _fc_range * 999.9
     print(f"[rewrite_value_table] FC: {len(fc_by_sid)} players")
 
-    # ── DP values (floor-at-100, matched by player name) ────────────────────
+    # ── DP values (0→0, max→999.9, matched by player name) ──────────────────
     dp_1qb_by_name: dict[str, float] = {}   # normalize_name(name) → normalised value
     dp_2qb_by_name: dict[str, float] = {}   # for QB SF premium
     try:
@@ -1144,25 +1144,23 @@ def rewrite_value_table_with_model() -> Path:
             _dp_nz = _dp_raw["value_1qb"][_dp_raw["value_1qb"] > 0]
             if len(_dp_nz):
                 _dp_max = float(_dp_nz.max())
-                _dp_min = float(_dp_nz.min())
-                _dp_range = max(_dp_max - _dp_min, 1.0)
+                _dp_range = max(_dp_max, 1.0)
                 for _, _r in _dp_raw.iterrows():
                     _nm = str(_r.get("player") or "").strip()
                     _v  = float(_r.get("value_1qb") or 0)
                     if _nm and _v > 0:
-                        dp_1qb_by_name[normalize_name(_nm)] = (_v - _dp_min) / _dp_range * 899.9 + 100.0
+                        dp_1qb_by_name[normalize_name(_nm)] = _v / _dp_range * 999.9
         # 2QB (SF)
         if "player" in _dp_raw.columns and "value_2qb" in _dp_raw.columns:
             _dp2_nz = _dp_raw["value_2qb"][_dp_raw["value_2qb"] > 0]
             if len(_dp2_nz):
                 _dp2_max = float(_dp2_nz.max())
-                _dp2_min = float(_dp2_nz.min())
-                _dp2_range = max(_dp2_max - _dp2_min, 1.0)
+                _dp2_range = max(_dp2_max, 1.0)
                 for _, _r in _dp_raw.iterrows():
                     _nm = str(_r.get("player") or "").strip()
                     _v  = float(_r.get("value_2qb") or 0)
                     if _nm and _v > 0:
-                        dp_2qb_by_name[normalize_name(_nm)] = (_v - _dp2_min) / _dp2_range * 899.9 + 100.0
+                        dp_2qb_by_name[normalize_name(_nm)] = _v / _dp2_range * 999.9
     except Exception as _dp_err:
         print(f"[rewrite_value_table] DP load failed: {_dp_err}")
     print(f"[rewrite_value_table] DP 1QB: {len(dp_1qb_by_name)} | 2QB: {len(dp_2qb_by_name)} players")
