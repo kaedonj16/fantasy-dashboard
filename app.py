@@ -1218,8 +1218,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Breakout Engine",   "page_breakouts",  "breakouts", False),
-        ("Waivers",           "page_waivers",    "waivers",   False),
-        ("Start/Sit",         "page_waivers",    "waivers",   False, "?tab=startsit"),
+        ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
     ], ["players", "prospects", "breakouts", "waivers"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
