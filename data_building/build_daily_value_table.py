@@ -11,7 +11,6 @@ from data_building.external_data.team_enrichment import (
     enrich_teams_index_with_rushing,
 )
 from data_building.player_value_history import record_model_value_snapshot
-from data_building.value_exports import export_engine_values
 from data_building.value_model_training import rewrite_value_table_with_model
 from utils.utils import (
     path_teams_index,
@@ -50,7 +49,21 @@ def build_daily_data(season: int, week: int):
         live_game_ids = get_live_game_ids_for_today(load_week_schedule(season, week))
         build_and_save_week_stats_for_league(load_teams_index(), season, week, live_game_ids)
 
-    if load_fantasycalc_api_values() is None or load_dynastyprocess_values() is None:
+    # Refresh vendor CSVs only when they are stale (not written today).
+    # Originally ungated to fix a bug where CSVs were never re-downloaded;
+    # the freshness guard below preserves daily freshness while avoiding
+    # redundant vendor API hits on every app restart within the same day.
+    from datetime import date as _date
+    _data_dir = Path(__file__).resolve().parents[1] / "data"
+    def _csvs_fresh_today():
+        for _name in ("fantasycalc_api_values.csv", "dynastyprocess_values.csv"):
+            _p = _data_dir / _name
+            if not _p.exists() or _date.fromtimestamp(_p.stat().st_mtime) != _date.today():
+                return False
+        return True
+    if _csvs_fresh_today():
+        print("[build_daily_data] Vendor CSVs already fresh today, skipping scrape")
+    else:
         scrape_all_vendor_values()
 
     # Only fetch weeks 1 through current week (or max 18)
@@ -83,8 +96,6 @@ def build_daily_data(season: int, week: int):
     except Exception as exc:
         print(f"[build_daily_data] Rookie evaluation pipeline failed: {exc}")
 
-    export_engine_values()
-
 
 def build_daily_model_values():
     """
@@ -93,10 +104,49 @@ def build_daily_model_values():
     MUST be called AFTER build_daily_advanced_metrics() so that advanced
     metrics are available for the model to use.
     """
+    import sys
+    from pathlib import Path
+    from datetime import date
+
     print(f"[build_daily_data] Building model values with advanced metrics")
-    rewrite_value_table_with_model()
-    model_value_table = load_model_value_table(apply_calibration=False) or []
-    record_model_value_snapshot(model_value_table)
+
+    json_path = Path(__file__).resolve().parents[1] / "data" / "model_values.json"
+    mtime_before = json_path.stat().st_mtime if json_path.exists() else None
+
+    try:
+        out_path = rewrite_value_table_with_model()
+        print(f"[build_daily_data] rewrite_value_table_with_model wrote {out_path}")
+    except Exception as e:
+        print(f"[build_daily_data] FAILED at rewrite_value_table_with_model: {type(e).__name__}: {e}", file=sys.stderr)
+        raise
+
+    if json_path.exists():
+        mtime_after = json_path.stat().st_mtime
+        if mtime_before == mtime_after:
+            print(f"[build_daily_data] WARNING: {json_path.name} mtime unchanged — write may have silently failed", file=sys.stderr)
+        elif date.fromtimestamp(mtime_after) != date.today():
+            print(f"[build_daily_data] WARNING: {json_path.name} mtime is {date.fromtimestamp(mtime_after)}, not today", file=sys.stderr)
+        else:
+            print(f"[build_daily_data] {json_path.name} refreshed (mtime now {date.fromtimestamp(mtime_after)})")
+    else:
+        print(f"[build_daily_data] FAILED: {json_path} does not exist after rewrite", file=sys.stderr)
+        raise RuntimeError(f"{json_path.name} missing after rewrite")
+
+    try:
+        model_value_table = load_model_value_table(apply_calibration=False) or []
+    except Exception as e:
+        print(f"[build_daily_data] FAILED at load_model_value_table: {type(e).__name__}: {e}", file=sys.stderr)
+        raise
+
+    if not model_value_table:
+        print(f"[build_daily_data] WARNING: load_model_value_table returned empty list", file=sys.stderr)
+
+    try:
+        n = record_model_value_snapshot(model_value_table)
+        print(f"[build_daily_data] record_model_value_snapshot wrote {n} rows")
+    except Exception as e:
+        print(f"[build_daily_data] FAILED at record_model_value_snapshot: {type(e).__name__}: {e}", file=sys.stderr)
+        raise
 
 
 def record_calibrated_history_snapshot() -> int:

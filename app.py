@@ -526,6 +526,7 @@ BASE_HTML = """
     <meta charset="utf-8">
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <title>{title}</title>
+    {og_tags}
     <meta name="viewport" content="width=device-width, initial-scale=1">
     
     <!-- Google AdSense -->
@@ -554,6 +555,8 @@ BASE_HTML = """
     <div id="app-scale">
       {nav}
 
+      {recap_banner}
+
       {ad_top}
 
       <main id="page-root" class="overview-layout" data-cache-ts="{cache_ts}">
@@ -577,7 +580,7 @@ BASE_HTML = """
           <a href="{contact_url}">Contact</a>
         </div>
         <div class="site-footer-note">
-          © 2025 BR Fantasy. All rights reserved.
+          © <span id="footer-year"></span> BR Fantasy. All rights reserved.
         </div>
       </div>
     </footer>
@@ -662,6 +665,12 @@ BASE_HTML = """
           shown = false;
           overlay.style.display = 'none';
         }});
+      }})();
+
+      // Dynamic copyright year
+      (function() {{
+        var el = document.getElementById('footer-year');
+        if (el) el.textContent = new Date().getFullYear();
       }})();
     </script>
   </body>
@@ -1195,9 +1204,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if draft_ended or not offseason_mode:
         nav_pills.append(nav_pill_dropdown("Weekly", [
             ("Matchups",             "page_weekly",             "weekly",   False),
+            ("Weekly Recap",         "page_recap",              "recap",    False),
             ("Waivers & Start/Sit",  "page_waivers",            "waivers",  False),
             ("Playoff Schedule",     "page_playoff_schedule",   "schedule", False),
-        ], ["weekly", "waivers", "schedule"], "weeklyNavDropdown"))
+        ], ["weekly", "recap", "waivers", "schedule"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",     "page_standings",    "standings",    False),
         ("Teams",         "page_teams",        "teams",        False),
@@ -1240,12 +1250,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
         # Update settings dropdown content for logged-in users with full menu
         settings_content = (
-            f"<button type='button' id='refreshBtn' class='settings-menu-item' "
-            f"        data-page='{active}' data-league='{league_id}' "
-            f"        data-platform='{platform}' data-season='{season}'>"
-            "  <img src='/static/refresh.png' class='settings-menu-icon' alt='Refresh'>"
-            "  <span class='settings-menu-label'>Refresh Data</span>"
-            "</button>"
             "<button type='button' class='settings-menu-item' id='settingsChangelogBtn'>"
             "  <img src='/static/bell.png' class='settings-menu-icon' alt='Changelog'>"
             "  <span class='settings-menu-label'>Notifications</span>"
@@ -1376,6 +1380,100 @@ _AD_BOTTOM = """<div class="ad-container ad-bottom-content"><ins class="adsbygoo
 _AD_INIT = """window.addEventListener('load', function() { setTimeout(function() { try { (adsbygoogle = window.adsbygoogle || []).push({}); (adsbygoogle = window.adsbygoogle || []).push({}); } catch(e) { console.warn('AdSense initialization error:', e); } }, 100); });"""
 
 
+def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
+    """Dismissible weekly 'Recap is ready' banner.
+
+    Shown on Tuesdays during the NFL season (Sep–Jan) only.
+    Dismissal resets each week via an ISO-week-scoped localStorage key,
+    so the banner reappears the following Tuesday.
+    """
+    import datetime as _dt
+    now = _dt.datetime.now()
+    if now.weekday() != 1:                            # Tuesday only (0=Mon … 6=Sun)
+        return ""
+    if now.month not in {9, 10, 11, 12, 1}:          # NFL season only
+        return ""
+    if not (league_id and platform and season):
+        return ""
+
+    recap_url = f"/{platform}/{season}/{league_id}/recap"
+    # Week-scoped key — dismissal resets automatically the following Tuesday
+    iso_week = now.isocalendar()[1]
+    dismiss_key = f"recap-banner-{now.year}-w{iso_week}"
+
+    return f"""
+<style>
+@keyframes recapSlideUp {{
+  from {{ opacity:0; transform:translateY(16px); }}
+  to   {{ opacity:1; transform:translateY(0); }}
+}}
+#recapReadyBanner {{ animation: recapSlideUp .3s ease forwards; }}
+</style>
+<div id="recapReadyBanner" style="
+     display:none;
+     position:fixed;bottom:24px;right:24px;z-index:9999;
+     background:var(--card);
+     border:1px solid var(--border);
+     border-top:3px solid var(--accent);
+     border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);
+     padding:18px 20px;width:300px;
+     flex-direction:column;gap:12px;">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <i class="fa-solid fa-newspaper" style="font-size:15px;color:var(--accent);margin-top:1px;"></i>
+      <span style="font-size:14px;font-weight:700;color:var(--text);">Recap is ready</span>
+    </div>
+    <button id="recapReadyClose"
+            style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
+                   cursor:pointer;padding:0;flex-shrink:0;"
+            aria-label="Dismiss">&times;</button>
+  </div>
+  <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">
+    This week's recap is ready. See who scored big, who got cooked, and where things stand.
+  </p>
+  <a id="recapReadyLink" href="{recap_url}"
+     style="display:block;text-align:center;background:var(--accent);color:#fff;
+            font-weight:700;font-size:13px;text-decoration:none;
+            padding:9px 0;border-radius:8px;">
+    View Recap
+  </a>
+</div>
+<script>
+(function(){{
+  var key = '{dismiss_key}';
+  var el  = document.getElementById('recapReadyBanner');
+  if (!el) return;
+
+  function dismiss() {{
+    el.style.display = 'none';
+    localStorage.setItem(key, '1');
+    var dot = document.getElementById('recapNavDot');
+    if (dot) dot.remove();
+  }}
+
+  function addNavDot() {{
+    var weekly = Array.from(document.querySelectorAll('.nav-pill, .nav-dropdown-btn'))
+                      .find(function(n) {{ return n.textContent.trim().startsWith('Weekly'); }});
+    if (!weekly) return;
+    var dot = document.createElement('span');
+    dot.id = 'recapNavDot';
+    dot.style.cssText = 'width:7px;height:7px;border-radius:50%;background:#ef4444;'
+                      + 'display:inline-block;margin-left:5px;vertical-align:middle;'
+                      + 'position:relative;top:-1px;flex-shrink:0;';
+    weekly.appendChild(dot);
+  }}
+
+  if (!localStorage.getItem(key)) {{
+    el.style.display = 'flex';
+    addNavDot();
+  }}
+
+  document.getElementById('recapReadyClose').addEventListener('click', dismiss);
+  document.getElementById('recapReadyLink').addEventListener('click', dismiss);
+}})();
+</script>"""
+
+
 def render_page(
         title: str,
         league_id: Optional[str],
@@ -1384,6 +1482,7 @@ def render_page(
         platform: Optional[str] = None,
         season: Optional[int] = None,
         *args,
+        og_tags: str = "",
         **kwargs,
 ) -> str:
     if league_id and platform and season:
@@ -1391,6 +1490,11 @@ def render_page(
         session["last_platform"] = platform
         session["last_season"] = season
     nav_html = build_nav(league_id, active, platform, season)
+
+    banner_html = ""
+    if session.get("viewer_username"):
+        banner_html = _recap_ready_banner(league_id or "", platform or "", season or 0)
+
     wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
 
     user_id = session.get("viewer_username")
@@ -1398,7 +1502,9 @@ def render_page(
 
     return BASE_HTML.format(
         title=title,
+        og_tags=og_tags,
         nav=nav_html,
+        recap_banner=banner_html,
         body=wrapped_body,
         cache_ts=int(time.time() * 1000),
         adsense_script="" if is_premium else _AD_SCRIPT,
@@ -5463,12 +5569,17 @@ def resolve_exact_pick_slot(
     if source_season <= 0:
         return None
 
-    prev_owner = pick.get("previous_owner_id")
-    if prev_owner is None:
-        prev_owner = pick.get("owner_id")
+    # roster_id = original pick owner whose standing determines the draft slot.
+    # previous_owner_id = who is SENDING the pick in this transaction — wrong
+    # for traded picks (they may have a different standing than the original owner).
+    orig_owner = pick.get("roster_id")
+    if orig_owner is None:
+        orig_owner = pick.get("previous_owner_id")
+    if orig_owner is None:
+        orig_owner = pick.get("owner_id")
 
     try:
-        prev_owner = int(prev_owner)
+        orig_owner = int(orig_owner)
     except Exception:
         return None
 
@@ -5479,7 +5590,7 @@ def resolve_exact_pick_slot(
         source_season=source_season,
     )
 
-    return slot_map.get(prev_owner)
+    return slot_map.get(orig_owner)
 
 
 def format_pick_round_label(pick: dict) -> str:
@@ -5557,11 +5668,13 @@ def build_activity_body(ctx: dict) -> str:
 
     def player_value(p: dict) -> tuple[float, str]:
         name = str(p.get("name") or "").strip()
-        name_lower = name.lower()
         pos = str(p.get("pos") or p.get("position") or "").strip().upper()
         team = str(p.get("team") or "").strip().upper()
         if not name or not pos:
             return 0.0, ""
+
+        # Normalize to match search_name format (no periods, lowercase)
+        name_lower = name.lower().replace(".", "")
 
         val = float(
             player_val_by_key.get((name_lower, pos, team))
@@ -11858,6 +11971,868 @@ def page_playoff_schedule(platform: str, season: int, league_id: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# WEEKLY RECAP
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _player_row(p: dict, owner: str, team_label: str, ava_html: str,
+                tag: str, tag_color: str) -> str:
+    name = html.escape(str(p.get("name") or "Unknown"))
+    pos  = html.escape(str(p.get("pos") or "—"))
+    nfl  = html.escape(str(p.get("nfl") or ""))
+    pts  = float(p.get("pts") or 0)
+    return f"""
+<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);">
+  {ava_html}
+  <div style="flex:1;min-width:0;">
+    <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</div>
+    <div style="font-size:11px;color:var(--muted);">{pos} · {nfl} &nbsp;·&nbsp; {html.escape(team_label)}</div>
+  </div>
+  <div style="text-align:right;flex-shrink:0;">
+    <div style="font-size:16px;font-weight:800;color:{tag_color};">{pts:.2f}</div>
+    <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">{tag}</div>
+  </div>
+</div>"""
+
+
+def _build_lineup_analysis_html(
+        matchups_by_week: dict,
+        selected_week: int,
+        team_by_rid: dict,
+        owner_avatar: dict,
+) -> str:
+    """Compute league-wide bust/sleeper/coaching mistake from raw matchup data."""
+    week_matchups = matchups_by_week.get(selected_week) or []
+    if not week_matchups:
+        return ""
+
+    def _ava_small(owner_name: str, rid: str = "", size: int = 30) -> str:
+        ava = owner_avatar.get(owner_name, "")
+        if ava:
+            return f"<img src='{ava}' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+        initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
+        return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
+                f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;'>{initials}</div>")
+
+    # Flatten: collect all starters and bench across the league for this week
+    all_starters: list = []  # (team_rid, team_name, owner, player_dict)
+    all_bench: list = []
+    bench_misses: list = []  # per team: best bench miss
+
+    for m in week_matchups:
+        for side in ("left", "right"):
+            team = m.get(side) or {}
+            rid = str(team.get("roster_id") or "")
+            owner = str(team.get("username") or "")
+            tname = team.get("name") or owner
+
+            starters = team.get("starters") or []
+            bench = team.get("bench") or []
+
+            for p in starters:
+                if p.get("pts") is not None:
+                    all_starters.append((rid, tname, owner, p))
+            for p in bench:
+                if p.get("pts") is not None:
+                    all_bench.append((rid, tname, owner, p))
+
+            # Coaching mistake: for each starter, find best bench player at same pos
+            bench_by_pos: dict = {}
+            for p in bench:
+                pos = str(p.get("pos") or "").upper()
+                if pos and p.get("pts") is not None:
+                    bench_by_pos.setdefault(pos, []).append(p)
+
+            biggest_swap = None
+            biggest_gap = 0.0
+            for s in starters:
+                pos = str(s.get("pos") or "").upper()
+                s_pts = float(s.get("pts") or 0)
+                candidates = bench_by_pos.get(pos, [])
+                if not candidates:
+                    continue
+                best = max(candidates, key=lambda x: float(x.get("pts") or 0))
+                gap = float(best.get("pts") or 0) - s_pts
+                if gap > biggest_gap:
+                    biggest_gap = gap
+                    biggest_swap = (s, best)
+
+            if biggest_swap and biggest_gap >= 1.0:
+                bench_misses.append({
+                    "rid": rid, "team": tname, "owner": owner,
+                    "starter": biggest_swap[0], "bench": biggest_swap[1],
+                    "gap": biggest_gap,
+                })
+
+    if not all_starters:
+        return ""
+
+    # Bust = worst starter (lowest scoring, exclude K/DEF where lows are common)
+    skill_starters = [s for s in all_starters if str(s[3].get("pos") or "").upper() in {"QB", "RB", "WR", "TE"}]
+    bust_pool = skill_starters or all_starters
+    bust_pool.sort(key=lambda x: float(x[3].get("pts") or 0))
+    busts = bust_pool[:3]
+
+    # Sleeper = best bench player
+    all_bench.sort(key=lambda x: -float(x[3].get("pts") or 0))
+    sleepers = all_bench[:3]
+
+    bench_misses.sort(key=lambda x: -x["gap"])
+    coaching_mistakes = bench_misses[:3]
+
+    bust_rows = "".join(
+        _player_row(p, owner, team, _ava_small(owner, rid),
+                    "BUST", "#ef4444")
+        for (rid, team, owner, p) in busts
+    )
+    sleeper_rows = "".join(
+        _player_row(p, owner, team, _ava_small(owner, rid),
+                    "SLEEPER", "#22c55e")
+        for (rid, team, owner, p) in sleepers
+    )
+
+    def mistake_row(item):
+        s = item["starter"]; b = item["bench"]
+        team = html.escape(item["team"])
+        s_name = html.escape(str(s.get("name") or ""))
+        s_pos  = html.escape(str(s.get("pos") or ""))
+        s_nfl  = html.escape(str(s.get("nfl") or ""))
+        s_pts  = float(s.get("pts") or 0)
+        b_name = html.escape(str(b.get("name") or ""))
+        b_pos  = html.escape(str(b.get("pos") or ""))
+        b_nfl  = html.escape(str(b.get("nfl") or ""))
+        b_pts  = float(b.get("pts") or 0)
+        gap    = item["gap"]
+        return f"""
+<div style="border-bottom:1px solid var(--border);">
+  <div style="display:flex;align-items:center;gap:10px;padding:10px 14px 5px;">
+    <div style="width:30px;height:30px;border-radius:50%;background:#ef444420;display:flex;align-items:center;
+                justify-content:center;font-size:11px;font-weight:700;color:#ef4444;flex-shrink:0;">{s_name[0] if s_name else "?"}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{s_name}</div>
+      <div style="font-size:11px;color:var(--muted);">{s_pos} · {s_nfl} &nbsp;·&nbsp; {team}</div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:16px;font-weight:800;color:#ef4444;">{s_pts:.2f}</div>
+      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">STARTED</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;padding:5px 14px 10px;">
+    <div style="width:30px;height:30px;border-radius:50%;background:#22c55e20;display:flex;align-items:center;
+                justify-content:center;font-size:11px;font-weight:700;color:#22c55e;flex-shrink:0;">{b_name[0] if b_name else "?"}</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{b_name}</div>
+      <div style="font-size:11px;color:var(--muted);">{b_pos} · {b_nfl} &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:600;">-{gap:.1f} pts</span></div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:16px;font-weight:800;color:#22c55e;">{b_pts:.2f}</div>
+      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">BENCHED</div>
+    </div>
+  </div>
+</div>"""
+
+    mistakes_rows = "".join(mistake_row(item) for item in coaching_mistakes) \
+                    or "<div style='padding:18px;color:var(--muted);font-size:13px;text-align:center;'>No major lineup mistakes this week — nice job, league.</div>"
+
+    return f"""
+<div class="recap-lineup-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;">
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
+    {bust_rows or '<div style="padding:14px;color:var(--muted);">—</div>'}
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Sleepers</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
+    {sleeper_rows or '<div style="padding:14px;color:var(--muted);">—</div>'}
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Coaching Mistakes</h3>
+      <span style="font-size:12px;color:var(--muted);">Bench vs starter (same pos)</span>
+    </div>
+    {mistakes_rows}
+  </div>
+</div>"""
+
+
+def _mock_lineup_analysis_html(team_names: list[str]) -> str:
+    """Sample lineup-analysis output for the preview state."""
+    busts = [
+        {"name": "Tee Higgins", "pos": "WR", "nfl": "CIN", "pts": 3.2, "team": team_names[0] if team_names else "Team A"},
+        {"name": "Najee Harris", "pos": "RB", "nfl": "PIT", "pts": 4.1, "team": team_names[2] if len(team_names) > 2 else "Team C"},
+        {"name": "Dak Prescott", "pos": "QB", "nfl": "DAL", "pts": 8.4, "team": team_names[1] if len(team_names) > 1 else "Team B"},
+    ]
+    sleepers = [
+        {"name": "Tank Dell", "pos": "WR", "nfl": "HOU", "pts": 26.8, "team": team_names[3] if len(team_names) > 3 else "Team D"},
+        {"name": "Jaylen Warren", "pos": "RB", "nfl": "PIT", "pts": 22.4, "team": team_names[1] if len(team_names) > 1 else "Team B"},
+        {"name": "Trey McBride", "pos": "TE", "nfl": "ARI", "pts": 19.1, "team": team_names[4] if len(team_names) > 4 else "Team E"},
+    ]
+
+    def row(p, tag, color):
+        name = html.escape(p['name']); pos = p['pos']; nfl = p['nfl']
+        return f"""
+<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);">
+  <div style="width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;
+              display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;">{name[0]}</div>
+  <div style="flex:1;min-width:0;">
+    <div style="font-weight:700;font-size:13px;">{name}</div>
+    <div style="font-size:11px;color:var(--muted);">{pos} · {nfl} &nbsp;·&nbsp; {html.escape(p['team'])}</div>
+  </div>
+  <div style="text-align:right;flex-shrink:0;">
+    <div style="font-size:16px;font-weight:800;color:{color};">{p['pts']:.2f}</div>
+    <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">{tag}</div>
+  </div>
+</div>"""
+
+    bust_rows = "".join(row(p, "BUST", "#ef4444") for p in busts)
+    sleeper_rows = "".join(row(p, "SLEEPER", "#22c55e") for p in sleepers)
+
+    team0 = html.escape(team_names[0] if team_names else "Team A")
+    mock_mistake = f"""
+<div style="border-bottom:1px solid var(--border);">
+  <div style="display:flex;align-items:center;gap:10px;padding:10px 14px 5px;">
+    <div style="width:30px;height:30px;border-radius:50%;background:#ef444420;display:flex;align-items:center;
+                justify-content:center;font-size:11px;font-weight:700;color:#ef4444;flex-shrink:0;">C</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:700;font-size:13px;">Cooper Kupp</div>
+      <div style="font-size:11px;color:var(--muted);">WR · LAR &nbsp;·&nbsp; {team0}</div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:16px;font-weight:800;color:#ef4444;">2.60</div>
+      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">STARTED</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;padding:5px 14px 10px;">
+    <div style="width:30px;height:30px;border-radius:50%;background:#22c55e20;display:flex;align-items:center;
+                justify-content:center;font-size:11px;font-weight:700;color:#22c55e;flex-shrink:0;">S</div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:700;font-size:13px;">Stefon Diggs</div>
+      <div style="font-size:11px;color:var(--muted);">WR · BUF &nbsp;·&nbsp; <span style="color:#f59e0b;font-weight:600;">-18.4 pts</span></div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:16px;font-weight:800;color:#22c55e;">21.00</div>
+      <div style="font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.04em;">BENCHED</div>
+    </div>
+  </div>
+</div>"""
+
+    return f"""
+<div class="recap-lineup-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;">
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
+    {bust_rows}
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Sleepers</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
+    {sleeper_rows}
+  </div>
+  <div class="card" style="overflow:hidden;">
+    <div class="card-header"><h3>Coaching Mistakes</h3>
+      <span style="font-size:12px;color:var(--muted);">Bench vs starter (same pos)</span>
+    </div>
+    {mock_mistake}
+  </div>
+</div>"""
+
+
+def _build_recap_preview_df(team_names: list[str]) -> pd.DataFrame:
+    """Generates a single week of mock recap data so users can see the
+    page layout before any weeks complete."""
+    import random as _rand
+    rng = _rand.Random(7)
+    rows = []
+    n = len(team_names)
+    if n % 2:
+        n -= 1
+    pairs = [(team_names[i], team_names[i + 1]) for i in range(0, n, 2)]
+    for mid, (a, b) in enumerate(pairs, start=1):
+        pa = round(rng.gauss(115, 18), 2)
+        pb = round(rng.gauss(108, 18), 2)
+        rows += [
+            {"week": 1, "matchup_id": mid, "roster_id": str(2 * mid - 1),
+             "owner": a, "points": pa, "points_against": pb, "finalized": True},
+            {"week": 1, "matchup_id": mid, "roster_id": str(2 * mid),
+             "owner": b, "points": pb, "points_against": pa, "finalized": True},
+        ]
+    return pd.DataFrame(rows)
+
+
+def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
+    df_weekly  = ctx.get("df_weekly")
+    roster_map = ctx.get("roster_map") or {}
+    users      = ctx.get("users") or []
+    league     = ctx.get("league") or {}
+    settings   = league.get("settings") or {}
+    playoff_start = int(settings.get("playoff_week_start") or 14)
+    _platform  = ctx.get("platform") or "sleeper"
+    _season    = ctx.get("season") or ""
+    _league_id = ctx.get("league_id") or ""
+    history_url = f"/{_platform}/{_season}/{_league_id}/history" if _league_id else ""
+
+    # ── Preview mode: no finalized weeks yet → use mock data ───────────────
+    preview_mode = False
+    has_real_finalized = (
+        df_weekly is not None
+        and not df_weekly.empty
+        and "finalized" in df_weekly.columns
+        and bool((df_weekly["finalized"] == True).any())
+    )
+    if not has_real_finalized:
+        preview_mode = True
+        # Build mock data from real team names if available, else defaults
+        if roster_map:
+            team_names = [str(n) for n in roster_map.values()][:10]
+            # Map mock roster_ids to real ones so avatars resolve
+            real_rids = list(roster_map.keys())
+            df_weekly = _build_recap_preview_df(team_names)
+            # Overwrite roster_id with real ones to enable avatar lookup
+            for i, rid in enumerate(df_weekly["roster_id"].tolist()):
+                if i < len(real_rids):
+                    df_weekly.at[i, "roster_id"] = str(real_rids[i % len(real_rids)])
+        else:
+            team_names = ["Dynasty Kings", "Gridiron Ghosts", "Blitz Brigade",
+                          "Redzone Rebels", "Endzone Elite", "Pocket Protectors"]
+            df_weekly = _build_recap_preview_df(team_names)
+            roster_map = {str(i + 1): n for i, n in enumerate(team_names)}
+
+    # avatar by owner name
+    owner_avatar: dict = {}
+    for u in users:
+        name = u.get("display_name") or u.get("username") or ""
+        ava  = u.get("metadata", {}).get("avatar") or u.get("avatar") or ""
+        if name and ava:
+            if not ava.startswith("http"):
+                ava = f"https://sleepercdn.com/avatars/thumbs/{ava}"
+            owner_avatar[name] = ava
+
+    # team name by roster_id
+    team_by_rid: dict = {str(rid): name for rid, name in roster_map.items()}
+
+    fin_df = df_weekly[df_weekly["finalized"] == True].copy()
+
+    available_weeks = sorted(fin_df["week"].unique().tolist())
+    reg_weeks = [w for w in available_weeks if w < playoff_start]
+    if not reg_weeks:
+        reg_weeks = available_weeks
+
+    if selected_week is None or selected_week not in available_weeks:
+        selected_week = reg_weeks[-1]
+
+    week_df = fin_df[fin_df["week"] == selected_week].copy()
+
+    # ── Matchup pairs ──────────────────────────────────────────────────────
+    matchups: list[dict] = []
+    for _, grp in week_df.groupby("matchup_id"):
+        if len(grp) != 2:
+            continue
+        grp = grp.sort_values("points", ascending=False)
+        w_row, l_row = grp.iloc[0], grp.iloc[1]
+        margin = float(w_row["points"]) - float(l_row["points"])
+        matchups.append({
+            "winner": w_row["owner"],
+            "loser":  l_row["owner"],
+            "w_rid":  str(w_row.get("roster_id", "")),
+            "l_rid":  str(l_row.get("roster_id", "")),
+            "w_pts":  float(w_row["points"]),
+            "l_pts":  float(l_row["points"]),
+            "margin": margin,
+        })
+    matchups.sort(key=lambda x: -x["margin"])
+
+    # ── Highlights ─────────────────────────────────────────────────────────
+    high_row = week_df.loc[week_df["points"].idxmax()]
+    low_row  = week_df.loc[week_df["points"].idxmin()]
+    blowout  = matchups[0] if matchups else None
+    closest  = matchups[-1] if matchups else None
+
+    league_avg = float(week_df["points"].mean()) if not week_df.empty else 0
+    league_total = float(week_df["points"].sum()) if not week_df.empty else 0
+
+    # Season high/low context
+    fin_max = float(fin_df["points"].max())
+    season_high = float(high_row["points"]) >= fin_max
+
+    def ava_img(owner_name, rid="", size=32):
+        ava = owner_avatar.get(owner_name, "")
+        if ava:
+            return f"<img src='{ava}' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+        initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
+        return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
+                f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:{max(10, size//3)}px;"
+                f"flex-shrink:0;'>{initials}</div>")
+
+    def team_name(owner, rid=""):
+        return html.escape(team_by_rid.get(rid) or owner or "—")
+
+    # ── Week selector ──────────────────────────────────────────────────────
+    week_opts = "".join(
+        f"<option value='{w}' {'selected' if w == selected_week else ''}>Week {w}</option>"
+        for w in reversed(reg_weeks)
+    )
+    history_banner = ""
+    if history_url:
+        history_banner = f"""
+<div id="historyRecapBanner" style="display:flex;align-items:center;gap:10px;padding:11px 16px;
+     margin-bottom:16px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);">
+  <i class="fa-solid fa-trophy" style="font-size:13px;color:var(--accent);flex-shrink:0;"></i>
+  <span style="font-size:13px;color:var(--text);flex:1;">
+    Want the full season breakdown? View it on the
+    <a href="{history_url}" style="color:var(--accent);font-weight:600;text-decoration:none;">History page</a>.
+  </span>
+  <button onclick="this.parentElement.style.display='none'"
+          style="background:none;border:none;color:var(--muted);cursor:pointer;padding:0 2px;
+                 font-size:16px;line-height:1;flex-shrink:0;" aria-label="Dismiss">&#x2715;</button>
+</div>"""
+
+    week_selector = f"""
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+  <h2 style="margin:0;font-size:20px;">Week {selected_week} Recap</h2>
+  <select onchange="window.location.search='?week='+this.value"
+          style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);
+                 background:var(--card);color:var(--text);font-size:13px;cursor:pointer;">
+    {week_opts}
+  </select>
+  <button onclick="(function(b){{var u=window.location.href,o=b.innerHTML;if(navigator.clipboard&&navigator.clipboard.writeText){{navigator.clipboard.writeText(u).then(function(){{b.innerHTML='Copied!';setTimeout(function(){{b.innerHTML=o;}},2000);}},function(){{prompt('Copy this link:',u);}});}}else{{prompt('Copy this link:',u);}}}})(this)"
+          style="display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:6px;
+                 border:1px solid var(--border);background:var(--card);color:var(--text);
+                 font-size:13px;cursor:pointer;font-weight:600;">
+    <i class="fa-solid fa-link" style="font-size:11px;"></i> Share
+  </button>
+</div>"""
+
+    # ── Headline cards ─────────────────────────────────────────────────────
+    def scorer_card(icon, label, name, pts, rid, sub, accent):
+        return f"""
+<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-width:0;">
+  <div style="display:flex;align-items:center;gap:6px;">
+    <i class="{icon}" style="font-size:13px;color:{accent};width:16px;text-align:center;"></i>
+    <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+      {ava_img(name, rid, 44)}
+      <div style="min-width:0;">
+        <div style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(name, rid)}</div>
+        <div style="font-size:12px;color:var(--muted);">@{html.escape(name)}</div>
+      </div>
+    </div>
+    <div style="text-align:right;flex-shrink:0;">
+      <div style="font-size:32px;font-weight:800;color:{accent};letter-spacing:-.5px;line-height:1;">{pts:.2f}</div>
+      <div style="font-size:11px;color:{accent};font-weight:600;margin-top:4px;">{html.escape(sub)}</div>
+    </div>
+  </div>
+</div>"""
+
+    def matchup_card(icon, label, m):
+        w_team = team_name(m["winner"], m["w_rid"])
+        l_team = team_name(m["loser"],  m["l_rid"])
+        return f"""
+<div class="card" style="padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-width:0;">
+  <div style="display:flex;align-items:center;gap:6px;">
+    <i class="{icon}" style="font-size:13px;color:var(--accent);width:16px;text-align:center;"></i>
+    <span style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);">{label}</span>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:8px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      {ava_img(m["winner"], m["w_rid"], 36)}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
+      </div>
+      <div style="font-size:24px;font-weight:800;color:var(--accent);flex-shrink:0;letter-spacing:-.5px;">{m['w_pts']:.1f}</div>
+    </div>
+    <div style="height:1px;background:var(--border);"></div>
+    <div style="display:flex;align-items:center;gap:10px;opacity:0.45;">
+      {ava_img(m["loser"], m["l_rid"], 36)}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
+      </div>
+      <div style="font-size:24px;font-weight:800;flex-shrink:0;letter-spacing:-.5px;">{m['l_pts']:.1f}</div>
+    </div>
+  </div>
+  <div style="font-size:11px;color:var(--muted);font-weight:600;">margin {m['margin']:.1f}</div>
+</div>"""
+
+    high_sub = "Season high" if season_high else f"+{float(high_row['points']) - league_avg:.1f} vs avg"
+    low_sub  = f"{float(low_row['points']) - league_avg:.1f} vs avg"
+
+    cards_html = f"""
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:20px;">
+  {scorer_card("fa-solid fa-fire", "HIGH SCORER", high_row["owner"],
+               float(high_row["points"]), str(high_row.get("roster_id","")),
+               high_sub, "#22c55e")}
+  {scorer_card("fa-solid fa-arrow-trend-down", "LOW SCORER", low_row["owner"],
+               float(low_row["points"]), str(low_row.get("roster_id","")),
+               low_sub, "#ef4444")}
+  {matchup_card("fa-solid fa-trophy", "BIGGEST WIN", blowout) if blowout else ""}
+  {matchup_card("fa-solid fa-bolt", "CLOSEST GAME", closest) if closest else ""}
+</div>"""
+
+    # ── Scoreboard ─────────────────────────────────────────────────────────
+    def matchup_result_row(m):
+        w_team = team_name(m["winner"], m["w_rid"])
+        l_team = team_name(m["loser"],  m["l_rid"])
+        margin_color = "#ef4444" if m["margin"] > 50 else ("#f59e0b" if m["margin"] > 20 else "#22c55e")
+        return f"""
+<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);">
+  <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;">
+    {ava_img(m["winner"], m["w_rid"], 30)}
+    <div style="min-width:0;">
+      <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{w_team}</div>
+      <div style="font-size:10px;color:var(--muted);">@{html.escape(m["winner"])}</div>
+    </div>
+  </div>
+  <div style="text-align:center;flex-shrink:0;min-width:110px;">
+    <div style="font-size:15px;font-weight:800;">{m['w_pts']:.2f} <span style="color:var(--muted);font-weight:400;font-size:12px;">—</span> {m['l_pts']:.2f}</div>
+    <div style="font-size:10px;color:{margin_color};font-weight:700;">+{m['margin']:.2f}</div>
+  </div>
+  <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;justify-content:flex-end;">
+    <div style="min-width:0;text-align:right;">
+      <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{l_team}</div>
+      <div style="font-size:10px;color:var(--muted);">@{html.escape(m["loser"])}</div>
+    </div>
+    {ava_img(m["loser"], m["l_rid"], 30)}
+  </div>
+</div>"""
+
+    scoreboard_rows = "".join(matchup_result_row(m) for m in matchups)
+    scoreboard_html = f"""
+<div class="card" style="overflow:hidden;">
+  <div class="card-header">
+    <h3>Scoreboard</h3>
+    <span style="font-size:12px;color:var(--muted);">
+      Avg: {league_avg:.1f} &nbsp;·&nbsp; Total: {league_total:.1f}
+    </span>
+  </div>
+  {scoreboard_rows}
+</div>"""
+
+    # ── Season standings snapshot ──────────────────────────────────────────
+    # Compute cumulative wins/losses/PF through selected_week
+    cum_df = fin_df[fin_df["week"] <= selected_week].copy()
+    cum_df["win"] = cum_df["points"] > cum_df["points_against"]
+    standings_rows_data = []
+    for rid, grp in cum_df.groupby("roster_id"):
+        owner = grp["owner"].iloc[0]
+        wins  = int(grp["win"].sum())
+        losses = len(grp) - wins
+        pf    = float(grp["points"].sum())
+        standings_rows_data.append({
+            "rid": str(rid), "owner": owner,
+            "wins": wins, "losses": losses, "pf": pf,
+        })
+    standings_rows_data.sort(key=lambda x: (-x["wins"], -x["pf"]))
+
+    def standing_row(rank, s):
+        bar_pct = s["pf"] / max(r["pf"] for r in standings_rows_data) * 100 if standings_rows_data else 0
+        rank_color = "#f59e0b" if rank == 1 else ("var(--muted)" if rank > 3 else "var(--text)")
+        return f"""
+<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);">
+  <div style="font-size:13px;font-weight:800;color:{rank_color};min-width:20px;text-align:center;">{rank}</div>
+  {ava_img(s["owner"], s["rid"], 28)}
+  <div style="flex:1;min-width:0;">
+    <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{team_name(s['owner'], s['rid'])}</div>
+    <div style="height:3px;background:var(--border);border-radius:2px;margin-top:3px;overflow:hidden;">
+      <div style="height:3px;background:var(--accent);border-radius:2px;width:{bar_pct:.0f}%;"></div>
+    </div>
+  </div>
+  <div style="text-align:right;flex-shrink:0;">
+    <div style="font-size:13px;font-weight:700;">{s['wins']}-{s['losses']}</div>
+    <div style="font-size:11px;color:var(--muted);">{s['pf']:.1f} PF</div>
+  </div>
+</div>"""
+
+    standing_rows_html = "".join(standing_row(i + 1, s) for i, s in enumerate(standings_rows_data))
+    standings_html = f"""
+<div class="card" style="overflow:hidden;">
+  <div class="card-header">
+    <h3>Standings</h3>
+    <span style="font-size:12px;color:var(--muted);">Through week {selected_week}</span>
+  </div>
+  {standing_rows_html}
+</div>"""
+
+    # ── AI weekly storyline column ─────────────────────────────────────────
+    if preview_mode:
+        from dashboard_services.ai.weekly_recap import get_weekly_ai_recap_preview
+        ai_column_html = get_weekly_ai_recap_preview()
+    else:
+        from dashboard_services.ai.weekly_recap import get_weekly_ai_recap
+        ai_column_html = get_weekly_ai_recap(
+            df_weekly=df_weekly,
+            matchups_by_week=ctx.get("matchups_by_week") or {},
+            selected_week=selected_week,
+            team_by_rid=team_by_rid,
+            league=league,
+            league_id=ctx.get("league_id") or "",
+            season=ctx.get("season") or "",
+        )
+
+    # ── Lineup analysis: busts, sleepers, coaching mistakes ────────────────
+    if preview_mode:
+        lineup_html = _mock_lineup_analysis_html(team_names)
+    else:
+        lineup_html = _build_lineup_analysis_html(
+            ctx.get("matchups_by_week") or {},
+            selected_week,
+            team_by_rid,
+            owner_avatar,
+        )
+
+    preview_banner = ""
+    if preview_mode:
+        preview_banner = """
+<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;margin-bottom:16px;
+            border:1px solid var(--accent);border-radius:8px;background:rgba(99,102,241,0.08);">
+  <span style="font-size:18px;">👁️</span>
+  <div style="font-size:13px;color:var(--text);">
+    <strong>Preview</strong> — this is sample data. Your real weekly recap will appear here after Week 1 completes.
+  </div>
+</div>"""
+
+    scoreboard_and_recap = f"""
+<div class="recap-scoreboard-grid" style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:20px;align-items:start;">
+  {scoreboard_html.replace("margin-bottom:20px;", "")}
+  {ai_column_html.replace("margin-bottom:20px;", "")}
+</div>"""
+
+    return (preview_banner + history_banner + week_selector + cards_html
+            + scoreboard_and_recap + lineup_html + standings_html)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/recap")
+def page_recap(platform: str, season: int, league_id: str):
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    try:
+        week = int(request.args.get("week") or 0) or None
+    except (ValueError, TypeError):
+        week = None
+    body = build_recap_body(ctx, selected_week=week)
+    league_name = html.escape((ctx.get("league") or {}).get("name") or "Fantasy League")
+    week_label = f"Week {week} Recap" if week else "Weekly Recap"
+    page_url = request.url
+    base_url = request.host_url.rstrip("/")
+    week_param = f"?week={week}" if week else ""
+    og_image = f"{base_url}/{platform}/{season}/{league_id}/recap/og.png{week_param}"
+    og_tags = (
+        f"<meta property='og:title' content='{week_label} — {league_name} | BR Fantasy'>"
+        f"<meta property='og:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
+        f"<meta property='og:image' content='{og_image}'>"
+        f"<meta property='og:image:width' content='1200'>"
+        f"<meta property='og:image:height' content='630'>"
+        f"<meta property='og:type' content='website'>"
+        f"<meta property='og:url' content='{html.escape(page_url)}'>"
+        f"<meta name='twitter:card' content='summary_large_image'>"
+        f"<meta name='twitter:title' content='{week_label} — {league_name} | BR Fantasy'>"
+        f"<meta name='twitter:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
+        f"<meta name='twitter:image' content='{og_image}'>"
+    )
+    return render_page("Weekly Recap", league_id, "recap", body, platform, season, og_tags=og_tags)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/recap/og.png")
+def recap_og_image(platform: str, season: int, league_id: str):
+    """Generate a 1200×630 social-share preview image for the weekly recap."""
+    import os as _os
+    import io as _io
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return "", 404
+
+    try:
+        week = int(request.args.get("week") or 0) or None
+    except (ValueError, TypeError):
+        week = None
+
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+    except Exception:
+        ctx = {}
+    league      = ctx.get("league") or {}
+    df_weekly   = ctx.get("df_weekly")
+    roster_map  = ctx.get("roster_map") or {}
+    users       = ctx.get("users") or []
+    settings    = league.get("settings") or {}
+    playoff_start = int(settings.get("playoff_week_start") or 14)
+    league_name = (league.get("name") or "Fantasy League")[:32]
+
+    # ── Resolve week and pull stats ────────────────────────────────────────
+    high_name, high_pts = "—", 0.0
+    low_name,  low_pts  = "—", 0.0
+    matchups_display    = []
+
+    if df_weekly is not None and not df_weekly.empty and "finalized" in df_weekly.columns:
+        fin_df = df_weekly[df_weekly["finalized"] == True].copy()
+        if not fin_df.empty:
+            available = sorted(fin_df["week"].unique().tolist())
+            reg_weeks = [w for w in available if w < playoff_start] or available
+            if week is None or week not in available:
+                week = reg_weeks[-1]
+
+            week_df = fin_df[fin_df["week"] == week].copy()
+            team_by_rid = {str(rid): name for rid, name in roster_map.items()}
+
+            if not week_df.empty:
+                high_row = week_df.loc[week_df["points"].idxmax()]
+                low_row  = week_df.loc[week_df["points"].idxmin()]
+                high_name = team_by_rid.get(str(high_row.get("roster_id", ""))) or str(high_row["owner"])
+                high_pts  = float(high_row["points"])
+                low_name  = team_by_rid.get(str(low_row.get("roster_id", ""))) or str(low_row["owner"])
+                low_pts   = float(low_row["points"])
+
+                for _, grp in week_df.groupby("matchup_id"):
+                    if len(grp) != 2:
+                        continue
+                    grp = grp.sort_values("points", ascending=False)
+                    w_row, l_row = grp.iloc[0], grp.iloc[1]
+                    w_team = team_by_rid.get(str(w_row.get("roster_id", ""))) or str(w_row["owner"])
+                    l_team = team_by_rid.get(str(l_row.get("roster_id", ""))) or str(l_row["owner"])
+                    matchups_display.append({
+                        "w": w_team, "w_pts": float(w_row["points"]),
+                        "l": l_team, "l_pts": float(l_row["points"]),
+                        "margin": float(w_row["points"]) - float(l_row["points"]),
+                    })
+                matchups_display.sort(key=lambda x: -x["margin"])
+
+    week_label = f"Week {week} Recap" if week else "Weekly Recap"
+
+    # ── Fonts ──────────────────────────────────────────────────────────────
+    font_dir   = _os.path.join(_os.path.dirname(__file__), "static", "fonts")
+    def _font(name, size):
+        path = _os.path.join(font_dir, name)
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            return ImageFont.load_default()
+
+    f_huge   = _font("Inter-Bold.ttf",     78)
+    f_large  = _font("Inter-Bold.ttf",     38)
+    f_med    = _font("Inter-SemiBold.ttf", 28)
+    f_small  = _font("Inter-Regular.ttf",  24)
+    f_label  = _font("Inter-Regular.ttf",  20)
+    f_pill   = _font("Inter-SemiBold.ttf", 20)  # fallback only
+
+    # ── Colors ─────────────────────────────────────────────────────────────
+    C_BG      = (2,   6,   23)   # #020617
+    C_SURFACE = (15,  23,  42)   # #0f172a
+    C_SURFACE2= (17,  27,  50)
+    C_ACCENT  = (56,  189, 248)  # #38bdf8
+    C_TEXT    = (229, 231, 235)  # #e5e7eb
+    C_MUTED   = (148, 163, 184)  # #94a3b8
+    C_SUBTLE  = (71,  85,  105)  # #475569
+    C_GREEN   = (34,  197, 94)
+    C_RED     = (239, 68,  68)
+    C_BORDER  = (31,  41,  55)   # #1f2937
+
+    W, H = 1200, 630
+    img  = Image.new("RGB", (W, H), color=C_BG)
+    draw = ImageDraw.Draw(img)
+
+    # ── Subtle grid lines ──────────────────────────────────────────────────
+    for x in range(0, W, 64):
+        draw.line([(x, 0), (x, H)], fill=(15, 23, 42), width=1)
+    for y in range(0, H, 64):
+        draw.line([(0, y), (W, y)], fill=(15, 23, 42), width=1)
+
+    # ── Top accent bar ─────────────────────────────────────────────────────
+    draw.rectangle([0, 0, W, 5], fill=C_ACCENT)
+
+    PAD = 72
+
+    # ── Logo ───────────────────────────────────────────────────────────────
+    try:
+        logo = Image.open(_os.path.join(_os.path.dirname(__file__), "static", "Website_Logo_dark.png")).convert("RGBA")
+        logo_h = 90
+        logo_w = int(logo.width * logo_h / logo.height)
+        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+        img.paste(logo, (PAD, 38), logo)
+    except Exception:
+        draw.text((PAD, 58), "BR Fantasy", fill=C_ACCENT, font=f_pill)
+
+    # ── Week headline ──────────────────────────────────────────────────────
+    draw.text((PAD, 152), week_label, fill=C_TEXT, font=f_huge)
+
+    # ── League name ────────────────────────────────────────────────────────
+    draw.text((PAD, 256), league_name, fill=C_MUTED, font=f_large)
+
+    # ── Accent rule ────────────────────────────────────────────────────────
+    draw.rounded_rectangle([PAD, 314, PAD + 64, 318], radius=2, fill=C_ACCENT)
+
+    # ── Stat callouts ──────────────────────────────────────────────────────
+    def stat_row(y, label, name, value, color):
+        draw.text((PAD, y),       label,    fill=C_SUBTLE, font=f_label)
+        draw.text((PAD, y + 24),  name[:22], fill=C_TEXT,   font=f_med)
+        bb = draw.textbbox((0, 0), value, font=f_med)
+        vw = bb[2] - bb[0]
+        draw.text((580 - vw, y + 24), value, fill=color, font=f_med)
+
+    sy = 336
+    stat_row(sy,       "HIGH SCORE",   high_name, f"{high_pts:.2f}",  C_GREEN)
+    if matchups_display:
+        best = matchups_display[0]
+        stat_row(sy + 76,  "BIGGEST WIN",  best["w"], f"+{best['margin']:.1f}", C_ACCENT)
+    stat_row(sy + 152, "LOW SCORE",    low_name,  f"{low_pts:.2f}",   C_RED)
+
+    # ── Scoreboard card ────────────────────────────────────────────────────
+    CX, CY, CW, CH = 680, 56, 456, 510
+    draw.rounded_rectangle([CX, CY, CX + CW, CY + CH], radius=16, fill=C_SURFACE)
+
+    # Card header
+    draw.text((CX + 24, CY + 20), "Scoreboard", fill=C_TEXT,  font=f_med)
+    draw.text((CX + 24, CY + 52), f"Week {week}", fill=C_MUTED, font=f_label)
+    draw.rectangle([CX, CY + 80, CX + CW, CY + 81], fill=C_BORDER)
+
+    # Matchup rows (up to 5)
+    ry = CY + 94
+    row_h = 82
+    for i, m in enumerate(matchups_display[:5]):
+        if ry + row_h > CY + CH - 10:
+            break
+
+        # Winner
+        w_name = m["w"][:18]
+        l_name = m["l"][:18]
+        draw.text((CX + 20, ry),      w_name, fill=C_TEXT,  font=f_small)
+        draw.text((CX + 20, ry + 28), l_name, fill=C_MUTED, font=f_small)
+
+        # Scores right-aligned
+        w_str = f"{m['w_pts']:.1f}"
+        l_str = f"{m['l_pts']:.1f}"
+        bb = draw.textbbox((0, 0), w_str, font=f_small)
+        sw = bb[2] - bb[0]
+        draw.text((CX + CW - 20 - sw, ry),      w_str, fill=C_GREEN,  font=f_small)
+        bb = draw.textbbox((0, 0), l_str, font=f_small)
+        sw = bb[2] - bb[0]
+        draw.text((CX + CW - 20 - sw, ry + 28), l_str, fill=C_MUTED,  font=f_small)
+
+        # Margin badge
+        mg_str = f"+{m['margin']:.1f}"
+        draw.text((CX + 20, ry + 54), mg_str, fill=C_ACCENT, font=f_label)
+
+        ry += row_h
+        if i < len(matchups_display) - 1 and ry < CY + CH - 10:
+            draw.rectangle([CX + 16, ry - 4, CX + CW - 16, ry - 3], fill=C_BORDER)
+
+    # ── Bottom bar ─────────────────────────────────────────────────────────
+    draw.rectangle([0, H - 50, W, H], fill=C_SURFACE)
+    draw.text((PAD, H - 32), "brfantasy.onrender.com", fill=C_MUTED, font=f_label)
+    _url_bb = draw.textbbox((0, 0), "brfantasy.onrender.com", font=f_label)
+    draw.text((PAD + (_url_bb[2] - _url_bb[0]) + 12, H - 32),
+              "·  AI-powered weekly recap", fill=C_SUBTLE, font=f_label)
+
+    season_str = f"Season {season}"
+    bb = draw.textbbox((0, 0), season_str, font=f_label)
+    draw.text((W - PAD - (bb[2] - bb[0]), H - 32), season_str, fill=C_MUTED, font=f_label)
+
+    # ── Render to bytes ────────────────────────────────────────────────────
+    buf = _io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    buf.seek(0)
+    return buf.read(), 200, {
+        "Content-Type": "image/png",
+        "Cache-Control": "public, max-age=3600",
+        "X-Content-Type-Options": "nosniff",
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # COMMISSIONER DASHBOARD
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -11949,19 +12924,80 @@ def build_commissioner_body(ctx):
                 f'<div style="height:6px;border-radius:3px;background:{color};width:{width:.1f}%"></div></div>')
 
     # ── 3. Trade fairness ─────────────────────────────────────────────────
+    # Use the same pick value table and logic as the activity page.
+    # In Sleeper draft_picks: owner_id = receiver, previous_owner_id = sender,
+    # roster_id = original pick owner (not always the sender).
+    _pick_tbl = load_pick_value_table() or {}
+    _standings_map = ctx.get("standings_map") or {}
+    _num_teams = len(rosters) or 10
+
+    def _pick_val_comm(pick: dict) -> float:
+        year = int(pick.get("season") or 0)
+        rnd  = int(pick.get("round") or 0)
+        if not year or not rnd:
+            return 0.0
+        exact_slot = resolve_exact_pick_slot(
+            platform=platform, root_league_id=league_id,
+            current_season=season, pick=pick,
+        )
+        if exact_slot is not None:
+            k = f"{year}_{rnd}_{exact_slot:02d}"
+            if k in _pick_tbl:
+                return float(_pick_tbl[k])
+        prev = pick.get("previous_owner_id")
+        seed = None
+        try:
+            if prev is not None:
+                seed = _standings_map.get(int(prev))
+        except Exception:
+            pass
+        if seed is not None:
+            if 1 <= seed <= 3:
+                bucket = "early"
+            elif seed <= 7:
+                bucket = "mid"
+            else:
+                bucket = "late"
+            k = f"{year}_{rnd}_{bucket}"
+            if k in _pick_tbl:
+                return float(_pick_tbl[k])
+        for b in ("mid", "early", "late"):
+            k = f"{year}_{rnd}_{b}"
+            if k in _pick_tbl:
+                return float(_pick_tbl[k])
+        k = f"{year}_{rnd}"
+        return float(_pick_tbl[k]) if k in _pick_tbl else 0.0
+
+    trade_txns = [tx for txns in tx_by_week.values() for tx in (txns or [])
+                  if tx.get("type") == "trade"]
     trade_rows = []
-    for tx in (traded or []):
-        adds  = tx.get("adds") or {}
-        drops = tx.get("drops") or {}
-        involved = {str(r) for r in (list(adds.values()) + list(drops.values()))}
+    seen_txn_ids: set = set()
+    for tx in trade_txns:
+        tx_id = tx.get("transaction_id") or tx.get("id")
+        if tx_id:
+            if tx_id in seen_txn_ids:
+                continue
+            seen_txn_ids.add(tx_id)
+        adds = tx.get("adds") or {}
+        draft_picks = tx.get("draft_picks") or []
+        # involved = teams who sent or received something (not the original pick owner)
+        involved = {str(rid) for rid in adds.values()}
+        for pick in draft_picks:
+            for key in ("owner_id", "previous_owner_id"):
+                v = str(pick.get(key) or "")
+                if v and v != "0":
+                    involved.add(v)
         if len(involved) < 2:
             continue
-        val_by_team: dict = {rid: 0.0 for rid in involved}
+        # Value received by each team: player adds + picks (owner_id = receiver)
+        received: dict = {rid: 0.0 for rid in involved}
         for pid, rid in adds.items():
-            val_by_team[str(rid)] = val_by_team.get(str(rid), 0) + val_by_pid.get(str(pid), 0)
-        for pid, rid in drops.items():
-            val_by_team[str(rid)] = val_by_team.get(str(rid), 0) - val_by_pid.get(str(pid), 0)
-        vals = sorted(val_by_team.items(), key=lambda x: -x[1])
+            received[str(rid)] = received.get(str(rid), 0) + val_by_pid.get(str(pid), 0)
+        for pick in draft_picks:
+            rid = str(pick.get("owner_id") or "")
+            if rid and rid in received:
+                received[rid] = received.get(rid, 0) + _pick_val_comm(pick)
+        vals = sorted(received.items(), key=lambda x: -x[1])
         if len(vals) >= 2:
             (r1, v1), (r2, v2) = vals[0], vals[1]
             diff = abs(v1 - v2)
@@ -11969,7 +13005,7 @@ def build_commissioner_body(ctx):
                 "team_a": roster_map.get(r1, f"Team {r1}"),
                 "team_b": roster_map.get(r2, f"Team {r2}"),
                 "val_a": round(v1, 0), "val_b": round(v2, 0),
-                "diff": round(diff, 0), "lopsided": diff > 200,
+                "diff": round(diff, 0), "lopsided": diff > 75,
             })
     trade_rows.sort(key=lambda x: -x["diff"])
 
@@ -12054,31 +13090,44 @@ def build_commissioner_body(ctx):
 
     # ── Trade fairness ────────────────────────────────────────────────────
     if trade_rows:
-        trade_table_rows = ""
+        trade_items = ""
         for t in trade_rows[:25]:
-            diff_color  = "#ef4444" if t["lopsided"] else ("#f59e0b" if t["diff"] > 100 else "#22c55e")
-            lopsided_tag = (" <span style='background:#ef444420;color:#ef4444;font-size:10px;"
-                            "padding:2px 5px;border-radius:4px;'>LOPSIDED</span>") if t["lopsided"] else ""
-            trade_table_rows += f"""
-<tr style="border-bottom:1px solid var(--border);">
-  <td style="padding:10px 14px;">{html.escape(t['team_a'])} <span style="color:var(--muted)">got</span> {int(t['val_a'])} val</td>
-  <td style="padding:10px 14px;">{html.escape(t['team_b'])} <span style="color:var(--muted)">got</span> {int(t['val_b'])} val</td>
-  <td style="padding:10px;text-align:center;font-weight:700;color:{diff_color};">±{int(t['diff'])}{lopsided_tag}</td>
-</tr>"""
+            diff_color = "#ef4444" if t["lopsided"] else ("#f59e0b" if t["diff"] > 40 else "#22c55e")
+            diff_label = "LOPSIDED" if t["lopsided"] else ("UNEVEN" if t["diff"] > 40 else "FAIR")
+            max_val = max(t["val_a"], t["val_b"], 1)
+            pct_a = t["val_a"] / max_val * 100
+            pct_b = t["val_b"] / max_val * 100
+            trade_items += f"""
+<div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);border-left:3px solid {diff_color};">
+  <div style="flex:1;min-width:0;">
+    <div style="font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-bottom:3px;">SIDE A</div>
+    <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{html.escape(t['team_a'])}</div>
+    <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.15;margin:2px 0;">{int(t['val_a']):,}</div>
+    <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;">
+      <div style="height:3px;background:var(--accent);border-radius:2px;width:{pct_a:.0f}%;"></div>
+    </div>
+  </div>
+  <div style="text-align:center;flex-shrink:0;">
+    <div style="font-size:15px;color:var(--muted);margin-bottom:5px;">&#8644;</div>
+    <div style="background:{diff_color}22;color:{diff_color};font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px;white-space:nowrap;">&#177;{int(t['diff']):,}</div>
+    <div style="font-size:9px;color:{diff_color};margin-top:3px;font-weight:700;letter-spacing:.06em;">{diff_label}</div>
+  </div>
+  <div style="flex:1;min-width:0;text-align:right;">
+    <div style="font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.04em;margin-bottom:3px;">SIDE B</div>
+    <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{html.escape(t['team_b'])}</div>
+    <div style="font-size:22px;font-weight:800;color:var(--text);line-height:1.15;margin:2px 0;">{int(t['val_b']):,}</div>
+    <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden;display:flex;justify-content:flex-end;">
+      <div style="height:3px;background:var(--accent);border-radius:2px;width:{pct_b:.0f}%;"></div>
+    </div>
+  </div>
+</div>"""
         trade_card = f"""
-<div class="card" style="overflow:auto;">
+<div class="card" style="overflow:hidden;">
   <div class="card-header">
     <h3>Trade Fairness Log</h3>
-    <span style="font-size:12px;color:var(--muted);">Value diff per trade · ±200 = lopsided</span>
+    <span style="font-size:12px;color:var(--muted);">Received value per side &middot; &#177;75 = lopsided</span>
   </div>
-  <table style="width:100%;border-collapse:collapse;">
-    <thead><tr style="border-bottom:2px solid var(--border);">
-      <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">SIDE A</th>
-      <th style="padding:10px 14px;text-align:left;font-size:12px;color:var(--muted);">SIDE B</th>
-      <th style="padding:10px;text-align:center;font-size:12px;color:var(--muted);">VALUE DIFF</th>
-    </tr></thead>
-    <tbody>{trade_table_rows}</tbody>
-  </table>
+  {trade_items}
 </div>"""
     else:
         trade_card = ("<div class='card'><div class='card-body' style='padding:20px;color:var(--muted);'>"
@@ -12442,7 +13491,7 @@ def api_refresh_page():
 # ---------- global cache for model value table used by trade eval ----------
 _MODEL_VALUE_CACHE = None
 _MODEL_VALUE_CACHE_TS = 0
-_MODEL_VALUE_TTL = 60 * 60  # 1 hour
+_MODEL_VALUE_TTL = 60 * 15  # 15 minutes (short enough to reflect daily cron updates promptly)
 
 # Caches for advanced-metrics endpoints (10-minute TTL)
 _ROLE_PLAYERS_CACHE: dict = {}
@@ -12738,6 +13787,88 @@ def get_model_value_table_cached():
     _MODEL_VALUE_CACHE = tbl
     _MODEL_VALUE_CACHE_TS = now
     return tbl
+
+
+@app.route("/api/flush-value-cache", methods=["POST"])
+@limiter.limit("10 per minute")
+def api_flush_value_cache():
+    """
+    Clear the in-memory model value cache so the next request fetches fresh data
+    from the DB. Useful right after a cron run without restarting the app.
+
+    Caller must pass the correct CRON_SECRET (same env var used by the cron job).
+    """
+    secret = os.environ.get("CRON_SECRET", "")
+    provided = (request.get_json(force=True, silent=True) or {}).get("secret", "")
+    # Require the secret to be set AND match — when CRON_SECRET is unset the
+    # old `if secret and …` guard would pass any request (short-circuit on falsy).
+    if not secret or provided != secret:
+        return jsonify({"error": "unauthorized"}), 403
+
+    global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
+    _MODEL_VALUE_CACHE    = None
+    _MODEL_VALUE_CACHE_TS = 0
+    return jsonify({"ok": True, "message": "Model value cache cleared — next request will reload from DB."})
+
+
+@app.route("/api/debug-values")
+@limiter.limit("30 per minute")
+def api_debug_values():
+    """
+    Diagnostic endpoint: returns DB values vs calibrated values for the top 10
+    players by value_1qb. Useful for confirming whether WLS calibration is
+    actually being written to the DB and whether values are changing.
+    """
+    try:
+        from dashboard_services.db import get_conn as _gc
+        with _gc() as _conn:
+            rows = _conn.execute(
+                """
+                SELECT
+                    player_id,
+                    position,
+                    value_1qb,
+                    calibrated_value_1qb,
+                    calibrated_value_sf,
+                    calibration_source,
+                    calibration_weight,
+                    last_updated
+                FROM player_values
+                WHERE value_1qb IS NOT NULL AND value_1qb > 0
+                  AND (position IS NULL OR position != 'PICK')
+                ORDER BY value_1qb DESC NULLS LAST
+                LIMIT 20
+                """
+            ).fetchall()
+        from pathlib import Path as _Path
+        import time as _time
+        _mv_path = DATA_DIR / "model_values.json"
+        _mv_mtime = (
+            datetime.fromtimestamp(_mv_path.stat().st_mtime).isoformat()
+            if _mv_path.exists() else "missing"
+        )
+        _cache_age = round(_time.time() - _MODEL_VALUE_CACHE_TS) if _MODEL_VALUE_CACHE_TS else None
+        return jsonify({
+            "model_values_json_mtime": _mv_mtime,
+            "in_memory_cache_age_seconds": _cache_age,
+            "in_memory_cache_size": len(_MODEL_VALUE_CACHE) if _MODEL_VALUE_CACHE else 0,
+            "top_players": [
+                {
+                    "player_id":              str(r["player_id"]),
+                    "position":               str(r["position"] or ""),
+                    "value_1qb":              float(r["value_1qb"] or 0),
+                    "calibrated_value_1qb":   float(r["calibrated_value_1qb"]) if r["calibrated_value_1qb"] is not None else None,
+                    "calibrated_value_sf":    float(r["calibrated_value_sf"])  if r["calibrated_value_sf"]  is not None else None,
+                    "calibration_source":     str(r["calibration_source"] or ""),
+                    "calibration_weight":     float(r["calibration_weight"]) if r["calibration_weight"] is not None else None,
+                    "last_updated":           r["last_updated"].isoformat() if r["last_updated"] else None,
+                    "coalesce_gives":         float(r["calibrated_value_1qb"] if r["calibrated_value_1qb"] is not None else r["value_1qb"] or 0),
+                }
+                for r in rows
+            ],
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/gm-memo", methods=["POST"])
@@ -19651,7 +20782,7 @@ def build_portfolio_body(
             f"</div>"
             f"</div></div>"
             f"<script>(function(){{"
-            f"var PAGE=10,fp='ALL',fn='',pg=1,filtered=[];"
+            f"var PAGE=5,fp='ALL',fn='',pg=1,filtered=[];"
             f"function applyFilters(){{"
             f"var rows=Array.from(document.querySelectorAll('.pf-row'));"
             f"filtered=rows.filter(function(r){{return(fp==='ALL'||r.dataset.pos===fp)&&(!fn||r.dataset.name.includes(fn));}});"
@@ -19979,6 +21110,22 @@ def _run_startup_daily() -> None:
 
 
 threading.Thread(target=_run_startup_daily, daemon=True).start()
+
+
+@app.route("/robots.txt")
+def robots_txt():
+    # Build sitemap URL from the actual request host so staging/dev never
+    # advertises the production sitemap URL.
+    host = request.host_url.rstrip("/")
+    txt = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Disallow: /api/\n"
+        "Disallow: /admin/\n"
+        "\n"
+        f"Sitemap: {host}/sitemap.xml\n"
+    )
+    return app.response_class(txt, mimetype="text/plain")
 
 
 if __name__ == "__main__":

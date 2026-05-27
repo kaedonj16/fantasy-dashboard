@@ -428,11 +428,7 @@ def _write_pick_values(pick_values_1qb: dict[str, float], pick_values_sf: dict[s
     today = date.today().isoformat()
     payload = {"date": today, "1qb": pick_values_1qb, "sf": pick_values_sf}
 
-    for path in [
-        DATA_DIR / f"pick_values_wls_{today}.json",
-        DATA_DIR / "pick_values_wls_latest.json",
-    ]:
-        path.write_text(json.dumps(payload, indent=2))
+    (DATA_DIR / "pick_values_wls_latest.json").write_text(json.dumps(payload, indent=2))
 
     logger.info("[trade_value_model] Wrote %d WLS pick values", len(pick_values_1qb))
 

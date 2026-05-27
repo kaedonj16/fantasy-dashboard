@@ -57,6 +57,194 @@ document.body.scrollTop = 0;
   window.addEventListener('DOMContentLoaded', finishBar);
 })();
 
+// ── Global utilities ──────────────────────────────────────────────────────────
+
+/**
+ * Format a numeric score with a thousands separator and 1 decimal place.
+ * e.g. 1234.5 → "1,234.5"   99.8 → "99.8"
+ */
+function fmtPts(v) {
+  const n = parseFloat(v);
+  if (isNaN(n)) return '—';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+/**
+ * Format a whole number with thousands separator.
+ * e.g. 12500 → "12,500"
+ */
+function fmtInt(v) {
+  const n = parseInt(v, 10);
+  if (isNaN(n)) return '—';
+  return n.toLocaleString('en-US');
+}
+
+/**
+ * Toast notification system.
+ * Usage: showToast('Copied!') / showToast('Error', 'error') / showToast('Saved', 'success', 3000)
+ */
+window.showToast = (function () {
+  var container = null;
+  function getContainer() {
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'toast-container';
+      document.body.appendChild(container);
+    }
+    return container;
+  }
+  return function showToast(message, type, duration) {
+    type = type || 'info';
+    duration = duration == null ? 3000 : duration;
+    var c = getContainer();
+    var t = document.createElement('div');
+    t.className = 'toast toast-' + type;
+    t.textContent = message;
+    c.appendChild(t);
+    // Trigger enter animation
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { t.classList.add('toast-visible'); });
+    });
+    setTimeout(function () {
+      t.classList.remove('toast-visible');
+      t.addEventListener('transitionend', function () { t.remove(); }, { once: true });
+    }, duration);
+  };
+})();
+
+/**
+ * Apply a fade-in animation to a container after async content loads.
+ * Usage: fadeInCard(el)
+ */
+function fadeInCard(el) {
+  if (!el) return;
+  el.classList.remove('card-fade-in');
+  void el.offsetWidth; // reflow
+  el.classList.add('card-fade-in');
+}
+
+/**
+ * Render a consistent empty state inside a container.
+ * Usage: emptyState(el, 'No players found', 'fa-user-slash')
+ */
+function emptyState(container, message, iconClass) {
+  if (!container) return;
+  iconClass = iconClass || 'fa-inbox';
+  container.innerHTML =
+    '<div class="empty-state">' +
+      '<i class="fa-solid ' + iconClass + ' empty-state-icon"></i>' +
+      '<p class="empty-state-msg">' + (message || 'Nothing here yet.') + '</p>' +
+    '</div>';
+}
+
+// ── PWA install prompt ────────────────────────────────────────────────────────
+(function () {
+  var deferredPrompt = null;
+  var bannerShown = false;
+  var DISMISS_KEY = 'pwa-install-dismissed-v1';
+
+  // iOS Safari never fires beforeinstallprompt — detect it separately.
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  var isStandalone = (navigator.standalone === true) ||
+                     window.matchMedia('(display-mode: standalone)').matches;
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    // Don't show if already dismissed or installed
+    if (localStorage.getItem(DISMISS_KEY)) return;
+    // Delay slightly so it doesn't interrupt page load
+    setTimeout(showInstallBanner, 8000);
+  });
+
+  // iOS: show Add-to-Home-Screen instructions after the same delay
+  if (isIOS && !isStandalone && !localStorage.getItem(DISMISS_KEY)) {
+    setTimeout(showIOSBanner, 8000);
+  }
+
+  function showInstallBanner() {
+    if (bannerShown || !deferredPrompt) return;
+    bannerShown = true;
+
+    var banner = document.createElement('div');
+    banner.id = 'pwa-install-banner';
+    banner.innerHTML =
+      '<div class="pwa-banner-left">' +
+        '<img src="/static/BR_Logo.png" class="pwa-banner-icon" alt="BR Fantasy">' +
+        '<div>' +
+          '<div class="pwa-banner-title">Add to Home Screen</div>' +
+          '<div class="pwa-banner-sub">Install BR Fantasy for quick access</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pwa-banner-actions">' +
+        '<button id="pwa-install-btn" class="pwa-btn pwa-btn-install">Install</button>' +
+        '<button id="pwa-dismiss-btn" class="pwa-btn pwa-btn-dismiss">Not now</button>' +
+      '</div>';
+    document.body.appendChild(banner);
+
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { banner.classList.add('pwa-banner-visible'); });
+    });
+
+    document.getElementById('pwa-install-btn').addEventListener('click', function () {
+      hideBanner();
+      // Capture and null-out before async call so a second tap can't double-fire.
+      var p = deferredPrompt;
+      deferredPrompt = null;
+      if (!p) return;
+      try {
+        p.prompt();
+        p.userChoice.then(function (choice) {
+          if (choice.outcome === 'accepted') localStorage.setItem(DISMISS_KEY, '1');
+        }).catch(function () {});
+      } catch (err) {
+        console.warn('[pwa] prompt() failed:', err);
+      }
+    });
+
+    document.getElementById('pwa-dismiss-btn').addEventListener('click', function () {
+      hideBanner();
+      localStorage.setItem(DISMISS_KEY, '1');
+    });
+  }
+
+  function showIOSBanner() {
+    if (bannerShown) return;
+    bannerShown = true;
+
+    var banner = document.createElement('div');
+    banner.id = 'pwa-install-banner';
+    banner.innerHTML =
+      '<div class="pwa-banner-left">' +
+        '<img src="/static/BR_Logo.png" class="pwa-banner-icon" alt="BR Fantasy">' +
+        '<div>' +
+          '<div class="pwa-banner-title">Add to Home Screen</div>' +
+          '<div class="pwa-banner-sub">Tap <strong>Share</strong> then <strong>Add to Home Screen</strong></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pwa-banner-actions">' +
+        '<button id="pwa-dismiss-btn" class="pwa-btn pwa-btn-dismiss">Got it</button>' +
+      '</div>';
+    document.body.appendChild(banner);
+
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { banner.classList.add('pwa-banner-visible'); });
+    });
+
+    document.getElementById('pwa-dismiss-btn').addEventListener('click', function () {
+      hideBanner();
+      localStorage.setItem(DISMISS_KEY, '1');
+    });
+  }
+
+  function hideBanner() {
+    var b = document.getElementById('pwa-install-banner');
+    if (!b) return;
+    b.classList.remove('pwa-banner-visible');
+    b.addEventListener('transitionend', function () { b.remove(); }, { once: true });
+  }
+})();
+
 // ── Login / subscribe gate ────────────────────────────────────────────────────
 /**
  * Render a sign-in or subscribe prompt inside a container element.
@@ -434,6 +622,7 @@ function initPlayoffOdds(root = document) {
             return;
           }
           panel.innerHTML = _renderPlayoffOdds(data);
+          fadeInCard(panel);
         })
         .catch(() => {
           panel.innerHTML = '<p class="po-error">Unable to load playoff odds.</p>';
@@ -967,7 +1156,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
     }).catch(err => {
       console.error("Failed to copy to clipboard:", err);
-      alert("Failed to copy link. Please try again.");
+      showToast("Failed to copy link. Please try again.", "error");
     });
   }
 
@@ -1258,8 +1447,17 @@ window.initTradePage = function initTradePage(root = document) {
     if (moversPanel) {
       moversPanel.classList.add("otc-movers-loading");
     }
-    if (risersEl) risersEl.innerHTML = '<div class="otc-movers-empty"><div class="loading-spinner"></div></div>';
-    if (fallersEl) fallersEl.innerHTML = '<div class="otc-movers-empty"><div class="loading-spinner"></div></div>';
+    const moverSkeleton = () => [1,2,3,4,5].map((_, i) => `
+      <div class="sk-mover-row">
+        <div class="sk-shimmer sk-avatar" style="width:28px;height:28px;animation-delay:${i*0.08}s;"></div>
+        <div style="flex:1;min-width:0;">
+          <div class="sk-shimmer sk-line" style="width:${55+i*8}%;animation-delay:${i*0.08}s;"></div>
+          <div class="sk-shimmer sk-line sk-line--sm sk-line--w50" style="animation-delay:${i*0.08+0.05}s;"></div>
+        </div>
+        <div class="sk-shimmer sk-line" style="width:40px;height:16px;animation-delay:${i*0.08}s;"></div>
+      </div>`).join('');
+    if (risersEl) risersEl.innerHTML = moverSkeleton();
+    if (fallersEl) fallersEl.innerHTML = moverSkeleton();
 
     try {
       const leagueType = getLeagueType();
@@ -1296,6 +1494,7 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       renderMovers(data);
+      fadeInCard(moversPanel);
 
       // Visual feedback - pulse animation
       if (moversPanel) {
@@ -1323,7 +1522,15 @@ window.initTradePage = function initTradePage(root = document) {
     if (moversPanel) {
       moversPanel.classList.add("otc-movers-loading");
     }
-    breakoutsEl.innerHTML = '<div class="otc-movers-empty"><div class="loading-spinner"></div></div>';
+    breakoutsEl.innerHTML = [1,2,3,4,5].map((_, i) => `
+      <div class="sk-mover-row">
+        <div class="sk-shimmer sk-avatar" style="width:28px;height:28px;animation-delay:${i*0.08}s;"></div>
+        <div style="flex:1;min-width:0;">
+          <div class="sk-shimmer sk-line" style="width:${55+i*7}%;animation-delay:${i*0.08}s;"></div>
+          <div class="sk-shimmer sk-line sk-line--sm sk-line--w50" style="animation-delay:${i*0.08+0.05}s;"></div>
+        </div>
+        <div class="sk-shimmer sk-line" style="width:36px;height:16px;animation-delay:${i*0.08}s;"></div>
+      </div>`).join('');
 
     try {
       const leagueType = getLeagueType();
@@ -4683,6 +4890,71 @@ document.addEventListener("DOMContentLoaded", () => {
 // Global variable to track notification state
 let hasNewNotifications = false;
 
+// Show a rich notification toast for a new changelog entry
+function _showNotifToast(entry) {
+  if (!entry) return;
+
+  // Build a richer popup than a plain text toast
+  var popup = document.createElement('div');
+  popup.className = 'notif-toast';
+
+  // Sanitize tag to alphanumerics/hyphens only — prevents CSS class injection.
+  var safeTag = (entry.tag || 'update').replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'update';
+  var tagClass = 'notif-toast-tag notif-toast-tag-' + safeTag;
+
+  // Resolve link with league context if available.
+  // Prefer window.__brctx (server-injected) over a URL heuristic to avoid false
+  // positives on paths like /2024/some-page where a year looks like a league segment.
+  var link = entry.link || null;
+  if (link && link.startsWith('/')) {
+    var _ctx = window.__brctx || {};
+    var isLoggedIn = (_ctx.is_logged_in != null)
+      ? Boolean(_ctx.is_logged_in)
+      : (function() {
+          var pp = window.location.pathname.split('/').filter(function(p) { return p; });
+          return pp.length >= 3 && pp[0] && !isNaN(pp[1]);
+        })();
+    if (isLoggedIn) {
+      var pp = window.location.pathname.split('/').filter(function(p) { return p; });
+      link = '/' + pp[0] + '/' + pp[1] + '/' + pp[2] + link;
+    }
+  }
+
+  popup.innerHTML =
+    '<div class="notif-toast-header">' +
+      '<i class="fa-solid fa-bell notif-toast-bell"></i>' +
+      '<span class="notif-toast-title">What\'s New</span>' +
+      '<button class="notif-toast-close" aria-label="Dismiss">&times;</button>' +
+    '</div>' +
+    '<div class="notif-toast-body">' +
+      '<span class="' + tagClass + '">' + safeTag + '</span>' +
+      '<p class="notif-toast-text">' + (entry.text || '') + '</p>' +
+    '</div>' +
+    (link
+      ? '<a href="' + link + '" class="notif-toast-action">View update &rsaquo;</a>'
+      : '') ;
+
+  document.body.appendChild(popup);
+
+  // Trigger enter animation
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() { popup.classList.add('notif-toast-visible'); });
+  });
+
+  function dismiss() {
+    popup.classList.remove('notif-toast-visible');
+    popup.addEventListener('transitionend', function() { popup.remove(); }, { once: true });
+  }
+
+  popup.querySelector('.notif-toast-close').addEventListener('click', dismiss);
+  if (link) {
+    popup.querySelector('.notif-toast-action').addEventListener('click', dismiss);
+  }
+
+  // Auto-dismiss after 8 seconds
+  setTimeout(dismiss, 8000);
+}
+
 // Global function for notification dots (accessible from settings dropdown)
 function setChangelogDot(hasNew, showSettingsDot = false) {
   // Update the global notification state
@@ -4722,9 +4994,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (!changelogData || changelogData.length === 0) return;
 
-      // Detect if user is logged in (check for league context in URL)
+      // Detect if user is logged in — prefer server-injected __brctx; fall back to
+      // URL heuristic only when the context object is absent.
+      const _ictx = window.__brctx || {};
       const pathParts = window.location.pathname.split('/').filter(p => p);
-      const isLoggedIn = pathParts.length >= 3 && pathParts[0] && !isNaN(pathParts[1]);
+      const isLoggedIn = (_ictx.is_logged_in != null)
+        ? Boolean(_ictx.is_logged_in)
+        : (pathParts.length >= 3 && Boolean(pathParts[0]) && !isNaN(pathParts[1]));
 
       // Filter out history page entries if not logged in
       if (!isLoggedIn) {
@@ -4733,13 +5009,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (changelogData.length === 0) return;
 
-      // Check if we should show the red dot
+      // Check if we should show the red dot + notification toast
       const latestDate = changelogData[0].date;
       const lastSeen = localStorage.getItem("changelog_last_seen");
 
-
       if (!lastSeen || latestDate > lastSeen) {
         setChangelogDot(true);
+        // Show a toast once per session for new notifications
+        const sessionKey = "changelog_toast_shown_" + latestDate;
+        if (!sessionStorage.getItem(sessionKey)) {
+          sessionStorage.setItem(sessionKey, "1");
+          _showNotifToast(changelogData[0]);
+        }
       }
 
       // Build dropdown HTML
@@ -4751,9 +5032,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Build the dropdown HTML
   function buildDropdown() {
-    // Detect league context from URL
+    // Detect league context — prefer server-injected __brctx over URL heuristic.
+    const _bctx = window.__brctx || {};
     const pathParts = window.location.pathname.split('/').filter(p => p);
-    const isLoggedIn = pathParts.length >= 3 && pathParts[0] && !isNaN(pathParts[1]);
+    const isLoggedIn = (_bctx.is_logged_in != null)
+      ? Boolean(_bctx.is_logged_in)
+      : (pathParts.length >= 3 && Boolean(pathParts[0]) && !isNaN(pathParts[1]));
     const leaguePrefix = isLoggedIn ? `/${pathParts[0]}/${pathParts[1]}/${pathParts[2]}` : '';
 
     const entries = changelogData.slice(0, 5).map(entry => {
@@ -5508,7 +5792,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const totalCard = totalPts != null
         ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">Total Pts${seasonLabel}</div>
-            <div class="pm-hero-val">${totalPts}</div>
+            <div class="pm-hero-val">${fmtPts(totalPts)}</div>
             <div class="pm-hero-sub">${totalPtsRank ? `POS : ${totalPtsRank} · OVR : ${totalPtsOvrRank ?? '—'}` : '-'}</div>
           </div>`
         : '';
@@ -6359,7 +6643,7 @@ function _buildStatsHTML(game_logs_by_year) {
 
       // Build season summary for header
       const seasonSummaryParts = [];
-      seasonSummaryParts.push(`${totalFantasyPts.toFixed(1)} pts`);
+      seasonSummaryParts.push(`${fmtPts(totalFantasyPts)} pts`);
       if (totalPassYd > 0) seasonSummaryParts.push(`${Math.round(totalPassYd)} pass yds`);
       if (totalRushYd > 0) seasonSummaryParts.push(`${Math.round(totalRushYd)} rush yds`);
       if (totalRec > 0) seasonSummaryParts.push(`${totalRec} rec`);
@@ -6418,7 +6702,7 @@ function _buildStatsHTML(game_logs_by_year) {
 
         const ptsCell = isBye
           ? '-'
-          : hasAnyStats ? (game.fantasy_pts != null ? game.fantasy_pts.toFixed(1) : '-') : '<span style="color:#9ca3af;">DNP</span>';
+          : hasAnyStats ? (game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '-') : '<span style="color:#9ca3af;">DNP</span>';
 
         statsHTML += `
           <tr class="${rowClass}">
@@ -6448,7 +6732,7 @@ function _buildStatsHTML(game_logs_by_year) {
                 <tr class="game-log-table-total">
                   <td><strong>Total</strong></td>
                   <td><strong>${gamesPlayed}G</strong></td>
-                  <td class="game-log-table-pts"><strong>${totalFantasyPts.toFixed(1)}</strong></td>
+                  <td class="game-log-table-pts"><strong>${fmtPts(totalFantasyPts)}</strong></td>
                   <td><strong>${valTotal(totalPassYd) !== '-' ? Math.round(totalPassYd) : '-'}</strong></td>
                   <td><strong>${valTotal(totalPassTd)}</strong></td>
                   <td><strong>${valTotal(totalPassInt)}</strong></td>

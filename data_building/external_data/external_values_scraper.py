@@ -1,7 +1,6 @@
 # dashboard_services/external_values_scraper.py
 
 import csv
-from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict
 
@@ -17,9 +16,6 @@ FANTASYCALC_API_URL = "https://api.fantasycalc.com/values/current"
 DYNASTYPROCESS_VALUES_URL = (
     "https://raw.githubusercontent.com/dynastyprocess/data/master/files/values.csv"
 )
-
-# Separate outputs so API vs scraped rankings don't trample each other
-FANTASYCALC_RANKINGS_CSV_PATH = DATA_DIR / f"fantasycalc_rankings_{date.today().isoformat()}.csv"
 
 HEADERS = {
     "User-Agent": (
@@ -76,16 +72,7 @@ def write_ktc_to_csv(
     if out_csv is None:
         out_csv = Path(path_ktc_values())
 
-    today = date.today()
-    yesterday = today - timedelta(days=1)
     out_csv = Path(out_csv)
-    dirname = out_csv.parent
-    yesterday_file = dirname / f"ktc_rankings_{yesterday.isoformat()}.csv"
-    if yesterday_file.exists():
-        try:
-            yesterday_file.unlink()
-        except Exception:
-            pass
 
     rows = []
     for entry in values:

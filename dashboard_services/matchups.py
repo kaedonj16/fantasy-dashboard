@@ -105,8 +105,12 @@ def build_matchup_preview(
     def _team_block_from_match_row(row: dict) -> dict:
         rid = str(row.get("roster_id"))
         starters_raw = [s for s in (row.get("starters") or []) if s]
+        starter_set = {str(s) for s in starters_raw}
+        all_players = [str(p) for p in (row.get("players") or []) if p]
+        bench_raw = [p for p in all_players if p not in starter_set]
         pts_map = {str(k): v for k, v in (row.get("players_points") or {}).items()}
         s_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in starters_raw]
+        b_infos: List[dict] = [_pinfo(str(pid), pts_map) for pid in bench_raw]
         pts_total = float(row["points"]) if isinstance(row.get("points"), (int, float)) else None
 
         wins, losses = record_by_rid.get(rid, (0, 0))
@@ -117,6 +121,7 @@ def build_matchup_preview(
             "name": roster_map.get(rid, f"Roster {rid}"),
             "roster_id": rid,
             "starters": s_infos,
+            "bench": b_infos,
             "pts_total": pts_total,
             "avatar": get_avatar(owner_id),
             "record": f"{wins}-{losses}",
@@ -374,6 +379,53 @@ def team_live_totals(
             live_proj_total += proj_val
 
     return actual_total, live_proj_total
+
+
+def compute_win_prob(
+        left: dict,
+        right: dict,
+        status_by_pid: dict[str, str],
+        proj_map: dict[str, float],
+) -> float:
+    """
+    Returns left team win probability (0.0–1.0) based on locked scores
+    and projected remaining points modelled as normal distributions.
+    Variance per pending player: sigma = max(0.4 * projection, 4.0).
+    """
+    from math import erf
+
+    def _stats(team: dict):
+        locked = 0.0
+        pend_proj = 0.0
+        pend_var = 0.0
+        for p in (team.get("starters") or []):
+            pid = p.get("pid")
+            actual = float(p.get("pts") or 0.0)
+            status = status_by_pid.get(pid, STATUS_NOT_STARTED)
+            proj = float(proj_map.get(pid, 0.0))
+            if status in (STATUS_IN_PROGRESS, STATUS_FINAL):
+                locked += actual
+            else:
+                pend_proj += proj
+                sigma = max(0.4 * proj, 4.0)
+                pend_var += sigma * sigma
+        return locked, pend_proj, pend_var
+
+    l_lock, l_pend, l_var = _stats(left)
+    r_lock, r_pend, r_var = _stats(right)
+    l_total = l_lock + l_pend
+    r_total = r_lock + r_pend
+    combined_var = l_var + r_var
+
+    if combined_var < 1e-6:
+        if l_total > r_total:
+            return 1.0
+        if r_total > l_total:
+            return 0.0
+        return 0.5
+
+    z = (l_total - r_total) / (combined_var ** 0.5 * 2 ** 0.5)
+    return max(0.01, min(0.99, 0.5 * (1 + erf(z))))
 
 
 def compute_team_projections_for_weeks(
@@ -827,10 +879,12 @@ def render_matchup_slide(
             rid = t.get('roster_id', '')
             return f"""
         <div class="m-team">
-          {img}
-          <div>
-            <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-            <div>{t['record']} • @{t['username']}</div>
+          <div class="m-team-identity">
+            {img}
+            <div>
+              <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
+              <div>{t['record']} • @{t['username']}</div>
+            </div>
           </div>
           <span class="num">{points}</span>
         </div>
@@ -845,10 +899,12 @@ def render_matchup_slide(
         rid = t.get('roster_id', '')
         return f"""
         <div class="m-team">
-          {img}
-          <div>
-            <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-            <div>{t['record']} • @{t['username']}</div>
+          <div class="m-team-identity">
+            {img}
+            <div>
+              <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
+              <div>{t['record']} • @{t['username']}</div>
+            </div>
           </div>
           <div style="display:grid;grid-template-columns:1;justify-items: center;">
             <span class="num">{actual_total:.1f}</span>
@@ -867,11 +923,13 @@ def render_matchup_slide(
             return f"""
         <div class="m-team">
           <span class="num">{points}</span>
-          <div class="right">
-            <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-            <div>@{t['username']} • {t['record']}</div>
+          <div class="m-team-identity">
+            <div class="right">
+              <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
+              <div>@{t['username']} • {t['record']}</div>
+            </div>
+            {img}
           </div>
-          {img}
         </div>
         """
 
@@ -887,11 +945,13 @@ def render_matchup_slide(
             <span class="num">{actual_total:.1f}</span>
             <span class="proj" style="opacity:0.4;text-align:center;">{live_proj_total:.1f}</span>
           </div>
-          <div class="right">
-            <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-            <div>@{t['username']} • {t['record']}</div>
+          <div class="m-team-identity">
+            <div class="right">
+              <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
+              <div>@{t['username']} • {t['record']}</div>
+            </div>
+            {img}
           </div>
-          {img}
         </div>
         """
 
@@ -1070,6 +1130,9 @@ def render_matchup_slide(
         # Add clickable attributes
         clickable_attrs = f" class='pname player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{name}'" if pid else " class='pname'"
 
+        stats_inline_l = f"<span class='meta m-cell-stats'>{stats}</span>" if stats else ""
+        stats_inline_r = f"<span class='meta m-cell-stats' style='text-align:right;'>{stats}</span>" if stats else ""
+
         if left_side:
             if is_bye:
                 cell = (
@@ -1088,6 +1151,7 @@ def render_matchup_slide(
                     f"<span{clickable_attrs}>{name}</span>"
                     f"<span class='meta'>{meta_content}</span></div>"
                     f"<span class='meta' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;'>{game_line}</span>"
+                    f"{stats_inline_l}"
                     f"</div>"
                     f"</div>"
                 )
@@ -1108,6 +1172,7 @@ def render_matchup_slide(
                     f"<span class='meta'>{meta_content}</span>"
                     f"<span{clickable_attrs}> {name}</span></div>"
                     f"<span class='meta' style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;'>{game_line}</span>"
+                    f"{stats_inline_r}"
                     f"</div>"
                     f"<span class='pos-badge {pos}'>{pos}</span>"
                     f"</div>"
@@ -1185,13 +1250,31 @@ def render_matchup_slide(
                 </div>"""
         )
 
+    # Win probability: only for live/projection weeks (skip completed weeks)
+    win_bar_html = ""
+    if proj:
+        l_prob = compute_win_prob(m["left"], m["right"], status_by_pid, week_proj_map)
+        lp = round(l_prob * 100)
+        rp = 100 - lp
+        l_leading = l_prob >= 0.5
+        l_col = "#22c55e" if l_leading else "var(--text-muted)"
+        r_col = "#22c55e" if not l_leading else "var(--text-muted)"
+        win_bar_html = f"""<div class="m-win-bar">
+  <span class="m-wp-pct" style="color:{l_col};">{lp}%</span>
+  <div class="m-wp-track">
+    <div class="m-wp-fill" style="width:{lp}%;background:{l_col};"></div>
+  </div>
+  <span class="m-wp-pct" style="color:{r_col};text-align:right;">{rp}%</span>
+</div>"""
+
     return f"""
     <div class="m-slide">
       <div class="m-head">
         {team_head(m['left'], proj)}
-        <div class="m-vs">vs</div>
+        <div class="m-vs">{'vs' if not proj else ''}</div>
         {team_head_2nd(m['right'], proj)}
       </div>
+      {win_bar_html}
       <div class="m-body">
         <div class="m-combo">
           {''.join(rows_html)}

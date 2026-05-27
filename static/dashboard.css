@@ -401,7 +401,7 @@ ul {
 
 .page-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 230px;
   gap: 24px;
   align-items: flex-start;
   width: 100%;
@@ -1176,6 +1176,10 @@ html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
 .site-logo {
   width: 225px;
   height: auto;
+}
+
+[data-theme="dark"] .site-logo {
+  content: url('/static/Website_Logo_dark.png');
 }
 
 .top-nav {
@@ -2241,6 +2245,10 @@ button:hover {
   padding: 8px 6px;
   color: var(--accent);
   font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--card);
 }
 
 .standings-table tr {
@@ -7679,6 +7687,17 @@ thead th {
   justify-content: space-between;
 }
 
+.m-team-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.m-team-identity .right {
+  text-align: right;
+}
+
 .m-team .name {
   font-weight: 800;
   text-overflow: ellipsis;
@@ -7713,6 +7732,31 @@ thead th {
   color: var(--text-muted);
   font-size: 1.1rem;
   letter-spacing: 0.5px;
+}
+
+.m-win-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+.m-wp-pct {
+  font-size: 11px;
+  font-weight: 800;
+  min-width: 30px;
+  letter-spacing: 0.02em;
+}
+.m-wp-track {
+  flex: 1;
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.m-wp-fill {
+  height: 5px;
+  border-radius: 3px;
+  transition: width 0.6s ease;
 }
 
 .manager-pill {
@@ -9109,7 +9153,8 @@ img, svg, canvas {
 
 @media (max-width: 900px) {
   .m-row {
-    grid-template-columns: 1fr 52px 52px 1fr;
+    grid-template-columns: 1fr 44px 44px 1fr;
+    column-gap: 6px;
   }
   /* collapse the stat-stack children so they don't wrap to a second row;
      !important overrides any inline style="display:grid" on stat-stack divs */
@@ -9119,15 +9164,30 @@ img, svg, canvas {
   }
 }
 
-/* On the weekly hub page the matchup carousel sits in a narrower column (~420px).
-   Scope the stat-cell hiding strictly to .matchups-shell so the left column's
-   optimal-lineup m-rows are unaffected. */
-.weekly-hub .matchups-shell .m-row {
-  grid-template-columns: 1.8fr 58px 58px 1.8fr;
+/* Stats injected inline into player cells — only shown on mobile where
+   the stat-stack columns are hidden. */
+.m-cell-stats { display: none; }
+@media (max-width: 900px) {
+  .m-cell-stats {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 1px;
+  }
 }
-.weekly-hub .matchups-shell .m-row > :nth-child(2),
-.weekly-hub .matchups-shell .m-row > :nth-child(5) {
-  display: none !important;
+
+/* Weekly hub desktop: give the matchup column 2/3 of page-main so the full
+   6-column stat-stack layout fits. Scoped to min-width:961px so the normal
+   960px two-col collapse still fires on tablet/mobile. */
+@media (min-width: 961px) {
+  .weekly-hub .standings-main.two-col-standings {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  }
+  .weekly-hub .matchups-shell .m-row { column-gap: 6px; }
+  .weekly-hub .matchups-shell .p .meta { font-size: 11px; }
 }
 
 @media (max-width: 640px) {
@@ -9188,14 +9248,14 @@ img, svg, canvas {
 
   /* ── Player rows ─────────────────────────────────────── */
   .m-row {
-    grid-template-columns: 1fr 36px 36px 1fr;
-    column-gap: 4px;
+    grid-template-columns: 1fr 30px 30px 1fr;
+    column-gap: 2px;
     padding: 0 2px;
   }
-  .num.mid { min-width: 32px; font-size: 11px; }
+  .num.mid { min-width: 26px; font-size: 11px; }
 
   .m-combo .p { gap: 4px; padding: 3px 0; }
-  .m-combo .pos-badge { font-size: 9px; padding: 1px 3px; flex-shrink: 0; }
+  .m-combo .pos-badge { font-size: 9px; padding: 1px 2px; flex-shrink: 0; width: 26px; height: 20px; }
   .m-combo .meta { font-size: 10px; line-height: 1.25; }
   .m-combo .pname { font-size: 12px; }
 }
@@ -15660,10 +15720,10 @@ button:disabled {
   padding: 3px;
   border-radius: 10px;
   width: fit-content;
-  margin: 14px 16px 10px;
+  margin: 14px 11px 10px;
 }
 #weeklyLeftTabs .tab-btn {
-  padding: 7px 16px;
+  padding: 7px 17px;
   font-size: 13px;
   font-weight: 700;
   border: none;
@@ -15859,3 +15919,290 @@ button:disabled {
   color: var(--text);
   border-color: var(--accent);
 }
+
+/* ── Generic skeleton shimmer ─────────────────────────────────────────────── */
+@keyframes skShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+.sk-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-alt, #1e293b) 25%,
+    var(--border, #334155) 50%,
+    var(--bg-alt, #1e293b) 75%
+  );
+  background-size: 200% 100%;
+  animation: skShimmer 1.4s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+.sk-line {
+  height: 12px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+.sk-line.sk-line--lg { height: 18px; }
+.sk-line.sk-line--sm { height: 9px; }
+.sk-line.sk-line--w75 { width: 75%; }
+.sk-line.sk-line--w50 { width: 50%; }
+.sk-line.sk-line--w60 { width: 60%; }
+
+.sk-avatar {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Movers skeleton rows */
+.sk-mover-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Recap page mobile layout ─────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .recap-scoreboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .recap-lineup-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Toast notifications ──────────────────────────────────────────────────── */
+#toast-container {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: #1e293b;
+  box-shadow: 0 4px 20px rgba(0,0,0,.3);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity .22s ease, transform .22s ease;
+  pointer-events: auto;
+  white-space: nowrap;
+  max-width: 90vw;
+}
+.toast.toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.toast.toast-success { background: #16a34a; }
+.toast.toast-error   { background: #dc2626; }
+.toast.toast-info    { background: #0ea5e9; }
+
+/* ── Async card fade-in ───────────────────────────────────────────────────── */
+@keyframes cardFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+.card-fade-in {
+  animation: cardFadeIn .3s ease forwards;
+}
+
+/* ── Consistent empty state ──────────────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px 16px;
+  text-align: center;
+}
+.empty-state-icon {
+  font-size: 26px;
+  color: var(--muted, #64748b);
+  opacity: .5;
+}
+.empty-state-msg {
+  font-size: 13px;
+  color: var(--text-muted, #94a3b8);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ── PWA install banner ───────────────────────────────────────────────────── */
+#pwa-install-banner {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  z-index: 9990;
+  background: var(--card, #1e293b);
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.3);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: clamp(280px, 90vw, 400px);
+  opacity: 0;
+  transition: opacity .3s ease, transform .3s ease;
+}
+#pwa-install-banner.pwa-banner-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.pwa-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.pwa-banner-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.pwa-banner-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #f1f5f9);
+}
+.pwa-banner-sub {
+  font-size: 11px;
+  color: var(--muted, #94a3b8);
+  margin-top: 2px;
+}
+.pwa-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.pwa-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pwa-btn-install {
+  background: var(--accent, #38bdf8);
+  color: #fff;
+}
+.pwa-btn-install:hover { opacity: .9; }
+.pwa-btn-dismiss {
+  background: var(--row, rgba(255,255,255,.05));
+  color: var(--muted, #94a3b8);
+}
+.pwa-btn-dismiss:hover { opacity: .8; }
+
+/* ── Notification toast (changelog new-entry popup) ──────────────────────── */
+.notif-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99998;
+  width: clamp(260px, 90vw, 320px);
+  background: var(--card, #1e293b);
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+  border-top: 3px solid var(--accent, #38bdf8);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.28);
+  padding: 14px 16px 12px;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity .25s ease, transform .25s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.notif-toast.notif-toast-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.notif-toast-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.notif-toast-bell {
+  font-size: 13px;
+  color: var(--accent, #38bdf8);
+  flex-shrink: 0;
+}
+.notif-toast-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #f1f5f9);
+  flex: 1;
+}
+.notif-toast-close {
+  background: none;
+  border: none;
+  color: var(--muted, #94a3b8);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.notif-toast-close:hover { color: var(--text, #f1f5f9); }
+.notif-toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.notif-toast-tag {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  align-self: flex-start;
+}
+/* Mirror changelog tag colours */
+.notif-toast-tag-new     { background: rgba(56,189,248,.15); color: #38bdf8; }
+.notif-toast-tag-fix     { background: rgba(34,197, 94,.15); color: #22c55e; }
+.notif-toast-tag-update  { background: rgba(251,191, 36,.15); color: #fbbf24; }
+.notif-toast-tag-feature { background: rgba(168,85,247,.15);  color: #a855f7; }
+.notif-toast-text {
+  font-size: 13px;
+  color: var(--muted, #94a3b8);
+  margin: 0;
+  line-height: 1.5;
+}
+.notif-toast-action {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent, #38bdf8);
+  text-decoration: none;
+  padding-top: 2px;
+}
+.notif-toast-action:hover { text-decoration: underline; }

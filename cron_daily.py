@@ -60,19 +60,34 @@ def _file_fresh_today(path: Path) -> bool:
 
 
 def _model_values_fresh() -> bool:
-    return _file_fresh_today(DATA_DIR / "model_values.json")
+    mv = DATA_DIR / "model_values.json"
+    if not _file_fresh_today(mv):
+        return False
+    # If any vendor CSV is newer than model_values.json, the model needs a rebuild
+    # even if it was already written today (it was built from stale data).
+    mv_mtime = mv.stat().st_mtime
+    for _csv in ("fantasycalc_api_values.csv", "dynastyprocess_values.csv"):
+        _p = DATA_DIR / _csv
+        if _p.exists() and _p.stat().st_mtime > mv_mtime:
+            return False
+    return True
 
 
 def _vendor_values_fresh() -> bool:
     return (
         _file_fresh_today(DATA_DIR / "fantasycalc_api_values.csv") and
-        _file_fresh_today(DATA_DIR / "dynastyprocess_values.csv") and
-        _file_fresh_today(DATA_DIR / "engine_values.csv")
+        _file_fresh_today(DATA_DIR / "dynastyprocess_values.csv")
     )
 
 
 def _usage_table_fresh() -> bool:
     return _file_fresh_today(DATA_DIR / "usage_table.json")
+
+
+def _model_mtime() -> float:
+    """Return mtime of model_values.json, or 0 if missing."""
+    mv = DATA_DIR / "model_values.json"
+    return mv.stat().st_mtime if mv.exists() else 0.0
 
 
 def _player_values_fresh() -> bool:
@@ -84,7 +99,19 @@ def _player_values_fresh() -> bool:
             ).fetchone()
         if row and row["t"]:
             t = row["t"]
-            return (t.date() if hasattr(t, "date") else t) == _today()
+            db_date = t.date() if hasattr(t, "date") else t
+            if db_date != _today():
+                return False
+            # Also stale if model_values.json was rewritten after the last DB save.
+            # Use .timestamp() so timezone-aware datetimes convert correctly;
+            # calendar.timegm(timetuple()) strips tz info and is wrong on non-UTC hosts.
+            try:
+                db_ts = t.timestamp()
+            except Exception:
+                db_ts = 0
+            if _model_mtime() > db_ts:
+                return False
+            return True
     except Exception:
         pass
     return False
@@ -116,7 +143,20 @@ def _wls_fresh() -> bool:
             ).fetchone()
         if row and row["t"]:
             t = row["t"]
-            return (t.date() if hasattr(t, "date") else t) == _today()
+            wls_date = t.date() if hasattr(t, "date") else t
+            if wls_date != _today():
+                return False
+            # Also stale if model_values.json was rebuilt after the last WLS run
+            # (the new model would make a different prior for WLS).
+            # Use .timestamp() so timezone-aware datetimes convert correctly;
+            # calendar.timegm(timetuple()) strips tz info and is wrong on non-UTC hosts.
+            try:
+                wls_ts = t.timestamp()
+            except Exception:
+                wls_ts = 0
+            if _model_mtime() > wls_ts:
+                return False
+            return True
     except Exception:
         pass
     return False
