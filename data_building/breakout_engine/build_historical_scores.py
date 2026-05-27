@@ -468,17 +468,46 @@ def load_usage_stats(
         snap_seasons = [s for s in nfl_seasons if s in SNAP_COUNT_SEASONS]
         snap_by_pfr_season: dict[tuple, float] = {}
         if snap_seasons:
-            print(f"  Loading snap counts for {snap_seasons}...")
-            snaps = nfl.import_snap_counts(snap_seasons)
-            snaps = snaps[snaps.get("game_type", "REG") == "REG"] if "game_type" in snaps.columns else snaps
-            snaps_agg = (
-                snaps[["pfr_player_id", "season", "offense_pct"]]
-                .groupby(["pfr_player_id", "season"])["offense_pct"]
-                .mean()
-                .reset_index()
-            )
-            for _, row in snaps_agg.iterrows():
-                snap_by_pfr_season[(str(row["pfr_player_id"]), int(row["season"]))] = float(_safe(row["offense_pct"], 0))
+            # Snap counts are downloaded from nfl_data_py (GitHub-hosted Parquet
+            # files) which intermittently hangs. Cache to disk since these are
+            # historical seasons that don't change.
+            cache_dir = Path(__file__).resolve().parents[2] / "data" / "cache" / "snap_counts"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_path = cache_dir / f"snaps_{'_'.join(str(s) for s in snap_seasons)}.parquet"
+
+            snaps = None
+            if cache_path.exists():
+                try:
+                    import pandas as _pd
+                    snaps = _pd.read_parquet(cache_path)
+                    print(f"  Loaded snap counts from cache: {cache_path.name}")
+                except Exception as _e:
+                    print(f"  Snap counts cache read failed ({_e}); refetching")
+                    snaps = None
+
+            if snaps is None:
+                print(f"  Loading snap counts for {snap_seasons}...")
+                try:
+                    snaps = nfl.import_snap_counts(snap_seasons)
+                    try:
+                        snaps.to_parquet(cache_path)
+                        print(f"  Cached snap counts to {cache_path.name}")
+                    except Exception as _ce:
+                        print(f"  Snap counts cache write skipped: {_ce}")
+                except Exception as _se:
+                    print(f"  Snap counts download failed ({_se}); proceeding without snap data")
+                    snaps = None
+
+            if snaps is not None and not snaps.empty:
+                snaps = snaps[snaps.get("game_type", "REG") == "REG"] if "game_type" in snaps.columns else snaps
+                snaps_agg = (
+                    snaps[["pfr_player_id", "season", "offense_pct"]]
+                    .groupby(["pfr_player_id", "season"])["offense_pct"]
+                    .mean()
+                    .reset_index()
+                )
+                for _, row in snaps_agg.iterrows():
+                    snap_by_pfr_season[(str(row["pfr_player_id"]), int(row["season"]))] = float(_safe(row["offense_pct"], 0))
 
         team_targets_by_season: dict[tuple, float] = {}
         for _, row in agg.iterrows():
