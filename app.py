@@ -13657,15 +13657,12 @@ def get_model_value_table_cached():
                     if _pos == "PICK":
                         continue  # picks have no FC entry, always keep
                     if _pid in _fc_sids:
-                        continue  # tracked by FC
-                    _name = str(_p.get("name") or "") or _pid_to_name.get(_pid, "")
-                    if _name and _nn(_name) in _dp_names:
-                        continue  # tracked by DP
+                        continue  # tracked by FC — keep DB value as-is
                     _p["value"]    = 0
                     _p["sf_value"] = 0
                     _zeroed += 1
                 if _zeroed:
-                    print(f"[model-value-cache] zeroed {_zeroed} players not in FC/DP")
+                    print(f"[model-value-cache] zeroed {_zeroed} players not in FC")
         except Exception as _e:
             print(f"[model-value-cache] FC/DP presence filter skipped: {_e}")
 
