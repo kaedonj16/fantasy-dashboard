@@ -56,7 +56,7 @@ def build_daily_data(season: int, week: int):
     from datetime import date as _date
     _data_dir = Path(__file__).resolve().parents[1] / "data"
     def _csvs_fresh_today():
-        for _name in ("fantasycalc_api_values.csv", "dynastyprocess_values.csv"):
+        for _name in ("fantasycalc_api_values.csv", "fantasycalc_sf_api_values.csv", "dynastyprocess_values.csv"):
             _p = _data_dir / _name
             if not _p.exists() or _date.fromtimestamp(_p.stat().st_mtime) != _date.today():
                 return False
@@ -339,7 +339,6 @@ def sync_history_to_player_values() -> int:
                 SET value_1qb            = ph.value,
                     value_sf             = COALESCE(ph.sf_value, ph.value_sf, ph.value),
                     calibrated_value_1qb = NULL,
-                    calibrated_value_sf  = NULL,
                     last_updated         = NOW()
                 FROM player_value_history ph
                 WHERE ph.player_id  = pv.player_id

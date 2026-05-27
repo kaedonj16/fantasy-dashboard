@@ -1193,6 +1193,30 @@ def rewrite_value_table_with_model() -> Path:
     except Exception as _ktc_err:
         print(f"[DEBUG] KTC blend skipped: {_ktc_err}")
 
+    # Load FC SF (numQbs=2) values — gives QBs their proper SF market premium.
+    # Normalized to 0-999.9 using the same floor-at-100 approach as 1QB FC values.
+    fc_sf_by_sid: dict[str, float] = {}
+    try:
+        from data_building.external_data.external_values_scraper import load_fantasycalc_sf_api_values
+        _fc_sf_rows = load_fantasycalc_sf_api_values() or []
+        if _fc_sf_rows:
+            _fc_sf_vals = [float(r["value"]) for r in _fc_sf_rows if r.get("value") and float(r["value"]) > 0]
+            if _fc_sf_vals:
+                _fc_sf_max = max(_fc_sf_vals)
+                _fc_sf_min = min(_fc_sf_vals)
+                _fc_sf_range = max(_fc_sf_max - _fc_sf_min, 1.0)
+                for _r in _fc_sf_rows:
+                    _sid = str(_r.get("sleeper_id") or "").strip()
+                    _v = _r.get("value")
+                    if _sid and _v and float(_v) > 0:
+                        fc_sf_by_sid[_sid] = (_fc_sf_max - _fc_sf_min) and \
+                            (float(_v) - _fc_sf_min) / _fc_sf_range * 899.9 + 100.0
+            print(f"[rewrite_value_table] Loaded {len(fc_sf_by_sid)} FC SF values (numQbs=2)")
+        else:
+            print("[rewrite_value_table] FC SF CSV missing — SF QB premium will use DP 2QB only")
+    except Exception as _e:
+        print(f"[rewrite_value_table] FC SF load failed: {_e}")
+
     # Build Superflex vendor value lookup using sf_engine_value + value_2qb
     sf_vendor_values: dict[str, float] = {}
 
@@ -1283,8 +1307,10 @@ def rewrite_value_table_with_model() -> Path:
         name = meta.get("name", "").strip()
         team = meta.get("team", "").strip()
 
-        # Get FC value (same for 1QB and SF)
-        fc_val_norm = vendor_values.get(pid, 0.0)
+        # Use FC SF (numQbs=2) as the vendor signal for SF blending.
+        # Falls back to 1QB FC only when SF CSV is unavailable.
+        fc_sf_norm = fc_sf_by_sid.get(pid, 0.0)
+        fc_for_sf  = fc_sf_norm if fc_sf_norm > 0 else vendor_values.get(pid, 0.0)
 
         # Get SF engine value
         sf_eng_val = sf_engine_map.get(pid, 0.0)
@@ -1293,19 +1319,19 @@ def rewrite_value_table_with_model() -> Path:
         dp_2qb_raw = dp_2qb_map.get((name, team), 0.0)
         dp_2qb_norm = (dp_2qb_raw / dp_2qb_max * 999.9) if dp_2qb_max > 0 else 0.0
 
-        # Superflex blend: 35% vendor (FC+KTC), 40% DP 2QB, 25% SF engine.
-        # DP 2QB is the strongest signal for QB scarcity in SF formats.
+        # Superflex blend: 50% FC SF, 30% DP 2QB, 20% SF engine.
+        # FC SF (numQbs=2) is now the primary signal — it directly encodes QB scarcity.
         # Renormalize when a source is missing so values aren't deflated.
-        if fc_val_norm > 0 or sf_eng_val > 0 or dp_2qb_norm > 0:
-            SF_W_VENDOR, SF_W_DP, SF_W_ENGINE = 0.35, 0.40, 0.25
+        if fc_for_sf > 0 or sf_eng_val > 0 or dp_2qb_norm > 0:
+            SF_W_VENDOR, SF_W_DP, SF_W_ENGINE = 0.50, 0.30, 0.20
             sf_wsum = 0.0
             sf_wtot = 0.0
-            if fc_val_norm > 0:
-                sf_wsum += SF_W_VENDOR * fc_val_norm; sf_wtot += SF_W_VENDOR
+            if fc_for_sf > 0:
+                sf_wsum += SF_W_VENDOR * fc_for_sf; sf_wtot += SF_W_VENDOR
             if dp_2qb_norm > 0:
-                sf_wsum += SF_W_DP * dp_2qb_norm;    sf_wtot += SF_W_DP
+                sf_wsum += SF_W_DP * dp_2qb_norm;   sf_wtot += SF_W_DP
             if sf_eng_val > 0:
-                sf_wsum += SF_W_ENGINE * sf_eng_val;  sf_wtot += SF_W_ENGINE
+                sf_wsum += SF_W_ENGINE * sf_eng_val; sf_wtot += SF_W_ENGINE
             sf_value = sf_wsum / sf_wtot if sf_wtot > 0 else 0.0
 
             sf_vendor_values[pid] = sf_value
