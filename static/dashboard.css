@@ -1743,7 +1743,8 @@ html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  height: 50px;
+  min-height: 50px;
+  flex-wrap: wrap;
 }
 
 .card.activity-card .scroll-box {
@@ -8702,6 +8703,30 @@ thead th {
   gap: 16px;
 }
 
+.team-strength-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.team-strength-card .card-body {
+  min-width: 0;
+}
+
+.team-strength-card .pos-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pos-bar-cell {
+  width: 100px;
+  min-width: 60px;
+}
+
+.pos-rank {
+  white-space: nowrap;
+  text-align: right;
+}
+
 .tick-head {
   font-weight: 900;
   font-size: 12px;
@@ -10087,9 +10112,6 @@ img, svg, canvas {
   }
 
   .team-strength-card .card-header-row {
-    flex-wrap: wrap;
-    height: auto;
-    min-height: 44px;
     padding-bottom: 4px;
   }
 
