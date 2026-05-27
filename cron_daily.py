@@ -423,6 +423,33 @@ n = record_calibrated_history_snapshot()
 print(f"[cron] Calibrated history snapshot: {n} players")
 """, "record_calibrated_history_snapshot")
 
+    # ------------------------------------------------------------------ #
+    # Step 11: Flush in-memory value cache                               #
+    # WLS (step 9) updates calibrated_value_sf AFTER the cache may have  #
+    # been repopulated mid-cron.  Flushing here ensures the next request  #
+    # reads the final WLS-calibrated values, not a stale mid-cron state.  #
+    # Requires APP_URL and CRON_SECRET env vars; skipped silently if      #
+    # either is missing.                                                   #
+    # ------------------------------------------------------------------ #
+    _app_url    = os.environ.get("APP_URL", "").rstrip("/")
+    _cron_secret = os.environ.get("CRON_SECRET", "")
+    if _app_url and _cron_secret:
+        try:
+            import urllib.request, json as _json
+            _body = _json.dumps({"secret": _cron_secret}).encode()
+            _req  = urllib.request.Request(
+                f"{_app_url}/api/flush-value-cache",
+                data=_body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(_req, timeout=10) as _resp:
+                print(f"[cron] Cache flush: HTTP {_resp.status}")
+        except Exception as _flush_err:
+            print(f"[cron] Cache flush failed (non-fatal): {_flush_err}")
+    else:
+        print("[cron] Cache flush skipped — APP_URL or CRON_SECRET not set")
+
     print(f"[cron] Daily run completed - Season {season}, Week {week}")
 
 
