@@ -5798,16 +5798,21 @@ def build_activity_body(ctx: dict) -> str:
         owner_txt = f"from {orig_name}" if orig_name else "Traded Pick"
         return f"{bucket_label} • {owner_txt}" if bucket_label else owner_txt
 
-    def verdict_from_net(net_total: float) -> tuple[str, str]:
-        if net_total >= 20:
-            return "bract-verdict-win", "Strong win"
-        if net_total >= 8:
-            return "bract-verdict-win", "Slight win"
-        if net_total <= -20:
-            return "bract-verdict-loss", "Strong loss"
-        if net_total <= -8:
-            return "bract-verdict-loss", "Slight loss"
-        return "bract-verdict-even", "Fair"
+    def verdict_from_net(net_total: float, baseline: float = 300.0) -> tuple[str, str]:
+        # Dynamic fair band that scales with trade size — matches /api/trade-eval logic.
+        if baseline >= 600:
+            fair_pct = 0.05
+        elif baseline >= 300:
+            fair_pct = 0.07
+        else:
+            fair_pct = 0.10
+        fair = max(baseline * fair_pct, 25.0)
+        abs_net = abs(net_total)
+        if abs_net <= fair:
+            return "bract-verdict-even", "Fair"
+        if net_total > 0:
+            return ("bract-verdict-win", "Strong win") if abs_net > fair * 2 else ("bract-verdict-win", "Slight win")
+        return ("bract-verdict-loss", "Strong loss") if abs_net > fair * 2 else ("bract-verdict-loss", "Slight loss")
 
     trade_count = 0
     waiver_count = 0
@@ -5937,6 +5942,7 @@ def build_activity_body(ctx: dict) -> str:
                     "raw_players_total": raw_players_total,
                     "raw_picks_total": raw_picks_total,
                     "player_values": in_player_vals,
+                    "asset_count": len(in_players) + len(in_picks),
                     "breakdown": [],
                     "adjustment": 0.0,
                     "effective_total": raw_total,
@@ -5946,7 +5952,21 @@ def build_activity_body(ctx: dict) -> str:
                 rid_list = list(side_map.keys())
                 side_a = side_map[rid_list[0]]
                 side_b = side_map[rid_list[1]]
-                apply_multi_for_one_adjustment(side_a, side_b)
+                # Match /api/trade-eval: only apply depth penalty when one side
+                # sends more assets than the other.  Penalising both sides of an
+                # equal-count trade just zeroes out the adjustment and produces
+                # misleadingly negative totals for both teams.
+                if side_a["asset_count"] != side_b["asset_count"]:
+                    apply_tier_stack_adjustment(side_a, side_b)
+                # Pre-compute zero-sum net values so both sides are mirrors of
+                # each other — exactly how trade-eval reports the result.
+                a_eff = side_a["effective_total"]
+                b_eff = side_b["effective_total"]
+                baseline_val = max(a_eff, b_eff, 1.0)
+                side_a["net_total"] = a_eff - b_eff
+                side_b["net_total"] = b_eff - a_eff
+                side_a["baseline"] = baseline_val
+                side_b["baseline"] = baseline_val
 
             net_values = []
 
@@ -5981,19 +6001,11 @@ def build_activity_body(ctx: dict) -> str:
                 sends = sends_players + sends_picks
 
                 side_info = side_map.get(roster_id)
-                eff_in = side_info["effective_total"] if side_info else 0.0
-
-                out_total = 0.0
-                for p in (tm.get("sends") or []):
-                    out_total += player_value(p)[0]
-                if roster_id is not None:
-                    for pick in picks_by_sender.get(roster_id, []):
-                        out_total += pick_value(pick, standings_map)
-
-                net_total = eff_in - out_total
+                net_total  = side_info["net_total"]  if side_info else 0.0
+                baseline   = side_info["baseline"]   if side_info else 300.0
                 net_values.append((tm.get("name", ""), net_total))
 
-                verdict_cls, verdict_txt = verdict_from_net(net_total)
+                verdict_cls, verdict_txt = verdict_from_net(net_total, baseline)
                 net_num_cls = (
                     "bract-net-pos" if net_total > 0 else
                     "bract-net-neg" if net_total < 0 else
