@@ -4623,13 +4623,16 @@ def _market_scale(fmt: str = "1qb") -> float:
 
 
 def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: int = 10,
-                             num_tiers: int = _NUM_TIERS) -> list:
+                             num_tiers: int = _NUM_TIERS, t1_size: int = None) -> list:
     """
     Natural gap-significance tier boundaries.
 
     Each gap is scored by how large it is relative to nearby gaps (local significance).
     The top (num_tiers-1) gaps become tier boundaries. Minimum 5 players per tier;
     tiers smaller than that are merged into the tier below. T9 is the large catch-all.
+
+    t1_size: override the number of players pinned to T1 (defaults to MIN_TIER=5 for
+             1QB, 6 for SF so QBs get their own elite tier with room for the top arms).
     """
     if league_type == "sf":
         primary = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
@@ -4654,6 +4657,8 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
 
     MIN_TIER = 5   # minimum players per tier
     window   = 12
+    # T1 size: 1QB defaults to 5, SF defaults to 6 (room for elite QBs + top skills)
+    _T1_SIZE = t1_size if t1_size is not None else (6 if league_type == "sf" else MIN_TIER)
 
     # Score each gap by local significance (gap vs median of nearby gaps)
     scored = []
@@ -4665,10 +4670,17 @@ def compute_tier_thresholds(value_table, league_type: str = "1qb", league_size: 
         local_med = sorted(nbrs)[len(nbrs) // 2] if nbrs else 1.0
         scored.append((gap / max(local_med, 0.5), i, (vals[i] + vals[i + 1]) / 2.0))
 
-    # Pick top gaps enforcing minimum spacing between boundaries
+    # T1 is always the top _T1_SIZE players (fixed elite tier)
     scored.sort(key=lambda x: x[0], reverse=True)
-    chosen_pos = []
-    boundaries = []
+    if len(vals) > _T1_SIZE:
+        _t1_mid = round((vals[_T1_SIZE - 1] + vals[_T1_SIZE]) / 2.0, 1)
+        chosen_pos = [_T1_SIZE - 1]
+        boundaries = [_t1_mid]
+    else:
+        chosen_pos = []
+        boundaries = []
+
+    # Find remaining boundaries naturally from T2 onward
     for _sig, pos, midpoint in scored:
         if len(boundaries) >= num_tiers - 1:
             break
@@ -13619,6 +13631,52 @@ def get_model_value_table_cached():
         print(f"[model-value-cache] DB load failed: {_e}")
     if not tbl:
         tbl = list(load_model_value_table() or [])
+
+    # Zero out players not tracked by any external market source (FC or DP).
+    # The ML model assigns some value to every player in the index; without this
+    # guard, washed-up vets and low-usage players leak into the rankings.
+    # We only do the presence check — DB values for tracked players are untouched.
+    if tbl:
+        try:
+            from data_building.external_data.external_values_scraper import (
+                load_fantasycalc_api_values, load_dynastyprocess_values,
+            )
+            from utils.utils import normalize_name as _nn
+
+            _fc_sids: set = set()
+            for _r in (load_fantasycalc_api_values() or []):
+                _sid = str(_r.get("sleeper_id") or "").strip()
+                if _sid:
+                    _fc_sids.add(_sid)
+
+            _dp_names: set = set()
+            for _r in (load_dynastyprocess_values() or []):
+                _nm = str(_r.get("player") or "").strip()
+                if _nm:
+                    _dp_names.add(_nn(_nm))
+
+            if _fc_sids or _dp_names:
+                try:
+                    from utils.utils import load_players_index as _lpi2
+                    _pid_to_name = {str(k): (v.get("name") or "") for k, v in (_lpi2() or {}).items()}
+                except Exception:
+                    _pid_to_name = {}
+
+                _zeroed = 0
+                for _p in tbl:
+                    _pid  = str(_p.get("id") or "")
+                    _pos  = str(_p.get("position") or "").upper()
+                    if _pos == "PICK":
+                        continue  # picks have no FC entry, always keep
+                    if _pid in _fc_sids:
+                        continue  # tracked by FC — keep DB value as-is
+                    _p["value"]    = 0
+                    _p["sf_value"] = 0
+                    _zeroed += 1
+                if _zeroed:
+                    print(f"[model-value-cache] zeroed {_zeroed} players not in FC")
+        except Exception as _e:
+            print(f"[model-value-cache] FC/DP presence filter skipped: {_e}")
 
     # Append rookie prospects for players not already tracked in player_values.
     # player_values (EMA-synced from player_value_history) takes priority when a

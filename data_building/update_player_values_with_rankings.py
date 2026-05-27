@@ -294,7 +294,9 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
     saved_count = 0
 
     _max_val = max((float(p.get("value") or 0) for p in players if isinstance(p, dict)), default=0)
-    _scale   = (999.9 / _max_val) if _max_val > 0 else 1.0
+    _max_sf  = max((float(p.get("sf_value") or 0) for p in players if isinstance(p, dict)), default=0)
+    _scale     = (999.9 / _max_val) if _max_val > 0 else 1.0
+    _scale_sf  = (999.9 / _max_sf)  if _max_sf  > 0 else _scale
 
     try:
         with get_conn() as conn:
@@ -303,7 +305,10 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
                     player_id = player.get("id")
                     if not player_id:
                         continue
-                    
+
+                    _val    = round(float(player.get("value",    0)) * _scale,    2)
+                    _sf_val = round(float(player.get("sf_value", 0) or player.get("value", 0)) * _scale_sf, 2)
+
                     # Insert into player_value_history
                     cur.execute(
                         """
@@ -314,14 +319,16 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
                             position,
                             team,
                             value,
+                            sf_value,
                             source
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (as_of_date, player_id, source) 
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (as_of_date, player_id, source)
                         DO UPDATE SET
-                            name = EXCLUDED.name,
+                            name     = EXCLUDED.name,
                             position = EXCLUDED.position,
-                            team = EXCLUDED.team,
-                            value = EXCLUDED.value
+                            team     = EXCLUDED.team,
+                            value    = EXCLUDED.value,
+                            sf_value = COALESCE(player_value_history.sf_value, EXCLUDED.sf_value)
                         """,
                         (
                             snapshot_date,
@@ -329,7 +336,8 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
                             player.get("name", ""),
                             player.get("position", ""),
                             player.get("team", ""),
-                            round(float(player.get("value", 0)) * _scale, 2),
+                            _val,
+                            _sf_val,
                             "model"
                         ),
                     )
