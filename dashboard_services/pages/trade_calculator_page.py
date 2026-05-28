@@ -410,96 +410,77 @@ def build_trade_calculator_body(
               .stl-card-body {{ grid-template-columns:1fr; }}
               .stl-col-divider {{ height:1px;width:auto; }}
             }}
-            /* Archetype mode toggle & chips */
+            /* ── Gaps | Strategy segmented toggle ─────────────────── */
+            .otc-mode-toggle {{
+              display:flex;gap:2px;padding:2px;border-radius:9px;
+              background:var(--row);border:1px solid var(--border);
+            }}
+            .otc-mode-btn {{
+              padding:5px 14px;font-size:12px;font-weight:700;
+              border:none;border-radius:7px;background:transparent;
+              color:var(--text-muted);cursor:pointer;transition:all .15s;
+            }}
+            .otc-mode-btn:hover:not(.is-active) {{ color:var(--text); }}
+            .otc-mode-btn.is-active {{
+              background:var(--text);color:var(--card);
+            }}
+
+            /* ── Archetype chips (2×2 grid) ───────────────────────── */
+            #otcArchetypeChips {{
+              display:none;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;
+            }}
             .otc-arch-chip {{
-              padding:5px 13px;font-size:12px;font-weight:600;
-              border-radius:20px;border:1.5px solid var(--border);
-              background:transparent;color:var(--text-muted);
-              cursor:pointer;transition:all .15s;white-space:nowrap;
+              padding:7px 10px;font-size:12px;font-weight:600;
+              border-radius:8px;border:1px solid var(--border);
+              background:var(--card);color:var(--text-muted);
+              cursor:pointer;transition:all .15s;text-align:center;
             }}
-            .otc-arch-chip:hover {{
-              border-color:var(--accent);color:var(--accent);
-            }}
+            .otc-arch-chip:hover {{ border-color:var(--accent);color:var(--text); }}
             .otc-arch-chip.is-active {{
-              background:var(--accent);border-color:var(--accent);
-              color:#fff;
+              background:var(--accent);border-color:var(--accent);color:#fff;
             }}
+
+            /* ── Strategy result cards (clean list, matches Gaps) ── */
             .otc-arch-card {{
-              background:var(--surface);border:1px solid var(--border);
-              border-radius:12px;padding:14px;display:flex;
-              flex-direction:column;gap:11px;
-              transition:border-color .15s, box-shadow .15s;
+              padding:10px 14px;border-bottom:1px solid var(--border);
+              display:flex;flex-direction:column;gap:7px;
+              transition:background .1s;
             }}
-            .otc-arch-card:hover {{
-              border-color:var(--accent);
-              box-shadow:0 2px 10px rgba(0,0,0,.07);
-            }}
-            .otc-arch-head {{
-              display:flex;align-items:center;gap:8px;min-width:0;
+            .otc-arch-card:last-child {{ border-bottom:none; }}
+            .otc-arch-card:hover {{ background:var(--row); }}
+            .otc-arch-head {{ display:flex;align-items:center;gap:8px;min-width:0; }}
+            .otc-arch-away {{
+              font-size:8px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.05em;color:var(--text-muted);
+              background:var(--row);padding:2px 5px;border-radius:3px;flex-shrink:0;
             }}
             .otc-arch-pos {{
-              font-size:11px;font-weight:700;padding:3px 8px;
-              border-radius:6px;flex-shrink:0;line-height:1;
+              font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;
+              flex-shrink:0;min-width:24px;text-align:center;
             }}
             .otc-arch-name {{
-              font-size:15px;font-weight:700;color:var(--text);
-              flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
-              white-space:nowrap;
+              font-size:13px;font-weight:700;color:var(--text);
+              flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
             }}
-            .otc-arch-meta {{
-              font-size:11px;color:var(--text-muted);
-              white-space:nowrap;flex-shrink:0;
-            }}
-            .otc-arch-away {{
-              font-size:9px;font-weight:700;text-transform:uppercase;
-              letter-spacing:.05em;color:var(--text-muted);
-              background:var(--row);padding:2px 6px;border-radius:4px;
-              flex-shrink:0;
-            }}
-            .otc-arch-why {{
-              font-size:12.5px;color:var(--text-muted);line-height:1.5;
-            }}
-            .otc-arch-deal {{
-              display:flex;gap:7px;align-items:baseline;flex-wrap:wrap;
-              font-size:12px;background:var(--row);border-radius:8px;
-              padding:8px 10px;
-            }}
+            .otc-arch-why {{ font-size:11.5px;color:var(--text-muted);line-height:1.45; }}
+            .otc-arch-deal {{ font-size:11px;color:var(--text-muted); }}
             .otc-arch-deal-label {{
-              font-size:9px;font-weight:700;text-transform:uppercase;
-              letter-spacing:.05em;color:var(--text-muted);flex-shrink:0;
+              font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+              font-size:9px;color:var(--text-muted);margin-right:4px;
             }}
             .otc-arch-deal-assets {{ color:var(--text);font-weight:600; }}
             .otc-arch-deal-assets .v {{ color:var(--text-muted);font-weight:400; }}
             .otc-arch-foot {{
-              display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+              display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:10.5px;
             }}
-            .otc-arch-wp {{
-              font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;
-            }}
+            .otc-arch-wp {{ font-weight:700;padding:2px 8px;border-radius:5px;font-size:10px; }}
             .otc-arch-wp.pos {{ background:#10b9811f;color:#10b981; }}
             .otc-arch-wp.neg {{ background:#ef44441f;color:#ef4444; }}
             .otc-arch-partner {{
-              display:inline-flex;align-items:center;gap:5px;
-              font-size:11px;font-weight:600;color:var(--text-muted);
+              display:inline-flex;align-items:center;gap:4px;
+              color:var(--text-muted);font-weight:600;
             }}
-            .otc-arch-partner .dot {{
-              width:7px;height:7px;border-radius:50%;flex-shrink:0;
-            }}
-            .otc-arch-btn {{
-              width:100%;padding:9px;border-radius:8px;
-              border:1px solid var(--border);background:var(--surface);
-              color:var(--text);font-size:12px;font-weight:600;
-              cursor:pointer;transition:all .15s;
-            }}
-            .otc-arch-btn:hover {{
-              background:var(--accent);border-color:var(--accent);color:#fff;
-            }}
-            #otcModeGaps.is-active, #otcModeStrategy.is-active {{
-              background:var(--accent);color:#fff;
-            }}
-            #otcModeGaps:not(.is-active), #otcModeStrategy:not(.is-active) {{
-              background:transparent;color:var(--text-muted);
-            }}
+            .otc-arch-partner .dot {{ width:6px;height:6px;border-radius:50%;flex-shrink:0; }}
           </style>
 
           </div><!-- /#otcCalcTab -->
@@ -528,26 +509,20 @@ def build_trade_calculator_body(
                   <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
                     <span class="otc-sugg-section-title">Trade Targets</span>
                     <!-- Mode toggle -->
-                    <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface);">
-                      <button id="otcModeGaps" class="otc-mode-btn is-active"
-                        style="padding:4px 12px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--accent);color:#fff;border-radius:7px 0 0 7px;transition:all .15s;">
-                        Gaps
-                      </button>
-                      <button id="otcModeStrategy" class="otc-mode-btn"
-                        style="padding:4px 12px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:transparent;color:var(--text-muted);transition:all .15s;">
-                        Strategy
-                      </button>
+                    <div class="otc-mode-toggle">
+                      <button id="otcModeGaps" class="otc-mode-btn is-active">Gaps</button>
+                      <button id="otcModeStrategy" class="otc-mode-btn">Strategy</button>
                     </div>
                   </div>
                   <!-- Archetype chips — shown only in Strategy mode -->
-                  <div id="otcArchetypeChips" style="display:none;flex-wrap:wrap;gap:6px;padding-top:2px;">
+                  <div id="otcArchetypeChips">
                     <button class="otc-arch-chip" data-arch="contending">Contending</button>
                     <button class="otc-arch-chip" data-arch="rebuilding">Rebuilding</button>
                     <button class="otc-arch-chip" data-arch="consolidate">Consolidate</button>
                     <button class="otc-arch-chip" data-arch="distribute">Distribute</button>
                   </div>
                 </div>
-                <div id="otcSuggTargetsBody" style="display:flex;flex-direction:column;gap:8px;">
+                <div id="otcSuggTargetsBody">
                   <div class="otc-movers-empty">Select your team above to see targets.</div>
                 </div>
                 <!-- Excluded players bar (Gaps mode only) -->

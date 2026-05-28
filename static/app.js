@@ -3486,7 +3486,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       if (btnGaps)     { btnGaps.classList.toggle("is-active", !isStrategy); }
       if (btnStrategy) { btnStrategy.classList.toggle("is-active", isStrategy); }
-      if (archChips)   { archChips.style.display = isStrategy ? "flex" : "none"; }
+      if (archChips)   { archChips.style.display = isStrategy ? "grid" : "none"; }
       if (excludedBar) { excludedBar.style.display = (!isStrategy && excludedBar.dataset.hasItems) ? "" : "none"; }
 
       if (!isStrategy) {
@@ -3630,11 +3630,8 @@ window.initTradePage = function initTradePage(root = document) {
 
           const assetLine = (label, list) => list && list.length
             ? `<div class="otc-arch-deal">
-                <span class="otc-arch-deal-label">${label}</span>
-                <span class="otc-arch-deal-assets">${
-                  list.map(s =>
-                    `${esc(s.name)} <span class="v">${Math.round(s.value)}</span>`
-                  ).join(", ")
+                <span class="otc-arch-deal-label">${label}</span><span class="otc-arch-deal-assets">${
+                  list.map(s => `${esc(s.name)} <span class="v">${Math.round(s.value)}</span>`).join(", ")
                 }</span>
               </div>`
             : "";
@@ -3642,7 +3639,6 @@ window.initTradePage = function initTradePage(root = document) {
           // Distribute: viewer sends the headline stud, receives a depth package.
           // Acquire (contending/rebuilding/consolidate): viewer receives the
           // headline player, sends the suggested package.
-          const metaBits = [age ? `Age ${age}` : "", t.pos_rank_label || ""].filter(Boolean).join(" · ");
           const detailHtml = isDistribute
             ? assetLine("Receive", t.suggested_receive)
             : assetLine("Send", t.suggested_send);
@@ -3653,7 +3649,8 @@ window.initTradePage = function initTradePage(root = document) {
                 ${isDistribute ? `<span class="otc-arch-away">Trade away</span>` : ""}
                 <span class="otc-arch-pos" style="background:${col}20;color:${col};">${t.position}</span>
                 <span class="otc-arch-name">${esc(t.name)}</span>
-                ${metaBits ? `<span class="otc-arch-meta">${metaBits}</span>` : ""}
+                <button class="sugg-target-get-btn otc-sugg-target-btn"
+                  data-pid="${safePid}" data-name="${safeName}">Find packages</button>
               </div>
               <div class="otc-arch-why">${esc(t.why)}</div>
               ${detailHtml}
@@ -3661,10 +3658,6 @@ window.initTradePage = function initTradePage(root = document) {
                 <span class="otc-arch-wp ${wpdCls}" title="Win probability delta">${wpdPct} win prob</span>
                 ${t.partner_team ? `<span class="otc-arch-partner"><span class="dot" style="background:${pAColor};"></span>${esc(t.partner_team)}</span>` : ""}
               </div>
-              <button class="otc-arch-btn sugg-target-get-btn"
-                data-pid="${safePid}" data-name="${safeName}">
-                ${isDistribute ? "Explore packages" : "Get packages"}
-              </button>
             </div>`;
         }).join("");
 
