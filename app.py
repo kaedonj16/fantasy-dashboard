@@ -20123,6 +20123,7 @@ def api_archetype_suggestions():
 
     try:
         from dashboard_services.archetype_engine import get_archetype_suggestions
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
         results = get_archetype_suggestions(
             archetype=archetype,
             platform=platform,
@@ -20131,6 +20132,7 @@ def api_archetype_suggestions():
             viewer_roster_id=viewer_roster_id,
             league_type=league_type,
             league_size=league_size,
+            ctx=ctx,
         )
         return jsonify(results)
     except Exception as exc:

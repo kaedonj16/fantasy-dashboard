@@ -549,20 +549,28 @@ def get_archetype_suggestions(
     viewer_roster_id: str,
     league_type: str = "1qb",
     league_size: int = 10,
+    ctx: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Returns up to 5 archetype-targeted trade suggestions.
     Gracefully degrades when DB or league context is unavailable.
+
+    The caller (API endpoint) should pass `ctx` from get_league_ctx_from_cache.
+    A lazy fallback import is used only if ctx is not supplied.
     """
     archetype = archetype.lower().strip()
 
     # ── League context ────────────────────────────────────────────────────────
-    ctx: Dict[str, Any] = {}
-    try:
-        from dashboard_services.platform_api import get_league_ctx_from_cache
-        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season) or {}
-    except Exception as exc:
-        log.warning("[archetype] ctx load failed: %s", exc)
+    if ctx is None:
+        try:
+            # Lazy, runtime-only import: this engine is itself imported lazily
+            # from the request handler, so app.py is fully initialized by now.
+            from app import get_league_ctx_from_cache
+            ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season) or {}
+        except Exception as exc:
+            log.warning("[archetype] ctx load failed: %s", exc)
+            ctx = {}
+    ctx = ctx or {}
 
     rosters         = ctx.get("rosters") or []
     roster_map      = ctx.get("roster_map") or {}
