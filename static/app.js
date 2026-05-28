@@ -3601,45 +3601,57 @@ window.initTradePage = function initTradePage(root = document) {
         const archLabel = { contending: "Contending", rebuilding: "Rebuilding", consolidate: "Consolidate", distribute: "Distribute" };
         const archColor = { contending: "#10b981", rebuilding: "#3b82f6", consolidate: "#f59e0b", distribute: "#8b5cf6" };
 
+        const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+
         container.innerHTML = data.map(t => {
           const col     = posColor[t.position] || "var(--accent)";
           const safePid = (t.player_id || "").replace(/"/g, "");
-          const safeName = (t.name || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+          const safeName = esc(t.name);
           const wpd     = t.win_prob_delta || 0;
           const wpdPct  = (wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1) + "%";
           const wpdCls  = wpd >= 0 ? "pos" : "neg";
           const age     = t.age ? `${parseFloat(t.age).toFixed(0)}` : "";
           const pArch   = t.partner_arch || "";
           const pAColor = archColor[pArch] || "var(--text-muted)";
+          const isDistribute = t.direction === "distribute";
 
-          const sendHtml = (t.suggested_send || []).length
+          const assetLine = (label, list) => list && list.length
             ? `<div class="otc-arch-send">
-                <span style="font-weight:600;color:var(--text);">Send:</span> ${
-                  (t.suggested_send || []).map(s =>
-                    `<span style="color:var(--text);">${s.name}</span> <span style="opacity:.6;">(${Math.round(s.value)})</span>`
+                <span style="font-weight:600;color:var(--text);">${label}:</span> ${
+                  list.map(s =>
+                    `<span style="color:var(--text);">${esc(s.name)}</span> <span style="opacity:.6;">(${Math.round(s.value)})</span>`
                   ).join(", ")
                 }
               </div>`
             : "";
 
+          // Distribute: viewer sends the headline stud, receives a depth package.
+          // Acquire (contending/rebuilding/consolidate): viewer receives the
+          // headline player, sends the suggested package.
+          const topLabel = isDistribute ? "Trade away" : "";
+          const detailHtml = isDistribute
+            ? assetLine("Receive", t.suggested_receive)
+            : assetLine("Send", t.suggested_send);
+
           return `
             <div class="otc-arch-card">
               <div class="otc-arch-card-top">
+                ${topLabel ? `<span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">${topLabel}</span>` : ""}
                 <span style="background:${col}20;color:${col};font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;">${t.position}</span>
                 <span style="font-size:14px;font-weight:700;color:var(--text);flex:1;">${t.name || ""}</span>
                 ${age ? `<span style="font-size:11px;color:var(--text-muted);">Age ${age}</span>` : ""}
                 ${t.pos_rank_label ? `<span style="font-size:11px;color:var(--text-muted);">${t.pos_rank_label}</span>` : ""}
               </div>
-              <div class="otc-arch-card-why">${t.why || ""}</div>
-              ${sendHtml}
+              <div class="otc-arch-card-why">${esc(t.why)}</div>
+              ${detailHtml}
               <div class="otc-arch-card-footer">
                 <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
                   <span class="otc-arch-wp-badge ${wpdCls}" title="Win probability delta">${wpdPct} win prob</span>
-                  ${pArch ? `<span class="otc-arch-partner-chip" style="border-left:2px solid ${pAColor};">${t.partner_team}</span>` : ""}
+                  ${pArch ? `<span class="otc-arch-partner-chip" style="border-left:2px solid ${pAColor};">${esc(t.partner_team)}</span>` : `<span class="otc-arch-partner-chip">${esc(t.partner_team)}</span>`}
                 </div>
                 <button class="sugg-target-get-btn otc-sugg-target-btn"
                   data-pid="${safePid}" data-name="${safeName}">
-                  Get packages
+                  ${isDistribute ? "Explore packages" : "Get packages"}
                 </button>
               </div>
             </div>`;

@@ -256,7 +256,7 @@ def _build_why(
             parts.append(age_tag)
         if trend_tag:
             parts.append(trend_tag)
-        parts.append(f"{partner} signals rebuild mode")
+        parts.append(t.get("partner_phrase") or f"{partner} may be a seller")
         return f"{name} offers immediate impact — {', '.join(parts[:3])}."
 
     if archetype == "rebuilding":
@@ -267,7 +267,7 @@ def _build_why(
             parts.append(age_tag)
         if trend_tag:
             parts.append(trend_tag)
-        parts.append(f"{partner} may move youth for win-now pieces")
+        parts.append(t.get("partner_phrase") or f"{partner} may move youth for win-now pieces")
         return f"{name} is a long-term asset — {', '.join(parts[:3])}."
 
     if archetype == "consolidate":
@@ -276,10 +276,8 @@ def _build_why(
             parts.append("proven current production")
         if age_tag:
             parts.append(age_tag)
-        return (
-            f"Consolidating around {name} ({', '.join(parts[:2])}). "
-            f"{partner} has concentrated value and can absorb depth pieces."
-        )
+        tail = t.get("partner_phrase") or f"{partner} has concentrated value and can absorb depth pieces"
+        return f"Consolidating around {name} ({', '.join(parts[:2])}). {tail}."
 
     if archetype == "distribute":
         return (
@@ -385,6 +383,162 @@ def _select_package(
     return pool[:1]
 
 
+# ── Pick send candidates ──────────────────────────────────────────────────────
+
+def _ordinal(n: int) -> str:
+    return {1: "1st", 2: "2nd", 3: "3rd"}.get(n, f"{n}th")
+
+
+def _pick_send_candidates(picks: List[Dict], num_teams: int) -> List[Dict[str, Any]]:
+    """Convert a roster's future picks into send-candidate dicts with est. values."""
+    if not picks:
+        return []
+    pick_tbl: Dict[str, float] = {}
+    try:
+        from dashboard_services.picks import load_pick_value_table
+        pick_tbl = load_pick_value_table(league_teams=num_teams) or {}
+    except Exception:
+        pick_tbl = {}
+
+    out = []
+    for pk in picks:
+        if not isinstance(pk, dict):
+            continue
+        season = str(pk.get("season") or pk.get("year") or "")
+        rnd    = int(pk.get("round") or 0)
+        if not season or rnd <= 0:
+            continue
+        val = 0.0
+        for key in (f"{season}_{rnd}_mid", f"{season}_{rnd}", f"{season}_{rnd}_early"):
+            if key in pick_tbl and float(pick_tbl[key]) > 0:
+                val = float(pick_tbl[key])
+                break
+        if val <= 0:
+            val = {1: 650.0, 2: 220.0}.get(rnd, 80.0)
+        out.append({
+            "player_id": f"pick_{season}_{rnd}",
+            "name":      f"{season} {_ordinal(rnd)}",
+            "position":  "PICK",
+            "value":     round(val, 1),
+            "is_pick":   True,
+        })
+    return out
+
+
+# ── Partner phrasing (signal-driven, varied) ──────────────────────────────────
+
+def _partner_phrase(
+    arch: str, name: str, seed: int, playoff_spots: int,
+    avg_age: Optional[float], rdft_ratio: Optional[float],
+) -> str:
+    if arch == "rebuilding":
+        if avg_age and avg_age < 25:
+            return f"{name} skews young and may sell win-now vets"
+        if seed > playoff_spots + 1:
+            return f"{name} sits outside playoff position — likely selling"
+        return f"{name} looks like a rebuild partner"
+    if arch == "contending":
+        if rdft_ratio and rdft_ratio > 0.95:
+            return f"{name} is built to win now and may pay up"
+        if seed <= max(2, playoff_spots // 2):
+            return f"{name} is a title contender chasing pieces"
+        return f"{name} is in win-now mode"
+    if arch == "distribute_candidate":
+        return f"{name} is top-heavy and needs depth"
+    return f"{name} could be a match"
+
+
+# ── Distribute suggestion builder (viewer sends one stud for depth) ───────────
+
+def _build_distribute(
+    viewer_players: List[str],
+    values_by_id: Dict[str, Any],
+    targets_by_owner: Dict[str, List[Dict]],
+    owner_meta: Dict[str, Dict],
+    roster_map: Dict,
+    league_type: str,
+    viewer_lineup_val: float,
+    league_avg: float,
+) -> List[Dict[str, Any]]:
+    """
+    Viewer sends one concentrated stud and receives a 2–3 player depth package.
+    Each card = one stud → one partner's multi-player return.
+    Only keeps trades where the optimal lineup ceiling rises.
+    """
+    studs = sorted(
+        [p for p in viewer_players
+         if values_by_id.get(p, {}).get("position") in SKILL_POS
+         and _f(values_by_id[p].get("value")) >= 600],
+        key=lambda p: _f(values_by_id[p].get("value")),
+        reverse=True,
+    )[:3]
+
+    results: List[Dict[str, Any]] = []
+    used_owners: set = set()
+
+    for stud in studs:
+        sval  = _f(values_by_id[stud].get("value"))
+        sname = values_by_id[stud].get("name", "")
+        spos  = values_by_id[stud].get("position", "")
+        lo, hi = sval * 0.75, sval * 1.25
+
+        best: Optional[Tuple[str, List[Dict], float]] = None
+        for owner, pool in targets_by_owner.items():
+            if owner in used_owners:
+                continue
+            cand = sorted(pool, key=lambda x: x["value"], reverse=True)[:8]
+            for n in (2, 3):
+                for combo in combinations(cand, n):
+                    s = sum(c["value"] for c in combo)
+                    if lo <= s <= hi:
+                        diff = abs(s - sval)
+                        if best is None or diff < best[2]:
+                            best = (owner, list(combo), diff)
+
+        if not best:
+            continue
+        owner, combo, _ = best
+        used_owners.add(owner)
+
+        recv_ids   = [c["player_id"] for c in combo]
+        new_players = [p for p in viewer_players if p != stud] + recv_ids
+        new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type)
+        wpd         = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
+
+        pname  = _roster_name(roster_map, owner)
+        p_arch = owner_meta.get(owner, {}).get("arch", "")
+        ceiling_note = "lineup ceiling rises" if wpd >= 0 else "adds depth but trims your ceiling"
+
+        results.append({
+            "player_id":      stud,
+            "name":           sname,
+            "position":       spos,
+            "nfl_team":       values_by_id[stud].get("team", ""),
+            "age":            _f(values_by_id[stud].get("age")),
+            "value":          round(sval, 1),
+            "redraft_value":  round(_f(values_by_id[stud].get("redraft_value")), 1),
+            "pos_rank_label": values_by_id[stud].get("pos_rank_label", ""),
+            "why":            (f"Spread {sname}'s value into {len(combo)} starters from {pname} — "
+                               f"{ceiling_note}, filling multiple holes at once."),
+            "partner_team":   pname,
+            "partner_arch":   p_arch,
+            "win_prob_delta": round(wpd, 4),
+            "direction":      "distribute",
+            "suggested_send": [{
+                "player_id": stud, "name": sname,
+                "position": spos, "value": round(sval, 1),
+            }],
+            "suggested_receive": [{
+                "player_id": c["player_id"], "name": c["name"],
+                "position": c["position"], "value": round(c["value"], 1),
+            } for c in combo],
+        })
+        if len(results) >= 5:
+            break
+
+    return results
+
+
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def get_archetype_suggestions(
@@ -410,10 +564,11 @@ def get_archetype_suggestions(
     except Exception as exc:
         log.warning("[archetype] ctx load failed: %s", exc)
 
-    rosters       = ctx.get("rosters") or []
-    roster_map    = ctx.get("roster_map") or {}
-    standings_map = ctx.get("standings_map") or {}
-    model_tbl     = ctx.get("model_value_table") or []
+    rosters         = ctx.get("rosters") or []
+    roster_map      = ctx.get("roster_map") or {}
+    standings_map   = ctx.get("standings_map") or {}
+    model_tbl       = ctx.get("model_value_table") or []
+    picks_by_roster = ctx.get("picks_by_roster") or {}
 
     num_teams     = max(len(rosters), league_size, 8)
     playoff_spots = max(4, round(num_teams * 0.4))
@@ -490,6 +645,8 @@ def get_archetype_suggestions(
 
     # ── Infer each rival's archetype & collect tradeable players ──────────────
     all_targets: List[Dict[str, Any]] = []
+    targets_by_owner: Dict[str, List[Dict]] = {}
+    owner_meta: Dict[str, Dict] = {}
     for r in rosters:
         rid = str(r.get("roster_id"))
         if rid == str(viewer_roster_id):
@@ -499,6 +656,17 @@ def get_archetype_suggestions(
         p_arch  = _infer_archetype(pids, values_by_id, seed, num_teams, playoff_spots)
         p_name  = _roster_name(roster_map, rid)
         is_pref = p_arch == preferred_arch
+
+        # Partner stats for phrasing
+        p_skill = [p for p in pids if values_by_id.get(p, {}).get("position") in SKILL_POS]
+        p_ages  = [_f(values_by_id[p].get("age"),
+                      PEAK_AGE.get(values_by_id[p].get("position", "WR"), 27)) for p in p_skill]
+        p_dyn   = sum(_f(values_by_id[p].get("value")) for p in p_skill)
+        p_rdft  = sum(_f(values_by_id[p].get("redraft_value")) for p in p_skill)
+        p_avg_age   = (sum(p_ages) / len(p_ages)) if p_ages else None
+        p_rdft_ratio = (p_rdft / p_dyn) if p_dyn > 0 else None
+        p_phrase = _partner_phrase(p_arch, p_name, seed, playoff_spots, p_avg_age, p_rdft_ratio)
+        owner_meta[rid] = {"arch": p_arch, "name": p_name, "phrase": p_phrase}
 
         for pid in pids:
             info = values_by_id.get(pid)
@@ -511,7 +679,7 @@ def get_archetype_suggestions(
             if pos not in SKILL_POS or val <= 0:
                 continue
 
-            all_targets.append({
+            tgt = {
                 "player_id":      pid,
                 "name":           info.get("name", ""),
                 "position":       pos,
@@ -524,8 +692,21 @@ def get_archetype_suggestions(
                 "owner_roster_id": rid,
                 "partner_name":   p_name,
                 "partner_arch":   p_arch,
+                "partner_phrase": p_phrase,
                 "is_pref":        is_pref,
+            }
+            all_targets.append(tgt)
+            targets_by_owner.setdefault(rid, []).append({
+                "player_id": pid, "name": info.get("name", ""),
+                "position": pos, "value": val,
             })
+
+    # ── Distribute: viewer sends a stud for a depth package ───────────────────
+    if archetype == "distribute":
+        return _build_distribute(
+            viewer_players, values_by_id, targets_by_owner, owner_meta,
+            roster_map, league_type, viewer_lineup_val, league_avg,
+        )
 
     # ── 30-day trend ──────────────────────────────────────────────────────────
     all_pids = list({t["player_id"] for t in all_targets} | set(viewer_players))
@@ -584,16 +765,6 @@ def get_archetype_suggestions(
                 0.15 * (1.0 if tp >= 0 else 0.7)
             ) * sc * pref_bonus
 
-        elif archetype == "distribute":
-            # Viewer sends one stud, wants mid-tier depth back
-            if not (200 <= val <= 800):
-                continue
-            score = (
-                0.50 * (val / 800) +
-                0.30 * (1.0 if tp >= 0 else 0.6) +
-                0.20 * min(1.0, rdft / max(1, val)) if rdft > 0 else 0.0
-            ) * sc * pref_bonus
-
         if score is None:
             continue
 
@@ -609,23 +780,26 @@ def get_archetype_suggestions(
         t["win_prob_delta"] = wpd
         scored.append((score + wpd * 0.25, t))
 
-    # ── Rank: one player per partner team, best overall ──────────────────────
+    # ── Rank: one player per (team, position), best overall ───────────────────
+    # Allows e.g. a team's stud RB *and* stud WR to both surface, but not two
+    # RBs from the same team. Falls back to player-only dedup if results are thin.
     scored.sort(key=lambda x: x[0], reverse=True)
-    seen_owners:  set = set()
-    seen_players: set = set()
+    seen_owner_pos: set = set()
+    seen_players:   set = set()
     top: List[Dict] = []
     for _, t in scored:
         if t["player_id"] in seen_players:
             continue
-        if t["owner_roster_id"] in seen_owners:
+        key = (t["owner_roster_id"], t["position"])
+        if key in seen_owner_pos:
             continue
-        seen_owners.add(t["owner_roster_id"])
+        seen_owner_pos.add(key)
         seen_players.add(t["player_id"])
         top.append(t)
         if len(top) >= 5:
             break
 
-    # Relax one-per-owner if not enough results
+    # Relax (team, position) cap if not enough results
     if len(top) < 3:
         for _, t in scored:
             if t["player_id"] not in seen_players and len(top) < 5:
@@ -634,6 +808,11 @@ def get_archetype_suggestions(
 
     # ── Build send packages & assemble response ───────────────────────────────
     send_candidates = _score_sends(viewer_players, values_by_id, archetype)
+    # Add viewer's draft picks to the send pool so packages can use them as
+    # value-fillers (e.g. two players + a pick for consolidate).
+    viewer_picks = picks_by_roster.get(str(viewer_roster_id)) or \
+                   picks_by_roster.get(viewer_roster_id) or []
+    send_candidates += _pick_send_candidates(viewer_picks, num_teams)
 
     results = []
     for t in top:
@@ -655,6 +834,7 @@ def get_archetype_suggestions(
             "partner_team":   t["partner_name"],
             "partner_arch":   t["partner_arch"],
             "win_prob_delta": round(wpd, 4),
+            "direction":      "acquire",
             "suggested_send": pkg,
         })
 
