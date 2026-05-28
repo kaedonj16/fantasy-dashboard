@@ -20824,7 +20824,7 @@ def api_trade_intel_player_packages(player_id: str):
 
         # Drop packages where the viewer is sending more than 2× the target's value.
         # Real trades include extreme overpays — those are not useful suggestions.
-        _max_send = (focus_value or 1) * 2.0
+        _max_send = (focus_value or 1) * 1.3
         primary_pkgs = [p for p in primary_pkgs if p.get("send_value", 0) <= _max_send]
 
         _total_real = real_result.get("total_real_trades") or 1
