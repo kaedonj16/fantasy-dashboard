@@ -12951,21 +12951,19 @@ def api_schedule_rankings():
         fpts_against = _compute_fpts_against(season)
 
         # Build schedule lookup for requested weeks
+        _team_alias = {"WSH": "WAS"}
+        def _norm(t): return _team_alias.get(t, t)
+
         schedules = {}
         for w in weeks:
-            sched_files = _glob.glob(
-                os.path.join("cache", "schedule", f"schedule_s{season}_w{w}_*.json")
-            ) or _glob.glob(
-                os.path.join("cache", "schedule", f"schedule_s{season}_w{w}.json")
-            )
-            if not sched_files:
-                schedules[w] = {}
-                continue
-            games = json.load(open(sched_files[0]))
-            _team_alias = {"WSH": "WAS"}
-            def _norm(t): return _team_alias.get(t, t)
+            try:
+                from utils.utils import load_week_schedule as _lws
+                games = _lws(season, w) or []
+            except Exception:
+                games = []
             lookup = {}
             for g in games:
+                if not isinstance(g, dict): continue
                 home = _norm((g.get("home") or "").upper())
                 away = _norm((g.get("away") or "").upper())
                 if home:
