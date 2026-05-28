@@ -9280,11 +9280,19 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     """Player Rankings page — searchable, filterable, sortable list of all players."""
     body_html = """
     <div class="card central">
-      <div class="card-header">
-        <h2>Player Rankings</h2>
-        <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
-          All players ranked by dynasty value.
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+        <div>
+          <h2>Player Rankings</h2>
+          <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
+            All players ranked by dynasty value.
+          </div>
         </div>
+        <button onclick="prExportCSV()" title="Download current list as CSV"
+          style="margin-top:4px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);
+                 background:var(--surface);color:var(--text);font-size:12px;font-weight:600;
+                 cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;">
+          <i class="fa-solid fa-download"></i> Export CSV
+        </button>
       </div>
       <div class="card-body" style="padding-top:0;">
 
@@ -9479,6 +9487,15 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         font-weight: 700;
         color: var(--accent);
       }
+      /* Sticky table header */
+      #prTableHeader {
+        position: sticky;
+        top: 60px;
+        z-index: 5;
+        border-radius: 6px;
+        margin-bottom: 2px;
+      }
+
       /* Filter Controls */
       .filter-controls-container {
         display: flex;
@@ -10216,6 +10233,40 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           prRender();
         });
       })();
+
+      // Export current filtered list as CSV
+      function prExportCSV() {
+        const players = window.prFilteredPlayers && window.prFilteredPlayers.length
+          ? window.prFilteredPlayers : prAllPlayers;
+        if (!players || !players.length) return;
+        const q = (s) => '"' + String(s || '').replace(/"/g, '""') + '"';
+        const header = ['Rank','Name','Position','Team','Age','1QB Value','SF Value','7d Rank Change'];
+        const rows = players.map((p, i) => [
+          i + 1,
+          q(p.name),
+          p.position || '',
+          p.team || '',
+          p.age != null ? Number(p.age).toFixed(1) : '',
+          Number(p.value || 0).toFixed(1),
+          Number(p.sf_value || 0).toFixed(1),
+          p.rank_change_7d != null ? p.rank_change_7d : ''
+        ]);
+        const csv = [header, ...rows].map(r => r.join(',')).join('\\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = 'player_rankings.csv'; a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      // '/' focuses search from anywhere on the page
+      document.addEventListener('keydown', function(e) {
+        if (e.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) {
+          e.preventDefault();
+          const inp = document.getElementById('prSearch');
+          if (inp) { inp.focus(); inp.select(); }
+        }
+      });
 
       // Close settings panel when clicking outside
       document.addEventListener('click', function(e) {

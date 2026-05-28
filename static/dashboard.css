@@ -11942,6 +11942,10 @@ img, svg, canvas {
   animation: fadeIn 0.2s ease forwards;
 }
 
+[data-theme="dark"] .player-modal-overlay {
+  background: rgba(2, 6, 23, 0.88);
+}
+
 @keyframes fadeIn {
   to {
     opacity: 1;
@@ -11962,6 +11966,14 @@ img, svg, canvas {
   animation: scaleIn 0.3s ease forwards;
 }
 
+[data-theme="dark"] .player-modal {
+  background: #152033;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  box-shadow:
+    0 32px 80px rgba(0, 0, 0, 0.75),
+    inset 0 1px 0 rgba(56, 189, 248, 0.12);
+}
+
 @keyframes scaleIn {
   to {
     transform: scale(1);
@@ -11977,6 +11989,11 @@ img, svg, canvas {
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
+}
+
+[data-theme="dark"] .player-modal-header {
+  background: linear-gradient(135deg, #1c2f4a 0%, #152033 55%, #0f1e32 100%);
+  border-bottom-color: rgba(56, 189, 248, 0.15);
 }
 
 .player-modal-title-section {
@@ -12126,6 +12143,11 @@ img, svg, canvas {
   text-align: center;
 }
 
+[data-theme="dark"] .player-modal-stat-card {
+  background: #0d1b2e;
+  border-color: rgba(56, 189, 248, 0.12);
+}
+
 .player-modal-stat-label {
   font-size: 11px;
   color: var(--text-muted);
@@ -12146,6 +12168,11 @@ img, svg, canvas {
   border-radius: 12px;
   padding: 16px;
   min-height: 300px;
+}
+
+[data-theme="dark"] .player-modal-chart-container {
+  background: #0d1b2e;
+  border-color: rgba(56, 189, 248, 0.12);
 }
 
 .player-modal-loading {
@@ -12173,6 +12200,11 @@ img, svg, canvas {
   border-radius: 10px;
   padding: 12px 14px;
   transition: all 0.2s ease;
+}
+
+[data-theme="dark"] .player-modal-game-log-row {
+  background: #0d1b2e;
+  border-color: rgba(56, 189, 248, 0.10);
 }
 
 .player-modal-game-log-row:hover {
@@ -15703,6 +15735,11 @@ button:disabled {
   scrollbar-width: none;
   flex-shrink: 0;
   gap: 2px;
+}
+
+[data-theme="dark"] .pm-tab-bar {
+  background: #0f1e32;
+  border-bottom-color: rgba(56, 189, 248, 0.15);
 }
 .pm-tab-bar::-webkit-scrollbar { display: none; }
 .pm-tab {
