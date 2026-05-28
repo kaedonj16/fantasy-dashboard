@@ -3462,7 +3462,7 @@ window.initTradePage = function initTradePage(root = document) {
     function bindSuggTargetsClick() {
       const body = root.querySelector("#otcSuggTargetsBody");
       if (!body) return;
-      bindOnce(body, "suggTargetsClick", "click", e => {
+      bindOnce(body, "suggTargetsClick", "click", async e => {
         const btn = e.target.closest(".sugg-target-get-btn");
         if (!btn) return;
         const pid       = btn.dataset.pid;
@@ -3474,35 +3474,48 @@ window.initTradePage = function initTradePage(root = document) {
           let receiveAssets = [];
           try { receiveAssets = JSON.parse(btn.dataset.receive || "[]"); } catch (_) {}
 
-          state.sideAPlayers.length = 0;
-          state.sideBPlayers.length = 0;
-          state.sideAPicks.length   = 0;
-          state.sideBPicks.length   = 0;
+          const origLabel = btn.textContent;
+          btn.textContent = "Loading…";
+          btn.disabled = true;
+          try {
+            // The calculator's chip + analysis UI lives in the Calculator tab and
+            // is keyed off allPlayers, so load the roster catalog before building
+            // the trade and switch tabs so the user actually sees the result.
+            await ensurePlayersLoaded();
 
-          // Side A = viewer gets = the depth return package
-          receiveAssets.forEach(a => {
-            if (!a.player_id) return;
-            const playerIdStr = String(a.player_id);
-            const pObj = allPlayers.find(p => String(p.id) === playerIdStr)
-              || { id: playerIdStr, name: a.name || playerIdStr };
-            state.sideAPlayers.push(pObj);
-          });
+            state.sideAPlayers.length = 0;
+            state.sideBPlayers.length = 0;
+            state.sideAPicks.length   = 0;
+            state.sideBPicks.length   = 0;
 
-          // Side B = viewer sends = the stud being distributed
-          const studObj = allPlayers.find(p => String(p.id) === String(pid))
-            || { id: pid, name };
-          state.sideBPlayers.push(studObj);
+            // Side A = viewer gets = the depth return package
+            receiveAssets.forEach(a => {
+              if (!a.player_id) return;
+              const playerIdStr = String(a.player_id);
+              const pObj = allPlayers.find(p => String(p.id) === playerIdStr)
+                || { id: playerIdStr, name: a.name || playerIdStr };
+              state.sideAPlayers.push(pObj);
+            });
 
-          saveState();
-          renderChips("A");
-          renderChips("B");
-          syncEmptyState("A");
-          syncEmptyState("B");
-          forceViewerSideA();
-          analyzeTrade();
+            // Side B = viewer sends = the stud being distributed
+            const studObj = allPlayers.find(p => String(p.id) === String(pid))
+              || { id: pid, name };
+            state.sideBPlayers.push(studObj);
 
-          const calcEl = root.querySelector(".otc-main") || root.querySelector("#tradeCalcCard");
-          if (calcEl) calcEl.scrollIntoView({ behavior: "smooth", block: "start" });
+            saveState();
+            renderChips("A");
+            renderChips("B");
+            syncEmptyState("A");
+            syncEmptyState("B");
+            forceViewerSideA();
+            analyzeTrade();
+            switchToCalc();
+            const shell = root.querySelector(".otc-shell");
+            if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
+          } finally {
+            btn.textContent = origLabel;
+            btn.disabled = false;
+          }
         } else {
           if (playerInput) {
             playerInput.value = name;
