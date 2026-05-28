@@ -21883,8 +21883,6 @@ def build_portfolio_body(
             f"</div>"
         )
 
-    two_col = f"<div class='pf-grid'>{league_card}{pos_card}</div>" if pos_card else league_card
-
     # ── NFL Exposure ──────────────────────────────────────────────────────
     nfl_html = ""
     if nfl_exposure:
@@ -22015,10 +22013,15 @@ def build_portfolio_body(
             f"}})();</script>"
         )
 
-    if nfl_html and holdings_html:
-        bottom_row = f"<div class='pf-grid-2'>{nfl_html}{holdings_html}</div>"
+    # Right column: Positional Strength + NFL Exposure stacked; My Leagues on left
+    right_col = (pos_card or "") + (nfl_html or "")
+    if right_col:
+        two_col = f"<div class='pf-grid'>{league_card}<div style='display:flex;flex-direction:column;gap:14px;'>{right_col}</div></div>"
     else:
-        bottom_row = nfl_html + holdings_html
+        two_col = league_card
+
+    # Player Holdings spans full width below
+    bottom_row = holdings_html or ""
     return css + top_strip + two_col + bottom_row
 
 
