@@ -5337,9 +5337,16 @@ function toggleNavDropdown(e, wrapperId) {
   if (!wrapper) return;
   // Close all other open dropdowns first
   document.querySelectorAll('.nav-pill-dropdown-wrapper.open').forEach(function(el) {
-    if (el.id !== wrapperId) el.classList.remove('open');
+    if (el.id !== wrapperId) {
+      el.classList.remove('open');
+      const btn = el.querySelector('[aria-expanded]');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
   });
+  const isNowOpen = !wrapper.classList.contains('open');
   wrapper.classList.toggle('open');
+  const triggerBtn = wrapper.querySelector('[aria-expanded]');
+  if (triggerBtn) triggerBtn.setAttribute('aria-expanded', isNowOpen ? 'true' : 'false');
 }
 
 // Legacy alias kept in case any rendered HTML still calls it
@@ -5351,6 +5358,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!e.target.closest('.nav-pill-dropdown-wrapper')) {
       document.querySelectorAll('.nav-pill-dropdown-wrapper.open').forEach(function(el) {
         el.classList.remove('open');
+        const btn = el.querySelector('[aria-expanded]');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
       });
     }
   });

@@ -25,6 +25,7 @@ from flask import (
     session,
     send_file,
 )
+from flask_compress import Compress
 from dashboard_services.ai.history_recap import get_history_ai_recap
 from dashboard_services.ai.renderer import (
     get_team_gm_memo,
@@ -273,6 +274,13 @@ except ImportError:
             def decorator(f): return f
             return decorator
     limiter = _NoopLimiter()
+
+# Response compression
+_compress = Compress()
+app.config["COMPRESS_MINCONTENT"] = 500          # only compress responses > 500 bytes
+app.config["COMPRESS_LEVEL"] = 6                  # gzip level (1-9); 6 is a good balance
+app.config["COMPRESS_ALGORITHM"] = ["br", "gzip"] # prefer brotli, fall back to gzip
+_compress.init_app(app)
 
 try:
     init_value_history_db()
@@ -548,7 +556,7 @@ FORM_BODY = """
 
 BASE_HTML = """
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
@@ -585,6 +593,7 @@ BASE_HTML = """
     </script>
   </head>
   <body>
+    <a class="skip-link" href="#page-root">Skip to main content</a>
     <div id="app-scale">
       {nav}
 
@@ -592,14 +601,14 @@ BASE_HTML = """
 
       {ad_top}
 
-      <main id="page-root" class="overview-layout" data-cache-ts="{cache_ts}">
+      <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}">
         {body}
       </main>
 
       {ad_bottom}
     </div>
 
-    <footer class="site-footer">
+    <footer class="site-footer" role="contentinfo">
       <div class="site-footer-inner">
         <div class="site-footer-left">
           <span class="footer-brand">BR Fantasy</span>
@@ -619,13 +628,16 @@ BASE_HTML = """
     </footer>
 
     <!-- Page navigation loading overlay -->
-    <div id="navLoadingOverlay" class="fullscreen-loading-overlay" style="display:none;">
-      <div class="loading-spinner"></div>
+    <div id="navLoadingOverlay" class="fullscreen-loading-overlay" role="status" aria-live="polite" aria-label="Loading page" style="display:none;">
+      <div class="loading-spinner" aria-hidden="true"></div>
       <div class="fullscreen-loading-text">Loading&hellip;</div>
     </div>
 
+    <!-- Toast notifications -->
+    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
     <!-- Cookie Consent Banner -->
-    <div id="cookieConsent" class="cookie-consent" style="display: none;">
+    <div id="cookieConsent" class="cookie-consent" role="dialog" aria-label="Cookie consent" style="display: none;">
       <div class="cookie-consent-content">
         <p>
           We use cookies to improve your experience and show relevant ads. By continuing to use this site, you consent to our use of cookies.
@@ -705,6 +717,24 @@ BASE_HTML = """
         var el = document.getElementById('footer-year');
         if (el) el.textContent = new Date().getFullYear();
       }})();
+
+      // Toast notification utility
+      window.showToast = function(msg, duration) {{
+        duration = duration || 3000;
+        var container = document.getElementById('toastContainer');
+        if (!container) return;
+        var toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.textContent = msg;
+        container.appendChild(toast);
+        requestAnimationFrame(function() {{
+          requestAnimationFrame(function() {{ toast.classList.add('toast--visible'); }});
+        }});
+        setTimeout(function() {{
+          toast.classList.remove('toast--visible');
+          toast.addEventListener('transitionend', function() {{ toast.remove(); }}, {{once: true}});
+        }}, duration);
+      }};
     </script>
   </body>
 </html>
@@ -1092,7 +1122,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if not league_id:
         def simple_pill(label: str, href: str, key: str) -> str:
             cls = "nav-pill active" if key == active else "nav-pill"
-            return f"<a class='{cls}' href='{href}'>{label}</a>"
+            aria = " aria-current='page'" if key == active else ""
+            return f"<a class='{cls}'{aria} href='{href}'>{label}</a>"
 
         def simple_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
             is_active = active in active_keys
@@ -1100,15 +1131,16 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             item_html = ""
             for item_label, href, item_key in items:
                 item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
-                item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
+                aria_cur = " aria-current='page'" if item_key == active else ""
+                item_html += f"<a class='{item_cls}'{aria_cur} href='{href}'>{item_label}</a>"
             btn_id  = dropdown_id.replace("Dropdown", "Btn")
             menu_id = dropdown_id.replace("Dropdown", "Menu")
             return (
                 f"<div class='nav-pill-dropdown-wrapper' id='{dropdown_id}'>"
-                f"  <button type='button' class='{btn_cls}' id='{btn_id}' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
-                f"    {label} <span class='nav-pill-chevron'>&#x25BE;</span>"
+                f"  <button type='button' class='{btn_cls}' id='{btn_id}' aria-expanded='false' aria-haspopup='true' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
+                f"    {label} <span class='nav-pill-chevron' aria-hidden='true'>&#x25BE;</span>"
                 f"  </button>"
-                f"  <div class='nav-pill-dropdown-menu' id='{menu_id}'>"
+                f"  <div class='nav-pill-dropdown-menu' id='{menu_id}' role='menu'>"
                 f"    {item_html}"
                 f"  </div>"
                 f"</div>"
@@ -1165,10 +1197,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         )
 
         return (
-            "<nav class='top-nav'>"
+            "<nav class='top-nav' aria-label='Main navigation'>"
             "  <div class='nav-left'>"
-            "    <a href='/'>"
-            "      <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
+            "    <a href='/' aria-label='BR Fantasy home'>"
+            "      <img src='/static/Website_Logo.png' alt='BR Fantasy' class='site-logo'/>"
             "    </a>"
             "  </div>"
             "  <div class='nav-center'>"
@@ -1184,8 +1216,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     def nav_pill(label: str, endpoint: str, key: str) -> str:
         cls = "nav-pill active" if key == active else "nav-pill"
+        aria = " aria-current='page'" if key == active else ""
         href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
-        return f"<a class='{cls}' href='{href}'>{label}</a>"
+        return f"<a class='{cls}'{aria} href='{href}'>{label}</a>"
 
     def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
         """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix)."""
@@ -1206,15 +1239,16 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 href = url_for(endpoint, platform=platform, season=season, league_id=league_id) + href_suffix
                 item_active = " active" if item_key == active else ""
                 item_cls = f"nav-pill-dropdown-item{item_active}"
-                item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
+                aria_cur = " aria-current='page'" if item_key == active else ""
+                item_html += f"<a class='{item_cls}'{aria_cur} href='{href}'>{item_label}</a>"
         btn_id  = dropdown_id.replace("Dropdown", "Btn")
         menu_id = dropdown_id.replace("Dropdown", "Menu")
         return (
             f"<div class='nav-pill-dropdown-wrapper' id='{dropdown_id}'>"
-            f"  <button type='button' class='{btn_cls}' id='{btn_id}' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
-            f"    {label} <span class='nav-pill-chevron'>&#x25BE;</span>"
+            f"  <button type='button' class='{btn_cls}' id='{btn_id}' aria-expanded='false' aria-haspopup='true' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
+            f"    {label} <span class='nav-pill-chevron' aria-hidden='true'>&#x25BE;</span>"
             f"  </button>"
-            f"  <div class='nav-pill-dropdown-menu' id='{menu_id}'>"
+            f"  <div class='nav-pill-dropdown-menu' id='{menu_id}' role='menu'>"
             f"    {item_html}"
             f"  </div>"
             f"</div>"
@@ -1390,10 +1424,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     )
 
     return (
-        "<nav class='top-nav'>"
+        "<nav class='top-nav' aria-label='Main navigation'>"
         "  <div class='nav-left'>"
-        f"    <a href='{dashboard_url}'>"
-        "      <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
+        f"    <a href='{dashboard_url}' aria-label='BR Fantasy dashboard'>"
+        "      <img src='/static/Website_Logo.png' alt='BR Fantasy' class='site-logo'/>"
         "    </a>"
         "  </div>"
         "  <div class='nav-center'>"
@@ -2287,20 +2321,53 @@ def get_trade_ai_analysis(
 def handle_500(e):
     logger.exception("[500] Internal server error")
     return (
-        "<!doctype html><html><head><title>Error — BR Fantasy</title>"
+        "<!doctype html><html lang='en'><head><title>Error — BR Fantasy</title>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
         "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
         ".box{text-align:center;padding:40px 24px;max-width:400px;}"
+        ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:24px;}"
         "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
         "a{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
         "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
         "</head><body><div class='box'>"
+        "<div class='logo'>BR Fantasy</div>"
         "<h2>Something went wrong</h2>"
         "<p>The server hit an unexpected error. This usually fixes itself — please try again in a moment.</p>"
         "<a href='/'>&#8592; Back to home</a>"
         "</div></body></html>"
     ), 500
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    return (
+        "<!doctype html><html lang='en'><head><title>Page Not Found — BR Fantasy</title>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
+        "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
+        ".box{text-align:center;padding:40px 24px;max-width:420px;}"
+        ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:8px;}"
+        ".code{font-size:72px;font-weight:800;color:#1e3a5f;line-height:1;margin:0 0 16px;}"
+        "h2{margin:0 0 8px;font-size:20px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
+        ".links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}"
+        "a.primary{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
+        "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}"
+        "a.secondary{display:inline-block;padding:10px 20px;background:transparent;"
+        "border:1px solid #334155;color:#94a3b8;"
+        "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
+        "</head><body><div class='box'>"
+        "<div class='logo'>BR Fantasy</div>"
+        "<div class='code'>404</div>"
+        "<h2>Page not found</h2>"
+        "<p>This page doesn&rsquo;t exist or may have moved. Check the URL or head back home.</p>"
+        "<div class='links'>"
+        "  <a class='primary' href='/'>&#8592; Home</a>"
+        "  <a class='secondary' href='/trade'>Trade Calc</a>"
+        "  <a class='secondary' href='/players'>Player Rankings</a>"
+        "</div>"
+        "</div></body></html>"
+    ), 404
 
 
 
@@ -10296,6 +10363,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         const a    = document.createElement('a');
         a.href = url; a.download = 'player_rankings.csv'; a.click();
         URL.revokeObjectURL(url);
+        if (window.showToast) showToast('Player rankings downloaded!');
       }
 
       // '/' focuses search from anywhere on the page

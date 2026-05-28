@@ -16535,3 +16535,55 @@ button:disabled {
   transition: color 0.14s;
 }
 .sched-remove:hover { color: #ef4444; }
+
+/* ── Skip link (accessibility) ─────────────────────────────────── */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: 9999;
+  padding: 8px 16px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.skip-link:focus {
+  left: 8px;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* ── Toast notifications ────────────────────────────────────────── */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  background: var(--card, #1e293b);
+  color: var(--text, #e2e8f0);
+  border: 1px solid var(--border, #334155);
+  border-left: 3px solid var(--accent, #3b82f6);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  pointer-events: auto;
+}
+.toast--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
