@@ -621,19 +621,20 @@ def calculate_roster_depth_warning(
 
         after = sum(1 for info in post_roster.values() if info["pos"] == pos and info["val"] >= threshold)
 
-        if after == before and after > floor:
-            continue  # No meaningful change, skip
-
-        warning = None
-        severity = None
+        # Only warn when THIS trade actually reduces depth at the position.
+        # Acquiring (or not touching) a position never triggers a depth warning,
+        # even if it's already thin — that's a pre-existing condition, not caused
+        # by this trade. Prevents "low RB depth" alerts when you're receiving an RB.
+        if after >= before:
+            continue
 
         if after == 0:
             warning = f"You'll have no starter-caliber {pos} after this trade"
             severity = "danger"
         elif after < floor:
             warning = f"Leaves you with only {after} starter-caliber {pos} (need {floor})"
-            severity = "danger" if after == 0 else "caution"
-        elif after < before:
+            severity = "caution"
+        else:
             warning = f"{pos} depth drops from {before} to {after} starters"
             severity = "caution"
 
