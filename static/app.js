@@ -3446,28 +3446,75 @@ window.initTradePage = function initTradePage(root = document) {
         }
 
         container.innerHTML = html || '<div class="otc-movers-empty">No targets found.</div>';
+        // Click handling is delegated once via bindSuggTargetsClick() below.
+      } catch (e) {
+        container.innerHTML = '<div class="otc-movers-empty">Could not load targets.</div>';
+      }
+    }
 
-        container.addEventListener("click", e => {
-          const btn = e.target.closest(".sugg-target-get-btn");
-          if (!btn) return;
-          const pid  = btn.dataset.pid;
-          const name = btn.dataset.name;
-          if (!pid || !name) return;
-          // Populate the search input and fetch packages
+    // ── Single delegated click handler for Gaps targets + Strategy cards ─────
+    // Both lists live in #otcSuggTargetsBody and re-render via innerHTML, so we
+    // bind ONE listener to the stable container instead of per-render listeners
+    // (which stacked up and let the acquire flow override distribute clicks).
+    // Routes on data-direction: "distribute" loads the inverted trade (stud on
+    // Side B / you give, depth return on Side A / you get); anything else runs
+    // the acquire package finder.
+    function bindSuggTargetsClick() {
+      const body = root.querySelector("#otcSuggTargetsBody");
+      if (!body) return;
+      bindOnce(body, "suggTargetsClick", "click", e => {
+        const btn = e.target.closest(".sugg-target-get-btn");
+        if (!btn) return;
+        const pid       = btn.dataset.pid;
+        const name      = btn.dataset.name;
+        const direction = btn.dataset.direction || "acquire";
+        if (!pid || !name) return;
+
+        if (direction === "distribute") {
+          let receiveAssets = [];
+          try { receiveAssets = JSON.parse(btn.dataset.receive || "[]"); } catch (_) {}
+
+          state.sideAPlayers.length = 0;
+          state.sideBPlayers.length = 0;
+          state.sideAPicks.length   = 0;
+          state.sideBPicks.length   = 0;
+
+          // Side A = viewer gets = the depth return package
+          receiveAssets.forEach(a => {
+            if (!a.player_id) return;
+            const playerIdStr = String(a.player_id);
+            const pObj = allPlayers.find(p => String(p.id) === playerIdStr)
+              || { id: playerIdStr, name: a.name || playerIdStr };
+            state.sideAPlayers.push(pObj);
+          });
+
+          // Side B = viewer sends = the stud being distributed
+          const studObj = allPlayers.find(p => String(p.id) === String(pid))
+            || { id: pid, name };
+          state.sideBPlayers.push(studObj);
+
+          saveState();
+          renderChips("A");
+          renderChips("B");
+          syncEmptyState("A");
+          syncEmptyState("B");
+          forceViewerSideA();
+          analyzeTrade();
+
+          const calcEl = root.querySelector(".otc-main") || root.querySelector("#tradeCalcCard");
+          if (calcEl) calcEl.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else {
           if (playerInput) {
             playerInput.value = name;
             playerDropdown.style.display = "none";
           }
           fetchPackages(pid, name);
-          // Scroll search into view
           const buildHead = root.querySelector(".otc-sugg-build-head");
           if (buildHead) buildHead.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        }, { once: false });
-
-      } catch (e) {
-        container.innerHTML = '<div class="otc-movers-empty">Could not load targets.</div>';
-      }
+        }
+      });
     }
+    bindSuggTargetsClick();
 
     // ── Mode toggle: Gaps | Strategy ─────────────────────────────────────────
     const btnGaps      = root.querySelector("#otcModeGaps");
@@ -3643,8 +3690,9 @@ window.initTradePage = function initTradePage(root = document) {
             ? assetLine("Receive", t.suggested_receive)
             : assetLine("Send", t.suggested_send);
 
+          // Single-quoted attribute, so escape apostrophes too (e.g. "Ja'Marr Chase")
           const receiveJson = isDistribute
-            ? esc(JSON.stringify(t.suggested_receive || []))
+            ? esc(JSON.stringify(t.suggested_receive || [])).replace(/'/g, "&#39;")
             : "";
 
           return `
@@ -3666,65 +3714,7 @@ window.initTradePage = function initTradePage(root = document) {
               </div>
             </div>`;
         }).join("");
-
-        // Wire "Find packages" / "Explore" buttons — delegate on container
-        container.addEventListener("click", e => {
-          const btn = e.target.closest(".sugg-target-get-btn");
-          if (!btn) return;
-          const pid       = btn.dataset.pid;
-          const name      = btn.dataset.name;
-          const direction = btn.dataset.direction || "acquire";
-          if (!pid || !name) return;
-
-          if (direction === "distribute") {
-            // Distribute: load stud on Side B (you give), receive package on Side A (you get)
-            let receiveAssets = [];
-            try { receiveAssets = JSON.parse(btn.dataset.receive || "[]"); } catch (_) {}
-
-            state.sideAPlayers.length = 0;
-            state.sideBPlayers.length = 0;
-            state.sideAPicks.length   = 0;
-            state.sideBPicks.length   = 0;
-
-            // Side A = viewer gets = the depth return package
-            receiveAssets.forEach(a => {
-              if (!a.player_id) return;
-              const playerIdStr = String(a.player_id);
-              const pObj = allPlayers.find(p => String(p.id) === playerIdStr)
-                || { id: playerIdStr, name: a.name || playerIdStr };
-              state.sideAPlayers.push(pObj);
-            });
-
-            // Side B = viewer sends = the stud being distributed
-            const studObj = allPlayers.find(p => String(p.id) === String(pid))
-              || { id: pid, name };
-            state.sideBPlayers.push(studObj);
-
-            saveState();
-            renderChips("A");
-            renderChips("B");
-            syncEmptyState("A");
-            syncEmptyState("B");
-            forceViewerSideA();
-            analyzeTrade();
-          } else {
-            // Acquire (contending / rebuilding / consolidate): find packages to acquire this player
-            if (playerInput) {
-              playerInput.value = name;
-              playerDropdown.style.display = "none";
-            }
-            fetchPackages(pid, name);
-          }
-
-          const buildHead = root.querySelector(".otc-sugg-build-head");
-          if (buildHead) buildHead.scrollIntoView({ behavior: "smooth", block: "nearest" });
-
-          const calcEl = root.querySelector(".otc-main") || root.querySelector("#tradeCalcCard");
-          if (calcEl && direction === "distribute") {
-            calcEl.scrollIntoView({ behavior: "smooth", block: "start" });
-          }
-        }, { once: false });
-
+        // Click handling is delegated once via bindSuggTargetsClick() below.
       } catch (err) {
         container.innerHTML = `<div class="otc-movers-empty">Could not load strategy suggestions.</div>`;
         console.error("[archetype]", err);
