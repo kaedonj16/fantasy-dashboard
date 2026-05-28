@@ -3629,44 +3629,42 @@ window.initTradePage = function initTradePage(root = document) {
           const isDistribute = t.direction === "distribute";
 
           const assetLine = (label, list) => list && list.length
-            ? `<div class="otc-arch-send">
-                <span style="font-weight:600;color:var(--text);">${label}:</span> ${
+            ? `<div class="otc-arch-deal">
+                <span class="otc-arch-deal-label">${label}</span>
+                <span class="otc-arch-deal-assets">${
                   list.map(s =>
-                    `<span style="color:var(--text);">${esc(s.name)}</span> <span style="opacity:.6;">(${Math.round(s.value)})</span>`
+                    `${esc(s.name)} <span class="v">${Math.round(s.value)}</span>`
                   ).join(", ")
-                }
+                }</span>
               </div>`
             : "";
 
           // Distribute: viewer sends the headline stud, receives a depth package.
           // Acquire (contending/rebuilding/consolidate): viewer receives the
           // headline player, sends the suggested package.
-          const topLabel = isDistribute ? "Trade away" : "";
+          const metaBits = [age ? `Age ${age}` : "", t.pos_rank_label || ""].filter(Boolean).join(" · ");
           const detailHtml = isDistribute
             ? assetLine("Receive", t.suggested_receive)
             : assetLine("Send", t.suggested_send);
 
           return `
             <div class="otc-arch-card">
-              <div class="otc-arch-card-top">
-                ${topLabel ? `<span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">${topLabel}</span>` : ""}
-                <span style="background:${col}20;color:${col};font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;">${t.position}</span>
-                <span style="font-size:14px;font-weight:700;color:var(--text);flex:1;">${t.name || ""}</span>
-                ${age ? `<span style="font-size:11px;color:var(--text-muted);">Age ${age}</span>` : ""}
-                ${t.pos_rank_label ? `<span style="font-size:11px;color:var(--text-muted);">${t.pos_rank_label}</span>` : ""}
+              <div class="otc-arch-head">
+                ${isDistribute ? `<span class="otc-arch-away">Trade away</span>` : ""}
+                <span class="otc-arch-pos" style="background:${col}20;color:${col};">${t.position}</span>
+                <span class="otc-arch-name">${esc(t.name)}</span>
+                ${metaBits ? `<span class="otc-arch-meta">${metaBits}</span>` : ""}
               </div>
-              <div class="otc-arch-card-why">${esc(t.why)}</div>
+              <div class="otc-arch-why">${esc(t.why)}</div>
               ${detailHtml}
-              <div class="otc-arch-card-footer">
-                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-                  <span class="otc-arch-wp-badge ${wpdCls}" title="Win probability delta">${wpdPct} win prob</span>
-                  ${pArch ? `<span class="otc-arch-partner-chip" style="border-left:2px solid ${pAColor};">${esc(t.partner_team)}</span>` : `<span class="otc-arch-partner-chip">${esc(t.partner_team)}</span>`}
-                </div>
-                <button class="sugg-target-get-btn otc-sugg-target-btn"
-                  data-pid="${safePid}" data-name="${safeName}">
-                  ${isDistribute ? "Explore packages" : "Get packages"}
-                </button>
+              <div class="otc-arch-foot">
+                <span class="otc-arch-wp ${wpdCls}" title="Win probability delta">${wpdPct} win prob</span>
+                ${t.partner_team ? `<span class="otc-arch-partner"><span class="dot" style="background:${pAColor};"></span>${esc(t.partner_team)}</span>` : ""}
               </div>
+              <button class="otc-arch-btn sugg-target-get-btn"
+                data-pid="${safePid}" data-name="${safeName}">
+                ${isDistribute ? "Explore packages" : "Get packages"}
+              </button>
             </div>`;
         }).join("");
 

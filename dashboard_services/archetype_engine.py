@@ -251,13 +251,14 @@ def _build_why(
     if archetype == "contending":
         parts = []
         if rdft > val * 1.08:
-            parts.append("redraft outpaces dynasty value — productive now")
+            parts.append("redraft value tops dynasty, productive now")
         if age_tag:
             parts.append(age_tag)
         if trend_tag:
             parts.append(trend_tag)
         parts.append(t.get("partner_phrase") or f"{partner} may be a seller")
-        return f"{name} offers immediate impact — {', '.join(parts[:3])}."
+        body = ", ".join(parts[:3])
+        return f"{name} offers immediate impact. {body[:1].upper()}{body[1:]}."
 
     if archetype == "rebuilding":
         parts = []
@@ -268,7 +269,8 @@ def _build_why(
         if trend_tag:
             parts.append(trend_tag)
         parts.append(t.get("partner_phrase") or f"{partner} may move youth for win-now pieces")
-        return f"{name} is a long-term asset — {', '.join(parts[:3])}."
+        body = ", ".join(parts[:3])
+        return f"{name} is a long-term asset. {body[:1].upper()}{body[1:]}."
 
     if archetype == "consolidate":
         parts = []
@@ -435,7 +437,7 @@ def _partner_phrase(
         if avg_age and avg_age < 25:
             return f"{name} skews young and may sell win-now vets"
         if seed > playoff_spots + 1:
-            return f"{name} sits outside playoff position — likely selling"
+            return f"{name} sits outside playoff position, likely selling"
         return f"{name} looks like a rebuild partner"
     if arch == "contending":
         if rdft_ratio and rdft_ratio > 0.95:
@@ -518,8 +520,8 @@ def _build_distribute(
             "value":          round(sval, 1),
             "redraft_value":  round(_f(values_by_id[stud].get("redraft_value")), 1),
             "pos_rank_label": values_by_id[stud].get("pos_rank_label", ""),
-            "why":            (f"Spread {sname}'s value into {len(combo)} starters from {pname} — "
-                               f"{ceiling_note}, filling multiple holes at once."),
+            "why":            (f"Spread {sname}'s value into {len(combo)} starters from {pname}. "
+                               f"{ceiling_note.capitalize()}, filling multiple holes at once."),
             "partner_team":   pname,
             "partner_arch":   p_arch,
             "win_prob_delta": round(wpd, 4),

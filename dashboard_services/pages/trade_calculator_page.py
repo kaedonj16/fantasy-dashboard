@@ -426,33 +426,73 @@ def build_trade_calculator_body(
             }}
             .otc-arch-card {{
               background:var(--surface);border:1px solid var(--border);
-              border-radius:10px;padding:12px 14px;display:flex;
-              flex-direction:column;gap:6px;
+              border-radius:12px;padding:14px;display:flex;
+              flex-direction:column;gap:11px;
+              transition:border-color .15s, box-shadow .15s;
             }}
-            .otc-arch-card-top {{
-              display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+            .otc-arch-card:hover {{
+              border-color:var(--accent);
+              box-shadow:0 2px 10px rgba(0,0,0,.07);
             }}
-            .otc-arch-card-why {{
-              font-size:12px;color:var(--text-muted);line-height:1.45;
+            .otc-arch-head {{
+              display:flex;align-items:center;gap:8px;min-width:0;
             }}
-            .otc-arch-card-footer {{
-              display:flex;align-items:center;justify-content:space-between;
-              flex-wrap:wrap;gap:6px;margin-top:2px;
+            .otc-arch-pos {{
+              font-size:11px;font-weight:700;padding:3px 8px;
+              border-radius:6px;flex-shrink:0;line-height:1;
             }}
-            .otc-arch-wp-badge {{
-              font-size:11px;font-weight:700;padding:2px 8px;
-              border-radius:6px;
-            }}
-            .otc-arch-wp-badge.pos {{ background:#10b98120;color:#10b981; }}
-            .otc-arch-wp-badge.neg {{ background:#ef444420;color:#ef4444; }}
-            .otc-arch-partner-chip {{
-              font-size:10px;font-weight:600;padding:2px 8px;
-              border-radius:6px;background:var(--row);color:var(--text-muted);
+            .otc-arch-name {{
+              font-size:15px;font-weight:700;color:var(--text);
+              flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
               white-space:nowrap;
             }}
-            .otc-arch-send {{
+            .otc-arch-meta {{
               font-size:11px;color:var(--text-muted);
-              border-top:1px solid var(--border);padding-top:6px;margin-top:2px;
+              white-space:nowrap;flex-shrink:0;
+            }}
+            .otc-arch-away {{
+              font-size:9px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.05em;color:var(--text-muted);
+              background:var(--row);padding:2px 6px;border-radius:4px;
+              flex-shrink:0;
+            }}
+            .otc-arch-why {{
+              font-size:12.5px;color:var(--text-muted);line-height:1.5;
+            }}
+            .otc-arch-deal {{
+              display:flex;gap:7px;align-items:baseline;flex-wrap:wrap;
+              font-size:12px;background:var(--row);border-radius:8px;
+              padding:8px 10px;
+            }}
+            .otc-arch-deal-label {{
+              font-size:9px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.05em;color:var(--text-muted);flex-shrink:0;
+            }}
+            .otc-arch-deal-assets {{ color:var(--text);font-weight:600; }}
+            .otc-arch-deal-assets .v {{ color:var(--text-muted);font-weight:400; }}
+            .otc-arch-foot {{
+              display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+            }}
+            .otc-arch-wp {{
+              font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;
+            }}
+            .otc-arch-wp.pos {{ background:#10b9811f;color:#10b981; }}
+            .otc-arch-wp.neg {{ background:#ef44441f;color:#ef4444; }}
+            .otc-arch-partner {{
+              display:inline-flex;align-items:center;gap:5px;
+              font-size:11px;font-weight:600;color:var(--text-muted);
+            }}
+            .otc-arch-partner .dot {{
+              width:7px;height:7px;border-radius:50%;flex-shrink:0;
+            }}
+            .otc-arch-btn {{
+              width:100%;padding:9px;border-radius:8px;
+              border:1px solid var(--border);background:var(--surface);
+              color:var(--text);font-size:12px;font-weight:600;
+              cursor:pointer;transition:all .15s;
+            }}
+            .otc-arch-btn:hover {{
+              background:var(--accent);border-color:var(--accent);color:#fff;
             }}
             #otcModeGaps.is-active, #otcModeStrategy.is-active {{
               background:var(--accent);color:#fff;
