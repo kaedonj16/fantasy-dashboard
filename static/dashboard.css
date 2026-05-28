@@ -16603,3 +16603,139 @@ button:disabled {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* ── Schedule view toggle ────────────────────────────────────────────────── */
+.sched-view-toggle {
+  display: flex;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  align-self: center;
+}
+.sched-view-btn {
+  padding: 6px 14px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.sched-view-btn.active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* ── Rankings controls ───────────────────────────────────────────────────── */
+.sched-rank-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0 8px;
+  flex-wrap: wrap;
+}
+.sched-pos-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+.sched-rank-pos {
+  padding: 5px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.sched-rank-pos.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.sched-sort-btn {
+  margin-left: auto;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+.sched-sort-btn:hover { background: var(--accent-soft); }
+
+/* ── Rank medals & numbers ───────────────────────────────────────────────── */
+.sched-rank-medal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.sched-rank-medal-1 { background: #fbbf24; color: #000; }
+.sched-rank-medal-2 { background: #94a3b8; color: #000; }
+.sched-rank-medal-3 { background: #c2855d; color: #fff; }
+.sched-rank-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Roster badge ────────────────────────────────────────────────────────── */
+.sched-roster-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  background: var(--accent-soft);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* ── Rankings player cell layout ─────────────────────────────────────────── */
+.sched-rank-player-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sched-rank-name-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* ── Ease score bar ──────────────────────────────────────────────────────── */
+.sched-ease-td { min-width: 90px; }
+.sched-ease-wrap {
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+.sched-ease-bar { height: 100%; border-radius: 3px; }
+.sched-ease-num {
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+}
