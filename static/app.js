@@ -3360,6 +3360,9 @@ window.initTradePage = function initTradePage(root = document) {
 
     // ── Suggestions-tab Trade Targets (different from sidebar) ───
     async function loadSuggTargets() {
+      // Skip if Strategy mode is active — archetype loader handles that
+      if ((localStorage.getItem("sugg-mode") || "gaps") === "strategy") return;
+
       const container = root.querySelector("#otcSuggTargetsBody");
       if (!container) return;
 
@@ -3452,6 +3455,218 @@ window.initTradePage = function initTradePage(root = document) {
         container.innerHTML = '<div class="otc-movers-empty">Could not load targets.</div>';
       }
     }
+
+    // ── Mode toggle: Gaps | Strategy ─────────────────────────────────────────
+    const btnGaps      = root.querySelector("#otcModeGaps");
+    const btnStrategy  = root.querySelector("#otcModeStrategy");
+    const archChips    = root.querySelector("#otcArchetypeChips");
+    const excludedBar  = root.querySelector("#otcExcludedBar");
+
+    // Restore persisted mode/archetype
+    let _targetsMode     = localStorage.getItem("sugg-mode")     || "gaps";
+    let _activeArchetype = localStorage.getItem("sugg-archetype") || "";
+
+    function _setMode(mode) {
+      _targetsMode = mode;
+      localStorage.setItem("sugg-mode", mode);
+      const isStrategy = mode === "strategy";
+
+      if (btnGaps)     { btnGaps.classList.toggle("is-active", !isStrategy); }
+      if (btnStrategy) { btnStrategy.classList.toggle("is-active", isStrategy); }
+      if (archChips)   { archChips.style.display = isStrategy ? "flex" : "none"; }
+      if (excludedBar) { excludedBar.style.display = (!isStrategy && excludedBar.dataset.hasItems) ? "" : "none"; }
+
+      if (!isStrategy) {
+        // Switch back to gaps
+        loadSuggTargets();
+      } else {
+        // Show chip selector; auto-load last archetype if one is saved
+        if (_activeArchetype) {
+          _setActiveChip(_activeArchetype);
+          loadArchetypeSuggestions(_activeArchetype);
+        } else {
+          const container = root.querySelector("#otcSuggTargetsBody");
+          if (container) container.innerHTML = '<div class="otc-movers-empty">Pick a strategy above.</div>';
+        }
+      }
+    }
+
+    function _setActiveChip(arch) {
+      _activeArchetype = arch;
+      localStorage.setItem("sugg-archetype", arch);
+      root.querySelectorAll(".otc-arch-chip").forEach(c => {
+        c.classList.toggle("is-active", c.dataset.arch === arch);
+      });
+    }
+
+    if (btnGaps)     btnGaps.addEventListener("click",     () => _setMode("gaps"));
+    if (btnStrategy) btnStrategy.addEventListener("click", () => _setMode("strategy"));
+
+    if (archChips) {
+      archChips.addEventListener("click", e => {
+        const chip = e.target.closest(".otc-arch-chip");
+        if (!chip) return;
+        const arch = chip.dataset.arch;
+        _setActiveChip(arch);
+        loadArchetypeSuggestions(arch);
+      });
+    }
+
+    // Re-apply mode visuals on context change (league/season switch)
+    const _origOnContextChange = typeof _onContextChange === "function" ? _onContextChange : null;
+    function _onContextChangePatch() {
+      suggTargetsLoaded = false;
+      if (suggTab.style.display !== "none") {
+        if (_targetsMode === "strategy" && _activeArchetype) {
+          loadArchetypeSuggestions(_activeArchetype);
+        } else {
+          loadSuggTargets();
+        }
+      }
+    }
+    // Re-wire context change listeners to patched version
+    const leagueInputEl2 = root.querySelector("#leagueIdInput");
+    const seasonInputEl2 = root.querySelector("#seasonInput");
+    if (leagueInputEl2) leagueInputEl2.addEventListener("change", _onContextChangePatch);
+    if (seasonInputEl2) seasonInputEl2.addEventListener("change", _onContextChangePatch);
+
+    // Restore mode on load (after roster is ready)
+    function _applyRestoredMode() {
+      if (_targetsMode === "strategy") {
+        _setMode("strategy");   // shows chips, auto-loads if archetype saved
+      }
+    }
+    // Delay one tick so roster input may already be populated
+    setTimeout(_applyRestoredMode, 0);
+
+    // ── Archetype suggestion loader ───────────────────────────────────────────
+    async function loadArchetypeSuggestions(archetype) {
+      const container = root.querySelector("#otcSuggTargetsBody");
+      if (!container) return;
+
+      const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      if (!hasPremium) {
+        container.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+        return;
+      }
+
+      const leagueId       = root.querySelector("#leagueIdInput")?.value  || "";
+      const season         = root.querySelector("#seasonInput")?.value     || new Date().getFullYear();
+      const viewerRosterId = getCurrentRosterId();
+
+      if (!leagueId || !viewerRosterId) {
+        container.innerHTML = '<div class="otc-movers-empty">Select your team to see strategy suggestions.</div>';
+        return;
+      }
+
+      const pathParts  = window.location.pathname.split("/").filter(Boolean);
+      const platform   = pathParts[0] || "sleeper";
+      const leagueType = getLeagueType();
+      const leagueSize = getLeagueSize();
+
+      // Loading skeleton
+      container.innerHTML = [1,2,3].map(() => `
+        <div class="otc-arch-card" style="opacity:.5;pointer-events:none;">
+          <div class="otc-sugg-skeleton-line" style="width:60%;height:14px;border-radius:6px;background:var(--border);animation:skeleton-pulse 1.2s ease-in-out infinite;"></div>
+          <div class="otc-sugg-skeleton-line" style="width:90%;height:10px;border-radius:6px;background:var(--border);animation:skeleton-pulse 1.2s ease-in-out infinite;margin-top:4px;"></div>
+        </div>
+      `).join("");
+
+      try {
+        const url =
+          `/api/trade-intel/archetype-suggestions` +
+          `?archetype=${encodeURIComponent(archetype)}` +
+          `&platform=${encodeURIComponent(platform)}` +
+          `&league_id=${encodeURIComponent(leagueId)}` +
+          `&season=${encodeURIComponent(season)}` +
+          `&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
+          `&league_type=${encodeURIComponent(leagueType)}` +
+          `&league_size=${encodeURIComponent(leagueSize)}`;
+
+        const res = await fetch(url, { cache: "no-store" });
+
+        if (res.status === 403) {
+          container.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+          return;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        if (!Array.isArray(data) || !data.length) {
+          container.innerHTML = '<div class="otc-movers-empty">No suggestions found for this strategy.</div>';
+          return;
+        }
+
+        const posColor = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+        const archLabel = { contending: "Contending", rebuilding: "Rebuilding", consolidate: "Consolidate", distribute: "Distribute" };
+        const archColor = { contending: "#10b981", rebuilding: "#3b82f6", consolidate: "#f59e0b", distribute: "#8b5cf6" };
+
+        container.innerHTML = data.map(t => {
+          const col     = posColor[t.position] || "var(--accent)";
+          const safePid = (t.player_id || "").replace(/"/g, "");
+          const safeName = (t.name || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+          const wpd     = t.win_prob_delta || 0;
+          const wpdPct  = (wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1) + "%";
+          const wpdCls  = wpd >= 0 ? "pos" : "neg";
+          const age     = t.age ? `${parseFloat(t.age).toFixed(0)}` : "";
+          const pArch   = t.partner_arch || "";
+          const pAColor = archColor[pArch] || "var(--text-muted)";
+
+          const sendHtml = (t.suggested_send || []).length
+            ? `<div class="otc-arch-send">
+                <span style="font-weight:600;color:var(--text);">Send:</span> ${
+                  (t.suggested_send || []).map(s =>
+                    `<span style="color:var(--text);">${s.name}</span> <span style="opacity:.6;">(${Math.round(s.value)})</span>`
+                  ).join(", ")
+                }
+              </div>`
+            : "";
+
+          return `
+            <div class="otc-arch-card">
+              <div class="otc-arch-card-top">
+                <span style="background:${col}20;color:${col};font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;">${t.position}</span>
+                <span style="font-size:14px;font-weight:700;color:var(--text);flex:1;">${t.name || ""}</span>
+                ${age ? `<span style="font-size:11px;color:var(--text-muted);">Age ${age}</span>` : ""}
+                ${t.pos_rank_label ? `<span style="font-size:11px;color:var(--text-muted);">${t.pos_rank_label}</span>` : ""}
+              </div>
+              <div class="otc-arch-card-why">${t.why || ""}</div>
+              ${sendHtml}
+              <div class="otc-arch-card-footer">
+                <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                  <span class="otc-arch-wp-badge ${wpdCls}" title="Win probability delta">${wpdPct} win prob</span>
+                  ${pArch ? `<span class="otc-arch-partner-chip" style="border-left:2px solid ${pAColor};">${t.partner_team}</span>` : ""}
+                </div>
+                <button class="sugg-target-get-btn otc-sugg-target-btn"
+                  data-pid="${safePid}" data-name="${safeName}">
+                  Get packages
+                </button>
+              </div>
+            </div>`;
+        }).join("");
+
+        // Wire "Get packages" buttons — delegate on container
+        container.addEventListener("click", e => {
+          const btn = e.target.closest(".sugg-target-get-btn");
+          if (!btn) return;
+          const pid  = btn.dataset.pid;
+          const name = btn.dataset.name;
+          if (!pid || !name) return;
+          if (playerInput) {
+            playerInput.value = name;
+            playerDropdown.style.display = "none";
+          }
+          fetchPackages(pid, name);
+          const buildHead = root.querySelector(".otc-sugg-build-head");
+          if (buildHead) buildHead.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }, { once: false });
+
+      } catch (err) {
+        container.innerHTML = `<div class="otc-movers-empty">Could not load strategy suggestions.</div>`;
+        console.error("[archetype]", err);
+      }
+    }
+
   })();
 
 

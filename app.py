@@ -20094,6 +20094,49 @@ def api_trade_targets():
     })
 
 
+@app.route("/api/trade-intel/archetype-suggestions")
+@limiter.limit("20 per minute")
+def api_archetype_suggestions():
+    """
+    GET /api/trade-intel/archetype-suggestions
+    Returns up to 5 trade targets based on the selected team archetype
+    (contending | rebuilding | consolidate | distribute).
+    Premium-gated. Uses archetype_engine for all scoring logic.
+    """
+    archetype        = str(request.args.get("archetype")        or "contending").strip().lower()
+    platform         = str(request.args.get("platform")         or "sleeper").strip()
+    league_id        = str(request.args.get("league_id")        or "").strip()
+    season           = int(request.args.get("season")           or datetime.now().year)
+    viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
+    league_type      = str(request.args.get("league_type")      or "1qb").strip().lower()
+    league_size      = int(request.args.get("league_size")      or 10)
+
+    if not league_id or not viewer_roster_id:
+        return jsonify({"error": "league_id and viewer_roster_id required"}), 400
+
+    if archetype not in ("contending", "rebuilding", "consolidate", "distribute"):
+        return jsonify({"error": "archetype must be contending|rebuilding|consolidate|distribute"}), 400
+
+    user_id = session.get("viewer_username") or None
+    if not has_premium_access(user_id, league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
+
+    try:
+        from dashboard_services.archetype_engine import get_archetype_suggestions
+        results = get_archetype_suggestions(
+            archetype=archetype,
+            platform=platform,
+            league_id=league_id,
+            season=season,
+            viewer_roster_id=viewer_roster_id,
+            league_type=league_type,
+            league_size=league_size,
+        )
+        return jsonify(results)
+    except Exception as exc:
+        return _api_err("Archetype suggestions failed", exc)
+
+
 @app.route("/api/trade-intel/player-packages/<player_id>")
 @limiter.limit("30 per minute")
 def api_trade_intel_player_packages(player_id: str):
