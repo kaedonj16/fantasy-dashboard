@@ -71,7 +71,7 @@ numpy==1.26.4
 
 openai>=1.58.1
 
-packaging==25.0
+packaging==24.2
 
 pandas==1.5.3
 
