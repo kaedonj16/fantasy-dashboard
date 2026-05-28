@@ -25,7 +25,10 @@ from flask import (
     session,
     send_file,
 )
-from flask_compress import Compress
+try:
+    from flask_compress import Compress
+except ImportError:
+    Compress = None
 from dashboard_services.ai.history_recap import get_history_ai_recap
 from dashboard_services.ai.renderer import (
     get_team_gm_memo,
@@ -276,11 +279,12 @@ except ImportError:
     limiter = _NoopLimiter()
 
 # Response compression
-_compress = Compress()
-app.config["COMPRESS_MINCONTENT"] = 500          # only compress responses > 500 bytes
-app.config["COMPRESS_LEVEL"] = 6                  # gzip level (1-9); 6 is a good balance
-app.config["COMPRESS_ALGORITHM"] = ["br", "gzip"] # prefer brotli, fall back to gzip
-_compress.init_app(app)
+if Compress is not None:
+    _compress = Compress()
+    app.config["COMPRESS_MIN_SIZE"] = 500          # only compress responses > 500 bytes
+    app.config["COMPRESS_LEVEL"] = 6                # gzip level (1-9); 6 is a good balance
+    app.config["COMPRESS_ALGORITHM"] = ["br", "gzip"]  # prefer brotli, fall back to gzip
+    _compress.init_app(app)
 
 try:
     init_value_history_db()
