@@ -16435,19 +16435,7 @@ button:disabled {
   flex: 1;
   min-width: 200px;
 }
-.sched-add-input {
-  width: 100%;
-  padding: 8px 32px 8px 34px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--card-bg);
-  color: var(--text);
-  font-size: 13px;
-  outline: none;
-  box-sizing: border-box;
-  transition: border-color 0.14s;
-}
-.sched-add-input:focus { border-color: var(--accent); }
+#schedAddInput:focus { border-color: var(--accent) !important; outline: none; }
 .sched-add-results {
   position: absolute;
   top: calc(100% + 4px);

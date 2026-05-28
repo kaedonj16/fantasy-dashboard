@@ -12478,8 +12478,10 @@ def build_schedule_body(ctx):
         </div>
         <div class="sched-add">
           <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted);pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
-          <input id="schedAddInput" class="sched-add-input" type="text"
-                 placeholder="Add a player..." autocomplete="off">
+          <input id="schedAddInput" type="text" placeholder="Add a player..." autocomplete="off"
+            style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
+                   border:1px solid var(--border);background:var(--card-bg);
+                   color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
           <button id="schedAddClear" type="button"
             style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
                    background:none;border:none;cursor:pointer;color:var(--text-muted);
