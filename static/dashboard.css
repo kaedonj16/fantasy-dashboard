@@ -16249,11 +16249,11 @@ button:disabled {
   line-height: 1;
 }
 
-/* ── Sparkline canvas in player rankings ──────────────────────────────────── */
+/* ── Sparkline canvas in player rankings (lives in the arrow column) ─────── */
 .pr-sparkline {
   display: block;
-  margin: 3px auto 0;
-  opacity: 0.85;
+  margin: 0 auto;
+  opacity: 0.9;
 }
 
 /* ── Optimal Lineup Tracker navigation ────────────────────────────────────── */

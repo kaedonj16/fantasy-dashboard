@@ -10087,11 +10087,16 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
 
           const rankChange = p.rank_change_7d;
-          let rankArrow = '';
-          if (rankChange != null && rankChange !== 0) {
+          const sparkData = prSparklines[p.id];
+
+          // Arrow column: sparkline when data available, chevron otherwise
+          let arrowCell = '';
+          if (sparkData && sparkData.length >= 2) {
+            arrowCell = `<canvas class="pr-sparkline" width="14" height="28" data-pid="${p.id}" title="${rankChange != null && rankChange !== 0 ? Math.abs(rankChange) + ' spot' + (Math.abs(rankChange) !== 1 ? 's' : '') + ' in 7 days' : '7-day trend'}"></canvas>`;
+          } else if (rankChange != null && rankChange !== 0) {
             const dir = rankChange > 0 ? 'up' : 'down';
             const icon = rankChange > 0 ? 'fa-chevron-up' : 'fa-chevron-down';
-            rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
+            arrowCell = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
           }
 
           const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '—' : sortMeta.cell(p);
@@ -10112,19 +10117,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             sortDisplayHTML = sortDisplay;
           }
 
-          const sparkData = prSparklines[p.id];
-          const sparkCanvas = (sparkData && sparkData.length >= 2)
-            ? `<canvas class="pr-sparkline" width="44" height="14" data-pid="${p.id}"></canvas>`
-            : '';
-
           row.innerHTML =
             '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
-            '<span class="pr-arrows">' + rankArrow + '</span>' +
+            '<span class="pr-arrows">' + arrowCell + '</span>' +
             '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '—') + '</span>' +
-            '<span class="pr-value">' + sortDisplayHTML + sparkCanvas + '</span>';
+            '<span class="pr-value">' + sortDisplayHTML + '</span>';
 
           if (sparkData && sparkData.length >= 2) {
             const cnv = row.querySelector('.pr-sparkline');
