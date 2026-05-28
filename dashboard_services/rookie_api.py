@@ -174,19 +174,25 @@ def rankings():
     try:
         from data_building.rookie_pipeline.pipeline import get_active_rookie_class
         from data_building.rookie_pipeline.value_translation import format_draft_capital
-        from utils.utils import load_model_value_table as _load_mv
 
         year = request.args.get("year", type=int) or get_active_rookie_class()
         pos  = (request.args.get("pos") or "").upper() or None
         league_type = (request.args.get("league_type") or "1qb").lower()
         league_size = request.args.get("league_size", type=int) or 10
 
-        # Build model-values lookup keyed by sleeper id — same source as player rankings
+        # Mirror get_model_value_table_cached: prefer DB calibrated values, fall back to JSON
         try:
-            mv_list = list(_load_mv() or [])
-            mv_map  = {str(p["id"]): p for p in mv_list if p.get("id")}
+            from dashboard_services.player_value_history import load_current_values_from_db as _lcvdb
+            mv_list = list(_lcvdb() or [])
         except Exception:
-            mv_map = {}
+            mv_list = []
+        if not mv_list:
+            try:
+                from utils.utils import load_model_value_table as _lmvt
+                mv_list = list(_lmvt() or [])
+            except Exception:
+                mv_list = []
+        mv_map = {str(p["id"]): p for p in mv_list if p.get("id")}
 
         rows = _get_rankings(year)
 
