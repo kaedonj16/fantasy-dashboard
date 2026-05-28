@@ -449,10 +449,11 @@ def build_trade_calculator_body(
             .otc-arch-card:last-child {{ border-bottom:none; }}
             .otc-arch-card:hover {{ background:var(--row); }}
             .otc-arch-head {{ display:flex;align-items:center;gap:8px;min-width:0; }}
+            .otc-arch-away-row {{ margin-bottom:2px; }}
             .otc-arch-away {{
-              font-size:8px;font-weight:700;text-transform:uppercase;
-              letter-spacing:.05em;color:var(--text-muted);
-              background:var(--row);padding:2px 5px;border-radius:3px;flex-shrink:0;
+              display:inline-block;font-size:8px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.06em;color:#f59e0b;
+              background:#f59e0b1a;padding:2px 6px;border-radius:3px;
             }}
             .otc-arch-pos {{
               font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;

@@ -320,10 +320,10 @@ def _score_sends(
             else:
                 sc = 0.15
         elif archetype == "rebuilding":
-            if age >= peak - 1:
-                sc = 0.5 + min(val / 800, 0.5)        # peak/post-peak — sell high
+            if age >= peak - 1 and val >= 350:         # peak/post-peak with real value — sell high
+                sc = 0.5 + min(val / 800, 0.5)
             else:
-                sc = 0.08
+                sc = 0.05
         elif archetype == "consolidate":
             if 300 <= val <= 650:
                 sc = 0.85 - abs(val - 475) / 475      # sweet spot mid-tier

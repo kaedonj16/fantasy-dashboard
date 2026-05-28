@@ -3643,14 +3643,20 @@ window.initTradePage = function initTradePage(root = document) {
             ? assetLine("Receive", t.suggested_receive)
             : assetLine("Send", t.suggested_send);
 
+          const receiveJson = isDistribute
+            ? esc(JSON.stringify(t.suggested_receive || []))
+            : "";
+
           return `
             <div class="otc-arch-card">
+              ${isDistribute ? `<div class="otc-arch-away-row"><span class="otc-arch-away">Trade away</span></div>` : ""}
               <div class="otc-arch-head">
-                ${isDistribute ? `<span class="otc-arch-away">Trade away</span>` : ""}
                 <span class="otc-arch-pos" style="background:${col}20;color:${col};">${t.position}</span>
                 <span class="otc-arch-name">${esc(t.name)}</span>
                 <button class="sugg-target-get-btn otc-sugg-target-btn"
-                  data-pid="${safePid}" data-name="${safeName}">Find packages</button>
+                  data-pid="${safePid}" data-name="${safeName}"
+                  data-direction="${isDistribute ? 'distribute' : 'acquire'}"
+                  data-receive='${receiveJson}'>${isDistribute ? "Explore" : "Find packages"}</button>
               </div>
               <div class="otc-arch-why">${esc(t.why)}</div>
               ${detailHtml}
@@ -3661,20 +3667,62 @@ window.initTradePage = function initTradePage(root = document) {
             </div>`;
         }).join("");
 
-        // Wire "Get packages" buttons — delegate on container
+        // Wire "Find packages" / "Explore" buttons — delegate on container
         container.addEventListener("click", e => {
           const btn = e.target.closest(".sugg-target-get-btn");
           if (!btn) return;
-          const pid  = btn.dataset.pid;
-          const name = btn.dataset.name;
+          const pid       = btn.dataset.pid;
+          const name      = btn.dataset.name;
+          const direction = btn.dataset.direction || "acquire";
           if (!pid || !name) return;
-          if (playerInput) {
-            playerInput.value = name;
-            playerDropdown.style.display = "none";
+
+          if (direction === "distribute") {
+            // Distribute: load stud on Side B (you give), receive package on Side A (you get)
+            let receiveAssets = [];
+            try { receiveAssets = JSON.parse(btn.dataset.receive || "[]"); } catch (_) {}
+
+            state.sideAPlayers.length = 0;
+            state.sideBPlayers.length = 0;
+            state.sideAPicks.length   = 0;
+            state.sideBPicks.length   = 0;
+
+            // Side A = viewer gets = the depth return package
+            receiveAssets.forEach(a => {
+              if (!a.player_id) return;
+              const playerIdStr = String(a.player_id);
+              const pObj = allPlayers.find(p => String(p.id) === playerIdStr)
+                || { id: playerIdStr, name: a.name || playerIdStr };
+              state.sideAPlayers.push(pObj);
+            });
+
+            // Side B = viewer sends = the stud being distributed
+            const studObj = allPlayers.find(p => String(p.id) === String(pid))
+              || { id: pid, name };
+            state.sideBPlayers.push(studObj);
+
+            saveState();
+            renderChips("A");
+            renderChips("B");
+            syncEmptyState("A");
+            syncEmptyState("B");
+            forceViewerSideA();
+            analyzeTrade();
+          } else {
+            // Acquire (contending / rebuilding / consolidate): find packages to acquire this player
+            if (playerInput) {
+              playerInput.value = name;
+              playerDropdown.style.display = "none";
+            }
+            fetchPackages(pid, name);
           }
-          fetchPackages(pid, name);
+
           const buildHead = root.querySelector(".otc-sugg-build-head");
           if (buildHead) buildHead.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+          const calcEl = root.querySelector(".otc-main") || root.querySelector("#tradeCalcCard");
+          if (calcEl && direction === "distribute") {
+            calcEl.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
         }, { once: false });
 
       } catch (err) {
