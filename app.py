@@ -21700,10 +21700,10 @@ def build_portfolio_body(
         ".pf-leagues-table th:nth-child(4){width:60px;}"
         ".pf-leagues-table th:nth-child(5){width:96px;}"
         ".pf-league-row td{border-top:1px solid var(--grid);padding:10px 6px;}"
-        ".pf-league-name-cell{text-align:left;}"
+        ".pf-leagues-table td.pf-league-name-cell{text-align:left;}"
         ".pf-league-link{text-decoration:none;color:inherit;font-weight:700;font-size:14px;}"
         ".pf-league-link:hover{color:var(--accent);}"
-        ".pf-pos-chips{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:5px;justify-content:space-between;}"
+        ".pf-pos-chips{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:6px;}"
         ".pf-pos-chips>span{display:inline-flex;align-items:center;gap:3px;font-size:11px;"
         "color:var(--text-muted);white-space:nowrap;}"
         ".pf-league-stat{text-align:center;font-size:14px;font-weight:600;white-space:nowrap;}"
@@ -21874,16 +21874,14 @@ def build_portfolio_body(
                 f"</div>"
             )
         pos_card = (
-            f"<div class='card'>"
+            f"<div class='card' style='display:flex;flex-direction:column;'>"
             f"<div class='card-header'>"
             f"<h2>Positional Strength</h2>"
             f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>vs. league averages</span>"
             f"</div>"
-            f"<div class='card-body'>{pos_rows}</div>"
+            f"<div class='card-body' style='flex:1;display:flex;flex-direction:column;justify-content:space-evenly;'>{pos_rows}</div>"
             f"</div>"
         )
-
-    two_col = f"<div class='pf-grid'>{league_card}{pos_card}</div>" if pos_card else league_card
 
     # ── NFL Exposure ──────────────────────────────────────────────────────
     nfl_html = ""
@@ -22014,6 +22012,8 @@ def build_portfolio_body(
             f"applyFilters();"
             f"}})();</script>"
         )
+
+    two_col = f"<div class='pf-grid'>{league_card}{pos_card}</div>" if pos_card else league_card
 
     if nfl_html and holdings_html:
         bottom_row = f"<div class='pf-grid-2'>{nfl_html}{holdings_html}</div>"
