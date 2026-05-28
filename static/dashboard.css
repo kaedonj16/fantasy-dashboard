@@ -16554,6 +16554,39 @@ button:disabled {
 }
 .sched-remove:hover { color: #ef4444; }
 
+@media (max-width: 640px) {
+  .sched-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .sched-week-range { gap: 6px; }
+  .sched-ctrl-label { font-size: 11px; }
+  .sched-select { font-size: 12px; padding: 5px 8px; }
+  .sched-add { min-width: 0; }
+  .sched-legend {
+    gap: 8px 12px;
+    font-size: 11px;
+    margin-bottom: 10px;
+  }
+  .sched-legend-note {
+    width: 100%;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  .sched-th { padding: 7px 8px; font-size: 10px; }
+  .sched-td { padding: 6px 7px; }
+  .sched-opp { font-size: 12px; }
+  .sched-pname { font-size: 12px; }
+  .sched-nfl { font-size: 10px; }
+  .sched-pos { font-size: 10px; padding: 1px 4px; margin-right: 4px; }
+  .sched-remove { font-size: 14px; margin-right: 5px; }
+  .sched-rank-controls { gap: 8px; }
+  .sched-sort-btn { font-size: 12px; padding: 5px 10px; }
+  .sched-rank-pos { font-size: 11px; padding: 4px 8px; }
+}
+
 /* ── Skip link (accessibility) ─────────────────────────────────── */
 .skip-link {
   position: absolute;
