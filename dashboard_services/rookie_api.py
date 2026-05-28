@@ -174,7 +174,7 @@ def rankings():
     try:
         from data_building.rookie_pipeline.pipeline import get_active_rookie_class
         from data_building.rookie_pipeline.value_translation import format_draft_capital
-        from app import get_model_value_table_cached
+        from utils.utils import load_model_value_table as _load_mv
 
         year = request.args.get("year", type=int) or get_active_rookie_class()
         pos  = (request.args.get("pos") or "").upper() or None
@@ -183,7 +183,7 @@ def rankings():
 
         # Build model-values lookup keyed by sleeper id — same source as player rankings
         try:
-            mv_list = list(get_model_value_table_cached() or [])
+            mv_list = list(_load_mv() or [])
             mv_map  = {str(p["id"]): p for p in mv_list if p.get("id")}
         except Exception:
             mv_map = {}
