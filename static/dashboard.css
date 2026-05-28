@@ -16485,7 +16485,8 @@ button:disabled {
 }
 .sched-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 .sched-th {
   padding: 10px 12px;
@@ -16497,8 +16498,16 @@ button:disabled {
   color: var(--accent);
   background: var(--accent-soft);
   white-space: nowrap;
+  border-bottom: 1px solid var(--border);
 }
-.sched-th-player { text-align: left; }
+.sched-th-player {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--accent-soft);
+  border-right: 1px solid var(--border);
+}
 .sched-td {
   padding: 8px 10px;
   text-align: center;
@@ -16508,6 +16517,11 @@ button:disabled {
 .sched-td-player {
   text-align: left;
   white-space: nowrap;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--card);
+  border-right: 1px solid var(--border);
 }
 .sched-bye { color: var(--text-muted); font-size: 12px; }
 .sched-opp { font-weight: 600; font-size: 13px; }
