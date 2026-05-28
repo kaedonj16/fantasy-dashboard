@@ -21658,7 +21658,7 @@ def build_portfolio_body(
     css = (
         "<style>"
         # only the bits not already in the global stylesheet
-        ".pf-grid{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:14px;align-items:start;}"
+        ".pf-grid{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:14px;}"
         "@media(max-width:700px){.pf-grid{grid-template-columns:1fr;}}"
         ".pf-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:start;}"
         "@media(max-width:700px){.pf-grid-2{grid-template-columns:1fr;}}"
@@ -21874,12 +21874,12 @@ def build_portfolio_body(
                 f"</div>"
             )
         pos_card = (
-            f"<div class='card'>"
+            f"<div class='card' style='display:flex;flex-direction:column;'>"
             f"<div class='card-header'>"
             f"<h2>Positional Strength</h2>"
             f"<span style='font-size:13px;color:var(--text-muted);font-weight:400;'>vs. league averages</span>"
             f"</div>"
-            f"<div class='card-body'>{pos_rows}</div>"
+            f"<div class='card-body' style='flex:1;display:flex;flex-direction:column;justify-content:space-evenly;'>{pos_rows}</div>"
             f"</div>"
         )
 
