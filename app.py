@@ -12700,11 +12700,17 @@ def build_schedule_body(ctx):
           (p.cells || []).forEach(function(c) {
             if (c.bye) { cells += '<td class="sched-td sched-bye">BYE</td>'; return; }
             var rankLabel = c.rank ? ('#' + c.rank) : '–';
-            var fptsLabel = c.fpts ? (c.fpts + ' pts') : '';
+            var ptsHtml = '';
+            if (c.pts != null) {
+              var isActual = c.pts_type === 'actual';
+              ptsHtml = '<div class="sched-player-pts' + (isActual ? '' : ' sched-player-pts--proj') + '">' +
+                          c.pts + ' pts' +
+                        '</div>';
+            }
             cells += '<td class="sched-td" style="background:' + c.bg + ';">' +
                        '<div class="sched-opp">'  + esc((c.at || '') + c.opp) + '</div>' +
                        '<div class="sched-rank" style="color:' + c.txt + ';">' + rankLabel + '</div>' +
-                       '<div class="sched-fpts">' + esc(fptsLabel) + '</div>' +
+                       ptsHtml +
                      '</td>';
           });
 
@@ -12945,6 +12951,38 @@ def api_schedule_rankings():
             except Exception:
                 pass
 
+        # Load per-player actual points (completed weeks) and projections (future weeks)
+        player_pts_actual: dict = {}
+        weeks_with_stats: set  = set()
+        for w in weeks:
+            sfiles = _glob.glob(os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season}_w{w}*.json"))
+            if not sfiles:
+                continue
+            weeks_with_stats.add(w)
+            try:
+                sd = json.load(open(sfiles[0]))
+                if isinstance(sd, dict):
+                    for _pid, _stats in sd.items():
+                        _pts = float(_stats.get("pts_ppr") or 0)
+                        if _pts > 0:
+                            player_pts_actual.setdefault(str(_pid), {})[w] = round(_pts, 1)
+            except Exception:
+                pass
+
+        player_pts_proj: dict = {}
+        try:
+            from utils.utils import load_week_projection as _lp
+            for w in weeks:
+                if w in weeks_with_stats:
+                    continue
+                _proj = _lp(season, w) or {}
+                for _pid, _val in _proj.items():
+                    _v = float(_val or 0)
+                    if _v > 0:
+                        player_pts_proj.setdefault(str(_pid), {})[w] = round(_v, 1)
+        except Exception:
+            pass
+
         results = []
         for pid, info in players_idx.items():
             pos  = (info.get("pos") or "").upper()
@@ -12966,6 +13004,10 @@ def api_schedule_rankings():
                 rank     = rank_map.get(opp)
                 fpts_val = fpts_against.get(opp, {}).get(position, 0)
                 txt, bg  = _sched_rank_color(rank, total_teams) if rank else ("#94a3b8", "transparent")
+                actual   = player_pts_actual.get(str(pid), {}).get(w)
+                proj     = player_pts_proj.get(str(pid), {}).get(w)
+                p_pts    = actual if actual is not None else proj
+                p_type   = "actual" if actual is not None else ("proj" if proj is not None else None)
                 cells.append({
                     "week": w, "bye": False,
                     "opp": opp,
@@ -12973,6 +13015,7 @@ def api_schedule_rankings():
                     "rank": rank, "total": total_teams,
                     "fpts": round(fpts_val, 1) if fpts_val else 0,
                     "txt": txt, "bg": bg,
+                    "pts": p_pts, "pts_type": p_type,
                 })
                 if rank:
                     rank_sum  += rank
