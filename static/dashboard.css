@@ -16380,3 +16380,167 @@ button:disabled {
   font-size: 13px;
   cursor: pointer;
 }
+
+/* ── Schedule (matchup-difficulty grid) ───────────────────────────────────── */
+.sched-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 4px 0 14px;
+}
+.sched-week-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sched-ctrl-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sched-ctrl-sep {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.sched-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sched-add {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+  max-width: 340px;
+}
+.sched-add-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.sched-add-input {
+  width: 100%;
+  padding: 8px 12px 8px 32px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.14s;
+}
+.sched-add-input:focus { border-color: var(--accent); }
+.sched-add-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.18);
+  overflow: hidden;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.sched-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.sched-add-row:hover { background: var(--accent-soft); }
+.sched-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+.sched-legend span { display: inline-flex; align-items: center; }
+.sched-chip {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 5px;
+}
+.sched-legend-note { color: var(--text-muted); }
+.sched-grid-wrap { overflow-x: auto; }
+.sched-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.sched-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.sched-th {
+  padding: 10px 12px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  white-space: nowrap;
+}
+.sched-th-player { text-align: left; }
+.sched-td {
+  padding: 8px 10px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.sched-td-player {
+  text-align: left;
+  white-space: nowrap;
+}
+.sched-bye { color: var(--text-muted); font-size: 12px; }
+.sched-opp { font-weight: 600; font-size: 13px; }
+.sched-rank { font-size: 11px; font-weight: 700; }
+.sched-fpts { font-size: 10px; color: var(--text-muted); }
+.sched-pos {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 6px;
+}
+.sched-pname { cursor: pointer; font-weight: 600; }
+.sched-pname:hover { color: var(--accent); }
+.sched-nfl { font-size: 11px; color: var(--text-muted); margin-left: 6px; }
+.sched-remove {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  margin-right: 8px;
+  padding: 0 2px;
+  border-radius: 4px;
+  transition: color 0.14s;
+}
+.sched-remove:hover { color: #ef4444; }
