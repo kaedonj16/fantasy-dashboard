@@ -9739,6 +9739,23 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         ctx2d.stroke();
       }
 
+      // Pick the right sparkline series for the active league settings
+      function prGetSparkData(pid) {
+        const entry = prSparklines[pid];
+        if (!entry) return null;
+        if (prScoringType === 'redraft') {
+          // No redraft history; fall back to dynasty base for direction only
+          return entry['value'] || null;
+        }
+        if (prLeagueType === 'sf') {
+          const key = prLeagueSize === 10 ? 'sf_value' : ('sf_value_' + prLeagueSize);
+          return entry[key] || entry['sf_value'] || null;
+        } else {
+          const key = prLeagueSize === 10 ? 'value' : ('value_' + prLeagueSize);
+          return entry[key] || entry['value'] || null;
+        }
+      }
+
       // ---- Fuzzy search (mirrors trade calc logic) ----
       function prFuzzyScore(name, query) {
         if (!name || !query) return 0;
@@ -10104,7 +10121,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
 
           const rankChange = p.rank_change_7d;
-          const sparkData = prSparklines[p.id];
+          const sparkData = prGetSparkData(p.id);
 
           // Arrow column: sparkline when data available, chevron otherwise
           let arrowCell = '';
@@ -14923,26 +14940,38 @@ def api_players():
 
 @app.route("/api/sparklines")
 def api_sparklines():
-    """Batch 7-day value history for sparkline rendering on the players page."""
+    """Batch 7-day value history for sparkline rendering on the players page.
+    Returns all value variants so the client picks the right one for its league settings."""
     try:
         from dashboard_services.db import get_conn
+        _cols = ["value", "sf_value", "value_8", "value_12", "value_14",
+                 "sf_value_8", "sf_value_12", "sf_value_14"]
         with get_conn() as conn:
             rows = conn.execute(
-                """
-                SELECT player_id, as_of_date, value
+                f"""
+                SELECT player_id, {', '.join(_cols)}
                 FROM player_value_history
                 WHERE source = 'model'
                   AND as_of_date >= CURRENT_DATE - INTERVAL '8 days'
                 ORDER BY player_id, as_of_date ASC
                 """
             ).fetchall()
+        # Accumulate per-column lists per player
         by_pid: dict = {}
         for row in rows:
             pid = row["player_id"]
-            val = float(row["value"] or 0)
-            by_pid.setdefault(pid, []).append(round(val, 1))
-        # Only include players with at least 2 data points
-        result = {pid: vals for pid, vals in by_pid.items() if len(vals) >= 2}
+            if pid not in by_pid:
+                by_pid[pid] = {c: [] for c in _cols}
+            for c in _cols:
+                v = row.get(c)
+                if v is not None:
+                    by_pid[pid][c].append(round(float(v), 1))
+        # Only include players with at least 2 data points for the base value
+        result = {
+            pid: {c: vals for c, vals in entry.items() if len(vals) >= 2}
+            for pid, entry in by_pid.items()
+            if len(entry.get("value", [])) >= 2
+        }
         resp = jsonify(result)
         resp.headers["Cache-Control"] = "public, max-age=3600"
         return resp
