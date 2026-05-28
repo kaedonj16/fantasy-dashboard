@@ -12304,10 +12304,12 @@ def _compute_fpts_against(season: int) -> dict:
             if not sched_files:
                 continue
             games = json.load(open(sched_files[0]))
+            _alias = {"WSH": "WAS"}
+            def _n(t): return _alias.get(t, t)
             opp_map: dict = {}  # team → opponent for this week
             for g in games:
-                home = (g.get("home") or "").upper()
-                away = (g.get("away") or "").upper()
+                home = _n((g.get("home") or "").upper())
+                away = _n((g.get("away") or "").upper())
                 if home and away:
                     opp_map[home] = away
                     opp_map[away] = home
