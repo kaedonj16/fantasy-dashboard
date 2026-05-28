@@ -14887,8 +14887,8 @@ def api_sparklines():
             ).fetchall()
         by_pid: dict = {}
         for row in rows:
-            pid = row[0]
-            val = float(row[2] or 0)
+            pid = row["player_id"]
+            val = float(row["value"] or 0)
             by_pid.setdefault(pid, []).append(round(val, 1))
         # Only include players with at least 2 data points
         result = {pid: vals for pid, vals in by_pid.items() if len(vals) >= 2}
