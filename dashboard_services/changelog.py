@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-05-28",
         "tag": "new",
-        "text": "Schedule Assistant: See matchup difficulty for every player on your roster across any week range. Add or remove players, pick a window, and the grid color-codes each matchup from elite to brutal based on real fantasy points allowed at that position. Find it under the Players menu.",
+        "text": "Schedule Assistant: See matchup difficulty for every player on your roster across any week range. Add or remove players, pick a window, and see how that defense stacks up against that position. Find it under the Players menu.",
         "link": None
     },
     {
