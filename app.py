@@ -10400,7 +10400,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         prLoaded = true;
         prRender();
         // Lazy-load sparklines — re-render with sparkline data once ready
-        fetch('/api/sparklines?v=2').then(r => r.json()).then(function(data) {
+        fetch('/api/sparklines?v=3').then(r => r.json()).then(function(data) {
           prSparklines = data || {};
           prRender();
         }).catch(function() {});
@@ -14940,8 +14940,9 @@ def api_players():
 
 @app.route("/api/sparklines")
 def api_sparklines():
-    """Batch 7-day value history for sparkline rendering on the players page.
-    Returns all value variants so the client picks the right one for its league settings."""
+    """7-day value history scaled to match the calibrated values shown on the rankings page.
+    Joins player_value_history with player_values so each series ends at the same value
+    the user sees displayed, matching the approach used by the player modal chart."""
     try:
         from dashboard_services.db import get_conn
         _cols = ["value", "sf_value", "value_8", "value_12", "value_14",
@@ -14949,29 +14950,57 @@ def api_sparklines():
         with get_conn() as conn:
             rows = conn.execute(
                 f"""
-                SELECT player_id, {', '.join(_cols)}
-                FROM player_value_history
-                WHERE source = 'model'
-                  AND as_of_date >= CURRENT_DATE - INTERVAL '8 days'
-                ORDER BY player_id, as_of_date ASC
+                SELECT pvh.player_id,
+                       {', '.join('pvh.' + c for c in _cols)},
+                       pv.calibrated_value_1qb,
+                       pv.calibrated_value_sf
+                FROM player_value_history pvh
+                LEFT JOIN player_values pv USING (player_id)
+                WHERE pvh.source = 'model'
+                  AND pvh.as_of_date >= CURRENT_DATE - INTERVAL '8 days'
+                ORDER BY pvh.player_id, pvh.as_of_date ASC
                 """
             ).fetchall()
-        # Accumulate per-column lists per player
+
         by_pid: dict = {}
         for row in rows:
             pid = row["player_id"]
             if pid not in by_pid:
-                by_pid[pid] = {c: [] for c in _cols}
+                entry0 = {c: [] for c in _cols}
+                entry0["cal_1qb"] = row.get("calibrated_value_1qb")
+                entry0["cal_sf"]  = row.get("calibrated_value_sf")
+                by_pid[pid] = entry0
             for c in _cols:
                 v = row.get(c)
                 if v is not None:
-                    by_pid[pid][c].append(round(float(v), 1))
-        # Only include players with at least 2 data points for the base value
-        result = {
-            pid: {c: vals for c, vals in entry.items() if len(vals) >= 2}
-            for pid, entry in by_pid.items()
-            if len(entry.get("value", [])) >= 2
-        }
+                    by_pid[pid][c].append(float(v))
+
+        result = {}
+        for pid, data in by_pid.items():
+            base = data.get("value", [])
+            if len(base) < 2:
+                continue
+
+            # Scale factors: calibrated_current / last_raw so the series ends at
+            # the same value the rankings page displays via COALESCE(calibrated, raw).
+            last_1qb = base[-1]
+            last_sf  = (data.get("sf_value") or [None])[-1]
+            cal_1qb  = data["cal_1qb"]
+            cal_sf   = data["cal_sf"]
+            s1qb = (float(cal_1qb) / last_1qb) if cal_1qb and last_1qb else 1.0
+            ssf  = (float(cal_sf)  / last_sf)  if cal_sf  and last_sf  else s1qb
+
+            entry = {}
+            for c in _cols:
+                vals = data[c]
+                if len(vals) < 2:
+                    continue
+                scale = ssf if c.startswith("sf_") else s1qb
+                entry[c] = [round(v * scale, 1) for v in vals]
+
+            if entry:
+                result[pid] = entry
+
         resp = jsonify(result)
         resp.headers["Cache-Control"] = "public, max-age=3600"
         return resp
