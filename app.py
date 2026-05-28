@@ -9399,7 +9399,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
         <!-- Table header -->
         <div id="prTableHeader" style="display:none;
-             grid-template-columns:28px 18px 1fr 52px 46px 46px 60px;
+             grid-template-columns:28px 42px 1fr 52px 46px 46px 60px;
              gap:0;padding:6px 12px;border-radius:6px;
              background:var(--accent-soft);font-size:11px;
              font-weight:700;color:var(--accent);letter-spacing:0.04em;
@@ -9428,7 +9428,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     <style>
       .pr-grid-row {
         display: grid;
-        grid-template-columns: 28px 18px 1fr 52px 46px 46px 60px;
+        grid-template-columns: 28px 42px 1fr 52px 46px 46px 60px;
         align-items: center;
         gap: 0;
       }
@@ -9700,12 +9700,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           width: 100%;
         }
         /* Table: hide Age on tablets — rank | arrow | name | pos | team | sort */
-        .pr-grid-row { grid-template-columns: 28px 16px 1fr 44px 42px 56px !important; }
+        .pr-grid-row { grid-template-columns: 28px 42px 1fr 44px 42px 56px !important; }
         .pr-age,  #prAgeHeader  { display: none !important; }
       }
       @media (max-width: 480px) {
         /* Phone: rank | arrow | name | sort — hide pos and team */
-        .pr-grid-row { grid-template-columns: 28px 16px 1fr 56px !important; }
+        .pr-grid-row { grid-template-columns: 28px 42px 1fr 56px !important; }
         .pr-pos-cell, #prTableHeader span:nth-child(4) { display: none !important; }
         .pr-team,     #prTableHeader span:nth-child(6) { display: none !important; }
       }
@@ -9724,21 +9724,32 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       var prPage = 1;
       var prPageSize = 50;
 
+      var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
+
       function _prDrawSparkline(canvas, data) {
         if (!canvas || !data || data.length < 2) return;
+        const dpr = window.devicePixelRatio || 1;
+        const w = PR_SPARK_W, h = PR_SPARK_H;
+        // Size the backing store for the display density so the line is crisp.
+        canvas.width  = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        canvas.style.width  = w + 'px';
+        canvas.style.height = h + 'px';
         const ctx2d = canvas.getContext('2d');
-        const w = canvas.width, h = canvas.height;
+        ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx2d.clearRect(0, 0, w, h);
         const min = Math.min(...data), max = Math.max(...data);
         const range = max - min || 1;
+        const pad = 2;
         const pts = data.map((v, i) => ({
-          x: (i / (data.length - 1)) * (w - 2) + 1,
-          y: (h - 2) - ((v - min) / range) * (h - 2) + 1
+          x: pad + (i / (data.length - 1)) * (w - pad * 2),
+          y: (h - pad) - ((v - min) / range) * (h - pad * 2)
         }));
         const isUp = data[data.length - 1] >= data[0];
         ctx2d.strokeStyle = isUp ? '#22c55e' : '#ef4444';
         ctx2d.lineWidth = 1.5;
         ctx2d.lineJoin = 'round';
+        ctx2d.lineCap = 'round';
         ctx2d.beginPath();
         pts.forEach((p, i) => i === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y));
         ctx2d.stroke();
@@ -10128,7 +10139,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           // Arrow column: sparkline when data available, chevron otherwise
           let arrowCell = '';
           if (sparkData && sparkData.length >= 2) {
-            arrowCell = `<canvas class="pr-sparkline" width="14" height="28" data-pid="${p.id}" title="${rankChange != null && rankChange !== 0 ? Math.abs(rankChange) + ' spot' + (Math.abs(rankChange) !== 1 ? 's' : '') + ' in 7 days' : '7-day trend'}"></canvas>`;
+            arrowCell = `<canvas class="pr-sparkline" data-pid="${p.id}" title="${rankChange != null && rankChange !== 0 ? Math.abs(rankChange) + ' spot' + (Math.abs(rankChange) !== 1 ? 's' : '') + ' in 7 days' : '7-day trend'}"></canvas>`;
           } else if (rankChange != null && rankChange !== 0) {
             const dir = rankChange > 0 ? 'up' : 'down';
             const icon = rankChange > 0 ? 'fa-chevron-up' : 'fa-chevron-down';
