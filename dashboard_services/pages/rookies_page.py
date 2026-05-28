@@ -129,16 +129,16 @@ def build_prospects_body() -> str:
     </div>
 
     <!-- Pagination -->
-    <div id="rkPagination" class="rk-pagination" style="display:none;">
-      <div class="rk-pagination-info">
+    <div id="rkPagination" class="pagination" style="display:none;">
+      <div class="pagination-info">
         <span id="rkPaginationText">Showing 1-20 of 100 prospects</span>
       </div>
-      <div class="rk-pagination-controls">
-        <button id="rkPrevBtn" class="rk-pagination-btn" onclick="rkLoadPage('prev')" disabled>
+      <div class="pagination-controls">
+        <button id="rkPrevBtn" class="pagination-btn" onclick="rkLoadPage('prev')" disabled>
           <i class="fa-solid fa-chevron-left"></i> Previous
         </button>
-        <div id="rkPageNumbers" class="rk-page-numbers"></div>
-        <button id="rkNextBtn" class="rk-pagination-btn" onclick="rkLoadPage('next')" disabled>
+        <div id="rkPageNumbers" class="pagination-pages"></div>
+        <button id="rkNextBtn" class="pagination-btn" onclick="rkLoadPage('next')" disabled>
           Next <i class="fa-solid fa-chevron-right"></i>
         </button>
       </div>
@@ -697,69 +697,7 @@ def build_prospects_body() -> str:
     .rk-pos,  #rkHeader span:nth-child(3) { display: none; }
   }
 
-  /* Pagination Styles */
-  .rk-pagination {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-    border-top: 1px solid var(--border);
-    margin-top: 12px;
-  }
-  .rk-pagination-info {
-    font-size: 13px;
-    color: var(--text-muted);
-  }
-  .rk-pagination-controls {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .rk-pagination-btn {
-    padding: 6px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--card-bg);
-    color: var(--text);
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .rk-pagination-btn:hover:not(:disabled) {
-    background: var(--bg-alt);
-    border-color: var(--accent-color);
-  }
-  .rk-pagination-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .rk-page-numbers {
-    display: flex;
-    gap: 4px;
-  }
-  .rk-page-number {
-    padding: 4px 8px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--card-bg);
-    color: var(--text);
-    font-size: 12px;
-    cursor: pointer;
-    min-width: 28px;
-    text-align: center;
-  }
-  .rk-page-number:hover {
-    background: var(--bg-alt);
-    border-color: var(--accent-color);
-  }
-  .rk-page-number.active {
-    background: var(--accent-color);
-    border-color: var(--accent-color);
-    color: white;
-  }
+  /* Pagination uses the universal .pagination component in dashboard.css */
 </style>
 
 <script>
@@ -1312,7 +1250,7 @@ def build_prospects_body() -> str:
     for (var i = startPage; i <= endPage; i++) {
       (function(pageNum) {
         var btn = document.createElement('button');
-        btn.className = 'rk-page-number' + (pageNum === rkCurrentPage ? ' active' : '');
+        btn.className = 'pagination-page' + (pageNum === rkCurrentPage ? ' active' : '');
         btn.textContent = pageNum;
         btn.onclick = function() { rkLoadPage(pageNum); };
         pageNumbers.appendChild(btn);

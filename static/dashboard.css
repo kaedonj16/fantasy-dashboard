@@ -4281,43 +4281,101 @@ thead th {
 }
 
 /* Paywall/empty state for suggestions tab */
-.otc-sugg-pagination {
+/* ── Universal pagination ─────────────────────────────────────────────────────
+   One component used by every paginated list (players, rookies, trade intel…).
+   Default layout: info text on the left, controls on the right.
+   Add .pagination--center for the centered prev / label / next variant. */
+.pagination {
   display: flex;
+  justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.pagination--center {
   justify-content: center;
-  gap: 12px;
+  border-top: none;
+  margin-top: 0;
   padding: 12px 0 4px;
 }
-
-.otc-sugg-page-btn {
-  padding: 5px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--row);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.14s, border-color 0.14s;
-  margin: 0;
+.pagination-info {
+  font-size: 13px;
+  color: var(--text-muted);
 }
-
-.otc-sugg-page-btn:hover:not(:disabled) {
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.pagination-btn:hover:not(:disabled) {
   background: var(--accent-soft);
   border-color: var(--accent);
+  color: var(--accent);
 }
-
-.otc-sugg-page-btn:disabled {
-  opacity: 0.35;
+.pagination-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pagination-pages {
+  display: flex;
+  gap: 4px;
+}
+.pagination-page {
+  min-width: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.pagination-page:hover:not(.active) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.pagination-page.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--card);
+  font-weight: 700;
   cursor: default;
 }
-
-.otc-sugg-page-label {
+.pagination-label {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-muted);
-  min-width: 40px;
+  min-width: 44px;
   text-align: center;
+}
+@media (max-width: 540px) {
+  .pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .pagination-info { text-align: center; }
+  .pagination-controls { justify-content: center; }
 }
 
 .otc-sugg-empty {

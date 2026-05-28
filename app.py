@@ -10178,16 +10178,16 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         if (!bar) {
           bar = document.createElement('div');
           bar.id = 'prPagination';
-          bar.className = 'pr-pagination';
+          bar.className = 'pagination';
           document.getElementById('prList').insertAdjacentElement('afterend', bar);
           bar.innerHTML =
-            `<div class="pr-pagination-info"><span id="prPaginationText"></span></div>` +
-            `<div class="pr-pagination-controls">` +
-              `<button class="pr-pagination-btn" id="prPrevBtn" onclick="prGoPage('prev')" disabled>` +
+            `<div class="pagination-info"><span id="prPaginationText"></span></div>` +
+            `<div class="pagination-controls">` +
+              `<button class="pagination-btn" id="prPrevBtn" onclick="prGoPage('prev')" disabled>` +
                 `<i class="fa-solid fa-chevron-left"></i> Previous` +
               `</button>` +
-              `<div class="pr-page-numbers" id="prPageNumbers"></div>` +
-              `<button class="pr-pagination-btn" id="prNextBtn" onclick="prGoPage('next')" disabled>` +
+              `<div class="pagination-pages" id="prPageNumbers"></div>` +
+              `<button class="pagination-btn" id="prNextBtn" onclick="prGoPage('next')" disabled>` +
                 `Next <i class="fa-solid fa-chevron-right"></i>` +
               `</button>` +
             `</div>`;
@@ -10217,7 +10217,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         if (endPage - startPage < maxPages - 1) startPage = Math.max(1, endPage - maxPages + 1);
         for (let i = startPage; i <= endPage; i++) {
           const btn = document.createElement('button');
-          btn.className = 'pr-page-number' + (i === page ? ' active' : '');
+          btn.className = 'pagination-page' + (i === page ? ' active' : '');
           btn.textContent = i;
           btn.onclick = (function(n){ return function(){ prGoPage(n); }; })(i);
           pageNumbers.appendChild(btn);
@@ -20989,22 +20989,6 @@ def build_portfolio_body(
         "border-radius:9999px;background:var(--card);color:inherit;outline:none;"
         "transition:border-color .12s;}"
         ".pf-fsearch:focus{border-color:var(--accent);}"
-        ".pr-pagination{display:flex;justify-content:space-between;align-items:center;"
-        "margin:20px 0;padding:12px 0;border-top:1px solid var(--border);flex-wrap:wrap;gap:8px;}"
-        ".pr-pagination-info{font-size:13px;color:var(--text-muted);}"
-        ".pr-pagination-controls{display:flex;align-items:center;gap:12px;}"
-        ".pr-pagination-btn{padding:6px 12px;border:1px solid var(--border);border-radius:6px;"
-        "background:var(--card);color:var(--text);cursor:pointer;font-size:12px;font-weight:500;"
-        "transition:all .15s;display:flex;align-items:center;gap:4px;}"
-        ".pr-pagination-btn:hover:not(:disabled){background:var(--bg-alt);border-color:var(--accent);}"
-        ".pr-pagination-btn:disabled{opacity:.5;cursor:not-allowed;}"
-        ".pr-page-numbers{display:flex;gap:4px;}"
-        ".pr-page-number{padding:4px 8px;border:1px solid var(--border);border-radius:4px;"
-        "background:var(--card);color:var(--text);cursor:pointer;font-size:12px;font-weight:500;"
-        "min-width:28px;text-align:center;}"
-        ".pr-page-number:hover{background:var(--bg-alt);}"
-        ".pr-page-number.active{background:var(--accent,#3b82f6);color:var(--card);"
-        "border-color:var(--accent,#3b82f6);font-weight:700;}"
         "</style>"
     )
 
