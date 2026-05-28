@@ -16582,9 +16582,40 @@ button:disabled {
   .sched-nfl { font-size: 10px; }
   .sched-pos { font-size: 10px; padding: 1px 4px; margin-right: 4px; }
   .sched-remove { font-size: 14px; margin-right: 5px; }
-  .sched-rank-controls { gap: 8px; }
+  .sched-rank-controls { gap: 8px; flex-wrap: wrap; }
   .sched-sort-btn { font-size: 12px; padding: 5px 10px; }
   .sched-rank-pos { font-size: 11px; padding: 4px 8px; }
+
+  /* Rankings view — tighter cells so more weeks fit */
+  .sched-th { padding: 6px 6px; font-size: 10px; }
+  .sched-td { padding: 5px 6px; }
+  .sched-opp { font-size: 11px; }
+  .sched-rank { font-size: 10px; }
+  .sched-player-pts { font-size: 9px; }
+
+  /* Narrow the sticky player column */
+  .sched-td-player { max-width: 140px; }
+  .sched-rank-player-cell { gap: 4px; }
+  .sched-rank-medal,
+  .sched-rank-num { width: 20px; height: 20px; font-size: 10px; flex-shrink: 0; }
+  .sched-pname {
+    font-size: 11px;
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+  }
+  .sched-nfl { font-size: 9px; }
+  .sched-pos { font-size: 9px; padding: 1px 3px; margin-right: 2px; flex-shrink: 0; }
+
+  /* Hide ease bar column on mobile — saves ~90px */
+  .sched-ease-td,
+  th.sched-th:last-child { display: none; }
+
+  /* Pagination bar */
+  .sched-page-bar { gap: 6px; font-size: 12px; }
+  .sched-page-btn { padding: 4px 10px; font-size: 11px; }
 }
 
 /* ── Skip link (accessibility) ─────────────────────────────────── */
@@ -16774,3 +16805,24 @@ button:disabled {
   font-weight: 700;
   text-align: right;
 }
+.sched-page-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 0 4px;
+}
+.sched-page-btn {
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s;
+}
+.sched-page-btn:hover:not(:disabled) { background: var(--accent-soft); }
+.sched-page-btn:disabled { opacity: 0.35; cursor: default; }
+.sched-page-info { font-size: 13px; color: var(--text-muted); }

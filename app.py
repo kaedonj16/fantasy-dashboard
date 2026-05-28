@@ -12517,8 +12517,8 @@ def build_schedule_body(ctx):
       <div id="schedRankingsSection" style="display:none;">
         <div class="sched-rank-controls">
           <div class="sched-pos-pills" id="schedRankPosPills">
-            <button class="sched-rank-pos active" data-pos="RB">RB</button>
-            <button class="sched-rank-pos" data-pos="QB">QB</button>
+            <button class="sched-rank-pos active" data-pos="QB">QB</button>
+            <button class="sched-rank-pos" data-pos="RB">RB</button>
             <button class="sched-rank-pos" data-pos="WR">WR</button>
             <button class="sched-rank-pos" data-pos="TE">TE</button>
             <button class="sched-rank-pos" data-pos="K">K</button>
@@ -12562,7 +12562,7 @@ def build_schedule_body(ctx):
       if (wkEnd < wkStart) wkEnd = wkStart;
 
       var currentView  = 'my-players';
-      var rankPos      = 'RB';
+      var rankPos      = 'QB';
       var rankHardFirst = false;
       var rankingsCache = null;   // last fetched rankings data
 
@@ -12672,6 +12672,9 @@ def build_schedule_body(ctx):
         });
       }
 
+      var rankPage = 0;
+      var RANK_PAGE_SIZE = 25;
+
       function buildRankingsTable(data) {
         var rankGrid  = document.getElementById('schedRankingsGrid');
         var weeks     = data.weeks    || [];
@@ -12684,13 +12687,18 @@ def build_schedule_body(ctx):
           return;
         }
 
+        var totalPages = Math.ceil(rankings.length / RANK_PAGE_SIZE);
+        if (rankPage >= totalPages) rankPage = 0;
+        var pageStart = rankPage * RANK_PAGE_SIZE;
+        var pageRows  = rankings.slice(pageStart, pageStart + RANK_PAGE_SIZE);
+
         var head = '<th class="sched-th sched-th-player">Player</th>';
         for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
         head += '<th class="sched-th">Avg</th><th class="sched-th" style="min-width:90px;">Ease</th>';
 
         var rows = '';
-        rankings.forEach(function(p, idx) {
-          var rank = idx + 1;
+        pageRows.forEach(function(p, idx) {
+          var rank = pageStart + idx + 1;
           var medalHtml;
           if (rank === 1)      medalHtml = '<span class="sched-rank-medal sched-rank-medal-1">1</span>';
           else if (rank === 2) medalHtml = '<span class="sched-rank-medal sched-rank-medal-2">2</span>';
@@ -12751,8 +12759,30 @@ def build_schedule_body(ctx):
           '</tr>';
         });
 
+        var pageBar = '';
+        if (totalPages > 1) {
+          var from = pageStart + 1, to = Math.min(pageStart + RANK_PAGE_SIZE, rankings.length);
+          pageBar = '<div class="sched-page-bar">' +
+            '<button class="sched-page-btn" id="rankPrev"' + (rankPage === 0 ? ' disabled' : '') + '>&#8592; Prev</button>' +
+            '<span class="sched-page-info">' + from + '–' + to + ' of ' + rankings.length + '</span>' +
+            '<button class="sched-page-btn" id="rankNext"' + (rankPage >= totalPages - 1 ? ' disabled' : '') + '>Next &#8594;</button>' +
+          '</div>';
+        }
+
         rankGrid.innerHTML =
-          '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>';
+          '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>' +
+          pageBar;
+
+        if (totalPages > 1) {
+          var prev = document.getElementById('rankPrev');
+          var next = document.getElementById('rankNext');
+          if (prev) prev.addEventListener('click', function() {
+            if (rankPage > 0) { rankPage--; buildRankingsTable(rankingsCache); rankGrid.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+          });
+          if (next) next.addEventListener('click', function() {
+            if (rankPage < totalPages - 1) { rankPage++; buildRankingsTable(rankingsCache); rankGrid.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+          });
+        }
       }
 
       // ── Player search / pool ────────────────────────────────────────────────────────────────
@@ -12796,13 +12826,13 @@ def build_schedule_body(ctx):
         wkStart = parseInt(this.value, 10);
         if (wkEnd < wkStart) wkEnd = wkStart;
         fillWeekSelects(); persist();
-        if (currentView === 'my-players') renderGrid(); else { rankingsCache = null; renderRankings(); }
+        if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
       });
       endSel.addEventListener('change', function() {
         wkEnd = parseInt(this.value, 10);
         if (wkStart > wkEnd) wkStart = wkEnd;
         fillWeekSelects(); persist();
-        if (currentView === 'my-players') renderGrid(); else { rankingsCache = null; renderRankings(); }
+        if (currentView === 'my-players') renderGrid(); else { rankPage = 0; rankingsCache = null; renderRankings(); }
       });
 
       addInput.addEventListener('input', function() {
@@ -12855,6 +12885,7 @@ def build_schedule_body(ctx):
         var btn = e.target.closest ? e.target.closest('.sched-rank-pos') : null;
         if (!btn) return;
         rankPos = btn.getAttribute('data-pos');
+        rankPage = 0;
         document.querySelectorAll('.sched-rank-pos').forEach(function(b) { b.classList.remove('active'); });
         btn.classList.add('active');
         renderRankings();
@@ -12866,6 +12897,7 @@ def build_schedule_body(ctx):
         this.innerHTML = rankHardFirst
           ? 'Hardest First <i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i>'
           : 'Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>';
+        rankPage = 0;
         if (rankingsCache) buildRankingsTable(rankingsCache);
       });
 
