@@ -692,6 +692,7 @@ def _match_viewer_to_cluster(
             "is_pick":     True,
             "pick_round":  rnd,
             "pick_season": pk.get("pick_season"),
+            "pick_slot":   pk.get("pick_slot"),
             "pick_order":  pk.get("pick_order"),
         })
 
