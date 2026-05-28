@@ -10400,7 +10400,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         prLoaded = true;
         prRender();
         // Lazy-load sparklines — re-render with sparkline data once ready
-        fetch('/api/sparklines?v=3').then(r => r.json()).then(function(data) {
+        fetch('/api/sparklines?v=4').then(r => r.json()).then(function(data) {
           prSparklines = data || {};
           prRender();
         }).catch(function() {});
@@ -14945,13 +14945,14 @@ def api_sparklines():
     the user sees displayed, matching the approach used by the player modal chart."""
     try:
         from dashboard_services.db import get_conn
-        _cols = ["value", "sf_value", "value_8", "value_12", "value_14",
-                 "sf_value_8", "sf_value_12", "sf_value_14"]
+        # DB column names in player_value_history (value_sf = base SF, 10-team)
+        _db_cols = ["value", "value_sf", "value_8", "value_12", "value_14",
+                    "sf_value_8", "sf_value_12", "sf_value_14"]
         with get_conn() as conn:
             rows = conn.execute(
                 f"""
                 SELECT pvh.player_id,
-                       {', '.join('pvh.' + c for c in _cols)},
+                       {', '.join('pvh.' + c for c in _db_cols)},
                        pv.calibrated_value_1qb,
                        pv.calibrated_value_sf
                 FROM player_value_history pvh
@@ -14966,11 +14967,11 @@ def api_sparklines():
         for row in rows:
             pid = row["player_id"]
             if pid not in by_pid:
-                entry0 = {c: [] for c in _cols}
+                entry0 = {c: [] for c in _db_cols}
                 entry0["cal_1qb"] = row.get("calibrated_value_1qb")
                 entry0["cal_sf"]  = row.get("calibrated_value_sf")
                 by_pid[pid] = entry0
-            for c in _cols:
+            for c in _db_cols:
                 v = row.get(c)
                 if v is not None:
                     by_pid[pid][c].append(float(v))
@@ -14984,19 +14985,23 @@ def api_sparklines():
             # Scale factors: calibrated_current / last_raw so the series ends at
             # the same value the rankings page displays via COALESCE(calibrated, raw).
             last_1qb = base[-1]
-            last_sf  = (data.get("sf_value") or [None])[-1]
+            last_sf  = (data.get("value_sf") or [None])[-1]
             cal_1qb  = data["cal_1qb"]
             cal_sf   = data["cal_sf"]
             s1qb = (float(cal_1qb) / last_1qb) if cal_1qb and last_1qb else 1.0
             ssf  = (float(cal_sf)  / last_sf)  if cal_sf  and last_sf  else s1qb
 
             entry = {}
-            for c in _cols:
+            for c in _db_cols:
                 vals = data[c]
                 if len(vals) < 2:
                     continue
-                scale = ssf if c.startswith("sf_") else s1qb
-                entry[c] = [round(v * scale, 1) for v in vals]
+                # sf_value_* cols start with "sf_"; value_sf does not — detect by suffix
+                is_sf_col = c.startswith("sf_") or c == "value_sf"
+                scale = ssf if is_sf_col else s1qb
+                # JS expects key "sf_value" (the alias used everywhere in player data)
+                out_key = "sf_value" if c == "value_sf" else c
+                entry[out_key] = [round(v * scale, 1) for v in vals]
 
             if entry:
                 result[pid] = entry
