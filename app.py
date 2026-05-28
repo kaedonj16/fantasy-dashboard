@@ -21703,7 +21703,7 @@ def build_portfolio_body(
         ".pf-league-name-cell{text-align:left;}"
         ".pf-league-link{text-decoration:none;color:inherit;font-weight:700;font-size:14px;}"
         ".pf-league-link:hover{color:var(--accent);}"
-        ".pf-pos-chips{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:5px;}"
+        ".pf-pos-chips{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:5px;justify-content:space-between;}"
         ".pf-pos-chips>span{display:inline-flex;align-items:center;gap:3px;font-size:11px;"
         "color:var(--text-muted);white-space:nowrap;}"
         ".pf-league-stat{text-align:center;font-size:14px;font-weight:600;white-space:nowrap;}"
