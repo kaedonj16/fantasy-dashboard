@@ -804,7 +804,21 @@ ul {
   border-bottom: 0.5px solid var(--border);
   background: var(--bg-alt);
   border-radius: 10px 10px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
+.changelog-dropdown-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.changelog-dropdown-close:hover { color: var(--text); }
 
 .changelog-entry {
   padding: 12px 14px;
