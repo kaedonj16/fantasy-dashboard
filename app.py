@@ -20292,7 +20292,8 @@ def api_trade_intel_player_packages(player_id: str):
                         viewer_picks.append({
                             "name": pk_name, "value": pval, "is_pick": True,
                             "pick_season": yr, "pick_round": rnd,
-                            "pick_order": slot,
+                            "pick_slot":  slot,
+                            "pick_order": _pick_bucket(slot).lower() if slot else "mid",
                         })
             except Exception as _ctx_err:
                 logger.warning("[trade-intel-picks] ctx error: %s", _ctx_err)
@@ -20823,7 +20824,7 @@ def api_trade_intel_player_packages(player_id: str):
 
         # Drop packages where the viewer is sending more than 2× the target's value.
         # Real trades include extreme overpays — those are not useful suggestions.
-        _max_send = (focus_value or 1) * 1.3
+        _max_send = (focus_value or 1) * 2.0
         primary_pkgs = [p for p in primary_pkgs if p.get("send_value", 0) <= _max_send]
 
         _total_real = real_result.get("total_real_trades") or 1
@@ -21067,11 +21068,17 @@ def _real_trade_packages_for_target(
 
     vk_by_round: dict = defaultdict(list)
     for pk in viewer_picks:
-        name = pk.get("name", "")
-        for rnd, marker in ((1, "1st"), (2, "2nd"), (3, "3rd")):
-            if marker in name:
-                vk_by_round[rnd].append(pk)
-                break
+        # Prefer explicit pick_round field (works for slot picks like "2026 1.02"
+        # whose names don't contain "1st"/"2nd"/"3rd")
+        rnd = pk.get("pick_round")
+        if rnd is not None:
+            vk_by_round[int(rnd)].append(pk)
+        else:
+            name = pk.get("name", "")
+            for r, marker in ((1, "1st"), (2, "2nd"), (3, "3rd")):
+                if marker in name:
+                    vk_by_round[r].append(pk)
+                    break
 
     # Pre-filter sig_counts: drop patterns whose total estimated value is < 55% of target
     _value_floor = focus_value * 0.85 if focus_value > 0 else 0
