@@ -20249,11 +20249,17 @@ def api_trade_intel_player_packages(player_id: str):
                         logger.warning("[trade-intel] build_picks_by_roster failed: %s", _pbr_err)
                         _fresh_pbr = ctx.get("picks_by_roster") or {}
                     raw_picks = _fresh_pbr.get(viewer_roster_id) or []
-                    pick_val_lookup = {
-                        str(p.get("id") or ""): float(p.get("value") or 0)
-                        for p in value_table
-                        if str(p.get("position") or "").upper() == "PICK"
-                    }
+                    # Use load_pick_value_table for accurate FC-calibrated slot values;
+                    # DB values for picks can be stale and cause wrong grade/accept rate
+                    try:
+                        from dashboard_services.picks import load_pick_value_table as _lpvt
+                        pick_val_lookup = _lpvt(league_teams=num_teams) or {}
+                    except Exception:
+                        pick_val_lookup = {
+                            str(p.get("id") or ""): float(p.get("value") or 0)
+                            for p in value_table
+                            if str(p.get("position") or "").upper() == "PICK"
+                        }
                     # Slot map for current season: {original_roster_id -> slot_number}
                     _slot_map: dict = {}
                     try:
@@ -20934,12 +20940,17 @@ def _real_trade_packages_for_target(
     """
     from collections import defaultdict
 
-    # Build pick value lookup from values_by_id (position=="PICK", id like "2026_1")
-    _pick_val_map = {
-        pid: info["value"]
-        for pid, info in values_by_id.items()
-        if info.get("position") == "PICK" and info.get("value", 0) > 0
-    }
+    # Use FC-calibrated pick values so slot picks match what users see elsewhere;
+    # DB values for picks can be stale relative to model_values.json/FC data
+    try:
+        from dashboard_services.picks import load_pick_value_table as _lpvt2
+        _pick_val_map = {k: v for k, v in (_lpvt2() or {}).items() if v > 0}
+    except Exception:
+        _pick_val_map = {
+            pid: info["value"]
+            for pid, info in values_by_id.items()
+            if info.get("position") == "PICK" and info.get("value", 0) > 0
+        }
 
     def _pick_val(rnd: int, season=None) -> float:
         if season:
