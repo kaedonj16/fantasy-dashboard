@@ -174,11 +174,19 @@ def rankings():
     try:
         from data_building.rookie_pipeline.pipeline import get_active_rookie_class
         from data_building.rookie_pipeline.value_translation import format_draft_capital
+        from app import get_model_value_table_cached
 
         year = request.args.get("year", type=int) or get_active_rookie_class()
         pos  = (request.args.get("pos") or "").upper() or None
         league_type = (request.args.get("league_type") or "1qb").lower()
         league_size = request.args.get("league_size", type=int) or 10
+
+        # Build model-values lookup keyed by sleeper id — same source as player rankings
+        try:
+            mv_list = list(get_model_value_table_cached() or [])
+            mv_map  = {str(p["id"]): p for p in mv_list if p.get("id")}
+        except Exception:
+            mv_map = {}
 
         rows = _get_rankings(year)
 
@@ -193,13 +201,16 @@ def rankings():
         for r in rows:
             d = _row_to_dict(r)
 
-            # Choose value based on settings
+            # Use same model values as player rankings page; fall back to rookie_value
+            mv = mv_map.get(str(d.get("sleeper_id") or "")) or {}
             if league_type == "sf":
-                val_key = "rookie_sf_value" if league_size == 10 else f"rookie_sf_value_{league_size}"
-                d["display_value"] = d.get(val_key) or d.get("rookie_sf_value")
+                mv_key = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
+                fb_key = "rookie_sf_value" if league_size == 10 else f"rookie_sf_value_{league_size}"
+                d["display_value"] = mv.get(mv_key) or mv.get("sf_value") or d.get(fb_key) or d.get("rookie_sf_value")
             else:
-                val_key = "rookie_value" if league_size == 10 else f"rookie_value_{league_size}"
-                d["display_value"] = d.get(val_key) or d.get("rookie_value")
+                mv_key = "value" if league_size == 10 else f"value_{league_size}"
+                fb_key = "rookie_value" if league_size == 10 else f"rookie_value_{league_size}"
+                d["display_value"] = mv.get(mv_key) or mv.get("value") or d.get(fb_key) or d.get("rookie_value")
 
             # Draft capital label
             d["draft_capital_label"] = format_draft_capital(
