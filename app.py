@@ -9739,19 +9739,19 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         ctx2d.stroke();
       }
 
-      // Pick the right sparkline series for the active league settings
+      // Pick the right sparkline series — same column key as prGetValue uses
       function prGetSparkData(pid) {
         const entry = prSparklines[pid];
         if (!entry) return null;
-        if (prScoringType === 'redraft') {
-          // No redraft history; fall back to dynasty base for direction only
-          return entry['value'] || null;
-        }
+        // Handle old flat-array format (pre-v2 cache)
+        if (Array.isArray(entry)) return entry.length >= 2 ? entry : null;
+        // Mirror prGetValue key selection exactly
+        let key;
         if (prLeagueType === 'sf') {
-          const key = prLeagueSize === 10 ? 'sf_value' : ('sf_value_' + prLeagueSize);
-          return entry[key] || entry['sf_value'] || null;
+          key = prLeagueSize === 10 ? 'sf_value' : 'sf_value_' + prLeagueSize;
+          return entry[key] || entry['sf_value'] || entry['value'] || null;
         } else {
-          const key = prLeagueSize === 10 ? 'value' : ('value_' + prLeagueSize);
+          key = prLeagueSize === 10 ? 'value' : 'value_' + prLeagueSize;
           return entry[key] || entry['value'] || null;
         }
       }
@@ -10400,7 +10400,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         prLoaded = true;
         prRender();
         // Lazy-load sparklines — re-render with sparkline data once ready
-        fetch('/api/sparklines').then(r => r.json()).then(function(data) {
+        fetch('/api/sparklines?v=2').then(r => r.json()).then(function(data) {
           prSparklines = data || {};
           prRender();
         }).catch(function() {});
