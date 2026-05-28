@@ -158,7 +158,8 @@ def _rel_time(dt) -> str:
         return f"{mins}m ago"
     today = now.date()
     if dt_et.date() == today:
-        return f"Today {dt_et.strftime('%-I:%M %p')}"
+        hour = dt_et.strftime("%I").lstrip("0") or "12"
+        return f"Today {hour}:{dt_et.strftime('%M %p')}"
     if dt_et.date() == (now - timedelta(days=1)).date():
         return f"Yesterday"
     days = (today - dt_et.date()).days
@@ -6061,9 +6062,11 @@ def build_activity_body(ctx: dict) -> str:
                 )
                 team_name = tm.get('name', '')
                 roster_id = tm.get('roster_id', '')
+                esc_name = html.escape(team_name)
+                esc_name_attr = html.escape(team_name, quote=True)
                 cols.append(
                     "<div class='team-col'>"
-                    f"  <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{team_name}'>{team_name}</div></header>"
+                    f"  <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{esc_name_attr}'>{esc_name}</div></header>"
                     f"  <div class='plist'>{gets}{sends}{total_html}</div>"
                     "</div>"
                 )
@@ -6219,11 +6222,13 @@ def build_activity_body(ctx: dict) -> str:
             adds = "".join(adds_parts) or "<div class='bract-empty-mini'>No adds recorded</div>"
 
             when = _rel_time(txrow["ts"]) if pd.notna(txrow["ts"]) else ""
+            esc_wv_name = html.escape(team_name)
+            esc_wv_name_attr = html.escape(team_name, quote=True)
             return (
                 "<div class='tx activity-item' data-kind='waiver'>"
                 f"  <div class='meta'>{pill('Waiver')} • {when}</div>"
                 "  <div class='team-col'>"
-                f"    <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{team_name}'>{team_name}</div></header>"
+                f"    <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{esc_wv_name_attr}'>{esc_wv_name}</div></header>"
                 f"    <div class='plist'>{adds}</div>"
                 "  </div>"
                 "</div>"
@@ -9739,21 +9744,20 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         ctx2d.stroke();
       }
 
-      // Pick the right sparkline series — same column key as prGetValue uses
+      // Single source of truth for value column key selection (used by prGetValue + prGetSparkData)
+      function prValueKey(isSf) {
+        if (isSf) return prLeagueSize === 10 ? 'sf_value' : 'sf_value_' + prLeagueSize;
+        return prLeagueSize === 10 ? 'value' : 'value_' + prLeagueSize;
+      }
+
       function prGetSparkData(pid) {
         const entry = prSparklines[pid];
         if (!entry) return null;
-        // Handle old flat-array format (pre-v2 cache)
         if (Array.isArray(entry)) return entry.length >= 2 ? entry : null;
-        // Mirror prGetValue key selection exactly
-        let key;
         if (prLeagueType === 'sf') {
-          key = prLeagueSize === 10 ? 'sf_value' : 'sf_value_' + prLeagueSize;
-          return entry[key] || entry['sf_value'] || entry['value'] || null;
-        } else {
-          key = prLeagueSize === 10 ? 'value' : 'value_' + prLeagueSize;
-          return entry[key] || entry['value'] || null;
+          return entry[prValueKey(true)] || entry['sf_value'] || entry['value'] || null;
         }
+        return entry[prValueKey(false)] || entry['value'] || null;
       }
 
       // ---- Fuzzy search (mirrors trade calc logic) ----
@@ -9788,11 +9792,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         }
         let base;
         if (prLeagueType === 'sf') {
-          const key = prLeagueSize === 10 ? 'sf_value' : 'sf_value_' + prLeagueSize;
-          base = Number(p[key] ?? p.sf_value ?? p.value ?? 0);
+          base = Number(p[prValueKey(true)] ?? p.sf_value ?? p.value ?? 0);
         } else {
-          const key = prLeagueSize === 10 ? 'value' : 'value_' + prLeagueSize;
-          base = Number(p[key] ?? p.value ?? 0);
+          base = Number(p[prValueKey(false)] ?? p.value ?? 0);
         }
         return Math.round(base * 10) / 10;
       }
@@ -10257,17 +10259,22 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           ? window.prFilteredPlayers : prAllPlayers;
         if (!players || !players.length) return;
         const q = (s) => '"' + String(s || '').replace(/"/g, '""') + '"';
-        const header = ['Rank','Name','Position','Team','Age','1QB Value','SF Value','7d Rank Change'];
-        const rows = players.map((p, i) => [
-          i + 1,
-          q(p.name),
-          p.position || '',
-          p.team || '',
-          p.age != null ? Number(p.age).toFixed(1) : '',
-          Number(p.value || 0).toFixed(1),
-          Number(p.sf_value || 0).toFixed(1),
-          p.rank_change_7d != null ? p.rank_change_7d : ''
-        ]);
+        const header = ['Rank','Name','Position','Team','Age','Value','1QB Value','SF Value','7d Rank Change'];
+        const rows = players.map((p, i) => {
+          const val1qb = Number(p[prValueKey(false)] ?? p.value ?? 0);
+          const valsf  = Number(p[prValueKey(true)]  ?? p.sf_value ?? 0);
+          return [
+            i + 1,
+            q(p.name),
+            p.position || '',
+            p.team || '',
+            p.age != null ? Number(p.age).toFixed(1) : '',
+            Number(prGetValue(p)).toFixed(1),
+            val1qb.toFixed(1),
+            valsf.toFixed(1),
+            p.rank_change_7d != null ? p.rank_change_7d : ''
+          ];
+        });
         const csv = [header, ...rows].map(r => r.join(',')).join('\\n');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const url  = URL.createObjectURL(blob);
@@ -11872,9 +11879,11 @@ def build_optimal_body(ctx):
         "</div>"
     )
 
-    # ── Fetch all weeks at once — shared across views ─────────────────────────
+    # ── Fetch only the weeks this view actually needs ─────────────────────────
+    # Weekly views need exactly one week; season views need all completed weeks.
     all_matchups: dict = {}
-    for w in range(1, max_week + 1):
+    weeks_to_fetch = [sel_week] if period == "weekly" else list(range(1, max_week + 1))
+    for w in weeks_to_fetch:
         try:
             all_matchups[w] = _gm(platform, league_id, w, season) or []
         except Exception:
