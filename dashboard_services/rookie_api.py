@@ -180,19 +180,23 @@ def rankings():
         league_type = (request.args.get("league_type") or "1qb").lower()
         league_size = request.args.get("league_size", type=int) or 10
 
-        # Mirror get_model_value_table_cached: prefer DB calibrated values, fall back to JSON
+        # Build mv_map matching get_model_value_table_cached logic:
+        # JSON first (includes 2026 rookies), then DB overlay (calibrated veterans win).
+        # If DB returns only veteran rows, JSON still fills in rookies not yet in player_values.
+        try:
+            from utils.utils import load_model_value_table as _lmvt
+            _json_list = list(_lmvt() or [])
+        except Exception:
+            _json_list = []
         try:
             from dashboard_services.player_value_history import load_current_values_from_db as _lcvdb
-            mv_list = list(_lcvdb() or [])
+            _db_list = list(_lcvdb() or [])
         except Exception:
-            mv_list = []
-        if not mv_list:
-            try:
-                from utils.utils import load_model_value_table as _lmvt
-                mv_list = list(_lmvt() or [])
-            except Exception:
-                mv_list = []
-        mv_map = {str(p["id"]): p for p in mv_list if p.get("id")}
+            _db_list = []
+        mv_map: dict = {str(p["id"]): p for p in _json_list if p.get("id")}
+        for p in _db_list:  # DB calibrated values overwrite JSON for established players
+            if p.get("id"):
+                mv_map[str(p["id"])] = p
 
         rows = _get_rankings(year)
 
