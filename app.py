@@ -22013,14 +22013,13 @@ def build_portfolio_body(
             f"}})();</script>"
         )
 
-    # Right column: Positional Strength + NFL Exposure + Player Holdings stacked
-    right_col = (pos_card or "") + (nfl_html or "") + (holdings_html or "")
-    if right_col:
-        two_col = f"<div class='pf-grid'>{league_card}<div style='display:flex;flex-direction:column;gap:14px;'>{right_col}</div></div>"
-    else:
-        two_col = league_card
+    two_col = f"<div class='pf-grid'>{league_card}{pos_card}</div>" if pos_card else league_card
 
-    return css + top_strip + two_col
+    if nfl_html and holdings_html:
+        bottom_row = f"<div class='pf-grid-2'>{nfl_html}{holdings_html}</div>"
+    else:
+        bottom_row = nfl_html + holdings_html
+    return css + top_strip + two_col + bottom_row
 
 
 def build_scout_body(ctx: dict) -> str:
