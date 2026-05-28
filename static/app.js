@@ -4951,8 +4951,20 @@ function _showNotifToast(entry) {
     popup.querySelector('.notif-toast-action').addEventListener('click', dismiss);
   }
 
-  // Auto-dismiss after 8 seconds
-  setTimeout(dismiss, 8000);
+  // Auto-dismiss after 8 seconds, paused while hovering
+  var dismissDelay = 8000;
+  var remaining = dismissDelay;
+  var startTime = Date.now();
+  var timer = setTimeout(dismiss, remaining);
+
+  popup.addEventListener('mouseenter', function() {
+    clearTimeout(timer);
+    remaining -= Date.now() - startTime;
+  });
+  popup.addEventListener('mouseleave', function() {
+    startTime = Date.now();
+    timer = setTimeout(dismiss, Math.max(remaining, 1500));
+  });
 }
 
 // Global function for notification dots (accessible from settings dropdown)
@@ -5062,9 +5074,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }).join("");
 
     dropdown.innerHTML = `
-      <div class="changelog-dropdown-header">Recent Updates</div>
+      <div class="changelog-dropdown-header">
+        <span>Recent Updates</span>
+        <button class="changelog-dropdown-close" aria-label="Close">&times;</button>
+      </div>
       ${entries}
     `;
+    dropdown.querySelector('.changelog-dropdown-close').addEventListener('click', function(e) {
+      e.stopPropagation();
+      closeDropdown();
+    });
   }
 
   // Format date (e.g., "2026-03-26" -> "Mar 26")

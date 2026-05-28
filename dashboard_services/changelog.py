@@ -8,7 +8,7 @@ CHANGELOG = [
         "date": "2026-05-28",
         "tag": "new",
         "text": "Schedule Assistant: See matchup difficulty for every player on your roster across any week range. Add or remove players, pick a window, and see how that defense stacks up against that position. Find it under the Players menu.",
-        "link": None
+        "link": "/schedule"
     },
     {
         "date": "2026-05-24",
