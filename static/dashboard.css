@@ -11967,11 +11967,8 @@ img, svg, canvas {
 }
 
 [data-theme="dark"] .player-modal {
-  background: #152033;
-  border: 1px solid rgba(56, 189, 248, 0.18);
-  box-shadow:
-    0 32px 80px rgba(0, 0, 0, 0.75),
-    inset 0 1px 0 rgba(56, 189, 248, 0.12);
+  background: #1a2535;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.8);
 }
 
 @keyframes scaleIn {
@@ -11991,10 +11988,6 @@ img, svg, canvas {
   flex-shrink: 0;
 }
 
-[data-theme="dark"] .player-modal-header {
-  background: linear-gradient(135deg, #1c2f4a 0%, #152033 55%, #0f1e32 100%);
-  border-bottom-color: rgba(56, 189, 248, 0.15);
-}
 
 .player-modal-title-section {
   flex: 1;
@@ -12144,8 +12137,7 @@ img, svg, canvas {
 }
 
 [data-theme="dark"] .player-modal-stat-card {
-  background: #0d1b2e;
-  border-color: rgba(56, 189, 248, 0.12);
+  background: #111e2e;
 }
 
 .player-modal-stat-label {
@@ -12171,8 +12163,7 @@ img, svg, canvas {
 }
 
 [data-theme="dark"] .player-modal-chart-container {
-  background: #0d1b2e;
-  border-color: rgba(56, 189, 248, 0.12);
+  background: #111e2e;
 }
 
 .player-modal-loading {
@@ -12203,8 +12194,7 @@ img, svg, canvas {
 }
 
 [data-theme="dark"] .player-modal-game-log-row {
-  background: #0d1b2e;
-  border-color: rgba(56, 189, 248, 0.10);
+  background: #111e2e;
 }
 
 .player-modal-game-log-row:hover {
@@ -15738,8 +15728,7 @@ button:disabled {
 }
 
 [data-theme="dark"] .pm-tab-bar {
-  background: #0f1e32;
-  border-bottom-color: rgba(56, 189, 248, 0.15);
+  background: #111e2e;
 }
 .pm-tab-bar::-webkit-scrollbar { display: none; }
 .pm-tab {
