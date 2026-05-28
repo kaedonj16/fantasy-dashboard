@@ -15317,7 +15317,7 @@ def api_trade_outcome():
 
 
 @app.route("/api/trade-eval", methods=["POST"])
-@limiter.limit("10 per minute")
+@limiter.limit("30 per minute")
 def api_trade_eval():
     try:
         payload = request.get_json(force=True) or {}

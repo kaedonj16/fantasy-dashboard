@@ -3805,6 +3805,20 @@ window.initTradePage = function initTradePage(root = document) {
         body: JSON.stringify(payload),
       });
 
+      if (res.status === 429) {
+        if (loadingState) loadingState.style.display = "none";
+        if (emptyState) emptyState.style.display = "none";
+        if (resultState) {
+          resultState.style.display = "block";
+          resultState.innerHTML = `
+            <div class="otc-ai-empty">
+              <div class="otc-ai-empty-title">Slow down a moment</div>
+              <div class="otc-ai-empty-sub">You're evaluating trades quickly — wait a few seconds and try again.</div>
+            </div>`;
+        }
+        return;
+      }
+
       if (!res.ok) throw new Error("Trade eval failed (" + res.status + ").");
 
       const data = await res.json();
