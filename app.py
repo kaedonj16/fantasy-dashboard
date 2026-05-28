@@ -227,6 +227,8 @@ def _static_hash(filename: str) -> str:
 _APP_JS_V = _static_hash("app.js")
 _PAYWALL_JS_V = _static_hash("paywall.js")
 _CSS_V = _static_hash("dashboard.css")
+_FA_V = _static_hash("font-awesome.css")
+_ICONS_V = _static_hash("icons.css")
 
 
 @app.after_request
@@ -571,8 +573,8 @@ BASE_HTML = """
     <meta name="mobile-web-app-title" content="BR Fantasy">
 
     <link rel="stylesheet" href="/static/dashboard.css?v={css_v}">
-    <link rel="stylesheet" href="/static/icons.css">
-    <link rel="stylesheet" href="/static/font-awesome.css">
+    <link rel="stylesheet" href="/static/icons.css?v={icons_v}">
+    <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
     <link rel="stylesheet" href="/static/paywall.css">
 
     <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
@@ -1550,6 +1552,8 @@ def render_page(
         app_js_v=_APP_JS_V,
         paywall_js_v=_PAYWALL_JS_V,
         css_v=_CSS_V,
+        fa_v=_FA_V,
+        icons_v=_ICONS_V,
     )
 
 
