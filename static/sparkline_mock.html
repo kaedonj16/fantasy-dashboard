@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sparkline Mock</title>
+<style>
+  body { margin: 0; padding: 24px; background: #0f172a; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; }
+  h3 { color: #94a3b8; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 12px; }
+  section { margin-bottom: 40px; }
+
+  /* ── Full table ── */
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .06em; padding: 6px 10px; text-align: left; border-bottom: 1px solid #1e293b; }
+  th.num, td.num { text-align: right; }
+  td { padding: 8px 10px; border-bottom: 1px solid #1e293b; vertical-align: middle; }
+  tr:hover td { background: #1e293b; }
+  .pos { font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 3px; color: #fff; }
+  .pos.QB { background: #7c3aed; }
+  .pos.WR { background: #0891b2; }
+  .pos.RB { background: #16a34a; }
+  .pos.TE { background: #b45309; }
+  .name { font-weight: 600; font-size: 13px; }
+  .team { color: #64748b; font-size: 11px; margin-left: 4px; }
+  .val { font-weight: 600; color: #f8fafc; font-variant-numeric: tabular-nums; }
+  .arrows { text-align: center; width: 28px; }
+  canvas { display: block; margin: 0 auto; }
+
+  /* ── Zoomed detail panel ── */
+  .zoom-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .zoom-card {
+    background: #1e293b;
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .zoom-label { font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.3; }
+  .zoom-name { font-size: 12px; font-weight: 600; color: #f1f5f9; }
+</style>
+</head>
+<body>
+
+<section>
+  <h3>As it appears in the table (14 × 28 px — actual size)</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Rk</th>
+        <th></th>
+        <th>Player</th>
+        <th class="num">Value</th>
+        <th class="num">Age</th>
+        <th style="text-align:center; width:36px;">7d</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</section>
+
+<section>
+  <h3>Zoomed 6× — same lines, larger canvas so you can see the shape</h3>
+  <div class="zoom-grid" id="zoom"></div>
+</section>
+
+<script>
+const players = [
+  { rank:1,  pos:'QB', name:'Jayden Daniels',  team:'WSH', val:98.2, data:[82,84,87,89,91,94,96,98]  },
+  { rank:2,  pos:'WR', name:"Ja'Marr Chase",   team:'CIN', val:97.1, data:[99,97,95,94,96,95,97,97]  },
+  { rank:3,  pos:'RB', name:'Bijan Robinson',  team:'ATL', val:95.4, data:[90,91,93,94,94,95,95,95]  },
+  { rank:4,  pos:'QB', name:'Lamar Jackson',   team:'BAL', val:94.8, data:[96,95,94,96,95,94,94,95]  },
+  { rank:5,  pos:'WR', name:'Justin Jefferson',team:'MIN', val:93.3, data:[88,89,88,90,91,92,93,93]  },
+  { rank:6,  pos:'TE', name:'Sam LaPorta',     team:'DET', val:91.0, data:[95,93,92,90,88,89,90,91]  },
+  { rank:7,  pos:'RB', name:'Breece Hall',     team:'NYJ', val:89.7, data:[87,88,89,90,90,89,90,90]  },
+  { rank:8,  pos:'WR', name:'Puka Nacua',      team:'LAR', val:88.2, data:[92,90,88,85,84,86,87,88]  },
+  { rank:9,  pos:'QB', name:'Joe Burrow',      team:'CIN', val:87.5, data:[84,85,86,86,87,87,88,88]  },
+  { rank:10, pos:'WR', name:'Rashee Rice',     team:'KC',  val:85.0, data:[90,88,86,84,83,84,84,85]  },
+];
+const ages = [22,24,23,28,25,23,24,22,27,23];
+
+function draw(canvas, data, lw) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const min = Math.min(...data), max = Math.max(...data);
+  const range = max - min || 1;
+  const pts = data.map((v, i) => ({
+    x: (i / (data.length - 1)) * (w - 4) + 2,
+    y: (h - 4) - ((v - min) / range) * (h - 4) + 2
+  }));
+  const isUp = data[data.length - 1] >= data[0];
+  ctx.strokeStyle = isUp ? '#22c55e' : '#ef4444';
+  ctx.lineWidth = lw || 1.5;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+  ctx.stroke();
+}
+
+// Table rows
+const tbody = document.getElementById('rows');
+players.forEach((p, i) => {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="num" style="color:#64748b;font-size:11px">${p.rank}</td>
+    <td><span class="pos ${p.pos}">${p.pos}</span></td>
+    <td class="name">${p.name}<span class="team">${p.team}</span></td>
+    <td class="val num">${p.val}</td>
+    <td class="num" style="color:#94a3b8">${ages[i]}</td>
+    <td class="arrows"><canvas width="14" height="28"></canvas></td>
+  `;
+  tbody.appendChild(tr);
+  draw(tr.querySelector('canvas'), p.data, 1.5);
+});
+
+// Zoom cards
+const zoomEl = document.getElementById('zoom');
+players.forEach(p => {
+  const card = document.createElement('div');
+  card.className = 'zoom-card';
+  const trend = p.data[p.data.length-1] >= p.data[0] ? '↑ Rising' : '↓ Falling';
+  const trendColor = p.data[p.data.length-1] >= p.data[0] ? '#22c55e' : '#ef4444';
+  card.innerHTML = `
+    <div class="zoom-name">${p.name}</div>
+    <canvas width="84" height="48"></canvas>
+    <div class="zoom-label" style="color:${trendColor}">${trend}</div>
+  `;
+  zoomEl.appendChild(card);
+  draw(card.querySelector('canvas'), p.data, 2);
+});
+</script>
+</body>
+</html>

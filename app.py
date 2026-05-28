@@ -25,6 +25,10 @@ from flask import (
     session,
     send_file,
 )
+try:
+    from flask_compress import Compress
+except ImportError:
+    Compress = None
 from dashboard_services.ai.history_recap import get_history_ai_recap
 from dashboard_services.ai.renderer import (
     get_team_gm_memo,
@@ -145,6 +149,31 @@ def _api_err(msg: str = "Request failed", e: Exception = None, code: int = 500):
     return jsonify({"error": msg, "ok": False}), code
 
 
+def _rel_time(dt) -> str:
+    """Human-relative timestamp: 'Today 3:42 PM', '2d ago', 'May 12'."""
+    now = datetime.now(EASTERN)
+    dt_et = dt.astimezone(EASTERN)
+    diff = now - dt_et
+    secs = diff.total_seconds()
+    if secs < 60:
+        return "Just now"
+    if secs < 3600:
+        mins = int(secs // 60)
+        return f"{mins}m ago"
+    today = now.date()
+    if dt_et.date() == today:
+        hour = dt_et.strftime("%I").lstrip("0") or "12"
+        return f"Today {hour}:{dt_et.strftime('%M %p')}"
+    if dt_et.date() == (now - timedelta(days=1)).date():
+        return f"Yesterday"
+    days = (today - dt_et.date()).days
+    if days < 7:
+        return f"{days}d ago"
+    if days < 30:
+        return f"{days // 7}w ago"
+    return dt_et.strftime("%b %d")
+
+
 # ── Sentry error tracking ─────────────────────────────────────────────────────
 _sentry_dsn = os.environ.get("SENTRY_DSN", "")
 if _sentry_dsn:
@@ -202,6 +231,8 @@ def _static_hash(filename: str) -> str:
 _APP_JS_V = _static_hash("app.js")
 _PAYWALL_JS_V = _static_hash("paywall.js")
 _CSS_V = _static_hash("dashboard.css")
+_FA_V = _static_hash("font-awesome.css")
+_ICONS_V = _static_hash("icons.css")
 
 
 @app.after_request
@@ -246,6 +277,14 @@ except ImportError:
             def decorator(f): return f
             return decorator
     limiter = _NoopLimiter()
+
+# Response compression
+if Compress is not None:
+    _compress = Compress()
+    app.config["COMPRESS_MIN_SIZE"] = 500          # only compress responses > 500 bytes
+    app.config["COMPRESS_LEVEL"] = 6                # gzip level (1-9); 6 is a good balance
+    app.config["COMPRESS_ALGORITHM"] = ["br", "gzip"]  # prefer brotli, fall back to gzip
+    _compress.init_app(app)
 
 try:
     init_value_history_db()
@@ -521,7 +560,7 @@ FORM_BODY = """
 
 BASE_HTML = """
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
@@ -532,16 +571,22 @@ BASE_HTML = """
     <!-- Google AdSense -->
     {adsense_script}
 
-    <link rel="icon" href="/static/BR_Logo.png" type="image/x-icon">
+    <link rel="icon" href="/static/BR_Logo.png" type="image/png">
+    <link rel="shortcut icon" href="/static/BR_Logo.png" type="image/png">
+    <link rel="apple-touch-icon" href="/static/BR_Logo.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/BR_Logo.png">
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#38bdf8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="BR Fantasy">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-title" content="BR Fantasy">
 
     <link rel="stylesheet" href="/static/dashboard.css?v={css_v}">
-    <link rel="stylesheet" href="/static/icons.css">
-    <link rel="stylesheet" href="/static/font-awesome.css">
+    <link rel="stylesheet" href="/static/icons.css?v={icons_v}">
+    <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
     <link rel="stylesheet" href="/static/paywall.css">
 
     <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
@@ -552,6 +597,7 @@ BASE_HTML = """
     </script>
   </head>
   <body>
+    <a class="skip-link" href="#page-root">Skip to main content</a>
     <div id="app-scale">
       {nav}
 
@@ -559,14 +605,14 @@ BASE_HTML = """
 
       {ad_top}
 
-      <main id="page-root" class="overview-layout" data-cache-ts="{cache_ts}">
+      <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}">
         {body}
       </main>
 
       {ad_bottom}
     </div>
 
-    <footer class="site-footer">
+    <footer class="site-footer" role="contentinfo">
       <div class="site-footer-inner">
         <div class="site-footer-left">
           <span class="footer-brand">BR Fantasy</span>
@@ -586,13 +632,16 @@ BASE_HTML = """
     </footer>
 
     <!-- Page navigation loading overlay -->
-    <div id="navLoadingOverlay" class="fullscreen-loading-overlay" style="display:none;">
-      <div class="loading-spinner"></div>
+    <div id="navLoadingOverlay" class="fullscreen-loading-overlay" role="status" aria-live="polite" aria-label="Loading page" style="display:none;">
+      <div class="loading-spinner" aria-hidden="true"></div>
       <div class="fullscreen-loading-text">Loading&hellip;</div>
     </div>
 
+    <!-- Toast notifications -->
+    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
     <!-- Cookie Consent Banner -->
-    <div id="cookieConsent" class="cookie-consent" style="display: none;">
+    <div id="cookieConsent" class="cookie-consent" role="dialog" aria-label="Cookie consent" style="display: none;">
       <div class="cookie-consent-content">
         <p>
           We use cookies to improve your experience and show relevant ads. By continuing to use this site, you consent to our use of cookies.
@@ -672,6 +721,24 @@ BASE_HTML = """
         var el = document.getElementById('footer-year');
         if (el) el.textContent = new Date().getFullYear();
       }})();
+
+      // Toast notification utility
+      window.showToast = function(msg, duration) {{
+        duration = duration || 3000;
+        var container = document.getElementById('toastContainer');
+        if (!container) return;
+        var toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.textContent = msg;
+        container.appendChild(toast);
+        requestAnimationFrame(function() {{
+          requestAnimationFrame(function() {{ toast.classList.add('toast--visible'); }});
+        }});
+        setTimeout(function() {{
+          toast.classList.remove('toast--visible');
+          toast.addEventListener('transitionend', function() {{ toast.remove(); }}, {{once: true}});
+        }}, duration);
+      }};
     </script>
   </body>
 </html>
@@ -1059,7 +1126,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if not league_id:
         def simple_pill(label: str, href: str, key: str) -> str:
             cls = "nav-pill active" if key == active else "nav-pill"
-            return f"<a class='{cls}' href='{href}'>{label}</a>"
+            aria = " aria-current='page'" if key == active else ""
+            return f"<a class='{cls}'{aria} href='{href}'>{label}</a>"
 
         def simple_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
             is_active = active in active_keys
@@ -1067,15 +1135,16 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             item_html = ""
             for item_label, href, item_key in items:
                 item_cls = "nav-pill-dropdown-item active" if item_key == active else "nav-pill-dropdown-item"
-                item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
+                aria_cur = " aria-current='page'" if item_key == active else ""
+                item_html += f"<a class='{item_cls}'{aria_cur} href='{href}'>{item_label}</a>"
             btn_id  = dropdown_id.replace("Dropdown", "Btn")
             menu_id = dropdown_id.replace("Dropdown", "Menu")
             return (
                 f"<div class='nav-pill-dropdown-wrapper' id='{dropdown_id}'>"
-                f"  <button type='button' class='{btn_cls}' id='{btn_id}' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
-                f"    {label} <span class='nav-pill-chevron'>&#x25BE;</span>"
+                f"  <button type='button' class='{btn_cls}' id='{btn_id}' aria-expanded='false' aria-haspopup='true' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
+                f"    {label} <span class='nav-pill-chevron' aria-hidden='true'>&#x25BE;</span>"
                 f"  </button>"
-                f"  <div class='nav-pill-dropdown-menu' id='{menu_id}'>"
+                f"  <div class='nav-pill-dropdown-menu' id='{menu_id}' role='menu'>"
                 f"    {item_html}"
                 f"  </div>"
                 f"</div>"
@@ -1089,13 +1158,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Trade Calculator", "/trade",          "trade"),
                 ("Suggestions <span class='nav-pro-badge'>PRO</span>", "/trade?tab=suggestions", "trade-suggestions"),
                 ("Trade Database",   "/trade-database", "trade-database"),
-                ("Trade Intel",      "/trade-intel",    "trade-intel"),
+                ("Trade Intel <span class='nav-pro-badge'>PRO</span>",      "/trade-intel",    "trade-intel"),
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
                 ("Prospects",       "/prospects",   "prospects"),
-                ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "/prospects?tab=draft", "prospects-draft"),
-                ("Breakouts",       "/breakouts", "breakouts"),
+                ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
+                ("Breakouts <span class='nav-pro-badge'>PRO</span>",       "/breakouts", "breakouts"),
             ], ["players", "prospects", "breakouts"], "playersNavDropdown"),
         ]
 
@@ -1132,10 +1201,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         )
 
         return (
-            "<nav class='top-nav'>"
+            "<nav class='top-nav' aria-label='Main navigation'>"
             "  <div class='nav-left'>"
-            "    <a href='/'>"
-            "      <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
+            "    <a href='/' aria-label='BR Fantasy home'>"
+            "      <img src='/static/Website_Logo.png' alt='BR Fantasy' class='site-logo'/>"
             "    </a>"
             "  </div>"
             "  <div class='nav-center'>"
@@ -1151,8 +1220,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
     def nav_pill(label: str, endpoint: str, key: str) -> str:
         cls = "nav-pill active" if key == active else "nav-pill"
+        aria = " aria-current='page'" if key == active else ""
         href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
-        return f"<a class='{cls}' href='{href}'>{label}</a>"
+        return f"<a class='{cls}'{aria} href='{href}'>{label}</a>"
 
     def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
         """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix)."""
@@ -1173,15 +1243,16 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 href = url_for(endpoint, platform=platform, season=season, league_id=league_id) + href_suffix
                 item_active = " active" if item_key == active else ""
                 item_cls = f"nav-pill-dropdown-item{item_active}"
-                item_html += f"<a class='{item_cls}' href='{href}'>{item_label}</a>"
+                aria_cur = " aria-current='page'" if item_key == active else ""
+                item_html += f"<a class='{item_cls}'{aria_cur} href='{href}'>{item_label}</a>"
         btn_id  = dropdown_id.replace("Dropdown", "Btn")
         menu_id = dropdown_id.replace("Dropdown", "Menu")
         return (
             f"<div class='nav-pill-dropdown-wrapper' id='{dropdown_id}'>"
-            f"  <button type='button' class='{btn_cls}' id='{btn_id}' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
-            f"    {label} <span class='nav-pill-chevron'>&#x25BE;</span>"
+            f"  <button type='button' class='{btn_cls}' id='{btn_id}' aria-expanded='false' aria-haspopup='true' onclick='toggleNavDropdown(event,\"{dropdown_id}\")'>"
+            f"    {label} <span class='nav-pill-chevron' aria-hidden='true'>&#x25BE;</span>"
             f"  </button>"
-            f"  <div class='nav-pill-dropdown-menu' id='{menu_id}'>"
+            f"  <div class='nav-pill-dropdown-menu' id='{menu_id}' role='menu'>"
             f"    {item_html}"
             f"  </div>"
             f"</div>"
@@ -1197,7 +1268,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Trade Calculator", "trade.page_trade",          "trade",          False),
         ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False, "?tab=suggestions"),
         ("Trade Database",   "trade.page_trade_database", "trade-database", False),
-        ("Trade Intel",      "trade.page_trade_intel",    "trade-intel",    False),
+        ("Trade Intel <span class='nav-pro-badge'>PRO</span>",      "trade.page_trade_intel",    "trade-intel",    False),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
@@ -1205,8 +1276,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         nav_pills.append(nav_pill_dropdown("Weekly", [
             ("Matchups",           "page_weekly",           "weekly",   False),
             ("Weekly Recap",       "page_recap",            "recap",    False),
-            ("Playoff Schedule",   "page_playoff_schedule", "schedule", False),
-        ], ["weekly", "recap", "schedule"], "weeklyNavDropdown"))
+        ], ["weekly", "recap"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",     "page_standings",    "standings",    False),
         ("Teams",         "page_teams",        "teams",        False),
@@ -1216,10 +1286,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
-        ("Draft Assistant <span class='nav-pro-badge'>PRO</span>", "page_prospects", "prospects-draft", False, "?tab=draft"),
-        ("Breakout Engine",   "page_breakouts",  "breakouts", False),
+        ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
+        ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
-    ], ["players", "prospects", "breakouts", "waivers"], "playersNavDropdown"))
+        ("Schedule Assistant",  "page_schedule",  "schedule",  False),
+    ], ["players", "prospects", "breakouts", "waivers", "schedule"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -1357,10 +1428,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     )
 
     return (
-        "<nav class='top-nav'>"
+        "<nav class='top-nav' aria-label='Main navigation'>"
         "  <div class='nav-left'>"
-        f"    <a href='{dashboard_url}'>"
-        "      <img src='/static/Website_Logo.png' alt='League Logo' class='site-logo'/>"
+        f"    <a href='{dashboard_url}' aria-label='BR Fantasy dashboard'>"
+        "      <img src='/static/Website_Logo.png' alt='BR Fantasy' class='site-logo'/>"
         "    </a>"
         "  </div>"
         "  <div class='nav-center'>"
@@ -1519,6 +1590,8 @@ def render_page(
         app_js_v=_APP_JS_V,
         paywall_js_v=_PAYWALL_JS_V,
         css_v=_CSS_V,
+        fa_v=_FA_V,
+        icons_v=_ICONS_V,
     )
 
 
@@ -2252,20 +2325,53 @@ def get_trade_ai_analysis(
 def handle_500(e):
     logger.exception("[500] Internal server error")
     return (
-        "<!doctype html><html><head><title>Error — BR Fantasy</title>"
+        "<!doctype html><html lang='en'><head><title>Error — BR Fantasy</title>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
         "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
         ".box{text-align:center;padding:40px 24px;max-width:400px;}"
+        ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:24px;}"
         "h2{margin:0 0 8px;font-size:22px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
         "a{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
         "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
         "</head><body><div class='box'>"
+        "<div class='logo'>BR Fantasy</div>"
         "<h2>Something went wrong</h2>"
         "<p>The server hit an unexpected error. This usually fixes itself — please try again in a moment.</p>"
         "<a href='/'>&#8592; Back to home</a>"
         "</div></body></html>"
     ), 500
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    return (
+        "<!doctype html><html lang='en'><head><title>Page Not Found — BR Fantasy</title>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
+        "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
+        ".box{text-align:center;padding:40px 24px;max-width:420px;}"
+        ".logo{font-size:13px;font-weight:700;color:#38bdf8;letter-spacing:.04em;margin-bottom:8px;}"
+        ".code{font-size:72px;font-weight:800;color:#1e3a5f;line-height:1;margin:0 0 16px;}"
+        "h2{margin:0 0 8px;font-size:20px;}p{color:#94a3b8;margin:0 0 24px;font-size:14px;}"
+        ".links{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;}"
+        "a.primary{display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;"
+        "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}"
+        "a.secondary{display:inline-block;padding:10px 20px;background:transparent;"
+        "border:1px solid #334155;color:#94a3b8;"
+        "border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;}</style>"
+        "</head><body><div class='box'>"
+        "<div class='logo'>BR Fantasy</div>"
+        "<div class='code'>404</div>"
+        "<h2>Page not found</h2>"
+        "<p>This page doesn&rsquo;t exist or may have moved. Check the URL or head back home.</p>"
+        "<div class='links'>"
+        "  <a class='primary' href='/'>&#8592; Home</a>"
+        "  <a class='secondary' href='/trade'>Trade Calc</a>"
+        "  <a class='secondary' href='/players'>Player Rankings</a>"
+        "</div>"
+        "</div></body></html>"
+    ), 404
 
 
 
@@ -6031,9 +6137,11 @@ def build_activity_body(ctx: dict) -> str:
                 )
                 team_name = tm.get('name', '')
                 roster_id = tm.get('roster_id', '')
+                esc_name = html.escape(team_name)
+                esc_name_attr = html.escape(team_name, quote=True)
                 cols.append(
                     "<div class='team-col'>"
-                    f"  <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{team_name}'>{team_name}</div></header>"
+                    f"  <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{esc_name_attr}'>{esc_name}</div></header>"
                     f"  <div class='plist'>{gets}{sends}{total_html}</div>"
                     "</div>"
                 )
@@ -6044,11 +6152,7 @@ def build_activity_body(ctx: dict) -> str:
                     biggest_trade_delta = delta
                     biggest_trade_label = f"{net_values[0][0]} vs {net_values[1][0]}"
 
-            when = (
-                txrow["ts"].astimezone(ZoneInfo("America/New_York")).strftime("%b %d, %I:%M %p")
-                if pd.notna(txrow["ts"])
-                else ""
-            )
+            when = _rel_time(txrow["ts"]) if pd.notna(txrow["ts"]) else ""
             # Build data payload for outcome check (sent/received per team)
             trade_date_str = ""
             if pd.notna(txrow["ts"]):
@@ -6192,16 +6296,14 @@ def build_activity_body(ctx: dict) -> str:
                 )
             adds = "".join(adds_parts) or "<div class='bract-empty-mini'>No adds recorded</div>"
 
-            when = (
-                txrow["ts"].astimezone(ZoneInfo("America/New_York")).strftime("%b %d, %I:%M %p")
-                if pd.notna(txrow["ts"])
-                else ""
-            )
+            when = _rel_time(txrow["ts"]) if pd.notna(txrow["ts"]) else ""
+            esc_wv_name = html.escape(team_name)
+            esc_wv_name_attr = html.escape(team_name, quote=True)
             return (
                 "<div class='tx activity-item' data-kind='waiver'>"
                 f"  <div class='meta'>{pill('Waiver')} • {when}</div>"
                 "  <div class='team-col'>"
-                f"    <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{team_name}'>{team_name}</div></header>"
+                f"    <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{esc_wv_name_attr}'>{esc_wv_name}</div></header>"
                 f"    <div class='plist'>{adds}</div>"
                 "  </div>"
                 "</div>"
@@ -6251,25 +6353,25 @@ def build_activity_body(ctx: dict) -> str:
         injury_html = render_injury_accordion(injury_df)
     else:
         injury_html = (
-            "<div class='card'>"
-            "  <div class='card-body'>"
-            "    <div class='bract-empty-state'>"
-            "      <div class='bract-empty-title'>No injury data right now</div>"
-            "      <div class='bract-empty-copy'>Either the feed is quiet or there are no currently tracked injury updates for this view.</div>"
+            "<div class=’card’>"
+            "  <div class=’card-body’>"
+            "    <div class=’bract-empty-state’>"
+            "      <div class=’bract-empty-icon’><i class=’fa-solid fa-shield-halved’ style=’font-size:28px;color:var(--muted);opacity:.5;’></i></div>"
+            "      <div class=’bract-empty-title’>No injury updates right now</div>"
+            "      <div class=’bract-empty-copy’>Either the feed is quiet or there are no currently tracked injury updates for this view.</div>"
             "    </div>"
             "  </div>"
             "</div>"
         )
 
     if not activity_html:
-        _empty_title = "No recent activity yet"
-        _empty_copy = "When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns."
         activity_html = (
             "<div class=’card’>"
             "  <div class=’card-body’>"
             "    <div class=’bract-empty-state’>"
-            f"      <div class=’bract-empty-title’>{_empty_title}</div>"
-            f"      <div class=’bract-empty-copy’>{_empty_copy}</div>"
+            "      <div class=’bract-empty-icon’><i class=’fa-solid fa-arrows-rotate’ style=’font-size:28px;color:var(--muted);opacity:.5;’></i></div>"
+            "      <div class=’bract-empty-title’>No recent activity yet</div>"
+            "      <div class=’bract-empty-copy’>When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns.</div>"
             "    </div>"
             "  </div>"
             "</div>"
@@ -7140,14 +7242,15 @@ def build_teams_body(ctx: dict) -> str:
             "  </div>"
             "  <div class='card-body'>"
             f"    {_chart_html}"
+            "    <div class='pos-table-wrap'>"
             "    <table class='pos-strength-table'>"
             "      <thead>"
             "        <tr>"
             "          <th>Pos</th>"
             "          <th>#</th>"
             "          <th>Value</th>"
-            "          <th>Starter Score</th>"
-            "          <th>Z-Score</th>"
+            "          <th>Score</th>"
+            "          <th>Z</th>"
             "          <th>Strength</th>"
             "          <th>Rank</th>"
             "        </tr>"
@@ -7156,6 +7259,7 @@ def build_teams_body(ctx: dict) -> str:
             f"        {''.join(table_rows)}"
             "      </tbody>"
             "    </table>"
+            "    </div>"
             "  </div>"
             "</div>"
         )
@@ -7191,19 +7295,19 @@ def build_teams_body(ctx: dict) -> str:
         </div>
         <div class="tab-panels">
           <div class="tab-panel active" data-tab="btm" id="btmPanel">
-            <div class="analytics-loading">Loading…</div>
+            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
           </div>
           <div class="tab-panel" data-tab="roster-intel" id="rosterIntelPanel">
-            <div class="analytics-loading">Loading…</div>
+            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:55%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
           </div>
           <div class="tab-panel" data-tab="power-rankings" id="powerRankingsPanel">
-            <div class="analytics-loading">Loading…</div>
+            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:70%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
           </div>
           <div class="tab-panel" data-tab="sos" id="sosPanel">
-            <div class="analytics-loading">Loading…</div>
+            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:65%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
           </div>
           <div class="tab-panel" data-tab="draft" id="draftPanel">
-            <div class="analytics-loading">Loading…</div>
+            <div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>
           </div>
         </div>
       </div>
@@ -7330,7 +7434,7 @@ def build_teams_body(ctx: dict) -> str:
         }}
 
         function fetchBtm(days) {{
-          panel.innerHTML = '<div class="analytics-loading">Loading…</div>';
+          panel.innerHTML = '<div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>';
           fetch('/api/beat-the-market?platform=' + _platform +
                 '&league_id=' + _leagueId + '&season=' + _season +
                 '&league_type=' + _leagueType + '&league_size=' + _leagueSize + '&days=' + days)
@@ -7450,7 +7554,7 @@ def build_teams_body(ctx: dict) -> str:
         _loaded.draft = true;
         var panel = document.getElementById('draftPanel');
         if (!panel) return;
-        panel.innerHTML = '<div class="analytics-loading">Loading…</div>';
+        panel.innerHTML = '<div class="analytics-skeleton"><div class="sk-shimmer sk-line" style="width:60%"></div><div class="sk-shimmer sk-line sk-line--w75" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w50" style="margin-top:10px"></div><div class="sk-shimmer sk-line sk-line--w60" style="margin-top:10px"></div></div>';
         fetch('/api/draft-grades?platform=' + _platform +
               '&league_id=' + _leagueId + '&season=' + _season + '&league_type=' + _leagueType)
           .then(function(r) {{ return r.json(); }})
@@ -9256,11 +9360,19 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     """Player Rankings page — searchable, filterable, sortable list of all players."""
     body_html = """
     <div class="card central">
-      <div class="card-header">
-        <h2>Player Rankings</h2>
-        <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
-          All players ranked by dynasty value.
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+        <div>
+          <h2>Player Rankings</h2>
+          <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
+            All players ranked by dynasty value.
+          </div>
         </div>
+        <button onclick="prExportCSV()" title="Download current list as CSV"
+          style="margin-top:4px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);
+                 background:var(--surface);color:var(--text);font-size:12px;font-weight:600;
+                 cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;">
+          <img src="/static/images/download-solid.png" style="width:13px;height:13px;vertical-align:middle;opacity:0.8;" alt=""> Export CSV
+        </button>
       </div>
       <div class="card-body" style="padding-top:0;">
 
@@ -9362,7 +9474,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
         <!-- Table header -->
         <div id="prTableHeader" style="display:none;
-             grid-template-columns:28px 18px 1fr 52px 46px 46px 60px;
+             grid-template-columns:28px 42px 1fr 52px 46px 46px 60px;
              gap:0;padding:6px 12px;border-radius:6px;
              background:var(--accent-soft);font-size:11px;
              font-weight:700;color:var(--accent);letter-spacing:0.04em;
@@ -9391,7 +9503,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     <style>
       .pr-grid-row {
         display: grid;
-        grid-template-columns: 28px 18px 1fr 52px 46px 46px 60px;
+        grid-template-columns: 28px 42px 1fr 52px 46px 46px 60px;
         align-items: center;
         gap: 0;
       }
@@ -9455,6 +9567,15 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         font-weight: 700;
         color: var(--accent);
       }
+      /* Sticky table header */
+      #prTableHeader {
+        position: sticky;
+        top: 60px;
+        z-index: 5;
+        border-radius: 6px;
+        margin-bottom: 2px;
+      }
+
       /* Filter Controls */
       .filter-controls-container {
         display: flex;
@@ -9654,12 +9775,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           width: 100%;
         }
         /* Table: hide Age on tablets — rank | arrow | name | pos | team | sort */
-        .pr-grid-row { grid-template-columns: 28px 16px 1fr 44px 42px 56px !important; }
+        .pr-grid-row { grid-template-columns: 28px 42px 1fr 44px 42px 56px !important; }
         .pr-age,  #prAgeHeader  { display: none !important; }
       }
       @media (max-width: 480px) {
         /* Phone: rank | arrow | name | sort — hide pos and team */
-        .pr-grid-row { grid-template-columns: 28px 16px 1fr 56px !important; }
+        .pr-grid-row { grid-template-columns: 28px 42px 1fr 56px !important; }
         .pr-pos-cell, #prTableHeader span:nth-child(4) { display: none !important; }
         .pr-team,     #prTableHeader span:nth-child(6) { display: none !important; }
       }
@@ -9668,6 +9789,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
     <script>
       var prAllPlayers = [];
       var prIndicators = {};
+      var prSparklines = {};
       var prLeagueType   = '1qb';
       var prLeagueSize   = 10;
       var prScoringType  = 'dynasty';  // 'dynasty' | 'redraft'
@@ -9676,6 +9798,53 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       var prLoaded = false;
       var prPage = 1;
       var prPageSize = 50;
+
+      var PR_SPARK_W = 38, PR_SPARK_H = 26;  // logical (CSS) px
+
+      function _prDrawSparkline(canvas, data) {
+        if (!canvas || !data || data.length < 2) return;
+        const dpr = window.devicePixelRatio || 1;
+        const w = PR_SPARK_W, h = PR_SPARK_H;
+        // Size the backing store for the display density so the line is crisp.
+        canvas.width  = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        canvas.style.width  = w + 'px';
+        canvas.style.height = h + 'px';
+        const ctx2d = canvas.getContext('2d');
+        ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx2d.clearRect(0, 0, w, h);
+        const min = Math.min(...data), max = Math.max(...data);
+        const range = max - min || 1;
+        const pad = 2;
+        const pts = data.map((v, i) => ({
+          x: pad + (i / (data.length - 1)) * (w - pad * 2),
+          y: (h - pad) - ((v - min) / range) * (h - pad * 2)
+        }));
+        const isUp = data[data.length - 1] >= data[0];
+        ctx2d.strokeStyle = isUp ? '#22c55e' : '#ef4444';
+        ctx2d.lineWidth = 1.5;
+        ctx2d.lineJoin = 'round';
+        ctx2d.lineCap = 'round';
+        ctx2d.beginPath();
+        pts.forEach((p, i) => i === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y));
+        ctx2d.stroke();
+      }
+
+      // Single source of truth for value column key selection (used by prGetValue + prGetSparkData)
+      function prValueKey(isSf) {
+        if (isSf) return prLeagueSize === 10 ? 'sf_value' : 'sf_value_' + prLeagueSize;
+        return prLeagueSize === 10 ? 'value' : 'value_' + prLeagueSize;
+      }
+
+      function prGetSparkData(pid) {
+        const entry = prSparklines[pid];
+        if (!entry) return null;
+        if (Array.isArray(entry)) return entry.length >= 2 ? entry : null;
+        if (prLeagueType === 'sf') {
+          return entry[prValueKey(true)] || entry['sf_value'] || entry['value'] || null;
+        }
+        return entry[prValueKey(false)] || entry['value'] || null;
+      }
 
       // ---- Fuzzy search (mirrors trade calc logic) ----
       function prFuzzyScore(name, query) {
@@ -9709,11 +9878,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         }
         let base;
         if (prLeagueType === 'sf') {
-          const key = prLeagueSize === 10 ? 'sf_value' : 'sf_value_' + prLeagueSize;
-          base = Number(p[key] ?? p.sf_value ?? p.value ?? 0);
+          base = Number(p[prValueKey(true)] ?? p.sf_value ?? p.value ?? 0);
         } else {
-          const key = prLeagueSize === 10 ? 'value' : 'value_' + prLeagueSize;
-          base = Number(p[key] ?? p.value ?? 0);
+          base = Number(p[prValueKey(false)] ?? p.value ?? 0);
         }
         return Math.round(base * 10) / 10;
       }
@@ -10042,11 +10209,16 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           if (prIsBreakout(p.id)) badges += '<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i> BREAKOUT</span>';
 
           const rankChange = p.rank_change_7d;
-          let rankArrow = '';
-          if (rankChange != null && rankChange !== 0) {
+          const sparkData = prGetSparkData(p.id);
+
+          // Arrow column: sparkline when data available, chevron otherwise
+          let arrowCell = '';
+          if (sparkData && sparkData.length >= 2) {
+            arrowCell = `<canvas class="pr-sparkline" data-pid="${p.id}" title="${rankChange != null && rankChange !== 0 ? Math.abs(rankChange) + ' spot' + (Math.abs(rankChange) !== 1 ? 's' : '') + ' in 7 days' : '7-day trend'}"></canvas>`;
+          } else if (rankChange != null && rankChange !== 0) {
             const dir = rankChange > 0 ? 'up' : 'down';
             const icon = rankChange > 0 ? 'fa-chevron-up' : 'fa-chevron-down';
-            rankArrow = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
+            arrowCell = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
           }
 
           const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '—' : sortMeta.cell(p);
@@ -10069,12 +10241,17 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 
           row.innerHTML =
             '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
-            '<span class="pr-arrows">' + rankArrow + '</span>' +
+            '<span class="pr-arrows">' + arrowCell + '</span>' +
             '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
             '<span class="pr-pos-cell">' + posRank + '</span>' +
             '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
             '<span class="pr-team">'  + (p.team || '—') + '</span>' +
             '<span class="pr-value">' + sortDisplayHTML + '</span>';
+
+          if (sparkData && sparkData.length >= 2) {
+            const cnv = row.querySelector('.pr-sparkline');
+            if (cnv) _prDrawSparkline(cnv, sparkData);
+          }
 
           list.appendChild(row);
         });
@@ -10087,16 +10264,16 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         if (!bar) {
           bar = document.createElement('div');
           bar.id = 'prPagination';
-          bar.className = 'pr-pagination';
+          bar.className = 'pagination';
           document.getElementById('prList').insertAdjacentElement('afterend', bar);
           bar.innerHTML =
-            `<div class="pr-pagination-info"><span id="prPaginationText"></span></div>` +
-            `<div class="pr-pagination-controls">` +
-              `<button class="pr-pagination-btn" id="prPrevBtn" onclick="prGoPage('prev')" disabled>` +
+            `<div class="pagination-info"><span id="prPaginationText"></span></div>` +
+            `<div class="pagination-controls">` +
+              `<button class="pagination-btn" id="prPrevBtn" onclick="prGoPage('prev')" disabled>` +
                 `<i class="fa-solid fa-chevron-left"></i> Previous` +
               `</button>` +
-              `<div class="pr-page-numbers" id="prPageNumbers"></div>` +
-              `<button class="pr-pagination-btn" id="prNextBtn" onclick="prGoPage('next')" disabled>` +
+              `<div class="pagination-pages" id="prPageNumbers"></div>` +
+              `<button class="pagination-btn" id="prNextBtn" onclick="prGoPage('next')" disabled>` +
                 `Next <i class="fa-solid fa-chevron-right"></i>` +
               `</button>` +
             `</div>`;
@@ -10126,7 +10303,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         if (endPage - startPage < maxPages - 1) startPage = Math.max(1, endPage - maxPages + 1);
         for (let i = startPage; i <= endPage; i++) {
           const btn = document.createElement('button');
-          btn.className = 'pr-page-number' + (i === page ? ' active' : '');
+          btn.className = 'pagination-page' + (i === page ? ' active' : '');
           btn.textContent = i;
           btn.onclick = (function(n){ return function(){ prGoPage(n); }; })(i);
           pageNumbers.appendChild(btn);
@@ -10161,6 +10338,46 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           prRender();
         });
       })();
+
+      // Export current filtered list as CSV
+      function prExportCSV() {
+        const players = window.prFilteredPlayers && window.prFilteredPlayers.length
+          ? window.prFilteredPlayers : prAllPlayers;
+        if (!players || !players.length) return;
+        const q = (s) => '"' + String(s || '').replace(/"/g, '""') + '"';
+        const header = ['Rank','Name','Position','Team','Age','Value','1QB Value','SF Value','7d Rank Change'];
+        const rows = players.map((p, i) => {
+          const val1qb = Number(p[prValueKey(false)] ?? p.value ?? 0);
+          const valsf  = Number(p[prValueKey(true)]  ?? p.sf_value ?? 0);
+          return [
+            i + 1,
+            q(p.name),
+            p.position || '',
+            p.team || '',
+            p.age != null ? Number(p.age).toFixed(1) : '',
+            Number(prGetValue(p)).toFixed(1),
+            val1qb.toFixed(1),
+            valsf.toFixed(1),
+            p.rank_change_7d != null ? p.rank_change_7d : ''
+          ];
+        });
+        const csv = [header, ...rows].map(r => r.join(',')).join('\\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url; a.download = 'player_rankings.csv'; a.click();
+        URL.revokeObjectURL(url);
+        if (window.showToast) showToast('Player rankings downloaded!');
+      }
+
+      // '/' focuses search from anywhere on the page
+      document.addEventListener('keydown', function(e) {
+        if (e.key === '/' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) {
+          e.preventDefault();
+          const inp = document.getElementById('prSearch');
+          if (inp) { inp.focus(); inp.select(); }
+        }
+      });
 
       // Close settings panel when clicking outside
       document.addEventListener('click', function(e) {
@@ -10276,6 +10493,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         document.getElementById('prLoading').style.display = 'none';
         prLoaded = true;
         prRender();
+        // Lazy-load sparklines — re-render with sparkline data once ready
+        fetch('/api/sparklines?v=4').then(r => r.json()).then(function(data) {
+          prSparklines = data || {};
+          prRender();
+        }).catch(function() {});
       }).catch(err => {
         console.error('Error loading player rankings:', err);
         document.getElementById('prLoading').innerHTML =
@@ -11615,6 +11837,71 @@ def _compute_optimal_lineup(pts_map, player_positions, roster_positions, all_pid
     return opt_set, round(opt_pts, 2)
 
 
+_OPT_POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#a855f7"}
+
+
+def _opt_player_badges(players_out: list) -> str:
+    parts = []
+    for p in players_out:
+        if p["actual_start"] == p["optimal_start"]:
+            badge_style = "background:var(--surface);border:1px solid var(--border);"
+            icon = ""
+        elif p["actual_start"] and not p["optimal_start"]:
+            badge_style = "background:#ef444420;border:1px solid #ef4444;color:#ef4444;"
+            icon = "&#9660; "
+        else:
+            badge_style = "background:#22c55e20;border:1px solid #22c55e;color:#22c55e;"
+            icon = "&#9650; "
+        pos_color = _OPT_POS_COLORS.get(p["pos"], "#6b7280")
+        parts.append(
+            f"<span style='padding:4px 8px;border-radius:6px;font-size:12px;{badge_style}'>"
+            f"<span style='color:{pos_color};font-weight:700;'>{p['pos']}</span> "
+            f"{html.escape(p['name'])} {icon}<b>{p['pts']:.1f}</b></span>"
+        )
+    return "".join(parts)
+
+
+def _opt_pos_breakdown(weeks_data: list) -> str:
+    pos_left: dict = {}
+    pos_misses: dict = {}
+    for wd in weeks_data:
+        for p in wd["players"]:
+            if not p["actual_start"] and p["optimal_start"]:
+                bucket = p["pos"] if p["pos"] in ("QB", "RB", "WR", "TE") else "OTHER"
+                pos_left[bucket] = pos_left.get(bucket, 0.0) + p["pts"]
+                pos_misses[bucket] = pos_misses.get(bucket, 0) + 1
+    if not pos_left:
+        return ""
+    rows_html = ""
+    for pos in ["QB", "RB", "WR", "TE", "OTHER"]:
+        if pos not in pos_left:
+            continue
+        left = round(pos_left[pos], 1)
+        misses = pos_misses[pos]
+        pos_color = _OPT_POS_COLORS.get(pos, "#6b7280")
+        label = "K/DEF/FLEX" if pos == "OTHER" else pos
+        rows_html += (
+            f"<tr>"
+            f"<td style='padding:8px 12px;'><span style='font-weight:700;color:{pos_color};'>{label}</span></td>"
+            f"<td style='padding:8px 12px;font-weight:600;color:#ef4444;'>+{left}</td>"
+            f"<td style='padding:8px 12px;color:var(--muted);'>{misses}×</td>"
+            f"</tr>"
+        )
+    return (
+        "<div class='card' style='margin-top:16px;'>"
+        "<div class='card-header'><h3>Points Left by Position</h3></div>"
+        "<table style='width:100%;border-collapse:collapse;'>"
+        "<thead><tr style='border-bottom:1px solid var(--border);'>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>POS</th>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>LEFT ON BENCH</th>"
+        "<th style='padding:8px 12px;text-align:left;font-size:11px;color:var(--muted);'>MISSED STARTS</th>"
+        "</tr></thead>"
+        f"<tbody>{rows_html}</tbody>"
+        "</table>"
+        "</div>"
+    )
+
+
 def build_optimal_body(ctx):
     from dashboard_services.platform_api import get_matchups as _gm
 
@@ -11628,11 +11915,15 @@ def build_optimal_body(ctx):
     playoff_start = int(settings.get("playoff_week_start") or 14)
     current_week  = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
     players_idx   = get_players_index_global() or {}
+    roster_map    = ctx.get("roster_map") or {}
+    rosters       = ctx.get("rosters") or []
 
-    if not viewer_rid:
-        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
-                "<p style='color:var(--muted)'>Sign in to see your optimal lineup history.</p>"
-                "</div></div>")
+    view   = request.args.get("view", "user")
+    period = request.args.get("period", "season")
+    try:
+        sel_week = int(request.args.get("week", 0))
+    except (ValueError, TypeError):
+        sel_week = 0
 
     max_week = min(current_week - 1, playoff_start - 1)
     if max_week < 1:
@@ -11640,141 +11931,313 @@ def build_optimal_body(ctx):
                 "<p>No completed weeks yet. Optimal lineup data will appear here once the season starts.</p>"
                 "</div>")
 
-    weeks_data = []
-    season_left = 0.0
-    season_actual = 0.0
-    season_optimal = 0.0
+    if sel_week < 1 or sel_week > max_week:
+        sel_week = max_week
 
-    for w in range(1, max_week + 1):
+    base_url = f"/{platform}/{season}/{league_id}/optimal"
+
+    # ── Navigation ────────────────────────────────────────────────────────────
+    def _tab(label, tv, tp, active):
+        wk = f"&week={sel_week}" if tp == "weekly" else ""
+        cls = "opt-tab active" if active else "opt-tab"
+        return f"<a class='{cls}' href='{base_url}?view={tv}&period={tp}{wk}'>{label}</a>"
+
+    week_opts = "".join(
+        f"<option value='{w}'{' selected' if w == sel_week else ''}>Week {w}</option>"
+        for w in range(1, max_week + 1)
+    )
+    week_picker = (
+        f"<select class='opt-week-select' "
+        f"onchange=\"window.location='{base_url}?view={view}&period=weekly&week='+this.value\">"
+        f"{week_opts}</select>"
+    ) if period == "weekly" else ""
+
+    nav_html = (
+        "<div class='opt-nav'>"
+        f"  <div class='opt-tab-group'>"
+        f"    {_tab('My Team', 'user', period, view == 'user')}"
+        f"    {_tab('League', 'league', period, view == 'league')}"
+        f"  </div>"
+        f"  <div class='opt-tab-group'>"
+        f"    {_tab('Season', view, 'season', period == 'season')}"
+        f"    {_tab('Weekly', view, 'weekly', period == 'weekly')}"
+        f"  </div>"
+        f"  {week_picker}"
+        "</div>"
+    )
+
+    # ── Fetch only the weeks this view actually needs ─────────────────────────
+    # Weekly views need exactly one week; season views need all completed weeks.
+    all_matchups: dict = {}
+    weeks_to_fetch = [sel_week] if period == "weekly" else list(range(1, max_week + 1))
+    for w in weeks_to_fetch:
         try:
-            raw = _gm(platform, league_id, w, season) or []
-            row = next((m for m in raw if str(m.get("roster_id")) == viewer_rid), None)
+            all_matchups[w] = _gm(platform, league_id, w, season) or []
+        except Exception:
+            all_matchups[w] = []
+
+    def _roster_weeks(rid: str) -> list:
+        weeks = []
+        for w in range(1, max_week + 1):
+            try:
+                row = next((m for m in all_matchups[w] if str(m.get("roster_id")) == str(rid)), None)
+                if not row:
+                    continue
+                starters_raw = [str(p) for p in (row.get("starters") or []) if p and str(p) != "0"]
+                all_pids     = [str(p) for p in (row.get("players")  or []) if p and str(p) != "0"]
+                pts_map      = {str(k): float(v or 0) for k, v in (row.get("players_points") or {}).items()}
+                if not starters_raw or not all_pids:
+                    continue
+                actual_pts = float(row.get("points") or 0)
+                pos_map    = {pid: (players_idx.get(pid) or {}).get("pos") or "" for pid in all_pids}
+                opt_set, opt_pts = _compute_optimal_lineup(pts_map, pos_map, roster_positions, all_pids)
+                left = round(max(opt_pts - actual_pts, 0), 1)
+                starter_set = set(starters_raw)
+                players_out = sorted([
+                    {
+                        "pid": pid,
+                        "name": (players_idx.get(pid) or {}).get("name") or pid,
+                        "pos":  ((players_idx.get(pid) or {}).get("pos") or "").upper(),
+                        "pts":  float(pts_map.get(pid) or 0),
+                        "actual_start": pid in starter_set,
+                        "optimal_start": pid in opt_set,
+                    }
+                    for pid in all_pids
+                ], key=lambda p: -p["pts"])
+                weeks.append({"week": w, "actual_pts": round(actual_pts, 2),
+                               "opt_pts": round(opt_pts, 2), "left": left, "players": players_out})
+            except Exception:
+                continue
+        return weeks
+
+    def _wk_table_row(wd: dict) -> str:
+        left_color = "#ef4444" if wd["left"] > 15 else ("#f59e0b" if wd["left"] > 7 else "#22c55e")
+        badges = _opt_player_badges(wd["players"])
+        return (
+            f"<tr style='cursor:pointer;' onclick='this.nextElementSibling.style.display="
+            f"this.nextElementSibling.style.display===\"none\"?\"table-row\":\"none\"'>"
+            f"<td style='padding:10px 12px;font-weight:600;'>Week {wd['week']}</td>"
+            f"<td style='padding:10px 12px;'>{wd['actual_pts']}</td>"
+            f"<td style='padding:10px 12px;'>{wd['opt_pts']}</td>"
+            f"<td style='padding:10px 12px;font-weight:700;color:{left_color};'>+{wd['left']}</td>"
+            f"</tr>"
+            f"<tr style='display:none;background:var(--surface2);'>"
+            f"<td colspan='4' style='padding:12px;'>"
+            f"<div style='font-size:12px;color:var(--muted);margin-bottom:8px;'>"
+            f"<span style='color:#ef4444'>&#9660; Should have benched</span> &nbsp; "
+            f"<span style='color:#22c55e'>&#9650; Should have started</span></div>"
+            f"<div style='display:flex;flex-wrap:wrap;gap:6px;'>{badges}</div>"
+            f"</td></tr>"
+        )
+
+    _TH = "<th style='padding:10px 12px;text-align:left;font-size:11px;color:var(--muted);'>"
+    _no_data = ("<div class='card'><div class='card-body' style='padding:24px;text-align:center;"
+                "color:var(--muted);'>No data available.</div></div>")
+
+    # ── League season view ────────────────────────────────────────────────────
+    if view == "league" and period == "season":
+        team_rows = []
+        for r in rosters:
+            rid = str(r.get("roster_id") or "")
+            if not rid:
+                continue
+            tname = roster_map.get(rid) or f"Team {rid}"
+            weeks = _roster_weeks(rid)
+            if not weeks:
+                continue
+            s_actual = sum(w["actual_pts"] for w in weeks)
+            s_opt    = sum(w["opt_pts"]    for w in weeks)
+            s_left   = round(sum(w["left"] for w in weeks), 1)
+            eff = round((s_actual / s_opt * 100) if s_opt else 0, 1)
+            team_rows.append({"name": tname, "actual": round(s_actual, 1),
+                               "opt": round(s_opt, 1), "left": s_left, "eff": eff})
+        team_rows.sort(key=lambda x: -x["eff"])
+
+        rows_html = ""
+        for i, tr in enumerate(team_rows):
+            eff_color = "#22c55e" if tr["eff"] >= 92 else ("#f59e0b" if tr["eff"] >= 86 else "#ef4444")
+            rows_html += (
+                f"<tr style='border-bottom:1px solid var(--border);'>"
+                f"<td style='padding:10px 12px;color:var(--muted);font-weight:600;'>#{i+1}</td>"
+                f"<td style='padding:10px 12px;font-weight:600;'>{html.escape(tr['name'])}</td>"
+                f"<td style='padding:10px 12px;font-weight:700;color:{eff_color};'>{tr['eff']}%</td>"
+                f"<td style='padding:10px 12px;'>{tr['actual']}</td>"
+                f"<td style='padding:10px 12px;'>{tr['opt']}</td>"
+                f"<td style='padding:10px 12px;color:#ef4444;font-weight:600;'>+{tr['left']}</td>"
+                f"</tr>"
+            )
+        body_html = (
+            f"<div class='card' style='overflow:auto;'>"
+            f"<div class='card-header'><h3>League Lineup Efficiency — Season</h3></div>"
+            f"<table style='width:100%;border-collapse:collapse;'>"
+            f"<thead><tr style='border-bottom:2px solid var(--border);'>"
+            f"{_TH}#</th>{_TH}TEAM</th>{_TH}EFFICIENCY</th>"
+            f"{_TH}ACTUAL PTS</th>{_TH}OPTIMAL PTS</th>{_TH}LEFT ON BENCH</th>"
+            f"</tr></thead><tbody>{rows_html}</tbody></table></div>"
+        ) if team_rows else _no_data
+        return nav_html + body_html
+
+    # ── League weekly view ────────────────────────────────────────────────────
+    if view == "league" and period == "weekly":
+        wk_rows = []
+        for r in rosters:
+            rid = str(r.get("roster_id") or "")
+            if not rid:
+                continue
+            tname = roster_map.get(rid) or f"Team {rid}"
+            row = next((m for m in all_matchups.get(sel_week, []) if str(m.get("roster_id")) == str(rid)), None)
             if not row:
                 continue
-            starters_raw = [str(p) for p in (row.get("starters") or []) if p and str(p) != "0"]
-            all_pids     = [str(p) for p in (row.get("players")  or []) if p and str(p) != "0"]
-            pts_map      = {str(k): float(v or 0) for k, v in (row.get("players_points") or {}).items()}
-            if not starters_raw or not all_pids:
+            try:
+                starters_raw = [str(p) for p in (row.get("starters") or []) if p and str(p) != "0"]
+                all_pids     = [str(p) for p in (row.get("players")  or []) if p and str(p) != "0"]
+                pts_map      = {str(k): float(v or 0) for k, v in (row.get("players_points") or {}).items()}
+                if not starters_raw or not all_pids:
+                    continue
+                actual_pts = float(row.get("points") or 0)
+                pos_map    = {pid: (players_idx.get(pid) or {}).get("pos") or "" for pid in all_pids}
+                opt_set, opt_pts = _compute_optimal_lineup(pts_map, pos_map, roster_positions, all_pids)
+                left = round(max(opt_pts - actual_pts, 0), 1)
+                starter_set = set(starters_raw)
+                players_out = sorted([
+                    {"pid": pid, "name": (players_idx.get(pid) or {}).get("name") or pid,
+                     "pos": ((players_idx.get(pid) or {}).get("pos") or "").upper(),
+                     "pts": float(pts_map.get(pid) or 0),
+                     "actual_start": pid in starter_set, "optimal_start": pid in opt_set}
+                    for pid in all_pids
+                ], key=lambda p: -p["pts"])
+                wk_rows.append({"name": tname, "actual": round(actual_pts, 2),
+                                 "opt": round(opt_pts, 2), "left": left, "players": players_out})
+            except Exception:
                 continue
-            actual_pts = float(row.get("points") or 0)
-            pos_map    = {pid: (players_idx.get(pid) or {}).get("pos") or "" for pid in all_pids}
-            opt_set, opt_pts = _compute_optimal_lineup(pts_map, pos_map, roster_positions, all_pids)
-            left = round(max(opt_pts - actual_pts, 0), 1)
-            season_actual  += actual_pts
-            season_optimal += opt_pts
-            season_left    += left
+        wk_rows.sort(key=lambda x: -x["left"])
 
-            # Build player rows
-            starter_set = set(starters_raw)
-            players_out = []
-            for pid in all_pids:
-                info = players_idx.get(pid) or {}
-                players_out.append({
-                    "pid": pid,
-                    "name": info.get("name") or pid,
-                    "pos":  (info.get("pos") or "").upper(),
-                    "pts":  float(pts_map.get(pid) or 0),
-                    "actual_start": pid in starter_set,
-                    "optimal_start": pid in opt_set,
-                })
-            players_out.sort(key=lambda p: (-p["pts"],))
+        rows_html = ""
+        for tr in wk_rows:
+            left_color = "#ef4444" if tr["left"] > 15 else ("#f59e0b" if tr["left"] > 7 else "#22c55e")
+            badges = _opt_player_badges(tr["players"])
+            rows_html += (
+                f"<tr style='cursor:pointer;border-bottom:1px solid var(--border);' "
+                f"onclick='this.nextElementSibling.style.display="
+                f"this.nextElementSibling.style.display===\"none\"?\"table-row\":\"none\"'>"
+                f"<td style='padding:10px 12px;font-weight:600;'>{html.escape(tr['name'])}</td>"
+                f"<td style='padding:10px 12px;'>{tr['actual']}</td>"
+                f"<td style='padding:10px 12px;'>{tr['opt']}</td>"
+                f"<td style='padding:10px 12px;font-weight:700;color:{left_color};'>+{tr['left']}</td>"
+                f"</tr>"
+                f"<tr style='display:none;background:var(--surface2);'>"
+                f"<td colspan='4' style='padding:12px;'>"
+                f"<div style='font-size:12px;color:var(--muted);margin-bottom:8px;'>"
+                f"<span style='color:#ef4444'>&#9660; Should have benched</span> &nbsp; "
+                f"<span style='color:#22c55e'>&#9650; Should have started</span></div>"
+                f"<div style='display:flex;flex-wrap:wrap;gap:6px;'>{badges}</div>"
+                f"</td></tr>"
+            )
+        body_html = (
+            f"<div class='card' style='overflow:auto;'>"
+            f"<div class='card-header'><h3>Week {sel_week} — League Efficiency</h3></div>"
+            f"<table style='width:100%;border-collapse:collapse;'>"
+            f"<thead><tr style='border-bottom:2px solid var(--border);'>"
+            f"{_TH}TEAM</th>{_TH}ACTUAL</th>{_TH}OPTIMAL</th>{_TH}LEFT ON BENCH</th>"
+            f"</tr></thead><tbody>{rows_html}</tbody></table></div>"
+        ) if wk_rows else _no_data
+        return nav_html + body_html
 
-            weeks_data.append({
-                "week":       w,
-                "actual_pts": round(actual_pts, 2),
-                "opt_pts":    round(opt_pts, 2),
-                "left":       left,
-                "players":    players_out,
-            })
-        except Exception:
-            continue
+    # ── User views ────────────────────────────────────────────────────────────
+    if not viewer_rid:
+        return (nav_html +
+                "<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
+                "<p style='color:var(--muted)'>Sign in to see your optimal lineup history.</p>"
+                "</div></div>")
 
+    weeks_data = _roster_weeks(viewer_rid)
     if not weeks_data:
-        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
+        return (nav_html +
+                "<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
                 "<p style='color:var(--muted)'>No lineup data found.</p></div></div>")
 
-    season_left = round(season_left, 1)
-    efficiency  = round((season_actual / season_optimal * 100) if season_optimal else 0, 1)
-    worst_week  = max(weeks_data, key=lambda x: x["left"])
-    best_week   = min(weeks_data, key=lambda x: x["left"])
-
-    # ── Summary cards ────────────────────────────────────────────────────────
-    summary_html = f"""
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px;">
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:24px;font-weight:700;color:var(--accent);">{season_left}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">PTS LEFT ON BENCH (SEASON)</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:24px;font-weight:700;color:var(--text);">{efficiency}%</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">LINEUP EFFICIENCY</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:24px;font-weight:700;color:#ef4444;">Wk {worst_week['week']}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">WORST WEEK (+{worst_week['left']} left)</div>
-  </div>
-  <div class="card" style="padding:16px;text-align:center;">
-    <div style="font-size:24px;font-weight:700;color:#22c55e;">Wk {best_week['week']}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">BEST WEEK (+{best_week['left']} left)</div>
-  </div>
-</div>"""
-
-    # ── Week-by-week table ───────────────────────────────────────────────────
-    rows_html = ""
-    for wd in reversed(weeks_data):
+    # ── User weekly view ──────────────────────────────────────────────────────
+    if period == "weekly":
+        wd = next((w for w in weeks_data if w["week"] == sel_week), None)
+        if not wd:
+            return nav_html + _no_data
         left_color = "#ef4444" if wd["left"] > 15 else ("#f59e0b" if wd["left"] > 7 else "#22c55e")
-        rows_html += f"""
-    <tr style="cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'table-row':'none'">
-      <td style="font-weight:600;">Week {wd['week']}</td>
-      <td>{wd['actual_pts']}</td>
-      <td>{wd['opt_pts']}</td>
-      <td style="font-weight:700;color:{left_color};">+{wd['left']}</td>
-    </tr>
-    <tr style="display:none;background:var(--surface2);">
-      <td colspan="4" style="padding:12px;">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Click a row to expand • <span style='color:#ef4444'>&#9660; Should have benched</span> &nbsp; <span style='color:#22c55e'>&#9650; Should have started</span></div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;">"""
-        for p in wd["players"]:
-            if p["actual_start"] == p["optimal_start"]:
-                badge_style = "background:var(--surface);border:1px solid var(--border);"
-                icon = ""
-            elif p["actual_start"] and not p["optimal_start"]:
-                badge_style = "background:#ef444420;border:1px solid #ef4444;color:#ef4444;"
-                icon = "&#9660; "
-            else:
-                badge_style = "background:#22c55e20;border:1px solid #22c55e;color:#22c55e;"
-                icon = "&#9650; "
-            pos_color = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#a855f7"}.get(p["pos"], "#6b7280")
-            rows_html += (f"<span style='padding:4px 8px;border-radius:6px;font-size:12px;{badge_style}'>"
-                          f"<span style='color:{pos_color};font-weight:700;'>{p['pos']}</span> "
-                          f"{html.escape(p['name'])} {icon}<b>{p['pts']:.1f}</b></span>")
-        rows_html += "</div></td></tr>"
+        badges = _opt_player_badges(wd["players"])
+        pos_html = _opt_pos_breakdown([wd])
+        summary = (
+            f"<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));"
+            f"gap:12px;margin-bottom:16px;'>"
+            f"<div class='card' style='padding:16px;text-align:center;'>"
+            f"<div style='font-size:22px;font-weight:700;'>{wd['actual_pts']}</div>"
+            f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>ACTUAL PTS</div></div>"
+            f"<div class='card' style='padding:16px;text-align:center;'>"
+            f"<div style='font-size:22px;font-weight:700;'>{wd['opt_pts']}</div>"
+            f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>OPTIMAL PTS</div></div>"
+            f"<div class='card' style='padding:16px;text-align:center;'>"
+            f"<div style='font-size:22px;font-weight:700;color:{left_color};'>+{wd['left']}</div>"
+            f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>LEFT ON BENCH</div></div>"
+            f"</div>"
+        )
+        detail = (
+            f"<div class='card'>"
+            f"<div class='card-header'><h3>Week {sel_week} — Player Breakdown</h3></div>"
+            f"<div style='padding:12px;'>"
+            f"<div style='font-size:12px;color:var(--muted);margin-bottom:8px;'>"
+            f"<span style='color:#ef4444'>&#9660; Should have benched</span> &nbsp; "
+            f"<span style='color:#22c55e'>&#9650; Should have started</span></div>"
+            f"<div style='display:flex;flex-wrap:wrap;gap:6px;'>{badges}</div>"
+            f"</div></div>"
+        )
+        return nav_html + summary + detail + pos_html
 
-    table_html = f"""
-<div class="card" style="overflow:auto;">
-  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-    <h3>Week-by-Week Breakdown</h3>
-    <span style="font-size:12px;color:var(--muted);">Click a row to see player details</span>
-  </div>
-  <table style="width:100%;border-collapse:collapse;">
-    <thead><tr style="border-bottom:1px solid var(--border);">
-      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">WEEK</th>
-      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">ACTUAL PTS</th>
-      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">OPTIMAL PTS</th>
-      <th style="padding:10px;text-align:left;font-size:12px;color:var(--muted);">LEFT ON BENCH</th>
-    </tr></thead>
-    <tbody>{rows_html}</tbody>
-  </table>
-</div>"""
+    # ── User season view ──────────────────────────────────────────────────────
+    season_actual  = sum(w["actual_pts"] for w in weeks_data)
+    season_optimal = sum(w["opt_pts"]    for w in weeks_data)
+    season_left    = round(sum(w["left"] for w in weeks_data), 1)
+    efficiency     = round((season_actual / season_optimal * 100) if season_optimal else 0, 1)
+    worst_week     = max(weeks_data, key=lambda x: x["left"])
+    best_week      = min(weeks_data, key=lambda x: x["left"])
 
-    return summary_html + table_html
+    summary_html = (
+        f"<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));"
+        f"gap:12px;margin-bottom:20px;'>"
+        f"<div class='card' style='padding:16px;text-align:center;'>"
+        f"<div style='font-size:24px;font-weight:700;color:var(--accent);'>{season_left}</div>"
+        f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>PTS LEFT ON BENCH</div></div>"
+        f"<div class='card' style='padding:16px;text-align:center;'>"
+        f"<div style='font-size:24px;font-weight:700;color:var(--text);'>{efficiency}%</div>"
+        f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>LINEUP EFFICIENCY</div></div>"
+        f"<div class='card' style='padding:16px;text-align:center;'>"
+        f"<div style='font-size:24px;font-weight:700;color:#ef4444;'>Wk {worst_week['week']}</div>"
+        f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>WORST (+{worst_week['left']} left)</div></div>"
+        f"<div class='card' style='padding:16px;text-align:center;'>"
+        f"<div style='font-size:24px;font-weight:700;color:#22c55e;'>Wk {best_week['week']}</div>"
+        f"<div style='font-size:11px;color:var(--muted);margin-top:4px;'>BEST (+{best_week['left']} left)</div></div>"
+        f"</div>"
+    )
+
+    rows_html = "".join(_wk_table_row(wd) for wd in reversed(weeks_data))
+    table_html = (
+        f"<div class='card' style='overflow:auto;'>"
+        f"<div class='card-header' style='display:flex;justify-content:space-between;align-items:center;'>"
+        f"<h3>Week-by-Week Breakdown</h3>"
+        f"<span style='font-size:12px;color:var(--muted);'>Click row to expand</span></div>"
+        f"<table style='width:100%;border-collapse:collapse;'>"
+        f"<thead><tr style='border-bottom:1px solid var(--border);'>"
+        f"{_TH}WEEK</th>{_TH}ACTUAL PTS</th>{_TH}OPTIMAL PTS</th>{_TH}LEFT ON BENCH</th>"
+        f"</tr></thead><tbody>{rows_html}</tbody></table></div>"
+    )
+
+    pos_html = _opt_pos_breakdown(weeks_data)
+
+    return nav_html + summary_html + table_html + pos_html
 
 
 @app.route("/<platform>/<int:season>/<league_id>/optimal")
 def page_optimal(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     body = build_optimal_body(ctx)
-    return render_page("Optimal Lineup Tracker", league_id, "optimal", body, platform, season)
+    return render_page("Lineup Efficiency Tracker", league_id, "optimal", body, platform, season)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -11880,29 +12343,36 @@ def _compute_fpts_against(season: int) -> dict:
     _FPTS_AGAINST_CACHE_TS[cache_key] = now
     return result
 
-def build_playoff_schedule_body(ctx):
-    platform  = ctx.get("platform") or "sleeper"
-    season    = ctx.get("season") or 2025
-    league_id = ctx.get("league_id") or ""
-    viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
-    rosters   = ctx.get("rosters") or []
+_SCHED_POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b",
+                     "TE": "#a855f7", "K": "#6b7280", "DEF": "#6b7280"}
+_SCHED_POS_ORDER = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
+
+
+def _sched_rank_color(rank, total):
+    """Color for a matchup by opponent's fpts-allowed rank (1 = easiest)."""
+    if not rank or not total:
+        return "#6b7280", "transparent"
+    pct = rank / total
+    if pct <= 0.25:
+        return "#22c55e", "#22c55e18"   # elite (most pts allowed)
+    if pct <= 0.50:
+        return "#84cc16", "#84cc1618"
+    if pct <= 0.75:
+        return "#f59e0b", "#f59e0b18"
+    return "#ef4444", "#ef444418"        # brutal (fewest pts allowed)
+
+
+def _compute_schedule_grid(season: int, pids, weeks):
+    """For each pid over the given weeks, return matchup + difficulty cells.
+    Reuses the cached fpts-allowed table so this is cheap per request."""
     players_idx = get_players_index_global() or {}
-
-    settings       = (ctx.get("league") or {}).get("settings") or {}
-    playoff_start  = int(settings.get("playoff_week_start") or 14)
-    playoff_weeks  = list(range(playoff_start, playoff_start + 4))
-
-    # FPTS allowed per game by each defense, by position
     fpts_against = _compute_fpts_against(season)
 
-    # Build per-position rank ordering (lower FPTS allowed = better for offense)
-    # rank 1 = easiest matchup (most pts allowed)
     _pos_rank_cache: dict = {}
-    def _fpts_rank(team: str, pos: str) -> tuple:
-        """Return (rank, total, fpts_per_game) for team vs pos. Lower rank = harder."""
+    def _fpts_rank(team: str, pos: str):
         if pos not in _pos_rank_cache:
             vals = [(t, fpts_against.get(t, {}).get(pos, 0)) for t in fpts_against]
-            vals.sort(key=lambda x: x[1], reverse=True)  # most pts allowed = rank 1 (easiest)
+            vals.sort(key=lambda x: x[1], reverse=True)  # most allowed = rank 1 (easiest)
             _pos_rank_cache[pos] = {t: (i + 1, len(vals)) for i, (t, _) in enumerate(vals)}
         entry = _pos_rank_cache.get(pos, {}).get(team)
         fpts_val = fpts_against.get(team, {}).get(pos, 0)
@@ -11910,110 +12380,335 @@ def build_playoff_schedule_body(ctx):
             return entry[0], entry[1], fpts_val
         return None, None, fpts_val
 
-    def _rank_color(rank, total):
-        if not rank or not total:
-            return "#6b7280", "var(--surface)"
-        pct = rank / total
-        if pct <= 0.25:   return "#22c55e", "#22c55e18"  # easiest (most pts allowed)
-        if pct <= 0.50:   return "#84cc16", "#84cc1618"
-        if pct <= 0.75:   return "#f59e0b", "#f59e0b18"
-        return "#ef4444", "#ef444418"                    # hardest (fewest pts allowed)
-
-    total_teams = max(len(fpts_against), 32)
-
-    # Build schedule lookup per week
-    schedules = {}
-    for w in playoff_weeks:
-        games = load_week_schedule(season, w) or []
+    schedules: dict = {}
+    for w in weeks:
+        try:
+            games = load_week_schedule(season, w) or []
+        except Exception:
+            games = []
         lookup = {}
         for g in games:
             home = (g.get("home") or "").upper()
             away = (g.get("away") or "").upper()
-            if home: lookup[home] = {"opp": away, "is_home": True}
-            if away: lookup[away] = {"opp": home, "is_home": False}
+            if home:
+                lookup[home] = {"opp": away, "is_home": True}
+            if away:
+                lookup[away] = {"opp": home, "is_home": False}
         schedules[w] = lookup
 
-    # Get the viewer's roster players
-    viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == viewer_rid), None)
-    roster_pids = [str(p) for p in (viewer_roster.get("players") if viewer_roster else []) or []]
-    if not roster_pids:
-        # show all rosters or fallback
-        return ("<div class='card central'><div class='card-body' style='padding:24px;text-align:center'>"
-                "<p style='color:var(--muted)'>Sign in to see your team's playoff schedule.</p></div></div>")
-
-    # Build player rows
-    _pos_order = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
-    players = []
-    for pid in roster_pids:
-        info = players_idx.get(pid) or {}
-        pos  = (info.get("pos") or "").upper()
-        nfl  = (info.get("team") or "").upper()
-        players.append({"pid": pid, "name": info.get("name") or pid, "pos": pos, "nfl": nfl})
-    players.sort(key=lambda p: (_pos_order.get(p["pos"], 9), p["name"]))
-
-    # ── Build grid ───────────────────────────────────────────────────────────
-    header_cells = "".join(f"<th style='padding:10px 14px;text-align:center;'>WK {w}</th>" for w in playoff_weeks)
-    grid_rows = ""
-    for p in players:
-        nfl = p["nfl"]
-        pos_color = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b", "TE": "#a855f7"}.get(p["pos"], "#6b7280")
-        cells = ""
-        for w in playoff_weeks:
-            game = schedules[w].get(nfl)
+    out = []
+    for pid in pids:
+        info = players_idx.get(str(pid)) or {}
+        pos = (info.get("pos") or "").upper()
+        nfl = (info.get("team") or "").upper()
+        cells = []
+        for w in weeks:
+            game = schedules.get(w, {}).get(nfl)
             if not game:
-                cells += "<td style='padding:10px;text-align:center;color:var(--muted);'>BYE</td>"
+                cells.append({"week": w, "bye": True})
                 continue
             opp = game["opp"]
-            at  = "" if game["is_home"] else "@"
-            rank, total, fpts_val = _fpts_rank(opp, p["pos"])
-            txt_color, bg_color = _rank_color(rank, total)
-            rank_label = f"#{rank}" if rank else "–"
-            fpts_label = f"{fpts_val:.1f} pts" if fpts_val else ""
-            cells += (f"<td style='padding:8px;text-align:center;background:{bg_color};'>"
-                      f"<div style='font-weight:600;'>{at}{opp}</div>"
-                      f"<div style='font-size:11px;color:{txt_color};font-weight:700;'>{rank_label}</div>"
-                      f"<div style='font-size:10px;color:var(--muted);'>{fpts_label}</div>"
-                      f"</td>")
-        grid_rows += f"""
-<tr style="border-bottom:1px solid var(--border);">
-  <td style="padding:10px 14px;white-space:nowrap;">
-    <span style="background:{pos_color}22;color:{pos_color};font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">{html.escape(p['pos'])}</span>
-    <span class="player-clickable" data-player-id="{p['pid']}" style="cursor:pointer;">{html.escape(p['name'])}</span>
-    <span style="font-size:11px;color:var(--muted);margin-left:6px;">{html.escape(p['nfl'])}</span>
-  </td>
-  {cells}
-</tr>"""
+            rank, total, fpts_val = _fpts_rank(opp, pos)
+            txt, bg = _sched_rank_color(rank, total)
+            cells.append({
+                "week": w, "bye": False, "opp": opp,
+                "at": "" if game["is_home"] else "@",
+                "rank": rank, "total": total,
+                "fpts": round(fpts_val, 1) if fpts_val else 0,
+                "txt": txt, "bg": bg,
+            })
+        out.append({
+            "pid": str(pid),
+            "name": info.get("name") or str(pid),
+            "pos": pos,
+            "color": _SCHED_POS_COLORS.get(pos, "#6b7280"),
+            "nfl": nfl,
+            "cells": cells,
+        })
+    out.sort(key=lambda p: (_SCHED_POS_ORDER.get(p["pos"], 9), p["name"]))
+    return out
 
-    legend = """
-<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;margin-bottom:16px;">
-  <span><span style="display:inline-block;width:10px;height:10px;background:#22c55e;border-radius:2px;margin-right:4px;"></span>Elite matchup (top 25%)</span>
-  <span><span style="display:inline-block;width:10px;height:10px;background:#84cc16;border-radius:2px;margin-right:4px;"></span>Good matchup</span>
-  <span><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px;margin-right:4px;"></span>Tough matchup</span>
-  <span><span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:2px;margin-right:4px;"></span>Brutal matchup (bottom 25%)</span>
-  <span style="color:var(--muted)">Rank = fantasy pts allowed per game at that position (PPR) — #1 = most pts allowed = easiest matchup</span>
-</div>"""
 
-    week_labels = " · ".join(f"Wk {w}" for w in playoff_weeks)
-    table = f"""
-<div class="card" style="overflow:auto;">
-  <div class="card-header"><h3>Fantasy Playoff Schedule — {week_labels}</h3></div>
-  <div style="padding:12px 16px;">{legend}</div>
-  <table style="width:100%;border-collapse:collapse;">
-    <thead><tr style="border-bottom:2px solid var(--border);">
-      <th style="padding:10px 14px;text-align:left;">Player</th>
-      {header_cells}
-    </tr></thead>
-    <tbody>{grid_rows}</tbody>
-  </table>
-</div>"""
-    return table
+def build_schedule_body(ctx):
+    import json as _json
+    season     = int(ctx.get("season") or 2025)
+    league_id  = ctx.get("league_id") or ""
+    platform   = ctx.get("platform") or "sleeper"
+    viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    rosters    = ctx.get("rosters") or []
+    players_idx = get_players_index_global() or {}
+
+    current_week = int(ctx.get("current_week") or 0)
+    max_week   = 18
+    start_week = current_week if current_week >= 1 else 1
+    def_start  = start_week
+    def_end    = min(start_week + 3, max_week)
+
+    viewer_roster = next((r for r in rosters if str(r.get("roster_id")) == viewer_rid), None)
+    roster_pids = [str(p) for p in (viewer_roster.get("players") if viewer_roster else []) or []]
+    init_pids = [
+        pid for pid in roster_pids
+        if ((players_idx.get(pid) or {}).get("pos") or "").upper() in ("QB", "RB", "WR", "TE", "K", "DEF")
+    ]
+
+    cfg = _json.dumps({
+        "season": season, "leagueId": league_id, "platform": platform,
+        "startWeek": start_week, "maxWeek": max_week,
+        "defStart": def_start, "defEnd": def_end,
+        "initPids": init_pids,
+    })
+
+    shell = """
+    <div class="card central schedule-card">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+        <div>
+          <h2>Schedule Assistant</h2>
+          <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+            Matchup difficulty by week. Add or remove players and pick a single week or a range.
+          </div>
+        </div>
+      </div>
+
+      <div class="sched-controls">
+        <div class="sched-week-range">
+          <span class="sched-ctrl-label">Weeks</span>
+          <select id="schedWkStart" class="sched-select"></select>
+          <span class="sched-ctrl-sep">to</span>
+          <select id="schedWkEnd" class="sched-select"></select>
+        </div>
+        <div class="sched-add">
+          <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted);pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
+          <input id="schedAddInput" class="sched-add-input" type="text"
+                 placeholder="Add a player..." autocomplete="off">
+          <div id="schedAddResults" class="sched-add-results" style="display:none;"></div>
+        </div>
+      </div>
+
+      <div class="sched-legend">
+        <span><span class="sched-chip" style="background:#22c55e;"></span>Elite (top 25%)</span>
+        <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
+        <span><span class="sched-chip" style="background:#f59e0b;"></span>Tough</span>
+        <span><span class="sched-chip" style="background:#ef4444;"></span>Brutal (bottom 25%)</span>
+        <span class="sched-legend-note">Rank = fantasy pts allowed per game at that position (PPR). #1 = easiest matchup.</span>
+      </div>
+
+      <div id="schedGrid" class="sched-grid-wrap">
+        <div class="sched-empty">Loading schedule…</div>
+      </div>
+    </div>
+    """
+
+    script = """
+    <script>
+    (function() {
+      var CFG = __CFG__;
+      var LS_PIDS = 'sched_pids_' + CFG.leagueId;
+      var LS_WKS  = 'sched_wks_'  + CFG.leagueId;
+
+      var selPids = [];
+      try { selPids = JSON.parse(localStorage.getItem(LS_PIDS) || 'null'); } catch (e) {}
+      if (!Array.isArray(selPids) || !selPids.length) selPids = CFG.initPids.slice();
+
+      var wkStart = CFG.defStart, wkEnd = CFG.defEnd;
+      try {
+        var saved = JSON.parse(localStorage.getItem(LS_WKS) || 'null');
+        if (saved && saved.s) { wkStart = saved.s; wkEnd = saved.e; }
+      } catch (e) {}
+      if (wkStart < CFG.startWeek) wkStart = CFG.startWeek;
+      if (wkEnd > CFG.maxWeek) wkEnd = CFG.maxWeek;
+      if (wkEnd < wkStart) wkEnd = wkStart;
+
+      var pool = [];       // [{id,name,pos,team}]
+      var poolReady = false;
+
+      var startSel = document.getElementById('schedWkStart');
+      var endSel   = document.getElementById('schedWkEnd');
+      var addInput = document.getElementById('schedAddInput');
+      var addResults = document.getElementById('schedAddResults');
+      var gridEl   = document.getElementById('schedGrid');
+
+      function fillWeekSelects() {
+        var optsS = '', optsE = '';
+        for (var w = CFG.startWeek; w <= CFG.maxWeek; w++) {
+          optsS += '<option value="' + w + '"' + (w === wkStart ? ' selected' : '') + '>Week ' + w + '</option>';
+          optsE += '<option value="' + w + '"' + (w === wkEnd ? ' selected' : '') + '>Week ' + w + '</option>';
+        }
+        startSel.innerHTML = optsS;
+        endSel.innerHTML = optsE;
+      }
+
+      function persist() {
+        try { localStorage.setItem(LS_PIDS, JSON.stringify(selPids)); } catch (e) {}
+        try { localStorage.setItem(LS_WKS, JSON.stringify({s: wkStart, e: wkEnd})); } catch (e) {}
+      }
+
+      function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) {
+          return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+        });
+      }
+
+      function renderGrid() {
+        if (!selPids.length) {
+          gridEl.innerHTML = '<div class="sched-empty">No players yet. Use the search above to add players.</div>';
+          return;
+        }
+        gridEl.innerHTML = '<div class="sched-empty">Loading…</div>';
+        var url = '/api/schedule?season=' + CFG.season +
+                  '&week_start=' + wkStart + '&week_end=' + wkEnd +
+                  '&pids=' + encodeURIComponent(selPids.join(','));
+        fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+          var weeks = data.weeks || [];
+          var players = data.players || [];
+          if (!players.length) {
+            gridEl.innerHTML = '<div class="sched-empty">No matchup data for this selection.</div>';
+            return;
+          }
+          var head = '<th class="sched-th sched-th-player">Player</th>';
+          for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
+          var rows = '';
+          players.forEach(function(p) {
+            var cells = '';
+            (p.cells || []).forEach(function(c) {
+              if (c.bye) {
+                cells += '<td class="sched-td sched-bye">BYE</td>';
+                return;
+              }
+              var rankLabel = c.rank ? ('#' + c.rank) : '–';
+              var fptsLabel = c.fpts ? (c.fpts + ' pts') : '';
+              cells += '<td class="sched-td" style="background:' + c.bg + ';">' +
+                         '<div class="sched-opp">' + esc(c.at + c.opp) + '</div>' +
+                         '<div class="sched-rank" style="color:' + c.txt + ';">' + rankLabel + '</div>' +
+                         '<div class="sched-fpts">' + esc(fptsLabel) + '</div>' +
+                       '</td>';
+            });
+            rows += '<tr>' +
+              '<td class="sched-td sched-td-player">' +
+                '<button class="sched-remove" data-pid="' + esc(p.pid) + '" title="Remove">&times;</button>' +
+                '<span class="sched-pos" style="background:' + p.color + '22;color:' + p.color + ';">' + esc(p.pos) + '</span>' +
+                '<span class="player-clickable sched-pname" data-player-id="' + esc(p.pid) + '">' + esc(p.name) + '</span>' +
+                '<span class="sched-nfl">' + esc(p.nfl) + '</span>' +
+              '</td>' + cells + '</tr>';
+          });
+          gridEl.innerHTML =
+            '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>';
+        }).catch(function() {
+          gridEl.innerHTML = '<div class="sched-empty" style="color:#ef4444;">Failed to load schedule.</div>';
+        });
+      }
+
+      function loadPool() {
+        fetch('/api/league-players').then(function(r) { return r.json(); }).then(function(resp) {
+          var arr = Array.isArray(resp) ? resp : (resp.players || []);
+          pool = arr.filter(function(p) {
+            var pos = String(p.position || '').toUpperCase();
+            return ['QB','RB','WR','TE','K','DEF'].indexOf(pos) !== -1 && p.team && p.team !== 'FA';
+          }).map(function(p) {
+            return {id: String(p.id), name: p.name || '', pos: String(p.position || '').toUpperCase(), team: p.team || ''};
+          });
+          poolReady = true;
+        }).catch(function() {});
+      }
+
+      function showAddResults(q) {
+        if (!poolReady || !q) { addResults.style.display = 'none'; return; }
+        var ql = q.toLowerCase();
+        var sel = {};
+        selPids.forEach(function(id) { sel[id] = 1; });
+        var matches = pool.filter(function(p) {
+          return !sel[p.id] && p.name.toLowerCase().indexOf(ql) !== -1;
+        }).slice(0, 8);
+        if (!matches.length) { addResults.style.display = 'none'; return; }
+        addResults.innerHTML = matches.map(function(p) {
+          var col = ({QB:'#3b82f6',RB:'#22c55e',WR:'#f59e0b',TE:'#a855f7'})[p.pos] || '#6b7280';
+          return '<div class="sched-add-row" data-pid="' + esc(p.id) + '">' +
+                   '<span class="sched-pos" style="background:' + col + '22;color:' + col + ';">' + esc(p.pos) + '</span>' +
+                   '<span>' + esc(p.name) + '</span>' +
+                   '<span class="sched-nfl">' + esc(p.team) + '</span>' +
+                 '</div>';
+        }).join('');
+        addResults.style.display = 'block';
+      }
+
+      // ── Wire up controls ──────────────────────────────────────────────────
+      fillWeekSelects();
+
+      startSel.addEventListener('change', function() {
+        wkStart = parseInt(this.value, 10);
+        if (wkEnd < wkStart) { wkEnd = wkStart; }
+        fillWeekSelects();
+        persist(); renderGrid();
+      });
+      endSel.addEventListener('change', function() {
+        wkEnd = parseInt(this.value, 10);
+        if (wkStart > wkEnd) { wkStart = wkEnd; }
+        fillWeekSelects();
+        persist(); renderGrid();
+      });
+
+      addInput.addEventListener('input', function() { showAddResults(this.value.trim()); });
+      addInput.addEventListener('focus', function() { showAddResults(this.value.trim()); });
+      document.addEventListener('click', function(e) {
+        var row = e.target.closest ? e.target.closest('.sched-add-row') : null;
+        if (row && addResults.contains(row)) {
+          var pid = row.getAttribute('data-pid');
+          if (pid && selPids.indexOf(pid) === -1) {
+            selPids.push(pid);
+            persist(); renderGrid();
+          }
+          addInput.value = '';
+          addResults.style.display = 'none';
+          return;
+        }
+        if (!addResults.contains(e.target) && e.target !== addInput) {
+          addResults.style.display = 'none';
+        }
+      });
+
+      gridEl.addEventListener('click', function(e) {
+        var btn = e.target.closest ? e.target.closest('.sched-remove') : null;
+        if (btn) {
+          e.stopPropagation();
+          var pid = btn.getAttribute('data-pid');
+          selPids = selPids.filter(function(id) { return id !== pid; });
+          persist(); renderGrid();
+        }
+      });
+
+      loadPool();
+      renderGrid();
+    })();
+    </script>
+    """.replace("__CFG__", cfg)
+
+    return shell + script
+
+
+@app.route("/api/schedule")
+def api_schedule():
+    try:
+        season = int(request.args.get("season") or 0)
+        pids = [p for p in (request.args.get("pids") or "").split(",") if p]
+        ws = int(request.args.get("week_start") or 1)
+        we = int(request.args.get("week_end") or ws)
+        if we < ws:
+            ws, we = we, ws
+        ws = max(1, min(ws, 18))
+        we = max(1, min(we, 18))
+        weeks = list(range(ws, we + 1))
+        if not pids:
+            return jsonify({"weeks": weeks, "players": []})
+        players = _compute_schedule_grid(season, pids, weeks)
+        return jsonify({"weeks": weeks, "players": players})
+    except Exception as e:
+        return _api_err("Schedule unavailable", e)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/schedule")
-def page_playoff_schedule(platform: str, season: int, league_id: str):
+def page_schedule(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body = build_playoff_schedule_body(ctx)
-    return render_page("Playoff Schedule", league_id, "schedule", body, platform, season)
+    body = build_schedule_body(ctx)
+    return render_page("Schedule Assistant", league_id, "schedule", body, platform, season)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -13513,7 +14208,8 @@ def api_refresh_page():
             rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
             body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
-                                                    scoring_format=scoring_format)
+                                                    scoring_format=scoring_format,
+                                                    platform=platform)
 
         else:
             body_html = ""
@@ -14569,6 +15265,81 @@ def api_players():
     except Exception as e:
         logger.exception("[api-players] Unexpected error")
         return _api_err("Request failed", e)
+
+
+@app.route("/api/sparklines")
+def api_sparklines():
+    """7-day value history scaled to match the calibrated values shown on the rankings page.
+    Joins player_value_history with player_values so each series ends at the same value
+    the user sees displayed, matching the approach used by the player modal chart."""
+    try:
+        from dashboard_services.db import get_conn
+        # DB column names in player_value_history (value_sf = base SF, 10-team)
+        _db_cols = ["value", "value_sf", "value_8", "value_12", "value_14",
+                    "sf_value_8", "sf_value_12", "sf_value_14"]
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT pvh.player_id,
+                       {', '.join('pvh.' + c for c in _db_cols)},
+                       pv.calibrated_value_1qb,
+                       pv.calibrated_value_sf
+                FROM player_value_history pvh
+                LEFT JOIN player_values pv USING (player_id)
+                WHERE pvh.source = 'model'
+                  AND pvh.as_of_date >= CURRENT_DATE - INTERVAL '8 days'
+                ORDER BY pvh.player_id, pvh.as_of_date ASC
+                """
+            ).fetchall()
+
+        by_pid: dict = {}
+        for row in rows:
+            pid = row["player_id"]
+            if pid not in by_pid:
+                entry0 = {c: [] for c in _db_cols}
+                entry0["cal_1qb"] = row.get("calibrated_value_1qb")
+                entry0["cal_sf"]  = row.get("calibrated_value_sf")
+                by_pid[pid] = entry0
+            for c in _db_cols:
+                v = row.get(c)
+                if v is not None:
+                    by_pid[pid][c].append(float(v))
+
+        result = {}
+        for pid, data in by_pid.items():
+            base = data.get("value", [])
+            if len(base) < 2:
+                continue
+
+            # Scale factors: calibrated_current / last_raw so the series ends at
+            # the same value the rankings page displays via COALESCE(calibrated, raw).
+            last_1qb = base[-1]
+            last_sf  = (data.get("value_sf") or [None])[-1]
+            cal_1qb  = data["cal_1qb"]
+            cal_sf   = data["cal_sf"]
+            s1qb = (float(cal_1qb) / last_1qb) if cal_1qb and last_1qb else 1.0
+            ssf  = (float(cal_sf)  / last_sf)  if cal_sf  and last_sf  else s1qb
+
+            entry = {}
+            for c in _db_cols:
+                vals = data[c]
+                if len(vals) < 2:
+                    continue
+                # sf_value_* cols start with "sf_"; value_sf does not — detect by suffix
+                is_sf_col = c.startswith("sf_") or c == "value_sf"
+                scale = ssf if is_sf_col else s1qb
+                # JS expects key "sf_value" (the alias used everywhere in player data)
+                out_key = "sf_value" if c == "value_sf" else c
+                entry[out_key] = [round(v * scale, 1) for v in vals]
+
+            if entry:
+                result[pid] = entry
+
+        resp = jsonify(result)
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+        return resp
+    except Exception as e:
+        return _api_err("Sparklines unavailable", e)
 
 
 @app.route("/api/league-players")
@@ -20538,22 +21309,6 @@ def build_portfolio_body(
         "border-radius:9999px;background:var(--card);color:inherit;outline:none;"
         "transition:border-color .12s;}"
         ".pf-fsearch:focus{border-color:var(--accent);}"
-        ".pr-pagination{display:flex;justify-content:space-between;align-items:center;"
-        "margin:20px 0;padding:12px 0;border-top:1px solid var(--border);flex-wrap:wrap;gap:8px;}"
-        ".pr-pagination-info{font-size:13px;color:var(--text-muted);}"
-        ".pr-pagination-controls{display:flex;align-items:center;gap:12px;}"
-        ".pr-pagination-btn{padding:6px 12px;border:1px solid var(--border);border-radius:6px;"
-        "background:var(--card);color:var(--text);cursor:pointer;font-size:12px;font-weight:500;"
-        "transition:all .15s;display:flex;align-items:center;gap:4px;}"
-        ".pr-pagination-btn:hover:not(:disabled){background:var(--bg-alt);border-color:var(--accent);}"
-        ".pr-pagination-btn:disabled{opacity:.5;cursor:not-allowed;}"
-        ".pr-page-numbers{display:flex;gap:4px;}"
-        ".pr-page-number{padding:4px 8px;border:1px solid var(--border);border-radius:4px;"
-        "background:var(--card);color:var(--text);cursor:pointer;font-size:12px;font-weight:500;"
-        "min-width:28px;text-align:center;}"
-        ".pr-page-number:hover{background:var(--bg-alt);}"
-        ".pr-page-number.active{background:var(--accent,#3b82f6);color:var(--card);"
-        "border-color:var(--accent,#3b82f6);font-weight:700;}"
         "</style>"
     )
 

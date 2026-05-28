@@ -16,11 +16,13 @@ def build_trade_calculator_body(
         viewer_roster_id: Optional[str] = None,
         has_premium: bool = False,
         is_superflex: bool = False,
+        platform: Optional[str] = None,
 ) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
     viewer_roster_val = viewer_roster_id or ""
     is_guest = not league_id
+    platform_val = platform or "sleeper"
 
     # Get trade count from database
     trade_count = "150,000+"
@@ -52,17 +54,17 @@ def build_trade_calculator_body(
     if scoring_format_val not in {s for s, _ in SUPPORTED_SCORING_FORMATS}:
         scoring_format_val = "ppr"
 
-    # Create dynamic breakouts URL based on login status
+    # Create dynamic URLs based on login status
     if is_guest:
         breakouts_url = "#"
         breakouts_link_text = "Sign in to see more →"
         breakouts_link_class = "otc-view-all-link otc-guest-link"
+        players_url = "/players"
     else:
-        # For logged-in users, link to their league's breakouts page
-        platform_val = "sleeper"  # Default platform, can be made dynamic if needed
         breakouts_url = f"/{platform_val}/{season_val}/{league_val}/breakouts"
         breakouts_link_text = "View All →"
         breakouts_link_class = "otc-view-all-link"
+        players_url = f"/{platform_val}/{season_val}/{league_val}/players"
 
     # ----------------------------------------------------------------
     # Pre-compute all conditional HTML blocks outside the f-string
@@ -519,7 +521,7 @@ def build_trade_calculator_body(
                   <h2 class="otc-side-title">Player Values</h2>
                   <div class="otc-side-sub">Filter by position</div>
                 </div>
-                <a href="/players" class="otc-view-all-link">View All Players →</a>
+                <a href="{players_url}" class="otc-view-all-link">View All Players →</a>
               </div>
             </div>
 

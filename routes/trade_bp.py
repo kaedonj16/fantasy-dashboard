@@ -46,7 +46,8 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
                                            scoring_format=scoring_format,
                                            viewer_roster_id=viewer_roster_id,
                                            has_premium=has_premium,
-                                           is_superflex=_is_sf)
+                                           is_superflex=_is_sf,
+                                           platform=platform)
     else:
         state = get_nfl_state() or {}
         current_season = int(state.get("season") or datetime.now().year)

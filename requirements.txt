@@ -135,3 +135,4 @@ websockets==10.4
 
 zipp==3.23.0
 Pillow>=10.0.0
+flask-compress==1.24

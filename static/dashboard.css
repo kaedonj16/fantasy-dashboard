@@ -1743,7 +1743,8 @@ html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  height: 50px;
+  min-height: 50px;
+  flex-wrap: wrap;
 }
 
 .card.activity-card .scroll-box {
@@ -4280,43 +4281,101 @@ thead th {
 }
 
 /* Paywall/empty state for suggestions tab */
-.otc-sugg-pagination {
+/* ── Universal pagination ─────────────────────────────────────────────────────
+   One component used by every paginated list (players, rookies, trade intel…).
+   Default layout: info text on the left, controls on the right.
+   Add .pagination--center for the centered prev / label / next variant. */
+.pagination {
   display: flex;
+  justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.pagination--center {
   justify-content: center;
-  gap: 12px;
+  border-top: none;
+  margin-top: 0;
   padding: 12px 0 4px;
 }
-
-.otc-sugg-page-btn {
-  padding: 5px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--row);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.14s, border-color 0.14s;
-  margin: 0;
+.pagination-info {
+  font-size: 13px;
+  color: var(--text-muted);
 }
-
-.otc-sugg-page-btn:hover:not(:disabled) {
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.pagination-btn:hover:not(:disabled) {
   background: var(--accent-soft);
   border-color: var(--accent);
+  color: var(--accent);
 }
-
-.otc-sugg-page-btn:disabled {
-  opacity: 0.35;
+.pagination-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pagination-pages {
+  display: flex;
+  gap: 4px;
+}
+.pagination-page {
+  min-width: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.pagination-page:hover:not(.active) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.pagination-page.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--card);
+  font-weight: 700;
   cursor: default;
 }
-
-.otc-sugg-page-label {
+.pagination-label {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-muted);
-  min-width: 40px;
+  min-width: 44px;
   text-align: center;
+}
+@media (max-width: 540px) {
+  .pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .pagination-info { text-align: center; }
+  .pagination-controls { justify-content: center; }
 }
 
 .otc-sugg-empty {
@@ -8702,6 +8761,30 @@ thead th {
   gap: 16px;
 }
 
+.team-strength-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.team-strength-card .card-body {
+  min-width: 0;
+}
+
+.team-strength-card .pos-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pos-bar-cell {
+  width: 100px;
+  min-width: 60px;
+}
+
+.pos-rank {
+  white-space: nowrap;
+  text-align: right;
+}
+
 .tick-head {
   font-weight: 900;
   font-size: 12px;
@@ -10087,9 +10170,6 @@ img, svg, canvas {
   }
 
   .team-strength-card .card-header-row {
-    flex-wrap: wrap;
-    height: auto;
-    min-height: 44px;
     padding-bottom: 4px;
   }
 
@@ -11920,6 +12000,10 @@ img, svg, canvas {
   animation: fadeIn 0.2s ease forwards;
 }
 
+[data-theme="dark"] .player-modal-overlay {
+  background: rgba(2, 6, 23, 0.88);
+}
+
 @keyframes fadeIn {
   to {
     opacity: 1;
@@ -11940,6 +12024,11 @@ img, svg, canvas {
   animation: scaleIn 0.3s ease forwards;
 }
 
+[data-theme="dark"] .player-modal {
+  background: #1a2535;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.8);
+}
+
 @keyframes scaleIn {
   to {
     transform: scale(1);
@@ -11956,6 +12045,7 @@ img, svg, canvas {
   align-items: center;
   flex-shrink: 0;
 }
+
 
 .player-modal-title-section {
   flex: 1;
@@ -12104,6 +12194,10 @@ img, svg, canvas {
   text-align: center;
 }
 
+[data-theme="dark"] .player-modal-stat-card {
+  background: #111e2e;
+}
+
 .player-modal-stat-label {
   font-size: 11px;
   color: var(--text-muted);
@@ -12124,6 +12218,10 @@ img, svg, canvas {
   border-radius: 12px;
   padding: 16px;
   min-height: 300px;
+}
+
+[data-theme="dark"] .player-modal-chart-container {
+  background: #111e2e;
 }
 
 .player-modal-loading {
@@ -12151,6 +12249,10 @@ img, svg, canvas {
   border-radius: 10px;
   padding: 12px 14px;
   transition: all 0.2s ease;
+}
+
+[data-theme="dark"] .player-modal-game-log-row {
+  background: #111e2e;
 }
 
 .player-modal-game-log-row:hover {
@@ -14831,6 +14933,10 @@ tr.team-clickable {
 
 /* Teams sidebar sticky positioning - desktop only */
 @media (min-width: 1181px) {
+  .teams-page.page-layout {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+
   .teams-sidebar {
     position: sticky;
     top: 90px;
@@ -14843,7 +14949,7 @@ tr.team-clickable {
 
 /* Slim (sidebar) variant */
 .btm-col-header.btm-slim,
-.btm-row.btm-slim { grid-template-columns: 28px 1fr 58px 58px; }
+.btm-row.btm-slim { grid-template-columns: 28px minmax(0, 1fr) 64px 64px; }
 .teams-sidebar .btm-meta { padding: 6px 12px 8px; }
 .teams-sidebar .teams-analytics-card { margin: 0; }
 
@@ -15678,6 +15784,10 @@ button:disabled {
   flex-shrink: 0;
   gap: 2px;
 }
+
+[data-theme="dark"] .pm-tab-bar {
+  background: #111e2e;
+}
 .pm-tab-bar::-webkit-scrollbar { display: none; }
 .pm-tab {
   background: none;
@@ -16206,3 +16316,274 @@ button:disabled {
   padding-top: 2px;
 }
 .notif-toast-action:hover { text-decoration: underline; }
+
+/* ── Analytics panel skeleton ────────────────────────────────────────────── */
+.analytics-skeleton {
+  padding: 12px 4px;
+}
+.analytics-skeleton .sk-line {
+  height: 13px;
+  border-radius: 4px;
+  margin-bottom: 0;
+}
+
+/* ── Empty state icon ─────────────────────────────────────────────────────── */
+.bract-empty-icon {
+  margin-bottom: 10px;
+  line-height: 1;
+}
+
+/* ── Sparkline canvas in player rankings (lives in the arrow column) ─────── */
+.pr-sparkline {
+  display: block;
+  margin: 0 auto;
+}
+
+/* ── Optimal Lineup Tracker navigation ────────────────────────────────────── */
+.opt-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.opt-tab-group {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.opt-tab {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.opt-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+.opt-tab:not(.active):hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+.opt-week-select {
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ── Schedule (matchup-difficulty grid) ───────────────────────────────────── */
+.sched-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 4px 0 14px;
+}
+.sched-week-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sched-ctrl-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sched-ctrl-sep {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.sched-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sched-add {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+  max-width: 340px;
+}
+.sched-add-input {
+  width: 100%;
+  padding: 8px 12px 8px 32px;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.14s;
+}
+.sched-add-input:focus { border-color: var(--accent); }
+.sched-add-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.18);
+  overflow: hidden;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.sched-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.sched-add-row:hover { background: var(--accent-soft); }
+.sched-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+.sched-legend span { display: inline-flex; align-items: center; }
+.sched-chip {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 5px;
+}
+.sched-legend-note { color: var(--text-muted); }
+.sched-grid-wrap { overflow-x: auto; }
+.sched-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.sched-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.sched-th {
+  padding: 10px 12px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  white-space: nowrap;
+}
+.sched-th-player { text-align: left; }
+.sched-td {
+  padding: 8px 10px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.sched-td-player {
+  text-align: left;
+  white-space: nowrap;
+}
+.sched-bye { color: var(--text-muted); font-size: 12px; }
+.sched-opp { font-weight: 600; font-size: 13px; }
+.sched-rank { font-size: 11px; font-weight: 700; }
+.sched-fpts { font-size: 10px; color: var(--text-muted); }
+.sched-pos {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 6px;
+}
+.sched-pname { cursor: pointer; font-weight: 600; }
+.sched-pname:hover { color: var(--accent); }
+.sched-nfl { font-size: 11px; color: var(--text-muted); margin-left: 6px; }
+.sched-remove {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  margin-right: 8px;
+  padding: 0 2px;
+  border-radius: 4px;
+  transition: color 0.14s;
+}
+.sched-remove:hover { color: #ef4444; }
+
+/* ── Skip link (accessibility) ─────────────────────────────────── */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: 9999;
+  padding: 8px 16px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.skip-link:focus {
+  left: 8px;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* ── Toast notifications ────────────────────────────────────────── */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  background: var(--card, #1e293b);
+  color: var(--text, #e2e8f0);
+  border: 1px solid var(--border, #334155);
+  border-left: 3px solid var(--accent, #3b82f6);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  pointer-events: auto;
+}
+.toast--visible {
+  opacity: 1;
+  transform: translateY(0);
+}

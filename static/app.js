@@ -3018,10 +3018,10 @@ window.initTradePage = function initTradePage(root = document) {
       }).join("");
 
       const paginationHtml = totalPages > 1 ? `
-        <div class="otc-sugg-pagination">
-          <button class="otc-sugg-page-btn" data-dir="-1" ${page === 0 ? "disabled" : ""}>← Prev</button>
-          <span class="otc-sugg-page-label">${page + 1} / ${totalPages}</span>
-          <button class="otc-sugg-page-btn" data-dir="1" ${page >= totalPages - 1 ? "disabled" : ""}>Next →</button>
+        <div class="pagination pagination--center">
+          <button class="pagination-btn" data-dir="-1" ${page === 0 ? "disabled" : ""}><i class="fa-solid fa-chevron-left"></i> Prev</button>
+          <span class="pagination-label">${page + 1} / ${totalPages}</span>
+          <button class="pagination-btn" data-dir="1" ${page >= totalPages - 1 ? "disabled" : ""}>Next <i class="fa-solid fa-chevron-right"></i></button>
         </div>` : "";
 
       // ── Profile labels shared across real-trade and combo sections ─────────────
@@ -3274,7 +3274,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       resultsList.innerHTML = cardsHtml + paginationHtml + realTradeHtml;
 
-      resultsList.querySelectorAll(".otc-sugg-page-btn").forEach(btn => {
+      resultsList.querySelectorAll(".pagination-btn").forEach(btn => {
         btn.addEventListener("click", () => {
           const newPage = _pkgPage + parseInt(btn.dataset.dir);
           if (newPage < 0 || newPage >= totalPages) return;
@@ -5337,9 +5337,16 @@ function toggleNavDropdown(e, wrapperId) {
   if (!wrapper) return;
   // Close all other open dropdowns first
   document.querySelectorAll('.nav-pill-dropdown-wrapper.open').forEach(function(el) {
-    if (el.id !== wrapperId) el.classList.remove('open');
+    if (el.id !== wrapperId) {
+      el.classList.remove('open');
+      const btn = el.querySelector('[aria-expanded]');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
   });
+  const isNowOpen = !wrapper.classList.contains('open');
   wrapper.classList.toggle('open');
+  const triggerBtn = wrapper.querySelector('[aria-expanded]');
+  if (triggerBtn) triggerBtn.setAttribute('aria-expanded', isNowOpen ? 'true' : 'false');
 }
 
 // Legacy alias kept in case any rendered HTML still calls it
@@ -5351,6 +5358,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!e.target.closest('.nav-pill-dropdown-wrapper')) {
       document.querySelectorAll('.nav-pill-dropdown-wrapper.open').forEach(function(el) {
         el.classList.remove('open');
+        const btn = el.querySelector('[aria-expanded]');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
       });
     }
   });
