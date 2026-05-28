@@ -1251,7 +1251,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
-        ("Schedule",            "page_schedule",  "schedule",  False),
+        ("Schedule Assistant",  "page_schedule",  "schedule",  False),
     ], ["players", "prospects", "breakouts", "waivers", "schedule"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
@@ -9300,7 +9300,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           style="margin-top:4px;padding:7px 14px;border-radius:8px;border:1px solid var(--border);
                  background:var(--surface);color:var(--text);font-size:12px;font-weight:600;
                  cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;">
-          <i class="fa-solid fa-download"></i> Export CSV
+          <img src="/static/images/download-solid.png" style="width:13px;height:13px;vertical-align:middle;opacity:0.8;" alt=""> Export CSV
         </button>
       </div>
       <div class="card-body" style="padding-top:0;">
@@ -12390,7 +12390,7 @@ def build_schedule_body(ctx):
     <div class="card central schedule-card">
       <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
         <div>
-          <h2>Schedule</h2>
+          <h2>Schedule Assistant</h2>
           <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
             Matchup difficulty by week. Add or remove players and pick a single week or a range.
           </div>
@@ -12405,7 +12405,7 @@ def build_schedule_body(ctx):
           <select id="schedWkEnd" class="sched-select"></select>
         </div>
         <div class="sched-add">
-          <i class="fa-solid fa-magnifying-glass sched-add-icon"></i>
+          <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted);pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
           <input id="schedAddInput" class="sched-add-input" type="text"
                  placeholder="Add a player..." autocomplete="off">
           <div id="schedAddResults" class="sched-add-results" style="display:none;"></div>
@@ -12636,7 +12636,7 @@ def api_schedule():
 def page_schedule(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     body = build_schedule_body(ctx)
-    return render_page("Schedule", league_id, "schedule", body, platform, season)
+    return render_page("Schedule Assistant", league_id, "schedule", body, platform, season)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -14136,7 +14136,8 @@ def api_refresh_page():
             rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
             body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
-                                                    scoring_format=scoring_format)
+                                                    scoring_format=scoring_format,
+                                                    platform=platform)
 
         else:
             body_html = ""
