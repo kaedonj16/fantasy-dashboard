@@ -16419,18 +16419,18 @@ button:disabled {
 .sched-add {
   position: relative;
   flex: 1;
-  min-width: 220px;
-  max-width: 340px;
+  min-width: 200px;
 }
 .sched-add-input {
   width: 100%;
-  padding: 8px 12px 8px 32px;
+  padding: 8px 32px 8px 34px;
   border: 1px solid var(--border);
-  border-radius: 9999px;
-  background: var(--card);
+  border-radius: 8px;
+  background: var(--card-bg);
   color: var(--text);
   font-size: 13px;
   outline: none;
+  box-sizing: border-box;
   transition: border-color 0.14s;
 }
 .sched-add-input:focus { border-color: var(--accent); }

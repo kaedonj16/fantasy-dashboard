@@ -12477,9 +12477,13 @@ def build_schedule_body(ctx):
           <select id="schedWkEnd" class="sched-select"></select>
         </div>
         <div class="sched-add">
-          <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted);pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted);pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
           <input id="schedAddInput" class="sched-add-input" type="text"
                  placeholder="Add a player..." autocomplete="off">
+          <button id="schedAddClear" type="button"
+            style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
+                   background:none;border:none;cursor:pointer;color:var(--text-muted);
+                   font-size:16px;line-height:1;padding:2px;" aria-label="Clear search">&#x2715;</button>
           <div id="schedAddResults" class="sched-add-results" style="display:none;"></div>
         </div>
       </div>
@@ -12525,6 +12529,7 @@ def build_schedule_body(ctx):
       var endSel   = document.getElementById('schedWkEnd');
       var addInput = document.getElementById('schedAddInput');
       var addResults = document.getElementById('schedAddResults');
+      var addClear = document.getElementById('schedAddClear');
       var gridEl   = document.getElementById('schedGrid');
 
       function fillWeekSelects() {
@@ -12646,8 +12651,19 @@ def build_schedule_body(ctx):
         persist(); renderGrid();
       });
 
-      addInput.addEventListener('input', function() { showAddResults(this.value.trim()); });
+      addInput.addEventListener('input', function() {
+        showAddResults(this.value.trim());
+        if (addClear) addClear.style.display = this.value ? '' : 'none';
+      });
       addInput.addEventListener('focus', function() { showAddResults(this.value.trim()); });
+      if (addClear) {
+        addClear.addEventListener('click', function() {
+          addInput.value = '';
+          addResults.style.display = 'none';
+          addClear.style.display = 'none';
+          addInput.focus();
+        });
+      }
       document.addEventListener('click', function(e) {
         var row = e.target.closest ? e.target.closest('.sched-add-row') : null;
         if (row && addResults.contains(row)) {
@@ -12658,6 +12674,7 @@ def build_schedule_body(ctx):
           }
           addInput.value = '';
           addResults.style.display = 'none';
+          if (addClear) addClear.style.display = 'none';
           return;
         }
         if (!addResults.contains(e.target) && e.target !== addInput) {
