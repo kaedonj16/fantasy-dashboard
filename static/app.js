@@ -1934,6 +1934,17 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  // Suggestion loaders always arrange Side A = viewer receives, Side B = viewer
+  // sends. The value diff and roster-depth warnings are only correct when the
+  // viewer-side selector matches that layout, so force it to "a" before analyzing.
+  function forceViewerSideA() {
+    const radioA = root.querySelector('input[name="viewerSide"][value="a"]');
+    if (radioA) radioA.checked = true;
+    const hidden = root.querySelector("#viewerSideInput");
+    if (hidden) hidden.value = "a";
+    syncViewerSideLabels();
+  }
+
   function renderChips(side) {
     const container = root.querySelector(side === "A" ? "#sideAChips" : "#sideBChips");
     const players = getSidePlayers(side);
@@ -2575,6 +2586,7 @@ window.initTradePage = function initTradePage(root = document) {
     renderChips("B");
     syncEmptyState("A");
     syncEmptyState("B");
+    forceViewerSideA();
     analyzeTrade();
 
     // Scroll calculator into view
@@ -3346,6 +3358,7 @@ window.initTradePage = function initTradePage(root = document) {
           renderChips("B");
           syncEmptyState("A");
           syncEmptyState("B");
+          forceViewerSideA();
           analyzeTrade();
           switchToCalc();
           const shell = root.querySelector(".otc-shell");
