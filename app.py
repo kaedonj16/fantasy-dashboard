@@ -12298,14 +12298,18 @@ def _compute_fpts_against(season: int) -> dict:
             # Load schedule for this week to build team→opponent map
             sched_files = _glob.glob(
                 os.path.join("cache", "schedule", f"schedule_s{season}_w{week}_*.json")
+            ) or _glob.glob(
+                os.path.join("cache", "schedule", f"schedule_s{season}_w{week}.json")
             )
             if not sched_files:
                 continue
             games = json.load(open(sched_files[0]))
+            _alias = {"WSH": "WAS"}
+            def _n(t): return _alias.get(t, t)
             opp_map: dict = {}  # team → opponent for this week
             for g in games:
-                home = (g.get("home") or "").upper()
-                away = (g.get("away") or "").upper()
+                home = _n((g.get("home") or "").upper())
+                away = _n((g.get("away") or "").upper())
                 if home and away:
                     opp_map[home] = away
                     opp_map[away] = home
@@ -12919,15 +12923,19 @@ def api_schedule_rankings():
         for w in weeks:
             sched_files = _glob.glob(
                 os.path.join("cache", "schedule", f"schedule_s{season}_w{w}_*.json")
+            ) or _glob.glob(
+                os.path.join("cache", "schedule", f"schedule_s{season}_w{w}.json")
             )
             if not sched_files:
                 schedules[w] = {}
                 continue
             games = json.load(open(sched_files[0]))
+            _team_alias = {"WSH": "WAS"}
+            def _norm(t): return _team_alias.get(t, t)
             lookup = {}
             for g in games:
-                home = (g.get("home") or "").upper()
-                away = (g.get("away") or "").upper()
+                home = _norm((g.get("home") or "").upper())
+                away = _norm((g.get("away") or "").upper())
                 if home:
                     lookup[home] = {"opp": away, "is_home": True}
                 if away:
