@@ -21658,7 +21658,7 @@ def build_portfolio_body(
     css = (
         "<style>"
         # only the bits not already in the global stylesheet
-        ".pf-grid{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:14px;}"
+        ".pf-grid{display:grid;grid-template-columns:3fr 2fr;gap:14px;margin-bottom:14px;align-items:start;}"
         "@media(max-width:700px){.pf-grid{grid-template-columns:1fr;}}"
         ".pf-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;align-items:start;}"
         "@media(max-width:700px){.pf-grid-2{grid-template-columns:1fr;}}"
