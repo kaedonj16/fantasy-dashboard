@@ -14804,6 +14804,26 @@ def get_model_value_table_cached():
             _mvc_idx = _mvc_lpi() or {}
             # IDs already present in player_values with a real value
             _existing_ids = {str(p.get("id") or "") for p in tbl if float(p.get("value") or 0) > 0}
+            # Build FC value map (normalized to 0-999 scale) as fallback for
+            # rookies tracked by FC but not yet in player_values.
+            _fc_val: dict = {}
+            _fc_sf_val: dict = {}
+            try:
+                from data_building.external_data.external_values_scraper import (
+                    load_fantasycalc_api_values as _mvc_lfc,
+                    load_fantasycalc_sf_api_values as _mvc_lfcsf,
+                )
+                _fc1r = _mvc_lfc() or []
+                _fcsf = _mvc_lfcsf() or []
+                if _fc1r:
+                    _max1  = max((float(r.get("value") or 0) for r in _fc1r), default=1) or 1
+                    _maxsf = max((float(r.get("value") or 0) for r in _fcsf), default=_max1) or _max1
+                    _fc_val  = {str(r["sleeper_id"]): round(float(r["value"]) * 999.9 / _max1, 1)
+                                for r in _fc1r if r.get("sleeper_id") and r.get("value")}
+                    _fc_sf_val = {str(r["sleeper_id"]): round(float(r["value"]) * 999.9 / _maxsf, 1)
+                                  for r in _fcsf if r.get("sleeper_id") and r.get("value")}
+            except Exception:
+                pass
             for r in rk_rows:
                 sid  = str(r.get("sleeper_id")) if r.get("sleeper_id") else None
                 name = r.get("name") or ""
@@ -14813,14 +14833,17 @@ def get_model_value_table_cached():
                     continue
                 _idx_team = _mvc_idx.get(sid, {}).get("team", "") if sid else ""
                 _team = r.get("actual_nfl_team") or _idx_team or r.get("team") or "FA"
+                # Prefer FC market value; fall back to prospect-scoring rookie_value
+                _v1  = _fc_val.get(sid or "") or float(r.get("rookie_value") or 0)
+                _vsf = _fc_sf_val.get(sid or "") or float(r.get("rookie_sf_value") or r.get("rookie_value") or 0)
                 tbl.append({
                     "id":        _rid,
                     "name":      name,
                     "team":      _team,
                     "position":  r.get("position") or "UNK",
                     "age":       r.get("age"),
-                    "value":     float(r.get("rookie_value") or 0),
-                    "sf_value":  float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
+                    "value":     _v1,
+                    "sf_value":  _vsf,
                     "is_rookie": True,
                 })
     except Exception as e:
