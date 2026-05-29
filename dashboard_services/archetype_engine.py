@@ -646,7 +646,12 @@ def _pick_send_candidates(
         bucket = "mid"
         if slot_map:
             try:
-                orig_rid = int(pk.get("original_roster_id") or pk.get("roster_id") or 0)
+                orig_rid = int(
+                    pk.get("original_roster_id")
+                    or pk.get("original_owner")   # field name used by service.py
+                    or pk.get("roster_id")
+                    or 0
+                )
                 slot = slot_map.get(orig_rid, 0)
             except (ValueError, TypeError):
                 slot = 0
