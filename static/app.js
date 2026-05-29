@@ -3784,8 +3784,11 @@ window.initTradePage = function initTradePage(root = document) {
       root.querySelectorAll(".otc-arch-chip").forEach(c =>
         c.classList.toggle("is-active", c.dataset.arch === arch));
       const hint = root.querySelector("#otcStrategyImpactHint");
-      if (hint) hint.textContent = (arch === "distribute" || arch === "rebuilding")
-        ? "Win % if traded away" : "Win % if acquired";
+      if (hint) {
+        if (arch === "rebuilding") hint.textContent = "Production loss if you sell";
+        else if (arch === "distribute") hint.textContent = "Win % change if distributed";
+        else hint.textContent = "Win % if acquired";
+      }
     }
 
     if (btnSubBuild)    btnSubBuild.addEventListener("click",    () => _setSuggSubtab("build"));
@@ -4035,7 +4038,9 @@ window.initTradePage = function initTradePage(root = document) {
           : "";
 
         // Win % + playoff odds
-        const wpd    = t.win_prob_delta    || 0;
+        // Rebuilding: use net_win_prob_delta (vet out + young in) for the trade card;
+        // win_prob_delta holds departure cost (shown in impact table).
+        const wpd    = (archetype === "rebuilding" ? (t.net_win_prob_delta ?? t.win_prob_delta) : t.win_prob_delta) || 0;
         const pod    = t.playoff_odds_delta || 0;
         const wpdCol = wpd >= 0 ? "#10b981" : "#ef4444";
         const podCol = pod >= 0 ? "#6366f1" : "#ef4444";

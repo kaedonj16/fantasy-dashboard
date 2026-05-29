@@ -120,9 +120,15 @@ def _optimal_lineup_value(
 # ── Win-probability model ─────────────────────────────────────────────────────
 
 def _win_prob(team_val: float, league_avg: float) -> float:
-    """Logistic win probability from relative lineup value."""
+    """Logistic win probability from relative lineup value.
+
+    k=2 keeps most realistic dynasty rosters in the 0.25–0.75 range so
+    that small lineup changes still produce meaningful playoff-odds deltas.
+    (k=4 saturated too quickly — a roster 20 % above average hit ~70 % WP,
+    pushing playoff-odds deltas to near zero for any further acquisition.)
+    """
     ratio = team_val / max(1.0, league_avg)
-    return 1.0 / (1.0 + math.exp(-4.0 * (ratio - 1.0)))
+    return 1.0 / (1.0 + math.exp(-2.0 * (ratio - 1.0)))
 
 
 def _wp_delta(
@@ -556,6 +562,13 @@ def _build_distribute(
         new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type)
         wpd         = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
 
+        # Only suggest distribute trades where the return package actually
+        # improves or roughly maintains lineup strength. A trade that simply
+        # hurts your lineup while adding bench depth is not worth suggesting.
+        if wpd < -0.02:
+            used_owners.discard(owner)
+            continue
+
         new_wp  = current_wp + wpd
         pod     = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) \
                 - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
@@ -669,7 +682,14 @@ def _build_rebuilding(
         pick = min(candidates, key=lambda t: abs(t["value"] - vval))
         used_targets.add(pick["player_id"])
 
-        # Honest win-prob: drop the vet from the lineup, add the young player.
+        # Departure cost: how much you lose by sending the vet (no replacement).
+        # This is shown in the impact table as "production loss" — a clearly
+        # negative number tells the user WHY the vet is worth trading away now.
+        dep_players = [p for p in viewer_players if p != vet]
+        dep_lineup  = _optimal_lineup_value(dep_players, values_by_id, league_type)
+        departure_wpd = _win_prob(dep_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
+
+        # Net trade effect: vet out + young player in (used in trade cards).
         new_players = [p for p in viewer_players if p != vet] + [pick["player_id"]]
         new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type)
         wpd = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
@@ -681,7 +701,7 @@ def _build_rebuilding(
         acpt    = _estimate_acceptance(vval, pick["value"], is_preferred=is_pref)
 
         tp  = _trend_pct(pick["player_id"], pick["value"], old_vals, values_by_id)
-        pick["win_prob_delta"] = wpd
+        pick["win_prob_delta"] = departure_wpd
         why = _build_why(pick, "rebuilding", tp, wpd)
 
         results.append({
@@ -696,7 +716,10 @@ def _build_rebuilding(
             "why":            why,
             "partner_team":   pick["partner_name"],
             "partner_arch":   pick["partner_arch"],
-            "win_prob_delta":    round(wpd, 4),
+            # departure_wpd: how much the vet costs you if traded (impact table)
+            # win_prob_delta: net trade effect used in trade cards
+            "win_prob_delta":    round(departure_wpd, 4),
+            "net_win_prob_delta": round(wpd, 4),
             "playoff_odds_delta": round(pod, 4),
             "acceptance_pct":     acpt,
             "direction":      "acquire",
