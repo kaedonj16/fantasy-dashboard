@@ -1201,6 +1201,82 @@ def upsert_rankings(scores: List[Dict], values: List[Dict], conn) -> int:
                     s.get("prospect_score"),
                 ),
             )
+
+    # Sync rookies into player_values so they flow through the same FC
+    # calibration pipeline as established players.
+    # For rows missing a sleeper_id, fall back to name matching against the
+    # Sleeper players index so recently-drafted rookies get picked up even
+    # before their sleeper_id is written to rookie_prospects.
+    # Only seeds raw prospect values; calibrated_value_* columns are left
+    # to cron_daily so FC market data can overwrite them on the next run.
+    try:
+        cur.execute(
+            """
+            SELECT rr.player_id,
+                   rp.sleeper_id, rp.name, rp.position, rp.age,
+                   rr.rookie_value, rr.rookie_sf_value,
+                   rr.rookie_value_8,  rr.rookie_value_12,  rr.rookie_value_14,
+                   rr.rookie_sf_value_8, rr.rookie_sf_value_12, rr.rookie_sf_value_14
+            FROM   rookie_rankings rr
+            JOIN   rookie_prospects rp ON rp.player_id = rr.player_id
+            WHERE  rr.rookie_value > 0
+              AND  rr.draft_class_year = (SELECT MAX(draft_class_year) FROM rookie_rankings)
+            """
+        )
+        pv_rows = cur.fetchall()
+
+        # Build name→sleeper_id lookup from players index for name-based fallback
+        _name_to_sid: dict = {}
+        try:
+            from utils.utils import load_players_index as _lpi_pv
+            for _pid, _pmeta in (_lpi_pv() or {}).items():
+                _pname = _norm_name(_pmeta.get("name") or "")
+                if _pname:
+                    _name_to_sid[_pname] = str(_pid)
+        except Exception:
+            pass
+
+        synced = 0
+        for row in pv_rows:
+            (_, sid, name, pos, age,
+             v1, vsf, v8, v12, v14, sf8, sf12, sf14) = row
+            # Prefer stored sleeper_id; fall back to name match in players index
+            if not sid and name:
+                sid = _name_to_sid.get(_norm_name(name))
+            if not sid:
+                continue
+            _safe = lambda x, fb=v1: float(x) if x else float(fb or 0)
+            cur.execute(
+                """
+                INSERT INTO player_values
+                    (player_id, value_1qb, value_sf,
+                     value_8, value_12, value_14,
+                     sf_value_8, sf_value_12, sf_value_14,
+                     position, age, years_exp, last_updated)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, CURRENT_DATE)
+                ON CONFLICT (player_id) DO UPDATE SET
+                    value_1qb   = EXCLUDED.value_1qb,
+                    value_sf    = EXCLUDED.value_sf,
+                    value_8     = EXCLUDED.value_8,
+                    value_12    = EXCLUDED.value_12,
+                    value_14    = EXCLUDED.value_14,
+                    sf_value_8  = EXCLUDED.sf_value_8,
+                    sf_value_12 = EXCLUDED.sf_value_12,
+                    sf_value_14 = EXCLUDED.sf_value_14,
+                    position    = COALESCE(player_values.position, EXCLUDED.position),
+                    age         = COALESCE(player_values.age, EXCLUDED.age),
+                    last_updated = CURRENT_DATE
+                """,
+                (str(sid), _safe(v1), _safe(vsf),
+                 _safe(v8), _safe(v12), _safe(v14),
+                 _safe(sf8, vsf), _safe(sf12, vsf), _safe(sf14, vsf),
+                 pos, age),
+            )
+            synced += 1
+        print(f"[upsert_rankings] synced {synced}/{len(pv_rows)} rookies to player_values")
+    except Exception as _pv_err:
+        print(f"[upsert_rankings] player_values sync skipped: {_pv_err}")
+
     return saved
 
 
