@@ -625,14 +625,16 @@ def _build_rebuilding(
     num_weeks: int = 14,
     num_teams: int = 10,
     playoff_spots: int = 4,
+    picks_by_owner: Optional[Dict[str, List[Dict]]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Rebuild = sell win-now vets for younger, ascending players of similar value.
+    Rebuild = sell win-now vets for younger assets of similar dynasty value.
 
-    Anchored on each sellable vet (the SEND): pair it with the rival young
-    target (the GET) whose value most closely matches the vet, so every card
-    has a realistic, fundable send and targets stay within reach (no dangling
-    elite players the viewer could never actually trade for).
+    Considers three return types for each vet:
+      1. Young player-for-vet swap
+      2. Pure draft pick(s) (sell high while the pick cost is real)
+      3. Young player + draft pick combo
+    Whichever best matches the vet's value wins.
     """
     # Sellable vets: at/past positional peak age with real remaining value.
     vets = sorted(
@@ -659,10 +661,12 @@ def _build_rebuilding(
          and t["value"] >= 150],
         key=lambda t: -t["value"],
     )
-    if not young:
-        return []
 
-    old_vals = _get_30d_values([t["player_id"] for t in young])
+    # Flatten rival picks: {owner_rid: [pick_dict, ...]}
+    pbo = picks_by_owner or {}
+
+    old_pids = [t["player_id"] for t in young]
+    old_vals = _get_30d_values(old_pids) if old_pids else {}
 
     results: List[Dict[str, Any]] = []
     used_targets: set = set()
@@ -673,60 +677,165 @@ def _build_rebuilding(
         vpos  = values_by_id[vet].get("position", "")
         lo, hi = vval * 0.75, vval * 1.30
 
-        candidates = [
-            t for t in young
-            if t["player_id"] not in used_targets and lo <= t["value"] <= hi
-        ]
-        if not candidates:
-            continue
-        pick = min(candidates, key=lambda t: abs(t["value"] - vval))
-        used_targets.add(pick["player_id"])
+        # ── Build candidate receive options ──────────────────────────────
+        options: List[Dict] = []  # each: {diff, recv_assets, partner_rid, recv_player_ids}
 
-        # Departure cost: how much you lose by sending the vet (no replacement).
-        # This is shown in the impact table as "production loss" — a clearly
-        # negative number tells the user WHY the vet is worth trading away now.
-        dep_players = [p for p in viewer_players if p != vet]
-        dep_lineup  = _optimal_lineup_value(dep_players, values_by_id, league_type)
+        # Option A: single young player
+        for t in young:
+            if t["player_id"] in used_targets or not (lo <= t["value"] <= hi):
+                continue
+            options.append({
+                "diff":          abs(t["value"] - vval),
+                "recv_assets":   [t],
+                "partner_rid":   t["owner_roster_id"],
+                "partner_name":  t["partner_name"],
+                "partner_arch":  t["partner_arch"],
+                "recv_pids":     [t["player_id"]],
+                "primary":       t,  # used for impact-table display and why-text
+            })
+
+        # Option B: single pick (any rival)
+        for owner_rid, owner_picks in pbo.items():
+            for pk in owner_picks:
+                if not (lo <= pk["value"] <= hi):
+                    continue
+                p_meta = {}
+                # Look up partner meta from all_targets or owner_meta if available
+                for t in all_targets:
+                    if t.get("owner_roster_id") == owner_rid:
+                        p_meta = {"partner_name": t["partner_name"],
+                                  "partner_arch": t["partner_arch"]}
+                        break
+                options.append({
+                    "diff":         abs(pk["value"] - vval),
+                    "recv_assets":  [pk],
+                    "partner_rid":  owner_rid,
+                    "partner_name": p_meta.get("partner_name", f"Team {owner_rid}"),
+                    "partner_arch": p_meta.get("partner_arch", ""),
+                    "recv_pids":    [],
+                    "primary":      None,  # pick-only — no young player to display
+                })
+
+        # Option C: young player + pick from same owner
+        for t in young:
+            if t["player_id"] in used_targets:
+                continue
+            owner_rid = t["owner_roster_id"]
+            for pk in pbo.get(owner_rid, []):
+                combo_val = t["value"] + pk["value"]
+                if not (lo <= combo_val <= hi):
+                    continue
+                options.append({
+                    "diff":         abs(combo_val - vval),
+                    "recv_assets":  [t, pk],
+                    "partner_rid":  owner_rid,
+                    "partner_name": t["partner_name"],
+                    "partner_arch": t["partner_arch"],
+                    "recv_pids":    [t["player_id"]],
+                    "primary":      t,
+                })
+
+        if not options:
+            continue
+
+        # Pick best option by value proximity
+        options.sort(key=lambda x: x["diff"])
+        best = options[0]
+
+        # Mark used players
+        for pid in best["recv_pids"]:
+            used_targets.add(pid)
+
+        # ── Win-prob calcs ────────────────────────────────────────────────
+        dep_players   = [p for p in viewer_players if p != vet]
+        dep_lineup    = _optimal_lineup_value(dep_players, values_by_id, league_type)
         departure_wpd = _win_prob(dep_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
 
-        # Net trade effect: vet out + young player in (used in trade cards).
-        new_players = [p for p in viewer_players if p != vet] + [pick["player_id"]]
-        new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type)
-        wpd = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
+        if best["recv_pids"]:
+            net_players = dep_players + best["recv_pids"]
+            net_lineup  = _optimal_lineup_value(net_players, values_by_id, league_type)
+            wpd = _win_prob(net_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
+        else:
+            wpd = departure_wpd  # pick-only: no immediate lineup improvement
 
-        new_wp  = current_wp + wpd
-        pod     = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) \
-                - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
-        is_pref = pick.get("partner_arch") == COMPLEMENT.get("rebuilding", "")
-        acpt    = _estimate_acceptance(vval, pick["value"], is_preferred=is_pref)
+        new_wp = current_wp + wpd
+        pod    = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) \
+               - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
 
-        tp  = _trend_pct(pick["player_id"], pick["value"], old_vals, values_by_id)
-        pick["win_prob_delta"] = departure_wpd
-        why = _build_why(pick, "rebuilding", tp, wpd)
+        recv_total = sum(a.get("value", 0) for a in best["recv_assets"])
+        is_pref    = best["partner_arch"] == COMPLEMENT.get("rebuilding", "")
+        acpt       = _estimate_acceptance(vval, recv_total, is_preferred=is_pref)
+
+        # ── Display / why text ────────────────────────────────────────────
+        primary = best["primary"]
+        if primary:
+            tp  = _trend_pct(primary["player_id"], primary["value"], old_vals, values_by_id)
+            primary["win_prob_delta"] = departure_wpd
+            why = _build_why(primary, "rebuilding", tp, wpd)
+            display_pid  = primary["player_id"]
+            display_name = primary["name"]
+            display_pos  = primary["position"]
+            display_age  = primary.get("age", 0)
+            display_val  = round(primary["value"], 1)
+            display_rdft = round(primary.get("redraft_value", 0), 1)
+            display_rank = primary.get("pos_rank_label", "")
+        else:
+            # Pick-only: display the pick as the "get" item
+            pk = best["recv_assets"][0]
+            why = (f"Sell {vname} while value is high — receive {pk['name']} "
+                   f"from {best['partner_name']}.")
+            display_pid  = pk["player_id"]
+            display_name = pk["name"]
+            display_pos  = "PICK"
+            display_age  = 0
+            display_val  = round(pk["value"], 1)
+            display_rdft = 0.0
+            display_rank = ""
+
+        # suggested_receive: full list of assets (players + picks) with metadata
+        suggested_receive = []
+        for a in best["recv_assets"]:
+            if a.get("is_pick"):
+                parts = a["player_id"].split("_")  # pick_YYYY_R
+                suggested_receive.append({
+                    "player_id":   a["player_id"],
+                    "name":        a["name"],
+                    "position":    "PICK",
+                    "value":       round(a["value"], 1),
+                    "is_pick":     True,
+                    "pick_season": parts[1] if len(parts) > 1 else "",
+                    "pick_round":  int(parts[2]) if len(parts) > 2 else 1,
+                })
+            else:
+                suggested_receive.append({
+                    "player_id": a["player_id"],
+                    "name":      a["name"],
+                    "position":  a["position"],
+                    "value":     round(a["value"], 1),
+                })
 
         results.append({
-            "player_id":      pick["player_id"],
-            "name":           pick["name"],
-            "position":       pick["position"],
-            "nfl_team":       pick["team"],
-            "age":            pick["age"],
-            "value":          round(pick["value"], 1),
-            "redraft_value":  round(pick.get("redraft_value", 0), 1),
-            "pos_rank_label": pick["pos_rank_label"],
+            "player_id":      display_pid,
+            "name":           display_name,
+            "position":       display_pos,
+            "nfl_team":       primary["team"] if primary else "",
+            "age":            display_age,
+            "value":          display_val,
+            "redraft_value":  display_rdft,
+            "pos_rank_label": display_rank,
             "why":            why,
-            "partner_team":   pick["partner_name"],
-            "partner_arch":   pick["partner_arch"],
-            # departure_wpd: how much the vet costs you if traded (impact table)
-            # win_prob_delta: net trade effect used in trade cards
-            "win_prob_delta":    round(departure_wpd, 4),
+            "partner_team":   best["partner_name"],
+            "partner_arch":   best["partner_arch"],
+            "win_prob_delta":     round(departure_wpd, 4),
             "net_win_prob_delta": round(wpd, 4),
             "playoff_odds_delta": round(pod, 4),
             "acceptance_pct":     acpt,
-            "direction":      "acquire",
+            "direction":          "acquire",
             "suggested_send": [{
                 "player_id": vet, "name": vname,
                 "position": vpos, "value": round(vval, 1),
             }],
+            "suggested_receive": suggested_receive,
         })
         if len(results) >= 5:
             break
@@ -928,14 +1037,23 @@ def get_archetype_suggestions(
             num_teams=num_teams, playoff_spots=playoff_spots,
         )
 
-    # ── Rebuilding: viewer sells a win-now vet for a younger player ───────────
+    # ── Rebuilding: viewer sells a win-now vet for youth / picks ─────────────
     if archetype == "rebuilding":
+        # Build rival picks pool for player+pick and pick-only receive options
+        picks_by_owner: Dict[str, List[Dict]] = {}
+        for rid, pick_list in picks_by_roster.items():
+            if str(rid) == str(viewer_roster_id):
+                continue
+            converted = _pick_send_candidates(pick_list, num_teams)
+            if converted:
+                picks_by_owner[str(rid)] = converted
         return _build_rebuilding(
             viewer_players, values_by_id, all_targets,
             league_type, viewer_lineup_val, league_avg,
             untouchable_ids=untouchable_ids,
             current_wp=current_wp, num_weeks=num_weeks,
             num_teams=num_teams, playoff_spots=playoff_spots,
+            picks_by_owner=picks_by_owner,
         )
 
     # ── 30-day trend ──────────────────────────────────────────────────────────

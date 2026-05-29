@@ -3684,10 +3684,19 @@ window.initTradePage = function initTradePage(root = document) {
             state.sideBPicks.length   = 0;
 
             receiveAssets.forEach(a => {
-              const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
-                || { id: String(a.player_id), name: a.name };
-              if (!state.sideAPlayers.some(p => String(p.id) === String(pObj.id)))
-                state.sideAPlayers.push(pObj);
+              if (a.is_pick || a.position === "PICK") {
+                const yr = String(a.pick_season || "").replace(/\D/g, "")
+                  || (String(a.player_id || "").split("_")[1] || "");
+                const rd = String(a.pick_round || "").replace(/\D/g, "")
+                  || (String(a.player_id || "").split("_")[2] || "1");
+                const pickId = yr && rd ? `${yr}_${rd}_mid` : null;
+                if (pickId) state.sideAPicks.push({ id: pickId, display: a.name || pickId });
+              } else {
+                const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
+                  || { id: String(a.player_id), name: a.name };
+                if (!state.sideAPlayers.some(p => String(p.id) === String(pObj.id)))
+                  state.sideAPlayers.push(pObj);
+              }
             });
             sendAssets.forEach(a => {
               const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
@@ -3988,9 +3997,12 @@ window.initTradePage = function initTradePage(root = document) {
           giveAssets = [{ player_id: t.player_id, name: t.name, position: t.position }];
           getAssets  = t.suggested_receive || [];
         } else if (archetype === "rebuilding" && sendAsset) {
-          // Viewer gives their vet, receives young target
+          // Viewer gives their vet, receives young player / pick / combo
           giveAssets = t.suggested_send || [];
-          getAssets  = [{ player_id: t.player_id, name: t.name, position: t.position }];
+          // Use suggested_receive if populated (covers pick and player+pick cases)
+          getAssets  = (t.suggested_receive && t.suggested_receive.length)
+            ? t.suggested_receive
+            : [{ player_id: t.player_id, name: t.name, position: t.position }];
         } else {
           // Contending/Consolidate: viewer gives a package, receives target
           giveAssets = t.suggested_send || [];
@@ -4000,6 +4012,12 @@ window.initTradePage = function initTradePage(root = document) {
         function renderAssetHtml(assets) {
           if (!assets.length) return `<div class="otc-rt-asset"><span class="otc-rt-name" style="color:var(--text-muted);">—</span></div>`;
           return assets.map(a => {
+            if (a.is_pick || a.position === "PICK") {
+              return `<div class="otc-rt-asset">
+                <span class="otc-rt-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>
+                <span class="otc-rt-name">${esc(a.name || "")}</span>
+              </div>`;
+            }
             const col = posColor[a.position] || "var(--accent)";
             return `<div class="otc-rt-asset">
               <span class="otc-rt-pos" style="background:${col}18;color:${col};">${a.position || "?"}</span>
