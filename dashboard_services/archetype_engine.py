@@ -663,72 +663,71 @@ def _build_distribute(
         spos  = values_by_id[stud].get("position", "")
         lo, hi = sval * 0.75, sval * 1.25
 
-        best: Optional[Tuple[str, List[Dict], float]] = None
+        # Collect best combo per owner, then take top-3 value matches
+        owner_bests: List[Tuple[str, List[Dict], float]] = []
         for owner, pool in targets_by_owner.items():
             if owner in used_owners:
                 continue
             cand = sorted(pool, key=lambda x: x["value"], reverse=True)[:8]
+            local_best: Optional[Tuple[str, List[Dict], float]] = None
             for n in (2, 3):
                 for combo in combinations(cand, n):
                     s = sum(c["value"] for c in combo)
                     if lo <= s <= hi:
                         diff = abs(s - sval)
-                        if best is None or diff < best[2]:
-                            best = (owner, list(combo), diff)
+                        if local_best is None or diff < local_best[2]:
+                            local_best = (owner, list(combo), diff)
+            if local_best:
+                owner_bests.append(local_best)
 
-        if not best:
-            continue
-        owner, combo, _ = best
-        used_owners.add(owner)
+        owner_bests.sort(key=lambda x: x[2])
 
-        recv_ids   = [c["player_id"] for c in combo]
-        new_players = [p for p in viewer_players if p != stud] + recv_ids
-        new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type)
-        wpd         = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
+        for owner, combo, _ in owner_bests[:3]:
+            used_owners.add(owner)
 
-        # Only suggest distribute trades where the return package actually
-        # improves or roughly maintains lineup strength. A trade that simply
-        # hurts your lineup while adding bench depth is not worth suggesting.
-        if wpd < -0.02:
-            used_owners.discard(owner)
-            continue
+            recv_ids    = [c["player_id"] for c in combo]
+            new_players = [p for p in viewer_players if p != stud] + recv_ids
+            new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type)
+            wpd         = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
 
-        new_wp  = current_wp + wpd
-        pod     = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) \
-                - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
-        recv_val = sum(c["value"] for c in combo)
-        acpt    = _estimate_acceptance(sval, recv_val, is_preferred=True)
+            new_wp  = current_wp + wpd
+            pod     = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) \
+                    - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+            recv_val = sum(c["value"] for c in combo)
+            acpt    = _estimate_acceptance(sval, recv_val, is_preferred=True)
 
-        pname  = _roster_name(roster_map, owner)
-        p_arch = owner_meta.get(owner, {}).get("arch", "")
-        ceiling_note = "lineup ceiling rises" if wpd >= 0 else "adds depth but trims your ceiling"
+            pname  = _roster_name(roster_map, owner)
+            p_arch = owner_meta.get(owner, {}).get("arch", "")
+            ceiling_note = "lineup ceiling rises" if wpd >= 0 else "adds depth but trims your ceiling"
 
-        results.append({
-            "player_id":      stud,
-            "name":           sname,
-            "position":       spos,
-            "nfl_team":       values_by_id[stud].get("team", ""),
-            "age":            _f(values_by_id[stud].get("age")),
-            "value":          round(sval, 1),
-            "redraft_value":  round(_f(values_by_id[stud].get("redraft_value")), 1),
-            "pos_rank_label": values_by_id[stud].get("pos_rank_label", ""),
-            "why":            (f"Spread {sname}'s value into {len(combo)} starters from {pname}. "
-                               f"{ceiling_note.capitalize()}, filling multiple holes at once."),
-            "partner_team":   pname,
-            "partner_arch":   p_arch,
-            "win_prob_delta":    round(wpd, 4),
-            "playoff_odds_delta": round(pod, 4),
-            "acceptance_pct":     acpt,
-            "direction":      "distribute",
-            "suggested_send": [{
-                "player_id": stud, "name": sname,
-                "position": spos, "value": round(sval, 1),
-            }],
-            "suggested_receive": [{
-                "player_id": c["player_id"], "name": c["name"],
-                "position": c["position"], "value": round(c["value"], 1),
-            } for c in combo],
-        })
+            results.append({
+                "player_id":      stud,
+                "name":           sname,
+                "position":       spos,
+                "nfl_team":       values_by_id[stud].get("team", ""),
+                "age":            _f(values_by_id[stud].get("age")),
+                "value":          round(sval, 1),
+                "redraft_value":  round(_f(values_by_id[stud].get("redraft_value")), 1),
+                "pos_rank_label": values_by_id[stud].get("pos_rank_label", ""),
+                "why":            (f"Spread {sname}'s value into {len(combo)} starters from {pname}. "
+                                   f"{ceiling_note.capitalize()}, filling multiple holes at once."),
+                "partner_team":   pname,
+                "partner_arch":   p_arch,
+                "win_prob_delta":    round(wpd, 4),
+                "playoff_odds_delta": round(pod, 4),
+                "acceptance_pct":     acpt,
+                "direction":      "distribute",
+                "suggested_send": [{
+                    "player_id": stud, "name": sname,
+                    "position": spos, "value": round(sval, 1),
+                }],
+                "suggested_receive": [{
+                    "player_id": c["player_id"], "name": c["name"],
+                    "position": c["position"], "value": round(c["value"], 1),
+                } for c in combo],
+            })
+            if len(results) >= 15:
+                break
         if len(results) >= 15:
             break
 
