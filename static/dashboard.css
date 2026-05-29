@@ -4135,14 +4135,7 @@ thead th {
 
 /* ── Strategy cards: phone layout (≤ 480px) ──────────────────────────────── */
 @media (max-width: 480px) {
-  /* Chips: 2 per row so long words (Contending, Rebuilding…) don't clip */
-  .otc-strategy-chips {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .otc-arch-chip {
-    font-size: 12px;
-    padding: 8px 6px;
-  }
+  /* Chips scroll horizontally as pills — no grid override needed */
 
   /* Trade card: stack YOU GET / YOU GIVE vertically */
   .otc-rt-body {
