@@ -2731,7 +2731,9 @@ window.initTradePage = function initTradePage(root = document) {
       else                        fetchPackages(pid, name);
     }
 
-    function _setSearchMode(mode) {
+    // Update the toggle state + UI without re-fetching (used when a card click
+    // already knows which fetch to run).
+    function _applySearchModeUI(mode) {
       _searchMode = mode;
       localStorage.setItem("sugg-search-mode", mode);
       if (_btnSearchGet)  _btnSearchGet.classList.toggle("is-active",  mode === "get");
@@ -2739,6 +2741,10 @@ window.initTradePage = function initTradePage(root = document) {
       playerInput.placeholder = mode === "send"
         ? "Search a player to trade away…"
         : "Search any player…";
+    }
+
+    function _setSearchMode(mode) {
+      _applySearchModeUI(mode);
       // Re-run the currently shown player through the new mode
       if (suggCurrentPlayerId) runSearchForCurrent(suggCurrentPlayerId, _pkgPlayerName || playerInput.value);
     }
@@ -3673,11 +3679,14 @@ window.initTradePage = function initTradePage(root = document) {
           playerInput.value = name;
           playerDropdown.style.display = "none";
         }
-        // Distribute: browse value-matched RETURNS for sending this player away.
-        // Acquire: browse packages to ACQUIRE this player.
+        // "distribute" = browse value-matched RETURNS for sending this player
+        // away (used by Distribute studs and Rebuilding vets). Otherwise browse
+        // packages to ACQUIRE this player. Keep the search toggle in sync.
         if (direction === "distribute") {
+          _applySearchModeUI("send");
           fetchSendPackages(pid, name);
         } else {
+          _applySearchModeUI("get");
           fetchPackages(pid, name);
         }
         const buildHead = root.querySelector(".otc-sugg-build-head");
@@ -3860,6 +3869,15 @@ window.initTradePage = function initTradePage(root = document) {
             ? assetLine("Receive", t.suggested_receive)
             : assetLine("Send", t.suggested_send);
 
+          // For rebuilding the actionable move is selling the vet, so the button
+          // explores RETURNS for the player you're sending (suggested_send[0]),
+          // not packages to acquire the young headline target.
+          const sendAsset = (t.suggested_send && t.suggested_send[0]) || null;
+          const isSend    = (isDistribute || (archetype === "rebuilding" && sendAsset && sendAsset.player_id));
+          const btnPid    = isSend && !isDistribute ? String(sendAsset.player_id).replace(/"/g, "") : safePid;
+          const btnName   = isSend && !isDistribute ? esc(sendAsset.name) : safeName;
+          const btnLabel  = isSend ? "Find returns" : "Find packages";
+
           return `
             <div class="otc-arch-card">
               ${isDistribute ? `<div class="otc-arch-away-row"><span class="otc-arch-away">Trade away</span></div>` : ""}
@@ -3867,8 +3885,8 @@ window.initTradePage = function initTradePage(root = document) {
                 <span class="otc-arch-pos" style="background:${col}20;color:${col};">${t.position}</span>
                 <span class="otc-arch-name">${esc(t.name)}</span>
                 <button class="sugg-target-get-btn otc-sugg-target-btn"
-                  data-pid="${safePid}" data-name="${safeName}"
-                  data-direction="${isDistribute ? 'distribute' : 'acquire'}">${isDistribute ? "Find returns" : "Find packages"}</button>
+                  data-pid="${btnPid}" data-name="${btnName}"
+                  data-direction="${isSend ? 'distribute' : 'acquire'}">${btnLabel}</button>
               </div>
               <div class="otc-arch-why">${esc(t.why)}</div>
               ${detailHtml}
