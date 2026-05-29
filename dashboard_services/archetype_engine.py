@@ -73,13 +73,17 @@ def _optimal_lineup_value(
     player_ids: List[str],
     values_by_id: Dict[str, Any],
     league_type: str = "1qb",
+    use_redraft: bool = False,
 ) -> float:
     """
     Greedy lineup optimizer. Fill dedicated slots first (QB/RB/WR/TE),
     then fill FLEX with best remaining eligible players.
+
+    use_redraft=True → score by redraft_value (current-season production),
+    falling back to dynasty value if redraft is unavailable. Use this for
+    win-probability calculations; dynasty value for trade window matching.
     """
     slots = SLOTS_SF if league_type == "sf" else SLOTS_1QB
-    flex_pos = SKILL_POS if league_type == "sf" else FLEX_POS
 
     by_pos: Dict[str, List[float]] = {}
     for pid in player_ids:
@@ -87,7 +91,10 @@ def _optimal_lineup_value(
         if not info:
             continue
         pos = str(info.get("position") or "").upper()
-        val = _f(info.get("value"))
+        if use_redraft:
+            val = _f(info.get("redraft_value")) or _f(info.get("value"))
+        else:
+            val = _f(info.get("value"))
         if pos in SKILL_POS and val > 0:
             by_pos.setdefault(pos, []).append(val)
 
@@ -693,7 +700,7 @@ def _build_distribute(
 
         # Departure cost: what happens to win% if you just lose this stud
         dep_players = [p for p in viewer_players if p != stud]
-        dep_lineup  = _optimal_lineup_value(dep_players, values_by_id, league_type)
+        dep_lineup  = _optimal_lineup_value(dep_players, values_by_id, league_type, use_redraft=True)
         dep_wpd     = _win_prob(dep_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
         dep_pod     = (_playoff_odds(current_wp + dep_wpd, num_weeks, num_teams, playoff_spots)
                        - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots))
@@ -704,7 +711,7 @@ def _build_distribute(
         scored_bests: List[Tuple[str, List[Dict], float, float]] = []
         for owner, combo, diff in owner_bests:
             recv_ids_trial = [c["player_id"] for c in combo]
-            trial_val = _optimal_lineup_value(dep_players + recv_ids_trial, values_by_id, league_type)
+            trial_val = _optimal_lineup_value(dep_players + recv_ids_trial, values_by_id, league_type, use_redraft=True)
             lineup_gain = trial_val - dep_lineup
             scored_bests.append((owner, combo, diff, lineup_gain))
         # Primary sort: lineup improvement descending; secondary: value closeness ascending
@@ -716,7 +723,7 @@ def _build_distribute(
 
             recv_ids    = [c["player_id"] for c in combo]
             new_players = dep_players + recv_ids
-            new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type)
+            new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type, use_redraft=True)
             net_wpd     = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
 
             net_new_wp  = current_wp + net_wpd
@@ -898,7 +905,7 @@ def _build_rebuilding(
 
         # ── Departure stats — computed once per vet, shared by all options ─
         dep_players   = [p for p in viewer_players if p != vet]
-        dep_lineup    = _optimal_lineup_value(dep_players, values_by_id, league_type)
+        dep_lineup    = _optimal_lineup_value(dep_players, values_by_id, league_type, use_redraft=True)
         departure_wpd = _win_prob(dep_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
         dep_wp        = current_wp + departure_wpd
         departure_pod = _playoff_odds(dep_wp, num_weeks, num_teams, playoff_spots) \
@@ -915,7 +922,7 @@ def _build_rebuilding(
             # ── Win-prob for this specific receive package ─────────────────
             if opt["recv_pids"]:
                 net_players = dep_players + opt["recv_pids"]
-                net_lineup  = _optimal_lineup_value(net_players, values_by_id, league_type)
+                net_lineup  = _optimal_lineup_value(net_players, values_by_id, league_type, use_redraft=True)
                 wpd = _win_prob(net_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
             else:
                 wpd = departure_wpd  # pick-only: no immediate lineup improvement
@@ -1118,7 +1125,7 @@ def get_archetype_suggestions(
             viewer_players = [str(p) for p in (r.get("players") or [])]
             break
 
-    viewer_lineup_val = _optimal_lineup_value(viewer_players, values_by_id, league_type)
+    viewer_lineup_val = _optimal_lineup_value(viewer_players, values_by_id, league_type, use_redraft=True)
 
     # Count viewer's skill-position players per position (used by distribute)
     viewer_pos_counts: Dict[str, int] = {}
@@ -1130,7 +1137,7 @@ def get_archetype_suggestions(
     # League-average lineup value
     lineup_vals = [
         _optimal_lineup_value(
-            [str(p) for p in (r.get("players") or [])], values_by_id, league_type
+            [str(p) for p in (r.get("players") or [])], values_by_id, league_type, use_redraft=True
         )
         for r in rosters
     ]
