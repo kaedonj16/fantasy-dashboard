@@ -124,6 +124,87 @@ def _optimal_lineup_value(
     return total
 
 
+_ROOKIE_PPG: Dict[str, float] = {"QB": 14.0, "RB": 7.5, "WR": 6.5, "TE": 4.5}
+_ROOKIE_PPG_DEFAULT = 6.0
+_FLEX_ELIGIBLE = {"RB", "WR", "TE"}
+_BENCH_SLOTS   = {"BN", "IR", "TAXI"}
+
+
+def _ppg_lineup(
+    pids: List[str],
+    ppg_map: Dict[str, Any],
+    pos_map: Dict[str, str],
+    roster_positions: List[str],
+) -> float:
+    """
+    Compute projected weekly lineup score using actual PPG data — the same
+    logic used by simulate_playoff_odds._position_aware_lineup.
+
+    Falls back to _optimal_lineup_value (dynasty value) when ppg_map is empty.
+    """
+    if not ppg_map:
+        return 0.0
+
+    fixed_slots: Dict[str, int] = {}
+    flex_slots = sflex_slots = 0
+    for slot in roster_positions:
+        s = str(slot).upper()
+        if s in _BENCH_SLOTS:
+            continue
+        if s in {"SUPER_FLEX", "QB", "RB", "WR", "TE"} and s not in {"QB", "RB", "WR", "TE"}:
+            sflex_slots += 1
+        elif s == "SUPER_FLEX":
+            sflex_slots += 1
+        elif s in {"FLEX", "WRRB_FLEX", "WRTE_FLEX", "RBWRTE", "RBWR"}:
+            flex_slots += 1
+        elif s in SKILL_POS:
+            fixed_slots[s] = fixed_slots.get(s, 0) + 1
+
+    by_pos: Dict[str, List[float]] = {}
+    for pid in pids:
+        info = ppg_map.get(str(pid))
+        if info:
+            pos = str(info.get("pos") or "").upper()
+            ppg = float(info.get("ppg") or 0) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+        else:
+            pos = pos_map.get(str(pid), "")
+            ppg = _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+        if pos in SKILL_POS:
+            by_pos.setdefault(pos, []).append(ppg)
+
+    for pos in by_pos:
+        by_pos[pos].sort(reverse=True)
+
+    used: Dict[str, int] = {}
+    total = 0.0
+
+    for slot_pos, count in fixed_slots.items():
+        pool = by_pos.get(slot_pos, [])
+        for _ in range(count):
+            i = used.get(slot_pos, 0)
+            total += pool[i] if i < len(pool) else 0.0
+            used[slot_pos] = i + 1
+
+    flex_pool = sorted(
+        [(pos, ppg) for pos in _FLEX_ELIGIBLE for ppg in by_pos.get(pos, [])[used.get(pos, 0):]],
+        key=lambda x: x[1], reverse=True,
+    )
+    for i in range(flex_slots):
+        if i < len(flex_pool):
+            total += flex_pool[i][1]
+    remaining = flex_pool[flex_slots:]
+
+    sflex_pool = sorted(
+        [("QB", ppg) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]] + remaining,
+        key=lambda x: x[1], reverse=True,
+    )
+    for i in range(sflex_slots):
+        if i < len(sflex_pool):
+            total += sflex_pool[i][1]
+
+    return total
+
+
 # ── Win-probability model ─────────────────────────────────────────────────────
 
 def _win_prob(team_val: float, league_avg: float) -> float:
@@ -647,6 +728,9 @@ def _build_distribute(
     num_teams: int = 10,
     playoff_spots: int = 4,
     viewer_pos_counts: Optional[Dict[str, int]] = None,
+    ppg_map: Optional[Dict[str, Any]] = None,
+    pos_map: Optional[Dict[str, str]] = None,
+    roster_positions: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Viewer sends one concentrated stud and receives a 2–3 player depth package.
@@ -698,21 +782,25 @@ def _build_distribute(
             if local_best:
                 owner_bests.append(local_best)
 
+        use_ppg = bool(ppg_map and roster_positions)
+
+        def _lineup_score(pids: List[str]) -> float:
+            if use_ppg:
+                return _ppg_lineup(pids, ppg_map, pos_map or {}, roster_positions)  # type: ignore[arg-type]
+            return _optimal_lineup_value(pids, values_by_id, league_type, use_redraft=True)
+
         # Departure cost: what happens to win% if you just lose this stud
         dep_players = [p for p in viewer_players if p != stud]
-        dep_lineup  = _optimal_lineup_value(dep_players, values_by_id, league_type, use_redraft=True)
+        dep_lineup  = _lineup_score(dep_players)
         dep_wpd     = _win_prob(dep_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
         dep_pod     = (_playoff_odds(current_wp + dep_wpd, num_weeks, num_teams, playoff_spots)
                        - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots))
 
         # Re-score each owner's best combo by how much it improves the lineup
-        # (not just value closeness). A combo that fills a weak position ranks
-        # above one that piles onto an already-strong position.
         scored_bests: List[Tuple[str, List[Dict], float, float]] = []
         for owner, combo, diff in owner_bests:
             recv_ids_trial = [c["player_id"] for c in combo]
-            trial_val = _optimal_lineup_value(dep_players + recv_ids_trial, values_by_id, league_type, use_redraft=True)
-            lineup_gain = trial_val - dep_lineup
+            lineup_gain = _lineup_score(dep_players + recv_ids_trial) - dep_lineup
             scored_bests.append((owner, combo, diff, lineup_gain))
         # Primary sort: lineup improvement descending; secondary: value closeness ascending
         scored_bests.sort(key=lambda x: (-x[3], x[2]))
@@ -723,7 +811,7 @@ def _build_distribute(
 
             recv_ids    = [c["player_id"] for c in combo]
             new_players = dep_players + recv_ids
-            new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type, use_redraft=True)
+            new_lineup  = _lineup_score(new_players)
             net_wpd     = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
 
             net_new_wp  = current_wp + net_wpd
@@ -789,6 +877,9 @@ def _build_rebuilding(
     num_teams: int = 10,
     playoff_spots: int = 4,
     picks_by_owner: Optional[Dict[str, List[Dict]]] = None,
+    ppg_map: Optional[Dict[str, Any]] = None,
+    pos_map: Optional[Dict[str, str]] = None,
+    roster_positions: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Rebuild = sell win-now vets for younger assets of similar dynasty value.
@@ -903,9 +994,16 @@ def _build_rebuilding(
 
         options.sort(key=lambda x: x["diff"])
 
+        use_ppg = bool(ppg_map and roster_positions)
+
+        def _reb_lineup_score(pids: List[str]) -> float:
+            if use_ppg:
+                return _ppg_lineup(pids, ppg_map, pos_map or {}, roster_positions)  # type: ignore[arg-type]
+            return _optimal_lineup_value(pids, values_by_id, league_type, use_redraft=True)
+
         # ── Departure stats — computed once per vet, shared by all options ─
         dep_players   = [p for p in viewer_players if p != vet]
-        dep_lineup    = _optimal_lineup_value(dep_players, values_by_id, league_type, use_redraft=True)
+        dep_lineup    = _reb_lineup_score(dep_players)
         departure_wpd = _win_prob(dep_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
         dep_wp        = current_wp + departure_wpd
         departure_pod = _playoff_odds(dep_wp, num_weeks, num_teams, playoff_spots) \
@@ -922,7 +1020,7 @@ def _build_rebuilding(
             # ── Win-prob for this specific receive package ─────────────────
             if opt["recv_pids"]:
                 net_players = dep_players + opt["recv_pids"]
-                net_lineup  = _optimal_lineup_value(net_players, values_by_id, league_type, use_redraft=True)
+                net_lineup  = _reb_lineup_score(net_players)
                 wpd = _win_prob(net_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
             else:
                 wpd = departure_wpd  # pick-only: no immediate lineup improvement
@@ -1125,7 +1223,23 @@ def get_archetype_suggestions(
             viewer_players = [str(p) for p in (r.get("players") or [])]
             break
 
-    viewer_lineup_val = _optimal_lineup_value(viewer_players, values_by_id, league_type, use_redraft=True)
+    # ── Build PPG map (same source as playoff odds simulator) ────────────────────
+    ppg_map:  Dict[str, Any] = {}
+    pos_map:  Dict[str, str] = {}
+    roster_positions: List[str] = ctx.get("roster_positions") or []
+    try:
+        from data_building.simulate_playoff_odds import build_ppg_map as _build_ppg_map
+        ppg_map, pos_map = _build_ppg_map(ctx)
+        log.debug("[archetype] ppg_map loaded: %d players", len(ppg_map))
+    except Exception as exc:
+        log.debug("[archetype] ppg_map unavailable, falling back to redraft values: %s", exc)
+
+    def _lval(pids: List[str]) -> float:
+        if ppg_map and roster_positions:
+            return _ppg_lineup(pids, ppg_map, pos_map, roster_positions)
+        return _optimal_lineup_value(pids, values_by_id, league_type, use_redraft=True)
+
+    viewer_lineup_val = _lval(viewer_players)
 
     # Count viewer's skill-position players per position (used by distribute)
     viewer_pos_counts: Dict[str, int] = {}
@@ -1134,13 +1248,8 @@ def get_archetype_suggestions(
         if pos in SKILL_POS:
             viewer_pos_counts[pos] = viewer_pos_counts.get(pos, 0) + 1
 
-    # League-average lineup value
-    lineup_vals = [
-        _optimal_lineup_value(
-            [str(p) for p in (r.get("players") or [])], values_by_id, league_type, use_redraft=True
-        )
-        for r in rosters
-    ]
+    # League-average lineup value (PPG-based, matching playoff odds simulator)
+    lineup_vals = [_lval([str(p) for p in (r.get("players") or [])]) for r in rosters]
     league_avg = sum(lineup_vals) / max(1, len(lineup_vals)) if lineup_vals else viewer_lineup_val
 
     settings  = ctx.get("settings") or {}
@@ -1228,6 +1337,7 @@ def get_archetype_suggestions(
             current_wp=current_wp, num_weeks=num_weeks,
             num_teams=num_teams, playoff_spots=playoff_spots,
             viewer_pos_counts=viewer_pos_counts,
+            ppg_map=ppg_map, pos_map=pos_map, roster_positions=roster_positions,
         )
 
     # ── Rebuilding: viewer sells a win-now vet for youth / picks ─────────────
@@ -1247,6 +1357,7 @@ def get_archetype_suggestions(
             current_wp=current_wp, num_weeks=num_weeks,
             num_teams=num_teams, playoff_spots=playoff_spots,
             picks_by_owner=picks_by_owner,
+            ppg_map=ppg_map, pos_map=pos_map, roster_positions=roster_positions,
         )
 
     # ── 30-day trend ──────────────────────────────────────────────────────────

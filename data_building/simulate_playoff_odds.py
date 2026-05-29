@@ -85,6 +85,79 @@ def _n_byes(playoff_teams: int) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Public helper — PPG map for use by other modules (e.g. archetype engine)
+# ---------------------------------------------------------------------------
+
+def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
+    """
+    Build (ppg_map, pos_map) using the same priority logic as _estimate_from_rosters:
+      1. FantasyPros season projections
+      2. Prior-season usage_rows cache
+      3. pos_map from DB (position fallback for rookies)
+
+    Returns:
+        ppg_map  — {str(player_id): {"ppg": float, "pos": str}}
+        pos_map  — {str(player_id): str(position)}   (position fallback)
+    """
+    season = int(ctx.get("season") or 0)
+    _ss    = ctx.get("scoring_settings") or {}
+    rec_pts = float(_ss.get("rec") or _ss.get("pointsPerReception") or 0)
+    if rec_pts >= 1.0:
+        scoring  = "ppr"
+        ppg_key  = "ppr_ppg"
+    elif rec_pts >= 0.5:
+        scoring  = "half_ppr"
+        ppg_key  = "half_ppr_ppg"
+    else:
+        scoring  = "std"
+        ppg_key  = "std_scoring_ppg"
+
+    ppg_map: dict = {}
+    try:
+        from data_building.fetch_projections import fetch_fp_season_projections
+        fp_data = fetch_fp_season_projections(season, scoring)
+        for pid, info in fp_data.items():
+            if info.get("ppg", 0) > 0:
+                ppg_map[str(pid)] = {"ppg": info["ppg"], "pos": info.get("pos", "")}
+    except Exception:
+        pass
+
+    try:
+        import os as _os, json as _json
+        from datetime import date as _date
+        _cache_dir = _os.path.join(_os.path.dirname(__file__), "..", "cache", "player_history")
+        _year = season or _date.today().year
+        for _y in [_year, _year - 1]:
+            _path = _os.path.join(_cache_dir, f"usage_rows_{_y}.json")
+            if _os.path.exists(_path):
+                with open(_path) as _f:
+                    _usage_data = _json.load(_f)
+                for p in _usage_data:
+                    pid = str(p.get("id") or "")
+                    if not pid or pid in ppg_map:
+                        continue
+                    ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
+                    pos = str(p.get("position") or "").upper()
+                    ppg_map[pid] = {"ppg": ppg, "pos": pos}
+                break
+    except Exception:
+        pass
+
+    pos_map: dict = {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT player_id, position FROM player_values WHERE position IS NOT NULL"
+            ).fetchall()
+        pos_map = {str(r["player_id"]): str(r["position"]).upper() for r in rows}
+    except Exception:
+        pass
+
+    return ppg_map, pos_map
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
