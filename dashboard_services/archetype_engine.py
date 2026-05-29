@@ -320,10 +320,13 @@ def _score_sends(
             else:
                 sc = 0.15
         elif archetype == "rebuilding":
-            if age >= peak - 1 and val >= 350:         # peak/post-peak with real value — sell high
+            # Rebuild = sell win-now vets (>= positional peak age) that still
+            # carry real value. Never dangle the young players you want to keep,
+            # so skip anything that isn't a sellable vet entirely.
+            if age >= peak and val >= 250:
                 sc = 0.5 + min(val / 800, 0.5)
             else:
-                sc = 0.05
+                continue
         elif archetype == "consolidate":
             if 300 <= val <= 650:
                 sc = 0.85 - abs(val - 475) / 475      # sweet spot mid-tier
@@ -374,7 +377,22 @@ def _select_package(
     if archetype == "distribute":
         return pool[:1]
 
-    # Contending / Rebuilding: 1-player first, then 2-combo
+    if archetype == "rebuilding":
+        # Send a vet that fairly matches the young target's value. Prefer the
+        # closest single vet, then the closest 2-vet combo. If nothing fits the
+        # band, suggest no send rather than a lopsided overpay.
+        in_band = [c for c in pool if lo <= c["value"] <= hi]
+        if in_band:
+            return [min(in_band, key=lambda c: abs(c["value"] - target_val))]
+        best2, best2_diff = None, float("inf")
+        for a, b in combinations(pool, 2):
+            s = a["value"] + b["value"]
+            if lo <= s <= hi and abs(s - target_val) < best2_diff:
+                best2_diff = abs(s - target_val)
+                best2 = [a, b]
+        return best2 or []
+
+    # Contending: 1-player first, then 2-combo
     for c in pool:
         if lo <= c["value"] <= hi:
             return [c]
@@ -754,7 +772,9 @@ def get_archetype_suggestions(
         elif archetype == "rebuilding":
             if age and age >= peak:
                 continue
-            if val < 150:
+            # Target meaningful young players, not deep-bench lottery tickets, so
+            # a sellable vet can fairly fund the acquisition.
+            if val < 300:
                 continue
             dyn_over_rdft = min(2.0, val / max(1, rdft)) if rdft > 0 else 1.4
             age_sc = max(0.0, (peak - (age or peak)) / peak)
@@ -819,10 +839,12 @@ def get_archetype_suggestions(
     # ── Build send packages & assemble response ───────────────────────────────
     send_candidates = _score_sends(viewer_players, values_by_id, archetype)
     # Add viewer's draft picks to the send pool so packages can use them as
-    # value-fillers (e.g. two players + a pick for consolidate).
-    viewer_picks = picks_by_roster.get(str(viewer_roster_id)) or \
-                   picks_by_roster.get(viewer_roster_id) or []
-    send_candidates += _pick_send_candidates(viewer_picks, num_teams)
+    # value-fillers (e.g. two players + a pick for consolidate). Skip this for
+    # rebuilding — a rebuild accumulates picks, it doesn't trade them away.
+    if archetype != "rebuilding":
+        viewer_picks = picks_by_roster.get(str(viewer_roster_id)) or \
+                       picks_by_roster.get(viewer_roster_id) or []
+        send_candidates += _pick_send_candidates(viewer_picks, num_teams)
 
     results = []
     for t in top:
