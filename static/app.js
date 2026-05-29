@@ -3910,15 +3910,14 @@ window.initTradePage = function initTradePage(root = document) {
         _strategyPage   = 0;
         if (strategyClearBtn) strategyClearBtn.style.display = "none";
 
-        // Show / update current playoff odds badge
-        const poBar = root.querySelector("#otcCurrentPOBar");
-        const poVal = root.querySelector("#otcCurrentPOValue");
-        if (poBar && poVal) {
+        // Show / update current playoff odds inline badge
+        const poBadge = root.querySelector("#otcCurrentPOBadge");
+        if (poBadge) {
           if (_currentPlayoffPct !== null) {
-            poVal.textContent = _currentPlayoffPct.toFixed(1) + "%";
-            poBar.style.display = "flex";
+            poBadge.textContent = "PO " + _currentPlayoffPct.toFixed(1) + "%";
+            poBadge.style.display = "";
           } else {
-            poBar.style.display = "none";
+            poBadge.style.display = "none";
           }
         }
 

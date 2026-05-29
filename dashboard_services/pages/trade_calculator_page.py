@@ -430,10 +430,11 @@ def build_trade_calculator_body(
               display:none;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;
             }}
             .otc-arch-chip {{
-              padding:7px 10px;font-size:12px;font-weight:600;
-              border-radius:8px;border:1px solid var(--border);
+              padding:6px 16px;font-size:12px;font-weight:600;
+              border-radius:20px;border:1px solid var(--border);
               background:var(--card);color:var(--text-muted);
-              cursor:pointer;transition:all .15s;text-align:center;
+              cursor:pointer;transition:all .15s;
+              white-space:nowrap;flex-shrink:0;
             }}
             .otc-arch-chip:hover {{ border-color:var(--accent);color:var(--text); }}
             .otc-arch-chip.is-active {{
@@ -509,9 +510,11 @@ def build_trade_calculator_body(
             }}
             /* ── Strategy panel ── */
             .otc-strategy-chips {{
-              display:grid;grid-template-columns:repeat(4,1fr);gap:6px;
-              padding:10px 14px 6px;
+              display:flex;overflow-x:auto;gap:6px;
+              padding:10px 14px 8px;
+              scrollbar-width:none;
             }}
+            .otc-strategy-chips::-webkit-scrollbar {{ display:none; }}
             .otc-strategy-section-head {{
               display:flex;align-items:center;justify-content:space-between;
               padding:8px 14px 4px;
@@ -576,12 +579,11 @@ def build_trade_calculator_body(
             /* ── Mobile: 480px ── */
             @media (max-width:480px) {{
               .otc-strategy-chips {{
-                grid-template-columns:repeat(2,1fr);
-                padding:8px 10px 4px;
+                padding:8px 10px 6px;
               }}
               .otc-arch-chip {{
-                font-size:12px;
-                padding:8px 6px;
+                font-size:11px;
+                padding:5px 12px;
               }}
               #otcStrategyCards {{
                 padding:8px 10px;
@@ -667,7 +669,7 @@ def build_trade_calculator_body(
             <!-- ── Strategy panel ───────────────────────────────────────────────── -->
             <div id="otcStrategyPanel" style="display:none;">
 
-              <!-- Archetype chips -->
+              <!-- Archetype chips (single scrollable pill row) -->
               <div id="otcStrategyChips" class="otc-strategy-chips">
                 <button class="otc-arch-chip" data-arch="contending">Contending</button>
                 <button class="otc-arch-chip" data-arch="rebuilding">Rebuilding</button>
@@ -675,16 +677,13 @@ def build_trade_calculator_body(
                 <button class="otc-arch-chip" data-arch="distribute">Distribute</button>
               </div>
 
-              <!-- Current playoff odds (populated after first load) -->
-              <div id="otcCurrentPOBar" style="display:none;padding:4px 14px 0;align-items:center;gap:6px;">
-                <span style="font-size:11px;color:var(--text-muted);">Your current playoff odds:</span>
-                <span id="otcCurrentPOValue" style="font-size:12px;font-weight:700;color:var(--accent);"></span>
-              </div>
-
-              <!-- Impact table -->
+              <!-- Impact table (current PO badge is inline on the right) -->
               <div class="otc-strategy-section-head">
                 <span class="otc-sugg-section-title">Impact <span id="otcStrategySpinner" style="display:none;font-size:10px;font-weight:500;color:var(--text-muted);"><i class="fa-solid fa-circle-notch" style="animation:spin .9s linear infinite;margin-right:2px;"></i>Simulating…</span></span>
-                <span class="otc-strategy-section-hint" id="otcStrategyImpactHint">Win % if acquired</span>
+                <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                  <span id="otcCurrentPOBadge" style="display:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;background:var(--accent,#3b82f6)20;color:var(--accent,#3b82f6);"></span>
+                  <span class="otc-strategy-section-hint" id="otcStrategyImpactHint">Win % if acquired</span>
+                </div>
               </div>
               <div id="otcStrategyImpact">
                 <div class="otc-movers-empty">Pick a strategy above.</div>
