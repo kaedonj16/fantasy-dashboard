@@ -440,11 +440,15 @@ def _select_packages(
     if best:
         results.append(best)
 
-    # ── 2. Player + pick: pair each pick with 1–2 players ────────────────────
+    # ── 2. Player(s) + 1 pick ────────────────────────────────────────────────
     if pick_pool and len(results) < max_pkgs:
         mp = player_pool[:8]
         best_pp, best_pp_d = None, float("inf")
         for pk in pick_pool:
+            # Just the pick alone
+            d = abs(pk["value"] - target_val)
+            if lo <= pk["value"] <= hi and d < best_pp_d:
+                best_pp_d, best_pp = d, [pk]
             for c in mp:
                 s = c["value"] + pk["value"]
                 d = abs(s - target_val)
@@ -459,6 +463,25 @@ def _select_packages(
                     best_pp_d, best_pp = d, [a, b, pk]
         if best_pp:
             results.append(best_pp)
+
+    # ── 3. Player(s) + 2 picks ───────────────────────────────────────────────
+    if len(pick_pool) >= 2 and len(results) < max_pkgs:
+        mp = player_pool[:6]
+        best_2p, best_2p_d = None, float("inf")
+        for pk1, pk2 in combinations(pick_pool, 2):
+            # Two picks alone
+            s = pk1["value"] + pk2["value"]
+            d = abs(s - target_val)
+            if lo <= s <= hi and d < best_2p_d:
+                best_2p_d, best_2p = d, [pk1, pk2]
+            # One player + two picks
+            for c in mp:
+                s = c["value"] + pk1["value"] + pk2["value"]
+                d = abs(s - target_val)
+                if lo <= s <= hi and d < best_2p_d:
+                    best_2p_d, best_2p = d, [c, pk1, pk2]
+        if best_2p:
+            results.append(best_2p)
 
     # ── Fallback: absolute-closest across all assets if window missed ─────────
     if not results:
@@ -494,8 +517,16 @@ def _ordinal(n: int) -> str:
     return {1: "1st", 2: "2nd", 3: "3rd"}.get(n, f"{n}th")
 
 
-def _pick_send_candidates(picks: List[Dict], num_teams: int) -> List[Dict[str, Any]]:
-    """Convert a roster's future picks into send-candidate dicts with est. values."""
+def _pick_send_candidates(
+    picks: List[Dict],
+    num_teams: int,
+    standings_map: Optional[Dict] = None,
+) -> List[Dict[str, Any]]:
+    """Convert future picks to send-candidate dicts.
+
+    Estimates draft slot from the original team's current standing so picks
+    are displayed as '2026 1.04' rather than generic '2026 1st'.
+    """
     if not picks:
         return []
     pick_tbl: Dict[str, float] = {}
@@ -505,6 +536,8 @@ def _pick_send_candidates(picks: List[Dict], num_teams: int) -> List[Dict[str, A
     except Exception:
         pick_tbl = {}
 
+    third = max(1, num_teams // 3)
+
     out = []
     for pk in picks:
         if not isinstance(pk, dict):
@@ -513,21 +546,49 @@ def _pick_send_candidates(picks: List[Dict], num_teams: int) -> List[Dict[str, A
         rnd    = int(pk.get("round") or 0)
         if not season or rnd <= 0:
             continue
+
+        # Estimate slot from the original team's standing (worst = picks first)
+        slot   = 0
+        bucket = "mid"
+        if standings_map:
+            orig_rid = str(pk.get("original_roster_id") or pk.get("roster_id") or "")
+            if orig_rid:
+                seed = _seed(standings_map, orig_rid, num_teams // 2)
+                slot = max(1, min(num_teams, num_teams - seed + 1))
+                if slot <= third:
+                    bucket = "early"
+                elif slot <= 2 * third:
+                    bucket = "mid"
+                else:
+                    bucket = "late"
+
+        # Look up value: try slot-specific key first, then bucket, then fallbacks
         val = 0.0
-        for key in (f"{season}_{rnd}_mid", f"{season}_{rnd}", f"{season}_{rnd}_early"):
+        keys: List[str] = []
+        if slot:
+            keys.append(f"{season}_{rnd}_{slot:02d}")
+        keys += [f"{season}_{rnd}_{bucket}", f"{season}_{rnd}_mid",
+                 f"{season}_{rnd}", f"{season}_{rnd}_early"]
+        for key in keys:
             if key in pick_tbl and float(pick_tbl[key]) > 0:
                 val = float(pick_tbl[key])
                 break
         if val <= 0:
             val = {1: 650.0, 2: 220.0}.get(rnd, 80.0)
+
+        name = f"{season} {_ordinal(rnd)}.{slot:02d}" if slot else f"{season} {_ordinal(rnd)}"
+        uid  = f"pick_{season}_{rnd}_{slot:02d}" if slot else f"pick_{season}_{rnd}"
+
         out.append({
-            "player_id":  f"pick_{season}_{rnd}",
-            "name":       f"{season} {_ordinal(rnd)}",
-            "position":   "PICK",
-            "value":      round(val, 1),
-            "is_pick":    True,
+            "player_id":   uid,
+            "name":        name,
+            "position":    "PICK",
+            "value":       round(val, 1),
+            "is_pick":     True,
             "pick_season": season,
             "pick_round":  rnd,
+            "pick_slot":   slot,
+            "pick_bucket": bucket,
         })
     return out
 
@@ -665,7 +726,7 @@ def _build_distribute(
                 "position": c["position"], "value": round(c["value"], 1),
             } for c in combo],
         })
-        if len(results) >= 5:
+        if len(results) >= 15:
             break
 
     return results
@@ -809,7 +870,7 @@ def _build_rebuilding(
                       - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
 
         # ── Emit up to 3 suggestions per vet (best options by value diff) ─
-        for opt in options[:6]:
+        for opt in options[:10]:
             if any(pid in used_targets for pid in opt["recv_pids"]):
                 continue
 
@@ -903,10 +964,10 @@ def _build_rebuilding(
                 }],
                 "suggested_receive": suggested_receive,
             })
-            if len(results) >= 5:
+            if len(results) >= 15:
                 break
 
-        if len(results) >= 5:
+        if len(results) >= 15:
             break
 
     return results
@@ -1113,7 +1174,7 @@ def get_archetype_suggestions(
         for rid, pick_list in picks_by_roster.items():
             if str(rid) == str(viewer_roster_id):
                 continue
-            converted = _pick_send_candidates(pick_list, num_teams)
+            converted = _pick_send_candidates(pick_list, num_teams, standings_map)
             if converted:
                 picks_by_owner[str(rid)] = converted
         return _build_rebuilding(
@@ -1215,7 +1276,7 @@ def get_archetype_suggestions(
     # value-fillers (e.g. two players + a pick for consolidate).
     viewer_picks = picks_by_roster.get(str(viewer_roster_id)) or \
                    picks_by_roster.get(viewer_roster_id) or []
-    send_candidates += _pick_send_candidates(viewer_picks, num_teams)
+    send_candidates += _pick_send_candidates(viewer_picks, num_teams, standings_map)
 
     results = []
     new_wp_base = current_wp  # alias for clarity inside loop
@@ -1226,7 +1287,7 @@ def get_archetype_suggestions(
         new_wp = new_wp_base + wpd
         pod    = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) - current_po
 
-        pkgs = _select_packages(send_candidates, t["value"], archetype, max_pkgs=2)
+        pkgs = _select_packages(send_candidates, t["value"], archetype, max_pkgs=3)
         if not pkgs:
             pkgs = [[]]
 
@@ -1253,9 +1314,9 @@ def get_archetype_suggestions(
                 "direction":          "acquire",
                 "suggested_send":     pkg,
             })
-            if len(results) >= 5:
+            if len(results) >= 15:
                 break
-        if len(results) >= 5:
+        if len(results) >= 15:
             break
 
     return results

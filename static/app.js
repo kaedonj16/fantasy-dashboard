@@ -3683,37 +3683,25 @@ window.initTradePage = function initTradePage(root = document) {
             state.sideAPicks.length   = 0;
             state.sideBPicks.length   = 0;
 
-            receiveAssets.forEach(a => {
+            function _loadPickToSide(a, picks, players) {
               if (a.is_pick || a.position === "PICK") {
-                const yr = String(a.pick_season || "").replace(/\D/g, "")
+                const yr     = String(a.pick_season || "").replace(/\D/g, "")
                   || (String(a.player_id || "").split("_")[1] || "");
-                const rd = String(a.pick_round || "").replace(/\D/g, "")
+                const rd     = String(a.pick_round  || "").replace(/\D/g, "")
                   || (String(a.player_id || "").split("_")[2] || "1");
-                const pickId = yr && rd ? `${yr}_${rd}_mid` : null;
-                if (pickId) state.sideAPicks.push({ id: pickId, display: a.name || pickId });
+                const bucket = a.pick_bucket || "mid";
+                const pickId = yr && rd ? `${yr}_${rd}_${bucket}` : null;
+                if (pickId && !picks.some(p => p.id === pickId))
+                  picks.push({ id: pickId, display: a.name || pickId });
               } else {
                 const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
                   || { id: String(a.player_id), name: a.name };
-                if (!state.sideAPlayers.some(p => String(p.id) === String(pObj.id)))
-                  state.sideAPlayers.push(pObj);
+                if (!players.some(p => String(p.id) === String(pObj.id)))
+                  players.push(pObj);
               }
-            });
-            sendAssets.forEach(a => {
-              if (a.is_pick || a.position === "PICK") {
-                const yr = String(a.pick_season || "").replace(/\D/g, "")
-                  || (String(a.player_id || "").split("_")[1] || "");
-                const rd = String(a.pick_round || "").replace(/\D/g, "")
-                  || (String(a.player_id || "").split("_")[2] || "1");
-                const pickId = yr && rd ? `${yr}_${rd}_mid` : null;
-                if (pickId && !state.sideBPicks.some(p => p.id === pickId))
-                  state.sideBPicks.push({ id: pickId, display: a.name || pickId });
-              } else {
-                const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
-                  || { id: String(a.player_id), name: a.name };
-                if (!state.sideBPlayers.some(p => String(p.id) === String(pObj.id)))
-                  state.sideBPlayers.push(pObj);
-              }
-            });
+            }
+            receiveAssets.forEach(a => _loadPickToSide(a, state.sideAPicks, state.sideAPlayers));
+            sendAssets.forEach(a    => _loadPickToSide(a, state.sideBPicks, state.sideBPlayers));
 
             saveState();
             renderChips("A");
@@ -3779,6 +3767,8 @@ window.initTradePage = function initTradePage(root = document) {
     let _activeArchetype = localStorage.getItem("sugg-archetype") || "";
     let _strategyData    = [];
     let _strategyFilter  = null;
+    let _strategyPage    = 0;
+    const _STRATEGY_PAGE_SIZE = 5;
 
     function _setSuggSubtab(tab) {
       _activeSubtab = tab;
@@ -3799,6 +3789,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     function _setStrategyChip(arch) {
       _activeArchetype = arch;
+      _strategyPage    = 0;
       localStorage.setItem("sugg-archetype", arch);
       root.querySelectorAll(".otc-arch-chip").forEach(c =>
         c.classList.toggle("is-active", c.dataset.arch === arch));
@@ -3909,6 +3900,7 @@ window.initTradePage = function initTradePage(root = document) {
         const data = await res.json();
         _strategyData   = Array.isArray(data) ? data : [];
         _strategyFilter = null;
+        _strategyPage   = 0;
         if (strategyClearBtn) strategyClearBtn.style.display = "none";
 
         if (!_strategyData.length) {
@@ -4016,7 +4008,12 @@ window.initTradePage = function initTradePage(root = document) {
         return;
       }
 
-      strategyCards.innerHTML = visible.map(t => {
+      const totalPages = Math.max(1, Math.ceil(visible.length / _STRATEGY_PAGE_SIZE));
+      _strategyPage    = Math.max(0, Math.min(_strategyPage, totalPages - 1));
+      const paged      = visible.slice(_strategyPage * _STRATEGY_PAGE_SIZE,
+                                       (_strategyPage + 1) * _STRATEGY_PAGE_SIZE);
+
+      const cardsHtml = paged.map(t => {
         const isDistribute = t.direction === "distribute";
         const sendAsset    = (t.suggested_send && t.suggested_send[0]) || null;
         const isSell       = isDistribute || (archetype === "rebuilding" && sendAsset?.player_id);
@@ -4131,6 +4128,24 @@ window.initTradePage = function initTradePage(root = document) {
           </div>
         </div>`;
       }).join("");
+
+      const pageHtml = totalPages > 1 ? `
+        <div class="otc-strategy-pager">
+          <button class="otc-strategy-page-btn" data-dir="-1"
+            ${_strategyPage === 0 ? "disabled" : ""}>&#8249; Prev</button>
+          <span class="otc-strategy-page-info">${_strategyPage + 1} of ${totalPages}</span>
+          <button class="otc-strategy-page-btn" data-dir="1"
+            ${_strategyPage >= totalPages - 1 ? "disabled" : ""}>Next &#8250;</button>
+        </div>` : "";
+
+      strategyCards.innerHTML = cardsHtml + pageHtml;
+
+      strategyCards.querySelectorAll(".otc-strategy-page-btn[data-dir]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          _strategyPage += parseInt(btn.dataset.dir, 10);
+          _renderStrategyCards(data, filterPid);
+        });
+      });
     }
 
   })();
