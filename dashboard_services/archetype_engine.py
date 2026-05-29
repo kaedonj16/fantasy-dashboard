@@ -520,12 +520,13 @@ def _ordinal(n: int) -> str:
 def _pick_send_candidates(
     picks: List[Dict],
     num_teams: int,
-    standings_map: Optional[Dict] = None,
+    slot_map: Optional[Dict[int, int]] = None,
 ) -> List[Dict[str, Any]]:
     """Convert future picks to send-candidate dicts.
 
-    Estimates draft slot from the original team's current standing so picks
-    are displayed as '2026 1.04' rather than generic '2026 1st'.
+    Uses the pre-computed slot_map (roster_id → draft slot) built by the
+    existing build_historical_pick_slot_map() so picks display as '2026 1.04'
+    when an exact slot is known.
     """
     if not picks:
         return []
@@ -547,23 +548,25 @@ def _pick_send_candidates(
         if not season or rnd <= 0:
             continue
 
-        # Estimate slot from the original team's standing (worst = picks first)
+        # Resolve exact slot from pre-computed map (original owner's draft position)
         slot   = 0
         bucket = "mid"
-        if standings_map:
-            orig_rid = str(pk.get("original_roster_id") or pk.get("roster_id") or "")
-            if orig_rid:
-                seed = _seed(standings_map, orig_rid, num_teams // 2)
-                slot = max(1, min(num_teams, num_teams - seed + 1))
-                if slot <= third:
-                    bucket = "early"
-                elif slot <= 2 * third:
-                    bucket = "mid"
-                else:
-                    bucket = "late"
+        if slot_map:
+            try:
+                orig_rid = int(pk.get("original_roster_id") or pk.get("roster_id") or 0)
+                slot = slot_map.get(orig_rid, 0)
+            except (ValueError, TypeError):
+                slot = 0
+        if slot > 0:
+            if slot <= third:
+                bucket = "early"
+            elif slot <= 2 * third:
+                bucket = "mid"
+            else:
+                bucket = "late"
 
-        # Look up value: try slot-specific key first, then bucket, then fallbacks
-        val = 0.0
+        # Look up value: slot-specific key first, then bucket, then fallbacks
+        val  = 0.0
         keys: List[str] = []
         if slot:
             keys.append(f"{season}_{rnd}_{slot:02d}")
@@ -1014,6 +1017,19 @@ def get_archetype_suggestions(
     picks_by_roster = ctx.get("picks_by_roster") or {}
 
     num_teams     = max(len(rosters), league_size, 8)
+
+    # Build pick-slot map using the existing app.py logic (roster_id → draft slot)
+    slot_map: Dict[int, int] = {}
+    try:
+        from app import build_historical_pick_slot_map
+        slot_map = build_historical_pick_slot_map(
+            platform=platform,
+            root_league_id=league_id,
+            current_season=season,
+            source_season=season - 1,
+        ) or {}
+    except Exception as exc:
+        log.debug("[archetype] pick slot map skipped: %s", exc)
     playoff_spots = max(4, round(num_teams * 0.4))
 
     # ── Build values_by_id ────────────────────────────────────────────────────
@@ -1174,7 +1190,7 @@ def get_archetype_suggestions(
         for rid, pick_list in picks_by_roster.items():
             if str(rid) == str(viewer_roster_id):
                 continue
-            converted = _pick_send_candidates(pick_list, num_teams, standings_map)
+            converted = _pick_send_candidates(pick_list, num_teams, slot_map)
             if converted:
                 picks_by_owner[str(rid)] = converted
         return _build_rebuilding(
@@ -1276,7 +1292,7 @@ def get_archetype_suggestions(
     # value-fillers (e.g. two players + a pick for consolidate).
     viewer_picks = picks_by_roster.get(str(viewer_roster_id)) or \
                    picks_by_roster.get(viewer_roster_id) or []
-    send_candidates += _pick_send_candidates(viewer_picks, num_teams, standings_map)
+    send_candidates += _pick_send_candidates(viewer_picks, num_teams, slot_map)
 
     results = []
     new_wp_base = current_wp  # alias for clarity inside loop

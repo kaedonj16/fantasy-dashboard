@@ -556,21 +556,6 @@ def build_trade_calculator_body(
             .otc-strategy-partner .dot {{
               width:6px;height:6px;border-radius:50%;flex-shrink:0;
             }}
-            /* strategy card pagination */
-            .otc-strategy-pager {{
-              display:flex;align-items:center;justify-content:center;gap:10px;
-              padding:8px 0 4px;border-top:1px solid var(--border);margin-top:2px;
-            }}
-            .otc-strategy-page-btn {{
-              padding:4px 14px;font-size:12px;font-weight:600;border-radius:6px;
-              border:1px solid var(--border);background:var(--card);color:var(--text);
-              cursor:pointer;transition:background .12s;
-            }}
-            .otc-strategy-page-btn:hover:not(:disabled) {{ background:var(--row); }}
-            .otc-strategy-page-btn:disabled {{ opacity:.35;cursor:default; }}
-            .otc-strategy-page-info {{
-              font-size:11px;font-weight:600;color:var(--text-muted);min-width:60px;text-align:center;
-            }}
           </style>
 
           </div><!-- /#otcCalcTab -->

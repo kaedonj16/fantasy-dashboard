@@ -4130,17 +4130,17 @@ window.initTradePage = function initTradePage(root = document) {
       }).join("");
 
       const pageHtml = totalPages > 1 ? `
-        <div class="otc-strategy-pager">
-          <button class="otc-strategy-page-btn" data-dir="-1"
-            ${_strategyPage === 0 ? "disabled" : ""}>&#8249; Prev</button>
-          <span class="otc-strategy-page-info">${_strategyPage + 1} of ${totalPages}</span>
-          <button class="otc-strategy-page-btn" data-dir="1"
-            ${_strategyPage >= totalPages - 1 ? "disabled" : ""}>Next &#8250;</button>
+        <div class="pagination pagination--center">
+          <button class="pagination-btn" data-dir="-1"
+            ${_strategyPage === 0 ? "disabled" : ""}><i class="fa-solid fa-chevron-left"></i> Prev</button>
+          <span class="pagination-label">${_strategyPage + 1} / ${totalPages}</span>
+          <button class="pagination-btn" data-dir="1"
+            ${_strategyPage >= totalPages - 1 ? "disabled" : ""}>Next <i class="fa-solid fa-chevron-right"></i></button>
         </div>` : "";
 
       strategyCards.innerHTML = cardsHtml + pageHtml;
 
-      strategyCards.querySelectorAll(".otc-strategy-page-btn[data-dir]").forEach(btn => {
+      strategyCards.querySelectorAll(".pagination-btn[data-dir]").forEach(btn => {
         btn.addEventListener("click", () => {
           _strategyPage += parseInt(btn.dataset.dir, 10);
           _renderStrategyCards(data, filterPid);
