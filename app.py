@@ -20111,6 +20111,9 @@ def api_archetype_suggestions():
     league_type      = str(request.args.get("league_type")      or "1qb").strip().lower()
     league_size      = int(request.args.get("league_size")      or 10)
 
+    untouchable_raw  = str(request.args.get("untouchable_ids") or "").strip()
+    untouchable_ids  = set(untouchable_raw.split(",")) - {""} if untouchable_raw else None
+
     if not league_id or not viewer_roster_id:
         return jsonify({"error": "league_id and viewer_roster_id required"}), 400
 
@@ -20133,6 +20136,7 @@ def api_archetype_suggestions():
             league_type=league_type,
             league_size=league_size,
             ctx=ctx,
+            untouchable_ids=untouchable_ids,
         )
         return jsonify(results)
     except Exception as exc:
@@ -21394,6 +21398,20 @@ def api_trade_intel_player_send_packages(player_id: str):
         # ── Per-team value-matched return packages ──────────────────────────
         lo, hi = focus_value * 0.82, focus_value * 1.25
 
+        # Viewer's position depth so we can prefer combos filling their weak spots
+        viewer_roster_obj = next(
+            (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
+        )
+        viewer_pos_counts: dict = {}
+        if viewer_roster_obj:
+            for pid in (viewer_roster_obj.get("players") or []):
+                pos = values_by_id.get(str(pid), {}).get("position", "")
+                if pos and str(pid) != str(player_id):
+                    viewer_pos_counts[pos] = viewer_pos_counts.get(pos, 0) + 1
+        depth_targets = {"QB": 2, "RB": 4, "WR": 5, "TE": 2}
+        viewer_weak = {pos for pos, tgt in depth_targets.items()
+                       if viewer_pos_counts.get(pos, 0) < tgt}
+
         def _value_label(total: float) -> tuple:
             ratio = total / focus_value if focus_value else 0
             if ratio >= 1.08:
@@ -21461,19 +21479,24 @@ def api_trade_intel_player_send_packages(player_id: str):
             for p in team_players:
                 for pk in team_picks:
                     _add([p, pk])
-            # 2 players (different positions preferred via ordering)
+            # 2 players — never offer two QBs
             for i, p1 in enumerate(team_players):
                 if p1["value"] >= hi:
                     continue
                 for p2 in team_players[i + 1:]:
+                    if p1["position"] == "QB" and p2["position"] == "QB":
+                        continue
                     _add([p1, p2])
             # 2 picks
             for i, pk1 in enumerate(team_picks):
                 for pk2 in team_picks[i + 1:]:
                     _add([pk1, pk2])
 
-            # Keep this team's 3 best-fitting options
-            team_opts.sort(key=lambda x: (x["fit"], -len(x["receive"])))
+            # Keep this team's 3 best-fitting options; prefer combos filling viewer's needs
+            def _need_bonus(assets: list) -> int:
+                return sum(1 for a in assets if a.get("position") in viewer_weak)
+            team_opts.sort(key=lambda x: (x["fit"] - _need_bonus(x["receive"]) * focus_value * 0.03,
+                                           -len(x["receive"])))
             options.extend(team_opts[:3])
 
         # Best fit across all teams first; cap the list

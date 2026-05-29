@@ -296,10 +296,13 @@ def _score_sends(
     player_ids: List[str],
     values_by_id: Dict[str, Any],
     archetype: str,
+    untouchable_ids=None,
 ) -> List[Dict[str, Any]]:
     """Score viewer's players as send candidates; returns sorted list."""
     out = []
     for pid in player_ids:
+        if untouchable_ids and pid in untouchable_ids:
+            continue
         info = values_by_id.get(pid)
         if not info:
             continue
@@ -360,6 +363,8 @@ def _select_package(
         best, best_diff = [], float("inf")
         for n in (2, 3):
             for combo in combinations(pool, n):
+                if sum(1 for c in combo if c["position"] == "QB") > 1:
+                    continue
                 s = sum(c["value"] for c in combo)
                 if lo <= s <= hi and abs(s - target_val) < best_diff:
                     best_diff = abs(s - target_val)
@@ -374,6 +379,8 @@ def _select_package(
         if lo <= c["value"] <= hi:
             return [c]
     for a, b in combinations(pool, 2):
+        if a["position"] == "QB" and b["position"] == "QB":
+            continue
         s = a["value"] + b["value"]
         if lo <= s <= hi:
             return [a, b]
@@ -427,22 +434,26 @@ def _pick_send_candidates(picks: List[Dict], num_teams: int) -> List[Dict[str, A
 def _partner_phrase(
     arch: str, name: str, seed: int, playoff_spots: int,
     avg_age: Optional[float], rdft_ratio: Optional[float],
+    partner_weak: Optional[List[str]] = None,
 ) -> str:
+    need_sfx = ""
+    if partner_weak:
+        need_sfx = f", needs {'/'.join(partner_weak[:2])} depth"
     if arch == "rebuilding":
         if avg_age and avg_age < 25:
-            return f"{name} skews young and may sell win-now vets"
+            return f"{name} skews young and may sell win-now vets{need_sfx}"
         if seed > playoff_spots + 1:
-            return f"{name} sits outside playoff position, likely selling"
-        return f"{name} looks like a rebuild partner"
+            return f"{name} sits outside playoff position, likely selling{need_sfx}"
+        return f"{name} looks like a rebuild partner{need_sfx}"
     if arch == "contending":
         if rdft_ratio and rdft_ratio > 0.95:
-            return f"{name} is built to win now and may pay up"
+            return f"{name} is built to win now and may pay up{need_sfx}"
         if seed <= max(2, playoff_spots // 2):
-            return f"{name} is a title contender chasing pieces"
-        return f"{name} is in win-now mode"
+            return f"{name} is a title contender chasing pieces{need_sfx}"
+        return f"{name} is in win-now mode{need_sfx}"
     if arch == "distribute_candidate":
-        return f"{name} is top-heavy and needs depth"
-    return f"{name} could be a match"
+        return f"{name} is top-heavy and needs depth{need_sfx}"
+    return f"{name} could be a match{need_sfx}"
 
 
 # ── Distribute suggestion builder (viewer sends one stud for depth) ───────────
@@ -456,6 +467,7 @@ def _build_distribute(
     league_type: str,
     viewer_lineup_val: float,
     league_avg: float,
+    untouchable_ids=None,
 ) -> List[Dict[str, Any]]:
     """
     Viewer sends one concentrated stud and receives a 2–3 player depth package.
@@ -465,7 +477,8 @@ def _build_distribute(
     studs = sorted(
         [p for p in viewer_players
          if values_by_id.get(p, {}).get("position") in SKILL_POS
-         and _f(values_by_id[p].get("value")) >= 600],
+         and _f(values_by_id[p].get("value")) >= 600
+         and (not untouchable_ids or p not in untouchable_ids)],
         key=lambda p: _f(values_by_id[p].get("value")),
         reverse=True,
     )[:3]
@@ -545,6 +558,7 @@ def _build_rebuilding(
     league_type: str,
     viewer_lineup_val: float,
     league_avg: float,
+    untouchable_ids=None,
 ) -> List[Dict[str, Any]]:
     """
     Rebuild = sell win-now vets for younger, ascending players of similar value.
@@ -559,9 +573,14 @@ def _build_rebuilding(
         [p for p in viewer_players
          if values_by_id.get(p, {}).get("position") in SKILL_POS
          and _f(values_by_id[p].get("age")) >= PEAK_AGE.get(
-             values_by_id[p].get("position", "WR"), 27)
-         and _f(values_by_id[p].get("value")) >= 250],
-        key=lambda p: _f(values_by_id[p].get("value")),
+             values_by_id[p].get("position", "WR"), 27) - 1
+         and _f(values_by_id[p].get("value")) >= 250
+         and (not untouchable_ids or p not in untouchable_ids)],
+        key=lambda p: (
+            max(0.0, _f(values_by_id[p].get("age"))
+                - PEAK_AGE.get(values_by_id[p].get("position", "WR"), 27))
+            * _f(values_by_id[p].get("value"))
+        ),
         reverse=True,
     )
     if not vets:
@@ -642,6 +661,7 @@ def get_archetype_suggestions(
     league_type: str = "1qb",
     league_size: int = 10,
     ctx: Optional[Dict[str, Any]] = None,
+    untouchable_ids: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
     """
     Returns up to 5 archetype-targeted trade suggestions.
@@ -765,7 +785,14 @@ def get_archetype_suggestions(
         p_rdft  = sum(_f(values_by_id[p].get("redraft_value")) for p in p_skill)
         p_avg_age   = (sum(p_ages) / len(p_ages)) if p_ages else None
         p_rdft_ratio = (p_rdft / p_dyn) if p_dyn > 0 else None
-        p_phrase = _partner_phrase(p_arch, p_name, seed, playoff_spots, p_avg_age, p_rdft_ratio)
+        p_pos_counts: Dict[str, int] = {}
+        for p in p_skill:
+            pos = values_by_id.get(p, {}).get("position", "")
+            if pos:
+                p_pos_counts[pos] = p_pos_counts.get(pos, 0) + 1
+        p_weak = [pos for pos in ("RB", "WR", "TE", "QB")
+                  if p_pos_counts.get(pos, 0) < 3][:2]
+        p_phrase = _partner_phrase(p_arch, p_name, seed, playoff_spots, p_avg_age, p_rdft_ratio, p_weak)
         owner_meta[rid] = {"arch": p_arch, "name": p_name, "phrase": p_phrase}
 
         for pid in pids:
@@ -806,6 +833,7 @@ def get_archetype_suggestions(
         return _build_distribute(
             viewer_players, values_by_id, targets_by_owner, owner_meta,
             roster_map, league_type, viewer_lineup_val, league_avg,
+            untouchable_ids=untouchable_ids,
         )
 
     # ── Rebuilding: viewer sells a win-now vet for a younger player ───────────
@@ -813,6 +841,7 @@ def get_archetype_suggestions(
         return _build_rebuilding(
             viewer_players, values_by_id, all_targets,
             league_type, viewer_lineup_val, league_avg,
+            untouchable_ids=untouchable_ids,
         )
 
     # ── 30-day trend ──────────────────────────────────────────────────────────
@@ -900,7 +929,7 @@ def get_archetype_suggestions(
                 top.append(t)
 
     # ── Build send packages & assemble response ───────────────────────────────
-    send_candidates = _score_sends(viewer_players, values_by_id, archetype)
+    send_candidates = _score_sends(viewer_players, values_by_id, archetype, untouchable_ids=untouchable_ids)
     # Add viewer's draft picks to the send pool so packages can use them as
     # value-fillers (e.g. two players + a pick for consolidate).
     viewer_picks = picks_by_roster.get(str(viewer_roster_id)) or \

@@ -3812,6 +3812,7 @@ window.initTradePage = function initTradePage(root = document) {
       `).join("");
 
       try {
+        const _untouchableStr = [..._untouchableIds].filter(Boolean).join(",");
         const url =
           `/api/trade-intel/archetype-suggestions` +
           `?archetype=${encodeURIComponent(archetype)}` +
@@ -3820,7 +3821,8 @@ window.initTradePage = function initTradePage(root = document) {
           `&season=${encodeURIComponent(season)}` +
           `&viewer_roster_id=${encodeURIComponent(viewerRosterId)}` +
           `&league_type=${encodeURIComponent(leagueType)}` +
-          `&league_size=${encodeURIComponent(leagueSize)}`;
+          `&league_size=${encodeURIComponent(leagueSize)}` +
+          (_untouchableStr ? `&untouchable_ids=${encodeURIComponent(_untouchableStr)}` : "");
 
         const res = await fetch(url, { cache: "no-store" });
 
@@ -3878,9 +3880,23 @@ window.initTradePage = function initTradePage(root = document) {
           const btnName   = isSend && !isDistribute ? esc(sendAsset.name) : safeName;
           const btnLabel  = isSend ? "Find returns" : "Find packages";
 
+          // Value match: how close is the suggested package to fair value?
+          const sendTotal = (t.suggested_send || []).reduce((s, p) => s + (p.value || 0), 0);
+          const recvTotal = isDistribute
+            ? (t.suggested_receive || []).reduce((s, p) => s + (p.value || 0), 0)
+            : t.value || 0;
+          const matchRatio   = sendTotal > 0 ? recvTotal / sendTotal : 0;
+          const matchLabel   = matchRatio >= 1.08 ? "Great return" : matchRatio >= 0.92 ? "Fair value" : "Light return";
+          const matchCls     = matchRatio >= 1.08 ? "great" : matchRatio >= 0.92 ? "fair" : "light";
+          const showMatch    = sendTotal > 0 && recvTotal > 0;
+
           return `
             <div class="otc-arch-card">
-              ${isDistribute ? `<div class="otc-arch-away-row"><span class="otc-arch-away">Trade away</span></div>` : ""}
+              ${isDistribute
+                ? `<div class="otc-arch-away-row"><span class="otc-arch-away">Trade away</span></div>`
+                : isSend && sendAsset
+                  ? `<div class="otc-arch-away-row"><span class="otc-arch-away">Selling ${esc(sendAsset.name)}</span></div>`
+                  : ""}
               <div class="otc-arch-head">
                 <span class="otc-arch-pos" style="background:${col}20;color:${col};">${t.position}</span>
                 <span class="otc-arch-name">${esc(t.name)}</span>
@@ -3892,6 +3908,7 @@ window.initTradePage = function initTradePage(root = document) {
               ${detailHtml}
               <div class="otc-arch-foot">
                 <span class="otc-arch-wp ${wpdCls}" title="Win probability delta">${wpdPct} win prob</span>
+                ${showMatch ? `<span class="otc-arch-vmatch otc-arch-vmatch-${matchCls}">${matchLabel}</span>` : ""}
                 ${t.partner_team ? `<span class="otc-arch-partner"><span class="dot" style="background:${pAColor};"></span>${esc(t.partner_team)}</span>` : ""}
               </div>
             </div>`;

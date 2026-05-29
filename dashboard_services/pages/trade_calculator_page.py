@@ -482,6 +482,12 @@ def build_trade_calculator_body(
               color:var(--text-muted);font-weight:600;
             }}
             .otc-arch-partner .dot {{ width:6px;height:6px;border-radius:50%;flex-shrink:0; }}
+            .otc-arch-vmatch {{
+              padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;
+            }}
+            .otc-arch-vmatch-great {{ background:#10b9811f;color:#10b981; }}
+            .otc-arch-vmatch-fair  {{ background:var(--border);color:var(--text-muted); }}
+            .otc-arch-vmatch-light {{ background:#f59e0b1a;color:#f59e0b; }}
           </style>
 
           </div><!-- /#otcCalcTab -->
