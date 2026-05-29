@@ -395,10 +395,16 @@ def _score_sends(
 def _select_package(
     sends: List[Dict], target_val: float, archetype: str
 ) -> List[Dict]:
-    """Choose 1–3 send players that approximately match target value (±30%)."""
+    """Choose 1–3 send players whose combined value is closest to target (±20%).
+
+    Evaluates ALL 1/2/3-player combos before deciding — no early returns —
+    so a 2-player package that sums to target±5% beats a single player that
+    technically falls inside the window but is 200 pts off.
+    Falls back to the absolute closest combo if nothing lands in the window.
+    """
     if not sends:
         return []
-    lo, hi = target_val * 0.70, target_val * 1.30
+    lo, hi = target_val * 0.80, target_val * 1.20
 
     # Include top scored players plus any picks (picks land at end of sends list)
     pool = sends[:12]
@@ -407,57 +413,60 @@ def _select_package(
     pool = (pool + extra_picks)[:15]
 
     if archetype == "consolidate":
-        best, best_diff = [], float("inf")
+        best_in_win: List[Dict] = []
+        best_in_win_diff: float = float("inf")
+        best_any: List[Dict] = pool[:2] if len(pool) >= 2 else pool
+        best_any_diff: float = float("inf")
         for n in (2, 3):
             for combo in combinations(pool, n):
                 if sum(1 for c in combo if c["position"] == "QB") > 1:
                     continue
                 s = sum(c["value"] for c in combo)
-                if lo <= s <= hi and abs(s - target_val) < best_diff:
-                    best_diff = abs(s - target_val)
-                    best = list(combo)
-        return best if best else pool[:2]
+                diff = abs(s - target_val)
+                if diff < best_any_diff:
+                    best_any_diff, best_any = diff, list(combo)
+                if lo <= s <= hi and diff < best_in_win_diff:
+                    best_in_win_diff, best_in_win = diff, list(combo)
+        return best_in_win if best_in_win else best_any
 
     if archetype == "distribute":
         return pool[:1]
 
-    # Contending: try 1-player, then 2-combo, then 3-combo.
-    # Track the closest-matching combo as fallback so we never return an
-    # arbitrary low-value player when nothing lands in the ±30% window.
-    best_pkg: List[Dict] = pool[:1]
-    best_diff: float = abs(pool[0]["value"] - target_val) if pool else float("inf")
+    # Contending: scan every 1/2/3-player combination exhaustively.
+    # best_in_win = closest combo within ±20%; best_any = closest regardless.
+    best_in_win = []
+    best_in_win_diff = float("inf")
+    best_any = pool[:1] if pool else []
+    best_any_diff = abs(pool[0]["value"] - target_val) if pool else float("inf")
 
     for c in pool:
-        diff = abs(c["value"] - target_val)
-        if diff < best_diff:
-            best_diff = diff
-            best_pkg = [c]
-        if lo <= c["value"] <= hi:
-            return [c]
+        d = abs(c["value"] - target_val)
+        if d < best_any_diff:
+            best_any_diff, best_any = d, [c]
+        if lo <= c["value"] <= hi and d < best_in_win_diff:
+            best_in_win_diff, best_in_win = d, [c]
 
     for a, b in combinations(pool, 2):
         if a["position"] == "QB" and b["position"] == "QB":
             continue
         s = a["value"] + b["value"]
-        diff = abs(s - target_val)
-        if diff < best_diff:
-            best_diff = diff
-            best_pkg = [a, b]
-        if lo <= s <= hi:
-            return [a, b]
+        d = abs(s - target_val)
+        if d < best_any_diff:
+            best_any_diff, best_any = d, [a, b]
+        if lo <= s <= hi and d < best_in_win_diff:
+            best_in_win_diff, best_in_win = d, [a, b]
 
     for a, b, c in combinations(pool[:8], 3):
         if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
             continue
         s = a["value"] + b["value"] + c["value"]
-        diff = abs(s - target_val)
-        if diff < best_diff:
-            best_diff = diff
-            best_pkg = [a, b, c]
-        if lo <= s <= hi:
-            return [a, b, c]
+        d = abs(s - target_val)
+        if d < best_any_diff:
+            best_any_diff, best_any = d, [a, b, c]
+        if lo <= s <= hi and d < best_in_win_diff:
+            best_in_win_diff, best_in_win = d, [a, b, c]
 
-    return best_pkg
+    return best_in_win if best_in_win else best_any
 
 
 # ── Pick send candidates ──────────────────────────────────────────────────────
