@@ -3666,12 +3666,59 @@ window.initTradePage = function initTradePage(root = document) {
       return async e => {
         const btn = e.target.closest(".sugg-target-get-btn");
         if (!btn) return;
-        const pid       = btn.dataset.pid;
-        const name      = btn.dataset.name;
         const direction = btn.dataset.direction || "acquire";
+
+        // Strategy "Analyze" button: load both trade sides into the calculator
+        if (direction === "analyze") {
+          btn.textContent = "Loading…";
+          btn.disabled = true;
+          try {
+            await ensurePlayersLoaded();
+            let receiveAssets = [], sendAssets = [];
+            try { receiveAssets = JSON.parse(decodeURIComponent(btn.dataset.receive || "[]")); } catch (_) {}
+            try { sendAssets    = JSON.parse(decodeURIComponent(btn.dataset.send    || "[]")); } catch (_) {}
+
+            state.sideAPlayers.length = 0;
+            state.sideBPlayers.length = 0;
+            state.sideAPicks.length   = 0;
+            state.sideBPicks.length   = 0;
+
+            receiveAssets.forEach(a => {
+              const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
+                || { id: String(a.player_id), name: a.name };
+              if (!state.sideAPlayers.some(p => String(p.id) === String(pObj.id)))
+                state.sideAPlayers.push(pObj);
+            });
+            sendAssets.forEach(a => {
+              const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
+                || { id: String(a.player_id), name: a.name };
+              if (!state.sideBPlayers.some(p => String(p.id) === String(pObj.id)))
+                state.sideBPlayers.push(pObj);
+            });
+
+            saveState();
+            renderChips("A");
+            renderChips("B");
+            syncEmptyState("A");
+            syncEmptyState("B");
+            forceViewerSideA();
+            analyzeTrade();
+            switchToCalc();
+            const shell = root.querySelector(".otc-shell");
+            if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
+          } finally {
+            btn.textContent = "Analyze";
+            btn.disabled = false;
+          }
+          return;
+        }
+
+        // Build Around / Gaps cards: find packages or returns
+        const pid  = btn.dataset.pid;
+        const name = btn.dataset.name;
         if (!pid || !name) return;
 
-        // Strategy cards: switch to Build Around so results are visible
+        // Strategy cards switching to Build Around so results are visible
         if (fromStrategy) _setSuggSubtab("build");
 
         if (playerInput) {
@@ -3915,7 +3962,8 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Strategy: compact trade cards ─────────────────────────────────────────
     function _renderStrategyCards(data, filterPid) {
       if (!strategyCards) return;
-      const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      const esc      = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      const posColor = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
       const archColor = { contending: "#10b981", rebuilding: "#3b82f6", consolidate: "#f59e0b", distribute: "#8b5cf6" };
       const archetype = _activeArchetype;
 
@@ -3928,75 +3976,104 @@ window.initTradePage = function initTradePage(root = document) {
       strategyCards.innerHTML = visible.map(t => {
         const isDistribute = t.direction === "distribute";
         const sendAsset    = (t.suggested_send && t.suggested_send[0]) || null;
-        const isSend       = isDistribute || (archetype === "rebuilding" && sendAsset?.player_id);
+        const isSell       = isDistribute || (archetype === "rebuilding" && sendAsset?.player_id);
 
-        // Trade headline: "Send → Receive"
-        const acquireName = esc(t.name);
-        const sendNames   = (t.suggested_send  || []).map(p => esc(p.name)).join(" + ") || "—";
-        const recvNames   = (t.suggested_receive || []).map(p => esc(p.name)).join(" + ");
-        let tradeLeft, tradeRight;
+        // Build YOU GET / YOU GIVE asset lists
+        let getAssets, giveAssets;
         if (isDistribute) {
-          tradeLeft  = acquireName;
-          tradeRight = recvNames ? `← ${recvNames}` : "";
+          // Viewer gives their stud, receives depth
+          giveAssets = [{ player_id: t.player_id, name: t.name, position: t.position }];
+          getAssets  = t.suggested_receive || [];
         } else if (archetype === "rebuilding" && sendAsset) {
-          tradeLeft  = esc(sendAsset.name);
-          tradeRight = `← ${acquireName}`;
+          // Viewer gives their vet, receives young target
+          giveAssets = t.suggested_send || [];
+          getAssets  = [{ player_id: t.player_id, name: t.name, position: t.position }];
         } else {
-          tradeLeft  = acquireName;
-          tradeRight = sendNames !== "—" ? `↑ ${sendNames}` : "";
+          // Contending/Consolidate: viewer gives a package, receives target
+          giveAssets = t.suggested_send || [];
+          getAssets  = [{ player_id: t.player_id, name: t.name, position: t.position }];
         }
 
-        // Value match badge
-        const sendVal  = (t.suggested_send    || []).reduce((s, p) => s + (p.value || 0), 0);
-        const recvVal  = isDistribute
-          ? (t.suggested_receive || []).reduce((s, p) => s + (p.value || 0), 0)
-          : (t.value || 0);
-        const ratio    = sendVal > 0 ? recvVal / sendVal : 0;
-        let vmLabel, vmCls;
-        if (isSend) {
-          vmLabel = ratio >= 1.08 ? "Great return" : ratio >= 0.92 ? "Fair value" : "Light return";
-          vmCls   = ratio >= 1.08 ? "great"        : ratio >= 0.92 ? "fair"       : "light";
-        } else {
-          vmLabel = ratio >= 1.08 ? "Steal" : ratio >= 0.92 ? "Fair" : "Overpay";
-          vmCls   = ratio >= 1.08 ? "steal" : ratio >= 0.92 ? "fair" : "overpay";
+        function renderAssetHtml(assets) {
+          if (!assets.length) return `<div class="otc-rt-asset"><span class="otc-rt-name" style="color:var(--text-muted);">—</span></div>`;
+          return assets.map(a => {
+            const col = posColor[a.position] || "var(--accent)";
+            return `<div class="otc-rt-asset">
+              <span class="otc-rt-pos" style="background:${col}18;color:${col};">${a.position || "?"}</span>
+              <span class="otc-rt-name">${esc(a.name || "")}</span>
+            </div>`;
+          }).join("");
         }
 
-        // Win prob + playoff odds
+        // Value grade badge
+        const giveVal = giveAssets.reduce((s, a) => s + (a.value || 0), 0);
+        const getVal  = getAssets.reduce((s, a) => s + (a.value || 0), 0) || (t.value || 0);
+        const ratio   = giveVal > 0 ? getVal / giveVal : 0;
+        let gradeInfo;
+        if (isSell) {
+          gradeInfo = ratio >= 1.08
+            ? { label: "Great return",  color: "#10b981" }
+            : ratio >= 0.92
+            ? { label: "Fair value",    color: "#6366f1" }
+            : { label: "Light return",  color: "#f59e0b" };
+        } else {
+          gradeInfo = ratio >= 1.08
+            ? { label: "Steal",         color: "#10b981" }
+            : ratio >= 0.92
+            ? { label: "Fair value",    color: "#6366f1" }
+            : { label: "Slight overpay",color: "#f59e0b" };
+        }
+        const gradeHtml = `<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${gradeInfo.color}15;border:1px solid ${gradeInfo.color}30;color:${gradeInfo.color};white-space:nowrap;">${gradeInfo.label}</span>`;
+
+        // Acceptance badge
+        const acpt = t.acceptance_pct != null ? t.acceptance_pct : null;
+        const acptColor = acpt >= 70 ? "#10b981" : acpt >= 50 ? "#6366f1" : "#f59e0b";
+        const acptHtml = acpt != null
+          ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:${acptColor}15;border:1px solid ${acptColor}30;color:${acptColor};white-space:nowrap;">
+               <span style="width:5px;height:5px;border-radius:50%;background:${acptColor};flex-shrink:0;"></span>${acpt}% accept
+             </span>`
+          : "";
+
+        // Win % + playoff odds
         const wpd    = t.win_prob_delta    || 0;
         const pod    = t.playoff_odds_delta || 0;
-        const wpdStr = (wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1) + "% wk";
-        const podStr = (pod >= 0 ? "+" : "") + (pod * 100).toFixed(1) + "% po";
         const wpdCol = wpd >= 0 ? "#10b981" : "#ef4444";
         const podCol = pod >= 0 ? "#6366f1" : "#ef4444";
-
-        // Acceptance
-        const acpt = t.acceptance_pct != null ? `${t.acceptance_pct}%` : "";
+        const wpdHtml = `<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${wpdCol}15;border:1px solid ${wpdCol}30;color:${wpdCol};white-space:nowrap;">${(wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1)}% wk</span>`;
+        const podHtml = `<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${podCol}15;border:1px solid ${podCol}30;color:${podCol};white-space:nowrap;">${(pod >= 0 ? "+" : "") + (pod * 100).toFixed(1)}% po</span>`;
 
         // Partner
         const pAColor = archColor[t.partner_arch || ""] || "var(--text-muted)";
         const pName   = esc(t.partner_team || "");
+        const partnerHtml = pName
+          ? `<span class="otc-strategy-partner"><span class="dot" style="background:${pAColor};"></span>${pName}</span>`
+          : "";
 
-        // Button
-        const btnPid  = isSend && !isDistribute && sendAsset
-          ? String(sendAsset.player_id).replace(/"/g, "") : (t.player_id || "").replace(/"/g, "");
-        const btnName = isSend && !isDistribute && sendAsset ? esc(sendAsset.name) : esc(t.name);
-        const btnDir  = isSend ? "distribute" : "acquire";
-        const btnLbl  = isSend ? "Find returns" : "Find packages";
+        // Analyze button data
+        const receiveEnc = encodeURIComponent(JSON.stringify(getAssets));
+        const sendEnc    = encodeURIComponent(JSON.stringify(giveAssets));
 
-        return `<div class="otc-strategy-trade-card">
-          <div class="otc-strategy-trade-headline">
-            <span class="otc-strategy-trade-send">${tradeLeft}</span>
-            ${tradeRight ? `<span class="otc-strategy-trade-recv">${tradeRight}</span>` : ""}
+        return `<div class="otc-real-trade-card">
+          <div class="otc-rt-body">
+            <div class="otc-rt-side">
+              <div class="otc-rt-label">You Get</div>
+              ${renderAssetHtml(getAssets)}
+            </div>
+            <div class="otc-rt-divider"></div>
+            <div class="otc-rt-side">
+              <div class="otc-rt-label">You Give</div>
+              ${renderAssetHtml(giveAssets)}
+            </div>
           </div>
-          <div class="otc-strategy-trade-footer">
-            <span class="otc-strategy-badge otc-strategy-badge-${vmCls}">${vmLabel}</span>
-            ${acpt ? `<span class="otc-strategy-accept">${acpt} accepted</span>` : ""}
-            <span style="font-size:10px;font-weight:700;color:${wpdCol};">${wpdStr}</span>
-            <span style="font-size:10px;font-weight:700;color:${podCol};">${podStr}</span>
-            ${pName ? `<span class="otc-strategy-partner"><span class="dot" style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${pAColor};"></span>${pName}</span>` : ""}
-            <button class="sugg-target-get-btn otc-strategy-get-btn"
-              data-pid="${btnPid}" data-name="${btnName}"
-              data-direction="${btnDir}">${btnLbl}</button>
+          <div class="otc-rt-footer">
+            <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;min-width:0;">
+              ${gradeHtml}${acptHtml}${wpdHtml}${podHtml}
+              ${partnerHtml}
+            </div>
+            <button class="sugg-target-get-btn otc-sugg-pkg-load-btn"
+              data-direction="analyze"
+              data-receive="${receiveEnc}"
+              data-send="${sendEnc}">Analyze</button>
           </div>
         </div>`;
       }).join("");

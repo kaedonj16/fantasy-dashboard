@@ -490,18 +490,25 @@ def build_trade_calculator_body(
             .otc-arch-vmatch-light {{ background:#f59e0b1a;color:#f59e0b; }}
             /* ── Suggestions sub-tab bar ── */
             .otc-sugg-subtab-bar {{
-              display:flex;border-bottom:1px solid var(--border);
-              padding:0 14px;gap:0;background:var(--card);
+              display:flex;padding:10px 14px 0;gap:2px;
+              background:var(--card);
+              border-bottom:1px solid var(--border);
             }}
             .otc-sugg-subtab {{
-              padding:9px 14px;font-size:12px;font-weight:600;
-              background:none;border:none;border-bottom:2px solid transparent;
+              flex:1;padding:7px 10px;font-size:12px;font-weight:700;
+              background:none;border:none;border-radius:8px 8px 0 0;
               color:var(--text-muted);cursor:pointer;
-              transition:color .15s, border-color .15s;white-space:nowrap;
+              transition:color .15s, background .15s;white-space:nowrap;
+              position:relative;bottom:-1px;
+              border:1px solid transparent;border-bottom:none;
             }}
-            .otc-sugg-subtab:hover {{ color:var(--text); }}
+            .otc-sugg-subtab:hover:not(.is-active) {{
+              color:var(--text);background:var(--row);
+            }}
             .otc-sugg-subtab.is-active {{
-              color:var(--accent);border-bottom-color:var(--accent);
+              color:var(--text);background:var(--card);
+              border-color:var(--border);
+              border-bottom:1px solid var(--card);
             }}
             /* ── Strategy panel ── */
             .otc-strategy-chips {{
@@ -540,47 +547,18 @@ def build_trade_calculator_body(
             .otc-strategy-impact-badge {{
               padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;
             }}
-            /* ── Compact trade cards ── */
-            .otc-strategy-trade-card {{
-              padding:10px 14px;border-bottom:1px solid var(--border);
+            /* ── Strategy cards container ── */
+            #otcStrategyCards {{
+              padding:10px 14px;display:flex;flex-direction:column;gap:6px;
             }}
-            .otc-strategy-trade-card:last-child {{ border-bottom:none; }}
-            .otc-strategy-trade-headline {{
-              display:flex;align-items:center;gap:6px;margin-bottom:5px;
-            }}
-            .otc-strategy-trade-send {{
-              font-size:13px;font-weight:700;color:var(--text);
-              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;
-            }}
-            .otc-strategy-trade-recv {{
-              font-size:11px;color:var(--text-muted);font-weight:500;
-              flex-shrink:0;
-            }}
-            .otc-strategy-trade-footer {{
-              display:flex;align-items:center;gap:6px;flex-wrap:wrap;
-            }}
-            .otc-strategy-badge {{
-              padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;
-            }}
-            .otc-strategy-badge-steal  {{ background:#10b9811f;color:#10b981; }}
-            .otc-strategy-badge-fair   {{ background:var(--border);color:var(--text-muted); }}
-            .otc-strategy-badge-overpay {{ background:#ef44441f;color:#ef4444; }}
-            .otc-strategy-badge-great  {{ background:#10b9811f;color:#10b981; }}
-            .otc-strategy-badge-light  {{ background:#f59e0b1a;color:#f59e0b; }}
-            .otc-strategy-accept {{
-              font-size:10px;font-weight:600;color:var(--text-muted);
-            }}
+            /* partner line inside otc-rt-footer */
             .otc-strategy-partner {{
               display:inline-flex;align-items:center;gap:4px;
               font-size:10px;font-weight:600;color:var(--text-muted);
-              margin-left:auto;
             }}
-            .otc-strategy-get-btn {{
-              margin-left:auto;padding:3px 8px;border-radius:4px;font-size:10px;
-              font-weight:700;background:var(--accent);color:#fff;border:none;cursor:pointer;
-              flex-shrink:0;
+            .otc-strategy-partner .dot {{
+              width:6px;height:6px;border-radius:50%;flex-shrink:0;
             }}
-            .otc-strategy-get-btn:hover {{ opacity:.85; }}
           </style>
 
           </div><!-- /#otcCalcTab -->
