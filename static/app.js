@@ -3768,6 +3768,7 @@ window.initTradePage = function initTradePage(root = document) {
     let _strategyData    = [];
     let _strategyFilter  = null;
     let _strategyPage    = 0;
+    let _currentPlayoffPct = null;
     const _STRATEGY_PAGE_SIZE = 5;
 
     function _setSuggSubtab(tab) {
@@ -3867,7 +3868,10 @@ window.initTradePage = function initTradePage(root = document) {
       const leagueType = getLeagueType();
       const leagueSize = getLeagueSize();
 
-      // Loading skeleton
+      // Loading skeleton + spinner
+      const strategySpinner = root.querySelector("#otcStrategySpinner");
+      const impactHint      = root.querySelector("#otcStrategyImpactHint");
+      if (strategySpinner) strategySpinner.style.display = "";
       strategyImpact.innerHTML = [1,2,3].map(() => `
         <div class="otc-strategy-impact-row" style="opacity:.5;pointer-events:none;">
           <div style="width:26px;height:18px;border-radius:3px;background:var(--border);flex-shrink:0;"></div>
@@ -3891,17 +3895,38 @@ window.initTradePage = function initTradePage(root = document) {
           (_untouchableStr ? `&untouchable_ids=${encodeURIComponent(_untouchableStr)}` : "");
 
         const res = await fetch(url, { cache: "no-store" });
+        if (strategySpinner) strategySpinner.style.display = "none";
         if (res.status === 403) {
           strategyImpact.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
           return;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-        const data = await res.json();
-        _strategyData   = Array.isArray(data) ? data : [];
+        const raw  = await res.json();
+        const data = raw.suggestions ?? (Array.isArray(raw) ? raw : []);
+        _currentPlayoffPct = raw.current_playoff_pct ?? null;
+        _strategyData   = data;
         _strategyFilter = null;
         _strategyPage   = 0;
         if (strategyClearBtn) strategyClearBtn.style.display = "none";
+
+        // Show / update current playoff odds badge
+        const poBar = root.querySelector("#otcCurrentPOBar");
+        const poVal = root.querySelector("#otcCurrentPOValue");
+        if (poBar && poVal) {
+          if (_currentPlayoffPct !== null) {
+            poVal.textContent = _currentPlayoffPct.toFixed(1) + "%";
+            poBar.style.display = "flex";
+          } else {
+            poBar.style.display = "none";
+          }
+        }
+
+        // Update impact-table hint to match archetype direction
+        if (impactHint) {
+          const isSell = archetype === "distribute" || archetype === "rebuilding";
+          impactHint.textContent = isSell ? "Win % cost if traded away" : "Win % if acquired";
+        }
 
         if (!_strategyData.length) {
           strategyImpact.innerHTML = '<div class="otc-movers-empty">No suggestions found for this strategy.</div>';
@@ -3914,6 +3939,7 @@ window.initTradePage = function initTradePage(root = document) {
         if (strategyCardsHead) strategyCardsHead.style.display = "";
 
       } catch (err) {
+        if (strategySpinner) strategySpinner.style.display = "none";
         strategyImpact.innerHTML = '<div class="otc-movers-empty">Could not load strategy.</div>';
         console.error("[strategy]", err);
       }

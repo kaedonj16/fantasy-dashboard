@@ -675,9 +675,15 @@ def build_trade_calculator_body(
                 <button class="otc-arch-chip" data-arch="distribute">Distribute</button>
               </div>
 
+              <!-- Current playoff odds (populated after first load) -->
+              <div id="otcCurrentPOBar" style="display:none;padding:4px 14px 0;align-items:center;gap:6px;">
+                <span style="font-size:11px;color:var(--text-muted);">Your current playoff odds:</span>
+                <span id="otcCurrentPOValue" style="font-size:12px;font-weight:700;color:var(--accent);"></span>
+              </div>
+
               <!-- Impact table -->
               <div class="otc-strategy-section-head">
-                <span class="otc-sugg-section-title">Impact</span>
+                <span class="otc-sugg-section-title">Impact <span id="otcStrategySpinner" style="display:none;font-size:10px;font-weight:500;color:var(--text-muted);"><i class="fa-solid fa-circle-notch" style="animation:spin .9s linear infinite;margin-right:2px;"></i>Simulating…</span></span>
                 <span class="otc-strategy-section-hint" id="otcStrategyImpactHint">Win % if acquired</span>
               </div>
               <div id="otcStrategyImpact">

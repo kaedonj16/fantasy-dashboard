@@ -219,7 +219,7 @@ def simulate_with_swap(
     return 0.0, new_avg
 
 
-
+def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
     """
     Build (ppg_map, pos_map) using the same priority logic as _estimate_from_rosters:
       1. FantasyPros season projections
@@ -421,16 +421,31 @@ def _position_aware_lineup(
         else:
             fixed_slots[s] = fixed_slots.get(s, 0) + 1
 
+    # Per-position averages from real projections — used as fallback for
+    # players with no FP data (rookies, injured, newly signed).
+    _pos_totals: dict[str, list] = {}
+    for _info in ppg_map.values():
+        _p, _g = _info.get("pos", ""), _info.get("ppg", 0)
+        if _p and _g > 0:
+            if _p not in _pos_totals:
+                _pos_totals[_p] = [_g, 1]
+            else:
+                _pos_totals[_p][0] += _g
+                _pos_totals[_p][1] += 1
+    pos_fallback = {p: v[0] / v[1] for p, v in _pos_totals.items()}
+
     # Resolve each player to (pos, ppg)
     by_pos: dict[str, list[float]] = {}
     for pid in pids:
         info = ppg_map.get(str(pid))
         if info:
             pos = info["pos"]
-            ppg = info["ppg"] if info["ppg"] > 0 else _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+            ppg = info["ppg"] if info["ppg"] > 0 else (
+                pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+            )
         else:
             pos = pos_map.get(str(pid), "")
-            ppg = _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+            ppg = pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
         if pos:
             by_pos.setdefault(pos, []).append(ppg)
     for pos in by_pos:

@@ -10,10 +10,15 @@ from __future__ import annotations
 
 import logging
 import math
+import time as _time
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
+
+# ── Sim-state cache (keyed by platform:league_id:season, 5-min TTL) ──────────
+_SIM_CACHE: Dict[str, Any] = {}
+_SIM_CACHE_TTL = 300  # seconds
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -1253,26 +1258,37 @@ def get_archetype_suggestions(
 
     # ── Build simulation state (same logic as playoff odds simulator) ─────────
     # Handles preseason (pure FP projections) and in-season (blended) automatically.
+    # Sim state + base odds are cached per league for 5 minutes so switching
+    # between archetype chips feels instant.
     sim_state: Optional[Dict] = None
     current_playoff_pct: float = 0.0  # viewer's current playoff % (0–100)
     ppg_map:  Dict[str, Any] = {}
     pos_map:  Dict[str, str] = {}
     roster_positions: List[str] = ctx.get("roster_positions") or []
+    _cache_key = f"{platform}:{league_id}:{season}"
     try:
         from data_building.simulate_playoff_odds import (
             build_sim_state as _build_sim_state,
             run_base_simulation as _run_base_sim,
             build_ppg_map as _build_ppg_map,
         )
-        sim_state = _build_sim_state(ctx, platform=platform)
+        _cached = _SIM_CACHE.get(_cache_key)
+        if _cached and (_time.time() - _cached["ts"]) < _SIM_CACHE_TTL:
+            sim_state  = _cached["sim_state"]
+            base_odds  = _cached["base_odds"]
+            log.debug("[archetype] sim cache hit for %s", _cache_key)
+        else:
+            sim_state = _build_sim_state(ctx, platform=platform)
+            base_odds = _run_base_sim(sim_state, n_sims=2000) if sim_state else {}
+            _SIM_CACHE[_cache_key] = {"sim_state": sim_state, "base_odds": base_odds, "ts": _time.time()}
+            log.debug("[archetype] sim cache miss, built fresh for %s", _cache_key)
         if sim_state:
             ppg_map  = sim_state["ppg_map"]
             pos_map  = sim_state["pos_map"]
             roster_positions = sim_state["roster_positions"]
-            base_odds = _run_base_sim(sim_state, n_sims=2000)
             vid = int(viewer_roster_id) if str(viewer_roster_id).isdigit() else viewer_roster_id
             current_playoff_pct = base_odds.get(vid, 0.0)
-            log.debug("[archetype] sim state ready; viewer playoff_pct=%.1f", current_playoff_pct)
+            log.debug("[archetype] viewer playoff_pct=%.1f", current_playoff_pct)
         else:
             ppg_map, pos_map = _build_ppg_map(ctx)
     except Exception as exc:
@@ -1383,7 +1399,7 @@ def get_archetype_suggestions(
 
     # ── Distribute: viewer sends a stud for a depth package ───────────────────
     if archetype == "distribute":
-        return _build_distribute(
+        _sugg = _build_distribute(
             viewer_players, values_by_id, targets_by_owner, owner_meta,
             roster_map, league_type, viewer_lineup_val, league_avg,
             untouchable_ids=untouchable_ids,
@@ -1395,6 +1411,7 @@ def get_archetype_suggestions(
             current_playoff_pct=current_playoff_pct,
             viewer_roster_id=viewer_roster_id,
         )
+        return {"suggestions": _sugg, "current_playoff_pct": round(current_playoff_pct, 1)}
 
     # ── Rebuilding: viewer sells a win-now vet for youth / picks ─────────────
     if archetype == "rebuilding":
@@ -1406,7 +1423,7 @@ def get_archetype_suggestions(
             converted = _pick_send_candidates(pick_list, num_teams, slot_map)
             if converted:
                 picks_by_owner[str(rid)] = converted
-        return _build_rebuilding(
+        _sugg = _build_rebuilding(
             viewer_players, values_by_id, all_targets,
             league_type, viewer_lineup_val, league_avg,
             untouchable_ids=untouchable_ids,
@@ -1418,6 +1435,7 @@ def get_archetype_suggestions(
             current_playoff_pct=current_playoff_pct,
             viewer_roster_id=viewer_roster_id,
         )
+        return {"suggestions": _sugg, "current_playoff_pct": round(current_playoff_pct, 1)}
 
     # ── 30-day trend ──────────────────────────────────────────────────────────
     all_pids = list({t["player_id"] for t in all_targets} | set(viewer_players))
@@ -1513,12 +1531,50 @@ def get_archetype_suggestions(
 
     results = []
     new_wp_base = current_wp  # alias for clarity inside loop
+    _vid_int: Optional[int] = None
+    try:
+        _vid_int = int(viewer_roster_id)
+    except (TypeError, ValueError):
+        pass
+
     for t in top:
-        tp  = _trend_pct(t["player_id"], t["value"], old_vals, values_by_id)
+        pid = t["player_id"]
+        pos = t["position"]
+        tp  = _trend_pct(pid, t["value"], old_vals, values_by_id)
+
+        # Build the hypothetical roster: add target, drop weakest same-pos player
+        same_pos_pids = [
+            p for p in viewer_players
+            if str(values_by_id.get(p, {}).get("position") or "").upper() == pos
+        ]
+        if same_pos_pids:
+            if ppg_map and roster_positions:
+                drop_pid = min(
+                    same_pos_pids,
+                    key=lambda p: (ppg_map.get(str(p)) or {}).get("ppg", 0),
+                )
+            else:
+                drop_pid = min(
+                    same_pos_pids,
+                    key=lambda p: _f(values_by_id.get(p, {}).get("value")),
+                )
+            new_pids = [p for p in viewer_players if p != drop_pid] + [pid]
+        else:
+            new_pids = viewer_players + [pid]
+
         wpd = t.get("win_prob_delta", 0.0)
+        pod = _playoff_odds(new_wp_base + wpd, num_weeks, num_teams, playoff_spots) - current_po
+
+        if sim_state is not None and _vid_int is not None:
+            try:
+                from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
+                new_po_pct, new_avg = _sim_swap(sim_state, _vid_int, new_pids, n_sims=2000)
+                pod = (new_po_pct - current_playoff_pct) / 100.0
+                wpd = _win_prob(new_avg, league_avg) - current_wp
+            except Exception:
+                pass
+
         why = _build_why(t, archetype, tp, wpd)
-        new_wp = new_wp_base + wpd
-        pod    = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) - current_po
 
         pkgs = _select_packages(send_candidates, t["value"], archetype, max_pkgs=3)
         if not pkgs:
@@ -1530,9 +1586,9 @@ def get_archetype_suggestions(
             acpt     = _estimate_acceptance(send_val, recv_val, is_preferred=t["is_pref"])
 
             results.append({
-                "player_id":      t["player_id"],
+                "player_id":      pid,
                 "name":           t["name"],
-                "position":       t["position"],
+                "position":       pos,
                 "nfl_team":       t["team"],
                 "age":            t["age"],
                 "value":          round(t["value"], 1),
@@ -1552,4 +1608,4 @@ def get_archetype_suggestions(
         if len(results) >= 15:
             break
 
-    return results
+    return {"suggestions": results, "current_playoff_pct": round(current_playoff_pct, 1)}
