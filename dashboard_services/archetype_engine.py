@@ -1279,7 +1279,7 @@ def get_archetype_suggestions(
             log.debug("[archetype] sim cache hit for %s", _cache_key)
         else:
             sim_state = _build_sim_state(ctx, platform=platform)
-            base_odds = _run_base_sim(sim_state, n_sims=2000) if sim_state else {}
+            base_odds = _run_base_sim(sim_state, n_sims=10_000) if sim_state else {}
             _SIM_CACHE[_cache_key] = {"sim_state": sim_state, "base_odds": base_odds, "ts": _time.time()}
             log.debug("[archetype] sim cache miss, built fresh for %s", _cache_key)
         if sim_state:
