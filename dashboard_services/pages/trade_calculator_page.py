@@ -488,61 +488,179 @@ def build_trade_calculator_body(
             .otc-arch-vmatch-great {{ background:#10b9811f;color:#10b981; }}
             .otc-arch-vmatch-fair  {{ background:var(--border);color:var(--text-muted); }}
             .otc-arch-vmatch-light {{ background:#f59e0b1a;color:#f59e0b; }}
+            /* ── Suggestions sub-tab bar ── */
+            .otc-sugg-subtab-bar {{
+              display:flex;border-bottom:1px solid var(--border);
+              padding:0 14px;gap:0;background:var(--card);
+            }}
+            .otc-sugg-subtab {{
+              padding:9px 14px;font-size:12px;font-weight:600;
+              background:none;border:none;border-bottom:2px solid transparent;
+              color:var(--text-muted);cursor:pointer;
+              transition:color .15s, border-color .15s;white-space:nowrap;
+            }}
+            .otc-sugg-subtab:hover {{ color:var(--text); }}
+            .otc-sugg-subtab.is-active {{
+              color:var(--accent);border-bottom-color:var(--accent);
+            }}
+            /* ── Strategy panel ── */
+            .otc-strategy-chips {{
+              display:grid;grid-template-columns:repeat(4,1fr);gap:6px;
+              padding:10px 14px 6px;
+            }}
+            .otc-strategy-section-head {{
+              display:flex;align-items:center;justify-content:space-between;
+              padding:8px 14px 4px;
+            }}
+            .otc-strategy-section-hint {{
+              font-size:10px;color:var(--text-muted);font-weight:500;
+            }}
+            .otc-strategy-clear-filter {{
+              font-size:10px;font-weight:700;color:var(--accent);
+              background:none;border:none;cursor:pointer;padding:2px 6px;
+              border-radius:4px;
+            }}
+            .otc-strategy-clear-filter:hover {{ background:var(--row); }}
+            /* ── Impact table rows ── */
+            .otc-strategy-impact-row {{
+              display:flex;align-items:center;gap:8px;
+              padding:8px 14px;border-bottom:1px solid var(--border);
+              cursor:pointer;transition:background .1s;
+            }}
+            .otc-strategy-impact-row:last-child {{ border-bottom:none; }}
+            .otc-strategy-impact-row:hover,
+            .otc-strategy-impact-row.is-active {{ background:var(--row); }}
+            .otc-strategy-impact-name {{
+              flex:1;font-size:13px;font-weight:700;color:var(--text);
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+            }}
+            .otc-strategy-impact-stats {{
+              display:flex;align-items:center;gap:6px;flex-shrink:0;
+            }}
+            .otc-strategy-impact-badge {{
+              padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;
+            }}
+            /* ── Compact trade cards ── */
+            .otc-strategy-trade-card {{
+              padding:10px 14px;border-bottom:1px solid var(--border);
+            }}
+            .otc-strategy-trade-card:last-child {{ border-bottom:none; }}
+            .otc-strategy-trade-headline {{
+              display:flex;align-items:center;gap:6px;margin-bottom:5px;
+            }}
+            .otc-strategy-trade-send {{
+              font-size:13px;font-weight:700;color:var(--text);
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;
+            }}
+            .otc-strategy-trade-recv {{
+              font-size:11px;color:var(--text-muted);font-weight:500;
+              flex-shrink:0;
+            }}
+            .otc-strategy-trade-footer {{
+              display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+            }}
+            .otc-strategy-badge {{
+              padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;
+            }}
+            .otc-strategy-badge-steal  {{ background:#10b9811f;color:#10b981; }}
+            .otc-strategy-badge-fair   {{ background:var(--border);color:var(--text-muted); }}
+            .otc-strategy-badge-overpay {{ background:#ef44441f;color:#ef4444; }}
+            .otc-strategy-badge-great  {{ background:#10b9811f;color:#10b981; }}
+            .otc-strategy-badge-light  {{ background:#f59e0b1a;color:#f59e0b; }}
+            .otc-strategy-accept {{
+              font-size:10px;font-weight:600;color:var(--text-muted);
+            }}
+            .otc-strategy-partner {{
+              display:inline-flex;align-items:center;gap:4px;
+              font-size:10px;font-weight:600;color:var(--text-muted);
+              margin-left:auto;
+            }}
+            .otc-strategy-get-btn {{
+              margin-left:auto;padding:3px 8px;border-radius:4px;font-size:10px;
+              font-weight:700;background:var(--accent);color:#fff;border:none;cursor:pointer;
+              flex-shrink:0;
+            }}
+            .otc-strategy-get-btn:hover {{ opacity:.85; }}
           </style>
 
           </div><!-- /#otcCalcTab -->
 
           <div id="otcSuggestionsTab" style="display:none;">
-            <div class="otc-sugg-tab-layout">
+            <!-- Sub-tab bar -->
+            <div class="otc-sugg-subtab-bar">
+              <button id="otcSubtabBuildAround" class="otc-sugg-subtab is-active">Build Around</button>
+              <button id="otcSubtabStrategy" class="otc-sugg-subtab">Strategy</button>
+            </div>
 
-              <!-- Build Around section -->
-              <div class="otc-sugg-build-section">
-                <div class="otc-sugg-build-head">
-                  <div class="otc-mode-toggle" id="otcSearchModeToggle">
-                    <button id="otcSearchModeGet" class="otc-mode-btn is-active">Build around</button>
-                    <button id="otcSearchModeSend" class="otc-mode-btn">Find returns</button>
-                  </div>
-                  <div class="otc-sugg-search-wrap">
-                    <input id="suggPlayerInput" class="otc-sugg-player-input"
-                      type="text" autocomplete="off"
-                      placeholder="Search any player…" />
-                    <div id="suggPlayerDropdown" class="otc-sugg-player-dropdown" style="display:none;"></div>
-                  </div>
-                </div>
-                <div id="suggResultsMeta" class="otc-sugg-meta" style="display:none;"></div>
-                <div id="suggResultsList" class="otc-sugg-list"></div>
-              </div>
+            <!-- ── Build Around panel ───────────────────────────────────────────── -->
+            <div id="otcBuildAroundPanel">
+              <div class="otc-sugg-tab-layout">
 
-              <!-- Trade Targets section -->
-              <div class="otc-sugg-targets-section">
-                <div class="otc-sugg-section-head" style="flex-direction:column;gap:8px;">
-                  <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
-                    <span class="otc-sugg-section-title">Trade Targets</span>
-                    <!-- Mode toggle -->
-                    <div class="otc-mode-toggle">
-                      <button id="otcModeGaps" class="otc-mode-btn is-active">Gaps</button>
-                      <button id="otcModeStrategy" class="otc-mode-btn">Strategy</button>
+                <!-- Build Around / Find Returns search -->
+                <div class="otc-sugg-build-section">
+                  <div class="otc-sugg-build-head">
+                    <div class="otc-mode-toggle" id="otcSearchModeToggle">
+                      <button id="otcSearchModeGet" class="otc-mode-btn is-active">Build around</button>
+                      <button id="otcSearchModeSend" class="otc-mode-btn">Find returns</button>
+                    </div>
+                    <div class="otc-sugg-search-wrap">
+                      <input id="suggPlayerInput" class="otc-sugg-player-input"
+                        type="text" autocomplete="off"
+                        placeholder="Search any player…" />
+                      <div id="suggPlayerDropdown" class="otc-sugg-player-dropdown" style="display:none;"></div>
                     </div>
                   </div>
-                  <!-- Archetype chips — shown only in Strategy mode -->
-                  <div id="otcArchetypeChips">
-                    <button class="otc-arch-chip" data-arch="contending">Contending</button>
-                    <button class="otc-arch-chip" data-arch="rebuilding">Rebuilding</button>
-                    <button class="otc-arch-chip" data-arch="consolidate">Consolidate</button>
-                    <button class="otc-arch-chip" data-arch="distribute">Distribute</button>
+                  <div id="suggResultsMeta" class="otc-sugg-meta" style="display:none;"></div>
+                  <div id="suggResultsList" class="otc-sugg-list"></div>
+                </div>
+
+                <!-- Gaps trade targets (always Gaps in Build Around) -->
+                <div class="otc-sugg-targets-section">
+                  <div class="otc-sugg-section-head">
+                    <span class="otc-sugg-section-title">Trade Targets</span>
+                  </div>
+                  <div id="otcSuggTargetsBody">
+                    <div class="otc-movers-empty">Select your team above to see targets.</div>
+                  </div>
+                  <!-- Excluded players bar -->
+                  <div id="otcExcludedBar" style="display:none;border-top:1px solid var(--border);">
+                    <div style="padding:8px 14px 4px;font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">Excluded from suggestions</div>
+                    <div id="otcExcludedChips"></div>
                   </div>
                 </div>
-                <div id="otcSuggTargetsBody">
-                  <div class="otc-movers-empty">Select your team above to see targets.</div>
-                </div>
-                <!-- Excluded players bar (Gaps mode only) -->
-                <div id="otcExcludedBar" style="display:none;border-top:1px solid var(--border);">
-                  <div style="padding:8px 14px 4px;font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.05em;text-transform:uppercase;">Excluded from suggestions</div>
-                  <div id="otcExcludedChips"></div>
-                </div>
+
+              </div>
+            </div><!-- /#otcBuildAroundPanel -->
+
+            <!-- ── Strategy panel ───────────────────────────────────────────────── -->
+            <div id="otcStrategyPanel" style="display:none;">
+
+              <!-- Archetype chips -->
+              <div id="otcStrategyChips" class="otc-strategy-chips">
+                <button class="otc-arch-chip" data-arch="contending">Contending</button>
+                <button class="otc-arch-chip" data-arch="rebuilding">Rebuilding</button>
+                <button class="otc-arch-chip" data-arch="consolidate">Consolidate</button>
+                <button class="otc-arch-chip" data-arch="distribute">Distribute</button>
               </div>
 
-            </div>
+              <!-- Impact table -->
+              <div class="otc-strategy-section-head">
+                <span class="otc-sugg-section-title">Impact</span>
+                <span class="otc-strategy-section-hint" id="otcStrategyImpactHint">Win % if acquired</span>
+              </div>
+              <div id="otcStrategyImpact">
+                <div class="otc-movers-empty">Pick a strategy above.</div>
+              </div>
+
+              <!-- Trade cards -->
+              <div class="otc-strategy-section-head" id="otcStrategyCardsHead" style="display:none;">
+                <span class="otc-sugg-section-title">Suggested trades</span>
+                <button class="otc-strategy-clear-filter" id="otcStrategyClearFilter" style="display:none;">Show all</button>
+              </div>
+              <div id="otcStrategyCards"></div>
+
+            </div><!-- /#otcStrategyPanel -->
+
           </div><!-- /#otcSuggestionsTab -->
 
         </div><!-- /.otc-shell -->

@@ -135,6 +135,43 @@ def _wp_delta(
     return _win_prob(new_val, league_avg) - _win_prob(viewer_val, league_avg)
 
 
+def _playoff_odds(
+    weekly_wp: float,
+    num_weeks: int = 14,
+    num_teams: int = 10,
+    playoff_spots: int = 4,
+) -> float:
+    """Approximate seasonal playoff probability from weekly win rate.
+
+    Uses a normal approximation of the binomial win-count distribution.
+    The cutoff is the win total that ranks a team at the playoff bubble
+    in a balanced league.
+    """
+    exp_wins = weekly_wp * num_weeks
+    std_wins = math.sqrt(max(num_weeks * weekly_wp * (1.0 - weekly_wp), 0.01))
+    cutoff   = num_weeks * (num_teams - playoff_spots) / max(num_teams, 1)
+    z        = (exp_wins - cutoff) / std_wins
+    return 0.5 * (1.0 + math.erf(z / math.sqrt(2)))
+
+
+def _estimate_acceptance(send_val: float, receive_val: float, is_preferred: bool) -> int:
+    """Estimate acceptance likelihood (0–90) from the partner team's perspective.
+
+    Partner receives send_val (viewer's assets) and gives up receive_val (their player).
+    A higher send/receive ratio means the partner is getting the better end.
+    """
+    ratio = send_val / max(receive_val, 1.0)
+    if ratio >= 1.10:
+        base = 72
+    elif ratio >= 0.95:
+        base = 50
+    elif ratio >= 0.85:
+        base = 32
+    else:
+        base = 16
+    return min(90, max(5, base + (10 if is_preferred else 0)))
+
+
 # ── Team archetype inference ──────────────────────────────────────────────────
 
 def _infer_archetype(
@@ -468,6 +505,10 @@ def _build_distribute(
     viewer_lineup_val: float,
     league_avg: float,
     untouchable_ids=None,
+    current_wp: float = 0.5,
+    num_weeks: int = 14,
+    num_teams: int = 10,
+    playoff_spots: int = 4,
 ) -> List[Dict[str, Any]]:
     """
     Viewer sends one concentrated stud and receives a 2–3 player depth package.
@@ -515,6 +556,12 @@ def _build_distribute(
         new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type)
         wpd         = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
 
+        new_wp  = current_wp + wpd
+        pod     = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) \
+                - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+        recv_val = sum(c["value"] for c in combo)
+        acpt    = _estimate_acceptance(sval, recv_val, is_preferred=True)
+
         pname  = _roster_name(roster_map, owner)
         p_arch = owner_meta.get(owner, {}).get("arch", "")
         ceiling_note = "lineup ceiling rises" if wpd >= 0 else "adds depth but trims your ceiling"
@@ -532,7 +579,9 @@ def _build_distribute(
                                f"{ceiling_note.capitalize()}, filling multiple holes at once."),
             "partner_team":   pname,
             "partner_arch":   p_arch,
-            "win_prob_delta": round(wpd, 4),
+            "win_prob_delta":    round(wpd, 4),
+            "playoff_odds_delta": round(pod, 4),
+            "acceptance_pct":     acpt,
             "direction":      "distribute",
             "suggested_send": [{
                 "player_id": stud, "name": sname,
@@ -559,6 +608,10 @@ def _build_rebuilding(
     viewer_lineup_val: float,
     league_avg: float,
     untouchable_ids=None,
+    current_wp: float = 0.5,
+    num_weeks: int = 14,
+    num_teams: int = 10,
+    playoff_spots: int = 4,
 ) -> List[Dict[str, Any]]:
     """
     Rebuild = sell win-now vets for younger, ascending players of similar value.
@@ -621,6 +674,12 @@ def _build_rebuilding(
         new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type)
         wpd = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
 
+        new_wp  = current_wp + wpd
+        pod     = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) \
+                - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+        is_pref = pick.get("partner_arch") == COMPLEMENT.get("rebuilding", "")
+        acpt    = _estimate_acceptance(vval, pick["value"], is_preferred=is_pref)
+
         tp  = _trend_pct(pick["player_id"], pick["value"], old_vals, values_by_id)
         pick["win_prob_delta"] = wpd
         why = _build_why(pick, "rebuilding", tp, wpd)
@@ -637,7 +696,9 @@ def _build_rebuilding(
             "why":            why,
             "partner_team":   pick["partner_name"],
             "partner_arch":   pick["partner_arch"],
-            "win_prob_delta": round(wpd, 4),
+            "win_prob_delta":    round(wpd, 4),
+            "playoff_odds_delta": round(pod, 4),
+            "acceptance_pct":     acpt,
             "direction":      "acquire",
             "suggested_send": [{
                 "player_id": vet, "name": vname,
@@ -758,6 +819,12 @@ def get_archetype_suggestions(
     ]
     league_avg = sum(lineup_vals) / max(1, len(lineup_vals)) if lineup_vals else viewer_lineup_val
 
+    settings  = ctx.get("settings") or {}
+    num_weeks = max(10, int(settings.get("playoff_week_start", 15)) - 1)
+
+    current_wp = _win_prob(viewer_lineup_val, league_avg)
+    current_po = _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+
     viewer_seed      = _seed(standings_map, viewer_roster_id, num_teams)
     viewer_above     = viewer_seed <= playoff_spots
     preferred_arch   = COMPLEMENT.get(archetype, "balanced")
@@ -834,6 +901,8 @@ def get_archetype_suggestions(
             viewer_players, values_by_id, targets_by_owner, owner_meta,
             roster_map, league_type, viewer_lineup_val, league_avg,
             untouchable_ids=untouchable_ids,
+            current_wp=current_wp, num_weeks=num_weeks,
+            num_teams=num_teams, playoff_spots=playoff_spots,
         )
 
     # ── Rebuilding: viewer sells a win-now vet for a younger player ───────────
@@ -842,6 +911,8 @@ def get_archetype_suggestions(
             viewer_players, values_by_id, all_targets,
             league_type, viewer_lineup_val, league_avg,
             untouchable_ids=untouchable_ids,
+            current_wp=current_wp, num_weeks=num_weeks,
+            num_teams=num_teams, playoff_spots=playoff_spots,
         )
 
     # ── 30-day trend ──────────────────────────────────────────────────────────
@@ -943,6 +1014,12 @@ def get_archetype_suggestions(
         why = _build_why(t, archetype, tp, wpd)
         pkg = _select_package(send_candidates, t["value"], archetype)
 
+        send_val = sum(p.get("value", 0) for p in pkg) if pkg else 0
+        recv_val = t["value"]
+        acpt     = _estimate_acceptance(send_val, recv_val, is_preferred=t["is_pref"])
+        new_wp   = current_wp + wpd
+        pod      = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) - current_po
+
         results.append({
             "player_id":      t["player_id"],
             "name":           t["name"],
@@ -955,7 +1032,9 @@ def get_archetype_suggestions(
             "why":            why,
             "partner_team":   t["partner_name"],
             "partner_arch":   t["partner_arch"],
-            "win_prob_delta": round(wpd, 4),
+            "win_prob_delta":    round(wpd, 4),
+            "playoff_odds_delta": round(pod, 4),
+            "acceptance_pct":     acpt,
             "direction":      "acquire",
             "suggested_send": pkg,
         })

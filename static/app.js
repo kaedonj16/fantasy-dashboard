@@ -3695,106 +3695,107 @@ window.initTradePage = function initTradePage(root = document) {
     }
     bindSuggTargetsClick();
 
-    // ── Mode toggle: Gaps | Strategy ─────────────────────────────────────────
-    const btnGaps      = root.querySelector("#otcModeGaps");
-    const btnStrategy  = root.querySelector("#otcModeStrategy");
-    const archChips    = root.querySelector("#otcArchetypeChips");
-    const excludedBar  = root.querySelector("#otcExcludedBar");
+    // ── Sub-tabs: "Build Around" | "Strategy" ────────────────────────────────
+    const btnSubBuild      = root.querySelector("#otcSubtabBuildAround");
+    const btnSubStrategy   = root.querySelector("#otcSubtabStrategy");
+    const buildAroundPanel = root.querySelector("#otcBuildAroundPanel");
+    const strategyPanel    = root.querySelector("#otcStrategyPanel");
+    const strategyChips    = root.querySelector("#otcStrategyChips");
+    const strategyImpact   = root.querySelector("#otcStrategyImpact");
+    const strategyCards    = root.querySelector("#otcStrategyCards");
+    const strategyCardsHead = root.querySelector("#otcStrategyCardsHead");
+    const strategyClearBtn  = root.querySelector("#otcStrategyClearFilter");
 
-    // Restore persisted mode/archetype
-    let _targetsMode     = localStorage.getItem("sugg-mode")     || "gaps";
+    let _activeSubtab    = localStorage.getItem("sugg-subtab")    || "build";
     let _activeArchetype = localStorage.getItem("sugg-archetype") || "";
+    let _strategyData    = [];
+    let _strategyFilter  = null;
 
-    function _setMode(mode) {
-      _targetsMode = mode;
-      localStorage.setItem("sugg-mode", mode);
-      const isStrategy = mode === "strategy";
-
-      if (btnGaps)     { btnGaps.classList.toggle("is-active", !isStrategy); }
-      if (btnStrategy) { btnStrategy.classList.toggle("is-active", isStrategy); }
-      if (archChips)   { archChips.style.display = isStrategy ? "grid" : "none"; }
-      if (excludedBar) { excludedBar.style.display = (!isStrategy && excludedBar.dataset.hasItems) ? "" : "none"; }
-
-      if (!isStrategy) {
-        // Switch back to gaps
-        loadSuggTargets();
+    function _setSuggSubtab(tab) {
+      _activeSubtab = tab;
+      localStorage.setItem("sugg-subtab", tab);
+      const isBuild = tab === "build";
+      if (buildAroundPanel)  buildAroundPanel.style.display  = isBuild ? "" : "none";
+      if (strategyPanel)     strategyPanel.style.display     = isBuild ? "none" : "";
+      if (btnSubBuild)    btnSubBuild.classList.toggle("is-active", isBuild);
+      if (btnSubStrategy) btnSubStrategy.classList.toggle("is-active", !isBuild);
+      if (!isBuild) {
+        const arch = _activeArchetype || "contending";
+        _setStrategyChip(arch);
+        loadStrategyView(arch);
       } else {
-        // Show chip selector; auto-load last archetype if one is saved
-        if (_activeArchetype) {
-          _setActiveChip(_activeArchetype);
-          loadArchetypeSuggestions(_activeArchetype);
-        } else {
-          const container = root.querySelector("#otcSuggTargetsBody");
-          if (container) container.innerHTML = '<div class="otc-movers-empty">Pick a strategy above.</div>';
-        }
+        loadSuggTargets();
       }
     }
 
-    function _setActiveChip(arch) {
+    function _setStrategyChip(arch) {
       _activeArchetype = arch;
       localStorage.setItem("sugg-archetype", arch);
-      root.querySelectorAll(".otc-arch-chip").forEach(c => {
-        c.classList.toggle("is-active", c.dataset.arch === arch);
-      });
+      root.querySelectorAll(".otc-arch-chip").forEach(c =>
+        c.classList.toggle("is-active", c.dataset.arch === arch));
+      const hint = root.querySelector("#otcStrategyImpactHint");
+      if (hint) hint.textContent = (arch === "distribute" || arch === "rebuilding")
+        ? "Win % if traded away" : "Win % if acquired";
     }
 
-    if (btnGaps)     btnGaps.addEventListener("click",     () => _setMode("gaps"));
-    if (btnStrategy) btnStrategy.addEventListener("click", () => _setMode("strategy"));
+    if (btnSubBuild)    btnSubBuild.addEventListener("click",    () => _setSuggSubtab("build"));
+    if (btnSubStrategy) btnSubStrategy.addEventListener("click", () => _setSuggSubtab("strategy"));
 
-    if (archChips) {
-      archChips.addEventListener("click", e => {
+    if (strategyChips) {
+      strategyChips.addEventListener("click", e => {
         const chip = e.target.closest(".otc-arch-chip");
         if (!chip) return;
-        const arch = chip.dataset.arch;
-        _setActiveChip(arch);
-        loadArchetypeSuggestions(arch);
+        _setStrategyChip(chip.dataset.arch);
+        loadStrategyView(chip.dataset.arch);
       });
     }
 
-    // Re-apply mode visuals on context change (league/season switch)
-    const _origOnContextChange = typeof _onContextChange === "function" ? _onContextChange : null;
+    if (strategyClearBtn) {
+      strategyClearBtn.addEventListener("click", () => {
+        _strategyFilter = null;
+        root.querySelectorAll(".otc-strategy-impact-row").forEach(r => r.classList.remove("is-active"));
+        strategyClearBtn.style.display = "none";
+        _renderStrategyCards(_strategyData, null);
+      });
+    }
+
+    // Re-wire context change on league/season switch
     function _onContextChangePatch() {
       suggTargetsLoaded = false;
       if (suggTab.style.display !== "none") {
-        if (_targetsMode === "strategy" && _activeArchetype) {
-          loadArchetypeSuggestions(_activeArchetype);
+        if (_activeSubtab !== "build" && _activeArchetype) {
+          loadStrategyView(_activeArchetype);
         } else {
           loadSuggTargets();
         }
       }
     }
-    // Re-wire context change listeners to patched version
     const leagueInputEl2 = root.querySelector("#leagueIdInput");
     const seasonInputEl2 = root.querySelector("#seasonInput");
     if (leagueInputEl2) leagueInputEl2.addEventListener("change", _onContextChangePatch);
     if (seasonInputEl2) seasonInputEl2.addEventListener("change", _onContextChangePatch);
 
-    // Restore mode on load (after roster is ready)
-    function _applyRestoredMode() {
-      if (_targetsMode === "strategy") {
-        _setMode("strategy");   // shows chips, auto-loads if archetype saved
-      }
-    }
-    // Delay one tick so roster input may already be populated
-    setTimeout(_applyRestoredMode, 0);
+    // Restore sub-tab on load
+    setTimeout(() => { if (_activeSubtab === "strategy") _setSuggSubtab("strategy"); }, 0);
 
-    // ── Archetype suggestion loader ───────────────────────────────────────────
-    async function loadArchetypeSuggestions(archetype) {
-      const container = root.querySelector("#otcSuggTargetsBody");
-      if (!container) return;
+    // ── Strategy view loader ──────────────────────────────────────────────────
+    async function loadStrategyView(archetype) {
+      if (!strategyImpact || !strategyCards) return;
 
       const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
       if (!hasPremium) {
-        container.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+        strategyImpact.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+        strategyCards.innerHTML  = "";
         return;
       }
 
-      const leagueId       = root.querySelector("#leagueIdInput")?.value  || "";
-      const season         = root.querySelector("#seasonInput")?.value     || new Date().getFullYear();
+      const leagueId       = root.querySelector("#leagueIdInput")?.value || "";
+      const season         = root.querySelector("#seasonInput")?.value   || new Date().getFullYear();
       const viewerRosterId = getCurrentRosterId();
 
       if (!leagueId || !viewerRosterId) {
-        container.innerHTML = '<div class="otc-movers-empty">Select your team to see strategy suggestions.</div>';
+        strategyImpact.innerHTML = '<div class="otc-movers-empty">Select your team to see strategy.</div>';
+        strategyCards.innerHTML  = "";
         return;
       }
 
@@ -3804,12 +3805,14 @@ window.initTradePage = function initTradePage(root = document) {
       const leagueSize = getLeagueSize();
 
       // Loading skeleton
-      container.innerHTML = [1,2,3].map(() => `
-        <div class="otc-arch-card" style="opacity:.5;pointer-events:none;">
-          <div class="otc-sugg-skeleton-line" style="width:60%;height:14px;border-radius:6px;background:var(--border);animation:skeleton-pulse 1.2s ease-in-out infinite;"></div>
-          <div class="otc-sugg-skeleton-line" style="width:90%;height:10px;border-radius:6px;background:var(--border);animation:skeleton-pulse 1.2s ease-in-out infinite;margin-top:4px;"></div>
-        </div>
-      `).join("");
+      strategyImpact.innerHTML = [1,2,3].map(() => `
+        <div class="otc-strategy-impact-row" style="opacity:.5;pointer-events:none;">
+          <div style="width:26px;height:18px;border-radius:3px;background:var(--border);flex-shrink:0;"></div>
+          <div style="flex:1;height:13px;border-radius:5px;background:var(--border);animation:skeleton-pulse 1.2s ease-in-out infinite;"></div>
+          <div style="width:80px;height:13px;border-radius:5px;background:var(--border);animation:skeleton-pulse 1.2s ease-in-out infinite;"></div>
+        </div>`).join("");
+      strategyCards.innerHTML = "";
+      if (strategyCardsHead) strategyCardsHead.style.display = "none";
 
       try {
         const _untouchableStr = [..._untouchableIds].filter(Boolean).join(",");
@@ -3825,99 +3828,175 @@ window.initTradePage = function initTradePage(root = document) {
           (_untouchableStr ? `&untouchable_ids=${encodeURIComponent(_untouchableStr)}` : "");
 
         const res = await fetch(url, { cache: "no-store" });
-
         if (res.status === 403) {
-          container.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
+          strategyImpact.innerHTML = '<div class="otc-movers-empty">Premium required.</div>';
           return;
         }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const data = await res.json();
-        if (!Array.isArray(data) || !data.length) {
-          container.innerHTML = '<div class="otc-movers-empty">No suggestions found for this strategy.</div>';
+        _strategyData   = Array.isArray(data) ? data : [];
+        _strategyFilter = null;
+        if (strategyClearBtn) strategyClearBtn.style.display = "none";
+
+        if (!_strategyData.length) {
+          strategyImpact.innerHTML = '<div class="otc-movers-empty">No suggestions found for this strategy.</div>';
+          strategyCards.innerHTML  = "";
           return;
         }
 
-        const posColor = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
-        const archLabel = { contending: "Contending", rebuilding: "Rebuilding", consolidate: "Consolidate", distribute: "Distribute" };
-        const archColor = { contending: "#10b981", rebuilding: "#3b82f6", consolidate: "#f59e0b", distribute: "#8b5cf6" };
+        _renderImpactTable(_strategyData);
+        _renderStrategyCards(_strategyData, null);
+        if (strategyCardsHead) strategyCardsHead.style.display = "";
 
-        const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-
-        container.innerHTML = data.map(t => {
-          const col     = posColor[t.position] || "var(--accent)";
-          const safePid = (t.player_id || "").replace(/"/g, "");
-          const safeName = esc(t.name);
-          const wpd     = t.win_prob_delta || 0;
-          const wpdPct  = (wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1) + "%";
-          const wpdCls  = wpd >= 0 ? "pos" : "neg";
-          const age     = t.age ? `${parseFloat(t.age).toFixed(0)}` : "";
-          const pArch   = t.partner_arch || "";
-          const pAColor = archColor[pArch] || "var(--text-muted)";
-          const isDistribute = t.direction === "distribute";
-
-          const assetLine = (label, list) => list && list.length
-            ? `<div class="otc-arch-deal">
-                <span class="otc-arch-deal-label">${label}</span><span class="otc-arch-deal-assets">${
-                  list.map(s => `${esc(s.name)} <span class="v">${Math.round(s.value)}</span>`).join(", ")
-                }</span>
-              </div>`
-            : "";
-
-          // Distribute: viewer sends the headline stud, receives a depth package.
-          // Acquire (contending/rebuilding/consolidate): viewer receives the
-          // headline player, sends the suggested package.
-          const detailHtml = isDistribute
-            ? assetLine("Receive", t.suggested_receive)
-            : assetLine("Send", t.suggested_send);
-
-          // For rebuilding the actionable move is selling the vet, so the button
-          // explores RETURNS for the player you're sending (suggested_send[0]),
-          // not packages to acquire the young headline target.
-          const sendAsset = (t.suggested_send && t.suggested_send[0]) || null;
-          const isSend    = (isDistribute || (archetype === "rebuilding" && sendAsset && sendAsset.player_id));
-          const btnPid    = isSend && !isDistribute ? String(sendAsset.player_id).replace(/"/g, "") : safePid;
-          const btnName   = isSend && !isDistribute ? esc(sendAsset.name) : safeName;
-          const btnLabel  = isSend ? "Find returns" : "Find packages";
-
-          // Value match: how close is the suggested package to fair value?
-          const sendTotal = (t.suggested_send || []).reduce((s, p) => s + (p.value || 0), 0);
-          const recvTotal = isDistribute
-            ? (t.suggested_receive || []).reduce((s, p) => s + (p.value || 0), 0)
-            : t.value || 0;
-          const matchRatio   = sendTotal > 0 ? recvTotal / sendTotal : 0;
-          const matchLabel   = matchRatio >= 1.08 ? "Great return" : matchRatio >= 0.92 ? "Fair value" : "Light return";
-          const matchCls     = matchRatio >= 1.08 ? "great" : matchRatio >= 0.92 ? "fair" : "light";
-          const showMatch    = sendTotal > 0 && recvTotal > 0;
-
-          return `
-            <div class="otc-arch-card">
-              ${isDistribute
-                ? `<div class="otc-arch-away-row"><span class="otc-arch-away">Trade away</span></div>`
-                : isSend && sendAsset
-                  ? `<div class="otc-arch-away-row"><span class="otc-arch-away">Selling ${esc(sendAsset.name)}</span></div>`
-                  : ""}
-              <div class="otc-arch-head">
-                <span class="otc-arch-pos" style="background:${col}20;color:${col};">${t.position}</span>
-                <span class="otc-arch-name">${esc(t.name)}</span>
-                <button class="sugg-target-get-btn otc-sugg-target-btn"
-                  data-pid="${btnPid}" data-name="${btnName}"
-                  data-direction="${isSend ? 'distribute' : 'acquire'}">${btnLabel}</button>
-              </div>
-              <div class="otc-arch-why">${esc(t.why)}</div>
-              ${detailHtml}
-              <div class="otc-arch-foot">
-                <span class="otc-arch-wp ${wpdCls}" title="Win probability delta">${wpdPct} win prob</span>
-                ${showMatch ? `<span class="otc-arch-vmatch otc-arch-vmatch-${matchCls}">${matchLabel}</span>` : ""}
-                ${t.partner_team ? `<span class="otc-arch-partner"><span class="dot" style="background:${pAColor};"></span>${esc(t.partner_team)}</span>` : ""}
-              </div>
-            </div>`;
-        }).join("");
-        // Click handling is delegated once via bindSuggTargetsClick() below.
       } catch (err) {
-        container.innerHTML = `<div class="otc-movers-empty">Could not load strategy suggestions.</div>`;
-        console.error("[archetype]", err);
+        strategyImpact.innerHTML = '<div class="otc-movers-empty">Could not load strategy.</div>';
+        console.error("[strategy]", err);
       }
+    }
+
+    // ── Strategy: player impact table ─────────────────────────────────────────
+    function _renderImpactTable(data) {
+      if (!strategyImpact) return;
+      const posColor = { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" };
+      const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      const isSellArch = _activeArchetype === "distribute" || _activeArchetype === "rebuilding";
+
+      strategyImpact.innerHTML = data.map(t => {
+        const wpd    = t.win_prob_delta    || 0;
+        const pod    = t.playoff_odds_delta || 0;
+        const wpdStr = (wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1) + "% wk";
+        const podStr = (pod >= 0 ? "+" : "") + (pod * 100).toFixed(1) + "% po";
+        const wpdBg  = wpd >= 0 ? "#10b9811f" : "#ef44441f";
+        const wpdCol = wpd >= 0 ? "#10b981"    : "#ef4444";
+        const podBg  = pod >= 0 ? "#6366f11f"  : "#ef44441f";
+        const podCol = pod >= 0 ? "#6366f1"    : "#ef4444";
+
+        const displayAsset = isSellArch && t.suggested_send && t.suggested_send[0]
+          ? t.suggested_send[0] : t;
+        const col  = posColor[displayAsset.position] || "var(--accent)";
+        const pid  = (t.player_id || "").replace(/"/g, "");
+
+        return `<div class="otc-strategy-impact-row" data-pid="${pid}">
+          <span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${col}20;color:${col};flex-shrink:0;">${displayAsset.position || t.position}</span>
+          <span class="otc-strategy-impact-name">${esc(displayAsset.name || t.name)}</span>
+          <div class="otc-strategy-impact-stats">
+            <span class="otc-strategy-impact-badge" style="background:${wpdBg};color:${wpdCol};">${wpdStr}</span>
+            <span class="otc-strategy-impact-badge" style="background:${podBg};color:${podCol};">${podStr}</span>
+          </div>
+        </div>`;
+      }).join("");
+
+      // Delegated click-to-filter (re-bind once per render via flag)
+      if (!strategyImpact._filterBound) {
+        strategyImpact._filterBound = true;
+        strategyImpact.addEventListener("click", e => {
+          const row = e.target.closest(".otc-strategy-impact-row");
+          if (!row) return;
+          const pid = row.dataset.pid;
+          if (_strategyFilter === pid) {
+            _strategyFilter = null;
+            row.classList.remove("is-active");
+            if (strategyClearBtn) strategyClearBtn.style.display = "none";
+          } else {
+            _strategyFilter = pid;
+            root.querySelectorAll(".otc-strategy-impact-row")
+              .forEach(r => r.classList.toggle("is-active", r.dataset.pid === pid));
+            if (strategyClearBtn) strategyClearBtn.style.display = "";
+          }
+          _renderStrategyCards(_strategyData, _strategyFilter);
+        });
+      }
+    }
+
+    // ── Strategy: compact trade cards ─────────────────────────────────────────
+    function _renderStrategyCards(data, filterPid) {
+      if (!strategyCards) return;
+      const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+      const archColor = { contending: "#10b981", rebuilding: "#3b82f6", consolidate: "#f59e0b", distribute: "#8b5cf6" };
+      const archetype = _activeArchetype;
+
+      const visible = filterPid ? data.filter(t => (t.player_id || "") === filterPid) : data;
+      if (!visible.length) {
+        strategyCards.innerHTML = '<div class="otc-movers-empty">No results.</div>';
+        return;
+      }
+
+      strategyCards.innerHTML = visible.map(t => {
+        const isDistribute = t.direction === "distribute";
+        const sendAsset    = (t.suggested_send && t.suggested_send[0]) || null;
+        const isSend       = isDistribute || (archetype === "rebuilding" && sendAsset?.player_id);
+
+        // Trade headline: "Send → Receive"
+        const acquireName = esc(t.name);
+        const sendNames   = (t.suggested_send  || []).map(p => esc(p.name)).join(" + ") || "—";
+        const recvNames   = (t.suggested_receive || []).map(p => esc(p.name)).join(" + ");
+        let tradeLeft, tradeRight;
+        if (isDistribute) {
+          tradeLeft  = acquireName;
+          tradeRight = recvNames ? `← ${recvNames}` : "";
+        } else if (archetype === "rebuilding" && sendAsset) {
+          tradeLeft  = esc(sendAsset.name);
+          tradeRight = `← ${acquireName}`;
+        } else {
+          tradeLeft  = acquireName;
+          tradeRight = sendNames !== "—" ? `↑ ${sendNames}` : "";
+        }
+
+        // Value match badge
+        const sendVal  = (t.suggested_send    || []).reduce((s, p) => s + (p.value || 0), 0);
+        const recvVal  = isDistribute
+          ? (t.suggested_receive || []).reduce((s, p) => s + (p.value || 0), 0)
+          : (t.value || 0);
+        const ratio    = sendVal > 0 ? recvVal / sendVal : 0;
+        let vmLabel, vmCls;
+        if (isSend) {
+          vmLabel = ratio >= 1.08 ? "Great return" : ratio >= 0.92 ? "Fair value" : "Light return";
+          vmCls   = ratio >= 1.08 ? "great"        : ratio >= 0.92 ? "fair"       : "light";
+        } else {
+          vmLabel = ratio >= 1.08 ? "Steal" : ratio >= 0.92 ? "Fair" : "Overpay";
+          vmCls   = ratio >= 1.08 ? "steal" : ratio >= 0.92 ? "fair" : "overpay";
+        }
+
+        // Win prob + playoff odds
+        const wpd    = t.win_prob_delta    || 0;
+        const pod    = t.playoff_odds_delta || 0;
+        const wpdStr = (wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1) + "% wk";
+        const podStr = (pod >= 0 ? "+" : "") + (pod * 100).toFixed(1) + "% po";
+        const wpdCol = wpd >= 0 ? "#10b981" : "#ef4444";
+        const podCol = pod >= 0 ? "#6366f1" : "#ef4444";
+
+        // Acceptance
+        const acpt = t.acceptance_pct != null ? `${t.acceptance_pct}%` : "";
+
+        // Partner
+        const pAColor = archColor[t.partner_arch || ""] || "var(--text-muted)";
+        const pName   = esc(t.partner_team || "");
+
+        // Button
+        const btnPid  = isSend && !isDistribute && sendAsset
+          ? String(sendAsset.player_id).replace(/"/g, "") : (t.player_id || "").replace(/"/g, "");
+        const btnName = isSend && !isDistribute && sendAsset ? esc(sendAsset.name) : esc(t.name);
+        const btnDir  = isSend ? "distribute" : "acquire";
+        const btnLbl  = isSend ? "Find returns" : "Find packages";
+
+        return `<div class="otc-strategy-trade-card">
+          <div class="otc-strategy-trade-headline">
+            <span class="otc-strategy-trade-send">${tradeLeft}</span>
+            ${tradeRight ? `<span class="otc-strategy-trade-recv">${tradeRight}</span>` : ""}
+          </div>
+          <div class="otc-strategy-trade-footer">
+            <span class="otc-strategy-badge otc-strategy-badge-${vmCls}">${vmLabel}</span>
+            ${acpt ? `<span class="otc-strategy-accept">${acpt} accepted</span>` : ""}
+            <span style="font-size:10px;font-weight:700;color:${wpdCol};">${wpdStr}</span>
+            <span style="font-size:10px;font-weight:700;color:${podCol};">${podStr}</span>
+            ${pName ? `<span class="otc-strategy-partner"><span class="dot" style="width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${pAColor};"></span>${pName}</span>` : ""}
+            <button class="sugg-target-get-btn otc-strategy-get-btn"
+              data-pid="${btnPid}" data-name="${btnName}"
+              data-direction="${btnDir}">${btnLbl}</button>
+          </div>
+        </div>`;
+      }).join("");
     }
 
   })();
