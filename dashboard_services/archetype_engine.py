@@ -319,14 +319,6 @@ def _score_sends(
                 sc = 0.65 + min(val / 1000, 0.35)     # post-peak, sell
             else:
                 sc = 0.15
-        elif archetype == "rebuilding":
-            # Rebuild = sell win-now vets (>= positional peak age) that still
-            # carry real value. Never dangle the young players you want to keep,
-            # so skip anything that isn't a sellable vet entirely.
-            if age >= peak and val >= 250:
-                sc = 0.5 + min(val / 800, 0.5)
-            else:
-                continue
         elif archetype == "consolidate":
             if 300 <= val <= 650:
                 sc = 0.85 - abs(val - 475) / 475      # sweet spot mid-tier
@@ -376,21 +368,6 @@ def _select_package(
 
     if archetype == "distribute":
         return pool[:1]
-
-    if archetype == "rebuilding":
-        # Send a vet that fairly matches the young target's value. Prefer the
-        # closest single vet, then the closest 2-vet combo. If nothing fits the
-        # band, suggest no send rather than a lopsided overpay.
-        in_band = [c for c in pool if lo <= c["value"] <= hi]
-        if in_band:
-            return [min(in_band, key=lambda c: abs(c["value"] - target_val))]
-        best2, best2_diff = None, float("inf")
-        for a, b in combinations(pool, 2):
-            s = a["value"] + b["value"]
-            if lo <= s <= hi and abs(s - target_val) < best2_diff:
-                best2_diff = abs(s - target_val)
-                best2 = [a, b]
-        return best2 or []
 
     # Contending: 1-player first, then 2-combo
     for c in pool:
@@ -552,6 +529,101 @@ def _build_distribute(
                 "player_id": c["player_id"], "name": c["name"],
                 "position": c["position"], "value": round(c["value"], 1),
             } for c in combo],
+        })
+        if len(results) >= 5:
+            break
+
+    return results
+
+
+# ── Rebuilding suggestion builder (sell a vet, acquire youth) ─────────────────
+
+def _build_rebuilding(
+    viewer_players: List[str],
+    values_by_id: Dict[str, Any],
+    all_targets: List[Dict[str, Any]],
+    league_type: str,
+    viewer_lineup_val: float,
+    league_avg: float,
+) -> List[Dict[str, Any]]:
+    """
+    Rebuild = sell win-now vets for younger, ascending players of similar value.
+
+    Anchored on each sellable vet (the SEND): pair it with the rival young
+    target (the GET) whose value most closely matches the vet, so every card
+    has a realistic, fundable send and targets stay within reach (no dangling
+    elite players the viewer could never actually trade for).
+    """
+    # Sellable vets: at/past positional peak age with real remaining value.
+    vets = sorted(
+        [p for p in viewer_players
+         if values_by_id.get(p, {}).get("position") in SKILL_POS
+         and _f(values_by_id[p].get("age")) >= PEAK_AGE.get(
+             values_by_id[p].get("position", "WR"), 27)
+         and _f(values_by_id[p].get("value")) >= 250],
+        key=lambda p: _f(values_by_id[p].get("value")),
+        reverse=True,
+    )
+    if not vets:
+        return []
+
+    # Young, ascending rival targets (below positional peak, real value).
+    young = sorted(
+        [t for t in all_targets
+         if t["age"] and t["age"] < PEAK_AGE.get(t["position"], 27)
+         and t["value"] >= 150],
+        key=lambda t: -t["value"],
+    )
+    if not young:
+        return []
+
+    old_vals = _get_30d_values([t["player_id"] for t in young])
+
+    results: List[Dict[str, Any]] = []
+    used_targets: set = set()
+
+    for vet in vets:
+        vval  = _f(values_by_id[vet].get("value"))
+        vname = values_by_id[vet].get("name", "")
+        vpos  = values_by_id[vet].get("position", "")
+        lo, hi = vval * 0.75, vval * 1.30
+
+        candidates = [
+            t for t in young
+            if t["player_id"] not in used_targets and lo <= t["value"] <= hi
+        ]
+        if not candidates:
+            continue
+        pick = min(candidates, key=lambda t: abs(t["value"] - vval))
+        used_targets.add(pick["player_id"])
+
+        # Honest win-prob: drop the vet from the lineup, add the young player.
+        new_players = [p for p in viewer_players if p != vet] + [pick["player_id"]]
+        new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type)
+        wpd = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
+
+        tp  = _trend_pct(pick["player_id"], pick["value"], old_vals, values_by_id)
+        pick["win_prob_delta"] = wpd
+        why = _build_why(pick, "rebuilding", tp, wpd)
+
+        results.append({
+            "player_id":      pick["player_id"],
+            "name":           pick["name"],
+            "position":       pick["position"],
+            "nfl_team":       pick["team"],
+            "age":            pick["age"],
+            "value":          round(pick["value"], 1),
+            "redraft_value":  round(pick.get("redraft_value", 0), 1),
+            "pos_rank_label": pick["pos_rank_label"],
+            "why":            why,
+            "partner_team":   pick["partner_name"],
+            "partner_arch":   pick["partner_arch"],
+            "win_prob_delta": round(wpd, 4),
+            "direction":      "acquire",
+            "suggested_send": [{
+                "player_id": vet, "name": vname,
+                "position": vpos, "value": round(vval, 1),
+            }],
         })
         if len(results) >= 5:
             break
@@ -736,6 +808,13 @@ def get_archetype_suggestions(
             roster_map, league_type, viewer_lineup_val, league_avg,
         )
 
+    # ── Rebuilding: viewer sells a win-now vet for a younger player ───────────
+    if archetype == "rebuilding":
+        return _build_rebuilding(
+            viewer_players, values_by_id, all_targets,
+            league_type, viewer_lineup_val, league_avg,
+        )
+
     # ── 30-day trend ──────────────────────────────────────────────────────────
     all_pids = list({t["player_id"] for t in all_targets} | set(viewer_players))
     old_vals = _get_30d_values(all_pids)
@@ -767,22 +846,6 @@ def get_archetype_suggestions(
                 0.30 * age_sc +
                 0.15 * min(1.0, val / 1000) +
                 0.10 * (1.0 if tp >= 0 else 0.5)
-            ) * sc * pref_bonus
-
-        elif archetype == "rebuilding":
-            if age and age >= peak:
-                continue
-            # Target meaningful young players, not deep-bench lottery tickets, so
-            # a sellable vet can fairly fund the acquisition.
-            if val < 300:
-                continue
-            dyn_over_rdft = min(2.0, val / max(1, rdft)) if rdft > 0 else 1.4
-            age_sc = max(0.0, (peak - (age or peak)) / peak)
-            score = (
-                0.45 * (dyn_over_rdft / 2.0) +
-                0.30 * age_sc +
-                0.15 * min(1.0, val / 800) +
-                0.10 * (1.0 if tp >= 0 else 0.6)
             ) * sc * pref_bonus
 
         elif archetype == "consolidate":
@@ -839,12 +902,10 @@ def get_archetype_suggestions(
     # ── Build send packages & assemble response ───────────────────────────────
     send_candidates = _score_sends(viewer_players, values_by_id, archetype)
     # Add viewer's draft picks to the send pool so packages can use them as
-    # value-fillers (e.g. two players + a pick for consolidate). Skip this for
-    # rebuilding — a rebuild accumulates picks, it doesn't trade them away.
-    if archetype != "rebuilding":
-        viewer_picks = picks_by_roster.get(str(viewer_roster_id)) or \
-                       picks_by_roster.get(viewer_roster_id) or []
-        send_candidates += _pick_send_candidates(viewer_picks, num_teams)
+    # value-fillers (e.g. two players + a pick for consolidate).
+    viewer_picks = picks_by_roster.get(str(viewer_roster_id)) or \
+                   picks_by_roster.get(viewer_roster_id) or []
+    send_candidates += _pick_send_candidates(viewer_picks, num_teams)
 
     results = []
     for t in top:
