@@ -2883,6 +2883,169 @@ window.initTradePage = function initTradePage(root = document) {
       }
     }
 
+    // ── Send-away packages: what you can GET by trading a player AWAY ──────────
+    // Inverse of fetchPackages. Lists value-matched return packages from rival
+    // teams; each option loads the calculator with the focus player on Side B
+    // (you give) and the return on Side A (you get).
+    async function fetchSendPackages(playerId, playerName) {
+      if (!playerId) return;
+
+      if (_fetchAbortCtrl) _fetchAbortCtrl.abort();
+      _fetchAbortCtrl = new AbortController();
+      const signal = _fetchAbortCtrl.signal;
+      suggCurrentPlayerId = playerId;
+
+      resultsMeta.style.display = "none";
+      resultsList.innerHTML = `<div class="otc-sugg-loading">${[1,2,3,4].map((_, i) => `
+        <div class="otc-sugg-skeleton" style="padding:10px 12px;">
+          <div class="otc-sugg-skeleton-line" style="height:14px;width:50%;border-radius:5px;animation-delay:${i*0.1}s;"></div>
+          <div class="otc-sugg-skeleton-line" style="height:10px;width:80%;margin-top:6px;border-radius:5px;animation-delay:${i*0.1+0.05}s;"></div>
+        </div>`).join("")}</div>`;
+
+      const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      if (!hasPremium) {
+        resultsList.innerHTML = `<div class="otc-sugg-empty">
+          <div class="otc-sugg-empty-title">Pro Feature</div>
+          <div class="otc-sugg-empty-sub">Upgrade to explore what you can get for your players.</div>
+        </div>`;
+        return;
+      }
+
+      const leagueId       = root.querySelector("#leagueIdInput")?.value  || "";
+      const season         = root.querySelector("#seasonInput")?.value     || new Date().getFullYear();
+      const viewerRosterId = getCurrentRosterId();
+      const platform       = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
+      const leagueType     = getLeagueType();
+
+      try {
+        const res = await fetch(
+          `/api/trade-intel/player-send-packages/${encodeURIComponent(playerId)}` +
+          `?season=${season}&league_type=${leagueType}&league_id=${encodeURIComponent(leagueId)}` +
+          `&platform=${encodeURIComponent(platform)}&viewer_roster_id=${encodeURIComponent(viewerRosterId)}`,
+          { signal }
+        );
+        if (signal.aborted || suggCurrentPlayerId !== playerId) return;
+        if (res.status === 403) {
+          resultsList.innerHTML = `<div class="otc-sugg-empty">
+            <div class="otc-sugg-empty-title">Pro Feature</div>
+            <div class="otc-sugg-empty-sub">Upgrade to explore trade returns for your players.</div>
+          </div>`;
+          return;
+        }
+
+        const data    = await res.json();
+        const options = data.options || [];
+        if (!options.length) {
+          resultsList.innerHTML = `<div class="otc-sugg-empty">
+            <div class="otc-sugg-empty-title">No matching returns</div>
+            <div class="otc-sugg-empty-sub">No rival roster has a value-matched package for ${playerName} right now.</div>
+          </div>`;
+          return;
+        }
+
+        const esc      = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+        const focusPos = data.focus_position || "WR";
+        const focusCol = posColor(focusPos);
+        const vc       = cls => cls === "great" ? "great" : cls === "light" ? "overpay" : "fair";
+
+        const assetHtml = a => {
+          if (a.is_pick) {
+            return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>${esc(a.name)}</div>`;
+          }
+          const col = posColor(a.position);
+          return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${a.position}</span><span>${esc(a.name)}</span></div>`;
+        };
+
+        resultsList.innerHTML = options.map(opt => `
+          <div class="otc-sugg-package">
+            <div class="otc-sugg-pkg-meta">
+              <span class="otc-sugg-pkg-value ${vc(opt.value_class)}">${esc(opt.value_label)}</span>
+              <span class="otc-sugg-pkg-freq">from ${esc(opt.team_name)}</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:6px;margin-top:6px;">
+              <div>
+                <div class="otc-sugg-pkg-side-label">YOU GIVE</div>
+                <div class="otc-sugg-pkg-assets">
+                  <div class="otc-sugg-pkg-asset" style="overflow:hidden;">
+                    <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};flex-shrink:0;">${focusPos}</span>
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(playerName)}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="otc-sugg-pkg-divider" style="padding-top:18px;">&rarr;</div>
+              <div>
+                <div class="otc-sugg-pkg-side-label">YOU GET</div>
+                <div class="otc-sugg-pkg-assets">${opt.receive.map(assetHtml).join("")}</div>
+              </div>
+            </div>
+            <button class="otc-sugg-send-load-btn otc-sugg-pkg-load-btn"
+              data-focus-id="${String(playerId).replace(/"/g, "")}"
+              data-focus-name="${esc(playerName)}"
+              data-receive='${esc(JSON.stringify(opt.receive)).replace(/'/g, "&#39;")}'>
+              Analyze
+            </button>
+          </div>`).join("");
+
+        resultsList.querySelectorAll(".otc-sugg-send-load-btn").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const origLabel = btn.textContent;
+            btn.textContent = "Loading…";
+            btn.disabled = true;
+            try {
+              await ensurePlayersLoaded();
+              let receiveAssets = [];
+              try { receiveAssets = JSON.parse(btn.dataset.receive || "[]"); } catch (_) {}
+              const fid   = btn.dataset.focusId;
+              const fname = btn.dataset.focusName;
+
+              state.sideAPlayers.length = 0;
+              state.sideBPlayers.length = 0;
+              state.sideAPicks.length   = 0;
+              state.sideBPicks.length   = 0;
+
+              // Side A = you get = the return package
+              receiveAssets.forEach(a => {
+                if (a.is_pick) {
+                  const yr = String(a.pick_season || "").replace(/\D/g, "");
+                  const rd = String(a.pick_round  || "").replace(/\D/g, "");
+                  const pickId = yr && rd ? `${yr}_${rd}_mid` : null;
+                  if (pickId) state.sideAPicks.push({ id: pickId, display: a.name || formatPickId(pickId) });
+                } else if (a.player_id) {
+                  const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
+                    || { id: String(a.player_id), name: a.name };
+                  state.sideAPlayers.push(pObj);
+                }
+              });
+
+              // Side B = you give = the focus player
+              const studObj = allPlayers.find(p => String(p.id) === String(fid))
+                || { id: fid, name: fname };
+              state.sideBPlayers.push(studObj);
+
+              saveState();
+              renderChips("A");
+              renderChips("B");
+              syncEmptyState("A");
+              syncEmptyState("B");
+              forceViewerSideA();
+              analyzeTrade();
+              switchToCalc();
+              const shell = root.querySelector(".otc-shell");
+              if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
+            } finally {
+              btn.textContent = origLabel;
+              btn.disabled = false;
+            }
+          });
+        });
+
+      } catch (err) {
+        if (err.name === "AbortError") return;
+        resultsList.innerHTML = `<div class="otc-sugg-empty">
+          <div class="otc-sugg-empty-sub">Failed to load send options.</div></div>`;
+      }
+    }
+
     // ── Render package cards (paginated, 5 per page) ────────────
     const PAGE_SIZE = 5;
     let _pkgPage = 0;
@@ -3470,61 +3633,19 @@ window.initTradePage = function initTradePage(root = document) {
         const direction = btn.dataset.direction || "acquire";
         if (!pid || !name) return;
 
-        if (direction === "distribute") {
-          let receiveAssets = [];
-          try { receiveAssets = JSON.parse(btn.dataset.receive || "[]"); } catch (_) {}
-
-          const origLabel = btn.textContent;
-          btn.textContent = "Loading…";
-          btn.disabled = true;
-          try {
-            // The calculator's chip + analysis UI lives in the Calculator tab and
-            // is keyed off allPlayers, so load the roster catalog before building
-            // the trade and switch tabs so the user actually sees the result.
-            await ensurePlayersLoaded();
-
-            state.sideAPlayers.length = 0;
-            state.sideBPlayers.length = 0;
-            state.sideAPicks.length   = 0;
-            state.sideBPicks.length   = 0;
-
-            // Side A = viewer gets = the depth return package
-            receiveAssets.forEach(a => {
-              if (!a.player_id) return;
-              const playerIdStr = String(a.player_id);
-              const pObj = allPlayers.find(p => String(p.id) === playerIdStr)
-                || { id: playerIdStr, name: a.name || playerIdStr };
-              state.sideAPlayers.push(pObj);
-            });
-
-            // Side B = viewer sends = the stud being distributed
-            const studObj = allPlayers.find(p => String(p.id) === String(pid))
-              || { id: pid, name };
-            state.sideBPlayers.push(studObj);
-
-            saveState();
-            renderChips("A");
-            renderChips("B");
-            syncEmptyState("A");
-            syncEmptyState("B");
-            forceViewerSideA();
-            analyzeTrade();
-            switchToCalc();
-            const shell = root.querySelector(".otc-shell");
-            if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
-          } finally {
-            btn.textContent = origLabel;
-            btn.disabled = false;
-          }
-        } else {
-          if (playerInput) {
-            playerInput.value = name;
-            playerDropdown.style.display = "none";
-          }
-          fetchPackages(pid, name);
-          const buildHead = root.querySelector(".otc-sugg-build-head");
-          if (buildHead) buildHead.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        if (playerInput) {
+          playerInput.value = name;
+          playerDropdown.style.display = "none";
         }
+        // Distribute: browse value-matched RETURNS for sending this player away.
+        // Acquire: browse packages to ACQUIRE this player.
+        if (direction === "distribute") {
+          fetchSendPackages(pid, name);
+        } else {
+          fetchPackages(pid, name);
+        }
+        const buildHead = root.querySelector(".otc-sugg-build-head");
+        if (buildHead) buildHead.scrollIntoView({ behavior: "smooth", block: "nearest" });
       });
     }
     bindSuggTargetsClick();
@@ -3703,11 +3824,6 @@ window.initTradePage = function initTradePage(root = document) {
             ? assetLine("Receive", t.suggested_receive)
             : assetLine("Send", t.suggested_send);
 
-          // Single-quoted attribute, so escape apostrophes too (e.g. "Ja'Marr Chase")
-          const receiveJson = isDistribute
-            ? esc(JSON.stringify(t.suggested_receive || [])).replace(/'/g, "&#39;")
-            : "";
-
           return `
             <div class="otc-arch-card">
               ${isDistribute ? `<div class="otc-arch-away-row"><span class="otc-arch-away">Trade away</span></div>` : ""}
@@ -3716,8 +3832,7 @@ window.initTradePage = function initTradePage(root = document) {
                 <span class="otc-arch-name">${esc(t.name)}</span>
                 <button class="sugg-target-get-btn otc-sugg-target-btn"
                   data-pid="${safePid}" data-name="${safeName}"
-                  data-direction="${isDistribute ? 'distribute' : 'acquire'}"
-                  data-receive='${receiveJson}'>${isDistribute ? "Explore" : "Find packages"}</button>
+                  data-direction="${isDistribute ? 'distribute' : 'acquire'}">${isDistribute ? "Find returns" : "Find packages"}</button>
               </div>
               <div class="otc-arch-why">${esc(t.why)}</div>
               ${detailHtml}

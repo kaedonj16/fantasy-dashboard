@@ -21283,6 +21283,216 @@ def _real_trade_packages_for_target(
     }
 
 
+@app.route("/api/trade-intel/player-send-packages/<player_id>")
+@limiter.limit("30 per minute")
+def api_trade_intel_player_send_packages(player_id: str):
+    """
+    Return packages the viewer could RECEIVE by SENDING AWAY the given player.
+
+    This is the inverse of /api/trade-intel/player-packages (which finds what you
+    give up to ACQUIRE a player). Here the focus player is one the viewer owns,
+    and we build value-matched return packages drawn from each rival team's
+    roster + that team's near-future picks. Each option is tagged with the team
+    it would come from so the user can browse send-away returns the same way they
+    browse acquire packages.
+
+    Query params: season, league_type, league_id, platform, viewer_roster_id
+    """
+    season           = int(request.args.get("season") or datetime.now().year)
+    league_type      = str(request.args.get("league_type") or "1qb").strip().lower()
+    league_id        = str(request.args.get("league_id") or "").strip()
+    platform         = str(request.args.get("platform") or "sleeper").strip()
+    viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
+
+    user_id = session.get("viewer_username")
+    if not has_premium_access(user_id, league_id, platform):
+        return jsonify({"error": "Premium required"}), 403
+
+    if not league_id or not viewer_roster_id:
+        return jsonify({"error": "League context required"}), 400
+
+    try:
+        # ── Value table ────────────────────────────────────────────────────
+        value_table = list(get_model_value_table_cached() or [])
+
+        ctx = get_league_ctx_from_cache(platform, league_id, season) or {}
+        rosters = ctx.get("rosters") or []
+
+        # Detect SF from roster_positions; the URL param may be wrong.
+        roster_positions = ctx.get("roster_positions") or []
+        _rp_list = [str(s).upper() for s in (roster_positions if isinstance(roster_positions, list) else [])]
+        is_sf    = (league_type == "sf") or any(s in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+        val_key  = "sf_value" if is_sf else "value"
+        num_teams = len(rosters) or 12
+
+        values_by_id: dict = {}
+        for p in value_table:
+            pid = str(p.get("id") or "")
+            if not pid:
+                continue
+            values_by_id[pid] = {
+                "name":           p.get("name", ""),
+                "position":       str(p.get("position") or "").upper(),
+                "value":          float(p.get(val_key) or p.get("value") or 0),
+                "pos_rank_label": (p.get("sf_pos_rank_label") if is_sf else p.get("pos_rank_label")) or "",
+                "team":           p.get("team") or "",
+                "age":            p.get("age"),
+            }
+
+        target_info = values_by_id.get(str(player_id))
+        if not target_info:
+            return jsonify({"error": "Player not found"}), 404
+
+        focus_value = round(target_info["value"], 1)
+        player_name = target_info["name"]
+        focus_pos   = target_info["position"]
+
+        if focus_value <= 0:
+            return jsonify({
+                "player_name": player_name, "focus_value": 0,
+                "focus_position": focus_pos, "options": [],
+            })
+
+        # ── Rival pick values (bucket-level, no slot detail) ────────────────
+        pick_tbl: dict = {}
+        try:
+            from dashboard_services.picks import load_pick_value_table as _lpvt
+            pick_tbl = _lpvt(league_teams=num_teams) or {}
+        except Exception:
+            pick_tbl = {}
+
+        picks_by_roster = ctx.get("picks_by_roster") or {}
+
+        def _ordinal(n: int) -> str:
+            return {1: "1st", 2: "2nd", 3: "3rd"}.get(n, f"{n}th")
+
+        def _rival_picks(rid: str) -> list:
+            raw = picks_by_roster.get(str(rid)) or picks_by_roster.get(rid) or []
+            out = []
+            for pk in raw:
+                if not isinstance(pk, dict):
+                    continue
+                yr  = int(pk.get("season") or pk.get("year") or 0)
+                rnd = int(pk.get("round") or 0)
+                if not yr or rnd <= 0 or yr > season + 1:
+                    continue
+                pval = 0.0
+                for key in (f"{yr}_{rnd}_mid", f"{yr}_{rnd}", f"{yr}_{rnd}_early"):
+                    if key in pick_tbl and float(pick_tbl[key]) > 0:
+                        pval = float(pick_tbl[key]); break
+                if pval <= 0:
+                    pval = {1: 220.0, 2: 130.0}.get(rnd, 70.0)
+                out.append({
+                    "name":  f"{yr} {_ordinal(rnd)}",
+                    "value": round(pval, 1),
+                    "is_pick": True,
+                    "pick_season": yr,
+                    "pick_round":  rnd,
+                })
+            return out
+
+        # ── Per-team value-matched return packages ──────────────────────────
+        lo, hi = focus_value * 0.82, focus_value * 1.25
+
+        def _value_label(total: float) -> tuple:
+            ratio = total / focus_value if focus_value else 0
+            if ratio >= 1.08:
+                return "Great return", "great"
+            if ratio >= 0.92:
+                return "Fair value", "fair"
+            return "Light return", "light"
+
+        options: list = []
+        seen_shapes: set = set()
+
+        for r in rosters:
+            rid = str(r.get("roster_id"))
+            if rid == viewer_roster_id:
+                continue
+            team_name = r.get("display_name") or r.get("owner_name") or f"Team {rid}"
+
+            team_players = sorted(
+                [
+                    {
+                        "player_id":      str(pid),
+                        "name":           values_by_id[str(pid)]["name"],
+                        "position":       values_by_id[str(pid)]["position"],
+                        "value":          values_by_id[str(pid)]["value"],
+                        "pos_rank_label": values_by_id[str(pid)]["pos_rank_label"],
+                        "is_pick":        False,
+                    }
+                    for pid in (r.get("players") or [])
+                    if str(pid) in values_by_id
+                    and values_by_id[str(pid)]["value"] >= 50
+                    and values_by_id[str(pid)]["position"] in ("QB", "RB", "WR", "TE")
+                ],
+                key=lambda x: -x["value"],
+            )
+            team_picks = sorted(_rival_picks(rid), key=lambda x: -x["value"])
+
+            team_opts: list = []
+
+            def _add(assets: list):
+                total = round(sum(float(a["value"]) for a in assets), 1)
+                if not (lo <= total <= hi):
+                    return
+                key = (rid, frozenset(
+                    str(a.get("player_id") or a.get("name")) for a in assets
+                ))
+                if key in seen_shapes:
+                    return
+                seen_shapes.add(key)
+                label, cls = _value_label(total)
+                team_opts.append({
+                    "team_name":     team_name,
+                    "team_roster_id": rid,
+                    "receive":       assets,
+                    "receive_value": total,
+                    "value_label":   label,
+                    "value_class":   cls,
+                    "fit":           abs(total - focus_value),
+                })
+
+            # 1 player
+            for p in team_players:
+                _add([p])
+            # 1 player + 1 pick
+            for p in team_players:
+                for pk in team_picks:
+                    _add([p, pk])
+            # 2 players (different positions preferred via ordering)
+            for i, p1 in enumerate(team_players):
+                if p1["value"] >= hi:
+                    continue
+                for p2 in team_players[i + 1:]:
+                    _add([p1, p2])
+            # 2 picks
+            for i, pk1 in enumerate(team_picks):
+                for pk2 in team_picks[i + 1:]:
+                    _add([pk1, pk2])
+
+            # Keep this team's 3 best-fitting options
+            team_opts.sort(key=lambda x: (x["fit"], -len(x["receive"])))
+            options.extend(team_opts[:3])
+
+        # Best fit across all teams first; cap the list
+        options.sort(key=lambda x: x["fit"])
+        for o in options:
+            o.pop("fit", None)
+        options = options[:12]
+
+        return jsonify({
+            "player_name":    player_name,
+            "focus_value":    focus_value,
+            "focus_position": focus_pos,
+            "options":        options,
+        })
+
+    except Exception as exc:
+        logger.warning("[player-send-packages] error: %s", exc)
+        return jsonify({"error": "Failed to build send packages"}), 500
+
+
 @app.route("/api/trade-ideas-for-target", methods=["POST"])
 @limiter.limit("20 per minute")
 def api_trade_ideas_for_target():
