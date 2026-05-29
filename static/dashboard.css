@@ -2320,6 +2320,32 @@ button:hover {
   .standings-table.dynasty-table td:nth-child(5) {
     display: none;
   }
+  /* Hide Proj% (col 7) on dynasty table — redundant with Val% at this width */
+  .standings-table.dynasty-table th:nth-child(7),
+  .standings-table.dynasty-table td:nth-child(7) {
+    display: none;
+  }
+}
+
+/* Value Rankings strip: stack button above table on mobile so table gets full card width */
+@media (max-width: 640px) {
+  .dynasty-value-strip {
+    flex-direction: column;
+    gap: 0;
+  }
+  .dynasty-value-strip .tab-btn {
+    align-self: flex-start;
+    margin-bottom: 4px;
+  }
+  .dynasty-value-strip .tab-panels {
+    width: 100%;
+    margin-top: 0;
+  }
+  /* Hide Proj% col on the full-width table too */
+  .standings-table.dynasty-table th:nth-child(7),
+  .standings-table.dynasty-table td:nth-child(7) {
+    display: none;
+  }
 }
 
 .table-stats {
