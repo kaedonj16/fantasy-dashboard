@@ -490,25 +490,22 @@ def build_trade_calculator_body(
             .otc-arch-vmatch-light {{ background:#f59e0b1a;color:#f59e0b; }}
             /* ── Suggestions sub-tab bar ── */
             .otc-sugg-subtab-bar {{
-              display:flex;padding:10px 14px 0;gap:2px;
-              background:var(--card);
-              border-bottom:1px solid var(--border);
+              display:flex;padding:10px 14px;gap:2px;
+              background:var(--card);border-bottom:1px solid var(--border);
+            }}
+            .otc-sugg-subtab-toggle {{
+              display:flex;gap:2px;padding:2px;border-radius:9px;
+              background:var(--row);border:1px solid var(--border);
             }}
             .otc-sugg-subtab {{
-              flex:1;padding:7px 10px;font-size:12px;font-weight:700;
-              background:none;border:none;border-radius:8px 8px 0 0;
-              color:var(--text-muted);cursor:pointer;
-              transition:color .15s, background .15s;white-space:nowrap;
-              position:relative;bottom:-1px;
-              border:1px solid transparent;border-bottom:none;
+              padding:6px 18px;font-size:12px;font-weight:700;
+              border:none;border-radius:7px;background:transparent;
+              color:var(--text-muted);cursor:pointer;transition:all .15s;
+              white-space:nowrap;
             }}
-            .otc-sugg-subtab:hover:not(.is-active) {{
-              color:var(--text);background:var(--row);
-            }}
+            .otc-sugg-subtab:hover:not(.is-active) {{ color:var(--text); }}
             .otc-sugg-subtab.is-active {{
-              color:var(--text);background:var(--card);
-              border-color:var(--border);
-              border-bottom:1px solid var(--card);
+              background:var(--text);color:var(--card);
             }}
             /* ── Strategy panel ── */
             .otc-strategy-chips {{
@@ -566,8 +563,10 @@ def build_trade_calculator_body(
           <div id="otcSuggestionsTab" style="display:none;">
             <!-- Sub-tab bar -->
             <div class="otc-sugg-subtab-bar">
-              <button id="otcSubtabBuildAround" class="otc-sugg-subtab is-active">Build Around</button>
-              <button id="otcSubtabStrategy" class="otc-sugg-subtab">Strategy</button>
+              <div class="otc-sugg-subtab-toggle">
+                <button id="otcSubtabBuildAround" class="otc-sugg-subtab is-active">Build Around</button>
+                <button id="otcSubtabStrategy" class="otc-sugg-subtab">Strategy</button>
+              </div>
             </div>
 
             <!-- ── Build Around panel ───────────────────────────────────────────── -->
