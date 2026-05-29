@@ -697,23 +697,30 @@ def _build_distribute(
 
         owner_bests.sort(key=lambda x: x[2])
 
+        # Departure cost: what happens to win% if you just lose this stud
+        dep_players = [p for p in viewer_players if p != stud]
+        dep_lineup  = _optimal_lineup_value(dep_players, values_by_id, league_type)
+        dep_wpd     = _win_prob(dep_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
+        dep_pod     = (_playoff_odds(current_wp + dep_wpd, num_weeks, num_teams, playoff_spots)
+                       - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots))
+
         for owner, combo, _ in owner_bests[:3]:
             used_owners.add(owner)
 
             recv_ids    = [c["player_id"] for c in combo]
-            new_players = [p for p in viewer_players if p != stud] + recv_ids
+            new_players = dep_players + recv_ids
             new_lineup  = _optimal_lineup_value(new_players, values_by_id, league_type)
-            wpd         = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
+            net_wpd     = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
 
-            new_wp  = current_wp + wpd
-            pod     = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) \
-                    - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+            net_new_wp  = current_wp + net_wpd
+            net_pod     = (_playoff_odds(net_new_wp, num_weeks, num_teams, playoff_spots)
+                           - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots))
             recv_val = sum(c["value"] for c in combo)
             acpt    = _estimate_acceptance(sval, recv_val, is_preferred=True)
 
             pname  = _roster_name(roster_map, owner)
             p_arch = owner_meta.get(owner, {}).get("arch", "")
-            ceiling_note = "lineup ceiling rises" if wpd >= 0 else "adds depth but trims your ceiling"
+            ceiling_note = "lineup ceiling rises" if net_wpd >= 0 else "adds depth but trims your ceiling"
 
             results.append({
                 "player_id":      stud,
@@ -728,8 +735,12 @@ def _build_distribute(
                                    f"{ceiling_note.capitalize()}, filling multiple holes at once."),
                 "partner_team":   pname,
                 "partner_arch":   p_arch,
-                "win_prob_delta":    round(wpd, 4),
-                "playoff_odds_delta": round(pod, 4),
+                # departure cost: impact table (cost of losing this stud alone)
+                "win_prob_delta":      round(dep_wpd, 4),
+                "playoff_odds_delta":  round(dep_pod, 4),
+                # net trade impact: shown on the card (lose stud + gain depth package)
+                "net_win_prob_delta":      round(net_wpd, 4),
+                "net_playoff_odds_delta":  round(net_pod, 4),
                 "acceptance_pct":     acpt,
                 "direction":      "distribute",
                 "suggested_send": [{
