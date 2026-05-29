@@ -88,7 +88,138 @@ def _n_byes(playoff_teams: int) -> int:
 # Public helper — PPG map for use by other modules (e.g. archetype engine)
 # ---------------------------------------------------------------------------
 
-def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
+def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
+    """
+    Build everything needed for trade-swap simulations without running them.
+
+    Mirrors the branching logic of simulate_playoff_odds:
+      - Preseason / offseason: project team strength from rosters (FP projections)
+      - In-season: historical team avg blended with next-week projections
+      - Season complete: returns None (no simulation needed)
+
+    Returns a state dict with keys:
+        teams             — list of team dicts (roster_id, avg, std, wins, …)
+        matchups          — {week: [(rid_a, rid_b), …]}
+        playoff_teams     — int
+        seed              — int | None
+        ppg_map           — {player_id: {ppg, pos}}
+        pos_map           — {player_id: position}
+        roster_positions  — list of slot strings from league settings
+        roster_pid_map    — {roster_id: [player_id, …]}
+    """
+    settings           = ctx.get("league_settings") or {}
+    playoff_week_start = int(settings.get("playoff_week_start") or 15)
+    playoff_teams      = int(settings.get("playoff_teams") or 6)
+    current_week       = int(ctx.get("current_week") or 0)
+    season             = int(ctx.get("season") or 0)
+    league_id          = str(ctx.get("league_id") or "")
+    regular_season_end = playoff_week_start - 1
+
+    seed: Optional[int] = None
+    if league_id:
+        seed = int(hashlib.md5(f"{league_id}:{season}".encode()).hexdigest(), 16) % (2 ** 32)
+
+    n_divisions  = int((ctx.get("league_settings") or {}).get("divisions") or 0)
+    division_map: dict[int, int] = {}
+    if n_divisions >= 2:
+        for r in (ctx.get("rosters") or []):
+            rid = r.get("roster_id")
+            div = int((r.get("settings") or {}).get("division") or 1)
+            if rid is not None:
+                division_map[int(rid)] = div
+
+    ppg_map, pos_map = build_ppg_map(ctx)
+    roster_positions = ctx.get("roster_positions") or []
+
+    team_stats = ctx.get("team_stats")
+    has_games  = team_stats is not None and not team_stats.empty
+
+    if not has_games:
+        teams = _estimate_from_rosters(ctx)
+        if not teams:
+            return None
+        remaining_weeks = list(range(1, playoff_week_start))
+    else:
+        if current_week > regular_season_end:
+            return None  # season complete — no simulation
+        teams = _build_teams(team_stats)
+        if not teams:
+            return None
+        remaining_weeks = list(range(current_week + 1, playoff_week_start))
+        _blend_weekly_projections(teams, ctx, season, current_week + 1)
+
+    matchups = _fetch_remaining_schedule(platform, league_id, season, remaining_weeks)
+    if not matchups:
+        matchups = _fallback_schedule(teams, remaining_weeks, division_map)
+
+    roster_pid_map: dict[int, list[str]] = {}
+    for r in (ctx.get("rosters") or []):
+        rid = r.get("roster_id")
+        if rid is not None:
+            roster_pid_map[int(rid)] = [str(p) for p in (r.get("players") or [])]
+
+    return {
+        "teams":            teams,
+        "matchups":         matchups,
+        "playoff_teams":    playoff_teams,
+        "seed":             seed,
+        "ppg_map":          ppg_map,
+        "pos_map":          pos_map,
+        "roster_positions": roster_positions,
+        "roster_pid_map":   roster_pid_map,
+    }
+
+
+def run_base_simulation(sim_state: dict, n_sims: int = 2000) -> dict[int, float]:
+    """
+    Run the Monte Carlo simulation for the pre-built state.
+    Returns {roster_id: playoff_pct (0–100)}.
+    """
+    result = _run_mc(
+        sim_state["teams"], sim_state["matchups"],
+        sim_state["playoff_teams"], n_sims, sim_state.get("seed"),
+    )
+    return {r["roster_id"]: r["playoff_pct"] for r in result}
+
+
+def simulate_with_swap(
+    sim_state: dict,
+    viewer_roster_id: int,
+    viewer_pids_after: list[str],
+    n_sims: int = 2000,
+) -> tuple[float, float]:
+    """
+    Re-run the simulation with viewer's roster replaced by viewer_pids_after.
+
+    Only the viewer's avg/std are recomputed; all other teams are unchanged,
+    keeping the simulation fast (numpy-vectorised, ~5 ms at n_sims=2000).
+
+    Returns (playoff_pct 0–100, new_avg_ppg).
+    """
+    ppg_map          = sim_state["ppg_map"]
+    pos_map          = sim_state["pos_map"]
+    roster_positions = sim_state["roster_positions"]
+
+    new_avg, starters = _position_aware_lineup(
+        viewer_pids_after, ppg_map, pos_map, roster_positions
+    )
+    new_std = max(_team_std_from_starters(starters), _MIN_STD)
+
+    teams = [
+        {**t, "avg": round(new_avg, 1), "std": round(new_std, 1)}
+        if t["roster_id"] == viewer_roster_id else t
+        for t in sim_state["teams"]
+    ]
+
+    result = _run_mc(teams, sim_state["matchups"], sim_state["playoff_teams"], n_sims, None)
+    for r in result:
+        if r["roster_id"] == viewer_roster_id:
+            return r["playoff_pct"], new_avg
+
+    return 0.0, new_avg
+
+
+
     """
     Build (ppg_map, pos_map) using the same priority logic as _estimate_from_rosters:
       1. FantasyPros season projections

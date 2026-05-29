@@ -731,11 +731,13 @@ def _build_distribute(
     ppg_map: Optional[Dict[str, Any]] = None,
     pos_map: Optional[Dict[str, str]] = None,
     roster_positions: Optional[List[str]] = None,
+    sim_state: Optional[Dict] = None,
+    current_playoff_pct: float = 0.0,
+    viewer_roster_id: Any = None,
 ) -> List[Dict[str, Any]]:
     """
     Viewer sends one concentrated stud and receives a 2–3 player depth package.
     Each card = one stud → one partner's multi-player return.
-    Only keeps trades where the optimal lineup ceiling rises.
     """
     studs = sorted(
         [p for p in viewer_players
@@ -814,9 +816,21 @@ def _build_distribute(
             new_lineup  = _lineup_score(new_players)
             net_wpd     = _win_prob(new_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
 
-            net_new_wp  = current_wp + net_wpd
-            net_pod     = (_playoff_odds(net_new_wp, num_weeks, num_teams, playoff_spots)
-                           - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots))
+            # Playoff odds: re-run Monte Carlo with swapped roster when sim state available
+            if sim_state and viewer_roster_id is not None:
+                try:
+                    from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
+                    new_po_pct, _ = _sim_swap(
+                        sim_state, int(viewer_roster_id), new_players, n_sims=2000
+                    )
+                    net_pod = (new_po_pct - current_playoff_pct) / 100.0
+                except Exception:
+                    net_pod = _playoff_odds(current_wp + net_wpd, num_weeks, num_teams, playoff_spots) \
+                              - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+            else:
+                net_pod = _playoff_odds(current_wp + net_wpd, num_weeks, num_teams, playoff_spots) \
+                          - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+
             recv_val = sum(c["value"] for c in combo)
             acpt    = _estimate_acceptance(sval, recv_val, is_preferred=True)
 
@@ -880,6 +894,9 @@ def _build_rebuilding(
     ppg_map: Optional[Dict[str, Any]] = None,
     pos_map: Optional[Dict[str, str]] = None,
     roster_positions: Optional[List[str]] = None,
+    sim_state: Optional[Dict] = None,
+    current_playoff_pct: float = 0.0,
+    viewer_roster_id: Any = None,
 ) -> List[Dict[str, Any]]:
     """
     Rebuild = sell win-now vets for younger assets of similar dynasty value.
@@ -1025,9 +1042,20 @@ def _build_rebuilding(
             else:
                 wpd = departure_wpd  # pick-only: no immediate lineup improvement
 
-            new_wp  = current_wp + wpd
-            net_pod = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) \
-                    - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+            # Playoff odds: re-run Monte Carlo with swapped roster when sim state available
+            if sim_state and viewer_roster_id is not None and opt["recv_pids"]:
+                try:
+                    from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
+                    new_po_pct, _ = _sim_swap(
+                        sim_state, int(viewer_roster_id), net_players, n_sims=2000
+                    )
+                    net_pod = (new_po_pct - current_playoff_pct) / 100.0
+                except Exception:
+                    net_pod = _playoff_odds(current_wp + wpd, num_weeks, num_teams, playoff_spots) \
+                              - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+            else:
+                net_pod = _playoff_odds(current_wp + wpd, num_weeks, num_teams, playoff_spots) \
+                          - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
 
             recv_total = sum(a.get("value", 0) for a in opt["recv_assets"])
             is_pref    = opt["partner_arch"] == COMPLEMENT.get("rebuilding", "")
@@ -1223,16 +1251,37 @@ def get_archetype_suggestions(
             viewer_players = [str(p) for p in (r.get("players") or [])]
             break
 
-    # ── Build PPG map (same source as playoff odds simulator) ────────────────────
+    # ── Build simulation state (same logic as playoff odds simulator) ─────────
+    # Handles preseason (pure FP projections) and in-season (blended) automatically.
+    sim_state: Optional[Dict] = None
+    current_playoff_pct: float = 0.0  # viewer's current playoff % (0–100)
     ppg_map:  Dict[str, Any] = {}
     pos_map:  Dict[str, str] = {}
     roster_positions: List[str] = ctx.get("roster_positions") or []
     try:
-        from data_building.simulate_playoff_odds import build_ppg_map as _build_ppg_map
-        ppg_map, pos_map = _build_ppg_map(ctx)
-        log.debug("[archetype] ppg_map loaded: %d players", len(ppg_map))
+        from data_building.simulate_playoff_odds import (
+            build_sim_state as _build_sim_state,
+            run_base_simulation as _run_base_sim,
+            build_ppg_map as _build_ppg_map,
+        )
+        sim_state = _build_sim_state(ctx, platform=platform)
+        if sim_state:
+            ppg_map  = sim_state["ppg_map"]
+            pos_map  = sim_state["pos_map"]
+            roster_positions = sim_state["roster_positions"]
+            base_odds = _run_base_sim(sim_state, n_sims=2000)
+            vid = int(viewer_roster_id) if str(viewer_roster_id).isdigit() else viewer_roster_id
+            current_playoff_pct = base_odds.get(vid, 0.0)
+            log.debug("[archetype] sim state ready; viewer playoff_pct=%.1f", current_playoff_pct)
+        else:
+            ppg_map, pos_map = _build_ppg_map(ctx)
     except Exception as exc:
-        log.debug("[archetype] ppg_map unavailable, falling back to redraft values: %s", exc)
+        log.debug("[archetype] sim state unavailable, using analytical model: %s", exc)
+        try:
+            from data_building.simulate_playoff_odds import build_ppg_map as _build_ppg_map
+            ppg_map, pos_map = _build_ppg_map(ctx)
+        except Exception:
+            pass
 
     def _lval(pids: List[str]) -> float:
         if ppg_map and roster_positions:
@@ -1249,14 +1298,18 @@ def get_archetype_suggestions(
             viewer_pos_counts[pos] = viewer_pos_counts.get(pos, 0) + 1
 
     # League-average lineup value (PPG-based, matching playoff odds simulator)
-    lineup_vals = [_lval([str(p) for p in (r.get("players") or [])]) for r in rosters]
-    league_avg = sum(lineup_vals) / max(1, len(lineup_vals)) if lineup_vals else viewer_lineup_val
+    if sim_state:
+        # Use the simulator's own team avgs so league_avg matches the simulation baseline
+        league_avg = sum(t["avg"] for t in sim_state["teams"]) / max(1, len(sim_state["teams"]))
+    else:
+        lineup_vals = [_lval([str(p) for p in (r.get("players") or [])]) for r in rosters]
+        league_avg = sum(lineup_vals) / max(1, len(lineup_vals)) if lineup_vals else viewer_lineup_val
 
     settings  = ctx.get("settings") or {}
     num_weeks = max(10, int(settings.get("playoff_week_start", 15)) - 1)
 
     current_wp = _win_prob(viewer_lineup_val, league_avg)
-    current_po = _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+    current_po = current_playoff_pct / 100.0  # use sim-based odds when available
 
     viewer_seed      = _seed(standings_map, viewer_roster_id, num_teams)
     viewer_above     = viewer_seed <= playoff_spots
@@ -1338,6 +1391,9 @@ def get_archetype_suggestions(
             num_teams=num_teams, playoff_spots=playoff_spots,
             viewer_pos_counts=viewer_pos_counts,
             ppg_map=ppg_map, pos_map=pos_map, roster_positions=roster_positions,
+            sim_state=sim_state,
+            current_playoff_pct=current_playoff_pct,
+            viewer_roster_id=viewer_roster_id,
         )
 
     # ── Rebuilding: viewer sells a win-now vet for youth / picks ─────────────
@@ -1358,6 +1414,9 @@ def get_archetype_suggestions(
             num_teams=num_teams, playoff_spots=playoff_spots,
             picks_by_owner=picks_by_owner,
             ppg_map=ppg_map, pos_map=pos_map, roster_positions=roster_positions,
+            sim_state=sim_state,
+            current_playoff_pct=current_playoff_pct,
+            viewer_roster_id=viewer_roster_id,
         )
 
     # ── 30-day trend ──────────────────────────────────────────────────────────
