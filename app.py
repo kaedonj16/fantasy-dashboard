@@ -14797,25 +14797,36 @@ def get_model_value_table_cached():
     # true gaps: undrafted prospects or newly-signed players not yet in the DB.
     try:
         from data_building.rookie_pipeline.pipeline import get_rookie_rankings_from_db, get_active_rookie_class
-        from utils.utils import load_players_index as _mvc_lpi
+        from utils.utils import load_players_index as _mvc_lpi, normalize_name as _mvc_nn
+        import re as _mvc_re
         draft_year = get_active_rookie_class()
         rk_rows = list(get_rookie_rankings_from_db(draft_year))
         if rk_rows:
             _mvc_idx = _mvc_lpi() or {}
             # IDs already present in player_values with a real value.
-            # Rookies with sleeper_ids are written to player_values by the pipeline,
-            # so they'll be in tbl already and skipped here. This block only fills
-            # in pre-draft prospects (ROOKIE_... IDs) not yet linked to Sleeper.
             _existing_ids = {str(p.get("id") or "") for p in tbl if float(p.get("value") or 0) > 0}
+            # Build name→sleeper_id map from players index (same logic as pipeline)
+            # so we can resolve a sleeper_id even when rookie_prospects.sleeper_id is null.
+            def _mvc_norm(n: str) -> str:
+                n = n.lower().strip()
+                n = _mvc_re.sub(r'\.', '', n)
+                n = _mvc_re.sub(r'[\s,]+(jr\.?|sr\.?|ii|iii|iv|v\.?)$', '', n).strip()
+                n = _mvc_re.sub(r'[^a-z\s]', '', n).strip()
+                return _mvc_re.sub(r'\s+', ' ', n)
+            _mvc_name_map = {_mvc_norm(m.get("name") or ""): str(pid)
+                             for pid, m in _mvc_idx.items() if m.get("name")}
             for r in rk_rows:
                 sid  = str(r.get("sleeper_id")) if r.get("sleeper_id") else None
                 name = r.get("name") or ""
+                # No stored sleeper_id — try name match against players index
+                if not sid and name:
+                    sid = _mvc_name_map.get(_mvc_norm(name))
                 _rid = sid if sid else (r.get("player_id") or f"rookie_{name}")
-                # Skip if already tracked in player_values (pipeline sync wins)
+                # Skip if already in player_values (pipeline sync or EMA history wins)
                 if str(_rid) in _existing_ids:
                     continue
-                _idx_team = _mvc_idx.get(sid, {}).get("team", "") if sid else ""
-                _team = r.get("actual_nfl_team") or _idx_team or r.get("team") or "FA"
+                _idx_entry = _mvc_idx.get(sid or "", {}) if sid else {}
+                _team = r.get("actual_nfl_team") or _idx_entry.get("team") or r.get("team") or "FA"
                 tbl.append({
                     "id":        _rid,
                     "name":      name,
