@@ -639,6 +639,7 @@ def _build_distribute(
     num_weeks: int = 14,
     num_teams: int = 10,
     playoff_spots: int = 4,
+    viewer_pos_counts: Optional[Dict[str, int]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Viewer sends one concentrated stud and receives a 2–3 player depth package.
@@ -663,12 +664,26 @@ def _build_distribute(
         spos  = values_by_id[stud].get("position", "")
         lo, hi = sval * 0.75, sval * 1.25
 
+        # Positions where the viewer already fills all starter slots —
+        # receiving another one from this position adds no lineup value.
+        slots = SLOTS_SF if league_type == "sf" else SLOTS_1QB
+        saturated: set = set()
+        if viewer_pos_counts:
+            for pos, needed in slots.items():
+                if pos == "FLEX":
+                    continue
+                if (viewer_pos_counts.get(pos, 0) - (1 if values_by_id.get(stud, {}).get("position") == pos else 0)) >= needed:
+                    saturated.add(pos)
+
         # Collect best combo per owner, then take top-3 value matches
         owner_bests: List[Tuple[str, List[Dict], float]] = []
         for owner, pool in targets_by_owner.items():
             if owner in used_owners:
                 continue
-            cand = sorted(pool, key=lambda x: x["value"], reverse=True)[:8]
+            cand = sorted(
+                [p for p in pool if p["position"] not in saturated],
+                key=lambda x: x["value"], reverse=True
+            )[:8]
             local_best: Optional[Tuple[str, List[Dict], float]] = None
             for n in (2, 3):
                 for combo in combinations(cand, n):
@@ -1087,6 +1102,13 @@ def get_archetype_suggestions(
 
     viewer_lineup_val = _optimal_lineup_value(viewer_players, values_by_id, league_type)
 
+    # Count viewer's skill-position players per position (used by distribute)
+    viewer_pos_counts: Dict[str, int] = {}
+    for pid in viewer_players:
+        pos = str(values_by_id.get(pid, {}).get("position") or "").upper()
+        if pos in SKILL_POS:
+            viewer_pos_counts[pos] = viewer_pos_counts.get(pos, 0) + 1
+
     # League-average lineup value
     lineup_vals = [
         _optimal_lineup_value(
@@ -1180,6 +1202,7 @@ def get_archetype_suggestions(
             untouchable_ids=untouchable_ids,
             current_wp=current_wp, num_weeks=num_weeks,
             num_teams=num_teams, playoff_spots=playoff_spots,
+            viewer_pos_counts=viewer_pos_counts,
         )
 
     # ── Rebuilding: viewer sells a win-now vet for youth / picks ─────────────
