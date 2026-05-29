@@ -5,6 +5,18 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-05-29",
+        "tag": "feature",
+        "text": "Trade Strategy: Win % and playoff odds on all four strategy archetypes (Contending, Rebuilding, Consolidate, Distribute) now run the same Monte Carlo simulation as the Standings page — projections-based in the offseason, blended with real scoring in-season. Your current playoff odds are shown inline so you can see exactly how much each suggested trade moves the needle.",
+        "link": "/trade?tab=suggestions"
+    },
+    {
+        "date": "2026-05-29",
+        "tag": "feature",
+        "text": "Trade Strategy: Distribute suggestions fixed and improved. Cards now correctly show the net effect of the trade (stud out, depth in) rather than just the departure cost. Distribute, Rebuilding, Contending, and Consolidate all show a 'Simulating…' indicator while results load and switch chips instantly on repeat visits.",
+        "link": "/trade?tab=suggestions"
+    },
+    {
         "date": "2026-05-28",
         "tag": "new",
         "text": "Schedule Assistant: See matchup difficulty for every player on your roster across any week range. Add or remove players, pick a window, and see how that defense stacks up against that position. Find it under the Players menu.",
