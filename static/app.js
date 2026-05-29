@@ -3578,8 +3578,8 @@ window.initTradePage = function initTradePage(root = document) {
 
     // ── Suggestions-tab Trade Targets (different from sidebar) ───
     async function loadSuggTargets() {
-      // Skip if Strategy mode is active — archetype loader handles that
-      if ((localStorage.getItem("sugg-mode") || "gaps") === "strategy") return;
+      // Skip if Strategy sub-tab is active — strategy loader handles that
+      if ((localStorage.getItem("sugg-subtab") || "build") === "strategy") return;
 
       const container = root.querySelector("#otcSuggTargetsBody");
       if (!container) return;
@@ -3658,16 +3658,12 @@ window.initTradePage = function initTradePage(root = document) {
     }
 
     // ── Single delegated click handler for Gaps targets + Strategy cards ─────
-    // Both lists live in #otcSuggTargetsBody and re-render via innerHTML, so we
-    // bind ONE listener to the stable container instead of per-render listeners
-    // (which stacked up and let the acquire flow override distribute clicks).
-    // Routes on data-direction: "distribute" loads the inverted trade (stud on
-    // Side B / you give, depth return on Side A / you get); anything else runs
-    // the acquire package finder.
-    function bindSuggTargetsClick() {
-      const body = root.querySelector("#otcSuggTargetsBody");
-      if (!body) return;
-      bindOnce(body, "suggTargetsClick", "click", async e => {
+    // Covers both #otcSuggTargetsBody (Build Around/Gaps) and #otcStrategyCards
+    // (Strategy tab). Both re-render via innerHTML, so we bind once to the stable
+    // container. Strategy-card clicks switch to the Build Around sub-tab first so
+    // results are visible.
+    function _handleSuggClick(fromStrategy) {
+      return async e => {
         const btn = e.target.closest(".sugg-target-get-btn");
         if (!btn) return;
         const pid       = btn.dataset.pid;
@@ -3675,13 +3671,13 @@ window.initTradePage = function initTradePage(root = document) {
         const direction = btn.dataset.direction || "acquire";
         if (!pid || !name) return;
 
+        // Strategy cards: switch to Build Around so results are visible
+        if (fromStrategy) _setSuggSubtab("build");
+
         if (playerInput) {
           playerInput.value = name;
           playerDropdown.style.display = "none";
         }
-        // "distribute" = browse value-matched RETURNS for sending this player
-        // away (used by Distribute studs and Rebuilding vets). Otherwise browse
-        // packages to ACQUIRE this player. Keep the search toggle in sync.
         if (direction === "distribute") {
           _applySearchModeUI("send");
           fetchSendPackages(pid, name);
@@ -3691,7 +3687,14 @@ window.initTradePage = function initTradePage(root = document) {
         }
         const buildHead = root.querySelector(".otc-sugg-build-head");
         if (buildHead) buildHead.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      });
+      };
+    }
+
+    function bindSuggTargetsClick() {
+      const body      = root.querySelector("#otcSuggTargetsBody");
+      const stratBody = root.querySelector("#otcStrategyCards");
+      if (body)      bindOnce(body,      "suggTargetsClick", "click", _handleSuggClick(false));
+      if (stratBody) bindOnce(stratBody, "stratCardsClick",  "click", _handleSuggClick(true));
     }
     bindSuggTargetsClick();
 
