@@ -2719,11 +2719,39 @@ window.initTradePage = function initTradePage(root = document) {
     const resultsList    = root.querySelector("#suggResultsList");
     if (!playerInput) return;
 
+    // ── Search mode: "get" = build around (acquire) | "send" = find returns ──
+    let _searchMode = localStorage.getItem("sugg-search-mode") || "get";
+    const _btnSearchGet  = root.querySelector("#otcSearchModeGet");
+    const _btnSearchSend = root.querySelector("#otcSearchModeSend");
+
+    // Run the chosen player through whichever search mode is active.
+    function runSearchForCurrent(pid, name) {
+      if (!pid) return;
+      if (_searchMode === "send") fetchSendPackages(pid, name);
+      else                        fetchPackages(pid, name);
+    }
+
+    function _setSearchMode(mode) {
+      _searchMode = mode;
+      localStorage.setItem("sugg-search-mode", mode);
+      if (_btnSearchGet)  _btnSearchGet.classList.toggle("is-active",  mode === "get");
+      if (_btnSearchSend) _btnSearchSend.classList.toggle("is-active", mode === "send");
+      playerInput.placeholder = mode === "send"
+        ? "Search a player to trade away…"
+        : "Search any player…";
+      // Re-run the currently shown player through the new mode
+      if (suggCurrentPlayerId) runSearchForCurrent(suggCurrentPlayerId, _pkgPlayerName || playerInput.value);
+    }
+
+    if (_btnSearchGet)  _btnSearchGet.addEventListener("click",  () => _setSearchMode("get"));
+    if (_btnSearchSend) _btnSearchSend.addEventListener("click", () => _setSearchMode("send"));
+    _setSearchMode(_searchMode);  // apply persisted mode (sets active button + placeholder)
+
     // Restore last searched player
     const _lastPlayer = (() => { try { return JSON.parse(localStorage.getItem('ti-last-player') || 'null'); } catch(_) { return null; } })();
     if (_lastPlayer && _lastPlayer.id) {
       playerInput.value = _lastPlayer.name || '';
-      fetchPackages(_lastPlayer.id, _lastPlayer.name || '');
+      runSearchForCurrent(_lastPlayer.id, _lastPlayer.name || '');
     }
 
     function posColor(pos) {
@@ -2758,7 +2786,7 @@ window.initTradePage = function initTradePage(root = document) {
       if (!item) return;
       playerInput.value = item.querySelector(".otc-sugg-dropdown-name").textContent;
       playerDropdown.style.display = "none";
-      fetchPackages(item.dataset.id, item.dataset.name);
+      runSearchForCurrent(item.dataset.id, item.dataset.name);
     });
 
     document.addEventListener("click", e => {
@@ -2769,7 +2797,7 @@ window.initTradePage = function initTradePage(root = document) {
     // ── Fetch packages from API ──────────────────────────────────
     // Exposed so inline lock-icon handlers can trigger a re-fetch after toggling untouchable
     window._refetchTradeIntel = () => {
-      if (suggCurrentPlayerId) fetchPackages(suggCurrentPlayerId, _pkgPlayerName);
+      if (suggCurrentPlayerId) runSearchForCurrent(suggCurrentPlayerId, _pkgPlayerName);
     };
     window._toggleUntouchable = (pid, name, pos) => {
       if (_untouchableIds.has(pid)) {
@@ -2916,6 +2944,15 @@ window.initTradePage = function initTradePage(root = document) {
       const viewerRosterId = getCurrentRosterId();
       const platform       = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
       const leagueType     = getLeagueType();
+
+      // Finding returns needs league context to know which rosters are rivals.
+      if (!leagueId || !viewerRosterId) {
+        resultsList.innerHTML = `<div class="otc-sugg-empty">
+          <div class="otc-sugg-empty-title">Select your team</div>
+          <div class="otc-sugg-empty-sub">Pick your league and team above to see what you can get for a player.</div>
+        </div>`;
+        return;
+      }
 
       try {
         const res = await fetch(

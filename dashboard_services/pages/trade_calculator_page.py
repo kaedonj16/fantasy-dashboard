@@ -492,7 +492,10 @@ def build_trade_calculator_body(
               <!-- Build Around section -->
               <div class="otc-sugg-build-section">
                 <div class="otc-sugg-build-head">
-                  <span class="otc-sugg-build-label">Build around</span>
+                  <div class="otc-mode-toggle" id="otcSearchModeToggle">
+                    <button id="otcSearchModeGet" class="otc-mode-btn is-active">Build around</button>
+                    <button id="otcSearchModeSend" class="otc-mode-btn">Find returns</button>
+                  </div>
                   <div class="otc-sugg-search-wrap">
                     <input id="suggPlayerInput" class="otc-sugg-player-input"
                       type="text" autocomplete="off"
