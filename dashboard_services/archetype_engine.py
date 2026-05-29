@@ -664,16 +664,12 @@ def _build_distribute(
         spos  = values_by_id[stud].get("position", "")
         lo, hi = sval * 0.75, sval * 1.25
 
-        # Positions where the viewer already fills all starter slots —
-        # receiving another one from this position adds no lineup value.
-        slots = SLOTS_SF if league_type == "sf" else SLOTS_1QB
+        # In 1QB leagues a second QB has no FLEX slot and contributes nothing to
+        # the lineup if the viewer already has a QB. RB/WR/TE all remain eligible
+        # because they can fill FLEX spots.
         saturated: set = set()
-        if viewer_pos_counts:
-            for pos, needed in slots.items():
-                if pos == "FLEX":
-                    continue
-                if (viewer_pos_counts.get(pos, 0) - (1 if values_by_id.get(stud, {}).get("position") == pos else 0)) >= needed:
-                    saturated.add(pos)
+        if league_type != "sf" and (viewer_pos_counts or {}).get("QB", 0) >= 1:
+            saturated.add("QB")
 
         # Collect best combo per owner, then take top-3 value matches
         owner_bests: List[Tuple[str, List[Dict], float]] = []
