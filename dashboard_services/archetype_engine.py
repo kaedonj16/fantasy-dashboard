@@ -395,14 +395,18 @@ def _score_sends(
 def _select_package(
     sends: List[Dict], target_val: float, archetype: str
 ) -> List[Dict]:
-    """Choose 1–3 send players that approximately match target value (±30 %)."""
+    """Choose 1–3 send players that approximately match target value (±30%)."""
     if not sends:
         return []
     lo, hi = target_val * 0.70, target_val * 1.30
-    pool = sends[:10]
+
+    # Include top scored players plus any picks (picks land at end of sends list)
+    pool = sends[:12]
+    extra_picks = [s for s in sends if (s.get("is_pick") or s.get("position") == "PICK")
+                   and s not in pool]
+    pool = (pool + extra_picks)[:15]
 
     if archetype == "consolidate":
-        # Prefer 2–3 mid-tier combo
         best, best_diff = [], float("inf")
         for n in (2, 3):
             for combo in combinations(pool, n):
@@ -417,17 +421,43 @@ def _select_package(
     if archetype == "distribute":
         return pool[:1]
 
-    # Contending: 1-player first, then 2-combo
+    # Contending: try 1-player, then 2-combo, then 3-combo.
+    # Track the closest-matching combo as fallback so we never return an
+    # arbitrary low-value player when nothing lands in the ±30% window.
+    best_pkg: List[Dict] = pool[:1]
+    best_diff: float = abs(pool[0]["value"] - target_val) if pool else float("inf")
+
     for c in pool:
+        diff = abs(c["value"] - target_val)
+        if diff < best_diff:
+            best_diff = diff
+            best_pkg = [c]
         if lo <= c["value"] <= hi:
             return [c]
+
     for a, b in combinations(pool, 2):
         if a["position"] == "QB" and b["position"] == "QB":
             continue
         s = a["value"] + b["value"]
+        diff = abs(s - target_val)
+        if diff < best_diff:
+            best_diff = diff
+            best_pkg = [a, b]
         if lo <= s <= hi:
             return [a, b]
-    return pool[:1]
+
+    for a, b, c in combinations(pool[:8], 3):
+        if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
+            continue
+        s = a["value"] + b["value"] + c["value"]
+        diff = abs(s - target_val)
+        if diff < best_diff:
+            best_diff = diff
+            best_pkg = [a, b, c]
+        if lo <= s <= hi:
+            return [a, b, c]
+
+    return best_pkg
 
 
 # ── Pick send candidates ──────────────────────────────────────────────────────
@@ -528,7 +558,7 @@ def _build_distribute(
          and (not untouchable_ids or p not in untouchable_ids)],
         key=lambda p: _f(values_by_id[p].get("value")),
         reverse=True,
-    )[:3]
+    )[:5]
 
     results: List[Dict[str, Any]] = []
     used_owners: set = set()
@@ -738,105 +768,114 @@ def _build_rebuilding(
         if not options:
             continue
 
-        # Pick best option by value proximity
         options.sort(key=lambda x: x["diff"])
-        best = options[0]
 
-        # Mark used players
-        for pid in best["recv_pids"]:
-            used_targets.add(pid)
-
-        # ── Win-prob calcs ────────────────────────────────────────────────
+        # ── Departure stats — computed once per vet, shared by all options ─
         dep_players   = [p for p in viewer_players if p != vet]
         dep_lineup    = _optimal_lineup_value(dep_players, values_by_id, league_type)
         departure_wpd = _win_prob(dep_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
+        dep_wp        = current_wp + departure_wpd
+        departure_pod = _playoff_odds(dep_wp, num_weeks, num_teams, playoff_spots) \
+                      - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
 
-        if best["recv_pids"]:
-            net_players = dep_players + best["recv_pids"]
-            net_lineup  = _optimal_lineup_value(net_players, values_by_id, league_type)
-            wpd = _win_prob(net_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
-        else:
-            wpd = departure_wpd  # pick-only: no immediate lineup improvement
+        # ── Emit up to 3 suggestions per vet (best options by value diff) ─
+        for opt in options[:6]:
+            if any(pid in used_targets for pid in opt["recv_pids"]):
+                continue
 
-        new_wp = current_wp + wpd
-        pod    = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) \
-               - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+            for pid in opt["recv_pids"]:
+                used_targets.add(pid)
 
-        recv_total = sum(a.get("value", 0) for a in best["recv_assets"])
-        is_pref    = best["partner_arch"] == COMPLEMENT.get("rebuilding", "")
-        acpt       = _estimate_acceptance(vval, recv_total, is_preferred=is_pref)
-
-        # ── Display / why text ────────────────────────────────────────────
-        primary = best["primary"]
-        if primary:
-            tp  = _trend_pct(primary["player_id"], primary["value"], old_vals, values_by_id)
-            primary["win_prob_delta"] = departure_wpd
-            why = _build_why(primary, "rebuilding", tp, wpd)
-            display_pid  = primary["player_id"]
-            display_name = primary["name"]
-            display_pos  = primary["position"]
-            display_age  = primary.get("age", 0)
-            display_val  = round(primary["value"], 1)
-            display_rdft = round(primary.get("redraft_value", 0), 1)
-            display_rank = primary.get("pos_rank_label", "")
-        else:
-            # Pick-only: display the pick as the "get" item
-            pk = best["recv_assets"][0]
-            why = (f"Sell {vname} while value is high — receive {pk['name']} "
-                   f"from {best['partner_name']}.")
-            display_pid  = pk["player_id"]
-            display_name = pk["name"]
-            display_pos  = "PICK"
-            display_age  = 0
-            display_val  = round(pk["value"], 1)
-            display_rdft = 0.0
-            display_rank = ""
-
-        # suggested_receive: full list of assets (players + picks) with metadata
-        suggested_receive = []
-        for a in best["recv_assets"]:
-            if a.get("is_pick"):
-                parts = a["player_id"].split("_")  # pick_YYYY_R
-                suggested_receive.append({
-                    "player_id":   a["player_id"],
-                    "name":        a["name"],
-                    "position":    "PICK",
-                    "value":       round(a["value"], 1),
-                    "is_pick":     True,
-                    "pick_season": parts[1] if len(parts) > 1 else "",
-                    "pick_round":  int(parts[2]) if len(parts) > 2 else 1,
-                })
+            # ── Win-prob for this specific receive package ─────────────────
+            if opt["recv_pids"]:
+                net_players = dep_players + opt["recv_pids"]
+                net_lineup  = _optimal_lineup_value(net_players, values_by_id, league_type)
+                wpd = _win_prob(net_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
             else:
-                suggested_receive.append({
-                    "player_id": a["player_id"],
-                    "name":      a["name"],
-                    "position":  a["position"],
-                    "value":     round(a["value"], 1),
-                })
+                wpd = departure_wpd  # pick-only: no immediate lineup improvement
 
-        results.append({
-            "player_id":      display_pid,
-            "name":           display_name,
-            "position":       display_pos,
-            "nfl_team":       primary["team"] if primary else "",
-            "age":            display_age,
-            "value":          display_val,
-            "redraft_value":  display_rdft,
-            "pos_rank_label": display_rank,
-            "why":            why,
-            "partner_team":   best["partner_name"],
-            "partner_arch":   best["partner_arch"],
-            "win_prob_delta":     round(departure_wpd, 4),
-            "net_win_prob_delta": round(wpd, 4),
-            "playoff_odds_delta": round(pod, 4),
-            "acceptance_pct":     acpt,
-            "direction":          "acquire",
-            "suggested_send": [{
-                "player_id": vet, "name": vname,
-                "position": vpos, "value": round(vval, 1),
-            }],
-            "suggested_receive": suggested_receive,
-        })
+            new_wp  = current_wp + wpd
+            net_pod = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) \
+                    - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+
+            recv_total = sum(a.get("value", 0) for a in opt["recv_assets"])
+            is_pref    = opt["partner_arch"] == COMPLEMENT.get("rebuilding", "")
+            acpt       = _estimate_acceptance(vval, recv_total, is_preferred=is_pref)
+
+            # ── Display / why text ─────────────────────────────────────────
+            primary = opt["primary"]
+            if primary:
+                tp  = _trend_pct(primary["player_id"], primary["value"], old_vals, values_by_id)
+                primary["win_prob_delta"] = departure_wpd
+                why = _build_why(primary, "rebuilding", tp, wpd)
+                display_pid  = primary["player_id"]
+                display_name = primary["name"]
+                display_pos  = primary["position"]
+                display_age  = primary.get("age", 0)
+                display_val  = round(primary["value"], 1)
+                display_rdft = round(primary.get("redraft_value", 0), 1)
+                display_rank = primary.get("pos_rank_label", "")
+            else:
+                pk = opt["recv_assets"][0]
+                why = (f"Sell {vname} while value is high — receive {pk['name']} "
+                       f"from {opt['partner_name']}.")
+                display_pid  = pk["player_id"]
+                display_name = pk["name"]
+                display_pos  = "PICK"
+                display_age  = 0
+                display_val  = round(pk["value"], 1)
+                display_rdft = 0.0
+                display_rank = ""
+
+            # ── Build suggested_receive ────────────────────────────────────
+            suggested_receive = []
+            for a in opt["recv_assets"]:
+                if a.get("is_pick"):
+                    parts = a["player_id"].split("_")  # pick_YYYY_R
+                    suggested_receive.append({
+                        "player_id":   a["player_id"],
+                        "name":        a["name"],
+                        "position":    "PICK",
+                        "value":       round(a["value"], 1),
+                        "is_pick":     True,
+                        "pick_season": parts[1] if len(parts) > 1 else "",
+                        "pick_round":  int(parts[2]) if len(parts) > 2 else 1,
+                    })
+                else:
+                    suggested_receive.append({
+                        "player_id": a["player_id"],
+                        "name":      a["name"],
+                        "position":  a["position"],
+                        "value":     round(a["value"], 1),
+                    })
+
+            results.append({
+                "player_id":      display_pid,
+                "name":           display_name,
+                "position":       display_pos,
+                "nfl_team":       primary["team"] if primary else "",
+                "age":            display_age,
+                "value":          display_val,
+                "redraft_value":  display_rdft,
+                "pos_rank_label": display_rank,
+                "why":            why,
+                "partner_team":   opt["partner_name"],
+                "partner_arch":   opt["partner_arch"],
+                "win_prob_delta":         round(departure_wpd, 4),
+                "net_win_prob_delta":     round(wpd, 4),
+                "playoff_odds_delta":     round(departure_pod, 4),
+                "net_playoff_odds_delta": round(net_pod, 4),
+                "acceptance_pct":         acpt,
+                "direction":              "acquire",
+                "suggested_send": [{
+                    "player_id": vet, "name": vname,
+                    "position": vpos, "value": round(vval, 1),
+                }],
+                "suggested_receive": suggested_receive,
+            })
+            if len(results) >= 5:
+                break
+
         if len(results) >= 5:
             break
 
