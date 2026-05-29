@@ -211,16 +211,32 @@ def rankings():
         for r in rows:
             d = _row_to_dict(r)
 
-            # Use same model values as player rankings page; fall back to rookie_value
+            # Use same model values as player rankings page; fall back to rookie_value.
+            # Write calibrated values back into value/sf_value so JS (rkGetValue +
+            # the modal) can find them without knowing about display_value.
             mv = mv_map.get(str(d.get("sleeper_id") or "")) or {}
+            if mv:
+                val_1qb = mv.get(f"value_{league_size}") or mv.get("value")
+                val_sf  = mv.get(f"sf_value_{league_size}") or mv.get("sf_value")
+                if val_1qb:
+                    d["value"] = val_1qb
+                    if league_size != 10:
+                        d[f"value_{league_size}"] = val_1qb
+                if val_sf:
+                    d["sf_value"] = val_sf
+                    if league_size != 10:
+                        d[f"sf_value_{league_size}"] = val_sf
+
             if league_type == "sf":
-                mv_key = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
-                fb_key = "rookie_sf_value" if league_size == 10 else f"rookie_sf_value_{league_size}"
-                d["display_value"] = mv.get(mv_key) or mv.get("sf_value") or d.get(fb_key) or d.get("rookie_sf_value")
+                d["display_value"] = (d.get("sf_value" if league_size == 10 else f"sf_value_{league_size}")
+                                      or d.get("sf_value")
+                                      or d.get("rookie_sf_value" if league_size == 10 else f"rookie_sf_value_{league_size}")
+                                      or d.get("rookie_sf_value"))
             else:
-                mv_key = "value" if league_size == 10 else f"value_{league_size}"
-                fb_key = "rookie_value" if league_size == 10 else f"rookie_value_{league_size}"
-                d["display_value"] = mv.get(mv_key) or mv.get("value") or d.get(fb_key) or d.get("rookie_value")
+                d["display_value"] = (d.get("value" if league_size == 10 else f"value_{league_size}")
+                                      or d.get("value")
+                                      or d.get("rookie_value" if league_size == 10 else f"rookie_value_{league_size}")
+                                      or d.get("rookie_value"))
 
             # Draft capital label
             d["draft_capital_label"] = format_draft_capital(
