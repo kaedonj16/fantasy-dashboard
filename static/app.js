@@ -3924,7 +3924,19 @@ window.initTradePage = function initTradePage(root = document) {
       const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
       const isSellArch = _activeArchetype === "distribute" || _activeArchetype === "rebuilding";
 
-      strategyImpact.innerHTML = data.map(t => {
+      // For sell archetypes (rebuilding/distribute), each vet may generate multiple
+      // suggestion cards — deduplicate the impact table so each vet appears once.
+      const _impactSeen = new Set();
+      const _impactData = data.filter(t => {
+        const key = isSellArch && t.suggested_send && t.suggested_send[0]
+          ? t.suggested_send[0].player_id
+          : (t.player_id || "");
+        if (_impactSeen.has(key)) return false;
+        _impactSeen.add(key);
+        return true;
+      });
+
+      strategyImpact.innerHTML = _impactData.map(t => {
         const wpd    = t.win_prob_delta    || 0;
         const pod    = t.playoff_odds_delta || 0;
         const wpdStr = (wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1) + "% wk";
@@ -3936,8 +3948,11 @@ window.initTradePage = function initTradePage(root = document) {
 
         const displayAsset = isSellArch && t.suggested_send && t.suggested_send[0]
           ? t.suggested_send[0] : t;
-        const col  = posColor[displayAsset.position] || "var(--accent)";
-        const pid  = (t.player_id || "").replace(/"/g, "");
+        const col = posColor[displayAsset.position] || "var(--accent)";
+        // Use the sell asset's ID as the filter key for sell archetypes
+        const pid = (isSellArch && t.suggested_send && t.suggested_send[0]
+          ? t.suggested_send[0].player_id
+          : (t.player_id || "")).replace(/"/g, "");
 
         return `<div class="otc-strategy-impact-row" data-pid="${pid}">
           <span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;background:${col}20;color:${col};flex-shrink:0;">${displayAsset.position || t.position}</span>
@@ -3979,7 +3994,13 @@ window.initTradePage = function initTradePage(root = document) {
       const archColor = { contending: "#10b981", rebuilding: "#3b82f6", consolidate: "#f59e0b", distribute: "#8b5cf6" };
       const archetype = _activeArchetype;
 
-      const visible = filterPid ? data.filter(t => (t.player_id || "") === filterPid) : data;
+      const isSellArch = archetype === "distribute" || archetype === "rebuilding";
+      const visible = filterPid ? data.filter(t => {
+        const pid = isSellArch && t.suggested_send && t.suggested_send[0]
+          ? t.suggested_send[0].player_id
+          : (t.player_id || "");
+        return pid === filterPid;
+      }) : data;
       if (!visible.length) {
         strategyCards.innerHTML = '<div class="otc-movers-empty">No results.</div>';
         return;
