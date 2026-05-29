@@ -392,81 +392,100 @@ def _score_sends(
     return out
 
 
-def _select_package(
-    sends: List[Dict], target_val: float, archetype: str
-) -> List[Dict]:
-    """Choose 1–3 send players whose combined value is closest to target (±20%).
+def _select_packages(
+    sends: List[Dict], target_val: float, archetype: str, max_pkgs: int = 2
+) -> List[List[Dict]]:
+    """Return up to max_pkgs distinct send packages within −10% / +5% of target.
 
-    Evaluates ALL 1/2/3-player combos before deciding — no early returns —
-    so a 2-player package that sums to target±5% beats a single player that
-    technically falls inside the window but is 200 pts off.
-    Falls back to the absolute closest combo if nothing lands in the window.
+    Surfaces different trade structures per target:
+      1. Best player-only combo (1–3 players, no picks)
+      2. Best player + draft-pick combo (if the viewer has picks)
+    Falls back to the absolute-closest combo when nothing lands in the window.
     """
     if not sends:
         return []
-    lo, hi = target_val * 0.80, target_val * 1.20
 
-    # Include top scored players plus any picks (picks land at end of sends list)
-    pool = sends[:12]
-    extra_picks = [s for s in sends if (s.get("is_pick") or s.get("position") == "PICK")
-                   and s not in pool]
-    pool = (pool + extra_picks)[:15]
+    lo, hi = target_val * 0.90, target_val * 1.05
 
-    if archetype == "consolidate":
-        best_in_win: List[Dict] = []
-        best_in_win_diff: float = float("inf")
-        best_any: List[Dict] = pool[:2] if len(pool) >= 2 else pool
-        best_any_diff: float = float("inf")
-        for n in (2, 3):
-            for combo in combinations(pool, n):
-                if sum(1 for c in combo if c["position"] == "QB") > 1:
-                    continue
-                s = sum(c["value"] for c in combo)
-                diff = abs(s - target_val)
-                if diff < best_any_diff:
-                    best_any_diff, best_any = diff, list(combo)
-                if lo <= s <= hi and diff < best_in_win_diff:
-                    best_in_win_diff, best_in_win = diff, list(combo)
-        return best_in_win if best_in_win else best_any
+    player_pool = [s for s in sends
+                   if not s.get("is_pick") and s.get("position") != "PICK"][:12]
+    pick_pool   = [s for s in sends
+                   if s.get("is_pick") or s.get("position") == "PICK"]
 
     if archetype == "distribute":
-        return pool[:1]
+        return [player_pool[:1]] if player_pool else []
 
-    # Contending: scan every 1/2/3-player combination exhaustively.
-    # best_in_win = closest combo within ±20%; best_any = closest regardless.
-    best_in_win = []
-    best_in_win_diff = float("inf")
-    best_any = pool[:1] if pool else []
-    best_any_diff = abs(pool[0]["value"] - target_val) if pool else float("inf")
+    results: List[List[Dict]] = []
 
-    for c in pool:
+    # ── 1. Player-only: exhaustive 1 / 2 / 3-player search ───────────────────
+    best, best_d = None, float("inf")
+    for c in player_pool:
         d = abs(c["value"] - target_val)
-        if d < best_any_diff:
-            best_any_diff, best_any = d, [c]
-        if lo <= c["value"] <= hi and d < best_in_win_diff:
-            best_in_win_diff, best_in_win = d, [c]
-
-    for a, b in combinations(pool, 2):
+        if lo <= c["value"] <= hi and d < best_d:
+            best_d, best = d, [c]
+    for a, b in combinations(player_pool, 2):
         if a["position"] == "QB" and b["position"] == "QB":
             continue
         s = a["value"] + b["value"]
         d = abs(s - target_val)
-        if d < best_any_diff:
-            best_any_diff, best_any = d, [a, b]
-        if lo <= s <= hi and d < best_in_win_diff:
-            best_in_win_diff, best_in_win = d, [a, b]
-
-    for a, b, c in combinations(pool[:8], 3):
+        if lo <= s <= hi and d < best_d:
+            best_d, best = d, [a, b]
+    for a, b, c in combinations(player_pool[:7], 3):
         if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
             continue
         s = a["value"] + b["value"] + c["value"]
         d = abs(s - target_val)
-        if d < best_any_diff:
-            best_any_diff, best_any = d, [a, b, c]
-        if lo <= s <= hi and d < best_in_win_diff:
-            best_in_win_diff, best_in_win = d, [a, b, c]
+        if lo <= s <= hi and d < best_d:
+            best_d, best = d, [a, b, c]
+    if best:
+        results.append(best)
 
-    return best_in_win if best_in_win else best_any
+    # ── 2. Player + pick: pair each pick with 1–2 players ────────────────────
+    if pick_pool and len(results) < max_pkgs:
+        mp = player_pool[:8]
+        best_pp, best_pp_d = None, float("inf")
+        for pk in pick_pool:
+            for c in mp:
+                s = c["value"] + pk["value"]
+                d = abs(s - target_val)
+                if lo <= s <= hi and d < best_pp_d:
+                    best_pp_d, best_pp = d, [c, pk]
+            for a, b in combinations(mp, 2):
+                if a["position"] == "QB" and b["position"] == "QB":
+                    continue
+                s = a["value"] + b["value"] + pk["value"]
+                d = abs(s - target_val)
+                if lo <= s <= hi and d < best_pp_d:
+                    best_pp_d, best_pp = d, [a, b, pk]
+        if best_pp:
+            results.append(best_pp)
+
+    # ── Fallback: absolute-closest across all assets if window missed ─────────
+    if not results:
+        all_pool = (player_pool + pick_pool)[:15]
+        fallback, fallback_d = None, float("inf")
+        for c in all_pool:
+            d = abs(c["value"] - target_val)
+            if d < fallback_d:
+                fallback_d, fallback = d, [c]
+        for a, b in combinations(all_pool, 2):
+            if a.get("position") == "QB" and b.get("position") == "QB":
+                continue
+            s = a["value"] + b["value"]
+            d = abs(s - target_val)
+            if d < fallback_d:
+                fallback_d, fallback = d, [a, b]
+        for a, b, c in combinations(all_pool[:7], 3):
+            if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
+                continue
+            s = a["value"] + b["value"] + c["value"]
+            d = abs(s - target_val)
+            if d < fallback_d:
+                fallback_d, fallback = d, [a, b, c]
+        if fallback:
+            results.append(fallback)
+
+    return results[:max_pkgs]
 
 
 # ── Pick send candidates ──────────────────────────────────────────────────────
@@ -502,11 +521,13 @@ def _pick_send_candidates(picks: List[Dict], num_teams: int) -> List[Dict[str, A
         if val <= 0:
             val = {1: 650.0, 2: 220.0}.get(rnd, 80.0)
         out.append({
-            "player_id": f"pick_{season}_{rnd}",
-            "name":      f"{season} {_ordinal(rnd)}",
-            "position":  "PICK",
-            "value":     round(val, 1),
-            "is_pick":   True,
+            "player_id":  f"pick_{season}_{rnd}",
+            "name":       f"{season} {_ordinal(rnd)}",
+            "position":   "PICK",
+            "value":      round(val, 1),
+            "is_pick":    True,
+            "pick_season": season,
+            "pick_round":  rnd,
         })
     return out
 
@@ -1197,35 +1218,44 @@ def get_archetype_suggestions(
     send_candidates += _pick_send_candidates(viewer_picks, num_teams)
 
     results = []
+    new_wp_base = current_wp  # alias for clarity inside loop
     for t in top:
         tp  = _trend_pct(t["player_id"], t["value"], old_vals, values_by_id)
         wpd = t.get("win_prob_delta", 0.0)
         why = _build_why(t, archetype, tp, wpd)
-        pkg = _select_package(send_candidates, t["value"], archetype)
+        new_wp = new_wp_base + wpd
+        pod    = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) - current_po
 
-        send_val = sum(p.get("value", 0) for p in pkg) if pkg else 0
-        recv_val = t["value"]
-        acpt     = _estimate_acceptance(send_val, recv_val, is_preferred=t["is_pref"])
-        new_wp   = current_wp + wpd
-        pod      = _playoff_odds(new_wp, num_weeks, num_teams, playoff_spots) - current_po
+        pkgs = _select_packages(send_candidates, t["value"], archetype, max_pkgs=2)
+        if not pkgs:
+            pkgs = [[]]
 
-        results.append({
-            "player_id":      t["player_id"],
-            "name":           t["name"],
-            "position":       t["position"],
-            "nfl_team":       t["team"],
-            "age":            t["age"],
-            "value":          round(t["value"], 1),
-            "redraft_value":  round(t.get("redraft_value", 0), 1),
-            "pos_rank_label": t["pos_rank_label"],
-            "why":            why,
-            "partner_team":   t["partner_name"],
-            "partner_arch":   t["partner_arch"],
-            "win_prob_delta":    round(wpd, 4),
-            "playoff_odds_delta": round(pod, 4),
-            "acceptance_pct":     acpt,
-            "direction":      "acquire",
-            "suggested_send": pkg,
-        })
+        for pkg in pkgs:
+            send_val = sum(p.get("value", 0) for p in pkg) if pkg else 0
+            recv_val = t["value"]
+            acpt     = _estimate_acceptance(send_val, recv_val, is_preferred=t["is_pref"])
+
+            results.append({
+                "player_id":      t["player_id"],
+                "name":           t["name"],
+                "position":       t["position"],
+                "nfl_team":       t["team"],
+                "age":            t["age"],
+                "value":          round(t["value"], 1),
+                "redraft_value":  round(t.get("redraft_value", 0), 1),
+                "pos_rank_label": t["pos_rank_label"],
+                "why":            why,
+                "partner_team":   t["partner_name"],
+                "partner_arch":   t["partner_arch"],
+                "win_prob_delta":     round(wpd, 4),
+                "playoff_odds_delta": round(pod, 4),
+                "acceptance_pct":     acpt,
+                "direction":          "acquire",
+                "suggested_send":     pkg,
+            })
+            if len(results) >= 5:
+                break
+        if len(results) >= 5:
+            break
 
     return results

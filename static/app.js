@@ -3699,10 +3699,20 @@ window.initTradePage = function initTradePage(root = document) {
               }
             });
             sendAssets.forEach(a => {
-              const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
-                || { id: String(a.player_id), name: a.name };
-              if (!state.sideBPlayers.some(p => String(p.id) === String(pObj.id)))
-                state.sideBPlayers.push(pObj);
+              if (a.is_pick || a.position === "PICK") {
+                const yr = String(a.pick_season || "").replace(/\D/g, "")
+                  || (String(a.player_id || "").split("_")[1] || "");
+                const rd = String(a.pick_round || "").replace(/\D/g, "")
+                  || (String(a.player_id || "").split("_")[2] || "1");
+                const pickId = yr && rd ? `${yr}_${rd}_mid` : null;
+                if (pickId && !state.sideBPicks.some(p => p.id === pickId))
+                  state.sideBPicks.push({ id: pickId, display: a.name || pickId });
+              } else {
+                const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
+                  || { id: String(a.player_id), name: a.name };
+                if (!state.sideBPlayers.some(p => String(p.id) === String(pObj.id)))
+                  state.sideBPlayers.push(pObj);
+              }
             });
 
             saveState();
