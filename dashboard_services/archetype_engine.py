@@ -691,14 +691,25 @@ def _build_distribute(
             if local_best:
                 owner_bests.append(local_best)
 
-        owner_bests.sort(key=lambda x: x[2])
-
         # Departure cost: what happens to win% if you just lose this stud
         dep_players = [p for p in viewer_players if p != stud]
         dep_lineup  = _optimal_lineup_value(dep_players, values_by_id, league_type)
         dep_wpd     = _win_prob(dep_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
         dep_pod     = (_playoff_odds(current_wp + dep_wpd, num_weeks, num_teams, playoff_spots)
                        - _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots))
+
+        # Re-score each owner's best combo by how much it improves the lineup
+        # (not just value closeness). A combo that fills a weak position ranks
+        # above one that piles onto an already-strong position.
+        scored_bests: List[Tuple[str, List[Dict], float, float]] = []
+        for owner, combo, diff in owner_bests:
+            recv_ids_trial = [c["player_id"] for c in combo]
+            trial_val = _optimal_lineup_value(dep_players + recv_ids_trial, values_by_id, league_type)
+            lineup_gain = trial_val - dep_lineup
+            scored_bests.append((owner, combo, diff, lineup_gain))
+        # Primary sort: lineup improvement descending; secondary: value closeness ascending
+        scored_bests.sort(key=lambda x: (-x[3], x[2]))
+        owner_bests = [(o, c, d) for o, c, d, _ in scored_bests]
 
         for owner, combo, _ in owner_bests[:3]:
             used_owners.add(owner)
