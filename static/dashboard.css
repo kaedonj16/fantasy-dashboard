@@ -4073,6 +4073,24 @@ thead th {
     text-align: center;
     padding: 7px 0;
   }
+  /* Strategy chips: 4 across is too tight at 600px — keep 4 but shrink */
+  .otc-arch-chip {
+    font-size: 11px;
+    padding: 6px 6px;
+  }
+  /* Impact table: shrink badges so name has room */
+  .otc-strategy-impact-badge {
+    font-size: 9px;
+    padding: 2px 5px;
+  }
+  /* Footer badges wrap earlier */
+  .otc-rt-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .otc-rt-footer > div:first-child {
+    justify-content: flex-start;
+  }
 
   /* ML suggestion packages */
   .otc-sugg-package {
@@ -4113,6 +4131,73 @@ thead th {
     margin: 2px 0;
   }
 
+}
+
+/* ── Strategy cards: phone layout (≤ 480px) ──────────────────────────────── */
+@media (max-width: 480px) {
+  /* Chips: 2 per row so long words (Contending, Rebuilding…) don't clip */
+  .otc-strategy-chips {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .otc-arch-chip {
+    font-size: 12px;
+    padding: 8px 6px;
+  }
+
+  /* Trade card: stack YOU GET / YOU GIVE vertically */
+  .otc-rt-body {
+    grid-template-columns: 1fr;
+  }
+  .otc-rt-divider {
+    height: 1px;
+    width: 100%;
+    align-self: unset;
+  }
+  .otc-rt-side {
+    padding: 8px 12px;
+  }
+
+  /* Footer: column stack, full-width Analyze already covered by 600px rule */
+  .otc-rt-footer {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  /* Cards container: tighter padding */
+  #otcStrategyCards {
+    padding: 8px 10px;
+  }
+
+  /* Impact rows: reduce gap so badges don't crowd the name */
+  .otc-strategy-impact-row {
+    padding: 7px 10px;
+    gap: 6px;
+  }
+  .otc-strategy-impact-stats {
+    gap: 4px;
+  }
+  .otc-strategy-impact-badge {
+    font-size: 9px;
+    padding: 2px 4px;
+  }
+  .otc-strategy-impact-name {
+    font-size: 12px;
+  }
+
+  /* Pagination: stack and centre */
+  .pagination.pagination--center {
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 0;
+  }
+  .pagination-btn {
+    padding: 7px 18px;
+    font-size: 13px;
+  }
+  .pagination-label {
+    font-size: 12px;
+  }
 }
 
 /* Loading skeleton */

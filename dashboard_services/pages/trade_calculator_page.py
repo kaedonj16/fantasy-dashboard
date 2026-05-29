@@ -556,6 +556,61 @@ def build_trade_calculator_body(
             .otc-strategy-partner .dot {{
               width:6px;height:6px;border-radius:50%;flex-shrink:0;
             }}
+
+            /* ── Mobile: 600px ── */
+            @media (max-width:600px) {{
+              .otc-arch-chip {{
+                font-size:11px;
+                padding:6px 6px;
+              }}
+              .otc-strategy-impact-badge {{
+                font-size:9px;
+                padding:2px 5px;
+              }}
+              .otc-sugg-subtab {{
+                padding:6px 10px;
+                font-size:11px;
+              }}
+            }}
+
+            /* ── Mobile: 480px ── */
+            @media (max-width:480px) {{
+              .otc-strategy-chips {{
+                grid-template-columns:repeat(2,1fr);
+                padding:8px 10px 4px;
+              }}
+              .otc-arch-chip {{
+                font-size:12px;
+                padding:8px 6px;
+              }}
+              #otcStrategyCards {{
+                padding:8px 10px;
+              }}
+              .otc-strategy-impact-row {{
+                padding:7px 10px;
+                gap:6px;
+              }}
+              .otc-strategy-impact-stats {{
+                gap:4px;
+              }}
+              .otc-strategy-impact-badge {{
+                font-size:9px;
+                padding:2px 4px;
+              }}
+              .otc-strategy-impact-name {{
+                font-size:12px;
+              }}
+              .otc-strategy-section-head {{
+                padding:6px 10px 2px;
+              }}
+              .otc-sugg-subtab-bar {{
+                padding:8px 10px;
+              }}
+              .otc-sugg-subtab {{
+                padding:5px 8px;
+                font-size:11px;
+              }}
+            }}
           </style>
 
           </div><!-- /#otcCalcTab -->
