@@ -2999,18 +2999,17 @@ window.initTradePage = function initTradePage(root = document) {
               <span class="otc-sugg-pkg-value ${vc(opt.value_class)}">${esc(opt.value_label)}</span>
               <span class="otc-sugg-pkg-freq">from ${esc(opt.team_name)}</span>
             </div>
-            <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:6px;margin-top:6px;">
-              <div>
+            <div class="otc-sugg-pkg-sides">
+              <div class="otc-sugg-pkg-side">
                 <div class="otc-sugg-pkg-side-label">YOU GIVE</div>
                 <div class="otc-sugg-pkg-assets">
-                  <div class="otc-sugg-pkg-asset" style="overflow:hidden;">
-                    <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};flex-shrink:0;">${focusPos}</span>
-                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(playerName)}</span>
+                  <div class="otc-sugg-pkg-asset">
+                    <span class="otc-sugg-pkg-asset-pos" style="background:${focusCol}20;color:${focusCol};">${focusPos}</span>
+                    <span>${esc(playerName)}</span>
                   </div>
                 </div>
               </div>
-              <div class="otc-sugg-pkg-divider" style="padding-top:18px;">&rarr;</div>
-              <div>
+              <div class="otc-sugg-pkg-side">
                 <div class="otc-sugg-pkg-side-label">YOU GET</div>
                 <div class="otc-sugg-pkg-assets">${opt.receive.map(assetHtml).join("")}</div>
               </div>

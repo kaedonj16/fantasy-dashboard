@@ -21423,6 +21423,7 @@ def api_trade_intel_player_send_packages(player_id: str):
                     }
                     for pid in (r.get("players") or [])
                     if str(pid) in values_by_id
+                    and str(pid) != str(player_id)  # never offer the player back
                     and values_by_id[str(pid)]["value"] >= 50
                     and values_by_id[str(pid)]["position"] in ("QB", "RB", "WR", "TE")
                 ],
