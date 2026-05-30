@@ -15968,20 +15968,28 @@ def api_league_players():
 
             if norm and norm in name_to_idx:
                 # Player already in model table (drafted + linked to Sleeper).
-                # Mark as rookie, ensure team is set from Sleeper index, and
-                # override values with pipeline values.
+                # Mark as rookie and update team. Preserve player_values DB values
+                # when present — only fill in gaps with pipeline values.
                 existing = model_value_table[name_to_idx[norm]]
                 existing["is_rookie"] = True
                 if _team and _team != "FA":
                     existing["team"] = _team
-                existing["value"]      = rookie_entry["value"]
-                existing["sf_value"]   = rookie_entry["sf_value"]
-                existing["value_8"]    = rookie_entry["value_8"]
-                existing["value_12"]   = rookie_entry["value_12"]
-                existing["value_14"]   = rookie_entry["value_14"]
-                existing["sf_value_8"] = rookie_entry["sf_value_8"]
-                existing["sf_value_12"]= rookie_entry["sf_value_12"]
-                existing["sf_value_14"]= rookie_entry["sf_value_14"]
+                if not float(existing.get("value") or 0):
+                    existing["value"]    = rookie_entry["value"]
+                if not float(existing.get("sf_value") or 0):
+                    existing["sf_value"] = rookie_entry["sf_value"]
+                if not float(existing.get("value_8") or 0):
+                    existing["value_8"]    = rookie_entry["value_8"]
+                if not float(existing.get("value_12") or 0):
+                    existing["value_12"]   = rookie_entry["value_12"]
+                if not float(existing.get("value_14") or 0):
+                    existing["value_14"]   = rookie_entry["value_14"]
+                if not float(existing.get("sf_value_8") or 0):
+                    existing["sf_value_8"] = rookie_entry["sf_value_8"]
+                if not float(existing.get("sf_value_12") or 0):
+                    existing["sf_value_12"]= rookie_entry["sf_value_12"]
+                if not float(existing.get("sf_value_14") or 0):
+                    existing["sf_value_14"]= rookie_entry["sf_value_14"]
             else:
                 model_value_table.append(rookie_entry)
 

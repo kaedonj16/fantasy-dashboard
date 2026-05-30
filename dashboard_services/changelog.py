@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-05-29",
         "tag": "feature",
-        "text": "Trade Strategy: All four archetypes (Contending, Rebuilding, Consolidate, Distribute) now use the same Monte Carlo simulation as the Standings page. Win %, playoff odds, and championship probability update per suggested trade so you can see exactly how much each move shifts your outlook. Projections-based in the offseason, blended with live scoring in-season.",
+        "text": "Trade Strategy: All four archetypes (Contending, Rebuilding, Consolidate, Distribute) now include live playoff odds and win probability. Each suggested trade shows how much it shifts your Win %, playoff odds, and championship probability using a Monte Carlo simulation. Projections-based in the offseason, blended with live scoring in-season.",
         "link": "/trade?tab=suggestions"
     },
     {
