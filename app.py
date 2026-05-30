@@ -14765,7 +14765,7 @@ def get_model_value_table_cached():
 
     # Snapshot raw player_values data before FC zeroing so the rookie append
     # block can recover values for rookies that get zeroed (not in FC list).
-    _pv_raw: dict = {str(p.get("id") or ""): p for p in (tbl or []) if p.get("id")}
+    _pv_raw: dict = {str(p.get("id") or ""): dict(p) for p in (tbl or []) if p.get("id")}
 
     # Zero out players not tracked by any external market source (FC or DP).
     # The ML model assigns some value to every player in the index; without this
@@ -15755,7 +15755,7 @@ def api_sparklines():
 @app.route("/api/league-players")
 def api_league_players():
     try:
-        model_value_table = list(get_model_value_table_cached() or [])
+        model_value_table = [dict(p) for p in (get_model_value_table_cached() or [])]
     except Exception as e:
         print(f"[api/league-players] Cache load failed: {e}")
         model_value_table = []
