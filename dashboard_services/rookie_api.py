@@ -180,9 +180,10 @@ def rankings():
         league_type = (request.args.get("league_type") or "1qb").lower()
         league_size = request.args.get("league_size", type=int) or 10
 
-        # Build mv_map matching get_model_value_table_cached logic:
-        # JSON first (includes 2026 rookies), then DB overlay (calibrated veterans win).
-        # If DB returns only veteran rows, JSON still fills in rookies not yet in player_values.
+        # Build mv_map: JSON model → DB player_values (source of truth).
+        # player_values contains calibrated values for all players including
+        # rookies that have been linked to a sleeper_id. Keyed by player_id
+        # (= sleeper_id), so the lookup below by sleeper_id finds them directly.
         try:
             from utils.utils import load_model_value_table as _lmvt
             _json_list = list(_lmvt() or [])
@@ -194,7 +195,7 @@ def rankings():
         except Exception:
             _db_list = []
         mv_map: dict = {str(p["id"]): p for p in _json_list if p.get("id")}
-        for p in _db_list:  # DB calibrated values overwrite JSON for established players
+        for p in _db_list:  # DB values overwrite JSON (DB is calibrated source of truth)
             if p.get("id"):
                 mv_map[str(p["id"])] = p
 

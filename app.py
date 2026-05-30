@@ -14744,6 +14744,10 @@ def get_model_value_table_cached():
     if not tbl:
         tbl = list(load_model_value_table() or [])
 
+    # Snapshot raw player_values data before FC zeroing so the rookie append
+    # block can recover values for rookies that get zeroed (not in FC list).
+    _pv_raw: dict = {str(p.get("id") or ""): p for p in (tbl or []) if p.get("id")}
+
     # Zero out players not tracked by any external market source (FC or DP).
     # The ML model assigns some value to every player in the index; without this
     # guard, washed-up vets and low-usage players leak into the rankings.
@@ -14802,25 +14806,30 @@ def get_model_value_table_cached():
         rk_rows = list(get_rookie_rankings_from_db(draft_year))
         if rk_rows:
             _mvc_idx = _mvc_lpi() or {}
-            # IDs already present in player_values with a real value
+            # IDs already present in player_values with a real value after FC zeroing
             _existing_ids = {str(p.get("id") or "") for p in tbl if float(p.get("value") or 0) > 0}
             for r in rk_rows:
                 sid  = str(r.get("sleeper_id")) if r.get("sleeper_id") else None
                 name = r.get("name") or ""
                 _rid = sid if sid else (r.get("player_id") or f"rookie_{name}")
-                # Skip if already tracked in player_values (EMA history wins)
+                # Skip if already showing with a real value
                 if str(_rid) in _existing_ids:
                     continue
                 _idx_team = _mvc_idx.get(sid, {}).get("team", "") if sid else ""
                 _team = r.get("actual_nfl_team") or _idx_team or r.get("team") or "FA"
+                # Prefer raw player_values (may have been zeroed by FC filter but
+                # the DB value is still correct). Fall back to rookie_value.
+                _pv = _pv_raw.get(sid or "") if sid else None
+                _v1  = float((_pv or {}).get("value") or 0) or float(r.get("rookie_value") or 0)
+                _vsf = float((_pv or {}).get("sf_value") or 0) or float(r.get("rookie_sf_value") or r.get("rookie_value") or 0)
                 tbl.append({
                     "id":        _rid,
                     "name":      name,
                     "team":      _team,
                     "position":  r.get("position") or "UNK",
                     "age":       r.get("age"),
-                    "value":     float(r.get("rookie_value") or 0),
-                    "sf_value":  float(r.get("rookie_sf_value") or r.get("rookie_value") or 0),
+                    "value":     _v1,
+                    "sf_value":  _vsf,
                     "is_rookie": True,
                 })
     except Exception as e:
