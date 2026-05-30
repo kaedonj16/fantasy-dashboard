@@ -733,8 +733,27 @@ def build_prospects_body() -> str:
     if (!panel || !btn) return;
 
     var isOpen = panel.style.display === 'block';
-    panel.style.display = isOpen ? 'none' : 'block';
-    btn.classList.toggle('active', !isOpen);
+    if (isOpen) {
+      panel.style.display = 'none';
+      btn.classList.remove('active');
+    } else {
+      panel.style.display = 'block';
+      btn.classList.add('active');
+      if (window.innerWidth <= 768) {
+        var rect = btn.getBoundingClientRect();
+        panel.style.position = 'fixed';
+        panel.style.top = (rect.bottom + 6) + 'px';
+        panel.style.left = '12px';
+        panel.style.right = '12px';
+        panel.style.minWidth = '';
+      } else {
+        panel.style.position = '';
+        panel.style.top = '';
+        panel.style.left = '';
+        panel.style.right = '';
+        panel.style.minWidth = '';
+      }
+    }
   }
 
   // Update active settings indicator tags
