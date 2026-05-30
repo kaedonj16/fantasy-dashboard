@@ -7,13 +7,13 @@ CHANGELOG = [
     {
         "date": "2026-05-29",
         "tag": "feature",
-        "text": "Trade Strategy: Win % and playoff odds on all four strategy archetypes (Contending, Rebuilding, Consolidate, Distribute) now run the same Monte Carlo simulation as the Standings page — projections-based in the offseason, blended with real scoring in-season. Your current playoff odds are shown inline so you can see exactly how much each suggested trade moves the needle.",
+        "text": "Trade Strategy: All four archetypes (Contending, Rebuilding, Consolidate, Distribute) now include live playoff odds and win probability. Each suggested trade shows how much it shifts your Win %, playoff odds, and championship probability using a Monte Carlo simulation. Projections-based in the offseason, blended with live scoring in-season.",
         "link": "/trade?tab=suggestions"
     },
     {
         "date": "2026-05-29",
         "tag": "feature",
-        "text": "Trade Strategy: Distribute suggestions fixed and improved. Cards now correctly show the net effect of the trade (stud out, depth in) rather than just the departure cost. Distribute, Rebuilding, Contending, and Consolidate all show a 'Simulating…' indicator while results load and switch chips instantly on repeat visits.",
+        "text": "Trade Strategy: Distribute suggestions now show the full picture of each trade: what leaves, what comes back, and the net value effect. All four strategy tabs display a Simulating indicator while results load and switch instantly on repeat visits.",
         "link": "/trade?tab=suggestions"
     },
     {
