@@ -180,11 +180,10 @@ def rankings():
         league_type = (request.args.get("league_type") or "1qb").lower()
         league_size = request.args.get("league_size", type=int) or 10
 
-        # Build mv_map: JSON model → DB player_values (calibrated) → FC CSV fallback.
-        # JSON and DB cover established players. The FC CSV layer fills in rookies
-        # that FC tracks but aren't in player_values yet (new draftees).
-        # FC values are normalized to 0-999 scale (top player = 999.9) to match
-        # the same scale used by player_values.
+        # Build mv_map: JSON model → DB player_values (source of truth).
+        # player_values contains calibrated values for all players including
+        # rookies that have been linked to a sleeper_id. Keyed by player_id
+        # (= sleeper_id), so the lookup below by sleeper_id finds them directly.
         try:
             from utils.utils import load_model_value_table as _lmvt
             _json_list = list(_lmvt() or [])
@@ -196,32 +195,9 @@ def rankings():
         except Exception:
             _db_list = []
         mv_map: dict = {str(p["id"]): p for p in _json_list if p.get("id")}
-        for p in _db_list:  # DB calibrated values overwrite JSON for established players
+        for p in _db_list:  # DB values overwrite JSON (DB is calibrated source of truth)
             if p.get("id"):
                 mv_map[str(p["id"])] = p
-        # FC CSV fallback for players not yet in player_values (primarily 2026 rookies)
-        try:
-            from data_building.external_data.external_values_scraper import (
-                load_fantasycalc_api_values as _lfc,
-                load_fantasycalc_sf_api_values as _lfcsf,
-            )
-            _fc1 = _lfc() or []
-            _fcsf = _lfcsf() or []
-            if _fc1:
-                _max1  = max((float(r.get("value") or 0) for r in _fc1), default=1) or 1
-                _maxsf = max((float(r.get("value") or 0) for r in _fcsf), default=_max1) or _max1
-                _sc1, _scsf = 999.9 / _max1, 999.9 / _maxsf
-                _fcsf_by_sid = {str(r.get("sleeper_id") or ""): float(r.get("value") or 0)
-                                for r in _fcsf if r.get("sleeper_id")}
-                for _r in _fc1:
-                    _sid = str(_r.get("sleeper_id") or "").strip()
-                    if _sid and _sid not in mv_map:
-                        _v1  = round(float(_r.get("value") or 0) * _sc1, 1)
-                        _vsf = round(_fcsf_by_sid.get(_sid, float(_r.get("value") or 0)) * _scsf, 1)
-                        if _v1 > 0:
-                            mv_map[_sid] = {"id": _sid, "value": _v1, "sf_value": _vsf or _v1}
-        except Exception:
-            pass
 
         rows = _get_rankings(year)
 
