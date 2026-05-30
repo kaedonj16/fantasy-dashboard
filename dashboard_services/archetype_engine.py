@@ -156,9 +156,7 @@ def _ppg_lineup(
         s = str(slot).upper()
         if s in _BENCH_SLOTS:
             continue
-        if s in {"SUPER_FLEX", "QB", "RB", "WR", "TE"} and s not in {"QB", "RB", "WR", "TE"}:
-            sflex_slots += 1
-        elif s == "SUPER_FLEX":
+        if s == "SUPER_FLEX":
             sflex_slots += 1
         elif s in {"FLEX", "WRRB_FLEX", "WRTE_FLEX", "RBWRTE", "RBWR"}:
             flex_slots += 1

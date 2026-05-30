@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 from typing import Optional, Iterable
 import numpy as np
 
 from dashboard_services.db import get_conn
+
+logger = logging.getLogger(__name__)
 
 
 def init_value_history_db() -> None:
@@ -250,7 +253,7 @@ def load_latest_value_snapshot(source: str = "model") -> list[dict]:
                 position,
                 team,
                 value,
-                sf_value,
+                value_sf,
                 value_8,
                 value_12,
                 value_14,
@@ -321,7 +324,7 @@ def load_latest_value_snapshot(source: str = "model") -> list[dict]:
             else:
                 player["age"] = None
     except Exception as e:
-        print(f"[load_latest_value_snapshot] Failed to enrich ages: {e}")
+        logger.info(f"[load_latest_value_snapshot] Failed to enrich ages: {e}")
         for player in players:
             player["age"] = None
 
@@ -671,24 +674,14 @@ def _get_top_movers_from_db(
 
             rows = cur.fetchall()
 
-    # Build name map: model table (covers picks + all players) then players_index fallback
-    name_map: dict = {}
-    try:
-        from utils.utils import load_model_value_table
-        for p in (load_model_value_table(apply_calibration=False) or []):
-            pid = str(p.get("id") or "")
-            nm = p.get("name") or ""
-            if pid and nm and nm != "Unknown":
-                name_map[pid] = nm
-    except Exception:
-        pass
+    # Build a players_index fallback for rows where the DB name column is missing/Unknown
+    players_index_map: dict = {}
     try:
         from utils.utils import load_players_index
         for pid, info in (load_players_index() or {}).items():
-            if pid not in name_map:
-                nm = (info or {}).get("name") or ""
-                if nm:
-                    name_map[str(pid)] = nm
+            nm = (info or {}).get("name") or ""
+            if nm:
+                players_index_map[str(pid)] = nm
     except Exception:
         pass
 
@@ -725,11 +718,10 @@ def _get_top_movers_from_db(
         # Skip picks — they're not players and their value swings are data noise
         if _pick_re.match(player_id):
             continue
-        resolved = name_map.get(player_id)
-        if resolved:
-            row_dict["name"] = resolved
-        elif not row_dict.get("name") or row_dict["name"] == "Unknown":
-            row_dict["name"] = f"Player {player_id}"
+        # Trust the name column from the DB; fall back to players_index then a placeholder
+        if not row_dict.get("name") or row_dict["name"] == "Unknown":
+            fallback = players_index_map.get(player_id)
+            row_dict["name"] = fallback if fallback else f"Player {player_id}"
         movers.append(row_dict)
     
     risers = movers[:limit]
@@ -771,102 +763,14 @@ def _get_top_movers_from_parquet(days: int, limit: int) -> dict:
             "fallers": [],
         }
     
-    try:
-        df = pd.read_parquet(parquet_file)
-        
-        # Since we don't have historical snapshots in parquet, we'll create a simple delta
-        # based on recent performance vs average performance
-        if 'ppr_ppg' in df.columns and len(df) > 0:
-            # Create a simple value metric based on recent performance
-            df['value'] = df['ppr_ppg'] * 10  # Simple conversion to value-like numbers
-            
-            # Create some artificial movement by comparing to a baseline
-            # In a real implementation, this would use actual historical snapshots
-            np.random.seed(42)  # For consistent results
-            
-            # Generate deltas with both positive and negative values
-            # Use a normal distribution centered at 0 to get both risers and fallers
-            df['delta'] = np.random.normal(0, 3, len(df))  # Random movement around 0 with more variance
-            
-            # Ensure we have a good mix of positive and negative deltas
-            # Force the top 20% to be positive (risers) and bottom 20% to be negative (fallers)
-            df_sorted_temp = df.sort_values('ppr_ppg', ascending=False)
-            n = len(df_sorted_temp)
-            
-            # Top performers get positive deltas (risers)
-            top_indices = df_sorted_temp.head(int(n * 0.2)).index
-            df.loc[top_indices, 'delta'] = np.abs(df.loc[top_indices, 'delta']) + 1
-            
-            # Bottom performers get negative deltas (fallers)  
-            bottom_indices = df_sorted_temp.tail(int(n * 0.2)).index
-            df.loc[bottom_indices, 'delta'] = -np.abs(df.loc[bottom_indices, 'delta']) - 1
-            
-            # Sort by delta to get risers and fallers
-            df_sorted = df.sort_values('delta', ascending=False)
-            
-            # Process the data
-            import re as _re2
-            _pick_pat = _re2.compile(r"^\d{4}_\d+_")
-            movers = []
-            for _, row in df_sorted.head(limit * 2).iterrows():  # Get more to have both risers and fallers
-                player_id = str(row['sleeper_id'])
-                if _pick_pat.match(player_id):
-                    continue
-                player_info = players_index.get(player_id) or {}
-                
-                # Use player info name if available, otherwise use parquet name or create fallback
-                name = player_info.get('name')
-                if not name:
-                    name = row.get('name')
-                    if not name or pd.isna(name):
-                        position = row.get('position', '')
-                        team = row.get('team', '')
-                        if position and team:
-                            name = f"{position} ({team})"
-                        elif position:
-                            name = f"{position} Player"
-                        else:
-                            name = f"Player {player_id}"
-                
-                mover_data = {
-                    'player_id': player_id,
-                    'name': name,
-                    'position': row.get('position', ''),
-                    'team': row.get('team', ''),
-                    'delta': round(float(row['delta']), 1),
-                    'old_value': round(float(row['value'] - row['delta']), 1),
-                    'new_value': round(float(row['value']), 1)
-                }
-                movers.append(mover_data)
-            
-            # Separate risers and fallers
-            risers = [m for m in movers if m['delta'] > 0][:limit]
-            fallers = [m for m in movers if m['delta'] < 0][:limit]
-            
-            return {
-                "latest_date": datetime.now().date().isoformat(),
-                "comparison_date": (datetime.now() - timedelta(days=days)).date().isoformat(),
-                "requested_days": days,
-                "used_days": days,
-                "risers": risers,
-                "fallers": fallers,
-            }
-        else:
-            return {
-                "latest_date": None,
-                "comparison_date": None,
-                "requested_days": days,
-                "used_days": None,
-                "risers": [],
-                "fallers": [],
-            }
-            
-    except Exception as e:
-        return {
-            "latest_date": None,
-            "comparison_date": None,
-            "requested_days": days,
-            "used_days": None,
-            "risers": [],
-            "fallers": [],
-        }
+    # Parquet files contain only a single snapshot — no historical deltas are available,
+    # so we cannot compute real risers/fallers. Return empty lists rather than fabricating
+    # movement from random data.
+    return {
+        "latest_date": None,
+        "comparison_date": None,
+        "requested_days": days,
+        "used_days": None,
+        "risers": [],
+        "fallers": [],
+    }
