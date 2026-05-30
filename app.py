@@ -502,44 +502,113 @@ FORM_BODY = """
 
   <div class="home-content-wrapper">
     <section class="home-feature-list-card">
-    <section class="home-feature-list">
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Trade Calculator</span><span class="home-feature-row-desc">AI-powered deal evaluation with counter suggestions and similar trade history</span></div>
+      <div class="home-features-header">
+        <span class="home-features-label">Platform Features</span>
+        <span class="home-features-count">10 tools</span>
       </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Dynasty Rankings</span><span class="home-feature-row-desc">Daily-updated hybrid values blending consensus data with advanced metrics</span></div>
+      <div class="home-feature-list">
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(99,102,241,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#6366f1;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14Z"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span></span>
+            <span class="home-feature-row-desc">Archetype-driven suggestions with Monte Carlo win probability — see exactly how each trade shifts your playoff odds</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(59,130,246,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Trade Calculator</span>
+            <span class="home-feature-row-desc">AI-powered deal grades, counter proposals, and real dynasty trade comparisons from thousands of logged transactions</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(16,185,129,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Dynasty Rankings</span>
+            <span class="home-feature-row-desc">Calibrated dynasty values updated daily — blending consensus data with advanced metrics, archetypes, and trend charts</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(167,139,250,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#a78bfa;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Rookie Prospects</span>
+            <span class="home-feature-row-desc">Full prospect profiles with college metrics, RAS athleticism scores, draft capital analysis, and real-time ADP movement</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(245,158,11,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#f59e0b;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-4"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Playoff Odds</span>
+            <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week — know your exact path to the playoffs and projected championship probability</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(6,182,212,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#06b6d4;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Weekly Hub</span>
+            <span class="home-feature-row-desc">Game-day command center with live scoring, optimal lineup suggestions, injury news, and head-to-head matchup breakdowns</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(249,115,22,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#f97316;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Breakout Tracker</span>
+            <span class="home-feature-row-desc">Spot value shifts before the market moves — tracks target share, snap counts, and depth chart changes to surface opportunities</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(236,72,153,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#ec4899;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Waiver Wire</span>
+            <span class="home-feature-row-desc">Personalized pickup rankings tailored to your roster's needs, scoring format, positional scarcity, and remaining schedule</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(239,68,68,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#ef4444;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Team Analytics</span>
+            <span class="home-feature-row-desc">Roster grades by position group, strength-of-schedule projections, and side-by-side comparisons across your entire league</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(234,179,8,.12);border-radius:8px;">
+            <i class="fa-solid fa-trophy" style="font-size:16px;color:#eab308;" aria-hidden="true"></i>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">League History</span>
+            <span class="home-feature-row-desc">AI season recaps, head-to-head rivalry records, historical draft grades, and complete year-by-year standings</span>
+          </div>
+        </div>
+
       </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#a78bfa;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Rookie Prospects</span><span class="home-feature-row-desc">Prospect profiles with college metrics, athleticism scores, and ADP trends</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#f59e0b;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Weekly Hub</span><span class="home-feature-row-desc">Live scoring, projections, injury news, and matchup context for gameday</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#06b6d4;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Breakout Candidates</span><span class="home-feature-row-desc">Spot usage spikes from depth chart shifts, target share, and opportunity data</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#f97316;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Waiver Wire</span><span class="home-feature-row-desc">Personalized pickups ranked by roster fit and positional need</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#ef4444;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Team Analytics</span><span class="home-feature-row-desc">Position grades, roster composition, and competitive advantages across the league</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#f43f5e;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Graphs & Trends</span><span class="home-feature-row-desc">PF/PA, SOS, playoff odds, luck metrics, and standings trajectory over time</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><i class="fa-solid fa-trophy" style="font-size:18px;color:#eab308;" aria-hidden="true"></i></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Historical Insights</span><span class="home-feature-row-desc">AI season recaps, rivalry records, draft grades, and full championship history</span></div>
-      </div>
-    </section>
     </section>
 
     <aside class="home-updates-sidebar">
@@ -866,7 +935,7 @@ def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict]) -> dic
         save_viewer_session(league_viewer)
         return league_viewer
     else:
-        print(f"[get_viewer_session_for_league] Could not resolve {username} in current league, returning session data")
+        logger.info(f"[get_viewer_session_for_league] Could not resolve {username} in current league, returning session data")
         return session_viewer
 
 
@@ -1038,10 +1107,20 @@ def store_model_values(
         json.dump(value_table, f, ensure_ascii=False)
 
 
+_HISTORY_SEASONS_CACHE: dict = {}
+_HISTORY_SEASONS_TTL = 600  # 10 minutes
+
+
 def get_available_history_seasons(platform: str, league_id: str, current_season: int) -> List[int]:
     """
     Returns completed seasons only (excludes current season).
+    Results are cached for 10 minutes to avoid redundant league-chain traversal.
     """
+    _key = (platform, league_id, int(current_season))
+    _cached = _HISTORY_SEASONS_CACHE.get(_key)
+    if _cached and time.time() - _cached[1] < _HISTORY_SEASONS_TTL:
+        return _cached[0]
+
     seasons = sorted(
         build_league_history_map(platform, league_id, current_season).keys(),
         reverse=True,
@@ -1049,6 +1128,7 @@ def get_available_history_seasons(platform: str, league_id: str, current_season:
 
     # remove current season
     seasons = [s for s in seasons if int(s) < int(current_season)]
+    _HISTORY_SEASONS_CACHE[_key] = (seasons, time.time())
 
     return seasons
 
@@ -1730,7 +1810,7 @@ def _load_rookie_rankings_for_ctx() -> list[dict]:
             if r.get("position") in ("QB", "RB", "WR", "TE")
         ]
     except Exception as e:
-        print(f"[rookie_rankings] skipped: {e}")
+        logger.info(f"[rookie_rankings] skipped: {e}")
         return []
 
 
@@ -2718,22 +2798,22 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     try:
         ctx["scoring_settings"] = get_effective_scoring_settings()
     except Exception as e:
-        print(f"[ctx] scoring_settings failed: {e}")
+        logger.info(f"[ctx] scoring_settings failed: {e}")
 
     try:
         ctx["roster_positions"] = get_roster_positions()
     except Exception as e:
-        print(f"[ctx] roster_positions failed: {e}")
+        logger.info(f"[ctx] roster_positions failed: {e}")
 
     try:
         ctx["league_settings"] = get_league_settings()
     except Exception as e:
-        print(f"[ctx] league_settings failed: {e}")
+        logger.info(f"[ctx] league_settings failed: {e}")
 
     try:
         ctx["total_rosters"] = get_total_rosters()
     except Exception as e:
-        print(f"[ctx] total_rosters failed, falling back to len(rosters): {e}")
+        logger.info(f"[ctx] total_rosters failed, falling back to len(rosters): {e}")
         ctx["total_rosters"] = len(rosters)
 
     roster_counts = count_roster_positions(get_roster_positions())
@@ -2844,7 +2924,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                         live_game_ids,
                     )
                 except Exception as e:
-                    print(f"[refresh] live week stats refresh skipped: {e}")
+                    logger.info(f"[refresh] live week stats refresh skipped: {e}")
 
                 try:
                     get_week_projections_cached(
@@ -2854,7 +2934,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                         True,
                     )
                 except Exception as e:
-                    print(f"[refresh] live projections refresh skipped: {e}")
+                    logger.info(f"[refresh] live projections refresh skipped: {e}")
 
             ctx["proj_by_week"] = build_projections_by_week(viewed_season, weeks)
 
@@ -2936,7 +3016,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                     draft_ended=_ref_draft_ended,
                 )
             except Exception as e:
-                print(f"[refresh] picks refresh skipped: {e}")
+                logger.info(f"[refresh] picks refresh skipped: {e}")
 
         # These aren't strictly required because build_offseason_dashboard_body can rebuild
         # from ctx, but keeping them fresh helps consistency if reused elsewhere.
@@ -2951,7 +3031,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                 platform=platform,
             )
         except Exception as e:
-            print(f"[refresh] teams overview refresh skipped: {e}")
+            logger.info(f"[refresh] teams overview refresh skipped: {e}")
 
     # ---------- Invalidate rendered HTML cache for refreshable pages ----------
     page_html = entry.setdefault("page_html", {})
@@ -3004,7 +3084,7 @@ def render_standings(team_stats, length) -> str:
         rows.append(f"""
             <tr>
               <td class="num">{int(row['Rank'])}</td>
-              <td class="team">{img} {row['owner']}</td>
+              <td class="team">{img} {html.escape(str(row['owner']))}</td>
               <td>{record}</td>
               <td>{row['PF']:.1f}</td>
               <td>{row['PA']:.1f}</td>
@@ -4218,7 +4298,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
                             countdown_text = "Season started"
                             draft_subtext = "Week 1 is underway!"
                     except Exception as e:
-                        print(f"[offseason] Failed to parse season_start_date: {e}")
+                        logger.info(f"[offseason] Failed to parse season_start_date: {e}")
                         countdown_text = "Draft passed"
                         draft_subtext = "Season starting soon."
                 else:
@@ -4559,7 +4639,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
                 active_week=week_to_show,
             )
     except Exception as e:
-        print(f"[offseason] Failed to generate matchup carousel: {e}")
+        logger.info(f"[offseason] Failed to generate matchup carousel: {e}")
         matchup_html = ""
 
     gm_card_html = ""
@@ -5017,12 +5097,12 @@ def _render_weekly_matchups(df_weekly: pd.DataFrame, week: int) -> str:
         rows.append(
             f"<div class='matchup-row'>"
             f"  <div class='m-team-col'>"
-            f"    <div class='m-team-name winner'>{win['owner']}</div>"
+            f"    <div class='m-team-name winner'>{html.escape(str(win['owner']))}</div>"
             f"    <div class='m-score'>{float(win['points']):.1f}</div>"
             f"  </div>"
             f"  <div class='m-vs-col'>def</div>"
             f"  <div class='m-team-col'>"
-            f"    <div class='m-team-name loser'>{lose['owner']}</div>"
+            f"    <div class='m-team-name loser'>{html.escape(str(lose['owner']))}</div>"
             f"    <div class='m-score'>{float(lose['points']):.1f}</div>"
             f"  </div>"
             f"  <div class='m-margin'>+{margin:.1f}</div>"
@@ -5519,7 +5599,7 @@ def build_projections_by_week(season: int, weeks: int):
         if projections:
             any_projections = True
     if not any_projections:
-        print(f"[projections] No projection data available for season {season}")
+        logger.info(f"[projections] No projection data available for season {season}")
     bundles["_available"] = any_projections
     return bundles
 
@@ -8064,6 +8144,7 @@ def api_trade_count():
 
 
 @app.route("/api/refresh-league", methods=["POST"])
+@limiter.limit("4 per minute")
 def api_refresh_league():
     """Force-expire a league context so the next request rebuilds it from source."""
     payload = request.get_json(silent=True) or {}
@@ -11229,8 +11310,20 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
         # ── Bench Warmer MVP: points left on bench ─────────────────────────
         try:
             from dashboard_services.platform_api import get_matchups as _gmu
-            for _w in range(1, _po_start):  # regular season only
-                for _mu in (_gmu(platform, rid, _w, hist_s) or []):
+            from concurrent.futures import ThreadPoolExecutor as _BW_TPE
+
+            def _fetch_bw_week(_w):
+                try:
+                    return _w, _gmu(platform, rid, _w, hist_s) or []
+                except Exception:
+                    return _w, []
+
+            _bw_weeks = list(range(1, _po_start))
+            with _BW_TPE(max_workers=min(len(_bw_weeks), 8)) as _bw_pool:
+                _bw_results = dict(_bw_pool.map(_fetch_bw_week, _bw_weeks))
+
+            for _w_mus in _bw_results.values():
+                for _mu in _w_mus:
                     _roster_id = str(_mu.get("roster_id", ""))
                     _uid = roster_to_uid.get(_roster_id, "")
                     if not _uid:
@@ -11716,11 +11809,11 @@ def page_history(platform: str, season: int, league_id: str):
             mock_ctx = _build_tour_mock_history_ctx()
             body_html = build_history_body(
                 history_ctx=mock_ctx,
-                available_seasons=[2024],
+                available_seasons=[datetime.now().year - 1],
                 base_platform=platform,
                 base_season=season,
                 base_league_id=league_id,
-                selected_history_season=2024,
+                selected_history_season=datetime.now().year - 1,
                 resolved_history_league_id="tour_mock",
             )
         except Exception as exc:
@@ -11925,7 +12018,7 @@ def build_optimal_body(ctx):
     from dashboard_services.platform_api import get_matchups as _gm
 
     platform = ctx.get("platform") or "sleeper"
-    season   = ctx.get("season") or 2025
+    season   = ctx.get("season") or datetime.now().year
     league_id = ctx.get("league_id") or ""
     viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     roster_positions = ctx.get("roster_positions") or []
@@ -11987,13 +12080,17 @@ def build_optimal_body(ctx):
 
     # ── Fetch only the weeks this view actually needs ─────────────────────────
     # Weekly views need exactly one week; season views need all completed weeks.
-    all_matchups: dict = {}
     weeks_to_fetch = [sel_week] if period == "weekly" else list(range(1, max_week + 1))
-    for w in weeks_to_fetch:
+
+    def _fetch_opt_week(w):
         try:
-            all_matchups[w] = _gm(platform, league_id, w, season) or []
+            return w, _gm(platform, league_id, w, season) or []
         except Exception:
-            all_matchups[w] = []
+            return w, []
+
+    from concurrent.futures import ThreadPoolExecutor as _OPT_TPE
+    with _OPT_TPE(max_workers=min(len(weeks_to_fetch), 8)) as _opt_pool:
+        all_matchups: dict = dict(_opt_pool.map(_fetch_opt_week, weeks_to_fetch))
 
     def _roster_weeks(rid: str) -> list:
         weeks = []
@@ -12088,7 +12185,7 @@ def build_optimal_body(ctx):
         body_html = (
             f"<div class='card' style='overflow:auto;'>"
             f"<div class='card-header'><h3>League Lineup Efficiency — Season</h3></div>"
-            f"<table style='width:100%;border-collapse:collapse;'>"
+            f"<table style='width:100%;min-width:520px;border-collapse:collapse;'>"
             f"<thead><tr style='border-bottom:2px solid var(--border);'>"
             f"{_TH}#</th>{_TH}TEAM</th>{_TH}EFFICIENCY</th>"
             f"{_TH}ACTUAL PTS</th>{_TH}OPTIMAL PTS</th>{_TH}LEFT ON BENCH</th>"
@@ -12155,7 +12252,7 @@ def build_optimal_body(ctx):
         body_html = (
             f"<div class='card' style='overflow:auto;'>"
             f"<div class='card-header'><h3>Week {sel_week} — League Efficiency</h3></div>"
-            f"<table style='width:100%;border-collapse:collapse;'>"
+            f"<table style='width:100%;min-width:520px;border-collapse:collapse;'>"
             f"<thead><tr style='border-bottom:2px solid var(--border);'>"
             f"{_TH}TEAM</th>{_TH}ACTUAL</th>{_TH}OPTIMAL</th>{_TH}LEFT ON BENCH</th>"
             f"</tr></thead><tbody>{rows_html}</tbody></table></div>"
@@ -12454,7 +12551,7 @@ def _compute_schedule_grid(season: int, pids, weeks):
 
 def build_schedule_body(ctx):
     import json as _json
-    season     = int(ctx.get("season") or 2025)
+    season     = int(ctx.get("season") or datetime.now().year)
     league_id  = ctx.get("league_id") or ""
     platform   = ctx.get("platform") or "sleeper"
     viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
@@ -13982,7 +14079,7 @@ def build_commissioner_body(ctx):
     from dashboard_services.service import get_transactions_by_week
 
     platform   = ctx.get("platform") or "sleeper"
-    season     = ctx.get("season") or 2025
+    season     = ctx.get("season") or datetime.now().year
     league_id  = ctx.get("league_id") or ""
     rosters    = ctx.get("rosters") or []
     users      = ctx.get("users") or []
@@ -14537,6 +14634,7 @@ def api_weekly_week():
 
 
 @app.route("/api/refresh-page", methods=["POST"])
+@limiter.limit("4 per minute")
 def api_refresh_page():
     payload = request.get_json(silent=True) or {}
     league_id = (payload.get("league_id") or "").strip()
@@ -14759,13 +14857,13 @@ def get_model_value_table_cached():
         from dashboard_services.player_value_history import load_current_values_from_db
         tbl = load_current_values_from_db() or None
     except Exception as _e:
-        print(f"[model-value-cache] DB load failed: {_e}")
+        logger.info(f"[model-value-cache] DB load failed: {_e}")
     if not tbl:
         tbl = list(load_model_value_table() or [])
 
     # Snapshot raw player_values data before FC zeroing so the rookie append
     # block can recover values for rookies that get zeroed (not in FC list).
-    _pv_raw: dict = {str(p.get("id") or ""): p for p in (tbl or []) if p.get("id")}
+    _pv_raw: dict = {str(p.get("id") or ""): dict(p) for p in (tbl or []) if p.get("id")}
 
     # Zero out players not tracked by any external market source (FC or DP).
     # The ML model assigns some value to every player in the index; without this
@@ -14809,9 +14907,9 @@ def get_model_value_table_cached():
                     _p["sf_value"] = 0
                     _zeroed += 1
                 if _zeroed:
-                    print(f"[model-value-cache] zeroed {_zeroed} players not in FC")
+                    logger.info(f"[model-value-cache] zeroed {_zeroed} players not in FC")
         except Exception as _e:
-            print(f"[model-value-cache] FC/DP presence filter skipped: {_e}")
+            logger.info(f"[model-value-cache] FC/DP presence filter skipped: {_e}")
 
     # Append rookie prospects for players not already tracked in player_values.
     # player_values (EMA-synced from player_value_history) takes priority when a
@@ -14852,7 +14950,7 @@ def get_model_value_table_cached():
                     "is_rookie": True,
                 })
     except Exception as e:
-        print(f"[model-value-cache] rookies skipped: {e}")
+        logger.info(f"[model-value-cache] rookies skipped: {e}")
 
     # Recompute pos_rank after rookies are appended (rookies were added after the
     # earlier rank pass, so they would otherwise always have pos_rank=None)
@@ -15579,7 +15677,7 @@ def api_trade_eval():
                     num_teams=len(rosters) or 12,
                 )
         except Exception as e:
-            print(f"[trade-ai] skipped: {e}")
+            logger.info(f"[trade-ai] skipped: {e}")
             analysis_html = ""
 
     return jsonify({
@@ -15755,9 +15853,9 @@ def api_sparklines():
 @app.route("/api/league-players")
 def api_league_players():
     try:
-        model_value_table = list(get_model_value_table_cached() or [])
+        model_value_table = [dict(p) for p in (get_model_value_table_cached() or [])]
     except Exception as e:
-        print(f"[api/league-players] Cache load failed: {e}")
+        logger.info(f"[api/league-players] Cache load failed: {e}")
         model_value_table = []
 
     if not isinstance(model_value_table, list):
@@ -15823,7 +15921,7 @@ def api_league_players():
                 "value": round(float(_pk_val), 1), "team": "",
             })
         model_value_table.extend(_injected_picks)
-        print(f"[api/league-players] DB picks: {len(_db_pick_ids)}, WLS fallback picks: {len(_injected_picks)}")
+        logger.info(f"[api/league-players] DB picks: {len(_db_pick_ids)}, WLS fallback picks: {len(_injected_picks)}")
 
         # Rebuild slot/bucket sets to include WLS-injected picks so the model
         # injection below correctly suppresses bucket picks when slots exist.
@@ -15887,11 +15985,11 @@ def api_league_players():
                     model_value_table.append(_jp)
                 _json_injected += 1
             if _json_injected:
-                print(f"[api/league-players] model_values.json picks injected/overridden: {_json_injected}")
+                logger.info(f"[api/league-players] model_values.json picks injected/overridden: {_json_injected}")
         except Exception as _e_json_picks:
             pass
     except Exception as _e_picks:
-        print(f"[api/league-players] pick injection skipped: {_e_picks}")
+        logger.info(f"[api/league-players] pick injection skipped: {_e_picks}")
 
     # Compute rank_change_7d from player-only pool (QB/RB/WR/TE) so that picks
     # and newly-added rookies don't distort movement arrows on the rankings page.
@@ -16013,7 +16111,7 @@ def api_league_players():
                 model_value_table.append(rookie_entry)
 
     except Exception as _e:
-        print(f"[api/league-players] rookies skipped: {_e}")
+        logger.info(f"[api/league-players] rookies skipped: {_e}")
 
     # --- Rank labels (no decay applied — DB values are source of truth) ---
     from collections import defaultdict as _dd_prl
@@ -16054,7 +16152,7 @@ def api_league_players():
             if player_data:
                 player["bDay"] = player_data.get("bDay")
     except Exception as e:
-        print(f"[api/league-players] Could not add birthday data: {e}")
+        logger.info(f"[api/league-players] Could not add birthday data: {e}")
 
     # Enrich with PPG and total points from usage cache (full PPR, min 4 games)
     try:
@@ -16114,7 +16212,7 @@ def api_league_players():
                 _player["ppg_rank"] = (_ppg_sorted.index(_ppg_v) + 1) if _ppg_v in _ppg_sorted else None
                 _player["total_pts_rank"] = (_tot_sorted.index(_tot_v) + 1) if _tot_v in _tot_sorted else None
     except Exception as _e_lp:
-        print(f"[api/league-players] PPG enrichment skipped: {_e_lp}")
+        logger.info(f"[api/league-players] PPG enrichment skipped: {_e_lp}")
 
     # Compute tier thresholds for every league-type × size combination so the
     # frontend can display each player's tier badge without a second API call.
@@ -16173,7 +16271,7 @@ def api_teams():
         return jsonify(teams)
 
     except Exception as e:
-        print(f"[api/teams] error: {e}")
+        logger.info(f"[api/teams] error: {e}")
         return jsonify([])
 
 
@@ -16314,7 +16412,7 @@ def api_player_indicators():
                 breakouts = [str(c["player_id"]) for c in offseason_candidates]
 
             except Exception as e:
-                print(f"[player-indicators] Offseason breakout detection failed: {e}")
+                logger.info(f"[player-indicators] Offseason breakout detection failed: {e}")
 
         else:
             # During season, use in-season breakout detection
@@ -16326,7 +16424,7 @@ def api_player_indicators():
 
             except Exception as e:
                 # Fallback to simple value-based detection (more restrictive threshold)
-                print(f"[player-indicators] Advanced metrics unavailable, using fallback: {e}")
+                logger.info(f"[player-indicators] Advanced metrics unavailable, using fallback: {e}")
                 movers_data = get_top_movers(days=7, limit=1000) or {}
 
                 for player in movers_data.get("risers", []):
@@ -16374,7 +16472,7 @@ def api_player_indicators():
                     if pid:
                         prospects.append(pid)
         except Exception as _pe:
-            print(f"[player-indicators] prospects skipped: {_pe}")
+            logger.info(f"[player-indicators] prospects skipped: {_pe}")
 
         return jsonify({
             "rookies": rookies,
@@ -16384,7 +16482,7 @@ def api_player_indicators():
         })
 
     except Exception as e:
-        print(f"[player-indicators] Error: {e}")
+        logger.info(f"[player-indicators] Error: {e}")
         return jsonify({"rookies": [], "breakouts": [], "elites": [], "prospects": []})
 
 
@@ -16406,7 +16504,7 @@ def api_prospect_profile(player_id: str):
                 return jsonify(_sanitize_for_json(d))
         return jsonify({"error": "not found"}), 404
     except Exception as e:
-        print(f"[api/prospect] {e}")
+        logger.info(f"[api/prospect] {e}")
         return _api_err("Request failed", e)
 
 
@@ -16441,9 +16539,9 @@ def api_breakout_candidates():
                     limit=limit * 5,  # Get more initially for filtering
                     max_per_team_position=2
                 )
-                print(f"[breakout-candidates] Offseason mode: {len(candidates)} candidates")
+                logger.info(f"[breakout-candidates] Offseason mode: {len(candidates)} candidates")
             except Exception as e:
-                print(f"[breakout-candidates] Offseason detection error: {e}")
+                logger.info(f"[breakout-candidates] Offseason detection error: {e}")
         else:
             # Use in-season breakout detection with enrichment
             try:
@@ -16474,9 +16572,9 @@ def api_breakout_candidates():
                         "breakout_score": b.get("score", 0),
                     })
 
-                print(f"[breakout-candidates] In-season mode: {len(candidates)} candidates")
+                logger.info(f"[breakout-candidates] In-season mode: {len(candidates)} candidates")
             except Exception as e:
-                print(f"[breakout-candidates] In-season detection error: {e}")
+                logger.info(f"[breakout-candidates] In-season detection error: {e}")
                 # Fallback to value movers
                 movers_data = get_top_movers(days=7, limit=100) or {}
                 players_index = load_players_index() or {}
@@ -16525,7 +16623,7 @@ def api_nfl_state():
         state = get_nfl_state()
         return jsonify(state or {})
     except Exception as e:
-        print(f"[nfl-state] Error: {e}")
+        logger.info(f"[nfl-state] Error: {e}")
         return jsonify({}), 500
 
 
@@ -16791,7 +16889,7 @@ def api_offseason_breakout_candidates():
         return jsonify(candidates)
 
     except Exception as e:
-        print(f"[offseason-breakout-candidates] Error: {e}")
+        logger.info(f"[offseason-breakout-candidates] Error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify([])
@@ -16880,7 +16978,7 @@ def api_calculate_breakout_scores():
         })
 
     except Exception as e:
-        print(f"[calculate-breakout-scores] Error: {e}")
+        logger.info(f"[calculate-breakout-scores] Error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e), "success": False}), 500
@@ -17276,7 +17374,7 @@ def api_player_details(player_id: str):
                         ),
                     }
             except Exception as pe:
-                print(f"[api_player_details] prospect lookup error: {pe}")
+                logger.info(f"[api_player_details] prospect lookup error: {pe}")
 
         # ── Fantasy team ownership (only when league context is provided) ──
         fantasy_team = None
@@ -17870,7 +17968,7 @@ def api_team_details(roster_id: str):
             df_weekly = ctx.get("df_weekly")
 
             if df_weekly is not None and not df_weekly.empty:
-                print(f"[api_team_details] df_weekly shape: {df_weekly.shape}")
+                logger.info(f"[api_team_details] df_weekly shape: {df_weekly.shape}")
 
             # If we don't have weekly data for the chosen season, try previous season
             if (df_weekly is None or df_weekly.empty) and graph_season > 2025:
@@ -17890,7 +17988,7 @@ def api_team_details(roster_id: str):
                 df_weekly = ctx.get("df_weekly")
                 graph_season = fallback_season
                 if df_weekly is not None and not df_weekly.empty:
-                    print(f"[api_team_details] Fallback df_weekly shape: {df_weekly.shape}")
+                    logger.info(f"[api_team_details] Fallback df_weekly shape: {df_weekly.shape}")
 
             # Remove debug prints for cleaner logs
             if team_stats is not None and df_weekly is not None and not df_weekly.empty:
@@ -17966,9 +18064,9 @@ def api_team_details(roster_id: str):
                             "season_used": graph_season  # Add info about which season data was used
                         }
                     else:
-                        print(f"[api_team_details] No graphs generated - team_row is empty for team_name='{team_name}'") if team_name is not None else print("[api_team_details] No graphs generated - team_row is empty for team_name='None'")
+                        logger.info(f"[api_team_details] No graphs generated - team_row is empty for team_name='{team_name}'") if team_name is not None else logger.info("[api_team_details] No graphs generated - team_row is empty for team_name='None'")
                 else:
-                    print(f"[api_team_details] No graphs generated - df_weekly is empty after filtering")
+                    logger.info(f"[api_team_details] No graphs generated - df_weekly is empty after filtering")
             else:
                 print(
                     f"[api_team_details] No graphs generated - team_stats: {team_stats is not None}, df_weekly: {df_weekly is not None and not df_weekly.empty}")
@@ -18463,7 +18561,7 @@ def api_schedule_strength():
 
     current_week = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
     season_type = str(nfl_state.get("season_type") or "").lower()
-    FULL_SEASON_WEEKS = 14  # typical fantasy regular season
+    FULL_SEASON_WEEKS = 17  # safe scan cap; loop breaks on empty weeks
 
     try:
         from dashboard_services.platform_api import get_matchups as pf_get_matchups
@@ -18549,7 +18647,7 @@ def api_schedule_strength():
 
         return jsonify({
             "current_week": current_week,
-            "weeks_remaining": max(0, FULL_SEASON_WEEKS - current_week),
+            "weeks_remaining": max(len(v) for v in future_opponents.values()) if future_opponents else 0,
             "teams": results,
             "using_power_rankings": games_played == 0,
         })

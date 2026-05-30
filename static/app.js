@@ -2331,17 +2331,18 @@ window.initTradePage = function initTradePage(root = document) {
         return;
       }
 
+      const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
       listEl.innerHTML = trades.map(t => {
         const sfBadge    = t.is_superflex === true  ? '<span class="stl-badge stl-badge-sf">SF</span>'
                          : t.is_superflex === false ? '<span class="stl-badge">1QB</span>' : '';
         const teamsBadge = t.num_teams    ? `<span class="stl-badge">${t.num_teams} Teams</span>` : '';
-        const scoreBadge = t.scoring_type ? `<span class="stl-badge">${t.scoring_type.toUpperCase()}</span>` : '';
+        const scoreBadge = t.scoring_type ? `<span class="stl-badge">${esc(t.scoring_type).toUpperCase()}</span>` : '';
 
         function renderAsset(a) {
           const key  = a.is_key_player ? ' stl-key' : '';
           const pick = a.type === 'pick' ? ' stl-pick' : '';
-          const pos  = a.type === 'player' ? `<span class="stl-pos">${a.position}</span>` : '';
-          return `<div class="stl-asset${key}${pick}">${a.name}${pos}</div>`;
+          const pos  = a.type === 'player' ? `<span class="stl-pos">${esc(a.position)}</span>` : '';
+          return `<div class="stl-asset${key}${pick}">${esc(a.name)}${pos}</div>`;
         }
 
         const sideA = (t.side_a || []).map(renderAsset).join('') || '<div class="stl-asset stl-muted">-</div>';
@@ -2349,7 +2350,7 @@ window.initTradePage = function initTradePage(root = document) {
 
         return `<div class="stl-card">
           <div class="stl-card-head">
-            <span class="stl-date">${t.date || "-"}</span>
+            <span class="stl-date">${esc(t.date || "-")}</span>
             <div class="stl-badges">${sfBadge}${teamsBadge}${scoreBadge}</div>
           </div>
           <div class="stl-card-body">
@@ -3149,9 +3150,11 @@ window.initTradePage = function initTradePage(root = document) {
         'vet-falling':   { text: '↓ Declining Vet',   color: '#ef4444' },
       };
 
+      const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+
       function assetHtml(a) {
         if (a.is_pick || a.type === "pick") {
-          const label = a.name || "Pick";
+          const label = esc(a.name || "Pick");
           return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:rgba(99,102,241,.12);color:#6366f1;">PICK</span>${label}</div>`;
         }
         const col = posColor(a.position);
@@ -3160,8 +3163,8 @@ window.initTradePage = function initTradePage(root = document) {
           ? `<span style="font-size:10px;font-weight:600;color:${prof.color};margin-left:4px;white-space:nowrap;">${prof.text}</span>`
           : '';
         return `<div class="otc-sugg-pkg-asset" style="flex-wrap:wrap;gap:4px;">
-          <span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${a.position}</span>
-          <span>${a.name}</span>${profBadge}
+          <span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${esc(a.position)}</span>
+          <span>${esc(a.name)}</span>${profBadge}
         </div>`;
       }
 
@@ -3190,8 +3193,8 @@ window.initTradePage = function initTradePage(root = document) {
           : '';
         const extraAssetHtml = extra
           ? `<div class="otc-sugg-pkg-asset" style="flex-wrap:wrap;gap:4px;">
-               <span class="otc-sugg-pkg-asset-pos" style="background:${extraCol}20;color:${extraCol};">${extra.position}</span>
-               <span>${extra.name}</span>${extraBadge}
+               <span class="otc-sugg-pkg-asset-pos" style="background:${extraCol}20;color:${extraCol};">${esc(extra.position)}</span>
+               <span>${esc(extra.name)}</span>${extraBadge}
              </div>`
           : '';
 
@@ -3418,11 +3421,9 @@ window.initTradePage = function initTradePage(root = document) {
               }
               const pid = a.player_id || a.id || '';
               const locked = pid && _untouchableIds.has(pid);
-              const safeName = (a.name || '').replace(/'/g, "\\'");
-              const safePos  = (a.position || '').replace(/'/g, "\\'");
-              const lockTitle = locked ? `Allow ${a.name} in suggestions` : `Exclude ${a.name} from suggestions`;
+              const lockTitle = locked ? `Allow ${esc(a.name)} in suggestions` : `Exclude ${esc(a.name)} from suggestions`;
               const lockBtn = pid
-                ? `<button onclick="window._toggleUntouchable('${pid}','${safeName}','${safePos}')" title="${lockTitle}"
+                ? `<button class="otc-rt-lock-btn" data-pid="${esc(pid)}" data-name="${esc(a.name)}" data-pos="${esc(a.position)}" title="${lockTitle}"
                      style="border:none;background:none;cursor:pointer;padding:0 0 0 5px;line-height:1;display:inline-flex;align-items:center;opacity:${locked?0.75:0.2};transition:opacity .15s;"
                      onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity='${locked?0.75:0.2}'">
                      <span class="fa-solid ${locked?'fa-lock':'fa-lock-open'}" style="width:11px;height:11px;"></span>
@@ -3430,8 +3431,8 @@ window.initTradePage = function initTradePage(root = document) {
                 : '';
               const col = posColor(a.position);
               return `<div class="otc-rt-asset" style="display:flex;align-items:center;">
-                ${prefix}<span class="otc-rt-pos" style="background:${col}18;color:${col};">${a.position}</span>
-                <span class="otc-rt-name" style="${isRef ? 'color:var(--text-muted);' : ''}">${a.name}</span>
+                ${prefix}<span class="otc-rt-pos" style="background:${col}18;color:${col};">${esc(a.position)}</span>
+                <span class="otc-rt-name" style="${isRef ? 'color:var(--text-muted);' : ''}">${esc(a.name)}</span>
                 ${lockBtn}
               </div>`;
             }).join('');
@@ -3490,6 +3491,12 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       resultsList.innerHTML = cardsHtml + paginationHtml + realTradeHtml;
+
+      resultsList.addEventListener("click", e => {
+        const btn = e.target.closest(".otc-rt-lock-btn");
+        if (!btn) return;
+        window._toggleUntouchable(btn.dataset.pid, btn.dataset.name, btn.dataset.pos);
+      });
 
       resultsList.querySelectorAll(".pagination-btn").forEach(btn => {
         btn.addEventListener("click", () => {
@@ -5123,7 +5130,7 @@ function bindRecapTeamSelector() {
     const teamsUrl = `/api/teams?league_id=${encodeURIComponent(resolvedLeagueId)}&platform=sleeper&season=${encodeURIComponent(historySeason)}`;
 
     fetch(teamsUrl)
-      .then(res => res.json())
+      .then(res => { if (!res.ok) throw new Error(res.status); return res.json(); })
       .then(teams => {
         teamDropdown.innerHTML = '<option value="">Choose a team for recap...</option>';
         
@@ -8340,14 +8347,15 @@ function openCompareSearch(player1Data) {
   const tabBar = document.getElementById('pmTabBar');
   if (tabBar) tabBar.style.display = 'none';
 
+  const esc = s => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
   body.innerHTML = `
     <div class="compare-search-panel">
       <div class="compare-search-header">
         <div class="compare-search-p1">
-          <img src="${player1Data.espnHeadshot || ''}" class="compare-search-headshot" alt="${player1Data.name}" />
+          <img src="${player1Data.espnHeadshot || ''}" class="compare-search-headshot" alt="${esc(player1Data.name)}" />
           <div>
-            <div class="compare-search-p1-name">${player1Data.name}</div>
-            <div class="compare-search-p1-meta">${player1Data.position || ''} · ${player1Data.team || ''}</div>
+            <div class="compare-search-p1-name">${esc(player1Data.name)}</div>
+            <div class="compare-search-p1-meta">${esc(player1Data.position || '')} · ${esc(player1Data.team || '')}</div>
           </div>
         </div>
         <div class="compare-vs-badge">VS</div>
