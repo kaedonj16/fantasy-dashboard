@@ -7124,6 +7124,73 @@ def build_teams_body(ctx: dict) -> str:
     from dashboard_services.ai.context_builders import calculate_roster_grade as _calc_grade
 
     _n_teams = len(team_meta)
+    _offseason = ctx.get("offseason_mode", False)
+    _rp_list = ctx.get("roster_positions") or []
+    _is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp_list)
+    _redraft_key = "redraft_value_sf" if _is_sf else "redraft_value_1qb"
+
+    # ── Compute dynasty totals and dynasty/redraft ratios per team ──
+    _team_dynasty_total: Dict[int, float] = {}
+    _team_dr_ratio: Dict[int, float] = {}
+    for _r in rosters:
+        _rid = _r.get("roster_id")
+        if _rid is None:
+            continue
+        _pairs: List[tuple] = []
+        for _pid in (_r.get("players") or []):
+            _row = by_id.get(str(_pid))
+            if not _row:
+                continue
+            _pos = str(_row.get("position") or "").upper()
+            if _pos not in CORE_POS:
+                continue
+            _dval = float(_row.get("value") or 0)
+            _rval = float(_row.get(_redraft_key) or 0)
+            _pairs.append((_dval, _rval))
+        _pairs.sort(reverse=True)
+        _team_dynasty_total[_rid] = sum(d for d, _ in _pairs[:8])
+        _ratios = [d / max(rv, 1) for d, rv in _pairs[:10] if d > 50 or rv > 50]
+        _team_dr_ratio[_rid] = round(sum(_ratios) / len(_ratios), 3) if _ratios else 1.0
+
+    # ── Dynasty value percentile helper ──
+    _dynasty_sorted = sorted(_team_dynasty_total.values())
+    _dynasty_n = max(len(_dynasty_sorted) - 1, 1)
+
+    def _dynasty_pct(rid: int) -> float:
+        t = _team_dynasty_total.get(rid, 0.0)
+        return sum(1 for v in _dynasty_sorted if v < t) / _dynasty_n
+
+    # ── PF and win rate from team_stats ──
+    _team_pf: Dict[int, float] = {}
+    _team_win_rate: Dict[int, float] = {}
+    _ts = ctx.get("team_stats")
+    if _ts is not None and not _offseason:
+        _name_to_rid: Dict[str, int] = {}
+        for _k, _v in (roster_map.items() if isinstance(roster_map, dict) else {}.items()):
+            try:
+                _name_to_rid[str(_v).strip().lower()] = int(_k)
+            except Exception:
+                pass
+        for _, _row in _ts.iterrows():
+            _owner = str(_row.get("owner") or "").strip().lower()
+            _rid_match = _name_to_rid.get(_owner)
+            if _rid_match is None:
+                continue
+            _team_pf[_rid_match] = float(_row.get("PF") or 0)
+            _w = float(_row.get("Wins") or 0)
+            _l = float(_row.get("Losses") or 0)
+            _t_g = float(_row.get("Ties") or 0)
+            _games = _w + _l + _t_g
+            _team_win_rate[_rid_match] = _w / _games if _games > 0 else 0.5
+
+    _pf_sorted = sorted(_team_pf.values())
+    _pf_n = max(len(_pf_sorted) - 1, 1)
+
+    def _pf_pct(rid: int) -> float:
+        pf = _team_pf.get(rid, 0.0)
+        if not _pf_sorted or max(_pf_sorted, default=0) == 0:
+            return 0.5
+        return sum(1 for v in _pf_sorted if v < pf) / _pf_n
 
     def _grade_for_roster(r_id: int) -> dict:
         roster_obj = next((r for r in rosters if r.get("roster_id") == r_id), {})
@@ -7142,7 +7209,16 @@ def build_teams_body(ctx: dict) -> str:
         flat_players.sort(key=lambda x: x["value"], reverse=True)
         picks = picks_by_roster.get(str(r_id), [])
         p_ranks = {pos: pos_rank[pos].get(r_id, _n_teams) for pos in POS_ORDER}
-        return _calc_grade(flat_players, picks, position_ranks=p_ranks, num_teams=_n_teams)
+        return _calc_grade(
+            flat_players, picks,
+            position_ranks=p_ranks,
+            num_teams=_n_teams,
+            dynasty_pct_val=_dynasty_pct(r_id),
+            pf_pct_val=_pf_pct(r_id),
+            win_rate=_team_win_rate.get(r_id),
+            dr_ratio=_team_dr_ratio.get(r_id, 1.0),
+            offseason=_offseason,
+        )
 
     team_grades = {rid: _grade_for_roster(rid) for rid in team_meta}
 
