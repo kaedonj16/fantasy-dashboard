@@ -502,44 +502,113 @@ FORM_BODY = """
 
   <div class="home-content-wrapper">
     <section class="home-feature-list-card">
-    <section class="home-feature-list">
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Trade Calculator</span><span class="home-feature-row-desc">AI-powered deal evaluation with counter suggestions and similar trade history</span></div>
+      <div class="home-features-header">
+        <span class="home-features-label">Platform Features</span>
+        <span class="home-features-count">10 tools</span>
       </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Dynasty Rankings</span><span class="home-feature-row-desc">Daily-updated hybrid values blending consensus data with advanced metrics</span></div>
+      <div class="home-feature-list">
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(99,102,241,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#6366f1;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14Z"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span></span>
+            <span class="home-feature-row-desc">Archetype-driven suggestions with Monte Carlo win probability — see exactly how each trade shifts your playoff odds</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(59,130,246,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Trade Calculator</span>
+            <span class="home-feature-row-desc">AI-powered deal grades, counter proposals, and real dynasty trade comparisons from thousands of logged transactions</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(16,185,129,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Dynasty Rankings</span>
+            <span class="home-feature-row-desc">Calibrated dynasty values updated daily — blending consensus data with advanced metrics, archetypes, and trend charts</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(167,139,250,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#a78bfa;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Rookie Prospects</span>
+            <span class="home-feature-row-desc">Full prospect profiles with college metrics, RAS athleticism scores, draft capital analysis, and real-time ADP movement</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(245,158,11,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#f59e0b;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 16 4-4 4 4 4-4"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Playoff Odds</span>
+            <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week — know your exact path to the playoffs and projected championship probability</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(6,182,212,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#06b6d4;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Weekly Hub</span>
+            <span class="home-feature-row-desc">Game-day command center with live scoring, optimal lineup suggestions, injury news, and head-to-head matchup breakdowns</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(249,115,22,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#f97316;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Breakout Tracker</span>
+            <span class="home-feature-row-desc">Spot value shifts before the market moves — tracks target share, snap counts, and depth chart changes to surface opportunities</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(236,72,153,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#ec4899;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Waiver Wire</span>
+            <span class="home-feature-row-desc">Personalized pickup rankings tailored to your roster's needs, scoring format, positional scarcity, and remaining schedule</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(239,68,68,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#ef4444;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Team Analytics</span>
+            <span class="home-feature-row-desc">Roster grades by position group, strength-of-schedule projections, and side-by-side comparisons across your entire league</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(234,179,8,.12);border-radius:8px;">
+            <i class="fa-solid fa-trophy" style="font-size:16px;color:#eab308;" aria-hidden="true"></i>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">League History</span>
+            <span class="home-feature-row-desc">AI season recaps, head-to-head rivalry records, historical draft grades, and complete year-by-year standings</span>
+          </div>
+        </div>
+
       </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#a78bfa;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Rookie Prospects</span><span class="home-feature-row-desc">Prospect profiles with college metrics, athleticism scores, and ADP trends</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#f59e0b;" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2v11h3v9l7-12h-4l4-8z"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Weekly Hub</span><span class="home-feature-row-desc">Live scoring, projections, injury news, and matchup context for gameday</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#06b6d4;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Breakout Candidates</span><span class="home-feature-row-desc">Spot usage spikes from depth chart shifts, target share, and opportunity data</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#f97316;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Waiver Wire</span><span class="home-feature-row-desc">Personalized pickups ranked by roster fit and positional need</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#ef4444;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Team Analytics</span><span class="home-feature-row-desc">Position grades, roster composition, and competitive advantages across the league</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><svg style="width:20px;height:20px;color:#f43f5e;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Graphs & Trends</span><span class="home-feature-row-desc">PF/PA, SOS, playoff odds, luck metrics, and standings trajectory over time</span></div>
-      </div>
-      <div class="home-feature-row">
-        <div class="home-feature-row-icon"><i class="fa-solid fa-trophy" style="font-size:18px;color:#eab308;" aria-hidden="true"></i></div>
-        <div class="home-feature-row-body"><span class="home-feature-row-title">Historical Insights</span><span class="home-feature-row-desc">AI season recaps, rivalry records, draft grades, and full championship history</span></div>
-      </div>
-    </section>
     </section>
 
     <aside class="home-updates-sidebar">
