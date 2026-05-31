@@ -238,6 +238,8 @@ def get_trade_ai_analysis(
             "team": a.get("team") or "",
             "age": a.get("age"),
             "value": safe_float(a.get("value")),
+            "pos_rank_label": a.get("pos_rank_label") or "",
+            "rank_change_7d": a.get("rank_change_7d"),
         }
 
     def summarize_pick_ids(pick_ids: list) -> dict:
@@ -289,6 +291,19 @@ def get_trade_ai_analysis(
         1,
     )
 
+    # Post-trade roster: remove traded-away players, add incoming players
+    gives_ids = {a.get("id") for a in gives_assets}
+    current_top = team_ctx.get("top_assets") or []
+    remaining = [a for a in current_top if str(a.get("id") or "") not in gives_ids]
+    for a in gets_assets:
+        if a.get("position") not in ("PICK", None, "?"):
+            remaining.append(a)
+    remaining.sort(key=lambda x: safe_float(x.get("value")), reverse=True)
+    post_trade_roster = [
+        {"name": a.get("name"), "position": a.get("position"), "value": round(safe_float(a.get("value")), 1)}
+        for a in remaining[:8]
+    ]
+
     payload = {
         "team_context": {
             "team_name": team_ctx.get("team_name"),
@@ -322,12 +337,13 @@ def get_trade_ai_analysis(
                 "position_totals": gives_pos,
                 "pick_summary": gives_pick_summary,
             },
+            "post_trade_roster": post_trade_roster,
             "market_delta": market_delta,
         },
     }
 
     # Build cache key for trade analysis
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v2")
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v3")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
@@ -627,16 +643,12 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
 
 def _fmt_pick_label(pk: dict) -> str:
     season = pk.get("season", "")
-    rnd    = pk.get("round", "")
+    rnd    = int(pk.get("round") or 0)
     slot   = pk.get("slot")
-    name   = pk.get("proj_name", "")
-    pos    = pk.get("proj_pos", "")
-    suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(int(rnd) if rnd else 0, f"{rnd}th")
-    slot_str = f".{int(slot):02d}" if slot else ""
-    base = f"{season} {suffix} Round Pick{slot_str}"
-    if name:
-        base += f" (proj. {name}, {pos})"
-    return base
+    suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
+    if slot:
+        return f"{season} {rnd}.{int(slot):02d}"
+    return f"{season} {suffix} (Mid)"
 
 
 def _render_real_trade_suggestions(real_trades: list[dict]) -> str:

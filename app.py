@@ -5824,7 +5824,8 @@ def format_pick_display_label(
     if exact_slot is not None:
         return f"{year} {rnd}.{exact_slot:02d}"
 
-    return f"{year} {format_pick_round_label(pick)}"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+    return f"{year} {rnd}{suffix} (Mid)"
 
 
 def build_activity_body(ctx: dict) -> str:
@@ -8068,13 +8069,15 @@ def build_teams_body(ctx: dict) -> str:
     return f"""
     <div class="page-layout teams-page">
       <main class="page-main">
-        <div class="teams-sort-bar">
-          <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
-          <button class="teams-sort-btn active" data-sort="posindex">Positional Index</button>
-          <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
-          <button class="teams-sort-btn" data-sort="archetype">Archetype</button>
+        <div class="teams-topbar">
+          <div class="teams-sort-bar">
+            <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
+            <button class="teams-sort-btn active" data-sort="posindex">Positional Index</button>
+            <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
+            <button class="teams-sort-btn" data-sort="archetype">Archetype</button>
+          </div>
+          {_window_legend_html}
         </div>
-        {_window_legend_html}
         <div class="teams-grid" id="teamsGrid">
           {all_cards_html}
         </div>
@@ -11251,16 +11254,111 @@ def page_prospects_guest():
     return page_prospects(platform="sleeper", season=current_season, league_id=None)
 
 
+_TEAMS_BUILDING: set = set()
+_TEAMS_BUILDING_LOCK = threading.Lock()
+
+
+def _background_build_teams(platform: str, league_id: str, season: int) -> None:
+    build_key = f"{platform}:{season}:{league_id}"
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        body_html = build_teams_body(ctx)
+        store_page_html(platform, season, league_id, "teams", body_html)
+    except Exception as exc:  # noqa: BLE001
+        import logging as _log
+        _log.getLogger(__name__).error("Background teams build failed: %s", exc)
+    finally:
+        with _TEAMS_BUILDING_LOCK:
+            _TEAMS_BUILDING.discard(build_key)
+
+
+def _build_teams_skeleton(platform: str, season: int, league_id: str, num_teams: int) -> str:
+    shimmer_card = """
+    <div class="card team-strength-card teams-sk-card">
+      <div class="card-header-row">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="sk-shimmer" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;"></div>
+          <div class="sk-shimmer" style="width:130px;height:16px;border-radius:4px;"></div>
+          <div class="sk-shimmer" style="width:34px;height:22px;border-radius:6px;"></div>
+        </div>
+        <div class="sk-shimmer" style="width:140px;height:11px;border-radius:4px;margin-top:4px;"></div>
+      </div>
+      <div class="card-body">
+        <div class="sk-shimmer" style="width:100%;height:180px;border-radius:6px;margin-bottom:10px;"></div>
+        <div class="sk-shimmer" style="width:100%;height:100px;border-radius:6px;"></div>
+      </div>
+    </div>"""
+    cards_html = shimmer_card * max(num_teams, 4)
+    return f"""
+    <div class="page-layout teams-page">
+      <main class="page-main">
+        <div class="teams-topbar">
+          <div class="teams-sort-bar">
+            <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
+            <button class="teams-sort-btn active" disabled>Positional Index</button>
+            <button class="teams-sort-btn" disabled>Team Grade</button>
+            <button class="teams-sort-btn" disabled>Archetype</button>
+          </div>
+          <div class="teams-loading-indicator">
+            <div class="loading-spinner" style="width:14px;height:14px;"></div>
+            <span>Building team rankings&hellip;</span>
+          </div>
+        </div>
+        <div class="teams-grid">
+          {cards_html}
+        </div>
+      </main>
+    </div>
+    <script>
+    (function() {{
+      var _poll = 0;
+      function check() {{
+        if (_poll > 25) return;
+        _poll++;
+        fetch('/api/teams-ready?platform={platform}&league_id={league_id}&season={season}')
+          .then(function(r) {{ return r.json(); }})
+          .then(function(d) {{ if (d.ready) window.location.reload(); else setTimeout(check, 1400); }})
+          .catch(function() {{ setTimeout(check, 2000); }});
+      }}
+      setTimeout(check, 1200);
+    }})();
+    </script>
+    """
+
+
+@app.route("/api/teams-ready")
+def api_teams_ready():
+    platform  = request.args.get("platform", "sleeper")
+    league_id = request.args.get("league_id", "")
+    try:
+        season = int(request.args.get("season", current_season))
+    except (TypeError, ValueError):
+        season = current_season
+    ready = bool(get_page_html_from_cache(platform, season, league_id, "teams"))
+    return jsonify({"ready": ready})
+
+
 @app.route("/<platform>/<int:season>/<league_id>/teams")
 def page_teams(platform: str, season: int, league_id: str):
     cached = get_page_html_from_cache(platform, season, league_id, "teams")
     if cached:
         return render_page("BR Fantasy Teams", league_id, "teams", cached, platform, season)
 
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body_html = build_teams_body(ctx)
-    store_page_html(platform, season, league_id, "teams", body_html)
-    return render_page("BR Fantasy Teams", league_id, "teams", body_html, platform, season)
+    # Not cached — kick off background build and serve skeleton immediately
+    build_key = f"{platform}:{season}:{league_id}"
+    with _TEAMS_BUILDING_LOCK:
+        if build_key not in _TEAMS_BUILDING:
+            _TEAMS_BUILDING.add(build_key)
+            threading.Thread(
+                target=_background_build_teams,
+                args=(platform, league_id, season),
+                daemon=True,
+            ).start()
+
+    ctx_entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id), {})
+    num_teams = int((ctx_entry.get("ctx") or {}).get("total_rosters") or 12)
+    skeleton = _build_teams_skeleton(platform, season, league_id, num_teams)
+    return render_page("BR Fantasy Teams", league_id, "teams", skeleton, platform, season)
 
 
 def _ens(career_owners: dict, uid: str) -> None:
@@ -15698,6 +15796,8 @@ def api_trade_eval():
                 "position": pos,
                 "team": team,
                 "age": age,
+                "pos_rank_label": player.get("pos_rank_label") or "",
+                "rank_change_7d": player.get("rank_change_7d"),
             })
 
             raw_players_total += val
@@ -20595,7 +20695,7 @@ def api_trade_intel_player_packages(player_id: str):
                         if slot:
                             pk_name = f"{yr} {rnd}.{slot:02d}"
                         else:
-                            pk_name = f"{yr} {suffix}"
+                            pk_name = f"{yr} {suffix} (Mid)"
                         if slot:
                             pval = (
                                 pick_val_lookup.get(f"{yr}_{rnd}_{slot:02d}")
@@ -20892,13 +20992,24 @@ def api_trade_intel_player_packages(player_id: str):
                 send = []
                 for a in assets:
                     if a.get("is_pick"):
+                        _ps   = a.get("pick_slot")
+                        _po   = a.get("pick_order") or "mid"
+                        _py   = a.get("pick_season")
+                        _pr   = a.get("pick_round")
+                        _pid  = (
+                            f"{_py}_{_pr}_{_ps:02d}" if _ps else
+                            f"{_py}_{_pr}_{_po}" if (_py and _pr) else None
+                        )
                         send.append({
-                            "name":       a.get("name", ""),
-                            "value":      float(a.get("value") or 0),
-                            "send_value": float(a.get("value") or 0),
-                            "is_pick":    True,
-                            "pick_round": a.get("pick_round"),
-                            "pick_season": a.get("pick_season"),
+                            "name":        a.get("name", ""),
+                            "value":       float(a.get("value") or 0),
+                            "send_value":  float(a.get("value") or 0),
+                            "is_pick":     True,
+                            "pick_round":  _pr,
+                            "pick_season": _py,
+                            "pick_slot":   _ps,
+                            "pick_order":  _po,
+                            "pick_id":     _pid,
                         })
                     else:
                         send.append({
@@ -21647,7 +21758,7 @@ def api_trade_intel_player_send_packages(player_id: str):
                 if pval <= 0:
                     pval = {1: 220.0, 2: 130.0}.get(rnd, 70.0)
                 out.append({
-                    "name":  f"{yr} {_ordinal(rnd)}",
+                    "name":  f"{yr} {_ordinal(rnd)} (Mid)",
                     "value": round(pval, 1),
                     "is_pick": True,
                     "pick_season": yr,
@@ -21952,7 +22063,7 @@ def api_trade_ideas_for_target():
                 ]
             else:
                 sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-                label = f"{yr} {rnd}{sfx}"
+                label = f"{yr} {rnd}{sfx} (Mid)"
                 val_keys = [f"{yr}_{rnd}_early", f"{yr}_{rnd}_mid", f"{yr}_{rnd}_late", f"{yr}_{rnd}"]
 
             # Use whichever key is actually in the table so pick_id is always parseable

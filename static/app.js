@@ -2271,6 +2271,11 @@ window.initTradePage = function initTradePage(root = document) {
         barIndicator.style.left = leftPct + "%";
       }
 
+      const fairZoneEl = root.querySelector(".otc-balance-fair");
+      if (fairZoneEl && data.fair_pct) {
+        fairZoneEl.style.width = (data.fair_pct * 200) + "%";
+      }
+
       if (verdictEl) {
         verdictEl.textContent = data.verdict || "";
         verdictEl.className = "otc-verdict";
@@ -2574,9 +2579,13 @@ window.initTradePage = function initTradePage(root = document) {
     // Side B = viewer sends = package
     sendAssets.forEach(asset => {
       if (asset.is_pick) {
-        // pick_id is the value-table key (e.g. "2026_1_early") that trade-eval
-        // can parse; asset.name is the human-readable label ("2026 1.05")
-        state.sideBPicks.push({ id: asset.pick_id || asset.name, display: asset.name });
+        const yr    = String(asset.pick_season || "").replace(/\D/g, "");
+        const rd    = String(asset.pick_round  || "").replace(/\D/g, "");
+        const slot  = asset.pick_slot ? String(asset.pick_slot).replace(/\D/g, "").padStart(2, "0") : null;
+        const order = String(asset.pick_order || "").toLowerCase().replace(/[^a-z]/g, "") || "mid";
+        const pickId = asset.pick_id || (yr && rd ? `${yr}_${rd}_${slot || order}` : null);
+        const pickObj = pickId ? allPlayers.find(p => p.id === pickId) : null;
+        state.sideBPicks.push({ id: pickObj ? pickObj.id : (pickId || asset.name), display: asset.name });
       } else {
         state.sideBPlayers.push(asset);
       }
@@ -3051,7 +3060,7 @@ window.initTradePage = function initTradePage(root = document) {
                 if (a.is_pick) {
                   const yr = String(a.pick_season || "").replace(/\D/g, "");
                   const rd = String(a.pick_round  || "").replace(/\D/g, "");
-                  const pickId = yr && rd ? `${yr}_${rd}_mid` : null;
+                  const pickId = a.pick_id || (yr && rd ? `${yr}_${rd}_mid` : null);
                   if (pickId) state.sideAPicks.push({ id: pickId, display: a.name || formatPickId(pickId) });
                 } else if (a.player_id) {
                   const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
