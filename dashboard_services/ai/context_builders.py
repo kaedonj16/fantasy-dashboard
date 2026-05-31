@@ -340,94 +340,87 @@ def _compute_win_window(
     avg_age: float,
     firsts: int,
     dynasty_pct: float,
-    pf_pct: float,
-    win_rate: float | None,
+    redraft_pct: float,
     dr_ratio: float,
-    offseason: bool,
-    standings_rank: int = 0,
-    n_teams: int = 12,
 ) -> str:
     """
-    Classify a team's competitive window.
+    Classify a team's competitive window purely from roster construction.
 
-    Both axes must be satisfied for the upper-tier labels:
-      - Roster quality  (dynasty_pct, age, dr_ratio)
-      - Actual results  (standings_rank, win_rate, pf_pct)
+    No current-season results (wins, PF, standings) are used — those are noisy
+    and miss the point of a dynasty window. Signals:
 
-    dynasty_pct    – 0-1 percentile of total dynasty value vs league
-    pf_pct         – 0-1 percentile of Points For vs league
-    win_rate       – wins / games played (None in offseason)
-    dr_ratio       – avg(dynasty / redraft) for top starters
-                     >1.2 = future-heavy (young/unproven)
-                     <0.9 = win-now (aging/peaking)
-    standings_rank – current league seed (1 = best); 0 = not provided
-    n_teams        – league size, used to make rank thresholds size-independent
+    dynasty_pct  – 0-1 percentile of total dynasty value vs league (long-term strength)
+    redraft_pct  – 0-1 percentile of total redraft value vs league (scoring projection NOW)
+    dr_ratio     – avg(dynasty / redraft) for top starters
+                   >1.2 = future-heavy (young, upside not yet realized)
+                   <0.9 = win-now (aging/peaking, redraft ≥ dynasty)
+    avg_age      – top-2-weighted average age of top-8 players
+    firsts       – future 1st round picks owned
     """
-    young = avg_age <= 26.5
-    aging = avg_age >= 28.5
-    wr    = win_rate or 0
+    young  = avg_age <= 26.5
+    prime  = 26.5 < avg_age <= 28.5
+    aging  = avg_age > 28.5
 
-    # standings_rank <= 4 = top-4 in league (the user's explicit requirement for contender)
-    top4  = (not offseason) and standings_rank > 0 and standings_rank <= 4
-    # top half: seeded in top half of league
-    top_half = (not offseason) and standings_rank > 0 and standings_rank <= (n_teams // 2)
+    win_now_roster = dr_ratio <= 0.90   # players more valuable now than long-term
+    future_roster  = dr_ratio >= 1.20   # players more valuable long-term than now
 
-    # Convenience booleans — all False in offseason so labels fall through to
-    # the dynasty-only path (which is correct when no games have been played)
-    performing  = (not offseason) and pf_pct >= 0.60 and wr >= 0.55
-    winning     = (not offseason) and wr >= 0.55
-    above_avg   = (not offseason) and (wr >= 0.50 or pf_pct >= 0.50)
+    # Value tier flags
+    dynasty_elite  = dynasty_pct >= 0.70   # top 30% of league
+    dynasty_strong = dynasty_pct >= 0.55   # top 45%
+    dynasty_avg    = dynasty_pct >= 0.40   # above average
 
-    win_now_roster = dr_ratio <= 0.90
-    future_roster  = dr_ratio >= 1.20
+    redraft_elite  = redraft_pct >= 0.70   # projecting to score in top 30%
+    redraft_strong = redraft_pct >= 0.55   # top 45%
+    redraft_avg    = redraft_pct >= 0.42   # above average
 
-    # ── Negative tier (not competitive) ────────────────────────────────────────
+    # ── Transitional / negative ───────────────────────────────────────────────
 
-    # Full Rebuild — deliberate tank: multiple 1sts + weak dynasty
+    # Full Rebuild — deliberate asset accumulation: many 1sts + weak current roster
     if firsts >= 3 and dynasty_pct <= 0.45:
         return "Full Rebuild"
 
-    # Retooling — picks + aging or declining-value roster winding down
-    if firsts >= 2 and (aging or (avg_age >= 27.5 and win_now_roster)):
+    # Retooling — have picks AND aging/declining profile (trading away the peak)
+    if firsts >= 2 and (aging or (prime and win_now_roster)):
         return "Retooling"
 
-    # Rebuilding — weak roster, not winning, no clear plan
-    if dynasty_pct <= 0.35 and (offseason or (pf_pct <= 0.45 and wr <= 0.45)):
+    # Rebuilding — weak on both dynasty and projected scoring, no tank capital
+    if dynasty_pct <= 0.35 and redraft_pct <= 0.40:
         return "Rebuilding"
 
-    # ── Active contender tier (winning now) ────────────────────────────────────
+    # ── Win-now tier (projecting well NOW, window is short) ───────────────────
 
-    # Win-Now — top-4 + producing + peaking/aging profile (short window closing)
-    if dynasty_pct >= 0.55 and top4 and performing and (aging or win_now_roster):
+    # Win-Now — elite projected scoring + aging/peaking roster + decent dynasty
+    # These teams need to capitalize immediately; their window is closing
+    if redraft_elite and dynasty_strong and (aging or win_now_roster):
         return "Win-Now"
 
-    # Aging Contender — top-4 + winning but dynasty profile declining
-    if top4 and winning and aging and dynasty_pct >= 0.50:
+    # Aging Contender — strong projected scoring but aging roster, dynasty declining
+    if redraft_strong and aging and dynasty_avg:
         return "Aging Contender"
 
-    # Contender — top-4 + elite dynasty + above-avg production
-    if dynasty_pct >= 0.65 and top4 and pf_pct >= 0.50:
+    # ── Prime contender tier (strong on both axes) ────────────────────────────
+
+    # Contender — elite dynasty AND strong projected scoring (best of both worlds)
+    if dynasty_elite and redraft_strong:
         return "Contender"
 
-    # Offseason-only contender check (rely on dynasty value alone)
-    if offseason and dynasty_pct >= 0.70 and not aging:
-        return "Contender"
+    # ── Building toward peak (dynasty strong, scoring still developing) ───────
 
-    # ── Approaching peak tier ──────────────────────────────────────────────────
-
-    # Contender Window — strong dynasty + young + at least top half of standings
-    if dynasty_pct >= 0.65 and young and (offseason or top_half):
+    # Contender Window — elite dynasty + young profile; peak scoring is coming
+    # These rosters have everything, they just haven't hit their ceiling yet
+    if dynasty_elite and (young or prime) and not win_now_roster:
         return "Contender Window"
 
-    # ── Building tier ──────────────────────────────────────────────────────────
+    # Also Contender Window for strong dynasty + above-avg projected scoring + young
+    if dynasty_strong and redraft_avg and young:
+        return "Contender Window"
 
-    # 2-3 Year Window — solid dynasty + young/prime + future-heavy roster
-    # No performance floor: they're not there yet, that's the point
-    if dynasty_pct >= 0.50 and avg_age <= 27.5 and future_roster:
+    # 2-3 Year Window — solid dynasty + future-heavy (upside not yet realized)
+    if dynasty_strong and (future_roster or young):
         return "2-3 Year Window"
 
-    # Rising — younger team with upside building toward relevance
-    if dynasty_pct >= 0.38 and young and future_roster:
+    # Rising — decent dynasty + very young + future-heavy roster
+    if dynasty_avg and young and future_roster:
         return "Rising"
 
     return "Holding Pattern"
@@ -440,25 +433,36 @@ def calculate_roster_grade(
     num_teams: int = 12,
     # League-context signals — passed from the team page when available
     dynasty_pct_val: float = -1.0,   # 0-1 percentile of team's dynasty value (-1 = not provided)
-    pf_pct_val: float = 0.5,         # 0-1 percentile of team's points for
-    win_rate: float | None = None,    # wins / (wins+losses+ties), None in offseason
+    redraft_pct_val: float = 0.5,    # 0-1 percentile of team's redraft value (scoring projection)
     dr_ratio: float = 1.0,           # avg(dynasty/redraft) for top starters
+    # Deprecated season-result params kept for call-site compatibility but not used in window logic
+    pf_pct_val: float = 0.5,
+    win_rate: float | None = None,
+    standings_rank: int = 0,
     offseason: bool = False,
-    standings_rank: int = 0,         # current league seed (1 = best); 0 = not provided
 ) -> dict:
     """
     Score a dynasty roster and compute a competitive window label.
 
-    When called from the team page (dynasty_pct_val provided), the grade and window
-    use production (PF), win rate, dynasty/redraft spread, and league-relative dynasty
-    value. When called without those signals (e.g. AI renderer), falls back to
-    age/depth/capital/elite scoring.
+    The window is based purely on roster construction:
+      dynasty_pct_val  — long-term value percentile vs league
+      redraft_pct_val  — projected scoring percentile vs league (not actual PF)
+      dr_ratio         — dynasty/redraft spread (future-heavy vs win-now)
+      avg_age          — top-2-weighted age of top-8 players
+      firsts           — future first-round picks
+
+    When called without league context (AI renderer, trade strategy), falls back
+    to age/depth/capital/elite scoring with positional rank proxy.
     """
     top8 = players[:8]
 
-    # Age Score
-    ages = [_safe_float(p.get("age")) for p in top8 if p.get("age") not in (None, "")]
-    avg_age = sum(ages) / len(ages) if ages else 28.0
+    # Age — weight the top-2 players at 2× since they define the window
+    ages_all = [_safe_float(p.get("age")) for p in top8 if p.get("age") not in (None, "")]
+    if ages_all:
+        weights = [2.0 if i < 2 else 1.0 for i in range(len(ages_all))]
+        avg_age = sum(a * w for a, w in zip(ages_all, weights)) / sum(weights)
+    else:
+        avg_age = 28.0
     if avg_age <= 23:
         age_score = 95
     elif avg_age <= 25:
@@ -518,15 +522,14 @@ def calculate_roster_grade(
     # ── Grade score ──────────────────────────────────────────────────────────────
     has_league_ctx = dynasty_pct_val >= 0.0
     if has_league_ctx:
-        # Richer formula when full league context is available
-        production_score = pf_pct_val * 100
-        dynasty_score    = dynasty_pct_val * 100
+        dynasty_score = dynasty_pct_val * 100
+        redraft_score = redraft_pct_val * 100
         total = round(
-            dynasty_score    * 0.35
-            + production_score * 0.20
-            + age_score        * 0.20
-            + elite_score      * 0.15
-            + capital_score    * 0.10,
+            dynasty_score * 0.40   # long-term roster quality
+            + redraft_score * 0.25  # projected scoring NOW
+            + age_score     * 0.15  # window length
+            + elite_score   * 0.12  # franchise-player quality
+            + capital_score * 0.08, # rebuild resources
             1,
         )
     elif position_ranks:
@@ -559,40 +562,25 @@ def calculate_roster_grade(
             avg_age=avg_age,
             firsts=firsts,
             dynasty_pct=dynasty_pct_val,
-            pf_pct=pf_pct_val,
-            win_rate=win_rate,
+            redraft_pct=redraft_pct_val,
             dr_ratio=dr_ratio,
-            offseason=offseason,
-            standings_rank=standings_rank,
-            n_teams=num_teams,
         )
     else:
         # Fallback for callers without league context (AI renderer, trade strategy)
-        direction = detect_team_direction(players, future_picks)
-        if rank_score >= 80 and direction not in ("rebuild", "retool"):
-            direction = "contender"
-        if rank_score < 20 and direction == "balanced":
-            direction = "rebuild"
+        # Approximate using positional rank score as a redraft proxy
         _young = avg_age <= 27.0
-        # Map old direction → new window labels
-        _dir_map = {
-            "contender": "Win-Now" if not _young else "Contender Window",
-            "rebuild": "Full Rebuild",
-            "retool": "Retooling",
-            "balanced": "Holding Pattern",
-        }
-        win_window = _dir_map.get(direction, "Holding Pattern")
-        if direction == "balanced":
-            if rank_score >= 75 and _young:
-                win_window = "Contender Window"
-            elif rank_score >= 75:
-                win_window = "Win-Now"
-            elif rank_score >= 55 and _young:
-                win_window = "2-3 Year Window"
-            elif rank_score >= 55:
-                win_window = "2-3 Year Window"
-            elif _young and total >= 48:
-                win_window = "Rising"
+        _aging = avg_age > 28.5
+        _dr = dr_ratio  # may still carry meaning even in fallback
+        _firsts = firsts
+        # Map rank_score (0-100) to 0-1 percentile proxy
+        _rank_pct = rank_score / 100.0
+        win_window = _compute_win_window(
+            avg_age=avg_age,
+            firsts=_firsts,
+            dynasty_pct=_rank_pct,    # positional rank as dynasty proxy
+            redraft_pct=_rank_pct,    # same proxy for both axes in fallback
+            dr_ratio=_dr,
+        )
 
     return {
         "score": total,
@@ -608,7 +596,7 @@ def calculate_roster_grade(
             "elite_count": elite_count,
             "deep_positions": deep_positions,
             "dynasty_pct": round(dynasty_pct_val, 3) if has_league_ctx else None,
-            "pf_pct": round(pf_pct_val, 3) if has_league_ctx else None,
+            "redraft_pct": round(redraft_pct_val, 3) if has_league_ctx else None,
             "dr_ratio": round(dr_ratio, 3) if has_league_ctx else None,
         },
     }
