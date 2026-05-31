@@ -10362,7 +10362,7 @@ img, svg, canvas {
   }
 
   .team-strength-card .card-header-row .mini-label {
-    width: 100%;
+    font-size: 10px;
   }
 
   .teams-sort-bar {
