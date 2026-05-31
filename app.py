@@ -20990,13 +20990,24 @@ def api_trade_intel_player_packages(player_id: str):
                 send = []
                 for a in assets:
                     if a.get("is_pick"):
+                        _ps   = a.get("pick_slot")
+                        _po   = a.get("pick_order") or "mid"
+                        _py   = a.get("pick_season")
+                        _pr   = a.get("pick_round")
+                        _pid  = (
+                            f"{_py}_{_pr}_{_ps:02d}" if _ps else
+                            f"{_py}_{_pr}_{_po}" if (_py and _pr) else None
+                        )
                         send.append({
-                            "name":       a.get("name", ""),
-                            "value":      float(a.get("value") or 0),
-                            "send_value": float(a.get("value") or 0),
-                            "is_pick":    True,
-                            "pick_round": a.get("pick_round"),
-                            "pick_season": a.get("pick_season"),
+                            "name":        a.get("name", ""),
+                            "value":       float(a.get("value") or 0),
+                            "send_value":  float(a.get("value") or 0),
+                            "is_pick":     True,
+                            "pick_round":  _pr,
+                            "pick_season": _py,
+                            "pick_slot":   _ps,
+                            "pick_order":  _po,
+                            "pick_id":     _pid,
                         })
                     else:
                         send.append({
