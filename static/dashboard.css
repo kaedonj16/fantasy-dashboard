@@ -6884,9 +6884,10 @@ thead th {
   color: #fecaca;
 }
 
-.m-team .avatar {
-  width: 60px;
-  height: 60px;
+.m-team .m-av {
+  width: 44px;
+  height: 44px;
+  box-shadow: none;
 }
 
 .podium .podium-header .avatar {
@@ -9500,7 +9501,7 @@ img, svg, canvas {
   .m-vs { font-size: 0.75rem; }
 
   .m-team { gap: 2px; overflow: hidden; }
-  .m-av { width: 36px; height: 36px; }
+  .m-team .m-av { width: 36px; height: 36px; }
   .m-team .num { font-size: 20px; letter-spacing: 0; }
   .m-team .proj { font-size: 10px; }
   .m-team-name { font-size: 12px; }

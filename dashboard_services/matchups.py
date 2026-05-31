@@ -1047,10 +1047,12 @@ def render_matchup_slide(
             is_bye = True
 
         # decide what to show
+        is_not_started = False
         if is_bye:
             display_actual = 0.0
             display_proj = None
         elif status == STATUS_NOT_STARTED:
+            is_not_started = True
             display_actual = 0.0
             display_proj = proj_val
         elif status == STATUS_IN_PROGRESS:
@@ -1141,7 +1143,7 @@ def render_matchup_slide(
                     f"</div>"
                 )
 
-        return cell, float(display_actual), display_proj, is_bye, (stats if stats else None)
+        return cell, float(display_actual), display_proj, is_bye, is_not_started, (stats if stats else None)
 
     rows_html: List[str] = []
 
@@ -1150,10 +1152,10 @@ def render_matchup_slide(
             m["right"].get("starters", []),
             fillvalue=None,
     ):
-        left_cell, left_actual, left_proj, left_is_bye, left_stats = player_bits(
+        left_cell, left_actual, left_proj, left_is_bye, left_not_started, left_stats = player_bits(
             L, "left", True
         )
-        right_cell, right_actual, right_proj, right_is_bye, right_stats = player_bits(
+        right_cell, right_actual, right_proj, right_is_bye, right_not_started, right_stats = player_bits(
             R, "right", False
         )
 
@@ -1163,7 +1165,7 @@ def render_matchup_slide(
         left_more = la > ra
         right_more = ra > la
 
-        def score_stack(actual_val, proj_val, side: str, is_bye: bool, more: bool) -> str:
+        def score_stack(actual_val, proj_val, side: str, is_bye: bool, more: bool, not_started: bool = False) -> str:
             if is_bye:
                 return (
                     "<div class='num-stack' style='display:grid'>"
@@ -1177,7 +1179,13 @@ def render_matchup_slide(
                     f"<span class='{cls}'>{actual_val:.1f}</span>"
                     "</div>"
                 )
-
+            if not_started:
+                # hasn't played yet — projection only, no zero actual
+                return (
+                    "<div class='num-stack' style='display:grid'>"
+                    f"<span class='num mid {side} proj' style='opacity:0.55;'>{proj_val:.1f}</span>"
+                    "</div>"
+                )
             cls_actual = f"num mid {side}" + (" more" if more else "")
             return (
                 "<div class='num-stack' style='display:grid'>"
@@ -1199,8 +1207,8 @@ def render_matchup_slide(
                 f"<span class='meta'>{stats}</span></div>"
             )
 
-        left_points_html = score_stack(left_actual, left_proj, "l", left_is_bye, left_more)
-        right_points_html = score_stack(right_actual, right_proj, "r", right_is_bye, right_more)
+        left_points_html = score_stack(left_actual, left_proj, "l", left_is_bye, left_more, left_not_started)
+        right_points_html = score_stack(right_actual, right_proj, "r", right_is_bye, right_more, right_not_started)
         points = f"{left_points_html}{right_points_html}"
 
         rows_html.append(

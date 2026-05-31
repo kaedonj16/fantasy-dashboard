@@ -333,7 +333,7 @@ def build_tables(
             user_meta = user_data.get("metadata") or {}
             u_id = user_data.get("avatar")
             avatar_id = user_meta.get("avatar") or (
-                f"https://sleepercdn.com/avatars/{u_id}" if platform == "sleeper" else f"{u_id}")
+                f"https://sleepercdn.com/avatars/thumbs/{u_id}" if platform == "sleeper" else f"{u_id}")
 
         owner_avatar[display] = avatar_url(avatar_id)
 
