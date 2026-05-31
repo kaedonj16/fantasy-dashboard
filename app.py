@@ -11331,9 +11331,9 @@ def api_teams_ready():
     platform  = request.args.get("platform", "sleeper")
     league_id = request.args.get("league_id", "")
     try:
-        season = int(request.args.get("season", current_season))
+        season = int(request.args.get("season", datetime.now().year))
     except (TypeError, ValueError):
-        season = current_season
+        season = datetime.now().year
     ready = bool(get_page_html_from_cache(platform, season, league_id, "teams"))
     return jsonify({"ready": ready})
 
