@@ -7357,18 +7357,39 @@ def build_teams_body(ctx: dict) -> str:
 
         # Numeric sort keys for client-side sorting
         _grade_num = {"A+":12,"A":11,"A-":10,"B+":9,"B":8,"B-":7,"C+":6,"C":5,"C-":4,"D+":3,"D":2,"D-":1,"F":0}.get(_grade, 0)
-        _archetype_num = {"Win-Now Window":1,"Contender Window":2,"Aging Contender":3,
-                          "2-3 Year Window":4,"Rising Contender":5,"Building":6,
-                          "Retooling":7,"Holding Pattern":8,"Full Rebuild":9}.get(_win_window, 5)
+        _archetype_num = {
+            "Contender":        1,
+            "Win-Now":          2,
+            "Aging Contender":  3,
+            "Contender Window": 4,
+            "2-3 Year Window":  5,
+            "Rising":           6,
+            "Holding Pattern":  7,
+            "Retooling":        8,
+            "Rebuilding":       9,
+            "Full Rebuild":     10,
+        }.get(_win_window, 7)
+        _window_cls = {
+            "Contender":        "wt-contender",
+            "Win-Now":          "wt-win-now",
+            "Aging Contender":  "wt-aging-contender",
+            "Contender Window": "wt-contender-window",
+            "2-3 Year Window":  "wt-2yr",
+            "Rising":           "wt-rising",
+            "Holding Pattern":  "wt-holding",
+            "Retooling":        "wt-retooling",
+            "Rebuilding":       "wt-rebuilding",
+            "Full Rebuild":     "wt-full-rebuild",
+        }.get(_win_window, "wt-holding")
         _pos_idx = team_pos_index[rid]
 
         card_html = (
-            f"<div class='card team-strength-card' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}'>"
+            f"<div class='card team-strength-card {_window_cls}' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}'>"
             "  <div class='card-header-row'>"
             f"    <div style='display:flex;align-items:center;gap:8px;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>{_grade_badge}</div>"
             "    <div style='display:flex;align-items:center;gap:6px;'>"
-            f"      <div class='mini-label'><span class='grade-window-label'>{_win_window}</span> &bull; Positional Index: "
-            f"<span style='font-weight:600'>{team_pos_index[rid]:+.2f}</span></div>"
+            f"      <div class='mini-label'><span class='grade-window-label'>{_win_window}</span>"
+            f"<span class='tc-pi-text'> &bull; <span class='tc-pi-num'>{team_pos_index[rid]:+.2f}</span></span></div>"
             "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
             "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
             "          <path d='M3 5l4 4 4-4' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>"
@@ -8028,16 +8049,16 @@ def build_teams_body(ctx: dict) -> str:
       </button>
       <div class="window-legend-panel" id="windowLegendPanel">
         <div class="window-legend-grid">
-          <div class="wl-row"><span class="wl-dot" style="background:#22c55e;"></span><strong class="wl-label">Contender</strong><span class="wl-desc">Elite dynasty + strong scoring projection &mdash; premier roster right now</span></div>
-          <div class="wl-row"><span class="wl-dot" style="background:#f59e0b;"></span><strong class="wl-label">Win-Now</strong><span class="wl-desc">Elite scoring with aging stars &mdash; peak years are here, window is open</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#22c55e;"></span><strong class="wl-label">Contender</strong><span class="wl-desc">Elite dynasty + strong scoring projection, premier roster right now</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#f59e0b;"></span><strong class="wl-label">Win-Now</strong><span class="wl-desc">Elite scoring with aging stars, peak years are here and window is open</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#84cc16;"></span><strong class="wl-label">Aging Contender</strong><span class="wl-desc">Strong roster projecting well, but franchise age is trending up</span></div>
-          <div class="wl-row"><span class="wl-dot" style="background:#3b82f6;"></span><strong class="wl-label">Contender Window</strong><span class="wl-desc">Elite dynasty value with young or prime core &mdash; window opening soon</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#3b82f6;"></span><strong class="wl-label">Contender Window</strong><span class="wl-desc">Elite dynasty value with young or prime core, window opening soon</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#6366f1;"></span><strong class="wl-label">2-3 Year Window</strong><span class="wl-desc">Strong future value building toward contention over the next few seasons</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#8b5cf6;"></span><strong class="wl-label">Rising</strong><span class="wl-desc">Young, future-heavy roster beginning to accumulate dynasty value</span></div>
-          <div class="wl-row"><span class="wl-dot" style="background:#94a3b8;"></span><strong class="wl-label">Holding Pattern</strong><span class="wl-desc">Average across all metrics &mdash; trajectory not yet clear</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#94a3b8;"></span><strong class="wl-label">Holding Pattern</strong><span class="wl-desc">Average across all metrics, direction not yet clear</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#f97316;"></span><strong class="wl-label">Retooling</strong><span class="wl-desc">Selling aging core, accumulating capital to reset for the future</span></div>
-          <div class="wl-row"><span class="wl-dot" style="background:#ef4444;"></span><strong class="wl-label">Rebuilding</strong><span class="wl-desc">Below-average dynasty + redraft &mdash; active rebuild in progress</span></div>
-          <div class="wl-row"><span class="wl-dot" style="background:#dc2626;"></span><strong class="wl-label">Full Rebuild</strong><span class="wl-desc">Stacked with picks, very low current value &mdash; all-in on the future</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#ef4444;"></span><strong class="wl-label">Rebuilding</strong><span class="wl-desc">Below-average dynasty + redraft, active rebuild in progress</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#dc2626;"></span><strong class="wl-label">Full Rebuild</strong><span class="wl-desc">Stacked with picks, very low current value, all-in on the future</span></div>
         </div>
       </div>
     </div>
