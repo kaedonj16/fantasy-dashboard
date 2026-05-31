@@ -346,61 +346,83 @@ def _compute_win_window(
     offseason: bool,
 ) -> str:
     """
-    Classify a team's competitive window using production, dynasty/redraft spread,
-    playoff performance, pick capital, and age profile.
+    Classify a team's competitive window.
 
-    dynasty_pct   – 0-1 percentile rank of team's total dynasty value across the league
-    pf_pct        – 0-1 percentile rank of team's points for (0.5 = neutral/offseason)
-    win_rate      – wins / games played, None in offseason
-    dr_ratio      – avg(dynasty_value / redraft_value) for top starters
-                    >1.0 = dynasty-heavy (young/unproven)  <1.0 = redraft-heavy (aging/peaking)
+    Both axes must be satisfied for the upper-tier labels:
+      - Roster quality  (dynasty_pct, age, dr_ratio)
+      - Actual results  (win_rate, pf_pct)
+
+    dynasty_pct  – 0-1 percentile of total dynasty value vs league
+    pf_pct       – 0-1 percentile of Points For vs league
+    win_rate     – wins / games played (None in offseason)
+    dr_ratio     – avg(dynasty / redraft) for top starters
+                   >1.2 = future-heavy (young/unproven)
+                   <0.9 = win-now (aging/peaking)
     """
     young = avg_age <= 26.5
     aging = avg_age >= 28.5
+    wr    = win_rate or 0
 
-    # Production signals — treated as neutral when in offseason
-    performing = (not offseason) and pf_pct >= 0.60 and (win_rate or 0) >= 0.55
-    winning    = (not offseason) and (win_rate or 0) >= 0.50
+    # Convenience booleans — all False in offseason so labels fall through to
+    # the dynasty-only path (which is correct when no games have been played)
+    performing  = (not offseason) and pf_pct >= 0.60 and wr >= 0.55   # clear above-avg
+    winning     = (not offseason) and wr >= 0.55                       # above .500
+    above_avg   = (not offseason) and (wr >= 0.50 or pf_pct >= 0.50)  # at least league-avg
 
-    # Roster profile from dynasty/redraft spread
-    win_now_roster = dr_ratio <= 0.90   # peaking/aging players valued more for now
-    future_roster  = dr_ratio >= 1.20   # young players with upside not yet realized
+    win_now_roster = dr_ratio <= 0.90   # redraft ≥ dynasty → peaking/aging
+    future_roster  = dr_ratio >= 1.20   # dynasty >> redraft → young/unproven
 
-    # 1. Full Rebuild — deliberate tank: many 1sts + weak dynasty value
+    # ── Negative tier (not competitive) ────────────────────────────────────────
+
+    # Full Rebuild — deliberate tank: multiple 1sts + weak dynasty
     if firsts >= 3 and dynasty_pct <= 0.45:
         return "Full Rebuild"
 
-    # 2. Retooling — transitioning: picks + aging or win-now roster winding down
+    # Retooling — picks + aging or declining-value roster winding down
     if firsts >= 2 and (aging or (avg_age >= 27.5 and win_now_roster)):
         return "Retooling"
 
-    # 3. Rebuilding — weak roster not producing, no tank capital either
-    if dynasty_pct <= 0.30 and (offseason or (pf_pct <= 0.40 and (win_rate or 1) <= 0.40)):
+    # Rebuilding — weak roster, not winning, no clear plan
+    if dynasty_pct <= 0.35 and (offseason or (pf_pct <= 0.45 and wr <= 0.45)):
         return "Rebuilding"
 
-    # 4. Win-Now — strong dynasty + actually producing + peaking/aging roster profile
-    if dynasty_pct >= 0.60 and performing and (aging or win_now_roster):
+    # ── Active contender tier (winning now) ────────────────────────────────────
+
+    # Win-Now — producing + peaking/aging profile (short window closing)
+    if dynasty_pct >= 0.55 and performing and (aging or win_now_roster):
         return "Win-Now"
 
-    # 5. Aging Contender — performing/winning but dynasty profile declining
-    if (performing or winning) and aging and dynasty_pct >= 0.45:
+    # Aging Contender — winning but dynasty profile declining (window closing)
+    if winning and aging and dynasty_pct >= 0.50:
         return "Aging Contender"
 
-    # 6. Contender — elite dynasty + performing, or so dominant performance is secondary
-    if dynasty_pct >= 0.70 and (performing or dynasty_pct >= 0.85 or (offseason and not aging)):
+    # Contender — elite dynasty + actually winning (no bypasses)
+    if dynasty_pct >= 0.70 and winning and pf_pct >= 0.50:
         return "Contender"
 
-    # 7. Contender Window — elite dynasty + young, not yet dominating production
-    if dynasty_pct >= 0.60 and young:
+    # Offseason-only contender check (no games to judge, rely on dynasty alone)
+    if offseason and dynasty_pct >= 0.70 and not aging:
+        return "Contender"
+
+    # ── Approaching peak tier (winning-adjacent) ───────────────────────────────
+
+    # Contender Window — strong dynasty + young + at least league-average results
+    # A team must actually be competitive to be in a "window"
+    if dynasty_pct >= 0.65 and young and (offseason or above_avg):
         return "Contender Window"
 
-    # 8. 2-3 Year Window — solid dynasty + young/prime + dynasty >> redraft (upside ahead)
-    if dynasty_pct >= 0.48 and avg_age <= 27.5 and future_roster:
+    # ── Building tier ──────────────────────────────────────────────────────────
+
+    # 2-3 Year Window — solid dynasty + young/prime + future-heavy roster
+    # No performance floor: they're not there yet, that's the point
+    if dynasty_pct >= 0.50 and avg_age <= 27.5 and future_roster:
         return "2-3 Year Window"
 
-    # 9. Rising — decent dynasty + very young + future-heavy roster
-    if dynasty_pct >= 0.35 and young and future_roster:
+    # Rising — younger team with upside building toward relevance
+    if dynasty_pct >= 0.38 and young and future_roster:
         return "Rising"
+
+    return "Holding Pattern"
 
     return "Holding Pattern"
 
