@@ -136,10 +136,12 @@ def generate_trade_ai_result(payload: dict) -> dict:
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     - Use the provided JSON for market values, roster composition, and pick slots. These numbers are ground truth — do not override them with intuition.
     - If two assets have explicit values and one is clearly higher, never conclude the lower-valued asset is worth more.
-    - You MAY and SHOULD apply your training knowledge about players to enrich the narrative: current injuries, NFL team situations, recent performance, draft position, contract status, role changes. This is what makes the analysis useful.
-    - If you reference an injury, situation, or NFL context from your training knowledge, briefly acknowledge it's based on known player context (e.g., "recovering from his ACL tear last season").
+    - You MAY and SHOULD apply your training knowledge about players to enrich the narrative: current injuries, NFL team situations, recent performance, draft pedigree, contract status, role changes. This is what makes the analysis useful.
     - Do NOT fabricate values, pick slots, or roster composition — those must come from the JSON.
-    - The post_trade_roster in the JSON shows the viewer's actual top players after the deal completes — reference these by name when explaining roster impact.
+    - injury_status and injury_body_part are provided per asset when applicable. If injury_status is "IR", "OUT", or similar, work this into the player narrative explicitly.
+    - pick_prospects maps pick IDs to the likely prospect at that slot (from ADP). Use these names when discussing picks — e.g., "the 2.03 projects as Marcus Johnson (WR)". If no prospect is listed for a pick, use your training knowledge or say "a mid-second prospect".
+    - opponent_team gives you the trade partner's team context (direction, record, top assets). Use it to explain WHY they'd make this trade and whether they'd likely accept.
+    - post_trade_roster shows the viewer's actual top players after the deal — reference these by name when explaining roster impact.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 2: VALUE HIERARCHY - READ THIS FIRST
@@ -261,18 +263,21 @@ def generate_trade_ai_result(payload: dict) -> dict:
     
     Narrative structure (follow this order):
       1. What are the key assets changing hands, and what do they represent in dynasty?
-         Use your training knowledge: mention real NFL situations, injuries, role changes, recent performance.
-         (e.g., "Malik Nabers is recovering from the ACL tear that ended his 2025 season, but he showed elite WR1 upside before going down")
+         Use your training knowledge: mention real NFL situations, injuries (use injury_status/injury_body_part fields), role changes, recent performance.
+         For picks, use pick_prospects names if available (e.g., "the 2.03 projects to Marcus Johnson").
+         (e.g., "Malik Nabers is on IR recovering from the ACL and meniscus tear that ended his 2025 season early")
       2. What is the production/age/trajectory story for each side?
-         Include concrete NFL context: team fit, target share potential, backfield situation, draft pedigree.
+         Include concrete NFL context: team fit, target share, backfield situation, draft pedigree, contract.
          (e.g., "Kenneth Walker slides into the KC backfield after a Super Bowl run, now the clear RB1 on a contender")
       3. What does this mean for the viewer's roster after the trade?
-         Reference the post_trade_roster from the JSON by name — name who stays and what roles they fill.
+         Reference the post_trade_roster by name — who stays, what roles they fill, where depth gaps open.
          (e.g., "You'd still lead with CeeDee Lamb and Drake London at WR, giving you elite floor even while Nabers recovers")
-      4. Only THEN introduce value delta as confirmation of the player-based read.
-         (e.g., "The market reflects this gap - you're sending ~240 more in value than you're receiving")
-      5. Verdict and counter (if applicable) framed in player terms.
-         (e.g., "To make this fair, ask them to include their 1.03 or a young starter-caliber WR")
+      4. Will the opponent accept? Use opponent_team context to explain their motivation.
+         Reference their direction, record, top assets, and what filling their weak positions means for them.
+         (e.g., "They're a rebuilding team (3-9) with no RB depth — Walker fills their biggest need immediately")
+      5. Only THEN introduce value delta as confirmation of the player-based read.
+         (e.g., "The market reflects this: you're sending ~141 more in value, a reasonable premium for an elite asset")
+      6. Verdict and counter (if applicable) framed in player terms.
     
     Language rules:
       - Avoid leading sentences like "This is a severe market-value loss of X points."

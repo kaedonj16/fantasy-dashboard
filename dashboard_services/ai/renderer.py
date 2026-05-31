@@ -221,6 +221,9 @@ def get_trade_ai_analysis(
     viewer_gets = side_a if viewer_side == "a" else side_b
     viewer_gives = side_b if viewer_side == "a" else side_a
 
+    # Injury data from Sleeper player objects stored in ctx
+    players_full = ctx.get("players") or {}
+
     def clean_asset(a: dict) -> dict:
         if not isinstance(a, dict):
             return {
@@ -231,8 +234,13 @@ def get_trade_ai_analysis(
                 "age": None,
                 "value": 0.0,
             }
+        pid = str(a.get("id") or "")
+        full_p = players_full.get(pid) or {}
+        raw_status = (full_p.get("injury_status") or full_p.get("status") or "").strip().upper()
+        injury_status = "" if raw_status in ("", "ACTIVE", "ACT") else raw_status
+        injury_body_part = (full_p.get("injury_body_part") or "").strip().lower()
         return {
-            "id": str(a.get("id") or ""),
+            "id": pid,
             "name": a.get("name") or "Unknown",
             "position": str(a.get("position") or a.get("pos") or "?").upper(),
             "team": a.get("team") or "",
@@ -240,6 +248,8 @@ def get_trade_ai_analysis(
             "value": safe_float(a.get("value")),
             "pos_rank_label": a.get("pos_rank_label") or "",
             "rank_change_7d": a.get("rank_change_7d"),
+            "injury_status": injury_status,
+            "injury_body_part": injury_body_part,
         }
 
     def summarize_pick_ids(pick_ids: list) -> dict:
@@ -304,6 +314,80 @@ def get_trade_ai_analysis(
         for a in remaining[:8]
     ]
 
+    # Pick-to-prospect mapping using rookie ADP
+    current_season = ctx.get("current_season") or ctx.get("season") or 2026
+    num_teams = len(ctx.get("rosters") or []) or 12
+    is_sf = bool(ctx.get("is_sf") or any(
+        str(s).upper() in {"SUPER_FLEX", "SFLEX"}
+        for s in (ctx.get("roster_positions") or [])
+    ))
+    all_pick_ids = list(viewer_gets.get("pick_ids") or []) + list(viewer_gives.get("pick_ids") or [])
+
+    pick_prospects: dict = {}
+    if all_pick_ids:
+        try:
+            from dashboard_services.adp_service import fetch_fc_rookie_adp, build_model_adp_fallback
+            adp_raw = fetch_fc_rookie_adp(is_sf=is_sf, season=current_season) or {}
+            if not adp_raw:
+                adp_raw = build_model_adp_fallback(is_sf=is_sf, season=current_season) or {}
+            name_by_id = {str(p.get("id")): p.get("name") for p in (ctx.get("model_value_table") or []) if p.get("id")}
+            prospects_sorted = sorted(
+                [
+                    {"sid": sid, "name": name_by_id.get(str(sid)) or "", "adp_rank": info.get("adp_rank") or 999, "position": info.get("position") or ""}
+                    for sid, info in adp_raw.items()
+                    if name_by_id.get(str(sid))
+                ],
+                key=lambda x: x["adp_rank"],
+            )
+            for pk in all_pick_ids:
+                parts = str(pk).split("_")
+                if len(parts) < 3:
+                    continue
+                try:
+                    yr, rnd = int(parts[0]), int(parts[1])
+                except ValueError:
+                    continue
+                if yr != current_season or not prospects_sorted:
+                    continue
+                third = parts[2]
+                try:
+                    slot = int(third)
+                except ValueError:
+                    slot = {"early": max(1, round(num_teams * 0.2)), "mid": round(num_teams * 0.5), "late": round(num_teams * 0.8)}.get(third, round(num_teams / 2))
+                overall = (rnd - 1) * num_teams + slot
+                closest = min(prospects_sorted, key=lambda p: abs(p["adp_rank"] - overall))
+                if abs(closest["adp_rank"] - overall) <= num_teams // 2 + 1:
+                    pick_prospects[pk] = {"name": closest["name"], "position": closest["position"], "adp_overall": closest["adp_rank"]}
+        except Exception:
+            pass
+
+    # Opponent team context
+    opponent_ctx: dict = {}
+    try:
+        opponent_side = side_b if viewer_side == "a" else side_a
+        opp_player_ids = {str(a.get("id")) for a in (opponent_side.get("assets") or []) if a.get("id")}
+        opp_roster_id = None
+        for roster in (ctx.get("rosters") or []):
+            rid = str(roster.get("roster_id") or "")
+            if rid == str(viewer_roster_id):
+                continue
+            if opp_player_ids & {str(p) for p in (roster.get("players") or [])}:
+                opp_roster_id = rid
+                break
+        if opp_roster_id:
+            opp_team_ctx = build_team_gm_context(ctx, opp_roster_id)
+            if opp_team_ctx:
+                opponent_ctx = {
+                    "team_name": opp_team_ctx.get("team_name"),
+                    "direction": opp_team_ctx.get("direction"),
+                    "record": opp_team_ctx.get("record"),
+                    "top_assets": [{"name": a.get("name"), "position": a.get("position"), "value": round(safe_float(a.get("value")), 1)} for a in (opp_team_ctx.get("top_assets") or [])[:5]],
+                    "strong_positions": opp_team_ctx.get("strong_positions") or [],
+                    "weak_positions": opp_team_ctx.get("weak_positions") or [],
+                }
+    except Exception:
+        pass
+
     payload = {
         "team_context": {
             "team_name": team_ctx.get("team_name"),
@@ -338,12 +422,14 @@ def get_trade_ai_analysis(
                 "pick_summary": gives_pick_summary,
             },
             "post_trade_roster": post_trade_roster,
+            "pick_prospects": pick_prospects,
             "market_delta": market_delta,
         },
+        "opponent_team": opponent_ctx or None,
     }
 
     # Build cache key for trade analysis
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v3")
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v4")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)
