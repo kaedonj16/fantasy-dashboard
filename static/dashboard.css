@@ -3312,9 +3312,9 @@ thead th {
   position: fixed;
   top: 0;
   left: 0;
-  height: 3px;
+  height: 4px;
   width: 0%;
-  background: linear-gradient(90deg, var(--accent, #38bdf8), #60a5fa);
+  background: linear-gradient(90deg, var(--accent, #38bdf8), #818cf8, #60a5fa);
   z-index: 999999;
   transition: width 0.25s ease, opacity 0.3s ease 0.1s;
   border-radius: 0 2px 2px 0;
@@ -17120,3 +17120,41 @@ button:disabled {
 .wt-retooling        .grade-window-label { color: #ea580c; }
 .wt-rebuilding       .grade-window-label { color: #dc2626; }
 .wt-full-rebuild     .grade-window-label { color: #b91c1c; }
+
+/* ============================================
+   TRADE SUGGESTIONS MOBILE
+   ============================================ */
+@media (max-width: 540px) {
+  .suggestion-assets {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .suggestion-side { min-width: 0; }
+  .suggestion-arrow {
+    text-align: center;
+    font-size: 16px;
+    transform: rotate(90deg);
+    display: block;
+    line-height: 1;
+  }
+}
+
+/* ============================================
+   TEAMS PAGE SKELETON
+   ============================================ */
+.teams-loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+.teams-sk-card .card-body { display: block !important; }
+.teams-sk-card .card-header-row {
+  padding-bottom: 8px;
+}
+.teams-sk-card {
+  pointer-events: none;
+}

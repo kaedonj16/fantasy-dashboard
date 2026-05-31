@@ -11253,16 +11253,111 @@ def page_prospects_guest():
     return page_prospects(platform="sleeper", season=current_season, league_id=None)
 
 
+_TEAMS_BUILDING: set = set()
+_TEAMS_BUILDING_LOCK = threading.Lock()
+
+
+def _background_build_teams(platform: str, league_id: str, season: int) -> None:
+    build_key = f"{platform}:{season}:{league_id}"
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        body_html = build_teams_body(ctx)
+        store_page_html(platform, season, league_id, "teams", body_html)
+    except Exception as exc:  # noqa: BLE001
+        import logging as _log
+        _log.getLogger(__name__).error("Background teams build failed: %s", exc)
+    finally:
+        with _TEAMS_BUILDING_LOCK:
+            _TEAMS_BUILDING.discard(build_key)
+
+
+def _build_teams_skeleton(platform: str, season: int, league_id: str, num_teams: int) -> str:
+    shimmer_card = """
+    <div class="card team-strength-card teams-sk-card">
+      <div class="card-header-row">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="sk-shimmer" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;"></div>
+          <div class="sk-shimmer" style="width:130px;height:16px;border-radius:4px;"></div>
+          <div class="sk-shimmer" style="width:34px;height:22px;border-radius:6px;"></div>
+        </div>
+        <div class="sk-shimmer" style="width:140px;height:11px;border-radius:4px;margin-top:4px;"></div>
+      </div>
+      <div class="card-body">
+        <div class="sk-shimmer" style="width:100%;height:180px;border-radius:6px;margin-bottom:10px;"></div>
+        <div class="sk-shimmer" style="width:100%;height:100px;border-radius:6px;"></div>
+      </div>
+    </div>"""
+    cards_html = shimmer_card * max(num_teams, 4)
+    return f"""
+    <div class="page-layout teams-page">
+      <main class="page-main">
+        <div class="teams-topbar">
+          <div class="teams-sort-bar">
+            <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
+            <button class="teams-sort-btn active" disabled>Positional Index</button>
+            <button class="teams-sort-btn" disabled>Team Grade</button>
+            <button class="teams-sort-btn" disabled>Archetype</button>
+          </div>
+          <div class="teams-loading-indicator">
+            <div class="loading-spinner" style="width:14px;height:14px;"></div>
+            <span>Building team rankings&hellip;</span>
+          </div>
+        </div>
+        <div class="teams-grid">
+          {cards_html}
+        </div>
+      </main>
+    </div>
+    <script>
+    (function() {{
+      var _poll = 0;
+      function check() {{
+        if (_poll > 25) return;
+        _poll++;
+        fetch('/api/teams-ready?platform={platform}&league_id={league_id}&season={season}')
+          .then(function(r) {{ return r.json(); }})
+          .then(function(d) {{ if (d.ready) window.location.reload(); else setTimeout(check, 1400); }})
+          .catch(function() {{ setTimeout(check, 2000); }});
+      }}
+      setTimeout(check, 1200);
+    }})();
+    </script>
+    """
+
+
+@app.route("/api/teams-ready")
+def api_teams_ready():
+    platform  = request.args.get("platform", "sleeper")
+    league_id = request.args.get("league_id", "")
+    try:
+        season = int(request.args.get("season", current_season))
+    except (TypeError, ValueError):
+        season = current_season
+    ready = bool(get_page_html_from_cache(platform, season, league_id, "teams"))
+    return jsonify({"ready": ready})
+
+
 @app.route("/<platform>/<int:season>/<league_id>/teams")
 def page_teams(platform: str, season: int, league_id: str):
     cached = get_page_html_from_cache(platform, season, league_id, "teams")
     if cached:
         return render_page("BR Fantasy Teams", league_id, "teams", cached, platform, season)
 
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body_html = build_teams_body(ctx)
-    store_page_html(platform, season, league_id, "teams", body_html)
-    return render_page("BR Fantasy Teams", league_id, "teams", body_html, platform, season)
+    # Not cached — kick off background build and serve skeleton immediately
+    build_key = f"{platform}:{season}:{league_id}"
+    with _TEAMS_BUILDING_LOCK:
+        if build_key not in _TEAMS_BUILDING:
+            _TEAMS_BUILDING.add(build_key)
+            threading.Thread(
+                target=_background_build_teams,
+                args=(platform, league_id, season),
+                daemon=True,
+            ).start()
+
+    ctx_entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id), {})
+    num_teams = int((ctx_entry.get("ctx") or {}).get("total_rosters") or 12)
+    skeleton = _build_teams_skeleton(platform, season, league_id, num_teams)
+    return render_page("BR Fantasy Teams", league_id, "teams", skeleton, platform, season)
 
 
 def _ens(career_owners: dict, uid: str) -> None:
