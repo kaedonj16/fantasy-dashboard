@@ -2271,6 +2271,11 @@ window.initTradePage = function initTradePage(root = document) {
         barIndicator.style.left = leftPct + "%";
       }
 
+      const fairZoneEl = root.querySelector(".otc-balance-fair");
+      if (fairZoneEl && data.fair_pct) {
+        fairZoneEl.style.width = (data.fair_pct * 200) + "%";
+      }
+
       if (verdictEl) {
         verdictEl.textContent = data.verdict || "";
         verdictEl.className = "otc-verdict";
