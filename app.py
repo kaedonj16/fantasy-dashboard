@@ -207,6 +207,25 @@ VALUE_CACHE_TTL = 60 * 60 * 6  # 6 hours
 # How long to cache rendered page HTML (Teams, Activity, Graphs) per league
 PAGE_HTML_TTL = 60 * 30  # 30 minutes
 
+# Ensure the cross-worker page HTML cache table exists. Runs once at import
+# time (i.e. once per gunicorn worker after --preload fork). Idempotent.
+try:
+    from dashboard_services.db import get_conn as _get_conn_init
+    with _get_conn_init() as _conn_init:
+        _conn_init.execute("""
+            CREATE TABLE IF NOT EXISTS page_html_cache (
+                platform   TEXT        NOT NULL,
+                season     INT         NOT NULL,
+                league_id  TEXT        NOT NULL,
+                page       TEXT        NOT NULL,
+                html       TEXT        NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (platform, season, league_id, page)
+            )
+        """)
+except Exception:
+    pass  # DB not available at startup; functions fall back to in-process cache
+
 daily_init_done = False
 os.environ["TZ"] = "America/New_York"
 time.tzset()
