@@ -11285,14 +11285,19 @@ _TEAMS_BUILDING_LOCK = threading.Lock()
 
 
 def _background_build_teams(platform: str, league_id: str, season: int) -> None:
+    import logging as _log
+    _logger = _log.getLogger(__name__)
     build_key = f"{platform}:{season}:{league_id}"
     try:
+        _t0 = time.time()
+        _logger.info("Teams background build started: %s", build_key)
         ctx = get_league_ctx_from_cache(platform, league_id, season)
+        _logger.info("Teams context ready (%.1fs), building HTML…", time.time() - _t0)
         body_html = build_teams_body(ctx)
         store_page_html(platform, season, league_id, "teams", body_html)
+        _logger.info("Teams build complete (%.1fs total)", time.time() - _t0)
     except Exception as exc:  # noqa: BLE001
-        import logging as _log
-        _log.getLogger(__name__).error("Background teams build failed: %s", exc, exc_info=True)
+        _logger.error("Background teams build failed: %s", exc, exc_info=True)
     finally:
         with _TEAMS_BUILDING_LOCK:
             _TEAMS_BUILDING.discard(build_key)
@@ -11375,7 +11380,20 @@ def page_teams(platform: str, season: int, league_id: str):
     if cached:
         return render_page("BR Fantasy Teams", league_id, "teams", cached, platform, season)
 
-    # Not cached — kick off background build and serve skeleton immediately
+    # If the league context is already in memory (user visited dashboard first),
+    # build the teams page synchronously — takes <3s and avoids the multi-worker
+    # skeleton polling problem entirely.
+    ctx_entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
+    if ctx_entry and (time.time() - ctx_entry.get("ts", 0) <= CACHE_TTL):
+        try:
+            body_html = build_teams_body(ctx_entry["ctx"])
+            store_page_html(platform, season, league_id, "teams", body_html)
+            return render_page("BR Fantasy Teams", league_id, "teams", body_html, platform, season)
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger(__name__).error("Sync teams build failed: %s", exc, exc_info=True)
+
+    # Cold load — context not cached yet, kick off background build + skeleton
     build_key = f"{platform}:{season}:{league_id}"
     with _TEAMS_BUILDING_LOCK:
         if build_key not in _TEAMS_BUILDING:
@@ -11386,8 +11404,7 @@ def page_teams(platform: str, season: int, league_id: str):
                 daemon=True,
             ).start()
 
-    ctx_entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id), {})
-    num_teams = int((ctx_entry.get("ctx") or {}).get("total_rosters") or 12)
+    num_teams = int((ctx_entry or {}).get("ctx", {}).get("total_rosters") or 12) if ctx_entry else 12
     skeleton = _build_teams_skeleton(platform, season, league_id, num_teams)
     return render_page("BR Fantasy Teams", league_id, "teams", skeleton, platform, season)
 
