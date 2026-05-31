@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-05-29",
         "tag": "new",
-        "text": "Trade Strategy: Archetype-driven suggestions for all four team profiles — Contending, Rebuilding, Consolidate, and Distribute. Each package shows exactly what leaves, what comes back, and how the deal shifts your Win %, playoff odds, and championship probability via Monte Carlo simulation. Projections-based in the offseason, blended with live scoring in-season. Results load with a Simulating indicator and switch instantly on repeat visits.",
+        "text": "Trade Strategy: Archetype-driven suggestions for all four team profiles: Contending, Rebuilding, Consolidate, and Distribute. Each package shows exactly what leaves, what comes back, and how the deal shifts your Win %, playoff odds, and championship probability.",
         "link": "/trade?tab=suggestions"
     },
     {

@@ -27,7 +27,6 @@ different stat profiles of QB / RB / WR / TE.
 from __future__ import annotations
 
 import math
-import statistics
 from typing import Any, Dict, List, Optional
 
 
@@ -1984,7 +1983,7 @@ def score_prospect(
         prospect_score += upside_bonus
 
     # Apply benchmark boost system for NFL success predictors
-    from benchmark_boosts import calc_benchmark_boost, apply_benchmark_boost
+    from data_building.updates.benchmark_boosts import calc_benchmark_boost, apply_benchmark_boost
     
     # Get draft pick for benchmark calculations
     draft_pick = None
