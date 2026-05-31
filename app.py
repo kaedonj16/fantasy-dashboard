@@ -7862,9 +7862,9 @@ def build_teams_body(ctx: dict) -> str:
               var nextDis = round >= totalRounds ? ' disabled' : '';
 
               var html = '<div class="draft-round-nav">' +
-                '<button class="pf-pill"' + prevDis + ' id="draftRoundPrev">&#8592; Prev</button>' +
+                '<button class="pagination-btn"' + prevDis + ' id="draftRoundPrev">&#8592; Prev</button>' +
                 '<span class="draft-round-label">' + label + '</span>' +
-                '<button class="pf-pill"' + nextDis + ' id="draftRoundNext">Next &#8594;</button>' +
+                '<button class="pagination-btn"' + nextDis + ' id="draftRoundNext">Next &#8594;</button>' +
               '</div>' +
               '<div class="draft-acc-picks">';
 
