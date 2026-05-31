@@ -326,18 +326,18 @@ def get_trade_ai_analysis(
     pick_prospects: dict = {}
     if all_pick_ids:
         try:
-            from dashboard_services.adp_service import fetch_fc_rookie_adp, build_model_adp_fallback
-            adp_raw = fetch_fc_rookie_adp(is_sf=is_sf, season=current_season) or {}
+            from dashboard_services.adp_service import fetch_league_adp_from_db, build_model_adp_fallback
+            adp_raw = fetch_league_adp_from_db(is_sf=is_sf, season=current_season, draft_type="rookie") or {}
             if not adp_raw:
                 adp_raw = build_model_adp_fallback(is_sf=is_sf, season=current_season) or {}
             name_by_id = {str(p.get("id")): p.get("name") for p in (ctx.get("model_value_table") or []) if p.get("id")}
             prospects_sorted = sorted(
                 [
-                    {"sid": sid, "name": name_by_id.get(str(sid)) or "", "adp_rank": info.get("adp_rank") or 999, "position": info.get("position") or ""}
+                    {"sid": sid, "name": name_by_id.get(str(sid)) or "", "avg_pick": float(info.get("avg_pick") or info.get("adp_rank") or 999), "position": info.get("position") or ""}
                     for sid, info in adp_raw.items()
                     if name_by_id.get(str(sid))
                 ],
-                key=lambda x: x["adp_rank"],
+                key=lambda x: x["avg_pick"],
             )
             for pk in all_pick_ids:
                 parts = str(pk).split("_")
@@ -355,9 +355,9 @@ def get_trade_ai_analysis(
                 except ValueError:
                     slot = {"early": max(1, round(num_teams * 0.2)), "mid": round(num_teams * 0.5), "late": round(num_teams * 0.8)}.get(third, round(num_teams / 2))
                 overall = (rnd - 1) * num_teams + slot
-                closest = min(prospects_sorted, key=lambda p: abs(p["adp_rank"] - overall))
-                if abs(closest["adp_rank"] - overall) <= num_teams // 2 + 1:
-                    pick_prospects[pk] = {"name": closest["name"], "position": closest["position"], "adp_overall": closest["adp_rank"]}
+                closest = min(prospects_sorted, key=lambda p: abs(p["avg_pick"] - overall))
+                if abs(closest["avg_pick"] - overall) <= num_teams // 2 + 1:
+                    pick_prospects[pk] = {"name": closest["name"], "position": closest["position"], "adp_overall": round(closest["avg_pick"], 1)}
         except Exception:
             pass
 
