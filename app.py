@@ -8068,13 +8068,15 @@ def build_teams_body(ctx: dict) -> str:
     return f"""
     <div class="page-layout teams-page">
       <main class="page-main">
-        <div class="teams-sort-bar">
-          <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
-          <button class="teams-sort-btn active" data-sort="posindex">Positional Index</button>
-          <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
-          <button class="teams-sort-btn" data-sort="archetype">Archetype</button>
+        <div class="teams-topbar">
+          <div class="teams-sort-bar">
+            <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
+            <button class="teams-sort-btn active" data-sort="posindex">Positional Index</button>
+            <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
+            <button class="teams-sort-btn" data-sort="archetype">Archetype</button>
+          </div>
+          {_window_legend_html}
         </div>
-        {_window_legend_html}
         <div class="teams-grid" id="teamsGrid">
           {all_cards_html}
         </div>

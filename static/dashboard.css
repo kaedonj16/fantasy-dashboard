@@ -16977,9 +16977,21 @@ button:disabled {
 /* ============================================
    WINDOW LEGEND
    ============================================ */
-.window-legend-wrap {
+/* Teams topbar: sort filters + window guide on same row */
+.teams-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 12px;
+  position: relative;
 }
+.teams-topbar .teams-sort-bar { flex: 1; margin-bottom: 0; }
+.teams-topbar .window-legend-wrap { flex-shrink: 0; margin-bottom: 0; }
+@media (max-width: 768px) {
+  .teams-topbar { flex-direction: column; align-items: stretch; }
+}
+
+.window-legend-wrap { margin-bottom: 12px; }
 .window-legend-toggle {
   display: flex;
   align-items: center;
@@ -16987,16 +16999,16 @@ button:disabled {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 7px 12px;
+  padding: 5px 10px;
   font-size: 12px;
   color: var(--text-muted);
   cursor: pointer;
-  width: 100%;
+  white-space: nowrap;
   text-align: left;
   transition: background 0.14s;
 }
 .window-legend-toggle:hover { background: var(--row); }
-.wl-chevron { margin-left: auto; transition: transform 0.2s; }
+.wl-chevron { margin-left: 4px; transition: transform 0.2s; }
 .window-legend-toggle[aria-expanded="true"] .wl-chevron { transform: rotate(180deg); }
 .window-legend-panel {
   display: none;
@@ -17005,6 +17017,18 @@ button:disabled {
   border: 1px solid var(--border);
   border-top: none;
   border-radius: 0 0 8px 8px;
+}
+@media (min-width: 769px) {
+  .window-legend-panel {
+    position: absolute;
+    top: calc(100% + 2px);
+    right: 0;
+    z-index: 30;
+    min-width: 540px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.14);
+  }
 }
 .window-legend-panel.wl-open { display: block; }
 .window-legend-grid {
