@@ -238,6 +238,8 @@ def get_trade_ai_analysis(
             "team": a.get("team") or "",
             "age": a.get("age"),
             "value": safe_float(a.get("value")),
+            "pos_rank_label": a.get("pos_rank_label") or "",
+            "rank_change_7d": a.get("rank_change_7d"),
         }
 
     def summarize_pick_ids(pick_ids: list) -> dict:
@@ -289,6 +291,19 @@ def get_trade_ai_analysis(
         1,
     )
 
+    # Post-trade roster: remove traded-away players, add incoming players
+    gives_ids = {a.get("id") for a in gives_assets}
+    current_top = team_ctx.get("top_assets") or []
+    remaining = [a for a in current_top if str(a.get("id") or "") not in gives_ids]
+    for a in gets_assets:
+        if a.get("position") not in ("PICK", None, "?"):
+            remaining.append(a)
+    remaining.sort(key=lambda x: safe_float(x.get("value")), reverse=True)
+    post_trade_roster = [
+        {"name": a.get("name"), "position": a.get("position"), "value": round(safe_float(a.get("value")), 1)}
+        for a in remaining[:8]
+    ]
+
     payload = {
         "team_context": {
             "team_name": team_ctx.get("team_name"),
@@ -322,12 +337,13 @@ def get_trade_ai_analysis(
                 "position_totals": gives_pos,
                 "pick_summary": gives_pick_summary,
             },
+            "post_trade_roster": post_trade_roster,
             "market_delta": market_delta,
         },
     }
 
     # Build cache key for trade analysis
-    cache_key = build_ai_cache_key("trade_analysis", payload, "v2")
+    cache_key = build_ai_cache_key("trade_analysis", payload, "v3")
 
     # Try to get from cache first
     cached = load_cached_ai_text(cache_key)

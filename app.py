@@ -15796,6 +15796,8 @@ def api_trade_eval():
                 "position": pos,
                 "team": team,
                 "age": age,
+                "pos_rank_label": player.get("pos_rank_label") or "",
+                "rank_change_7d": player.get("rank_change_7d"),
             })
 
             raw_players_total += val
