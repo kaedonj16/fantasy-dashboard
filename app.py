@@ -24,6 +24,7 @@ from flask import (
     jsonify,
     session,
     send_file,
+    make_response,
 )
 try:
     from flask_compress import Compress
@@ -11347,7 +11348,7 @@ def _build_teams_skeleton(platform: str, season: int, league_id: str, num_teams:
           .then(function(r) {{ return r.json(); }})
           .then(function(d) {{
             if (d.ready) {{
-              window.location.reload();
+              window.location.href = window.location.pathname + '?_r=' + Date.now();
             }} else {{
               setTimeout(check, polls < 10 ? 1500 : 2500);
             }}
@@ -11405,7 +11406,9 @@ def page_teams(platform: str, season: int, league_id: str):
 
     num_teams = int((ctx_entry or {}).get("ctx", {}).get("total_rosters") or 12) if ctx_entry else 12
     skeleton = _build_teams_skeleton(platform, season, league_id, num_teams)
-    return render_page("BR Fantasy Teams", league_id, "teams", skeleton, platform, season)
+    resp = make_response(render_page("BR Fantasy Teams", league_id, "teams", skeleton, platform, season))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 def _ens(career_owners: dict, uid: str) -> None:

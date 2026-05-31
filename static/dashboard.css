@@ -2315,14 +2315,14 @@ button:hover {
   .standings-table[data-page="standings"] td:nth-child(5) {
     display: none;
   }
+  /* Hide Players (col 4) on dynasty table — too many columns at this width */
+  .standings-table.dynasty-table th:nth-child(4),
+  .standings-table.dynasty-table td:nth-child(4) {
+    display: none;
+  }
   /* Hide Draft Capital on value rankings dynasty table */
   .standings-table.dynasty-table th:nth-child(5),
   .standings-table.dynasty-table td:nth-child(5) {
-    display: none;
-  }
-  /* Hide Proj% (col 7) on dynasty table — redundant with Val% at this width */
-  .standings-table.dynasty-table th:nth-child(7),
-  .standings-table.dynasty-table td:nth-child(7) {
     display: none;
   }
 }
@@ -2341,9 +2341,9 @@ button:hover {
     width: 100%;
     margin-top: 0;
   }
-  /* Hide Proj% col on the full-width table too */
-  .standings-table.dynasty-table th:nth-child(7),
-  .standings-table.dynasty-table td:nth-child(7) {
+  /* Hide Players col on the full-width dynasty table too */
+  .standings-table.dynasty-table th:nth-child(4),
+  .standings-table.dynasty-table td:nth-child(4) {
     display: none;
   }
 }
@@ -8924,6 +8924,23 @@ thead th {
 .team-strength-card {
   min-width: 0;
   overflow: hidden;
+}
+
+.team-strength-card .card-header-row {
+  flex-wrap: nowrap;
+}
+
+.team-strength-card .card-header-row > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.team-strength-card .card-header-row h2 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
 }
 
 .team-strength-card .card-body {
