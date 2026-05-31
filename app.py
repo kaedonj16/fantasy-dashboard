@@ -7192,6 +7192,16 @@ def build_teams_body(ctx: dict) -> str:
             return 0.5
         return sum(1 for v in _pf_sorted if v < pf) / _pf_n
 
+    # ── Standings rank (1 = best) ──
+    _standings_map = ctx.get("standings_map") or {}
+
+    def _standings_rank(rid: int) -> int:
+        seed = _standings_map.get(rid) or _standings_map.get(str(rid))
+        try:
+            return int(seed) if seed is not None else 0
+        except Exception:
+            return 0
+
     def _grade_for_roster(r_id: int) -> dict:
         roster_obj = next((r for r in rosters if r.get("roster_id") == r_id), {})
         flat_players = []
@@ -7218,6 +7228,7 @@ def build_teams_body(ctx: dict) -> str:
             win_rate=_team_win_rate.get(r_id),
             dr_ratio=_team_dr_ratio.get(r_id, 1.0),
             offseason=_offseason,
+            standings_rank=_standings_rank(r_id),
         )
 
     team_grades = {rid: _grade_for_roster(rid) for rid in team_meta}

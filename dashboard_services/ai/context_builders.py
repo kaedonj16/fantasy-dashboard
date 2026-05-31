@@ -344,33 +344,42 @@ def _compute_win_window(
     win_rate: float | None,
     dr_ratio: float,
     offseason: bool,
+    standings_rank: int = 0,
+    n_teams: int = 12,
 ) -> str:
     """
     Classify a team's competitive window.
 
     Both axes must be satisfied for the upper-tier labels:
       - Roster quality  (dynasty_pct, age, dr_ratio)
-      - Actual results  (win_rate, pf_pct)
+      - Actual results  (standings_rank, win_rate, pf_pct)
 
-    dynasty_pct  – 0-1 percentile of total dynasty value vs league
-    pf_pct       – 0-1 percentile of Points For vs league
-    win_rate     – wins / games played (None in offseason)
-    dr_ratio     – avg(dynasty / redraft) for top starters
-                   >1.2 = future-heavy (young/unproven)
-                   <0.9 = win-now (aging/peaking)
+    dynasty_pct    – 0-1 percentile of total dynasty value vs league
+    pf_pct         – 0-1 percentile of Points For vs league
+    win_rate       – wins / games played (None in offseason)
+    dr_ratio       – avg(dynasty / redraft) for top starters
+                     >1.2 = future-heavy (young/unproven)
+                     <0.9 = win-now (aging/peaking)
+    standings_rank – current league seed (1 = best); 0 = not provided
+    n_teams        – league size, used to make rank thresholds size-independent
     """
     young = avg_age <= 26.5
     aging = avg_age >= 28.5
     wr    = win_rate or 0
 
+    # standings_rank <= 4 = top-4 in league (the user's explicit requirement for contender)
+    top4  = (not offseason) and standings_rank > 0 and standings_rank <= 4
+    # top half: seeded in top half of league
+    top_half = (not offseason) and standings_rank > 0 and standings_rank <= (n_teams // 2)
+
     # Convenience booleans — all False in offseason so labels fall through to
     # the dynasty-only path (which is correct when no games have been played)
-    performing  = (not offseason) and pf_pct >= 0.60 and wr >= 0.55   # clear above-avg
-    winning     = (not offseason) and wr >= 0.55                       # above .500
-    above_avg   = (not offseason) and (wr >= 0.50 or pf_pct >= 0.50)  # at least league-avg
+    performing  = (not offseason) and pf_pct >= 0.60 and wr >= 0.55
+    winning     = (not offseason) and wr >= 0.55
+    above_avg   = (not offseason) and (wr >= 0.50 or pf_pct >= 0.50)
 
-    win_now_roster = dr_ratio <= 0.90   # redraft ≥ dynasty → peaking/aging
-    future_roster  = dr_ratio >= 1.20   # dynasty >> redraft → young/unproven
+    win_now_roster = dr_ratio <= 0.90
+    future_roster  = dr_ratio >= 1.20
 
     # ── Negative tier (not competitive) ────────────────────────────────────────
 
@@ -388,27 +397,26 @@ def _compute_win_window(
 
     # ── Active contender tier (winning now) ────────────────────────────────────
 
-    # Win-Now — producing + peaking/aging profile (short window closing)
-    if dynasty_pct >= 0.55 and performing and (aging or win_now_roster):
+    # Win-Now — top-4 + producing + peaking/aging profile (short window closing)
+    if dynasty_pct >= 0.55 and top4 and performing and (aging or win_now_roster):
         return "Win-Now"
 
-    # Aging Contender — winning but dynasty profile declining (window closing)
-    if winning and aging and dynasty_pct >= 0.50:
+    # Aging Contender — top-4 + winning but dynasty profile declining
+    if top4 and winning and aging and dynasty_pct >= 0.50:
         return "Aging Contender"
 
-    # Contender — elite dynasty + actually winning (no bypasses)
-    if dynasty_pct >= 0.70 and winning and pf_pct >= 0.50:
+    # Contender — top-4 + elite dynasty + above-avg production
+    if dynasty_pct >= 0.65 and top4 and pf_pct >= 0.50:
         return "Contender"
 
-    # Offseason-only contender check (no games to judge, rely on dynasty alone)
+    # Offseason-only contender check (rely on dynasty value alone)
     if offseason and dynasty_pct >= 0.70 and not aging:
         return "Contender"
 
-    # ── Approaching peak tier (winning-adjacent) ───────────────────────────────
+    # ── Approaching peak tier ──────────────────────────────────────────────────
 
-    # Contender Window — strong dynasty + young + at least league-average results
-    # A team must actually be competitive to be in a "window"
-    if dynasty_pct >= 0.65 and young and (offseason or above_avg):
+    # Contender Window — strong dynasty + young + at least top half of standings
+    if dynasty_pct >= 0.65 and young and (offseason or top_half):
         return "Contender Window"
 
     # ── Building tier ──────────────────────────────────────────────────────────
@@ -424,8 +432,6 @@ def _compute_win_window(
 
     return "Holding Pattern"
 
-    return "Holding Pattern"
-
 
 def calculate_roster_grade(
     players: list[dict],
@@ -438,6 +444,7 @@ def calculate_roster_grade(
     win_rate: float | None = None,    # wins / (wins+losses+ties), None in offseason
     dr_ratio: float = 1.0,           # avg(dynasty/redraft) for top starters
     offseason: bool = False,
+    standings_rank: int = 0,         # current league seed (1 = best); 0 = not provided
 ) -> dict:
     """
     Score a dynasty roster and compute a competitive window label.
@@ -556,6 +563,8 @@ def calculate_roster_grade(
             win_rate=win_rate,
             dr_ratio=dr_ratio,
             offseason=offseason,
+            standings_rank=standings_rank,
+            n_teams=num_teams,
         )
     else:
         # Fallback for callers without league context (AI renderer, trade strategy)
