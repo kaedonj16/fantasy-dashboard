@@ -6885,8 +6885,6 @@ thead th {
 }
 
 .m-team .m-av {
-  width: 44px;
-  height: 44px;
   box-shadow: none;
 }
 
@@ -7911,41 +7909,46 @@ thead th {
 .m-team-left { text-align: left; }
 .m-team-right { text-align: right; }
 
-.m-team-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-
 .m-av {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
 }
 
+/* score block — full column width, pushed toward the center "vs" */
 .m-num-block {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  flex: 1;
-  min-width: 0;
+  width: 100%;
 }
+.m-team-left .m-num-block { align-items: flex-end; text-align: right; }
+.m-team-right .m-num-block { align-items: flex-start; text-align: left; }
 
-.m-team-left .m-num-block { align-items: flex-end; }
-.m-team-right .m-num-block { align-items: flex-start; }
+/* avatar + name row */
+.m-team-ident {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.m-team-right .m-team-ident { justify-content: flex-end; }
 
 .m-team-name {
   font-size: 13px;
   font-weight: 700;
   line-height: 1.25;
-  width: 100%;
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  flex: 1;
 }
+.m-team-right .m-team-name { text-align: right; }
 
 .m-team-meta {
   font-size: 11px;
@@ -9501,8 +9504,7 @@ img, svg, canvas {
   .m-vs { font-size: 0.75rem; }
 
   .m-team { gap: 2px; overflow: hidden; }
-  .m-team .m-av { width: 36px; height: 36px; }
-  .m-team .num { font-size: 20px; letter-spacing: 0; }
+  .m-team .num { font-size: 22px; letter-spacing: 0; }
   .m-team .proj { font-size: 10px; }
   .m-team-name { font-size: 12px; }
   .m-team-meta { font-size: 10px; }

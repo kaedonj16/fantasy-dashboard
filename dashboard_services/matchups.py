@@ -885,11 +885,11 @@ def render_matchup_slide(
 
         return f"""
         <div class="m-team m-team-left">
-          <div class="m-team-top">
+          <div class="m-num-block">{score_html}</div>
+          <div class="m-team-ident">
             {img}
-            <div class="m-num-block">{score_html}</div>
+            <div class="m-team-name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{name}">{name}</div>
           </div>
-          <div class="m-team-name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{name}">{name}</div>
           <div class="m-team-meta">{t['record']} &bull; @{t['username']}</div>
         </div>
         """
@@ -909,11 +909,11 @@ def render_matchup_slide(
 
         return f"""
         <div class="m-team m-team-right">
-          <div class="m-team-top">
-            <div class="m-num-block">{score_html}</div>
+          <div class="m-num-block">{score_html}</div>
+          <div class="m-team-ident">
+            <div class="m-team-name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{name}">{name}</div>
             {img}
           </div>
-          <div class="m-team-name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{name}">{name}</div>
           <div class="m-team-meta">@{t['username']} &bull; {t['record']}</div>
         </div>
         """
