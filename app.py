@@ -971,23 +971,60 @@ def _cache_key(platform: str, season: int, league_id: str):
 
 
 def get_page_html_from_cache(platform: str, season: int, league_id: str, page: str) -> Optional[str]:
+    # Fast path: check in-process memory first
     entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
-    if not entry:
-        return None
-    pages = entry.get("page_html", {})
-    rec = pages.get(page)
-    if not rec:
-        return None
-    ts, html = rec
-    if time.time() - ts > PAGE_HTML_TTL:
-        return None
-    return html
+    if entry:
+        pages = entry.get("page_html", {})
+        rec = pages.get(page)
+        if rec:
+            ts, html = rec
+            if time.time() - ts <= PAGE_HTML_TTL:
+                return html
+
+    # Cross-worker fallback: check the shared DB cache
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            row = conn.execute(
+                """
+                SELECT html, EXTRACT(EPOCH FROM (NOW() - created_at)) AS age_s
+                FROM page_html_cache
+                WHERE platform=%s AND season=%s AND league_id=%s AND page=%s
+                """,
+                (platform.lower().strip(), int(season), str(league_id).strip(), page),
+            ).fetchone()
+        if row and row["age_s"] is not None and float(row["age_s"]) <= PAGE_HTML_TTL:
+            html = row["html"]
+            # Populate in-process cache so subsequent calls skip the DB
+            mem_entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
+            mem_entry.setdefault("page_html", {})[page] = (time.time(), html)
+            return html
+    except Exception:
+        pass  # DB unavailable — fall through to None
+
+    return None
 
 
 def store_page_html(platform: str, season: int, league_id: str, page: str, html: str) -> None:
+    # Write to in-process cache
     entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
-    pages = entry.setdefault("page_html", {})
-    pages[page] = (time.time(), html)
+    entry.setdefault("page_html", {})[page] = (time.time(), html)
+
+    # Write to shared DB cache so other workers can find the result
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO page_html_cache (platform, season, league_id, page, html, created_at)
+                VALUES (%s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (platform, season, league_id, page)
+                DO UPDATE SET html=EXCLUDED.html, created_at=NOW()
+                """,
+                (platform.lower().strip(), int(season), str(league_id).strip(), page, html),
+            )
+    except Exception:
+        pass  # DB write failure is non-fatal; in-process cache is still set
 
 def get_awards_agg_from_cache(platform: str, season: int, league_id: str):
     entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
@@ -11266,7 +11303,7 @@ def _background_build_teams(platform: str, league_id: str, season: int) -> None:
         store_page_html(platform, season, league_id, "teams", body_html)
     except Exception as exc:  # noqa: BLE001
         import logging as _log
-        _log.getLogger(__name__).error("Background teams build failed: %s", exc)
+        _log.getLogger(__name__).error("Background teams build failed: %s", exc, exc_info=True)
     finally:
         with _TEAMS_BUILDING_LOCK:
             _TEAMS_BUILDING.discard(build_key)
@@ -11312,13 +11349,18 @@ def _build_teams_skeleton(platform: str, season: int, league_id: str, num_teams:
     <script>
     (function() {{
       var _poll = 0;
+      var _MAX = 50;
+      var _indicator = document.querySelector('.teams-loading-indicator');
       function check() {{
-        if (_poll > 25) return;
+        if (_poll >= _MAX) {{
+          if (_indicator) _indicator.innerHTML = '<span style="color:var(--text-muted)">Taking longer than expected &mdash; <a href="" style="color:var(--accent)">retry</a></span>';
+          return;
+        }}
         _poll++;
         fetch('/api/teams-ready?platform={platform}&league_id={league_id}&season={season}')
           .then(function(r) {{ return r.json(); }})
-          .then(function(d) {{ if (d.ready) window.location.reload(); else setTimeout(check, 1400); }})
-          .catch(function() {{ setTimeout(check, 2000); }});
+          .then(function(d) {{ if (d.ready) window.location.reload(); else setTimeout(check, 1600); }})
+          .catch(function() {{ setTimeout(check, 2500); }});
       }}
       setTimeout(check, 1200);
     }})();
