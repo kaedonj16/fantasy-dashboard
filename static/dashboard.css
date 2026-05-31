@@ -17077,6 +17077,13 @@ button:disabled {
 .wt-rebuilding       { border-left-color: #ef4444; }
 .wt-full-rebuild     { border-left-color: #dc2626; }
 
+/* Positional index inline text in card header */
+.tc-pi-text { color: var(--text-subtle); font-weight: 500; font-size: 11px; text-transform: none; letter-spacing: 0; }
+.tc-pi-num  { font-weight: 700; color: var(--text-muted); }
+@media (max-width: 768px) {
+  .tc-pi-text { display: none; }
+}
+
 /* Colored window label text */
 .grade-window-label { font-size: 11px; font-weight: 700; font-style: normal; letter-spacing: 0.04em; text-transform: uppercase; }
 .wt-contender        .grade-window-label { color: #16a34a; }
