@@ -5824,7 +5824,8 @@ def format_pick_display_label(
     if exact_slot is not None:
         return f"{year} {rnd}.{exact_slot:02d}"
 
-    return f"{year} {format_pick_round_label(pick)}"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+    return f"{year} {rnd}{suffix} (Mid)"
 
 
 def build_activity_body(ctx: dict) -> str:
@@ -20692,7 +20693,7 @@ def api_trade_intel_player_packages(player_id: str):
                         if slot:
                             pk_name = f"{yr} {rnd}.{slot:02d}"
                         else:
-                            pk_name = f"{yr} {suffix}"
+                            pk_name = f"{yr} {suffix} (Mid)"
                         if slot:
                             pval = (
                                 pick_val_lookup.get(f"{yr}_{rnd}_{slot:02d}")
@@ -21744,7 +21745,7 @@ def api_trade_intel_player_send_packages(player_id: str):
                 if pval <= 0:
                     pval = {1: 220.0, 2: 130.0}.get(rnd, 70.0)
                 out.append({
-                    "name":  f"{yr} {_ordinal(rnd)}",
+                    "name":  f"{yr} {_ordinal(rnd)} (Mid)",
                     "value": round(pval, 1),
                     "is_pick": True,
                     "pick_season": yr,
@@ -22049,7 +22050,7 @@ def api_trade_ideas_for_target():
                 ]
             else:
                 sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-                label = f"{yr} {rnd}{sfx}"
+                label = f"{yr} {rnd}{sfx} (Mid)"
                 val_keys = [f"{yr}_{rnd}_early", f"{yr}_{rnd}_mid", f"{yr}_{rnd}_late", f"{yr}_{rnd}"]
 
             # Use whichever key is actually in the table so pick_id is always parseable

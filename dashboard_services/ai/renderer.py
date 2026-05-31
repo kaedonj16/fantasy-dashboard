@@ -627,16 +627,12 @@ def get_trade_suggestions_html(ctx: dict, viewer_roster_id: str) -> str:
 
 def _fmt_pick_label(pk: dict) -> str:
     season = pk.get("season", "")
-    rnd    = pk.get("round", "")
+    rnd    = int(pk.get("round") or 0)
     slot   = pk.get("slot")
-    name   = pk.get("proj_name", "")
-    pos    = pk.get("proj_pos", "")
-    suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(int(rnd) if rnd else 0, f"{rnd}th")
-    slot_str = f".{int(slot):02d}" if slot else ""
-    base = f"{season} {suffix} Round Pick{slot_str}"
-    if name:
-        base += f" (proj. {name}, {pos})"
-    return base
+    suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
+    if slot:
+        return f"{season} {rnd}.{int(slot):02d}"
+    return f"{season} {suffix} (Mid)"
 
 
 def _render_real_trade_suggestions(real_trades: list[dict]) -> str:
