@@ -970,22 +970,46 @@ def _cache_key(platform: str, season: int, league_id: str):
     return str(platform).lower().strip(), int(season), str(league_id).strip()
 
 
+def _page_html_tmp_path(platform: str, season: int, league_id: str, page: str) -> str:
+    safe = f"{platform}_{season}_{league_id}_{page}".replace("/", "_")
+    return f"/tmp/br_page_{safe}.html"
+
+
 def get_page_html_from_cache(platform: str, season: int, league_id: str, page: str) -> Optional[str]:
+    # Fast path: check in-process memory first
     entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
-    if not entry:
-        return None
-    rec = entry.get("page_html", {}).get(page)
-    if not rec:
-        return None
-    ts, html = rec
-    if time.time() - ts > PAGE_HTML_TTL:
-        return None
-    return html
+    if entry:
+        rec = entry.get("page_html", {}).get(page)
+        if rec:
+            ts, html = rec
+            if time.time() - ts <= PAGE_HTML_TTL:
+                return html
+
+    # Cross-worker fallback: /tmp file — all gunicorn workers share the container fs
+    try:
+        path = _page_html_tmp_path(platform, season, league_id, page)
+        if os.path.exists(path) and time.time() - os.path.getmtime(path) <= PAGE_HTML_TTL:
+            html = open(path, encoding="utf-8").read()
+            mem_entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
+            mem_entry.setdefault("page_html", {})[page] = (time.time(), html)
+            return html
+    except Exception:
+        pass
+
+    return None
 
 
 def store_page_html(platform: str, season: int, league_id: str, page: str, html: str) -> None:
     entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
     entry.setdefault("page_html", {})[page] = (time.time(), html)
+    try:
+        path = _page_html_tmp_path(platform, season, league_id, page)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(html)
+        os.replace(tmp, path)  # atomic — readers never see a partial file
+    except Exception:
+        pass
 
 def get_awards_agg_from_cache(platform: str, season: int, league_id: str):
     entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
@@ -11254,16 +11278,134 @@ def page_prospects_guest():
 
 
 
+_TEAMS_BUILDING: set = set()
+_TEAMS_BUILDING_LOCK = threading.Lock()
+
+
+def _background_build_teams(platform: str, league_id: str, season: int) -> None:
+    import logging as _log
+    _logger = _log.getLogger(__name__)
+    build_key = f"{platform}:{season}:{league_id}"
+    try:
+        t0 = time.time()
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        _logger.info("Teams context ready in %.1fs, building HTML", time.time() - t0)
+        body_html = build_teams_body(ctx)
+        store_page_html(platform, season, league_id, "teams", body_html)
+        _logger.info("Teams build complete in %.1fs", time.time() - t0)
+    except Exception as exc:  # noqa: BLE001
+        _log.getLogger(__name__).error("Background teams build failed: %s", exc, exc_info=True)
+    finally:
+        with _TEAMS_BUILDING_LOCK:
+            _TEAMS_BUILDING.discard(build_key)
+
+
+def _build_teams_skeleton(platform: str, season: int, league_id: str, num_teams: int) -> str:
+    shimmer_card = """
+    <div class="card team-strength-card teams-sk-card">
+      <div class="card-header-row">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="sk-shimmer" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;"></div>
+          <div class="sk-shimmer" style="width:130px;height:16px;border-radius:4px;"></div>
+          <div class="sk-shimmer" style="width:34px;height:22px;border-radius:6px;"></div>
+        </div>
+        <div class="sk-shimmer" style="width:140px;height:11px;border-radius:4px;margin-top:4px;"></div>
+      </div>
+      <div class="card-body">
+        <div class="sk-shimmer" style="width:100%;height:180px;border-radius:6px;margin-bottom:10px;"></div>
+        <div class="sk-shimmer" style="width:100%;height:100px;border-radius:6px;"></div>
+      </div>
+    </div>"""
+    cards_html = shimmer_card * max(num_teams, 4)
+    return f"""
+    <div class="page-layout teams-page">
+      <main class="page-main">
+        <div class="teams-topbar">
+          <div class="teams-sort-bar">
+            <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
+            <button class="teams-sort-btn active" disabled>Positional Index</button>
+            <button class="teams-sort-btn" disabled>Team Grade</button>
+            <button class="teams-sort-btn" disabled>Archetype</button>
+          </div>
+          <div class="teams-loading-indicator" id="teams-sk-status">
+            <div class="loading-spinner" style="width:14px;height:14px;"></div>
+            <span>Building team rankings&hellip;</span>
+          </div>
+        </div>
+        <div class="teams-grid">
+          {cards_html}
+        </div>
+      </main>
+    </div>
+    <script>
+    (function() {{
+      var polls = 0;
+      var indicator = document.getElementById('teams-sk-status');
+      function check() {{
+        polls++;
+        fetch('/api/teams-ready?platform={platform}&league_id={league_id}&season={season}')
+          .then(function(r) {{ return r.json(); }})
+          .then(function(d) {{
+            if (d.ready) {{
+              window.location.reload();
+            }} else {{
+              setTimeout(check, polls < 10 ? 1500 : 2500);
+            }}
+          }})
+          .catch(function() {{ setTimeout(check, 3000); }});
+      }}
+      setTimeout(check, 1500);
+    }})();
+    </script>
+    """
+
+
+@app.route("/api/teams-ready")
+def api_teams_ready():
+    platform  = request.args.get("platform", "sleeper")
+    league_id = request.args.get("league_id", "")
+    try:
+        season = int(request.args.get("season", datetime.now().year))
+    except (TypeError, ValueError):
+        season = datetime.now().year
+    ready = bool(get_page_html_from_cache(platform, season, league_id, "teams"))
+    return jsonify({"ready": ready})
+
+
 @app.route("/<platform>/<int:season>/<league_id>/teams")
 def page_teams(platform: str, season: int, league_id: str):
     cached = get_page_html_from_cache(platform, season, league_id, "teams")
     if cached:
         return render_page("BR Fantasy Teams", league_id, "teams", cached, platform, season)
 
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    body_html = build_teams_body(ctx)
-    store_page_html(platform, season, league_id, "teams", body_html)
-    return render_page("BR Fantasy Teams", league_id, "teams", body_html, platform, season)
+    # If the league context is already warm (user visited any other page), build
+    # synchronously right now — takes ~1-2s and skips the whole skeleton/polling dance.
+    ctx_entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
+    if ctx_entry and (time.time() - ctx_entry.get("ts", 0) <= CACHE_TTL):
+        try:
+            body_html = build_teams_body(ctx_entry["ctx"])
+            store_page_html(platform, season, league_id, "teams", body_html)
+            return render_page("BR Fantasy Teams", league_id, "teams", body_html, platform, season)
+        except Exception as exc:
+            import logging as _log
+            _log.getLogger(__name__).error("Sync teams build failed: %s", exc, exc_info=True)
+
+    # Cold load — kick off background build and show skeleton while it runs.
+    # The /tmp file written by store_page_html is visible to all gunicorn workers
+    # so whichever worker handles the poll will see it as ready.
+    build_key = f"{platform}:{season}:{league_id}"
+    with _TEAMS_BUILDING_LOCK:
+        if build_key not in _TEAMS_BUILDING:
+            _TEAMS_BUILDING.add(build_key)
+            threading.Thread(
+                target=_background_build_teams,
+                args=(platform, league_id, season),
+                daemon=True,
+            ).start()
+
+    num_teams = int((ctx_entry or {}).get("ctx", {}).get("total_rosters") or 12) if ctx_entry else 12
+    skeleton = _build_teams_skeleton(platform, season, league_id, num_teams)
+    return render_page("BR Fantasy Teams", league_id, "teams", skeleton, platform, season)
 
 
 def _ens(career_owners: dict, uid: str) -> None:
