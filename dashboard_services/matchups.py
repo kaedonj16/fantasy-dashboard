@@ -872,86 +872,49 @@ def render_matchup_slide(
 
     def team_head(t, proj_mode: bool):
         ava = t.get("avatar") or ""
-        img = f"<img class='avatar' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
+        img = f"<img class='avatar m-av' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
+        rid = t.get('roster_id', '')
+        name = t['name']
 
         if not proj_mode:
             points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
-            rid = t.get('roster_id', '')
-            return f"""
-        <div class="m-team">
-          <div class="m-team-identity">
-            {img}
-            <div>
-              <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-              <div>{t['record']} • @{t['username']}</div>
-            </div>
-          </div>
-          <span class="num">{points}</span>
-        </div>
-        """
+            score_html = f"<span class='num'>{points}</span>"
+        else:
+            actual_total, live_proj_total = team_live_totals(t, status_by_pid, week_proj_map)
+            score_html = f"<span class='num'>{actual_total:.1f}</span><span class='proj'>{live_proj_total:.1f}</span>"
 
-        actual_total, live_proj_total = team_live_totals(
-            t,
-            status_by_pid,
-            week_proj_map,
-        )
-
-        rid = t.get('roster_id', '')
         return f"""
-        <div class="m-team">
-          <div class="m-team-identity">
+        <div class="m-team m-team-left">
+          <div class="m-team-top">
             {img}
-            <div>
-              <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-              <div>{t['record']} • @{t['username']}</div>
-            </div>
+            <div class="m-num-block">{score_html}</div>
           </div>
-          <div style="display:grid;grid-template-columns:1;justify-items: center;">
-            <span class="num">{actual_total:.1f}</span>
-            <span class="proj" style="opacity:0.4;text-align:center;">{live_proj_total:.1f}</span>
-          </div>
+          <div class="m-team-name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{name}">{name}</div>
+          <div class="m-team-meta">{t['record']} &bull; @{t['username']}</div>
         </div>
         """
 
     def team_head_2nd(t, proj_mode: bool):
         ava = t.get("avatar") or ""
-        img = f"<img class='avatar' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
+        img = f"<img class='avatar m-av' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
+        rid = t.get('roster_id', '')
+        name = t['name']
 
         if not proj_mode:
             points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
-            rid = t.get('roster_id', '')
-            return f"""
-        <div class="m-team">
-          <span class="num">{points}</span>
-          <div class="m-team-identity">
-            <div class="right">
-              <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-              <div>@{t['username']} • {t['record']}</div>
-            </div>
-            {img}
-          </div>
-        </div>
-        """
+            score_html = f"<span class='num'>{points}</span>"
+        else:
+            actual_total, live_proj_total = team_live_totals(t, status_by_pid, week_proj_map)
+            score_html = f"<span class='num'>{actual_total:.1f}</span><span class='proj'>{live_proj_total:.1f}</span>"
 
-        actual_total, live_proj_total = team_live_totals(
-            t,
-            status_by_pid,
-            week_proj_map,
-        )
-        rid = t.get('roster_id', '')
         return f"""
-        <div class="m-team">
-          <div style="display:grid;grid-template-columns:1;justify-items: center;">
-            <span class="num">{actual_total:.1f}</span>
-            <span class="proj" style="opacity:0.4;text-align:center;">{live_proj_total:.1f}</span>
-          </div>
-          <div class="m-team-identity">
-            <div class="right">
-              <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-              <div>@{t['username']} • {t['record']}</div>
-            </div>
+        <div class="m-team m-team-right">
+          <div class="m-team-top">
+            <div class="m-num-block">{score_html}</div>
             {img}
           </div>
+          <div class="m-team-name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{name}">{name}</div>
+          <div class="m-team-meta">@{t['username']} &bull; {t['record']}</div>
         </div>
         """
 

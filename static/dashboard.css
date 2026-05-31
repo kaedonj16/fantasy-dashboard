@@ -7901,25 +7901,58 @@ thead th {
 
 .m-team {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  width: 100%;
 }
 
-.m-team-identity {
+.m-team-left { text-align: left; }
+.m-team-right { text-align: right; }
+
+.m-team-top {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  width: 100%;
+}
+
+.m-av {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.m-num-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
   min-width: 0;
 }
 
-.m-team-identity .right {
-  text-align: right;
+.m-team-left .m-num-block { align-items: flex-end; }
+.m-team-right .m-num-block { align-items: flex-start; }
+
+.m-team-name {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.m-team .name {
-  font-weight: 800;
+.m-team-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
+  width: 100%;
 }
 
 .m-team .num {
@@ -7930,7 +7963,6 @@ thead th {
 }
 
 .m-team .proj {
-  text-align: center;
   letter-spacing: 1px;
   font-weight: 700;
   opacity: 0.45;
@@ -9467,44 +9499,12 @@ img, svg, canvas {
 
   .m-vs { font-size: 0.75rem; }
 
-  /* flex layout inside each team cell */
-  .m-team {
-    gap: 4px;
-    min-width: 0;
-    overflow: hidden;
-    flex-wrap: nowrap;
-  }
-
-  /* avatar: fixed size, never shrink */
-  .m-team .avatar { width: 38px; height: 38px; flex-shrink: 0; }
-
-  /* name / record block: can shrink and will clip with ellipsis */
-  .m-team > div {
-    flex: 1 1 0;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .m-team .name {
-    font-size: 12px;
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* record / username line */
-  .m-team > div > div:not(.name) {
-    font-size: 10px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--text-muted);
-  }
-
-  /* score: fixed width, never shrink */
-  .m-team .num { font-size: 18px; letter-spacing: 0; flex-shrink: 0; }
+  .m-team { gap: 2px; overflow: hidden; }
+  .m-av { width: 36px; height: 36px; }
+  .m-team .num { font-size: 20px; letter-spacing: 0; }
   .m-team .proj { font-size: 10px; }
+  .m-team-name { font-size: 12px; }
+  .m-team-meta { font-size: 10px; }
 
   /* ── Player rows ─────────────────────────────────────── */
   .m-row {
@@ -9522,7 +9522,7 @@ img, svg, canvas {
 
 @media (max-width: 400px) {
   /* On very small phones hide the avatar entirely */
-  .m-team .avatar { display: none !important; }
+  .m-av { display: none !important; }
   .m-head { grid-template-columns: 1fr 22px 1fr; padding: 6px 8px; }
 }
 
