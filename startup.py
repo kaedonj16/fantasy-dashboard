@@ -14,21 +14,10 @@ def main():
     print("Production Startup - Fantasy Dashboard")
     print(f"Started: {datetime.now().isoformat()}")
 
-    # Always run migrations on every startup — all SQL files use
-    # CREATE TABLE/INDEX IF NOT EXISTS so re-running is safe.
-    print("Running database migrations...")
-    try:
-        from scripts.run_migrations import run_migrations
-        run_migrations()
-        print("Migrations completed successfully")
-    except Exception as e:
-        print(f"Migration failed: {e}")
-        print("Continuing with app startup (some features may be unavailable)")
-
     first_run_flag = "/tmp/fantasy_dashboard_initialized"
 
     if not os.path.exists(first_run_flag):
-        print("First deployment detected - running full initialization...")
+        print("First deployment detected - running initialization...")
         try:
             from scripts.initialize_production import main as init_main
             init_main()
@@ -39,7 +28,7 @@ def main():
             print(f"First-time initialization failed: {e}")
             print("Continuing with app startup (manual initialization may be needed)")
     else:
-        print("Existing deployment detected - skipping full initialization")
+        print("Existing deployment detected - skipping initialization")
         with open(first_run_flag, 'r') as f:
             print(f"Previously initialized: {f.read().strip()}")
 

@@ -207,25 +207,6 @@ VALUE_CACHE_TTL = 60 * 60 * 6  # 6 hours
 # How long to cache rendered page HTML (Teams, Activity, Graphs) per league
 PAGE_HTML_TTL = 60 * 30  # 30 minutes
 
-# Ensure the cross-worker page HTML cache table exists. Runs once at import
-# time (i.e. once per gunicorn worker after --preload fork). Idempotent.
-try:
-    from dashboard_services.db import get_conn as _get_conn_init
-    with _get_conn_init() as _conn_init:
-        _conn_init.execute("""
-            CREATE TABLE IF NOT EXISTS page_html_cache (
-                platform   TEXT        NOT NULL,
-                season     INT         NOT NULL,
-                league_id  TEXT        NOT NULL,
-                page       TEXT        NOT NULL,
-                html       TEXT        NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (platform, season, league_id, page)
-            )
-        """)
-except Exception:
-    pass  # DB not available at startup; functions fall back to in-process cache
-
 daily_init_done = False
 os.environ["TZ"] = "America/New_York"
 time.tzset()
@@ -989,37 +970,32 @@ def _cache_key(platform: str, season: int, league_id: str):
     return str(platform).lower().strip(), int(season), str(league_id).strip()
 
 
+def _page_cache_path(platform: str, season: int, league_id: str, page: str) -> str:
+    safe = f"{platform}_{season}_{league_id}_{page}".replace("/", "_")
+    return f"/tmp/br_page_{safe}.html"
+
+
 def get_page_html_from_cache(platform: str, season: int, league_id: str, page: str) -> Optional[str]:
-    # Fast path: check in-process memory first
+    # Check in-process memory first
     entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
     if entry:
-        pages = entry.get("page_html", {})
-        rec = pages.get(page)
+        rec = entry.get("page_html", {}).get(page)
         if rec:
             ts, html = rec
             if time.time() - ts <= PAGE_HTML_TTL:
                 return html
 
-    # Cross-worker fallback: check the shared DB cache
+    # Cross-worker fallback: shared /tmp file (all workers share the container fs)
+    path = _page_cache_path(platform, season, league_id, page)
     try:
-        from dashboard_services.db import get_conn
-        with get_conn() as conn:
-            row = conn.execute(
-                """
-                SELECT html, EXTRACT(EPOCH FROM (NOW() - created_at)) AS age_s
-                FROM page_html_cache
-                WHERE platform=%s AND season=%s AND league_id=%s AND page=%s
-                """,
-                (platform.lower().strip(), int(season), str(league_id).strip(), page),
-            ).fetchone()
-        if row and row["age_s"] is not None and float(row["age_s"]) <= PAGE_HTML_TTL:
-            html = row["html"]
-            # Populate in-process cache so subsequent calls skip the DB
+        if os.path.exists(path) and time.time() - os.path.getmtime(path) <= PAGE_HTML_TTL:
+            html = open(path, encoding="utf-8").read()
+            # Back-fill in-process cache
             mem_entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
             mem_entry.setdefault("page_html", {})[page] = (time.time(), html)
             return html
     except Exception:
-        pass  # DB unavailable — fall through to None
+        pass
 
     return None
 
@@ -1029,21 +1005,15 @@ def store_page_html(platform: str, season: int, league_id: str, page: str, html:
     entry = DASHBOARD_CACHE.setdefault(_cache_key(platform, season, league_id), {})
     entry.setdefault("page_html", {})[page] = (time.time(), html)
 
-    # Write to shared DB cache so other workers can find the result
+    # Write to shared /tmp file so other workers can find the result
     try:
-        from dashboard_services.db import get_conn
-        with get_conn() as conn:
-            conn.execute(
-                """
-                INSERT INTO page_html_cache (platform, season, league_id, page, html, created_at)
-                VALUES (%s, %s, %s, %s, %s, NOW())
-                ON CONFLICT (platform, season, league_id, page)
-                DO UPDATE SET html=EXCLUDED.html, created_at=NOW()
-                """,
-                (platform.lower().strip(), int(season), str(league_id).strip(), page, html),
-            )
+        path = _page_cache_path(platform, season, league_id, page)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(html)
+        os.replace(tmp, path)  # atomic rename
     except Exception:
-        pass  # DB write failure is non-fatal; in-process cache is still set
+        pass
 
 def get_awards_agg_from_cache(platform: str, season: int, league_id: str):
     entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
