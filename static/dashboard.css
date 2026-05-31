@@ -17061,3 +17061,31 @@ button:disabled {
   .team-strength-card .card-body { display: none; }
   .team-strength-card.tc-expanded .card-body { display: block; }
 }
+
+/* ============================================
+   WINDOW-TYPE ACCENT COLORS
+   ============================================ */
+.team-strength-card { border-left: 3px solid transparent; }
+.wt-contender        { border-left-color: #22c55e; }
+.wt-win-now          { border-left-color: #f59e0b; }
+.wt-aging-contender  { border-left-color: #84cc16; }
+.wt-contender-window { border-left-color: #3b82f6; }
+.wt-2yr              { border-left-color: #6366f1; }
+.wt-rising           { border-left-color: #8b5cf6; }
+.wt-holding          { border-left-color: #94a3b8; }
+.wt-retooling        { border-left-color: #f97316; }
+.wt-rebuilding       { border-left-color: #ef4444; }
+.wt-full-rebuild     { border-left-color: #dc2626; }
+
+/* Colored window label text */
+.grade-window-label { font-size: 11px; font-weight: 700; font-style: normal; letter-spacing: 0.04em; text-transform: uppercase; }
+.wt-contender        .grade-window-label { color: #16a34a; }
+.wt-win-now          .grade-window-label { color: #d97706; }
+.wt-aging-contender  .grade-window-label { color: #65a30d; }
+.wt-contender-window .grade-window-label { color: #2563eb; }
+.wt-2yr              .grade-window-label { color: #4f46e5; }
+.wt-rising           .grade-window-label { color: #7c3aed; }
+.wt-holding          .grade-window-label { color: #64748b; }
+.wt-retooling        .grade-window-label { color: #ea580c; }
+.wt-rebuilding       .grade-window-label { color: #dc2626; }
+.wt-full-rebuild     .grade-window-label { color: #b91c1c; }
