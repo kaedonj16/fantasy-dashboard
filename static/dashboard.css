@@ -9944,6 +9944,13 @@ img, svg, canvas {
     font-size: 0;
   }
 
+  .otc-balance-fair::before {
+    content: "FAIR";
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+  }
+
   .trade-bar-indicator {
     width: 8px;
     height: 20px;
