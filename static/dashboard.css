@@ -16973,3 +16973,91 @@ button:disabled {
 .sched-page-btn:hover:not(:disabled) { background: var(--accent-soft); }
 .sched-page-btn:disabled { opacity: 0.35; cursor: default; }
 .sched-page-info { font-size: 13px; color: var(--text-muted); }
+
+/* ============================================
+   WINDOW LEGEND
+   ============================================ */
+.window-legend-wrap {
+  margin-bottom: 12px;
+}
+.window-legend-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.14s;
+}
+.window-legend-toggle:hover { background: var(--row); }
+.wl-chevron { margin-left: auto; transition: transform 0.2s; }
+.window-legend-toggle[aria-expanded="true"] .wl-chevron { transform: rotate(180deg); }
+.window-legend-panel {
+  display: none;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+}
+.window-legend-panel.wl-open { display: block; }
+.window-legend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 7px 20px;
+}
+.wl-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.wl-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.wl-label {
+  min-width: 120px;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.wl-desc { color: var(--text-muted); }
+
+/* ============================================
+   MOBILE COLLAPSIBLE TEAM CARDS
+   ============================================ */
+.team-card-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--row);
+  cursor: pointer;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  padding: 0;
+  transition: background 0.15s;
+}
+.team-card-toggle:hover { background: var(--border); }
+.team-card-toggle svg { transition: transform 0.2s; }
+.team-strength-card.tc-expanded .team-card-toggle svg { transform: rotate(180deg); }
+
+@media (max-width: 768px) {
+  .team-card-toggle { display: flex; }
+  .team-strength-card .card-body { display: none; }
+  .team-strength-card.tc-expanded .card-body { display: block; }
+}

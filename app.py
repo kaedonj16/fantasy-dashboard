@@ -7366,8 +7366,15 @@ def build_teams_body(ctx: dict) -> str:
             f"<div class='card team-strength-card' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}'>"
             "  <div class='card-header-row'>"
             f"    <div style='display:flex;align-items:center;gap:8px;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>{_grade_badge}</div>"
-            f"    <div class='mini-label'><span class='grade-window-label'>{_win_window}</span> &bull; Positional Index: "
+            "    <div style='display:flex;align-items:center;gap:6px;'>"
+            f"      <div class='mini-label'><span class='grade-window-label'>{_win_window}</span> &bull; Positional Index: "
             f"<span style='font-weight:600'>{team_pos_index[rid]:+.2f}</span></div>"
+            "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
+            "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
+            "          <path d='M3 5l4 4 4-4' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>"
+            "        </svg>"
+            "      </button>"
+            "    </div>"
             "  </div>"
             "  <div class='card-body'>"
             f"    {_chart_html}"
@@ -8011,6 +8018,31 @@ def build_teams_body(ctx: dict) -> str:
     </script>
     """
 
+    # ---------- Window legend ----------
+    _window_legend_html = """
+    <div class="window-legend-wrap">
+      <button class="window-legend-toggle" id="windowLegendToggle" aria-expanded="false">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Window Guide
+        <svg class="wl-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+      <div class="window-legend-panel" id="windowLegendPanel">
+        <div class="window-legend-grid">
+          <div class="wl-row"><span class="wl-dot" style="background:#22c55e;"></span><strong class="wl-label">Contender</strong><span class="wl-desc">Elite dynasty + strong scoring projection &mdash; premier roster right now</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#f59e0b;"></span><strong class="wl-label">Win-Now</strong><span class="wl-desc">Elite scoring with aging stars &mdash; peak years are here, window is open</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#84cc16;"></span><strong class="wl-label">Aging Contender</strong><span class="wl-desc">Strong roster projecting well, but franchise age is trending up</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#3b82f6;"></span><strong class="wl-label">Contender Window</strong><span class="wl-desc">Elite dynasty value with young or prime core &mdash; window opening soon</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#6366f1;"></span><strong class="wl-label">2-3 Year Window</strong><span class="wl-desc">Strong future value building toward contention over the next few seasons</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#8b5cf6;"></span><strong class="wl-label">Rising</strong><span class="wl-desc">Young, future-heavy roster beginning to accumulate dynasty value</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#94a3b8;"></span><strong class="wl-label">Holding Pattern</strong><span class="wl-desc">Average across all metrics &mdash; trajectory not yet clear</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#f97316;"></span><strong class="wl-label">Retooling</strong><span class="wl-desc">Selling aging core, accumulating capital to reset for the future</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#ef4444;"></span><strong class="wl-label">Rebuilding</strong><span class="wl-desc">Below-average dynasty + redraft &mdash; active rebuild in progress</span></div>
+          <div class="wl-row"><span class="wl-dot" style="background:#dc2626;"></span><strong class="wl-label">Full Rebuild</strong><span class="wl-desc">Stacked with picks, very low current value &mdash; all-in on the future</span></div>
+        </div>
+      </div>
+    </div>
+    """
+
     # ---------- Page shell ----------
     return f"""
     <div class="page-layout teams-page">
@@ -8021,6 +8053,7 @@ def build_teams_body(ctx: dict) -> str:
           <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
           <button class="teams-sort-btn" data-sort="archetype">Archetype</button>
         </div>
+        {_window_legend_html}
         <div class="teams-grid" id="teamsGrid">
           {all_cards_html}
         </div>
@@ -8114,6 +8147,29 @@ def build_teams_body(ctx: dict) -> str:
           charts.forEach(tryRender);
         }}
       }})();
+
+      // Window legend toggle
+      (function() {{
+        var btn   = document.getElementById('windowLegendToggle');
+        var panel = document.getElementById('windowLegendPanel');
+        if (!btn || !panel) return;
+        btn.addEventListener('click', function() {{
+          var open = panel.classList.toggle('wl-open');
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }});
+      }})();
+
+      // Mobile collapsible team cards
+      document.querySelectorAll('.team-card-toggle').forEach(function(btn) {{
+        btn.addEventListener('click', function(e) {{
+          e.stopPropagation();
+          var card = btn.closest('.team-strength-card');
+          if (!card) return;
+          var expanded = card.classList.toggle('tc-expanded');
+          btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        }});
+      }});
+
     }})();
     </script>
     """
