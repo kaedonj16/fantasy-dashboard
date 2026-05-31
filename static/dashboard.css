@@ -9940,6 +9940,10 @@ img, svg, canvas {
     height: 8px;
   }
 
+  .otc-balance-fair {
+    font-size: 0;
+  }
+
   .trade-bar-indicator {
     width: 8px;
     height: 20px;
