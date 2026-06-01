@@ -8036,12 +8036,51 @@ def build_teams_body(ctx: dict) -> str:
         _loaded.rosterIntel = true;
         var panel = document.getElementById('rosterIntelPanel');
         if (!panel) return;
-        fetch('/api/roster-intel?platform=' + encodeURIComponent(_platform) +
-              '&league_id=' + encodeURIComponent(_leagueId) +
-              '&season=' + _season +
-              '&league_type=' + encodeURIComponent(_leagueType) +
-              '&viewer_roster_id=' + encodeURIComponent(_viewerRosterId || ''))
-          .then(function(r) {{ return r.json(); }})
+
+        // Fetch FC dynasty ADP from the browser (server IP is blocked by FC).
+        // Gracefully degrade to empty dict if FC is unavailable.
+        var numQbs = _leagueType === 'sf' ? 2 : 1;
+        var fcPromise = fetch(
+          'https://fantasycalc.com/api/values/current?numQbs=' + numQbs + '&ppr=0.5',
+          {{credentials: 'omit'}}
+        )
+          .then(function(r) {{ return r.ok ? r.json() : []; }})
+          .catch(function() {{ return []; }});
+
+        fcPromise.then(function(fcRaw) {{
+          // Transform FC array into {{sleeperId: {{pos_rank, adp_rank, position}}}}
+          var fcAdp = {{}};
+          if (Array.isArray(fcRaw)) {{
+            var posCounters = {{}};
+            var sorted = fcRaw.filter(function(e) {{ return e && e.overallRank; }})
+                              .sort(function(a, b) {{ return a.overallRank - b.overallRank; }});
+            sorted.forEach(function(entry) {{
+              var p = entry.player || {{}};
+              var sid = String(p.sleeperId || '');
+              if (!sid || sid === 'null' || sid === 'undefined') return;
+              var pos = String(p.position || '').toUpperCase();
+              posCounters[pos] = (posCounters[pos] || 0) + 1;
+              fcAdp[sid] = {{
+                adp_rank: entry.overallRank,
+                pos_rank:  posCounters[pos],
+                position:  pos,
+              }};
+            }});
+          }}
+
+          return fetch('/api/roster-intel', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{
+              platform:         _platform,
+              league_id:        _leagueId,
+              season:           _season,
+              league_type:      _leagueType,
+              viewer_roster_id: _viewerRosterId || '',
+              fc_adp:           fcAdp,
+            }}),
+          }}).then(function(r) {{ return r.json(); }});
+        }})
           .then(function(data) {{
             if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
             var teams = data.teams || [];
@@ -8122,7 +8161,10 @@ def build_teams_body(ctx: dict) -> str:
 
             panel.innerHTML = html || '<p class="analytics-empty">Roster looks stable — no actions flagged.</p>';
           }})
-          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load roster intel.</p>'; }});
+          .catch(function(err) {{
+            console.warn('[roster-intel]', err);
+            panel.innerHTML = '<p class="analytics-empty">Could not load roster intel.</p>';
+          }});
       }}
 
       function loadPowerRankings() {{
@@ -20423,18 +20465,23 @@ def api_trade_intel_run_crawl():
         return jsonify({"error": "Internal error"}), 500
 
 
-@app.route("/api/roster-intel")
+@app.route("/api/roster-intel", methods=["POST"])
 def api_roster_intel():
     """
     Position-grouped roster health for the viewer's team.
     Returns per-position aggregates (total value, avg age, league rank, health label)
     and per-player signals for the viewer's roster.
+
+    Accepts JSON body. fc_adp (optional) is pre-fetched by the browser from
+    FantasyCalc (server-side IP is blocked) and passed as:
+    {sleeper_id: {pos_rank, adp_rank, position}}.
     """
-    platform        = str(request.args.get("platform")         or "sleeper").strip()
-    league_id       = str(request.args.get("league_id")        or "").strip()
-    season          = int(request.args.get("season")           or datetime.now().year)
-    league_type     = str(request.args.get("league_type")      or "1qb").strip().lower()
-    viewer_rid_raw  = str(request.args.get("viewer_roster_id") or "").strip()
+    body            = request.get_json(silent=True) or {}
+    platform        = str(body.get("platform")         or "sleeper").strip()
+    league_id       = str(body.get("league_id")        or "").strip()
+    season          = int(body.get("season")           or datetime.now().year)
+    league_type     = str(body.get("league_type")      or "1qb").strip().lower()
+    viewer_rid_raw  = str(body.get("viewer_roster_id") or "").strip()
 
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
@@ -20502,13 +20549,8 @@ def api_roster_intel():
     except Exception:
         pass
 
-    # FantasyCalc dynasty startup ADP — market consensus position ranks
-    from dashboard_services.adp_service import fetch_fc_startup_adp
-    fc_adp: dict = {}
-    try:
-        fc_adp = fetch_fc_startup_adp(is_sf=(league_type == "sf")) or {}
-    except Exception:
-        pass
+    # FantasyCalc dynasty ADP — sent by the browser (server IP is blocked by FC)
+    fc_adp: dict = body.get("fc_adp") or {}
 
     POSITIONS = ["QB", "RB", "WR", "TE"]
     prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
