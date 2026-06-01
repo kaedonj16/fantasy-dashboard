@@ -6884,9 +6884,7 @@ thead th {
   color: #fecaca;
 }
 
-.m-team .m-av {
-  box-shadow: none;
-}
+.m-av { box-shadow: none; }
 
 .podium .podium-header .avatar {
   width: 42px;
@@ -7859,11 +7857,10 @@ thead th {
 }
 
 .m-head {
-  display: grid;
-  grid-template-columns: 1fr 40px 1fr;
+  display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 12px 14px;
   background: var(--card-soft);
   border-radius: 10px;
   margin-bottom: 12px;
@@ -7898,16 +7895,15 @@ thead th {
   color: var(--text-muted);
 }
 
+/* ── Matchup header team blocks ─────────────────────────── */
 .m-team {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-  width: 100%;
+  flex: 1;
 }
-
-.m-team-left { text-align: left; }
-.m-team-right { text-align: right; }
+.m-team-right { justify-content: flex-end; }
 
 .m-av {
   width: 36px;
@@ -7917,38 +7913,23 @@ thead th {
   flex-shrink: 0;
 }
 
-/* score block — full column width, pushed toward the center "vs" */
-.m-num-block {
+.m-team-info {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  width: 100%;
-}
-.m-team-left .m-num-block { align-items: flex-end; text-align: right; }
-.m-team-right .m-num-block { align-items: flex-start; text-align: left; }
-
-/* avatar + name row */
-.m-team-ident {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
+  gap: 2px;
   min-width: 0;
-  overflow: hidden;
+  flex: 1;
 }
-.m-team-right .m-team-ident { justify-content: flex-end; }
+.m-team-right .m-team-info { text-align: right; }
 
 .m-team-name {
   font-size: 13px;
   font-weight: 700;
-  line-height: 1.25;
-  min-width: 0;
-  overflow: hidden;
+  line-height: 1.2;
   white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
 }
-.m-team-right .m-team-name { text-align: right; }
 
 .m-team-meta {
   font-size: 11px;
@@ -7956,25 +7937,39 @@ thead th {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  width: 100%;
 }
 
-.m-team .num {
-  letter-spacing: 1px;
-  font-size: 30px;
+.m-team-name.loser { color: var(--text-muted); }
+
+/* ── Central scoreboard ──────────────────────────────────── */
+.m-scoreboard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.m-score-val {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.m-scoreboard .num {
+  font-size: 28px;
   font-weight: 800;
+  letter-spacing: 0.5px;
   color: var(--accent);
+  line-height: 1;
 }
 
-.m-team .proj {
-  letter-spacing: 1px;
-  font-weight: 700;
-  opacity: 0.45;
+.m-scoreboard .proj {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.5;
   color: var(--accent);
-}
-
-.m-team-name.loser {
-  color: var(--text-muted);
+  letter-spacing: 0.5px;
 }
 
 .m-team-name.winner {
@@ -9491,24 +9486,16 @@ img, svg, canvas {
   .m-nav h2 { font-size: 15px; }
   .m-btn { padding: 4px 8px; font-size: 12px; }
 
-  /* Wider card: strip the card padding and tighten vs column */
+  /* Wider card on mobile */
   .card.matchup-carousel { padding: 8px; }
 
-  .m-head {
-    grid-template-columns: 1fr 22px 1fr;
-    padding: 6px 8px;
-    gap: 4px;
-    overflow: hidden;        /* clip content that spills out of grid cells */
-  }
-
-  /* grid cells must have min-width:0 or 1fr won't actually constrain them */
-  .m-head > * { min-width: 0; overflow: hidden; }
-
-  .m-vs { font-size: 0.75rem; }
-
-  .m-team { gap: 2px; overflow: hidden; }
-  .m-team .num { font-size: 22px; letter-spacing: 0; }
-  .m-team .proj { font-size: 10px; }
+  .m-head { padding: 10px; gap: 8px; }
+  .m-team { gap: 6px; }
+  .m-av { width: 30px; height: 30px; }
+  .m-scoreboard { gap: 6px; }
+  .m-scoreboard .num { font-size: 22px; }
+  .m-scoreboard .proj { font-size: 10px; }
+  .m-vs { font-size: 10px; }
   .m-team-name { font-size: 12px; }
   .m-team-meta { font-size: 10px; }
 
@@ -9527,9 +9514,9 @@ img, svg, canvas {
 }
 
 @media (max-width: 400px) {
-  /* On very small phones hide the avatar entirely */
   .m-av { display: none !important; }
-  .m-head { grid-template-columns: 1fr 22px 1fr; padding: 6px 8px; }
+  .m-head { padding: 8px 6px; gap: 4px; }
+  .m-scoreboard .num { font-size: 20px; }
 }
 
 @media (max-width: 720px) {

@@ -870,53 +870,40 @@ def render_matchup_slide(
     today_str = date.today().strftime("%Y%m%d")
     now_dt = datetime.now()
 
+    def _score_html(t, proj_mode: bool) -> str:
+        if not proj_mode:
+            points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
+            return f"<span class='num'>{points}</span>"
+        actual_total, live_proj_total = team_live_totals(t, status_by_pid, week_proj_map)
+        return f"<span class='num'>{actual_total:.1f}</span><span class='proj'>{live_proj_total:.1f}</span>"
+
     def team_head(t, proj_mode: bool):
         ava = t.get("avatar") or ""
         img = f"<img class='avatar m-av' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
         rid = t.get('roster_id', '')
         name = t['name']
-
-        if not proj_mode:
-            points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
-            score_html = f"<span class='num'>{points}</span>"
-        else:
-            actual_total, live_proj_total = team_live_totals(t, status_by_pid, week_proj_map)
-            score_html = f"<span class='num'>{actual_total:.1f}</span><span class='proj'>{live_proj_total:.1f}</span>"
-
         return f"""
         <div class="m-team m-team-left">
-          <div class="m-num-block">{score_html}</div>
-          <div class="m-team-ident">
-            {img}
+          {img}
+          <div class="m-team-info">
             <div class="m-team-name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{name}">{name}</div>
+            <div class="m-team-meta">{t['record']} &bull; @{t['username']}</div>
           </div>
-          <div class="m-team-meta">{t['record']} &bull; @{t['username']}</div>
-        </div>
-        """
+        </div>"""
 
     def team_head_2nd(t, proj_mode: bool):
         ava = t.get("avatar") or ""
         img = f"<img class='avatar m-av' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
         rid = t.get('roster_id', '')
         name = t['name']
-
-        if not proj_mode:
-            points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
-            score_html = f"<span class='num'>{points}</span>"
-        else:
-            actual_total, live_proj_total = team_live_totals(t, status_by_pid, week_proj_map)
-            score_html = f"<span class='num'>{actual_total:.1f}</span><span class='proj'>{live_proj_total:.1f}</span>"
-
         return f"""
         <div class="m-team m-team-right">
-          <div class="m-num-block">{score_html}</div>
-          <div class="m-team-ident">
+          <div class="m-team-info">
             <div class="m-team-name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{name}">{name}</div>
-            {img}
+            <div class="m-team-meta">@{t['username']} &bull; {t['record']}</div>
           </div>
-          <div class="m-team-meta">@{t['username']} &bull; {t['record']}</div>
-        </div>
-        """
+          {img}
+        </div>"""
 
     def format_team_game_line(team_abv: str, game: dict, pos: str, side: str) -> str:
         if not team_abv or not game:
@@ -1238,11 +1225,18 @@ def render_matchup_slide(
   <span class="m-wp-pct" style="color:{r_col};text-align:right;">{rp}%</span>
 </div>"""
 
+    l_score = _score_html(m['left'], proj)
+    r_score = _score_html(m['right'], proj)
+
     return f"""
     <div class="m-slide">
       <div class="m-head">
         {team_head(m['left'], proj)}
-        <div class="m-vs">{'vs' if not proj else ''}</div>
+        <div class="m-scoreboard">
+          <div class="m-score-val">{l_score}</div>
+          <div class="m-vs">vs</div>
+          <div class="m-score-val">{r_score}</div>
+        </div>
         {team_head_2nd(m['right'], proj)}
       </div>
       {win_bar_html}
