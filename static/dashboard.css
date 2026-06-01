@@ -7951,7 +7951,7 @@ thead th {
 /* ── Central scoreboard ──────────────────────────────────── */
 .m-scoreboard {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   gap: 14px;
 }
@@ -7985,10 +7985,12 @@ thead th {
 
 .m-vs {
   text-align: center;
-  font-weight: 900;
+  font-weight: 700;
   color: var(--text-muted);
-  font-size: 1.1rem;
-  letter-spacing: 0.5px;
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-top: 8px; /* optical center against 32px num line-height */
 }
 
 .m-win-bar {
