@@ -8069,11 +8069,18 @@ def build_teams_body(ctx: dict) -> str:
     <div class="window-legend-wrap">
       <button class="window-legend-toggle" id="windowLegendToggle" aria-expanded="false">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        Window Guide
+        Legend
         <svg class="wl-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>
       <div class="window-legend-panel" id="windowLegendPanel">
         <div class="window-legend-grid">
+          <div class="wl-section-label">Grades</div>
+          <div class="wl-row"><span class="wl-grade grade-a">A</span><strong class="wl-label">A+ &ndash; A&minus;</strong><span class="wl-desc">Elite roster &mdash; top dynasty value, strong depth, elite core players</span></div>
+          <div class="wl-row"><span class="wl-grade grade-b">B</span><strong class="wl-label">B+ &ndash; B&minus;</strong><span class="wl-desc">Competitive roster with clear strengths and some positional gaps</span></div>
+          <div class="wl-row"><span class="wl-grade grade-c">C</span><strong class="wl-label">C+ &ndash; C&minus;</strong><span class="wl-desc">Below-average roster needing reinforcement in multiple areas</span></div>
+          <div class="wl-row"><span class="wl-grade grade-d">D</span><strong class="wl-label">D</strong><span class="wl-desc">Weak roster &mdash; low dynasty value and scoring projection league-wide</span></div>
+          <div class="wl-grade-note">Grade factors: dynasty value (40%) &middot; projected scoring (25%) &middot; age profile (15%) &middot; elite players (12%) &middot; draft capital (8%)</div>
+          <div class="wl-section-label" style="margin-top:10px;">Competitive Windows</div>
           <div class="wl-row"><span class="wl-dot" style="background:#22c55e;"></span><strong class="wl-label">Contender</strong><span class="wl-desc">Elite dynasty + strong scoring projection, premier roster right now</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#f59e0b;"></span><strong class="wl-label">Win-Now</strong><span class="wl-desc">Elite scoring with aging stars, peak years are here and window is open</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#84cc16;"></span><strong class="wl-label">Aging Contender</strong><span class="wl-desc">Strong roster projecting well, but franchise age is trending up</span></div>
