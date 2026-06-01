@@ -220,7 +220,19 @@ build_daily_data({season!r}, {week!r})
 """, "build_daily_data")
 
     # ------------------------------------------------------------------ #
-    # Step 2: Advanced metrics                                            #
+    # Step 2: Weekly projections (current week + next week if available) #
+    # ------------------------------------------------------------------ #
+    _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from utils.utils import fetch_week_from_tank01, save_week_projections
+for w in sorted(set([{week!r}, min({week!r} + 1, 18)])):
+    data = fetch_week_from_tank01({season!r}, w)
+    save_week_projections({season!r}, w, data)
+    print(f"[cron] Projections week {{w}}: {{len(data)}} players")
+""", "fetch_weekly_projections")
+
+    # ------------------------------------------------------------------ #
+    # Step 4: Advanced metrics                                            #
     # ------------------------------------------------------------------ #
     _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
@@ -262,7 +274,7 @@ else:
 """, "build_daily_advanced_metrics")
 
     # ------------------------------------------------------------------ #
-    # Step 3: Model values                                                #
+    # Step 5: Model values                                                #
     # ------------------------------------------------------------------ #
     if _model_values_fresh():
         print("[cron] Model values already built today, skipping")

@@ -700,12 +700,18 @@ def fetch_week_from_tank01(season: int, week: int) -> dict[str, float]:
         "receivingTD": 6,
     }
     url = f"https://{TANK01_API_HOST}/getNFLProjections"
+    try:
+        from dashboard_services.api import get_nfl_state
+        current_season = int((get_nfl_state() or {}).get("season") or 0)
+    except Exception:
+        current_season = 0
     params = {
         "week": week,
-        "archiveSeason": season,
         "itemFormat": "list",
         **scoring_params,
     }
+    if season != current_season and season > 0:
+        params["archiveSeason"] = season
 
     headers = {
         "x-rapidapi-host": TANK01_API_HOST,
