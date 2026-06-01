@@ -7859,8 +7859,8 @@ thead th {
 .m-head {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 6px;
+  padding: 10px 12px;
   background: var(--card-soft);
   border-radius: 10px;
   margin-bottom: 12px;
@@ -7901,12 +7901,12 @@ thead th {
 .m-score-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .m-av {
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -7929,7 +7929,7 @@ thead th {
 }
 
 .m-scoreboard .num {
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 800;
   color: var(--accent);
   line-height: 1;
@@ -9501,13 +9501,13 @@ img, svg, canvas {
 
   /* Wider card on mobile */
   .card.matchup-carousel { padding: 8px; }
-  .m-head { padding: 10px; gap: 8px; }
-  .m-score-row { gap: 8px; }
-  .m-av { width: 32px; height: 32px; }
-  .m-scoreboard { gap: 8px; }
-  .m-scoreboard .num { font-size: 24px; }
+  .m-head { padding: 8px 10px; gap: 5px; }
+  .m-score-row { gap: 6px; }
+  .m-av { width: 28px; height: 28px; }
+  .m-scoreboard { gap: 6px; }
+  .m-scoreboard .num { font-size: 22px; }
   .m-scoreboard .proj { font-size: 10px; }
-  .m-vs { font-size: 10px; letter-spacing: 0; margin-top: 5px; }
+  .m-vs { font-size: 10px; letter-spacing: 0; margin-top: 4px; }
   .m-team-name { font-size: 12px; }
   .m-team-meta { font-size: 10px; }
 
