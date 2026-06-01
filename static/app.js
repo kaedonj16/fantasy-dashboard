@@ -7474,7 +7474,7 @@ function _buildStatsHTML(game_logs_by_year) {
       gameLogs.forEach(game => {
         // Projection row
         if (game.is_projection) {
-          const projVal = game.fantasy_pts != null ? `~${fmtPts(game.fantasy_pts)}` : '—';
+          const projVal = game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '—';
           statsHTML += `
             <tr class="game-log-table-row game-log-proj-row">
               <td>${game.date || `Wk ${game.week}`}</td>
@@ -7537,9 +7537,9 @@ function _buildStatsHTML(game_logs_by_year) {
               </tbody>
               <tfoot>
                 <tr class="game-log-table-total">
-                  <td><strong>Season</strong></td>
-                  <td><strong>${gamesPlayed} wks</strong></td>
-                  <td class="game-log-table-pts game-log-proj-pts"><strong>~${ppg} ppg</strong></td>
+                  <td><strong>Total</strong></td>
+                  <td><strong>${gamesPlayed}G</strong></td>
+                  <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(totalFantasyPts)}</strong></td>
                   <td colspan="10" style="text-align:left;font-size:11px;color:var(--text-muted);padding-left:8px;">* Projected — actuals update when games are played</td>
                 </tr>
               </tfoot>
