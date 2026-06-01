@@ -7859,8 +7859,7 @@ thead th {
 .m-head {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
+  padding: 12px 16px;
   background: var(--card-soft);
   border-radius: 10px;
   margin-bottom: 12px;
@@ -7897,28 +7896,48 @@ thead th {
 
 /* ── Matchup header ──────────────────────────────────────── */
 
-/* Score row: [avatar] [scoreboard] [avatar] */
-.m-score-row {
+/* Three-column row: [team col] [scoreboard] [team col] */
+.m-head-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+}
+
+/* Left and right team columns */
+.m-team-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.m-col-right {
+  align-items: flex-end;
+  text-align: right;
 }
 
 .m-av {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
+  margin-bottom: 2px;
 }
 
 /* Central scoreboard */
 .m-scoreboard {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  gap: 12px;
-  flex: 1;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.m-scoreboard.has-proj {
+  align-items: flex-start;
 }
 
 .m-score-val {
@@ -7929,7 +7948,7 @@ thead th {
 }
 
 .m-scoreboard .num {
-  font-size: 28px;
+  font-size: 32px;
   font-weight: 800;
   color: var(--accent);
   line-height: 1;
@@ -7944,29 +7963,12 @@ thead th {
   font-variant-numeric: tabular-nums;
 }
 
-/* Teams row: [left identity] [right identity] */
-.m-teams-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.m-team-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-.m-right { text-align: right; }
-
 .m-team-name {
   font-size: 13px;
   font-weight: 700;
   line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .m-team-meta {
@@ -7979,9 +7981,11 @@ thead th {
 
 .m-team-name.loser { color: var(--text-muted); }
 
-/* Legacy selector kept for other pages that still use .m-team */
+/* Legacy selectors kept for other pages */
 .m-team { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
 .m-team-right { justify-content: flex-end; }
+.m-team-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.m-right { text-align: right; }
 
 .m-team-name.winner {
   font-weight: 700;
@@ -7994,7 +7998,10 @@ thead th {
   font-size: 0.7rem;
   letter-spacing: 1px;
   text-transform: uppercase;
-  margin-top: 8px; /* optical center against 32px num line-height */
+}
+
+.m-scoreboard.has-proj .m-vs {
+  margin-top: 6px;
 }
 
 .m-win-bar {
@@ -9501,13 +9508,14 @@ img, svg, canvas {
 
   /* Wider card on mobile */
   .card.matchup-carousel { padding: 8px; }
-  .m-head { padding: 8px 10px; gap: 5px; }
-  .m-score-row { gap: 6px; }
-  .m-av { width: 28px; height: 28px; }
+  .m-head { padding: 8px 10px; }
+  .m-head-row { gap: 8px; }
+  .m-av { width: 28px; height: 28px; margin-bottom: 1px; }
   .m-scoreboard { gap: 6px; }
   .m-scoreboard .num { font-size: 22px; }
   .m-scoreboard .proj { font-size: 10px; }
-  .m-vs { font-size: 10px; letter-spacing: 0; margin-top: 4px; }
+  .m-scoreboard.has-proj .m-vs { margin-top: 3px; }
+  .m-vs { font-size: 10px; letter-spacing: 0; }
   .m-team-name { font-size: 12px; }
   .m-team-meta { font-size: 10px; }
 
@@ -9526,9 +9534,10 @@ img, svg, canvas {
 }
 
 @media (max-width: 400px) {
-  .m-av { display: none !important; }
-  .m-head { padding: 8px 6px; gap: 6px; }
-  .m-scoreboard .num { font-size: 22px; }
+  .m-av { width: 24px; height: 24px; }
+  .m-head { padding: 8px 6px; }
+  .m-head-row { gap: 6px; }
+  .m-scoreboard .num { font-size: 20px; }
 }
 
 @media (max-width: 720px) {

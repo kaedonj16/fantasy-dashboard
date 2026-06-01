@@ -877,21 +877,20 @@ def render_matchup_slide(
         actual_total, live_proj_total = team_live_totals(t, status_by_pid, week_proj_map)
         return f"<span class='num'>{actual_total:.1f}</span><span class='proj'>{live_proj_total:.1f}</span>"
 
-    def _img(t) -> str:
-        ava = t.get("avatar") or ""
-        return f"<img class='avatar m-av' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
-
-    def _identity(t, side: str) -> str:
+    def _team_col(t, side: str) -> str:
         rid = t.get('roster_id', '')
         name = t['name']
         record = t.get('record', '0-0')
         username = t.get('username') or ''
+        ava = t.get("avatar") or ""
+        img_html = f"<img class='avatar m-av' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
         name_el = f"<div class='m-team-name team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</div>"
         if side == 'left':
             meta = f"<div class='m-team-meta'>{record} &bull; @{username}</div>"
+            return f"<div class='m-team-col m-col-left'>{img_html}{name_el}{meta}</div>"
         else:
             meta = f"<div class='m-team-meta'>@{username} &bull; {record}</div>"
-        return f"<div class='m-team-info m-{side}'>{name_el}{meta}</div>"
+            return f"<div class='m-team-col m-col-right'>{img_html}{name_el}{meta}</div>"
 
     # keep for backward compat with any callers (unused in this render path)
     def team_head(t, proj_mode: bool): return ""
@@ -1219,22 +1218,19 @@ def render_matchup_slide(
 
     l_score = _score_html(m['left'], proj)
     r_score = _score_html(m['right'], proj)
+    proj_class = " has-proj" if proj else ""
 
     return f"""
     <div class="m-slide">
       <div class="m-head">
-        <div class="m-score-row">
-          {_img(m['left'])}
-          <div class="m-scoreboard">
+        <div class="m-head-row">
+          {_team_col(m['left'], 'left')}
+          <div class="m-scoreboard{proj_class}">
             <div class="m-score-val m-score-l">{l_score}</div>
             <div class="m-vs">vs</div>
             <div class="m-score-val m-score-r">{r_score}</div>
           </div>
-          {_img(m['right'])}
-        </div>
-        <div class="m-teams-row">
-          {_identity(m['left'], 'left')}
-          {_identity(m['right'], 'right')}
+          {_team_col(m['right'], 'right')}
         </div>
       </div>
       {win_bar_html}
