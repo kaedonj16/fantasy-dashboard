@@ -675,7 +675,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}">
+      <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
 
@@ -1757,6 +1757,7 @@ def render_page(
         recap_banner=banner_html,
         body=wrapped_body,
         cache_ts=int(time.time() * 1000),
+        user_premium="true" if is_premium else "false",
         adsense_script="" if is_premium else _AD_SCRIPT,
         ad_top="" if is_premium else _AD_TOP,
         ad_bottom="" if is_premium else _AD_BOTTOM,
