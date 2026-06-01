@@ -751,49 +751,48 @@ def map_weekly_projections_to_sleeper(
     """
     Convert Tank01 rows -> { sleeper_id: projected_points }.
 
-    For your Tank01 shape (list of [team_rows, player_rows]):
-      weekly_rows[0] = team rows (for DEF)
-      weekly_rows[1] = player rows (for skill players)
-
-    We map:
-      • teamID -> Sleeper DEF id via teams_index
-      • playerID -> Sleeper pid via players_index.tankId
+    Tank01 returns body as a list of groups (teams, then one or more player groups).
+    We iterate all groups and handle each row by whether it has teamID or playerID.
     """
     out: Dict[str, float] = {}
 
     teams_index = load_teams_index() or {}
     players_index = load_players_index() or {}
 
-    # Teams / DEF (index 0)
-    if len(weekly_rows) > 0:
-        for row in weekly_rows[0]:
+    for group in weekly_rows:
+        if not isinstance(group, list):
+            continue
+        for row in group:
+            if not isinstance(row, dict):
+                continue
+
             team_id_raw = row.get("teamID")
-            proj = row.get("fantasyPointsDefault")
-            if proj is None:
-                continue
-
-            team_key = next(
-                (k for k, v in teams_index.items() if v.get("teamId") == str(team_id_raw)),
-                None,
-            )
-            if team_key:
-                out[str(team_key)] = float(proj)
-
-    # Players (index 1)
-    if len(weekly_rows) > 1:
-        for row in weekly_rows[1]:
             tank_id = row.get("playerID")
-            proj_raw = row.get("fantasyPointsDefault") or {}
-            proj = proj_raw.get("PPR") if isinstance(proj_raw, dict) else proj_raw
-            if proj is None:
-                continue
 
-            pid = next(
-                (k for k, v in players_index.items() if v.get("tankId") == str(tank_id)),
-                None,
-            )
-            if pid:
-                out[str(pid)] = float(proj)
+            if team_id_raw and not tank_id:
+                # DEF row
+                proj = row.get("fantasyPointsDefault")
+                if proj is None:
+                    continue
+                team_key = next(
+                    (k for k, v in teams_index.items() if v.get("teamId") == str(team_id_raw)),
+                    None,
+                )
+                if team_key:
+                    out[str(team_key)] = float(proj)
+
+            elif tank_id:
+                # Skill player row
+                proj_raw = row.get("fantasyPointsDefault") or {}
+                proj = proj_raw.get("PPR") if isinstance(proj_raw, dict) else proj_raw
+                if proj is None:
+                    continue
+                pid = next(
+                    (k for k, v in players_index.items() if v.get("tankId") == str(tank_id)),
+                    None,
+                )
+                if pid:
+                    out[str(pid)] = float(proj)
 
     return out
 
