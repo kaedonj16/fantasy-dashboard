@@ -20465,18 +20465,22 @@ def api_trade_intel_run_crawl():
         return jsonify({"error": "Internal error"}), 500
 
 
-@app.route("/api/roster-intel", methods=["POST"])
+@app.route("/api/roster-intel", methods=["GET", "POST"])
 def api_roster_intel():
     """
     Position-grouped roster health for the viewer's team.
     Returns per-position aggregates (total value, avg age, league rank, health label)
     and per-player signals for the viewer's roster.
 
-    Accepts JSON body. fc_adp (optional) is pre-fetched by the browser from
-    FantasyCalc (server-side IP is blocked) and passed as:
-    {sleeper_id: {pos_rank, adp_rank, position}}.
+    POST body (preferred): includes fc_adp pre-fetched by the browser from
+    FantasyCalc ({sleeperId: {pos_rank, adp_rank, position}}).
+    GET fallback: reads params from query string, fc_adp defaults to {}.
     """
-    body            = request.get_json(silent=True) or {}
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+    else:
+        body = request.args
+
     platform        = str(body.get("platform")         or "sleeper").strip()
     league_id       = str(body.get("league_id")        or "").strip()
     season          = int(body.get("season")           or datetime.now().year)
