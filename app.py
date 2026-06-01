@@ -5278,7 +5278,6 @@ def _render_weekly_highlights(
         blowout = max(matchup_summaries, key=lambda m: abs(m["margin"]))
         closest_card = _hl_matchup("Closest Game",   closest["winner"], closest["loser"], closest["margin"])
         blowout_card = _hl_matchup("Biggest Blowout", blowout["winner"], blowout["loser"], blowout["margin"])
-        """
 
     return highest_card + lowest_card + closest_card + blowout_card
 
