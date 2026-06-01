@@ -3028,7 +3028,19 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
     # ---------- Teams page ----------
     if page == "teams":
+        # Clear first, then re-fetch so rosters/traded reflect post-trade state
         clear_teams_cache_for_league(resolved_league_id)
+        rosters = get_rosters(platform, resolved_league_id, viewed_season)
+        ctx["rosters"] = rosters
+        ctx["roster_map"] = _build_roster_map(users, rosters)
+
+        if platform == "sleeper":
+            try:
+                traded = get_traded_picks(platform, resolved_league_id, viewed_season)
+                ctx["traded"] = traded
+            except Exception:
+                traded = ctx.get("traded")
+
         ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
         if platform == "sleeper":
