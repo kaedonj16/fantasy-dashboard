@@ -1231,13 +1231,15 @@ def render_matchup_slide(
     return f"""
     <div class="m-slide">
       <div class="m-head">
-        {team_head(m['left'], proj)}
         <div class="m-scoreboard">
           <div class="m-score-val">{l_score}</div>
           <div class="m-vs">vs</div>
           <div class="m-score-val">{r_score}</div>
         </div>
-        {team_head_2nd(m['right'], proj)}
+        <div class="m-teams-row">
+          {team_head(m['left'], proj)}
+          {team_head_2nd(m['right'], proj)}
+        </div>
       </div>
       {win_bar_html}
       <div class="m-body">
