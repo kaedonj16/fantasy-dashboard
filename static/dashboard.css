@@ -7963,6 +7963,10 @@ thead th {
   font-variant-numeric: tabular-nums;
 }
 
+.m-scoreboard .m-proj-only {
+  opacity: 0.55;
+}
+
 .m-team-name {
   font-size: 13px;
   font-weight: 700;

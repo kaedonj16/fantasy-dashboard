@@ -870,12 +870,19 @@ def render_matchup_slide(
     today_str = date.today().strftime("%Y%m%d")
     now_dt = datetime.now()
 
-    def _score_html(t, proj_mode: bool) -> str:
+    def _score_html(t, proj_mode: bool) -> tuple[str, bool]:
+        """Returns (html, has_live_proj). has_live_proj=True means actual+proj stacked."""
         if not proj_mode:
             points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
-            return f"<span class='num'>{points}</span>"
+            return f"<span class='num'>{points}</span>", False
         actual_total, live_proj_total = team_live_totals(t, status_by_pid, week_proj_map)
-        return f"<span class='num'>{actual_total:.1f}</span><span class='proj'>{live_proj_total:.1f}</span>"
+        any_started = any(
+            status_by_pid.get(p.get("pid"), STATUS_NOT_STARTED) in (STATUS_IN_PROGRESS, STATUS_FINAL)
+            for p in (t.get("starters") or [])
+        )
+        if not any_started:
+            return f"<span class='num m-proj-only'>{live_proj_total:.1f}</span>", False
+        return f"<span class='num'>{actual_total:.1f}</span><span class='proj'>{live_proj_total:.1f}</span>", True
 
     def _team_col(t, side: str) -> str:
         rid = t.get('roster_id', '')
@@ -1216,9 +1223,9 @@ def render_matchup_slide(
   <span class="m-wp-pct" style="color:{r_col};text-align:right;">{rp}%</span>
 </div>"""
 
-    l_score = _score_html(m['left'], proj)
-    r_score = _score_html(m['right'], proj)
-    proj_class = " has-proj" if proj else ""
+    l_score, l_live = _score_html(m['left'], proj)
+    r_score, r_live = _score_html(m['right'], proj)
+    proj_class = " has-proj" if (l_live or r_live) else ""
 
     return f"""
     <div class="m-slide">
