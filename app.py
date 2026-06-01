@@ -8174,9 +8174,9 @@ def build_teams_body(ctx: dict) -> str:
       <div class="window-legend-panel" id="windowLegendPanel">
         <div class="window-legend-grid">
           <div class="wl-section-label">Grades</div>
-          <div class="wl-row"><span class="wl-grade grade-a">A</span><strong class="wl-label">A+ &ndash; A&minus;</strong><span class="wl-desc">Elite roster: top dynasty value, strong depth, elite core players</span></div>
-          <div class="wl-row"><span class="wl-grade grade-b">B</span><strong class="wl-label">B+ &ndash; B&minus;</strong><span class="wl-desc">Competitive roster with clear strengths and some positional gaps</span></div>
-          <div class="wl-row"><span class="wl-grade grade-c">C</span><strong class="wl-label">C+ &ndash; C&minus;</strong><span class="wl-desc">Below-average roster needing reinforcement in multiple areas</span></div>
+          <div class="wl-row"><span class="wl-grade grade-a">A</span><strong class="wl-label">A+ to A&minus;</strong><span class="wl-desc">Elite roster: top dynasty value, strong depth, elite core players</span></div>
+          <div class="wl-row"><span class="wl-grade grade-b">B</span><strong class="wl-label">B+ to B&minus;</strong><span class="wl-desc">Competitive roster with clear strengths and some positional gaps</span></div>
+          <div class="wl-row"><span class="wl-grade grade-c">C</span><strong class="wl-label">C+ to C&minus;</strong><span class="wl-desc">Below-average roster needing reinforcement in multiple areas</span></div>
           <div class="wl-row"><span class="wl-grade grade-d">D</span><strong class="wl-label">D</strong><span class="wl-desc">Weak roster: low dynasty value and scoring projection league-wide</span></div>
           <div class="wl-grade-note">Grade factors: dynasty value (40%) &middot; projected scoring (25%) &middot; age profile (15%) &middot; elite players (12%) &middot; draft capital (8%)</div>
           <div class="wl-section-label" style="margin-top:10px;">Competitive Windows</div>
