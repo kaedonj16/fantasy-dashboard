@@ -5376,6 +5376,51 @@ def build_weekly_hub_body(ctx: dict) -> str:
     )
     highlights_html = _render_weekly_highlights(df_weekly, default_week)
 
+    # When the current season has no data (offseason), fall back to the most
+    # recent completed week from the previous season. Use the league's
+    # previous_league_id to look up the cached context for that season.
+    _highlights_season_label = ""
+    if not highlights_html:
+        try:
+            _prev_season = season - 1
+            _league_obj = ctx.get("league") or {}
+            _prev_lid = str(_league_obj.get("previous_league_id") or "").strip()
+            if not _prev_lid:
+                _prev_lid = ctx.get("resolved_league_id", league_id)
+            _prev_key = _cache_key(platform, _prev_season, _prev_lid)
+            _prev_entry = DASHBOARD_CACHE.get(_prev_key)
+            if not _prev_entry:
+                # Also try with the current league_id in case the cache was
+                # populated under a different key combination
+                for _ck, _ce in list(DASHBOARD_CACHE.items()):
+                    if (
+                        isinstance(_ck, tuple)
+                        and len(_ck) == 3
+                        and _ck[0] == platform.lower()
+                        and _ck[1] == _prev_season
+                    ):
+                        _prev_entry = _ce
+                        break
+            if _prev_entry:
+                _prev_df = _prev_entry.get("ctx", {}).get("df_weekly", pd.DataFrame())
+                if (
+                    not _prev_df.empty
+                    and "finalized" in _prev_df.columns
+                    and "week" in _prev_df.columns
+                ):
+                    _prev_fin = _prev_df[_prev_df["finalized"] == True]
+                    if not _prev_fin.empty:
+                        _prev_wk = int(_prev_fin["week"].max())
+                        highlights_html = _render_weekly_highlights(_prev_df, _prev_wk)
+                        if highlights_html:
+                            _highlights_season_label = (
+                                f"<div class='side-section-label'>"
+                                f"{_prev_season} Season &middot; Week {_prev_wk}"
+                                f"</div>"
+                            )
+        except Exception:
+            pass
+
     proj_warn_html = ""
     if not proj_by_week.get("_available"):
         proj_warn_html = (
@@ -5395,6 +5440,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     """
     side_panel_html = f"""
           <div class="week-side-panel active" data-week="{default_week}">
+            {_highlights_season_label}
             {highlights_html}
           </div>
     """
@@ -14943,6 +14989,49 @@ def api_weekly_week():
         season
     )
     highlights_html = _render_weekly_highlights(df_weekly, week)
+
+    # Offseason fallback: show previous season's last week highlights from cache
+    _api_season_label = ""
+    if not highlights_html:
+        try:
+            _prev_season = season - 1
+            _league_obj2 = ctx.get("league") or {}
+            _prev_lid2 = str(_league_obj2.get("previous_league_id") or "").strip()
+            if not _prev_lid2:
+                _prev_lid2 = resolved_league_id
+            _prev_key2 = _cache_key(platform, _prev_season, _prev_lid2)
+            _prev_entry2 = DASHBOARD_CACHE.get(_prev_key2)
+            if not _prev_entry2:
+                for _ck2, _ce2 in list(DASHBOARD_CACHE.items()):
+                    if (
+                        isinstance(_ck2, tuple)
+                        and len(_ck2) == 3
+                        and _ck2[0] == platform.lower()
+                        and _ck2[1] == _prev_season
+                    ):
+                        _prev_entry2 = _ce2
+                        break
+            if _prev_entry2:
+                _prev_df2 = _prev_entry2.get("ctx", {}).get("df_weekly", pd.DataFrame())
+                if (
+                    not _prev_df2.empty
+                    and "finalized" in _prev_df2.columns
+                    and "week" in _prev_df2.columns
+                ):
+                    _prev_fin2 = _prev_df2[_prev_df2["finalized"] == True]
+                    if not _prev_fin2.empty:
+                        _prev_wk2 = int(_prev_fin2["week"].max())
+                        highlights_html = _render_weekly_highlights(_prev_df2, _prev_wk2)
+                        if highlights_html:
+                            _api_season_label = (
+                                f"<div class='side-section-label'>"
+                                f"{_prev_season} Season &middot; Week {_prev_wk2}"
+                                f"</div>"
+                            )
+        except Exception:
+            pass
+    if _api_season_label:
+        highlights_html = _api_season_label + highlights_html
 
     matchups = matchups_by_week.get(week, []) or []
     status_by_pid = (statuses.get(week) or {}).get("statuses", {}) or {}
