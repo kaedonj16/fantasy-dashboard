@@ -426,6 +426,7 @@ ul {
 
 .sidebar-grid {
   grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
 }
 
 .streak-cold .chip-streak {
@@ -6445,19 +6446,28 @@ thead th {
 }
 
 .rank {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   display: inline-grid;
   place-items: center;
-  border-radius: 6px;
-  border: 1px solid var(--grid);
+  border-radius: 4px;
+  font-size: 11px;
   font-weight: 800;
-  color: #93c5fd;
+  color: var(--text-muted);
+  background: transparent;
+  flex-shrink: 0;
 }
 
 .rank-first {
-  background: #facc15;
-  color: #78350f;
+  color: #f59e0b;
+}
+
+.rank-second {
+  color: var(--text-muted);
+}
+
+.rank-third {
+  color: #92400e;
 }
 
 /* ---- Playoff Odds tab ---- */
@@ -6594,15 +6604,6 @@ thead th {
   font-variant-numeric: tabular-nums;
 }
 
-.rank-second {
-  background: var(--bg-alt);
-  color: #374151;
-}
-
-.rank-third {
-  background: #cd7f32;
-  color: #7c2d12;
-}
 
 /* ============================================
    MATCHUPS & SCHEDULE
@@ -8595,7 +8596,10 @@ thead th {
   justify-self: end;
   font-variant-numeric: tabular-nums;
   font-weight: 800;
+  font-size: 14px;
   color: var(--accent);
+  white-space: nowrap;
+  padding-left: 4px;
 }
 
 .radar-selectors {
@@ -8650,17 +8654,26 @@ thead th {
 }
 
 .side-card {
-  padding: 12px;
-  display: grid;
+  padding: 10px 10px 6px;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-soft);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  min-width: 0;
 }
 
 .side-card h2, .side-card h3, .side-header, .side-body {
-  text-align: center;
+  text-align: left;
 }
 
 .side-card h3 {
-  font-size: 16px;
+  font-size: 11px;
   font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 4px;
 }
 
 .side-header {
@@ -8674,11 +8687,11 @@ thead th {
 
 .side-row {
   display: grid;
-  grid-template-columns: 28px 1fr 40px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  border-top: 1px dashed #d9e2ec;
+  gap: 5px;
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
 }
 
 .side-row:first-of-type {
@@ -9228,14 +9241,26 @@ thead th {
   display: block;
 }
 
+.who {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .who .name {
+  font-size: 13px;
   font-weight: 700;
   color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .who .sub {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 [data-tooltip] {
