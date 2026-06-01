@@ -16184,8 +16184,12 @@ tr.team-clickable {
   object-fit: contain;
   opacity: 0.75;
   transition: opacity 0.15s ease;
+  filter: brightness(0) saturate(100%) invert(40%);
 }
 #discord-pill:hover .fp-discord-icon { opacity: 1; }
+html[data-theme="dark"] .fp-discord-icon {
+  filter: brightness(0) saturate(100%) invert(90%);
+}
 
 /* ── Disabled button state ───────────────────────────────────────────────── */
 button:disabled {
