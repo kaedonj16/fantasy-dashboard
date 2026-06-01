@@ -7475,10 +7475,14 @@ function _buildStatsHTML(game_logs_by_year) {
         // Projection row
         if (game.is_projection) {
           const projVal = game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '—';
+          let projDate = game.date || '';
+          if (projDate.length === 8) {
+            projDate = `${parseInt(projDate.substring(4,6))}/${parseInt(projDate.substring(6,8))}`;
+          }
           statsHTML += `
             <tr class="game-log-table-row game-log-proj-row">
-              <td>${game.date || `Wk ${game.week}`}</td>
-              <td class="game-log-table-opp">—</td>
+              <td>${projDate || `Wk ${game.week}`}</td>
+              <td class="game-log-table-opp">${game.opponent || '—'}</td>
               <td class="game-log-table-pts game-log-proj-pts">${projVal}</td>
               <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
             </tr>
