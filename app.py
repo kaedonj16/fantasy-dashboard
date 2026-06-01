@@ -12771,8 +12771,6 @@ def _compute_fpts_against(season: int) -> dict:
 
             # Load schedule for this week to build team→opponent map
             sched_files = _glob.glob(
-                os.path.join("cache", "schedule", f"schedule_s{season}_w{week}_*.json")
-            ) or _glob.glob(
                 os.path.join("cache", "schedule", f"schedule_s{season}_w{week}.json")
             )
             if not sched_files:
