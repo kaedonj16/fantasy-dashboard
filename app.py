@@ -17951,10 +17951,12 @@ def api_player_game_logs(player_id: str):
             game_logs = []
 
             schedule_by_week: dict = {}
-            for schedule_file in glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*_d*.json")):
+            # Match both dated (schedule_s2025_w1_d2026-03-22.json)
+            # and undated (schedule_s2026_w1.json) filename formats.
+            for schedule_file in glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*.json")):
                 try:
                     fn = os.path.basename(schedule_file)
-                    week_num = int(fn.split('_w')[1].split('_')[0])
+                    week_num = int(fn.split('_w')[1].split('_')[0].split('.')[0])
                     with open(schedule_file) as f:
                         games = json.load(f)
                     if isinstance(games, list) and week_num not in schedule_by_week:
@@ -18074,16 +18076,45 @@ def api_player_game_logs(player_id: str):
                 if _proj_vals:
                     _mv = list(_proj_vals.values())
                     _med = _med_fn(_mv) if _mv else 0
+
+                    # Load upcoming season schedule for opponent lookup
+                    _sched: dict = {}
+                    for _sf in glob.glob(os.path.join("cache", "schedule", f"schedule_s{_upcoming}_w*.json")):
+                        try:
+                            _fn = os.path.basename(_sf)
+                            _wn = int(_fn.split('_w')[1].split('_')[0].split('.')[0])
+                            with open(_sf) as _sff:
+                                _sg = json.load(_sff)
+                            if isinstance(_sg, list) and _wn not in _sched:
+                                _sched[_wn] = _sg
+                        except Exception:
+                            pass
+
                     _proj_logs = []
                     for _w in range(1, 19):
                         _pv = _proj_vals.get(_w, _med if _med > 0 else None)
-                        # Apply same 50% threshold as build_projections_by_week
                         if _pv and _med > 0 and _pv < _med * 0.5:
                             _pv = _med
+
+                        # Resolve opponent from schedule
+                        _opp = "—"
+                        _game_date = ""
+                        for _g in (_sched.get(_w) or []):
+                            if not isinstance(_g, dict):
+                                continue
+                            if player_team and player_team == _g.get("home"):
+                                _opp = _g.get("away", "—")
+                                _game_date = _g.get("gameDate", "")
+                                break
+                            elif player_team and player_team == _g.get("away"):
+                                _opp = f"@{_g.get('home', '—')}"
+                                _game_date = _g.get("gameDate", "")
+                                break
+
                         _proj_logs.append({
                             "week": _w,
-                            "date": f"Wk {_w}",
-                            "opponent": "—",
+                            "date": _game_date or f"Wk {_w}",
+                            "opponent": _opp,
                             "fantasy_pts": round(_pv, 2) if _pv else None,
                             "stats": None,
                             "is_projection": True,
