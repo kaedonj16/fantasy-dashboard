@@ -8374,7 +8374,7 @@ thead th {
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 12px;
+  top: 72px;
   height: fit-content;
 }
 
