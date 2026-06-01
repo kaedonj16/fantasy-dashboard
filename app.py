@@ -2672,7 +2672,6 @@ def ensure_weekly_bits(ctx: dict) -> None:
         # Load pre-season projections for all 18 weeks
         ctx["proj_by_week"] = build_projections_by_week(int(ctx["season"]), 18, ctx.get("raw_scoring_settings"))
         ctx["statuses"] = {}
-        ctx["proj_by_roster"] = {}
         if "matchups_by_week" not in ctx:
             try:
                 ctx["matchups_by_week"] = build_matchups_by_week(
@@ -2685,6 +2684,16 @@ def ensure_weekly_bits(ctx: dict) -> None:
                 )
             except Exception:
                 ctx["matchups_by_week"] = {}
+        # Compute projected team totals so highlights / matchup preview work
+        try:
+            ctx["proj_by_roster"] = compute_team_projections_for_weeks(
+                ctx["matchups_by_week"],
+                {},  # no statuses in offseason
+                ctx["proj_by_week"],
+                ctx.get("roster_map") or {},
+            )
+        except Exception:
+            ctx["proj_by_roster"] = {}
         return
 
     def _apply_proj_column() -> None:
@@ -5151,37 +5160,75 @@ def _render_weekly_matchups(df_weekly: pd.DataFrame, week: int) -> str:
     """
 
 
-def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
-    if df_weekly.empty or "week" not in df_weekly.columns:
+def _render_weekly_highlights(
+    df_weekly: pd.DataFrame,
+    week: int,
+    proj_by_roster: dict | None = None,
+    matchups_by_week: dict | None = None,
+) -> str:
+    """Render sidebar highlight cards for a given week.
+
+    Tries sources in order:
+      1. Finalized scores from df_weekly
+      2. Projected scores from df_weekly["proj"] (week not yet final)
+      3. Projected team totals from proj_by_roster + matchups_by_week
+    """
+    # ------------------------------------------------------------------
+    # Build a flat list of rows: {owner, roster_id, matchup_id, use_score}
+    # ------------------------------------------------------------------
+    rows: list[dict] = []
+    is_projected = False
+
+    if not df_weekly.empty and "week" in df_weekly.columns:
+        wdf = df_weekly[df_weekly["week"] == week].copy()
+        if not wdf.empty:
+            if "finalized" in wdf.columns and not wdf["finalized"].any():
+                wdf["use_score"] = wdf.get("proj", pd.Series(dtype=float))
+                is_projected = True
+            else:
+                wdf["use_score"] = wdf["points"]
+            for _, row in wdf.iterrows():
+                score = row.get("use_score")
+                rows.append({
+                    "owner": row["owner"],
+                    "roster_id": str(row["roster_id"]),
+                    "matchup_id": row["matchup_id"],
+                    "use_score": float(score) if pd.notna(score) else 0.0,
+                })
+
+    # Fall back to projected totals when no df_weekly data for this week
+    if not rows and proj_by_roster and matchups_by_week:
+        is_projected = True
+        for m in (matchups_by_week.get(week) or []):
+            mid = m.get("matchup_id", 0)
+            for side in ("left", "right"):
+                team = m.get(side) or {}
+                rid = str(team.get("roster_id") or "")
+                name = team.get("name") or f"Team {rid}"
+                proj = float(proj_by_roster.get((week, rid)) or 0.0)
+                rows.append({
+                    "owner": name,
+                    "roster_id": rid,
+                    "matchup_id": mid,
+                    "use_score": proj,
+                })
+
+    if not rows:
         return ""
-    wdf = df_weekly[df_weekly["week"] == week].copy()
-    if wdf.empty:
-        return f"""
-        <div class='card small'>
-          <div class='card-header'><h3>Week {week} Highlights</h3></div>
-          <div class='card-body'>
-            <p>No highlights for this week yet.</p>
-          </div>
-        </div>
-        """
 
-    # ------------------------------------------------------------
-    # Use projections for weeks that are NOT finalized
-    # ------------------------------------------------------------
-    if not wdf["finalized"].any():
-        wdf["use_score"] = wdf["proj"]
-    else:
-        wdf["use_score"] = wdf["points"]
+    score_label = " (Proj)" if is_projected else ""
 
-    # ------------------------------------------------------------
+    # ------------------------------------------------------------------
     # Highest / Lowest Score Cards
-    # ------------------------------------------------------------
-    top = wdf.sort_values("use_score", ascending=False).iloc[0]
-    low = wdf.sort_values("use_score", ascending=True).iloc[0]
+    # ------------------------------------------------------------------
+    rows_sorted_desc = sorted(rows, key=lambda r: r["use_score"], reverse=True)
+    rows_sorted_asc  = sorted(rows, key=lambda r: r["use_score"])
+    top = rows_sorted_desc[0]
+    low = rows_sorted_asc[0]
 
     highest_card = f"""
     <div class="card small">
-      <div class="card-header"><h3>Highest Score</h3></div>
+      <div class="card-header"><h3>Highest Score{score_label}</h3></div>
       <div class="card-body">
         <div class="highlight-game-card white">
           <div class="hg-row">
@@ -5197,7 +5244,7 @@ def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
 
     lowest_card = f"""
     <div class="card small">
-      <div class="card-header"><h3>Lowest Score</h3></div>
+      <div class="card-header"><h3>Lowest Score{score_label}</h3></div>
       <div class="card-body">
         <div class="highlight-game-card white">
           <div class="hg-row">
@@ -5211,39 +5258,41 @@ def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
     </div>
     """
 
-    # ------------------------------------------------------------
+    # ------------------------------------------------------------------
     # Closest Game / Blowout Game
-    # ------------------------------------------------------------
-    matchups = []
-    for (_, _), grp in wdf.groupby(["week", "matchup_id"]):
+    # ------------------------------------------------------------------
+    by_matchup: dict = {}
+    for r in rows:
+        mid = r["matchup_id"]
+        by_matchup.setdefault(mid, []).append(r)
+
+    matchup_summaries = []
+    for mid, grp in by_matchup.items():
         if len(grp) != 2:
             continue
-        g = grp.sort_values("use_score", ascending=False)
-        win = g.iloc[0]
-        lose = g.iloc[1]
-        margin = float(win["use_score"] - lose["use_score"])
-
-        matchups.append({
+        grp_sorted = sorted(grp, key=lambda r: r["use_score"], reverse=True)
+        win, lose = grp_sorted[0], grp_sorted[1]
+        matchup_summaries.append({
             "winner": win["owner"],
             "winner_rid": win["roster_id"],
-            "winnerPts": float(win["use_score"]),
+            "winnerPts": win["use_score"],
             "loser": lose["owner"],
             "loser_rid": lose["roster_id"],
-            "loserPts": float(lose["use_score"]),
-            "margin": margin,
+            "loserPts": lose["use_score"],
+            "margin": win["use_score"] - lose["use_score"],
         })
 
     closest_card = ""
     blowout_card = ""
 
-    if matchups:
-        closest = min(matchups, key=lambda m: abs(m["margin"]))
-        blowout = max(matchups, key=lambda m: abs(m["margin"]))
+    if matchup_summaries:
+        closest = min(matchup_summaries, key=lambda m: abs(m["margin"]))
+        blowout = max(matchup_summaries, key=lambda m: abs(m["margin"]))
 
         closest_card = f"""
         <div class="card small">
           <div class="card-header">
-            <h3>Closest Game</h3><h3>{closest['margin']:.1f} Points</h3>
+            <h3>Closest Game{score_label}</h3><h3>{closest['margin']:.1f} pts</h3>
           </div>
           <div class="card-body">
             <div class="highlight-game-card white">
@@ -5263,7 +5312,7 @@ def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
         blowout_card = f"""
         <div class="card small">
           <div class="card-header">
-            <h3>Biggest Blowout</h3><h3>{blowout['margin']:.1f} Points</h3>
+            <h3>Biggest Blowout{score_label}</h3><h3>{blowout['margin']:.1f} pts</h3>
           </div>
           <div class="card-body">
             <div class="highlight-game-card white">
@@ -5374,52 +5423,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
         platform,
         season
     )
-    highlights_html = _render_weekly_highlights(df_weekly, default_week)
-
-    # When the current season has no data (offseason), fall back to the most
-    # recent completed week from the previous season. Use the league's
-    # previous_league_id to look up the cached context for that season.
-    _highlights_season_label = ""
-    if not highlights_html:
-        try:
-            _prev_season = season - 1
-            _league_obj = ctx.get("league") or {}
-            _prev_lid = str(_league_obj.get("previous_league_id") or "").strip()
-            if not _prev_lid:
-                _prev_lid = ctx.get("resolved_league_id", league_id)
-            _prev_key = _cache_key(platform, _prev_season, _prev_lid)
-            _prev_entry = DASHBOARD_CACHE.get(_prev_key)
-            if not _prev_entry:
-                # Also try with the current league_id in case the cache was
-                # populated under a different key combination
-                for _ck, _ce in list(DASHBOARD_CACHE.items()):
-                    if (
-                        isinstance(_ck, tuple)
-                        and len(_ck) == 3
-                        and _ck[0] == platform.lower()
-                        and _ck[1] == _prev_season
-                    ):
-                        _prev_entry = _ce
-                        break
-            if _prev_entry:
-                _prev_df = _prev_entry.get("ctx", {}).get("df_weekly", pd.DataFrame())
-                if (
-                    not _prev_df.empty
-                    and "finalized" in _prev_df.columns
-                    and "week" in _prev_df.columns
-                ):
-                    _prev_fin = _prev_df[_prev_df["finalized"] == True]
-                    if not _prev_fin.empty:
-                        _prev_wk = int(_prev_fin["week"].max())
-                        highlights_html = _render_weekly_highlights(_prev_df, _prev_wk)
-                        if highlights_html:
-                            _highlights_season_label = (
-                                f"<div class='side-section-label'>"
-                                f"{_prev_season} Season &middot; Week {_prev_wk}"
-                                f"</div>"
-                            )
-        except Exception:
-            pass
+    proj_by_roster = ctx.get("proj_by_roster") or {}
+    highlights_html = _render_weekly_highlights(
+        df_weekly, default_week,
+        proj_by_roster=proj_by_roster,
+        matchups_by_week=matchups_by_week,
+    )
 
     proj_warn_html = ""
     if not proj_by_week.get("_available"):
@@ -5440,7 +5449,6 @@ def build_weekly_hub_body(ctx: dict) -> str:
     """
     side_panel_html = f"""
           <div class="week-side-panel active" data-week="{default_week}">
-            {_highlights_season_label}
             {highlights_html}
           </div>
     """
@@ -14988,50 +14996,12 @@ def api_weekly_week():
         platform,
         season
     )
-    highlights_html = _render_weekly_highlights(df_weekly, week)
-
-    # Offseason fallback: show previous season's last week highlights from cache
-    _api_season_label = ""
-    if not highlights_html:
-        try:
-            _prev_season = season - 1
-            _league_obj2 = ctx.get("league") or {}
-            _prev_lid2 = str(_league_obj2.get("previous_league_id") or "").strip()
-            if not _prev_lid2:
-                _prev_lid2 = resolved_league_id
-            _prev_key2 = _cache_key(platform, _prev_season, _prev_lid2)
-            _prev_entry2 = DASHBOARD_CACHE.get(_prev_key2)
-            if not _prev_entry2:
-                for _ck2, _ce2 in list(DASHBOARD_CACHE.items()):
-                    if (
-                        isinstance(_ck2, tuple)
-                        and len(_ck2) == 3
-                        and _ck2[0] == platform.lower()
-                        and _ck2[1] == _prev_season
-                    ):
-                        _prev_entry2 = _ce2
-                        break
-            if _prev_entry2:
-                _prev_df2 = _prev_entry2.get("ctx", {}).get("df_weekly", pd.DataFrame())
-                if (
-                    not _prev_df2.empty
-                    and "finalized" in _prev_df2.columns
-                    and "week" in _prev_df2.columns
-                ):
-                    _prev_fin2 = _prev_df2[_prev_df2["finalized"] == True]
-                    if not _prev_fin2.empty:
-                        _prev_wk2 = int(_prev_fin2["week"].max())
-                        highlights_html = _render_weekly_highlights(_prev_df2, _prev_wk2)
-                        if highlights_html:
-                            _api_season_label = (
-                                f"<div class='side-section-label'>"
-                                f"{_prev_season} Season &middot; Week {_prev_wk2}"
-                                f"</div>"
-                            )
-        except Exception:
-            pass
-    if _api_season_label:
-        highlights_html = _api_season_label + highlights_html
+    _api_proj_by_roster = ctx.get("proj_by_roster") or {}
+    highlights_html = _render_weekly_highlights(
+        df_weekly, week,
+        proj_by_roster=_api_proj_by_roster,
+        matchups_by_week=matchups_by_week,
+    )
 
     matchups = matchups_by_week.get(week, []) or []
     status_by_pid = (statuses.get(week) or {}).get("statuses", {}) or {}
