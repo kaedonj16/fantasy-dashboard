@@ -1068,6 +1068,52 @@ html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
   gap: 12px;
 }
 
+.bo-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.bo-page-btn {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.bo-page-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.bo-page-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.bo-page-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.bo-page-info {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+
 .breakout-context {
   font-size: 14px;
   color: var(--text);

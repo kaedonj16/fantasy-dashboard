@@ -11047,9 +11047,11 @@ def page_breakouts(platform: str, season: int, league_id: str):
       const BO_HAS_PREMIUM = {str(has_premium).lower()};
       let breakoutCandidates = [];
       let currentFilter = 'ALL';
+      let currentPage = 1;
+      const PAGE_SIZE = 12;
 
       // Fetch breakout candidates on page load (using new BreakoutEngine API)
-      fetch('/api/breakout/candidates?season={season}&min_score=25')
+      fetch('/api/breakout/candidates?season={season}&min_score=50')
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
@@ -11068,13 +11070,17 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
       function filterBreakouts(position) {{
         currentFilter = position;
-
-        // Update active button
+        currentPage = 1;
         document.querySelectorAll('.breakout-filter-btn').forEach(btn => {{
           btn.classList.toggle('active', btn.getAttribute('data-position') === position);
         }});
-
         renderBreakouts();
+      }}
+
+      function goToPage(page) {{
+        currentPage = page;
+        renderBreakouts();
+        document.getElementById('breakoutsContainer').scrollIntoView({{ behavior: 'smooth', block: 'start' }});
       }}
 
       function _boPpgRange(candidate) {{
@@ -11127,12 +11133,51 @@ def page_breakouts(platform: str, season: int, league_id: str):
         container.style.display = 'block';
 
         const FREE_LIMIT = 3;
-        const visible = BO_HAS_PREMIUM ? filtered : filtered.slice(0, FREE_LIMIT);
-        const locked = !BO_HAS_PREMIUM && filtered.length > FREE_LIMIT;
+        if (!BO_HAS_PREMIUM) {{
+          const visible = filtered.slice(0, FREE_LIMIT);
+          const locked = filtered.length > FREE_LIMIT;
+          let html = '<div class="breakout-grid">';
+          visible.forEach(candidate => {{ html += renderBreakoutCard(candidate); }});
+          if (locked) {{
+            html += `
+              <div class="breakout-card" onclick="showPaywall('breakout-candidates')" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;border:2px dashed var(--border);">
+                <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
+                <div style="font-weight:700;font-size:15px;">${{filtered.length - FREE_LIMIT}} more candidates locked</div>
+                <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to see all breakout<br>candidates and full details</div>
+                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
+              </div>`;
+          }}
+          html += '</div>';
+          container.innerHTML = html;
+          return;
+        }}
+
+        // Premium: paginate
+        const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+        currentPage = Math.max(1, Math.min(currentPage, totalPages));
+        const start = (currentPage - 1) * PAGE_SIZE;
+        const visible = filtered.slice(start, start + PAGE_SIZE);
 
         let html = '<div class="breakout-grid">';
+        visible.forEach(candidate => {{ html += renderBreakoutCard(candidate); }});
+        html += '</div>';
 
-        visible.forEach(candidate => {{
+        // Pagination controls
+        if (totalPages > 1) {{
+          html += '<div class="bo-pagination">';
+          html += `<button class="bo-page-btn" onclick="goToPage(${{currentPage - 1}})" ${{currentPage === 1 ? 'disabled' : ''}}>&#8249;</button>`;
+          for (let i = 1; i <= totalPages; i++) {{
+            html += `<button class="bo-page-btn ${{i === currentPage ? 'active' : ''}}" onclick="goToPage(${{i}})">${{i}}</button>`;
+          }}
+          html += `<button class="bo-page-btn" onclick="goToPage(${{currentPage + 1}})" ${{currentPage === totalPages ? 'disabled' : ''}}>&#8250;</button>`;
+          html += `<span class="bo-page-info">${{start + 1}}–${{Math.min(start + PAGE_SIZE, filtered.length)}} of ${{filtered.length}}</span>`;
+          html += '</div>';
+        }}
+
+        container.innerHTML = html;
+      }}
+
+      function renderBreakoutCard(candidate) {{
           const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
           const pos = candidate.position || '?';
@@ -11142,9 +11187,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
           const hitProb = candidate.hit_probability != null ? Math.round(parseFloat(candidate.hit_probability) * 100) : null;
 
           let scoreColor = '#10b981';
-          if (score < 50) scoreColor = '#3b82f6';
-          if (score < 40) scoreColor = '#f59e0b';
-          if (score < 30) scoreColor = '#6b7280';
+          if (score < 65) scoreColor = '#3b82f6';
+          if (score < 55) scoreColor = '#f59e0b';
 
           const range = _boPpgRange(candidate);
           const topComp = _boTopComponent(candidate);
@@ -11172,7 +11216,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
             : '';
 
           const barFill = Math.min(100, Math.max(0, topComp.val));
-          html += `
+          return `
             <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + name + `', {{tab:'breakout'}})">
               <div class="breakout-card-header">
                 <div>
@@ -11184,11 +11228,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                   ${{hitHtml}}
                 </div>
               </div>
-
-              <div style="margin-bottom:12px;">
-                ${{ppgHtml}}
-              </div>
-
+              <div style="margin-bottom:12px;">${{ppgHtml}}</div>
               <div style="margin-bottom:10px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                   <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Top Driver: ${{topComp.label}}</span>
@@ -11198,24 +11238,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
                   <div style="height:100%;width:${{barFill}}%;background:${{topComp.color}};border-radius:3px;transition:width 0.3s;"></div>
                 </div>
               </div>
-
               ${{topReason ? `<div style="font-size:11px;color:var(--text-muted);line-height:1.4;border-top:1px solid var(--border-color);padding-top:8px;">${{topReason}}</div>` : ''}}
-            </div>
-          `;
-        }});
-
-        if (locked) {{
-          html += `
-            <div class="breakout-card" onclick="showPaywall('breakout-candidates')" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;border:2px dashed var(--border);">
-              <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
-              <div style="font-weight:700;font-size:15px;">${{filtered.length - FREE_LIMIT}} more candidates locked</div>
-              <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to see all breakout<br>candidates and full details</div>
-              <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
-            </div>
-          `;
-        }}
-        html += '</div>';
-        container.innerHTML = html;
+            </div>`;
       }}
     </script>
     """
@@ -16945,7 +16969,7 @@ def api_player_indicators():
         breakouts = []
         try:
             from dashboard_services.breakout_api import get_breakout_candidates as _get_bo_indicators
-            _bo_result = _get_bo_indicators(season=current_season, min_score=25)
+            _bo_result = _get_bo_indicators(season=current_season, min_score=50)
             breakouts = [str(c["player_id"]) for c in (_bo_result.get("candidates") or [])]
         except Exception as e:
             logger.info(f"[player-indicators] Breakout candidates unavailable: {e}")
@@ -20588,7 +20612,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     breakout_pids: set = set()
     try:
         from dashboard_services.breakout_api import get_breakout_candidates as _get_bo
-        _bo = _get_bo(season=season, min_score=25)
+        _bo = _get_bo(season=season, min_score=50)
         breakout_pids = {str(c["player_id"]) for c in (_bo.get("candidates") or [])}
     except Exception:
         pass
