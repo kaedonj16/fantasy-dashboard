@@ -8036,73 +8036,84 @@ def build_teams_body(ctx: dict) -> str:
         _loaded.rosterIntel = true;
         var panel = document.getElementById('rosterIntelPanel');
         if (!panel) return;
-        fetch('/api/roster-intel?platform=' + _platform +
-              '&league_id=' + _leagueId + '&season=' + _season +
-              '&league_type=' + _leagueType)
-          .then(r => r.json())
-          .then(data => {{
+        fetch('/api/roster-intel?platform=' + encodeURIComponent(_platform) +
+              '&league_id=' + encodeURIComponent(_leagueId) +
+              '&season=' + _season +
+              '&league_type=' + encodeURIComponent(_leagueType) +
+              '&viewer_roster_id=' + encodeURIComponent(_viewerRosterId || ''))
+          .then(function(r) {{ return r.json(); }})
+          .then(function(data) {{
             if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
             var teams = data.teams || [];
             if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No roster data available.</p>'; return; }}
 
-            // Show only the logged-in user's team; fall back to all teams if not known
-            if (_viewerRosterId) {{
-              teams = teams.filter(function(t) {{ return String(t.roster_id) === String(_viewerRosterId); }});
-            }}
-
             var sigColor = {{
-              'Core':           '#22c55e',
-              'Hold — Breakout':'#f59e0b',
-              'Sell High':      '#ef4444',
-              'Buy Window':     '#3b82f6',
-              'Hold':           'var(--text-muted)',
-              'Cut':            '#94a3b8',
+              'Core':      '#22c55e',
+              'Sell High': '#ef4444',
+              'Breakout':  '#8b5cf6',
+              'Monitor':   '#f59e0b',
+              'Hold':      'var(--text-muted)',
+              'Cut':       '#94a3b8',
             }};
-            var sigBg = {{
-              'Core':           '#dcfce7',
-              'Hold — Breakout':'#fef3c7',
-              'Sell High':      '#fee2e2',
-              'Buy Window':     '#dbeafe',
-              'Hold':           'var(--row)',
-              'Cut':            'var(--row)',
+            var healthColor = {{
+              'Strong':  '#22c55e',
+              'Average': 'var(--text-muted)',
+              'Thin':    '#f59e0b',
+              'Aging':   '#ef4444',
             }};
+            var POS_ORDER = ['QB', 'RB', 'WR', 'TE'];
 
-            var sigOrder = {{'Sell High':0,'Cut':1,'Hold — Breakout':2,'Buy Window':3,'Core':4,'Hold':5}};
             var html = '';
             teams.forEach(function(t) {{
-              // Show everything except plain Hold — sorted by urgency
-              var actionPlayers = t.players
-                .filter(function(p) {{ return p.signal !== 'Hold'; }})
-                .sort(function(a, b) {{
-                  return (sigOrder[a.signal] ?? 9) - (sigOrder[b.signal] ?? 9);
+              var positions = t.positions || {{}};
+              POS_ORDER.forEach(function(pos) {{
+                var pd = positions[pos];
+                if (!pd || !pd.players.length) return;
+
+                var rankStr = pd.league_rank ? (pd.league_rank + '/' + pd.num_teams) : '';
+                var hc = healthColor[pd.health] || 'var(--text-muted)';
+
+                html += '<div class="ri-pos-section">' +
+                  '<div class="ri-pos-header">' +
+                    '<span class="ri-pos-label">' + pos + '</span>' +
+                    '<div class="ri-pos-stats">' +
+                      '<span>' + pd.player_count + ' player' + (pd.player_count !== 1 ? 's' : '') + '</span>' +
+                      (pd.avg_age ? '<span>Avg ' + pd.avg_age + ' yrs</span>' : '') +
+                      (rankStr ? '<span>Rank ' + rankStr + '</span>' : '') +
+                    '</div>' +
+                    '<span class="ri-health-badge" style="color:' + hc + ';">' + pd.health + '</span>' +
+                  '</div>';
+
+                pd.players.forEach(function(p) {{
+                  var chgHtml = '';
+                  if (p.rank_change_7d && p.rank_change_7d !== 0) {{
+                    var sym = p.rank_change_7d > 0 ? '▲' : '▼';
+                    var col = p.rank_change_7d > 0 ? '#22c55e' : '#ef4444';
+                    chgHtml = '<span style="font-size:10px;color:' + col + ';margin-left:4px;">' + sym + Math.abs(p.rank_change_7d) + '</span>';
+                  }}
+                  var sc = sigColor[p.signal] || 'var(--text-muted)';
+                  html += '<div class="ri-player-row">' +
+                    '<div class="ri-player-info">' +
+                      '<span class="ri-player-name">' + p.name + chgHtml + '</span>' +
+                      '<span class="ri-player-meta">' +
+                        (p.pos_rank_label || '') +
+                        (p.age ? ' · Age ' + p.age : '') +
+                      '</span>' +
+                    '</div>' +
+                    '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+                      '<span style="font-size:11px;color:var(--text-muted);font-weight:600;">' + (p.value || 0) + '</span>' +
+                      '<span class="ri-signal" style="color:' + sc + ';background:' + sc + '18;">' + p.signal + '</span>' +
+                    '</div>' +
+                  '</div>';
                 }});
-              if (!actionPlayers.length) return;
-              html += '<div class="ri-team-block">' +
-                '<div class="ri-team-name">' + t.team_name + '</div>';
-              actionPlayers.slice(0, 8).forEach(function(p) {{
-                var chgHtml = '';
-                if (p.rank_change_7d && p.rank_change_7d !== 0) {{
-                  var sym = p.rank_change_7d > 0 ? '▲' : '▼';
-                  var col = p.rank_change_7d > 0 ? '#22c55e' : '#ef4444';
-                  chgHtml = '<span style="font-size:10px;color:' + col + ';margin-left:4px;">' + sym + Math.abs(p.rank_change_7d) + '</span>';
-                }}
-                html += '<div class="ri-player-row">' +
-                  '<div class="ri-player-info">' +
-                    '<span class="ri-player-name">' + p.name + chgHtml + '</span>' +
-                    '<span class="ri-player-meta">' + p.position + (p.pos_rank_label ? ' · ' + p.pos_rank_label : '') + '</span>' +
-                  '</div>' +
-                  '<span class="ri-signal" style="background:' + (sigBg[p.signal]||'var(--row)') + ';color:' + (sigColor[p.signal]||'var(--text-muted)') + '">' + p.signal + '</span>' +
-                '</div>';
+
+                html += '</div>';
               }});
-              html += '</div>';
             }});
 
-            var emptyMsg = _viewerRosterId
-              ? 'Your roster looks stable — no urgent actions flagged.'
-              : 'All rosters look stable — no urgent actions flagged.';
-            panel.innerHTML = html || '<p class="analytics-empty">' + emptyMsg + '</p>';
+            panel.innerHTML = html || '<p class="analytics-empty">Roster looks stable — no actions flagged.</p>';
           }})
-          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
+          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load roster intel.</p>'; }});
       }}
 
       function loadPowerRankings() {{
@@ -20406,13 +20417,15 @@ def api_trade_intel_run_crawl():
 @app.route("/api/roster-intel")
 def api_roster_intel():
     """
-    Keeper/cut signals for every rostered player in a league.
-    Returns per-player hold/sell/buy/cut signals based on value trend, age, and position curve.
+    Position-grouped roster health for the viewer's team.
+    Returns per-position aggregates (total value, avg age, league rank, health label)
+    and per-player signals for the viewer's roster.
     """
-    platform  = str(request.args.get("platform")  or "sleeper").strip()
-    league_id = str(request.args.get("league_id") or "").strip()
-    season    = int(request.args.get("season")    or datetime.now().year)
-    league_type = str(request.args.get("league_type") or "1qb").strip().lower()
+    platform        = str(request.args.get("platform")         or "sleeper").strip()
+    league_id       = str(request.args.get("league_id")        or "").strip()
+    season          = int(request.args.get("season")           or datetime.now().year)
+    league_type     = str(request.args.get("league_type")      or "1qb").strip().lower()
+    viewer_rid_raw  = str(request.args.get("viewer_roster_id") or "").strip()
 
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
@@ -20422,8 +20435,8 @@ def api_roster_intel():
     except Exception as e:
         return _api_err("Request failed", e)
 
-    rosters    = ctx.get("rosters") or []
-    roster_map = ctx.get("roster_map") or {}
+    rosters           = ctx.get("rosters") or []
+    roster_map        = ctx.get("roster_map") or {}
     model_value_table = ctx.get("model_value_table") or []
 
     # Build value lookup keyed by player_id
@@ -20436,21 +20449,17 @@ def api_roster_intel():
         if not pid:
             continue
         values_by_id[pid] = {
-            "value":           float(row.get(val_key) or row.get("value") or 0),
-            "age":             row.get("age"),
-            "position":        str(row.get("position") or "").upper(),
-            "pos_rank_label":  row.get("pos_rank_label") or "",
-            "rank_change_7d":  row.get("rank_change_7d"),
-            "name":            row.get("name") or "",
-            "team":            row.get("team") or "",
+            "value":          float(row.get(val_key) or row.get("value") or 0),
+            "age":            row.get("age"),
+            "position":       str(row.get("position") or "").upper(),
+            "pos_rank_label": row.get("pos_rank_label") or "",
+            "rank_change_7d": row.get("rank_change_7d"),
+            "name":           row.get("name") or "",
+            "team":           row.get("team") or "",
         }
 
-    # Bulk-fetch breakout scores
-    all_rostered = [
-        str(pid)
-        for r in rosters
-        for pid in (r.get("players") or [])
-    ]
+    # Bulk-fetch breakout scores for all rostered players
+    all_rostered = [str(pid) for r in rosters for pid in (r.get("players") or [])]
     breakout_scores: dict = {}
     from dashboard_services.db import get_conn
     try:
@@ -20466,79 +20475,147 @@ def api_roster_intel():
                     """,
                     (all_rostered,),
                 )
-                for r in cur.fetchall():
-                    r = dict(r)
-                    if r.get("breakout_opportunity_score") is not None:
-                        breakout_scores[r["player_id"]] = float(r["breakout_opportunity_score"])
+                for row in cur.fetchall():
+                    row = dict(row)
+                    if row.get("breakout_opportunity_score") is not None:
+                        breakout_scores[row["player_id"]] = float(row["breakout_opportunity_score"])
     except Exception:
         pass
 
-    # Prime age ceilings by position
+    POSITIONS = ["QB", "RB", "WR", "TE"]
     prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
     def _signal(pid: str, info: dict) -> str:
-        val        = info["value"]
-        age        = float(info["age"] or 0)
-        pos        = info["position"]
-        rank_chg   = info["rank_change_7d"] or 0
-        prime      = prime_max.get(pos, 28)
-        bscore     = breakout_scores.get(pid, 0)
+        val       = info["value"]
+        age       = float(info["age"] or 0)
+        pos       = info["position"]
+        rank_chg  = info["rank_change_7d"] or 0
+        bscore    = breakout_scores.get(pid, 0)
+        prime     = prime_max.get(pos, 28)
         past_prime = age > prime
 
+        # Release candidates
         if val < 80:
             return "Cut"
-        if val >= 400 and rank_chg >= 6:
-            return "Sell High"
-        if past_prime and val >= 300 and rank_chg >= 3:
-            return "Sell High"
-        if not past_prime and rank_chg <= -6 and val >= 200:
-            return "Buy Window"
-        if bscore >= 55 and not past_prime:
-            return "Hold — Breakout"
-        if val >= 500 and not past_prime:
-            return "Core"
-        if past_prime and val < 200:
+        if past_prime and val < 175:
             return "Cut"
+
+        # Sell window: aging but still valuable
+        if past_prime and val >= 350:
+            return "Sell High"
+        # Sell window: young player at peak (trending up hard)
+        if not past_prime and val >= 450 and rank_chg >= 7:
+            return "Sell High"
+
+        # Untouchable elite young asset
+        if not past_prime and val >= 700:
+            return "Core"
+
+        # Hidden upside — breakout candidate
+        if not past_prime and bscore >= 58 and val >= 80:
+            return "Breakout"
+
+        # Young player with significant declining value — watch/consider selling
+        if not past_prime and rank_chg <= -8 and val >= 175:
+            return "Monitor"
+
         return "Hold"
 
-    signal_order = {"Sell High": 0, "Core": 1, "Hold — Breakout": 2,
-                    "Buy Window": 3, "Hold": 4, "Cut": 5}
-
-    result = []
-    players_index = ctx.get("players_index") or {}
+    # ── Compute per-position totals for ALL teams (for league rank) ────────────
+    pos_totals: dict = {}   # {rid: {pos: total_value}}
     for roster in rosters:
-        rid       = str(roster.get("roster_id"))
-        team_name = roster_map.get(rid, f"Roster {rid}")
-        players   = []
+        rid = str(roster.get("roster_id"))
+        pos_totals[rid] = {pos: 0.0 for pos in POSITIONS}
         for pid in (roster.get("players") or []):
             pid = str(pid)
             info = values_by_id.get(pid)
-            if not info:
+            if not info or info["position"] not in POSITIONS:
                 continue
-            pos = info["position"]
-            if pos not in {"QB", "RB", "WR", "TE"}:
-                continue
-            sig = _signal(pid, info)
-            players.append({
-                "player_id":     pid,
-                "name":          info["name"] or players_index.get(pid, {}).get("name", f"Player {pid}"),
-                "position":      pos,
-                "team":          info["team"],
-                "age":           info["age"],
-                "value":         round(info["value"], 0),
-                "pos_rank_label": info["pos_rank_label"],
-                "rank_change_7d": info["rank_change_7d"],
-                "signal":        sig,
-            })
-        players.sort(key=lambda p: signal_order.get(p["signal"], 9))
-        result.append({
+            pos_totals[rid][info["position"]] += info["value"]
+
+    num_teams = len(rosters)
+
+    # Compute league rank per position (1 = best)
+    pos_ranks: dict = {}    # {rid: {pos: rank}}
+    for pos in POSITIONS:
+        sorted_rids = sorted(pos_totals, key=lambda r: pos_totals[r][pos], reverse=True)
+        for rank, rid in enumerate(sorted_rids, 1):
+            pos_ranks.setdefault(rid, {})[pos] = rank
+
+    # ── Build response for the viewer's team (or all if unknown) ──────────────
+    target_rids = {viewer_rid_raw} if viewer_rid_raw else {str(r.get("roster_id")) for r in rosters}
+
+    results = []
+    players_index = ctx.get("players_index") or {}
+    for roster in rosters:
+        rid = str(roster.get("roster_id"))
+        if rid not in target_rids:
+            continue
+        team_name = roster_map.get(rid, f"Roster {rid}")
+        positions_data: dict = {}
+
+        for pos in POSITIONS:
+            pos_players = []
+            pos_ages    = []
+            for pid in (roster.get("players") or []):
+                pid  = str(pid)
+                info = values_by_id.get(pid)
+                if not info or info["position"] != pos:
+                    continue
+                name = info["name"] or (players_index.get(pid) or {}).get("name") or f"Player {pid}"
+                sig  = _signal(pid, info)
+                pos_players.append({
+                    "player_id":      pid,
+                    "name":           name,
+                    "age":            info["age"],
+                    "value":          round(info["value"], 0),
+                    "pos_rank_label": info["pos_rank_label"],
+                    "rank_change_7d": info["rank_change_7d"],
+                    "signal":         sig,
+                })
+                if info["age"]:
+                    pos_ages.append(float(info["age"]))
+
+            # Sort by value descending (starters first)
+            pos_players.sort(key=lambda p: -(p["value"] or 0))
+
+            total_val   = pos_totals[rid][pos]
+            avg_age     = round(sum(pos_ages) / len(pos_ages), 1) if pos_ages else None
+            league_rank = pos_ranks.get(rid, {}).get(pos, 0)
+            prime       = prime_max.get(pos, 28)
+
+            # Position health label
+            past_prime_count = sum(1 for p in pos_players if p["age"] and float(p["age"]) > prime)
+            strong_count     = sum(1 for p in pos_players if (p["value"] or 0) >= 200)
+            total_count      = len(pos_players)
+
+            if total_count > 0 and past_prime_count / total_count >= 0.6:
+                health = "Aging"
+            elif strong_count < 2:
+                health = "Thin"
+            elif league_rank <= max(1, round(num_teams * 0.3)):
+                health = "Strong"
+            else:
+                health = "Average"
+
+            positions_data[pos] = {
+                "players":      pos_players,
+                "total_value":  round(total_val, 0),
+                "avg_age":      avg_age,
+                "league_rank":  league_rank,
+                "num_teams":    num_teams,
+                "player_count": total_count,
+                "health":       health,
+            }
+
+        results.append({
             "roster_id": rid,
             "team_name": team_name,
-            "players":   players,
+            "positions": positions_data,
         })
 
-    result.sort(key=lambda t: t["team_name"])
-    return jsonify({"teams": result})
+    results.sort(key=lambda t: t["team_name"])
+    return jsonify({"teams": results})
 
 
 @app.route("/api/trade-targets")

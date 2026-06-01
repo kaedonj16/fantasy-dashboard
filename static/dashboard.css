@@ -15291,20 +15291,49 @@ tr.team-clickable {
 .teams-sidebar .btm-meta { padding: 6px 12px 8px; }
 .teams-sidebar .teams-analytics-card { margin: 0; }
 
-/* ── Roster Intel ─────────────────────────────────────────────────────────── */
-.ri-team-block {
-  padding: 10px 0;
+/* ── Roster Intel ─────────────────────────────────────── */
+.ri-pos-section {
+  padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
-.ri-team-block:last-child { border-bottom: none; }
+.ri-pos-section:last-child { border-bottom: none; padding-bottom: 0; }
 
-.ri-team-name {
+.ri-pos-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ri-pos-label {
   font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text);
+  width: 26px;
+  flex-shrink: 0;
+}
+
+.ri-pos-stats {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ri-pos-stats span + span::before {
+  content: '·';
+  margin-right: 10px;
+}
+
+.ri-health-badge {
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  margin-bottom: 6px;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
 }
 
 .ri-player-row {
