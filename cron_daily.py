@@ -220,12 +220,34 @@ build_daily_data({season!r}, {week!r})
 """, "build_daily_data")
 
     # ------------------------------------------------------------------ #
-    # Step 2: Weekly projections (current week + next week if available) #
+    # Step 2: Weekly projections                                         #
+    # In-season (reg/post): refresh current + next week daily            #
+    # Offseason: refresh all 18 weeks, but only once per week            #
     # ------------------------------------------------------------------ #
-    _run_step(f"""
+    in_season = season_type in ("reg", "post")
+    if in_season:
+        _proj_weeks = sorted(set([week, min(week + 1, 18)]))
+        _proj_fresh = all(
+            _file_fresh_today(Path(f"{CACHE_DIR}/projections/projections_s{season}_w{w}.json"))
+            for w in _proj_weeks
+        )
+    else:
+        _proj_weeks = list(range(1, 19))
+        _proj_fresh = all(
+            (
+                (p := Path(f"{CACHE_DIR}/projections/projections_s{season}_w{w}.json")).exists()
+                and (date.today() - date.fromtimestamp(p.stat().st_mtime)).days < 7
+            )
+            for w in _proj_weeks
+        )
+
+    if _proj_fresh:
+        print(f"[cron] Projections already fresh ({'today' if in_season else 'this week'}), skipping")
+    else:
+        _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 from utils.utils import fetch_week_from_tank01, save_week_projections
-for w in sorted(set([{week!r}, min({week!r} + 1, 18)])):
+for w in {_proj_weeks!r}:
     data = fetch_week_from_tank01({season!r}, w)
     save_week_projections({season!r}, w, data)
     print(f"[cron] Projections week {{w}}: {{len(data)}} players")
