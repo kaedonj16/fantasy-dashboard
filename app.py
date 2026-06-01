@@ -3031,6 +3031,27 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         clear_teams_cache_for_league(resolved_league_id)
         ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
+        if platform == "sleeper":
+            try:
+                _teams_draft_ts = None
+                if isinstance(latest_draft, dict):
+                    _teams_draft_ts = _safe_int(latest_draft.get("start_time"))
+                if _teams_draft_ts is None:
+                    _teams_draft_ts = _safe_int(league.get("draft_day"))
+                _teams_draft_ended = (
+                    datetime.now(EASTERN) > datetime.fromtimestamp(_teams_draft_ts / 1000, tz=EASTERN)
+                    if _teams_draft_ts else False
+                )
+                ctx["picks_by_roster"] = build_picks_by_roster(
+                    num_future_seasons=3,
+                    league=league,
+                    rosters=rosters,
+                    traded=traded,
+                    draft_ended=_teams_draft_ended,
+                )
+            except Exception as e:
+                logger.info(f"[refresh] teams picks refresh skipped: {e}")
+
     # ---------- Trade page ----------
     if page == "trade":
         # Keep the shared table fresh so the trade calc reflects newest values
@@ -4967,17 +4988,15 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
                                  value_table: list = None,
                                  league_size: int = 10) -> None:
     """
-    Additive bench-spot adjustment for unequal trades.
+    Depth penalty for the bigger side in unequal trades.
 
-    The smaller side receives a bonus equal to the value of the bench/waiver
-    players the algorithm implicitly considers when evaluating multi-for-one
-    trades.  The average dynasty league has ~11.3 teams × ~26.7 roster spots
-    ≈ 302 total spots, so the first bench player is the ~300th-ranked player
-    (≈425 value).  Each additional extra player frees a slightly higher-value
-    bench spot (rank decreases by 10 per step: 300 → 290 → 280 …).
+    The side giving up more players is discounted by the value of waiver-wire
+    players they're effectively forcing the other side to match with.  The first
+    bench player sits at roughly rank (league_size × 26), and each successive
+    extra player is worth slightly less (rank increases by 10 per step).
 
-    Bigger side: effective_total = raw_total (no discount applied).
-    Smaller side: effective_total = raw_total + sum(bench_values).
+    Bigger side: effective_total = raw_total - sum(bench_values).
+    Smaller side: effective_total = raw_total (no adjustment).
     """
     a_count = len(side_a.get("breakdown") or []) or len(side_a.get("player_values") or [])
     b_count = len(side_b.get("breakdown") or []) or len(side_b.get("player_values") or [])
@@ -5008,23 +5027,23 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
             reverse=True,
         )
 
-    base_rank      = league_size * 27  # ≈ 302 for a 11.3-team / 26.7-spot league
-    _BENCH_BASE    = 425.0             # fallback when value_table unavailable
-    _BENCH_STEP    = 15.0              # extra value per 10-rank improvement
+    base_rank   = league_size * 26   # first bench slot (~260 for 10-team league)
+    _BENCH_BASE = 400.0              # fallback when value_table unavailable
+    _BENCH_STEP = -10.0              # each extra player is worth slightly less
 
     def _bench_value(i: int) -> float:
-        rank = max(1, base_rank - i * 10)
+        rank = min(len(sorted_vals) if sorted_vals else 9999, base_rank + i * 10)
         if sorted_vals:
             idx = min(rank - 1, len(sorted_vals) - 1)
             return sorted_vals[idx]
-        return _BENCH_BASE + i * _BENCH_STEP
+        return max(50.0, _BENCH_BASE + i * _BENCH_STEP)
 
     bench_total = sum(_bench_value(i) for i in range(delta))
 
-    smaller["effective_total"] = float(smaller.get("raw_total") or 0.0) + bench_total
-    smaller["adjustment"]      = bench_total
-    bigger["effective_total"]  = float(bigger.get("raw_total") or 0.0)
-    bigger["adjustment"]       = 0.0
+    bigger["effective_total"]  = float(bigger.get("raw_total") or 0.0) - bench_total
+    bigger["adjustment"]       = -bench_total
+    smaller["effective_total"] = float(smaller.get("raw_total") or 0.0)
+    smaller["adjustment"]      = 0.0
 
 
 apply_multi_for_one_adjustment = apply_tier_stack_adjustment
