@@ -11409,19 +11409,56 @@ def _background_build_teams(platform: str, league_id: str, season: int) -> None:
 
 
 def _build_teams_skeleton(platform: str, season: int, league_id: str, num_teams: int) -> str:
-    shimmer_card = """
+    def _sk_row(w1, w2, w3, w4, w5, bar_pct):
+        return (
+            f"<tr>"
+            f"<td><div class='sk-shimmer' style='width:{w1}px;height:11px;border-radius:3px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:{w2}px;height:11px;border-radius:3px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:{w3}px;height:11px;border-radius:3px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:{w4}px;height:11px;border-radius:3px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:{w5}px;height:11px;border-radius:3px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:{bar_pct}%;height:8px;border-radius:4px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:24px;height:11px;border-radius:3px;'></div></td>"
+            f"</tr>"
+        )
+    table_rows = "".join([
+        _sk_row(22, 12, 36, 32, 16, 72),
+        _sk_row(22, 12, 42, 36, 16, 58),
+        _sk_row(22, 12, 38, 30, 16, 65),
+        _sk_row(22, 12, 30, 28, 16, 45),
+        _sk_row(28, 12, 24, 22, 16, 30),
+    ])
+    shimmer_card = f"""
     <div class="card team-strength-card teams-sk-card">
       <div class="card-header-row">
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
           <div class="sk-shimmer" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;"></div>
-          <div class="sk-shimmer" style="width:130px;height:16px;border-radius:4px;"></div>
-          <div class="sk-shimmer" style="width:34px;height:22px;border-radius:6px;"></div>
+          <div class="sk-shimmer" style="width:125px;height:15px;border-radius:4px;"></div>
+          <div class="sk-shimmer" style="width:72px;height:12px;border-radius:4px;opacity:0.7;"></div>
         </div>
-        <div class="sk-shimmer" style="width:140px;height:11px;border-radius:4px;margin-top:4px;"></div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+          <div class="sk-shimmer" style="width:38px;height:24px;border-radius:6px;"></div>
+          <div class="sk-shimmer" style="width:22px;height:22px;border-radius:4px;"></div>
+        </div>
       </div>
       <div class="card-body">
-        <div class="sk-shimmer" style="width:100%;height:180px;border-radius:6px;margin-bottom:10px;"></div>
-        <div class="sk-shimmer" style="width:100%;height:100px;border-radius:6px;"></div>
+        <div class="sk-shimmer" style="width:100%;height:120px;border-radius:6px;margin-bottom:14px;"></div>
+        <div class="pos-table-wrap">
+          <table class="pos-strength-table">
+            <thead>
+              <tr>
+                <th><div class="sk-shimmer" style="width:22px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:10px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:32px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:30px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:10px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:50px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:24px;height:9px;border-radius:3px;"></div></th>
+              </tr>
+            </thead>
+            <tbody>{table_rows}</tbody>
+          </table>
+        </div>
       </div>
     </div>"""
     cards_html = shimmer_card * max(num_teams, 4)
