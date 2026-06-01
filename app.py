@@ -20623,7 +20623,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     breakout_pids: set = set()
     try:
         from dashboard_services.breakout_api import get_breakout_candidates as _get_bo
-        _bo = _get_bo(season=season)
+        _bo = _get_bo(season=season, min_score=25)
         breakout_pids = {str(c["player_id"]) for c in (_bo.get("candidates") or [])}
     except Exception:
         pass
@@ -20669,8 +20669,10 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         if not past_prime and pid in breakout_pids and val >= 80:
             return "Breakout"
 
-        # Sleeper — our model values significantly more than the dynasty market
-        if mkt_gap <= -5 and val >= 200 and not past_prime:
+        # Sleeper — our model values significantly more than the dynasty market.
+        # Only applies to mid-tier players; top-tier players are never "sleepers".
+        _sleeper_rank_floor = {"QB": 10, "RB": 14, "WR": 16, "TE": 6}.get(pos, 16)
+        if mkt_gap <= -5 and val >= 200 and not past_prime and internal_pos_rk >= _sleeper_rank_floor:
             return "Sleeper"
 
         # Severe 7-day drop — consider selling before value erodes further
