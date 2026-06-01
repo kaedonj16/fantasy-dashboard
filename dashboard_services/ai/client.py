@@ -38,8 +38,8 @@ class AIUnavailableError(Exception):
 
 
 def clean_ai_text(text: str) -> str:
-    """Replace em dashes with hyphens so they don't appear in rendered output."""
-    return text.replace("—", " - ")
+    import re
+    return re.sub(r'\s*—\s*', ', ', text)
 
 
 def generate_text(system_prompt: str, user_prompt: str, model: str = "gpt-5-mini") -> str:
