@@ -5626,7 +5626,7 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
 
     variant = pick_proj_variant(raw_scoring_settings or {})
 
-    def _flat(multi: dict) -> float | None:
+    def _flat(multi: dict) -> Optional[float]:
         """Extract the chosen variant's value from a multi-variant player entry."""
         if isinstance(multi, dict):
             return multi.get(variant) or multi.get("ppr")
