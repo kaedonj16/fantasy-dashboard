@@ -5656,6 +5656,37 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
                 all_vals.setdefault(pid, []).append(val)
     fallback = {pid: median(vals) for pid, vals in all_vals.items()}
 
+    # For players missing from Tank01 entirely (e.g. rookies), use FantasyPros
+    # season PPG as a flat per-week estimate.  The PPG file is PPR-based, so we
+    # estimate other variants by backing out typical reception points by position.
+    _EST_REC = {"QB": 0.0, "RB": 3.0, "WR": 5.0, "TE": 4.0}
+    try:
+        import json as _json
+        _fp_path = os.path.join("cache", f"fp_projections_{season}_ppr.json")
+        with open(_fp_path) as _fp_f:
+            _fp_data = _json.load(_fp_f)
+        for _fp_pid, _fp_entry in _fp_data.items():
+            if _fp_pid in fallback:
+                continue
+            _ppg = float(_fp_entry.get("ppg") or 0)
+            _pos = _fp_entry.get("pos", "")
+            if _ppg <= 0 or _pos not in _EST_REC:
+                continue
+            _rec_pts = _EST_REC[_pos]
+            _non_rec = max(_ppg - _rec_pts, 0)
+            if variant in ("ppr", "tep", "6pt_ppr", "6pt_tep"):
+                _v = _ppg
+            elif variant in ("half_ppr", "6pt_half"):
+                _v = _non_rec + _rec_pts * 0.5
+            else:
+                _v = _non_rec
+            if _v > 0:
+                fallback[_fp_pid] = round(_v, 2)
+    except FileNotFoundError:
+        pass
+    except Exception as _e:
+        logger.debug(f"[projections] FP fallback load failed: {_e}")
+
     bundles = {}
     for w in range(1, weeks + 1):
         week_proj = dict(fallback)
