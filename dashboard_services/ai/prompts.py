@@ -353,29 +353,39 @@ def generate_power_rankings_result(rankings_ctx: dict) -> dict:
     system_prompt = """
 You are a sharp dynasty fantasy football analyst writing weekly power rankings.
 Write like a beat reporter — vivid, specific, punchy. One sentence per team, max 30 words.
-Each sentence must be DIFFERENT in structure and opening. Never start two sentences with the same word.
-Anchor each narrative to what makes that roster DISTINCT: dominant position group, elite individual, age profile, pick capital, depth, or glaring gap.
-Never use the word "Balanced" to describe a team. Find something specific instead.
+Each sentence must be DIFFERENT in structure and opening. Never start two sentences the same way.
+win_window is the team's pre-computed competitive window label — use it as the primary frame for every narrative.
 Do not invent injuries, news, or player traits — use only the supplied JSON.
-Momentum (rising/falling/steady): rising if high value with weak record or improving rank; falling if declining value or poor record; else steady.
+Momentum: rising if value is high but record lags, or window is building; falling if aging/declining; steady otherwise.
+
+win_window guide (let this shape the TONE and ANGLE of each narrative):
+- Contender         → team is elite on both dynasty and scoring axes right now
+- Win-Now           → peak scoring window is open but the timeline is short; urgency
+- Aging Contender   → strong scoring projection but aging core, window narrowing
+- Contender Window  → elite dynasty value with a young/prime roster, ceiling still rising
+- 2-3 Year Window   → strong long-term assets, scoring still developing; patience required
+- Rising            → young future-heavy roster with upside not yet realized
+- Holding Pattern   → no clear direction; stable but not building or winning
+- Retooling         → have picks and aging/declining core; trading away the peak
+- Rebuilding        → weak on both axes, few picks; tough stretch ahead
+- Full Rebuild      → deliberate tank with pick capital; project mode
 """.strip()
 
     user_prompt = f"""
-Generate power rankings narratives for each team. Every sentence must lead with something specific to that team — a player name, a position strength, a trend, or a profile note.
-Vary sentence structure across the list. No two teams should open the same way.
+Generate power rankings narratives for each team. Lead every sentence with a specific detail — a player name, a position strength, a roster age note, or pick capital — that SUPPORTS the win_window label.
 
 For each team in "teams", produce:
 - roster_id: exact string from the data
-- narrative: one sentence (max 30 words) that differentiates this team from the others
+- narrative: one sentence (max 30 words) grounded in the win_window and top_assets
 - momentum: rising | falling | steady
 
-Key signals to draw on:
-- top_assets: player names and positions (use them!)
-- position_strengths: which positions are strongest (top3 sum) vs weakest
-- avg_age: young (<26) = upside, old (>28.5) = win-now or decline
-- first_round_picks: high pick capital (2+) suggests rebuild/retool
-- direction: contender / retool / rebuild / balanced (use only when not all teams share it)
-- wins/losses/pf: performance signal (week 0 = preseason, skip record if all 0-0)
+Key signals:
+- win_window: PRIMARY frame — the narrative tone must match this label
+- top_assets: name the best player(s) to make each sentence specific
+- position_strengths: reference dominant or weak groups when notable
+- avg_age: reinforce young/aging angle when it drives the win_window
+- first_round_picks: mention pick capital for Rebuilding/Retooling/Full Rebuild teams
+- wins/losses/pf: use for in-season context; skip record entirely if all teams are 0-0
 
 Return JSON matching the schema exactly.
 

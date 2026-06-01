@@ -1266,16 +1266,55 @@ def build_power_rankings_context(ctx: dict) -> dict:
 
     For each roster, compute a PowerScore:
       0.30 * Z(PF) + 0.40 * Z(Win%) + 0.30 * Z(avg_roster_value)
-    Then pass top_assets and direction to AI for narrative generation.
+    Then pass top_assets, direction, and win_window to AI for narrative generation.
+    win_window uses the same league-context percentile logic as the teams page cards.
     """
     rosters = ctx.get("rosters") or []
     standings_map = ctx.get("standings_map") or {}
     roster_map = ctx.get("roster_map") or {}
-    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=_ctx_is_sf(ctx))
+    is_sf = _ctx_is_sf(ctx)
+    model_value_lookup = build_model_value_lookup(ctx.get("model_value_table") or [], is_sf=is_sf)
+    redraft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+    _CORE_POS = {"QB", "RB", "WR", "TE"}
+
+    # ── Pre-compute dynasty totals, redraft totals, and dynasty/redraft ratios ──
+    _team_dynasty_total: dict = {}
+    _team_redraft_total: dict = {}
+    _team_dr_ratio: dict = {}
+    for roster in rosters:
+        rid_int = roster.get("roster_id")
+        if rid_int is None:
+            continue
+        _pairs: list = []
+        for pid in (roster.get("players") or []):
+            row = model_value_lookup.get(str(pid)) or {}
+            pos = str(row.get("position") or "").upper()
+            if pos not in _CORE_POS:
+                continue
+            dval = _safe_float(row.get("value") or 0)
+            rval = _safe_float(row.get(redraft_key) or 0)
+            _pairs.append((dval, rval))
+        _pairs.sort(reverse=True)
+        _team_dynasty_total[rid_int] = sum(d for d, _ in _pairs[:8])
+        _team_redraft_total[rid_int] = sum(r for _, r in _pairs[:8])
+        _ratios = [d / max(r, 1) for d, r in _pairs[:10] if d > 50 or r > 50]
+        _team_dr_ratio[rid_int] = round(sum(_ratios) / len(_ratios), 3) if _ratios else 1.0
+
+    def _make_pct_fn(totals: dict):
+        _sorted = sorted(totals.values())
+        _n = max(len(_sorted) - 1, 1)
+        def _pct(rid_int) -> float:
+            t = totals.get(rid_int, 0.0)
+            return sum(1 for v in _sorted if v < t) / _n
+        return _pct
+
+    _dynasty_pct_fn = _make_pct_fn(_team_dynasty_total)
+    _redraft_pct_fn = _make_pct_fn(_team_redraft_total)
 
     team_data = []
     for roster in rosters:
         rid = str(roster.get("roster_id") or "")
+        rid_int = roster.get("roster_id")
         settings = roster.get("settings") or {}
         wins = _safe_int(settings.get("wins"))
         losses = _safe_int(settings.get("losses"))
@@ -1308,6 +1347,20 @@ def build_power_rankings_context(ctx: dict) -> dict:
         avg_age = round(sum(ages) / len(ages), 1) if ages else None
         first_round_picks = sum(1 for p in future_picks if "1." in str(p.get("display") or ""))
 
+        # Compute win_window using league-context percentiles (same as teams page)
+        try:
+            grade_data = calculate_roster_grade(
+                players_summary,
+                future_picks,
+                dynasty_pct_val=_dynasty_pct_fn(rid_int),
+                redraft_pct_val=_redraft_pct_fn(rid_int),
+                dr_ratio=_team_dr_ratio.get(rid_int, 1.0),
+                num_teams=len(rosters),
+            )
+            win_window = grade_data.get("win_window") or direction
+        except Exception:
+            win_window = direction
+
         team_data.append({
             "roster_id": rid,
             "team_name": roster_map.get(rid) or f"Team {rid}",
@@ -1317,6 +1370,7 @@ def build_power_rankings_context(ctx: dict) -> dict:
             "pf": pf,
             "avg_value": round(avg_value, 1),
             "avg_age": avg_age,
+            "win_window": win_window,
             "direction": direction,
             "top_assets": players_summary[:5],
             "future_picks": future_picks[:4],

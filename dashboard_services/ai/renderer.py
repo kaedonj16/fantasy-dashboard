@@ -624,7 +624,7 @@ def get_power_rankings_html(ctx: dict) -> str:
                     "wins": t["wins"],
                     "losses": t["losses"],
                     "pf": round(t["pf"], 1),
-                    "direction": t["direction"],
+                    "win_window": t.get("win_window") or t.get("direction") or "balanced",
                     "avg_age": t.get("avg_age"),
                     "first_round_picks": t.get("first_round_picks", 0),
                     "position_strengths": t.get("position_strengths") or {},
