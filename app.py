@@ -20680,7 +20680,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
                     "fc_pos_rank":       _fc_pos_rk,
                     "mkt_gap":           _mkt_gap,
                     "years_exp":         years_exp_map.get(pid),
-                    "breakout_score":    round(breakout_scores.get(pid, 0), 1) if pid in breakout_scores else None,
+                    "breakout_score":    None,
                     "signal":            sig,
                 })
                 if info["age"]:

@@ -284,54 +284,85 @@ function showLoginGate(target, opts) {
   }
 }
 
-// ── Data freshness chip ───────────────────────────────────────────────────────
+// ── Floating action pills (Discord + Data Freshness) ─────────────────────────
 (function () {
-  var STALE_MS = 6 * 60 * 60 * 1000; // 6 hours - matches server CACHE_TTL
+  var STALE_MS = 6 * 60 * 60 * 1000;
+
   function initFreshness() {
+    // Create or reuse the shared pill group container
+    var group = document.getElementById('floating-pill-group');
+    if (!group) {
+      group = document.createElement('div');
+      group.id = 'floating-pill-group';
+      document.body.appendChild(group);
+    }
+
+    // Discord pill — always visible
+    if (!document.getElementById('discord-pill')) {
+      var dp = document.createElement('a');
+      dp.id = 'discord-pill';
+      dp.className = 'fp-pill';
+      dp.href = 'https://discord.gg/85efgtK2s';
+      dp.target = '_blank';
+      dp.rel = 'noopener noreferrer';
+      dp.setAttribute('aria-label', 'Join our Discord');
+      dp.innerHTML =
+        '<span class="fp-pill-icon"><i class="fab fa-discord"></i></span>' +
+        '<span class="fp-pill-label">Join Discord</span>';
+      group.appendChild(dp);
+    }
+
+    // Refresh pill — only when a cache timestamp is available (league pages)
     var main = document.getElementById('page-root');
     if (!main) return;
     var ts = parseInt(main.dataset.cacheTs || '0', 10);
     if (!ts) return;
+
     var chip = document.getElementById('cache-freshness');
     if (!chip) {
       chip = document.createElement('div');
       chip.id = 'cache-freshness';
-      document.body.appendChild(chip);
+      chip.className = 'fp-pill';
+      chip.setAttribute('role', 'button');
+      chip.setAttribute('tabindex', '0');
+      chip.setAttribute('aria-label', 'Refresh data');
+      chip.innerHTML =
+        '<span class="fp-pill-icon"><span class="fp-pill-time">…</span></span>' +
+        '<span class="fp-pill-label">Refresh</span>';
+      group.appendChild(chip);
     }
+
     function update() {
       var diff = Date.now() - ts;
       var mins = Math.floor(diff / 60000);
-      var label;
-      if (mins < 1) label = 'Data just updated';
-      else if (mins < 60) label = 'Data • ' + mins + 'm ago';
-      else label = 'Data • ' + Math.floor(mins / 60) + 'h ago';
-      chip.textContent = label + ' · Refresh';
-      chip.classList.add('cf-visible');
+      var timeStr = mins < 1 ? 'now' : mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h';
+      var timeEl = chip.querySelector('.fp-pill-time');
+      if (timeEl) timeEl.textContent = timeStr;
       chip.classList.toggle('cf-stale', diff > STALE_MS);
     }
     update();
     setInterval(update, 60000);
 
-    chip.addEventListener('click', function() {
-      // Parse league context from URL: /<platform>/<season>/<league_id>/...
+    function doRefresh() {
       var parts = window.location.pathname.split('/').filter(Boolean);
       if (parts.length < 3) { window.location.reload(); return; }
-      var platform = parts[0];
-      var season = parts[1];
-      var leagueId = parts[2];
-      chip.textContent = 'Refreshing…';
+      var timeEl = chip.querySelector('.fp-pill-time');
+      if (timeEl) timeEl.textContent = '…';
       chip.style.opacity = '0.6';
       fetch('/api/refresh-league', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform: platform, season: parseInt(season, 10), league_id: leagueId })
-      }).then(function() {
-        window.location.reload();
-      }).catch(function() {
-        window.location.reload();
-      });
+        body: JSON.stringify({ platform: parts[0], season: parseInt(parts[1], 10), league_id: parts[2] })
+      }).then(function () { window.location.reload(); })
+        .catch(function () { window.location.reload(); });
+    }
+
+    chip.addEventListener('click', doRefresh);
+    chip.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doRefresh(); }
     });
   }
+
   document.addEventListener('DOMContentLoaded', initFreshness);
 })();
 
