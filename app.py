@@ -5216,53 +5216,48 @@ def _render_weekly_highlights(
     if not rows:
         return ""
 
+    def _hl_single(title: str, team: dict) -> str:
+        return f"""
+        <div class="whl-card">
+          <div class="whl-label">{title}</div>
+          <div class="whl-row">
+            <span class="whl-name team-clickable" data-roster-id="{team['roster_id']}" data-team-name="{team['owner']}">{team['owner']}</span>
+            <span class="whl-pts">{team['use_score']:.1f}</span>
+          </div>
+        </div>"""
+
+    def _hl_matchup(title: str, win: dict, lose: dict, margin: float) -> str:
+        return f"""
+        <div class="whl-card">
+          <div class="whl-label">{title}</div>
+          <div class="whl-row whl-winner">
+            <span class="whl-name team-clickable" data-roster-id="{win['roster_id']}" data-team-name="{win['owner']}">{win['owner']}</span>
+            <span class="whl-pts">{win['use_score']:.1f}</span>
+          </div>
+          <div class="whl-row whl-loser">
+            <span class="whl-name team-clickable" data-roster-id="{lose['roster_id']}" data-team-name="{lose['owner']}">{lose['owner']}</span>
+            <span class="whl-pts">{lose['use_score']:.1f}</span>
+          </div>
+          <div class="whl-margin">{margin:.1f} pt margin</div>
+        </div>"""
+
     # ------------------------------------------------------------------
-    # Highest / Lowest Score Cards
+    # Highest / Lowest Score
     # ------------------------------------------------------------------
     rows_sorted_desc = sorted(rows, key=lambda r: r["use_score"], reverse=True)
     rows_sorted_asc  = sorted(rows, key=lambda r: r["use_score"])
     top = rows_sorted_desc[0]
     low = rows_sorted_asc[0]
 
-    highest_card = f"""
-    <div class="card small">
-      <div class="card-header"><h3>Highest Score</h3></div>
-      <div class="card-body">
-        <div class="highlight-game-card white">
-          <div class="hg-row">
-            <div class="hg-team">
-              <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{top['roster_id']}" data-team-name="{top['owner']}">{top['owner']}</span>
-            </div>
-            <div class="hg-score">{top['use_score']:.1f}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-    """
-
-    lowest_card = f"""
-    <div class="card small">
-      <div class="card-header"><h3>Lowest Score</h3></div>
-      <div class="card-body">
-        <div class="highlight-game-card white">
-          <div class="hg-row">
-            <div class="hg-team">
-              <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{low['roster_id']}" data-team-name="{low['owner']}">{low['owner']}</span>
-            </div>
-            <div class="hg-score">{low['use_score']:.1f}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-    """
+    highest_card = _hl_single("Highest Score", top)
+    lowest_card  = _hl_single("Lowest Score",  low)
 
     # ------------------------------------------------------------------
-    # Closest Game / Blowout Game
+    # Closest Game / Blowout
     # ------------------------------------------------------------------
     by_matchup: dict = {}
     for r in rows:
-        mid = r["matchup_id"]
-        by_matchup.setdefault(mid, []).append(r)
+        by_matchup.setdefault(r["matchup_id"], []).append(r)
 
     matchup_summaries = []
     for mid, grp in by_matchup.items():
@@ -5271,12 +5266,7 @@ def _render_weekly_highlights(
         grp_sorted = sorted(grp, key=lambda r: r["use_score"], reverse=True)
         win, lose = grp_sorted[0], grp_sorted[1]
         matchup_summaries.append({
-            "winner": win["owner"],
-            "winner_rid": win["roster_id"],
-            "winnerPts": win["use_score"],
-            "loser": lose["owner"],
-            "loser_rid": lose["roster_id"],
-            "loserPts": lose["use_score"],
+            "winner": win, "loser": lose,
             "margin": win["use_score"] - lose["use_score"],
         })
 
@@ -5286,43 +5276,8 @@ def _render_weekly_highlights(
     if matchup_summaries:
         closest = min(matchup_summaries, key=lambda m: abs(m["margin"]))
         blowout = max(matchup_summaries, key=lambda m: abs(m["margin"]))
-
-        closest_card = f"""
-        <div class="card small">
-          <div class="card-header"><h3>Closest Game</h3></div>
-          <div class="card-body">
-            <div class="highlight-game-card white">
-              <div class="hg-row">
-                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{closest['winner_rid']}" data-team-name="{closest['winner']}">{closest['winner']}</span>
-                <span class="hg-score">{closest['winnerPts']:.1f}</span>
-              </div>
-              <div class="hg-row">
-                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{closest['loser_rid']}" data-team-name="{closest['loser']}">{closest['loser']}</span>
-                <span class="hg-score">{closest['loserPts']:.1f}</span>
-              </div>
-              <div class="hg-margin">{closest['margin']:.1f} pt margin</div>
-            </div>
-          </div>
-        </div>
-        """
-
-        blowout_card = f"""
-        <div class="card small">
-          <div class="card-header"><h3>Biggest Blowout</h3></div>
-          <div class="card-body">
-            <div class="highlight-game-card white">
-              <div class="hg-row">
-                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{blowout['winner_rid']}" data-team-name="{blowout['winner']}">{blowout['winner']}</span>
-                <span class="hg-score">{blowout['winnerPts']:.1f}</span>
-              </div>
-              <div class="hg-row">
-                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{blowout['loser_rid']}" data-team-name="{blowout['loser']}">{blowout['loser']}</span>
-                <span class="hg-score">{blowout['loserPts']:.1f}</span>
-              </div>
-              <div class="hg-margin">{blowout['margin']:.1f} pt margin</div>
-            </div>
-          </div>
-        </div>
+        closest_card = _hl_matchup("Closest Game",   closest["winner"], closest["loser"], closest["margin"])
+        blowout_card = _hl_matchup("Biggest Blowout", blowout["winner"], blowout["loser"], blowout["margin"])
         """
 
     return highest_card + lowest_card + closest_card + blowout_card

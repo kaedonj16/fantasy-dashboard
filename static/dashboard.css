@@ -7094,6 +7094,69 @@ thead th {
   margin-top: 4px;
 }
 
+/* Weekly highlights sidebar cards */
+.whl-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.whl-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 7px;
+}
+
+.whl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.whl-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.whl-name:hover { color: var(--accent); }
+
+.whl-pts {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.whl-winner .whl-pts { color: var(--accent); }
+
+.whl-loser .whl-name,
+.whl-loser .whl-pts {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.whl-margin {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
 .home-bullets {
   list-style: none;
   margin: 0;
