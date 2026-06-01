@@ -941,12 +941,21 @@ def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict]) -> dic
 
 
 def get_viewer_session() -> dict:
-    viewer_data = {
-        "viewer_username": session.get("viewer_username"),
-        "viewer_user_id": session.get("viewer_user_id"),
-        "viewer_roster_id": session.get("viewer_roster_id"),
-        "viewer_team_name": session.get("viewer_team_name"),
-    }
+    try:
+        viewer_data = {
+            "viewer_username": session.get("viewer_username"),
+            "viewer_user_id": session.get("viewer_user_id"),
+            "viewer_roster_id": session.get("viewer_roster_id"),
+            "viewer_team_name": session.get("viewer_team_name"),
+        }
+    except RuntimeError:
+        # Called outside a request context (e.g. background thread) — no session available
+        viewer_data = {
+            "viewer_username": None,
+            "viewer_user_id": None,
+            "viewer_roster_id": None,
+            "viewer_team_name": None,
+        }
     return viewer_data
 
 
