@@ -2801,6 +2801,13 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     resolved_league_id = ctx.get("resolved_league_id", league_id)
 
     # ---------- Always refresh core league objects ----------
+    # Clear TTL caches so rosters/traded picks reflect the latest transactions
+    # on every refresh, not just the teams page.
+    try:
+        clear_activity_cache_for_league(resolved_league_id)
+    except Exception:
+        pass
+
     league = get_league(platform, resolved_league_id, viewed_season)
     users = get_users(platform, resolved_league_id, viewed_season)
     rosters = get_rosters(platform, resolved_league_id, viewed_season)
@@ -3028,19 +3035,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
     # ---------- Teams page ----------
     if page == "teams":
-        # Clear first, then re-fetch so rosters/traded reflect post-trade state
-        clear_teams_cache_for_league(resolved_league_id)
-        rosters = get_rosters(platform, resolved_league_id, viewed_season)
-        ctx["rosters"] = rosters
-        ctx["roster_map"] = _build_roster_map(users, rosters)
-
-        if platform == "sleeper":
-            try:
-                traded = get_traded_picks(platform, resolved_league_id, viewed_season)
-                ctx["traded"] = traded
-            except Exception:
-                traded = ctx.get("traded")
-
+        # Rosters/traded already re-fetched from cleared cache in core section above.
         ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
 
         if platform == "sleeper":
