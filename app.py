@@ -5621,13 +5621,28 @@ function wkActivateTab(tab) {{
 
 
 def build_projections_by_week(season: int, weeks: int):
-    bundles = {}
+    raw = {}
     any_projections = False
     for w in range(1, weeks + 1):
         projections = load_week_projection(season, w)
-        bundles[w] = {"projections": projections or {}}
+        raw[w] = projections or {}
         if projections:
             any_projections = True
+
+    # Build a fallback map: for each player use their most-populated week value
+    # so players absent from specific weeks (e.g. Tank01 gaps) still get a projection.
+    fallback: dict = {}
+    for w in range(1, weeks + 1):
+        for pid, val in raw[w].items():
+            if val and pid not in fallback:
+                fallback[pid] = val
+
+    bundles = {}
+    for w in range(1, weeks + 1):
+        week_proj = dict(fallback)   # start with baseline
+        week_proj.update(raw[w])     # override with real data where available
+        bundles[w] = {"projections": week_proj}
+
     if not any_projections:
         logger.info(f"[projections] No projection data available for season {season}")
     bundles["_available"] = any_projections
@@ -14859,7 +14874,7 @@ def api_weekly_week():
     if not finalized_df.empty:
         last_final_week = int(finalized_df["week"].max())
     else:
-        last_final_week = max(1, min(int(current_week or 1), int(max_weeks or 1)))
+        last_final_week = 0  # no finalized weeks → all weeks show projections
 
     resolved_league_id = ctx.get("resolved_league_id", league_id)
 

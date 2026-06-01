@@ -1213,13 +1213,16 @@ def render_matchup_slide(
         lp = round(l_prob * 100)
         rp = 100 - lp
         l_leading = l_prob >= 0.5
-        l_col = "#22c55e" if l_leading else "var(--text-muted)"
-        r_col = "#22c55e" if not l_leading else "var(--text-muted)"
+        win_green = "#22c55e"
+        lose_fade = "rgba(148,163,184,0.35)"
+        l_col = win_green if l_leading else "var(--text-muted)"
+        r_col = win_green if not l_leading else "var(--text-muted)"
+        l_bar = win_green if l_leading else lose_fade
+        r_bar = win_green if not l_leading else lose_fade
+        track_bg = f"linear-gradient(to right,{l_bar} {lp}%,{r_bar} {lp}%)"
         win_bar_html = f"""<div class="m-win-bar">
   <span class="m-wp-pct" style="color:{l_col};">{lp}%</span>
-  <div class="m-wp-track">
-    <div class="m-wp-fill" style="width:{lp}%;background:{l_col};"></div>
-  </div>
+  <div class="m-wp-track" style="background:{track_bg};"></div>
   <span class="m-wp-pct" style="color:{r_col};text-align:right;">{rp}%</span>
 </div>"""
 
