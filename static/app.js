@@ -2187,7 +2187,9 @@ window.initTradePage = function initTradePage(root = document) {
           noteEl.style.cssText = 'font-size:10px;color:var(--text-muted);margin-top:2px;text-align:center;';
           totalEl.parentNode.insertBefore(noteEl, totalEl.nextSibling);
         }
-        noteEl.textContent = discount >= 5 ? `↓ ${Math.round(discount)} depth adj.` : '';
+        if (discount >= 5)        noteEl.textContent = `↓ ${Math.round(discount)} depth adj.`;
+        else if (discount <= -5) noteEl.textContent = `↑ ${Math.round(-discount)} bench adj.`;
+        else                     noteEl.textContent = '';
       }
     });
 

@@ -4836,10 +4836,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
 
 # Depth cap: each additional asset beyond the anchor is worth less (position 0 = anchor)
-_DEPTH_MULTS = [1.0, 0.85, 0.72, 0.60, 0.50, 0.42]
-
-# Tier cap: upper bound on how much a non-anchor asset can contribute, by individual tier.
-# Spread linearly from 1.0 (T1, no cap) down to 0.38 (T9, fringe), extended for extra tiers.
 def _build_tier_caps(num_tiers: int) -> dict:
     high, low = 1.0, 0.38
     if num_tiers <= 1:
@@ -4967,98 +4963,68 @@ def _asset_tier(value: float, thresholds: list = None) -> int:
 
 def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
                                  tier_thresholds: list = None,
-                                 is_sf: bool = False) -> None:
+                                 is_sf: bool = False,
+                                 value_table: list = None,
+                                 league_size: int = 10) -> None:
     """
-    Tier-aware trade evaluation.
+    Additive bench-spot adjustment for unequal trades.
 
-    Each side's highest-value asset (the "anchor") counts at full face value.
-    Every additional asset is worth min(depth_mult, tier_cap) × its face value,
-    where tier_cap is driven by that player's individual tier derived from the
-    live value-table gaps. Stacking lower-tier players against an elite anchor
-    produces compounding discounts; adding a quality T2 player is barely penalised.
+    The smaller side receives a bonus equal to the value of the bench/waiver
+    players the algorithm implicitly considers when evaluating multi-for-one
+    trades.  The average dynasty league has ~11.3 teams × ~26.7 roster spots
+    ≈ 302 total spots, so the first bench player is the ~300th-ranked player
+    (≈425 value).  Each additional extra player frees a slightly higher-value
+    bench spot (rank decreases by 10 per step: 300 → 290 → 280 …).
 
-    In SF leagues, QBs fill up to 3 starting slots (QB / SFLEX / FLEX), so
-    each QB in a package uses its own QB-specific depth index rather than its
-    global value-rank index — preventing the second and third QBs from being
-    over-penalised relative to their actual roster utility.
+    Bigger side: effective_total = raw_total (no discount applied).
+    Smaller side: effective_total = raw_total + sum(bench_values).
     """
+    a_count = len(side_a.get("breakdown") or []) or len(side_a.get("player_values") or [])
+    b_count = len(side_b.get("breakdown") or []) or len(side_b.get("player_values") or [])
+
     thresholds = tier_thresholds if tier_thresholds is not None else _FALLBACK_THRESHOLDS
-    tier_caps  = _build_tier_caps(len(thresholds) + 1)
-    # In SF, QBs have 3 starting slots before the depth penalty steepens
-    qb_starter_slots = 3 if is_sf else 1
 
-    def _compute_side(side):
-        bd = side.get("breakdown") or []
-        if bd:
-            items = sorted(
-                [(item.get("value", 0.0), str(item.get("position") or "").upper()) for item in bd],
-                reverse=True,
-            )
-        else:
-            # Fallback: no position info available
-            raw_vals = sorted(list(side.get("player_values", []) or []), reverse=True)
-            raw_picks = float(side.get("raw_picks_total", 0.0) or 0.0)
-            if raw_picks > 0.0:
-                raw_vals.append(raw_picks)
-                raw_vals.sort(reverse=True)
-            items = [(v, "") for v in raw_vals]
-
-        if not items:
-            return float(side.get("raw_total", 0.0) or 0.0), 0.0
-
-        effective  = 0.0
-        global_idx = 0
-        qb_idx     = 0  # separate counter so SF QBs use their own depth slot
-
-        for v, pos in items:
-            if global_idx == 0:
-                effective += v  # anchor always full value
-            elif is_sf and pos == "QB" and qb_idx < qb_starter_slots:
-                # QB still within SF starting depth — use QB-specific depth index
-                depth_m = _DEPTH_MULTS[min(qb_idx, len(_DEPTH_MULTS) - 1)]
-                tier_m  = tier_caps.get(_asset_tier(v, thresholds), 0.38)
-                effective += v * min(depth_m, tier_m)
-            else:
-                depth_m = _DEPTH_MULTS[min(global_idx, len(_DEPTH_MULTS) - 1)]
-                tier_m  = tier_caps.get(_asset_tier(v, thresholds), 0.38)
-                effective += v * min(depth_m, tier_m)
-
-            if pos == "QB":
-                qb_idx += 1
-            global_idx += 1
-
-        return effective, effective - float(side.get("raw_total", 0.0) or 0.0)
-
-    eff_a, adj_a = _compute_side(side_a)
-    eff_b, adj_b = _compute_side(side_b)
-
-    side_a["effective_total"] = eff_a
-    side_b["effective_total"] = eff_b
-    side_a["adjustment"] = adj_a
-    side_b["adjustment"] = adj_b
-
-    # Annotate each breakdown item with its individual tier + context-aware effective value
+    # Annotate tiers first (informational, no multiplier applied)
     for side in (side_a, side_b):
-        bd = side.get("breakdown") or []
-        if not bd:
-            continue
-        sorted_bd = sorted(bd, key=lambda x: x.get("value", 0.0), reverse=True)
-        qb_idx = 0
-        for idx, item in enumerate(sorted_bd):
-            val  = item.get("value", 0.0)
-            pos  = str(item.get("position") or "").upper()
-            tier = _asset_tier(val, thresholds)
-            if idx == 0:
-                m = 1.0
-            elif is_sf and pos == "QB" and qb_idx < qb_starter_slots:
-                m = min(_DEPTH_MULTS[min(qb_idx, len(_DEPTH_MULTS) - 1)], tier_caps.get(tier, 0.38))
-            else:
-                m = min(_DEPTH_MULTS[min(idx, len(_DEPTH_MULTS) - 1)], tier_caps.get(tier, 0.38))
-            if pos == "QB":
-                qb_idx += 1
-            item["tier"]            = tier
-            item["stack_mult"]      = round(m, 3)
-            item["effective_value"] = round(val * m, 1)
+        for item in (side.get("breakdown") or []):
+            val = item.get("value", 0.0)
+            item["tier"]            = _asset_tier(val, thresholds)
+            item["stack_mult"]      = 1.0
+            item["effective_value"] = round(val, 1)
+
+    if a_count == b_count:
+        return
+
+    delta   = abs(a_count - b_count)
+    smaller = side_a if a_count < b_count else side_b
+    bigger  = side_b if a_count < b_count else side_a
+
+    # Build sorted value list for bench-rank lookup
+    sorted_vals: list = []
+    if value_table:
+        sorted_vals = sorted(
+            [float(p.get("value") or 0) for p in value_table
+             if isinstance(p, dict) and float(p.get("value") or 0) > 10],
+            reverse=True,
+        )
+
+    base_rank      = league_size * 27  # ≈ 302 for a 11.3-team / 26.7-spot league
+    _BENCH_BASE    = 425.0             # fallback when value_table unavailable
+    _BENCH_STEP    = 15.0              # extra value per 10-rank improvement
+
+    def _bench_value(i: int) -> float:
+        rank = max(1, base_rank - i * 10)
+        if sorted_vals:
+            idx = min(rank - 1, len(sorted_vals) - 1)
+            return sorted_vals[idx]
+        return _BENCH_BASE + i * _BENCH_STEP
+
+    bench_total = sum(_bench_value(i) for i in range(delta))
+
+    smaller["effective_total"] = float(smaller.get("raw_total") or 0.0) + bench_total
+    smaller["adjustment"]      = bench_total
+    bigger["effective_total"]  = float(bigger.get("raw_total") or 0.0)
+    bigger["adjustment"]       = 0.0
 
 
 apply_multi_for_one_adjustment = apply_tier_stack_adjustment
@@ -16004,7 +15970,7 @@ def api_trade_eval():
     side_a_count = len(side_a_players) + len(side_a_picks)
     side_b_count = len(side_b_players) + len(side_b_picks)
     if side_a_count != side_b_count:
-        apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"))
+        apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"), value_table=value_table, league_size=league_size)
 
     a_eff = side_a["effective_total"]
     b_eff = side_b["effective_total"]
