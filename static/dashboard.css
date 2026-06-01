@@ -16181,6 +16181,7 @@ tr.team-clickable {
 .fp-discord-icon {
   width: 18px;
   height: 18px;
+  display: block;
   object-fit: contain;
   opacity: 0.75;
   transition: opacity 0.15s ease;
