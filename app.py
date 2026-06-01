@@ -8051,6 +8051,7 @@ def build_teams_body(ctx: dict) -> str:
               'Core':      '#22c55e',
               'Sell High': '#ef4444',
               'Breakout':  '#8b5cf6',
+              'Sleeper':   '#06b6d4',
               'Monitor':   '#f59e0b',
               'Hold':      'var(--text-muted)',
               'Cut':       '#94a3b8',
@@ -8091,14 +8092,22 @@ def build_teams_body(ctx: dict) -> str:
                     var col = p.rank_change_7d > 0 ? '#22c55e' : '#ef4444';
                     chgHtml = '<span style="font-size:10px;color:' + col + ';margin-left:4px;">' + sym + Math.abs(p.rank_change_7d) + '</span>';
                   }}
+                  // Market context note: show FC ADP divergence if notable
+                  var mktNote = '';
+                  if (p.mkt_gap !== null && p.mkt_gap !== undefined && Math.abs(p.mkt_gap) >= 4 && p.fc_pos_rank) {{
+                    var mktDir = p.mkt_gap > 0 ? 'mkt ↑' : 'mkt ↓';
+                    var mktCol = p.mkt_gap > 0 ? '#ef4444' : '#06b6d4';
+                    mktNote = ' <span style="font-size:10px;color:' + mktCol + ';margin-left:4px;">' + mktDir + '</span>';
+                  }}
                   var sc = sigColor[p.signal] || 'var(--text-muted)';
+                  var metaParts = [];
+                  if (p.pos_rank_label) metaParts.push(p.pos_rank_label);
+                  if (p.age) metaParts.push('Age ' + p.age);
+                  if (p.fc_pos_rank) metaParts.push('FC ' + pos + p.fc_pos_rank);
                   html += '<div class="ri-player-row">' +
                     '<div class="ri-player-info">' +
-                      '<span class="ri-player-name">' + p.name + chgHtml + '</span>' +
-                      '<span class="ri-player-meta">' +
-                        (p.pos_rank_label || '') +
-                        (p.age ? ' · Age ' + p.age : '') +
-                      '</span>' +
+                      '<span class="ri-player-name">' + p.name + chgHtml + mktNote + '</span>' +
+                      '<span class="ri-player-meta">' + metaParts.join(' · ') + '</span>' +
                     '</div>' +
                     '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
                       '<span style="font-size:11px;color:var(--text-muted);font-weight:600;">' + (p.value || 0) + '</span>' +
@@ -20449,18 +20458,21 @@ def api_roster_intel():
         if not pid:
             continue
         values_by_id[pid] = {
-            "value":          float(row.get(val_key) or row.get("value") or 0),
-            "age":            row.get("age"),
-            "position":       str(row.get("position") or "").upper(),
-            "pos_rank_label": row.get("pos_rank_label") or "",
-            "rank_change_7d": row.get("rank_change_7d"),
-            "name":           row.get("name") or "",
-            "team":           row.get("team") or "",
+            "value":             float(row.get(val_key) or row.get("value") or 0),
+            "age":               row.get("age"),
+            "position":          str(row.get("position") or "").upper(),
+            "pos_rank_label":    row.get("pos_rank_label") or "",
+            "pos_rank":          row.get("pos_rank"),
+            "rank_change_7d":    row.get("rank_change_7d"),
+            "pos_rank_change_7d": row.get("pos_rank_change_7d"),
+            "name":              row.get("name") or "",
+            "team":              row.get("team") or "",
         }
 
-    # Bulk-fetch breakout scores for all rostered players
+    # Bulk-fetch breakout scores + years_exp for all rostered players
     all_rostered = [str(pid) for r in rosters for pid in (r.get("players") or [])]
     breakout_scores: dict = {}
+    years_exp_map: dict = {}
     from dashboard_services.db import get_conn
     try:
         with get_conn() as conn:
@@ -20479,6 +20491,22 @@ def api_roster_intel():
                     row = dict(row)
                     if row.get("breakout_opportunity_score") is not None:
                         breakout_scores[row["player_id"]] = float(row["breakout_opportunity_score"])
+                cur.execute(
+                    "SELECT player_id, years_exp FROM player_values WHERE player_id = ANY(%s)",
+                    (all_rostered,),
+                )
+                for row in cur.fetchall():
+                    row = dict(row)
+                    if row.get("years_exp") is not None:
+                        years_exp_map[str(row["player_id"])] = int(row["years_exp"])
+    except Exception:
+        pass
+
+    # FantasyCalc dynasty startup ADP — market consensus position ranks
+    from dashboard_services.adp_service import fetch_fc_startup_adp
+    fc_adp: dict = {}
+    try:
+        fc_adp = fetch_fc_startup_adp(is_sf=(league_type == "sf")) or {}
     except Exception:
         pass
 
@@ -20486,13 +20514,19 @@ def api_roster_intel():
     prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
     def _signal(pid: str, info: dict) -> str:
-        val       = info["value"]
-        age       = float(info["age"] or 0)
-        pos       = info["position"]
-        rank_chg  = info["rank_change_7d"] or 0
-        bscore    = breakout_scores.get(pid, 0)
-        prime     = prime_max.get(pos, 28)
-        past_prime = age > prime
+        val              = info["value"]
+        age              = float(info["age"] or 0)
+        pos              = info["position"]
+        rank_chg         = info["pos_rank_change_7d"] or info["rank_change_7d"] or 0
+        bscore           = breakout_scores.get(pid, 0)
+        prime            = prime_max.get(pos, 28)
+        past_prime       = age > prime
+        yexp             = years_exp_map.get(pid)      # None if unknown
+        internal_pos_rk  = int(info.get("pos_rank") or 999)
+        fc_pos_rk        = int((fc_adp.get(pid) or {}).get("pos_rank") or 999)
+        # Positive = market (FC) thinks player is better than our model; sell into the hype.
+        # Negative = we value them more than the market does; hidden gem.
+        mkt_gap = internal_pos_rk - fc_pos_rk
 
         # Release candidates
         if val < 80:
@@ -20500,23 +20534,33 @@ def api_roster_intel():
         if past_prime and val < 175:
             return "Cut"
 
-        # Sell window: aging but still valuable
+        # Sell windows — aging players still holding value
         if past_prime and val >= 350:
             return "Sell High"
-        # Sell window: young player at peak (trending up hard)
-        if not past_prime and val >= 450 and rank_chg >= 7:
+        # Sell window — market significantly overvalues vs our model (sell into hype)
+        if mkt_gap >= 5 and val >= 250 and not past_prime:
+            return "Sell High"
+        # Sell window — young player trending up hard into peak value
+        if not past_prime and val >= 450 and rank_chg >= 6:
             return "Sell High"
 
-        # Untouchable elite young asset
+        # Elite young untouchable asset
         if not past_prime and val >= 700:
             return "Core"
 
-        # Hidden upside — breakout candidate
-        if not past_prime and bscore >= 58 and val >= 80:
-            return "Breakout"
+        # Breakout candidate — stronger signal for rookies/sophomores
+        if not past_prime and bscore >= 55 and val >= 80:
+            if yexp is not None and yexp <= 1:
+                return "Breakout"      # true rookie/sophomore breakout
+            if bscore >= 62:
+                return "Breakout"      # high-confidence breakout for older players
 
-        # Young player with significant declining value — watch/consider selling
-        if not past_prime and rank_chg <= -8 and val >= 175:
+        # Sleeper — our model values them significantly more than the dynasty market does
+        if mkt_gap <= -5 and val >= 200 and not past_prime:
+            return "Sleeper"
+
+        # Concerning decline in young player — consider selling before further drop
+        if not past_prime and rank_chg <= -7 and val >= 175:
             return "Monitor"
 
         return "Hold"
@@ -20564,14 +20608,22 @@ def api_roster_intel():
                     continue
                 name = info["name"] or (players_index.get(pid) or {}).get("name") or f"Player {pid}"
                 sig  = _signal(pid, info)
+                _fc  = fc_adp.get(pid) or {}
+                _fc_pos_rk = _fc.get("pos_rank")
+                _int_pos_rk = info.get("pos_rank")
+                _mkt_gap = (int(_int_pos_rk or 999) - int(_fc_pos_rk or 999)) if (_int_pos_rk and _fc_pos_rk) else None
                 pos_players.append({
-                    "player_id":      pid,
-                    "name":           name,
-                    "age":            info["age"],
-                    "value":          round(info["value"], 0),
-                    "pos_rank_label": info["pos_rank_label"],
-                    "rank_change_7d": info["rank_change_7d"],
-                    "signal":         sig,
+                    "player_id":         pid,
+                    "name":              name,
+                    "age":               info["age"],
+                    "value":             round(info["value"], 0),
+                    "pos_rank_label":    info["pos_rank_label"],
+                    "rank_change_7d":    info["pos_rank_change_7d"] or info["rank_change_7d"],
+                    "fc_pos_rank":       _fc_pos_rk,
+                    "mkt_gap":           _mkt_gap,
+                    "years_exp":         years_exp_map.get(pid),
+                    "breakout_score":    round(breakout_scores.get(pid, 0), 1) if pid in breakout_scores else None,
+                    "signal":            sig,
                 })
                 if info["age"]:
                     pos_ages.append(float(info["age"]))
