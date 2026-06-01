@@ -6856,8 +6856,7 @@ function openPlayerModal(playerId, playerName, opts) {
         && String(pd.draft_class_year) === String(_currentNFLYear);
       if (tabProspect) tabProspect.style.display = _isCurrentYearProspect ? '' : 'none';
       const tabBreakout = document.getElementById('pmTabBreakout');
-      const _pageIsPremium = document.getElementById('page-root')?.dataset.premium === 'true';
-      if (tabBreakout) tabBreakout.style.display = (_pageIsPremium && (isBreakout(pid) || (opts && opts.tab === 'breakout'))) ? '' : 'none';
+      if (tabBreakout) tabBreakout.style.display = (isBreakout(pid) || (opts && opts.tab === 'breakout')) ? '' : 'none';
 
       // Switch to requested tab, or Overview by default
       const _initialTab = (opts && opts.tab) || 'overview';
@@ -7128,6 +7127,23 @@ function pmSwitchTab(tab) {
   // ── Lazy-load Breakout tab ───────────────────────────────────────────────
   if (tab === 'breakout' && panel && !panel.dataset.loaded) {
     panel.dataset.loaded = '1';
+    const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
+    if (!_isPremium) {
+      panel.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:48px 24px;text-align:center;">
+          <i class="fa-solid fa-lock" style="font-size:28px;color:var(--text-muted);opacity:0.5;"></i>
+          <div style="font-size:15px;font-weight:700;color:var(--text);">Breakout Analysis is a PRO feature</div>
+          <div style="font-size:13px;color:var(--text-muted);max-width:280px;line-height:1.5;">
+            See breakout scores, opportunity drivers, hit probability, and PPG projections for every candidate.
+          </div>
+          <button onclick="showPaywall('breakout-analysis')"
+                  style="margin-top:4px;padding:9px 20px;background:linear-gradient(135deg,#667eea,#764ba2);
+                         color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;">
+            Upgrade to PRO
+          </button>
+        </div>`;
+      return;
+    }
     fetch(`/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(data => {
