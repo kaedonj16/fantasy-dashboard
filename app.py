@@ -5002,10 +5002,10 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
     """
     Depth penalty for the bigger side in unequal trades.
 
-    The side giving up more players is discounted by the value of waiver-wire
-    players they're effectively forcing the other side to match with.  The first
-    bench player sits at roughly rank (league_size × 26), and each successive
-    extra player is worth slightly less (rank increases by 10 per step).
+    The side giving up more players is discounted by a fraction of the value of
+    true waiver-wire players (ranked well below the roster cutoff).  The first
+    reference player sits at roughly rank (league_size × 38) and each successive
+    extra player steps deeper; 50% of that value is applied as the penalty.
 
     Bigger side: effective_total = raw_total - sum(bench_values).
     Smaller side: effective_total = raw_total (no adjustment).
@@ -5039,16 +5039,18 @@ def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
             reverse=True,
         )
 
-    base_rank   = league_size * 26   # first bench slot (~260 for 10-team league)
-    _BENCH_BASE = 400.0              # fallback when value_table unavailable
-    _BENCH_STEP = -10.0              # each extra player is worth slightly less
+    # Rank well below the roster cutoff so the penalty reflects true waiver-wire value
+    base_rank      = league_size * 38   # ~380 for 10-team (below 27-spot roster cutoff)
+    _BENCH_BASE    = 80.0               # fallback when value_table unavailable
+    _BENCH_STEP    = -5.0               # each extra player is worth slightly less
+    _PENALTY_FRAC  = 0.5                # apply 50% of waiver-wire value as the penalty
 
     def _bench_value(i: int) -> float:
         rank = min(len(sorted_vals) if sorted_vals else 9999, base_rank + i * 10)
         if sorted_vals:
             idx = min(rank - 1, len(sorted_vals) - 1)
-            return sorted_vals[idx]
-        return max(50.0, _BENCH_BASE + i * _BENCH_STEP)
+            return sorted_vals[idx] * _PENALTY_FRAC
+        return max(20.0, (_BENCH_BASE + i * _BENCH_STEP) * _PENALTY_FRAC)
 
     bench_total = sum(_bench_value(i) for i in range(delta))
 
