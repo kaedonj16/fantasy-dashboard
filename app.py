@@ -1657,6 +1657,73 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
 </script>"""
 
 
+def _discord_banner() -> str:
+    """Dismissible weekly Discord invite banner shown every Sunday."""
+    import datetime as _dt
+    now = _dt.datetime.now()
+    if now.weekday() != 6:          # Sunday only (0=Mon … 6=Sun)
+        return ""
+
+    iso_week = now.isocalendar()[1]
+    dismiss_key = f"discord-banner-{now.year}-w{iso_week}"
+
+    return f"""
+<style>
+@keyframes discordSlideUp {{
+  from {{ opacity:0; transform:translateY(16px); }}
+  to   {{ opacity:1; transform:translateY(0); }}
+}}
+#discordBanner {{ animation: discordSlideUp .3s ease forwards; }}
+</style>
+<div id="discordBanner" style="
+     display:none;
+     position:fixed;bottom:24px;right:24px;z-index:9999;
+     background:var(--card);
+     border:1px solid var(--border);
+     border-top:3px solid #5865F2;
+     border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);
+     padding:18px 20px;width:300px;
+     flex-direction:column;gap:12px;">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <img src="/static/images/discord-brands-solid.png" alt="Discord"
+           style="width:16px;height:16px;opacity:.9;filter:brightness(0) saturate(100%) invert(40%) sepia(80%) saturate(600%) hue-rotate(210deg) brightness(110%);">
+      <span style="font-size:14px;font-weight:700;color:var(--text);">Join the Discord</span>
+    </div>
+    <button id="discordBannerClose"
+            style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
+                   cursor:pointer;padding:0;flex-shrink:0;"
+            aria-label="Dismiss">&times;</button>
+  </div>
+  <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">
+    Talk dynasty, get trade advice, and connect with other managers in the BR Fantasy community.
+  </p>
+  <a id="discordBannerLink" href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener"
+     style="display:block;text-align:center;background:#5865F2;color:#fff;
+            font-weight:700;font-size:13px;text-decoration:none;
+            padding:9px 0;border-radius:8px;">
+    Join Discord
+  </a>
+</div>
+<script>
+(function(){{
+  var key = '{dismiss_key}';
+  var el  = document.getElementById('discordBanner');
+  if (!el) return;
+  if (!localStorage.getItem(key)) {{
+    el.style.display = 'flex';
+  }}
+  document.getElementById('discordBannerClose').addEventListener('click', function() {{
+    el.style.display = 'none';
+    localStorage.setItem(key, '1');
+  }});
+  document.getElementById('discordBannerLink').addEventListener('click', function() {{
+    localStorage.setItem(key, '1');
+  }});
+}})();
+</script>"""
+
+
 def render_page(
         title: str,
         league_id: Optional[str],
@@ -1674,9 +1741,9 @@ def render_page(
         session["last_season"] = season
     nav_html = build_nav(league_id, active, platform, season)
 
-    banner_html = ""
+    banner_html = _discord_banner()
     if session.get("viewer_username"):
-        banner_html = _recap_ready_banner(league_id or "", platform or "", season or 0)
+        banner_html += _recap_ready_banner(league_id or "", platform or "", season or 0)
 
     wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
 
