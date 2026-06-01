@@ -8702,6 +8702,11 @@ thead th {
   padding-top: 6px;
 }
 
+.side-card h3 + .side-row {
+  border-top: none;
+  padding-top: 6px;
+}
+
 .site-footer {
   margin-top: 24px;
   padding: 16px 24px 24px;
@@ -16098,6 +16103,7 @@ button:disabled {
 }
 #weeklyLeftTabs .tab-panel.active {
   display: block;
+  padding: 10px 12px 12px;
 }
 
 .pm-trade-card {
