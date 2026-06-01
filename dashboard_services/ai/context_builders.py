@@ -192,11 +192,14 @@ def _format_pick_display(pk: str) -> str:
         year, rnd, slot = parts
         if slot.isdigit():
             return f"{year} {rnd}.{slot.zfill(2)}"
-        return f"{year} {rnd} {slot.lower()}"
+        bucket_label = slot.capitalize()
+        suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(_safe_int(rnd), f"{rnd}th")
+        return f"{year} {suffix} ({bucket_label})"
 
     if len(parts) == 2:
         year, rnd = parts
-        return f"{year} {rnd} mid"
+        suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(_safe_int(rnd), f"{rnd}th")
+        return f"{year} {suffix} (Mid)"
 
     return raw
 

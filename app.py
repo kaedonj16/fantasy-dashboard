@@ -5949,7 +5949,8 @@ def format_pick_display_label(
     if exact_slot is not None:
         return f"{year} {rnd}.{exact_slot:02d}"
 
-    return f"{year} {rnd} mid"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+    return f"{year} {rnd}{suffix} (Mid)"
 
 
 def build_activity_body(ctx: dict) -> str:
@@ -6393,7 +6394,7 @@ def build_activity_body(ctx: dict) -> str:
                         slot_value = exact_slot
                     else:
                         pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
-                        display_name = f"{season} {round_num} mid"
+                        display_name = f"{season} {round_num} (Mid)"
                         slot_value = None
 
                     gets_picks.append({
@@ -6427,7 +6428,7 @@ def build_activity_body(ctx: dict) -> str:
                         slot_value = exact_slot
                     else:
                         pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
-                        display_name = f"{season} {round_num} mid"
+                        display_name = f"{season} {round_num} (Mid)"
                         slot_value = None
 
                     sends_picks.append({
@@ -20938,7 +20939,8 @@ def api_trade_intel_player_packages(player_id: str):
                         if slot:
                             pk_name = f"{yr} {rnd}.{slot:02d}"
                         else:
-                            pk_name = f"{yr} {rnd} mid"
+                            _sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+                            pk_name = f"{yr} {rnd}{_sfx} (Mid)"
                         if slot:
                             pval = (
                                 pick_val_lookup.get(f"{yr}_{rnd}_{slot:02d}")
@@ -22001,7 +22003,7 @@ def api_trade_intel_player_send_packages(player_id: str):
                 if pval <= 0:
                     pval = {1: 220.0, 2: 130.0}.get(rnd, 70.0)
                 out.append({
-                    "name":  f"{yr} {rnd} mid",
+                    "name":  f"{yr} {rnd}{({1:'st',2:'nd',3:'rd'}.get(rnd,'th'))} (Mid)",
                     "value": round(pval, 1),
                     "is_pick": True,
                     "pick_season": yr,

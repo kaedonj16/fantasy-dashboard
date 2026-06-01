@@ -2105,8 +2105,9 @@ window.initTradePage = function initTradePage(root = document) {
     const year = parts[0];
     const round = parseInt(parts[1], 10);
     const third = parts.slice(2).join("_");
-    const bucket = { early: "early", mid: "mid", late: "late" }[third];
-    if (bucket) return `${year} ${round} ${bucket}`;
+    const suffix = { 1: "st", 2: "nd", 3: "rd" }[round] || "th";
+    const bucketLabel = { early: "Early", mid: "Mid", late: "Late" }[third];
+    if (bucketLabel) return `${year} ${round}${suffix} (${bucketLabel})`;
     const slot = parseInt(third, 10);
     if (!isNaN(slot)) return `${year} ${round}.${String(slot).padStart(2, "0")}`;
     return String(id).replaceAll("_", " ");
@@ -3704,8 +3705,9 @@ window.initTradePage = function initTradePage(root = document) {
                   || (String(a.player_id || "").split("_")[1] || "");
                 const rd     = String(a.pick_round  || "").replace(/\D/g, "")
                   || (String(a.player_id || "").split("_")[2] || "1");
-                const bucket = a.pick_bucket || "mid";
-                const pickId = yr && rd ? `${yr}_${rd}_${bucket}` : null;
+                const slotRaw = a.pick_slot ? String(a.pick_slot).replace(/\D/g, "").padStart(2, "0") : null;
+                const bucket  = a.pick_bucket || "mid";
+                const pickId  = yr && rd ? `${yr}_${rd}_${slotRaw || bucket}` : null;
                 if (pickId && !picks.some(p => p.id === pickId))
                   picks.push({ id: pickId, display: a.name || pickId });
               } else {

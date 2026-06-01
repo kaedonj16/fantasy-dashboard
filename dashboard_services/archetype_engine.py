@@ -612,6 +612,7 @@ def _pick_send_candidates(
     picks: List[Dict],
     num_teams: int,
     slot_map: Optional[Dict[int, int]] = None,
+    current_season: int = 0,
 ) -> List[Dict[str, Any]]:
     """Convert future picks to send-candidate dicts.
 
@@ -639,10 +640,11 @@ def _pick_send_candidates(
         if not season or rnd <= 0:
             continue
 
-        # Resolve exact slot from pre-computed map (original owner's draft position)
+        # Resolve exact slot from pre-computed map — only valid for the current draft year
         slot   = 0
         bucket = "mid"
-        if slot_map:
+        pick_yr = int(season) if season else 0
+        if slot_map and current_season and pick_yr == current_season:
             try:
                 orig_rid = int(
                     pk.get("original_roster_id")
@@ -675,7 +677,7 @@ def _pick_send_candidates(
         if val <= 0:
             val = {1: 650.0, 2: 220.0}.get(rnd, 80.0)
 
-        name = f"{season} {rnd}.{slot:02d}" if slot else f"{season} {rnd} {bucket}"
+        name = f"{season} {rnd}.{slot:02d}" if slot else f"{season} {_ordinal(rnd)} (Mid)"
         uid  = f"pick_{season}_{rnd}_{slot:02d}" if slot else f"pick_{season}_{rnd}"
 
         out.append({
@@ -1423,7 +1425,7 @@ def get_archetype_suggestions(
         for rid, pick_list in picks_by_roster.items():
             if str(rid) == str(viewer_roster_id):
                 continue
-            converted = _pick_send_candidates(pick_list, num_teams, slot_map)
+            converted = _pick_send_candidates(pick_list, num_teams, slot_map, current_season=season)
             if converted:
                 picks_by_owner[str(rid)] = converted
         _sugg = _build_rebuilding(
@@ -1530,7 +1532,7 @@ def get_archetype_suggestions(
     # value-fillers (e.g. two players + a pick for consolidate).
     viewer_picks = picks_by_roster.get(str(viewer_roster_id)) or \
                    picks_by_roster.get(viewer_roster_id) or []
-    send_candidates += _pick_send_candidates(viewer_picks, num_teams, slot_map)
+    send_candidates += _pick_send_candidates(viewer_picks, num_teams, slot_map, current_season=season)
 
     results = []
     new_wp_base = current_wp  # alias for clarity inside loop

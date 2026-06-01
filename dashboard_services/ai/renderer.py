@@ -733,7 +733,8 @@ def _fmt_pick_label(pk: dict) -> str:
     slot   = pk.get("slot")
     if slot:
         return f"{season} {rnd}.{int(slot):02d}"
-    return f"{season} {rnd} mid"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+    return f"{season} {rnd}{suffix} (Mid)"
 
 
 def _render_real_trade_suggestions(real_trades: list[dict]) -> str:
