@@ -8087,7 +8087,7 @@ def build_teams_body(ctx: dict) -> str:
 
                 pd.players.forEach(function(p) {{
                   var chgHtml = '';
-                  if (p.rank_change_7d && p.rank_change_7d !== 0) {{
+                  if (p.rank_change_7d && Math.abs(p.rank_change_7d) >= 7) {{
                     var sym = p.rank_change_7d > 0 ? '▲' : '▼';
                     var col = p.rank_change_7d > 0 ? '#22c55e' : '#ef4444';
                     chgHtml = '<span style="font-size:10px;color:' + col + ';margin-left:4px;">' + sym + Math.abs(p.rank_change_7d) + '</span>';
@@ -20540,8 +20540,8 @@ def api_roster_intel():
         # Sell window — market significantly overvalues vs our model (sell into hype)
         if mkt_gap >= 5 and val >= 250 and not past_prime:
             return "Sell High"
-        # Sell window — young player trending up hard into peak value
-        if not past_prime and val >= 450 and rank_chg >= 6:
+        # Sell window — young player with severe rank jump (≥10 pos spots in 7 days)
+        if not past_prime and val >= 450 and rank_chg >= 10:
             return "Sell High"
 
         # Elite young untouchable asset
@@ -20559,8 +20559,8 @@ def api_roster_intel():
         if mkt_gap <= -5 and val >= 200 and not past_prime:
             return "Sleeper"
 
-        # Concerning decline in young player — consider selling before further drop
-        if not past_prime and rank_chg <= -7 and val >= 175:
+        # Severe drop in young player (≥10 pos spots in 7 days) — consider selling
+        if not past_prime and rank_chg <= -10 and val >= 175:
             return "Monitor"
 
         return "Hold"
