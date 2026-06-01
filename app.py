@@ -18032,6 +18032,66 @@ def api_player_game_logs(player_id: str):
                 game_logs.sort(key=lambda g: g.get("date", "") or "")
                 game_logs_by_year[season_year] = game_logs
 
+        # ── Upcoming projected season ─────────────────────────────────────────
+        # If the next season isn't in historical stats yet, build a projected
+        # season from Tank01 weekly projections (with FP PPG as fallback).
+        _upcoming = (max(available_years) + 1) if available_years else datetime.now().year
+        if _upcoming not in game_logs_by_year:
+            try:
+                from utils.utils import pick_proj_variant, load_week_projection
+                from statistics import median as _med_fn
+                _variant = pick_proj_variant(scoring_settings)
+
+                _proj_vals: dict = {}
+                for _w in range(1, 19):
+                    _wd = load_week_projection(_upcoming, _w) or {}
+                    _v = _wd.get(player_id)
+                    if isinstance(_v, dict):
+                        _fv = float(_v.get(_variant) or _v.get("ppr") or 0)
+                    elif isinstance(_v, (int, float)):
+                        _fv = float(_v)
+                    else:
+                        _fv = 0.0
+                    if _fv > 0.5:
+                        _proj_vals[_w] = round(_fv, 2)
+
+                # FP PPG fallback if no Tank01 weekly files
+                if not _proj_vals:
+                    _fp_path = os.path.join("cache", f"fp_projections_{_upcoming}_ppr.json")
+                    try:
+                        with open(_fp_path) as _fp_f:
+                            _fp_data = json.load(_fp_f)
+                        _fp_e = _fp_data.get(player_id)
+                        if _fp_e:
+                            _ppg = float(_fp_e.get("ppg") or 0)
+                            if _ppg > 0:
+                                for _w in range(1, 19):
+                                    _proj_vals[_w] = round(_ppg, 2)
+                    except FileNotFoundError:
+                        pass
+
+                if _proj_vals:
+                    _mv = list(_proj_vals.values())
+                    _med = _med_fn(_mv) if _mv else 0
+                    _proj_logs = []
+                    for _w in range(1, 19):
+                        _pv = _proj_vals.get(_w, _med if _med > 0 else None)
+                        # Apply same 50% threshold as build_projections_by_week
+                        if _pv and _med > 0 and _pv < _med * 0.5:
+                            _pv = _med
+                        _proj_logs.append({
+                            "week": _w,
+                            "date": f"Wk {_w}",
+                            "opponent": "—",
+                            "fantasy_pts": round(_pv, 2) if _pv else None,
+                            "stats": None,
+                            "is_projection": True,
+                        })
+                    if any(g["fantasy_pts"] for g in _proj_logs):
+                        game_logs_by_year[_upcoming] = _proj_logs
+            except Exception as _proj_err:
+                logger.debug(f"[game_logs] upcoming season projection failed: {_proj_err}")
+
         return jsonify({"game_logs_by_year": game_logs_by_year})
     except Exception as e:
         logger.exception("[api_player_game_logs] error")

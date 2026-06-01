@@ -7394,6 +7394,7 @@ function _buildStatsHTML(game_logs_by_year) {
     years.forEach((year, index) => {
       const gameLogs = game_logs_by_year[year];
       const isFirstYear = index === 0;
+      const isProjection = gameLogs.length > 0 && gameLogs[0].is_projection === true;
 
       // Calculate season totals
       let totalFantasyPts = 0;
@@ -7405,6 +7406,10 @@ function _buildStatsHTML(game_logs_by_year) {
 
       gameLogs.forEach(game => {
         if (game.is_bye) return;
+        if (game.is_projection) {
+          if (game.fantasy_pts != null) { totalFantasyPts += game.fantasy_pts; gamesPlayed++; }
+          return;
+        }
         const s = game.stats || {};
         if (game.fantasy_pts != null) gamesPlayed++;
         totalFantasyPts += game.fantasy_pts || 0;
@@ -7421,13 +7426,14 @@ function _buildStatsHTML(game_logs_by_year) {
         totalFumLost += s.fum_lost || 0;
       });
 
-      // Build season summary for header
-      const seasonSummaryParts = [];
-      seasonSummaryParts.push(`${fmtPts(totalFantasyPts)} pts`);
-      if (totalPassYd > 0) seasonSummaryParts.push(`${Math.round(totalPassYd)} pass yds`);
-      if (totalRushYd > 0) seasonSummaryParts.push(`${Math.round(totalRushYd)} rush yds`);
-      if (totalRec > 0) seasonSummaryParts.push(`${totalRec} rec`);
-      const seasonSummary = seasonSummaryParts.join(' • ');
+      // Build right-side header summary
+      const ppg = gamesPlayed > 0 ? (totalFantasyPts / gamesPlayed).toFixed(1) : '0.0';
+      let summaryHTML;
+      if (isProjection) {
+        summaryHTML = `<span class="game-log-year-summary">~${ppg} ppg &nbsp;<span style="opacity:0.65;">(projected)</span></span>`;
+      } else {
+        summaryHTML = `<span class="game-log-year-summary">${gamesPlayed}g &nbsp;·&nbsp; ${ppg} ppg &nbsp;·&nbsp; ${fmtPts(totalFantasyPts)} pts</span>`;
+      }
 
       statsHTML += `
         <div class="game-log-year-section">
@@ -7435,15 +7441,17 @@ function _buildStatsHTML(game_logs_by_year) {
             <div class="game-log-year-header-main">
               <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
               <span class="game-log-year-title">${year} Season</span>
+              ${isProjection ? '<span class="game-log-proj-badge">Projected</span>' : ''}
             </div>
+            ${summaryHTML}
           </div>
           <div class="game-log-year-content ${isFirstYear ? 'expanded' : ''}" id="year-${year}">
             <table class="game-log-table">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th>${isProjection ? 'Week' : 'Date'}</th>
                   <th>Opp</th>
-                  <th>Pts</th>
+                  <th class="${isProjection ? 'game-log-proj-th' : ''}">Pts${isProjection ? ' *' : ''}</th>
                   <th>Pass Yd</th>
                   <th>Pass TD</th>
                   <th>INT</th>
@@ -7460,6 +7468,20 @@ function _buildStatsHTML(game_logs_by_year) {
       `;
 
       gameLogs.forEach(game => {
+        // Projection row
+        if (game.is_projection) {
+          const projVal = game.fantasy_pts != null ? `~${fmtPts(game.fantasy_pts)}` : '—';
+          statsHTML += `
+            <tr class="game-log-table-row game-log-proj-row">
+              <td>${game.date || `Wk ${game.week}`}</td>
+              <td class="game-log-table-opp">—</td>
+              <td class="game-log-table-pts game-log-proj-pts">${projVal}</td>
+              <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
+            </tr>
+          `;
+          return;
+        }
+
         const stats = game.stats || null;
 
         // Format date: 20240908 -> 9/8
@@ -7505,8 +7527,24 @@ function _buildStatsHTML(game_logs_by_year) {
 
       const valTotal = (v) => v != null && v > 0 ? v : '-';
 
-      // Add season totals row in table format (inside the table)
-      statsHTML += `
+      // Tfoot: projected season shows PPG; completed shows full totals
+      if (isProjection) {
+        statsHTML += `
+              </tbody>
+              <tfoot>
+                <tr class="game-log-table-total">
+                  <td><strong>Season</strong></td>
+                  <td><strong>${gamesPlayed} wks</strong></td>
+                  <td class="game-log-table-pts game-log-proj-pts"><strong>~${ppg} ppg</strong></td>
+                  <td colspan="10" style="text-align:left;font-size:11px;color:var(--text-muted);padding-left:8px;">* Projected — actuals update when games are played</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+        `;
+      } else {
+        statsHTML += `
               </tbody>
               <tfoot>
                 <tr class="game-log-table-total">
@@ -7528,7 +7566,8 @@ function _buildStatsHTML(game_logs_by_year) {
             </table>
           </div>
         </div>
-      `;
+        `;
+      }
     });
 
     statsHTML += `</div>`;

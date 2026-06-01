@@ -12712,6 +12712,30 @@ img, svg, canvas {
   background-color: #f9fafb;
 }
 
+.game-log-proj-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #6366f1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.game-log-proj-th {
+  color: #6366f1 !important;
+}
+
+.game-log-proj-row {
+  background: rgba(99, 102, 241, 0.03);
+}
+
+.game-log-proj-pts {
+  color: #6366f1 !important;
+  font-style: italic;
+}
+
 .game-log-bye {
   opacity: 0.45;
   background-color: #f9fafb;
