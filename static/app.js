@@ -302,7 +302,7 @@ function showLoginGate(target, opts) {
       var dp = document.createElement('a');
       dp.id = 'discord-pill';
       dp.className = 'fp-pill';
-      dp.href = 'https://discord.gg/85efgtK2s';
+      dp.href = 'https://discord.gg/7aZrs7qfur';
       dp.target = '_blank';
       dp.rel = 'noopener noreferrer';
       dp.setAttribute('aria-label', 'Join our Discord');
