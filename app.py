@@ -5216,8 +5216,6 @@ def _render_weekly_highlights(
     if not rows:
         return ""
 
-    score_label = " (Proj)" if is_projected else ""
-
     # ------------------------------------------------------------------
     # Highest / Lowest Score Cards
     # ------------------------------------------------------------------
@@ -5228,7 +5226,7 @@ def _render_weekly_highlights(
 
     highest_card = f"""
     <div class="card small">
-      <div class="card-header"><h3>Highest Score{score_label}</h3></div>
+      <div class="card-header"><h3>Highest Score</h3></div>
       <div class="card-body">
         <div class="highlight-game-card white">
           <div class="hg-row">
@@ -5244,7 +5242,7 @@ def _render_weekly_highlights(
 
     lowest_card = f"""
     <div class="card small">
-      <div class="card-header"><h3>Lowest Score{score_label}</h3></div>
+      <div class="card-header"><h3>Lowest Score</h3></div>
       <div class="card-body">
         <div class="highlight-game-card white">
           <div class="hg-row">
@@ -5291,9 +5289,7 @@ def _render_weekly_highlights(
 
         closest_card = f"""
         <div class="card small">
-          <div class="card-header">
-            <h3>Closest Game{score_label}</h3><h3>{closest['margin']:.1f} pts</h3>
-          </div>
+          <div class="card-header"><h3>Closest Game</h3></div>
           <div class="card-body">
             <div class="highlight-game-card white">
               <div class="hg-row">
@@ -5304,6 +5300,7 @@ def _render_weekly_highlights(
                 <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{closest['loser_rid']}" data-team-name="{closest['loser']}">{closest['loser']}</span>
                 <span class="hg-score">{closest['loserPts']:.1f}</span>
               </div>
+              <div class="hg-margin">{closest['margin']:.1f} pt margin</div>
             </div>
           </div>
         </div>
@@ -5311,9 +5308,7 @@ def _render_weekly_highlights(
 
         blowout_card = f"""
         <div class="card small">
-          <div class="card-header">
-            <h3>Biggest Blowout{score_label}</h3><h3>{blowout['margin']:.1f} pts</h3>
-          </div>
+          <div class="card-header"><h3>Biggest Blowout</h3></div>
           <div class="card-body">
             <div class="highlight-game-card white">
               <div class="hg-row">
@@ -5324,6 +5319,7 @@ def _render_weekly_highlights(
                 <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{blowout['loser_rid']}" data-team-name="{blowout['loser']}">{blowout['loser']}</span>
                 <span class="hg-score">{blowout['loserPts']:.1f}</span>
               </div>
+              <div class="hg-margin">{blowout['margin']:.1f} pt margin</div>
             </div>
           </div>
         </div>
