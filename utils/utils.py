@@ -682,23 +682,43 @@ def streak_class(row) -> str:
     return ""
 
 
+def _scoring_params_for_tank01() -> tuple[dict, float]:
+    """
+    Build Tank01 scoring params from the live league settings.
+    Returns (params_dict, bonus_rec_te) where bonus_rec_te is the TEP bonus per TE reception.
+    Sleeper raw keys → Tank01 parameter names.
+    """
+    try:
+        from dashboard_services.api import SCORING_SETTINGS
+        raw = SCORING_SETTINGS or {}
+    except Exception:
+        raw = {}
+
+    def _get(sleeper_key: str, default: float) -> float:
+        return float(raw.get(sleeper_key, default))
+
+    params = {
+        "passYards":         _get("pass_yd",             0.04),
+        "passTD":            _get("pass_td",             4),
+        "passInterceptions": _get("pass_int",            -2),
+        "pointsPerReception":_get("rec",                 1),
+        "receivingYards":    _get("rec_yd",              0.1),
+        "receivingTD":       _get("rec_td",              6),
+        "rushYards":         _get("rush_yd",             0.1),
+        "rushTD":            _get("rush_td",             6),
+        "fumbles":           _get("fum_lost",            -2),
+        "twoPointConversions":_get("bonus_2pt_convert",  2),
+    }
+    bonus_rec_te = _get("bonus_rec_te", 0.0)
+    return params, bonus_rec_te
+
+
 def fetch_week_from_tank01(season: int, week: int) -> dict[str, float]:
     """
     Fetches Tank01 projections for all players for a given week/season,
     then returns a dict { sleeper_id: projected_points }.
     """
-    scoring_params = {
-        "twoPointConversions": 2,
-        "passYards": 0.04,
-        "passTD": 4,
-        "passInterceptions": -2,
-        "pointsPerReception": 1,
-        "rushYards": 0.1,
-        "rushTD": 6,
-        "fumbles": -2,
-        "receivingYards": 0.1,
-        "receivingTD": 6,
-    }
+    scoring_params, bonus_rec_te = _scoring_params_for_tank01()
     url = f"https://{TANK01_API_HOST}/getNFLProjections"
     try:
         from dashboard_services.api import get_nfl_state
@@ -738,7 +758,7 @@ def fetch_week_from_tank01(season: int, week: int) -> dict[str, float]:
         print("⚠️ No cached players index found. Run get_players_index_cached() first.")
         return {}
 
-    proj_map = map_weekly_projections_to_sleeper(body, players_idx)
+    proj_map = map_weekly_projections_to_sleeper(body, players_idx, bonus_rec_te=bonus_rec_te)
 
     print(f"✅ Retrieved {len(proj_map)} player projections for Week {week}")
     return proj_map
@@ -747,12 +767,14 @@ def fetch_week_from_tank01(season: int, week: int) -> dict[str, float]:
 def map_weekly_projections_to_sleeper(
         weekly_rows: List[dict],
         idx_sleeper: Dict[str, dict],
+        bonus_rec_te: float = 0.0,
 ) -> Dict[str, float]:
     """
     Convert Tank01 rows -> { sleeper_id: projected_points }.
 
     Tank01 returns body as a list of groups (teams, then one or more player groups).
     We iterate all groups and handle each row by whether it has teamID or playerID.
+    bonus_rec_te: extra points per TE reception (TEP bonus from league settings).
     """
     out: Dict[str, float] = {}
 
@@ -787,12 +809,23 @@ def map_weekly_projections_to_sleeper(
                 proj = proj_raw.get("PPR") if isinstance(proj_raw, dict) else proj_raw
                 if proj is None:
                     continue
+
                 pid = next(
                     (k for k, v in players_index.items() if v.get("tankId") == str(tank_id)),
                     None,
                 )
-                if pid:
-                    out[str(pid)] = float(proj)
+                if not pid:
+                    continue
+
+                pts = float(proj)
+
+                # Apply TEP bonus: Tank01 has no position-specific PPR, so add it manually
+                if bonus_rec_te and players_index.get(pid, {}).get("pos") == "TE":
+                    rec_stats = row.get("receiving") or row.get("stats") or {}
+                    proj_rec = float(rec_stats.get("rec") or rec_stats.get("receptions") or 0)
+                    pts += proj_rec * bonus_rec_te
+
+                out[str(pid)] = pts
 
     return out
 
