@@ -381,13 +381,14 @@ def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Op
     Load projections cache for (season, week), fetching if missing.
     Returns an empty dict (never None/raises) so callers can safely .get() on the result.
     """
-    proj_path = Path(path_week_proj(season, w))
+    proj_path = Path(get_or_refresh_projection_path(season, w))
     if not proj_path.exists() or force_refresh:
         try:
             get_week_projections_cached(season, w, fetch_week_from_tank01, force_refresh=force_refresh)
         except Exception as e:
             print(f"[projections] fetch failed for {season} w{w}: {e}")
 
+    proj_path = Path(get_or_refresh_projection_path(season, w))
     if not proj_path.exists():
         return {}
 
@@ -401,7 +402,14 @@ def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Op
 
 
 def save_week_projections(season: int, week: int, proj_map: Dict[str, float]) -> None:
-    write_json(path_week_proj(season, week), proj_map)
+    today = date.today().isoformat()
+    # Remove any stale dated files before saving today's
+    for old in glob.glob(os.path.join(CACHE_DIR, f"projections/projections_s{season}_w{week}_d*.json")):
+        try:
+            os.remove(old)
+        except OSError:
+            pass
+    write_json(os.path.join(CACHE_DIR, f"projections/projections_s{season}_w{week}_d{today}.json"), proj_map)
 
 
 def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
