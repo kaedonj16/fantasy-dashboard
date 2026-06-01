@@ -5636,18 +5636,27 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
         if projections:
             any_projections = True
 
-    # Build a fallback map: for each player use their most-populated week value
-    # so players absent from specific weeks (e.g. Tank01 gaps) still get a projection.
-    fallback: dict = {}
+    # Build a fallback map using the median of all available week values per player.
+    # This prevents a stale near-zero week-1 entry (e.g. backup listed as starter)
+    # from poisoning projections for weeks where Tank01 has no data.
+    from statistics import median
+    all_vals: dict = {}
     for w in range(1, weeks + 1):
         for pid, val in raw[w].items():
-            if val and pid not in fallback:
-                fallback[pid] = val
+            if val and val > 0.5:  # skip near-zero placeholders
+                all_vals.setdefault(pid, []).append(val)
+    fallback = {pid: median(vals) for pid, vals in all_vals.items()}
 
     bundles = {}
     for w in range(1, weeks + 1):
         week_proj = dict(fallback)
-        week_proj.update(raw[w])
+        # Override with real data, but skip suspiciously low values (<10% of fallback)
+        # so stale backup-listed entries don't override the median
+        for pid, val in raw[w].items():
+            fb = fallback.get(pid, 0)
+            if fb > 0 and val < fb * 0.1:
+                continue  # skip — looks like Tank01 had wrong starter
+            week_proj[pid] = val
         bundles[w] = {"projections": week_proj}
 
     if not any_projections:
