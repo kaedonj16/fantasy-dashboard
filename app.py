@@ -17458,18 +17458,14 @@ def api_player_details(player_id: str):
 
             # Load schedule data for ALL weeks to show all games
             schedule_by_week = {}
-            schedule_pattern = os.path.join("cache", "schedule", f"schedule_s{season_year}_w*_d*.json")
-            for schedule_file in glob.glob(schedule_pattern):
+            for schedule_file in glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*.json")):
                 try:
-                    # Extract week from filename: schedule_s2024_w1_d2024-09-05.json
                     filename = os.path.basename(schedule_file)
-                    week_num = int(filename.split('_w')[1].split('_')[0])
-
+                    week_num = int(filename.split('_w')[1].split('_')[0].split('.')[0])
                     with open(schedule_file, 'r') as f:
                         games = json.load(f)
-                        # Ensure games is a list
-                        if isinstance(games, list) and week_num not in schedule_by_week:
-                            schedule_by_week[week_num] = games
+                    if isinstance(games, list) and week_num not in schedule_by_week:
+                        schedule_by_week[week_num] = games
                 except Exception as e:
                     logger.warning("[api_player_details] Error loading schedule %s: %s", schedule_file, e)
                     continue
@@ -17951,8 +17947,6 @@ def api_player_game_logs(player_id: str):
             game_logs = []
 
             schedule_by_week: dict = {}
-            # Match both dated (schedule_s2025_w1_d2026-03-22.json)
-            # and undated (schedule_s2026_w1.json) filename formats.
             for schedule_file in glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*.json")):
                 try:
                     fn = os.path.basename(schedule_file)

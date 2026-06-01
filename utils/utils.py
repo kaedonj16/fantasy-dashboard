@@ -496,66 +496,12 @@ def get_week_projections_cached(
 
 
 def get_or_refresh_projection_path(season: int, week: int) -> str:
-    today = date.today()
-    pattern = os.path.join(
-        CACHE_DIR,
-        f"projections/projections_s{season}_w{week}_d*.json",
-    )
-    matches = glob.glob(pattern)
-
-    # If a prior file exists, check its date
-    if matches:
-        # Assume only one, but handle more than one just in case
-        for file in matches:
-            try:
-                # extract the date part between `_d` and `.json`
-                basename = os.path.basename(file)
-                date_str = basename.split("_d")[1].replace(".json", "")
-                file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-
-                if file_date == today:
-                    # Good - today's data exists
-                    return file
-                else:
-                    # Old - remove it
-                    os.remove(file)
-            except Exception:
-                # If parsing fails, just delete it
-                os.remove(file)
-
-    # If nothing exists or old file was removed, return today's fresh filename
     return path_week_proj(season, week)
 
 
 def get_or_refresh_schedule_path(season: int, week: int) -> Optional[str]:
-    today = date.today()
-    pattern = os.path.join(
-        CACHE_DIR,
-        f"schedule/schedule_s{season}_w{week}_d*.json",
-    )
-    matches = glob.glob(pattern)
-
-    if matches:
-        for file in matches:
-            try:
-                basename = os.path.basename(file)
-                # schedule_s2024_w3_d2025-11-19.json
-                date_part = basename.split("_d", 1)[1].replace(".json", "")
-                file_date = datetime.strptime(date_part, "%Y-%m-%d").date()
-
-                if file_date == today:
-                    # keep today's file
-                    return file
-
-                # delete files from previous days
-                os.remove(file)
-
-            except Exception:
-                # if parsing fails, delete it
-                os.remove(file)
-
-    # no valid file for today → caller will fetch & save
-    return None
+    path = path_week_schedule(season, week)
+    return path if os.path.exists(path) else None
 
 
 def get_week_schedule_cached(
