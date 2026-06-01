@@ -16178,6 +16178,15 @@ tr.team-clickable {
 
 #cache-freshness.cf-stale { color: #f59e0b; border-color: #f59e0b55; }
 
+.fp-discord-icon {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+#discord-pill:hover .fp-discord-icon { opacity: 1; }
+
 /* ── Disabled button state ───────────────────────────────────────────────── */
 button:disabled {
   opacity: 0.4;

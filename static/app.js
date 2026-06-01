@@ -307,7 +307,7 @@ function showLoginGate(target, opts) {
       dp.rel = 'noopener noreferrer';
       dp.setAttribute('aria-label', 'Join our Discord');
       dp.innerHTML =
-        '<span class="fp-pill-icon"><i class="fab fa-discord"></i></span>' +
+        '<span class="fp-pill-icon"><img src="/static/images/discord-brands-solid.png" alt="Discord" class="fp-discord-icon"></span>' +
         '<span class="fp-pill-label">Join Discord</span>';
       group.appendChild(dp);
     }
