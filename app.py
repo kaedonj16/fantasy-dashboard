@@ -3208,6 +3208,11 @@ def build_dashboard_body(ctx: dict) -> str:
         last_final_week = 0  # no finalized weeks yet → show projections for current week
 
     _fpts_against_dash = _compute_fpts_against(season)
+    _dash_vid = str(viewer_roster_id or "")
+    _dash_matchups = sorted(
+        matchups_by_week.get(current_week, []),
+        key=lambda m: 0 if _dash_vid and _dash_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
+    )
     slides = [
         render_matchup_slide(
             season,
@@ -3221,7 +3226,7 @@ def build_dashboard_body(ctx: dict) -> str:
             team_game_lookup=team_game_lookup,
             fpts_against=_fpts_against_dash,
         )
-        for m in matchups_by_week.get(current_week, [])
+        for m in _dash_matchups
     ]
     slides_by_week = {current_week: "".join(slides)}
     matchup_html = render_matchup_carousel_weeks(
@@ -4661,7 +4666,11 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         # Generate slides for Week 1 (or current week)
         week_to_show = current_week if current_week > 0 else 1
-        matchups_for_week = matchups_by_week.get(week_to_show, [])
+        _os_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+        matchups_for_week = sorted(
+            matchups_by_week.get(week_to_show, []),
+            key=lambda m: 0 if _os_vid and _os_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
+        )
 
         if matchups_for_week:
             _fpts_against_os = _compute_fpts_against(season)
@@ -5338,7 +5347,11 @@ def build_weekly_hub_body(ctx: dict) -> str:
     else:
         default_week = clamp_week(current_week or 1)
 
-    default_matchups = matchups_by_week.get(default_week, []) or []
+    _hub_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    default_matchups = sorted(
+        matchups_by_week.get(default_week, []) or [],
+        key=lambda m: 0 if _hub_vid and _hub_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
+    )
     _fpts_against_weekly = _compute_fpts_against(season)
     slides = [
         render_matchup_slide(
@@ -14962,7 +14975,11 @@ def api_weekly_week():
         matchups_by_week=matchups_by_week,
     )
 
-    matchups = matchups_by_week.get(week, []) or []
+    _api_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    matchups = sorted(
+        matchups_by_week.get(week, []) or [],
+        key=lambda m: 0 if _api_vid and _api_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
+    )
     status_by_pid = (statuses.get(week) or {}).get("statuses", {}) or {}
     _fpts_against_api = _compute_fpts_against(season)
 
