@@ -2670,7 +2670,7 @@ def ensure_weekly_bits(ctx: dict) -> None:
 
     if ctx.get("offseason_mode"):
         # Load pre-season projections for all 18 weeks
-        ctx["proj_by_week"] = build_projections_by_week(int(ctx["season"]), 18)
+        ctx["proj_by_week"] = build_projections_by_week(int(ctx["season"]), 18, ctx.get("raw_scoring_settings"))
         ctx["statuses"] = {}
         ctx["proj_by_roster"] = {}
         if "matchups_by_week" not in ctx:
@@ -2720,7 +2720,7 @@ def ensure_weekly_bits(ctx: dict) -> None:
     roster_counts = count_roster_positions(get_roster_positions())
     has_idp = any(k in roster_counts for k in ["DL", "LB", "DB", "IDP_FLEX"])
 
-    proj_by_week = build_projections_by_week(viewed_season, weeks)
+    proj_by_week = build_projections_by_week(viewed_season, weeks, ctx.get("raw_scoring_settings"))
 
     if has_idp:
         statuses = build_status_by_week(
@@ -2922,7 +2922,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         clear_weekly_cache_for_league(resolved_league_id)
 
         if offseason_mode:
-            ctx["proj_by_week"] = build_projections_by_week(viewed_season, 18)
+            ctx["proj_by_week"] = build_projections_by_week(viewed_season, 18, ctx.get("raw_scoring_settings"))
             ctx["statuses"] = {}
             ctx["matchups_by_week"] = build_matchups_by_week(
                 resolved_league_id,
@@ -2957,16 +2957,20 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                     logger.info(f"[refresh] live week stats refresh skipped: {e}")
 
                 try:
+                    _rss = ctx.get("raw_scoring_settings") or {}
+                    from utils.utils import proj_scoring_key
                     get_week_projections_cached(
                         current_season,
                         current_week,
                         fetch_week_from_tank01,
-                        True,
+                        scoring_key=proj_scoring_key(_rss),
+                        raw_scoring_settings=_rss,
+                        force_refresh=True,
                     )
                 except Exception as e:
                     logger.info(f"[refresh] live projections refresh skipped: {e}")
 
-            ctx["proj_by_week"] = build_projections_by_week(viewed_season, weeks)
+            ctx["proj_by_week"] = build_projections_by_week(viewed_season, weeks, ctx.get("raw_scoring_settings"))
 
             if has_idp:
                 ctx["statuses"] = build_status_by_week(
@@ -5620,11 +5624,14 @@ function wkActivateTab(tab) {{
 """
 
 
-def build_projections_by_week(season: int, weeks: int):
+def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dict = None):
+    from utils.utils import proj_scoring_key
+    sk = proj_scoring_key(raw_scoring_settings or {})
+
     raw = {}
     any_projections = False
     for w in range(1, weeks + 1):
-        projections = load_week_projection(season, w)
+        projections = load_week_projection(season, w, scoring_key=sk)
         raw[w] = projections or {}
         if projections:
             any_projections = True
@@ -5639,12 +5646,12 @@ def build_projections_by_week(season: int, weeks: int):
 
     bundles = {}
     for w in range(1, weeks + 1):
-        week_proj = dict(fallback)   # start with baseline
-        week_proj.update(raw[w])     # override with real data where available
+        week_proj = dict(fallback)
+        week_proj.update(raw[w])
         bundles[w] = {"projections": week_proj}
 
     if not any_projections:
-        logger.info(f"[projections] No projection data available for season {season}")
+        logger.info(f"[projections] No projection data available for season {season} (scoring: {sk})")
     bundles["_available"] = any_projections
     return bundles
 

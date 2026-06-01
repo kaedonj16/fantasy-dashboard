@@ -181,8 +181,22 @@ def path_idp_index() -> str:
     return os.path.join(CACHE_DIR, "idp_players_index.json")
 
 
-def path_week_proj(season: int, week: int) -> str:
-    return os.path.join(CACHE_DIR, f"projections/projections_s{season}_w{week}.json")
+def proj_scoring_key(raw_sleeper_settings: dict) -> str:
+    """
+    Short human-readable key for a scoring format, used in projection filenames.
+    Derived from the Sleeper raw scoring settings so different league types
+    (PPR, half-PPR, TEP, standard) each get their own cached projection files.
+    """
+    s = raw_sleeper_settings or {}
+    rec     = float(s.get("rec", 1.0))
+    te_bon  = float(s.get("bonus_rec_te", 0.0))
+    # Encode as e.g. "ppr1.0_te0.5" or "ppr0.5_te0.0"
+    return f"ppr{rec:g}_te{te_bon:g}"
+
+
+def path_week_proj(season: int, week: int, scoring_key: str = "") -> str:
+    suffix = f"_{scoring_key}" if scoring_key else ""
+    return os.path.join(CACHE_DIR, f"projections/projections_s{season}_w{week}{suffix}.json")
 
 
 def path_week_stats(season: int, week: int) -> str:
@@ -376,15 +390,15 @@ def load_week_schedule(season: int, w: int):
     return schedule
 
 
-def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Optional[Dict]:
+def load_week_projection(season: int, w: int, scoring_key: str = "", force_refresh: bool = False) -> Optional[Dict]:
     """
-    Load projections cache for (season, week), fetching if missing.
+    Load projections cache for (season, week, scoring_key), fetching if missing.
     Returns an empty dict (never None/raises) so callers can safely .get() on the result.
     """
-    proj_path = Path(path_week_proj(season, w))
+    proj_path = Path(path_week_proj(season, w, scoring_key))
     if not proj_path.exists() or force_refresh:
         try:
-            get_week_projections_cached(season, w, fetch_week_from_tank01, force_refresh=force_refresh)
+            get_week_projections_cached(season, w, fetch_week_from_tank01, scoring_key=scoring_key, force_refresh=force_refresh)
         except Exception as e:
             print(f"[projections] fetch failed for {season} w{w}: {e}")
 
@@ -400,8 +414,8 @@ def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Op
         return {}
 
 
-def save_week_projections(season: int, week: int, proj_map: Dict[str, float]) -> None:
-    write_json(path_week_proj(season, week), proj_map)
+def save_week_projections(season: int, week: int, proj_map: Dict[str, float], scoring_key: str = "") -> None:
+    write_json(path_week_proj(season, week, scoring_key), proj_map)
 
 
 def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
@@ -481,19 +495,21 @@ def get_week_projections_cached(
         season: int,
         week: int,
         fetch_fn: Callable[[int, int], Dict[str, float]],
+        scoring_key: str = "",
+        raw_scoring_settings: dict = None,
         force_refresh: bool = False,
 ) -> Dict[str, float]:
     """
     fetch_fn should call Tank01 /getNFLProjections and return:
       { sleeper_id: projected_points, ... }
     """
-    cache_path = path_week_proj(season, week)
+    cache_path = path_week_proj(season, week, scoring_key)
 
     if os.path.exists(cache_path) and not force_refresh:
-        return load_week_projection(season, week) or {}
+        return load_week_projection(season, week, scoring_key) or {}
 
-    data = fetch_fn(season, week)
-    save_week_projections(season, week, proj_map=data)
+    data = fetch_fn(season, week, raw_scoring_settings)
+    save_week_projections(season, week, proj_map=data, scoring_key=scoring_key)
     return data
 
 
@@ -682,17 +698,21 @@ def streak_class(row) -> str:
     return ""
 
 
-def _scoring_params_for_tank01() -> tuple[dict, float]:
+def _scoring_params_for_tank01(raw_settings: dict = None) -> tuple[dict, float]:
     """
-    Build Tank01 scoring params from the live league settings.
+    Build Tank01 scoring params from raw Sleeper scoring settings.
+    Falls back to the globally loaded league settings if none provided.
     Returns (params_dict, bonus_rec_te) where bonus_rec_te is the TEP bonus per TE reception.
     Sleeper raw keys → Tank01 parameter names.
     """
-    try:
-        from dashboard_services.api import SCORING_SETTINGS
-        raw = SCORING_SETTINGS or {}
-    except Exception:
-        raw = {}
+    if raw_settings is not None:
+        raw = raw_settings
+    else:
+        try:
+            from dashboard_services.api import SCORING_SETTINGS
+            raw = SCORING_SETTINGS or {}
+        except Exception:
+            raw = {}
 
     def _get(sleeper_key: str, default: float) -> float:
         return float(raw.get(sleeper_key, default))
@@ -713,12 +733,12 @@ def _scoring_params_for_tank01() -> tuple[dict, float]:
     return params, bonus_rec_te
 
 
-def fetch_week_from_tank01(season: int, week: int) -> dict[str, float]:
+def fetch_week_from_tank01(season: int, week: int, raw_scoring_settings: dict = None) -> dict[str, float]:
     """
     Fetches Tank01 projections for all players for a given week/season,
     then returns a dict { sleeper_id: projected_points }.
     """
-    scoring_params, bonus_rec_te = _scoring_params_for_tank01()
+    scoring_params, bonus_rec_te = _scoring_params_for_tank01(raw_scoring_settings)
     url = f"https://{TANK01_API_HOST}/getNFLProjections"
     try:
         from dashboard_services.api import get_nfl_state
