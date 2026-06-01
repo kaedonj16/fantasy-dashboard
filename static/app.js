@@ -7540,7 +7540,7 @@ function _buildStatsHTML(game_logs_by_year) {
         statsHTML += `
               </tbody>
               <tfoot>
-                <tr class="game-log-table-total">
+                <tr class="game-log-table-total game-log-proj-row">
                   <td><strong>Total</strong></td>
                   <td><strong>${gamesPlayed}G</strong></td>
                   <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(totalFantasyPts)}</strong></td>
