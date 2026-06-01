@@ -37,6 +37,11 @@ class AIUnavailableError(Exception):
     """Raised when the OpenAI API is unreachable or returns a server error."""
 
 
+def clean_ai_text(text: str) -> str:
+    """Replace em dashes with hyphens so they don't appear in rendered output."""
+    return text.replace("—", " - ")
+
+
 def generate_text(system_prompt: str, user_prompt: str, model: str = "gpt-5-mini") -> str:
     client = get_ai_client()
     last_exc: Exception | None = None
@@ -52,7 +57,7 @@ def generate_text(system_prompt: str, user_prompt: str, model: str = "gpt-5-mini
                     {"role": "user", "content": user_prompt},
                 ],
             )
-            return resp.output_text.strip()
+            return clean_ai_text(resp.output_text.strip())
 
         except RateLimitError as exc:
             last_exc = exc

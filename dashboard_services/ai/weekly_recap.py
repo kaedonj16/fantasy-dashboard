@@ -10,6 +10,7 @@ from dashboard_services.ai.cache import AI_CACHE_DIR, save_cached_ai_text
 from dashboard_services.ai.client import (
     AIRateLimitError,
     AIUnavailableError,
+    clean_ai_text,
     get_ai_client,
 )
 from dashboard_services.ai.renderer import ai_available
@@ -396,7 +397,7 @@ Use the h2h and season_weeks data where it adds something real to the story — 
             }
         },
     )
-    return json.loads(resp.output_text.strip())
+    return json.loads(clean_ai_text(resp.output_text.strip()))
 
 
 def _render_recap_html(result: dict) -> str:

@@ -1,7 +1,7 @@
 import json
 import os
 
-from dashboard_services.ai.client import get_ai_client
+from dashboard_services.ai.client import clean_ai_text, get_ai_client
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 
@@ -313,7 +313,7 @@ Trade context:
         },
     )
 
-    raw = resp.output_text.strip()
+    raw = clean_ai_text(resp.output_text.strip())
     data = json.loads(raw)
 
     if not isinstance(data, dict):
@@ -391,7 +391,7 @@ Rankings context:
         },
     )
 
-    raw = resp.output_text.strip()
+    raw = clean_ai_text(resp.output_text.strip())
     data = json.loads(raw)
 
     if not isinstance(data, dict):
@@ -491,7 +491,7 @@ Trade suggestions context:
         },
     )
 
-    raw = resp.output_text.strip()
+    raw = clean_ai_text(resp.output_text.strip())
     data = json.loads(raw)
 
     if not isinstance(data, dict):
@@ -559,7 +559,7 @@ def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
         },
     )
 
-    raw = resp.output_text.strip()
+    raw = clean_ai_text(resp.output_text.strip())
     data = json.loads(raw)
 
     if not isinstance(data, dict):
