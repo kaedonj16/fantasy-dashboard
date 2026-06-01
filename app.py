@@ -20498,13 +20498,13 @@ def api_roster_intel():
         return _api_err("Request failed", e)
 
     try:
-        return _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp)
+        return _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season=season)
     except Exception as e:
         logger.exception("[api-roster-intel] unhandled error: %s", e)
         return _api_err("Roster intel unavailable", e)
 
 
-def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp):
+def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: int = 0):
     rosters           = ctx.get("rosters") or []
     roster_map        = ctx.get("roster_map") or {}
     model_value_table = ctx.get("model_value_table") or []
@@ -20532,26 +20532,11 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp):
 
     # Bulk-fetch breakout scores + years_exp for all rostered players
     all_rostered = [str(pid) for r in rosters for pid in (r.get("players") or [])]
-    breakout_scores: dict = {}
     years_exp_map: dict = {}
     from dashboard_services.db import get_conn
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT DISTINCT ON (player_id)
-                        player_id, breakout_opportunity_score
-                    FROM breakout_opportunity_scores
-                    WHERE player_id = ANY(%s)
-                    ORDER BY player_id, as_of_date DESC
-                    """,
-                    (all_rostered,),
-                )
-                for row in cur.fetchall():
-                    row = dict(row)
-                    if row.get("breakout_opportunity_score") is not None:
-                        breakout_scores[row["player_id"]] = float(row["breakout_opportunity_score"])
                 cur.execute(
                     "SELECT player_id, years_exp FROM player_values WHERE player_id = ANY(%s)",
                     (all_rostered,),
@@ -20563,22 +20548,30 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp):
     except Exception:
         pass
 
+    # Breakout candidates — use the SAME source as the Breakout Engine page so the
+    # "Breakout" signal here is consistent with what shows up there.
+    breakout_pids: set = set()
+    try:
+        from dashboard_services.breakout_api import get_breakout_candidates as _get_bo
+        _bo = _get_bo(season=season)
+        breakout_pids = {str(c["player_id"]) for c in (_bo.get("candidates") or [])}
+    except Exception:
+        pass
+
     POSITIONS = ["QB", "RB", "WR", "TE"]
     prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
     def _signal(pid: str, info: dict) -> str:
-        val              = info["value"]
-        age              = float(info["age"] or 0)
-        pos              = info["position"]
-        rank_chg         = info["pos_rank_change_7d"] or info["rank_change_7d"] or 0
-        bscore           = breakout_scores.get(pid, 0)
-        prime            = prime_max.get(pos, 28)
-        past_prime       = age > prime
-        yexp             = years_exp_map.get(pid)      # None if unknown
-        internal_pos_rk  = int(info.get("pos_rank") or 999)
-        fc_pos_rk        = int((fc_adp.get(pid) or {}).get("pos_rank") or 999)
-        # Positive = market (FC) thinks player is better than our model; sell into the hype.
-        # Negative = we value them more than the market does; hidden gem.
+        val             = info["value"]
+        age             = float(info["age"] or 0)
+        pos             = info["position"]
+        rank_chg        = info["pos_rank_change_7d"] or info["rank_change_7d"] or 0
+        prime           = prime_max.get(pos, 28)
+        past_prime      = age > prime
+        young           = age > 0 and age <= 24
+        internal_pos_rk = int(info.get("pos_rank") or 999)
+        fc_pos_rk       = int((fc_adp.get(pid) or {}).get("pos_rank") or 999)
+        # Positive = market (FC) overvalues vs our model; negative = we value more than market.
         mkt_gap = internal_pos_rk - fc_pos_rk
 
         # Release candidates
@@ -20590,57 +20583,66 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp):
         # Sell windows — aging players still holding value
         if past_prime and val >= 350:
             return "Sell High"
-        # Sell window — market significantly overvalues vs our model (sell into hype)
-        if mkt_gap >= 5 and val >= 250 and not past_prime:
+        # Market overvalues vs our model — sell into the hype.
+        # Exclude young ascending players (≤24) — market premium on youth is justified.
+        if mkt_gap >= 5 and val >= 250 and not past_prime and not young:
             return "Sell High"
-        # Sell window — young player with severe rank jump (≥10 pos spots in 7 days)
-        if not past_prime and val >= 450 and rank_chg >= 10:
+        # Severe 7-day rank jump for a prime player — sell into momentum
+        if not past_prime and not young and val >= 450 and rank_chg >= 10:
             return "Sell High"
 
-        # Elite young untouchable asset
+        # Elite untouchable asset
         if not past_prime and val >= 700:
             return "Core"
 
-        # Breakout candidate — stronger signal for rookies/sophomores
-        if not past_prime and bscore >= 55 and val >= 80:
-            if yexp is not None and yexp <= 1:
-                return "Breakout"      # true rookie/sophomore breakout
-            if bscore >= 62:
-                return "Breakout"      # high-confidence breakout for older players
+        # Breakout — only if the player appears on the actual Breakout Engine page
+        if not past_prime and pid in breakout_pids and val >= 80:
+            return "Breakout"
 
-        # Sleeper — our model values them significantly more than the dynasty market does
+        # Sleeper — our model values significantly more than the dynasty market
         if mkt_gap <= -5 and val >= 200 and not past_prime:
             return "Sleeper"
 
-        # Severe drop in young player (≥10 pos spots in 7 days) — consider selling
+        # Severe 7-day drop — consider selling before value erodes further
         if not past_prime and rank_chg <= -10 and val >= 175:
             return "Monitor"
 
         return "Hold"
 
-    # ── Compute per-position totals for ALL teams (for league rank) ────────────
-    pos_totals: dict = {}   # {rid: {pos: total_value}}
+    # ── Compute per-position strength for ALL teams using the same weighted
+    #    formula as the teams page cards so ranks match exactly.
+    slot_counts = count_roster_positions(get_roster_positions())
+    pos_vals: dict = {}   # {rid: {pos: [value, ...]}}
     for roster in rosters:
         rid = str(roster.get("roster_id"))
-        pos_totals[rid] = {pos: 0.0 for pos in POSITIONS}
+        pos_vals[rid] = {pos: [] for pos in POSITIONS}
         for pid in (roster.get("players") or []):
             pid = str(pid)
             info = values_by_id.get(pid)
             if not info or info["position"] not in POSITIONS:
                 continue
-            pos_totals[rid][info["position"]] += info["value"]
+            pos_vals[rid][info["position"]].append(info["value"])
+
+    pos_strength: dict = {}   # {rid: {pos: weighted_strength}}
+    for rid, pmap in pos_vals.items():
+        pos_strength[rid] = {
+            pos: _weighted_pos_strength(pmap[pos], pos, slot_counts)
+            for pos in POSITIONS
+        }
 
     num_teams = len(rosters)
 
-    # Compute league rank per position (1 = best)
+    # Rank teams per position by weighted strength (1 = best), matching teams page
     pos_ranks: dict = {}    # {rid: {pos: rank}}
     for pos in POSITIONS:
-        sorted_rids = sorted(pos_totals, key=lambda r: pos_totals[r][pos], reverse=True)
+        sorted_rids = sorted(pos_strength, key=lambda r: pos_strength[r][pos], reverse=True)
         for rank, rid in enumerate(sorted_rids, 1):
             pos_ranks.setdefault(rid, {})[pos] = rank
 
-    # ── Build response for the viewer's team (or all if unknown) ──────────────
-    target_rids = {viewer_rid_raw} if viewer_rid_raw else {str(r.get("roster_id")) for r in rosters}
+    # ── Build response for the viewer's team only ─────────────────────────────
+    if not viewer_rid_raw:
+        return jsonify({"teams": []})
+    target_rids = {viewer_rid_raw}
 
     results = []
     players_index = ctx.get("players_index") or {}
@@ -20684,7 +20686,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp):
             # Sort by value descending (starters first)
             pos_players.sort(key=lambda p: -(p["value"] or 0))
 
-            total_val   = pos_totals[rid][pos]
+            total_val   = sum(pos_vals.get(rid, {}).get(pos, []))
             avg_age     = round(sum(pos_ages) / len(pos_ages), 1) if pos_ages else None
             league_rank = pos_ranks.get(rid, {}).get(pos, 0)
             prime       = prime_max.get(pos, 28)
