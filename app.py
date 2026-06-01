@@ -20486,6 +20486,9 @@ def api_roster_intel():
     season          = int(body.get("season")           or datetime.now().year)
     league_type     = str(body.get("league_type")      or "1qb").strip().lower()
     viewer_rid_raw  = str(body.get("viewer_roster_id") or "").strip()
+    # Fall back to session if the template didn't inject a viewer roster id
+    if not viewer_rid_raw:
+        viewer_rid_raw = str(session.get("viewer_roster_id") or "").strip()
     # FC dynasty ADP — sent by browser because server IP is blocked by FC
     fc_adp: dict    = (body.get("fc_adp") or {}) if isinstance(body.get("fc_adp"), dict) else {}
 
@@ -20641,7 +20644,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
 
     # ── Build response for the viewer's team only ─────────────────────────────
     if not viewer_rid_raw:
-        return jsonify({"teams": []})
+        return jsonify({"error": "Sign in to a team to view your roster intel."}), 400
     target_rids = {viewer_rid_raw}
 
     results = []
