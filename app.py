@@ -8193,12 +8193,6 @@ def build_teams_body(ctx: dict) -> str:
                   '</div>';
 
                 pd.players.forEach(function(p) {{
-                  var chgHtml = '';
-                  if (p.rank_change_7d && Math.abs(p.rank_change_7d) >= 7) {{
-                    var sym = p.rank_change_7d > 0 ? '▲' : '▼';
-                    var col = p.rank_change_7d > 0 ? '#22c55e' : '#ef4444';
-                    chgHtml = '<span style="font-size:10px;color:' + col + ';margin-left:4px;">' + sym + Math.abs(p.rank_change_7d) + '</span>';
-                  }}
                   // Market context note: show FC ADP divergence if notable
                   var mktNote = '';
                   if (p.mkt_gap !== null && p.mkt_gap !== undefined && Math.abs(p.mkt_gap) >= 4 && p.fc_pos_rank) {{
@@ -8214,7 +8208,7 @@ def build_teams_body(ctx: dict) -> str:
                   var safeName = (p.name || '').replace(/"/g, '&quot;');
                   html += '<div class="ri-player-row">' +
                     '<div class="ri-player-info">' +
-                      '<span class="ri-player-name player-clickable" style="cursor:pointer;" data-player-id="' + (p.player_id || '') + '" data-player-name="' + safeName + '">' + p.name + chgHtml + mktNote + '</span>' +
+                      '<span class="ri-player-name player-clickable" style="cursor:pointer;" data-player-id="' + (p.player_id || '') + '" data-player-name="' + safeName + '">' + p.name + mktNote + '</span>' +
                       '<span class="ri-player-meta">' + metaParts.join(' · ') + '</span>' +
                     '</div>' +
                     '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
