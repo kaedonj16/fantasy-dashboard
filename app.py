@@ -16941,50 +16941,14 @@ def api_player_indicators():
             elif rookie_year and int(rookie_year) == current_season:
                 rookies.append(str(player_id))
 
-        # Get breakouts using multi-factor algorithm
-        # Falls back to value-based detection if advanced metrics not available
+        # Get breakouts from the same source as the Breakout Engine page
         breakouts = []
-
-        # Check if we're in offseason
-        season_type = str(nfl_state.get("season_type", "")).lower().strip()
-        is_offseason = season_type == "off"
-
-        if is_offseason:
-            # During offseason, use roster change-based breakout detection
-            try:
-                from data_building.offseason_opportunity import get_offseason_breakout_candidates
-
-                offseason_candidates = get_offseason_breakout_candidates(current_season, min_score=25)
-                breakouts = [str(c["player_id"]) for c in offseason_candidates]
-
-            except Exception as e:
-                logger.info(f"[player-indicators] Offseason breakout detection failed: {e}")
-
-        else:
-            # During season, use in-season breakout detection
-            try:
-                from data_building.advanced_metrics import detect_breakout_candidates
-
-                breakout_candidates = detect_breakout_candidates(lookback_days=14)
-                breakouts = [str(b["player_id"]) for b in breakout_candidates]
-
-            except Exception as e:
-                # Fallback to simple value-based detection (more restrictive threshold)
-                logger.info(f"[player-indicators] Advanced metrics unavailable, using fallback: {e}")
-                movers_data = get_top_movers(days=7, limit=1000) or {}
-
-                for player in movers_data.get("risers", []):
-                    delta = player.get("delta", 0)
-                    position = player.get("position", "")
-
-                    # More restrictive thresholds to reduce false positives
-                    # Higher threshold for TEs since they're more volatile
-                    threshold = 100 if position == "TE" else 75
-
-                    if delta >= threshold:
-                        pid = str(player.get("player_id", ""))
-                        if pid:
-                            breakouts.append(pid)
+        try:
+            from dashboard_services.breakout_api import get_breakout_candidates as _get_bo_indicators
+            _bo_result = _get_bo_indicators(season=current_season, min_score=25)
+            breakouts = [str(c["player_id"]) for c in (_bo_result.get("candidates") or [])]
+        except Exception as e:
+            logger.info(f"[player-indicators] Breakout candidates unavailable: {e}")
 
         # Get elites based on positional rank cutoffs (12-man PPR dynasty)
         elites = []
