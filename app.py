@@ -5661,8 +5661,8 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
         week_proj = dict(fallback)
         for pid, val in raw[w].items():
             fb = fallback.get(pid, 0)
-            if fb > 0 and val < fb * 0.1:
-                continue  # skip stale near-zero starter listing
+            if fb > 0 and val < fb * 0.5:
+                continue  # skip outlier-low weekly entry (stale role/backup listing)
             week_proj[pid] = val
         bundles[w] = {"projections": week_proj}
 

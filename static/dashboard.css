@@ -427,6 +427,7 @@ ul {
 .sidebar-grid {
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
+  align-items: stretch;
 }
 
 .streak-cold .chip-streak {
@@ -8654,7 +8655,7 @@ thead th {
 }
 
 .side-card {
-  padding: 10px 10px 6px;
+  padding: 10px 10px 8px;
   display: flex;
   flex-direction: column;
   background: var(--card-soft);
@@ -8668,12 +8669,14 @@ thead th {
 }
 
 .side-card h3 {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin: 0 0 4px;
+  margin: 0 0 2px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
 }
 
 .side-header {
@@ -8687,15 +8690,16 @@ thead th {
 
 .side-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 5px;
-  padding: 5px 0;
+  padding: 4px 0;
   border-top: 1px solid var(--border);
 }
 
-.side-row:first-of-type {
+.side-row:first-child {
   border-top: none;
+  padding-top: 6px;
 }
 
 .site-footer {
