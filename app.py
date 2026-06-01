@@ -5050,9 +5050,9 @@ def render_weekly_top_scorers_for_week(
         season: str
 ) -> str:
     # 1. Filter to ONLY this week
-    if df_weekly.empty or "week" not in df_weekly.columns:
-        return ""
-    week_df = df_weekly[df_weekly["week"] == w].copy()
+    week_df = pd.DataFrame()
+    if not df_weekly.empty and "week" in df_weekly.columns:
+        week_df = df_weekly[df_weekly["week"] == w].copy()
 
     if not week_df.empty and week_df["points"].any():
         _, _, top_by_pos = matchup_cards_last_week(
@@ -14825,12 +14825,6 @@ def api_weekly_week():
 
     ctx = get_league_ctx_from_cache(platform, league_id, season)
 
-    if ctx.get("offseason_mode"):
-        return jsonify({
-            "ok": False,
-            "error": "Weekly Hub is unavailable during the offseason."
-        }), 400
-
     ensure_weekly_bits(ctx)
 
     df_weekly = ctx["df_weekly"]
@@ -14847,7 +14841,7 @@ def api_weekly_week():
     teams_index = ctx["teams_index"]
     season = ctx["season"]
     current_week = ctx["current_week"]
-    max_weeks = ctx["weeks"]
+    max_weeks = int(ctx.get("weeks") or 0) or 18
 
     if week < 1 or week > max_weeks:
         return jsonify({"ok": False, "error": f"Week {week} out of range"}), 400
