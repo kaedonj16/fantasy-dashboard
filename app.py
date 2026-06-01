@@ -1912,7 +1912,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     mode = "offseason" if offseason_mode else "in_season"
 
     if offseason_mode:
-        max_week = 0
+        max_week = FULL_SEASON_WEEKS
         season_complete = False
     elif season < current_season:
         max_week = FULL_SEASON_WEEKS
@@ -2669,15 +2669,15 @@ def ensure_weekly_bits(ctx: dict) -> None:
     """
 
     if ctx.get("offseason_mode"):
-        ctx["proj_by_week"] = {}
+        # Load pre-season projections for all 18 weeks
+        ctx["proj_by_week"] = build_projections_by_week(int(ctx["season"]), 18)
         ctx["statuses"] = {}
         ctx["proj_by_roster"] = {}
-        # Still build historical matchups so Weekly Hub shows past-season scores
         if "matchups_by_week" not in ctx:
             try:
                 ctx["matchups_by_week"] = build_matchups_by_week(
                     ctx.get("resolved_league_id", ctx["league_id"]),
-                    range(1, int(ctx.get("weeks") or 18) + 1),
+                    range(1, 19),
                     ctx.get("roster_map") or {},
                     ctx.get("players") or {},
                     int(ctx["season"]),
@@ -2922,9 +2922,16 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         clear_weekly_cache_for_league(resolved_league_id)
 
         if offseason_mode:
-            ctx["proj_by_week"] = {}
+            ctx["proj_by_week"] = build_projections_by_week(viewed_season, 18)
             ctx["statuses"] = {}
-            ctx["matchups_by_week"] = {}
+            ctx["matchups_by_week"] = build_matchups_by_week(
+                resolved_league_id,
+                range(1, 19),
+                roster_map,
+                players,
+                viewed_season,
+                platform,
+            )
             ctx["proj_by_roster"] = {}
         else:
             should_refresh_live_week = (
