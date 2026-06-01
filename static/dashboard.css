@@ -3747,6 +3747,7 @@ thead th {
 
 /* ── Suggestions tab layout ─────────────────────────────────── */
 .otc-sugg-tab-layout {
+  padding-top: 5px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
   gap: 20px;
