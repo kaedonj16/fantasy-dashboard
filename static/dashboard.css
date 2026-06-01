@@ -9491,9 +9491,12 @@ img, svg, canvas {
   .m-nav h2 { font-size: 15px; }
   .m-btn { padding: 4px 8px; font-size: 12px; }
 
+  /* Wider card: strip the card padding and tighten vs column */
+  .card.matchup-carousel { padding: 8px; }
+
   .m-head {
-    grid-template-columns: 1fr 26px 1fr;
-    padding: 8px 10px;
+    grid-template-columns: 1fr 22px 1fr;
+    padding: 6px 8px;
     gap: 4px;
     overflow: hidden;        /* clip content that spills out of grid cells */
   }
@@ -9850,6 +9853,8 @@ img, svg, canvas {
 }
 
 @media (max-width: 480px) {
+  .overview-layout { margin: 4px; }
+
   .ad-container {
     min-height: 60px;
     max-height: 70px;
