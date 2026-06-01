@@ -625,6 +625,9 @@ def get_power_rankings_html(ctx: dict) -> str:
                     "losses": t["losses"],
                     "pf": round(t["pf"], 1),
                     "direction": t["direction"],
+                    "avg_age": t.get("avg_age"),
+                    "first_round_picks": t.get("first_round_picks", 0),
+                    "position_strengths": t.get("position_strengths") or {},
                     "top_assets": [{"name": p["name"], "position": p["position"], "value": p["value"]} for p in (t.get("top_assets") or [])[:3]],
                 }
                 for t in teams

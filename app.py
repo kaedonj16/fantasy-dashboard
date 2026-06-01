@@ -20486,6 +20486,8 @@ def api_roster_intel():
     season          = int(body.get("season")           or datetime.now().year)
     league_type     = str(body.get("league_type")      or "1qb").strip().lower()
     viewer_rid_raw  = str(body.get("viewer_roster_id") or "").strip()
+    # FC dynasty ADP — sent by browser because server IP is blocked by FC
+    fc_adp: dict    = (body.get("fc_adp") or {}) if isinstance(body.get("fc_adp"), dict) else {}
 
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
@@ -20495,6 +20497,14 @@ def api_roster_intel():
     except Exception as e:
         return _api_err("Request failed", e)
 
+    try:
+        return _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp)
+    except Exception as e:
+        logger.exception("[api-roster-intel] unhandled error: %s", e)
+        return _api_err("Roster intel unavailable", e)
+
+
+def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp):
     rosters           = ctx.get("rosters") or []
     roster_map        = ctx.get("roster_map") or {}
     model_value_table = ctx.get("model_value_table") or []
@@ -20552,9 +20562,6 @@ def api_roster_intel():
                         years_exp_map[str(row["player_id"])] = int(row["years_exp"])
     except Exception:
         pass
-
-    # FantasyCalc dynasty ADP — sent by the browser (server IP is blocked by FC)
-    fc_adp: dict = body.get("fc_adp") or {}
 
     POSITIONS = ["QB", "RB", "WR", "TE"]
     prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}

@@ -1302,6 +1302,11 @@ def build_power_rankings_context(ctx: dict) -> dict:
         )
         future_picks = ctx.get("picks_by_roster", {}).get(rid, [])
         direction = detect_team_direction(players_summary, future_picks)
+        pos_strength = group_position_strength(players_summary)
+
+        ages = [_safe_float(p.get("age")) for p in players_summary if p.get("age") not in (None, "")]
+        avg_age = round(sum(ages) / len(ages), 1) if ages else None
+        first_round_picks = sum(1 for p in future_picks if "1." in str(p.get("display") or ""))
 
         team_data.append({
             "roster_id": rid,
@@ -1311,9 +1316,16 @@ def build_power_rankings_context(ctx: dict) -> dict:
             "win_pct": win_pct,
             "pf": pf,
             "avg_value": round(avg_value, 1),
+            "avg_age": avg_age,
             "direction": direction,
             "top_assets": players_summary[:5],
             "future_picks": future_picks[:4],
+            "first_round_picks": first_round_picks,
+            "position_strengths": {
+                pos: {"top3": s["top_3_sum"], "best": s["best"], "count": s["count"]}
+                for pos, s in pos_strength.items()
+                if pos in ("QB", "RB", "WR", "TE")
+            },
         })
 
     if not team_data:

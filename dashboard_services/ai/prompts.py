@@ -352,23 +352,30 @@ def generate_power_rankings_result(rankings_ctx: dict) -> dict:
 
     system_prompt = """
 You are a sharp dynasty fantasy football analyst writing weekly power rankings.
-Write like a beat reporter - vivid, specific, grounded in the data provided.
-For each team, write one punchy sentence (max 30 words) explaining their ranking.
-Use team direction (contender/rebuild/retool/balanced) and top assets to frame the narrative.
-Assign momentum: rising (improving trajectory), falling (declining), or steady (holding).
-Use only the supplied JSON. Do not invent injuries, news, or player traits.
+Write like a beat reporter — vivid, specific, punchy. One sentence per team, max 30 words.
+Each sentence must be DIFFERENT in structure and opening. Never start two sentences with the same word.
+Anchor each narrative to what makes that roster DISTINCT: dominant position group, elite individual, age profile, pick capital, depth, or glaring gap.
+Never use the word "Balanced" to describe a team. Find something specific instead.
+Do not invent injuries, news, or player traits — use only the supplied JSON.
+Momentum (rising/falling/steady): rising if high value with weak record or improving rank; falling if declining value or poor record; else steady.
 """.strip()
 
     user_prompt = f"""
-Generate power rankings narratives for each team.
+Generate power rankings narratives for each team. Every sentence must lead with something specific to that team — a player name, a position strength, a trend, or a profile note.
+Vary sentence structure across the list. No two teams should open the same way.
 
-For each team in the "teams" array, produce:
+For each team in "teams", produce:
 - roster_id: exact string from the data
-- narrative: one sentence (max 30 words) explaining their position
+- narrative: one sentence (max 30 words) that differentiates this team from the others
 - momentum: rising | falling | steady
 
-Base momentum on: win percentage trend vs avg value, and whether they're a contender/rebuild/retool.
-Contenders with high win% = steady or rising. Rebuilds with low win% = steady or falling.
+Key signals to draw on:
+- top_assets: player names and positions (use them!)
+- position_strengths: which positions are strongest (top3 sum) vs weakest
+- avg_age: young (<26) = upside, old (>28.5) = win-now or decline
+- first_round_picks: high pick capital (2+) suggests rebuild/retool
+- direction: contender / retool / rebuild / balanced (use only when not all teams share it)
+- wins/losses/pf: performance signal (week 0 = preseason, skip record if all 0-0)
 
 Return JSON matching the schema exactly.
 
