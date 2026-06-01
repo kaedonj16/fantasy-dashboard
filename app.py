@@ -8210,9 +8210,10 @@ def build_teams_body(ctx: dict) -> str:
                   if (p.pos_rank_label) metaParts.push(p.pos_rank_label);
                   if (p.age) metaParts.push('Age ' + p.age);
                   if (p.fc_pos_rank) metaParts.push('FC ' + pos + p.fc_pos_rank);
+                  var safeName = (p.name || '').replace(/"/g, '&quot;');
                   html += '<div class="ri-player-row">' +
                     '<div class="ri-player-info">' +
-                      '<span class="ri-player-name">' + p.name + chgHtml + mktNote + '</span>' +
+                      '<span class="ri-player-name player-clickable" style="cursor:pointer;" data-player-id="' + (p.player_id || '') + '" data-player-name="' + safeName + '">' + p.name + chgHtml + mktNote + '</span>' +
                       '<span class="ri-player-meta">' + metaParts.join(' · ') + '</span>' +
                     '</div>' +
                     '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
