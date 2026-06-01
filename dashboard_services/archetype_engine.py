@@ -675,7 +675,7 @@ def _pick_send_candidates(
         if val <= 0:
             val = {1: 650.0, 2: 220.0}.get(rnd, 80.0)
 
-        name = f"{season} {_ordinal(rnd)}.{slot:02d}" if slot else f"{season} {_ordinal(rnd)}"
+        name = f"{season} {rnd}.{slot:02d}" if slot else f"{season} {rnd} {bucket}"
         uid  = f"pick_{season}_{rnd}_{slot:02d}" if slot else f"pick_{season}_{rnd}"
 
         out.append({

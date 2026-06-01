@@ -5949,8 +5949,7 @@ def format_pick_display_label(
     if exact_slot is not None:
         return f"{year} {rnd}.{exact_slot:02d}"
 
-    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-    return f"{year} {rnd}{suffix} (Mid)"
+    return f"{year} {rnd} mid"
 
 
 def build_activity_body(ctx: dict) -> str:
@@ -6387,15 +6386,14 @@ def build_activity_body(ctx: dict) -> str:
                         except Exception:
                             pass
 
-                    # Use exact slot if available, otherwise use roster_id as fallback
-                    _rd_sfx = {1: "st", 2: "nd", 3: "rd"}.get(int(round_num or 0), "th")
+                    # Use exact slot if available, otherwise fall back to mid
                     if exact_slot:
                         pick_id = f"{season} {round_num}.{exact_slot:02d}"
                         display_name = pick_id
                         slot_value = exact_slot
                     else:
                         pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
-                        display_name = f"{season} {round_num}{_rd_sfx} Rd"
+                        display_name = f"{season} {round_num} mid"
                         slot_value = None
 
                     gets_picks.append({
@@ -6422,15 +6420,14 @@ def build_activity_body(ctx: dict) -> str:
                         except Exception:
                             pass
 
-                    # Use exact slot if available, otherwise use roster_id as fallback
-                    _rd_sfx = {1: "st", 2: "nd", 3: "rd"}.get(int(round_num or 0), "th")
+                    # Use exact slot if available, otherwise fall back to mid
                     if exact_slot:
                         pick_id = f"{season} {round_num}.{exact_slot:02d}"
                         display_name = pick_id
                         slot_value = exact_slot
                     else:
                         pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
-                        display_name = f"{season} {round_num}{_rd_sfx} Rd"
+                        display_name = f"{season} {round_num} mid"
                         slot_value = None
 
                     sends_picks.append({
@@ -20938,11 +20935,10 @@ def api_trade_intel_player_packages(player_id: str):
                         orig = pk.get("original_owner")
                         # Slot only meaningful for the current season
                         slot = _slot_map.get(int(orig)) if (yr == season and orig) else None
-                        suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
                         if slot:
                             pk_name = f"{yr} {rnd}.{slot:02d}"
                         else:
-                            pk_name = f"{yr} {suffix} (Mid)"
+                            pk_name = f"{yr} {rnd} mid"
                         if slot:
                             pval = (
                                 pick_val_lookup.get(f"{yr}_{rnd}_{slot:02d}")
@@ -22005,7 +22001,7 @@ def api_trade_intel_player_send_packages(player_id: str):
                 if pval <= 0:
                     pval = {1: 220.0, 2: 130.0}.get(rnd, 70.0)
                 out.append({
-                    "name":  f"{yr} {_ordinal(rnd)} (Mid)",
+                    "name":  f"{yr} {rnd} mid",
                     "value": round(pval, 1),
                     "is_pick": True,
                     "pick_season": yr,

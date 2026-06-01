@@ -2105,9 +2105,8 @@ window.initTradePage = function initTradePage(root = document) {
     const year = parts[0];
     const round = parseInt(parts[1], 10);
     const third = parts.slice(2).join("_");
-    const suffix = { 1: "st", 2: "nd", 3: "rd" }[round] || "th";
-    const bucketLabel = { early: "Early", mid: "Mid", late: "Late" }[third];
-    if (bucketLabel) return `${year} ${round}${suffix} (${bucketLabel})`;
+    const bucket = { early: "early", mid: "mid", late: "late" }[third];
+    if (bucket) return `${year} ${round} ${bucket}`;
     const slot = parseInt(third, 10);
     if (!isNaN(slot)) return `${year} ${round}.${String(slot).padStart(2, "0")}`;
     return String(id).replaceAll("_", " ");
