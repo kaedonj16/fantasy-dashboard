@@ -3180,7 +3180,7 @@ def build_dashboard_body(ctx: dict) -> str:
     if not finalized_df.empty:
         last_final_week = int(finalized_df["week"].max())
     else:
-        last_final_week = current_week
+        last_final_week = 0  # no finalized weeks yet → show projections for current week
 
     _fpts_against_dash = _compute_fpts_against(season)
     slides = [
@@ -5311,7 +5311,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     if not finalized_df.empty and "week" in finalized_df.columns:
         last_final_week = int(finalized_df["week"].max())
     else:
-        last_final_week = max(1, min(current_week or 1, weeks))
+        last_final_week = 0  # no finalized weeks yet → show projections for current week
 
     max_week = max(1, weeks)
 

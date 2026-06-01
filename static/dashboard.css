@@ -7859,7 +7859,7 @@ thead th {
 .m-head {
   display: flex;
   flex-direction: column;
-  padding: 12px 16px;
+  padding: 10px 12px;
   background: var(--card-soft);
   border-radius: 10px;
   margin-bottom: 12px;
@@ -7900,7 +7900,7 @@ thead th {
 .m-head-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 /* Left and right team columns */
