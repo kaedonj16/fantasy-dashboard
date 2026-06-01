@@ -7411,7 +7411,11 @@ function _buildStatsHTML(game_logs_by_year) {
           return;
         }
         const s = game.stats || {};
-        if (game.fantasy_pts != null) gamesPlayed++;
+        // Only count weeks where the player actually had recorded stats (not DNP)
+        const playedThisGame = game.stats != null && (
+          s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null
+        );
+        if (playedThisGame) gamesPlayed++;
         totalFantasyPts += game.fantasy_pts || 0;
         totalPassYd += s.pass_yd || 0;
         totalPassTd += s.pass_td || 0;

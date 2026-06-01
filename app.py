@@ -18033,9 +18033,10 @@ def api_player_game_logs(player_id: str):
                 game_logs_by_year[season_year] = game_logs
 
         # ── Upcoming projected season ─────────────────────────────────────────
-        # If the next season isn't in historical stats yet, build a projected
-        # season from Tank01 weekly projections (with FP PPG as fallback).
-        _upcoming = (max(available_years) + 1) if available_years else datetime.now().year
+        # Use the request `season` param as the upcoming year.  We do NOT use
+        # max(available_years)+1 because sleeper_stats files may already exist
+        # for the current season (e.g. 2026), pushing the calculation to 2027.
+        _upcoming = season  # season already parsed from request.args above
         if _upcoming not in game_logs_by_year:
             try:
                 from utils.utils import pick_proj_variant, load_week_projection
