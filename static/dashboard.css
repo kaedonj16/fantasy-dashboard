@@ -8371,7 +8371,7 @@ thead th {
   text-align: right;
 }
 
-.page-sidebar {
+git ad.page-sidebar {
   display: flex;
   flex-direction: column;
   position: sticky;
