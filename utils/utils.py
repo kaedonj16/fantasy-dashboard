@@ -181,22 +181,8 @@ def path_idp_index() -> str:
     return os.path.join(CACHE_DIR, "idp_players_index.json")
 
 
-def proj_scoring_key(raw_sleeper_settings: dict) -> str:
-    """
-    Short human-readable key for a scoring format, used in projection filenames.
-    Derived from the Sleeper raw scoring settings so different league types
-    (PPR, half-PPR, TEP, standard) each get their own cached projection files.
-    """
-    s = raw_sleeper_settings or {}
-    rec     = float(s.get("rec", 1.0))
-    te_bon  = float(s.get("bonus_rec_te", 0.0))
-    # Encode as e.g. "ppr1.0_te0.5" or "ppr0.5_te0.0"
-    return f"ppr{rec:g}_te{te_bon:g}"
-
-
-def path_week_proj(season: int, week: int, scoring_key: str = "") -> str:
-    suffix = f"_{scoring_key}" if scoring_key else ""
-    return os.path.join(CACHE_DIR, f"projections/projections_s{season}_w{week}{suffix}.json")
+def path_week_proj(season: int, week: int) -> str:
+    return os.path.join(CACHE_DIR, f"projections/projections_s{season}_w{week}.json")
 
 
 def path_week_stats(season: int, week: int) -> str:
@@ -390,15 +376,14 @@ def load_week_schedule(season: int, w: int):
     return schedule
 
 
-def load_week_projection(season: int, w: int, scoring_key: str = "", force_refresh: bool = False) -> Optional[Dict]:
+def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Optional[Dict]:
     """
-    Load projections cache for (season, week, scoring_key), fetching if missing.
-    Returns an empty dict (never None/raises) so callers can safely .get() on the result.
+    Load projections cache for (season, week). Returns multi-variant dict or {}.
     """
-    proj_path = Path(path_week_proj(season, w, scoring_key))
+    proj_path = Path(path_week_proj(season, w))
     if not proj_path.exists() or force_refresh:
         try:
-            get_week_projections_cached(season, w, fetch_week_from_tank01, scoring_key=scoring_key, force_refresh=force_refresh)
+            get_week_projections_cached(season, w, fetch_week_from_tank01, force_refresh=force_refresh)
         except Exception as e:
             print(f"[projections] fetch failed for {season} w{w}: {e}")
 
@@ -414,8 +399,8 @@ def load_week_projection(season: int, w: int, scoring_key: str = "", force_refre
         return {}
 
 
-def save_week_projections(season: int, week: int, proj_map: Dict[str, float], scoring_key: str = "") -> None:
-    write_json(path_week_proj(season, week, scoring_key), proj_map)
+def save_week_projections(season: int, week: int, proj_map: dict) -> None:
+    write_json(path_week_proj(season, week), proj_map)
 
 
 def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
@@ -494,22 +479,19 @@ def cache_tank01_sleeper_index(
 def get_week_projections_cached(
         season: int,
         week: int,
-        fetch_fn: Callable[[int, int], Dict[str, float]],
-        scoring_key: str = "",
-        raw_scoring_settings: dict = None,
+        fetch_fn: Callable[[int, int], Dict],
         force_refresh: bool = False,
-) -> Dict[str, float]:
+) -> Dict:
     """
-    fetch_fn should call Tank01 /getNFLProjections and return:
-      { sleeper_id: projected_points, ... }
+    fetch_fn returns { sleeper_id: {ppr, half_ppr, std, tep, ...} }.
     """
-    cache_path = path_week_proj(season, week, scoring_key)
+    cache_path = path_week_proj(season, week)
 
     if os.path.exists(cache_path) and not force_refresh:
-        return load_week_projection(season, week, scoring_key) or {}
+        return load_week_projection(season, week) or {}
 
-    data = fetch_fn(season, week, raw_scoring_settings)
-    save_week_projections(season, week, proj_map=data, scoring_key=scoring_key)
+    data = fetch_fn(season, week)
+    save_week_projections(season, week, proj_map=data)
     return data
 
 
@@ -698,88 +680,49 @@ def streak_class(row) -> str:
     return ""
 
 
-def _scoring_params_for_tank01(raw_settings: dict = None) -> tuple[dict, float]:
+def fetch_week_from_tank01(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
     """
-    Build Tank01 scoring params from raw Sleeper scoring settings.
-    Falls back to the globally loaded league settings if none provided.
-    Returns (params_dict, bonus_rec_te) where bonus_rec_te is the TEP bonus per TE reception.
-    Sleeper raw keys → Tank01 parameter names.
+    Fetches Tank01 projections for all players for a given week/season.
+    Returns { sleeper_id: {"ppr": X, "half_ppr": Y, "std": Z, "tep": A,
+                           "6pt_ppr": B, "6pt_half": C, "6pt_tep": D} }
+    All common scoring variants are pre-computed so one file serves every league type.
     """
-    if raw_settings is not None:
-        raw = raw_settings
-    else:
-        try:
-            from dashboard_services.api import SCORING_SETTINGS
-            raw = SCORING_SETTINGS or {}
-        except Exception:
-            raw = {}
-
-    def _get(sleeper_key: str, default: float) -> float:
-        return float(raw.get(sleeper_key, default))
-
-    params = {
-        "passYards":         _get("pass_yd",             0.04),
-        "passTD":            _get("pass_td",             4),
-        "passInterceptions": _get("pass_int",            -2),
-        "pointsPerReception":_get("rec",                 1),
-        "receivingYards":    _get("rec_yd",              0.1),
-        "receivingTD":       _get("rec_td",              6),
-        "rushYards":         _get("rush_yd",             0.1),
-        "rushTD":            _get("rush_td",             6),
-        "fumbles":           _get("fum_lost",            -2),
-        "twoPointConversions":_get("bonus_2pt_convert",  2),
+    # Fetch with standard PPR params — we read PPR/halfPPR/std directly from
+    # Tank01's fantasyPointsDefault and derive other variants from raw stats.
+    base_params = {
+        "passYards": 0.04, "passTD": 4, "passInterceptions": -2,
+        "pointsPerReception": 1, "receivingYards": 0.1, "receivingTD": 6,
+        "rushYards": 0.1, "rushTD": 6, "fumbles": -2, "twoPointConversions": 2,
     }
-    bonus_rec_te = _get("bonus_rec_te", 0.0)
-    return params, bonus_rec_te
-
-
-def fetch_week_from_tank01(season: int, week: int, raw_scoring_settings: dict = None) -> dict[str, float]:
-    """
-    Fetches Tank01 projections for all players for a given week/season,
-    then returns a dict { sleeper_id: projected_points }.
-    """
-    scoring_params, bonus_rec_te = _scoring_params_for_tank01(raw_scoring_settings)
     url = f"https://{TANK01_API_HOST}/getNFLProjections"
     try:
         from dashboard_services.api import get_nfl_state
         current_season = int((get_nfl_state() or {}).get("season") or 0)
     except Exception:
         current_season = 0
-    params = {
-        "week": week,
-        "itemFormat": "list",
-        **scoring_params,
-    }
+    params = {"week": week, "itemFormat": "list", **base_params}
     if season != current_season and season > 0:
         params["archiveSeason"] = season
 
-    headers = {
-        "x-rapidapi-host": TANK01_API_HOST,
-        "x-rapidapi-key": TANK01_API_KEY,
-    }
+    headers = {"x-rapidapi-host": TANK01_API_HOST, "x-rapidapi-key": TANK01_API_KEY}
 
     print(f"📡 Fetching Tank01 projections for Week {week}...")
     resp = requests.get(url, headers=headers, params=params, timeout=20)
-
     if resp.status_code != 200:
         print(f"⚠️ Tank01 API error {resp.status_code}: {resp.text[:200]}")
         return {}
 
     data = resp.json()
-    # Tank01 sometimes stores projections in data["body"] or directly under "list"
     body = data.get("body") or data.get("list") or []
     if isinstance(body, dict):
         body = list(body.values())
 
-    # Load cached player index for matching Sleeper IDs
     players_idx = load_players_index()
-
     if not players_idx:
         print("⚠️ No cached players index found. Run get_players_index_cached() first.")
         return {}
 
-    proj_map = map_weekly_projections_to_sleeper(body, players_idx, bonus_rec_te=bonus_rec_te)
-
+    proj_map = map_weekly_projections_to_sleeper(body, players_idx)
     print(f"✅ Retrieved {len(proj_map)} player projections for Week {week}")
     return proj_map
 
@@ -787,19 +730,27 @@ def fetch_week_from_tank01(season: int, week: int, raw_scoring_settings: dict = 
 def map_weekly_projections_to_sleeper(
         weekly_rows: List[dict],
         idx_sleeper: Dict[str, dict],
-        bonus_rec_te: float = 0.0,
-) -> Dict[str, float]:
+) -> dict:
     """
-    Convert Tank01 rows -> { sleeper_id: projected_points }.
+    Convert Tank01 rows -> multi-variant projection dict.
+    { sleeper_id: {"ppr": X, "half_ppr": Y, "std": Z,
+                   "tep": A, "6pt_ppr": B, "6pt_half": C, "6pt_tep": D} }
 
-    Tank01 returns body as a list of groups (teams, then one or more player groups).
-    We iterate all groups and handle each row by whether it has teamID or playerID.
-    bonus_rec_te: extra points per TE reception (TEP bonus from league settings).
+    Variants:
+      ppr       — 1pt/rec, 4pt passing TD
+      half_ppr  — 0.5pt/rec, 4pt passing TD
+      std       — 0pt/rec, 4pt passing TD
+      tep       — PPR + 0.5pt/rec bonus for TEs, 4pt passing TD
+      6pt_ppr   — PPR, 6pt passing TD
+      6pt_half  — half-PPR, 6pt passing TD
+      6pt_tep   — PPR + TEP, 6pt passing TD
     """
-    out: Dict[str, float] = {}
+    out: dict = {}
 
     teams_index = load_teams_index() or {}
     players_index = load_players_index() or {}
+
+    TEP_BONUS = 0.5  # standard TE premium per reception
 
     for group in weekly_rows:
         if not isinstance(group, list):
@@ -812,7 +763,7 @@ def map_weekly_projections_to_sleeper(
             tank_id = row.get("playerID")
 
             if team_id_raw and not tank_id:
-                # DEF row
+                # DEF / team row — same value for all variants
                 proj = row.get("fantasyPointsDefault")
                 if proj is None:
                     continue
@@ -821,13 +772,22 @@ def map_weekly_projections_to_sleeper(
                     None,
                 )
                 if team_key:
-                    out[str(team_key)] = float(proj)
+                    v = float(proj)
+                    out[str(team_key)] = {
+                        "ppr": v, "half_ppr": v, "std": v,
+                        "tep": v, "6pt_ppr": v, "6pt_half": v, "6pt_tep": v,
+                    }
 
             elif tank_id:
-                # Skill player row
-                proj_raw = row.get("fantasyPointsDefault") or {}
-                proj = proj_raw.get("PPR") if isinstance(proj_raw, dict) else proj_raw
-                if proj is None:
+                fp = row.get("fantasyPointsDefault") or {}
+                if isinstance(fp, dict):
+                    ppr  = float(fp.get("PPR")     or fp.get("ppr")     or 0)
+                    half = float(fp.get("halfPPR")  or fp.get("half")    or 0)
+                    std  = float(fp.get("standard") or fp.get("std")     or 0)
+                else:
+                    ppr = half = std = float(fp or 0)
+
+                if ppr == 0 and half == 0 and std == 0:
                     continue
 
                 pid = next(
@@ -837,17 +797,62 @@ def map_weekly_projections_to_sleeper(
                 if not pid:
                     continue
 
-                pts = float(proj)
+                pos = players_index.get(pid, {}).get("pos", "")
 
-                # Apply TEP bonus: Tank01 has no position-specific PPR, so add it manually
-                if bonus_rec_te and players_index.get(pid, {}).get("pos") == "TE":
+                # Projected passing TDs (for 6pt TD adjustment: +2 per pass TD vs 4pt base)
+                passing = row.get("passing") or {}
+                proj_pass_td = float(passing.get("passTD") or passing.get("passIng_td") or 0)
+                td_bonus = proj_pass_td * 2  # difference between 6pt and 4pt TD
+
+                # TEP: extra 0.5/rec for TEs only
+                tep_bonus = 0.0
+                if pos == "TE":
                     rec_stats = row.get("receiving") or row.get("stats") or {}
                     proj_rec = float(rec_stats.get("rec") or rec_stats.get("receptions") or 0)
-                    pts += proj_rec * bonus_rec_te
+                    tep_bonus = proj_rec * TEP_BONUS
 
-                out[str(pid)] = pts
+                out[str(pid)] = {
+                    "ppr":      round(ppr, 2),
+                    "half_ppr": round(half, 2),
+                    "std":      round(std, 2),
+                    "tep":      round(ppr + tep_bonus, 2),
+                    "6pt_ppr":  round(ppr + td_bonus, 2),
+                    "6pt_half": round(half + td_bonus, 2),
+                    "6pt_tep":  round(ppr + tep_bonus + td_bonus, 2),
+                }
 
     return out
+
+
+def pick_proj_variant(raw_sleeper_settings: dict) -> str:
+    """
+    Return the projection variant key that matches a league's scoring settings.
+    Keys: ppr | half_ppr | std | tep | 6pt_ppr | 6pt_half | 6pt_tep
+    """
+    s = raw_sleeper_settings or {}
+    rec      = float(s.get("rec", 1.0))
+    te_bonus = float(s.get("bonus_rec_te", 0.0))
+    pass_td  = float(s.get("pass_td", 4.0))
+
+    tep   = te_bonus >= 0.25
+    six   = pass_td >= 5.5
+
+    if rec >= 1.0:
+        base = "ppr"
+    elif rec >= 0.4:
+        base = "half_ppr"
+    else:
+        base = "std"
+
+    if six and tep and base == "ppr":
+        return "6pt_tep"
+    if six and base == "ppr":
+        return "6pt_ppr"
+    if six and base == "half_ppr":
+        return "6pt_half"
+    if tep and base == "ppr":
+        return "tep"
+    return base
 
 
 # ------------------------------------------------

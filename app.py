@@ -2957,14 +2957,10 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                     logger.info(f"[refresh] live week stats refresh skipped: {e}")
 
                 try:
-                    _rss = ctx.get("raw_scoring_settings") or {}
-                    from utils.utils import proj_scoring_key
                     get_week_projections_cached(
                         current_season,
                         current_week,
                         fetch_week_from_tank01,
-                        scoring_key=proj_scoring_key(_rss),
-                        raw_scoring_settings=_rss,
                         force_refresh=True,
                     )
                 except Exception as e:
@@ -5625,42 +5621,53 @@ function wkActivateTab(tab) {{
 
 
 def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dict = None):
-    from utils.utils import proj_scoring_key
-    sk = proj_scoring_key(raw_scoring_settings or {})
+    from utils.utils import pick_proj_variant
+    from statistics import median
+
+    variant = pick_proj_variant(raw_scoring_settings or {})
+
+    def _flat(multi: dict) -> float | None:
+        """Extract the chosen variant's value from a multi-variant player entry."""
+        if isinstance(multi, dict):
+            return multi.get(variant) or multi.get("ppr")
+        if isinstance(multi, (int, float)):
+            return float(multi)  # legacy flat file
+        return None
 
     raw = {}
     any_projections = False
     for w in range(1, weeks + 1):
-        projections = load_week_projection(season, w, scoring_key=sk)
-        raw[w] = projections or {}
-        if projections:
+        multi_week = load_week_projection(season, w) or {}
+        flat = {}
+        for pid, val in multi_week.items():
+            v = _flat(val)
+            if v is not None:
+                flat[pid] = v
+        raw[w] = flat
+        if flat:
             any_projections = True
 
-    # Build a fallback map using the median of all available week values per player.
-    # This prevents a stale near-zero week-1 entry (e.g. backup listed as starter)
-    # from poisoning projections for weeks where Tank01 has no data.
-    from statistics import median
+    # Fallback: use median across all weeks so a stale near-zero entry
+    # (e.g. Tank01 had a backup listed as starter) doesn't poison other weeks.
     all_vals: dict = {}
     for w in range(1, weeks + 1):
         for pid, val in raw[w].items():
-            if val and val > 0.5:  # skip near-zero placeholders
+            if val > 0.5:
                 all_vals.setdefault(pid, []).append(val)
     fallback = {pid: median(vals) for pid, vals in all_vals.items()}
 
     bundles = {}
     for w in range(1, weeks + 1):
         week_proj = dict(fallback)
-        # Override with real data, but skip suspiciously low values (<10% of fallback)
-        # so stale backup-listed entries don't override the median
         for pid, val in raw[w].items():
             fb = fallback.get(pid, 0)
             if fb > 0 and val < fb * 0.1:
-                continue  # skip — looks like Tank01 had wrong starter
+                continue  # skip stale near-zero starter listing
             week_proj[pid] = val
         bundles[w] = {"projections": week_proj}
 
     if not any_projections:
-        logger.info(f"[projections] No projection data available for season {season} (scoring: {sk})")
+        logger.info(f"[projections] No projection data for season {season} (variant: {variant})")
     bundles["_available"] = any_projections
     return bundles
 
