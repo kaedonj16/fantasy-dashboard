@@ -5163,8 +5163,8 @@ def _render_weekly_matchups(df_weekly: pd.DataFrame, week: int) -> str:
 def _render_weekly_highlights(
     df_weekly: pd.DataFrame,
     week: int,
-    proj_by_roster: dict | None = None,
-    matchups_by_week: dict | None = None,
+    proj_by_roster: Optional[dict] = None,
+    matchups_by_week: Optional[dict] = None,
 ) -> str:
     """Render sidebar highlight cards for a given week.
 
