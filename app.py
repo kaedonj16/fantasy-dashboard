@@ -3435,6 +3435,7 @@ def render_power_and_playoffs(
     season,
     bracket_override=None,
     seed_map_override=None,
+    power_rankings=None,
 ) -> str:
     """
     Single card that shows:
@@ -3442,9 +3443,28 @@ def render_power_and_playoffs(
       - Playoff Picture (using bracket)
     bracket_override: pre-built bracket list; skips API fetch when provided.
     seed_map_override: {roster_id: seed_int}; skips seed_top6 calculation.
+    power_rankings: list of team dicts from build_power_rankings_context()
+        ({"team_name", "power_score", "rank"}). When provided, the podium's
+        order and PowerScore are taken from here so this card matches the
+        Teams page "Power Rankings" tab exactly.
     """
     if team_stats is None or team_stats.empty:
         return ""
+
+    team_stats = team_stats.copy()
+
+    # ---- Align with the Teams page Power Rankings tab when provided ----
+    # Override PowerScore (and therefore ordering) using the canonical
+    # build_power_rankings_context() output, matched by team name.
+    if power_rankings:
+        pr_score_by_name = {
+            str(t.get("team_name")): float(t.get("power_score") or 0.0)
+            for t in power_rankings
+        }
+        if "owner" in team_stats.columns:
+            team_stats["PowerScore"] = team_stats["owner"].map(
+                lambda o: pr_score_by_name.get(str(o), 0.0)
+            )
 
     # ---- Sort by PowerScore, with PF as tiebreaker if available ----
     has_power = "PowerScore" in team_stats.columns
@@ -4037,10 +4057,19 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         # Generic: no bracket available
         synthetic_bracket = []
 
+    # Use the same ranking source as the Teams page "Power Rankings" tab so the
+    # offseason podium matches it exactly (ranks by roster value when no games
+    # have been played).
+    try:
+        from dashboard_services.ai.context_builders import build_power_rankings_context
+        _pr_teams = (build_power_rankings_context(ctx) or {}).get("teams") or []
+    except Exception:
+        _pr_teams = []
     power_playoffs_html = render_power_and_playoffs(
         synthetic_ts, roster_map, league_id_str, platform, season,
         bracket_override=synthetic_bracket,
         seed_map_override=seed_map_override,
+        power_rankings=_pr_teams,
     )
 
     # ── left-column dynasty rankings table ───────────────────────────────────
@@ -4271,12 +4300,20 @@ def build_standings_body(ctx: dict) -> str:
 
     table_html = render_team_stats(team_stats, detailed_df)
     share_html = render_share_rankings(ctx)
+    # Use the same ranking source as the Teams page "Power Rankings" tab so the
+    # two views always agree.
+    try:
+        from dashboard_services.ai.context_builders import build_power_rankings_context
+        _pr_teams = (build_power_rankings_context(ctx) or {}).get("teams") or []
+    except Exception:
+        _pr_teams = []
     power_playoffs_html = render_power_and_playoffs(
         team_stats,
         roster_map,
         ctx.get("resolved_league_id", ctx["league_id"]),
         ctx["platform"],
         ctx["season"],
+        power_rankings=_pr_teams,
     )
     sidebar_html = render_standings_sidebar(team_stats)
 
