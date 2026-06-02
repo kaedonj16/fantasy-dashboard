@@ -1590,20 +1590,20 @@ def get_archetype_suggestions(
             recv_val = t["value"]
             acpt     = _estimate_acceptance(send_val, recv_val, is_preferred=t["is_pref"])
 
-            # Net playoff odds delta: full trade swap (gain target, lose send package)
-            pkg_pids = {str(a.get("player_id", "")) for a in pkg if a.get("player_id")}
-            net_roster = [p for p in viewer_players if str(p) not in pkg_pids] + [pid]
-            if sim_state is not None and _vid_int is not None:
-                try:
-                    from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
-                    _net_po_pct, _ = _sim_swap(sim_state, _vid_int, net_roster, n_sims=10_000)
-                    net_pod_pkg = (_net_po_pct - current_playoff_pct) / 100.0
-                except Exception:
-                    net_pod_pkg = pod
-            else:
-                net_lval = _lval(net_roster)
-                net_wp   = _win_prob(net_lval, league_avg)
-                net_pod_pkg = _playoff_odds(net_wp, num_weeks, num_teams, playoff_spots) - current_po
+            # Per-package net odds: build the exact post-trade roster and compute
+            # its playoff probability relative to the sim-based baseline.
+            # Formula path is used (not a separate swap sim) to keep this fast —
+            # the accurate sim baseline anchors the overall scale, and the formula
+            # correctly differentiates packages by what each actually removes from
+            # the optimal lineup.
+            pkg_player_pids = {str(a.get("player_id", "")) for a in pkg if a.get("player_id") and not a.get("is_pick")}
+            net_roster = [p for p in viewer_players if str(p) not in pkg_player_pids] + [pid]
+            net_lval = _lval(net_roster)
+            net_wp_pkg = _win_prob(net_lval, league_avg)
+            # Delta relative to formula-based current so the ratio is self-consistent
+            current_po_formula = _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+            net_pod_pkg = _playoff_odds(net_wp_pkg, num_weeks, num_teams, playoff_spots) - current_po_formula
+            net_wpd_pkg = net_wp_pkg - current_wp
 
             results.append({
                 "player_id":      pid,
@@ -1619,6 +1619,7 @@ def get_archetype_suggestions(
                 "partner_arch":   t["partner_arch"],
                 "win_prob_delta":          round(wpd, 4),
                 "playoff_odds_delta":      round(pod, 4),
+                "net_win_prob_delta":      round(net_wpd_pkg, 4),
                 "net_playoff_odds_delta":  round(net_pod_pkg, 4),
                 "acceptance_pct":          acpt,
                 "direction":               "acquire",
