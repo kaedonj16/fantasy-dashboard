@@ -7449,47 +7449,52 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
     years.forEach((year, index) => {
       const gameLogs = game_logs_by_year[year];
       const isFirstYear = index === 0;
-      const isProjection = gameLogs.length > 0 && gameLogs[0].is_projection === true;
+      const hasRealGames = gameLogs.some(g => !g.is_projection && !g.is_bye && g.fantasy_pts != null);
+      const hasProjGames = gameLogs.some(g => g.is_projection);
+      const isProjection = !hasRealGames && hasProjGames;   // ALL entries are projected
+      const isMixed      = hasRealGames && hasProjGames;    // active season mid-way
 
-      // Calculate season totals
+      // Accumulate real completed games for the header (never mix in projections)
       let totalFantasyPts = 0;
       let totalPassYd = 0, totalPassTd = 0, totalPassInt = 0;
       let totalRushAtt = 0, totalRushYd = 0, totalRushTd = 0;
       let totalRecTgt = 0, totalRec = 0, totalRecYd = 0, totalRecTd = 0;
       let totalFumLost = 0;
       let gamesPlayed = 0;
+      // Projected totals tracked separately for the tfoot footnote
+      let projTotalPts = 0, projGames = 0;
 
       gameLogs.forEach(game => {
         if (game.is_bye) return;
         if (game.is_projection) {
-          if (game.fantasy_pts != null) { totalFantasyPts += game.fantasy_pts; gamesPlayed++; }
+          if (game.fantasy_pts != null) { projTotalPts += game.fantasy_pts; projGames++; }
           return;
         }
         const s = game.stats || {};
-        // Only count weeks where the player actually had recorded stats (not DNP)
         const playedThisGame = game.stats != null && (
           s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null
         );
         if (playedThisGame) gamesPlayed++;
         totalFantasyPts += game.fantasy_pts || 0;
-        totalPassYd += s.pass_yd || 0;
-        totalPassTd += s.pass_td || 0;
+        totalPassYd  += s.pass_yd  || 0;
+        totalPassTd  += s.pass_td  || 0;
         totalPassInt += s.pass_int || 0;
         totalRushAtt += s.rush_att || 0;
-        totalRushYd += s.rush_yd || 0;
-        totalRushTd += s.rush_td || 0;
-        totalRecTgt += s.rec_tgt || 0;
-        totalRec += s.rec || 0;
-        totalRecYd += s.rec_yd || 0;
-        totalRecTd += s.rec_td || 0;
+        totalRushYd  += s.rush_yd  || 0;
+        totalRushTd  += s.rush_td  || 0;
+        totalRecTgt  += s.rec_tgt  || 0;
+        totalRec     += s.rec      || 0;
+        totalRecYd   += s.rec_yd   || 0;
+        totalRecTd   += s.rec_td   || 0;
         totalFumLost += s.fum_lost || 0;
       });
 
-      // Build right-side header summary
+      // Header summary — always based on real completed games
       const ppg = gamesPlayed > 0 ? (totalFantasyPts / gamesPlayed).toFixed(1) : '0.0';
       let summaryHTML;
       if (isProjection) {
-        summaryHTML = `<span class="game-log-year-summary">~${ppg} ppg &nbsp;<span style="opacity:0.65;">(projected)</span></span>`;
+        const projPpg = projGames > 0 ? (projTotalPts / projGames).toFixed(1) : '0.0';
+        summaryHTML = `<span class="game-log-year-summary">~${projPpg} ppg &nbsp;<span style="opacity:0.65;">(projected)</span></span>`;
       } else {
         summaryHTML = `<span class="game-log-year-summary">${gamesPlayed}g &nbsp;·&nbsp; ${ppg} ppg &nbsp;·&nbsp; ${fmtPts(totalFantasyPts)} pts</span>`;
       }
@@ -7500,7 +7505,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
             <div class="game-log-year-header-main">
               <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
               <span class="game-log-year-title">${year} Season</span>
-              ${isProjection ? '<span class="game-log-proj-badge">Projected</span>' : ''}
+              ${isProjection ? '<span class="game-log-proj-badge">Projected</span>' : isMixed ? '<span class="game-log-proj-badge" style="background:var(--accent-soft);color:var(--accent);">In Season</span>' : ''}
             </div>
             ${summaryHTML}
           </div>
@@ -7508,9 +7513,9 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
             <table class="game-log-table">
               <thead>
                 <tr>
-                  <th>${isProjection ? 'Week' : 'Date'}</th>
+                  <th>Date</th>
                   <th>Opp</th>
-                  <th class="${isProjection ? 'game-log-proj-th' : ''}">Pts${isProjection ? ' *' : ''}</th>
+                  <th class="${isProjection ? 'game-log-proj-th' : ''}">Pts${(isProjection || isMixed) ? ' *' : ''}</th>
                   <th>Pass Yd</th>
                   <th>Pass TD</th>
                   <th>INT</th>
