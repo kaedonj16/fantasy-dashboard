@@ -9165,21 +9165,28 @@ def api_start_sit_options():
     except Exception:
         pass
 
-    # ── FP season projections — same source as player modal / matchup page ─────
-    # keyed by Sleeper player_id → ppg (PPR)
-    fp_ppg_map: dict = {}
-    try:
-        _fp_path = os.path.join("cache", f"fp_projections_{season}_ppr.json")
-        with open(_fp_path) as _fp_f:
-            _fp_raw = json.load(_fp_f)
-        for _fp_pid, _fp_entry in _fp_raw.items():
-            _ppg_v = float(_fp_entry.get("ppg") or 0)
-            if _ppg_v > 0:
-                fp_ppg_map[str(_fp_pid)] = round(_ppg_v, 1)
-    except FileNotFoundError:
-        pass
-    except Exception:
-        pass
+    # ── Weekly projections — SAME source as the player modal & matchups page ───
+    # build_projections_by_week() returns Tank01 weekly values (variant-adjusted,
+    # with per-player median outlier correction) and FantasyPros season PPG as a
+    # fallback for players with no weekly data. Reuse the cached ctx bundle when
+    # present so start/sit shows the exact number the modal/matchups show.
+    proj_by_week = ctx.get("proj_by_week")
+    if not proj_by_week:
+        try:
+            proj_by_week = build_projections_by_week(
+                season, 18, ctx.get("raw_scoring_settings")
+            )
+        except Exception:
+            proj_by_week = {}
+    _wk_proj = ((proj_by_week or {}).get(current_week) or {}).get("projections") or {}
+    def _lookup_proj(pid: str):
+        v = _wk_proj.get(pid)
+        if v is None:
+            v = _wk_proj.get(str(pid))
+        try:
+            return round(float(v), 1) if v is not None else 0.0
+        except (TypeError, ValueError):
+            return 0.0
 
     # ── Season-long and recent-form PPG from Sleeper stat files ───────────────
     season_ppg: dict = {}
@@ -9224,13 +9231,16 @@ def api_start_sit_options():
 
         s_ppg      = season_ppg.get(pid, 0.0)
         recent_ppg = recent_ppg_map.get(pid, 0.0)
-        # FP season PPG is the same projection source as the player modal
-        fp_ppg     = fp_ppg_map.get(str(pid), 0.0)
-        # Shown as "Proj" in the UI — FP PPG is more reliable than stale Tank01 weekly cache
-        proj_pts   = fp_ppg if fp_ppg > 0 else round(s_ppg, 1)
+        # Projection = exact value the player modal / matchups page show for this
+        # week (Tank01 weekly w/ median correction → FantasyPros season PPG).
+        proj_pts   = _lookup_proj(pid)
+        if proj_pts <= 0 and s_ppg > 0:
+            proj_pts = round(s_ppg, 1)
 
         fpts_vs = round(fpts_against.get(opponent, {}).get(pos, 0.0), 1) if opponent else 0.0
-        # Z-score matchup rank (rank 1 = easiest); fall back to fpts-against rank
+        # Z-score matchup rank (rank 1 = easiest); fall back to fpts-against rank.
+        # Shown as the matchup chip for context — the weekly projection already
+        # reflects the opponent, so it is NOT re-applied to the start/sit score.
         _z_opp = _norm_sched_team(opponent) if opponent else ""
         _z_map = _z_rank_tables.get(pos, {})
         if _z_opp and _z_map:
@@ -9241,25 +9251,17 @@ def api_start_sit_options():
         else:
             def_rank, def_total = None, 32
 
-        # ── Start/sit score: base × form × matchup ────────────────────────────
+        # ── Start/sit score: projection × recent form ─────────────────────────
+        # Projection is the dominant signal (and already opponent-aware). Recent
+        # form nudges it ±15% so a hot/cold streak can break near-ties without
+        # overriding a meaningful projection gap.
         if on_bye:
             score = 0.0
         else:
-            # Base: FP PPG → season PPG → 0
-            _base = fp_ppg if fp_ppg > 0 else s_ppg
-
-            # Form factor: how player is trending vs their season average (±25%)
             _form = 1.0
             if recent_ppg > 0 and s_ppg > 0:
-                _form = min(1.25, max(0.75, recent_ppg / s_ppg))
-
-            # Matchup factor: ease 0=hardest → 1=easiest, scaled to 0.80–1.20
-            _mu = 1.0
-            if def_rank and def_total and def_total > 1:
-                _ease = (def_total - def_rank) / (def_total - 1)
-                _mu = 0.80 + _ease * 0.40
-
-            score = _base * _form * _mu
+                _form = min(1.15, max(0.85, recent_ppg / s_ppg))
+            score = proj_pts * _form
 
         full_player  = players_full.get(pid) or {}
         raw_status   = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
