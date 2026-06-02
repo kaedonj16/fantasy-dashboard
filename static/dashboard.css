@@ -8620,10 +8620,11 @@ html[data-theme="dark"] .podium .bar {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* Hamburger icon: accent color is near-black in light mode which is fine,
-   but in dark mode we want it clearly visible regardless of accent */
-html[data-theme="dark"] .nav-hamburger {
-  color: #e5e7eb;
+/* Hamburger fa-bars icon: mirror the CSS filter color used on gear/search PNGs.
+   Light mode --accent (#122d4b) matches the dark-navy filter output.
+   Dark mode --accent (#38bdf8) matches the cyan filter output. */
+.nav-hamburger {
+  color: var(--accent);
 }
 
 /* Mobile: make second and third podium slots smaller than first */
