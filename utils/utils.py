@@ -673,16 +673,82 @@ def fetch_week_from_tank01(season: int, week: int, raw_scoring_settings: dict = 
     return proj_map
 
 
+def _sleeper_stats_to_variants(st: dict, pos: str, raw_scoring_settings: dict = None) -> Optional[dict]:
+    """
+    Compute all scoring variants from a Sleeper raw-stats dict.
+
+    Sleeper's projections endpoint returns projected stat lines
+    (pass_yd, pass_td, rec, rec_yd, ...) — not pre-computed pts_ppr.
+    When raw_scoring_settings is supplied the league-specific values are
+    used, otherwise standard defaults apply. All seven variants are
+    computed so pick_proj_variant() can select the right one later.
+    """
+    ss = raw_scoring_settings or {}
+    TEP_BONUS = 0.5
+
+    pass_yd  = float(st.get("pass_yd")  or 0)
+    pass_td  = float(st.get("pass_td")  or 0)
+    pass_int = float(st.get("pass_int") or 0)
+    rush_yd  = float(st.get("rush_yd")  or 0)
+    rush_td  = float(st.get("rush_td")  or 0)
+    rec      = float(st.get("rec")      or 0)
+    rec_yd   = float(st.get("rec_yd")   or 0)
+    rec_td   = float(st.get("rec_td")   or 0)
+    fum_lost = float(st.get("fum_lost") or 0)
+
+    if (pass_yd + pass_td + rush_yd + rush_td + rec + rec_yd + rec_td) == 0:
+        return None
+
+    # League-specific scoring rates (with standard defaults)
+    pass_yd_rate  = float(ss.get("pass_yd",        ss.get("passYards",         0.04)))
+    pass_td_rate  = float(ss.get("pass_td",        ss.get("passTD",            4.0)))
+    pass_int_rate = float(ss.get("pass_int",       ss.get("passInterceptions", -2.0)))
+    rush_yd_rate  = float(ss.get("rush_yd",        ss.get("rushYards",         0.1)))
+    rush_td_rate  = float(ss.get("rush_td",        ss.get("rushTD",            6.0)))
+    rec_yd_rate   = float(ss.get("rec_yd",         ss.get("receivingYards",    0.1)))
+    rec_td_rate   = float(ss.get("rec_td",         ss.get("receivingTD",       6.0)))
+    fum_rate      = float(ss.get("fum_lost",       ss.get("fumbles",           -2.0)))
+    te_bonus_rate = float(ss.get("bonus_rec_te",   0.0))
+
+    base = (
+        pass_yd  * pass_yd_rate
+        + pass_td  * pass_td_rate
+        + pass_int * pass_int_rate
+        + rush_yd  * rush_yd_rate
+        + rush_td  * rush_td_rate
+        + rec_yd   * rec_yd_rate
+        + rec_td   * rec_td_rate
+        + fum_lost * fum_rate
+    )
+
+    ppr  = base + rec * 1.0
+    half = base + rec * 0.5
+    std  = base
+
+    # TE premium: use league's bonus_rec_te if set, else standard 0.5
+    tep_rate = te_bonus_rate if te_bonus_rate > 0 else TEP_BONUS
+    tep = ppr + (rec * tep_rate if pos == "TE" else 0.0)
+
+    # 6pt passing TD: difference vs the league's actual pass_td rate
+    td6 = pass_td * max(0.0, 6.0 - pass_td_rate)
+
+    return {
+        "ppr":      round(ppr, 2),
+        "half_ppr": round(half, 2),
+        "std":      round(std, 2),
+        "tep":      round(tep, 2),
+        "6pt_ppr":  round(ppr  + td6, 2),
+        "6pt_half": round(half + td6, 2),
+        "6pt_tep":  round(tep  + td6, 2),
+    }
+
+
 def fetch_week_from_sleeper(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
     """
-    Fetch Sleeper's own weekly projections — same source/shape as the actual
-    stats the app already consumes, keyed by Sleeper player_id (no ID mapping
-    needed). Returns the standard multi-variant dict:
-
-      { sleeper_id: {"ppr": X, "half_ppr": Y, "std": Z, "tep": A,
-                     "6pt_ppr": B, "6pt_half": C, "6pt_tep": D} }
-
-    Returns {} on any failure so callers can fall back to Tank01.
+    Fetch Sleeper's own weekly projections, keyed by Sleeper player_id.
+    The API returns projected stat lines; fantasy points are computed here
+    from those raw stats so they match Sleeper's own scoring exactly.
+    Returns {} on any failure so the caller can fall back to Tank01.
     """
     url = f"https://api.sleeper.app/v1/projections/nfl/regular/{season}/{week}"
     try:
@@ -696,7 +762,7 @@ def fetch_week_from_sleeper(season: int, week: int, raw_scoring_settings: dict =
         print(f"⚠️ Sleeper projections fetch failed: {e}")
         return {}
 
-    # Sleeper returns either a dict {pid: {stats...}} or a list of row objects.
+    # Response is {player_id: {stats: {...}}} or {player_id: {...flat stats...}}
     rows = []
     if isinstance(data, dict):
         for pid, entry in data.items():
@@ -710,33 +776,13 @@ def fetch_week_from_sleeper(season: int, week: int, raw_scoring_settings: dict =
                     rows.append((pid, entry))
 
     players_index = load_players_index() or {}
-    TEP_BONUS = 0.5
     out: dict = {}
     for pid, entry in rows:
-        # Stats may be nested under "stats" or at the top level.
         st = entry.get("stats") if isinstance(entry.get("stats"), dict) else entry
-        ppr  = float(st.get("pts_ppr")      or 0)
-        half = float(st.get("pts_half_ppr") or 0)
-        std  = float(st.get("pts_std")      or 0)
-        if ppr == 0 and half == 0 and std == 0:
-            continue
-
         pos = players_index.get(pid, {}).get("pos", "")
-        proj_pass_td = float(st.get("pass_td") or 0)
-        td_bonus = proj_pass_td * 2  # 6pt vs 4pt passing TD
-        tep_bonus = 0.0
-        if pos == "TE":
-            tep_bonus = float(st.get("rec") or 0) * TEP_BONUS
-
-        out[pid] = {
-            "ppr":      round(ppr, 2),
-            "half_ppr": round(half, 2),
-            "std":      round(std, 2),
-            "tep":      round(ppr + tep_bonus, 2),
-            "6pt_ppr":  round(ppr + td_bonus, 2),
-            "6pt_half": round(half + td_bonus, 2),
-            "6pt_tep":  round(ppr + tep_bonus + td_bonus, 2),
-        }
+        variants = _sleeper_stats_to_variants(st, pos, raw_scoring_settings)
+        if variants:
+            out[pid] = variants
 
     print(f"✅ Retrieved {len(out)} Sleeper projections for Week {week}")
     return out
