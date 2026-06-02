@@ -945,7 +945,8 @@ img[src*="bell.png"],
 img[src*="logout.png"],
 img[src*="sun-solid.png"],
 img[src*="magnifying-glass-solid.png"],
-img[src*="bars-solid.png"] {
+img[src*="bars-solid.png"],
+img[src*="xmark-solid.png"] {
   filter: brightness(0) saturate(100%) invert(15%) sepia(45%) saturate(625%) hue-rotate(200deg) brightness(95%) contrast(90%) !important;
 }
 
@@ -962,7 +963,8 @@ html[data-theme="dark"] img[src*="bell.png"],
 html[data-theme="dark"] img[src*="logout.png"],
 html[data-theme="dark"] img[src*="sun-solid.png"],
 html[data-theme="dark"] img[src*="magnifying-glass-solid.png"],
-html[data-theme="dark"] img[src*="bars-solid.png"] {
+html[data-theme="dark"] img[src*="bars-solid.png"],
+html[data-theme="dark"] img[src*="xmark-solid.png"] {
   filter: brightness(0) saturate(100%) invert(82%) sepia(23%) saturate(1585%) hue-rotate(178deg) brightness(103%) contrast(88%) !important;
 }
 
