@@ -70,10 +70,22 @@ def build_matchup_ratings(season: int, through_week: int | None = None, save: bo
     import pandas as pd
 
     years = [y for y in (season, season - 1, season - 2) if y >= 1999]
-    df = nfl.import_weekly_data(years)
-    if df is None or df.empty:
-        print("[matchup_ratings] nfl_data_py returned no weekly data")
+    # Load each year independently so a single missing/404 release asset doesn't
+    # abort the whole build (older nfl_data_py versions 404 on some years).
+    frames = []
+    for y in years:
+        try:
+            d = nfl.import_weekly_data([y])
+            if d is not None and not d.empty:
+                frames.append(d)
+                print(f"[matchup_ratings] loaded {y}: {len(d)} rows")
+        except Exception as e:
+            print(f"[matchup_ratings] skipping {y}: {e}")
+    if not frames:
+        print("[matchup_ratings] no weekly data available "
+              "(try: pip install -U nfl_data_py)")
         return {}
+    df = pd.concat(frames, ignore_index=True)
 
     df = df[df["season_type"] == "REG"].copy()
     df = df.rename(columns={"position": "pos"})
