@@ -16209,31 +16209,13 @@ def api_trade_outcome():
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from dashboard_services.picks import load_pick_value_table
         
-        # Load current values from player_value_history latest snapshot so that
-        # "at trade date" and "current" are on the same scale (both raw model values).
-        # Using calibrated/market values here vs. raw history values creates fake deltas
-        # that reflect methodology differences, not actual value movement.
-        try:
-            from dashboard_services.player_value_history import get_latest_snapshot_date
-            latest_snap_date = get_latest_snapshot_date()
-            if not latest_snap_date:
-                raise ValueError("No snapshot date found")
-            with get_conn() as conn:
-                snap_rows = conn.execute(
-                    """
-                    SELECT player_id, value
-                    FROM player_value_history
-                    WHERE source = 'model' AND as_of_date = %s
-                    """,
-                    (latest_snap_date,),
-                ).fetchall()
-            if not snap_rows:
-                raise ValueError("Empty latest snapshot")
-            values_now = {str(r["player_id"]): float(r["value"]) for r in snap_rows if r["value"]}
-        except Exception as db_error:
-            logger.warning("[api-trade-outcome] History snapshot unavailable, falling back to player_values: %s", db_error)
-            value_table = get_model_value_table_cached()
-            values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
+        # Use the same value source as the player modal so all values are consistent.
+        value_table = get_model_value_table_cached() or []
+        values_now = {
+            str(p["id"]): float(p.get("value") or 0)
+            for p in value_table
+            if isinstance(p, dict) and p.get("id") and float(p.get("value") or 0) > 0
+        }
         
         # Load pick values for pick asset handling
         pick_values = load_pick_value_table()
@@ -16252,7 +16234,11 @@ def api_trade_outcome():
             history = get_player_value_history(pid, days=800)
             if not history:
                 return None
-            best_val = None
+
+            # history is sorted ASC — last entry is the most recent raw snapshot
+            latest_raw = float(history[-1].get("value") or 0)
+
+            best_raw = None
             best_diff = float("inf")
             for snap in history:
                 snap_date_str = str(snap.get("as_of_date") or "")[:10]
@@ -16262,13 +16248,20 @@ def api_trade_outcome():
                     diff = abs((_date.fromisoformat(snap_date_str) - target).days)
                     if diff < best_diff:
                         best_diff = diff
-                        best_val = float(snap.get("value") or 0)
+                        best_raw = float(snap.get("value") or 0)
                 except (ValueError, TypeError):
                     continue
-            # No snapshot within 30 days of the trade date means data is too stale to compare
-            if best_diff > 30 or not best_val:
+
+            if best_diff > 30 or not best_raw or not latest_raw:
                 return None
-            return best_val
+
+            # Scale the raw historical value onto the calibrated scale the modal uses.
+            # historical_calibrated ≈ current_calibrated × (historical_raw / latest_raw)
+            # For a 1-day-old trade the ratio is ~1.0, giving near-zero delta.
+            current_calibrated = values_now.get(pid, 0.0)
+            if not current_calibrated:
+                return best_raw  # no calibrated value — return raw as fallback
+            return round(current_calibrated * (best_raw / latest_raw), 1)
         
         def get_pick_value(asset: dict) -> float:
             """Get current pick value, preferring WLS-derived bucket values."""
