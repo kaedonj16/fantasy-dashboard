@@ -9165,14 +9165,33 @@ def api_start_sit_options():
     except Exception:
         pass
 
-    # ── Season-long PPG from all cached stat files ────────────────────────────
+    # ── FP season projections — same source as player modal / matchup page ─────
+    # keyed by Sleeper player_id → ppg (PPR)
+    fp_ppg_map: dict = {}
+    try:
+        _fp_path = os.path.join("cache", f"fp_projections_{season}_ppr.json")
+        with open(_fp_path) as _fp_f:
+            _fp_raw = json.load(_fp_f)
+        for _fp_pid, _fp_entry in _fp_raw.items():
+            _ppg_v = float(_fp_entry.get("ppg") or 0)
+            if _ppg_v > 0:
+                fp_ppg_map[str(_fp_pid)] = round(_ppg_v, 1)
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+    # ── Season-long and recent-form PPG from Sleeper stat files ───────────────
     season_ppg: dict = {}
+    recent_ppg_map: dict = {}   # last 4 weeks
     try:
         import glob as _glob
         _stat_files = sorted(_glob.glob(
             os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
         ))
         _season_pts: dict = {}
+        _recent_files = _stat_files[-4:]   # last 4 weeks for form
+        _recent_pts: dict = {}
         for _sf in _stat_files:
             try:
                 _sdata = json.load(open(_sf))
@@ -9180,18 +9199,12 @@ def api_start_sit_options():
                     pts = float(stats.get("pts_ppr") or 0)
                     if pts > 0:
                         _season_pts.setdefault(str(pid), []).append(pts)
+                        if _sf in _recent_files:
+                            _recent_pts.setdefault(str(pid), []).append(pts)
             except Exception:
                 continue
         season_ppg = {pid: round(sum(v) / len(v), 1) for pid, v in _season_pts.items() if v}
-    except Exception:
-        pass
-
-    # ── Projections for current week ──────────────────────────────────────────
-    proj_map: dict = {}
-    try:
-        from utils.utils import load_week_projection as _lwp
-        if current_week > 0:
-            proj_map = _lwp(season, current_week) or {}
+        recent_ppg_map = {pid: round(sum(v) / len(v), 1) for pid, v in _recent_pts.items() if v}
     except Exception:
         pass
 
@@ -9209,14 +9222,15 @@ def api_start_sit_options():
         on_bye    = bool(opponent_map) and team not in opponent_map
         opp_label = opp_label_map.get(team, "BYE" if on_bye else "")
 
-        s_ppg         = season_ppg.get(pid, 0.0)
-        _raw_proj = proj_map.get(pid) or proj_map.get(str(pid))
-        if isinstance(_raw_proj, dict):
-            proj_pts = round(float(_raw_proj.get("ppr") or _raw_proj.get("pts_ppr") or 0.0), 1)
-        else:
-            proj_pts = round(float(_raw_proj or 0.0), 1)
+        s_ppg      = season_ppg.get(pid, 0.0)
+        recent_ppg = recent_ppg_map.get(pid, 0.0)
+        # FP season PPG is the same projection source as the player modal
+        fp_ppg     = fp_ppg_map.get(str(pid), 0.0)
+        # Shown as "Proj" in the UI — FP PPG is more reliable than stale Tank01 weekly cache
+        proj_pts   = fp_ppg if fp_ppg > 0 else round(s_ppg, 1)
+
         fpts_vs = round(fpts_against.get(opponent, {}).get(pos, 0.0), 1) if opponent else 0.0
-        # Use z-score matchup rank (rank 1 = easiest); fall back to fpts-against rank
+        # Z-score matchup rank (rank 1 = easiest); fall back to fpts-against rank
         _z_opp = _norm_sched_team(opponent) if opponent else ""
         _z_map = _z_rank_tables.get(pos, {})
         if _z_opp and _z_map:
@@ -9227,24 +9241,25 @@ def api_start_sit_options():
         else:
             def_rank, def_total = None, 32
 
-        # Weekly start/sit score. Projection is the best single signal for a
-        # given week (it already bakes in the matchup), so prefer it. Fall back
-        # to matchup-adjusted season PPG, then to dynasty value so the list
-        # still ranks sensibly before weekly projections/stats exist.
+        # ── Start/sit score: base × form × matchup ────────────────────────────
         if on_bye:
             score = 0.0
-        elif proj_pts > 0:
-            score = proj_pts
-        elif s_ppg > 0 and fpts_vs > 0:
-            league_avg_fpts = round(
-                sum(fpts_against.get(t, {}).get(pos, 0.0) for t in fpts_against) / max(len(fpts_against), 1), 1
-            )
-            adj = min(1.25, max(0.75, fpts_vs / max(league_avg_fpts, 1.0)))
-            score = s_ppg * adj
-        elif s_ppg > 0:
-            score = s_ppg
         else:
-            score = float(row.get(_vf_ss) or row.get("value") or 0) * 0.01
+            # Base: FP PPG → season PPG → 0
+            _base = fp_ppg if fp_ppg > 0 else s_ppg
+
+            # Form factor: how player is trending vs their season average (±25%)
+            _form = 1.0
+            if recent_ppg > 0 and s_ppg > 0:
+                _form = min(1.25, max(0.75, recent_ppg / s_ppg))
+
+            # Matchup factor: ease 0=hardest → 1=easiest, scaled to 0.80–1.20
+            _mu = 1.0
+            if def_rank and def_total and def_total > 1:
+                _ease = (def_total - def_rank) / (def_total - 1)
+                _mu = 0.80 + _ease * 0.40
+
+            score = _base * _form * _mu
 
         full_player  = players_full.get(pid) or {}
         raw_status   = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
@@ -9258,6 +9273,7 @@ def api_start_sit_options():
             "opponent_team": opponent,
             "on_bye":        on_bye,
             "season_ppg":    round(s_ppg, 1),
+            "recent_ppg":    recent_ppg,
             "proj_pts":      proj_pts,
             "fpts_against":  fpts_vs,
             "def_rank":      def_rank,
