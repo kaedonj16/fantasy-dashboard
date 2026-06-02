@@ -43,7 +43,10 @@ from datetime import datetime, timezone
 
 from utils.paths import CACHE_DIR
 
-POSITIONS = ("QB", "RB", "WR", "TE", "K")
+# Kickers are intentionally excluded: the nflverse weekly stats asset doesn't
+# carry kicker fantasy points (fantasy_points_ppr is 0 for K), so z-scores would
+# be meaningless. Consumers fall back to raw points-allowed for K.
+POSITIONS = ("QB", "RB", "WR", "TE")
 WINDOW_WEEKS = 16
 EXCLUDE_WEEKS = {18}            # modern analog of the old week-17 "rest" week
 CURRENT_SEASON_WEIGHT = 2.0
