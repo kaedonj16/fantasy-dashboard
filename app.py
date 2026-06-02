@@ -819,7 +819,7 @@ def normalize_sleeper_username(value: str) -> str:
     return (value or "").strip().lower()
 
 
-def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: str) -> Union[Dict, None]:
+def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: str, user_id: Optional[str] = None) -> Union[Dict, None]:
     """
     Resolve a Sleeper username (or ESPN team/owner name) to:
       - user_id
@@ -828,23 +828,33 @@ def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: 
 
     For ESPN leagues the `username` field holds the owner's display_name or team_name
     because ESPN doesn't use Sleeper-style usernames.
-    """
-    wanted = normalize_sleeper_username(username)
-    if not wanted:
-        return None
 
+    Prefer matching by user_id (unambiguous) when provided; fall back to name matching.
+    """
     matched_user = None
-    for u in users or []:
-        # Check display_name, username, and ESPN team_name (in metadata)
-        meta = u.get("metadata") or {}
-        candidates = [
-            normalize_sleeper_username(u.get("display_name") or ""),
-            normalize_sleeper_username(u.get("username") or ""),
-            normalize_sleeper_username(meta.get("team_name") or ""),
-        ]
-        if wanted in candidates:
-            matched_user = u
-            break
+
+    # Primary: match by user_id — avoids false matches on team_name collisions
+    if user_id:
+        for u in users or []:
+            if str(u.get("user_id") or "") == str(user_id):
+                matched_user = u
+                break
+
+    # Fallback: match by normalized username / display_name / team_name
+    if not matched_user:
+        wanted = normalize_sleeper_username(username)
+        if not wanted:
+            return None
+        for u in users or []:
+            meta = u.get("metadata") or {}
+            candidates = [
+                normalize_sleeper_username(u.get("display_name") or ""),
+                normalize_sleeper_username(u.get("username") or ""),
+                normalize_sleeper_username(meta.get("team_name") or ""),
+            ]
+            if wanted in candidates:
+                matched_user = u
+                break
 
     if not matched_user:
         return None
@@ -929,8 +939,9 @@ def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict]) -> dic
     if not username:
         return session_viewer
 
-    # Resolve the viewer for this specific league
-    league_viewer = resolve_viewer_for_league(users, rosters, username)
+    # Pass user_id so resolution prefers the unambiguous numeric ID match
+    stored_user_id = session_viewer.get("viewer_user_id")
+    league_viewer = resolve_viewer_for_league(users, rosters, username, user_id=stored_user_id)
 
     if league_viewer:
         save_viewer_session(league_viewer)
@@ -8487,7 +8498,9 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
     entry = DASHBOARD_CACHE.get(key)
     if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
         ctx = entry["ctx"]
-        ctx["viewer"] = get_viewer_session()
+        ctx["viewer"] = get_viewer_session_for_league(
+            ctx.get("users") or [], ctx.get("rosters") or []
+        )
         return ctx
 
     with _CTX_LOCKS_LOCK:
@@ -8500,7 +8513,9 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         entry = DASHBOARD_CACHE.get(key)
         if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
             ctx = entry["ctx"]
-            ctx["viewer"] = get_viewer_session()
+            ctx["viewer"] = get_viewer_session_for_league(
+                ctx.get("users") or [], ctx.get("rosters") or []
+            )
             return ctx
         ctx = build_league_context(platform, league_id, season)
         DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
@@ -8534,7 +8549,16 @@ def api_refresh_league():
         return jsonify({"error": "league_id required"}), 400
     key = _cache_key(platform, season, league_id)
     if key in DASHBOARD_CACHE:
-        DASHBOARD_CACHE[key]["ts"] = 0  # expire immediately
+        DASHBOARD_CACHE[key]["ts"] = 0       # expire context cache
+        DASHBOARD_CACHE[key]["page_html"] = {}  # clear rendered HTML so pages re-render fresh
+    # Also remove /tmp files so other gunicorn workers don't serve stale HTML
+    for page in ("dashboard", "activity", "teams", "graphs", "standings", "weekly"):
+        try:
+            path = _page_html_tmp_path(platform, season, league_id, page)
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
     return jsonify({"ok": True})
 
 
