@@ -11049,6 +11049,37 @@ def page_breakouts(platform: str, season: int, league_id: str):
     """Dedicated page for breakout candidates with detailed projections."""
     user_id = session.get("viewer_username")
     has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
+
+    if not has_premium:
+        # Show teaser and auto-open the paywall popup (also covers not-logged-in)
+        teaser_html = """
+    <div class="card central">
+      <div class="card-header">
+        <h2>Breakout Engine</h2>
+        <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
+          Players positioned for breakouts based on opportunity, efficiency, and roster changes
+        </div>
+      </div>
+      <div class="card-body" style="text-align:center;padding:60px 24px;">
+        <div style="font-size:40px;margin-bottom:16px;opacity:.3;"><i class="fa-solid fa-chart-line"></i></div>
+        <div style="font-weight:700;font-size:18px;margin-bottom:8px;">Premium Feature</div>
+        <div style="color:var(--text-muted);font-size:14px;margin-bottom:24px;">
+          See breakout scores, opportunity drivers, hit probability, and<br>
+          PPG projections for every candidate.
+        </div>
+        <button onclick="showPaywall('breakout-candidates')"
+          style="padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;">
+          Unlock Breakout Engine
+        </button>
+      </div>
+    </div>
+    <script>
+      // Pre-open paywall so user sees it immediately
+      document.addEventListener('DOMContentLoaded', function() { showPaywall('breakout-candidates'); });
+    </script>
+    """
+        return render_page("Breakout Engine", league_id, "breakouts", teaser_html, platform, season)
+
     body_html = f"""
     <div class="card central">
       <div class="card-header">
