@@ -13370,7 +13370,7 @@ img, svg, canvas {
   align-items: flex-start;
 }
 #tm-panel-charts .team-modal-section {
-  min-width: 0;
+  max-width: 770px;
   overflow: hidden;
   margin-bottom: 0;
 }
