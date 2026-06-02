@@ -13571,7 +13571,6 @@ def build_schedule_body(ctx):
       }
 
       var rankPage = 0;
-      var RANK_PAGE_SIZE = 25;
 
       function buildRankingsTable(data) {
         var rankGrid  = document.getElementById('schedRankingsGrid');
@@ -13587,8 +13586,6 @@ def build_schedule_body(ctx):
 
         // Group players from the same NFL team into one row — their schedule,
         // avg rank and ease are identical, so separate rows just repeat values.
-        // Players already arrive sorted with teammates adjacent (by ease, then
-        // team, then value), so a first-seen map preserves the ranking order.
         var groups = [];
         var byTeam = {};
         rankings.forEach(function(p) {
@@ -13597,19 +13594,14 @@ def build_schedule_body(ctx):
           g.players.push(p);
         });
 
-        var totalPages = Math.ceil(groups.length / RANK_PAGE_SIZE);
-        if (rankPage >= totalPages) rankPage = 0;
-        var pageStart = rankPage * RANK_PAGE_SIZE;
-        var pageGroups = groups.slice(pageStart, pageStart + RANK_PAGE_SIZE);
-
         var head = '<th class="sched-th sched-th-player">Team</th>';
         for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
         head += '<th class="sched-th">Avg</th><th class="sched-th" style="min-width:90px;">Ease</th>';
 
         var rows = '';
-        pageGroups.forEach(function(g, idx) {
+        groups.forEach(function(g, idx) {
           var p = g.rep;
-          var rank = pageStart + idx + 1;
+          var rank = idx + 1;
           var medalHtml;
           if (rank === 1)      medalHtml = '<span class="sched-rank-medal sched-rank-medal-1">1</span>';
           else if (rank === 2) medalHtml = '<span class="sched-rank-medal sched-rank-medal-2">2</span>';
@@ -13666,30 +13658,8 @@ def build_schedule_body(ctx):
           '</tr>';
         });
 
-        var pageBar = '';
-        if (totalPages > 1) {
-          var from = pageStart + 1, to = Math.min(pageStart + RANK_PAGE_SIZE, groups.length);
-          pageBar = '<div class="sched-page-bar">' +
-            '<button class="sched-page-btn" id="rankPrev"' + (rankPage === 0 ? ' disabled' : '') + '>&#8592; Prev</button>' +
-            '<span class="sched-page-info">' + from + '–' + to + ' of ' + groups.length + '</span>' +
-            '<button class="sched-page-btn" id="rankNext"' + (rankPage >= totalPages - 1 ? ' disabled' : '') + '>Next &#8594;</button>' +
-          '</div>';
-        }
-
         rankGrid.innerHTML =
-          '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>' +
-          pageBar;
-
-        if (totalPages > 1) {
-          var prev = document.getElementById('rankPrev');
-          var next = document.getElementById('rankNext');
-          if (prev) prev.addEventListener('click', function() {
-            if (rankPage > 0) { rankPage--; buildRankingsTable(rankingsCache); rankGrid.scrollIntoView({behavior:'smooth',block:'nearest'}); }
-          });
-          if (next) next.addEventListener('click', function() {
-            if (rankPage < totalPages - 1) { rankPage++; buildRankingsTable(rankingsCache); rankGrid.scrollIntoView({behavior:'smooth',block:'nearest'}); }
-          });
-        }
+          '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>';
       }
 
       // ── Player search / pool ────────────────────────────────────────────────────────────────
