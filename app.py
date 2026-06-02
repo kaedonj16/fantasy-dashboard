@@ -16235,10 +16235,7 @@ def api_trade_outcome():
             if not history:
                 return None
 
-            # history is sorted ASC — last entry is the most recent raw snapshot
-            latest_raw = float(history[-1].get("value") or 0)
-
-            best_raw = None
+            best_val = None
             best_diff = float("inf")
             for snap in history:
                 snap_date_str = str(snap.get("as_of_date") or "")[:10]
@@ -16248,20 +16245,14 @@ def api_trade_outcome():
                     diff = abs((_date.fromisoformat(snap_date_str) - target).days)
                     if diff < best_diff:
                         best_diff = diff
-                        best_raw = float(snap.get("value") or 0)
+                        best_val = float(snap.get("value") or 0)
                 except (ValueError, TypeError):
                     continue
 
-            if best_diff > 30 or not best_raw or not latest_raw:
+            # No snapshot within 30 days of the trade date — too stale to compare
+            if best_diff > 30 or not best_val:
                 return None
-
-            # Scale the raw historical value onto the calibrated scale the modal uses.
-            # historical_calibrated ≈ current_calibrated × (historical_raw / latest_raw)
-            # For a 1-day-old trade the ratio is ~1.0, giving near-zero delta.
-            current_calibrated = values_now.get(pid, 0.0)
-            if not current_calibrated:
-                return best_raw  # no calibrated value — return raw as fallback
-            return round(current_calibrated * (best_raw / latest_raw), 1)
+            return round(best_val, 1)
         
         def get_pick_value(asset: dict) -> float:
             """Get current pick value, preferring WLS-derived bucket values."""
