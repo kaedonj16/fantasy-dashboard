@@ -18579,7 +18579,14 @@ def api_player_game_logs(player_id: str):
         # max(available_years)+1 because sleeper_stats files may already exist
         # for the current season (e.g. 2026), pushing the calculation to 2027.
         _upcoming = season  # season already parsed from request.args above
-        if _upcoming not in game_logs_by_year:
+        # Weeks already covered by actual stats — skip those when projecting
+        _actual_weeks = {
+            g.get("week") for g in (game_logs_by_year.get(_upcoming) or [])
+            if not g.get("is_projection")
+        }
+        # Show projections if: no actual data yet (pre-season) OR some weeks
+        # are still in the future (active season — fill the remaining weeks).
+        if _upcoming not in game_logs_by_year or _actual_weeks:
             try:
                 from utils.utils import pick_proj_variant, load_week_projection
                 from statistics import median as _med_fn
@@ -18632,6 +18639,8 @@ def api_player_game_logs(player_id: str):
 
                     _proj_logs = []
                     for _w in range(1, 19):
+                        if _w in _actual_weeks:
+                            continue  # already have real stats for this week
                         _pv = _proj_vals.get(_w, _med if _med > 0 else None)
                         if _pv and _med > 0 and _pv < _med * 0.5:
                             _pv = _med
@@ -18660,7 +18669,13 @@ def api_player_game_logs(player_id: str):
                             "is_projection": True,
                         })
                     if any(g["fantasy_pts"] for g in _proj_logs):
-                        game_logs_by_year[_upcoming] = _proj_logs
+                        existing = game_logs_by_year.get(_upcoming) or []
+                        # Merge: keep real games, append future projected weeks
+                        combined = sorted(
+                            existing + _proj_logs,
+                            key=lambda g: g.get("week") or 0
+                        )
+                        game_logs_by_year[_upcoming] = combined
             except Exception as _proj_err:
                 logger.debug(f"[game_logs] upcoming season projection failed: {_proj_err}")
 
