@@ -831,7 +831,7 @@ def _build_distribute(
                 try:
                     from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
                     new_po_pct, _ = _sim_swap(
-                        sim_state, int(viewer_roster_id), new_players, n_sims=2000
+                        sim_state, int(viewer_roster_id), new_players, n_sims=10_000
                     )
                     net_pod = (new_po_pct - current_playoff_pct) / 100.0
                 except Exception:
@@ -1057,7 +1057,7 @@ def _build_rebuilding(
                 try:
                     from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
                     new_po_pct, _ = _sim_swap(
-                        sim_state, int(viewer_roster_id), net_players, n_sims=2000
+                        sim_state, int(viewer_roster_id), net_players, n_sims=10_000
                     )
                     net_pod = (new_po_pct - current_playoff_pct) / 100.0
                 except Exception:
@@ -1573,7 +1573,7 @@ def get_archetype_suggestions(
         if sim_state is not None and _vid_int is not None:
             try:
                 from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
-                new_po_pct, new_avg = _sim_swap(sim_state, _vid_int, new_pids, n_sims=2000)
+                new_po_pct, new_avg = _sim_swap(sim_state, _vid_int, new_pids, n_sims=10_000)
                 pod = (new_po_pct - current_playoff_pct) / 100.0
                 wpd = _win_prob(new_avg, league_avg) - current_wp
             except Exception:
@@ -1596,7 +1596,7 @@ def get_archetype_suggestions(
             if sim_state is not None and _vid_int is not None:
                 try:
                     from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
-                    _net_po_pct, _ = _sim_swap(sim_state, _vid_int, net_roster, n_sims=2000)
+                    _net_po_pct, _ = _sim_swap(sim_state, _vid_int, net_roster, n_sims=10_000)
                     net_pod_pkg = (_net_po_pct - current_playoff_pct) / 100.0
                 except Exception:
                     net_pod_pkg = pod

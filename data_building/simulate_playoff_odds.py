@@ -186,13 +186,18 @@ def simulate_with_swap(
     sim_state: dict,
     viewer_roster_id: int,
     viewer_pids_after: list[str],
-    n_sims: int = 2000,
+    n_sims: int = 10_000,
 ) -> tuple[float, float]:
     """
     Re-run the simulation with viewer's roster replaced by viewer_pids_after.
 
     Only the viewer's avg/std are recomputed; all other teams are unchanged,
-    keeping the simulation fast (numpy-vectorised, ~5 ms at n_sims=2000).
+    keeping the simulation fast (numpy-vectorised). The simulation reuses the
+    same deterministic seed as the baseline (run_base_simulation) so that the
+    *only* difference between the two runs is the viewer's swapped lineup —
+    a common-random-numbers variance reduction. This makes the playoff-odds
+    delta a clean before/after comparison instead of two independent noisy
+    draws subtracted from each other.
 
     Returns (playoff_pct 0–100, new_avg_ppg).
     """
@@ -211,7 +216,8 @@ def simulate_with_swap(
         for t in sim_state["teams"]
     ]
 
-    result = _run_mc(teams, sim_state["matchups"], sim_state["playoff_teams"], n_sims, None)
+    result = _run_mc(teams, sim_state["matchups"], sim_state["playoff_teams"],
+                     n_sims, sim_state.get("seed"))
     for r in result:
         if r["roster_id"] == viewer_roster_id:
             return r["playoff_pct"], new_avg
