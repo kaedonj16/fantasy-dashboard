@@ -8549,7 +8549,16 @@ def api_refresh_league():
         return jsonify({"error": "league_id required"}), 400
     key = _cache_key(platform, season, league_id)
     if key in DASHBOARD_CACHE:
-        DASHBOARD_CACHE[key]["ts"] = 0  # expire immediately
+        DASHBOARD_CACHE[key]["ts"] = 0       # expire context cache
+        DASHBOARD_CACHE[key]["page_html"] = {}  # clear rendered HTML so pages re-render fresh
+    # Also remove /tmp files so other gunicorn workers don't serve stale HTML
+    for page in ("dashboard", "activity", "teams", "graphs", "standings", "weekly"):
+        try:
+            path = _page_html_tmp_path(platform, season, league_id, page)
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
     return jsonify({"ok": True})
 
 
