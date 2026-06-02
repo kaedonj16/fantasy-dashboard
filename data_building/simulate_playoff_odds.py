@@ -148,9 +148,9 @@ def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
         remaining_weeks = list(range(current_week + 1, playoff_week_start))
         _blend_weekly_projections(teams, ctx, season, current_week + 1)
 
-    matchups = _fetch_remaining_schedule(platform, league_id, season, remaining_weeks)
-    if not matchups:
-        matchups = _fallback_schedule(teams, remaining_weeks, division_map)
+    matchups = _resolve_schedule(
+        platform, league_id, season, remaining_weeks, teams, division_map
+    )
 
     roster_pid_map: dict[int, list[str]] = {}
     for r in (ctx.get("rosters") or []):
@@ -375,11 +375,9 @@ def simulate_playoff_odds(
         if not teams:
             return []
         remaining_weeks = list(range(1, playoff_week_start))
-        matchups_by_week = _fetch_remaining_schedule(
-            platform, league_id, season, remaining_weeks
+        matchups_by_week = _resolve_schedule(
+            platform, league_id, season, remaining_weeks, teams, division_map
         )
-        if not matchups_by_week:
-            matchups_by_week = _fallback_schedule(teams, remaining_weeks, division_map)
         result = _run_mc(teams, matchups_by_week, playoff_teams, n_sims, seed)
         for r in result:
             r["is_projected"] = True
@@ -395,11 +393,9 @@ def simulate_playoff_odds(
 
     # ── Case 3: in-season projection ─────────────────────────────────────────
     remaining_weeks = list(range(current_week + 1, playoff_week_start))
-    matchups_by_week = _fetch_remaining_schedule(
-        platform, league_id, season, remaining_weeks
+    matchups_by_week = _resolve_schedule(
+        platform, league_id, season, remaining_weeks, teams, division_map
     )
-    if not matchups_by_week:
-        matchups_by_week = _fallback_schedule(teams, remaining_weeks, division_map)
 
     # Blend historical team avg with Sleeper's upcoming-week player projections.
     # Using 30 % weekly projection + 70 % season average keeps the estimate
@@ -820,6 +816,31 @@ def _fallback_schedule(
     return _round_robin_schedule(teams, weeks)
 
 
+def _resolve_schedule(
+    platform: str,
+    league_id: str,
+    season: int,
+    weeks: list[int],
+    teams: list[dict],
+    division_map: dict[int, int],
+) -> dict[int, list[tuple[int, int]]]:
+    """Single schedule source shared by every simulation path.
+
+    Prefers the real published schedule and switches to it the moment it is
+    decided — per week. Any week the platform hasn't published yet is filled
+    from the deterministic fallback so coverage is complete and identical
+    across all callers. Once the real schedule is fully published, every
+    simulation uses it verbatim.
+    """
+    real = _fetch_remaining_schedule(platform, league_id, season, weeks)
+    missing = [w for w in weeks if w not in real]
+    if not missing:
+        return real
+    fallback = _fallback_schedule(teams, missing, division_map)
+    # Real takes precedence per week; fallback only fills undecided weeks.
+    return {**fallback, **real}
+
+
 def _round_robin_schedule(
     teams: list[dict],
     weeks: list[int],
@@ -827,8 +848,13 @@ def _round_robin_schedule(
     """
     Balanced round-robin (circle method): fix one team, rotate the rest.
     Produces N-1 unique rounds then cycles — matches Sleeper's default.
+
+    Teams are sorted by roster_id so the generated schedule is identical
+    regardless of the order teams are passed in. This keeps the fallback
+    schedule universal across every caller (playoff-odds page, archetype
+    swap sims, etc.) so all simulations share one schedule.
     """
-    ids = [t["roster_id"] for t in teams]
+    ids = sorted(t["roster_id"] for t in teams)
     n   = len(ids)
     if n < 2:
         return {}
@@ -871,14 +897,16 @@ def _divisional_schedule(
     """
     from collections import defaultdict as _dd
     by_div: dict[int, list[int]] = _dd(list)
-    for t in teams:
+    for t in sorted(teams, key=lambda x: x["roster_id"]):
         div = division_map.get(t["roster_id"], 1)
         by_div[div].append(t["roster_id"])
 
     if len(by_div) < 2:
         return _round_robin_schedule(teams, weeks)
 
-    divisions = list(by_div.values())
+    # Iterate divisions in sorted key order so the schedule is deterministic
+    # and identical across all callers (one universal schedule).
+    divisions = [sorted(by_div[d]) for d in sorted(by_div)]
     n_teams   = len(teams)
     n_weeks   = len(weeks)
     n_per_week = n_teams // 2
