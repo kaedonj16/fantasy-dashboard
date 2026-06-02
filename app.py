@@ -9210,7 +9210,11 @@ def api_start_sit_options():
         opp_label = opp_label_map.get(team, "BYE" if on_bye else "")
 
         s_ppg         = season_ppg.get(pid, 0.0)
-        proj_pts      = round(float(proj_map.get(pid) or proj_map.get(str(pid)) or 0.0), 1)
+        _raw_proj = proj_map.get(pid) or proj_map.get(str(pid))
+        if isinstance(_raw_proj, dict):
+            proj_pts = round(float(_raw_proj.get("ppr") or _raw_proj.get("pts_ppr") or 0.0), 1)
+        else:
+            proj_pts = round(float(_raw_proj or 0.0), 1)
         fpts_vs = round(fpts_against.get(opponent, {}).get(pos, 0.0), 1) if opponent else 0.0
         # Use z-score matchup rank (rank 1 = easiest); fall back to fpts-against rank
         _z_opp = _norm_sched_team(opponent) if opponent else ""
