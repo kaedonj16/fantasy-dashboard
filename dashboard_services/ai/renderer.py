@@ -624,7 +624,10 @@ def get_power_rankings_html(ctx: dict) -> str:
                     "wins": t["wins"],
                     "losses": t["losses"],
                     "pf": round(t["pf"], 1),
-                    "direction": t["direction"],
+                    "win_window": t.get("win_window") or t.get("direction") or "balanced",
+                    "avg_age": t.get("avg_age"),
+                    "first_round_picks": t.get("first_round_picks", 0),
+                    "position_strengths": t.get("position_strengths") or {},
                     "top_assets": [{"name": p["name"], "position": p["position"], "value": p["value"]} for p in (t.get("top_assets") or [])[:3]],
                 }
                 for t in teams
@@ -731,10 +734,10 @@ def _fmt_pick_label(pk: dict) -> str:
     season = pk.get("season", "")
     rnd    = int(pk.get("round") or 0)
     slot   = pk.get("slot")
-    suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
     if slot:
         return f"{season} {rnd}.{int(slot):02d}"
-    return f"{season} {suffix} (Mid)"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+    return f"{season} {rnd}{suffix} (Mid)"
 
 
 def _render_real_trade_suggestions(real_trades: list[dict]) -> str:

@@ -178,7 +178,7 @@ def avatar_from_users(platform, users: list[dict], owner_id: Optional[str]) -> O
         return avatar_meta
     if profile_id:
         if platform == "sleeper":
-            return f"https://sleepercdn.com/avatars/{profile_id}"
+            return f"https://sleepercdn.com/avatars/thumbs/{profile_id}"
         return f"{profile_id}"
     return None
 

@@ -870,90 +870,38 @@ def render_matchup_slide(
     today_str = date.today().strftime("%Y%m%d")
     now_dt = datetime.now()
 
-    def team_head(t, proj_mode: bool):
-        ava = t.get("avatar") or ""
-        img = f"<img class='avatar' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
-
+    def _score_html(t, proj_mode: bool) -> tuple[str, bool]:
+        """Returns (html, has_live_proj). has_live_proj=True means actual+proj stacked."""
         if not proj_mode:
             points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
-            rid = t.get('roster_id', '')
-            return f"""
-        <div class="m-team">
-          <div class="m-team-identity">
-            {img}
-            <div>
-              <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-              <div>{t['record']} • @{t['username']}</div>
-            </div>
-          </div>
-          <span class="num">{points}</span>
-        </div>
-        """
-
-        actual_total, live_proj_total = team_live_totals(
-            t,
-            status_by_pid,
-            week_proj_map,
+            return f"<span class='num'>{points}</span>", False
+        actual_total, live_proj_total = team_live_totals(t, status_by_pid, week_proj_map)
+        any_started = any(
+            status_by_pid.get(p.get("pid"), STATUS_NOT_STARTED) in (STATUS_IN_PROGRESS, STATUS_FINAL)
+            for p in (t.get("starters") or [])
         )
+        if not any_started:
+            return f"<span class='num m-proj-only'>{live_proj_total:.1f}</span>", False
+        return f"<span class='num'>{actual_total:.1f}</span><span class='proj'>{live_proj_total:.1f}</span>", True
 
+    def _team_col(t, side: str) -> str:
         rid = t.get('roster_id', '')
-        return f"""
-        <div class="m-team">
-          <div class="m-team-identity">
-            {img}
-            <div>
-              <div class="name left team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-              <div>{t['record']} • @{t['username']}</div>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1;justify-items: center;">
-            <span class="num">{actual_total:.1f}</span>
-            <span class="proj" style="opacity:0.4;text-align:center;">{live_proj_total:.1f}</span>
-          </div>
-        </div>
-        """
-
-    def team_head_2nd(t, proj_mode: bool):
+        name = t['name']
+        record = t.get('record', '0-0')
+        username = t.get('username') or ''
         ava = t.get("avatar") or ""
-        img = f"<img class='avatar' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
+        img_html = f"<img class='avatar m-av' src='{ava}' onerror=\"this.style.display='none'\">" if ava else ""
+        name_el = f"<div class='m-team-name team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</div>"
+        if side == 'left':
+            meta = f"<div class='m-team-meta'>{record} &bull; @{username}</div>"
+            return f"<div class='m-team-col m-col-left'>{img_html}{name_el}{meta}</div>"
+        else:
+            meta = f"<div class='m-team-meta'>@{username} &bull; {record}</div>"
+            return f"<div class='m-team-col m-col-right'>{img_html}{name_el}{meta}</div>"
 
-        if not proj_mode:
-            points = f"{t['pts_total']:.2f}" if isinstance(t.get("pts_total"), (int, float)) else "-"
-            rid = t.get('roster_id', '')
-            return f"""
-        <div class="m-team">
-          <span class="num">{points}</span>
-          <div class="m-team-identity">
-            <div class="right">
-              <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-              <div>@{t['username']} • {t['record']}</div>
-            </div>
-            {img}
-          </div>
-        </div>
-        """
-
-        actual_total, live_proj_total = team_live_totals(
-            t,
-            status_by_pid,
-            week_proj_map,
-        )
-        rid = t.get('roster_id', '')
-        return f"""
-        <div class="m-team">
-          <div style="display:grid;grid-template-columns:1;justify-items: center;">
-            <span class="num">{actual_total:.1f}</span>
-            <span class="proj" style="opacity:0.4;text-align:center;">{live_proj_total:.1f}</span>
-          </div>
-          <div class="m-team-identity">
-            <div class="right">
-              <div class="name team-clickable" style="cursor:pointer;" data-roster-id="{rid}" data-team-name="{t['name']}">{t['name']}</div>
-              <div>@{t['username']} • {t['record']}</div>
-            </div>
-            {img}
-          </div>
-        </div>
-        """
+    # keep for backward compat with any callers (unused in this render path)
+    def team_head(t, proj_mode: bool): return ""
+    def team_head_2nd(t, proj_mode: bool): return ""
 
     def format_team_game_line(team_abv: str, game: dict, pos: str, side: str) -> str:
         if not team_abv or not game:
@@ -1084,10 +1032,12 @@ def render_matchup_slide(
             is_bye = True
 
         # decide what to show
+        is_not_started = False
         if is_bye:
             display_actual = 0.0
             display_proj = None
         elif status == STATUS_NOT_STARTED:
+            is_not_started = True
             display_actual = 0.0
             display_proj = proj_val
         elif status == STATUS_IN_PROGRESS:
@@ -1178,7 +1128,7 @@ def render_matchup_slide(
                     f"</div>"
                 )
 
-        return cell, float(display_actual), display_proj, is_bye, (stats if stats else None)
+        return cell, float(display_actual), display_proj, is_bye, is_not_started, (stats if stats else None)
 
     rows_html: List[str] = []
 
@@ -1187,10 +1137,10 @@ def render_matchup_slide(
             m["right"].get("starters", []),
             fillvalue=None,
     ):
-        left_cell, left_actual, left_proj, left_is_bye, left_stats = player_bits(
+        left_cell, left_actual, left_proj, left_is_bye, left_not_started, left_stats = player_bits(
             L, "left", True
         )
-        right_cell, right_actual, right_proj, right_is_bye, right_stats = player_bits(
+        right_cell, right_actual, right_proj, right_is_bye, right_not_started, right_stats = player_bits(
             R, "right", False
         )
 
@@ -1200,7 +1150,7 @@ def render_matchup_slide(
         left_more = la > ra
         right_more = ra > la
 
-        def score_stack(actual_val, proj_val, side: str, is_bye: bool, more: bool) -> str:
+        def score_stack(actual_val, proj_val, side: str, is_bye: bool, more: bool, not_started: bool = False) -> str:
             if is_bye:
                 return (
                     "<div class='num-stack' style='display:grid'>"
@@ -1214,7 +1164,13 @@ def render_matchup_slide(
                     f"<span class='{cls}'>{actual_val:.1f}</span>"
                     "</div>"
                 )
-
+            if not_started:
+                # hasn't played yet — projection only, no zero actual
+                return (
+                    "<div class='num-stack' style='display:grid'>"
+                    f"<span class='num mid {side} proj' style='opacity:0.55;'>{proj_val:.1f}</span>"
+                    "</div>"
+                )
             cls_actual = f"num mid {side}" + (" more" if more else "")
             return (
                 "<div class='num-stack' style='display:grid'>"
@@ -1236,8 +1192,8 @@ def render_matchup_slide(
                 f"<span class='meta'>{stats}</span></div>"
             )
 
-        left_points_html = score_stack(left_actual, left_proj, "l", left_is_bye, left_more)
-        right_points_html = score_stack(right_actual, right_proj, "r", right_is_bye, right_more)
+        left_points_html = score_stack(left_actual, left_proj, "l", left_is_bye, left_more, left_not_started)
+        right_points_html = score_stack(right_actual, right_proj, "r", right_is_bye, right_more, right_not_started)
         points = f"{left_points_html}{right_points_html}"
 
         rows_html.append(
@@ -1257,22 +1213,35 @@ def render_matchup_slide(
         lp = round(l_prob * 100)
         rp = 100 - lp
         l_leading = l_prob >= 0.5
-        l_col = "#22c55e" if l_leading else "var(--text-muted)"
-        r_col = "#22c55e" if not l_leading else "var(--text-muted)"
+        win_green = "#22c55e"
+        lose_fade = "rgba(148,163,184,0.35)"
+        l_col = win_green if l_leading else "var(--text-muted)"
+        r_col = win_green if not l_leading else "var(--text-muted)"
+        l_bar = win_green if l_leading else lose_fade
+        r_bar = win_green if not l_leading else lose_fade
+        track_bg = f"linear-gradient(to right,{l_bar} {lp}%,{r_bar} {lp}%)"
         win_bar_html = f"""<div class="m-win-bar">
   <span class="m-wp-pct" style="color:{l_col};">{lp}%</span>
-  <div class="m-wp-track">
-    <div class="m-wp-fill" style="width:{lp}%;background:{l_col};"></div>
-  </div>
+  <div class="m-wp-track" style="background:{track_bg};"></div>
   <span class="m-wp-pct" style="color:{r_col};text-align:right;">{rp}%</span>
 </div>"""
+
+    l_score, l_live = _score_html(m['left'], proj)
+    r_score, r_live = _score_html(m['right'], proj)
+    proj_class = " has-proj" if (l_live or r_live) else ""
 
     return f"""
     <div class="m-slide">
       <div class="m-head">
-        {team_head(m['left'], proj)}
-        <div class="m-vs">{'vs' if not proj else ''}</div>
-        {team_head_2nd(m['right'], proj)}
+        <div class="m-head-row">
+          {_team_col(m['left'], 'left')}
+          <div class="m-scoreboard{proj_class}">
+            <div class="m-score-val m-score-l">{l_score}</div>
+            <div class="m-vs">vs</div>
+            <div class="m-score-val m-score-r">{r_score}</div>
+          </div>
+          {_team_col(m['right'], 'right')}
+        </div>
       </div>
       {win_bar_html}
       <div class="m-body">

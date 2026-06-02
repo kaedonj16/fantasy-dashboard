@@ -137,9 +137,12 @@ def fetch_fc_startup_adp(is_sf: bool) -> dict:
         import requests as _req
         resp = _req.get(url, timeout=15, headers={"User-Agent": "fantasy-dashboard/1.0"})
         resp.raise_for_status()
+        if not resp.text.strip():
+            logger.info("adp_service: FantasyCalc startup returned empty body (sf=%s) — skipping", is_sf)
+            return {}
         fc_data = resp.json()
-    except Exception:
-        logger.warning("adp_service: FantasyCalc startup fetch failed (sf=%s)", is_sf, exc_info=True)
+    except Exception as _exc:
+        logger.warning("adp_service: FantasyCalc startup fetch failed (sf=%s): %s", is_sf, _exc)
         fc_data = []
 
     if not fc_data:

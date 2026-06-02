@@ -426,6 +426,8 @@ ul {
 
 .sidebar-grid {
   grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  align-items: stretch;
 }
 
 .streak-cold .chip-streak {
@@ -1064,6 +1066,52 @@ html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.bo-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.bo-page-btn {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.bo-page-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.bo-page-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.bo-page-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.bo-page-info {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 8px;
 }
 
 .breakout-context {
@@ -3745,6 +3793,7 @@ thead th {
 
 /* ── Suggestions tab layout ─────────────────────────────────── */
 .otc-sugg-tab-layout {
+  padding-top: 5px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
   gap: 20px;
@@ -6445,19 +6494,28 @@ thead th {
 }
 
 .rank {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   display: inline-grid;
   place-items: center;
-  border-radius: 6px;
-  border: 1px solid var(--grid);
+  border-radius: 4px;
+  font-size: 11px;
   font-weight: 800;
-  color: #93c5fd;
+  color: var(--text-muted);
+  background: transparent;
+  flex-shrink: 0;
 }
 
 .rank-first {
-  background: #facc15;
-  color: #78350f;
+  color: #f59e0b;
+}
+
+.rank-second {
+  color: var(--text-muted);
+}
+
+.rank-third {
+  color: #92400e;
 }
 
 /* ---- Playoff Odds tab ---- */
@@ -6594,15 +6652,6 @@ thead th {
   font-variant-numeric: tabular-nums;
 }
 
-.rank-second {
-  background: var(--bg-alt);
-  color: #374151;
-}
-
-.rank-third {
-  background: #cd7f32;
-  color: #7c2d12;
-}
 
 /* ============================================
    MATCHUPS & SCHEDULE
@@ -6884,10 +6933,7 @@ thead th {
   color: #fecaca;
 }
 
-.m-team .avatar {
-  width: 60px;
-  height: 60px;
-}
+.m-av { box-shadow: none; }
 
 .podium .podium-header .avatar {
   width: 42px;
@@ -7086,6 +7132,76 @@ thead th {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.hg-margin {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 4px;
+}
+
+/* Weekly highlights sidebar cards */
+.whl-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.whl-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 7px;
+}
+
+.whl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.whl-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.whl-name:hover { color: var(--accent); }
+
+.whl-pts {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.whl-winner .whl-pts { color: var(--accent); }
+
+.whl-loser .whl-name,
+.whl-loser .whl-pts {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.whl-margin {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
 }
 
 .home-bullets {
@@ -7860,10 +7976,8 @@ thead th {
 }
 
 .m-head {
-  display: grid;
-  grid-template-columns: 1fr 40px 1fr;
-  align-items: center;
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
   padding: 10px 12px;
   background: var(--card-soft);
   border-radius: 10px;
@@ -7899,47 +8013,102 @@ thead th {
   color: var(--text-muted);
 }
 
-.m-team {
+/* ── Matchup header ──────────────────────────────────────── */
+
+/* Three-column row: [team col] [scoreboard] [team col] */
+.m-head-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  justify-content: space-between;
 }
 
-.m-team-identity {
+/* Left and right team columns */
+.m-team-col {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  flex: 1;
   min-width: 0;
 }
 
-.m-team-identity .right {
+.m-col-right {
+  align-items: flex-end;
   text-align: right;
 }
 
-.m-team .name {
+.m-av {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  margin-bottom: 2px;
+}
+
+/* Central scoreboard */
+.m-scoreboard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.m-scoreboard.has-proj {
+  align-items: flex-start;
+}
+
+.m-score-val {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.m-scoreboard .num {
+  font-size: 32px;
   font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.m-scoreboard .proj {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.5;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.m-scoreboard .m-proj-only {
+  opacity: 0.55;
+}
+
+.m-team-name {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.m-team-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.m-team .num {
-  letter-spacing: 1px;
-  font-size: 30px;
-  font-weight: 800;
-  color: var(--accent);
-}
+.m-team-name.loser { color: var(--text-muted); }
 
-.m-team .proj {
-  text-align: center;
-  letter-spacing: 1px;
-  font-weight: 700;
-  opacity: 0.45;
-  color: var(--accent);
-}
-
-.m-team-name.loser {
-  color: var(--text-muted);
-}
+/* Legacy selectors kept for other pages */
+.m-team { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.m-team-right { justify-content: flex-end; }
+.m-team-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.m-right { text-align: right; }
 
 .m-team-name.winner {
   font-weight: 700;
@@ -7947,10 +8116,15 @@ thead th {
 
 .m-vs {
   text-align: center;
-  font-weight: 900;
+  font-weight: 700;
   color: var(--text-muted);
-  font-size: 1.1rem;
-  letter-spacing: 0.5px;
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.m-scoreboard.has-proj .m-vs {
+  margin-top: 6px;
 }
 
 .m-win-bar {
@@ -8243,13 +8417,14 @@ thead th {
   text-align: right;
 }
 
-.page-sidebar {
+git ad.page-sidebar {
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 12px;
+  top: 95px;
   height: fit-content;
 }
+
 
 .picks-list .pick-row {
   background: var(--row);
@@ -8540,7 +8715,10 @@ thead th {
   justify-self: end;
   font-variant-numeric: tabular-nums;
   font-weight: 800;
+  font-size: 14px;
   color: var(--accent);
+  white-space: nowrap;
+  padding-left: 4px;
 }
 
 .radar-selectors {
@@ -8595,17 +8773,28 @@ thead th {
 }
 
 .side-card {
-  padding: 12px;
-  display: grid;
+  padding: 10px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-soft);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  min-width: 0;
 }
 
 .side-card h2, .side-card h3, .side-header, .side-body {
-  text-align: center;
+  text-align: left;
 }
 
 .side-card h3 {
-  font-size: 16px;
+  font-size: 10px;
   font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 2px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
 }
 
 .side-header {
@@ -8619,15 +8808,21 @@ thead th {
 
 .side-row {
   display: grid;
-  grid-template-columns: 28px 1fr 40px;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  border-top: 1px dashed #d9e2ec;
+  gap: 5px;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
 }
 
-.side-row:first-of-type {
+.side-row:first-child {
   border-top: none;
+  padding-top: 6px;
+}
+
+.side-card h3 + .side-row {
+  border-top: none;
+  padding-top: 6px;
 }
 
 .site-footer {
@@ -9173,14 +9368,26 @@ thead th {
   display: block;
 }
 
+.who {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .who .name {
+  font-size: 13px;
   font-weight: 700;
   color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .who .sub {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 [data-tooltip] {
@@ -9455,56 +9662,18 @@ img, svg, canvas {
   .m-nav h2 { font-size: 15px; }
   .m-btn { padding: 4px 8px; font-size: 12px; }
 
-  .m-head {
-    grid-template-columns: 1fr 26px 1fr;
-    padding: 8px 10px;
-    gap: 4px;
-    overflow: hidden;        /* clip content that spills out of grid cells */
-  }
-
-  /* grid cells must have min-width:0 or 1fr won't actually constrain them */
-  .m-head > * { min-width: 0; overflow: hidden; }
-
-  .m-vs { font-size: 0.75rem; }
-
-  /* flex layout inside each team cell */
-  .m-team {
-    gap: 4px;
-    min-width: 0;
-    overflow: hidden;
-    flex-wrap: nowrap;
-  }
-
-  /* avatar: fixed size, never shrink */
-  .m-team .avatar { width: 38px; height: 38px; flex-shrink: 0; }
-
-  /* name / record block: can shrink and will clip with ellipsis */
-  .m-team > div {
-    flex: 1 1 0;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .m-team .name {
-    font-size: 12px;
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* record / username line */
-  .m-team > div > div:not(.name) {
-    font-size: 10px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--text-muted);
-  }
-
-  /* score: fixed width, never shrink */
-  .m-team .num { font-size: 18px; letter-spacing: 0; flex-shrink: 0; }
-  .m-team .proj { font-size: 10px; }
+  /* Wider card on mobile */
+  .card.matchup-carousel { padding: 8px; }
+  .m-head { padding: 8px 10px; }
+  .m-head-row { gap: 8px; }
+  .m-av { width: 28px; height: 28px; margin-bottom: 1px; }
+  .m-scoreboard { gap: 6px; }
+  .m-scoreboard .num { font-size: 22px; }
+  .m-scoreboard .proj { font-size: 10px; }
+  .m-scoreboard.has-proj .m-vs { margin-top: 3px; }
+  .m-vs { font-size: 10px; letter-spacing: 0; }
+  .m-team-name { font-size: 12px; }
+  .m-team-meta { font-size: 10px; }
 
   /* ── Player rows ─────────────────────────────────────── */
   .m-row {
@@ -9521,9 +9690,10 @@ img, svg, canvas {
 }
 
 @media (max-width: 400px) {
-  /* On very small phones hide the avatar entirely */
-  .m-team .avatar { display: none !important; }
-  .m-head { grid-template-columns: 1fr 22px 1fr; padding: 6px 8px; }
+  .m-av { width: 24px; height: 24px; }
+  .m-head { padding: 8px 6px; }
+  .m-head-row { gap: 6px; }
+  .m-scoreboard .num { font-size: 20px; }
 }
 
 @media (max-width: 720px) {
@@ -9847,6 +10017,8 @@ img, svg, canvas {
 }
 
 @media (max-width: 480px) {
+  .overview-layout { margin: 4px; }
+
   .ad-container {
     min-height: 60px;
     max-height: 70px;
@@ -10362,7 +10534,7 @@ img, svg, canvas {
   }
 
   .team-strength-card .card-header-row .mini-label {
-    width: 100%;
+    font-size: 10px;
   }
 
   .teams-sort-bar {
@@ -12656,6 +12828,30 @@ img, svg, canvas {
 
 .game-log-no-stats td:first-child {
   background-color: #f9fafb;
+}
+
+.game-log-proj-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #6366f1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.game-log-proj-th {
+  color: #6366f1 !important;
+}
+
+.game-log-proj-row {
+  background: rgba(99, 102, 241, 0.03);
+}
+
+.game-log-proj-pts {
+  color: #6366f1 !important;
+  font-style: italic;
 }
 
 .game-log-bye {
@@ -15141,20 +15337,49 @@ tr.team-clickable {
 .teams-sidebar .btm-meta { padding: 6px 12px 8px; }
 .teams-sidebar .teams-analytics-card { margin: 0; }
 
-/* ── Roster Intel ─────────────────────────────────────────────────────────── */
-.ri-team-block {
-  padding: 10px 0;
+/* ── Roster Intel ─────────────────────────────────────── */
+.ri-pos-section {
+  padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
-.ri-team-block:last-child { border-bottom: none; }
+.ri-pos-section:last-child { border-bottom: none; padding-bottom: 0; }
 
-.ri-team-name {
+.ri-pos-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ri-pos-label {
   font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text);
+  width: 26px;
+  flex-shrink: 0;
+}
+
+.ri-pos-stats {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ri-pos-stats span + span::before {
+  content: '·';
+  margin-right: 10px;
+}
+
+.ri-health-badge {
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  margin-bottom: 6px;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
 }
 
 .ri-player-row {
@@ -15936,24 +16161,82 @@ tr.team-clickable {
 }
 
 /* ── Data freshness chip ─────────────────────────────────────────────────── */
-#cache-freshness {
-  display: none;
+/* ── Floating action pills (Discord + Data Freshness) ── */
+#floating-pill-group {
   position: fixed;
   bottom: 14px;
   right: 16px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  z-index: 50;
+}
+
+.fp-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  width: 40px;
+  border-radius: 20px;
   background: var(--card, #1e293b);
   border: 1px solid var(--border, #334155);
-  border-radius: 20px;
-  padding: 5px 12px;
-  font-size: 11px;
   color: var(--text-muted, #94a3b8);
-  z-index: 50;
-  pointer-events: auto;
+  box-shadow: 0 2px 8px rgba(0,0,0,.2);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  overflow: hidden;
   white-space: nowrap;
+  text-decoration: none;
+  transition: width 0.22s ease, border-color 0.15s ease, color 0.15s ease;
+  pointer-events: auto;
 }
-#cache-freshness.cf-visible { display: block; }
+
+.fp-pill:hover {
+  color: var(--text, #f1f5f9);
+  border-color: var(--accent, #38bdf8);
+}
+
+#discord-pill:hover  { width: 148px; }
+#cache-freshness:hover { width: 112px; }
+
+.fp-pill-icon {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+
+.fp-pill-time {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.fp-pill-label {
+  font-size: 12px;
+  font-weight: 600;
+  padding-right: 14px;
+  padding-left: 1px;
+}
+
+#cache-freshness.cf-stale { color: #f59e0b; border-color: #f59e0b55; }
+
+.fp-discord-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+  filter: brightness(0) saturate(100%) invert(40%);
+}
+#discord-pill:hover .fp-discord-icon { opacity: 1; }
+html[data-theme="dark"] .fp-discord-icon {
+  filter: brightness(0) saturate(100%) invert(90%);
+}
 
 /* ── Disabled button state ───────────────────────────────────────────────── */
 button:disabled {
@@ -16049,6 +16332,7 @@ button:disabled {
 }
 #weeklyLeftTabs .tab-panel.active {
   display: block;
+  padding: 10px 12px 12px;
 }
 
 .pm-trade-card {
@@ -16078,7 +16362,6 @@ button:disabled {
 .pm-trade-asset { font-size: 13px; font-weight: 500; color: var(--text); }
 .pm-trade-asset.pm-focus { font-weight: 700; color: var(--accent); }
 .pm-trade-asset.pm-pick { color: var(--text-muted); font-style: italic; font-size: 12px; }
-#cache-freshness.cf-stale { color: #f59e0b; border-color: #f59e0b55; }
 
 /* Login / subscribe gate card */
 .login-gate {
@@ -17085,6 +17368,38 @@ button:disabled {
   flex-shrink: 0;
 }
 .wl-desc { color: var(--text-muted); }
+
+.wl-section-label {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wl-grade {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.wl-grade-note {
+  grid-column: 1 / -1;
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.75;
+  padding-top: 2px;
+}
 
 /* ============================================
    MOBILE COLLAPSIBLE TEAM CARDS

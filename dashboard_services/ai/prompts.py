@@ -1,7 +1,7 @@
 import json
 import os
 
-from dashboard_services.ai.client import get_ai_client
+from dashboard_services.ai.client import clean_ai_text, get_ai_client
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 
@@ -313,7 +313,7 @@ Trade context:
         },
     )
 
-    raw = resp.output_text.strip()
+    raw = clean_ai_text(resp.output_text.strip())
     data = json.loads(raw)
 
     if not isinstance(data, dict):
@@ -352,23 +352,40 @@ def generate_power_rankings_result(rankings_ctx: dict) -> dict:
 
     system_prompt = """
 You are a sharp dynasty fantasy football analyst writing weekly power rankings.
-Write like a beat reporter - vivid, specific, grounded in the data provided.
-For each team, write one punchy sentence (max 30 words) explaining their ranking.
-Use team direction (contender/rebuild/retool/balanced) and top assets to frame the narrative.
-Assign momentum: rising (improving trajectory), falling (declining), or steady (holding).
-Use only the supplied JSON. Do not invent injuries, news, or player traits.
+Write like a beat reporter — vivid, specific, punchy. One sentence per team, max 30 words.
+Each sentence must be DIFFERENT in structure and opening. Never start two sentences the same way.
+win_window is the team's pre-computed competitive window label — use it as the primary frame for every narrative.
+Do not invent injuries, news, or player traits — use only the supplied JSON.
+Momentum: rising if value is high but record lags, or window is building; falling if aging/declining; steady otherwise.
+
+win_window guide (let this shape the TONE and ANGLE of each narrative):
+- Contender         → team is elite on both dynasty and scoring axes right now
+- Win-Now           → peak scoring window is open but the timeline is short; urgency
+- Aging Contender   → strong scoring projection but aging core, window narrowing
+- Contender Window  → elite dynasty value with a young/prime roster, ceiling still rising
+- 2-3 Year Window   → strong long-term assets, scoring still developing; patience required
+- Rising            → young future-heavy roster with upside not yet realized
+- Holding Pattern   → no clear direction; stable but not building or winning
+- Retooling         → have picks and aging/declining core; trading away the peak
+- Rebuilding        → weak on both axes, few picks; tough stretch ahead
+- Full Rebuild      → deliberate tank with pick capital; project mode
 """.strip()
 
     user_prompt = f"""
-Generate power rankings narratives for each team.
+Generate power rankings narratives for each team. Lead every sentence with a specific detail — a player name, a position strength, a roster age note, or pick capital — that SUPPORTS the win_window label.
 
-For each team in the "teams" array, produce:
+For each team in "teams", produce:
 - roster_id: exact string from the data
-- narrative: one sentence (max 30 words) explaining their position
+- narrative: one sentence (max 30 words) grounded in the win_window and top_assets
 - momentum: rising | falling | steady
 
-Base momentum on: win percentage trend vs avg value, and whether they're a contender/rebuild/retool.
-Contenders with high win% = steady or rising. Rebuilds with low win% = steady or falling.
+Key signals:
+- win_window: PRIMARY frame — the narrative tone must match this label
+- top_assets: name the best player(s) to make each sentence specific
+- position_strengths: reference dominant or weak groups when notable
+- avg_age: reinforce young/aging angle when it drives the win_window
+- first_round_picks: mention pick capital for Rebuilding/Retooling/Full Rebuild teams
+- wins/losses/pf: use for in-season context; skip record entirely if all teams are 0-0
 
 Return JSON matching the schema exactly.
 
@@ -391,7 +408,7 @@ Rankings context:
         },
     )
 
-    raw = resp.output_text.strip()
+    raw = clean_ai_text(resp.output_text.strip())
     data = json.loads(raw)
 
     if not isinstance(data, dict):
@@ -491,7 +508,7 @@ Trade suggestions context:
         },
     )
 
-    raw = resp.output_text.strip()
+    raw = clean_ai_text(resp.output_text.strip())
     data = json.loads(raw)
 
     if not isinstance(data, dict):
@@ -559,7 +576,7 @@ def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
         },
     )
 
-    raw = resp.output_text.strip()
+    raw = clean_ai_text(resp.output_text.strip())
     data = json.loads(raw)
 
     if not isinstance(data, dict):

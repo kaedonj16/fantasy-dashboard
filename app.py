@@ -675,7 +675,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}">
+      <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
 
@@ -941,12 +941,21 @@ def get_viewer_session_for_league(users: List[Dict], rosters: List[Dict]) -> dic
 
 
 def get_viewer_session() -> dict:
-    viewer_data = {
-        "viewer_username": session.get("viewer_username"),
-        "viewer_user_id": session.get("viewer_user_id"),
-        "viewer_roster_id": session.get("viewer_roster_id"),
-        "viewer_team_name": session.get("viewer_team_name"),
-    }
+    try:
+        viewer_data = {
+            "viewer_username": session.get("viewer_username"),
+            "viewer_user_id": session.get("viewer_user_id"),
+            "viewer_roster_id": session.get("viewer_roster_id"),
+            "viewer_team_name": session.get("viewer_team_name"),
+        }
+    except RuntimeError:
+        # Called outside a request context (e.g. background thread) — no session available
+        viewer_data = {
+            "viewer_username": None,
+            "viewer_user_id": None,
+            "viewer_roster_id": None,
+            "viewer_team_name": None,
+        }
     return viewer_data
 
 
@@ -1648,6 +1657,73 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
 </script>"""
 
 
+def _discord_banner() -> str:
+    """Dismissible weekly Discord invite banner shown every Sunday."""
+    import datetime as _dt
+    now = _dt.datetime.now()
+    if now.weekday() != 6:          # Sunday only (0=Mon … 6=Sun)
+        return ""
+
+    iso_week = now.isocalendar()[1]
+    dismiss_key = f"discord-banner-{now.year}-w{iso_week}"
+
+    return f"""
+<style>
+@keyframes discordSlideUp {{
+  from {{ opacity:0; transform:translateY(16px); }}
+  to   {{ opacity:1; transform:translateY(0); }}
+}}
+#discordBanner {{ animation: discordSlideUp .3s ease forwards; }}
+</style>
+<div id="discordBanner" style="
+     display:none;
+     position:fixed;bottom:24px;right:24px;z-index:9999;
+     background:var(--card);
+     border:1px solid var(--border);
+     border-top:3px solid #5865F2;
+     border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);
+     padding:18px 20px;width:300px;
+     flex-direction:column;gap:12px;">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <img src="/static/images/discord-brands-solid.png" alt="Discord"
+           style="width:16px;height:16px;opacity:.9;filter:brightness(0) saturate(100%) invert(40%) sepia(80%) saturate(600%) hue-rotate(210deg) brightness(110%);">
+      <span style="font-size:14px;font-weight:700;color:var(--text);">Join the Discord</span>
+    </div>
+    <button id="discordBannerClose"
+            style="background:none;border:none;color:var(--muted);font-size:18px;line-height:1;
+                   cursor:pointer;padding:0;flex-shrink:0;"
+            aria-label="Dismiss">&times;</button>
+  </div>
+  <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.45;">
+    Talk dynasty, get trade advice, and connect with other managers in the BR Fantasy community.
+  </p>
+  <a id="discordBannerLink" href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener"
+     style="display:block;text-align:center;background:#5865F2;color:#fff;
+            font-weight:700;font-size:13px;text-decoration:none;
+            padding:9px 0;border-radius:8px;">
+    Join Discord
+  </a>
+</div>
+<script>
+(function(){{
+  var key = '{dismiss_key}';
+  var el  = document.getElementById('discordBanner');
+  if (!el) return;
+  if (!localStorage.getItem(key)) {{
+    el.style.display = 'flex';
+  }}
+  document.getElementById('discordBannerClose').addEventListener('click', function() {{
+    el.style.display = 'none';
+    localStorage.setItem(key, '1');
+  }});
+  document.getElementById('discordBannerLink').addEventListener('click', function() {{
+    localStorage.setItem(key, '1');
+  }});
+}})();
+</script>"""
+
+
 def render_page(
         title: str,
         league_id: Optional[str],
@@ -1665,9 +1741,9 @@ def render_page(
         session["last_season"] = season
     nav_html = build_nav(league_id, active, platform, season)
 
-    banner_html = ""
+    banner_html = _discord_banner()
     if session.get("viewer_username"):
-        banner_html = _recap_ready_banner(league_id or "", platform or "", season or 0)
+        banner_html += _recap_ready_banner(league_id or "", platform or "", season or 0)
 
     wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
 
@@ -1681,6 +1757,7 @@ def render_page(
         recap_banner=banner_html,
         body=wrapped_body,
         cache_ts=int(time.time() * 1000),
+        user_premium="true" if is_premium else "false",
         adsense_script="" if is_premium else _AD_SCRIPT,
         ad_top="" if is_premium else _AD_TOP,
         ad_bottom="" if is_premium else _AD_BOTTOM,
@@ -1912,7 +1989,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     mode = "offseason" if offseason_mode else "in_season"
 
     if offseason_mode:
-        max_week = 0
+        max_week = FULL_SEASON_WEEKS
         season_complete = False
     elif season < current_season:
         max_week = FULL_SEASON_WEEKS
@@ -2669,15 +2746,14 @@ def ensure_weekly_bits(ctx: dict) -> None:
     """
 
     if ctx.get("offseason_mode"):
-        ctx["proj_by_week"] = {}
+        # Load pre-season projections for all 18 weeks
+        ctx["proj_by_week"] = build_projections_by_week(int(ctx["season"]), 18, ctx.get("raw_scoring_settings"))
         ctx["statuses"] = {}
-        ctx["proj_by_roster"] = {}
-        # Still build historical matchups so Weekly Hub shows past-season scores
         if "matchups_by_week" not in ctx:
             try:
                 ctx["matchups_by_week"] = build_matchups_by_week(
                     ctx.get("resolved_league_id", ctx["league_id"]),
-                    range(1, int(ctx.get("weeks") or 18) + 1),
+                    range(1, 19),
                     ctx.get("roster_map") or {},
                     ctx.get("players") or {},
                     int(ctx["season"]),
@@ -2685,6 +2761,16 @@ def ensure_weekly_bits(ctx: dict) -> None:
                 )
             except Exception:
                 ctx["matchups_by_week"] = {}
+        # Compute projected team totals so highlights / matchup preview work
+        try:
+            ctx["proj_by_roster"] = compute_team_projections_for_weeks(
+                ctx["matchups_by_week"],
+                {},  # no statuses in offseason
+                ctx["proj_by_week"],
+                ctx.get("roster_map") or {},
+            )
+        except Exception:
+            ctx["proj_by_roster"] = {}
         return
 
     def _apply_proj_column() -> None:
@@ -2720,7 +2806,7 @@ def ensure_weekly_bits(ctx: dict) -> None:
     roster_counts = count_roster_positions(get_roster_positions())
     has_idp = any(k in roster_counts for k in ["DL", "LB", "DB", "IDP_FLEX"])
 
-    proj_by_week = build_projections_by_week(viewed_season, weeks)
+    proj_by_week = build_projections_by_week(viewed_season, weeks, ctx.get("raw_scoring_settings"))
 
     if has_idp:
         statuses = build_status_by_week(
@@ -2783,6 +2869,13 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
     resolved_league_id = ctx.get("resolved_league_id", league_id)
 
     # ---------- Always refresh core league objects ----------
+    # Clear TTL caches so rosters/traded picks reflect the latest transactions
+    # on every refresh, not just the teams page.
+    try:
+        clear_activity_cache_for_league(resolved_league_id)
+    except Exception:
+        pass
+
     league = get_league(platform, resolved_league_id, viewed_season)
     users = get_users(platform, resolved_league_id, viewed_season)
     rosters = get_rosters(platform, resolved_league_id, viewed_season)
@@ -2922,9 +3015,16 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
         clear_weekly_cache_for_league(resolved_league_id)
 
         if offseason_mode:
-            ctx["proj_by_week"] = {}
+            ctx["proj_by_week"] = build_projections_by_week(viewed_season, 18, ctx.get("raw_scoring_settings"))
             ctx["statuses"] = {}
-            ctx["matchups_by_week"] = {}
+            ctx["matchups_by_week"] = build_matchups_by_week(
+                resolved_league_id,
+                range(1, 19),
+                roster_map,
+                players,
+                viewed_season,
+                platform,
+            )
             ctx["proj_by_roster"] = {}
         else:
             should_refresh_live_week = (
@@ -2954,12 +3054,12 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                         current_season,
                         current_week,
                         fetch_week_from_tank01,
-                        True,
+                        force_refresh=True,
                     )
                 except Exception as e:
                     logger.info(f"[refresh] live projections refresh skipped: {e}")
 
-            ctx["proj_by_week"] = build_projections_by_week(viewed_season, weeks)
+            ctx["proj_by_week"] = build_projections_by_week(viewed_season, weeks, ctx.get("raw_scoring_settings"))
 
             if has_idp:
                 ctx["statuses"] = build_status_by_week(
@@ -3003,8 +3103,29 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
 
     # ---------- Teams page ----------
     if page == "teams":
-        clear_teams_cache_for_league(resolved_league_id)
+        # Rosters/traded already re-fetched from cleared cache in core section above.
         ctx["model_value_table"] = ctx.get("model_value_table") or list(get_model_value_table_cached() or [])
+
+        if platform == "sleeper":
+            try:
+                _teams_draft_ts = None
+                if isinstance(latest_draft, dict):
+                    _teams_draft_ts = _safe_int(latest_draft.get("start_time"))
+                if _teams_draft_ts is None:
+                    _teams_draft_ts = _safe_int(league.get("draft_day"))
+                _teams_draft_ended = (
+                    datetime.now(EASTERN) > datetime.fromtimestamp(_teams_draft_ts / 1000, tz=EASTERN)
+                    if _teams_draft_ts else False
+                )
+                ctx["picks_by_roster"] = build_picks_by_roster(
+                    num_future_seasons=3,
+                    league=league,
+                    rosters=rosters,
+                    traded=traded,
+                    draft_ended=_teams_draft_ended,
+                )
+            except Exception as e:
+                logger.info(f"[refresh] teams picks refresh skipped: {e}")
 
     # ---------- Trade page ----------
     if page == "trade":
@@ -3180,9 +3301,14 @@ def build_dashboard_body(ctx: dict) -> str:
     if not finalized_df.empty:
         last_final_week = int(finalized_df["week"].max())
     else:
-        last_final_week = current_week
+        last_final_week = 0  # no finalized weeks yet → show projections for current week
 
     _fpts_against_dash = _compute_fpts_against(season)
+    _dash_vid = str(viewer_roster_id or "")
+    _dash_matchups = sorted(
+        matchups_by_week.get(current_week, []),
+        key=lambda m: 0 if _dash_vid and _dash_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
+    )
     slides = [
         render_matchup_slide(
             season,
@@ -3196,7 +3322,7 @@ def build_dashboard_body(ctx: dict) -> str:
             team_game_lookup=team_game_lookup,
             fpts_against=_fpts_against_dash,
         )
-        for m in matchups_by_week.get(current_week, [])
+        for m in _dash_matchups
     ]
     slides_by_week = {current_week: "".join(slides)}
     matchup_html = render_matchup_carousel_weeks(
@@ -4636,7 +4762,11 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
         # Generate slides for Week 1 (or current week)
         week_to_show = current_week if current_week > 0 else 1
-        matchups_for_week = matchups_by_week.get(week_to_show, [])
+        _os_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+        matchups_for_week = sorted(
+            matchups_by_week.get(week_to_show, []),
+            key=lambda m: 0 if _os_vid and _os_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
+        )
 
         if matchups_for_week:
             _fpts_against_os = _compute_fpts_against(season)
@@ -4802,10 +4932,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
 
 
 # Depth cap: each additional asset beyond the anchor is worth less (position 0 = anchor)
-_DEPTH_MULTS = [1.0, 0.85, 0.72, 0.60, 0.50, 0.42]
-
-# Tier cap: upper bound on how much a non-anchor asset can contribute, by individual tier.
-# Spread linearly from 1.0 (T1, no cap) down to 0.38 (T9, fringe), extended for extra tiers.
 def _build_tier_caps(num_tiers: int) -> dict:
     high, low = 1.0, 0.38
     if num_tiers <= 1:
@@ -4933,98 +5059,68 @@ def _asset_tier(value: float, thresholds: list = None) -> int:
 
 def apply_tier_stack_adjustment(side_a: dict, side_b: dict,
                                  tier_thresholds: list = None,
-                                 is_sf: bool = False) -> None:
+                                 is_sf: bool = False,
+                                 value_table: list = None,
+                                 league_size: int = 10) -> None:
     """
-    Tier-aware trade evaluation.
+    Depth penalty for the bigger side in unequal trades.
 
-    Each side's highest-value asset (the "anchor") counts at full face value.
-    Every additional asset is worth min(depth_mult, tier_cap) × its face value,
-    where tier_cap is driven by that player's individual tier derived from the
-    live value-table gaps. Stacking lower-tier players against an elite anchor
-    produces compounding discounts; adding a quality T2 player is barely penalised.
+    The side giving up more players is discounted by a fraction of the value of
+    true waiver-wire players (ranked well below the roster cutoff).  The first
+    reference player sits at roughly rank (league_size × 38) and each successive
+    extra player steps deeper; 50% of that value is applied as the penalty.
 
-    In SF leagues, QBs fill up to 3 starting slots (QB / SFLEX / FLEX), so
-    each QB in a package uses its own QB-specific depth index rather than its
-    global value-rank index — preventing the second and third QBs from being
-    over-penalised relative to their actual roster utility.
+    Bigger side: effective_total = raw_total - sum(bench_values).
+    Smaller side: effective_total = raw_total (no adjustment).
     """
+    a_count = len(side_a.get("breakdown") or []) or len(side_a.get("player_values") or [])
+    b_count = len(side_b.get("breakdown") or []) or len(side_b.get("player_values") or [])
+
     thresholds = tier_thresholds if tier_thresholds is not None else _FALLBACK_THRESHOLDS
-    tier_caps  = _build_tier_caps(len(thresholds) + 1)
-    # In SF, QBs have 3 starting slots before the depth penalty steepens
-    qb_starter_slots = 3 if is_sf else 1
 
-    def _compute_side(side):
-        bd = side.get("breakdown") or []
-        if bd:
-            items = sorted(
-                [(item.get("value", 0.0), str(item.get("position") or "").upper()) for item in bd],
-                reverse=True,
-            )
-        else:
-            # Fallback: no position info available
-            raw_vals = sorted(list(side.get("player_values", []) or []), reverse=True)
-            raw_picks = float(side.get("raw_picks_total", 0.0) or 0.0)
-            if raw_picks > 0.0:
-                raw_vals.append(raw_picks)
-                raw_vals.sort(reverse=True)
-            items = [(v, "") for v in raw_vals]
-
-        if not items:
-            return float(side.get("raw_total", 0.0) or 0.0), 0.0
-
-        effective  = 0.0
-        global_idx = 0
-        qb_idx     = 0  # separate counter so SF QBs use their own depth slot
-
-        for v, pos in items:
-            if global_idx == 0:
-                effective += v  # anchor always full value
-            elif is_sf and pos == "QB" and qb_idx < qb_starter_slots:
-                # QB still within SF starting depth — use QB-specific depth index
-                depth_m = _DEPTH_MULTS[min(qb_idx, len(_DEPTH_MULTS) - 1)]
-                tier_m  = tier_caps.get(_asset_tier(v, thresholds), 0.38)
-                effective += v * min(depth_m, tier_m)
-            else:
-                depth_m = _DEPTH_MULTS[min(global_idx, len(_DEPTH_MULTS) - 1)]
-                tier_m  = tier_caps.get(_asset_tier(v, thresholds), 0.38)
-                effective += v * min(depth_m, tier_m)
-
-            if pos == "QB":
-                qb_idx += 1
-            global_idx += 1
-
-        return effective, effective - float(side.get("raw_total", 0.0) or 0.0)
-
-    eff_a, adj_a = _compute_side(side_a)
-    eff_b, adj_b = _compute_side(side_b)
-
-    side_a["effective_total"] = eff_a
-    side_b["effective_total"] = eff_b
-    side_a["adjustment"] = adj_a
-    side_b["adjustment"] = adj_b
-
-    # Annotate each breakdown item with its individual tier + context-aware effective value
+    # Annotate tiers first (informational, no multiplier applied)
     for side in (side_a, side_b):
-        bd = side.get("breakdown") or []
-        if not bd:
-            continue
-        sorted_bd = sorted(bd, key=lambda x: x.get("value", 0.0), reverse=True)
-        qb_idx = 0
-        for idx, item in enumerate(sorted_bd):
-            val  = item.get("value", 0.0)
-            pos  = str(item.get("position") or "").upper()
-            tier = _asset_tier(val, thresholds)
-            if idx == 0:
-                m = 1.0
-            elif is_sf and pos == "QB" and qb_idx < qb_starter_slots:
-                m = min(_DEPTH_MULTS[min(qb_idx, len(_DEPTH_MULTS) - 1)], tier_caps.get(tier, 0.38))
-            else:
-                m = min(_DEPTH_MULTS[min(idx, len(_DEPTH_MULTS) - 1)], tier_caps.get(tier, 0.38))
-            if pos == "QB":
-                qb_idx += 1
-            item["tier"]            = tier
-            item["stack_mult"]      = round(m, 3)
-            item["effective_value"] = round(val * m, 1)
+        for item in (side.get("breakdown") or []):
+            val = item.get("value", 0.0)
+            item["tier"]            = _asset_tier(val, thresholds)
+            item["stack_mult"]      = 1.0
+            item["effective_value"] = round(val, 1)
+
+    if a_count == b_count:
+        return
+
+    delta   = abs(a_count - b_count)
+    smaller = side_a if a_count < b_count else side_b
+    bigger  = side_b if a_count < b_count else side_a
+
+    # Build sorted value list for bench-rank lookup
+    sorted_vals: list = []
+    if value_table:
+        sorted_vals = sorted(
+            [float(p.get("value") or 0) for p in value_table
+             if isinstance(p, dict) and float(p.get("value") or 0) > 10],
+            reverse=True,
+        )
+
+    # Rank well below the roster cutoff so the penalty reflects true waiver-wire value
+    base_rank      = league_size * 38   # ~380 for 10-team (below 27-spot roster cutoff)
+    _BENCH_BASE    = 80.0               # fallback when value_table unavailable
+    _BENCH_STEP    = -5.0               # each extra player is worth slightly less
+    _PENALTY_FRAC  = 0.5                # apply 50% of waiver-wire value as the penalty
+
+    def _bench_value(i: int) -> float:
+        rank = min(len(sorted_vals) if sorted_vals else 9999, base_rank + i * 10)
+        if sorted_vals:
+            idx = min(rank - 1, len(sorted_vals) - 1)
+            return sorted_vals[idx] * _PENALTY_FRAC
+        return max(20.0, (_BENCH_BASE + i * _BENCH_STEP) * _PENALTY_FRAC)
+
+    bench_total = sum(_bench_value(i) for i in range(delta))
+
+    bigger["effective_total"]  = float(bigger.get("raw_total") or 0.0) - bench_total
+    bigger["adjustment"]       = -bench_total
+    smaller["effective_total"] = float(smaller.get("raw_total") or 0.0)
+    smaller["adjustment"]      = 0.0
 
 
 apply_multi_for_one_adjustment = apply_tier_stack_adjustment
@@ -5043,9 +5139,9 @@ def render_weekly_top_scorers_for_week(
         season: str
 ) -> str:
     # 1. Filter to ONLY this week
-    if df_weekly.empty or "week" not in df_weekly.columns:
-        return ""
-    week_df = df_weekly[df_weekly["week"] == w].copy()
+    week_df = pd.DataFrame()
+    if not df_weekly.empty and "week" in df_weekly.columns:
+        week_df = df_weekly[df_weekly["week"] == w].copy()
 
     if not week_df.empty and week_df["points"].any():
         _, _, top_by_pos = matchup_cards_last_week(
@@ -5144,134 +5240,124 @@ def _render_weekly_matchups(df_weekly: pd.DataFrame, week: int) -> str:
     """
 
 
-def _render_weekly_highlights(df_weekly: pd.DataFrame, week: int) -> str:
-    if df_weekly.empty or "week" not in df_weekly.columns:
+def _render_weekly_highlights(
+    df_weekly: pd.DataFrame,
+    week: int,
+    proj_by_roster: Optional[dict] = None,
+    matchups_by_week: Optional[dict] = None,
+) -> str:
+    """Render sidebar highlight cards for a given week.
+
+    Tries sources in order:
+      1. Finalized scores from df_weekly
+      2. Projected scores from df_weekly["proj"] (week not yet final)
+      3. Projected team totals from proj_by_roster + matchups_by_week
+    """
+    # ------------------------------------------------------------------
+    # Build a flat list of rows: {owner, roster_id, matchup_id, use_score}
+    # ------------------------------------------------------------------
+    rows: list[dict] = []
+    is_projected = False
+
+    if not df_weekly.empty and "week" in df_weekly.columns:
+        wdf = df_weekly[df_weekly["week"] == week].copy()
+        if not wdf.empty:
+            if "finalized" in wdf.columns and not wdf["finalized"].any():
+                wdf["use_score"] = wdf.get("proj", pd.Series(dtype=float))
+                is_projected = True
+            else:
+                wdf["use_score"] = wdf["points"]
+            for _, row in wdf.iterrows():
+                score = row.get("use_score")
+                rows.append({
+                    "owner": row["owner"],
+                    "roster_id": str(row["roster_id"]),
+                    "matchup_id": row["matchup_id"],
+                    "use_score": float(score) if pd.notna(score) else 0.0,
+                })
+
+    # Fall back to projected totals when no df_weekly data for this week
+    if not rows and proj_by_roster and matchups_by_week:
+        is_projected = True
+        for m in (matchups_by_week.get(week) or []):
+            mid = m.get("matchup_id", 0)
+            for side in ("left", "right"):
+                team = m.get(side) or {}
+                rid = str(team.get("roster_id") or "")
+                name = team.get("name") or f"Team {rid}"
+                proj = float(proj_by_roster.get((week, rid)) or 0.0)
+                rows.append({
+                    "owner": name,
+                    "roster_id": rid,
+                    "matchup_id": mid,
+                    "use_score": proj,
+                })
+
+    if not rows:
         return ""
-    wdf = df_weekly[df_weekly["week"] == week].copy()
-    if wdf.empty:
+
+    def _hl_single(title: str, team: dict) -> str:
         return f"""
-        <div class='card small'>
-          <div class='card-header'><h3>Week {week} Highlights</h3></div>
-          <div class='card-body'>
-            <p>No highlights for this week yet.</p>
+        <div class="whl-card">
+          <div class="whl-label">{title}</div>
+          <div class="whl-row">
+            <span class="whl-name team-clickable" data-roster-id="{team['roster_id']}" data-team-name="{team['owner']}">{team['owner']}</span>
+            <span class="whl-pts">{team['use_score']:.1f}</span>
           </div>
-        </div>
-        """
+        </div>"""
 
-    # ------------------------------------------------------------
-    # Use projections for weeks that are NOT finalized
-    # ------------------------------------------------------------
-    if not wdf["finalized"].any():
-        wdf["use_score"] = wdf["proj"]
-    else:
-        wdf["use_score"] = wdf["points"]
-
-    # ------------------------------------------------------------
-    # Highest / Lowest Score Cards
-    # ------------------------------------------------------------
-    top = wdf.sort_values("use_score", ascending=False).iloc[0]
-    low = wdf.sort_values("use_score", ascending=True).iloc[0]
-
-    highest_card = f"""
-    <div class="card small">
-      <div class="card-header"><h3>Highest Score</h3></div>
-      <div class="card-body">
-        <div class="highlight-game-card white">
-          <div class="hg-row">
-            <div class="hg-team">
-              <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{top['roster_id']}" data-team-name="{top['owner']}">{top['owner']}</span>
-            </div>
-            <div class="hg-score">{top['use_score']:.1f}</div>
+    def _hl_matchup(title: str, win: dict, lose: dict, margin: float) -> str:
+        return f"""
+        <div class="whl-card">
+          <div class="whl-label">{title}</div>
+          <div class="whl-row whl-winner">
+            <span class="whl-name team-clickable" data-roster-id="{win['roster_id']}" data-team-name="{win['owner']}">{win['owner']}</span>
+            <span class="whl-pts">{win['use_score']:.1f}</span>
           </div>
-        </div>
-      </div>
-    </div>
-    """
-
-    lowest_card = f"""
-    <div class="card small">
-      <div class="card-header"><h3>Lowest Score</h3></div>
-      <div class="card-body">
-        <div class="highlight-game-card white">
-          <div class="hg-row">
-            <div class="hg-team">
-              <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{low['roster_id']}" data-team-name="{low['owner']}">{low['owner']}</span>
-            </div>
-            <div class="hg-score">{low['use_score']:.1f}</div>
+          <div class="whl-row whl-loser">
+            <span class="whl-name team-clickable" data-roster-id="{lose['roster_id']}" data-team-name="{lose['owner']}">{lose['owner']}</span>
+            <span class="whl-pts">{lose['use_score']:.1f}</span>
           </div>
-        </div>
-      </div>
-    </div>
-    """
+          <div class="whl-margin">{margin:.1f} pt margin</div>
+        </div>"""
 
-    # ------------------------------------------------------------
-    # Closest Game / Blowout Game
-    # ------------------------------------------------------------
-    matchups = []
-    for (_, _), grp in wdf.groupby(["week", "matchup_id"]):
+    # ------------------------------------------------------------------
+    # Highest / Lowest Score
+    # ------------------------------------------------------------------
+    rows_sorted_desc = sorted(rows, key=lambda r: r["use_score"], reverse=True)
+    rows_sorted_asc  = sorted(rows, key=lambda r: r["use_score"])
+    top = rows_sorted_desc[0]
+    low = rows_sorted_asc[0]
+
+    highest_card = _hl_single("Highest Score", top)
+    lowest_card  = _hl_single("Lowest Score",  low)
+
+    # ------------------------------------------------------------------
+    # Closest Game / Blowout
+    # ------------------------------------------------------------------
+    by_matchup: dict = {}
+    for r in rows:
+        by_matchup.setdefault(r["matchup_id"], []).append(r)
+
+    matchup_summaries = []
+    for mid, grp in by_matchup.items():
         if len(grp) != 2:
             continue
-        g = grp.sort_values("use_score", ascending=False)
-        win = g.iloc[0]
-        lose = g.iloc[1]
-        margin = float(win["use_score"] - lose["use_score"])
-
-        matchups.append({
-            "winner": win["owner"],
-            "winner_rid": win["roster_id"],
-            "winnerPts": float(win["use_score"]),
-            "loser": lose["owner"],
-            "loser_rid": lose["roster_id"],
-            "loserPts": float(lose["use_score"]),
-            "margin": margin,
+        grp_sorted = sorted(grp, key=lambda r: r["use_score"], reverse=True)
+        win, lose = grp_sorted[0], grp_sorted[1]
+        matchup_summaries.append({
+            "winner": win, "loser": lose,
+            "margin": win["use_score"] - lose["use_score"],
         })
 
     closest_card = ""
     blowout_card = ""
 
-    if matchups:
-        closest = min(matchups, key=lambda m: abs(m["margin"]))
-        blowout = max(matchups, key=lambda m: abs(m["margin"]))
-
-        closest_card = f"""
-        <div class="card small">
-          <div class="card-header">
-            <h3>Closest Game</h3><h3>{closest['margin']:.1f} Points</h3>
-          </div>
-          <div class="card-body">
-            <div class="highlight-game-card white">
-              <div class="hg-row">
-                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{closest['winner_rid']}" data-team-name="{closest['winner']}">{closest['winner']}</span>
-                <span class="hg-score">{closest['winnerPts']:.1f}</span>
-              </div>
-              <div class="hg-row">
-                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{closest['loser_rid']}" data-team-name="{closest['loser']}">{closest['loser']}</span>
-                <span class="hg-score">{closest['loserPts']:.1f}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        """
-
-        blowout_card = f"""
-        <div class="card small">
-          <div class="card-header">
-            <h3>Biggest Blowout</h3><h3>{blowout['margin']:.1f} Points</h3>
-          </div>
-          <div class="card-body">
-            <div class="highlight-game-card white">
-              <div class="hg-row">
-                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{blowout['winner_rid']}" data-team-name="{blowout['winner']}">{blowout['winner']}</span>
-                <span class="hg-score">{blowout['winnerPts']:.1f}</span>
-              </div>
-              <div class="hg-row">
-                <span class="hg-name team-clickable" style="cursor:pointer;" data-roster-id="{blowout['loser_rid']}" data-team-name="{blowout['loser']}">{blowout['loser']}</span>
-                <span class="hg-score">{blowout['loserPts']:.1f}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        """
+    if matchup_summaries:
+        closest = min(matchup_summaries, key=lambda m: abs(m["margin"]))
+        blowout = max(matchup_summaries, key=lambda m: abs(m["margin"]))
+        closest_card = _hl_matchup("Closest Game",   closest["winner"], closest["loser"], closest["margin"])
+        blowout_card = _hl_matchup("Biggest Blowout", blowout["winner"], blowout["loser"], blowout["margin"])
 
     return highest_card + lowest_card + closest_card + blowout_card
 
@@ -5311,7 +5397,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     if not finalized_df.empty and "week" in finalized_df.columns:
         last_final_week = int(finalized_df["week"].max())
     else:
-        last_final_week = max(1, min(current_week or 1, weeks))
+        last_final_week = 0  # no finalized weeks yet → show projections for current week
 
     max_week = max(1, weeks)
 
@@ -5323,7 +5409,11 @@ def build_weekly_hub_body(ctx: dict) -> str:
     else:
         default_week = clamp_week(current_week or 1)
 
-    default_matchups = matchups_by_week.get(default_week, []) or []
+    _hub_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    default_matchups = sorted(
+        matchups_by_week.get(default_week, []) or [],
+        key=lambda m: 0 if _hub_vid and _hub_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
+    )
     _fpts_against_weekly = _compute_fpts_against(season)
     slides = [
         render_matchup_slide(
@@ -5367,7 +5457,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
         platform,
         season
     )
-    highlights_html = _render_weekly_highlights(df_weekly, default_week)
+    proj_by_roster = ctx.get("proj_by_roster") or {}
+    highlights_html = _render_weekly_highlights(
+        df_weekly, default_week,
+        proj_by_roster=proj_by_roster,
+        matchups_by_week=matchups_by_week,
+    )
 
     proj_warn_html = ""
     if not proj_by_week.get("_available"):
@@ -5613,16 +5708,85 @@ function wkActivateTab(tab) {{
 """
 
 
-def build_projections_by_week(season: int, weeks: int):
-    bundles = {}
+def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dict = None):
+    from utils.utils import pick_proj_variant
+    from statistics import median
+
+    variant = pick_proj_variant(raw_scoring_settings or {})
+
+    def _flat(multi: dict) -> Optional[float]:
+        """Extract the chosen variant's value from a multi-variant player entry."""
+        if isinstance(multi, dict):
+            return multi.get(variant) or multi.get("ppr")
+        if isinstance(multi, (int, float)):
+            return float(multi)  # legacy flat file
+        return None
+
+    raw = {}
     any_projections = False
     for w in range(1, weeks + 1):
-        projections = load_week_projection(season, w)
-        bundles[w] = {"projections": projections or {}}
-        if projections:
+        multi_week = load_week_projection(season, w) or {}
+        flat = {}
+        for pid, val in multi_week.items():
+            v = _flat(val)
+            if v is not None:
+                flat[pid] = v
+        raw[w] = flat
+        if flat:
             any_projections = True
+
+    # Fallback: use median across all weeks so a stale near-zero entry
+    # (e.g. Tank01 had a backup listed as starter) doesn't poison other weeks.
+    all_vals: dict = {}
+    for w in range(1, weeks + 1):
+        for pid, val in raw[w].items():
+            if val > 0.5:
+                all_vals.setdefault(pid, []).append(val)
+    fallback = {pid: median(vals) for pid, vals in all_vals.items()}
+
+    # For players missing from Tank01 entirely (e.g. rookies), use FantasyPros
+    # season PPG as a flat per-week estimate.  The PPG file is PPR-based, so we
+    # estimate other variants by backing out typical reception points by position.
+    _EST_REC = {"QB": 0.0, "RB": 3.0, "WR": 5.0, "TE": 4.0}
+    try:
+        import json as _json
+        _fp_path = os.path.join("cache", f"fp_projections_{season}_ppr.json")
+        with open(_fp_path) as _fp_f:
+            _fp_data = _json.load(_fp_f)
+        for _fp_pid, _fp_entry in _fp_data.items():
+            if _fp_pid in fallback:
+                continue
+            _ppg = float(_fp_entry.get("ppg") or 0)
+            _pos = _fp_entry.get("pos", "")
+            if _ppg <= 0 or _pos not in _EST_REC:
+                continue
+            _rec_pts = _EST_REC[_pos]
+            _non_rec = max(_ppg - _rec_pts, 0)
+            if variant in ("ppr", "tep", "6pt_ppr", "6pt_tep"):
+                _v = _ppg
+            elif variant in ("half_ppr", "6pt_half"):
+                _v = _non_rec + _rec_pts * 0.5
+            else:
+                _v = _non_rec
+            if _v > 0:
+                fallback[_fp_pid] = round(_v, 2)
+    except FileNotFoundError:
+        pass
+    except Exception as _e:
+        logger.debug(f"[projections] FP fallback load failed: {_e}")
+
+    bundles = {}
+    for w in range(1, weeks + 1):
+        week_proj = dict(fallback)
+        for pid, val in raw[w].items():
+            fb = fallback.get(pid, 0)
+            if fb > 0 and val < fb * 0.5:
+                continue  # skip outlier-low weekly entry (stale role/backup listing)
+            week_proj[pid] = val
+        bundles[w] = {"projections": week_proj}
+
     if not any_projections:
-        logger.info(f"[projections] No projection data available for season {season}")
+        logger.info(f"[projections] No projection data for season {season} (variant: {variant})")
     bundles["_available"] = any_projections
     return bundles
 
@@ -6285,15 +6449,14 @@ def build_activity_body(ctx: dict) -> str:
                         except Exception:
                             pass
 
-                    # Use exact slot if available, otherwise use roster_id as fallback
-                    _rd_sfx = {1: "st", 2: "nd", 3: "rd"}.get(int(round_num or 0), "th")
+                    # Use exact slot if available, otherwise fall back to mid
                     if exact_slot:
                         pick_id = f"{season} {round_num}.{exact_slot:02d}"
                         display_name = pick_id
                         slot_value = exact_slot
                     else:
                         pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
-                        display_name = f"{season} {round_num}{_rd_sfx} Rd"
+                        display_name = f"{season} {round_num} (Mid)"
                         slot_value = None
 
                     gets_picks.append({
@@ -6320,15 +6483,14 @@ def build_activity_body(ctx: dict) -> str:
                         except Exception:
                             pass
 
-                    # Use exact slot if available, otherwise use roster_id as fallback
-                    _rd_sfx = {1: "st", 2: "nd", 3: "rd"}.get(int(round_num or 0), "th")
+                    # Use exact slot if available, otherwise fall back to mid
                     if exact_slot:
                         pick_id = f"{season} {round_num}.{exact_slot:02d}"
                         display_name = pick_id
                         slot_value = exact_slot
                     else:
                         pick_id = f"{season} {round_num}.{roster_id}" if roster_id else f"{season} {round_num}.XX"
-                        display_name = f"{season} {round_num}{_rd_sfx} Rd"
+                        display_name = f"{season} {round_num} (Mid)"
                         slot_value = None
 
                     sends_picks.append({
@@ -7410,10 +7572,11 @@ def build_teams_body(ctx: dict) -> str:
         card_html = (
             f"<div class='card team-strength-card {_window_cls}' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}'>"
             "  <div class='card-header-row'>"
-            f"    <div style='display:flex;align-items:center;gap:8px;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>{_grade_badge}</div>"
-            "    <div style='display:flex;align-items:center;gap:6px;'>"
-            f"      <div class='mini-label'><span class='grade-window-label'>{_win_window}</span>"
-            f"<span class='tc-pi-text'> &bull; <span class='tc-pi-num'>{team_pos_index[rid]:+.2f}</span></span></div>"
+            f"    <div style='display:flex;align-items:center;gap:8px;min-width:0;flex:1;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>"
+            f"<div class='mini-label' style='flex-shrink:0;'><span class='grade-window-label'>{_win_window}</span>"
+            f"<span class='tc-pi-text'> &bull; <span class='tc-pi-num'>{team_pos_index[rid]:+.2f}</span></span></div></div>"
+            "    <div style='display:flex;align-items:center;gap:6px;flex-shrink:0;'>"
+            f"      {_grade_badge}"
             "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
             "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
             "          <path d='M3 5l4 4 4-4' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>"
@@ -7861,9 +8024,9 @@ def build_teams_body(ctx: dict) -> str:
               var nextDis = round >= totalRounds ? ' disabled' : '';
 
               var html = '<div class="draft-round-nav">' +
-                '<button class="pf-pill"' + prevDis + ' id="draftRoundPrev">&#8592; Prev</button>' +
+                '<button class="pagination-btn"' + prevDis + ' id="draftRoundPrev">&#8592; Prev</button>' +
                 '<span class="draft-round-label">' + label + '</span>' +
-                '<button class="pf-pill"' + nextDis + ' id="draftRoundNext">Next &#8594;</button>' +
+                '<button class="pagination-btn"' + nextDis + ' id="draftRoundNext">Next &#8594;</button>' +
               '</div>' +
               '<div class="draft-acc-picks">';
 
@@ -7941,73 +8104,130 @@ def build_teams_body(ctx: dict) -> str:
         _loaded.rosterIntel = true;
         var panel = document.getElementById('rosterIntelPanel');
         if (!panel) return;
-        fetch('/api/roster-intel?platform=' + _platform +
-              '&league_id=' + _leagueId + '&season=' + _season +
-              '&league_type=' + _leagueType)
-          .then(r => r.json())
-          .then(data => {{
+
+        // Fetch FC dynasty ADP from the browser (server IP is blocked by FC).
+        // Gracefully degrade to empty dict if FC is unavailable.
+        var numQbs = _leagueType === 'sf' ? 2 : 1;
+        var fcPromise = fetch(
+          'https://fantasycalc.com/api/values/current?numQbs=' + numQbs + '&ppr=0.5',
+          {{credentials: 'omit'}}
+        )
+          .then(function(r) {{ return r.ok ? r.json() : []; }})
+          .catch(function() {{ return []; }});
+
+        fcPromise.then(function(fcRaw) {{
+          // Transform FC array into {{sleeperId: {{pos_rank, adp_rank, position}}}}
+          var fcAdp = {{}};
+          if (Array.isArray(fcRaw)) {{
+            var posCounters = {{}};
+            var sorted = fcRaw.filter(function(e) {{ return e && e.overallRank; }})
+                              .sort(function(a, b) {{ return a.overallRank - b.overallRank; }});
+            sorted.forEach(function(entry) {{
+              var p = entry.player || {{}};
+              var sid = String(p.sleeperId || '');
+              if (!sid || sid === 'null' || sid === 'undefined') return;
+              var pos = String(p.position || '').toUpperCase();
+              posCounters[pos] = (posCounters[pos] || 0) + 1;
+              fcAdp[sid] = {{
+                adp_rank: entry.overallRank,
+                pos_rank:  posCounters[pos],
+                position:  pos,
+              }};
+            }});
+          }}
+
+          return fetch('/api/roster-intel', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{
+              platform:         _platform,
+              league_id:        _leagueId,
+              season:           _season,
+              league_type:      _leagueType,
+              viewer_roster_id: _viewerRosterId || '',
+              fc_adp:           fcAdp,
+            }}),
+          }}).then(function(r) {{ return r.json(); }});
+        }})
+          .then(function(data) {{
             if (data.error) {{ panel.innerHTML = '<p class="analytics-empty">' + data.error + '</p>'; return; }}
             var teams = data.teams || [];
             if (!teams.length) {{ panel.innerHTML = '<p class="analytics-empty">No roster data available.</p>'; return; }}
 
-            // Show only the logged-in user's team; fall back to all teams if not known
-            if (_viewerRosterId) {{
-              teams = teams.filter(function(t) {{ return String(t.roster_id) === String(_viewerRosterId); }});
-            }}
-
             var sigColor = {{
-              'Core':           '#22c55e',
-              'Hold — Breakout':'#f59e0b',
-              'Sell High':      '#ef4444',
-              'Buy Window':     '#3b82f6',
-              'Hold':           'var(--text-muted)',
-              'Cut':            '#94a3b8',
+              'Core':      '#22c55e',
+              'Sell High': '#ef4444',
+              'Breakout':  '#8b5cf6',
+              'Sleeper':   '#06b6d4',
+              'Monitor':   '#f59e0b',
+              'Hold':      'var(--text-muted)',
+              'Cut':       '#94a3b8',
             }};
-            var sigBg = {{
-              'Core':           '#dcfce7',
-              'Hold — Breakout':'#fef3c7',
-              'Sell High':      '#fee2e2',
-              'Buy Window':     '#dbeafe',
-              'Hold':           'var(--row)',
-              'Cut':            'var(--row)',
+            var healthColor = {{
+              'Strong':  '#22c55e',
+              'Average': 'var(--text-muted)',
+              'Thin':    '#f59e0b',
+              'Aging':   '#ef4444',
             }};
+            var POS_ORDER = ['QB', 'RB', 'WR', 'TE'];
 
-            var sigOrder = {{'Sell High':0,'Cut':1,'Hold — Breakout':2,'Buy Window':3,'Core':4,'Hold':5}};
             var html = '';
             teams.forEach(function(t) {{
-              // Show everything except plain Hold — sorted by urgency
-              var actionPlayers = t.players
-                .filter(function(p) {{ return p.signal !== 'Hold'; }})
-                .sort(function(a, b) {{
-                  return (sigOrder[a.signal] ?? 9) - (sigOrder[b.signal] ?? 9);
+              var positions = t.positions || {{}};
+              POS_ORDER.forEach(function(pos) {{
+                var pd = positions[pos];
+                if (!pd || !pd.players.length) return;
+
+                var rankStr = pd.league_rank ? (pd.league_rank + '/' + pd.num_teams) : '';
+                var hc = healthColor[pd.health] || 'var(--text-muted)';
+
+                html += '<div class="ri-pos-section">' +
+                  '<div class="ri-pos-header">' +
+                    '<span class="ri-pos-label">' + pos + '</span>' +
+                    '<div class="ri-pos-stats">' +
+                      '<span>' + pd.player_count + ' player' + (pd.player_count !== 1 ? 's' : '') + '</span>' +
+                      (pd.avg_age ? '<span>Avg ' + pd.avg_age + ' yrs</span>' : '') +
+                      (rankStr ? '<span>Rank ' + rankStr + '</span>' : '') +
+                    '</div>' +
+                    '<span class="ri-health-badge" style="color:' + hc + ';">' + pd.health + '</span>' +
+                  '</div>';
+
+                pd.players.forEach(function(p) {{
+                  // Market context note: show FC ADP divergence if notable
+                  var mktNote = '';
+                  if (p.mkt_gap !== null && p.mkt_gap !== undefined && Math.abs(p.mkt_gap) >= 4 && p.fc_pos_rank) {{
+                    var mktDir = p.mkt_gap > 0 ? 'mkt ↑' : 'mkt ↓';
+                    var mktCol = p.mkt_gap > 0 ? '#ef4444' : '#06b6d4';
+                    mktNote = ' <span style="font-size:10px;color:' + mktCol + ';margin-left:4px;">' + mktDir + '</span>';
+                  }}
+                  var sc = sigColor[p.signal] || 'var(--text-muted)';
+                  var metaParts = [];
+                  if (p.pos_rank_label) metaParts.push(p.pos_rank_label);
+                  if (p.age) metaParts.push('Age ' + p.age);
+                  if (p.fc_pos_rank) metaParts.push('FC ' + pos + p.fc_pos_rank);
+                  var safeName = (p.name || '').replace(/"/g, '&quot;');
+                  html += '<div class="ri-player-row">' +
+                    '<div class="ri-player-info">' +
+                      '<span class="ri-player-name player-clickable" style="cursor:pointer;" data-player-id="' + (p.player_id || '') + '" data-player-name="' + safeName + '">' + p.name + mktNote + '</span>' +
+                      '<span class="ri-player-meta">' + metaParts.join(' · ') + '</span>' +
+                    '</div>' +
+                    '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+                      '<span style="font-size:11px;color:var(--text-muted);font-weight:600;">' + (p.value || 0) + '</span>' +
+                      '<span class="ri-signal" style="color:' + sc + ';background:' + sc + '18;">' + p.signal + '</span>' +
+                    '</div>' +
+                  '</div>';
                 }});
-              if (!actionPlayers.length) return;
-              html += '<div class="ri-team-block">' +
-                '<div class="ri-team-name">' + t.team_name + '</div>';
-              actionPlayers.slice(0, 8).forEach(function(p) {{
-                var chgHtml = '';
-                if (p.rank_change_7d && p.rank_change_7d !== 0) {{
-                  var sym = p.rank_change_7d > 0 ? '▲' : '▼';
-                  var col = p.rank_change_7d > 0 ? '#22c55e' : '#ef4444';
-                  chgHtml = '<span style="font-size:10px;color:' + col + ';margin-left:4px;">' + sym + Math.abs(p.rank_change_7d) + '</span>';
-                }}
-                html += '<div class="ri-player-row">' +
-                  '<div class="ri-player-info">' +
-                    '<span class="ri-player-name">' + p.name + chgHtml + '</span>' +
-                    '<span class="ri-player-meta">' + p.position + (p.pos_rank_label ? ' · ' + p.pos_rank_label : '') + '</span>' +
-                  '</div>' +
-                  '<span class="ri-signal" style="background:' + (sigBg[p.signal]||'var(--row)') + ';color:' + (sigColor[p.signal]||'var(--text-muted)') + '">' + p.signal + '</span>' +
-                '</div>';
+
+                html += '</div>';
               }});
-              html += '</div>';
             }});
 
-            var emptyMsg = _viewerRosterId
-              ? 'Your roster looks stable — no urgent actions flagged.'
-              : 'All rosters look stable — no urgent actions flagged.';
-            panel.innerHTML = html || '<p class="analytics-empty">' + emptyMsg + '</p>';
+            panel.innerHTML = html || '<p class="analytics-empty">Roster looks stable — no actions flagged.</p>';
           }})
-          .catch(function() {{ panel.innerHTML = '<p class="analytics-empty">Could not load data.</p>'; }});
+          .catch(function(err) {{
+            console.warn('[roster-intel]', err);
+            panel.innerHTML = '<p class="analytics-empty">Could not load roster intel.</p>';
+          }});
       }}
 
       function loadPowerRankings() {{
@@ -8068,11 +8288,18 @@ def build_teams_body(ctx: dict) -> str:
     <div class="window-legend-wrap">
       <button class="window-legend-toggle" id="windowLegendToggle" aria-expanded="false">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        Window Guide
+        Legend
         <svg class="wl-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>
       <div class="window-legend-panel" id="windowLegendPanel">
         <div class="window-legend-grid">
+          <div class="wl-section-label">Grades</div>
+          <div class="wl-row"><span class="wl-grade grade-a">A</span><strong class="wl-label">A+ to A&minus;</strong><span class="wl-desc">Elite roster: top dynasty value, strong depth, elite core players</span></div>
+          <div class="wl-row"><span class="wl-grade grade-b">B</span><strong class="wl-label">B+ to B&minus;</strong><span class="wl-desc">Competitive roster with clear strengths and some positional gaps</span></div>
+          <div class="wl-row"><span class="wl-grade grade-c">C</span><strong class="wl-label">C+ to C&minus;</strong><span class="wl-desc">Below-average roster needing reinforcement in multiple areas</span></div>
+          <div class="wl-row"><span class="wl-grade grade-d">D</span><strong class="wl-label">D</strong><span class="wl-desc">Weak roster: low dynasty value and scoring projection league-wide</span></div>
+          <div class="wl-grade-note">Grade factors: dynasty value (40%) &middot; projected scoring (25%) &middot; age profile (15%) &middot; elite players (12%) &middot; draft capital (8%)</div>
+          <div class="wl-section-label" style="margin-top:10px;">Competitive Windows</div>
           <div class="wl-row"><span class="wl-dot" style="background:#22c55e;"></span><strong class="wl-label">Contender</strong><span class="wl-desc">Elite dynasty + strong scoring projection, premier roster right now</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#f59e0b;"></span><strong class="wl-label">Win-Now</strong><span class="wl-desc">Elite scoring with aging stars, peak years are here and window is open</span></div>
           <div class="wl-row"><span class="wl-dot" style="background:#84cc16;"></span><strong class="wl-label">Aging Contender</strong><span class="wl-desc">Strong roster projecting well, but franchise age is trending up</span></div>
@@ -10815,9 +11042,11 @@ def page_breakouts(platform: str, season: int, league_id: str):
       const BO_HAS_PREMIUM = {str(has_premium).lower()};
       let breakoutCandidates = [];
       let currentFilter = 'ALL';
+      let currentPage = 1;
+      const PAGE_SIZE = 12;
 
       // Fetch breakout candidates on page load (using new BreakoutEngine API)
-      fetch('/api/breakout/candidates?season={season}&min_score=25')
+      fetch('/api/breakout/candidates?season={season}&min_score=50')
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
@@ -10836,13 +11065,17 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
       function filterBreakouts(position) {{
         currentFilter = position;
-
-        // Update active button
+        currentPage = 1;
         document.querySelectorAll('.breakout-filter-btn').forEach(btn => {{
           btn.classList.toggle('active', btn.getAttribute('data-position') === position);
         }});
-
         renderBreakouts();
+      }}
+
+      function goToPage(page) {{
+        currentPage = page;
+        renderBreakouts();
+        document.getElementById('breakoutsContainer').scrollIntoView({{ behavior: 'smooth', block: 'start' }});
       }}
 
       function _boPpgRange(candidate) {{
@@ -10895,12 +11128,51 @@ def page_breakouts(platform: str, season: int, league_id: str):
         container.style.display = 'block';
 
         const FREE_LIMIT = 3;
-        const visible = BO_HAS_PREMIUM ? filtered : filtered.slice(0, FREE_LIMIT);
-        const locked = !BO_HAS_PREMIUM && filtered.length > FREE_LIMIT;
+        if (!BO_HAS_PREMIUM) {{
+          const visible = filtered.slice(0, FREE_LIMIT);
+          const locked = filtered.length > FREE_LIMIT;
+          let html = '<div class="breakout-grid">';
+          visible.forEach(candidate => {{ html += renderBreakoutCard(candidate); }});
+          if (locked) {{
+            html += `
+              <div class="breakout-card" onclick="showPaywall('breakout-candidates')" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;border:2px dashed var(--border);">
+                <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
+                <div style="font-weight:700;font-size:15px;">${{filtered.length - FREE_LIMIT}} more candidates locked</div>
+                <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to see all breakout<br>candidates and full details</div>
+                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
+              </div>`;
+          }}
+          html += '</div>';
+          container.innerHTML = html;
+          return;
+        }}
+
+        // Premium: paginate
+        const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+        currentPage = Math.max(1, Math.min(currentPage, totalPages));
+        const start = (currentPage - 1) * PAGE_SIZE;
+        const visible = filtered.slice(start, start + PAGE_SIZE);
 
         let html = '<div class="breakout-grid">';
+        visible.forEach(candidate => {{ html += renderBreakoutCard(candidate); }});
+        html += '</div>';
 
-        visible.forEach(candidate => {{
+        // Pagination controls
+        if (totalPages > 1) {{
+          html += '<div class="bo-pagination">';
+          html += `<button class="bo-page-btn" onclick="goToPage(${{currentPage - 1}})" ${{currentPage === 1 ? 'disabled' : ''}}>&#8249;</button>`;
+          for (let i = 1; i <= totalPages; i++) {{
+            html += `<button class="bo-page-btn ${{i === currentPage ? 'active' : ''}}" onclick="goToPage(${{i}})">${{i}}</button>`;
+          }}
+          html += `<button class="bo-page-btn" onclick="goToPage(${{currentPage + 1}})" ${{currentPage === totalPages ? 'disabled' : ''}}>&#8250;</button>`;
+          html += `<span class="bo-page-info">${{start + 1}}–${{Math.min(start + PAGE_SIZE, filtered.length)}} of ${{filtered.length}}</span>`;
+          html += '</div>';
+        }}
+
+        container.innerHTML = html;
+      }}
+
+      function renderBreakoutCard(candidate) {{
           const name = candidate.player_name || 'Unknown';
           const team = candidate.team || '?';
           const pos = candidate.position || '?';
@@ -10910,9 +11182,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
           const hitProb = candidate.hit_probability != null ? Math.round(parseFloat(candidate.hit_probability) * 100) : null;
 
           let scoreColor = '#10b981';
-          if (score < 50) scoreColor = '#3b82f6';
-          if (score < 40) scoreColor = '#f59e0b';
-          if (score < 30) scoreColor = '#6b7280';
+          if (score < 65) scoreColor = '#3b82f6';
+          if (score < 55) scoreColor = '#f59e0b';
 
           const range = _boPpgRange(candidate);
           const topComp = _boTopComponent(candidate);
@@ -10940,7 +11211,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
             : '';
 
           const barFill = Math.min(100, Math.max(0, topComp.val));
-          html += `
+          return `
             <div class="breakout-card" style="cursor:pointer;" onclick="openPlayerModal('` + pid + `', '` + name + `', {{tab:'breakout'}})">
               <div class="breakout-card-header">
                 <div>
@@ -10952,11 +11223,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
                   ${{hitHtml}}
                 </div>
               </div>
-
-              <div style="margin-bottom:12px;">
-                ${{ppgHtml}}
-              </div>
-
+              <div style="margin-bottom:12px;">${{ppgHtml}}</div>
               <div style="margin-bottom:10px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                   <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Top Driver: ${{topComp.label}}</span>
@@ -10966,24 +11233,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
                   <div style="height:100%;width:${{barFill}}%;background:${{topComp.color}};border-radius:3px;transition:width 0.3s;"></div>
                 </div>
               </div>
-
               ${{topReason ? `<div style="font-size:11px;color:var(--text-muted);line-height:1.4;border-top:1px solid var(--border-color);padding-top:8px;">${{topReason}}</div>` : ''}}
-            </div>
-          `;
-        }});
-
-        if (locked) {{
-          html += `
-            <div class="breakout-card" onclick="showPaywall('breakout-candidates')" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;border:2px dashed var(--border);">
-              <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
-              <div style="font-weight:700;font-size:15px;">${{filtered.length - FREE_LIMIT}} more candidates locked</div>
-              <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to see all breakout<br>candidates and full details</div>
-              <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
-            </div>
-          `;
-        }}
-        html += '</div>';
-        container.innerHTML = html;
+            </div>`;
       }}
     </script>
     """
@@ -11302,19 +11553,56 @@ def _background_build_teams(platform: str, league_id: str, season: int) -> None:
 
 
 def _build_teams_skeleton(platform: str, season: int, league_id: str, num_teams: int) -> str:
-    shimmer_card = """
+    def _sk_row(w1, w2, w3, w4, w5, bar_pct):
+        return (
+            f"<tr>"
+            f"<td><div class='sk-shimmer' style='width:{w1}px;height:11px;border-radius:3px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:{w2}px;height:11px;border-radius:3px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:{w3}px;height:11px;border-radius:3px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:{w4}px;height:11px;border-radius:3px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:{w5}px;height:11px;border-radius:3px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:{bar_pct}%;height:8px;border-radius:4px;'></div></td>"
+            f"<td><div class='sk-shimmer' style='width:24px;height:11px;border-radius:3px;'></div></td>"
+            f"</tr>"
+        )
+    table_rows = "".join([
+        _sk_row(22, 12, 36, 32, 16, 72),
+        _sk_row(22, 12, 42, 36, 16, 58),
+        _sk_row(22, 12, 38, 30, 16, 65),
+        _sk_row(22, 12, 30, 28, 16, 45),
+        _sk_row(28, 12, 24, 22, 16, 30),
+    ])
+    shimmer_card = f"""
     <div class="card team-strength-card teams-sk-card">
       <div class="card-header-row">
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
           <div class="sk-shimmer" style="width:32px;height:32px;border-radius:50%;flex-shrink:0;"></div>
-          <div class="sk-shimmer" style="width:130px;height:16px;border-radius:4px;"></div>
-          <div class="sk-shimmer" style="width:34px;height:22px;border-radius:6px;"></div>
+          <div class="sk-shimmer" style="width:125px;height:15px;border-radius:4px;"></div>
+          <div class="sk-shimmer" style="width:72px;height:12px;border-radius:4px;opacity:0.7;"></div>
         </div>
-        <div class="sk-shimmer" style="width:140px;height:11px;border-radius:4px;margin-top:4px;"></div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+          <div class="sk-shimmer" style="width:38px;height:24px;border-radius:6px;"></div>
+          <div class="sk-shimmer" style="width:22px;height:22px;border-radius:4px;"></div>
+        </div>
       </div>
       <div class="card-body">
-        <div class="sk-shimmer" style="width:100%;height:180px;border-radius:6px;margin-bottom:10px;"></div>
-        <div class="sk-shimmer" style="width:100%;height:100px;border-radius:6px;"></div>
+        <div class="sk-shimmer" style="width:100%;height:120px;border-radius:6px;margin-bottom:14px;"></div>
+        <div class="pos-table-wrap">
+          <table class="pos-strength-table">
+            <thead>
+              <tr>
+                <th><div class="sk-shimmer" style="width:22px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:10px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:32px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:30px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:10px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:50px;height:9px;border-radius:3px;"></div></th>
+                <th><div class="sk-shimmer" style="width:24px;height:9px;border-radius:3px;"></div></th>
+              </tr>
+            </thead>
+            <tbody>{table_rows}</tbody>
+          </table>
+        </div>
       </div>
     </div>"""
     cards_html = shimmer_card * max(num_teams, 4)
@@ -12687,8 +12975,6 @@ def _compute_fpts_against(season: int) -> dict:
 
             # Load schedule for this week to build team→opponent map
             sched_files = _glob.glob(
-                os.path.join("cache", "schedule", f"schedule_s{season}_w{week}_*.json")
-            ) or _glob.glob(
                 os.path.join("cache", "schedule", f"schedule_s{season}_w{week}.json")
             )
             if not sched_files:
@@ -14810,12 +15096,6 @@ def api_weekly_week():
 
     ctx = get_league_ctx_from_cache(platform, league_id, season)
 
-    if ctx.get("offseason_mode"):
-        return jsonify({
-            "ok": False,
-            "error": "Weekly Hub is unavailable during the offseason."
-        }), 400
-
     ensure_weekly_bits(ctx)
 
     df_weekly = ctx["df_weekly"]
@@ -14832,7 +15112,7 @@ def api_weekly_week():
     teams_index = ctx["teams_index"]
     season = ctx["season"]
     current_week = ctx["current_week"]
-    max_weeks = ctx["weeks"]
+    max_weeks = int(ctx.get("weeks") or 0) or 18
 
     if week < 1 or week > max_weeks:
         return jsonify({"ok": False, "error": f"Week {week} out of range"}), 400
@@ -14850,7 +15130,7 @@ def api_weekly_week():
     if not finalized_df.empty:
         last_final_week = int(finalized_df["week"].max())
     else:
-        last_final_week = max(1, min(int(current_week or 1), int(max_weeks or 1)))
+        last_final_week = 0  # no finalized weeks → all weeks show projections
 
     resolved_league_id = ctx.get("resolved_league_id", league_id)
 
@@ -14866,9 +15146,18 @@ def api_weekly_week():
         platform,
         season
     )
-    highlights_html = _render_weekly_highlights(df_weekly, week)
+    _api_proj_by_roster = ctx.get("proj_by_roster") or {}
+    highlights_html = _render_weekly_highlights(
+        df_weekly, week,
+        proj_by_roster=_api_proj_by_roster,
+        matchups_by_week=matchups_by_week,
+    )
 
-    matchups = matchups_by_week.get(week, []) or []
+    _api_vid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
+    matchups = sorted(
+        matchups_by_week.get(week, []) or [],
+        key=lambda m: 0 if _api_vid and _api_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
+    )
     status_by_pid = (statuses.get(week) or {}).get("statuses", {}) or {}
     _fpts_against_api = _compute_fpts_against(season)
 
@@ -15895,7 +16184,7 @@ def api_trade_eval():
     side_a_count = len(side_a_players) + len(side_a_picks)
     side_b_count = len(side_b_players) + len(side_b_picks)
     if side_a_count != side_b_count:
-        apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"))
+        apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"), value_table=value_table, league_size=league_size)
 
     a_eff = side_a["effective_total"]
     b_eff = side_b["effective_total"]
@@ -16671,50 +16960,14 @@ def api_player_indicators():
             elif rookie_year and int(rookie_year) == current_season:
                 rookies.append(str(player_id))
 
-        # Get breakouts using multi-factor algorithm
-        # Falls back to value-based detection if advanced metrics not available
+        # Get breakouts from the same source as the Breakout Engine page
         breakouts = []
-
-        # Check if we're in offseason
-        season_type = str(nfl_state.get("season_type", "")).lower().strip()
-        is_offseason = season_type == "off"
-
-        if is_offseason:
-            # During offseason, use roster change-based breakout detection
-            try:
-                from data_building.offseason_opportunity import get_offseason_breakout_candidates
-
-                offseason_candidates = get_offseason_breakout_candidates(current_season, min_score=25)
-                breakouts = [str(c["player_id"]) for c in offseason_candidates]
-
-            except Exception as e:
-                logger.info(f"[player-indicators] Offseason breakout detection failed: {e}")
-
-        else:
-            # During season, use in-season breakout detection
-            try:
-                from data_building.advanced_metrics import detect_breakout_candidates
-
-                breakout_candidates = detect_breakout_candidates(lookback_days=14)
-                breakouts = [str(b["player_id"]) for b in breakout_candidates]
-
-            except Exception as e:
-                # Fallback to simple value-based detection (more restrictive threshold)
-                logger.info(f"[player-indicators] Advanced metrics unavailable, using fallback: {e}")
-                movers_data = get_top_movers(days=7, limit=1000) or {}
-
-                for player in movers_data.get("risers", []):
-                    delta = player.get("delta", 0)
-                    position = player.get("position", "")
-
-                    # More restrictive thresholds to reduce false positives
-                    # Higher threshold for TEs since they're more volatile
-                    threshold = 100 if position == "TE" else 75
-
-                    if delta >= threshold:
-                        pid = str(player.get("player_id", ""))
-                        if pid:
-                            breakouts.append(pid)
+        try:
+            from dashboard_services.breakout_api import get_breakout_candidates as _get_bo_indicators
+            _bo_result = _get_bo_indicators(season=current_season, min_score=50)
+            breakouts = [str(c["player_id"]) for c in (_bo_result.get("candidates") or [])]
+        except Exception as e:
+            logger.info(f"[player-indicators] Breakout candidates unavailable: {e}")
 
         # Get elites based on positional rank cutoffs (12-man PPR dynasty)
         elites = []
@@ -17380,18 +17633,14 @@ def api_player_details(player_id: str):
 
             # Load schedule data for ALL weeks to show all games
             schedule_by_week = {}
-            schedule_pattern = os.path.join("cache", "schedule", f"schedule_s{season_year}_w*_d*.json")
-            for schedule_file in glob.glob(schedule_pattern):
+            for schedule_file in glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*.json")):
                 try:
-                    # Extract week from filename: schedule_s2024_w1_d2024-09-05.json
                     filename = os.path.basename(schedule_file)
-                    week_num = int(filename.split('_w')[1].split('_')[0])
-
+                    week_num = int(filename.split('_w')[1].split('_')[0].split('.')[0])
                     with open(schedule_file, 'r') as f:
                         games = json.load(f)
-                        # Ensure games is a list
-                        if isinstance(games, list) and week_num not in schedule_by_week:
-                            schedule_by_week[week_num] = games
+                    if isinstance(games, list) and week_num not in schedule_by_week:
+                        schedule_by_week[week_num] = games
                 except Exception as e:
                     logger.warning("[api_player_details] Error loading schedule %s: %s", schedule_file, e)
                     continue
@@ -17873,10 +18122,10 @@ def api_player_game_logs(player_id: str):
             game_logs = []
 
             schedule_by_week: dict = {}
-            for schedule_file in glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*_d*.json")):
+            for schedule_file in glob.glob(os.path.join("cache", "schedule", f"schedule_s{season_year}_w*.json")):
                 try:
                     fn = os.path.basename(schedule_file)
-                    week_num = int(fn.split('_w')[1].split('_')[0])
+                    week_num = int(fn.split('_w')[1].split('_')[0].split('.')[0])
                     with open(schedule_file) as f:
                         games = json.load(f)
                     if isinstance(games, list) and week_num not in schedule_by_week:
@@ -17953,6 +18202,96 @@ def api_player_game_logs(player_id: str):
             if game_logs:
                 game_logs.sort(key=lambda g: g.get("date", "") or "")
                 game_logs_by_year[season_year] = game_logs
+
+        # ── Upcoming projected season ─────────────────────────────────────────
+        # Use the request `season` param as the upcoming year.  We do NOT use
+        # max(available_years)+1 because sleeper_stats files may already exist
+        # for the current season (e.g. 2026), pushing the calculation to 2027.
+        _upcoming = season  # season already parsed from request.args above
+        if _upcoming not in game_logs_by_year:
+            try:
+                from utils.utils import pick_proj_variant, load_week_projection
+                from statistics import median as _med_fn
+                _variant = pick_proj_variant(scoring_settings)
+
+                _proj_vals: dict = {}
+                for _w in range(1, 19):
+                    _wd = load_week_projection(_upcoming, _w) or {}
+                    _v = _wd.get(player_id)
+                    if isinstance(_v, dict):
+                        _fv = float(_v.get(_variant) or _v.get("ppr") or 0)
+                    elif isinstance(_v, (int, float)):
+                        _fv = float(_v)
+                    else:
+                        _fv = 0.0
+                    if _fv > 0.5:
+                        _proj_vals[_w] = round(_fv, 2)
+
+                # FP PPG fallback if no Tank01 weekly files
+                if not _proj_vals:
+                    _fp_path = os.path.join("cache", f"fp_projections_{_upcoming}_ppr.json")
+                    try:
+                        with open(_fp_path) as _fp_f:
+                            _fp_data = json.load(_fp_f)
+                        _fp_e = _fp_data.get(player_id)
+                        if _fp_e:
+                            _ppg = float(_fp_e.get("ppg") or 0)
+                            if _ppg > 0:
+                                for _w in range(1, 19):
+                                    _proj_vals[_w] = round(_ppg, 2)
+                    except FileNotFoundError:
+                        pass
+
+                if _proj_vals:
+                    _mv = list(_proj_vals.values())
+                    _med = _med_fn(_mv) if _mv else 0
+
+                    # Load upcoming season schedule for opponent lookup
+                    _sched: dict = {}
+                    for _sf in glob.glob(os.path.join("cache", "schedule", f"schedule_s{_upcoming}_w*.json")):
+                        try:
+                            _fn = os.path.basename(_sf)
+                            _wn = int(_fn.split('_w')[1].split('_')[0].split('.')[0])
+                            with open(_sf) as _sff:
+                                _sg = json.load(_sff)
+                            if isinstance(_sg, list) and _wn not in _sched:
+                                _sched[_wn] = _sg
+                        except Exception:
+                            pass
+
+                    _proj_logs = []
+                    for _w in range(1, 19):
+                        _pv = _proj_vals.get(_w, _med if _med > 0 else None)
+                        if _pv and _med > 0 and _pv < _med * 0.5:
+                            _pv = _med
+
+                        # Resolve opponent from schedule
+                        _opp = "—"
+                        _game_date = ""
+                        for _g in (_sched.get(_w) or []):
+                            if not isinstance(_g, dict):
+                                continue
+                            if player_team and player_team == _g.get("home"):
+                                _opp = _g.get("away", "—")
+                                _game_date = _g.get("gameDate", "")
+                                break
+                            elif player_team and player_team == _g.get("away"):
+                                _opp = f"@{_g.get('home', '—')}"
+                                _game_date = _g.get("gameDate", "")
+                                break
+
+                        _proj_logs.append({
+                            "week": _w,
+                            "date": _game_date or f"Wk {_w}",
+                            "opponent": _opp,
+                            "fantasy_pts": round(_pv, 2) if _pv else None,
+                            "stats": None,
+                            "is_projection": True,
+                        })
+                    if any(g["fantasy_pts"] for g in _proj_logs):
+                        game_logs_by_year[_upcoming] = _proj_logs
+            except Exception as _proj_err:
+                logger.debug(f"[game_logs] upcoming season projection failed: {_proj_err}")
 
         return jsonify({"game_logs_by_year": game_logs_by_year})
     except Exception as e:
@@ -20177,16 +20516,32 @@ def api_trade_intel_run_crawl():
         return jsonify({"error": "Internal error"}), 500
 
 
-@app.route("/api/roster-intel")
+@app.route("/api/roster-intel", methods=["GET", "POST"])
 def api_roster_intel():
     """
-    Keeper/cut signals for every rostered player in a league.
-    Returns per-player hold/sell/buy/cut signals based on value trend, age, and position curve.
+    Position-grouped roster health for the viewer's team.
+    Returns per-position aggregates (total value, avg age, league rank, health label)
+    and per-player signals for the viewer's roster.
+
+    POST body (preferred): includes fc_adp pre-fetched by the browser from
+    FantasyCalc ({sleeperId: {pos_rank, adp_rank, position}}).
+    GET fallback: reads params from query string, fc_adp defaults to {}.
     """
-    platform  = str(request.args.get("platform")  or "sleeper").strip()
-    league_id = str(request.args.get("league_id") or "").strip()
-    season    = int(request.args.get("season")    or datetime.now().year)
-    league_type = str(request.args.get("league_type") or "1qb").strip().lower()
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+    else:
+        body = request.args
+
+    platform        = str(body.get("platform")         or "sleeper").strip()
+    league_id       = str(body.get("league_id")        or "").strip()
+    season          = int(body.get("season")           or datetime.now().year)
+    league_type     = str(body.get("league_type")      or "1qb").strip().lower()
+    viewer_rid_raw  = str(body.get("viewer_roster_id") or "").strip()
+    # Fall back to session if the template didn't inject a viewer roster id
+    if not viewer_rid_raw:
+        viewer_rid_raw = str(session.get("viewer_roster_id") or "").strip()
+    # FC dynasty ADP — sent by browser because server IP is blocked by FC
+    fc_adp: dict    = (body.get("fc_adp") or {}) if isinstance(body.get("fc_adp"), dict) else {}
 
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
@@ -20196,8 +20551,16 @@ def api_roster_intel():
     except Exception as e:
         return _api_err("Request failed", e)
 
-    rosters    = ctx.get("rosters") or []
-    roster_map = ctx.get("roster_map") or {}
+    try:
+        return _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season=season)
+    except Exception as e:
+        logger.exception("[api-roster-intel] unhandled error: %s", e)
+        return _api_err("Roster intel unavailable", e)
+
+
+def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: int = 0):
+    rosters           = ctx.get("rosters") or []
+    roster_map        = ctx.get("roster_map") or {}
     model_value_table = ctx.get("model_value_table") or []
 
     # Build value lookup keyed by player_id
@@ -20210,109 +20573,212 @@ def api_roster_intel():
         if not pid:
             continue
         values_by_id[pid] = {
-            "value":           float(row.get(val_key) or row.get("value") or 0),
-            "age":             row.get("age"),
-            "position":        str(row.get("position") or "").upper(),
-            "pos_rank_label":  row.get("pos_rank_label") or "",
-            "rank_change_7d":  row.get("rank_change_7d"),
-            "name":            row.get("name") or "",
-            "team":            row.get("team") or "",
+            "value":             float(row.get(val_key) or row.get("value") or 0),
+            "age":               row.get("age"),
+            "position":          str(row.get("position") or "").upper(),
+            "pos_rank_label":    row.get("pos_rank_label") or "",
+            "pos_rank":          row.get("pos_rank"),
+            "rank_change_7d":    row.get("rank_change_7d"),
+            "pos_rank_change_7d": row.get("pos_rank_change_7d"),
+            "name":              row.get("name") or "",
+            "team":              row.get("team") or "",
         }
 
-    # Bulk-fetch breakout scores
-    all_rostered = [
-        str(pid)
-        for r in rosters
-        for pid in (r.get("players") or [])
-    ]
-    breakout_scores: dict = {}
+    # Bulk-fetch breakout scores + years_exp for all rostered players
+    all_rostered = [str(pid) for r in rosters for pid in (r.get("players") or [])]
+    years_exp_map: dict = {}
     from dashboard_services.db import get_conn
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    SELECT DISTINCT ON (player_id)
-                        player_id, breakout_opportunity_score
-                    FROM breakout_opportunity_scores
-                    WHERE player_id = ANY(%s)
-                    ORDER BY player_id, as_of_date DESC
-                    """,
+                    "SELECT player_id, years_exp FROM player_values WHERE player_id = ANY(%s)",
                     (all_rostered,),
                 )
-                for r in cur.fetchall():
-                    r = dict(r)
-                    if r.get("breakout_opportunity_score") is not None:
-                        breakout_scores[r["player_id"]] = float(r["breakout_opportunity_score"])
+                for row in cur.fetchall():
+                    row = dict(row)
+                    if row.get("years_exp") is not None:
+                        years_exp_map[str(row["player_id"])] = int(row["years_exp"])
     except Exception:
         pass
 
-    # Prime age ceilings by position
+    # Breakout candidates — use the SAME source as the Breakout Engine page so the
+    # "Breakout" signal here is consistent with what shows up there.
+    breakout_pids: set = set()
+    try:
+        from dashboard_services.breakout_api import get_breakout_candidates as _get_bo
+        _bo = _get_bo(season=season, min_score=50)
+        breakout_pids = {str(c["player_id"]) for c in (_bo.get("candidates") or [])}
+    except Exception:
+        pass
+
+    POSITIONS = ["QB", "RB", "WR", "TE"]
     prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
     def _signal(pid: str, info: dict) -> str:
-        val        = info["value"]
-        age        = float(info["age"] or 0)
-        pos        = info["position"]
-        rank_chg   = info["rank_change_7d"] or 0
-        prime      = prime_max.get(pos, 28)
-        bscore     = breakout_scores.get(pid, 0)
-        past_prime = age > prime
+        val             = info["value"]
+        age             = float(info["age"] or 0)
+        pos             = info["position"]
+        rank_chg        = info["pos_rank_change_7d"] or info["rank_change_7d"] or 0
+        prime           = prime_max.get(pos, 28)
+        past_prime      = age > prime
+        young           = age > 0 and age <= 24
+        internal_pos_rk = int(info.get("pos_rank") or 999)
+        fc_pos_rk       = int((fc_adp.get(pid) or {}).get("pos_rank") or 999)
+        # Positive = market (FC) overvalues vs our model; negative = we value more than market.
+        mkt_gap = internal_pos_rk - fc_pos_rk
 
+        # Release candidates
         if val < 80:
             return "Cut"
-        if val >= 400 and rank_chg >= 6:
-            return "Sell High"
-        if past_prime and val >= 300 and rank_chg >= 3:
-            return "Sell High"
-        if not past_prime and rank_chg <= -6 and val >= 200:
-            return "Buy Window"
-        if bscore >= 55 and not past_prime:
-            return "Hold — Breakout"
-        if val >= 500 and not past_prime:
-            return "Core"
-        if past_prime and val < 200:
+        if past_prime and val < 175:
             return "Cut"
+
+        # Sell windows — aging players still holding value
+        if past_prime and val >= 350:
+            return "Sell High"
+        # Market overvalues vs our model — sell into the hype.
+        # Exclude young ascending players (≤24) — market premium on youth is justified.
+        if mkt_gap >= 5 and val >= 250 and not past_prime and not young:
+            return "Sell High"
+        # Severe 7-day rank jump for a prime player — sell into momentum
+        if not past_prime and not young and val >= 450 and rank_chg >= 10:
+            return "Sell High"
+
+        # Elite untouchable asset
+        if not past_prime and val >= 700:
+            return "Core"
+
+        # Breakout — only if the player appears on the actual Breakout Engine page
+        if not past_prime and pid in breakout_pids and val >= 80:
+            return "Breakout"
+
+        # Sleeper — our model values significantly more than the dynasty market.
+        # Only applies to mid-tier players; top-tier players are never "sleepers".
+        _sleeper_rank_floor = {"QB": 10, "RB": 14, "WR": 16, "TE": 6}.get(pos, 16)
+        if mkt_gap <= -5 and val >= 200 and not past_prime and internal_pos_rk >= _sleeper_rank_floor:
+            return "Sleeper"
+
+        # Severe 7-day drop — consider selling before value erodes further
+        if not past_prime and rank_chg <= -10 and val >= 175:
+            return "Monitor"
+
         return "Hold"
 
-    signal_order = {"Sell High": 0, "Core": 1, "Hold — Breakout": 2,
-                    "Buy Window": 3, "Hold": 4, "Cut": 5}
-
-    result = []
-    players_index = ctx.get("players_index") or {}
+    # ── Compute per-position strength for ALL teams using the same weighted
+    #    formula as the teams page cards so ranks match exactly.
+    slot_counts = count_roster_positions(get_roster_positions())
+    pos_vals: dict = {}   # {rid: {pos: [value, ...]}}
     for roster in rosters:
-        rid       = str(roster.get("roster_id"))
-        team_name = roster_map.get(rid, f"Roster {rid}")
-        players   = []
+        rid = str(roster.get("roster_id"))
+        pos_vals[rid] = {pos: [] for pos in POSITIONS}
         for pid in (roster.get("players") or []):
             pid = str(pid)
             info = values_by_id.get(pid)
-            if not info:
+            if not info or info["position"] not in POSITIONS:
                 continue
-            pos = info["position"]
-            if pos not in {"QB", "RB", "WR", "TE"}:
-                continue
-            sig = _signal(pid, info)
-            players.append({
-                "player_id":     pid,
-                "name":          info["name"] or players_index.get(pid, {}).get("name", f"Player {pid}"),
-                "position":      pos,
-                "team":          info["team"],
-                "age":           info["age"],
-                "value":         round(info["value"], 0),
-                "pos_rank_label": info["pos_rank_label"],
-                "rank_change_7d": info["rank_change_7d"],
-                "signal":        sig,
-            })
-        players.sort(key=lambda p: signal_order.get(p["signal"], 9))
-        result.append({
+            pos_vals[rid][info["position"]].append(info["value"])
+
+    pos_strength: dict = {}   # {rid: {pos: weighted_strength}}
+    for rid, pmap in pos_vals.items():
+        pos_strength[rid] = {
+            pos: _weighted_pos_strength(pmap[pos], pos, slot_counts)
+            for pos in POSITIONS
+        }
+
+    num_teams = len(rosters)
+
+    # Rank teams per position by weighted strength (1 = best), matching teams page
+    pos_ranks: dict = {}    # {rid: {pos: rank}}
+    for pos in POSITIONS:
+        sorted_rids = sorted(pos_strength, key=lambda r: pos_strength[r][pos], reverse=True)
+        for rank, rid in enumerate(sorted_rids, 1):
+            pos_ranks.setdefault(rid, {})[pos] = rank
+
+    # ── Build response for the viewer's team only ─────────────────────────────
+    if not viewer_rid_raw:
+        return jsonify({"error": "Sign in to a team to view your roster intel."}), 400
+    target_rids = {viewer_rid_raw}
+
+    results = []
+    players_index = ctx.get("players_index") or {}
+    for roster in rosters:
+        rid = str(roster.get("roster_id"))
+        if rid not in target_rids:
+            continue
+        team_name = roster_map.get(rid, f"Roster {rid}")
+        positions_data: dict = {}
+
+        for pos in POSITIONS:
+            pos_players = []
+            pos_ages    = []
+            for pid in (roster.get("players") or []):
+                pid  = str(pid)
+                info = values_by_id.get(pid)
+                if not info or info["position"] != pos:
+                    continue
+                name = info["name"] or (players_index.get(pid) or {}).get("name") or f"Player {pid}"
+                sig  = _signal(pid, info)
+                _fc  = fc_adp.get(pid) or {}
+                _fc_pos_rk = _fc.get("pos_rank")
+                _int_pos_rk = info.get("pos_rank")
+                _mkt_gap = (int(_int_pos_rk or 999) - int(_fc_pos_rk or 999)) if (_int_pos_rk and _fc_pos_rk) else None
+                pos_players.append({
+                    "player_id":         pid,
+                    "name":              name,
+                    "age":               info["age"],
+                    "value":             round(info["value"], 0),
+                    "pos_rank_label":    info["pos_rank_label"],
+                    "rank_change_7d":    info["pos_rank_change_7d"] or info["rank_change_7d"],
+                    "fc_pos_rank":       _fc_pos_rk,
+                    "mkt_gap":           _mkt_gap,
+                    "years_exp":         years_exp_map.get(pid),
+                    "breakout_score":    None,
+                    "signal":            sig,
+                })
+                if info["age"]:
+                    pos_ages.append(float(info["age"]))
+
+            # Sort by value descending (starters first)
+            pos_players.sort(key=lambda p: -(p["value"] or 0))
+
+            total_val   = sum(pos_vals.get(rid, {}).get(pos, []))
+            avg_age     = round(sum(pos_ages) / len(pos_ages), 1) if pos_ages else None
+            league_rank = pos_ranks.get(rid, {}).get(pos, 0)
+            prime       = prime_max.get(pos, 28)
+
+            # Position health label
+            past_prime_count = sum(1 for p in pos_players if p["age"] and float(p["age"]) > prime)
+            strong_count     = sum(1 for p in pos_players if (p["value"] or 0) >= 200)
+            total_count      = len(pos_players)
+
+            if total_count > 0 and past_prime_count / total_count >= 0.6:
+                health = "Aging"
+            elif strong_count < 2:
+                health = "Thin"
+            elif league_rank <= max(1, round(num_teams * 0.3)):
+                health = "Strong"
+            else:
+                health = "Average"
+
+            positions_data[pos] = {
+                "players":      pos_players,
+                "total_value":  round(total_val, 0),
+                "avg_age":      avg_age,
+                "league_rank":  league_rank,
+                "num_teams":    num_teams,
+                "player_count": total_count,
+                "health":       health,
+            }
+
+        results.append({
             "roster_id": rid,
             "team_name": team_name,
-            "players":   players,
+            "positions": positions_data,
         })
 
-    result.sort(key=lambda t: t["team_name"])
-    return jsonify({"teams": result})
+    results.sort(key=lambda t: t["team_name"])
+    return jsonify({"teams": results})
 
 
 @app.route("/api/trade-targets")
@@ -20741,11 +21207,11 @@ def api_trade_intel_player_packages(player_id: str):
                         orig = pk.get("original_owner")
                         # Slot only meaningful for the current season
                         slot = _slot_map.get(int(orig)) if (yr == season and orig) else None
-                        suffix = {1: "1st", 2: "2nd", 3: "3rd"}.get(rnd, f"{rnd}th")
                         if slot:
                             pk_name = f"{yr} {rnd}.{slot:02d}"
                         else:
-                            pk_name = f"{yr} {suffix} (Mid)"
+                            _sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+                            pk_name = f"{yr} {rnd}{_sfx} (Mid)"
                         if slot:
                             pval = (
                                 pick_val_lookup.get(f"{yr}_{rnd}_{slot:02d}")
@@ -21808,7 +22274,7 @@ def api_trade_intel_player_send_packages(player_id: str):
                 if pval <= 0:
                     pval = {1: 220.0, 2: 130.0}.get(rnd, 70.0)
                 out.append({
-                    "name":  f"{yr} {_ordinal(rnd)} (Mid)",
+                    "name":  f"{yr} {rnd}{({1:'st',2:'nd',3:'rd'}.get(rnd,'th'))} (Mid)",
                     "value": round(pval, 1),
                     "is_pick": True,
                     "pick_season": yr,

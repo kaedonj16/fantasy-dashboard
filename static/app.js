@@ -284,54 +284,85 @@ function showLoginGate(target, opts) {
   }
 }
 
-// ── Data freshness chip ───────────────────────────────────────────────────────
+// ── Floating action pills (Discord + Data Freshness) ─────────────────────────
 (function () {
-  var STALE_MS = 6 * 60 * 60 * 1000; // 6 hours - matches server CACHE_TTL
+  var STALE_MS = 6 * 60 * 60 * 1000;
+
   function initFreshness() {
+    // Create or reuse the shared pill group container
+    var group = document.getElementById('floating-pill-group');
+    if (!group) {
+      group = document.createElement('div');
+      group.id = 'floating-pill-group';
+      document.body.appendChild(group);
+    }
+
+    // Discord pill — always visible
+    if (!document.getElementById('discord-pill')) {
+      var dp = document.createElement('a');
+      dp.id = 'discord-pill';
+      dp.className = 'fp-pill';
+      dp.href = 'https://discord.gg/7aZrs7qfur';
+      dp.target = '_blank';
+      dp.rel = 'noopener noreferrer';
+      dp.setAttribute('aria-label', 'Join our Discord');
+      dp.innerHTML =
+        '<span class="fp-pill-icon"><img src="/static/images/discord-brands-solid.png" alt="Discord" class="fp-discord-icon"></span>' +
+        '<span class="fp-pill-label">Join Discord</span>';
+      group.appendChild(dp);
+    }
+
+    // Refresh pill — only when a cache timestamp is available (league pages)
     var main = document.getElementById('page-root');
     if (!main) return;
     var ts = parseInt(main.dataset.cacheTs || '0', 10);
     if (!ts) return;
+
     var chip = document.getElementById('cache-freshness');
     if (!chip) {
       chip = document.createElement('div');
       chip.id = 'cache-freshness';
-      document.body.appendChild(chip);
+      chip.className = 'fp-pill';
+      chip.setAttribute('role', 'button');
+      chip.setAttribute('tabindex', '0');
+      chip.setAttribute('aria-label', 'Refresh data');
+      chip.innerHTML =
+        '<span class="fp-pill-icon"><span class="fp-pill-time">…</span></span>' +
+        '<span class="fp-pill-label">Refresh</span>';
+      group.appendChild(chip);
     }
+
     function update() {
       var diff = Date.now() - ts;
       var mins = Math.floor(diff / 60000);
-      var label;
-      if (mins < 1) label = 'Data just updated';
-      else if (mins < 60) label = 'Data • ' + mins + 'm ago';
-      else label = 'Data • ' + Math.floor(mins / 60) + 'h ago';
-      chip.textContent = label + ' · Refresh';
-      chip.classList.add('cf-visible');
+      var timeStr = mins < 1 ? 'now' : mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h';
+      var timeEl = chip.querySelector('.fp-pill-time');
+      if (timeEl) timeEl.textContent = timeStr;
       chip.classList.toggle('cf-stale', diff > STALE_MS);
     }
     update();
     setInterval(update, 60000);
 
-    chip.addEventListener('click', function() {
-      // Parse league context from URL: /<platform>/<season>/<league_id>/...
+    function doRefresh() {
       var parts = window.location.pathname.split('/').filter(Boolean);
       if (parts.length < 3) { window.location.reload(); return; }
-      var platform = parts[0];
-      var season = parts[1];
-      var leagueId = parts[2];
-      chip.textContent = 'Refreshing…';
+      var timeEl = chip.querySelector('.fp-pill-time');
+      if (timeEl) timeEl.textContent = '…';
       chip.style.opacity = '0.6';
       fetch('/api/refresh-league', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform: platform, season: parseInt(season, 10), league_id: leagueId })
-      }).then(function() {
-        window.location.reload();
-      }).catch(function() {
-        window.location.reload();
-      });
+        body: JSON.stringify({ platform: parts[0], season: parseInt(parts[1], 10), league_id: parts[2] })
+      }).then(function () { window.location.reload(); })
+        .catch(function () { window.location.reload(); });
+    }
+
+    chip.addEventListener('click', doRefresh);
+    chip.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doRefresh(); }
     });
   }
+
   document.addEventListener('DOMContentLoaded', initFreshness);
 })();
 
@@ -2187,7 +2218,8 @@ window.initTradePage = function initTradePage(root = document) {
           noteEl.style.cssText = 'font-size:10px;color:var(--text-muted);margin-top:2px;text-align:center;';
           totalEl.parentNode.insertBefore(noteEl, totalEl.nextSibling);
         }
-        noteEl.textContent = discount >= 5 ? `↓ ${Math.round(discount)} depth adj.` : '';
+        if (discount >= 5)  noteEl.textContent = `↓ ${Math.round(discount)} depth adj.`;
+        else               noteEl.textContent = '';
       }
     });
 
@@ -3705,8 +3737,9 @@ window.initTradePage = function initTradePage(root = document) {
                   || (String(a.player_id || "").split("_")[1] || "");
                 const rd     = String(a.pick_round  || "").replace(/\D/g, "")
                   || (String(a.player_id || "").split("_")[2] || "1");
-                const bucket = a.pick_bucket || "mid";
-                const pickId = yr && rd ? `${yr}_${rd}_${bucket}` : null;
+                const slotRaw = a.pick_slot ? String(a.pick_slot).replace(/\D/g, "").padStart(2, "0") : null;
+                const bucket  = a.pick_bucket || "mid";
+                const pickId  = yr && rd ? `${yr}_${rd}_${slotRaw || bucket}` : null;
                 if (pickId && !picks.some(p => p.id === pickId))
                   picks.push({ id: pickId, display: a.name || pickId });
               } else {
@@ -7094,6 +7127,23 @@ function pmSwitchTab(tab) {
   // ── Lazy-load Breakout tab ───────────────────────────────────────────────
   if (tab === 'breakout' && panel && !panel.dataset.loaded) {
     panel.dataset.loaded = '1';
+    const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
+    if (!_isPremium) {
+      panel.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:48px 24px;text-align:center;">
+          <i class="fa-solid fa-lock" style="font-size:28px;color:var(--text-muted);opacity:0.5;"></i>
+          <div style="font-size:15px;font-weight:700;color:var(--text);">Breakout Analysis is a PRO feature</div>
+          <div style="font-size:13px;color:var(--text-muted);max-width:280px;line-height:1.5;">
+            See breakout scores, opportunity drivers, hit probability, and PPG projections for every candidate.
+          </div>
+          <button onclick="showPaywall('breakout-analysis')"
+                  style="margin-top:4px;padding:9px 20px;background:linear-gradient(135deg,#667eea,#764ba2);
+                         color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;">
+            Upgrade to PRO
+          </button>
+        </div>`;
+      return;
+    }
     fetch(`/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(data => {
@@ -7394,6 +7444,7 @@ function _buildStatsHTML(game_logs_by_year) {
     years.forEach((year, index) => {
       const gameLogs = game_logs_by_year[year];
       const isFirstYear = index === 0;
+      const isProjection = gameLogs.length > 0 && gameLogs[0].is_projection === true;
 
       // Calculate season totals
       let totalFantasyPts = 0;
@@ -7405,8 +7456,16 @@ function _buildStatsHTML(game_logs_by_year) {
 
       gameLogs.forEach(game => {
         if (game.is_bye) return;
+        if (game.is_projection) {
+          if (game.fantasy_pts != null) { totalFantasyPts += game.fantasy_pts; gamesPlayed++; }
+          return;
+        }
         const s = game.stats || {};
-        if (game.fantasy_pts != null) gamesPlayed++;
+        // Only count weeks where the player actually had recorded stats (not DNP)
+        const playedThisGame = game.stats != null && (
+          s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null
+        );
+        if (playedThisGame) gamesPlayed++;
         totalFantasyPts += game.fantasy_pts || 0;
         totalPassYd += s.pass_yd || 0;
         totalPassTd += s.pass_td || 0;
@@ -7421,13 +7480,14 @@ function _buildStatsHTML(game_logs_by_year) {
         totalFumLost += s.fum_lost || 0;
       });
 
-      // Build season summary for header
-      const seasonSummaryParts = [];
-      seasonSummaryParts.push(`${fmtPts(totalFantasyPts)} pts`);
-      if (totalPassYd > 0) seasonSummaryParts.push(`${Math.round(totalPassYd)} pass yds`);
-      if (totalRushYd > 0) seasonSummaryParts.push(`${Math.round(totalRushYd)} rush yds`);
-      if (totalRec > 0) seasonSummaryParts.push(`${totalRec} rec`);
-      const seasonSummary = seasonSummaryParts.join(' • ');
+      // Build right-side header summary
+      const ppg = gamesPlayed > 0 ? (totalFantasyPts / gamesPlayed).toFixed(1) : '0.0';
+      let summaryHTML;
+      if (isProjection) {
+        summaryHTML = `<span class="game-log-year-summary">~${ppg} ppg &nbsp;<span style="opacity:0.65;">(projected)</span></span>`;
+      } else {
+        summaryHTML = `<span class="game-log-year-summary">${gamesPlayed}g &nbsp;·&nbsp; ${ppg} ppg &nbsp;·&nbsp; ${fmtPts(totalFantasyPts)} pts</span>`;
+      }
 
       statsHTML += `
         <div class="game-log-year-section">
@@ -7435,15 +7495,17 @@ function _buildStatsHTML(game_logs_by_year) {
             <div class="game-log-year-header-main">
               <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
               <span class="game-log-year-title">${year} Season</span>
+              ${isProjection ? '<span class="game-log-proj-badge">Projected</span>' : ''}
             </div>
+            ${summaryHTML}
           </div>
           <div class="game-log-year-content ${isFirstYear ? 'expanded' : ''}" id="year-${year}">
             <table class="game-log-table">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th>${isProjection ? 'Week' : 'Date'}</th>
                   <th>Opp</th>
-                  <th>Pts</th>
+                  <th class="${isProjection ? 'game-log-proj-th' : ''}">Pts${isProjection ? ' *' : ''}</th>
                   <th>Pass Yd</th>
                   <th>Pass TD</th>
                   <th>INT</th>
@@ -7460,6 +7522,24 @@ function _buildStatsHTML(game_logs_by_year) {
       `;
 
       gameLogs.forEach(game => {
+        // Projection row
+        if (game.is_projection) {
+          const projVal = game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '—';
+          let projDate = game.date || '';
+          if (projDate.length === 8) {
+            projDate = `${parseInt(projDate.substring(4,6))}/${parseInt(projDate.substring(6,8))}`;
+          }
+          statsHTML += `
+            <tr class="game-log-table-row game-log-proj-row">
+              <td>${projDate || `Wk ${game.week}`}</td>
+              <td class="game-log-table-opp">${game.opponent || '—'}</td>
+              <td class="game-log-table-pts game-log-proj-pts">${projVal}</td>
+              <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
+            </tr>
+          `;
+          return;
+        }
+
         const stats = game.stats || null;
 
         // Format date: 20240908 -> 9/8
@@ -7505,8 +7585,24 @@ function _buildStatsHTML(game_logs_by_year) {
 
       const valTotal = (v) => v != null && v > 0 ? v : '-';
 
-      // Add season totals row in table format (inside the table)
-      statsHTML += `
+      // Tfoot: projected season shows PPG; completed shows full totals
+      if (isProjection) {
+        statsHTML += `
+              </tbody>
+              <tfoot>
+                <tr class="game-log-table-total game-log-proj-row">
+                  <td><strong>Total</strong></td>
+                  <td><strong>${gamesPlayed}G</strong></td>
+                  <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(totalFantasyPts)}</strong></td>
+                  <td colspan="10" style="text-align:left;font-size:11px;color:var(--text-muted);padding-left:8px;">* Projected — actuals update when games are played</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+        `;
+      } else {
+        statsHTML += `
               </tbody>
               <tfoot>
                 <tr class="game-log-table-total">
@@ -7528,7 +7624,8 @@ function _buildStatsHTML(game_logs_by_year) {
             </table>
           </div>
         </div>
-      `;
+        `;
+      }
     });
 
     statsHTML += `</div>`;

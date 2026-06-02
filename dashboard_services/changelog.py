@@ -6,14 +6,8 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-05-29",
-        "tag": "feature",
-        "text": "Trade Strategy: All four archetypes (Contending, Rebuilding, Consolidate, Distribute) now include live playoff odds and win probability. Each suggested trade shows how much it shifts your Win %, playoff odds, and championship probability using a Monte Carlo simulation. Projections-based in the offseason, blended with live scoring in-season.",
-        "link": "/trade?tab=suggestions"
-    },
-    {
-        "date": "2026-05-29",
-        "tag": "feature",
-        "text": "Trade Strategy: Distribute suggestions now show the full picture of each trade: what leaves, what comes back, and the net value effect. All four strategy tabs display a Simulating indicator while results load and switch instantly on repeat visits.",
+        "tag": "new",
+        "text": "Trade Strategy: Archetype-driven suggestions for all four team profiles: Contending, Rebuilding, Consolidate, and Distribute. Each package shows exactly what leaves, what comes back, and how the deal shifts your Win %, playoff odds, and championship probability.",
         "link": "/trade?tab=suggestions"
     },
     {

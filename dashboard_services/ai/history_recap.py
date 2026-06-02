@@ -4,6 +4,7 @@ import json
 import threading
 
 from dashboard_services.ai.cache import load_cached_ai_text, save_cached_ai_text
+from dashboard_services.ai.client import clean_ai_text
 from dashboard_services.ai.prompts import get_ai_client
 from dashboard_services.ai.renderer import ai_available
 from dashboard_services.platform_api import get_bracket
@@ -413,7 +414,7 @@ def _generate_recap_ai_result(payload: dict) -> dict:
         },
     )
 
-    data = json.loads(resp.output_text.strip())
+    data = json.loads(clean_ai_text(resp.output_text.strip()))
     return data
 
 
@@ -571,7 +572,7 @@ def _generate_league_summary_ai(payload: dict) -> str:
         ],
     )
 
-    return resp.output_text.strip()
+    return clean_ai_text(resp.output_text.strip())
 
 
 def _fallback_league_summary(history_ctx: dict, season: int) -> str:
