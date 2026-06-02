@@ -9471,11 +9471,202 @@ html[data-theme="dark"] .contact-social-pill img {
   opacity: 0.72;
 }
 
+/* ─── Transaction cards (trades + waivers) ───────────────────────────────── */
 .tx {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--card-soft);
-  padding: 10px;
+  padding: 12px 14px;
+}
+
+.tx-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.tx-type-pill {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+
+.tx-pill-trade  { background: var(--accent-soft); color: var(--accent); }
+.tx-pill-waiver { background: #dcfce7; color: #15803d; }
+
+.tx-summary {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tx-time {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Two-column trade layout */
+.tx-sides {
+  display: grid;
+  grid-template-columns: 1fr 22px 1fr;
+  align-items: start;
+}
+
+.tx-sides-multi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.tx-arrow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.tx-side-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tx-side-head .tx-avatar,
+.tx-meta .tx-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 26px;
+}
+
+.tx-team-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Item rows */
+.tx-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+
+.tx-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 0;
+}
+
+.tx-io {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.tx-add .tx-io  { background: #dcfce7; color: #15803d; }
+.tx-drop .tx-io { background: #fee2e2; color: #dc2626; }
+
+.tx-row-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tx-row-name {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tx-row-sub {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tx-row-val {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 28px;
+  text-align: right;
+}
+
+/* Footer: net value + verdict */
+.tx-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.tx-net {
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.tx-net-pos  { color: #16a34a; }
+.tx-net-neg  { color: #dc2626; }
+.tx-net-even { color: var(--text-muted); }
+
+.tx-verdict {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin-left: auto;
+}
+
+.tx-verdict.bract-verdict-win  { background: #dcfce7; color: #15803d; }
+.tx-verdict.bract-verdict-loss { background: #fee2e2; color: #dc2626; }
+.tx-verdict.bract-verdict-even { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+
+.tx-empty-mini {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 2px 0;
 }
 
 .verdict-text {
@@ -10697,69 +10888,20 @@ img, svg, canvas {
   }
 
   .tx {
-    padding: 8px;
-    border-radius: 10px;
-    margin-bottom: 8px;
-  }
-
-  .tx .meta {
-    font-size: 11px;
-    margin-bottom: 6px;
-  }
-
-  .trade-card .teams {
-    gap: 8px;
-  }
-
-  .team-col {
-    padding: 8px;
+    padding: 10px 12px;
     border-radius: 10px;
   }
 
-  .team-col header {
-    gap: 8px;
-    margin-bottom: 6px;
+  .tx-sides {
+    grid-template-columns: 1fr 18px 1fr;
   }
 
-  .team-name {
-    font-size: 13px;
-  }
-
-  .avatar {
-    width: 32px;
-    height: 32px;
-  }
-
-  .player-activity {
-    padding: 4px 6px;
-    font-size: 12px;
-    gap: 8px;
-  }
-
-  .player-activity .io {
-    width: 16px;
-    height: 16px;
-    font-size: 11px;
-  }
-
-  .player-trade-value {
-    font-size: 11px;
-    margin-right: 8px;
-  }
-
-  .bract-total-row {
-    margin-top: 6px;
-  }
-
-  .bract-total-head {
-    font-size: 12px;
-    margin-bottom: 3px;
-  }
-
-  .bract-verdict {
-    font-size: 10px;
-    padding: 3px 6px;
-  }
+  .tx-row-name { font-size: 12px; }
+  .tx-row-sub  { font-size: 10px; }
+  .tx-row-val  { font-size: 11px; }
+  .tx-team-name { font-size: 12px; }
+  .tx-summary   { font-size: 12px; }
+  .tx-time      { font-size: 11px; }
 
   .activity-pill {
     font-size: 10px;
@@ -11320,69 +11462,20 @@ img, svg, canvas {
   }
 
   .tx {
-    padding: 6px;
-    border-radius: 8px;
-    margin-bottom: 6px;
+    padding: 9px 11px;
+    border-radius: 10px;
   }
 
-  .tx .meta {
-    font-size: 10px;
-    margin-bottom: 4px;
+  .tx-sides {
+    grid-template-columns: 1fr 16px 1fr;
   }
 
-  .trade-card .teams {
-    gap: 6px;
-  }
-
-  .team-col {
-    padding: 6px;
-    border-radius: 8px;
-  }
-
-  .team-col header {
-    gap: 6px;
-    margin-bottom: 4px;
-  }
-
-  .team-name {
-    font-size: 12px;
-  }
-
-  .avatar {
-    width: 28px;
-    height: 28px;
-  }
-
-  .player-activity {
-    padding: 3px 4px;
-    font-size: 11px;
-    gap: 6px;
-  }
-
-  .player-activity .io {
-    width: 14px;
-    height: 14px;
-    font-size: 10px;
-  }
-
-  .player-trade-value {
-    font-size: 10px;
-    margin-right: 6px;
-  }
-
-  .bract-total-row {
-    margin-top: 4px;
-  }
-
-  .bract-total-head {
-    font-size: 11px;
-    margin-bottom: 2px;
-  }
-
-  .bract-verdict {
-    font-size: 9px;
-    padding: 2px 4px;
-  }
+  .tx-row-name { font-size: 11.5px; }
+  .tx-row-sub  { font-size: 9.5px; }
+  .tx-row-val  { font-size: 10.5px; }
+  .tx-team-name { font-size: 11.5px; }
+  .tx-summary   { font-size: 11.5px; }
+  .tx-time      { font-size: 10.5px; }
 
   .activity-pill {
     font-size: 9px;
