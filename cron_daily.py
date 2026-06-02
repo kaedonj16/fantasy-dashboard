@@ -296,6 +296,25 @@ else:
 """, "build_daily_advanced_metrics")
 
     # ------------------------------------------------------------------ #
+    # Step 4b: Defense-vs-position matchup ratings (z-scores)             #
+    # Powers the Schedule Assistant rankings / ease scores.               #
+    # Only rebuilt on Wednesdays during the regular/post season so each   #
+    # week's new game data is captured after the Tuesday final box-score  #
+    # update. Skipped entirely in the offseason.                          #
+    # ------------------------------------------------------------------ #
+    if not in_season:
+        print("[cron] Matchup ratings skipped - offseason")
+    elif today_weekday != 2:  # 0=Mon … 2=Wed … 6=Sun
+        print(f"[cron] Matchup ratings skipped - not Wednesday (weekday={today_weekday})")
+    else:
+        _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.matchup_ratings import build_matchup_ratings, out_path
+res = build_matchup_ratings({season!r})
+print(f"[cron] Matchup ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out_path({season!r})}}")
+""", "build_matchup_ratings", timeout=900)
+
+    # ------------------------------------------------------------------ #
     # Step 5: Model values                                                #
     # ------------------------------------------------------------------ #
     if _model_values_fresh():

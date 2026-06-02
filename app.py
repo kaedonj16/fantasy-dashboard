@@ -13012,6 +13012,10 @@ _FPTS_AGAINST_CACHE: dict = {}
 _FPTS_AGAINST_CACHE_TS: dict = {}
 _FPTS_AGAINST_TTL = 3600  # 1 hour
 
+_MATCHUP_RATINGS_CACHE: dict = {}
+_MATCHUP_RATINGS_TS: dict = {}
+_MATCHUP_RATINGS_TTL = 3600  # 1 hour
+
 def _compute_fpts_against(season: int) -> dict:
     """
     Compute fantasy points allowed per game by each NFL defense, broken down by position.
@@ -13113,6 +13117,17 @@ _SCHED_POS_COLORS = {"QB": "#3b82f6", "RB": "#22c55e", "WR": "#f59e0b",
                      "TE": "#a855f7", "K": "#6b7280", "DEF": "#6b7280"}
 _SCHED_POS_ORDER = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "DEF": 5}
 
+# Normalize schedule-file team codes to the abbreviations used everywhere else
+# (e.g. the schedule uses WSH; players_index and the ratings use WAS).
+_SCHED_TEAM_ALIAS = {"WSH": "WAS", "JAC": "JAX", "LA": "LAR", "OAK": "LV",
+                     "SD": "LAC", "STL": "LAR", "ARZ": "ARI", "BLT": "BAL",
+                     "CLV": "CLE", "HST": "HOU"}
+
+
+def _norm_sched_team(t):
+    t = (t or "").upper().strip()
+    return _SCHED_TEAM_ALIAS.get(t, t)
+
 
 def _sched_rank_color(rank, total):
     """Color for a matchup by opponent's fpts-allowed rank (1 = easiest)."""
@@ -13128,23 +13143,84 @@ def _sched_rank_color(rank, total):
     return "#ef4444", "#ef444418"        # brutal (fewest pts allowed)
 
 
+def _load_matchup_ratings(season: int) -> dict:
+    """Load the cron-precomputed z-score matchup ratings table.
+
+    Shape: {team: {pos: {"z": float, "ease": 0-100, "n": int, "fpts": float}}}.
+    Returns {} when the cache file is absent so callers fall back to raw
+    fpts-allowed (the table is produced by data_building/matchup_ratings.py via
+    the daily cron)."""
+    key = str(season)
+    now = time.time()
+    if (_MATCHUP_RATINGS_CACHE.get(key) is not None
+            and now - _MATCHUP_RATINGS_TS.get(key, 0) < _MATCHUP_RATINGS_TTL):
+        return _MATCHUP_RATINGS_CACHE[key]
+    data: dict = {}
+    try:
+        path = os.path.join("cache", f"matchup_ratings_s{season}.json")
+        if os.path.exists(path):
+            blob = json.load(open(path))
+            data = blob.get("ratings") or {}
+    except Exception:
+        data = {}
+    _MATCHUP_RATINGS_CACHE[key] = data
+    _MATCHUP_RATINGS_TS[key] = now
+    return data
+
+
+def _matchup_rank_table(season: int, position: str):
+    """Return (rank_map, total_teams, info_by_team, is_z).
+
+    rank_map[team] -> rank where 1 = easiest matchup for `position`. Uses the
+    strength-of-schedule-adjusted z-score ratings when available, otherwise
+    falls back to raw fpts-allowed so the schedule views keep working before
+    the first cron build. info_by_team[team] carries {"z","ease","fpts"}."""
+    ratings = _load_matchup_ratings(season)
+    pairs = []
+    info: dict = {}
+    if ratings:
+        for team, posd in ratings.items():
+            r = posd.get(position)
+            if not r:
+                continue
+            pairs.append((team, r.get("z", 0.0)))
+            info[team] = r
+    if pairs:
+        pairs.sort(key=lambda x: -x[1])   # highest z = easiest = rank 1
+        return {t: i + 1 for i, (t, _) in enumerate(pairs)}, len(pairs), info, True
+
+    # Fallback: raw fantasy points allowed (pre-z behavior)
+    fa = _compute_fpts_against(season)
+    fpairs = [(t, d.get(position, 0)) for t, d in fa.items() if position in d]
+    fpairs.sort(key=lambda x: -x[1])
+    finfo = {t: {"fpts": fa.get(t, {}).get(position, 0)} for t, _ in fpairs}
+    return {t: i + 1 for i, (t, _) in enumerate(fpairs)}, len(fpairs), finfo, False
+
+
+def _matchup_cell_ease(rank, total, info):
+    """Per-cell ease (0-100). Prefer the z-derived ease; fall back to rank percentile."""
+    if info and info.get("ease") is not None:
+        return float(info["ease"])
+    if rank and total and total > 1:
+        return round((total - rank) / (total - 1) * 100, 1)
+    return 0.0
+
+
 def _compute_schedule_grid(season: int, pids, weeks):
     """For each pid over the given weeks, return matchup + difficulty cells.
     Reuses the cached fpts-allowed table so this is cheap per request."""
     players_idx = get_players_index_global() or {}
-    fpts_against = _compute_fpts_against(season)
 
+    # Per-position z-score matchup tables (falls back to raw fpts when uncomputed)
     _pos_rank_cache: dict = {}
     def _fpts_rank(team: str, pos: str):
         if pos not in _pos_rank_cache:
-            vals = [(t, fpts_against.get(t, {}).get(pos, 0)) for t in fpts_against]
-            vals.sort(key=lambda x: x[1], reverse=True)  # most allowed = rank 1 (easiest)
-            _pos_rank_cache[pos] = {t: (i + 1, len(vals)) for i, (t, _) in enumerate(vals)}
-        entry = _pos_rank_cache.get(pos, {}).get(team)
-        fpts_val = fpts_against.get(team, {}).get(pos, 0)
-        if entry:
-            return entry[0], entry[1], fpts_val
-        return None, None, fpts_val
+            _pos_rank_cache[pos] = _matchup_rank_table(season, pos)
+        rank_map, total, info, _is_z = _pos_rank_cache[pos]
+        rinfo = info.get(team, {})
+        fpts_val = rinfo.get("fpts", 0)
+        rank = rank_map.get(team)
+        return rank, (total if rank else None), fpts_val
 
     schedules: dict = {}
     for w in weeks:
@@ -13154,19 +13230,45 @@ def _compute_schedule_grid(season: int, pids, weeks):
             games = []
         lookup = {}
         for g in games:
-            home = (g.get("home") or "").upper()
-            away = (g.get("away") or "").upper()
+            home = _norm_sched_team(g.get("home"))
+            away = _norm_sched_team(g.get("away"))
             if home:
                 lookup[home] = {"opp": away, "is_home": True}
             if away:
                 lookup[away] = {"opp": home, "is_home": False}
         schedules[w] = lookup
 
+    # Per-position team strength-of-schedule over the selected weeks (rank 1 =
+    # easiest schedule among all NFL teams), so each player shows where their
+    # team's schedule ranks for their position.
+    _team_sos_cache: dict = {}
+    def _team_sos(pos: str):
+        if pos in _team_sos_cache:
+            return _team_sos_cache[pos]
+        if pos not in _pos_rank_cache:
+            _pos_rank_cache[pos] = _matchup_rank_table(season, pos)
+        rank_map, total, info, _is_z = _pos_rank_cache[pos]
+        team_ease: dict = {}
+        for t in rank_map.keys():
+            eases = []
+            for w in weeks:
+                game = schedules.get(w, {}).get(t)
+                if not game:
+                    continue
+                r = rank_map.get(game["opp"])
+                eases.append(_matchup_cell_ease(r, total, info.get(game["opp"], {})))
+            if eases:
+                team_ease[t] = sum(eases) / len(eases)
+        ranked = sorted(team_ease.items(), key=lambda x: -x[1])
+        sos = {t: (i + 1, len(ranked), round(e, 1)) for i, (t, e) in enumerate(ranked)}
+        _team_sos_cache[pos] = sos
+        return sos
+
     out = []
     for pid in pids:
         info = players_idx.get(str(pid)) or {}
         pos = (info.get("pos") or "").upper()
-        nfl = (info.get("team") or "").upper()
+        nfl = _norm_sched_team(info.get("team"))
         cells = []
         for w in weeks:
             game = schedules.get(w, {}).get(nfl)
@@ -13183,6 +13285,8 @@ def _compute_schedule_grid(season: int, pids, weeks):
                 "fpts": round(fpts_val, 1) if fpts_val else 0,
                 "txt": txt, "bg": bg,
             })
+        _sos = _team_sos(pos).get(nfl)
+        sos_rank, sos_total, sos_ease = _sos if _sos else (None, None, None)
         out.append({
             "pid": str(pid),
             "name": info.get("name") or str(pid),
@@ -13190,6 +13294,9 @@ def _compute_schedule_grid(season: int, pids, weeks):
             "color": _SCHED_POS_COLORS.get(pos, "#6b7280"),
             "nfl": nfl,
             "cells": cells,
+            "sos_rank": sos_rank,
+            "sos_total": sos_total,
+            "sos_ease": sos_ease,
         })
     out.sort(key=lambda p: (_SCHED_POS_ORDER.get(p["pos"], 9), p["name"]))
     return out
@@ -13239,29 +13346,46 @@ def build_schedule_body(ctx):
         </div>
       </div>
 
-      <!-- My Players view -->
-      <div id="schedMyPlayersSection">
-        <div class="sched-controls">
-          <div class="sched-week-range">
-            <span class="sched-ctrl-label">Weeks</span>
-            <select id="schedWkStart" class="sched-select"></select>
-            <span class="sched-ctrl-sep">to</span>
-            <select id="schedWkEnd" class="sched-select"></select>
-          </div>
-          <div class="sched-add">
-            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted);pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
-            <input id="schedAddInput" type="text" placeholder="Add a player..." autocomplete="off"
-              style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
-                     border:1px solid var(--border);background:var(--card-bg);
-                     color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
-            <button id="schedAddClear" type="button"
-              style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
-                     background:none;border:none;cursor:pointer;color:var(--text-muted);
-                     font-size:16px;line-height:1;padding:2px;" aria-label="Clear search">&#x2715;</button>
-            <div id="schedAddResults" class="sched-add-results" style="display:none;"></div>
-          </div>
+      <!-- Shared controls: week range always; player search vs. rank controls flip per tab -->
+      <div class="sched-controls sched-shared-controls">
+        <div class="sched-week-range">
+          <span class="sched-ctrl-label">Weeks</span>
+          <select id="schedWkStart" class="sched-select"></select>
+          <span class="sched-ctrl-sep">to</span>
+          <select id="schedWkEnd" class="sched-select"></select>
         </div>
 
+        <!-- My Players: player search -->
+        <div class="sched-add" id="schedAddWrap">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted);pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
+          <input id="schedAddInput" type="text" placeholder="Add a player..." autocomplete="off"
+            style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
+                   border:1px solid var(--border);background:var(--card-bg);
+                   color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
+          <button id="schedAddClear" type="button"
+            style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
+                   background:none;border:none;cursor:pointer;color:var(--text-muted);
+                   font-size:16px;line-height:1;padding:2px;" aria-label="Clear search">&#x2715;</button>
+          <div id="schedAddResults" class="sched-add-results" style="display:none;"></div>
+        </div>
+
+        <!-- Schedule Rankings: position pills + sort -->
+        <div class="sched-rank-controls" id="schedRankControls" style="display:none;">
+          <div class="sched-pos-pills" id="schedRankPosPills">
+            <button class="sched-rank-pos active" data-pos="QB">QB</button>
+            <button class="sched-rank-pos" data-pos="RB">RB</button>
+            <button class="sched-rank-pos" data-pos="WR">WR</button>
+            <button class="sched-rank-pos" data-pos="TE">TE</button>
+            <button class="sched-rank-pos" data-pos="K">K</button>
+          </div>
+          <button class="sched-sort-btn" id="schedRankSort">
+            Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- My Players view -->
+      <div id="schedMyPlayersSection">
         <div class="sched-legend">
           <span><span class="sched-chip" style="background:#22c55e;"></span>Elite (top 25%)</span>
           <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
@@ -13277,18 +13401,6 @@ def build_schedule_body(ctx):
 
       <!-- Schedule Rankings view -->
       <div id="schedRankingsSection" style="display:none;">
-        <div class="sched-rank-controls">
-          <div class="sched-pos-pills" id="schedRankPosPills">
-            <button class="sched-rank-pos active" data-pos="QB">QB</button>
-            <button class="sched-rank-pos" data-pos="RB">RB</button>
-            <button class="sched-rank-pos" data-pos="WR">WR</button>
-            <button class="sched-rank-pos" data-pos="TE">TE</button>
-            <button class="sched-rank-pos" data-pos="K">K</button>
-          </div>
-          <button class="sched-sort-btn" id="schedRankSort">
-            Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>
-          </button>
-        </div>
         <div class="sched-legend" style="padding-top:0;">
           <span><span class="sched-chip" style="background:#22c55e;"></span>Elite</span>
           <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
@@ -13327,6 +13439,8 @@ def build_schedule_body(ctx):
       var rankPos      = 'QB';
       var rankHardFirst = false;
       var rankingsCache = null;   // last fetched rankings data
+      var _myKey   = null;        // week range My Players last rendered at
+      var _rankKey = null;        // week range Rankings last rendered at
 
       var pool      = [];
       var poolReady = false;
@@ -13361,6 +13475,7 @@ def build_schedule_body(ctx):
 
       // ── My Players view ─────────────────────────────────────────────────────
       function renderGrid() {
+        _myKey = wkStart + '-' + wkEnd;
         if (!selPids.length) {
           gridEl.innerHTML = '<div class="sched-empty">No players yet. Use the search above to add players.</div>';
           return;
@@ -13376,7 +13491,8 @@ def build_schedule_body(ctx):
             gridEl.innerHTML = '<div class="sched-empty">No matchup data for this selection.</div>';
             return;
           }
-          var head = '<th class="sched-th sched-th-player">Player</th>';
+          var head = '<th class="sched-th sched-th-player">Player</th>' +
+                     '<th class="sched-th sched-th-sos" title="Strength of schedule rank for this position over the selected weeks (1 = easiest)">SoS</th>';
           for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
           var rows = '';
           players.forEach(function(p) {
@@ -13391,13 +13507,22 @@ def build_schedule_body(ctx):
                          '<div class="sched-fpts">' + esc(fptsLabel) + '</div>' +
                        '</td>';
             });
+            var sosCell;
+            if (p.sos_rank) {
+              var sosFrac = p.sos_rank / (p.sos_total || 32);
+              var sc = sosFrac <= 0.25 ? '#22c55e' : sosFrac <= 0.50 ? '#84cc16' : sosFrac <= 0.75 ? '#f59e0b' : '#ef4444';
+              sosCell = '<td class="sched-td sched-sos-td" style="color:' + sc + ';">#' + p.sos_rank +
+                        '<span class="sched-sos-total">/' + (p.sos_total || 32) + '</span></td>';
+            } else {
+              sosCell = '<td class="sched-td sched-sos-td">–</td>';
+            }
             rows += '<tr>' +
               '<td class="sched-td sched-td-player">' +
                 '<button class="sched-remove" data-pid="' + esc(p.pid) + '" title="Remove">&times;</button>' +
                 '<span class="sched-pos" style="background:' + p.color + '22;color:' + p.color + ';">' + esc(p.pos) + '</span>' +
                 '<span class="player-clickable sched-pname" data-player-id="' + esc(p.pid) + '">' + esc(p.name) + '</span>' +
                 '<span class="sched-nfl">' + esc(p.nfl) + '</span>' +
-              '</td>' + cells + '</tr>';
+              '</td>' + sosCell + cells + '</tr>';
           });
           gridEl.innerHTML =
             '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>';
@@ -13411,13 +13536,24 @@ def build_schedule_body(ctx):
         currentView = v;
         document.getElementById('schedMyPlayersSection').style.display  = v === 'my-players' ? '' : 'none';
         document.getElementById('schedRankingsSection').style.display   = v === 'rankings'   ? '' : 'none';
+        // Flip the shared controls to match the active tab
+        document.getElementById('schedAddWrap').style.display      = v === 'my-players' ? '' : 'none';
+        document.getElementById('schedRankControls').style.display = v === 'rankings'   ? '' : 'none';
         document.querySelectorAll('.sched-view-btn').forEach(function(b) {
           b.classList.toggle('active', b.getAttribute('data-view') === v);
         });
-        if (v === 'rankings') renderRankings();
+        // Re-render the target view if the (shared) week range changed since it
+        // last rendered, so switching tabs always reflects the current weeks.
+        var key = wkStart + '-' + wkEnd;
+        if (v === 'rankings') {
+          if (_rankKey !== key) { rankPage = 0; rankingsCache = null; renderRankings(); }
+        } else {
+          if (_myKey !== key) renderGrid();
+        }
       }
 
       function renderRankings() {
+        _rankKey = wkStart + '-' + wkEnd;
         rankingsCache = null;
         var rankGrid = document.getElementById('schedRankingsGrid');
         rankGrid.innerHTML = '<div class="sched-empty">Loading…</div>';
@@ -13467,8 +13603,9 @@ def build_schedule_body(ctx):
           else if (rank === 3) medalHtml = '<span class="sched-rank-medal sched-rank-medal-3">3</span>';
           else                 medalHtml = '<span class="sched-rank-num">' + rank + '</span>';
 
-          var rosterBadge = p.on_roster
-            ? '<span class="sched-roster-badge">Rostered</span>' : '';
+          var rosterBadge = p.owner
+            ? '<span class="sched-roster-badge sched-roster-badge--owner">' + esc(p.owner) + '</span>'
+            : (p.on_roster ? '<span class="sched-roster-badge">Rostered</span>' : '');
 
           var cells = '';
           (p.cells || []).forEach(function(c) {
@@ -13710,12 +13847,8 @@ def api_schedule_rankings():
             position = "RB"
 
         players_idx  = get_players_index_global() or {}
-        fpts_against = _compute_fpts_against(season)
 
         # Build schedule lookup for requested weeks
-        _team_alias = {"WSH": "WAS"}
-        def _norm(t): return _team_alias.get(t, t)
-
         schedules = {}
         for w in weeks:
             try:
@@ -13726,30 +13859,67 @@ def api_schedule_rankings():
             lookup = {}
             for g in games:
                 if not isinstance(g, dict): continue
-                home = _norm((g.get("home") or "").upper())
-                away = _norm((g.get("away") or "").upper())
+                home = _norm_sched_team(g.get("home"))
+                away = _norm_sched_team(g.get("away"))
                 if home:
                     lookup[home] = {"opp": away, "is_home": True}
                 if away:
                     lookup[away] = {"opp": home, "is_home": False}
             schedules[w] = lookup
 
-        # Rank all teams by fpts allowed to this position (rank 1 = most allowed = easiest)
-        pos_fpts = [(t, d.get(position, 0)) for t, d in fpts_against.items() if position in d]
-        pos_fpts.sort(key=lambda x: -x[1])
-        rank_map   = {t: i + 1 for i, (t, _) in enumerate(pos_fpts)}
-        total_teams = len(pos_fpts)
+        # Rank teams by strength-of-schedule-adjusted z-score (rank 1 = easiest).
+        # Falls back to raw fpts-allowed until the cron builds the ratings table.
+        rank_map, total_teams, rating_info, _is_z = _matchup_rank_table(season, position)
 
-        # Get roster pids for on_roster flag
+        # Get roster pids (+ owning team name) for the on-roster badge
         roster_pids: set = set()
+        owner_by_pid: dict = {}
         if league_id:
             try:
                 ctx = get_league_ctx_from_cache(platform, league_id, season)
+                users_by_id = {str(u.get("user_id")): u for u in (ctx.get("users") or [])}
                 for r in (ctx.get("rosters") or []):
+                    owner = users_by_id.get(str(r.get("owner_id"))) or {}
+                    meta = owner.get("metadata") or {}
+                    tname = meta.get("team_name") or owner.get("display_name") or owner.get("username")
                     for pid in (r.get("players") or []):
                         roster_pids.add(str(pid))
+                        if tname:
+                            owner_by_pid[str(pid)] = tname
             except Exception:
                 pass
+
+        # Build value lookup once — used for depth-chart cap and final sort
+        value_by_pid: dict = {}
+        for _p in (get_model_value_table_cached() or []):
+            _pid = str(_p.get("id") or "")
+            if _pid:
+                value_by_pid[_pid] = max(
+                    float(_p.get("value") or 0),
+                    float(_p.get("value_1qb") or 0),
+                    float(_p.get("value_sf") or 0),
+                )
+
+        # Depth-chart cap: keep only the top N at this position per NFL team
+        # (ranked by model value), plus any rostered players. Removes the long
+        # tail of backups that share an identical schedule row.
+        _POS_CAP = {"QB": 2, "RB": 3, "WR": 3, "TE": 2}
+        cap = _POS_CAP.get(position)
+        keep_pids: set = set(roster_pids)
+        if cap:
+            from collections import defaultdict as _dd_team
+            by_team: dict = _dd_team(list)
+            for _pid, _info in players_idx.items():
+                if (_info.get("pos") or "").upper() != position:
+                    continue
+                _team = _norm_sched_team(_info.get("team"))
+                if not _team or _team == "FA":
+                    continue
+                by_team[_team].append((str(_pid), value_by_pid.get(str(_pid), 0.0)))
+            for _team, _lst in by_team.items():
+                _lst.sort(key=lambda x: -x[1])
+                for _pid, _ in _lst[:cap]:
+                    keep_pids.add(_pid)
 
         # Load per-player actual points (completed weeks) and projections (future weeks)
         player_pts_actual: dict = {}
@@ -13791,9 +13961,12 @@ def api_schedule_rankings():
             team = (info.get("team") or "").upper()
             if not team or team == "FA":
                 continue
+            if cap and str(pid) not in keep_pids:
+                continue
 
             cells = []
             rank_sum  = 0
+            ease_sum  = 0.0
             valid_wks = 0
             for w in weeks:
                 game = schedules.get(w, {}).get(team)
@@ -13802,7 +13975,8 @@ def api_schedule_rankings():
                     continue
                 opp      = game["opp"]
                 rank     = rank_map.get(opp)
-                fpts_val = fpts_against.get(opp, {}).get(position, 0)
+                rinfo    = rating_info.get(opp, {})
+                fpts_val = rinfo.get("fpts", 0)
                 txt, bg  = _sched_rank_color(rank, total_teams) if rank else ("#94a3b8", "transparent")
                 actual   = player_pts_actual.get(str(pid), {}).get(w)
                 proj     = player_pts_proj.get(str(pid), {}).get(w)
@@ -13819,10 +13993,12 @@ def api_schedule_rankings():
                 })
                 if rank:
                     rank_sum  += rank
+                    ease_sum  += _matchup_cell_ease(rank, total_teams, rinfo)
                     valid_wks += 1
 
             avg_rank   = round(rank_sum / valid_wks, 1) if valid_wks else 999
-            ease_score = round((total_teams - avg_rank) / max(total_teams - 1, 1) * 100, 1) if valid_wks else 0
+            # Ease from the z-score scale (avg over scheduled weeks); higher = easier
+            ease_score = round(ease_sum / valid_wks, 1) if valid_wks else 0
 
             results.append({
                 "pid":        str(pid),
@@ -13830,14 +14006,31 @@ def api_schedule_rankings():
                 "pos":        pos,
                 "color":      _SCHED_POS_COLORS.get(pos, "#6b7280"),
                 "team":       team,
+                "value":      value_by_pid.get(str(pid), 0.0),
                 "on_roster":  str(pid) in roster_pids,
+                "owner":      owner_by_pid.get(str(pid)),
                 "cells":      cells,
                 "avg_rank":   avg_rank,
                 "ease_score": ease_score,
                 "valid_weeks": valid_wks,
             })
 
-        results.sort(key=lambda x: (x["avg_rank"], x["name"]))
+        # Sort by ease first, then group teammates together under the best player
+        # on that team.  Rank #1 = the most valuable player with the easiest
+        # schedule; teammates follow immediately after.
+        _team_max_ease: dict = {}
+        _team_max_val:  dict = {}
+        for r in results:
+            t = r["team"]
+            if r["ease_score"] > _team_max_ease.get(t, -1):
+                _team_max_ease[t] = r["ease_score"]
+            if r["value"] > _team_max_val.get(t, -1):
+                _team_max_val[t] = r["value"]
+        results.sort(key=lambda x: (
+            -_team_max_ease.get(x["team"], 0.0),  # teams with easiest schedule first
+            x["team"],                             # tie-break: keep same team together
+            -x["value"],                           # within team: most valuable first
+        ))
         return jsonify({
             "weeks":       weeks,
             "position":    position,

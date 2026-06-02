@@ -16912,6 +16912,8 @@ button:disabled {
   flex-wrap: wrap;
   margin: 4px 0 14px;
 }
+/* Rank controls live in the shared bar; span the row so pills sit left, sort right */
+.sched-shared-controls .sched-rank-controls { flex: 1; justify-content: space-between; padding: 0; }
 .sched-week-range {
   display: flex;
   align-items: center;
@@ -17049,6 +17051,23 @@ button:disabled {
 .sched-pname { cursor: pointer; font-weight: 600; }
 .sched-pname:hover { color: var(--accent); }
 .sched-nfl { font-size: 11px; color: var(--text-muted); margin-left: 6px; }
+/* On the rankings cell, push the NFL team to the far right of the player column */
+.sched-rank-player-cell { width: 100%; }
+.sched-rank-player-cell .sched-nfl { margin-left: auto; padding-left: 8px; }
+.sched-roster-badge--owner {
+  text-transform: none;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sched-th-sos { text-align: center; }
+.sched-sos-td {
+  text-align: center;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.sched-sos-total { font-size: 9px; color: var(--text-muted); font-weight: 600; }
 .sched-remove {
   border: none;
   background: none;
