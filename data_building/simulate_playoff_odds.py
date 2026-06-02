@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 _MIN_STD      = 8.0    # floor on std dev
 _N_SIMS       = 10_000
 _BENCH_SLOTS  = {"BN", "IR", "TAXI"}
+_WEEKLY_BLEND = 0.30   # in-season weight on weekly projections vs historical avg
 
 # Conservative defaults for players with no prior-season stats (rookies, etc.)
 _ROOKIE_PPG: dict[str, float] = {
@@ -135,10 +136,13 @@ def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
     has_games  = team_stats is not None and not team_stats.empty
 
     if not has_games:
-        teams = _estimate_from_rosters(ctx)
+        # Share the exact PPG map used by swap sims so baseline == no-op swap.
+        # Offseason team avg is 100% projection, so swaps use blend = 1.0.
+        teams = _estimate_from_rosters(ctx, ppg_map=ppg_map, pos_map=pos_map)
         if not teams:
             return None
         remaining_weeks = list(range(1, playoff_week_start))
+        blend_factor = 1.0
     else:
         if current_week > regular_season_end:
             return None  # season complete — no simulation
@@ -146,7 +150,11 @@ def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
         if not teams:
             return None
         remaining_weeks = list(range(current_week + 1, playoff_week_start))
-        _blend_weekly_projections(teams, ctx, season, current_week + 1)
+        # In-season avg blends historical results with weekly projections.
+        # Swaps must apply the same blend factor to the projection delta so a
+        # no-op swap leaves the avg unchanged.
+        blend_factor = _WEEKLY_BLEND
+        _blend_weekly_projections(teams, ctx, season, current_week + 1, blend=blend_factor)
 
     matchups = _resolve_schedule(
         platform, league_id, season, remaining_weeks, teams, division_map
@@ -167,6 +175,7 @@ def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
         "pos_map":          pos_map,
         "roster_positions": roster_positions,
         "roster_pid_map":   roster_pid_map,
+        "blend":            blend_factor,
     }
 
 
@@ -200,15 +209,42 @@ def simulate_with_swap(
     draws subtracted from each other.
 
     Returns (playoff_pct 0–100, new_avg_ppg).
+
+    The viewer's new avg is computed as a *marginal* adjustment:
+
+        new_avg = current_avg + blend * (proj_lineup(after) - proj_lineup(before))
+
+    Both projection lineups use the same PPG map, so the map cancels in the
+    difference and a no-op swap (after == before) leaves the avg untouched —
+    yielding a zero delta. Offseason uses blend = 1.0 (avg is 100% projection,
+    so new_avg collapses to proj_lineup(after)); in-season uses the same blend
+    factor applied to the team's blended baseline, so only the trade's true
+    effect moves the odds.
     """
     ppg_map          = sim_state["ppg_map"]
     pos_map          = sim_state["pos_map"]
     roster_positions = sim_state["roster_positions"]
+    blend            = float(sim_state.get("blend", 1.0))
 
-    new_avg, starters = _position_aware_lineup(
+    viewer_team = next(
+        (t for t in sim_state["teams"] if t["roster_id"] == viewer_roster_id), None
+    )
+    current_avg = viewer_team["avg"] if viewer_team else 0.0
+
+    proj_after, after_starters = _position_aware_lineup(
         viewer_pids_after, ppg_map, pos_map, roster_positions
     )
-    new_std = max(_team_std_from_starters(starters), _MIN_STD)
+
+    if blend >= 1.0:
+        new_avg = proj_after
+    else:
+        before_pids = sim_state.get("roster_pid_map", {}).get(viewer_roster_id, [])
+        proj_before, _ = _position_aware_lineup(
+            before_pids, ppg_map, pos_map, roster_positions
+        )
+        new_avg = current_avg + blend * (proj_after - proj_before)
+
+    new_std = max(_team_std_from_starters(after_starters), _MIN_STD)
 
     teams = [
         {**t, "avg": round(new_avg, 1), "std": round(new_std, 1)}
@@ -520,7 +556,11 @@ def _position_aware_lineup(
     return total, starters
 
 
-def _estimate_from_rosters(ctx: dict) -> list[dict]:
+def _estimate_from_rosters(
+    ctx: dict,
+    ppg_map: Optional[dict] = None,
+    pos_map: Optional[dict] = None,
+) -> list[dict]:
     """
     Build synthetic team scoring profiles for preseason simulation.
 
@@ -533,6 +573,11 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
 
     Uses position-aware lineup selection and per-team std dev estimated from
     the position composition of the projected starting lineup.
+
+    When ppg_map/pos_map are supplied (by build_sim_state) they are used
+    verbatim instead of being rebuilt, so the baseline team averages and the
+    per-trade swap simulations share one identical PPG source — a no-op swap
+    then produces a zero delta and real trades show only their true effect.
     """
     rosters          = ctx.get("rosters") or []
     roster_map       = ctx.get("roster_map") or {}
@@ -541,6 +586,34 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
 
     if not rosters:
         return []
+
+    # If a prebuilt PPG map is supplied, skip the internal build entirely.
+    if ppg_map is not None:
+        if pos_map is None:
+            pos_map = {}
+        if not ppg_map and not pos_map:
+            return []
+        teams: list[dict] = []
+        for roster in rosters:
+            rid  = roster.get("roster_id")
+            pids = roster.get("players") or []
+            projected_avg, starters = _position_aware_lineup(
+                pids, ppg_map, pos_map, roster_positions
+            )
+            projected_std = _team_std_from_starters(starters)
+            name = (
+                roster_map.get(str(rid))
+                or roster_map.get(int(rid) if rid is not None else -1)
+                or f"Team {rid}"
+            )
+            teams.append({
+                "roster_id": int(rid),
+                "name":      name,
+                "wins":      0, "losses": 0, "ties": 0, "pf": 0.0,
+                "avg":       round(projected_avg, 1),
+                "std":       round(projected_std, 1),
+            })
+        return teams
 
     # Detect scoring format — Sleeper uses "rec", non-Sleeper uses "pointsPerReception"
     _ss = ctx.get("scoring_settings") or {}
@@ -644,7 +717,7 @@ def _blend_weekly_projections(
     ctx: dict,
     season: int,
     next_week: int,
-    blend: float = 0.30,
+    blend: float = _WEEKLY_BLEND,
 ) -> None:
     """
     Update each team's avg in-place by blending historical avg (1-blend) with
