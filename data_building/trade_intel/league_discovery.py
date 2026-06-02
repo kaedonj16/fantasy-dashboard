@@ -460,11 +460,12 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
     print(f"[discovery] Starting. Known={len(known)}, Seeds={len(seeds)}, Target={target}")
 
     # First pass: expand all seed leagues to populate the frontier (parallelized)
-    def expand_seed_league(league_id: str) -> Tuple[str, List[str]]:
-        """Expand a single seed league and return (league_id, new_leagues)"""
+    seed_user_ids: List[str] = []
+
+    def expand_seed_league(league_id: str) -> Tuple[str, List[str], List[str]]:
+        """Expand a single seed league and return (league_id, new_leagues, owner_ids)"""
         time.sleep(_REQUEST_DELAY)
         owner_ids = _roster_owner_ids(league_id)
-        _save_users(owner_ids, source="bfs")
         new_leagues = []
 
         for owner_id in owner_ids:
@@ -473,15 +474,20 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
             for lid in user_leagues:
                 if lid not in known:
                     new_leagues.append(lid)
-        
-        return league_id, new_leagues
+
+        return league_id, new_leagues, owner_ids
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(expand_seed_league, lid): lid for lid in to_expand}
         for future in as_completed(futures):
-            league_id, new_leagues = future.result()
+            league_id, new_leagues, owner_ids = future.result()
+            seed_user_ids.extend(owner_ids)
             for new_lid in new_leagues:
                 frontier.add(new_lid)
+
+    # Flush all seed-phase users in one batch
+    if seed_user_ids:
+        _save_users(seed_user_ids, source="bfs")
 
     print(f"[discovery] Seed expansion complete. {len(frontier)} leagues in frontier")
 
@@ -516,10 +522,11 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
             }
             
             new_frontier_leagues = []
+            dynasty_owner_ids: List[str] = []
             if len(frontier) < 2000:
                 owner_ids = _roster_owner_ids(league_id)
                 if league_type == 2:
-                    _save_users(owner_ids, source="bfs")
+                    dynasty_owner_ids = owner_ids
                 for owner_id in owner_ids:
                     if owner_id in visited_users:
                         continue
@@ -528,17 +535,21 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
                     user_leagues = _user_leagues(owner_id, season)
                     new_leagues = [lid for lid in user_leagues if lid not in known]
                     new_frontier_leagues.extend(new_leagues)
-            
-            return league_data, new_frontier_leagues
-        
+
+            return league_data, new_frontier_leagues, dynasty_owner_ids
+
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {executor.submit(process_single_frontier_league, lid): lid for lid in batch_leagues}
+            batch_dynasty_users: List[str] = []
             for future in as_completed(futures):
-                league_data, new_frontier = future.result()
+                league_data, new_frontier, dynasty_users = future.result()
                 if league_data:
                     batch_to_save.append(league_data)
                     known.add(league_data["league_id"])
                 batch_new_frontier.extend(new_frontier)
+                batch_dynasty_users.extend(dynasty_users)
+        if batch_dynasty_users:
+            _save_users(batch_dynasty_users, source="bfs")
         
         return batch_to_save, batch_new_frontier
 
