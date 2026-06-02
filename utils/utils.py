@@ -108,7 +108,7 @@ SCHEDULE_CACHE: dict[tuple[int, int], dict] = {}
 SCHEDULE_TTL = 60 * 10  # seconds
 
 TANK01_API_HOST = "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com"
-TANK01_API_KEY = "a31667ff00msh6d542faa96aa36bp1513aajsn612c819feca4"  # consider env var in prod
+TANK01_API_KEY = os.environ.get("TANK01_API_KEY", "")  # RapidAPI key — set via env
 
 NFL_TEAMS = [
     "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN", "DET", "GB",

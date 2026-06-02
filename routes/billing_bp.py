@@ -47,6 +47,26 @@ _STRIPE_PRICES = {
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _subscription_period_end(sub) -> "datetime":
+    """Return the subscription's current period end as a UTC datetime.
+
+    Stripe API 2025-03-31+ (stripe-python v15) moved ``current_period_end`` off
+    the Subscription object onto each subscription *item*. This reads whichever
+    location is present and falls back to a 32-day grant if neither is found.
+    """
+    ts = getattr(sub, "current_period_end", None)
+    if not ts:
+        try:
+            items = (sub.get("items") if hasattr(sub, "get") else sub["items"])
+            data = items["data"] if items else []
+            ts = max((it.get("current_period_end") or 0) for it in data) or None
+        except Exception:
+            ts = None
+    if ts:
+        return datetime.fromtimestamp(ts, tz=timezone.utc)
+    return datetime.now(timezone.utc) + timedelta(days=32)
+
+
 def _try_grant_from_stripe_success() -> None:
     """
     When a user returns from Stripe checkout, verify the session server-side
@@ -85,7 +105,7 @@ def _try_grant_from_stripe_success() -> None:
         try:
             sub        = _stripe().Subscription.retrieve(sub_id) if sub_id else None
             expires_at = (
-                datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
+                _subscription_period_end(sub)
                 if sub else datetime.now(timezone.utc) + timedelta(days=366)
             )
         except Exception:
@@ -417,7 +437,7 @@ def stripe_webhook():
 
         try:
             sub = _stripe().Subscription.retrieve(sub_id)
-            expires_at = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
+            expires_at = _subscription_period_end(sub)
         except Exception:
             expires_at = datetime.now(timezone.utc) + timedelta(days=32)
 
@@ -447,7 +467,7 @@ def stripe_webhook():
         if sub_id:
             try:
                 sub        = _stripe().Subscription.retrieve(sub_id)
-                expires_at = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
+                expires_at = _subscription_period_end(sub)
                 from dashboard_services.db import get_conn
                 with get_conn() as conn:
                     with conn.cursor() as cur:
@@ -479,12 +499,17 @@ def api_subscription_status():
     """Check if user has premium access for a league."""
     from dashboard_services.subscriptions import get_subscription_info
 
-    user_id = request.args.get("user_id") or session.get("viewer_username")
+    # Identity is taken from the session, never from a client-supplied user_id,
+    # so a caller cannot enumerate other users' subscription details.
+    user_id = session.get("viewer_username")
     league_id = request.args.get("league_id")
     platform = request.args.get("platform", "sleeper")
 
     try:
         sub_info = get_subscription_info(user_id, league_id, platform)
+        # Strip internal/PII fields — the client only needs entitlement flags.
+        for _k in ("stripe_customer_id", "subscriber_user_id"):
+            sub_info.pop(_k, None)
         return jsonify(sub_info)
     except Exception as e:
         logger.error("[api_subscription_status] Error: %s", e)

@@ -9,9 +9,36 @@ Premium Features:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from functools import wraps
 from typing import Optional, Dict, Any
 
 from dashboard_services.db import get_conn
+
+
+def premium_required(fn):
+    """Decorator that enforces premium access on a Flask route.
+
+    Identity comes from the server-side session (``viewer_username``) — never
+    from the client — while ``league_id``/``platform`` are read from the
+    request (query string, form, or JSON body). Returns a 403 paywall response
+    if the viewer does not have premium access.
+    """
+    @wraps(fn)
+    def _wrapper(*args, **kwargs):
+        from flask import request, session, jsonify
+
+        data = request.get_json(silent=True) if request.is_json else None
+        data = data or {}
+        league_id = data.get("league_id") or request.values.get("league_id")
+        platform = (data.get("platform") or request.values.get("platform")
+                    or "sleeper")
+        user_id = session.get("viewer_username")
+
+        if not has_premium_access(user_id, league_id, platform):
+            return jsonify({"paywall": True, "error": "Premium required"}), 403
+        return fn(*args, **kwargs)
+
+    return _wrapper
 
 
 def has_premium_access(user_id: Optional[str], league_id: Optional[str], platform: str = "sleeper") -> bool:
@@ -70,7 +97,7 @@ def has_premium_access(user_id: Optional[str], league_id: Optional[str], platfor
 
     except Exception as e:
         print(f"[subscriptions] Error checking premium access: {e}")
-        # Fail open - allow access on error to prevent breaking the app
+        # Fail closed: on any error, deny premium rather than grant it.
         return False
 
 

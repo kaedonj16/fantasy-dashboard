@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 from flask import Blueprint, jsonify, request
 
 from dashboard_services.db import get_conn
+from dashboard_services.subscriptions import premium_required
 
 logger = logging.getLogger(__name__)
 
@@ -1005,6 +1006,7 @@ def get_roster_situation(team: str, season: Optional[int] = None) -> Dict:
 # =============================================================================
 
 @breakout_bp.route('/candidates')
+@premium_required
 def candidates():
     """Get all breakout candidates."""
     season = request.args.get('season', type=int)
@@ -1013,6 +1015,7 @@ def candidates():
 
 
 @breakout_bp.route('/candidates/<position>')
+@premium_required
 def candidates_by_position(position):
     """Get breakout candidates by position."""
     season = request.args.get('season', type=int)
@@ -1022,6 +1025,7 @@ def candidates_by_position(position):
 
 
 @breakout_bp.route('/player/<player_id>')
+@premium_required
 def player_detail(player_id):
     """Get detailed breakout info for a player."""
     season = request.args.get('season', type=int)
@@ -1029,6 +1033,7 @@ def player_detail(player_id):
 
 
 @breakout_bp.route('/statistics')
+@premium_required
 def statistics():
     """Get aggregate breakout statistics."""
     season = request.args.get('season', type=int)
@@ -1036,6 +1041,7 @@ def statistics():
 
 
 @breakout_bp.route('/team/<team>')
+@premium_required
 def team_roster_situation(team):
     """Get team roster situation and breakout candidates."""
     season = request.args.get('season', type=int)

@@ -1,9 +1,11 @@
+import os
+
 from utils.utils import load_teams_index, load_players_index, path_players_index, write_json
 
 TANK01_URL = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com/getNFLPlayerList"
 TANK01_HEADERS = {
     "x-rapidapi-host": "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com",
-    "x-rapidapi-key": "a31667ff00msh6d542faa96aa36bp1513aajsn612c819feca4",
+    "x-rapidapi-key": os.environ.get("TANK01_API_KEY", ""),
 }
 
 # Map Tank01 raw positions -> your canonical IDP buckets

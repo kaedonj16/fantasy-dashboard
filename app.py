@@ -248,14 +248,31 @@ def _add_cache_headers(response):
     return response
 
 _secret_key = os.environ.get('FLASK_SECRET_KEY', '')
+_is_production = os.environ.get('PYTHON_ENV', '').strip().lower() == 'production'
 if not _secret_key:
+    if _is_production:
+        # Fail closed: a known/default secret key lets anyone forge session
+        # cookies (and thus any viewer identity + premium access).
+        raise RuntimeError(
+            "FLASK_SECRET_KEY is not set. Refusing to start in production with an "
+            "insecure default key — set FLASK_SECRET_KEY in the environment."
+        )
     logging.warning(
-        "FLASK_SECRET_KEY is not set — using insecure default. "
-        "Set this env var in production to protect session cookies."
+        "FLASK_SECRET_KEY is not set — using insecure development default. "
+        "The app will refuse to start without it when PYTHON_ENV=production."
     )
     _secret_key = 'dev-secret-key-change-in-production'
 app.secret_key = _secret_key
 del _secret_key
+
+# Harden session cookies. SECURE is enabled only in production so local HTTP
+# development still works.
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=_is_production,
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 _redis_url = os.environ.get("REDIS_URL", "")
@@ -11070,7 +11087,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
       const PAGE_SIZE = 12;
 
       // Fetch breakout candidates on page load (using new BreakoutEngine API)
-      fetch('/api/breakout/candidates?season={season}&min_score=50')
+      fetch('/api/breakout/candidates?season={season}&min_score=50&league_id={league_id}&platform={platform}')
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
@@ -11322,10 +11339,19 @@ def _try_grant_from_stripe_success() -> None:
             return
 
         try:
-            sub        = stripe.Subscription.retrieve(sub_id) if sub_id else None
+            sub = stripe.Subscription.retrieve(sub_id) if sub_id else None
+            # Stripe v15 moved current_period_end onto subscription items.
+            _ts = getattr(sub, "current_period_end", None) if sub else None
+            if sub is not None and not _ts:
+                try:
+                    _items = (sub.get("items") if hasattr(sub, "get") else sub["items"])
+                    _ts = max((it.get("current_period_end") or 0)
+                              for it in (_items["data"] if _items else [])) or None
+                except Exception:
+                    _ts = None
             expires_at = (
-                datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc)
-                if sub else datetime.now(timezone.utc) + timedelta(days=366)
+                datetime.fromtimestamp(_ts, tz=timezone.utc)
+                if _ts else datetime.now(timezone.utc) + timedelta(days=366)
             )
         except Exception:
             expires_at = datetime.now(timezone.utc) + timedelta(days=366)
@@ -15707,6 +15733,9 @@ def api_gm_memo():
     if not league_id or not season or not viewer_roster_id:
         return jsonify({"error": "Missing required parameters"}), 400
 
+    if not has_premium_access(session.get("viewer_username"), league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
+
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         gm_memo_html = get_team_gm_memo(ctx, viewer_roster_id)
@@ -15733,6 +15762,9 @@ def api_power_rankings():
 
     if not league_id:
         return jsonify({"error": "Missing league_id"}), 400
+
+    if not has_premium_access(session.get("viewer_username"), league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
 
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -17067,6 +17099,11 @@ def api_breakout_candidates():
     Get breakout candidates - automatically switches between offseason and in-season detection.
     Returns full candidate objects with stats, not just IDs.
     """
+    league_id = request.args.get("league_id")
+    platform = request.args.get("platform", "sleeper")
+    if not has_premium_access(session.get("viewer_username"), league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
+
     try:
         from datetime import datetime
         from utils.utils import load_players_index, load_model_value_table
@@ -20501,7 +20538,16 @@ def api_trade_intel_run_crawl():
     """
     Trigger a crawl batch manually (admin use). Runs discovery + crawl in background.
     In production this should be called by a cron job rather than the UI.
+
+    Caller must pass the correct CRON_SECRET in the JSON body:
+        {"secret": "<CRON_SECRET>"}
     """
+    secret   = os.environ.get("CRON_SECRET", "")
+    body     = request.get_json(force=True, silent=True) or {}
+    provided = body.get("secret", "")
+    if not secret or provided != secret:
+        return jsonify({"error": "unauthorized"}), 403
+
     try:
         import threading
         from data_building.trade_intel.league_discovery import run_discovery
@@ -23542,4 +23588,7 @@ def robots_txt():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Debug mode (Werkzeug interactive debugger) is opt-in via FLASK_DEBUG=1 and
+    # never on in production. Production is served by gunicorn (see startup.py),
+    # which imports `app:app` and does not run this block.
+    app.run(debug=os.environ.get("FLASK_DEBUG", "").strip() == "1")

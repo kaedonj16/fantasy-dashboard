@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import requests
 import time
 from pathlib import Path
@@ -10,7 +11,7 @@ def fetch_nfl_players():
     headers = {
         'Content-Type': 'application/json',
         'x-rapidapi-host': 'tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com',
-        'x-rapidapi-key': 'a31667ff00msh6d542faa96aa36bp1513aajsn612c819feca4'
+        'x-rapidapi-key': os.environ.get('TANK01_API_KEY', '')
     }
     
     try:
