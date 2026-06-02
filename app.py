@@ -689,7 +689,9 @@ BASE_HTML = """
           <span class="footer-tagline">Tools for obsessive commissioners.</span>
         </div>
         <div class="site-footer-links">
+          <a href="/about">About</a>
           <a href="{privacy_url}">Privacy</a>
+          <a href="/terms">Terms</a>
           <a href="{faq_url}">FAQ</a>
           <a href="{support_url}">Support the site</a>
           <a href="{yt_url}" target="_blank" rel="noopener">YouTube</a>
@@ -1773,10 +1775,10 @@ def render_page(
         ad_top="" if is_premium else _AD_TOP,
         ad_bottom="" if is_premium else _AD_BOTTOM,
         adsense_init="" if is_premium else _AD_INIT,
-        privacy_url=league_url("privacy", league_id),
-        faq_url=league_url("faq", league_id),
-        support_url=league_url("support", league_id),
-        contact_url=league_url("contact", league_id),
+        privacy_url="/privacy",
+        faq_url="/faq",
+        support_url="/support",
+        contact_url="/contact",
         yt_url="https://youtube.com/@hoodiekj",
         app_js_v=_APP_JS_V,
         paywall_js_v=_PAYWALL_JS_V,
@@ -23523,6 +23525,269 @@ def _run_startup_daily() -> None:
 
 
 threading.Thread(target=_run_startup_daily, daemon=True).start()
+
+
+def _static_page(title: str, active: str, body_html: str) -> str:
+    return render_page(title, None, active, body_html)
+
+
+@app.route("/about")
+def page_about():
+    body = """
+    <div class="static-card-page">
+      <h1 class="static-hero-title">About BR Fantasy</h1>
+      <p class="static-hero-sub">Tools built by a fantasy football obsessive, for fantasy football obsessives.</p>
+
+      <h2>What is BR Fantasy?</h2>
+      <p>BR Fantasy is a free analytics platform built specifically for dynasty and redraft fantasy football leagues on Sleeper. It gives commissioners and managers deeper insight into their leagues than any native app provides — trade evaluations, roster health grades, positional strength rankings, breakout tracking, weekly projections, and more.</p>
+
+      <h2>Who built this?</h2>
+      <p>BR Fantasy is designed and developed by KJ, a lifelong football fan and long-time dynasty fantasy player who got tired of making roster decisions without real data. The platform started as a personal side project and has grown into a full analytics suite used by hundreds of leagues.</p>
+      <p>You can follow along on YouTube at <a href="https://youtube.com/@hoodiekj" target="_blank" rel="noopener">@hoodiekj</a> where KJ covers dynasty strategy, site updates, and league analysis.</p>
+
+      <h2>What does BR Fantasy offer?</h2>
+      <ul>
+        <li><strong>League Dashboard</strong> — Power rankings, standings, and weekly performance at a glance.</li>
+        <li><strong>Teams Page</strong> — Positional grades, roster depth, and dynasty windows for every team in your league.</li>
+        <li><strong>Trade Calculator</strong> — Dynasty and redraft trade evaluations using model-based player values.</li>
+        <li><strong>Trade Intel</strong> — Real league trade data to see what players are actually going for.</li>
+        <li><strong>Breakout Engine</strong> — Identifies under-the-radar players with upside based on usage, age, and opportunity.</li>
+        <li><strong>Player Rankings</strong> — Dynasty rankings updated regularly with positional context.</li>
+        <li><strong>Roster Intel</strong> — Personalized signals for every player on your roster (Sleeper, Core, Sell High, Monitor).</li>
+        <li><strong>Prospects</strong> — Rookie tracking with measurements, draft context, and dynasty projections.</li>
+        <li><strong>Weekly Hub</strong> — Start/sit guidance, matchup grades, and injury status in season.</li>
+      </ul>
+
+      <h2>Is it free?</h2>
+      <p>The core platform is completely free. A PRO tier unlocks advanced features like Trade Intel, Trade Suggestions, and Breakout Analysis. PRO subscriptions help keep the site running and free for everyone else.</p>
+
+      <h2>Supported platforms</h2>
+      <p>BR Fantasy currently supports <strong>Sleeper</strong> leagues. ESPN support is in development.</p>
+
+      <h2>Contact</h2>
+      <p>Have a question, bug report, or feature request? Visit the <a href="/contact">Contact page</a> or reach out on Discord.</p>
+    </div>
+    """
+    return _static_page("About – BR Fantasy", "about", body)
+
+
+@app.route("/privacy")
+# Also reachable from league-scoped footer links
+@app.route("/<path:_prefix>/privacy")
+def page_privacy(_prefix=None):
+    body = """
+    <div class="static-card-page">
+      <h1 class="static-hero-title">Privacy Policy</h1>
+      <p class="static-hero-sub">Last updated: June 2025</p>
+
+      <p>BR Fantasy ("we", "us", or "our") operates the website brfantasy.onrender.com (the "Service"). This page informs you of our policies regarding the collection, use, and disclosure of personal data when you use our Service.</p>
+
+      <h2>Information We Collect</h2>
+      <p>We collect minimal data necessary to operate the Service:</p>
+      <ul>
+        <li><strong>Sleeper username</strong> — entered voluntarily to personalize your league view. We do not store passwords.</li>
+        <li><strong>League data</strong> — fetched from the Sleeper public API on your behalf to display analytics. We cache this server-side to improve performance.</li>
+        <li><strong>Session data</strong> — a browser cookie stores your current league context so you don't have to re-enter it on each visit. No personally identifiable information is stored in this cookie.</li>
+        <li><strong>Usage data</strong> — standard server logs (IP address, browser type, pages visited, time of access) collected automatically for security and performance monitoring.</li>
+      </ul>
+
+      <h2>Cookies</h2>
+      <p>We use cookies for the following purposes:</p>
+      <ul>
+        <li><strong>Session cookies</strong> — keep you logged in to your league during a browsing session.</li>
+        <li><strong>Preference cookies</strong> — remember your dark/light mode preference.</li>
+        <li><strong>Advertising cookies</strong> — we use Google AdSense to display ads on the Service. Google and its partners use cookies to serve ads based on your prior visits to this and other websites. You may opt out of personalised advertising by visiting <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener">Google Ads Settings</a> or <a href="https://www.aboutads.info" target="_blank" rel="noopener">aboutads.info</a>.</li>
+      </ul>
+
+      <h2>Google AdSense and Third-Party Advertising</h2>
+      <p>We use Google AdSense, a third-party advertising service provided by Google LLC. Google AdSense uses cookies and web beacons to serve ads based on a user's prior visits to our website or other websites on the Internet. Google's use of advertising cookies enables it and its partners to serve ads to our users based on their visit to our Service and/or other sites on the Internet.</p>
+      <p>Users may opt out of personalized advertising by visiting <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener">Ads Settings</a>. Alternatively, users can opt out of a third-party vendor's use of cookies for personalized advertising by visiting <a href="https://www.aboutads.info/choices/" target="_blank" rel="noopener">www.aboutads.info/choices/</a>.</p>
+      <p>For more information on how Google uses data when you use our partners' sites or apps, see <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener">How Google uses data when you use our partners' sites or apps</a>.</p>
+
+      <h2>How We Use Your Information</h2>
+      <ul>
+        <li>To provide and maintain the Service</li>
+        <li>To personalise your league and roster views</li>
+        <li>To monitor usage and improve performance</li>
+        <li>To detect and prevent abuse or security issues</li>
+      </ul>
+
+      <h2>Data Sharing</h2>
+      <p>We do not sell, trade, or rent your personal information to third parties. We may share anonymised, aggregated usage statistics. The only third-party services we use that may receive data are:</p>
+      <ul>
+        <li><strong>Google AdSense / Google LLC</strong> — for advertising (see above)</li>
+        <li><strong>Sleeper</strong> — we query their public API on your behalf to fetch league data</li>
+        <li><strong>Render.com</strong> — our hosting provider, which processes server logs</li>
+      </ul>
+
+      <h2>Data Retention</h2>
+      <p>Session data is cleared when you close your browser or after a period of inactivity. Cached league data is purged after 12 hours. Server logs are retained for up to 30 days.</p>
+
+      <h2>Children's Privacy</h2>
+      <p>Our Service is not directed to anyone under the age of 13. We do not knowingly collect personally identifiable information from children under 13. If you are a parent or guardian and you believe your child has provided us with personal data, please contact us.</p>
+
+      <h2>Changes to This Policy</h2>
+      <p>We may update this Privacy Policy from time to time. We will notify users of any changes by updating the "Last updated" date at the top of this page. We encourage you to review this Privacy Policy periodically.</p>
+
+      <h2>Contact Us</h2>
+      <p>If you have any questions about this Privacy Policy, please visit our <a href="/contact">Contact page</a>.</p>
+    </div>
+    """
+    return _static_page("Privacy Policy – BR Fantasy", "privacy", body)
+
+
+@app.route("/contact")
+@app.route("/<path:_prefix>/contact")
+def page_contact(_prefix=None):
+    body = """
+    <div class="static-card-page">
+      <h1 class="static-hero-title">Contact</h1>
+      <p class="static-hero-sub">Questions, bug reports, feature requests — we want to hear from you.</p>
+
+      <h2>Discord (fastest response)</h2>
+      <p>The quickest way to reach us is through the BR Fantasy Discord server. You can ask questions, report bugs, request features, and chat dynasty strategy with other users.</p>
+      <p><a href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener" class="btn-primary" style="display:inline-block;margin-top:6px;">Join the Discord</a></p>
+
+      <h2>YouTube</h2>
+      <p>Follow along on YouTube for site updates, dynasty breakdowns, and strategy content:</p>
+      <p><a href="https://youtube.com/@hoodiekj" target="_blank" rel="noopener">youtube.com/@hoodiekj</a></p>
+
+      <h2>Bug Reports & Feature Requests</h2>
+      <p>Found a bug or have an idea for a new feature? Post it in the <strong>#feedback</strong> channel on Discord. Include your league ID and a description of what you expected vs. what you saw.</p>
+
+      <h2>Business Inquiries</h2>
+      <p>For partnership or business inquiries, please reach out via Discord direct message to the <strong>@admin</strong> role.</p>
+    </div>
+    """
+    return _static_page("Contact – BR Fantasy", "contact", body)
+
+
+@app.route("/terms")
+@app.route("/<path:_prefix>/terms")
+def page_terms(_prefix=None):
+    body = """
+    <div class="static-card-page">
+      <h1 class="static-hero-title">Terms of Service</h1>
+      <p class="static-hero-sub">Last updated: June 2025</p>
+
+      <p>Please read these Terms of Service ("Terms") carefully before using brfantasy.onrender.com (the "Service") operated by BR Fantasy ("us", "we", or "our").</p>
+
+      <h2>Acceptance of Terms</h2>
+      <p>By accessing or using the Service you agree to be bound by these Terms. If you disagree with any part of the terms then you may not access the Service.</p>
+
+      <h2>Use of the Service</h2>
+      <p>BR Fantasy provides fantasy football analytics tools for personal, non-commercial use. You agree to use the Service only for lawful purposes and in a manner that does not infringe the rights of others.</p>
+      <p>You must not:</p>
+      <ul>
+        <li>Attempt to scrape, crawl, or systematically download data from the Service in a way that burdens our infrastructure</li>
+        <li>Use the Service to build a competing product without our written consent</li>
+        <li>Attempt to access any part of the Service beyond what is intentionally made available</li>
+        <li>Use automated tools to generate fake or misleading league data</li>
+      </ul>
+
+      <h2>Third-Party Data</h2>
+      <p>The Service fetches and displays data from the Sleeper API. We are not affiliated with Sleeper and make no warranty as to the accuracy or timeliness of that data. All fantasy sports statistics and projections are estimates and should not be relied upon for any purpose outside of recreational fantasy sports.</p>
+
+      <h2>PRO Subscriptions</h2>
+      <p>Some features require a paid PRO subscription. Subscriptions are billed as described at the time of purchase. All sales are final unless otherwise required by law. We reserve the right to modify, suspend, or discontinue PRO features at any time with reasonable notice.</p>
+
+      <h2>Intellectual Property</h2>
+      <p>The Service and its original content, features, and functionality are and will remain the exclusive property of BR Fantasy. Our trademarks and trade dress may not be used in connection with any product or service without the prior written consent of BR Fantasy.</p>
+
+      <h2>Disclaimer of Warranties</h2>
+      <p>The Service is provided on an "AS IS" and "AS AVAILABLE" basis without any warranties of any kind, either express or implied. We do not warrant that the Service will be uninterrupted, error-free, or that any defects will be corrected.</p>
+
+      <h2>Limitation of Liability</h2>
+      <p>In no event shall BR Fantasy be liable for any indirect, incidental, special, consequential, or punitive damages, including without limitation, loss of profits, data, or goodwill, arising out of your use of or inability to use the Service.</p>
+
+      <h2>Changes to Terms</h2>
+      <p>We reserve the right to modify these Terms at any time. We will indicate the date of the most recent revision at the top of this page. Continued use of the Service after any changes constitutes acceptance of the new Terms.</p>
+
+      <h2>Contact</h2>
+      <p>If you have any questions about these Terms, please visit our <a href="/contact">Contact page</a>.</p>
+    </div>
+    """
+    return _static_page("Terms of Service – BR Fantasy", "terms", body)
+
+
+@app.route("/faq")
+@app.route("/<path:_prefix>/faq")
+def page_faq(_prefix=None):
+    body = """
+    <div class="static-card-page">
+      <h1 class="static-hero-title">Frequently Asked Questions</h1>
+      <p class="static-hero-sub">Everything you need to know about getting started.</p>
+
+      <h2>How do I get started?</h2>
+      <p>Enter your Sleeper league ID and your Sleeper username on the home page. Your league ID can be found in the Sleeper app under League Settings. Once entered, you'll see a full analytics dashboard for your league.</p>
+
+      <h2>Where do I find my Sleeper league ID?</h2>
+      <p>Open the Sleeper app → tap your league → tap the settings gear icon → scroll down to see your League ID (a long number). You can also find it in the URL when viewing your league on sleeper.com.</p>
+
+      <h2>Is my data stored?</h2>
+      <p>We cache league data server-side for up to 12 hours to improve performance. We do not store passwords or sensitive personal information. See our <a href="/privacy">Privacy Policy</a> for full details.</p>
+
+      <h2>Why isn't my roster updated after a trade?</h2>
+      <p>League data is cached for 12 hours. Click the refresh button in the bottom-right corner of any league page to force a fresh pull from Sleeper.</p>
+
+      <h2>What platforms are supported?</h2>
+      <p>Currently Sleeper is fully supported. ESPN is in development.</p>
+
+      <h2>What is PRO?</h2>
+      <p>PRO unlocks advanced features including Trade Intel (real trade data from hundreds of leagues), Trade Suggestions, Breakout Analysis, and more. The core analytics — dashboard, teams, trade calculator, roster intel, players, and breakouts — are free.</p>
+
+      <h2>How are player values calculated?</h2>
+      <p>Player values are based on an internal model that weighs age, position, recent performance, target/carry share, and dynasty positional scarcity. Values are updated regularly. They are intended as a starting point for trade discussions, not absolute truth.</p>
+
+      <h2>How do I cancel PRO?</h2>
+      <p>PRO subscriptions can be cancelled at any time from your account settings or by contacting us via <a href="/contact">Discord</a>.</p>
+
+      <h2>Something looks wrong — how do I report a bug?</h2>
+      <p>Join the <a href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener">Discord server</a> and post in #feedback with your league ID and a description of the issue.</p>
+    </div>
+    """
+    return _static_page("FAQ – BR Fantasy", "faq", body)
+
+
+@app.route("/support")
+@app.route("/<path:_prefix>/support")
+def page_support(_prefix=None):
+    body = """
+    <div class="static-card-page">
+      <h1 class="static-hero-title">Support BR Fantasy</h1>
+      <p class="static-hero-sub">Help keep the lights on and the features coming.</p>
+
+      <p>BR Fantasy is an independent project built and maintained by one person. The core platform is free and will stay free. Your support directly funds server costs, data infrastructure, and development time.</p>
+
+      <h2>Upgrade to PRO</h2>
+      <p>The best way to support BR Fantasy is to upgrade to PRO. PRO unlocks Trade Intel, Trade Suggestions, and Breakout Analysis — and every subscription directly supports continued development.</p>
+
+      <h2>Spread the word</h2>
+      <p>Share BR Fantasy with your league mates, post about it on social media, or mention it in your fantasy football communities. Word of mouth is how this project grows.</p>
+
+      <h2>Subscribe on YouTube</h2>
+      <p>Follow the <a href="https://youtube.com/@hoodiekj" target="_blank" rel="noopener">@hoodiekj YouTube channel</a> for dynasty strategy content, site walkthroughs, and updates.</p>
+
+      <h2>Join the Discord</h2>
+      <p>The <a href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener">BR Fantasy Discord</a> is the hub for the community. Join to get early access to new features, give feedback, and connect with other dynasty players.</p>
+    </div>
+    """
+    return _static_page("Support BR Fantasy", "support", body)
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    host = request.host_url.rstrip("/")
+    pages = ["", "/about", "/privacy", "/terms", "/faq", "/contact", "/support",
+             "/players", "/breakouts", "/prospects"]
+    urls = "\n".join(
+        f"  <url><loc>{host}{p}</loc></url>" for p in pages
+    )
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{urls}
+</urlset>"""
+    return app.response_class(xml, mimetype="application/xml")
 
 
 @app.route("/robots.txt")
