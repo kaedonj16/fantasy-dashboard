@@ -13239,15 +13239,19 @@ def build_schedule_body(ctx):
         </div>
       </div>
 
+      <!-- Shared week-range selector (controls both views) -->
+      <div class="sched-controls sched-shared-controls">
+        <div class="sched-week-range">
+          <span class="sched-ctrl-label">Weeks</span>
+          <select id="schedWkStart" class="sched-select"></select>
+          <span class="sched-ctrl-sep">to</span>
+          <select id="schedWkEnd" class="sched-select"></select>
+        </div>
+      </div>
+
       <!-- My Players view -->
       <div id="schedMyPlayersSection">
         <div class="sched-controls">
-          <div class="sched-week-range">
-            <span class="sched-ctrl-label">Weeks</span>
-            <select id="schedWkStart" class="sched-select"></select>
-            <span class="sched-ctrl-sep">to</span>
-            <select id="schedWkEnd" class="sched-select"></select>
-          </div>
           <div class="sched-add">
             <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted);pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
             <input id="schedAddInput" type="text" placeholder="Add a player..." autocomplete="off"
