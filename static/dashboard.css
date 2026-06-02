@@ -944,7 +944,9 @@ img[src*="refresh.png"],
 img[src*="bell.png"],
 img[src*="logout.png"],
 img[src*="sun-solid.png"],
-img[src*="magnifying-glass-solid.png"] {
+img[src*="magnifying-glass-solid.png"],
+img[src*="bars-solid.png"],
+img[src*="xmark-solid.png"] {
   filter: brightness(0) saturate(100%) invert(15%) sepia(45%) saturate(625%) hue-rotate(200deg) brightness(95%) contrast(90%) !important;
 }
 
@@ -960,7 +962,9 @@ html[data-theme="dark"] img[src*="refresh.png"],
 html[data-theme="dark"] img[src*="bell.png"],
 html[data-theme="dark"] img[src*="logout.png"],
 html[data-theme="dark"] img[src*="sun-solid.png"],
-html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
+html[data-theme="dark"] img[src*="magnifying-glass-solid.png"],
+html[data-theme="dark"] img[src*="bars-solid.png"],
+html[data-theme="dark"] img[src*="xmark-solid.png"] {
   filter: brightness(0) saturate(100%) invert(82%) sepia(23%) saturate(1585%) hue-rotate(178deg) brightness(103%) contrast(88%) !important;
 }
 
@@ -8599,6 +8603,28 @@ git ad.page-sidebar {
   box-shadow: 0 8px 28px rgba(234, 88, 12, 0.22);
 }
 
+/* Dark mode podium overrides — replace light gradients with dark tinted equivalents */
+html[data-theme="dark"] .podium .slot.first {
+  background: linear-gradient(180deg, #2d2200 0%, #3d2f00 100%);
+  border-color: #ca9a00;
+  box-shadow: 0 8px 28px rgba(202, 154, 0, 0.22);
+}
+html[data-theme="dark"] .podium .slot.second {
+  background: linear-gradient(180deg, #1e2535 0%, #263044 100%);
+  border-color: #64748b;
+  box-shadow: 0 8px 28px rgba(100, 116, 139, 0.22);
+}
+html[data-theme="dark"] .podium .slot.third {
+  background: linear-gradient(180deg, #2d1500 0%, #3d1f00 100%);
+  border-color: #b45309;
+  box-shadow: 0 8px 28px rgba(180, 83, 9, 0.22);
+}
+html[data-theme="dark"] .podium .bar {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+
 /* Mobile: make second and third podium slots smaller than first */
 @media (max-width: 768px) {
   .podium .slot.second,
@@ -8889,6 +8915,31 @@ git ad.page-sidebar {
   margin: 6px 0;
   font-size: 13px;
   color: var(--text);
+}
+
+.contact-social-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  text-decoration: none;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  transition: border-color 0.15s, background 0.15s;
+}
+.contact-social-pill:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.contact-social-pill img {
+  filter: brightness(0) saturate(100%) invert(15%) sepia(45%) saturate(625%) hue-rotate(200deg) brightness(95%) contrast(90%);
+}
+html[data-theme="dark"] .contact-social-pill img {
+  filter: brightness(0) saturate(100%) invert(82%) sepia(23%) saturate(1585%) hue-rotate(178deg) brightness(103%) contrast(88%);
 }
 
 .static-card-page {
