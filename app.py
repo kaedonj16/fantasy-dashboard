@@ -16260,19 +16260,19 @@ def api_trade_outcome():
         trade_date = str(payload.get("trade_date") or "")
         trade_month = trade_date[:7] if trade_date else ""
 
-        def get_value_at_trade(pid: str) -> float:
-            """Return the closest historical value to trade_date; returns 0.0 if no history."""
+        def get_value_at_trade(pid: str):
+            """Return the closest historical value to trade_date within 30 days, or None."""
             if not trade_date:
-                return 0.0
+                return None
             from datetime import date as _date
             try:
                 target = _date.fromisoformat(trade_date[:10])
             except ValueError:
-                return 0.0
+                return None
             history = get_player_value_history(pid, days=800)
             if not history:
-                return 0.0
-            best_val = 0.0
+                return None
+            best_val = None
             best_diff = float("inf")
             for snap in history:
                 snap_date_str = str(snap.get("as_of_date") or "")[:10]
@@ -16285,7 +16285,9 @@ def api_trade_outcome():
                         best_val = float(snap.get("value") or 0)
                 except (ValueError, TypeError):
                     continue
-            print(best_val)
+            # No snapshot within 30 days of the trade date means data is too stale to compare
+            if best_diff > 30 or not best_val:
+                return None
             return best_val
         
         def get_pick_value(asset: dict) -> float:
@@ -16334,7 +16336,7 @@ def api_trade_outcome():
         all_assets = [("received", a) for a in assets_received] + [("sent", a) for a in assets_sent]
         all_pids = [(side, str(a.get("id") or ""), str(a.get("name") or a.get("id") or "")) for side, a in all_assets]
 
-        # Fetch historical values in parallel
+        # Fetch historical values in parallel — only store when we found a reliable snapshot
         then_values: dict[str, float] = {}
         if trade_date:
             with ThreadPoolExecutor(max_workers=min(len(all_pids), 8)) as pool:
@@ -16342,9 +16344,11 @@ def api_trade_outcome():
                 for fut in as_completed(futures):
                     pid = futures[fut]
                     try:
-                        then_values[pid] = fut.result()
+                        result = fut.result()
+                        if result is not None:
+                            then_values[pid] = result
                     except Exception:
-                        then_values[pid] = 0.0
+                        pass  # Leave absent — _build_row treats missing pid as None
 
         received_rows = []
         sent_rows = []
