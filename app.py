@@ -13206,6 +13206,46 @@ def _matchup_cell_ease(rank, total, info):
     return 0.0
 
 
+def _team_sos_table(season: int, position: str, weeks):
+    """Return {team: (rank, total, ease)} for `position` over `weeks`.
+
+    rank 1 = easiest schedule among all NFL teams for that position. Reuses the
+    z-score matchup ratings (falling back to raw fpts-allowed). Shared by the
+    Schedule Assistant grid and the player-compare start/sit view."""
+    rank_map, total, info, _is_z = _matchup_rank_table(season, position)
+    if not rank_map:
+        return {}
+    schedules: dict = {}
+    for w in weeks:
+        try:
+            games = load_week_schedule(season, w) or []
+        except Exception:
+            games = []
+        lookup = {}
+        for g in games:
+            if not isinstance(g, dict):
+                continue
+            home = _norm_sched_team(g.get("home"))
+            away = _norm_sched_team(g.get("away"))
+            if home:
+                lookup[home] = away
+            if away:
+                lookup[away] = home
+        schedules[w] = lookup
+    team_ease: dict = {}
+    for t in rank_map.keys():
+        eases = []
+        for w in weeks:
+            opp = schedules.get(w, {}).get(t)
+            if not opp:
+                continue
+            eases.append(_matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {})))
+        if eases:
+            team_ease[t] = sum(eases) / len(eases)
+    ranked = sorted(team_ease.items(), key=lambda x: -x[1])
+    return {t: (i + 1, len(ranked), round(e, 1)) for i, (t, e) in enumerate(ranked)}
+
+
 def _compute_schedule_grid(season: int, pids, weeks):
     """For each pid over the given weeks, return matchup + difficulty cells.
     Reuses the cached fpts-allowed table so this is cheap per request."""
@@ -18291,11 +18331,38 @@ def api_player_details(player_id: str):
         except Exception:
             pass
 
+        # Strength of schedule for the upcoming weeks — powers the start/sit
+        # comparison in the player-compare modal. rank 1 = easiest schedule.
+        sos = None
+        try:
+            _pos = (player_meta.get("pos") or "").upper()
+            _team = _norm_sched_team(player_meta.get("team"))
+            if _pos in {"QB", "RB", "WR", "TE"} and _team:
+                _state = get_nfl_state() or {}
+                _cur_wk = int(_state.get("week") or 1)
+                _styp = (_state.get("season_type") or "").lower()
+                # In the offseason/preseason there's no "current" week yet, so
+                # rate the whole upcoming season; in-season look ahead ~6 weeks.
+                _start_wk = _cur_wk if _styp in ("reg", "post") else 1
+                _end_wk = min(18, _start_wk + 5) if _styp in ("reg", "post") else 18
+                _weeks = list(range(_start_wk, _end_wk + 1))
+                _tbl = _team_sos_table(season, _pos, _weeks)
+                _row = _tbl.get(_team)
+                if _row:
+                    sos = {
+                        "rank": _row[0], "total": _row[1], "ease": _row[2],
+                        "week_start": _start_wk, "week_end": _end_wk,
+                        "position": _pos,
+                    }
+        except Exception:
+            logger.debug("[api_player_details] SoS computation failed", exc_info=True)
+
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
             "position": player_meta.get("pos"),
             "team": player_meta.get("team"),
+            "sos": sos,
             "age": player_value.get("age"),
             "pos_rank": player_value.get("pos_rank"),
             "pos_rank_label": player_value.get("pos_rank_label"),

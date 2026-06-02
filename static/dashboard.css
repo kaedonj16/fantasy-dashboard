@@ -14323,6 +14323,68 @@ tr.team-clickable {
   margin: 0 16px;
 }
 
+/* ── Strength of Schedule (start/sit) ───────────────────────────── */
+.compare-sos-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 8px;
+}
+.compare-sos-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0;
+  padding: 6px 0 4px;
+}
+.compare-sos-divider {
+  width: 1px;
+  background: var(--border);
+  align-self: stretch;
+  margin: 0 16px;
+}
+.compare-sos-cell {
+  text-align: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  position: relative;
+}
+.compare-sos-cell--edge {
+  background: color-mix(in srgb, #22c55e 10%, transparent);
+}
+.compare-sos-edge-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: #22c55e;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+.compare-sos-rank {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+}
+.compare-sos-total {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.compare-sos-ease-wrap {
+  height: 5px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 6px auto 4px;
+  max-width: 140px;
+}
+.compare-sos-ease-bar { height: 100%; border-radius: 3px; }
+.compare-sos-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
 /* ── Season selector ────────────────────────────────────────────── */
 .compare-season-selector {
   display: flex;
