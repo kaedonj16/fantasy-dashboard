@@ -23646,7 +23646,11 @@ def page_contact(_prefix=None):
 
       <h2>Discord (fastest response)</h2>
       <p>The quickest way to reach us is through the BR Fantasy Discord server. You can ask questions, report bugs, request features, and chat dynasty strategy with other users.</p>
-      <p><a href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener" class="btn-primary" style="display:inline-block;margin-top:6px;">Join the Discord</a></p>
+      <iframe src="https://discord.com/widget?id=1378938174697013350&theme=dark"
+              width="350" height="300" allowtransparency="true" frameborder="0"
+              sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
+              style="border-radius:12px;display:block;margin:12px 0;max-width:100%;"></iframe>
+      <p><a href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener" class="btn-primary" style="display:inline-block;margin-top:4px;">Join the Discord</a></p>
 
       <h2>YouTube</h2>
       <p>Follow along on YouTube for site updates, dynasty breakdowns, and strategy content:</p>
