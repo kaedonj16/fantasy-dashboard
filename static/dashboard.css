@@ -8601,19 +8601,19 @@ git ad.page-sidebar {
 
 /* Dark mode podium overrides — replace light gradients with dark tinted equivalents */
 html[data-theme="dark"] .podium .slot.first {
-  background: linear-gradient(180deg, #1a1500 0%, #2a2000 100%);
-  border-color: #a37c00;
-  box-shadow: 0 8px 28px rgba(163, 124, 0, 0.25);
+  background: linear-gradient(180deg, #2d2200 0%, #3d2f00 100%);
+  border-color: #ca9a00;
+  box-shadow: 0 8px 28px rgba(202, 154, 0, 0.22);
 }
 html[data-theme="dark"] .podium .slot.second {
-  background: linear-gradient(180deg, #151b24 0%, #1e2a38 100%);
-  border-color: #4b5563;
-  box-shadow: 0 8px 28px rgba(75, 85, 99, 0.25);
+  background: linear-gradient(180deg, #1e2535 0%, #263044 100%);
+  border-color: #64748b;
+  box-shadow: 0 8px 28px rgba(100, 116, 139, 0.22);
 }
 html[data-theme="dark"] .podium .slot.third {
-  background: linear-gradient(180deg, #1a0f00 0%, #2a1800 100%);
-  border-color: #92400e;
-  box-shadow: 0 8px 28px rgba(146, 64, 14, 0.25);
+  background: linear-gradient(180deg, #2d1500 0%, #3d1f00 100%);
+  border-color: #b45309;
+  box-shadow: 0 8px 28px rgba(180, 83, 9, 0.22);
 }
 html[data-theme="dark"] .podium .bar {
   background: rgba(255, 255, 255, 0.08);
@@ -8622,9 +8622,12 @@ html[data-theme="dark"] .podium .bar {
 
 /* Hamburger fa-bars icon: mirror the CSS filter color used on gear/search PNGs.
    Light mode --accent (#122d4b) matches the dark-navy filter output.
-   Dark mode --accent (#38bdf8) matches the cyan filter output. */
+   Dark mode: hardcode the same cyan the image filter produces. */
 .nav-hamburger {
   color: var(--accent);
+}
+html[data-theme="dark"] .nav-hamburger {
+  color: #38bdf8 !important;
 }
 
 /* Mobile: make second and third podium slots smaller than first */
