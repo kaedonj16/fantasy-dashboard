@@ -6647,12 +6647,10 @@ thead th {
 
 .rank-item {
   display: grid;
-  grid-template-columns: 28px 28px 1fr auto;
-  grid-template-rows: auto auto;
+  grid-template-columns: 28px 28px minmax(0, 1fr) minmax(0, 1.6fr) auto;
   align-items: center;
-  column-gap: 8px;
-  row-gap: 0;
-  padding: 10px 14px 8px;
+  gap: 0 10px;
+  padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--card);
@@ -6665,8 +6663,6 @@ thead th {
 }
 
 .rank-item .pos {
-  grid-row: 1;
-  grid-column: 1;
   font-size: 12px;
   font-weight: 800;
   color: var(--text-muted);
@@ -6675,8 +6671,6 @@ thead th {
 }
 
 .rank-item > .avatar {
-  grid-row: 1;
-  grid-column: 2;
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -6684,8 +6678,6 @@ thead th {
 }
 
 .rank-item .name {
-  grid-row: 1;
-  grid-column: 3;
   font-weight: 700;
   font-size: 13.5px;
   color: var(--text);
@@ -6695,8 +6687,6 @@ thead th {
 }
 
 .rank-item .rec {
-  grid-row: 1;
-  grid-column: 4;
   font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
@@ -6705,12 +6695,10 @@ thead th {
 }
 
 .rank-item .power-row {
-  grid-row: 2;
-  grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding-top: 7px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .rank-item .bar {
@@ -6726,7 +6714,7 @@ thead th {
   height: 100%;
   background: var(--accent);
   border-radius: 999px;
-  opacity: 0.7;
+  opacity: 0.75;
 }
 
 
@@ -10439,9 +10427,11 @@ img, svg, canvas {
   }
 
   .rank-item {
-    grid-template-columns: 24px 24px 1fr auto !important;
+    grid-template-columns: 24px 24px minmax(0,1fr) minmax(0,1.2fr) auto !important;
     padding: 8px 10px;
+    gap: 0 7px;
   }
+  .rank-item .chips .chip { font-size: 10.5px; }
 
   .m-slide,
   .matchup-card,

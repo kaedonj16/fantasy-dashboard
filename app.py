@@ -3619,11 +3619,11 @@ def render_power_and_playoffs(
             f"<span class='pos'>#{pos}</span>"
             f"{img}"
             f"<span class='name'>{team}</span>"
-            f"<span class='rec'>{record}</span>"
             f"<div class='power-row'>"
             f"<div class='bar'><div style='width:{bar_w:.1f}%'></div></div>"
             f"<div class='chips'>{chips_html}</div>"
             f"</div>"
+            f"<span class='rec'>{record}</span>"
             f"</div>"
         )
 
