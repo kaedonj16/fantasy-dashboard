@@ -944,7 +944,8 @@ img[src*="refresh.png"],
 img[src*="bell.png"],
 img[src*="logout.png"],
 img[src*="sun-solid.png"],
-img[src*="magnifying-glass-solid.png"] {
+img[src*="magnifying-glass-solid.png"],
+img[src*="bars-solid.png"] {
   filter: brightness(0) saturate(100%) invert(15%) sepia(45%) saturate(625%) hue-rotate(200deg) brightness(95%) contrast(90%) !important;
 }
 
@@ -960,7 +961,8 @@ html[data-theme="dark"] img[src*="refresh.png"],
 html[data-theme="dark"] img[src*="bell.png"],
 html[data-theme="dark"] img[src*="logout.png"],
 html[data-theme="dark"] img[src*="sun-solid.png"],
-html[data-theme="dark"] img[src*="magnifying-glass-solid.png"] {
+html[data-theme="dark"] img[src*="magnifying-glass-solid.png"],
+html[data-theme="dark"] img[src*="bars-solid.png"] {
   filter: brightness(0) saturate(100%) invert(82%) sepia(23%) saturate(1585%) hue-rotate(178deg) brightness(103%) contrast(88%) !important;
 }
 
@@ -8620,17 +8622,6 @@ html[data-theme="dark"] .podium .bar {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* Hamburger fa-bars icon: mirror the CSS filter color used on gear/search PNGs.
-   Light mode --accent (#122d4b) matches the dark-navy filter output.
-   Dark mode: hardcode the same cyan the image filter produces. */
-.nav-hamburger {
-  color: var(--accent);
-}
-html[data-theme="dark"] .nav-hamburger,
-html[data-theme="dark"] .nav-hamburger i,
-html[data-theme="dark"] .nav-hamburger .fa-bars {
-  color: #38bdf8 !important;
-}
 
 /* Mobile: make second and third podium slots smaller than first */
 @media (max-width: 768px) {

@@ -1310,7 +1310,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"  {changelog_bell}"
             f"  {settings_gear}"
             "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
-            "    <i class='fa-solid fa-bars' aria-hidden='true'></i>"
+            "    <img src='/static/images/bars-solid.png' style='width:16px;height:16px;' alt=''>"
             "  </button>"
             "</div>"
         )
@@ -1516,7 +1516,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"  {changelog_bell}"
         f"  {settings_gear}"
         "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
-        "    <i class='fa-solid fa-bars' aria-hidden='true'></i>"
+        "    <img src='/static/images/bars-solid.png' style='width:16px;height:16px;' alt=''>"
         "  </button>"
         "</div>"
     )
