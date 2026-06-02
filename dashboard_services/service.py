@@ -549,7 +549,7 @@ def _compute_team_records(df: pd.DataFrame) -> pd.DataFrame:
             ties[owner2] += 1
 
     results = []
-    owners = sorted(set(df["owner"]))
+    owners = sorted(set(df["owner"])) if "owner" in df.columns else []
     for owner in owners:
         w = wins[owner]
         l = losses[owner]
@@ -565,7 +565,9 @@ def _compute_team_records(df: pd.DataFrame) -> pd.DataFrame:
                 "Win%": (w + 0.5 * t) / g if g else 0.0,
             }
         )
-    return pd.DataFrame(results)
+    # Always return the expected schema so downstream merges on "owner" work even
+    # in the preseason when there are no games played yet (empty results).
+    return pd.DataFrame(results, columns=["owner", "Wins", "Losses", "Ties", "G", "Win%"])
 
 
 def _aggregate_team_stats(df_weekly: pd.DataFrame, records: pd.DataFrame) -> pd.DataFrame:
@@ -584,11 +586,16 @@ def _aggregate_team_stats(df_weekly: pd.DataFrame, records: pd.DataFrame) -> pd.
 
     team_stats = stats.merge(records, on="owner", how="left")
 
+    # Owners with no games yet (preseason) come through the left-merge as NaN.
+    for _col in ("Wins", "Losses", "Ties", "G"):
+        if _col in team_stats.columns:
+            team_stats[_col] = team_stats[_col].fillna(0)
+
     team_stats["Record"] = team_stats[["Wins", "Losses", "Ties"]].apply(
         lambda r: f"{int(r.Wins)}-{int(r.Losses)}"
                   + (f"-{int(r.Ties)}" if r.Ties else ""),
         axis=1,
-    )
+    ) if not team_stats.empty else pd.Series(dtype=str)
 
     return team_stats
 

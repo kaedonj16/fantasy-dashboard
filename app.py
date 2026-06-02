@@ -13585,17 +13585,30 @@ def build_schedule_body(ctx):
           return;
         }
 
-        var totalPages = Math.ceil(rankings.length / RANK_PAGE_SIZE);
+        // Group players from the same NFL team into one row — their schedule,
+        // avg rank and ease are identical, so separate rows just repeat values.
+        // Players already arrive sorted with teammates adjacent (by ease, then
+        // team, then value), so a first-seen map preserves the ranking order.
+        var groups = [];
+        var byTeam = {};
+        rankings.forEach(function(p) {
+          var g = byTeam[p.team];
+          if (!g) { g = { team: p.team, rep: p, players: [] }; byTeam[p.team] = g; groups.push(g); }
+          g.players.push(p);
+        });
+
+        var totalPages = Math.ceil(groups.length / RANK_PAGE_SIZE);
         if (rankPage >= totalPages) rankPage = 0;
         var pageStart = rankPage * RANK_PAGE_SIZE;
-        var pageRows  = rankings.slice(pageStart, pageStart + RANK_PAGE_SIZE);
+        var pageGroups = groups.slice(pageStart, pageStart + RANK_PAGE_SIZE);
 
-        var head = '<th class="sched-th sched-th-player">Player</th>';
+        var head = '<th class="sched-th sched-th-player">Team</th>';
         for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
         head += '<th class="sched-th">Avg</th><th class="sched-th" style="min-width:90px;">Ease</th>';
 
         var rows = '';
-        pageRows.forEach(function(p, idx) {
+        pageGroups.forEach(function(g, idx) {
+          var p = g.rep;
           var rank = pageStart + idx + 1;
           var medalHtml;
           if (rank === 1)      medalHtml = '<span class="sched-rank-medal sched-rank-medal-1">1</span>';
@@ -13603,25 +13616,23 @@ def build_schedule_body(ctx):
           else if (rank === 3) medalHtml = '<span class="sched-rank-medal sched-rank-medal-3">3</span>';
           else                 medalHtml = '<span class="sched-rank-num">' + rank + '</span>';
 
-          var rosterBadge = p.owner
-            ? '<span class="sched-roster-badge sched-roster-badge--owner">' + esc(p.owner) + '</span>'
-            : (p.on_roster ? '<span class="sched-roster-badge">Rostered</span>' : '');
+          var namesHtml = g.players.map(function(pl) {
+            var badge = pl.owner
+              ? '<span class="sched-roster-badge sched-roster-badge--owner">' + esc(pl.owner) + '</span>'
+              : (pl.on_roster ? '<span class="sched-roster-badge">Rostered</span>' : '');
+            return '<div class="sched-rank-player-line">' +
+                     '<span class="player-clickable sched-pname" data-player-id="' + esc(pl.pid) + '">' + esc(pl.name) + '</span>' +
+                     badge +
+                   '</div>';
+          }).join('');
 
           var cells = '';
           (p.cells || []).forEach(function(c) {
             if (c.bye) { cells += '<td class="sched-td sched-bye">BYE</td>'; return; }
             var rankLabel = c.rank ? ('#' + c.rank) : '–';
-            var ptsHtml = '';
-            if (c.pts != null) {
-              var isActual = c.pts_type === 'actual';
-              ptsHtml = '<div class="sched-player-pts' + (isActual ? '' : ' sched-player-pts--proj') + '">' +
-                          c.pts + ' pts' +
-                        '</div>';
-            }
             cells += '<td class="sched-td" style="background:' + c.bg + ';">' +
                        '<div class="sched-opp">'  + esc((c.at || '') + c.opp) + '</div>' +
                        '<div class="sched-rank" style="color:' + c.txt + ';">' + rankLabel + '</div>' +
-                       ptsHtml +
                      '</td>';
           });
 
@@ -13642,14 +13653,11 @@ def build_schedule_body(ctx):
 
           rows += '<tr>' +
             '<td class="sched-td sched-td-player">' +
-              '<div class="sched-rank-player-cell">' +
+              '<div class="sched-rank-player-cell sched-rank-player-cell--group">' +
                 medalHtml +
                 '<span class="sched-pos" style="background:' + p.color + '22;color:' + p.color + ';">' + esc(p.pos) + '</span>' +
-                '<div class="sched-rank-name-wrap">' +
-                  '<span class="player-clickable sched-pname" data-player-id="' + esc(p.pid) + '">' + esc(p.name) + '</span>' +
-                  rosterBadge +
-                '</div>' +
-                '<span class="sched-nfl">' + esc(p.team) + '</span>' +
+                '<div class="sched-rank-name-wrap">' + namesHtml + '</div>' +
+                '<span class="sched-nfl">' + esc(g.team) + '</span>' +
               '</div>' +
             '</td>' +
             cells +
@@ -13660,10 +13668,10 @@ def build_schedule_body(ctx):
 
         var pageBar = '';
         if (totalPages > 1) {
-          var from = pageStart + 1, to = Math.min(pageStart + RANK_PAGE_SIZE, rankings.length);
+          var from = pageStart + 1, to = Math.min(pageStart + RANK_PAGE_SIZE, groups.length);
           pageBar = '<div class="sched-page-bar">' +
             '<button class="sched-page-btn" id="rankPrev"' + (rankPage === 0 ? ' disabled' : '') + '>&#8592; Prev</button>' +
-            '<span class="sched-page-info">' + from + '–' + to + ' of ' + rankings.length + '</span>' +
+            '<span class="sched-page-info">' + from + '–' + to + ' of ' + groups.length + '</span>' +
             '<button class="sched-page-btn" id="rankNext"' + (rankPage >= totalPages - 1 ? ' disabled' : '') + '>Next &#8594;</button>' +
           '</div>';
         }

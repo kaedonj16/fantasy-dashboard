@@ -9287,6 +9287,18 @@ function tmSwitchTab(tab) {
     window._tmTradesLoaded = true;
     tmLoadTrades(window._tmRosterId);
   }
+
+  // Plotly charts are created while their panel is display:none (roster is the
+  // default tab), so they measure a 0-width container and fall back to a wide
+  // default that overflows the column. Resize them once the panel is visible.
+  if (tab === 'charts' && typeof Plotly !== 'undefined') {
+    requestAnimationFrame(() => {
+      ['teamWeeklyChart', 'teamRadarChart'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { try { Plotly.Plots.resize(el); } catch (_) {} }
+      });
+    });
+  }
 }
 
 async function tmLoadTrades(rosterId) {
@@ -9879,7 +9891,7 @@ function renderTeamDetails(data) {
         plot_bgcolor: 'rgba(0,0,0,0)'
       };
 
-      Plotly.newPlot('teamWeeklyChart', traces, weeklyLayout, { responsive: true });
+      Plotly.newPlot('teamWeeklyChart', traces, weeklyLayout, { responsive: true, displayModeBar: false });
     }
 
     // Render radar chart
@@ -9931,8 +9943,9 @@ function renderTeamDetails(data) {
           },
           bgcolor: 'rgba(0,0,0,0)'
         },
-        margin: { l: 20, r: 20, t: 10, b: 10 },
+        margin: { l: 40, r: 40, t: 24, b: 24 },
         showlegend: false,
+        autosize: true,
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: {
@@ -9941,7 +9954,10 @@ function renderTeamDetails(data) {
         }
       };
 
-      Plotly.newPlot('teamRadarChart', [radarTrace], radarLayout, { responsive: true });
+      Plotly.newPlot('teamRadarChart', [radarTrace], radarLayout, {
+        responsive: true,
+        displayModeBar: false,
+      });
     }
   }
 }

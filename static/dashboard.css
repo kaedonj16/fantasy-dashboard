@@ -17336,6 +17336,19 @@ button:disabled {
   min-width: 0;
 }
 
+/* Grouped team row: align players to the top, stack each name + owner badge */
+.sched-rank-player-cell--group { align-items: flex-start; }
+.sched-rank-player-cell--group .sched-pos { margin-top: 2px; }
+.sched-rank-player-cell--group .sched-nfl { margin-top: 2px; }
+.sched-rank-player-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.sched-rank-player-line .sched-pname { font-weight: 600; }
+
 /* ── Ease score bar ──────────────────────────────────────────────────────── */
 .sched-ease-td { min-width: 90px; }
 .sched-ease-wrap {
