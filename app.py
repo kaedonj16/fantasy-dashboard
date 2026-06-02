@@ -13239,7 +13239,7 @@ def build_schedule_body(ctx):
         </div>
       </div>
 
-      <!-- Shared week-range selector (controls both views) -->
+      <!-- Shared controls: week range always; player search vs. rank controls flip per tab -->
       <div class="sched-controls sched-shared-controls">
         <div class="sched-week-range">
           <span class="sched-ctrl-label">Weeks</span>
@@ -13247,25 +13247,38 @@ def build_schedule_body(ctx):
           <span class="sched-ctrl-sep">to</span>
           <select id="schedWkEnd" class="sched-select"></select>
         </div>
+
+        <!-- My Players: player search -->
+        <div class="sched-add" id="schedAddWrap">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted);pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
+          <input id="schedAddInput" type="text" placeholder="Add a player..." autocomplete="off"
+            style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
+                   border:1px solid var(--border);background:var(--card-bg);
+                   color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
+          <button id="schedAddClear" type="button"
+            style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
+                   background:none;border:none;cursor:pointer;color:var(--text-muted);
+                   font-size:16px;line-height:1;padding:2px;" aria-label="Clear search">&#x2715;</button>
+          <div id="schedAddResults" class="sched-add-results" style="display:none;"></div>
+        </div>
+
+        <!-- Schedule Rankings: position pills + sort -->
+        <div class="sched-rank-controls" id="schedRankControls" style="display:none;">
+          <div class="sched-pos-pills" id="schedRankPosPills">
+            <button class="sched-rank-pos active" data-pos="QB">QB</button>
+            <button class="sched-rank-pos" data-pos="RB">RB</button>
+            <button class="sched-rank-pos" data-pos="WR">WR</button>
+            <button class="sched-rank-pos" data-pos="TE">TE</button>
+            <button class="sched-rank-pos" data-pos="K">K</button>
+          </div>
+          <button class="sched-sort-btn" id="schedRankSort">
+            Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>
+          </button>
+        </div>
       </div>
 
       <!-- My Players view -->
       <div id="schedMyPlayersSection">
-        <div class="sched-controls">
-          <div class="sched-add">
-            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--text-muted);pointer-events:none;"><i class="fa-solid fa-magnifying-glass"></i></span>
-            <input id="schedAddInput" type="text" placeholder="Add a player..." autocomplete="off"
-              style="width:100%;padding:8px 32px 8px 34px;border-radius:8px;
-                     border:1px solid var(--border);background:var(--card-bg);
-                     color:var(--text);font-size:13px;outline:none;box-sizing:border-box;">
-            <button id="schedAddClear" type="button"
-              style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);
-                     background:none;border:none;cursor:pointer;color:var(--text-muted);
-                     font-size:16px;line-height:1;padding:2px;" aria-label="Clear search">&#x2715;</button>
-            <div id="schedAddResults" class="sched-add-results" style="display:none;"></div>
-          </div>
-        </div>
-
         <div class="sched-legend">
           <span><span class="sched-chip" style="background:#22c55e;"></span>Elite (top 25%)</span>
           <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
@@ -13281,18 +13294,6 @@ def build_schedule_body(ctx):
 
       <!-- Schedule Rankings view -->
       <div id="schedRankingsSection" style="display:none;">
-        <div class="sched-rank-controls">
-          <div class="sched-pos-pills" id="schedRankPosPills">
-            <button class="sched-rank-pos active" data-pos="QB">QB</button>
-            <button class="sched-rank-pos" data-pos="RB">RB</button>
-            <button class="sched-rank-pos" data-pos="WR">WR</button>
-            <button class="sched-rank-pos" data-pos="TE">TE</button>
-            <button class="sched-rank-pos" data-pos="K">K</button>
-          </div>
-          <button class="sched-sort-btn" id="schedRankSort">
-            Easiest First <i class="fa-solid fa-arrow-up-short-wide" aria-hidden="true"></i>
-          </button>
-        </div>
         <div class="sched-legend" style="padding-top:0;">
           <span><span class="sched-chip" style="background:#22c55e;"></span>Elite</span>
           <span><span class="sched-chip" style="background:#84cc16;"></span>Good</span>
@@ -13415,6 +13416,9 @@ def build_schedule_body(ctx):
         currentView = v;
         document.getElementById('schedMyPlayersSection').style.display  = v === 'my-players' ? '' : 'none';
         document.getElementById('schedRankingsSection').style.display   = v === 'rankings'   ? '' : 'none';
+        // Flip the shared controls to match the active tab
+        document.getElementById('schedAddWrap').style.display      = v === 'my-players' ? '' : 'none';
+        document.getElementById('schedRankControls').style.display = v === 'rankings'   ? '' : 'none';
         document.querySelectorAll('.sched-view-btn').forEach(function(b) {
           b.classList.toggle('active', b.getAttribute('data-view') === v);
         });

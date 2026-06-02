@@ -16912,6 +16912,8 @@ button:disabled {
   flex-wrap: wrap;
   margin: 4px 0 14px;
 }
+/* Rank controls live in the shared bar; span the row so pills sit left, sort right */
+.sched-shared-controls .sched-rank-controls { flex: 1; justify-content: space-between; padding: 0; }
 .sched-week-range {
   display: flex;
   align-items: center;
