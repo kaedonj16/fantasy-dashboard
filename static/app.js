@@ -7602,8 +7602,8 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
               <tfoot>
                 <tr class="game-log-table-total game-log-proj-row">
                   <td><strong>Total</strong></td>
-                  <td><strong>${gamesPlayed}G</strong></td>
-                  <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(totalFantasyPts)}</strong></td>
+                  <td><strong>${projGames}G</strong></td>
+                  <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(projTotalPts)}</strong></td>
                   <td colspan="10" style="text-align:left;font-size:11px;color:var(--text-muted);padding-left:8px;">* Projected — actuals update when games are played</td>
                 </tr>
               </tfoot>
