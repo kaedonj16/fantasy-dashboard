@@ -3508,7 +3508,6 @@ def render_power_and_playoffs(
         ties_val = safe_int(row.get("Ties"), 0)
         rec = f"{wins}-{losses}" + (f"-{ties_val}" if ties_val else "")
 
-        size = {"1": "38px", "2": "32px", "3": "32px"}[str(rank)]
         base_cls = {1: "first", 2: "second", 3: "third"}[rank]
 
         power_val = safe_float(row.get("PowerScore"), 0.0)
@@ -3547,7 +3546,7 @@ def render_power_and_playoffs(
           <div class="slot {base_cls} {streak_frame_cls}">
             <div class="wrap">
               <div class='podium-header'>
-                <h3 style="font-size:{size}">#{rank}</h3>
+                <h3>#{rank}</h3>
                 {avatar_html}
               </div>
               <div class="name">{name}</div>
