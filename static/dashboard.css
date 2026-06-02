@@ -13371,10 +13371,11 @@ img, svg, canvas {
 }
 #tm-panel-charts .team-modal-section {
   min-width: 0;
+  overflow: hidden;
   margin-bottom: 0;
 }
-.tm-chart-weekly { flex: 1 1 auto; }
-.tm-chart-radar  { flex: 0 0 260px; width: 260px; }
+.tm-chart-weekly { flex: 0 0 66%; min-width: 0; }
+.tm-chart-radar  { flex: 0 0 calc(34% - 24px); min-width: 0; }
 
 .team-modal-loading,
 .team-modal-error {
