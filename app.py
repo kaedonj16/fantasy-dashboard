@@ -706,7 +706,9 @@ BASE_HTML = """
           <span class="footer-tagline">Tools for obsessive commissioners.</span>
         </div>
         <div class="site-footer-links">
+          <a href="{about_url}">About</a>
           <a href="{privacy_url}">Privacy</a>
+          <a href="{terms_url}">Terms</a>
           <a href="{faq_url}">FAQ</a>
           <a href="{support_url}">Support the site</a>
           <a href="{yt_url}" target="_blank" rel="noopener">YouTube</a>
@@ -1327,7 +1329,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             f"  {changelog_bell}"
             f"  {settings_gear}"
             "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
-            "    <i class='fa-solid fa-bars' aria-hidden='true'></i>"
+            "    <img src='/static/images/bars-solid.png' style='width:16px;height:16px;' alt=''>"
             "  </button>"
             "</div>"
         )
@@ -1533,7 +1535,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         f"  {changelog_bell}"
         f"  {settings_gear}"
         "  <button class='nav-hamburger utility-icon-btn' id='navToggle' aria-label='Menu'>"
-        "    <i class='fa-solid fa-bars' aria-hidden='true'></i>"
+        "    <img src='/static/images/bars-solid.png' style='width:16px;height:16px;' alt=''>"
         "  </button>"
         "</div>"
     )
@@ -1790,10 +1792,12 @@ def render_page(
         ad_top="" if is_premium else _AD_TOP,
         ad_bottom="" if is_premium else _AD_BOTTOM,
         adsense_init="" if is_premium else _AD_INIT,
-        privacy_url=league_url("privacy", league_id),
-        faq_url=league_url("faq", league_id),
-        support_url=league_url("support", league_id),
-        contact_url=league_url("contact", league_id),
+        about_url=f"/{platform}/{season}/{league_id}/about" if (league_id and platform and season) else "/about",
+        privacy_url=f"/{platform}/{season}/{league_id}/privacy" if (league_id and platform and season) else "/privacy",
+        terms_url=f"/{platform}/{season}/{league_id}/terms" if (league_id and platform and season) else "/terms",
+        faq_url=f"/{platform}/{season}/{league_id}/faq" if (league_id and platform and season) else "/faq",
+        support_url=f"/{platform}/{season}/{league_id}/support" if (league_id and platform and season) else "/support",
+        contact_url=f"/{platform}/{season}/{league_id}/contact" if (league_id and platform and season) else "/contact",
         yt_url="https://youtube.com/@hoodiekj",
         app_js_v=_APP_JS_V,
         paywall_js_v=_PAYWALL_JS_V,
@@ -23569,6 +23573,8 @@ def _run_startup_daily() -> None:
 
 
 threading.Thread(target=_run_startup_daily, daemon=True).start()
+
+
 
 
 @app.route("/robots.txt")

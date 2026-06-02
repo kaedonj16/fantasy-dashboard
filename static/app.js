@@ -6102,14 +6102,16 @@ document.addEventListener('DOMContentLoaded', function() {
       navPillsContainer.classList.toggle('nav-open');
 
       // Update hamburger icon
-      navToggle.innerHTML = navPillsContainer.classList.contains('nav-open') ? '<i class="fa-solid fa-xmark" aria-hidden="true"></i>' : '<i class="fa-solid fa-bars" aria-hidden="true"></i>';
+      navToggle.innerHTML = navPillsContainer.classList.contains('nav-open')
+        ? '<img src="/static/images/xmark-solid.png" style="width:16px;height:16px;" alt="">'
+        : '<img src="/static/images/bars-solid.png" style="width:16px;height:16px;" alt="">';
     });
 
     // Close menu when clicking outside
     document.addEventListener('click', function(e) {
       if (!navToggle.contains(e.target) && !navPillsContainer.contains(e.target)) {
         navPillsContainer.classList.remove('nav-open');
-        navToggle.innerHTML = '<i class="fa-solid fa-bars" aria-hidden="true"></i>';
+        navToggle.innerHTML = '<img src="/static/images/bars-solid.png" style="width:16px;height:16px;" alt="">';
       }
     });
 
@@ -6118,7 +6120,7 @@ document.addEventListener('DOMContentLoaded', function() {
       pill.addEventListener('click', function() {
         if (pill.closest('.nav-pill-dropdown-wrapper')) return;  // dropdown trigger - keep hamburger open
         navPillsContainer.classList.remove('nav-open');
-        navToggle.innerHTML = '<i class="fa-solid fa-bars" aria-hidden="true"></i>';
+        navToggle.innerHTML = '<img src="/static/images/bars-solid.png" style="width:16px;height:16px;" alt="">';
       });
     });
 
@@ -6126,7 +6128,7 @@ document.addEventListener('DOMContentLoaded', function() {
     navPillsContainer.querySelectorAll('.nav-pill-dropdown-item').forEach(item => {
       item.addEventListener('click', function() {
         navPillsContainer.classList.remove('nav-open');
-        navToggle.innerHTML = '<i class="fa-solid fa-bars" aria-hidden="true"></i>';
+        navToggle.innerHTML = '<img src="/static/images/bars-solid.png" style="width:16px;height:16px;" alt="">';
         const wrapper = document.getElementById('playersNavDropdown');
         if (wrapper) wrapper.classList.remove('open');
       });
