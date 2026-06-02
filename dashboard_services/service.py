@@ -88,7 +88,8 @@ def matchup_cards_last_week(
         rosters: list,
         users: list,
         platform: str,
-        season: str
+        season: str,
+        roster_positions: list = None,
 ) -> tuple[int, str, dict]:
     """
     Returns: (week_number, html_for_matchup_cards, top_by_pos_dict)
@@ -213,7 +214,12 @@ def matchup_cards_last_week(
         """
         )
 
-    want_positions = ["QB", "RB", "WR", "TE", "K", "DEF"]
+    _base_positions = ["QB", "RB", "WR", "TE", "K", "DEF"]
+    rp_set = set(roster_positions or [])
+    want_positions = [
+        p for p in _base_positions
+        if p not in ("K", "DEF") or p in rp_set
+    ]
     top_by_pos = {}
     for pos in want_positions:
         pool = sorted(buckets.get(pos, []), key=lambda x: x["pts"], reverse=True)[:3]
@@ -248,7 +254,7 @@ def fantasy_team_and_roster_for_player(pid: str, rosters: list, roster_map: dict
     return "Free Agent", ""
 
 
-def render_top_three(top_by_pos: dict, rosters, roster_map) -> str:
+def render_top_three(top_by_pos: dict, rosters, roster_map, positions: list = None) -> str:
     def card(pos, rows):
         if not rows:
             return f"<div class='side-card'><h2>{pos}</h2><div class='muted'>No data</div></div>"
@@ -283,7 +289,8 @@ def render_top_three(top_by_pos: dict, rosters, roster_map) -> str:
             )
         return f"<div class='side-card'><h3>{pos}</h3>{''.join(lis)}</div>"
 
-    blocks = [card(pos, top_by_pos.get(pos, [])) for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]]
+    _render_positions = positions if positions else ["QB", "RB", "WR", "TE", "K", "DEF"]
+    blocks = [card(pos, top_by_pos.get(pos, [])) for pos in _render_positions]
     return "<div class='sidebar-grid'>" + "".join(blocks) + "</div>"
 
 

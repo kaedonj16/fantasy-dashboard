@@ -5170,8 +5170,16 @@ def render_weekly_top_scorers_for_week(
         w: int,
         users: list,
         platform: str,
-        season: str
+        season: str,
+        roster_positions: list = None,
 ) -> str:
+    _base_positions = ["QB", "RB", "WR", "TE", "K", "DEF"]
+    rp_set = set(roster_positions or [])
+    active_positions = [
+        p for p in _base_positions
+        if p not in ("K", "DEF") or p in rp_set
+    ]
+
     # 1. Filter to ONLY this week
     week_df = pd.DataFrame()
     if not df_weekly.empty and "week" in df_weekly.columns:
@@ -5186,16 +5194,17 @@ def render_weekly_top_scorers_for_week(
             rosters,
             users,
             platform,
-            season
+            season,
+            roster_positions=roster_positions,
         )
-        return render_top_three(top_by_pos, rosters, roster_map)
+        return render_top_three(top_by_pos, rosters, roster_map, active_positions)
 
     # --------------------------------------------
     # CASE 2: Week not finalized → use projections for this week
     # --------------------------------------------
     if projections is None:
-        empty = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
-        return render_top_three(empty, rosters, roster_map)
+        empty = {pos: [] for pos in active_positions}
+        return render_top_three(empty, rosters, roster_map, active_positions)
 
     # Build projected rows
     proj_rows = []
@@ -5210,7 +5219,7 @@ def render_weekly_top_scorers_for_week(
                 continue
 
             pos = p.get("position") or p.get("pos")
-            if pos not in ["QB", "RB", "WR", "TE", "K", "DEF"]:
+            if pos not in active_positions:
                 continue
 
             proj_rows.append({
@@ -5221,14 +5230,14 @@ def render_weekly_top_scorers_for_week(
                 "points": float(val),
             })
 
-    top_by_pos = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
+    top_by_pos = {pos: [] for pos in active_positions}
 
     for pos in top_by_pos:
         f = [r for r in proj_rows if r["pos"] == pos]
         f.sort(key=lambda r: r["points"], reverse=True)
         top_by_pos[pos] = f[:3]
 
-    return render_top_three(top_by_pos, rosters, roster_map)
+    return render_top_three(top_by_pos, rosters, roster_map, active_positions)
 
 
 def _render_weekly_matchups(df_weekly: pd.DataFrame, week: int) -> str:
@@ -5489,7 +5498,8 @@ def build_weekly_hub_body(ctx: dict) -> str:
         default_week,
         users,
         platform,
-        season
+        season,
+        roster_positions=ctx.get("roster_positions") or [],
     )
     proj_by_roster = ctx.get("proj_by_roster") or {}
     highlights_html = _render_weekly_highlights(
@@ -15501,7 +15511,8 @@ def api_weekly_week():
         week,
         users,
         platform,
-        season
+        season,
+        roster_positions=ctx.get("roster_positions") or [],
     )
     _api_proj_by_roster = ctx.get("proj_by_roster") or {}
     highlights_html = _render_weekly_highlights(
