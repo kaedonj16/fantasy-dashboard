@@ -3615,9 +3615,10 @@ def render_power_and_playoffs(
         )
 
         rank_cards.append(
-            f"<div class='rank-item {css_cls} '>"
+            f"<div class='rank-item {css_cls}'>"
             f"<span class='pos'>#{pos}</span>"
-            f"<span class='name'>{img}&nbsp;{team}</span>"
+            f"{img}"
+            f"<span class='name'>{team}</span>"
             f"<span class='rec'>{record}</span>"
             f"<div class='power-row'>"
             f"<div class='bar'><div style='width:{bar_w:.1f}%'></div></div>"
