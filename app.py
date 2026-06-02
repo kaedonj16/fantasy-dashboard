@@ -86,6 +86,7 @@ from dashboard_services.platform_api import (
 from dashboard_services.players import get_players_map
 from dashboard_services.subscriptions import (
     has_premium_access,
+    has_premium_for_viewer,
     create_league_subscription,
     create_user_subscription,
     cancel_subscription,
@@ -1778,7 +1779,7 @@ def render_page(
     wrapped_body = f"<div class='page-shell' data-page='{active}'>{body_html}</div>"
 
     user_id = session.get("viewer_username")
-    is_premium = has_premium_access(user_id, league_id, platform or "sleeper")
+    is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
 
     return BASE_HTML.format(
         title=title,
@@ -9586,7 +9587,7 @@ def _build_career_graphs_ctx_live(
 
 def page_auction_values(platform: str = None, season: int = None, league_id: str = None):
     user_id = session.get("viewer_username")
-    has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
+    has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
 
     if not has_premium:
         # Show teaser with paywall
@@ -11047,7 +11048,7 @@ def page_prospects(platform: str, season: int, league_id: str):
 def page_breakouts(platform: str, season: int, league_id: str):
     """Dedicated page for breakout candidates with detailed projections."""
     user_id = session.get("viewer_username")
-    has_premium = has_premium_access(user_id, league_id, platform)
+    has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
     body_html = f"""
     <div class="card central">
       <div class="card-header">
@@ -15737,7 +15738,8 @@ def api_gm_memo():
     if not league_id or not season or not viewer_roster_id:
         return jsonify({"error": "Missing required parameters"}), 400
 
-    if not has_premium_access(session.get("viewer_username"), league_id, platform):
+    if not has_premium_for_viewer(session.get("viewer_username"), session.get("viewer_user_id"),
+                                  league_id, platform, season):
         return jsonify({"paywall": True, "error": "Premium required"}), 403
 
     try:
@@ -15767,7 +15769,8 @@ def api_power_rankings():
     if not league_id:
         return jsonify({"error": "Missing league_id"}), 400
 
-    if not has_premium_access(session.get("viewer_username"), league_id, platform):
+    if not has_premium_for_viewer(session.get("viewer_username"), session.get("viewer_user_id"),
+                                  league_id, platform, season):
         return jsonify({"paywall": True, "error": "Premium required"}), 403
 
     try:
@@ -15792,7 +15795,7 @@ def api_trade_suggestions():
         return jsonify({"error": "Missing required parameters"}), 400
 
     user_id = session.get("viewer_username")
-    if not has_premium_access(user_id, league_id, platform):
+    if not has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season):
         return jsonify({"paywall": True, "error": "Premium required"}), 403
 
     try:
@@ -17105,7 +17108,8 @@ def api_breakout_candidates():
     """
     league_id = request.args.get("league_id")
     platform = request.args.get("platform", "sleeper")
-    if not has_premium_access(session.get("viewer_username"), league_id, platform):
+    if not has_premium_for_viewer(session.get("viewer_username"), session.get("viewer_user_id"),
+                                  league_id, platform, request.args.get("season")):
         return jsonify({"paywall": True, "error": "Premium required"}), 403
 
     try:
@@ -20872,7 +20876,7 @@ def api_trade_targets():
         return jsonify({"error": "league_id and viewer_roster_id required"}), 400
 
     user_id = session.get("viewer_username") or None
-    if not has_premium_access(user_id, league_id, platform):
+    if not has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season):
         return jsonify({"paywall": True, "error": "Premium required"}), 403
 
     try:
@@ -21071,7 +21075,7 @@ def api_archetype_suggestions():
         return jsonify({"error": "archetype must be contending|rebuilding|consolidate|distribute"}), 400
 
     user_id = session.get("viewer_username") or None
-    if not has_premium_access(user_id, league_id, platform):
+    if not has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season):
         return jsonify({"paywall": True, "error": "Premium required"}), 403
 
     try:
@@ -21113,7 +21117,7 @@ def api_trade_intel_player_packages(player_id: str):
     untouchable_ids  = set(x.strip() for x in _untouchable_raw.split(",") if x.strip())
 
     user_id = session.get("viewer_username")
-    if not has_premium_access(user_id, league_id, platform):
+    if not has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season):
         return jsonify({"error": "Premium required"}), 403
 
     try:
@@ -22270,7 +22274,7 @@ def api_trade_intel_player_send_packages(player_id: str):
     viewer_roster_id = str(request.args.get("viewer_roster_id") or "").strip()
 
     user_id = session.get("viewer_username")
-    if not has_premium_access(user_id, league_id, platform):
+    if not has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season):
         return jsonify({"error": "Premium required"}), 403
 
     if not league_id or not viewer_roster_id:
@@ -22497,7 +22501,7 @@ def api_trade_ideas_for_target():
         return jsonify({"error": "Missing required parameters"}), 400
 
     user_id = session.get("viewer_username")
-    if not has_premium_access(user_id, league_id, platform):
+    if not has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season):
         return jsonify({"paywall": True, "error": "Premium required"}), 403
 
     try:

@@ -21,6 +21,7 @@ from dashboard_services.subscriptions import (
     create_league_subscription,
     create_user_subscription,
     has_premium_access,
+    has_premium_for_viewer,
 )
 
 billing_bp = Blueprint("billing", __name__)
@@ -368,7 +369,7 @@ def create_checkout_session():
         return jsonify({"error": "Invalid plan"}), 400
 
     check_league = league_id if league_id else None
-    has_premium = has_premium_access(user_id, check_league, "sleeper")
+    has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), check_league, "sleeper")
     logger.info("[checkout] User premium status for league %s: %s", check_league, has_premium)
     if has_premium:
         return jsonify({"error": "You already have an active premium subscription."}), 400

@@ -8,6 +8,7 @@ Premium Features:
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from functools import wraps
 from typing import Optional, Dict, Any
@@ -18,10 +19,12 @@ from dashboard_services.db import get_conn
 def premium_required(fn):
     """Decorator that enforces premium access on a Flask route.
 
-    Identity comes from the server-side session (``viewer_username``) — never
-    from the client — while ``league_id``/``platform`` are read from the
-    request (query string, form, or JSON body). Returns a 403 paywall response
-    if the viewer does not have premium access.
+    Identity comes from the server-side session (``viewer_username`` /
+    ``viewer_user_id``) — never from the client — while ``league_id`` /
+    ``platform`` / ``season`` are read from the request (query string, form, or
+    JSON body). A league subscription is only honored when the viewer is an
+    actual member of that league, so a tampered ``league_id`` cannot unlock
+    premium. Returns a 403 paywall response otherwise.
     """
     @wraps(fn)
     def _wrapper(*args, **kwargs):
@@ -32,9 +35,12 @@ def premium_required(fn):
         league_id = data.get("league_id") or request.values.get("league_id")
         platform = (data.get("platform") or request.values.get("platform")
                     or "sleeper")
-        user_id = session.get("viewer_username")
+        season = data.get("season") or request.values.get("season")
 
-        if not has_premium_access(user_id, league_id, platform):
+        if not has_premium_for_viewer(
+            session.get("viewer_username"), session.get("viewer_user_id"),
+            league_id, platform, season,
+        ):
             return jsonify({"paywall": True, "error": "Premium required"}), 403
         return fn(*args, **kwargs)
 
@@ -99,6 +105,75 @@ def has_premium_access(user_id: Optional[str], league_id: Optional[str], platfor
         print(f"[subscriptions] Error checking premium access: {e}")
         # Fail closed: on any error, deny premium rather than grant it.
         return False
+
+
+# ── League membership (guards the shared league-plan entitlement) ─────────────
+
+_MEMBER_CACHE: Dict[Any, Any] = {}
+_MEMBER_TTL = 600  # seconds
+
+
+def _viewer_league_ids(viewer_user_id: str, season: int) -> set:
+    """Return the set of Sleeper league_ids the user belongs to (cached)."""
+    ck = (str(viewer_user_id), int(season))
+    hit = _MEMBER_CACHE.get(ck)
+    if hit and (time.time() - hit[1]) < _MEMBER_TTL:
+        return hit[0]
+    from dashboard_services.api import get_sleeper_user_leagues
+    raw = get_sleeper_user_leagues(str(viewer_user_id), int(season)) or []
+    ids = {str(lg.get("league_id")) for lg in raw if lg.get("league_id")}
+    _MEMBER_CACHE[ck] = (ids, time.time())
+    return ids
+
+
+def viewer_is_league_member(
+    viewer_user_id: Optional[str], league_id: Optional[str],
+    platform: str = "sleeper", season: Optional[int] = None,
+) -> bool:
+    """Whether the given viewer actually belongs to the league.
+
+    League-plan premium is shared across a league, so we must confirm the
+    requester is a member before honoring it — otherwise anyone who knows a
+    paid league's (non-secret) id would unlock premium for free.
+
+    Membership is only verifiable for Sleeper; for other platforms we do not
+    block (return True) so those flows keep working.
+    """
+    if not league_id:
+        return False
+    if (platform or "sleeper") != "sleeper":
+        return True
+    if not viewer_user_id:
+        return False
+    try:
+        season = int(season or datetime.now().year)
+        return str(league_id) in _viewer_league_ids(viewer_user_id, season)
+    except Exception:
+        # Fail closed on the league path; a user with their own subscription is
+        # unaffected (that is checked separately).
+        return False
+
+
+def has_premium_for_viewer(
+    viewer_username: Optional[str], viewer_user_id: Optional[str],
+    league_id: Optional[str], platform: str = "sleeper",
+    season: Optional[int] = None,
+) -> bool:
+    """Premium gate that is safe against ``league_id`` tampering.
+
+    Grants access if the viewer has their own user subscription (valid
+    anywhere), or the league has a subscription AND the viewer is a verified
+    member of that league.
+    """
+    platform = platform or "sleeper"
+    # Own subscription works everywhere.
+    if viewer_username and has_premium_access(viewer_username, None, platform):
+        return True
+    # League subscription only for actual members.
+    if league_id and has_premium_access(None, league_id, platform):
+        if viewer_is_league_member(viewer_user_id, league_id, platform, season):
+            return True
+    return False
 
 
 def get_subscription_info(user_id: Optional[str], league_id: Optional[str], platform: str = "sleeper") -> Dict[
