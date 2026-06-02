@@ -9251,17 +9251,26 @@ def api_start_sit_options():
         else:
             def_rank, def_total = None, 32
 
-        # ── Start/sit score: projection × recent form ─────────────────────────
-        # Projection is the dominant signal (and already opponent-aware). Recent
-        # form nudges it ±15% so a hot/cold streak can break near-ties without
-        # overriding a meaningful projection gap.
+        # ── Start/sit score: projection × form × matchup ─────────────────────
+        # Projection is the dominant signal. Form (±10%) and matchup (±10%)
+        # each influence close calls but combined can only swing the score
+        # ~20% — not enough to flip a meaningful projection gap (e.g. 12.8 vs
+        # 9.8 stays the same regardless of matchup).
         if on_bye:
             score = 0.0
         else:
+            # Recent form: capped ±10%
             _form = 1.0
             if recent_ppg > 0 and s_ppg > 0:
-                _form = min(1.15, max(0.85, recent_ppg / s_ppg))
-            score = proj_pts * _form
+                _form = min(1.10, max(0.90, recent_ppg / s_ppg))
+
+            # Matchup ease: rank 1=easiest → +10%, rank 32=hardest → -10%
+            _mu = 1.0
+            if def_rank and def_total and def_total > 1:
+                _ease = (def_total - def_rank) / (def_total - 1)  # 0–1
+                _mu = 0.90 + _ease * 0.20  # 0.90–1.10
+
+            score = proj_pts * _form * _mu
 
         full_player  = players_full.get(pid) or {}
         raw_status   = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
