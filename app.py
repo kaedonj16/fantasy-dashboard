@@ -16209,48 +16209,29 @@ def api_trade_outcome():
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from dashboard_services.picks import load_pick_value_table
         
-        # Load calibrated values: weighted_market_value_1qb from trade intel (primary),
-        # falling back to calibrated_value_1qb / value_1qb from player_values.
+        # Load current values from player_value_history latest snapshot so that
+        # "at trade date" and "current" are on the same scale (both raw model values).
+        # Using calibrated/market values here vs. raw history values creates fake deltas
+        # that reflect methodology differences, not actual value movement.
         try:
-            current_season = datetime.now().year
+            from dashboard_services.player_value_history import get_latest_snapshot_date
+            latest_snap_date = get_latest_snapshot_date()
+            if not latest_snap_date:
+                raise ValueError("No snapshot date found")
             with get_conn() as conn:
-                cal_rows = conn.execute(
+                snap_rows = conn.execute(
                     """
-                    SELECT
-                        pv.player_id,
-                        COALESCE(
-                            tips.weighted_market_value_1qb,
-                            pv.calibrated_value_1qb,
-                            pv.value_1qb
-                        ) AS calibrated_value,
-                        pv.position
-                    FROM player_values pv
-                    LEFT JOIN trade_intel_player_stats tips
-                        ON tips.player_id = pv.player_id AND tips.season = %s
-                    WHERE pv.player_id IS NOT NULL
+                    SELECT player_id, value
+                    FROM player_value_history
+                    WHERE source = 'model' AND as_of_date = %s
                     """,
-                    (current_season,),
+                    (latest_snap_date,),
                 ).fetchall()
-            if not cal_rows:
-                raise ValueError("No calibrated values loaded")
-            values_now = {}
-            pick_count = 0
-            player_count = 0
-            for row in cal_rows:
-                asset_id = str(row["player_id"] or "")
-                if not asset_id:
-                    continue
-                value = float(row["calibrated_value"] or 0.0)
-                values_now[asset_id] = value
-                if str(row.get("position") or "").upper() == "PICK":
-                    pick_count += 1
-                    if "_" in asset_id:
-                        space_format_id = asset_id.replace("_", " ", 1).replace("_", ".", 1)
-                        values_now[space_format_id] = value
-                else:
-                    player_count += 1
+            if not snap_rows:
+                raise ValueError("Empty latest snapshot")
+            values_now = {str(r["player_id"]): float(r["value"]) for r in snap_rows if r["value"]}
         except Exception as db_error:
-            logger.warning("[api-trade-outcome] Calibrated values unavailable, falling back to model table: %s", db_error)
+            logger.warning("[api-trade-outcome] History snapshot unavailable, falling back to player_values: %s", db_error)
             value_table = get_model_value_table_cached()
             values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
         
@@ -16258,7 +16239,6 @@ def api_trade_outcome():
         pick_values = load_pick_value_table()
 
         trade_date = str(payload.get("trade_date") or "")
-        trade_month = trade_date[:7] if trade_date else ""
 
         def get_value_at_trade(pid: str):
             """Return the closest historical value to trade_date within 30 days, or None."""
