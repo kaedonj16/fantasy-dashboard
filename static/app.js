@@ -7505,7 +7505,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
             <div class="game-log-year-header-main">
               <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
               <span class="game-log-year-title">${year} Season</span>
-              ${isProjection ? '<span class="game-log-proj-badge">Projected</span>' : isMixed ? '<span class="game-log-proj-badge" style="background:var(--accent-soft);color:var(--accent);">In Season</span>' : ''}
+              ${isProjection ? '<span class="game-log-proj-badge">Projected</span>' : ''}
             </div>
             ${summaryHTML}
           </div>
