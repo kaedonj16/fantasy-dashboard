@@ -13509,8 +13509,8 @@ def build_schedule_body(ctx):
             });
             var sosCell;
             if (p.sos_rank) {
-              var se = (p.sos_ease == null) ? 50 : p.sos_ease;
-              var sc = se >= 75 ? '#22c55e' : se >= 50 ? '#84cc16' : se >= 25 ? '#f59e0b' : '#ef4444';
+              var sosFrac = p.sos_rank / (p.sos_total || 32);
+              var sc = sosFrac <= 0.25 ? '#22c55e' : sosFrac <= 0.50 ? '#84cc16' : sosFrac <= 0.75 ? '#f59e0b' : '#ef4444';
               sosCell = '<td class="sched-td sched-sos-td" style="color:' + sc + ';">#' + p.sos_rank +
                         '<span class="sched-sos-total">/' + (p.sos_total || 32) + '</span></td>';
             } else {
@@ -13889,6 +13889,17 @@ def api_schedule_rankings():
             except Exception:
                 pass
 
+        # Build value lookup once — used for depth-chart cap and final sort
+        value_by_pid: dict = {}
+        for _p in (get_model_value_table_cached() or []):
+            _pid = str(_p.get("id") or "")
+            if _pid:
+                value_by_pid[_pid] = max(
+                    float(_p.get("value") or 0),
+                    float(_p.get("value_1qb") or 0),
+                    float(_p.get("value_sf") or 0),
+                )
+
         # Depth-chart cap: keep only the top N at this position per NFL team
         # (ranked by model value), plus any rostered players. Removes the long
         # tail of backups that share an identical schedule row.
@@ -13896,15 +13907,6 @@ def api_schedule_rankings():
         cap = _POS_CAP.get(position)
         keep_pids: set = set(roster_pids)
         if cap:
-            value_by_pid: dict = {}
-            for _p in (get_model_value_table_cached() or []):
-                _pid = str(_p.get("id") or "")
-                if _pid:
-                    value_by_pid[_pid] = max(
-                        float(_p.get("value") or 0),
-                        float(_p.get("value_1qb") or 0),
-                        float(_p.get("value_sf") or 0),
-                    )
             from collections import defaultdict as _dd_team
             by_team: dict = _dd_team(list)
             for _pid, _info in players_idx.items():
@@ -14004,6 +14006,7 @@ def api_schedule_rankings():
                 "pos":        pos,
                 "color":      _SCHED_POS_COLORS.get(pos, "#6b7280"),
                 "team":       team,
+                "value":      value_by_pid.get(str(pid), 0.0),
                 "on_roster":  str(pid) in roster_pids,
                 "owner":      owner_by_pid.get(str(pid)),
                 "cells":      cells,
@@ -14012,7 +14015,22 @@ def api_schedule_rankings():
                 "valid_weeks": valid_wks,
             })
 
-        results.sort(key=lambda x: (x["avg_rank"], x["name"]))
+        # Sort by ease first, then group teammates together under the best player
+        # on that team.  Rank #1 = the most valuable player with the easiest
+        # schedule; teammates follow immediately after.
+        _team_max_ease: dict = {}
+        _team_max_val:  dict = {}
+        for r in results:
+            t = r["team"]
+            if r["ease_score"] > _team_max_ease.get(t, -1):
+                _team_max_ease[t] = r["ease_score"]
+            if r["value"] > _team_max_val.get(t, -1):
+                _team_max_val[t] = r["value"]
+        results.sort(key=lambda x: (
+            -_team_max_ease.get(x["team"], 0.0),  # teams with easiest schedule first
+            x["team"],                             # tie-break: keep same team together
+            -x["value"],                           # within team: most valuable first
+        ))
         return jsonify({
             "weeks":       weeks,
             "position":    position,
