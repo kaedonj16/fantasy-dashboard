@@ -9931,7 +9931,7 @@ function renderTeamDetails(data) {
           },
           bgcolor: 'rgba(0,0,0,0)'
         },
-        margin: { l: 40, r: 40, t: 20, b: 20 },
+        margin: { l: 20, r: 20, t: 10, b: 10 },
         showlegend: false,
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
