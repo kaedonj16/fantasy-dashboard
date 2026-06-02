@@ -689,9 +689,9 @@ BASE_HTML = """
           <span class="footer-tagline">Tools for obsessive commissioners.</span>
         </div>
         <div class="site-footer-links">
-          <a href="/about">About</a>
+          <a href="{about_url}">About</a>
           <a href="{privacy_url}">Privacy</a>
-          <a href="/terms">Terms</a>
+          <a href="{terms_url}">Terms</a>
           <a href="{faq_url}">FAQ</a>
           <a href="{support_url}">Support the site</a>
           <a href="{yt_url}" target="_blank" rel="noopener">YouTube</a>
@@ -1775,10 +1775,12 @@ def render_page(
         ad_top="" if is_premium else _AD_TOP,
         ad_bottom="" if is_premium else _AD_BOTTOM,
         adsense_init="" if is_premium else _AD_INIT,
-        privacy_url="/privacy",
-        faq_url="/faq",
-        support_url="/support",
-        contact_url="/contact",
+        about_url=f"/{platform}/{season}/{league_id}/about" if (league_id and platform and season) else "/about",
+        privacy_url=f"/{platform}/{season}/{league_id}/privacy" if (league_id and platform and season) else "/privacy",
+        terms_url=f"/{platform}/{season}/{league_id}/terms" if (league_id and platform and season) else "/terms",
+        faq_url=f"/{platform}/{season}/{league_id}/faq" if (league_id and platform and season) else "/faq",
+        support_url=f"/{platform}/{season}/{league_id}/support" if (league_id and platform and season) else "/support",
+        contact_url=f"/{platform}/{season}/{league_id}/contact" if (league_id and platform and season) else "/contact",
         yt_url="https://youtube.com/@hoodiekj",
         app_js_v=_APP_JS_V,
         paywall_js_v=_PAYWALL_JS_V,
