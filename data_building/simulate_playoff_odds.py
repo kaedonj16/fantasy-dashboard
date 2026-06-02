@@ -227,17 +227,23 @@ def simulate_with_swap(
 
 def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
     """
-    Build (ppg_map, pos_map) using the same priority logic as _estimate_from_rosters:
-      1. FantasyPros season projections
-      2. Prior-season usage_rows cache
-      3. pos_map from DB (position fallback for rookies)
+    Build (ppg_map, pos_map).
+
+    Priority order:
+      1. Sleeper weekly projections for the upcoming week — same source used by
+         _blend_weekly_projections, so simulate_with_swap sees the same player
+         PPGs as the base simulation's team-avg blend.
+      2. FantasyPros season projections — preseason baseline or gap-filler.
+      3. Prior-season usage_rows cache — fills any remaining gaps.
 
     Returns:
         ppg_map  — {str(player_id): {"ppg": float, "pos": str}}
         pos_map  — {str(player_id): str(position)}   (position fallback)
     """
-    season = int(ctx.get("season") or 0)
+    season       = int(ctx.get("season") or 0)
+    current_week = int(ctx.get("current_week") or 0)
     _ss    = ctx.get("scoring_settings") or {}
+    _rss   = ctx.get("raw_scoring_settings") or {}
     rec_pts = float(_ss.get("rec") or _ss.get("pointsPerReception") or 0)
     if rec_pts >= 1.0:
         scoring  = "ppr"
@@ -249,16 +255,50 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
         scoring  = "std"
         ppg_key  = "std_scoring_ppg"
 
+    # pos_map built first — needed as position fallback for all PPG sources
+    pos_map: dict = {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT player_id, position FROM player_values WHERE position IS NOT NULL"
+            ).fetchall()
+        pos_map = {str(r["player_id"]): str(r["position"]).upper() for r in rows}
+    except Exception:
+        pass
+
     ppg_map: dict = {}
+
+    # Priority 1: Sleeper weekly projections (in-season — same source as the
+    # team-avg blend so simulate_with_swap is consistent with the base sim)
+    if current_week > 0 and season > 0:
+        try:
+            from utils.utils import fetch_week_projections, pick_proj_variant
+            multi_map = fetch_week_projections(season, current_week + 1, _rss)
+            variant   = pick_proj_variant(_rss)
+            for pid, variants in (multi_map or {}).items():
+                if not isinstance(variants, dict):
+                    continue
+                pts = variants.get(variant) or variants.get("ppr") or 0.0
+                if pts > 0:
+                    ppg_map[str(pid)] = {
+                        "ppg": float(pts),
+                        "pos": pos_map.get(str(pid), ""),
+                    }
+        except Exception:
+            pass
+
+    # Priority 2: FantasyPros season projections (preseason or gap-filler)
     try:
         from data_building.fetch_projections import fetch_fp_season_projections
         fp_data = fetch_fp_season_projections(season, scoring)
         for pid, info in fp_data.items():
-            if info.get("ppg", 0) > 0:
+            if str(pid) not in ppg_map and info.get("ppg", 0) > 0:
                 ppg_map[str(pid)] = {"ppg": info["ppg"], "pos": info.get("pos", "")}
     except Exception:
         pass
 
+    # Priority 3: Prior-season usage cache
     try:
         import os as _os, json as _json
         from datetime import date as _date
@@ -275,19 +315,9 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
                         continue
                     ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
                     pos = str(p.get("position") or "").upper()
-                    ppg_map[pid] = {"ppg": ppg, "pos": pos}
+                    if ppg > 0:
+                        ppg_map[pid] = {"ppg": ppg, "pos": pos}
                 break
-    except Exception:
-        pass
-
-    pos_map: dict = {}
-    try:
-        from dashboard_services.db import get_conn
-        with get_conn() as conn:
-            rows = conn.execute(
-                "SELECT player_id, position FROM player_values WHERE position IS NOT NULL"
-            ).fetchall()
-        pos_map = {str(r["player_id"]): str(r["position"]).upper() for r in rows}
     except Exception:
         pass
 

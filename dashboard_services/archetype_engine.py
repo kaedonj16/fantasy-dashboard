@@ -163,15 +163,25 @@ def _ppg_lineup(
         elif s in SKILL_POS:
             fixed_slots[s] = fixed_slots.get(s, 0) + 1
 
+    # Position-average fallback (mirrors simulate_playoff_odds._position_aware_lineup)
+    _pos_totals: Dict[str, List] = {}
+    for _info in ppg_map.values():
+        _p, _g = str(_info.get("pos") or "").upper(), float(_info.get("ppg") or 0)
+        if _p and _g > 0:
+            _pos_totals.setdefault(_p, [0.0, 0])
+            _pos_totals[_p][0] += _g
+            _pos_totals[_p][1] += 1
+    pos_fallback = {p: v[0] / v[1] for p, v in _pos_totals.items() if v[1] > 0}
+
     by_pos: Dict[str, List[float]] = {}
     for pid in pids:
         info = ppg_map.get(str(pid))
         if info:
             pos = str(info.get("pos") or "").upper()
-            ppg = float(info.get("ppg") or 0) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+            ppg = float(info.get("ppg") or 0) or pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
         else:
             pos = pos_map.get(str(pid), "")
-            ppg = _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+            ppg = pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
         if pos in SKILL_POS:
             by_pos.setdefault(pos, []).append(ppg)
 
