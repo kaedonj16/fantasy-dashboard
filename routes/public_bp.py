@@ -1,7 +1,7 @@
 """
 Public / static-content routes (no league context required).
 
-Routes: /privacy, /support, /faq, /contact, /sw.js, /ads.txt
+Routes: /privacy, /support, /faq, /contact, /about, /terms, /sw.js, /ads.txt
 Also handles the league-context variants: /<platform>/<season>/<league_id>/...
 """
 from __future__ import annotations
@@ -78,6 +78,8 @@ def sitemap_xml():
         ("/faq", "0.4", "monthly"),
         ("/support", "0.4", "monthly"),
         ("/contact", "0.3", "monthly"),
+        ("/about", "0.4", "monthly"),
+        ("/terms", "0.3", "monthly"),
     ]
 
     import xml.etree.ElementTree as ET
@@ -414,3 +416,155 @@ def contact_page(platform: Optional[str] = None, season: Optional[int] = None,
         </div>
         """
     return _render("BR Fantasy Contact", league_id or None, "contact", body, platform, season)
+
+
+# ── About ─────────────────────────────────────────────────────────────────────
+
+@public_bp.route("/about")
+@public_bp.route("/<platform>/<int:season>/<league_id>/about")
+def about_page(platform: Optional[str] = None, season: Optional[int] = None,
+               league_id: Optional[str] = None):
+    body = """
+        <div class="static-page">
+          <div class="static-card-page">
+
+            <h1 class="static-hero-title">About BR Fantasy</h1>
+
+            <div class="static-section">
+              <div class="static-section-title">What Is This?</div>
+              <p>
+                BR Fantasy is a custom fantasy football dashboard built on top of public
+                Sleeper API data. It transforms raw league stats into power rankings,
+                weekly matchup previews, trade analysis, graphs, standings, and more &mdash;
+                all in one place.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Who Built It?</div>
+              <p>
+                This project was created by
+                <a href="https://youtube.com/@hoodiekj" target="_blank" rel="noopener">hoodiekj</a>,
+                a fantasy football player and developer who wanted better tools than what
+                the major platforms provide. What started as a personal league tool has
+                grown into a full-featured dashboard used by leagues across the country.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Features</div>
+              <ul style="margin-left:20px; font-size:14px; line-height:1.8;">
+                <li>Power rankings &amp; weekly performance scoring</li>
+                <li>Matchup previews with projected scores</li>
+                <li>Roster &amp; trade intelligence</li>
+                <li>Dynasty breakout candidate rankings</li>
+                <li>Full standings, graphs, and historical data</li>
+                <li>Trade database powered by real league activity</li>
+              </ul>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Data Sources</div>
+              <p>
+                All fantasy data is sourced from public Sleeper and ESPN APIs.
+                Player projections and rankings are sourced from publicly available
+                fantasy football data providers. No private or proprietary data
+                is used without permission.
+              </p>
+            </div>
+
+            <div class="highlight-box">
+              Questions, feedback, or feature ideas? Reach out on the
+              <a href="/contact">Contact</a> page.
+            </div>
+
+          </div>
+        </div>
+        """
+    return _render("About BR Fantasy", league_id or None, "about", body, platform, season)
+
+
+# ── Terms ─────────────────────────────────────────────────────────────────────
+
+@public_bp.route("/terms")
+@public_bp.route("/<platform>/<int:season>/<league_id>/terms")
+def terms_page(platform: Optional[str] = None, season: Optional[int] = None,
+               league_id: Optional[str] = None):
+    body = """
+        <div class="static-page">
+          <div class="static-card-page">
+
+            <h1 class="static-hero-title">Terms of Service</h1>
+
+            <div class="static-section">
+              <div class="static-section-title">Acceptance of Terms</div>
+              <p>
+                By accessing or using BR Fantasy, you agree to be bound by these Terms
+                of Service. If you do not agree to these terms, please do not use the site.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Use of the Service</div>
+              <p>
+                BR Fantasy is provided for personal, non-commercial use. You agree not to
+                misuse the service, attempt to gain unauthorized access to any part of the
+                system, or use automated tools to scrape or overload the site.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Data &amp; Privacy</div>
+              <p>
+                By using this site you acknowledge that league data entered (such as
+                Sleeper league IDs and usernames) may be cached and used to improve
+                platform-wide features like trade analytics. See the
+                <a href="/privacy">Privacy Policy</a> for full details.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Intellectual Property</div>
+              <p>
+                All original code, design, and content on BR Fantasy are the property of
+                their respective creators. Sleeper&reg; is a registered trademark of
+                Sleeper Inc. and is not affiliated with BR Fantasy.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Disclaimer of Warranties</div>
+              <p>
+                BR Fantasy is provided &ldquo;as is&rdquo; without warranties of any kind.
+                Projections, rankings, and trade values are for informational purposes only
+                and do not constitute financial or sports betting advice. We make no
+                guarantees about the accuracy, reliability, or availability of the service.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Limitation of Liability</div>
+              <p>
+                BR Fantasy and its operators shall not be liable for any indirect,
+                incidental, or consequential damages arising from your use of the site.
+                Your use of BR Fantasy is at your own risk.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Changes to These Terms</div>
+              <p>
+                We reserve the right to update these Terms at any time. Continued use of
+                the site after changes are posted constitutes acceptance of the new Terms.
+              </p>
+            </div>
+
+            <div class="highlight-box">
+              Questions about these terms? Reach out on the
+              <a href="/contact">Contact</a> page.
+            </div>
+
+          </div>
+        </div>
+        """
+    return _render("BR Fantasy Terms", league_id or None, "terms", body, platform, season)
