@@ -8619,52 +8619,6 @@ function _buildComparePPGRow(p1, p2) {
   `;
 }
 
-function _buildCompareSoSRow(p1, p2) {
-  const s1 = p1.sos, s2 = p2.sos;
-  if (!s1 && !s2) return '';
-
-  const total = (s1 && s1.total) || (s2 && s2.total) || 32;
-
-  // Easier schedule (lower rank) wins the start/sit edge.
-  let edge = 0;
-  if (s1 && s2) edge = s1.rank < s2.rank ? 1 : (s2.rank < s1.rank ? 2 : 0);
-  else if (s1) edge = 1;
-  else if (s2) edge = 2;
-
-  function cell(s, isWinner) {
-    if (!s) {
-      return `<div class="compare-sos-cell">
-        <div class="compare-sos-rank" style="color:var(--text-muted);">—</div>
-        <div class="compare-sos-label">No schedule data</div>
-      </div>`;
-    }
-    const frac = s.rank / (s.total || 32);
-    const color = frac <= 0.25 ? '#22c55e' : frac <= 0.50 ? '#84cc16' : frac <= 0.75 ? '#f59e0b' : '#ef4444';
-    const ease = Math.round(s.ease);
-    return `<div class="compare-sos-cell${isWinner ? ' compare-sos-cell--edge' : ''}">
-      ${isWinner ? '<div class="compare-sos-edge-tag">Easier ✓</div>' : ''}
-      <div class="compare-sos-rank" style="color:${color};">#${s.rank}<span class="compare-sos-total">/${s.total}</span></div>
-      <div class="compare-sos-ease-wrap"><div class="compare-sos-ease-bar" style="width:${ease}%;background:${color};"></div></div>
-      <div class="compare-sos-label">Ease ${ease} · ${s.position} matchups</div>
-    </div>`;
-  }
-
-  const wkLabel = (s) => s ? `Wk ${s.week_start}–${s.week_end}` : '';
-  const wk = wkLabel(s1) || wkLabel(s2);
-
-  return `
-    <hr class="pm-section-divider">
-    <div class="pm-section-header">
-      <span class="pm-section-label">Strength of Schedule</span>
-      <span class="compare-sos-sub">${wk} · #1 = easiest</span>
-    </div>
-    <div class="compare-sos-row">
-      ${cell(s1, edge === 1)}
-      <div class="compare-sos-divider"></div>
-      ${cell(s2, edge === 2)}
-    </div>
-  `;
-}
 
 function _buildCompareHeroHTML(p) {
   const val1qb = p.stats?.value || 0;
@@ -9021,8 +8975,6 @@ function openComparisonView(p1, p2) {
         <div class="compare-hero-player" id="compareHero1" data-name="${p1.full_name || ''}">${_buildCompareHeroHTML(p1)}</div>
         <div class="compare-hero-player" id="compareHero2" data-name="${p2.full_name || ''}">${_buildCompareHeroHTML(p2)}</div>
       </div>
-
-      ${_buildCompareSoSRow(p1, p2)}
 
       <hr class="pm-section-divider">
 

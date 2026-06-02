@@ -9117,23 +9117,35 @@ def api_start_sit_options():
 
     current_week = int(ctx.get("current_week") or 0)
 
-    # ── FPTS-against defense ranks (replaces yardage-based matchup adj) ──────
+    # ── FPTS-against data (for "Def vs pos" pts/gm display) ──────────────────
     fpts_against: dict = {}
     try:
         fpts_against = _compute_fpts_against(season)
     except Exception:
         pass
 
+    # ── Z-score matchup rank tables (rank 1 = easiest, one per position) ─────
+    _z_rank_tables: dict = {}
+    _z_total_map: dict = {}
+    for _zpos in ("QB", "RB", "WR", "TE"):
+        try:
+            _rm, _tot, _ri, _iz = _matchup_rank_table(season, _zpos)
+            _z_rank_tables[_zpos] = _rm
+            _z_total_map[_zpos] = _tot
+        except Exception:
+            _z_rank_tables[_zpos] = {}
+            _z_total_map[_zpos] = 32
+
+    # Fallback rank cache (fpts-against) used when z-score data is absent
     _def_rank_cache: dict = {}
-    def _get_def_rank(team: str, pos: str):
+    def _get_def_rank_fallback(team: str, pos: str):
         if pos not in _def_rank_cache:
             vals = [(t, fpts_against.get(t, {}).get(pos, 0.0)) for t in fpts_against]
             vals.sort(key=lambda x: x[1], reverse=True)
             _def_rank_cache[pos] = {t: i + 1 for i, (t, _) in enumerate(vals)}
         rank  = _def_rank_cache.get(pos, {}).get(team)
         total = len(fpts_against) or 32
-        fpts_val = round(fpts_against.get(team, {}).get(pos, 0.0), 1)
-        return rank, total, fpts_val
+        return rank, total
 
     # ── Opponent map from current week schedule ───────────────────────────────
     opponent_map: dict = {}
@@ -9198,7 +9210,17 @@ def api_start_sit_options():
 
         s_ppg         = season_ppg.get(pid, 0.0)
         proj_pts      = round(float(proj_map.get(pid) or proj_map.get(str(pid)) or 0.0), 1)
-        def_rank, def_total, fpts_vs = _get_def_rank(opponent, pos) if opponent else (None, 32, 0.0)
+        fpts_vs = round(fpts_against.get(opponent, {}).get(pos, 0.0), 1) if opponent else 0.0
+        # Use z-score matchup rank (rank 1 = easiest); fall back to fpts-against rank
+        _z_opp = _norm_sched_team(opponent) if opponent else ""
+        _z_map = _z_rank_tables.get(pos, {})
+        if _z_opp and _z_map:
+            def_rank  = _z_map.get(_z_opp) or _z_map.get(opponent)
+            def_total = _z_total_map.get(pos, 32)
+        elif opponent:
+            def_rank, def_total = _get_def_rank_fallback(opponent, pos)
+        else:
+            def_rank, def_total = None, 32
 
         # Matchup score: prefer FPTS-against when available
         if not on_bye and fpts_vs > 0 and s_ppg > 0:
@@ -18331,38 +18353,11 @@ def api_player_details(player_id: str):
         except Exception:
             pass
 
-        # Strength of schedule for the upcoming weeks — powers the start/sit
-        # comparison in the player-compare modal. rank 1 = easiest schedule.
-        sos = None
-        try:
-            _pos = (player_meta.get("pos") or "").upper()
-            _team = _norm_sched_team(player_meta.get("team"))
-            if _pos in {"QB", "RB", "WR", "TE"} and _team:
-                _state = get_nfl_state() or {}
-                _cur_wk = int(_state.get("week") or 1)
-                _styp = (_state.get("season_type") or "").lower()
-                # In the offseason/preseason there's no "current" week yet, so
-                # rate the whole upcoming season; in-season look ahead ~6 weeks.
-                _start_wk = _cur_wk if _styp in ("reg", "post") else 1
-                _end_wk = min(18, _start_wk + 5) if _styp in ("reg", "post") else 18
-                _weeks = list(range(_start_wk, _end_wk + 1))
-                _tbl = _team_sos_table(season, _pos, _weeks)
-                _row = _tbl.get(_team)
-                if _row:
-                    sos = {
-                        "rank": _row[0], "total": _row[1], "ease": _row[2],
-                        "week_start": _start_wk, "week_end": _end_wk,
-                        "position": _pos,
-                    }
-        except Exception:
-            logger.debug("[api_player_details] SoS computation failed", exc_info=True)
-
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
             "position": player_meta.get("pos"),
             "team": player_meta.get("team"),
-            "sos": sos,
             "age": player_value.get("age"),
             "pos_rank": player_value.get("pos_rank"),
             "pos_rank_label": player_value.get("pos_rank_label"),
