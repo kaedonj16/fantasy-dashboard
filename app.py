@@ -6698,12 +6698,12 @@ def build_activity_body(ctx: dict) -> str:
         injury_html = render_injury_accordion(injury_df)
     else:
         injury_html = (
-            "<div class=’card’>"
-            "  <div class=’card-body’>"
-            "    <div class=’bract-empty-state’>"
-            "      <div class=’bract-empty-icon’><i class=’fa-solid fa-shield-halved’ style=’font-size:28px;color:var(--muted);opacity:.5;’></i></div>"
-            "      <div class=’bract-empty-title’>No injury updates right now</div>"
-            "      <div class=’bract-empty-copy’>Either the feed is quiet or there are no currently tracked injury updates for this view.</div>"
+            "<div class='card'>"
+            "  <div class='card-body'>"
+            "    <div class='bract-empty-state'>"
+            "      <div class='bract-empty-icon'><i class='fa-solid fa-shield-halved' style='font-size:28px;color:var(--muted);opacity:.5;'></i></div>"
+            "      <div class='bract-empty-title'>No injury updates right now</div>"
+            "      <div class='bract-empty-copy'>Either the feed is quiet or there are no currently tracked injury updates for this view.</div>"
             "    </div>"
             "  </div>"
             "</div>"
@@ -6711,12 +6711,12 @@ def build_activity_body(ctx: dict) -> str:
 
     if not activity_html:
         activity_html = (
-            "<div class=’card’>"
-            "  <div class=’card-body’>"
-            "    <div class=’bract-empty-state’>"
-            "      <div class=’bract-empty-icon’><i class=’fa-solid fa-arrows-rotate’ style=’font-size:28px;color:var(--muted);opacity:.5;’></i></div>"
-            "      <div class=’bract-empty-title’>No recent activity yet</div>"
-            "      <div class=’bract-empty-copy’>When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns.</div>"
+            "<div class='card'>"
+            "  <div class='card-body'>"
+            "    <div class='bract-empty-state'>"
+            "      <div class='bract-empty-icon'><i class='fa-solid fa-arrows-rotate' style='font-size:28px;color:var(--muted);opacity:.5;'></i></div>"
+            "      <div class='bract-empty-title'>No recent activity yet</div>"
+            "      <div class='bract-empty-copy'>When trades and waiver claims come through, they'll show up here with value context and team-by-team breakdowns.</div>"
             "    </div>"
             "  </div>"
             "</div>"
