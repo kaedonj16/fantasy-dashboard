@@ -9227,17 +9227,22 @@ def api_start_sit_options():
         else:
             def_rank, def_total = None, 32
 
-        # Matchup score: prefer FPTS-against when available
-        if not on_bye and fpts_vs > 0 and s_ppg > 0:
+        # Weekly start/sit score. Projection is the best single signal for a
+        # given week (it already bakes in the matchup), so prefer it. Fall back
+        # to matchup-adjusted season PPG, then to dynasty value so the list
+        # still ranks sensibly before weekly projections/stats exist.
+        if on_bye:
+            score = 0.0
+        elif proj_pts > 0:
+            score = proj_pts
+        elif s_ppg > 0 and fpts_vs > 0:
             league_avg_fpts = round(
                 sum(fpts_against.get(t, {}).get(pos, 0.0) for t in fpts_against) / max(len(fpts_against), 1), 1
             )
             adj = min(1.25, max(0.75, fpts_vs / max(league_avg_fpts, 1.0)))
             score = s_ppg * adj
-        elif not on_bye and s_ppg > 0:
+        elif s_ppg > 0:
             score = s_ppg
-        elif on_bye:
-            score = 0.0
         else:
             score = float(row.get(_vf_ss) or row.get("value") or 0) * 0.01
 
