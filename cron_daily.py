@@ -298,8 +298,16 @@ else:
     # ------------------------------------------------------------------ #
     # Step 4b: Defense-vs-position matchup ratings (z-scores)             #
     # Powers the Schedule Assistant rankings / ease scores.               #
+    # Only rebuilt on Wednesdays during the regular/post season so each   #
+    # week's new game data is captured after the Tuesday final box-score  #
+    # update. Skipped entirely in the offseason.                          #
     # ------------------------------------------------------------------ #
-    _run_step(f"""
+    if not in_season:
+        print("[cron] Matchup ratings skipped - offseason")
+    elif today_weekday != 2:  # 0=Mon … 2=Wed … 6=Sun
+        print(f"[cron] Matchup ratings skipped - not Wednesday (weekday={today_weekday})")
+    else:
+        _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.matchup_ratings import build_matchup_ratings, out_path
 res = build_matchup_ratings({season!r})
