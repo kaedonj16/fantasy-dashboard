@@ -31,6 +31,17 @@ _N_SIMS       = 10_000
 _BENCH_SLOTS  = {"BN", "IR", "TAXI"}
 _WEEKLY_BLEND = 0.30   # in-season weight on weekly projections vs historical avg
 
+# Weekly fantasy team totals are right-skewed (boom weeks, thin left tail),
+# not Gaussian. We model each team's weekly score as a skew-normal with a
+# fixed positive shape, rescaled to preserve the team's (mean, std). alpha=2
+# gives a realistic skewness of ~0.45 while keeping the inputs the rest of the
+# model already computes.
+_SKEW_ALPHA   = 2.0
+_SKEW_DELTA   = _SKEW_ALPHA / math.sqrt(1.0 + _SKEW_ALPHA * _SKEW_ALPHA)
+# Mean/std of the raw skew-normal latent z (used to standardize before scaling)
+_SKEW_Z_MEAN  = _SKEW_DELTA * math.sqrt(2.0 / math.pi)
+_SKEW_Z_STD   = math.sqrt(1.0 - 2.0 * _SKEW_DELTA * _SKEW_DELTA / math.pi)
+
 # Conservative defaults for players with no prior-season stats (rookies, etc.)
 _ROOKIE_PPG: dict[str, float] = {
     "QB": 14.0,
@@ -1033,6 +1044,42 @@ def _divisional_schedule(
 # Monte Carlo engine (vectorised)
 # ---------------------------------------------------------------------------
 
+def _sample_scores(
+    rng: "np.random.Generator",
+    mean: float,
+    std: float,
+    n_sims: int,
+) -> "np.ndarray":
+    """Draw n_sims weekly scores from a right-skewed distribution.
+
+    Two improvements over a plain Normal draw:
+
+    1. Skew-normal shape — weekly fantasy totals are right-skewed (occasional
+       boom weeks, a thin floor), so a Gaussian understates upside ceilings.
+       The latent skew-normal z = delta*|u0| + sqrt(1-delta^2)*u1 is
+       standardised and rescaled to the requested (mean, std), so the mean and
+       variance are preserved exactly while injecting realistic positive skew.
+
+    2. Antithetic variates — the symmetric component u1 is mirrored between the
+       first and second half of the sims (z uses +u1 / -u1 over the same |u0|).
+       Sim i and sim i+half are therefore mirror seasons, which cancels much of
+       the sampling noise in win counts and points-for, tightening playoff-odds
+       estimates (and trade deltas) without raising n_sims.
+    """
+    half = (n_sims + 1) // 2
+    u0 = rng.standard_normal(half).astype(np.float32)
+    u1 = rng.standard_normal(half).astype(np.float32)
+    c  = np.float32(math.sqrt(1.0 - _SKEW_DELTA * _SKEW_DELTA))
+    d  = np.float32(_SKEW_DELTA)
+    half_normal = np.abs(u0)
+    z_pos = d * half_normal + c * u1
+    z_neg = d * half_normal - c * u1          # antithetic on the symmetric part
+    z = np.concatenate([z_pos, z_neg])[:n_sims]
+    z_std = (z - np.float32(_SKEW_Z_MEAN)) / np.float32(_SKEW_Z_STD)
+    scores = np.float32(mean) + np.float32(std) * z_std
+    return np.maximum(scores, 0).astype(np.float32)
+
+
 def _run_mc(
     teams: list[dict],
     matchups_by_week: dict[int, list[tuple[int, int]]],
@@ -1064,12 +1111,8 @@ def _run_mc(
                 continue
             games_per_team[ia] += 1
             games_per_team[ib] += 1
-            sa = np.maximum(
-                rng.normal(avgs[ia], stds[ia], n_sims).astype(np.float32), 0
-            )
-            sb = np.maximum(
-                rng.normal(avgs[ib], stds[ib], n_sims).astype(np.float32), 0
-            )
+            sa = _sample_scores(rng, avgs[ia], stds[ia], n_sims)
+            sb = _sample_scores(rng, avgs[ib], stds[ib], n_sims)
             a_wins = sa > sb
             wins[:, ia] += a_wins.astype(np.float32)
             wins[:, ib] += (~a_wins).astype(np.float32)
