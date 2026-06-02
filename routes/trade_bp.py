@@ -12,7 +12,7 @@ from typing import Optional
 
 from flask import Blueprint, session
 
-from dashboard_services.subscriptions import has_premium_access
+from dashboard_services.subscriptions import has_premium_access, has_premium_for_viewer
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
         viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or [])
         viewer_roster_id = viewer.get("viewer_roster_id") or ""
-        has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
+        has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
         _rp = ctx.get("roster_positions") or []
         _is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
         body = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
@@ -63,7 +63,7 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
 def page_trade_intel(platform: str, season: int, league_id: str):
     from app import render_page
     user_id = session.get("viewer_username")
-    has_premium = has_premium_access(user_id, league_id, platform)
+    has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
     try:
         from app import get_league_ctx_from_cache
         _ti_ctx = get_league_ctx_from_cache(platform, league_id, season)
