@@ -383,7 +383,7 @@ def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Op
     proj_path = Path(path_week_proj(season, w))
     if not proj_path.exists() or force_refresh:
         try:
-            get_week_projections_cached(season, w, fetch_week_from_tank01, force_refresh=force_refresh)
+            get_week_projections_cached(season, w, fetch_week_projections, force_refresh=force_refresh)
         except Exception as e:
             print(f"[projections] fetch failed for {season} w{w}: {e}")
 
@@ -671,6 +671,85 @@ def fetch_week_from_tank01(season: int, week: int, raw_scoring_settings: dict = 
     proj_map = map_weekly_projections_to_sleeper(body, players_idx)
     print(f"✅ Retrieved {len(proj_map)} player projections for Week {week}")
     return proj_map
+
+
+def fetch_week_from_sleeper(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
+    """
+    Fetch Sleeper's own weekly projections — same source/shape as the actual
+    stats the app already consumes, keyed by Sleeper player_id (no ID mapping
+    needed). Returns the standard multi-variant dict:
+
+      { sleeper_id: {"ppr": X, "half_ppr": Y, "std": Z, "tep": A,
+                     "6pt_ppr": B, "6pt_half": C, "6pt_tep": D} }
+
+    Returns {} on any failure so callers can fall back to Tank01.
+    """
+    url = f"https://api.sleeper.app/v1/projections/nfl/regular/{season}/{week}"
+    try:
+        print(f"📡 Fetching Sleeper projections for {season} Week {week}...")
+        resp = requests.get(url, timeout=20)
+        if resp.status_code != 200:
+            print(f"⚠️ Sleeper projections error {resp.status_code}: {resp.text[:160]}")
+            return {}
+        data = resp.json()
+    except Exception as e:
+        print(f"⚠️ Sleeper projections fetch failed: {e}")
+        return {}
+
+    # Sleeper returns either a dict {pid: {stats...}} or a list of row objects.
+    rows = []
+    if isinstance(data, dict):
+        for pid, entry in data.items():
+            if isinstance(entry, dict):
+                rows.append((str(pid), entry))
+    elif isinstance(data, list):
+        for entry in data:
+            if isinstance(entry, dict):
+                pid = str(entry.get("player_id") or "")
+                if pid:
+                    rows.append((pid, entry))
+
+    players_index = load_players_index() or {}
+    TEP_BONUS = 0.5
+    out: dict = {}
+    for pid, entry in rows:
+        # Stats may be nested under "stats" or at the top level.
+        st = entry.get("stats") if isinstance(entry.get("stats"), dict) else entry
+        ppr  = float(st.get("pts_ppr")      or 0)
+        half = float(st.get("pts_half_ppr") or 0)
+        std  = float(st.get("pts_std")      or 0)
+        if ppr == 0 and half == 0 and std == 0:
+            continue
+
+        pos = players_index.get(pid, {}).get("pos", "")
+        proj_pass_td = float(st.get("pass_td") or 0)
+        td_bonus = proj_pass_td * 2  # 6pt vs 4pt passing TD
+        tep_bonus = 0.0
+        if pos == "TE":
+            tep_bonus = float(st.get("rec") or 0) * TEP_BONUS
+
+        out[pid] = {
+            "ppr":      round(ppr, 2),
+            "half_ppr": round(half, 2),
+            "std":      round(std, 2),
+            "tep":      round(ppr + tep_bonus, 2),
+            "6pt_ppr":  round(ppr + td_bonus, 2),
+            "6pt_half": round(half + td_bonus, 2),
+            "6pt_tep":  round(ppr + tep_bonus + td_bonus, 2),
+        }
+
+    print(f"✅ Retrieved {len(out)} Sleeper projections for Week {week}")
+    return out
+
+
+def fetch_week_projections(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
+    """Prefer Sleeper's projections (same source as actual stats); fall back to
+    Tank01 when Sleeper returns nothing."""
+    proj = fetch_week_from_sleeper(season, week, raw_scoring_settings)
+    if proj:
+        return proj
+    print("ℹ️ Sleeper projections empty — falling back to Tank01")
+    return fetch_week_from_tank01(season, week, raw_scoring_settings)
 
 
 def map_weekly_projections_to_sleeper(

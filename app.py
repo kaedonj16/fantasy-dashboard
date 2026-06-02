@@ -120,6 +120,7 @@ from utils.utils import (
     clear_weekly_cache_for_league,
     count_roster_positions,
     fetch_week_from_tank01,
+    fetch_week_projections,
     get_live_game_ids_for_today,
     get_week_projections_cached,
     load_idp_index,
@@ -3086,7 +3087,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                     get_week_projections_cached(
                         current_season,
                         current_week,
-                        fetch_week_from_tank01,
+                        fetch_week_projections,
                         force_refresh=True,
                     )
                 except Exception as e:
