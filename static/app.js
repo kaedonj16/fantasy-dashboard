@@ -7494,7 +7494,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
       let summaryHTML;
       if (isProjection) {
         const projPpg = projGames > 0 ? (projTotalPts / projGames).toFixed(1) : '0.0';
-        summaryHTML = `<span class="game-log-year-summary">~${projPpg} ppg &nbsp;<span style="opacity:0.65;">(projected)</span></span>`;
+        summaryHTML = `<span class="game-log-year-summary">~${projPpg} ppg &nbsp;<span style="opacity:0.65;"></span></span>`;
       } else {
         summaryHTML = `<span class="game-log-year-summary">${gamesPlayed}g &nbsp;·&nbsp; ${ppg} ppg &nbsp;·&nbsp; ${fmtPts(totalFantasyPts)} pts</span>`;
       }
