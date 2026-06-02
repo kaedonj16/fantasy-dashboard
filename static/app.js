@@ -7144,7 +7144,10 @@ function pmSwitchTab(tab) {
         </div>`;
       return;
     }
-    fetch(`/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}`)
+    const _boMatch = window.location.pathname.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
+    const _boLeague = _boMatch ? _boMatch[3] : '';
+    const _boPlatform = _boMatch ? _boMatch[1] : 'sleeper';
+    fetch(`/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&league_id=${encodeURIComponent(_boLeague)}&platform=${encodeURIComponent(_boPlatform)}`)
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(data => {
         if (!panel.isConnected) return;
@@ -9538,11 +9541,13 @@ function openBreakoutModal(playerId, playerName) {
   document.body.appendChild(overlay);
   document.body.style.overflow = 'hidden';
 
-  // Extract season from URL
+  // Extract season/league/platform from URL (/<platform>/<season>/<league_id>/...)
   const pathParts = window.location.pathname.split('/').filter(p => p);
   const season = pathParts[1] || new Date().getFullYear();
+  const _bkPlatform = (pathParts[0] === 'sleeper' || pathParts[0] === 'espn') ? pathParts[0] : 'sleeper';
+  const _bkLeague = pathParts[2] || '';
 
-  fetch(`/api/breakout/player/${playerId}?season=${season}`)
+  fetch(`/api/breakout/player/${playerId}?season=${season}&league_id=${encodeURIComponent(_bkLeague)}&platform=${encodeURIComponent(_bkPlatform)}`)
     .then(res => {
       if (!res.ok) {
         console.error('Breakout API request failed:', res.status, res.statusText);
