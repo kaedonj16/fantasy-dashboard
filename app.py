@@ -9115,7 +9115,7 @@ def api_start_sit_options():
         if pid:
             rows_by_id[pid] = row
 
-    current_week = int(ctx.get("current_week") or 0)
+    current_week = int(ctx.get("current_week") or 1)  # default week 1 in offseason
 
     # ── FPTS-against data (for "Def vs pos" pts/gm display) ──────────────────
     fpts_against: dict = {}
@@ -9205,8 +9205,9 @@ def api_start_sit_options():
         player_name   = row.get("name") or meta.get("name") or f"Player {pid}"
         team          = (row.get("team") or meta.get("team") or "").upper()
         opponent      = opponent_map.get(team, "")
-        opp_label     = opp_label_map.get(team, "BYE" if current_week > 0 else "")
-        on_bye        = current_week > 0 and team not in opponent_map
+        # Only mark as BYE/on-bye when the schedule actually loaded (opponent_map non-empty)
+        on_bye    = bool(opponent_map) and team not in opponent_map
+        opp_label = opp_label_map.get(team, "BYE" if on_bye else "")
 
         s_ppg         = season_ppg.get(pid, 0.0)
         proj_pts      = round(float(proj_map.get(pid) or proj_map.get(str(pid)) or 0.0), 1)
