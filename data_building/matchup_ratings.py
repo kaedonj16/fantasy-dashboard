@@ -107,6 +107,31 @@ def _pick_col(df, *names):
     return None
 
 
+def _normalize_weekly(d, pd):
+    """Reduce a weekly-stats frame to a common schema, tolerating the differing
+    column names of nfl_data_py vs. the raw nflverse `stats_player_week` asset.
+    Returns columns: season, week, season_type, pos, team, opp, pts (or None)."""
+    c_seas = _pick_col(d, "season")
+    c_week = _pick_col(d, "week")
+    c_pos  = _pick_col(d, "position", "pos")
+    c_team = _pick_col(d, "recent_team", "team")
+    c_opp  = _pick_col(d, "opponent_team", "opponent", "opp")
+    c_pts  = _pick_col(d, "fantasy_points_ppr")
+    c_styp = _pick_col(d, "season_type")
+    if not all((c_seas, c_week, c_pos, c_team, c_opp, c_pts)):
+        print(f"[matchup_ratings] unusable columns: {list(d.columns)[:25]}")
+        return None
+    return pd.DataFrame({
+        "season": pd.to_numeric(d[c_seas], errors="coerce"),
+        "week": pd.to_numeric(d[c_week], errors="coerce"),
+        "season_type": d[c_styp].astype(str).str.upper() if c_styp else "REG",
+        "pos": d[c_pos].astype(str).str.upper(),
+        "team": d[c_team].map(_norm_team),
+        "opp": d[c_opp].map(_norm_team),
+        "pts": pd.to_numeric(d[c_pts], errors="coerce").fillna(0.0),
+    })
+
+
 def build_matchup_ratings(season: int, through_week: int | None = None, save: bool = True) -> dict:
     """Compute and (optionally) cache z-score matchup ratings for `season`."""
     import pandas as pd
@@ -119,41 +144,28 @@ def build_matchup_ratings(season: int, through_week: int | None = None, save: bo
     frames = []
     for y in years:
         d = _load_weekly_year(y, pd, nfl)
-        if d is not None and not d.empty:
-            frames.append(d)
-            print(f"[matchup_ratings] loaded {y}: {len(d)} rows")
-        else:
+        if d is None or d.empty:
             print(f"[matchup_ratings] skipping {y}: no data")
+            continue
+        nd = _normalize_weekly(d, pd)
+        if nd is None or nd.empty:
+            print(f"[matchup_ratings] skipping {y}: unusable schema")
+            continue
+        frames.append(nd)
+        print(f"[matchup_ratings] loaded {y}: {len(nd)} rows")
     if not frames:
         print("[matchup_ratings] no weekly data available")
         return {}
     df = pd.concat(frames, ignore_index=True)
 
-    # Tolerate column-name differences between nfl_data_py and raw nflverse assets.
-    c_styp = _pick_col(df, "season_type")
-    c_pos  = _pick_col(df, "position", "pos")
-    c_team = _pick_col(df, "recent_team", "team")
-    c_opp  = _pick_col(df, "opponent_team", "opponent", "opp")
-    c_pts  = _pick_col(df, "fantasy_points_ppr", "fantasy_points")
-    if not all((c_pos, c_team, c_opp, c_pts)):
-        print(f"[matchup_ratings] unexpected columns: {list(df.columns)[:20]}")
-        return {}
-
-    if c_styp:
-        df = df[df[c_styp] == "REG"].copy()
-    else:
-        df = df.copy()
-    df["pos"] = df[c_pos].astype(str).str.upper()
+    df = df[df["season_type"] == "REG"]
     df = df[df["pos"].isin(POSITIONS)]
     df = df[~df["week"].isin(EXCLUDE_WEEKS)]
     if through_week:
         df = df[~((df["season"] == season) & (df["week"] > through_week))]
+    df = df.dropna(subset=["season", "week", "team", "opp"])
     if df.empty:
         return {}
-
-    df["team"] = df[c_team].map(_norm_team)
-    df["opp"] = df[c_opp].map(_norm_team)
-    df["pts"] = pd.to_numeric(df[c_pts], errors="coerce").fillna(0.0)
 
     # Position-group game totals: one row per (season, week, team, opponent, pos).
     grp = (df.groupby(["season", "week", "team", "opp", "pos"], as_index=False)
