@@ -9622,12 +9622,12 @@ html[data-theme="dark"] .contact-social-pill img {
 }
 
 .tx-row-val {
-  flex: 0 0 auto;
+  flex: 0 0 52px;
   font-size: 11.5px;
   font-weight: 600;
   color: var(--text-muted);
-  min-width: 28px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Footer: net value + verdict */
