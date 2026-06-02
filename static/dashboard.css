@@ -8626,7 +8626,9 @@ html[data-theme="dark"] .podium .bar {
 .nav-hamburger {
   color: var(--accent);
 }
-html[data-theme="dark"] .nav-hamburger {
+html[data-theme="dark"] .nav-hamburger,
+html[data-theme="dark"] .nav-hamburger i,
+html[data-theme="dark"] .nav-hamburger .fa-bars {
   color: #38bdf8 !important;
 }
 
