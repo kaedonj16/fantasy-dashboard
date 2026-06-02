@@ -377,19 +377,28 @@ def contact_page(platform: Optional[str] = None, season: Optional[int] = None,
             <h1 class="static-hero-title">Contact</h1>
 
             <div class="static-section">
-              <div class="static-section-title">Message</div>
-              <p>You can message the creator directly via social platforms:</p>
+              <div class="static-section-title">Reach us</div>
+              <p>The fastest way to get a response is through Discord. You can also follow along on YouTube and X for site updates and dynasty content.</p>
 
-              <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:10px;">
-                <a class="link-pill" href="https://youtube.com/@hoodiekj" target="_blank">▶️ YouTube</a>
-                <a class="link-pill" href="https://twitch.tv/hoodiekj1" target="_blank">🎮 Twitch</a>
-                <a class="link-pill" href="https://twitter.com/hoodiekj16" target="_blank">🐦 Twitter/X</a>
+              <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:12px;">
+                <a class="contact-social-pill" href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener">
+                  <img src="/static/images/discord-brands-solid.png" style="width:16px;height:16px;" alt="">
+                  Join Discord
+                </a>
+                <a class="contact-social-pill" href="https://youtube.com/@hoodiekj" target="_blank" rel="noopener">
+                  <img src="/static/images/youtube-brands-solid.png" style="width:16px;height:16px;" alt="">
+                  YouTube
+                </a>
+                <a class="contact-social-pill" href="https://x.com/hoodiekj" target="_blank" rel="noopener">
+                  <img src="/static/images/x-twitter-brands-solid.png" style="width:16px;height:16px;" alt="">
+                  X / Twitter
+                </a>
               </div>
             </div>
 
             <div class="static-section">
               <div class="static-section-title">What to include</div>
-              <ul style="margin-left:20px; color:#4b5563; font-size:14px;">
+              <ul style="margin-left:20px; font-size:14px;">
                 <li>Your Sleeper league ID</li>
                 <li>Which page you were on</li>
                 <li>What wasn't working or looked incorrect</li>
