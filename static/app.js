@@ -7435,12 +7435,12 @@ function _buildBkTabHTML(data, scoreColor) {
 }
 
 // ── Stats tab HTML builder (returns HTML string, no DOM side effects) ─────────
-function _buildStatsHTML(game_logs_by_year) {
+function _buildStatsHTML(game_logs_by_year, skipHeader) {
   let statsHTML = '';
   if (game_logs_by_year && Object.keys(game_logs_by_year).length > 0) {
     statsHTML += `
       <div class="player-modal-section">
-        <div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>
+        ${skipHeader ? '' : '<div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>'}
     `;
 
     // Sort years in descending order (most recent first)
@@ -8995,8 +8995,8 @@ function openComparisonView(p1, p2) {
   // Inject game logs for both players
   const gl1 = document.getElementById('compareGameLogs1');
   const gl2 = document.getElementById('compareGameLogs2');
-  if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year);
-  if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year);
+  if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year, true);
+  if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year, true);
 
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();
