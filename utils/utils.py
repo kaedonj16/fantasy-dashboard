@@ -789,13 +789,8 @@ def fetch_week_from_sleeper(season: int, week: int, raw_scoring_settings: dict =
 
 
 def fetch_week_projections(season: int, week: int, raw_scoring_settings: dict = None) -> dict:
-    """Prefer Sleeper's projections (same source as actual stats); fall back to
-    Tank01 when Sleeper returns nothing."""
-    proj = fetch_week_from_sleeper(season, week, raw_scoring_settings)
-    if proj:
-        return proj
-    print("ℹ️ Sleeper projections empty — falling back to Tank01")
-    return fetch_week_from_tank01(season, week, raw_scoring_settings)
+    """Fetch weekly projections from Sleeper (sole source for all projection data)."""
+    return fetch_week_from_sleeper(season, week, raw_scoring_settings)
 
 
 def map_weekly_projections_to_sleeper(

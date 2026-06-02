@@ -624,20 +624,19 @@ def _blend_weekly_projections(
     if next_week < 1 or blend <= 0:
         return
 
-    # Detect scoring format — Sleeper uses "rec", non-Sleeper uses "pointsPerReception"
-    _ss = ctx.get("scoring_settings") or {}
-    rec_pts = float(_ss.get("rec") or _ss.get("pointsPerReception") or 0)
-    scoring = "ppr" if rec_pts >= 1.0 else ("half_ppr" if rec_pts >= 0.5 else "std")
+    raw_ss = ctx.get("raw_scoring_settings") or {}
 
     try:
-        from data_building.fetch_projections import fetch_sleeper_week_projections
-        proj_map = fetch_sleeper_week_projections(season, next_week, scoring)
+        from utils.utils import fetch_week_projections, pick_proj_variant
+        multi_map = fetch_week_projections(season, next_week, raw_ss)
     except Exception as exc:
         logger.warning("[playoff_odds] Sleeper weekly proj unavailable: %s", exc)
         return
 
-    if not proj_map:
+    if not multi_map:
         return
+
+    variant = pick_proj_variant(raw_ss)
 
     roster_positions = ctx.get("roster_positions") or []
     # Build roster_id → player_ids lookup
@@ -658,12 +657,14 @@ def _blend_weekly_projections(
     except Exception:
         pass
 
-    # Build ppg_map from weekly projections (proj already in pts, not ppg)
-    week_ppg: dict[str, dict] = {
-        pid: {"ppg": pts, "pos": pos_map.get(pid, "")}
-        for pid, pts in proj_map.items()
-        if pts > 0
-    }
+    # Flatten multi-variant projections to a single pts value per player
+    week_ppg: dict[str, dict] = {}
+    for pid, variants in multi_map.items():
+        if not isinstance(variants, dict):
+            continue
+        pts = variants.get(variant) or variants.get("ppr") or 0.0
+        if pts > 0:
+            week_ppg[pid] = {"ppg": pts, "pos": pos_map.get(pid, "")}
 
     updated = 0
     for team in teams:

@@ -5778,8 +5778,8 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
                 all_vals.setdefault(pid, []).append(val)
     fallback = {pid: median(vals) for pid, vals in all_vals.items()}
 
-    # For players missing from Tank01 entirely (e.g. rookies), use FantasyPros
-    # season PPG as a flat per-week estimate.  The PPG file is PPR-based, so we
+    # For players Sleeper doesn't project (e.g. fringe depth), use FantasyPros
+    # preseason PPG as a flat per-week estimate.  The PPG file is PPR-based, so we
     # estimate other variants by backing out typical reception points by position.
     _EST_REC = {"QB": 0.0, "RB": 3.0, "WR": 5.0, "TE": 4.0}
     try:
