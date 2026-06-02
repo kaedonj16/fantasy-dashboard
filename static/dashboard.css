@@ -8917,6 +8917,31 @@ html[data-theme="dark"] .podium .bar {
   color: var(--text);
 }
 
+.contact-social-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  text-decoration: none;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  transition: border-color 0.15s, background 0.15s;
+}
+.contact-social-pill:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.contact-social-pill img {
+  filter: brightness(0) saturate(100%) invert(15%) sepia(45%) saturate(625%) hue-rotate(200deg) brightness(95%) contrast(90%);
+}
+html[data-theme="dark"] .contact-social-pill img {
+  filter: brightness(0) saturate(100%) invert(82%) sepia(23%) saturate(1585%) hue-rotate(178deg) brightness(103%) contrast(88%);
+}
+
 .static-card-page {
   background: var(--card);
   border-radius: 16px;

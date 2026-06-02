@@ -23644,17 +23644,22 @@ def page_contact(_prefix=None):
       <h1 class="static-hero-title">Contact</h1>
       <p class="static-hero-sub">Questions, bug reports, feature requests — we want to hear from you.</p>
 
-      <h2>Discord (fastest response)</h2>
-      <p>The quickest way to reach us is through the BR Fantasy Discord server. You can ask questions, report bugs, request features, and chat dynasty strategy with other users.</p>
-      <iframe src="https://discord.com/widget?id=1378938174697013350&theme=dark"
-              width="350" height="300" allowtransparency="true" frameborder="0"
-              sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
-              style="border-radius:12px;display:block;margin:12px 0;max-width:100%;"></iframe>
-      <p><a href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener" class="btn-primary" style="display:inline-block;margin-top:4px;">Join the Discord</a></p>
-
-      <h2>YouTube</h2>
-      <p>Follow along on YouTube for site updates, dynasty breakdowns, and strategy content:</p>
-      <p><a href="https://youtube.com/@hoodiekj" target="_blank" rel="noopener">youtube.com/@hoodiekj</a></p>
+      <h2>Reach us</h2>
+      <p>The fastest way to get a response is through Discord. You can also follow along on YouTube and X for site updates and dynasty content.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin:16px 0;">
+        <a href="https://discord.gg/7aZrs7qfur" target="_blank" rel="noopener" class="contact-social-pill">
+          <img src="/static/images/discord-brands-solid.png" style="width:16px;height:16px;" alt="">
+          Join Discord
+        </a>
+        <a href="https://youtube.com/@hoodiekj" target="_blank" rel="noopener" class="contact-social-pill">
+          <img src="/static/images/youtube-brands-solid.png" style="width:16px;height:16px;" alt="">
+          YouTube
+        </a>
+        <a href="https://x.com/hoodiekj" target="_blank" rel="noopener" class="contact-social-pill">
+          <img src="/static/images/x-twitter-brands-solid.png" style="width:16px;height:16px;" alt="">
+          X / Twitter
+        </a>
+      </div>
 
       <h2>Bug Reports & Feature Requests</h2>
       <p>Found a bug or have an idea for a new feature? Post it in the <strong>#feedback</strong> channel on Discord. Include your league ID and a description of what you expected vs. what you saw.</p>
