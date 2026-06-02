@@ -64,31 +64,82 @@ def out_path(season: int) -> str:
     return os.path.join(str(CACHE_DIR), f"matchup_ratings_s{season}.json")
 
 
+# Direct nflverse release assets, newest naming first. nfl_data_py (older
+# versions) reads only the legacy `player_stats_{year}` asset, which nflverse
+# stopped updating after 2024 — so recent seasons 404 there. Reading the current
+# `stats_player_week_{year}` asset directly keeps the builder version-proof.
+_NFLVERSE_WEEKLY_URLS = (
+    "https://github.com/nflverse/nflverse-data/releases/download/player_stats/stats_player_week_{year}.parquet",
+    "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_{year}.parquet",
+)
+
+
+def _load_weekly_year(year, pd, nfl=None):
+    """Return a weekly-stats DataFrame for `year`, or None.
+
+    Tries nfl_data_py first (if importable), then falls back to reading the
+    nflverse release parquet directly."""
+    if nfl is not None:
+        try:
+            d = nfl.import_weekly_data([year])
+            if d is not None and not d.empty:
+                return d
+        except Exception as e:
+            print(f"[matchup_ratings] nfl_data_py {year} failed ({e}); trying nflverse direct")
+    for url in _NFLVERSE_WEEKLY_URLS:
+        try:
+            d = pd.read_parquet(url.format(year=year))
+            if d is not None and not d.empty:
+                return d
+        except Exception:
+            continue
+    return None
+
+
+def _pick_col(df, *names):
+    for n in names:
+        if n in df.columns:
+            return n
+    return None
+
+
 def build_matchup_ratings(season: int, through_week: int | None = None, save: bool = True) -> dict:
     """Compute and (optionally) cache z-score matchup ratings for `season`."""
-    import nfl_data_py as nfl
     import pandas as pd
+    try:
+        import nfl_data_py as nfl
+    except Exception:
+        nfl = None
 
     years = [y for y in (season, season - 1, season - 2) if y >= 1999]
-    # Load each year independently so a single missing/404 release asset doesn't
-    # abort the whole build (older nfl_data_py versions 404 on some years).
     frames = []
     for y in years:
-        try:
-            d = nfl.import_weekly_data([y])
-            if d is not None and not d.empty:
-                frames.append(d)
-                print(f"[matchup_ratings] loaded {y}: {len(d)} rows")
-        except Exception as e:
-            print(f"[matchup_ratings] skipping {y}: {e}")
+        d = _load_weekly_year(y, pd, nfl)
+        if d is not None and not d.empty:
+            frames.append(d)
+            print(f"[matchup_ratings] loaded {y}: {len(d)} rows")
+        else:
+            print(f"[matchup_ratings] skipping {y}: no data")
     if not frames:
-        print("[matchup_ratings] no weekly data available "
-              "(try: pip install -U nfl_data_py)")
+        print("[matchup_ratings] no weekly data available")
         return {}
     df = pd.concat(frames, ignore_index=True)
 
-    df = df[df["season_type"] == "REG"].copy()
-    df = df.rename(columns={"position": "pos"})
+    # Tolerate column-name differences between nfl_data_py and raw nflverse assets.
+    c_styp = _pick_col(df, "season_type")
+    c_pos  = _pick_col(df, "position", "pos")
+    c_team = _pick_col(df, "recent_team", "team")
+    c_opp  = _pick_col(df, "opponent_team", "opponent", "opp")
+    c_pts  = _pick_col(df, "fantasy_points_ppr", "fantasy_points")
+    if not all((c_pos, c_team, c_opp, c_pts)):
+        print(f"[matchup_ratings] unexpected columns: {list(df.columns)[:20]}")
+        return {}
+
+    if c_styp:
+        df = df[df[c_styp] == "REG"].copy()
+    else:
+        df = df.copy()
+    df["pos"] = df[c_pos].astype(str).str.upper()
     df = df[df["pos"].isin(POSITIONS)]
     df = df[~df["week"].isin(EXCLUDE_WEEKS)]
     if through_week:
@@ -96,9 +147,9 @@ def build_matchup_ratings(season: int, through_week: int | None = None, save: bo
     if df.empty:
         return {}
 
-    df["team"] = df["recent_team"].map(_norm_team)
-    df["opp"] = df["opponent_team"].map(_norm_team)
-    df["pts"] = pd.to_numeric(df["fantasy_points_ppr"], errors="coerce").fillna(0.0)
+    df["team"] = df[c_team].map(_norm_team)
+    df["opp"] = df[c_opp].map(_norm_team)
+    df["pts"] = pd.to_numeric(df[c_pts], errors="coerce").fillna(0.0)
 
     # Position-group game totals: one row per (season, week, team, opponent, pos).
     grp = (df.groupby(["season", "week", "team", "opp", "pos"], as_index=False)
