@@ -8974,6 +8974,14 @@ function openComparisonView(p1, p2) {
 
       <hr class="pm-section-divider">
 
+      <div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>
+      <div class="compare-gamelogs-section">
+        <div class="compare-gamelogs-col" id="compareGameLogs1"></div>
+        <div class="compare-gamelogs-col" id="compareGameLogs2"></div>
+      </div>
+
+      <hr class="pm-section-divider">
+
       <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
       <div id="compareValueChart" class="player-modal-chart-container" style="min-height:200px;"></div>
 
@@ -8983,6 +8991,12 @@ function openComparisonView(p1, p2) {
       </div>
     </div>
   `;
+
+  // Inject game logs for both players
+  const gl1 = document.getElementById('compareGameLogs1');
+  const gl2 = document.getElementById('compareGameLogs2');
+  if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year);
+  if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year);
 
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();
@@ -9901,6 +9915,7 @@ function renderTeamDetails(data) {
       const radarLayout = {
         template: theme.template,
         polar: {
+          domain: { x: [0.05, 0.95], y: [0.05, 0.95] },
           radialaxis: {
             visible: true,
             range: [-3, 3],
@@ -9916,12 +9931,13 @@ function renderTeamDetails(data) {
           },
           bgcolor: 'rgba(0,0,0,0)'
         },
-        margin: { l: 60, r: 60, t: 40, b: 40 },
+        margin: { l: 40, r: 40, t: 20, b: 20 },
         showlegend: false,
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: {
-          color: theme.textColor
+          color: theme.textColor,
+          size: 11,
         }
       };
 

@@ -13373,8 +13373,8 @@ img, svg, canvas {
   min-width: 0;
   margin-bottom: 0;
 }
-.tm-chart-weekly { flex: 0 0 58%; }
-.tm-chart-radar  { flex: 0 0 calc(42% - 24px); }
+.tm-chart-weekly { flex: 0 0 55%; }
+.tm-chart-radar  { flex: 1 1 auto; min-width: 280px; }
 
 .team-modal-loading,
 .team-modal-error {
@@ -14430,6 +14430,23 @@ tr.team-clickable {
   height: 100%;
   border-radius: 4px;
   transition: width 0.35s ease;
+}
+
+/* ── Game logs side-by-side ─────────────────────────────────────── */
+.compare-gamelogs-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.compare-gamelogs-col {
+  min-width: 0;
+}
+.compare-gamelogs-col .game-log-year-section {
+  margin-bottom: 8px;
+}
+.compare-gamelogs-col .game-log-table {
+  font-size: 11px;
 }
 
 /* ── Nav buttons ────────────────────────────────────────────────── */
