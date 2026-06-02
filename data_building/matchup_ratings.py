@@ -64,11 +64,13 @@ def out_path(season: int) -> str:
     return os.path.join(str(CACHE_DIR), f"matchup_ratings_s{season}.json")
 
 
-# Direct nflverse release assets, newest naming first. nfl_data_py (older
-# versions) reads only the legacy `player_stats_{year}` asset, which nflverse
-# stopped updating after 2024 — so recent seasons 404 there. Reading the current
-# `stats_player_week_{year}` asset directly keeps the builder version-proof.
+# Direct nflverse release assets. nfl_data_py (older versions) only reads the
+# legacy player_stats/player_stats_{year} asset, which nflverse stopped updating
+# after 2024, so recent seasons 404 there. nflverse moved weekly player stats to
+# the `stats_player` release as `stats_player_week_{year}.parquet`. Try the
+# likely current paths directly so the builder is version-proof.
 _NFLVERSE_WEEKLY_URLS = (
+    "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_{year}.parquet",
     "https://github.com/nflverse/nflverse-data/releases/download/player_stats/stats_player_week_{year}.parquet",
     "https://github.com/nflverse/nflverse-data/releases/download/player_stats/player_stats_{year}.parquet",
 )
@@ -78,7 +80,7 @@ def _load_weekly_year(year, pd, nfl=None):
     """Return a weekly-stats DataFrame for `year`, or None.
 
     Tries nfl_data_py first (if importable), then falls back to reading the
-    nflverse release parquet directly."""
+    nflverse release parquet directly, logging the specific failure per URL."""
     if nfl is not None:
         try:
             d = nfl.import_weekly_data([year])
@@ -87,12 +89,14 @@ def _load_weekly_year(year, pd, nfl=None):
         except Exception as e:
             print(f"[matchup_ratings] nfl_data_py {year} failed ({e}); trying nflverse direct")
     for url in _NFLVERSE_WEEKLY_URLS:
+        u = url.format(year=year)
         try:
-            d = pd.read_parquet(url.format(year=year))
+            d = pd.read_parquet(u)
             if d is not None and not d.empty:
+                print(f"[matchup_ratings] {year} via {u}")
                 return d
-        except Exception:
-            continue
+        except Exception as e:
+            print(f"[matchup_ratings] {year} {u.rsplit('/', 2)[-2]}/{u.rsplit('/', 1)[-1]} -> {e}")
     return None
 
 
