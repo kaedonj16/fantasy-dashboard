@@ -13012,6 +13012,10 @@ _FPTS_AGAINST_CACHE: dict = {}
 _FPTS_AGAINST_CACHE_TS: dict = {}
 _FPTS_AGAINST_TTL = 3600  # 1 hour
 
+_MATCHUP_RATINGS_CACHE: dict = {}
+_MATCHUP_RATINGS_TS: dict = {}
+_MATCHUP_RATINGS_TTL = 3600  # 1 hour
+
 def _compute_fpts_against(season: int) -> dict:
     """
     Compute fantasy points allowed per game by each NFL defense, broken down by position.
@@ -13128,23 +13132,84 @@ def _sched_rank_color(rank, total):
     return "#ef4444", "#ef444418"        # brutal (fewest pts allowed)
 
 
+def _load_matchup_ratings(season: int) -> dict:
+    """Load the cron-precomputed z-score matchup ratings table.
+
+    Shape: {team: {pos: {"z": float, "ease": 0-100, "n": int, "fpts": float}}}.
+    Returns {} when the cache file is absent so callers fall back to raw
+    fpts-allowed (the table is produced by data_building/matchup_ratings.py via
+    the daily cron)."""
+    key = str(season)
+    now = time.time()
+    if (_MATCHUP_RATINGS_CACHE.get(key) is not None
+            and now - _MATCHUP_RATINGS_TS.get(key, 0) < _MATCHUP_RATINGS_TTL):
+        return _MATCHUP_RATINGS_CACHE[key]
+    data: dict = {}
+    try:
+        path = os.path.join("cache", f"matchup_ratings_s{season}.json")
+        if os.path.exists(path):
+            blob = json.load(open(path))
+            data = blob.get("ratings") or {}
+    except Exception:
+        data = {}
+    _MATCHUP_RATINGS_CACHE[key] = data
+    _MATCHUP_RATINGS_TS[key] = now
+    return data
+
+
+def _matchup_rank_table(season: int, position: str):
+    """Return (rank_map, total_teams, info_by_team, is_z).
+
+    rank_map[team] -> rank where 1 = easiest matchup for `position`. Uses the
+    strength-of-schedule-adjusted z-score ratings when available, otherwise
+    falls back to raw fpts-allowed so the schedule views keep working before
+    the first cron build. info_by_team[team] carries {"z","ease","fpts"}."""
+    ratings = _load_matchup_ratings(season)
+    pairs = []
+    info: dict = {}
+    if ratings:
+        for team, posd in ratings.items():
+            r = posd.get(position)
+            if not r:
+                continue
+            pairs.append((team, r.get("z", 0.0)))
+            info[team] = r
+    if pairs:
+        pairs.sort(key=lambda x: -x[1])   # highest z = easiest = rank 1
+        return {t: i + 1 for i, (t, _) in enumerate(pairs)}, len(pairs), info, True
+
+    # Fallback: raw fantasy points allowed (pre-z behavior)
+    fa = _compute_fpts_against(season)
+    fpairs = [(t, d.get(position, 0)) for t, d in fa.items() if position in d]
+    fpairs.sort(key=lambda x: -x[1])
+    finfo = {t: {"fpts": fa.get(t, {}).get(position, 0)} for t, _ in fpairs}
+    return {t: i + 1 for i, (t, _) in enumerate(fpairs)}, len(fpairs), finfo, False
+
+
+def _matchup_cell_ease(rank, total, info):
+    """Per-cell ease (0-100). Prefer the z-derived ease; fall back to rank percentile."""
+    if info and info.get("ease") is not None:
+        return float(info["ease"])
+    if rank and total and total > 1:
+        return round((total - rank) / (total - 1) * 100, 1)
+    return 0.0
+
+
 def _compute_schedule_grid(season: int, pids, weeks):
     """For each pid over the given weeks, return matchup + difficulty cells.
     Reuses the cached fpts-allowed table so this is cheap per request."""
     players_idx = get_players_index_global() or {}
-    fpts_against = _compute_fpts_against(season)
 
+    # Per-position z-score matchup tables (falls back to raw fpts when uncomputed)
     _pos_rank_cache: dict = {}
     def _fpts_rank(team: str, pos: str):
         if pos not in _pos_rank_cache:
-            vals = [(t, fpts_against.get(t, {}).get(pos, 0)) for t in fpts_against]
-            vals.sort(key=lambda x: x[1], reverse=True)  # most allowed = rank 1 (easiest)
-            _pos_rank_cache[pos] = {t: (i + 1, len(vals)) for i, (t, _) in enumerate(vals)}
-        entry = _pos_rank_cache.get(pos, {}).get(team)
-        fpts_val = fpts_against.get(team, {}).get(pos, 0)
-        if entry:
-            return entry[0], entry[1], fpts_val
-        return None, None, fpts_val
+            _pos_rank_cache[pos] = _matchup_rank_table(season, pos)
+        rank_map, total, info, _is_z = _pos_rank_cache[pos]
+        rinfo = info.get(team, {})
+        fpts_val = rinfo.get("fpts", 0)
+        rank = rank_map.get(team)
+        return rank, (total if rank else None), fpts_val
 
     schedules: dict = {}
     for w in weeks:
@@ -13718,7 +13783,6 @@ def api_schedule_rankings():
             position = "RB"
 
         players_idx  = get_players_index_global() or {}
-        fpts_against = _compute_fpts_against(season)
 
         # Build schedule lookup for requested weeks
         _team_alias = {"WSH": "WAS"}
@@ -13742,11 +13806,9 @@ def api_schedule_rankings():
                     lookup[away] = {"opp": home, "is_home": False}
             schedules[w] = lookup
 
-        # Rank all teams by fpts allowed to this position (rank 1 = most allowed = easiest)
-        pos_fpts = [(t, d.get(position, 0)) for t, d in fpts_against.items() if position in d]
-        pos_fpts.sort(key=lambda x: -x[1])
-        rank_map   = {t: i + 1 for i, (t, _) in enumerate(pos_fpts)}
-        total_teams = len(pos_fpts)
+        # Rank teams by strength-of-schedule-adjusted z-score (rank 1 = easiest).
+        # Falls back to raw fpts-allowed until the cron builds the ratings table.
+        rank_map, total_teams, rating_info, _is_z = _matchup_rank_table(season, position)
 
         # Get roster pids for on_roster flag
         roster_pids: set = set()
@@ -13802,6 +13864,7 @@ def api_schedule_rankings():
 
             cells = []
             rank_sum  = 0
+            ease_sum  = 0.0
             valid_wks = 0
             for w in weeks:
                 game = schedules.get(w, {}).get(team)
@@ -13810,7 +13873,8 @@ def api_schedule_rankings():
                     continue
                 opp      = game["opp"]
                 rank     = rank_map.get(opp)
-                fpts_val = fpts_against.get(opp, {}).get(position, 0)
+                rinfo    = rating_info.get(opp, {})
+                fpts_val = rinfo.get("fpts", 0)
                 txt, bg  = _sched_rank_color(rank, total_teams) if rank else ("#94a3b8", "transparent")
                 actual   = player_pts_actual.get(str(pid), {}).get(w)
                 proj     = player_pts_proj.get(str(pid), {}).get(w)
@@ -13827,10 +13891,12 @@ def api_schedule_rankings():
                 })
                 if rank:
                     rank_sum  += rank
+                    ease_sum  += _matchup_cell_ease(rank, total_teams, rinfo)
                     valid_wks += 1
 
             avg_rank   = round(rank_sum / valid_wks, 1) if valid_wks else 999
-            ease_score = round((total_teams - avg_rank) / max(total_teams - 1, 1) * 100, 1) if valid_wks else 0
+            # Ease from the z-score scale (avg over scheduled weeks); higher = easier
+            ease_score = round(ease_sum / valid_wks, 1) if valid_wks else 0
 
             results.append({
                 "pid":        str(pid),

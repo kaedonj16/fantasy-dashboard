@@ -296,6 +296,17 @@ else:
 """, "build_daily_advanced_metrics")
 
     # ------------------------------------------------------------------ #
+    # Step 4b: Defense-vs-position matchup ratings (z-scores)             #
+    # Powers the Schedule Assistant rankings / ease scores.               #
+    # ------------------------------------------------------------------ #
+    _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+from data_building.matchup_ratings import build_matchup_ratings, out_path
+res = build_matchup_ratings({season!r})
+print(f"[cron] Matchup ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out_path({season!r})}}")
+""", "build_matchup_ratings", timeout=900)
+
+    # ------------------------------------------------------------------ #
     # Step 5: Model values                                                #
     # ------------------------------------------------------------------ #
     if _model_values_fresh():
