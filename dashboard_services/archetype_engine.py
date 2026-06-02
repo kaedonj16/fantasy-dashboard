@@ -1600,20 +1600,33 @@ def get_archetype_suggestions(
             recv_val = t["value"]
             acpt     = _estimate_acceptance(send_val, recv_val, is_preferred=t["is_pref"])
 
-            # Per-package net odds: build the exact post-trade roster and compute
-            # its playoff probability relative to the sim-based baseline.
-            # Formula path is used (not a separate swap sim) to keep this fast —
-            # the accurate sim baseline anchors the overall scale, and the formula
-            # correctly differentiates packages by what each actually removes from
-            # the optimal lineup.
+            # Per-package net odds: build the exact post-trade roster (drop the
+            # sent players, add the target) and re-run the SAME Monte Carlo
+            # playoff simulation — same schedule, same opponents, same seed —
+            # with only the viewer's lineup changed. This is the accurate path
+            # and is consistent with the playoff-odds page. The analytical
+            # formula is used only if the simulation is unavailable.
             pkg_player_pids = {str(a.get("player_id", "")) for a in pkg if a.get("player_id") and not a.get("is_pick")}
             net_roster = [p for p in viewer_players if str(p) not in pkg_player_pids] + [pid]
-            net_lval = _lval(net_roster)
-            net_wp_pkg = _win_prob(net_lval, league_avg)
-            # Delta relative to formula-based current so the ratio is self-consistent
-            current_po_formula = _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
-            net_pod_pkg = _playoff_odds(net_wp_pkg, num_weeks, num_teams, playoff_spots) - current_po_formula
-            net_wpd_pkg = net_wp_pkg - current_wp
+
+            net_pod_pkg = None
+            net_wpd_pkg = None
+            if sim_state is not None and _vid_int is not None:
+                try:
+                    from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
+                    _net_po_pct, _net_avg = _sim_swap(sim_state, _vid_int, net_roster, n_sims=10_000)
+                    net_pod_pkg = (_net_po_pct - current_playoff_pct) / 100.0
+                    net_wpd_pkg = _win_prob(_net_avg, league_avg) - current_wp
+                except Exception:
+                    net_pod_pkg = None
+
+            if net_pod_pkg is None:
+                # Analytical fallback (no sim state) — still per-package
+                net_lval   = _lval(net_roster)
+                net_wp_pkg = _win_prob(net_lval, league_avg)
+                current_po_formula = _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+                net_pod_pkg = _playoff_odds(net_wp_pkg, num_weeks, num_teams, playoff_spots) - current_po_formula
+                net_wpd_pkg = net_wp_pkg - current_wp
 
             results.append({
                 "player_id":      pid,
