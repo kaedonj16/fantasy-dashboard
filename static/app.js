@@ -4157,12 +4157,9 @@ window.initTradePage = function initTradePage(root = document) {
              </span>`
           : "";
 
-        // Win % + playoff odds
-        // Rebuilding/distribute: use net_* fields (trade net effect) for card;
-        // win_prob_delta / playoff_odds_delta hold departure cost (impact table).
-        const usesNet = archetype === "rebuilding" || archetype === "distribute";
-        const wpd    = (usesNet ? (t.net_win_prob_delta ?? t.win_prob_delta) : t.win_prob_delta) || 0;
-        const pod    = (usesNet ? (t.net_playoff_odds_delta ?? t.playoff_odds_delta) : t.playoff_odds_delta) || 0;
+        // Win % + playoff odds — always prefer net_* fields (full trade swap effect)
+        const wpd = (t.net_win_prob_delta ?? t.win_prob_delta) || 0;
+        const pod = (t.net_playoff_odds_delta ?? t.playoff_odds_delta) || 0;
         const wpdCol = wpd >= 0 ? "#10b981" : "#ef4444";
         const podCol = pod >= 0 ? "#6366f1" : "#ef4444";
         const wpdHtml = `<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${wpdCol}15;border:1px solid ${wpdCol}30;color:${wpdCol};white-space:nowrap;">${(wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1)}% wk</span>`;
