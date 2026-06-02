@@ -8498,7 +8498,9 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
     entry = DASHBOARD_CACHE.get(key)
     if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
         ctx = entry["ctx"]
-        ctx["viewer"] = get_viewer_session()
+        ctx["viewer"] = get_viewer_session_for_league(
+            ctx.get("users") or [], ctx.get("rosters") or []
+        )
         return ctx
 
     with _CTX_LOCKS_LOCK:
@@ -8511,7 +8513,9 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         entry = DASHBOARD_CACHE.get(key)
         if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
             ctx = entry["ctx"]
-            ctx["viewer"] = get_viewer_session()
+            ctx["viewer"] = get_viewer_session_for_league(
+                ctx.get("users") or [], ctx.get("rosters") or []
+            )
             return ctx
         ctx = build_league_context(platform, league_id, season)
         DASHBOARD_CACHE[key] = {"ctx": ctx, "ts": time.time(), "page_html": {}}
