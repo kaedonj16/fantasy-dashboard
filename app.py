@@ -3937,11 +3937,12 @@ def _build_offseason_standings_body(ctx: dict) -> str:
 
     # ── Compute value share and projected production share ─────────────────────
     league_value_total = sum(r["total"] for r in team_rows) or 1.0
-    # Offseason projected scoring from playoff odds simulation
+    # Projected scoring using same Sleeper-first PPG source as playoff odds page
     rid_to_proj: dict[str, float] = {}
     try:
-        from data_building.simulate_playoff_odds import _estimate_from_rosters
-        est_teams = _estimate_from_rosters(ctx)
+        from data_building.simulate_playoff_odds import build_ppg_map, _estimate_from_rosters
+        _ppg_map, _pos_map = build_ppg_map(ctx)
+        est_teams = _estimate_from_rosters(ctx, ppg_map=_ppg_map, pos_map=_pos_map)
         for t in est_teams:
             rid_to_proj[str(t["roster_id"])] = float(t.get("avg") or 0.0)
     except Exception:
@@ -4195,12 +4196,13 @@ def render_share_rankings(ctx: dict) -> str:
     is_offseason    = league_pf_total == 0.0
     prod_label      = "Proj. Production Share" if is_offseason else "Production Share"
 
-    # Offseason: use the same projected-avg pipeline as playoff odds
+    # Offseason: use the same Sleeper-first PPG source as the playoff odds page
     rid_to_proj: Dict[str, float] = {}
     if is_offseason:
         try:
-            from data_building.simulate_playoff_odds import _estimate_from_rosters
-            est_teams = _estimate_from_rosters(ctx)
+            from data_building.simulate_playoff_odds import build_ppg_map, _estimate_from_rosters
+            _ppg_map2, _pos_map2 = build_ppg_map(ctx)
+            est_teams = _estimate_from_rosters(ctx, ppg_map=_ppg_map2, pos_map=_pos_map2)
             for t in est_teams:
                 rid_to_proj[str(t["roster_id"])] = float(t.get("avg") or 0.0)
         except Exception:

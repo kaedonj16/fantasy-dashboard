@@ -516,6 +516,68 @@ def _select_packages(
     if archetype == "distribute":
         return [player_pool[:1]] if player_pool else []
 
+    if archetype == "consolidate":
+        # Consolidate = trade up: always send 2+ assets, never 1-for-1.
+        # Priority: 2 players → 3 players → 2 players + pick
+        lo_c, hi_c = target_val * 0.85, target_val * 1.10
+        results_c: List[List[Dict]] = []
+
+        # 1. Best 2-player package
+        best2, best2_d = None, float("inf")
+        for a, b in combinations(player_pool, 2):
+            if a["position"] == "QB" and b["position"] == "QB":
+                continue
+            s = a["value"] + b["value"]
+            d = abs(s - target_val)
+            if lo_c <= s <= hi_c and d < best2_d:
+                best2_d, best2 = d, [a, b]
+        if best2:
+            results_c.append(best2)
+
+        # 2. Best 3-player package (must differ from pkg 1)
+        if len(results_c) < max_pkgs:
+            best3, best3_d = None, float("inf")
+            used_pids = {p["player_id"] for pkg in results_c for p in pkg}
+            for a, b, c in combinations(player_pool[:8], 3):
+                if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
+                    continue
+                s = a["value"] + b["value"] + c["value"]
+                d = abs(s - target_val)
+                pkg_pids = {a["player_id"], b["player_id"], c["player_id"]}
+                if lo_c <= s <= hi_c and d < best3_d and not pkg_pids.issubset(used_pids):
+                    best3_d, best3 = d, [a, b, c]
+            if best3:
+                results_c.append(best3)
+
+        # 3. Best 2-player + 1 pick
+        if len(results_c) < max_pkgs and pick_pool:
+            best_pp, best_pp_d = None, float("inf")
+            for pk in pick_pool:
+                for a, b in combinations(player_pool[:8], 2):
+                    if a["position"] == "QB" and b["position"] == "QB":
+                        continue
+                    s = a["value"] + b["value"] + pk["value"]
+                    d = abs(s - target_val)
+                    if lo_c <= s <= hi_c and d < best_pp_d:
+                        best_pp_d, best_pp = d, [a, b, pk]
+            if best_pp:
+                results_c.append(best_pp)
+
+        # Fallback: widen window, still require 2+ assets
+        if not results_c:
+            fallback2, fallback2_d = None, float("inf")
+            for a, b in combinations(player_pool, 2):
+                if a["position"] == "QB" and b["position"] == "QB":
+                    continue
+                s = a["value"] + b["value"]
+                d = abs(s - target_val)
+                if d < fallback2_d:
+                    fallback2_d, fallback2 = d, [a, b]
+            if fallback2:
+                results_c.append(fallback2)
+
+        return results_c[:max_pkgs]
+
     results: List[List[Dict]] = []
 
     # ── 1. Player-only: exhaustive 1 / 2 / 3-player search ───────────────────
