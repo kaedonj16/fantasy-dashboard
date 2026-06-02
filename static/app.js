@@ -7496,7 +7496,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
 
       statsHTML += `
         <div class="game-log-year-section">
-          <div class="game-log-year-header" onclick="toggleGameLogYear('${year}')">
+          <div class="game-log-year-header" onclick="toggleGameLogYear(this)">
             <div class="game-log-year-header-main">
               <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
               <span class="game-log-year-title">${year} Season</span>
@@ -7923,9 +7923,22 @@ function buildAdvancedMetricsHTML(metricsData) {
   return html;
 }
 
-function toggleGameLogYear(year) {
-  const content = document.getElementById(`year-${year}`);
-  const toggle = document.getElementById(`toggle-${year}`);
+function toggleGameLogYear(arg) {
+  // Resolve the header element. Accepts the clicked header (preferred — works
+  // when duplicate year IDs exist, e.g. both players in the compare modal) or
+  // a year string for backward compatibility.
+  let header;
+  if (typeof arg === 'string') {
+    const toggle = document.getElementById(`toggle-${arg}`);
+    header = toggle ? toggle.closest('.game-log-year-header') : null;
+  } else {
+    header = arg;
+  }
+  if (!header) return;
+
+  const content = header.nextElementSibling;
+  const toggle = header.querySelector('.game-log-year-toggle');
+  if (!content || !toggle) return;
 
   if (content.classList.contains('expanded')) {
     content.classList.remove('expanded');
