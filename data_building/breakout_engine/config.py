@@ -24,13 +24,18 @@ PHASE_WEIGHTS: Dict[str, Dict[str, float]] = {
     # negative empirical r and adding noise hurts ranking quality.
     # Freed weight (0.05 + 0.05 = 0.10) redistributed to confidence and role_trajectory.
     'offseason': {
-        'opportunity_opened': 0.08,
-        'competition_removed': 0.00,   # Negative empirical r — zeroed out
+        # Re-weighted to make a real opening matter (product intent: "breakout =
+        # an opportunity opened"), trading some backtest-optimal weight away from
+        # confidence. Opportunity is the gating signal via the gates below; this
+        # also lets it move the ranking among qualified candidates rather than
+        # being a near-zero 0.08 contributor.
+        'opportunity_opened': 0.16,
+        'competition_removed': 0.06,
         'competition_added_penalty': 0.07,
         'team_environment': 0.00,      # Negative empirical r — zeroed out
-        'player_readiness': 0.20,
-        'role_trajectory': 0.30,       # Strong positive predictor (+0.05 from redistribution)
-        'confidence': 0.35,            # Strongest predictor (+0.05 from redistribution)
+        'player_readiness': 0.18,
+        'role_trajectory': 0.28,
+        'confidence': 0.25,
     },
     'post_free_agency': {
         'opportunity_opened': 0.15,
@@ -104,8 +109,13 @@ MIN_BREAKOUT_SCORE = 40.0
 # Calibrated for the contested-SHARE opportunity scale: a player's diluted share
 # of vacated work scores far lower than the old gross-team-total scale, so a
 # "real opening" is ~20, not 35.
-BREAKOUT_GATE_OPP_MIN = 20.0    # opportunity_opened floor (real vacated share)
-BREAKOUT_GATE_COMP_MIN = 30.0   # OR competition_removed floor
+# A "real opening" means a meaningful vacated share, not a token one. Set to ~50
+# so a trivial opening (e.g. a backup leaving, opp≈20) does NOT qualify a player
+# as opportunity-driven — they must instead clear the stricter ascension path,
+# which is capped below the genuine opportunity breakouts. This is the primary
+# control on how many candidates surface (target ~8-15 legit breakouts).
+BREAKOUT_GATE_OPP_MIN = 50.0    # opportunity_opened floor (real vacated share)
+BREAKOUT_GATE_COMP_MIN = 50.0   # OR competition_removed floor
 
 # Readiness gate: pass if EITHER of these clears.
 BREAKOUT_GATE_READY_MIN = 50.0  # player_readiness floor
@@ -122,12 +132,17 @@ BREAKOUT_GATE_TRAJ_MIN = 60.0   # OR role_trajectory floor (clearly rising)
 BREAKOUT_ASCENSION_READY_MIN = 58.0  # player_readiness floor (talent/profile)
 BREAKOUT_ASCENSION_TRAJ_MIN = 60.0   # AND role_trajectory floor (rising usage)
 
-# An ascension-only candidate has no MEASURED opening (no vacated role, no
-# departed competition) — its upside is inferred from trajectory alone, which is
-# less certain than a quantified opportunity. Cap its final score so a player
-# with no new opening cannot outrank the clear opportunity-driven breakouts.
-# Only applied when the player qualifies via ascension and NOT via opportunity.
-BREAKOUT_ASCENSION_SCORE_CAP = 80.0
+# An ascension-only candidate has no real opening (no meaningful vacated role,
+# no departed competition) — its upside is inferred from trajectory alone, which
+# is less certain than a quantified opportunity. Cap its final score so a player
+# with no new opening sits clearly BELOW the genuine opportunity-driven breakouts
+# (which span ~58-90). Applied whenever the player qualifies via ascension but
+# NOT via the opportunity path. This is what keeps the top tier to the ~8-15
+# legit, opportunity-driven breakouts rather than every ascending young starter.
+# Set just below the page display floor (50) so ascension-only players are scored
+# but don't crowd the main breakout list — keeping it to the ~8-15 genuine
+# opportunity breakouts. Raise toward 50+ to surface ascension candidates too.
+BREAKOUT_ASCENSION_SCORE_CAP = 48.0
 
 # If a player fails the gates, cap their final score here so they fall below
 # the candidate floor (40) and the page floor (50) and drop off the list.

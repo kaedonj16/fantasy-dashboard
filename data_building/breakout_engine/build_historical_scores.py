@@ -1180,6 +1180,7 @@ def score_one_player(
         vacated_cache=vacated_cache,
         incumbents_cache=incumbents_cache,
         arrivals_cache=arrivals_cache,
+        player_prev_usage=prev_usage,
     )
     component_scores["opportunity_opened"] = s
     component_details["opportunity_opened"] = d

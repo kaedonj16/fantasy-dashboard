@@ -236,6 +236,7 @@ class BreakoutEngine:
             # provide partial contested-share dilution. The rebuild path (which
             # has full rosters) is authoritative for the displayed list.
             arrivals_cache=self.db_cache.get('arrivals'),
+            player_prev_usage=prev_usage,
         )
         component_scores['opportunity_opened'] = score
         component_details['opportunity_opened'] = details

@@ -432,6 +432,7 @@ def calculate_opportunity_opened_score(
         air_yards_data: Optional[Dict] = None,
         incumbents_cache: Optional[Dict] = None,
         arrivals_cache: Optional[Dict] = None,
+        player_prev_usage: Optional[Dict] = None,
 ) -> Tuple[float, Dict]:
     """
     Score (0-100) based on the vacated opportunity actually AVAILABLE to this
@@ -491,11 +492,22 @@ def calculate_opportunity_opened_score(
         raw_score = carry_score + target_score
     elif position == "QB":
         # Starter snaps are not shared among competitors — use the gross value.
-        raw_score = 100.0 if vacated_snap_share >= QB_STARTER_SNAP_THRESHOLD else 0.0
+        # But a RETURNING starter's job did not "open": only credit a QB stepping
+        # into a vacated starting role, not one who already held it last season
+        # (otherwise a backup leaving falsely reads as an opening for the starter).
+        qb_prev_snap = _safe_float((player_prev_usage or {}).get("snap_share", 0))
+        if qb_prev_snap >= QB_STARTER_SNAP_THRESHOLD:
+            raw_score = 0.0
+        else:
+            raw_score = 100.0 if vacated_snap_share >= QB_STARTER_SNAP_THRESHOLD else 0.0
     else:
         raw_score = 0.0
 
-    snap_for_bonus = vacated_snap_share if position == "QB" else share_snap
+    # QB snap bonus only when a starting job actually opened (raw_score > 0).
+    if position == "QB":
+        snap_for_bonus = vacated_snap_share if raw_score > 0 else 0.0
+    else:
+        snap_for_bonus = share_snap
     snap_bonus = min(snap_for_bonus * 50.0, MAX_SNAP_SHARE_BONUS)
 
     # --- Air yards quality bonus (WR/TE only) ---
