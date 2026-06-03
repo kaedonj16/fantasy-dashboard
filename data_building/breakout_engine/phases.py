@@ -16,6 +16,7 @@ from .config import (
     BREAKOUT_GATE_TRAJ_MIN,
     BREAKOUT_ASCENSION_READY_MIN,
     BREAKOUT_ASCENSION_TRAJ_MIN,
+    BREAKOUT_ASCENSION_SCORE_CAP,
     BREAKOUT_GATE_FAIL_CAP,
     BREAKOUT_CURVE_PIVOT,
     BREAKOUT_CURVE_SLOPE,
@@ -226,6 +227,12 @@ class PhaseDetector:
 
         if not (opportunity_breakout or ascension_breakout):
             curved = min(curved, BREAKOUT_GATE_FAIL_CAP)
+        elif competition_data_absent:
+            # Qualified via ascension with NO measured opening at all (no vacated
+            # role, no departed competition) — cap below the clear
+            # opportunity-driven breakouts. A player with even a modest real
+            # opportunity share is NOT capped.
+            curved = min(curved, BREAKOUT_ASCENSION_SCORE_CAP)
 
         return curved
 

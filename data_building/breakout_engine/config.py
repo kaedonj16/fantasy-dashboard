@@ -101,8 +101,11 @@ MIN_BREAKOUT_SCORE = 40.0
 #   - Want a sharper split -> raise BREAKOUT_CURVE_SLOPE (more separation).
 
 # Opportunity gate: pass if EITHER of these clears (component scores are 0-100).
-BREAKOUT_GATE_OPP_MIN = 35.0    # opportunity_opened floor (real vacated role)
-BREAKOUT_GATE_COMP_MIN = 45.0   # OR competition_removed floor
+# Calibrated for the contested-SHARE opportunity scale: a player's diluted share
+# of vacated work scores far lower than the old gross-team-total scale, so a
+# "real opening" is ~20, not 35.
+BREAKOUT_GATE_OPP_MIN = 20.0    # opportunity_opened floor (real vacated share)
+BREAKOUT_GATE_COMP_MIN = 30.0   # OR competition_removed floor
 
 # Readiness gate: pass if EITHER of these clears.
 BREAKOUT_GATE_READY_MIN = 50.0  # player_readiness floor
@@ -118,6 +121,13 @@ BREAKOUT_GATE_TRAJ_MIN = 60.0   # OR role_trajectory floor (clearly rising)
 # clearly ascending). Set the readiness floor too high and these get wrongly cut.
 BREAKOUT_ASCENSION_READY_MIN = 58.0  # player_readiness floor (talent/profile)
 BREAKOUT_ASCENSION_TRAJ_MIN = 60.0   # AND role_trajectory floor (rising usage)
+
+# An ascension-only candidate has no MEASURED opening (no vacated role, no
+# departed competition) — its upside is inferred from trajectory alone, which is
+# less certain than a quantified opportunity. Cap its final score so a player
+# with no new opening cannot outrank the clear opportunity-driven breakouts.
+# Only applied when the player qualifies via ascension and NOT via opportunity.
+BREAKOUT_ASCENSION_SCORE_CAP = 80.0
 
 # If a player fails the gates, cap their final score here so they fall below
 # the candidate floor (40) and the page floor (50) and drop off the list.
@@ -166,20 +176,14 @@ MAX_SNAP_SHARE_BONUS = 20  # Up to 20 bonus points for high snap share vacated
 # Vacated opportunity is a TEAM-level quantity. Crediting it in full to every
 # pass-catcher who shares it (e.g. all of a team's WRs + TEs after one WR leaves)
 # saturates the score at 100 for ~everyone and makes it meaningless. Instead we
-# divide the vacated work among the credible competitors contesting it, so the
-# score reflects the opportunity actually AVAILABLE to this player. The caps
-# below are therefore PER-COMPETITOR (one player's plausible share), not team
-# totals. Readiness/trajectory then decide who actually seizes the share.
+# split the vacated work among the players who share the room, weighted by their
+# prior usage PER GAME — whoever was already earning targets/carries inherits the
+# larger portion of a departed teammate's work. The caps below are therefore
+# PER-COMPETITOR (one player's plausible share), not team totals. Readiness and
+# trajectory then decide whether the player capitalizes on that share.
 PER_COMPETITOR_TARGETS_WR_TE = 90    # ~90 vacated targets to one player = max
 PER_COMPETITOR_CARRIES_RB = 170      # ~170 vacated carries to one RB = max (primary)
 PER_COMPETITOR_TARGETS_RB = 55       # secondary receiving work for an RB
-
-# A rostered player only counts as a competitor for vacated work if they have a
-# credible claim to it: meaningful prior usage OR notable draft capital.
-CREDIBLE_COMPETITOR_TARGETS = 30     # WR/TE: >=30 prior targets
-CREDIBLE_COMPETITOR_CARRIES = 40     # RB: >=40 prior carries
-CREDIBLE_COMPETITOR_SNAP = 0.25      # OR >=25% snap share
-CREDIBLE_COMPETITOR_DRAFT_ROUND = 3  # OR drafted in round <= 3
 
 # QB thresholds
 QB_STARTER_SNAP_THRESHOLD = 0.70  # 70%+ snap share = starter left

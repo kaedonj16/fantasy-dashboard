@@ -246,58 +246,59 @@ def _pooled_vacated(vacated_cache, team: str, position: str, season: int):
     return merged
 
 
-def _is_credible_competitor(position: str, entry: Dict) -> bool:
-    """True if a rostered player has a credible claim to vacated work.
-
-    Filters out deep-bench/practice-squad bodies so the dilution denominator
-    reflects real role-competitors, not every name on the roster.
-    """
-    targets = _safe_float(entry.get("last_season_targets", 0))
-    carries = _safe_float(entry.get("last_season_carries", 0))
-    snap = _safe_float(entry.get("last_season_snap_share", 0))
-    draft_meta = entry.get("draft_metadata") or {}
-    draft_round = draft_meta.get("round")
-    high_pick = draft_round is not None and draft_round <= CREDIBLE_COMPETITOR_DRAFT_ROUND
-
-    if snap >= CREDIBLE_COMPETITOR_SNAP or high_pick:
-        return True
-    if position == "RB":
-        return carries >= CREDIBLE_COMPETITOR_CARRIES
-    return targets >= CREDIBLE_COMPETITOR_TARGETS  # WR/TE (and any pass-catcher)
+# Expected per-game claim for a player with NO prior usage (rookies), by draft
+# round. A 1st-round WR projects to a ~#2/#3-receiver target share; later picks
+# and UDFAs command progressively less. RB units are weighted carries+targets.
+_DRAFT_CLAIM_WR_TE = {1: 5.0, 2: 3.5, 3: 2.5, 4: 1.5}
+_DRAFT_CLAIM_RB = {1: 14.0, 2: 9.0, 3: 6.0, 4: 4.0}
 
 
 def _competitor_claim(position: str, entry: Dict) -> float:
-    """A player's claim on vacated work, blending prior role and draft pedigree.
+    """A player's claim on vacated work, based on prior usage PER GAME.
 
-    A veteran claims via established usage; a young high-pick claims via draft
-    capital even with little prior usage (so a Year-2 first-rounder isn't split
-    down to a depth piece's share). Everyone gets a small floor.
+    Vacated targets/carries get redistributed toward the players who were
+    already earning volume: someone who was 2nd on the team in targets/game
+    inherits far more of a departed teammate's work than someone who saw 2
+    targets/game. Per-game (not season totals) so an injury-shortened but
+    high-usage season still counts.
+
+    A player with NO prior usage (a drafted rookie) has no usage to measure, so
+    their claim falls back to an expected share implied by draft capital — e.g. a
+    team that loses its WR1 but drafts a 1st-round WR sees that rookie absorb a
+    real chunk of the vacated targets. (Draft capital is only a fallback; an
+    established player is always weighted by actual usage, not pedigree.)
     """
+    games = _safe_float(entry.get("last_season_games", 0))
     targets = _safe_float(entry.get("last_season_targets", 0))
     carries = _safe_float(entry.get("last_season_carries", 0))
-    snap = _safe_float(entry.get("last_season_snap_share", 0))
+    volume = (carries + targets * 1.5) if position == "RB" else targets
+
+    if volume > 0:
+        # Per game when we know games played; else approximate from a full slate.
+        return volume / games if games >= 1 else volume / 17.0
+
+    # No measured usage — infer expected role from draft capital. An undrafted
+    # player who never produced isn't a real competitor for vacated work, so they
+    # claim nothing (and don't dilute or inflate the competitor count).
     draft_round = (entry.get("draft_metadata") or {}).get("round")
-
+    if draft_round is None:
+        return 0.0
     if position == "RB":
-        usage_claim = carries + targets * 1.5
-    else:  # WR/TE (pass-catchers)
-        usage_claim = targets + snap * 50.0
-
-    pedigree = {1: 110.0, 2: 80.0, 3: 60.0, 4: 45.0}.get(draft_round, 25.0 if draft_round else 0.0)
-    return max(usage_claim, pedigree, 10.0)
+        return _DRAFT_CLAIM_RB.get(draft_round, 2.0)   # rounds 5-7
+    return _DRAFT_CLAIM_WR_TE.get(draft_round, 1.0)     # rounds 5-7
 
 
 def _opportunity_share(
     player_id: str, team: str, position: str,
     incumbents_cache: Optional[Dict], arrivals_cache: Optional[Dict],
 ) -> Tuple[float, int]:
-    """The player's claim-weighted share of the vacated work, and competitor count.
+    """The player's usage-weighted share of the vacated work, and competitor count.
 
     Returns (share_fraction, competitor_count). The vacated opportunity is split
-    among credible competitors (returning incumbents + arrivals across the
-    pass-catcher group, or the exact position for RB) in proportion to each
-    player's claim, rather than equally. Falls back to a full share (1.0) when
-    there is no roster context or no competition.
+    among the players who share the group (returning incumbents + arrivals across
+    the pass-catcher group, or the exact position for RB) in proportion to each
+    player's prior usage per game — not equally and not by draft capital. Falls
+    back to a full share (1.0) when there is no usage context to divide by.
     """
     entries: Dict[str, Dict] = {}
     for key in _opportunity_group_keys(team, position):
@@ -307,22 +308,14 @@ def _opportunity_share(
                 if pid:
                     entries.setdefault(pid, e)
 
-    claims = {
-        pid: _competitor_claim(position, e)
-        for pid, e in entries.items()
-        if _is_credible_competitor(position, e)
-    }
-    # The player being scored always competes for the work they'd inherit.
-    if player_id not in claims:
-        if player_id in entries:
-            claims[player_id] = _competitor_claim(position, entries[player_id])
-        else:
-            claims[player_id] = 10.0  # roster context missing — assume a floor claim
+    claims = {pid: _competitor_claim(position, e) for pid, e in entries.items()}
+    claims.setdefault(player_id, 0.0)  # scored player always shares the room
 
     total = sum(claims.values())
+    competitors = max(sum(1 for v in claims.values() if v > 0), 1)
     if total <= 0:
-        return 1.0, max(len(claims), 1)
-    return claims[player_id] / total, len(claims)
+        return 1.0, competitors  # no one had prior usage — don't dilute
+    return claims[player_id] / total, competitors
 
 
 def _pooled_list(cache, db_fn, team: str, position: str, season: int) -> List[Dict]:
