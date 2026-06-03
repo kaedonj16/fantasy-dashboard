@@ -7271,10 +7271,32 @@ function _buildBkTabHTML(data, scoreColor) {
 
   const reasons = (data.key_reasons || '').split('\n')
     .map(r => r.replace(/^[•\-]\s*/, '').trim())
-    .filter(r => r.length > 0);
+    .filter(r => r.length > 0)
+    // Role fit is rendered as a dedicated chip below — drop the text duplicate.
+    .filter(r => !/role fit for vacated targets/i.test(r));
 
   const txnSummary    = data.vacated_usage_summary || '';
   const addedCompSumm = data.added_competition_summary || '';
+
+  // ── Role / archetype fit chip (context only — does not affect the score) ────
+  let cd = data.component_details;
+  if (typeof cd === 'string') { try { cd = JSON.parse(cd); } catch (e) { cd = {}; } }
+  const aFit = (cd && cd.opportunity_opened && cd.opportunity_opened.archetype_fit) || null;
+  let roleFitChip = '';
+  if (aFit && aFit.label) {
+    const fitColor = aFit.label === 'high' ? '#10b981'
+                   : aFit.label === 'medium' ? '#f59e0b' : '#6b7280';
+    const labelTxt = aFit.label.charAt(0).toUpperCase() + aFit.label.slice(1);
+    roleFitChip = `
+      <div title="How well this player's receiving role matches the vacated targets. Context only — it does not change the score."
+           style="display:inline-flex;align-items:center;gap:9px;padding:6px 11px;border-radius:8px;
+                  background:${fitColor}1a;border-left:3px solid ${fitColor};margin:2px 0 10px;">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${fitColor};">
+          <i class="fa-solid fa-bullseye" aria-hidden="true"></i> Role fit: ${labelTxt}</span>
+        <span style="font-size:12px;color:var(--text-muted);">${aFit.candidate_role} ↔ ${aFit.vacated_role} <span style="opacity:.7;">(vacated)</span></span>
+      </div>`;
+  }
+
 
   // ── PPG range computation ──────────────────────────────────────────────────
   const s1      = parseFloat(data.season1_ppr || 0);
@@ -7384,6 +7406,8 @@ function _buildBkTabHTML(data, scoreColor) {
     { label: 'Role Trajectory', val: data.role_trajectory_score,     color: null      },
     { label: 'Confidence',      val: data.confidence_score,          color: '#6b7280' },
   ];
+
+  html += roleFitChip;
 
   html += `<div class='pm-two-column'>`;
 
