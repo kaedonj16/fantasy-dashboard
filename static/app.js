@@ -7467,6 +7467,39 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
     // Sort years in descending order (most recent first)
     const years = Object.keys(game_logs_by_year).sort((a, b) => b - a);
 
+    // Show only the stat groups this player actually has, so a WR isn't padded
+    // with empty passing/rushing columns (which pushed the real columns off-screen
+    // — worse in the side-by-side compare modal). Computed once across all years
+    // so the columns stay consistent between year sections. Falls back to the
+    // position default for projection-only players with no real stats yet.
+    // Each column: [statKey, header, roundFlag].
+    const _PASS = [['pass_yd','Pass Yd',1],['pass_td','Pass TD',0],['pass_int','INT',0]];
+    const _RUSH = [['rush_att','Rush Att',0],['rush_yd','Rush Yd',1],['rush_td','Rush TD',0]];
+    const _REC  = [['rec_tgt','Tgt',0],['rec','Rec',0],['rec_yd','Rec Yd',1],['rec_td','Rec TD',0]];
+    let _anyPass = false, _anyRush = false, _anyRec = false;
+    years.forEach(y => (game_logs_by_year[y] || []).forEach(g => {
+      const s = g.stats || {};
+      if (s.pass_yd || s.pass_td || s.pass_int) _anyPass = true;
+      if (s.rush_att || s.rush_yd || s.rush_td) _anyRush = true;
+      if (s.rec_tgt || s.rec || s.rec_yd || s.rec_td) _anyRec = true;
+    }));
+    let statCols = [];
+    if (_anyPass) statCols = statCols.concat(_PASS);
+    if (_anyRush) statCols = statCols.concat(_RUSH);
+    if (_anyRec)  statCols = statCols.concat(_REC);
+    if (!statCols.length) {
+      const P = (position || '').toUpperCase();
+      statCols = P === 'QB' ? _PASS.concat(_RUSH)
+               : P === 'RB' ? _RUSH.concat(_REC)
+               : _REC;
+    }
+    const _statTh = statCols.map(c => `<th>${c[1]}</th>`).join('');
+    const _statCell = (s) => statCols.map(c => {
+      const v = s[c[0]];
+      const disp = (v != null && v > 0) ? (c[2] ? Math.round(v) : v) : '-';
+      return `<td>${disp}</td>`;
+    }).join('');
+
     years.forEach((year, index) => {
       const gameLogs = game_logs_by_year[year];
       const isFirstYear = index === 0;
@@ -7537,16 +7570,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
                   <th>Date</th>
                   <th>Opp</th>
                   <th class="${isProjection ? 'game-log-proj-th' : ''}">Pts${(isProjection || isMixed) ? ' *' : ''}</th>
-                  <th>Pass Yd</th>
-                  <th>Pass TD</th>
-                  <th>INT</th>
-                  <th>Rush Att</th>
-                  <th>Rush Yd</th>
-                  <th>Rush TD</th>
-                  <th>Tgt</th>
-                  <th>Rec</th>
-                  <th>Rec Yd</th>
-                  <th>Rec TD</th>
+                  ${_statTh}
                 </tr>
               </thead>
               <tbody>
@@ -7565,7 +7589,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
               <td>${projDate || `Wk ${game.week}`}</td>
               <td class="game-log-table-opp">${game.opponent || '—'}</td>
               <td class="game-log-table-pts game-log-proj-pts">${projVal}</td>
-              <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
+              ${statCols.map(() => '<td>—</td>').join('')}
             </tr>
           `;
           return;
@@ -7600,16 +7624,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
             <td>${dateStr}</td>
             <td class="game-log-table-opp">${game.opponent || '-'}</td>
             <td class="game-log-table-pts">${ptsCell}</td>
-            <td>${val(s.pass_yd) !== '-' ? Math.round(s.pass_yd) : '-'}</td>
-            <td>${val(s.pass_td)}</td>
-            <td>${val(s.pass_int)}</td>
-            <td>${val(s.rush_att)}</td>
-            <td>${val(s.rush_yd) !== '-' ? Math.round(s.rush_yd) : '-'}</td>
-            <td>${val(s.rush_td)}</td>
-            <td>${val(s.rec_tgt)}</td>
-            <td>${val(s.rec)}</td>
-            <td>${val(s.rec_yd) !== '-' ? Math.round(s.rec_yd) : '-'}</td>
-            <td>${val(s.rec_td)}</td>
+            ${_statCell(s)}
           </tr>
         `;
       });
@@ -7625,7 +7640,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
                   <td><strong>Total</strong></td>
                   <td><strong>${projGames}G</strong></td>
                   <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(projTotalPts)}</strong></td>
-                  <td colspan="10" style="text-align:left;font-size:11px;color:var(--text-muted);padding-left:8px;">* Projected — actuals update when games are played</td>
+                  <td colspan="${statCols.length}" style="text-align:left;font-size:11px;color:var(--text-muted);padding-left:8px;">* Projected — actuals update when games are played</td>
                 </tr>
               </tfoot>
             </table>
@@ -7640,16 +7655,12 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
                   <td><strong>Total</strong></td>
                   <td><strong>${gamesPlayed}G</strong></td>
                   <td class="game-log-table-pts"><strong>${fmtPts(totalFantasyPts)}</strong></td>
-                  <td><strong>${valTotal(totalPassYd) !== '-' ? Math.round(totalPassYd) : '-'}</strong></td>
-                  <td><strong>${valTotal(totalPassTd)}</strong></td>
-                  <td><strong>${valTotal(totalPassInt)}</strong></td>
-                  <td><strong>${valTotal(totalRushAtt)}</strong></td>
-                  <td><strong>${valTotal(totalRushYd) !== '-' ? Math.round(totalRushYd) : '-'}</strong></td>
-                  <td><strong>${valTotal(totalRushTd)}</strong></td>
-                  <td><strong>${valTotal(totalRecTgt)}</strong></td>
-                  <td><strong>${valTotal(totalRec)}</strong></td>
-                  <td><strong>${valTotal(totalRecYd) !== '-' ? Math.round(totalRecYd) : '-'}</strong></td>
-                  <td><strong>${valTotal(totalRecTd)}</strong></td>
+                  ${statCols.map(c => {
+                    const totMap = {pass_yd:totalPassYd,pass_td:totalPassTd,pass_int:totalPassInt,rush_att:totalRushAtt,rush_yd:totalRushYd,rush_td:totalRushTd,rec_tgt:totalRecTgt,rec:totalRec,rec_yd:totalRecYd,rec_td:totalRecTd};
+                    const v = totMap[c[0]];
+                    const disp = (v != null && v > 0) ? (c[2] ? Math.round(v) : v) : '-';
+                    return `<td><strong>${disp}</strong></td>`;
+                  }).join('')}
                 </tr>
               </tfoot>
             </table>

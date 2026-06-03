@@ -213,6 +213,21 @@ class BreakoutEngine:
         # OLD: prev_usage = get_player_previous_season_usage(player_id, self.season - 1) or {}
         prev_usage = self.usage_cache.get(player_id, {})
 
+        # PPG ceiling: an established (2+ yr) player already producing at an elite
+        # PPR/game rate has already broken out — exclude by RATE, so a hurt-but-
+        # elite season (e.g. 7 games / 14 PPG) isn't missed by the top-N/ games-
+        # floor producer set above. Young risers are exempt (a high rate is the
+        # ascension we want to surface). Mirrors build_historical_scores.
+        from data_building.breakout_engine.config import (
+            ESTABLISHED_PRODUCER_PPG, ESTABLISHED_PPG_MIN_GAMES, ESTABLISHED_PPG_MIN_EXP,
+        )
+        _ppg_ceiling = ESTABLISHED_PRODUCER_PPG.get(position)
+        if (_ppg_ceiling is not None
+                and int(player.get('years_exp', 0)) >= ESTABLISHED_PPG_MIN_EXP
+                and float(prev_usage.get('games', 0)) >= ESTABLISHED_PPG_MIN_GAMES
+                and float(prev_usage.get('ppr_ppg', 0)) >= _ppg_ceiling):
+            return None
+
         # Check if player is a drafted rookie
         is_drafted_rookie = player.get('is_rookie', False) or player.get('draft_year') == self.season
         draft_capital = player.get('draft_capital')
@@ -236,6 +251,7 @@ class BreakoutEngine:
             # provide partial contested-share dilution. The rebuild path (which
             # has full rosters) is authoritative for the displayed list.
             arrivals_cache=self.db_cache.get('arrivals'),
+            player_prev_usage=prev_usage,
         )
         component_scores['opportunity_opened'] = score
         component_details['opportunity_opened'] = details

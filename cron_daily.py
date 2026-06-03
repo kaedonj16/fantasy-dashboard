@@ -370,7 +370,21 @@ print(f"[cron] Synced {n} EMA values from player_value_history to player_values"
 """, "sync_ema_to_player_values")
 
     # ------------------------------------------------------------------ #
-    # Step 5: Breakout candidates                                        #
+    # Step 5a: Archetype cache export (WR/TE role-fit context for        #
+    # breakout engine). Runs unconditionally so the cache stays current  #
+    # as PFF advanced metrics are refreshed throughout the offseason.    #
+    # Safe to re-run: it simply overwrites cache/archetype_{season}.json #
+    # ------------------------------------------------------------------ #
+    _run_step(f"""
+from dotenv import load_dotenv; load_dotenv()
+import sys, os; sys.path.insert(0, os.getcwd())
+from scripts.export_archetype_cache import run as export_archetype
+n = export_archetype({season!r})
+print(f"[cron] Archetype cache: {{n}} WR/TE profiles -> cache/archetype_{season!r}.json")
+""", "export_archetype_cache")
+
+    # ------------------------------------------------------------------ #
+    # Step 5b: Breakout candidates                                       #
     # ------------------------------------------------------------------ #
     _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()

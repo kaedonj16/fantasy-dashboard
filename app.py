@@ -18916,18 +18916,13 @@ def api_team_details(roster_id: str):
                 for pick_info in owned_picks:
                     if pick_info["current_owner"] == int(roster_id):
                         via = None
-                        previous_owner = pick_info["previous_owner"]
                         original_owner = pick_info["original_owner"]
 
-                        if previous_owner is not None and previous_owner != original_owner:
-                            # Find who it came from (the previous owner who traded it away)
-                            via_roster = next((r for r in rosters if r.get("roster_id") == previous_owner), None)
-                            if via_roster:
-                                via_owner_id = via_roster.get("owner_id")
-                                via_user = next((u for u in users if u.get("user_id") == via_owner_id), None)
-                                via = via_user.get("display_name") if via_user else f"Team {previous_owner}"
-                        elif original_owner != int(roster_id):
-                            # This team acquired the pick from its original owner
+                        if original_owner != int(roster_id):
+                            # Always show the team whose draft slot this pick originates from.
+                            # Using previous_owner (last trader) was wrong when a pick changes
+                            # hands more than once — multiple picks could share the same
+                            # previous_owner while having different original owners.
                             via_roster = next((r for r in rosters if r.get("roster_id") == original_owner), None)
                             if via_roster:
                                 via_owner_id = via_roster.get("owner_id")

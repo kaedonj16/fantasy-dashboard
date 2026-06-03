@@ -227,11 +227,12 @@ class PhaseDetector:
 
         if not (opportunity_breakout or ascension_breakout):
             curved = min(curved, BREAKOUT_GATE_FAIL_CAP)
-        elif competition_data_absent:
-            # Qualified via ascension with NO measured opening at all (no vacated
-            # role, no departed competition) — cap below the clear
-            # opportunity-driven breakouts. A player with even a modest real
-            # opportunity share is NOT capped.
+        elif not opportunity_breakout:
+            # Qualified via ascension but NOT via a real opening — cap below the
+            # genuine opportunity-driven breakouts. This applies to any player
+            # without a meaningful opportunity/competition opening (not only the
+            # exactly-zero case), so an ascending young starter with no vacancy
+            # can't outrank a true opportunity breakout.
             curved = min(curved, BREAKOUT_ASCENSION_SCORE_CAP)
 
         return curved
