@@ -31,6 +31,10 @@ services:
         sync: false
       - key: FLASK_SECRET_KEY
         sync: false
+      # Gates admin-only data-management endpoints (rookie prospect writes,
+      # sleeper linking, pipeline refresh). If unset, those endpoints are disabled.
+      - key: ADMIN_KEY
+        sync: false
       - key: PYTHON_ENV
         value: production
     autoDeploy: true

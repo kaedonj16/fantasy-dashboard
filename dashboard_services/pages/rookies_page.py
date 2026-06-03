@@ -8,8 +8,9 @@ the filters/sorts are instant without round-trips.
 from __future__ import annotations
 
 
-def build_prospects_body() -> str:
-    return """
+def build_prospects_body(is_admin: bool = False) -> str:
+    admin_flag = "true" if is_admin else "false"
+    return f"""<script>window.RK_IS_ADMIN = {admin_flag};</script>""" + """
 <div class="card central" id="prospectsCard">
   <div class="card-header rk-card-header">
     <div>
@@ -1225,6 +1226,8 @@ def build_prospects_body() -> str:
     if (existingSleeperIdVal) {
       return '<div style="font-size:12px;color:var(--text-muted);">Sleeper ID: <strong style="color:var(--text);">' + existingSleeperIdVal + '</strong> <span style="color:#10b981;">✓ linked</span></div>';
     }
+    // Linking writes to the database — only admins see the controls.
+    if (!window.RK_IS_ADMIN) { return ''; }
     return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
       '<span style="font-size:12px;color:var(--text-muted);">Sleeper ID:</span>' +
       '<input id="rkSleeperIdInput" type="text" placeholder="e.g. 10229" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text);width:110px;" />' +

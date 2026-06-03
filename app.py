@@ -11158,7 +11158,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 def page_prospects(platform: str, season: int, league_id: str):
     """Rookie prospect rankings page — active class auto-detected."""
     from dashboard_services.pages.rookies_page import build_prospects_body
-    body_html = build_prospects_body()
+    from dashboard_services.admin_auth import is_admin
+    body_html = build_prospects_body(is_admin=is_admin())
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 
