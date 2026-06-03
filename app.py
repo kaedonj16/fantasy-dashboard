@@ -21599,13 +21599,27 @@ def api_trade_intel_player_packages(player_id: str):
                     # DB values for picks can be stale and cause wrong grade/accept rate
                     try:
                         from dashboard_services.picks import load_pick_value_table as _lpvt
-                        pick_val_lookup = _lpvt(league_teams=num_teams) or {}
+                        pick_val_lookup = dict(_lpvt(league_teams=num_teams) or {})
                     except Exception:
-                        pick_val_lookup = {
-                            str(p.get("id") or ""): float(p.get("value") or 0)
-                            for p in value_table
-                            if str(p.get("position") or "").upper() == "PICK"
-                        }
+                        pick_val_lookup = {}
+                    # Backfill slot/bucket pick values straight from model_values.json.
+                    # The DB value table excludes picks (position != 'PICK'), and
+                    # load_pick_value_table can return without current-year slot keys
+                    # in this code path — which previously collapsed every pick onto a
+                    # weak round-average/flat fallback, making big overpays (e.g. two
+                    # R1 picks for a mid-RB) grade as "slight overpay". model_values.json
+                    # is a static file present in prod with correct slot values
+                    # (2026_1_01 -> 666.4, 2026_1_02 -> 386.4, future buckets, etc.).
+                    try:
+                        for _mp in (load_model_value_table(apply_calibration=False) or []):
+                            if str(_mp.get("position") or "").upper() != "PICK":
+                                continue
+                            _mpid  = str(_mp.get("id") or "")
+                            _mpval = float(_mp.get("value") or 0)
+                            if _mpid and _mpval > 0 and not pick_val_lookup.get(_mpid):
+                                pick_val_lookup[_mpid] = _mpval
+                    except Exception:
+                        pass
                     # Slot map for current season: {original_roster_id -> slot_number}
                     _slot_map: dict = {}
                     try:
