@@ -356,8 +356,10 @@ def _archetype_vector(profile: Optional[Dict]) -> Optional[Tuple[float, float, f
     slot, adot, yac = profile.get("slot_rate"), profile.get("adot"), profile.get("yac_per_rec")
     if slot is None and adot is None and yac is None:
         return None
+    # slot_rate=None means no alignment data — treat as 0.5 (neutral/unknown)
+    slot_norm = 0.5 if slot is None else _clamp(_safe_float(slot) / 100.0, 0.0, 1.0)
     return (
-        _clamp(_safe_float(slot) / 100.0, 0.0, 1.0),   # 0=outside .. 1=pure slot
+        slot_norm,
         _clamp(_safe_float(adot) / 20.0, 0.0, 1.0),    # target depth (aDOT)
         _clamp(_safe_float(yac) / 10.0, 0.0, 1.0),     # yards after catch
     )

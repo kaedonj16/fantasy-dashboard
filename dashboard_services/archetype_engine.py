@@ -1442,6 +1442,8 @@ def get_archetype_suggestions(
         owner_meta[rid] = {"arch": p_arch, "name": p_name, "phrase": p_phrase}
 
         for pid in pids:
+            if pid in viewer_players:
+                continue  # never suggest the viewer's own players as targets
             info = values_by_id.get(pid)
             if not info:
                 continue
