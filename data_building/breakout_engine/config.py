@@ -78,6 +78,81 @@ PHASE_WEIGHTS: Dict[str, Dict[str, float]] = {
 # Set to 40 to be selective while capturing top RB opportunities
 MIN_BREAKOUT_SCORE = 40.0
 
+# ==============================================================================
+# SELECTIVITY: QUALIFICATION GATES + SCORE CURVE
+# ==============================================================================
+# The raw aggregate is a weighted *average*, which clusters most players near
+# the middle (~50). To surface only legitimate breakouts (a small handful, not
+# a wide net), we (1) require a player to clear qualification gates and (2)
+# steepen the score so the mediocre middle collapses below the candidate floor.
+#
+# A legit breakout needs BOTH a real opening AND the ability to seize it:
+#   - Opportunity dimension: a meaningful role opened up (vacated work) OR
+#     real same-position competition departed.
+#   - Readiness dimension: the player's profile is ready OR their role is
+#     already trending up.
+# A player elite on only one dimension is not a clean breakout.
+#
+# Tuning (if you see too many / too few candidates on the page, which uses a
+# min_score of 50):
+#   - Too MANY candidates  -> raise BREAKOUT_CURVE_PIVOT (e.g. 60 -> 63) and/or
+#     raise the gate floors (BREAKOUT_GATE_*_MIN).
+#   - Too FEW candidates   -> lower BREAKOUT_CURVE_PIVOT and/or the gate floors.
+#   - Want a sharper split -> raise BREAKOUT_CURVE_SLOPE (more separation).
+
+# Opportunity gate: pass if EITHER of these clears (component scores are 0-100).
+# Calibrated for the contested-SHARE opportunity scale: a player's diluted share
+# of vacated work scores far lower than the old gross-team-total scale, so a
+# "real opening" is ~20, not 35.
+BREAKOUT_GATE_OPP_MIN = 20.0    # opportunity_opened floor (real vacated share)
+BREAKOUT_GATE_COMP_MIN = 30.0   # OR competition_removed floor
+
+# Readiness gate: pass if EITHER of these clears.
+BREAKOUT_GATE_READY_MIN = 50.0  # player_readiness floor
+BREAKOUT_GATE_TRAJ_MIN = 60.0   # OR role_trajectory floor (clearly rising)
+
+# Ascension path: a player can qualify as a breakout WITHOUT a new opening if
+# they are clearly ascending on their own — the classic Year-2 / sophomore leap
+# (e.g. a stud young RB who already has the job and is trending up, with no
+# vacated role and no competition change). Because there is no opening to lean
+# on, this path demands BOTH a high readiness AND a strong upward trajectory.
+# A strongly rising trajectory is the primary ascension signal; readiness only
+# needs to be moderate (a Year-2 stud like a 1st-round RB can sit at ~60 while
+# clearly ascending). Set the readiness floor too high and these get wrongly cut.
+BREAKOUT_ASCENSION_READY_MIN = 58.0  # player_readiness floor (talent/profile)
+BREAKOUT_ASCENSION_TRAJ_MIN = 60.0   # AND role_trajectory floor (rising usage)
+
+# An ascension-only candidate has no MEASURED opening (no vacated role, no
+# departed competition) — its upside is inferred from trajectory alone, which is
+# less certain than a quantified opportunity. Cap its final score so a player
+# with no new opening cannot outrank the clear opportunity-driven breakouts.
+# Only applied when the player qualifies via ascension and NOT via opportunity.
+BREAKOUT_ASCENSION_SCORE_CAP = 80.0
+
+# If a player fails the gates, cap their final score here so they fall below
+# the candidate floor (40) and the page floor (50) and drop off the list.
+BREAKOUT_GATE_FAIL_CAP = 38.0
+
+# Score curve: pivots the raw aggregate and stretches the spread around it.
+# curved = PIVOT + (raw - PIVOT) * SLOPE, clamped to 0-100.
+#
+# NOTE on the raw distribution: the underlying components compress scores into
+# a dense ~50-58 band (competition_added_penalty=0 means "no competition added"
+# — the best case — yet contributes 0 to the weighted average, pulling even
+# strong profiles down). That compression is why a flat 50 threshold catches
+# ~80 players. The pivot must sit near the *candidate median*, not at 64.
+#
+# With PIVOT=52, SLOPE=1.8: raw 50 -> 48.4, raw 52 -> 52, raw 55 -> 57.4,
+# raw 58 -> 62.8, raw 45 -> 39.4. Players below ~raw 51 fall under the floor.
+#
+# These are SAFE STARTING VALUES. To dial in the exact 8-15 count against your
+# real data without rebuilding repeatedly, run:
+#   python -m data_building.breakout_engine.tune_selectivity
+# It reads the stored component scores and prints the count for a grid of
+# pivot/slope values so you can pick the pair that lands in range.
+BREAKOUT_CURVE_PIVOT = 52.0
+BREAKOUT_CURVE_SLOPE = 1.8
+
 # Component score ranges (most are 0-100)
 COMPONENT_SCORE_MIN = 0.0
 COMPONENT_SCORE_MAX = 100.0
@@ -96,6 +171,19 @@ MAX_VACATED_TARGETS_RB = 100  # 100 targets = 30 points (secondary)
 
 # Snap share bonus
 MAX_SNAP_SHARE_BONUS = 20  # Up to 20 bonus points for high snap share vacated
+
+# --- Contested-share dilution --------------------------------------------------
+# Vacated opportunity is a TEAM-level quantity. Crediting it in full to every
+# pass-catcher who shares it (e.g. all of a team's WRs + TEs after one WR leaves)
+# saturates the score at 100 for ~everyone and makes it meaningless. Instead we
+# split the vacated work among the players who share the room, weighted by their
+# prior usage PER GAME — whoever was already earning targets/carries inherits the
+# larger portion of a departed teammate's work. The caps below are therefore
+# PER-COMPETITOR (one player's plausible share), not team totals. Readiness and
+# trajectory then decide whether the player capitalizes on that share.
+PER_COMPETITOR_TARGETS_WR_TE = 90    # ~90 vacated targets to one player = max
+PER_COMPETITOR_CARRIES_RB = 170      # ~170 vacated carries to one RB = max (primary)
+PER_COMPETITOR_TARGETS_RB = 55       # secondary receiving work for an RB
 
 # QB thresholds
 QB_STARTER_SNAP_THRESHOLD = 0.70  # 70%+ snap share = starter left

@@ -716,7 +716,12 @@ def main() -> Dict[str, Any]:
 
     print(f"[calculate_breakouts] Season: {season}, scoring from {stats_season} stats with as_of_date={date.today()}")
 
-    run(seasons=[stats_season], min_score=55.0, as_of_date_override=date.today())
+    # Storage floor is the effective candidate cutoff everywhere (all page
+    # requests use <= this), so it controls how many breakouts surface. With
+    # contested-share opportunity dilution making scores meaningful, ~60 yields
+    # the genuine candidates (roughly 20). Raise toward 70 for a tighter
+    # high-conviction list (~14), or lower it to widen the net.
+    run(seasons=[stats_season], min_score=60.0, as_of_date_override=date.today())
 
     return {"season": season, "stats_season": stats_season, "as_of_date": date.today().isoformat()}
 

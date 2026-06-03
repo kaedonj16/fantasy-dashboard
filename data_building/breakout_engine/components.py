@@ -13,6 +13,7 @@ Each function calculates one of the 7 component scores:
 All functions return (score: float, details: Dict) tuples.
 """
 
+import math
 from datetime import date, timedelta
 from typing import List, Optional, Tuple
 
@@ -205,6 +206,220 @@ def _score_bucket(value: float, thresholds: List[Tuple[float, float]], default: 
 
 
 # ==============================================================================
+# PASS-CATCHER OPPORTUNITY POOLING (WR + TE)
+# ==============================================================================
+# Receiving opportunity and competition are shared between WRs and TEs on the
+# same team: targets vacated (or added) by a WR are contestable by a TE, and
+# vice versa (e.g. a WR leaving Indianapolis frees up targets a pass-catching
+# TE can absorb). Carries stay position-exact (RB-only); RB/QB are unaffected.
+
+PASS_CATCHER_POSITIONS = ("WR", "TE")
+
+
+def _opportunity_group_keys(team: str, position: str) -> List[Tuple[str, str]]:
+    """(team, position) cache keys whose receiving opportunity this player shares."""
+    if position in PASS_CATCHER_POSITIONS:
+        return [(team, "WR"), (team, "TE")]
+    return [(team, position)]
+
+
+def _pooled_vacated(vacated_cache, team: str, position: str, season: int):
+    """Merge vacated opportunity across the player's opportunity group.
+
+    For RB/QB this is identical to a single-key lookup; for WR/TE it sums the
+    receiving opportunity vacated by both WRs and TEs on the team.
+    """
+    merged = None
+    for t, p in _opportunity_group_keys(team, position):
+        if vacated_cache is not None:
+            v = vacated_cache.get((t, p))
+        else:
+            v = get_vacated_opportunity(t, p, season)
+        if not v:
+            continue
+        if merged is None:
+            merged = {"targets": 0.0, "carries": 0.0, "snap_share": 0.0,
+                      "departed_players": []}
+        merged["targets"] += _safe_float(v.get("targets", 0))
+        merged["carries"] += _safe_float(v.get("carries", 0))
+        merged["snap_share"] += _safe_float(v.get("snap_share", 0))
+        merged["departed_players"] += list(v.get("departed_players", []) or [])
+    return merged
+
+
+# Expected per-game claim for a player with NO prior usage (rookies), by draft
+# round. A 1st-round WR projects to a ~#2/#3-receiver target share; later picks
+# and UDFAs command progressively less. RB units are weighted carries+targets.
+_DRAFT_CLAIM_WR_TE = {1: 5.0, 2: 3.5, 3: 2.5, 4: 1.5}
+_DRAFT_CLAIM_RB = {1: 14.0, 2: 9.0, 3: 6.0, 4: 4.0}
+
+
+def _competitor_claim(position: str, entry: Dict) -> float:
+    """A player's claim on vacated work, based on prior usage PER GAME.
+
+    Vacated targets/carries get redistributed toward the players who were
+    already earning volume: someone who was 2nd on the team in targets/game
+    inherits far more of a departed teammate's work than someone who saw 2
+    targets/game. Per-game (not season totals) so an injury-shortened but
+    high-usage season still counts.
+
+    A player with NO prior usage (a drafted rookie) has no usage to measure, so
+    their claim falls back to an expected share implied by draft capital — e.g. a
+    team that loses its WR1 but drafts a 1st-round WR sees that rookie absorb a
+    real chunk of the vacated targets. (Draft capital is only a fallback; an
+    established player is always weighted by actual usage, not pedigree.)
+    """
+    games = _safe_float(entry.get("last_season_games", 0))
+    targets = _safe_float(entry.get("last_season_targets", 0))
+    carries = _safe_float(entry.get("last_season_carries", 0))
+    volume = (carries + targets * 1.5) if position == "RB" else targets
+
+    if volume > 0:
+        # Per game when we know games played; else approximate from a full slate.
+        return volume / games if games >= 1 else volume / 17.0
+
+    # No measured usage — infer expected role from draft capital. An undrafted
+    # player who never produced isn't a real competitor for vacated work, so they
+    # claim nothing (and don't dilute or inflate the competitor count).
+    draft_round = (entry.get("draft_metadata") or {}).get("round")
+    if draft_round is None:
+        return 0.0
+    if position == "RB":
+        return _DRAFT_CLAIM_RB.get(draft_round, 2.0)   # rounds 5-7
+    return _DRAFT_CLAIM_WR_TE.get(draft_round, 1.0)     # rounds 5-7
+
+
+def _opportunity_share(
+    player_id: str, team: str, position: str,
+    incumbents_cache: Optional[Dict], arrivals_cache: Optional[Dict],
+) -> Tuple[float, int]:
+    """The player's usage-weighted share of the vacated work, and competitor count.
+
+    Returns (share_fraction, competitor_count). The vacated opportunity is split
+    among the players who share the group (returning incumbents + arrivals across
+    the pass-catcher group, or the exact position for RB) in proportion to each
+    player's prior usage per game — not equally and not by draft capital. Falls
+    back to a full share (1.0) when there is no usage context to divide by.
+    """
+    entries: Dict[str, Dict] = {}
+    for key in _opportunity_group_keys(team, position):
+        for src in (incumbents_cache, arrivals_cache):
+            for e in (src or {}).get(key, []):
+                pid = e.get("player_id")
+                if pid:
+                    entries.setdefault(pid, e)
+
+    claims = {pid: _competitor_claim(position, e) for pid, e in entries.items()}
+    claims.setdefault(player_id, 0.0)  # scored player always shares the room
+
+    total = sum(claims.values())
+    competitors = max(sum(1 for v in claims.values() if v > 0), 1)
+    if total <= 0:
+        return 1.0, competitors  # no one had prior usage — don't dilute
+    return claims[player_id] / total, competitors
+
+
+def _pooled_list(cache, db_fn, team: str, position: str, season: int) -> List[Dict]:
+    """Concatenate a list-valued cache (departures/arrivals) across the group.
+
+    De-dupes by player_id for safety (a player only appears under their own
+    position, so concatenation normally has no overlap).
+    """
+    out: List[Dict] = []
+    seen = set()
+    for t, p in _opportunity_group_keys(team, position):
+        items = cache.get((t, p), []) if cache is not None else db_fn(t, p, season)
+        for it in items or []:
+            pid = it.get("player_id")
+            if pid is not None and pid in seen:
+                continue
+            if pid is not None:
+                seen.add(pid)
+            out.append(it)
+    return out
+
+
+# ==============================================================================
+# ARCHETYPE / ROLE FIT (context only — does NOT affect the score)
+# ==============================================================================
+# Read-only explainability: how well a candidate's receiving role matches the
+# type of targets being vacated (a slot/possession vacancy "fits" a slot player
+# more than an outside burner). Surfaced as a label/insight; the numeric score
+# stays usage-based, since archetype data only exists for 2024-25 and can't be
+# backtested. Requires PFF-style fields (aDOT, slot/wide rate, YAC) which are
+# exported to cache/archetype_{season}.json. Degrades to None when unavailable.
+
+def _archetype_vector(profile: Optional[Dict]) -> Optional[Tuple[float, float, float]]:
+    """Normalized role vector (slot tendency, target depth, YAC) or None."""
+    if not profile:
+        return None
+    slot, adot, yac = profile.get("slot_rate"), profile.get("adot"), profile.get("yac_per_rec")
+    if slot is None and adot is None and yac is None:
+        return None
+    return (
+        _clamp(_safe_float(slot) / 100.0, 0.0, 1.0),   # 0=outside .. 1=pure slot
+        _clamp(_safe_float(adot) / 20.0, 0.0, 1.0),    # target depth (aDOT)
+        _clamp(_safe_float(yac) / 10.0, 0.0, 1.0),     # yards after catch
+    )
+
+
+def _vacated_archetype_profile(departed_players: List[Dict]) -> Optional[Tuple[float, float, float]]:
+    """Target-weighted average role vector of the departed players, or None."""
+    acc, wsum = [0.0, 0.0, 0.0], 0.0
+    for dp in departed_players or []:
+        vec = _archetype_vector(dp.get("archetype"))
+        if vec is None:
+            continue
+        w = max(_safe_float(dp.get("targets", 0)), 1.0)
+        for i in range(3):
+            acc[i] += vec[i] * w
+        wsum += w
+    return (acc[0] / wsum, acc[1] / wsum, acc[2] / wsum) if wsum > 0 else None
+
+
+def _describe_role(vec: Tuple[float, float, float]) -> str:
+    """Short human label for a role vector, e.g. 'slot, short-area'."""
+    slot, adot, _ = vec
+    align = "slot" if slot >= 0.6 else "outside" if slot <= 0.35 else "slot/outside"
+    depth = "deep" if adot >= 0.6 else "short-area" if adot <= 0.4 else "intermediate"
+    return f"{align}, {depth}"
+
+
+def compute_archetype_fit(
+    player_archetype: Optional[Dict], team: str, position: str, vacated_cache: Optional[Dict],
+) -> Optional[Dict]:
+    """How well the candidate's role matches the vacated targets (WR/TE only).
+
+    Returns {fit, label, candidate_role, vacated_role} or None when archetype
+    data is missing on either side. Pure context — never feeds the score.
+    """
+    if position not in PASS_CATCHER_POSITIONS:
+        return None
+    cand = _archetype_vector(player_archetype)
+    if cand is None:
+        return None
+    departed: List[Dict] = []
+    for key in _opportunity_group_keys(team, position):
+        v = (vacated_cache or {}).get(key)
+        if v:
+            departed += v.get("departed_players", []) or []
+    vac = _vacated_archetype_profile(departed)
+    if vac is None:
+        return None
+    dist = math.sqrt(sum((cand[i] - vac[i]) ** 2 for i in range(3)))
+    sim = max(0.0, 1.0 - dist / math.sqrt(3.0))
+    # Realistic role distances compress into ~0.6-1.0, so calibrate labels there:
+    # a clean alignment mismatch (slot vs outside) lands ~0.61 -> "low".
+    label = "high" if sim >= 0.85 else "medium" if sim >= 0.70 else "low"
+    return {
+        "fit": round(sim, 2),
+        "label": label,
+        "candidate_role": _describe_role(cand),
+        "vacated_role": _describe_role(vac),
+    }
+
+
+# ==============================================================================
 # COMPONENT 1: OPPORTUNITY OPENED SCORE
 # ==============================================================================
 
@@ -214,10 +429,14 @@ def calculate_opportunity_opened_score(
         position: str,
         season: int,
         vacated_cache: Optional[Dict] = None,
-        air_yards_data: Optional[Dict] = None
+        air_yards_data: Optional[Dict] = None,
+        incumbents_cache: Optional[Dict] = None,
+        arrivals_cache: Optional[Dict] = None,
 ) -> Tuple[float, Dict]:
     """
-    Score (0-100) based on total opportunity vacated from team/position.
+    Score (0-100) based on the vacated opportunity actually AVAILABLE to this
+    player — the team's vacated work divided among the credible competitors
+    contesting it, not the gross team total credited to everyone.
 
     Args:
         vacated_cache: Optional dict mapping (team, position) to vacated opportunity.
@@ -225,12 +444,13 @@ def calculate_opportunity_opened_score(
         air_yards_data: Optional dict with air yards context for WR/TE quality bonus:
                         - 'vacated_air_yards' (int): total air yards from departed WRs/TEs
                         - 'avg_depth_of_target' (float): average aDOT of departed targets
+        incumbents_cache, arrivals_cache: Optional rosters used to count the
+                        credible competitors who will share the vacated work. When
+                        omitted, no dilution is applied (competitor count = 1).
     """
-    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query
-    if vacated_cache is not None:
-        vac_opp = vacated_cache.get((team, position))
-    else:
-        vac_opp = get_vacated_opportunity(team, position, season)
+    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query.
+    # WR/TE pool receiving opportunity (see _pooled_vacated); RB/QB unchanged.
+    vac_opp = _pooled_vacated(vacated_cache, team, position, season)
 
     if not vac_opp:
         return 0.0, {
@@ -251,19 +471,32 @@ def calculate_opportunity_opened_score(
     vacated_snap_share = _safe_float(vac_opp.get("snap_share", 0))
     departed_players = vac_opp.get("departed_players", [])
 
+    # Contested-share dilution: split the vacated work among credible competitors
+    # in proportion to each player's claim (usage + draft pedigree), so the score
+    # reflects what is realistically AVAILABLE to this player rather than the
+    # gross team total. QB starter snaps are not shared, so they stay undivided.
+    share_fraction, competitor_count = _opportunity_share(
+        player_id, team, position, incumbents_cache, arrivals_cache
+    )
+    share_targets = vacated_targets * share_fraction
+    share_carries = vacated_carries * share_fraction
+    share_snap = vacated_snap_share * share_fraction
+
     if position in ["WR", "TE"]:
-        target_score = min((vacated_targets / MAX_VACATED_TARGETS_WR_TE) * 100.0, 100.0)
+        target_score = min((share_targets / PER_COMPETITOR_TARGETS_WR_TE) * 100.0, 100.0)
         raw_score = target_score
     elif position == "RB":
-        carry_score = min((vacated_carries / MAX_VACATED_CARRIES_RB) * 70.0, 70.0)
-        target_score = min((vacated_targets / MAX_VACATED_TARGETS_RB) * 30.0, 30.0)
+        carry_score = min((share_carries / PER_COMPETITOR_CARRIES_RB) * 70.0, 70.0)
+        target_score = min((share_targets / PER_COMPETITOR_TARGETS_RB) * 30.0, 30.0)
         raw_score = carry_score + target_score
     elif position == "QB":
+        # Starter snaps are not shared among competitors — use the gross value.
         raw_score = 100.0 if vacated_snap_share >= QB_STARTER_SNAP_THRESHOLD else 0.0
     else:
         raw_score = 0.0
 
-    snap_bonus = min(vacated_snap_share * 50.0, MAX_SNAP_SHARE_BONUS)
+    snap_for_bonus = vacated_snap_share if position == "QB" else share_snap
+    snap_bonus = min(snap_for_bonus * 50.0, MAX_SNAP_SHARE_BONUS)
 
     # --- Air yards quality bonus (WR/TE only) ---
     air_yards_bonus = 0.0
@@ -274,8 +507,9 @@ def calculate_opportunity_opened_score(
         vacated_air_yards = _safe_int(air_yards_data.get("vacated_air_yards", 0), 0)
         avg_depth_of_target = _safe_float(air_yards_data.get("avg_depth_of_target", 0.0), 0.0)
 
-        # Volume bonus: normalized against elite WR1 air yards season
-        volume_bonus = _normalize_to_one(vacated_air_yards, MAX_VACATED_AIR_YARDS) * AIR_YARDS_ELITE_BONUS
+        # Volume bonus: normalized against elite WR1 air yards season (the
+        # player's diluted share, consistent with target/carry dilution).
+        volume_bonus = _normalize_to_one(vacated_air_yards * share_fraction, MAX_VACATED_AIR_YARDS) * AIR_YARDS_ELITE_BONUS
 
         # Depth bonus: routes that go downfield are harder to replace and more valuable
         if avg_depth_of_target >= AIR_YARDS_ELITE_ADOT:
@@ -299,6 +533,9 @@ def calculate_opportunity_opened_score(
         "vacated_targets": round(vacated_targets, 1),
         "vacated_carries": round(vacated_carries, 1),
         "vacated_snap_share": round(vacated_snap_share, 3),
+        "competitor_count": competitor_count,
+        "share_targets": round(share_targets, 1),
+        "share_carries": round(share_carries, 1),
         "raw_score": round(raw_score, 2),
         "snap_bonus": round(snap_bonus, 2),
         "air_yards_bonus": round(air_yards_bonus, 2),
@@ -380,11 +617,12 @@ def calculate_competition_removed_score(
         departures_cache: Optional dict mapping (team, position) to list of departures.
                          If provided, uses O(1) cache lookup instead of DB query.
     """
-    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query
-    if departures_cache is not None:
-        departures = departures_cache.get((team, position), [])
-    else:
-        departures = get_departures_by_team_position(team, position, season)
+    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query.
+    # WR/TE pool pass-catcher departures so a TE sees a departing WR as removed
+    # competition (and vice versa); RB/QB unchanged.
+    departures = _pooled_list(
+        departures_cache, get_departures_by_team_position, team, position, season
+    )
 
     if not departures:
         return 0.0, {
@@ -639,11 +877,12 @@ def calculate_competition_added_penalty(
         arrivals_cache: Optional dict mapping (team, position) to list of arrivals.
                        If provided, uses O(1) cache lookup instead of DB query.
     """
-    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query
-    if arrivals_cache is not None:
-        arrivals = arrivals_cache.get((team, position), [])
-    else:
-        arrivals = get_arrivals_by_team_position(team, position, season)
+    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query.
+    # WR/TE pool pass-catcher arrivals so an incoming WR counts as added
+    # competition for a TE (and vice versa); RB/QB unchanged.
+    arrivals = _pooled_list(
+        arrivals_cache, get_arrivals_by_team_position, team, position, season
+    )
 
     if not arrivals:
         return 0.0, {

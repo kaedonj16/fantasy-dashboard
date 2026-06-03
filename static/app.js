@@ -7271,10 +7271,33 @@ function _buildBkTabHTML(data, scoreColor) {
 
   const reasons = (data.key_reasons || '').split('\n')
     .map(r => r.replace(/^[•\-]\s*/, '').trim())
-    .filter(r => r.length > 0);
+    .filter(r => r.length > 0)
+    // Role fit is rendered as a dedicated chip below — drop the text duplicate.
+    .filter(r => !/role fit for vacated targets/i.test(r));
 
   const txnSummary    = data.vacated_usage_summary || '';
   const addedCompSumm = data.added_competition_summary || '';
+
+  // ── Role / archetype fit factor (context only — does not affect the score) ──
+  let cd = data.component_details;
+  if (typeof cd === 'string') { try { cd = JSON.parse(cd); } catch (e) { cd = {}; } }
+  const aFit = (cd && cd.opportunity_opened && cd.opportunity_opened.archetype_fit) || null;
+  let roleFitItem = '';
+  if (aFit && aFit.label) {
+    const fitColor = aFit.label === 'high' ? '#10b981'
+                   : aFit.label === 'medium' ? '#f59e0b' : '#6b7280';
+    roleFitItem = `
+      <div title="How well this player's receiving role matches the vacated targets. Context only — it does not change the score."
+           style="font-size:13px;display:flex;gap:12px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--surface-2,rgba(255,255,255,0.06));margin-bottom:2px;">
+        <span style="color:${fitColor};font-weight:700;flex-shrink:0;"><i class="fa-solid fa-bullseye" aria-hidden="true"></i></span>
+        <span>
+          <span style="font-weight:600;color:${fitColor};text-transform:capitalize;">${aFit.label} Role Fit</span>
+          <span style="display:block;color:var(--text-muted);margin-top:2px;">Vacated Role: ${aFit.vacated_role}</span>
+          <span style="display:block;color:var(--text-muted);">His Role: ${aFit.candidate_role}</span>
+        </span>
+      </div>`;
+  }
+
 
   // ── PPG range computation ──────────────────────────────────────────────────
   const s1      = parseFloat(data.season1_ppr || 0);
@@ -7407,11 +7430,12 @@ function _buildBkTabHTML(data, scoreColor) {
   html += '</div></div>';
 
   // ── Key factors (right on desktop, above on mobile) ────────────────────────
-  if (reasons.length) {
+  if (reasons.length || roleFitItem) {
     html += `<div class='pm-right-column pm-bk-reasons-col'>`;
     html += `<hr class="pm-section-divider">`;
     html += `<div class="pm-section-header"><span class="pm-section-label">Key Factors</span></div>`;
     html += `<div style="display:flex;flex-direction:column;gap:6px;">`;
+    html += roleFitItem;
     reasons.forEach(r => {
       html += `<div style="font-size:13px;color:var(--text-muted);display:flex;gap:15px;align-items:flex-start;">
         <span style="color:${scoreColor};font-weight:700;flex-shrink:0;">•</span><span>${r}</span>

@@ -8,7 +8,19 @@ and provides appropriate component score weights for each phase.
 from datetime import date
 from typing import Dict
 
-from .config import PHASE_WEIGHTS
+from .config import (
+    PHASE_WEIGHTS,
+    BREAKOUT_GATE_OPP_MIN,
+    BREAKOUT_GATE_COMP_MIN,
+    BREAKOUT_GATE_READY_MIN,
+    BREAKOUT_GATE_TRAJ_MIN,
+    BREAKOUT_ASCENSION_READY_MIN,
+    BREAKOUT_ASCENSION_TRAJ_MIN,
+    BREAKOUT_ASCENSION_SCORE_CAP,
+    BREAKOUT_GATE_FAIL_CAP,
+    BREAKOUT_CURVE_PIVOT,
+    BREAKOUT_CURVE_SLOPE,
+)
 
 
 class PhaseDetector:
@@ -141,19 +153,28 @@ class PhaseDetector:
         """
         weights = cls.get_phase_weights(phase)
 
-        # Detect DB-absent state: all three competition components return 0 when
-        # the roster-changes table hasn't been populated. Treat them as absent
-        # (exclude from both numerator and denominator) so they don't drag down
-        # the renormalized score. Note that competition_added_penalty ranges from
-        # -38 to 0 (it is a pure penalty, never positive), so a value of 0 is
-        # ambiguous - it could mean "no data" or "no new competition added".
-        # When combined with opportunity_opened=0 and competition_removed=0, all
-        # three are almost certainly absent rather than genuinely zero.
         opp_opened = component_scores.get('opportunity_opened', 0.0)
         comp_removed = component_scores.get('competition_removed', 0.0)
         comp_added = component_scores.get('competition_added_penalty', 0.0)
+
+        absent: set = set()
+
+        # competition_added_penalty ranges -38..0 and is a pure penalty. A value
+        # of 0 means "no new competition added" — the *ideal* breakout setup, not
+        # a low score on a 0-100 scale. Averaging a 0 in at full weight drags the
+        # score down and buries legitimate opportunity breakouts, so exclude it
+        # unless it is an actual (negative) penalty.
+        if comp_added >= 0.0:
+            absent.add('competition_added_penalty')
+
+        # Detect DB-absent / stable-roster state: when opportunity AND
+        # competition-removed are also both zero, there is no roster-change signal
+        # for this player. Exclude those too so the score reflects the components
+        # we do have (readiness, trajectory, environment) rather than being
+        # dragged toward zero.
         competition_data_absent = (opp_opened == 0.0 and comp_removed == 0.0 and comp_added == 0.0)
-        absent = {'opportunity_opened', 'competition_removed', 'competition_added_penalty'} if competition_data_absent else set()
+        if competition_data_absent:
+            absent.update({'opportunity_opened', 'competition_removed'})
 
         total = 0.0
         active_weight = 0.0
@@ -168,7 +189,52 @@ class PhaseDetector:
             return 0.0
 
         # Renormalize so the active-weight components span the full 0-100 range
-        return max(0.0, min(100.0, total / active_weight))
+        raw = max(0.0, min(100.0, total / active_weight))
+
+        # ── Steepen the curve so the mediocre middle collapses ────────────────
+        # The raw aggregate is an average and clusters near ~50; pivot+stretch
+        # pushes average players below the candidate floor while keeping genuine
+        # standouts high. See config BREAKOUT_CURVE_* for tuning.
+        curved = BREAKOUT_CURVE_PIVOT + (raw - BREAKOUT_CURVE_PIVOT) * BREAKOUT_CURVE_SLOPE
+        curved = max(0.0, min(100.0, curved))
+
+        # ── Qualification gates: a candidate qualifies via EITHER of two paths.
+        opp = component_scores.get('opportunity_opened', 0.0)
+        comp_removed = component_scores.get('competition_removed', 0.0)
+        readiness = component_scores.get('player_readiness', 0.0)
+        trajectory = component_scores.get('role_trajectory', 0.0)
+
+        # Path A — opportunity-driven: a real opening AND the ability to take it.
+        # A player on a stable roster (no opening) has opportunity_ok=False and
+        # must instead qualify via the ascension path below.
+        opportunity_ok = (
+            opp >= BREAKOUT_GATE_OPP_MIN
+            or comp_removed >= BREAKOUT_GATE_COMP_MIN
+        )
+        readiness_ok = (
+            readiness >= BREAKOUT_GATE_READY_MIN
+            or trajectory >= BREAKOUT_GATE_TRAJ_MIN
+        )
+        opportunity_breakout = opportunity_ok and readiness_ok
+
+        # Path B — ascension-driven: no new opening required, but the player must
+        # be clearly ascending on their own (the Year-2 leap), which demands a
+        # high readiness AND a strong upward trajectory.
+        ascension_breakout = (
+            readiness >= BREAKOUT_ASCENSION_READY_MIN
+            and trajectory >= BREAKOUT_ASCENSION_TRAJ_MIN
+        )
+
+        if not (opportunity_breakout or ascension_breakout):
+            curved = min(curved, BREAKOUT_GATE_FAIL_CAP)
+        elif competition_data_absent:
+            # Qualified via ascension with NO measured opening at all (no vacated
+            # role, no departed competition) — cap below the clear
+            # opportunity-driven breakouts. A player with even a modest real
+            # opportunity share is NOT capped.
+            curved = min(curved, BREAKOUT_ASCENSION_SCORE_CAP)
+
+        return curved
 
     @classmethod
     def get_phase_description(cls, phase: str) -> str:
