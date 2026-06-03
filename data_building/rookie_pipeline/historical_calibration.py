@@ -132,7 +132,7 @@ def _build_nfl_outcomes(
     }}
     """
     outcomes: Dict[str, Dict[str, Any]] = {}
-    latest_completed_regular_season = dt.datetime.utcnow().year - 1
+    latest_completed_regular_season = dt.datetime.now(dt.timezone.utc).year - 1
 
     for draft_year in draft_years:
         log.info("[calibration] Loading draft class %d roster", draft_year)

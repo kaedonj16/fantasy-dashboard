@@ -60,9 +60,10 @@ def robots_txt():
 @public_bp.route("/sitemap.xml")
 def sitemap_xml():
     from app import get_nfl_state
+    from datetime import datetime
     base = request.host_url.rstrip("/")
     nfl_state = get_nfl_state() or {}
-    season = int(nfl_state.get("season") or 2025)
+    season = int(nfl_state.get("season") or datetime.now().year)
 
     # Static pages always indexed
     static_urls = [
@@ -368,8 +369,8 @@ def faq_page(platform: Optional[str] = None, season: Optional[int] = None,
 
 # ── Contact ───────────────────────────────────────────────────────────────────
 
-@public_bp.route("/contact", methods=["GET", "POST"])
-@public_bp.route("/<platform>/<int:season>/<league_id>/contact", methods=["GET", "POST"])
+@public_bp.route("/contact")
+@public_bp.route("/<platform>/<int:season>/<league_id>/contact")
 def contact_page(platform: Optional[str] = None, season: Optional[int] = None,
                  league_id: Optional[str] = None):
     body = """

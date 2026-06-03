@@ -321,7 +321,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                 if pd.notna(forty) and forty != '':
                     try:
                         athleticism['forty_yard'] = float(forty)
-                    except:
+                    except (ValueError, TypeError):
                         pass
                 
                 # Vertical jump (inches)
@@ -333,7 +333,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                             athleticism['vertical_inches'] = int(vert_val)
                         else:
                             athleticism['vertical_inches'] = vert_val
-                    except:
+                    except (ValueError, TypeError):
                         pass
                 
                 # Broad jump (inches)
@@ -341,7 +341,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                 if pd.notna(broad) and broad != '':
                     try:
                         athleticism['broad_jump_in'] = int(float(broad))
-                    except:
+                    except (ValueError, TypeError):
                         pass
                 
                 # 3-cone drill
@@ -349,7 +349,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                 if pd.notna(three_cone) and three_cone != '':
                     try:
                         athleticism['three_cone'] = float(three_cone)
-                    except:
+                    except (ValueError, TypeError):
                         pass
                 
                 # Short shuttle
@@ -357,7 +357,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                 if pd.notna(shuttle) and shuttle != '':
                     try:
                         athleticism['short_shuttle'] = float(shuttle)
-                    except:
+                    except (ValueError, TypeError):
                         pass
                 
                 # Bench press
@@ -365,7 +365,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                 if pd.notna(bench) and bench != '':
                     try:
                         athleticism['bench_reps'] = int(float(bench))
-                    except:
+                    except (ValueError, TypeError):
                         pass
                 
                 # Height (convert NFL format to inches)
@@ -380,7 +380,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                             eighths = int(height_str[3])
                             total_inches = feet * 12 + inches + eighths / 8
                             athleticism['height_inches'] = total_inches
-                    except:
+                    except (ValueError, TypeError):
                         pass
                 
                 # Weight
@@ -388,7 +388,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                 if pd.notna(weight) and weight != '':
                     try:
                         athleticism['weight_lbs'] = int(float(weight))
-                    except:
+                    except (ValueError, TypeError):
                         pass
                 
                 # RAS (Relative Athletic Score)
@@ -396,7 +396,7 @@ def fetch_local_combine_csv(draft_year: int) -> Dict[str, Dict[str, Any]]:
                 if pd.notna(ras) and ras != '':
                     try:
                         athleticism['ras_score'] = float(ras)
-                    except:
+                    except (ValueError, TypeError):
                         pass
                 
                 # Only add if we have at least one measurement

@@ -45,7 +45,8 @@ def fetch_league_adp_from_db(
                 cache_path = type(DATA_DIR)(dated[-1])
         if cache_path.exists() and (time.time() - cache_path.stat().st_mtime) < 86400:
             try:
-                return _json.load(open(cache_path))
+                with open(cache_path) as _cf:
+                    return _json.load(_cf)
             except Exception:
                 logger.warning("adp_service: corrupt cache at %s, rebuilding", cache_path)
 
