@@ -21,12 +21,11 @@ from pathlib import Path
 from dashboard_services.db import get_conn
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("usage: python scripts/export_archetype_cache.py <season>")
-        sys.exit(1)
-    season = int(sys.argv[1])
+def run(season: int) -> int:
+    """Export archetype profiles for `season` to cache/archetype_{season}.json.
 
+    Returns the number of player profiles written.
+    """
     query = """
         SELECT DISTINCT ON (player_id)
             player_id,
@@ -62,6 +61,14 @@ def main():
     out_path = out_dir / f"archetype_{season}.json"
     out_path.write_text(json.dumps({"season": season, "players": players}, indent=2))
     print(f"Wrote {len(players)} WR/TE archetype profiles -> {out_path}")
+    return len(players)
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("usage: python scripts/export_archetype_cache.py <season>")
+        sys.exit(1)
+    run(int(sys.argv[1]))
 
 
 def _num(v):
