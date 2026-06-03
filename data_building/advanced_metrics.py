@@ -843,29 +843,43 @@ def get_player_metrics_by_season(player_id: str, season: int) -> Optional[Dict[s
 def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
     """
     Retrieve career-advanced metrics aggregated across all seasons for a player.
-    
+
     Args:
         player_id: Sleeper player ID
-        
+
     Returns:
         Dict with aggregated career metrics or None if not found
     """
+    from collections import defaultdict
+
+    _NUMERIC_METRICS = [
+        'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
+        'yards_per_carry', 'yards_per_touch', 'rush_td_rate',
+        'yards_per_attempt', 'completion_pct', 'td_rate', 'int_rate',
+        'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
+        'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
+        'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
+        'wide_rate', 'inline_rate', 'pass_block_rate', 'grades_offense',
+        'grades_pass_block', 'explosive_runs_10_plus', 'breakaway_percentage',
+        'elusive_rating', 'pff_rushing_grade', 'pff_passing_grade',
+        'big_time_throw_rate', 'adjusted_completion_rate', 'pressure_to_sack_rate',
+        'nfl_passer_rating',
+    ]
+
     with get_conn() as conn:
-        # Get all metrics for this player across all seasons
         rows = conn.execute("""
             SELECT * FROM player_advanced_metrics
             WHERE player_id = %s
             ORDER BY as_of_date DESC
         """, (player_id,)).fetchall()
-        
+
         if not rows:
             return None
-            
-        # Convert to list of dicts
-        metrics_list = [dict(row) for row in rows]
 
+        metrics_list = [dict(row) for row in rows]
         latest = metrics_list[0]
-        # Prefer the canonical fantasy position (QB/RB/WR/TE) — some import
+
+        # Prefer the canonical fantasy position (QB/RB/WR/TE); some import
         # paths write PFF codes like "HB".  Search all rows newest-first.
         _canonical = {"QB", "RB", "WR", "TE"}
         position = None
@@ -876,52 +890,56 @@ def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
                 break
         if position is None:
             position = _normalize_position(latest.get("position"))
-        
-        # Initialize aggregated metrics
-        aggregated = {
-            'player_id': player_id,
-            'position': position,
-            'season': None,  # Career mode
-            'as_of_date': latest.get('as_of_date'),  # Use latest date
+
+        # Step 1 — coalesce rows within each season so that a season with
+        # two DB rows (one PFF import + one computed snapshot) contributes
+        # the full column set, not just the most recent row.
+        season_buckets: Dict[Optional[int], List[Dict]] = defaultdict(list)
+        for r in metrics_list:
+            season_buckets[r.get("season")].append(r)
+
+        seasons_ordered = sorted(
+            (s for s in season_buckets if s is not None), reverse=True
+        )
+
+        if seasons_ordered:
+            season_snapshots = []
+            for s in seasons_ordered:
+                s_rows = season_buckets[s]  # already newest-first from ORDER BY
+                merged = dict(s_rows[0])
+                for older in s_rows[1:]:
+                    for key, value in older.items():
+                        if merged.get(key) is None and value is not None:
+                            merged[key] = value
+                season_snapshots.append(merged)
+        else:
+            season_snapshots = [latest]
+
+        # Step 2 — weighted average across seasons (most recent = weight 1,
+        # previous = 0.5, etc.).  Track weight per column separately so a
+        # metric that only exists in one season isn't diluted by the total
+        # season count (e.g. PFF grades imported for just one year).
+        col_sums: Dict[str, float] = {}
+        col_weights: Dict[str, float] = {}
+
+        for i, snap in enumerate(season_snapshots):
+            w = 1.0 / (i + 1)
+            for metric in _NUMERIC_METRICS:
+                v = snap.get(metric)
+                if v is not None:
+                    col_sums[metric] = col_sums.get(metric, 0.0) + float(v) * w
+                    col_weights[metric] = col_weights.get(metric, 0.0) + w
+
+        aggregated: Dict[str, Any] = {
+            "player_id": player_id,
+            "position": position,
+            "season": None,
+            "as_of_date": latest.get("as_of_date"),
         }
-        
-        # Define numeric metrics to aggregate
-        numeric_metrics = [
-            'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
-            'yards_per_carry', 'yards_per_touch', 'rush_td_rate',
-            'yards_per_attempt', 'completion_pct', 'td_rate', 'int_rate',
-            'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
-            'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
-            'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
-            'wide_rate', 'inline_rate', 'pass_block_rate', 'grades_offense',
-            'grades_pass_block', 'explosive_runs_10_plus', 'breakaway_percentage',
-            'elusive_rating', 'pff_rushing_grade', 'pff_passing_grade',
-            'big_time_throw_rate', 'adjusted_completion_rate', 'pressure_to_sack_rate',
-            'nfl_passer_rating'
-        ]
-        
-        # Aggregate metrics using weighted average (more recent seasons weighted more)
-        total_weight = 0
-        for i, metrics in enumerate(metrics_list):
-            # Weight decreases with age (recent seasons get higher weight)
-            weight = 1.0 / (i + 1)
-            total_weight += weight
-            
-            for metric in numeric_metrics:
-                value = metrics.get(metric)
-                if value is not None:
-                    if metric not in aggregated:
-                        aggregated[metric] = 0
-                    # Convert Decimal to float for multiplication
-                    float_value = float(value)
-                    aggregated[metric] += float_value * weight
-        
-        # Normalize by total weight
-        if total_weight > 0:
-            for metric in numeric_metrics:
-                if metric in aggregated:
-                    aggregated[metric] = aggregated[metric] / total_weight
-        
+        for metric in _NUMERIC_METRICS:
+            if col_weights.get(metric, 0.0) > 0:
+                aggregated[metric] = col_sums[metric] / col_weights[metric]
+
         return aggregated
 
 
