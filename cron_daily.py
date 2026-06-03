@@ -373,14 +373,18 @@ print(f"[cron] Synced {n} EMA values from player_value_history to player_values"
     # Step 5a: Archetype cache export (WR/TE role-fit context for        #
     # breakout engine). Runs unconditionally so the cache stays current  #
     # as PFF advanced metrics are refreshed throughout the offseason.    #
-    # Safe to re-run: it simply overwrites cache/archetype_{season}.json #
+    # Exports the STATS season (season-1): the breakout build scores from #
+    # the prior completed season's usage and loads archetype_{season-1}. #
+    # The current season has no game data yet (0 rows), so exporting it   #
+    # would write an empty cache and silently disable all role-fit labels.#
     # ------------------------------------------------------------------ #
+    _archetype_season = season - 1
     _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 import sys, os; sys.path.insert(0, os.getcwd())
 from scripts.export_archetype_cache import run as export_archetype
-n = export_archetype({season!r})
-print(f"[cron] Archetype cache: {{n}} WR/TE profiles -> cache/archetype_{season!r}.json")
+n = export_archetype({_archetype_season!r})
+print(f"[cron] Archetype cache: {{n}} WR/TE profiles -> cache/archetype_{_archetype_season!r}.json")
 """, "export_archetype_cache")
 
     # ------------------------------------------------------------------ #
