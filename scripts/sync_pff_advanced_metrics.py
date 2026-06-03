@@ -28,7 +28,7 @@ import requests
 
 from dashboard_services.db import get_conn
 from dashboard_services.api import get_nfl_state
-from data_building.advanced_metrics import init_advanced_metrics_db
+from data_building.advanced_metrics import init_advanced_metrics_db, _normalize_position
 from utils.utils import load_players_index, normalize_name
 
 OUTPUT_DIR = "data"
@@ -184,9 +184,9 @@ def upsert_csv(
                 continue
 
             name = normalize_name(row.get("player") or "")
-            pos = (row.get("position") or "").upper()
+            pos = _normalize_position((row.get("position") or "").upper())
             team = (row.get("team_name") or "").upper()
-            
+
             if not name:
                 continue
             pos = pos or position_hint
