@@ -13118,6 +13118,18 @@ img, svg, canvas {
   flex-direction: column;
   gap: 35px;
 }
+.adv-metrics-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+  align-items: start;
+}
+.adv-metrics-two-col .pm-comp-list {
+  gap: 14px;
+}
+@media (max-width: 600px) {
+  .adv-metrics-two-col { grid-template-columns: 1fr; }
+}
 .pm-comp-list-bo {
   display: flex;
   flex-direction: column;
