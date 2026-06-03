@@ -1521,6 +1521,21 @@ def build_season(
             skipped_rookie += 1
             continue
 
+        # PPG ceiling: an established (2+ yr) player already producing at an elite
+        # PPR/game rate has already broken out — exclude by RATE, so a hurt-but-
+        # elite season (e.g. 7 games / 14 PPG) doesn't slip past the top-N path.
+        # Young risers are exempt (a high rate is the ascension we want to keep).
+        from data_building.breakout_engine.config import (
+            ESTABLISHED_PRODUCER_PPG, ESTABLISHED_PPG_MIN_GAMES, ESTABLISHED_PPG_MIN_EXP,
+        )
+        _ppg_ceiling = ESTABLISHED_PRODUCER_PPG.get(roster_entry["position"])
+        if (_ppg_ceiling is not None
+                and years_exp >= ESTABLISHED_PPG_MIN_EXP
+                and float(player_prev_usage.get("games", 0)) >= ESTABLISHED_PPG_MIN_GAMES
+                and float(player_prev_usage.get("ppr_ppg", 0)) >= _ppg_ceiling):
+            skipped_established += 1
+            continue
+
         result = score_one_player(
             gsis_id=gsis_id,
             roster_entry=roster_entry,

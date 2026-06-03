@@ -573,6 +573,23 @@ ESTABLISHED_PRODUCER_TOP_N = {
 }
 ESTABLISHED_PRODUCER_MIN_GAMES = 8  # Minimum games to count a season
 
+# Absolute PPG ceiling: a player already producing at this PPR/game rate has
+# already broken out and can't be a breakout candidate — regardless of where
+# they ranked (top-N can miss a high-rate player in a deep year) or how many
+# games they played (the top-N path needs 8+ games, so a hurt-but-elite player
+# like a 7-game / 14 PPG WR slips through). This catches them by RATE.
+# Only applied to ESTABLISHED players (2+ yrs experience): for a rookie/sophomore
+# a high rate IS the ascension we want to surface (e.g. a 14 PPG rookie RB), so
+# young players are exempt.
+ESTABLISHED_PRODUCER_PPG = {
+    'QB': 17.0,
+    'RB': 13.0,
+    'WR': 13.0,
+    'TE': 10.5,
+}
+ESTABLISHED_PPG_MIN_GAMES = 5   # rate must come from a real sample, not 1-2 games
+ESTABLISHED_PPG_MIN_EXP = 2     # only gate players with 2+ years experience
+
 # ==============================================================================
 # WR FALSE-POSITIVE REDUCTION - Thresholds
 # ==============================================================================
