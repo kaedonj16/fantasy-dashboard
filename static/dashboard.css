@@ -14544,8 +14544,22 @@ tr.team-clickable {
 .compare-gamelogs-col .game-log-year-section {
   margin-bottom: 8px;
 }
+.compare-gamelogs-col .game-log-year-content {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .compare-gamelogs-col .game-log-table {
   font-size: 11px;
+  width: max-content;
+  min-width: 100%;
+}
+.compare-gamelogs-col .game-log-table th,
+.compare-gamelogs-col .game-log-table td {
+  padding: 5px 5px;
+}
+.compare-gamelogs-col .game-log-table th:first-child,
+.compare-gamelogs-col .game-log-table td:first-child {
+  padding-left: 8px;
 }
 
 /* ── Nav buttons ────────────────────────────────────────────────── */

@@ -7456,7 +7456,7 @@ function _buildBkTabHTML(data, scoreColor) {
 }
 
 // ── Stats tab HTML builder (returns HTML string, no DOM side effects) ─────────
-function _buildStatsHTML(game_logs_by_year, skipHeader) {
+function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
   let statsHTML = '';
   if (game_logs_by_year && Object.keys(game_logs_by_year).length > 0) {
     statsHTML += `
@@ -7488,7 +7488,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
     if (_anyRush) statCols = statCols.concat(_RUSH);
     if (_anyRec)  statCols = statCols.concat(_REC);
     if (!statCols.length) {
-      const P = (position || '').toUpperCase();
+      const P = (positionHint || position || '').toUpperCase();
       statCols = P === 'QB' ? _PASS.concat(_RUSH)
                : P === 'RB' ? _RUSH.concat(_REC)
                : _REC;
@@ -9091,8 +9091,8 @@ function openComparisonView(p1, p2) {
   // Inject game logs for both players
   const gl1 = document.getElementById('compareGameLogs1');
   const gl2 = document.getElementById('compareGameLogs2');
-  if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year, true);
-  if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year, true);
+  if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year, true, p1.position);
+  if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year, true, p2.position);
 
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();
