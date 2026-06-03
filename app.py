@@ -21599,13 +21599,27 @@ def api_trade_intel_player_packages(player_id: str):
                     # DB values for picks can be stale and cause wrong grade/accept rate
                     try:
                         from dashboard_services.picks import load_pick_value_table as _lpvt
-                        pick_val_lookup = _lpvt(league_teams=num_teams) or {}
+                        pick_val_lookup = dict(_lpvt(league_teams=num_teams) or {})
                     except Exception:
-                        pick_val_lookup = {
-                            str(p.get("id") or ""): float(p.get("value") or 0)
-                            for p in value_table
-                            if str(p.get("position") or "").upper() == "PICK"
-                        }
+                        pick_val_lookup = {}
+                    # Backfill slot/bucket pick values straight from model_values.json.
+                    # The DB value table excludes picks (position != 'PICK'), and
+                    # load_pick_value_table can return without current-year slot keys
+                    # in this code path — which previously collapsed every pick onto a
+                    # weak round-average/flat fallback, making big overpays (e.g. two
+                    # R1 picks for a mid-RB) grade as "slight overpay". model_values.json
+                    # is a static file present in prod with correct slot values
+                    # (2026_1_01 -> 666.4, 2026_1_02 -> 386.4, future buckets, etc.).
+                    try:
+                        for _mp in (load_model_value_table(apply_calibration=False) or []):
+                            if str(_mp.get("position") or "").upper() != "PICK":
+                                continue
+                            _mpid  = str(_mp.get("id") or "")
+                            _mpval = float(_mp.get("value") or 0)
+                            if _mpid and _mpval > 0 and not pick_val_lookup.get(_mpid):
+                                pick_val_lookup[_mpid] = _mpval
+                    except Exception:
+                        pass
                     # Slot map for current season: {original_roster_id -> slot_number}
                     _slot_map: dict = {}
                     try:
@@ -21827,10 +21841,10 @@ def api_trade_intel_player_packages(player_id: str):
 
         # ── Value-based fallback: always fill to at least 5 packages ─────
         # Combines viewer players (and picks) whose total value sits within
-        # [85%, 125%] of focus_value. Works even with no trade history.
+        # [90%, 115%] of focus_value. Works even with no trade history.
         if viewer_players and len(primary_pkgs) < 5:
             _fv      = float(focus_value or 0)
-            _lo, _hi = _fv * 0.82, _fv * 1.25
+            _lo, _hi = _fv * 0.90, _fv * 1.15
             _used_sets = {
                 frozenset(
                     str(a.get("player_id") or a.get("name") or "")
@@ -21843,7 +21857,7 @@ def api_trade_intel_player_packages(player_id: str):
                 out: list = []
                 sorted_p = sorted(players, key=lambda p: -float(p.get("value") or 0))
                 sorted_k = sorted(picks,   key=lambda k:  int(k.get("pick_round") or 3))
-                lo, hi   = target * 0.82, target * 1.25
+                lo, hi   = target * 0.90, target * 1.15
 
                 def _add(assets):
                     key = frozenset(
@@ -22201,7 +22215,7 @@ def api_trade_intel_player_packages(player_id: str):
 
         # Drop packages where the viewer is sending more than 2× the target's value.
         # Real trades include extreme overpays — those are not useful suggestions.
-        _max_send = (focus_value or 1) * 1.3
+        _max_send = (focus_value or 1) * 1.15
         primary_pkgs = [p for p in primary_pkgs if p.get("send_value", 0) <= _max_send]
 
         _total_real = real_result.get("total_real_trades") or 1
@@ -22478,7 +22492,7 @@ def _real_trade_packages_for_target(
                       if _sig_estimate_value(k) >= _value_floor}
 
     # Value range for matching packages against the viewer's roster
-    max_send_value = focus_value * 1.30 if focus_value > 0 else float("inf")
+    max_send_value = focus_value * 1.15 if focus_value > 0 else float("inf")
     min_send_value = focus_value * 0.65 if focus_value > 0 else 0.0
     target_value   = focus_value  # alias used in anchor / tier checks below
 
