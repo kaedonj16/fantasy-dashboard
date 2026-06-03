@@ -785,7 +785,15 @@ def get_player_metrics(player_id: str, as_of_date: Optional[str] = None) -> Opti
 
 def get_player_metrics_by_season(player_id: str, season: int) -> Optional[Dict[str, Any]]:
     """
-    Retrieve the most recent advanced metrics snapshot for a player in a given season.
+    Retrieve advanced metrics for a player in a given season.
+
+    A single season can have multiple snapshot rows with complementary columns
+    — e.g. a PFF NFL import (completion %, passer rating, snap share) on one
+    date and the computed efficiency snapshot (role_score, yards_per_target,
+    target quality) on another. Taking only the most recent row would silently
+    drop whichever set landed on the older date, which is why the season view
+    showed fewer metrics than Career. Instead, coalesce all rows for the season
+    newest-first: the latest non-null value wins for every column.
 
     Args:
         player_id: Sleeper player ID
@@ -795,13 +803,24 @@ def get_player_metrics_by_season(player_id: str, season: int) -> Optional[Dict[s
         Dict with all metrics or None if not found
     """
     with get_conn() as conn:
-        row = conn.execute("""
+        rows = conn.execute("""
             SELECT * FROM player_advanced_metrics
             WHERE player_id = %s AND season = %s
             ORDER BY as_of_date DESC
-            LIMIT 1
-        """, (player_id, season)).fetchone()
-        return dict(row) if row else None
+        """, (player_id, season)).fetchall()
+
+        if not rows:
+            return None
+
+        rows = [dict(r) for r in rows]
+        # Base = most recent row (carries id, position, as_of_date, season).
+        merged = dict(rows[0])
+        # Fill any remaining nulls from older rows in the same season.
+        for older in rows[1:]:
+            for key, value in older.items():
+                if merged.get(key) is None and value is not None:
+                    merged[key] = value
+        return merged
 
 
 def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
