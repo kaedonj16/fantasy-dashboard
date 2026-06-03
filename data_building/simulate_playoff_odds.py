@@ -29,6 +29,18 @@ logger = logging.getLogger(__name__)
 _MIN_STD      = 8.0    # floor on std dev
 _N_SIMS       = 10_000
 _BENCH_SLOTS  = {"BN", "IR", "TAXI"}
+_WEEKLY_BLEND = 0.30   # in-season weight on weekly projections vs historical avg
+
+# Weekly fantasy team totals are right-skewed (boom weeks, thin left tail),
+# not Gaussian. We model each team's weekly score as a skew-normal with a
+# fixed positive shape, rescaled to preserve the team's (mean, std). alpha=2
+# gives a realistic skewness of ~0.45 while keeping the inputs the rest of the
+# model already computes.
+_SKEW_ALPHA   = 2.0
+_SKEW_DELTA   = _SKEW_ALPHA / math.sqrt(1.0 + _SKEW_ALPHA * _SKEW_ALPHA)
+# Mean/std of the raw skew-normal latent z (used to standardize before scaling)
+_SKEW_Z_MEAN  = _SKEW_DELTA * math.sqrt(2.0 / math.pi)
+_SKEW_Z_STD   = math.sqrt(1.0 - 2.0 * _SKEW_DELTA * _SKEW_DELTA / math.pi)
 
 # Conservative defaults for players with no prior-season stats (rookies, etc.)
 _ROOKIE_PPG: dict[str, float] = {
@@ -135,10 +147,13 @@ def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
     has_games  = team_stats is not None and not team_stats.empty
 
     if not has_games:
-        teams = _estimate_from_rosters(ctx)
+        # Share the exact PPG map used by swap sims so baseline == no-op swap.
+        # Offseason team avg is 100% projection, so swaps use blend = 1.0.
+        teams = _estimate_from_rosters(ctx, ppg_map=ppg_map, pos_map=pos_map)
         if not teams:
             return None
         remaining_weeks = list(range(1, playoff_week_start))
+        blend_factor = 1.0
     else:
         if current_week > regular_season_end:
             return None  # season complete — no simulation
@@ -146,11 +161,15 @@ def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
         if not teams:
             return None
         remaining_weeks = list(range(current_week + 1, playoff_week_start))
-        _blend_weekly_projections(teams, ctx, season, current_week + 1)
+        # In-season avg blends historical results with weekly projections.
+        # Swaps must apply the same blend factor to the projection delta so a
+        # no-op swap leaves the avg unchanged.
+        blend_factor = _WEEKLY_BLEND
+        _blend_weekly_projections(teams, ctx, season, current_week + 1, blend=blend_factor)
 
-    matchups = _fetch_remaining_schedule(platform, league_id, season, remaining_weeks)
-    if not matchups:
-        matchups = _fallback_schedule(teams, remaining_weeks, division_map)
+    matchups = _resolve_schedule(
+        platform, league_id, season, remaining_weeks, teams, division_map
+    )
 
     roster_pid_map: dict[int, list[str]] = {}
     for r in (ctx.get("rosters") or []):
@@ -167,6 +186,7 @@ def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
         "pos_map":          pos_map,
         "roster_positions": roster_positions,
         "roster_pid_map":   roster_pid_map,
+        "blend":            blend_factor,
     }
 
 
@@ -186,24 +206,56 @@ def simulate_with_swap(
     sim_state: dict,
     viewer_roster_id: int,
     viewer_pids_after: list[str],
-    n_sims: int = 2000,
+    n_sims: int = 10_000,
 ) -> tuple[float, float]:
     """
     Re-run the simulation with viewer's roster replaced by viewer_pids_after.
 
     Only the viewer's avg/std are recomputed; all other teams are unchanged,
-    keeping the simulation fast (numpy-vectorised, ~5 ms at n_sims=2000).
+    keeping the simulation fast (numpy-vectorised). The simulation reuses the
+    same deterministic seed as the baseline (run_base_simulation) so that the
+    *only* difference between the two runs is the viewer's swapped lineup —
+    a common-random-numbers variance reduction. This makes the playoff-odds
+    delta a clean before/after comparison instead of two independent noisy
+    draws subtracted from each other.
 
     Returns (playoff_pct 0–100, new_avg_ppg).
+
+    The viewer's new avg is computed as a *marginal* adjustment:
+
+        new_avg = current_avg + blend * (proj_lineup(after) - proj_lineup(before))
+
+    Both projection lineups use the same PPG map, so the map cancels in the
+    difference and a no-op swap (after == before) leaves the avg untouched —
+    yielding a zero delta. Offseason uses blend = 1.0 (avg is 100% projection,
+    so new_avg collapses to proj_lineup(after)); in-season uses the same blend
+    factor applied to the team's blended baseline, so only the trade's true
+    effect moves the odds.
     """
     ppg_map          = sim_state["ppg_map"]
     pos_map          = sim_state["pos_map"]
     roster_positions = sim_state["roster_positions"]
+    blend            = float(sim_state.get("blend", 1.0))
 
-    new_avg, starters = _position_aware_lineup(
+    viewer_team = next(
+        (t for t in sim_state["teams"] if t["roster_id"] == viewer_roster_id), None
+    )
+    current_avg = viewer_team["avg"] if viewer_team else 0.0
+
+    proj_after, after_starters = _position_aware_lineup(
         viewer_pids_after, ppg_map, pos_map, roster_positions
     )
-    new_std = max(_team_std_from_starters(starters), _MIN_STD)
+
+    if blend >= 1.0:
+        new_avg = proj_after
+    else:
+        before_pids = sim_state.get("roster_pid_map", {}).get(viewer_roster_id, [])
+        proj_before, _ = _position_aware_lineup(
+            before_pids, ppg_map, pos_map, roster_positions
+        )
+        new_avg = current_avg + blend * (proj_after - proj_before)
+
+    new_std = max(_team_std_from_starters(after_starters), _MIN_STD)
 
     teams = [
         {**t, "avg": round(new_avg, 1), "std": round(new_std, 1)}
@@ -211,7 +263,8 @@ def simulate_with_swap(
         for t in sim_state["teams"]
     ]
 
-    result = _run_mc(teams, sim_state["matchups"], sim_state["playoff_teams"], n_sims, None)
+    result = _run_mc(teams, sim_state["matchups"], sim_state["playoff_teams"],
+                     n_sims, sim_state.get("seed"))
     for r in result:
         if r["roster_id"] == viewer_roster_id:
             return r["playoff_pct"], new_avg
@@ -221,17 +274,23 @@ def simulate_with_swap(
 
 def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
     """
-    Build (ppg_map, pos_map) using the same priority logic as _estimate_from_rosters:
-      1. FantasyPros season projections
-      2. Prior-season usage_rows cache
-      3. pos_map from DB (position fallback for rookies)
+    Build (ppg_map, pos_map).
+
+    Priority order:
+      1. Sleeper weekly projections for the upcoming week — same source used by
+         _blend_weekly_projections, so simulate_with_swap sees the same player
+         PPGs as the base simulation's team-avg blend.
+      2. FantasyPros season projections — preseason baseline or gap-filler.
+      3. Prior-season usage_rows cache — fills any remaining gaps.
 
     Returns:
         ppg_map  — {str(player_id): {"ppg": float, "pos": str}}
         pos_map  — {str(player_id): str(position)}   (position fallback)
     """
-    season = int(ctx.get("season") or 0)
+    season       = int(ctx.get("season") or 0)
+    current_week = int(ctx.get("current_week") or 0)
     _ss    = ctx.get("scoring_settings") or {}
+    _rss   = ctx.get("raw_scoring_settings") or {}
     rec_pts = float(_ss.get("rec") or _ss.get("pointsPerReception") or 0)
     if rec_pts >= 1.0:
         scoring  = "ppr"
@@ -243,16 +302,50 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
         scoring  = "std"
         ppg_key  = "std_scoring_ppg"
 
+    # pos_map built first — needed as position fallback for all PPG sources
+    pos_map: dict = {}
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT player_id, position FROM player_values WHERE position IS NOT NULL"
+            ).fetchall()
+        pos_map = {str(r["player_id"]): str(r["position"]).upper() for r in rows}
+    except Exception:
+        pass
+
     ppg_map: dict = {}
+
+    # Priority 1: Sleeper weekly projections (in-season — same source as the
+    # team-avg blend so simulate_with_swap is consistent with the base sim)
+    if current_week > 0 and season > 0:
+        try:
+            from utils.utils import fetch_week_projections, pick_proj_variant
+            multi_map = fetch_week_projections(season, current_week + 1, _rss)
+            variant   = pick_proj_variant(_rss)
+            for pid, variants in (multi_map or {}).items():
+                if not isinstance(variants, dict):
+                    continue
+                pts = variants.get(variant) or variants.get("ppr") or 0.0
+                if pts > 0:
+                    ppg_map[str(pid)] = {
+                        "ppg": float(pts),
+                        "pos": pos_map.get(str(pid), ""),
+                    }
+        except Exception:
+            pass
+
+    # Priority 2: FantasyPros season projections (preseason or gap-filler)
     try:
         from data_building.fetch_projections import fetch_fp_season_projections
         fp_data = fetch_fp_season_projections(season, scoring)
         for pid, info in fp_data.items():
-            if info.get("ppg", 0) > 0:
+            if str(pid) not in ppg_map and info.get("ppg", 0) > 0:
                 ppg_map[str(pid)] = {"ppg": info["ppg"], "pos": info.get("pos", "")}
     except Exception:
         pass
 
+    # Priority 3: Prior-season usage cache
     try:
         import os as _os, json as _json
         from datetime import date as _date
@@ -269,19 +362,9 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
                         continue
                     ppg = float((p.get("usage") or {}).get(ppg_key) or 0)
                     pos = str(p.get("position") or "").upper()
-                    ppg_map[pid] = {"ppg": ppg, "pos": pos}
+                    if ppg > 0:
+                        ppg_map[pid] = {"ppg": ppg, "pos": pos}
                 break
-    except Exception:
-        pass
-
-    pos_map: dict = {}
-    try:
-        from dashboard_services.db import get_conn
-        with get_conn() as conn:
-            rows = conn.execute(
-                "SELECT player_id, position FROM player_values WHERE position IS NOT NULL"
-            ).fetchall()
-        pos_map = {str(r["player_id"]): str(r["position"]).upper() for r in rows}
     except Exception:
         pass
 
@@ -339,11 +422,9 @@ def simulate_playoff_odds(
         if not teams:
             return []
         remaining_weeks = list(range(1, playoff_week_start))
-        matchups_by_week = _fetch_remaining_schedule(
-            platform, league_id, season, remaining_weeks
+        matchups_by_week = _resolve_schedule(
+            platform, league_id, season, remaining_weeks, teams, division_map
         )
-        if not matchups_by_week:
-            matchups_by_week = _fallback_schedule(teams, remaining_weeks, division_map)
         result = _run_mc(teams, matchups_by_week, playoff_teams, n_sims, seed)
         for r in result:
             r["is_projected"] = True
@@ -359,11 +440,9 @@ def simulate_playoff_odds(
 
     # ── Case 3: in-season projection ─────────────────────────────────────────
     remaining_weeks = list(range(current_week + 1, playoff_week_start))
-    matchups_by_week = _fetch_remaining_schedule(
-        platform, league_id, season, remaining_weeks
+    matchups_by_week = _resolve_schedule(
+        platform, league_id, season, remaining_weeks, teams, division_map
     )
-    if not matchups_by_week:
-        matchups_by_week = _fallback_schedule(teams, remaining_weeks, division_map)
 
     # Blend historical team avg with Sleeper's upcoming-week player projections.
     # Using 30 % weekly projection + 70 % season average keeps the estimate
@@ -488,7 +567,11 @@ def _position_aware_lineup(
     return total, starters
 
 
-def _estimate_from_rosters(ctx: dict) -> list[dict]:
+def _estimate_from_rosters(
+    ctx: dict,
+    ppg_map: Optional[dict] = None,
+    pos_map: Optional[dict] = None,
+) -> list[dict]:
     """
     Build synthetic team scoring profiles for preseason simulation.
 
@@ -501,6 +584,11 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
 
     Uses position-aware lineup selection and per-team std dev estimated from
     the position composition of the projected starting lineup.
+
+    When ppg_map/pos_map are supplied (by build_sim_state) they are used
+    verbatim instead of being rebuilt, so the baseline team averages and the
+    per-trade swap simulations share one identical PPG source — a no-op swap
+    then produces a zero delta and real trades show only their true effect.
     """
     rosters          = ctx.get("rosters") or []
     roster_map       = ctx.get("roster_map") or {}
@@ -509,6 +597,34 @@ def _estimate_from_rosters(ctx: dict) -> list[dict]:
 
     if not rosters:
         return []
+
+    # If a prebuilt PPG map is supplied, skip the internal build entirely.
+    if ppg_map is not None:
+        if pos_map is None:
+            pos_map = {}
+        if not ppg_map and not pos_map:
+            return []
+        teams: list[dict] = []
+        for roster in rosters:
+            rid  = roster.get("roster_id")
+            pids = roster.get("players") or []
+            projected_avg, starters = _position_aware_lineup(
+                pids, ppg_map, pos_map, roster_positions
+            )
+            projected_std = _team_std_from_starters(starters)
+            name = (
+                roster_map.get(str(rid))
+                or roster_map.get(int(rid) if rid is not None else -1)
+                or f"Team {rid}"
+            )
+            teams.append({
+                "roster_id": int(rid),
+                "name":      name,
+                "wins":      0, "losses": 0, "ties": 0, "pf": 0.0,
+                "avg":       round(projected_avg, 1),
+                "std":       round(projected_std, 1),
+            })
+        return teams
 
     # Detect scoring format — Sleeper uses "rec", non-Sleeper uses "pointsPerReception"
     _ss = ctx.get("scoring_settings") or {}
@@ -612,7 +728,7 @@ def _blend_weekly_projections(
     ctx: dict,
     season: int,
     next_week: int,
-    blend: float = 0.30,
+    blend: float = _WEEKLY_BLEND,
 ) -> None:
     """
     Update each team's avg in-place by blending historical avg (1-blend) with
@@ -624,20 +740,19 @@ def _blend_weekly_projections(
     if next_week < 1 or blend <= 0:
         return
 
-    # Detect scoring format — Sleeper uses "rec", non-Sleeper uses "pointsPerReception"
-    _ss = ctx.get("scoring_settings") or {}
-    rec_pts = float(_ss.get("rec") or _ss.get("pointsPerReception") or 0)
-    scoring = "ppr" if rec_pts >= 1.0 else ("half_ppr" if rec_pts >= 0.5 else "std")
+    raw_ss = ctx.get("raw_scoring_settings") or {}
 
     try:
-        from data_building.fetch_projections import fetch_sleeper_week_projections
-        proj_map = fetch_sleeper_week_projections(season, next_week, scoring)
+        from utils.utils import fetch_week_projections, pick_proj_variant
+        multi_map = fetch_week_projections(season, next_week, raw_ss)
     except Exception as exc:
         logger.warning("[playoff_odds] Sleeper weekly proj unavailable: %s", exc)
         return
 
-    if not proj_map:
+    if not multi_map:
         return
+
+    variant = pick_proj_variant(raw_ss)
 
     roster_positions = ctx.get("roster_positions") or []
     # Build roster_id → player_ids lookup
@@ -658,12 +773,14 @@ def _blend_weekly_projections(
     except Exception:
         pass
 
-    # Build ppg_map from weekly projections (proj already in pts, not ppg)
-    week_ppg: dict[str, dict] = {
-        pid: {"ppg": pts, "pos": pos_map.get(pid, "")}
-        for pid, pts in proj_map.items()
-        if pts > 0
-    }
+    # Flatten multi-variant projections to a single pts value per player
+    week_ppg: dict[str, dict] = {}
+    for pid, variants in multi_map.items():
+        if not isinstance(variants, dict):
+            continue
+        pts = variants.get(variant) or variants.get("ppr") or 0.0
+        if pts > 0:
+            week_ppg[pid] = {"ppg": pts, "pos": pos_map.get(pid, "")}
 
     updated = 0
     for team in teams:
@@ -783,6 +900,31 @@ def _fallback_schedule(
     return _round_robin_schedule(teams, weeks)
 
 
+def _resolve_schedule(
+    platform: str,
+    league_id: str,
+    season: int,
+    weeks: list[int],
+    teams: list[dict],
+    division_map: dict[int, int],
+) -> dict[int, list[tuple[int, int]]]:
+    """Single schedule source shared by every simulation path.
+
+    Prefers the real published schedule and switches to it the moment it is
+    decided — per week. Any week the platform hasn't published yet is filled
+    from the deterministic fallback so coverage is complete and identical
+    across all callers. Once the real schedule is fully published, every
+    simulation uses it verbatim.
+    """
+    real = _fetch_remaining_schedule(platform, league_id, season, weeks)
+    missing = [w for w in weeks if w not in real]
+    if not missing:
+        return real
+    fallback = _fallback_schedule(teams, missing, division_map)
+    # Real takes precedence per week; fallback only fills undecided weeks.
+    return {**fallback, **real}
+
+
 def _round_robin_schedule(
     teams: list[dict],
     weeks: list[int],
@@ -790,8 +932,13 @@ def _round_robin_schedule(
     """
     Balanced round-robin (circle method): fix one team, rotate the rest.
     Produces N-1 unique rounds then cycles — matches Sleeper's default.
+
+    Teams are sorted by roster_id so the generated schedule is identical
+    regardless of the order teams are passed in. This keeps the fallback
+    schedule universal across every caller (playoff-odds page, archetype
+    swap sims, etc.) so all simulations share one schedule.
     """
-    ids = [t["roster_id"] for t in teams]
+    ids = sorted(t["roster_id"] for t in teams)
     n   = len(ids)
     if n < 2:
         return {}
@@ -834,14 +981,16 @@ def _divisional_schedule(
     """
     from collections import defaultdict as _dd
     by_div: dict[int, list[int]] = _dd(list)
-    for t in teams:
+    for t in sorted(teams, key=lambda x: x["roster_id"]):
         div = division_map.get(t["roster_id"], 1)
         by_div[div].append(t["roster_id"])
 
     if len(by_div) < 2:
         return _round_robin_schedule(teams, weeks)
 
-    divisions = list(by_div.values())
+    # Iterate divisions in sorted key order so the schedule is deterministic
+    # and identical across all callers (one universal schedule).
+    divisions = [sorted(by_div[d]) for d in sorted(by_div)]
     n_teams   = len(teams)
     n_weeks   = len(weeks)
     n_per_week = n_teams // 2
@@ -895,6 +1044,42 @@ def _divisional_schedule(
 # Monte Carlo engine (vectorised)
 # ---------------------------------------------------------------------------
 
+def _sample_scores(
+    rng: "np.random.Generator",
+    mean: float,
+    std: float,
+    n_sims: int,
+) -> "np.ndarray":
+    """Draw n_sims weekly scores from a right-skewed distribution.
+
+    Two improvements over a plain Normal draw:
+
+    1. Skew-normal shape — weekly fantasy totals are right-skewed (occasional
+       boom weeks, a thin floor), so a Gaussian understates upside ceilings.
+       The latent skew-normal z = delta*|u0| + sqrt(1-delta^2)*u1 is
+       standardised and rescaled to the requested (mean, std), so the mean and
+       variance are preserved exactly while injecting realistic positive skew.
+
+    2. Antithetic variates — the symmetric component u1 is mirrored between the
+       first and second half of the sims (z uses +u1 / -u1 over the same |u0|).
+       Sim i and sim i+half are therefore mirror seasons, which cancels much of
+       the sampling noise in win counts and points-for, tightening playoff-odds
+       estimates (and trade deltas) without raising n_sims.
+    """
+    half = (n_sims + 1) // 2
+    u0 = rng.standard_normal(half).astype(np.float32)
+    u1 = rng.standard_normal(half).astype(np.float32)
+    c  = np.float32(math.sqrt(1.0 - _SKEW_DELTA * _SKEW_DELTA))
+    d  = np.float32(_SKEW_DELTA)
+    half_normal = np.abs(u0)
+    z_pos = d * half_normal + c * u1
+    z_neg = d * half_normal - c * u1          # antithetic on the symmetric part
+    z = np.concatenate([z_pos, z_neg])[:n_sims]
+    z_std = (z - np.float32(_SKEW_Z_MEAN)) / np.float32(_SKEW_Z_STD)
+    scores = np.float32(mean) + np.float32(std) * z_std
+    return np.maximum(scores, 0).astype(np.float32)
+
+
 def _run_mc(
     teams: list[dict],
     matchups_by_week: dict[int, list[tuple[int, int]]],
@@ -926,12 +1111,8 @@ def _run_mc(
                 continue
             games_per_team[ia] += 1
             games_per_team[ib] += 1
-            sa = np.maximum(
-                rng.normal(avgs[ia], stds[ia], n_sims).astype(np.float32), 0
-            )
-            sb = np.maximum(
-                rng.normal(avgs[ib], stds[ib], n_sims).astype(np.float32), 0
-            )
+            sa = _sample_scores(rng, avgs[ia], stds[ia], n_sims)
+            sb = _sample_scores(rng, avgs[ib], stds[ib], n_sims)
             a_wins = sa > sb
             wins[:, ia] += a_wins.astype(np.float32)
             wins[:, ib] += (~a_wins).astype(np.float32)

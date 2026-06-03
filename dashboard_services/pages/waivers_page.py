@@ -324,20 +324,22 @@ function wvRenderCompare() {{
     const defLabel = p.fpts_against > 0
       ? `${{p.fpts_against}} pts/gm allowed`
       : (p.on_bye ? 'BYE' : '—');
-    const ppgWin  = (other && p.season_ppg > 0 && other.season_ppg > 0) ? (p.season_ppg > other.season_ppg ? 'wv-compare-win' : 'wv-compare-lose') : '';
-    const projWin = (other && p.proj_pts > 0 && other.proj_pts > 0)     ? (p.proj_pts  > other.proj_pts  ? 'wv-compare-win' : 'wv-compare-lose') : '';
+    const projWin  = (other && p.proj_pts > 0 && other.proj_pts > 0)    ? (p.proj_pts   > other.proj_pts   ? 'wv-compare-win' : 'wv-compare-lose') : '';
+    const l4ppg    = p.recent_ppg > 0 ? p.recent_ppg : p.season_ppg;
+    const l4ppgOth = other && (other.recent_ppg > 0 ? other.recent_ppg : other.season_ppg);
+    const ppgWin   = (l4ppg > 0 && l4ppgOth > 0) ? (l4ppg > l4ppgOth ? 'wv-compare-win' : 'wv-compare-lose') : '';
     const muCls   = wvMuClass(p.def_rank, p.def_total);
     return `
       <div class="wv-compare-col">
         <div class="wv-compare-player-name">${{p.name}}</div>
         <div class="wv-compare-player-sub">${{[p.team, p.pos_rank_label, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ')}}</div>
         <div class="wv-compare-row">
-          <span class="wv-compare-lbl">PPG (season)</span>
-          <span class="wv-compare-val ${{ppgWin}}">${{p.season_ppg > 0 ? p.season_ppg : '—'}}</span>
+          <span class="wv-compare-lbl">Proj PPG</span>
+          <span class="wv-compare-val ${{projWin}}">${{p.proj_pts > 0 ? p.proj_pts : '—'}}</span>
         </div>
         <div class="wv-compare-row">
-          <span class="wv-compare-lbl">Projected</span>
-          <span class="wv-compare-val ${{projWin}}">${{p.proj_pts > 0 ? p.proj_pts : '—'}}</span>
+          <span class="wv-compare-lbl">L4 PPG</span>
+          <span class="wv-compare-val ${{ppgWin}}">${{p.recent_ppg > 0 ? p.recent_ppg : (p.season_ppg > 0 ? p.season_ppg : '—')}}</span>
         </div>
         <div class="wv-compare-row">
           <span class="wv-compare-lbl">Opponent</span>
@@ -410,11 +412,11 @@ function wvRenderStartSit() {{
 
       const statsRow = `
         <div class="wv-ss-stats">
-          ${{p.season_ppg > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">PPG</span><span class="wv-ss-stat-val">${{p.season_ppg}}</span></div>` : ''}}
-          ${{p.proj_pts > 0   ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Proj</span><span class="wv-ss-stat-val">${{p.proj_pts}}</span></div>` : ''}}
+          ${{p.proj_pts > 0   ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Proj PPG</span><span class="wv-ss-stat-val">${{p.proj_pts}}</span></div>` : ''}}
+          ${{p.recent_ppg > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">L4 PPG</span><span class="wv-ss-stat-val">${{p.recent_ppg}}</span></div>` : ''}}
           ${{p.opponent       ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Opp</span><span class="wv-ss-stat-val muted">${{p.opponent}}</span></div>` : ''}}
-          ${{p.fpts_against > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Def allows</span><span class="wv-ss-stat-val muted">${{p.fpts_against}} pts</span></div>` : ''}}
           ${{muChip ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Matchup</span><span class="wv-ss-stat-val">${{muChip}}</span></div>` : ''}}
+          ${{p.fpts_against > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Def allows</span><span class="wv-ss-stat-val muted">${{p.fpts_against}} pts</span></div>` : ''}}
         </div>`;
 
       return `

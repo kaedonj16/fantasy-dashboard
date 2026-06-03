@@ -241,6 +241,33 @@ def _sleeper_proj_cache_path(year: int, week: int) -> Path:
     return _CACHE_DIR / f"sleeper_proj_{year}_w{week:02d}.json"
 
 
+def _raw_to_pts(st: dict, pos: str, scoring: str) -> float:
+    """Compute fantasy points for one player from Sleeper raw projected stats."""
+    pass_yd  = float(st.get("pass_yd")  or 0)
+    pass_td  = float(st.get("pass_td")  or 0)
+    pass_int = float(st.get("pass_int") or 0)
+    rush_yd  = float(st.get("rush_yd")  or 0)
+    rush_td  = float(st.get("rush_td")  or 0)
+    rec      = float(st.get("rec")      or 0)
+    rec_yd   = float(st.get("rec_yd")   or 0)
+    rec_td   = float(st.get("rec_td")   or 0)
+    fum_lost = float(st.get("fum_lost") or 0)
+
+    if (pass_yd + pass_td + rush_yd + rush_td + rec + rec_yd + rec_td) == 0:
+        return 0.0
+
+    base = (
+        pass_yd  * 0.04  + pass_td  * 4.0  + pass_int * -2.0
+        + rush_yd * 0.1  + rush_td  * 6.0
+        + rec_yd  * 0.1  + rec_td   * 6.0
+        + fum_lost * -2.0
+    )
+    rec_pts  = 1.0 if scoring == "ppr" else (0.5 if scoring == "half_ppr" else 0.0)
+    tep_pts  = 0.5 if scoring == "tep" and pos == "TE" else 0.0
+    td6_pts  = pass_td * 2.0 if scoring in ("6pt_ppr", "6pt_half", "6pt_tep") else 0.0
+    return round(base + rec * rec_pts + rec * tep_pts + td6_pts, 2)
+
+
 def fetch_sleeper_week_projections(
     year: int,
     week: int,
@@ -251,26 +278,35 @@ def fetch_sleeper_week_projections(
     Fetch Sleeper weekly projections for a single week.
     Returns {sleeper_player_id: projected_pts_for_that_week}
 
-    Uses Sleeper's own player IDs so no name mapping is needed.
-    Disk-cached for _SLEEPER_CACHE_HOURS hours.
+    Sleeper's projections endpoint returns raw stat projections (pass_yd,
+    pass_td, rec, ...) — fantasy points are computed here from those stats
+    so the numbers match Sleeper's own scoring. Disk-cached 1 h.
     """
-    pts_key = {
-        "ppr":      "pts_ppr",
-        "half_ppr": "pts_half_ppr",
-        "std":      "pts_std",
-    }.get(scoring, "pts_ppr")
-
     cache_path = _sleeper_proj_cache_path(year, week)
+
+    def _parse_raw(raw: dict) -> dict[str, float]:
+        try:
+            from utils.utils import load_players_index as _lpi
+            players_index = _lpi() or {}
+        except Exception:
+            players_index = {}
+        out: dict[str, float] = {}
+        for pid, entry in raw.items():
+            if not isinstance(entry, dict):
+                continue
+            st  = entry.get("stats") if isinstance(entry.get("stats"), dict) else entry
+            pos = players_index.get(str(pid), {}).get("pos", "")
+            pts = _raw_to_pts(st, pos, scoring)
+            if pts > 0:
+                out[str(pid)] = pts
+        return out
+
     if not force_refresh and _cache_fresh(cache_path, _SLEEPER_CACHE_HOURS):
         try:
             with open(cache_path) as f:
                 raw = json.load(f)
             if raw:
-                return {
-                    pid: float((v or {}).get(pts_key) or 0)
-                    for pid, v in raw.items()
-                    if isinstance(v, dict)
-                }
+                return _parse_raw(raw)
         except Exception:
             pass
 
@@ -287,10 +323,7 @@ def fetch_sleeper_week_projections(
     with open(cache_path, "w") as f:
         json.dump(raw, f)
 
-    result = {
-        pid: float((v or {}).get(pts_key) or 0)
-        for pid, v in raw.items()
-        if isinstance(v, dict)
-    }
-    logger.info("[sleeper_proj] Cached %d player projections for %d/w%d", len(result), year, week)
+    result = _parse_raw(raw)
+    logger.info("[sleeper_proj] %d player projections for %d/w%d (scoring=%s)",
+                len(result), year, week, scoring)
     return result

@@ -163,15 +163,25 @@ def _ppg_lineup(
         elif s in SKILL_POS:
             fixed_slots[s] = fixed_slots.get(s, 0) + 1
 
+    # Position-average fallback (mirrors simulate_playoff_odds._position_aware_lineup)
+    _pos_totals: Dict[str, List] = {}
+    for _info in ppg_map.values():
+        _p, _g = str(_info.get("pos") or "").upper(), float(_info.get("ppg") or 0)
+        if _p and _g > 0:
+            _pos_totals.setdefault(_p, [0.0, 0])
+            _pos_totals[_p][0] += _g
+            _pos_totals[_p][1] += 1
+    pos_fallback = {p: v[0] / v[1] for p, v in _pos_totals.items() if v[1] > 0}
+
     by_pos: Dict[str, List[float]] = {}
     for pid in pids:
         info = ppg_map.get(str(pid))
         if info:
             pos = str(info.get("pos") or "").upper()
-            ppg = float(info.get("ppg") or 0) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+            ppg = float(info.get("ppg") or 0) or pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
         else:
             pos = pos_map.get(str(pid), "")
-            ppg = _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+            ppg = pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
         if pos in SKILL_POS:
             by_pos.setdefault(pos, []).append(ppg)
 
@@ -506,6 +516,68 @@ def _select_packages(
     if archetype == "distribute":
         return [player_pool[:1]] if player_pool else []
 
+    if archetype == "consolidate":
+        # Consolidate = trade up: always send 2+ assets, never 1-for-1.
+        # Priority: 2 players → 3 players → 2 players + pick
+        lo_c, hi_c = target_val * 0.85, target_val * 1.10
+        results_c: List[List[Dict]] = []
+
+        # 1. Best 2-player package
+        best2, best2_d = None, float("inf")
+        for a, b in combinations(player_pool, 2):
+            if a["position"] == "QB" and b["position"] == "QB":
+                continue
+            s = a["value"] + b["value"]
+            d = abs(s - target_val)
+            if lo_c <= s <= hi_c and d < best2_d:
+                best2_d, best2 = d, [a, b]
+        if best2:
+            results_c.append(best2)
+
+        # 2. Best 3-player package (must differ from pkg 1)
+        if len(results_c) < max_pkgs:
+            best3, best3_d = None, float("inf")
+            used_pids = {p["player_id"] for pkg in results_c for p in pkg}
+            for a, b, c in combinations(player_pool[:8], 3):
+                if sum(1 for x in (a, b, c) if x["position"] == "QB") > 1:
+                    continue
+                s = a["value"] + b["value"] + c["value"]
+                d = abs(s - target_val)
+                pkg_pids = {a["player_id"], b["player_id"], c["player_id"]}
+                if lo_c <= s <= hi_c and d < best3_d and not pkg_pids.issubset(used_pids):
+                    best3_d, best3 = d, [a, b, c]
+            if best3:
+                results_c.append(best3)
+
+        # 3. Best 2-player + 1 pick
+        if len(results_c) < max_pkgs and pick_pool:
+            best_pp, best_pp_d = None, float("inf")
+            for pk in pick_pool:
+                for a, b in combinations(player_pool[:8], 2):
+                    if a["position"] == "QB" and b["position"] == "QB":
+                        continue
+                    s = a["value"] + b["value"] + pk["value"]
+                    d = abs(s - target_val)
+                    if lo_c <= s <= hi_c and d < best_pp_d:
+                        best_pp_d, best_pp = d, [a, b, pk]
+            if best_pp:
+                results_c.append(best_pp)
+
+        # Fallback: widen window, still require 2+ assets
+        if not results_c:
+            fallback2, fallback2_d = None, float("inf")
+            for a, b in combinations(player_pool, 2):
+                if a["position"] == "QB" and b["position"] == "QB":
+                    continue
+                s = a["value"] + b["value"]
+                d = abs(s - target_val)
+                if d < fallback2_d:
+                    fallback2_d, fallback2 = d, [a, b]
+            if fallback2:
+                results_c.append(fallback2)
+
+        return results_c[:max_pkgs]
+
     results: List[List[Dict]] = []
 
     # ── 1. Player-only: exhaustive 1 / 2 / 3-player search ───────────────────
@@ -831,7 +903,7 @@ def _build_distribute(
                 try:
                     from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
                     new_po_pct, _ = _sim_swap(
-                        sim_state, int(viewer_roster_id), new_players, n_sims=2000
+                        sim_state, int(viewer_roster_id), new_players, n_sims=10_000
                     )
                     net_pod = (new_po_pct - current_playoff_pct) / 100.0
                 except Exception:
@@ -1057,7 +1129,7 @@ def _build_rebuilding(
                 try:
                     from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
                     new_po_pct, _ = _sim_swap(
-                        sim_state, int(viewer_roster_id), net_players, n_sims=2000
+                        sim_state, int(viewer_roster_id), net_players, n_sims=10_000
                     )
                     net_pod = (new_po_pct - current_playoff_pct) / 100.0
                 except Exception:
@@ -1573,7 +1645,7 @@ def get_archetype_suggestions(
         if sim_state is not None and _vid_int is not None:
             try:
                 from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
-                new_po_pct, new_avg = _sim_swap(sim_state, _vid_int, new_pids, n_sims=2000)
+                new_po_pct, new_avg = _sim_swap(sim_state, _vid_int, new_pids, n_sims=10_000)
                 pod = (new_po_pct - current_playoff_pct) / 100.0
                 wpd = _win_prob(new_avg, league_avg) - current_wp
             except Exception:
@@ -1590,6 +1662,34 @@ def get_archetype_suggestions(
             recv_val = t["value"]
             acpt     = _estimate_acceptance(send_val, recv_val, is_preferred=t["is_pref"])
 
+            # Per-package net odds: build the exact post-trade roster (drop the
+            # sent players, add the target) and re-run the SAME Monte Carlo
+            # playoff simulation — same schedule, same opponents, same seed —
+            # with only the viewer's lineup changed. This is the accurate path
+            # and is consistent with the playoff-odds page. The analytical
+            # formula is used only if the simulation is unavailable.
+            pkg_player_pids = {str(a.get("player_id", "")) for a in pkg if a.get("player_id") and not a.get("is_pick")}
+            net_roster = [p for p in viewer_players if str(p) not in pkg_player_pids] + [pid]
+
+            net_pod_pkg = None
+            net_wpd_pkg = None
+            if sim_state is not None and _vid_int is not None:
+                try:
+                    from data_building.simulate_playoff_odds import simulate_with_swap as _sim_swap
+                    _net_po_pct, _net_avg = _sim_swap(sim_state, _vid_int, net_roster, n_sims=10_000)
+                    net_pod_pkg = (_net_po_pct - current_playoff_pct) / 100.0
+                    net_wpd_pkg = _win_prob(_net_avg, league_avg) - current_wp
+                except Exception:
+                    net_pod_pkg = None
+
+            if net_pod_pkg is None:
+                # Analytical fallback (no sim state) — still per-package
+                net_lval   = _lval(net_roster)
+                net_wp_pkg = _win_prob(net_lval, league_avg)
+                current_po_formula = _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)
+                net_pod_pkg = _playoff_odds(net_wp_pkg, num_weeks, num_teams, playoff_spots) - current_po_formula
+                net_wpd_pkg = net_wp_pkg - current_wp
+
             results.append({
                 "player_id":      pid,
                 "name":           t["name"],
@@ -1602,11 +1702,13 @@ def get_archetype_suggestions(
                 "why":            why,
                 "partner_team":   t["partner_name"],
                 "partner_arch":   t["partner_arch"],
-                "win_prob_delta":     round(wpd, 4),
-                "playoff_odds_delta": round(pod, 4),
-                "acceptance_pct":     acpt,
-                "direction":          "acquire",
-                "suggested_send":     pkg,
+                "win_prob_delta":          round(wpd, 4),
+                "playoff_odds_delta":      round(pod, 4),
+                "net_win_prob_delta":      round(net_wpd_pkg, 4),
+                "net_playoff_odds_delta":  round(net_pod_pkg, 4),
+                "acceptance_pct":          acpt,
+                "direction":               "acquire",
+                "suggested_send":          pkg,
             })
             if len(results) >= 15:
                 break

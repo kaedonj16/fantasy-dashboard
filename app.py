@@ -120,6 +120,7 @@ from utils.utils import (
     clear_weekly_cache_for_league,
     count_roster_positions,
     fetch_week_from_tank01,
+    fetch_week_projections,
     get_live_game_ids_for_today,
     get_week_projections_cached,
     load_idp_index,
@@ -3086,7 +3087,7 @@ def refresh_league_ctx_section(platform: str, league_id: str, page: str, season:
                     get_week_projections_cached(
                         current_season,
                         current_week,
-                        fetch_week_from_tank01,
+                        fetch_week_projections,
                         force_refresh=True,
                     )
                 except Exception as e:
@@ -3434,6 +3435,7 @@ def render_power_and_playoffs(
     season,
     bracket_override=None,
     seed_map_override=None,
+    power_rankings=None,
 ) -> str:
     """
     Single card that shows:
@@ -3441,9 +3443,28 @@ def render_power_and_playoffs(
       - Playoff Picture (using bracket)
     bracket_override: pre-built bracket list; skips API fetch when provided.
     seed_map_override: {roster_id: seed_int}; skips seed_top6 calculation.
+    power_rankings: list of team dicts from build_power_rankings_context()
+        ({"team_name", "power_score", "rank"}). When provided, the podium's
+        order and PowerScore are taken from here so this card matches the
+        Teams page "Power Rankings" tab exactly.
     """
     if team_stats is None or team_stats.empty:
         return ""
+
+    team_stats = team_stats.copy()
+
+    # ---- Align with the Teams page Power Rankings tab when provided ----
+    # Override PowerScore (and therefore ordering) using the canonical
+    # build_power_rankings_context() output, matched by team name.
+    if power_rankings:
+        pr_score_by_name = {
+            str(t.get("team_name")): float(t.get("power_score") or 0.0)
+            for t in power_rankings
+        }
+        if "owner" in team_stats.columns:
+            team_stats["PowerScore"] = team_stats["owner"].map(
+                lambda o: pr_score_by_name.get(str(o), 0.0)
+            )
 
     # ---- Sort by PowerScore, with PF as tiebreaker if available ----
     has_power = "PowerScore" in team_stats.columns
@@ -3507,7 +3528,6 @@ def render_power_and_playoffs(
         ties_val = safe_int(row.get("Ties"), 0)
         rec = f"{wins}-{losses}" + (f"-{ties_val}" if ties_val else "")
 
-        size = {"1": "38px", "2": "32px", "3": "32px"}[str(rank)]
         base_cls = {1: "first", 2: "second", 3: "third"}[rank]
 
         power_val = safe_float(row.get("PowerScore"), 0.0)
@@ -3546,7 +3566,7 @@ def render_power_and_playoffs(
           <div class="slot {base_cls} {streak_frame_cls}">
             <div class="wrap">
               <div class='podium-header'>
-                <h3 style="font-size:{size}">#{rank}</h3>
+                <h3>#{rank}</h3>
                 {avatar_html}
               </div>
               <div class="name">{name}</div>
@@ -3615,14 +3635,13 @@ def render_power_and_playoffs(
         )
 
         rank_cards.append(
-            f"<div class='rank-item {css_cls} '>"
+            f"<div class='rank-item {css_cls}'>"
             f"<span class='pos'>#{pos}</span>"
-            f"<span class='name'>{img}&nbsp;{team}</span>"
-            f"<span class='rec'>{record}</span>"
-            f"<div class='power-row'>"
+            f"{img}"
+            f"<span class='name'>{team}</span>"
             f"<div class='bar'><div style='width:{bar_w:.1f}%'></div></div>"
             f"<div class='chips'>{chips_html}</div>"
-            f"</div>"
+            f"<span class='rec'>{record}</span>"
             f"</div>"
         )
 
@@ -3918,11 +3937,12 @@ def _build_offseason_standings_body(ctx: dict) -> str:
 
     # ── Compute value share and projected production share ─────────────────────
     league_value_total = sum(r["total"] for r in team_rows) or 1.0
-    # Offseason projected scoring from playoff odds simulation
+    # Projected scoring using same Sleeper-first PPG source as playoff odds page
     rid_to_proj: dict[str, float] = {}
     try:
-        from data_building.simulate_playoff_odds import _estimate_from_rosters
-        est_teams = _estimate_from_rosters(ctx)
+        from data_building.simulate_playoff_odds import build_ppg_map, _estimate_from_rosters
+        _ppg_map, _pos_map = build_ppg_map(ctx)
+        est_teams = _estimate_from_rosters(ctx, ppg_map=_ppg_map, pos_map=_pos_map)
         for t in est_teams:
             rid_to_proj[str(t["roster_id"])] = float(t.get("avg") or 0.0)
     except Exception:
@@ -4038,10 +4058,19 @@ def _build_offseason_standings_body(ctx: dict) -> str:
         # Generic: no bracket available
         synthetic_bracket = []
 
+    # Use the same ranking source as the Teams page "Power Rankings" tab so the
+    # offseason podium matches it exactly (ranks by roster value when no games
+    # have been played).
+    try:
+        from dashboard_services.ai.context_builders import build_power_rankings_context
+        _pr_teams = (build_power_rankings_context(ctx) or {}).get("teams") or []
+    except Exception:
+        _pr_teams = []
     power_playoffs_html = render_power_and_playoffs(
         synthetic_ts, roster_map, league_id_str, platform, season,
         bracket_override=synthetic_bracket,
         seed_map_override=seed_map_override,
+        power_rankings=_pr_teams,
     )
 
     # ── left-column dynasty rankings table ───────────────────────────────────
@@ -4167,12 +4196,13 @@ def render_share_rankings(ctx: dict) -> str:
     is_offseason    = league_pf_total == 0.0
     prod_label      = "Proj. Production Share" if is_offseason else "Production Share"
 
-    # Offseason: use the same projected-avg pipeline as playoff odds
+    # Offseason: use the same Sleeper-first PPG source as the playoff odds page
     rid_to_proj: Dict[str, float] = {}
     if is_offseason:
         try:
-            from data_building.simulate_playoff_odds import _estimate_from_rosters
-            est_teams = _estimate_from_rosters(ctx)
+            from data_building.simulate_playoff_odds import build_ppg_map, _estimate_from_rosters
+            _ppg_map2, _pos_map2 = build_ppg_map(ctx)
+            est_teams = _estimate_from_rosters(ctx, ppg_map=_ppg_map2, pos_map=_pos_map2)
             for t in est_teams:
                 rid_to_proj[str(t["roster_id"])] = float(t.get("avg") or 0.0)
         except Exception:
@@ -4272,12 +4302,20 @@ def build_standings_body(ctx: dict) -> str:
 
     table_html = render_team_stats(team_stats, detailed_df)
     share_html = render_share_rankings(ctx)
+    # Use the same ranking source as the Teams page "Power Rankings" tab so the
+    # two views always agree.
+    try:
+        from dashboard_services.ai.context_builders import build_power_rankings_context
+        _pr_teams = (build_power_rankings_context(ctx) or {}).get("teams") or []
+    except Exception:
+        _pr_teams = []
     power_playoffs_html = render_power_and_playoffs(
         team_stats,
         roster_map,
         ctx.get("resolved_league_id", ctx["league_id"]),
         ctx["platform"],
         ctx["season"],
+        power_rankings=_pr_teams,
     )
     sidebar_html = render_standings_sidebar(team_stats)
 
@@ -5169,8 +5207,16 @@ def render_weekly_top_scorers_for_week(
         w: int,
         users: list,
         platform: str,
-        season: str
+        season: str,
+        roster_positions: list = None,
 ) -> str:
+    _base_positions = ["QB", "RB", "WR", "TE", "K", "DEF"]
+    rp_set = set(roster_positions or [])
+    active_positions = [
+        p for p in _base_positions
+        if p not in ("K", "DEF") or p in rp_set
+    ]
+
     # 1. Filter to ONLY this week
     week_df = pd.DataFrame()
     if not df_weekly.empty and "week" in df_weekly.columns:
@@ -5185,16 +5231,17 @@ def render_weekly_top_scorers_for_week(
             rosters,
             users,
             platform,
-            season
+            season,
+            roster_positions=roster_positions,
         )
-        return render_top_three(top_by_pos, rosters, roster_map)
+        return render_top_three(top_by_pos, rosters, roster_map, active_positions)
 
     # --------------------------------------------
     # CASE 2: Week not finalized → use projections for this week
     # --------------------------------------------
     if projections is None:
-        empty = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
-        return render_top_three(empty, rosters, roster_map)
+        empty = {pos: [] for pos in active_positions}
+        return render_top_three(empty, rosters, roster_map, active_positions)
 
     # Build projected rows
     proj_rows = []
@@ -5209,7 +5256,7 @@ def render_weekly_top_scorers_for_week(
                 continue
 
             pos = p.get("position") or p.get("pos")
-            if pos not in ["QB", "RB", "WR", "TE", "K", "DEF"]:
+            if pos not in active_positions:
                 continue
 
             proj_rows.append({
@@ -5220,14 +5267,14 @@ def render_weekly_top_scorers_for_week(
                 "points": float(val),
             })
 
-    top_by_pos = {pos: [] for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]}
+    top_by_pos = {pos: [] for pos in active_positions}
 
     for pos in top_by_pos:
         f = [r for r in proj_rows if r["pos"] == pos]
         f.sort(key=lambda r: r["points"], reverse=True)
         top_by_pos[pos] = f[:3]
 
-    return render_top_three(top_by_pos, rosters, roster_map)
+    return render_top_three(top_by_pos, rosters, roster_map, active_positions)
 
 
 def _render_weekly_matchups(df_weekly: pd.DataFrame, week: int) -> str:
@@ -5488,7 +5535,8 @@ def build_weekly_hub_body(ctx: dict) -> str:
         default_week,
         users,
         platform,
-        season
+        season,
+        roster_positions=ctx.get("roster_positions") or [],
     )
     proj_by_roster = ctx.get("proj_by_roster") or {}
     highlights_html = _render_weekly_highlights(
@@ -5777,8 +5825,8 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
                 all_vals.setdefault(pid, []).append(val)
     fallback = {pid: median(vals) for pid, vals in all_vals.items()}
 
-    # For players missing from Tank01 entirely (e.g. rookies), use FantasyPros
-    # season PPG as a flat per-week estimate.  The PPG file is PPR-based, so we
+    # For players Sleeper doesn't project (e.g. fringe depth), use FantasyPros
+    # preseason PPG as a flat per-week estimate.  The PPG file is PPR-based, so we
     # estimate other variants by backing out typical reception points by position.
     _EST_REC = {"QB": 0.0, "RB": 3.0, "WR": 5.0, "TE": 4.0}
     try:
@@ -6257,9 +6305,12 @@ def build_activity_body(ctx: dict) -> str:
                 val_txt = f"{val:.1f}" if val > 0 else ""
                 val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
 
-                # Make player name clickable using the pid from the player dict
                 pid = p.get("pid", "")
-                clickable_attrs = f" class='player-clickable' style='cursor:pointer;font-weight:600;' data-player-id='{pid}' data-player-name='{name}'" if pid else " style='font-weight:600'"
+                clickable_attrs = (
+                    f" class='player-clickable' style='cursor:pointer;font-weight:600;'"
+                    f" data-player-id='{pid}' data-player-name='{name}'"
+                    if pid else " style='font-weight:600'"
+                )
 
                 return (
                     "<div class='player-activity'>"
@@ -6268,7 +6319,7 @@ def build_activity_body(ctx: dict) -> str:
                     f"{'+' if io_class == 'add' else '−'}</span>"
                     "<div>"
                     f"  <div{clickable_attrs}>{name}</div>"
-                    f"  <div style='color:#64748b;font-size:12px'>{pos_rank_label} • {p['team']}</div>"
+                    f"  <div style='color:#64748b;font-size:12px'>{pos_rank_label} • {p.get('team','')}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
                 )
@@ -6588,8 +6639,8 @@ def build_activity_body(ctx: dict) -> str:
                     "<div style='gap: 10px;display: flex;align-items: center;'>"
                     "<span class='io add'>+</span>"
                     "<div>"
-                    f"  <div style='font-weight:600'>{p['name']}</div>"
-                    f"  <div style='color:#64748b;font-size:12px'>{pos_rank_label} • {p['team']}</div>"
+                    f"  <div style='font-weight:600'>{name}</div>"
+                    f"  <div style='color:#64748b;font-size:12px'>{pos_rank_label} • {p.get('team','')}</div>"
                     "</div></div>"
                     f"{val_html}</div>"
                 )
@@ -6652,12 +6703,12 @@ def build_activity_body(ctx: dict) -> str:
         injury_html = render_injury_accordion(injury_df)
     else:
         injury_html = (
-            "<div class=’card’>"
-            "  <div class=’card-body’>"
-            "    <div class=’bract-empty-state’>"
-            "      <div class=’bract-empty-icon’><i class=’fa-solid fa-shield-halved’ style=’font-size:28px;color:var(--muted);opacity:.5;’></i></div>"
-            "      <div class=’bract-empty-title’>No injury updates right now</div>"
-            "      <div class=’bract-empty-copy’>Either the feed is quiet or there are no currently tracked injury updates for this view.</div>"
+            "<div class='card'>"
+            "  <div class='card-body'>"
+            "    <div class='bract-empty-state'>"
+            "      <div class='bract-empty-icon'><i class='fa-solid fa-shield-halved' style='font-size:28px;color:var(--muted);opacity:.5;'></i></div>"
+            "      <div class='bract-empty-title'>No injury updates right now</div>"
+            "      <div class='bract-empty-copy'>Either the feed is quiet or there are no currently tracked injury updates for this view.</div>"
             "    </div>"
             "  </div>"
             "</div>"
@@ -6665,12 +6716,12 @@ def build_activity_body(ctx: dict) -> str:
 
     if not activity_html:
         activity_html = (
-            "<div class=’card’>"
-            "  <div class=’card-body’>"
-            "    <div class=’bract-empty-state’>"
-            "      <div class=’bract-empty-icon’><i class=’fa-solid fa-arrows-rotate’ style=’font-size:28px;color:var(--muted);opacity:.5;’></i></div>"
-            "      <div class=’bract-empty-title’>No recent activity yet</div>"
-            "      <div class=’bract-empty-copy’>When trades and waiver claims come through, they’ll show up here with value context and team-by-team breakdowns.</div>"
+            "<div class='card'>"
+            "  <div class='card-body'>"
+            "    <div class='bract-empty-state'>"
+            "      <div class='bract-empty-icon'><i class='fa-solid fa-arrows-rotate' style='font-size:28px;color:var(--muted);opacity:.5;'></i></div>"
+            "      <div class='bract-empty-title'>No recent activity yet</div>"
+            "      <div class='bract-empty-copy'>When trades and waiver claims come through, they'll show up here with value context and team-by-team breakdowns.</div>"
             "    </div>"
             "  </div>"
             "</div>"
@@ -9115,25 +9166,37 @@ def api_start_sit_options():
         if pid:
             rows_by_id[pid] = row
 
-    current_week = int(ctx.get("current_week") or 0)
+    current_week = int(ctx.get("current_week") or 1)  # default week 1 in offseason
 
-    # ── FPTS-against defense ranks (replaces yardage-based matchup adj) ──────
+    # ── FPTS-against data (for "Def vs pos" pts/gm display) ──────────────────
     fpts_against: dict = {}
     try:
         fpts_against = _compute_fpts_against(season)
     except Exception:
         pass
 
+    # ── Z-score matchup rank tables (rank 1 = easiest, one per position) ─────
+    _z_rank_tables: dict = {}
+    _z_total_map: dict = {}
+    for _zpos in ("QB", "RB", "WR", "TE"):
+        try:
+            _rm, _tot, _ri, _iz = _matchup_rank_table(season, _zpos)
+            _z_rank_tables[_zpos] = _rm
+            _z_total_map[_zpos] = _tot
+        except Exception:
+            _z_rank_tables[_zpos] = {}
+            _z_total_map[_zpos] = 32
+
+    # Fallback rank cache (fpts-against) used when z-score data is absent
     _def_rank_cache: dict = {}
-    def _get_def_rank(team: str, pos: str):
+    def _get_def_rank_fallback(team: str, pos: str):
         if pos not in _def_rank_cache:
             vals = [(t, fpts_against.get(t, {}).get(pos, 0.0)) for t in fpts_against]
             vals.sort(key=lambda x: x[1], reverse=True)
             _def_rank_cache[pos] = {t: i + 1 for i, (t, _) in enumerate(vals)}
         rank  = _def_rank_cache.get(pos, {}).get(team)
         total = len(fpts_against) or 32
-        fpts_val = round(fpts_against.get(team, {}).get(pos, 0.0), 1)
-        return rank, total, fpts_val
+        return rank, total
 
     # ── Opponent map from current week schedule ───────────────────────────────
     opponent_map: dict = {}
@@ -9153,14 +9216,40 @@ def api_start_sit_options():
     except Exception:
         pass
 
-    # ── Season-long PPG from all cached stat files ────────────────────────────
+    # ── Weekly projections — SAME source as the player modal & matchups page ───
+    # build_projections_by_week() returns Tank01 weekly values (variant-adjusted,
+    # with per-player median outlier correction) and FantasyPros season PPG as a
+    # fallback for players with no weekly data. Reuse the cached ctx bundle when
+    # present so start/sit shows the exact number the modal/matchups show.
+    proj_by_week = ctx.get("proj_by_week")
+    if not proj_by_week:
+        try:
+            proj_by_week = build_projections_by_week(
+                season, 18, ctx.get("raw_scoring_settings")
+            )
+        except Exception:
+            proj_by_week = {}
+    _wk_proj = ((proj_by_week or {}).get(current_week) or {}).get("projections") or {}
+    def _lookup_proj(pid: str):
+        v = _wk_proj.get(pid)
+        if v is None:
+            v = _wk_proj.get(str(pid))
+        try:
+            return round(float(v), 1) if v is not None else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    # ── Season-long and recent-form PPG from Sleeper stat files ───────────────
     season_ppg: dict = {}
+    recent_ppg_map: dict = {}   # last 4 weeks
     try:
         import glob as _glob
         _stat_files = sorted(_glob.glob(
             os.path.join("cache", "sleeper_stats", f"sleeper_stats_s{season}_w*.json")
         ))
         _season_pts: dict = {}
+        _recent_files = _stat_files[-4:]   # last 4 weeks for form
+        _recent_pts: dict = {}
         for _sf in _stat_files:
             try:
                 _sdata = json.load(open(_sf))
@@ -9168,18 +9257,12 @@ def api_start_sit_options():
                     pts = float(stats.get("pts_ppr") or 0)
                     if pts > 0:
                         _season_pts.setdefault(str(pid), []).append(pts)
+                        if _sf in _recent_files:
+                            _recent_pts.setdefault(str(pid), []).append(pts)
             except Exception:
                 continue
         season_ppg = {pid: round(sum(v) / len(v), 1) for pid, v in _season_pts.items() if v}
-    except Exception:
-        pass
-
-    # ── Projections for current week ──────────────────────────────────────────
-    proj_map: dict = {}
-    try:
-        from utils.utils import load_week_projection as _lwp
-        if current_week > 0:
-            proj_map = _lwp(season, current_week) or {}
+        recent_ppg_map = {pid: round(sum(v) / len(v), 1) for pid, v in _recent_pts.items() if v}
     except Exception:
         pass
 
@@ -9193,26 +9276,52 @@ def api_start_sit_options():
         player_name   = row.get("name") or meta.get("name") or f"Player {pid}"
         team          = (row.get("team") or meta.get("team") or "").upper()
         opponent      = opponent_map.get(team, "")
-        opp_label     = opp_label_map.get(team, "BYE" if current_week > 0 else "")
-        on_bye        = current_week > 0 and team not in opponent_map
+        # Only mark as BYE/on-bye when the schedule actually loaded (opponent_map non-empty)
+        on_bye    = bool(opponent_map) and team not in opponent_map
+        opp_label = opp_label_map.get(team, "BYE" if on_bye else "")
 
-        s_ppg         = season_ppg.get(pid, 0.0)
-        proj_pts      = round(float(proj_map.get(pid) or proj_map.get(str(pid)) or 0.0), 1)
-        def_rank, def_total, fpts_vs = _get_def_rank(opponent, pos) if opponent else (None, 32, 0.0)
+        s_ppg      = season_ppg.get(pid, 0.0)
+        recent_ppg = recent_ppg_map.get(pid, 0.0)
+        # Projection = exact value the player modal / matchups page show for this
+        # week (Tank01 weekly w/ median correction → FantasyPros season PPG).
+        proj_pts   = _lookup_proj(pid)
+        if proj_pts <= 0 and s_ppg > 0:
+            proj_pts = round(s_ppg, 1)
 
-        # Matchup score: prefer FPTS-against when available
-        if not on_bye and fpts_vs > 0 and s_ppg > 0:
-            league_avg_fpts = round(
-                sum(fpts_against.get(t, {}).get(pos, 0.0) for t in fpts_against) / max(len(fpts_against), 1), 1
-            )
-            adj = min(1.25, max(0.75, fpts_vs / max(league_avg_fpts, 1.0)))
-            score = s_ppg * adj
-        elif not on_bye and s_ppg > 0:
-            score = s_ppg
-        elif on_bye:
+        fpts_vs = round(fpts_against.get(opponent, {}).get(pos, 0.0), 1) if opponent else 0.0
+        # Z-score matchup rank (rank 1 = easiest); fall back to fpts-against rank.
+        # Shown as the matchup chip for context — the weekly projection already
+        # reflects the opponent, so it is NOT re-applied to the start/sit score.
+        _z_opp = _norm_sched_team(opponent) if opponent else ""
+        _z_map = _z_rank_tables.get(pos, {})
+        if _z_opp and _z_map:
+            def_rank  = _z_map.get(_z_opp) or _z_map.get(opponent)
+            def_total = _z_total_map.get(pos, 32)
+        elif opponent:
+            def_rank, def_total = _get_def_rank_fallback(opponent, pos)
+        else:
+            def_rank, def_total = None, 32
+
+        # ── Start/sit score: projection × form × matchup ─────────────────────
+        # Projection is the dominant signal. Form (±10%) and matchup (±10%)
+        # each influence close calls but combined can only swing the score
+        # ~20% — not enough to flip a meaningful projection gap (e.g. 12.8 vs
+        # 9.8 stays the same regardless of matchup).
+        if on_bye:
             score = 0.0
         else:
-            score = float(row.get(_vf_ss) or row.get("value") or 0) * 0.01
+            # Recent form: capped ±10%
+            _form = 1.0
+            if recent_ppg > 0 and s_ppg > 0:
+                _form = min(1.10, max(0.90, recent_ppg / s_ppg))
+
+            # Matchup ease: rank 1=easiest → +10%, rank 32=hardest → -10%
+            _mu = 1.0
+            if def_rank and def_total and def_total > 1:
+                _ease = (def_total - def_rank) / (def_total - 1)  # 0–1
+                _mu = 0.90 + _ease * 0.20  # 0.90–1.10
+
+            score = proj_pts * _form * _mu
 
         full_player  = players_full.get(pid) or {}
         raw_status   = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
@@ -9226,6 +9335,7 @@ def api_start_sit_options():
             "opponent_team": opponent,
             "on_bye":        on_bye,
             "season_ppg":    round(s_ppg, 1),
+            "recent_ppg":    recent_ppg,
             "proj_pts":      proj_pts,
             "fpts_against":  fpts_vs,
             "def_rank":      def_rank,
@@ -13206,6 +13316,46 @@ def _matchup_cell_ease(rank, total, info):
     return 0.0
 
 
+def _team_sos_table(season: int, position: str, weeks):
+    """Return {team: (rank, total, ease)} for `position` over `weeks`.
+
+    rank 1 = easiest schedule among all NFL teams for that position. Reuses the
+    z-score matchup ratings (falling back to raw fpts-allowed). Shared by the
+    Schedule Assistant grid and the player-compare start/sit view."""
+    rank_map, total, info, _is_z = _matchup_rank_table(season, position)
+    if not rank_map:
+        return {}
+    schedules: dict = {}
+    for w in weeks:
+        try:
+            games = load_week_schedule(season, w) or []
+        except Exception:
+            games = []
+        lookup = {}
+        for g in games:
+            if not isinstance(g, dict):
+                continue
+            home = _norm_sched_team(g.get("home"))
+            away = _norm_sched_team(g.get("away"))
+            if home:
+                lookup[home] = away
+            if away:
+                lookup[away] = home
+        schedules[w] = lookup
+    team_ease: dict = {}
+    for t in rank_map.keys():
+        eases = []
+        for w in weeks:
+            opp = schedules.get(w, {}).get(t)
+            if not opp:
+                continue
+            eases.append(_matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {})))
+        if eases:
+            team_ease[t] = sum(eases) / len(eases)
+    ranked = sorted(team_ease.items(), key=lambda x: -x[1])
+    return {t: (i + 1, len(ranked), round(e, 1)) for i, (t, e) in enumerate(ranked)}
+
+
 def _compute_schedule_grid(season: int, pids, weeks):
     """For each pid over the given weeks, return matchup + difficulty cells.
     Reuses the cached fpts-allowed table so this is cheap per request."""
@@ -13571,7 +13721,6 @@ def build_schedule_body(ctx):
       }
 
       var rankPage = 0;
-      var RANK_PAGE_SIZE = 25;
 
       function buildRankingsTable(data) {
         var rankGrid  = document.getElementById('schedRankingsGrid');
@@ -13585,43 +13734,47 @@ def build_schedule_body(ctx):
           return;
         }
 
-        var totalPages = Math.ceil(rankings.length / RANK_PAGE_SIZE);
-        if (rankPage >= totalPages) rankPage = 0;
-        var pageStart = rankPage * RANK_PAGE_SIZE;
-        var pageRows  = rankings.slice(pageStart, pageStart + RANK_PAGE_SIZE);
+        // Group players from the same NFL team into one row — their schedule,
+        // avg rank and ease are identical, so separate rows just repeat values.
+        var groups = [];
+        var byTeam = {};
+        rankings.forEach(function(p) {
+          var g = byTeam[p.team];
+          if (!g) { g = { team: p.team, rep: p, players: [] }; byTeam[p.team] = g; groups.push(g); }
+          g.players.push(p);
+        });
 
-        var head = '<th class="sched-th sched-th-player">Player</th>';
+        var head = '<th class="sched-th sched-th-player">Team</th>';
         for (var i = 0; i < weeks.length; i++) head += '<th class="sched-th">WK ' + weeks[i] + '</th>';
         head += '<th class="sched-th">Avg</th><th class="sched-th" style="min-width:90px;">Ease</th>';
 
         var rows = '';
-        pageRows.forEach(function(p, idx) {
-          var rank = pageStart + idx + 1;
+        groups.forEach(function(g, idx) {
+          var p = g.rep;
+          var rank = idx + 1;
           var medalHtml;
           if (rank === 1)      medalHtml = '<span class="sched-rank-medal sched-rank-medal-1">1</span>';
           else if (rank === 2) medalHtml = '<span class="sched-rank-medal sched-rank-medal-2">2</span>';
           else if (rank === 3) medalHtml = '<span class="sched-rank-medal sched-rank-medal-3">3</span>';
           else                 medalHtml = '<span class="sched-rank-num">' + rank + '</span>';
 
-          var rosterBadge = p.owner
-            ? '<span class="sched-roster-badge sched-roster-badge--owner">' + esc(p.owner) + '</span>'
-            : (p.on_roster ? '<span class="sched-roster-badge">Rostered</span>' : '');
+          var namesHtml = g.players.map(function(pl) {
+            var badge = pl.owner
+              ? '<span class="sched-roster-badge sched-roster-badge--owner">' + esc(pl.owner) + '</span>'
+              : (pl.on_roster ? '<span class="sched-roster-badge">Rostered</span>' : '');
+            return '<div class="sched-rank-player-line">' +
+                     '<span class="player-clickable sched-pname" data-player-id="' + esc(pl.pid) + '">' + esc(pl.name) + '</span>' +
+                     badge +
+                   '</div>';
+          }).join('');
 
           var cells = '';
           (p.cells || []).forEach(function(c) {
             if (c.bye) { cells += '<td class="sched-td sched-bye">BYE</td>'; return; }
             var rankLabel = c.rank ? ('#' + c.rank) : '–';
-            var ptsHtml = '';
-            if (c.pts != null) {
-              var isActual = c.pts_type === 'actual';
-              ptsHtml = '<div class="sched-player-pts' + (isActual ? '' : ' sched-player-pts--proj') + '">' +
-                          c.pts + ' pts' +
-                        '</div>';
-            }
             cells += '<td class="sched-td" style="background:' + c.bg + ';">' +
                        '<div class="sched-opp">'  + esc((c.at || '') + c.opp) + '</div>' +
                        '<div class="sched-rank" style="color:' + c.txt + ';">' + rankLabel + '</div>' +
-                       ptsHtml +
                      '</td>';
           });
 
@@ -13642,14 +13795,11 @@ def build_schedule_body(ctx):
 
           rows += '<tr>' +
             '<td class="sched-td sched-td-player">' +
-              '<div class="sched-rank-player-cell">' +
+              '<div class="sched-rank-player-cell sched-rank-player-cell--group">' +
                 medalHtml +
                 '<span class="sched-pos" style="background:' + p.color + '22;color:' + p.color + ';">' + esc(p.pos) + '</span>' +
-                '<div class="sched-rank-name-wrap">' +
-                  '<span class="player-clickable sched-pname" data-player-id="' + esc(p.pid) + '">' + esc(p.name) + '</span>' +
-                  rosterBadge +
-                '</div>' +
-                '<span class="sched-nfl">' + esc(p.team) + '</span>' +
+                '<div class="sched-rank-name-wrap">' + namesHtml + '</div>' +
+                '<span class="sched-nfl">' + esc(g.team) + '</span>' +
               '</div>' +
             '</td>' +
             cells +
@@ -13658,30 +13808,8 @@ def build_schedule_body(ctx):
           '</tr>';
         });
 
-        var pageBar = '';
-        if (totalPages > 1) {
-          var from = pageStart + 1, to = Math.min(pageStart + RANK_PAGE_SIZE, rankings.length);
-          pageBar = '<div class="sched-page-bar">' +
-            '<button class="sched-page-btn" id="rankPrev"' + (rankPage === 0 ? ' disabled' : '') + '>&#8592; Prev</button>' +
-            '<span class="sched-page-info">' + from + '–' + to + ' of ' + rankings.length + '</span>' +
-            '<button class="sched-page-btn" id="rankNext"' + (rankPage >= totalPages - 1 ? ' disabled' : '') + '>Next &#8594;</button>' +
-          '</div>';
-        }
-
         rankGrid.innerHTML =
-          '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>' +
-          pageBar;
-
-        if (totalPages > 1) {
-          var prev = document.getElementById('rankPrev');
-          var next = document.getElementById('rankNext');
-          if (prev) prev.addEventListener('click', function() {
-            if (rankPage > 0) { rankPage--; buildRankingsTable(rankingsCache); rankGrid.scrollIntoView({behavior:'smooth',block:'nearest'}); }
-          });
-          if (next) next.addEventListener('click', function() {
-            if (rankPage < totalPages - 1) { rankPage++; buildRankingsTable(rankingsCache); rankGrid.scrollIntoView({behavior:'smooth',block:'nearest'}); }
-          });
-        }
+          '<table class="sched-table"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table>';
       }
 
       // ── Player search / pool ────────────────────────────────────────────────────────────────
@@ -15423,7 +15551,8 @@ def api_weekly_week():
         week,
         users,
         platform,
-        season
+        season,
+        roster_positions=ctx.get("roster_positions") or [],
     )
     _api_proj_by_roster = ctx.get("proj_by_roster") or {}
     highlights_html = _render_weekly_highlights(
@@ -16075,70 +16204,33 @@ def api_trade_outcome():
         from concurrent.futures import ThreadPoolExecutor, as_completed
         from dashboard_services.picks import load_pick_value_table
         
-        # Load calibrated values: weighted_market_value_1qb from trade intel (primary),
-        # falling back to calibrated_value_1qb / value_1qb from player_values.
-        try:
-            current_season = datetime.now().year
-            with get_conn() as conn:
-                cal_rows = conn.execute(
-                    """
-                    SELECT
-                        pv.player_id,
-                        COALESCE(
-                            tips.weighted_market_value_1qb,
-                            pv.calibrated_value_1qb,
-                            pv.value_1qb
-                        ) AS calibrated_value,
-                        pv.position
-                    FROM player_values pv
-                    LEFT JOIN trade_intel_player_stats tips
-                        ON tips.player_id = pv.player_id AND tips.season = %s
-                    WHERE pv.player_id IS NOT NULL
-                    """,
-                    (current_season,),
-                ).fetchall()
-            if not cal_rows:
-                raise ValueError("No calibrated values loaded")
-            values_now = {}
-            pick_count = 0
-            player_count = 0
-            for row in cal_rows:
-                asset_id = str(row["player_id"] or "")
-                if not asset_id:
-                    continue
-                value = float(row["calibrated_value"] or 0.0)
-                values_now[asset_id] = value
-                if str(row.get("position") or "").upper() == "PICK":
-                    pick_count += 1
-                    if "_" in asset_id:
-                        space_format_id = asset_id.replace("_", " ", 1).replace("_", ".", 1)
-                        values_now[space_format_id] = value
-                else:
-                    player_count += 1
-        except Exception as db_error:
-            logger.warning("[api-trade-outcome] Calibrated values unavailable, falling back to model table: %s", db_error)
-            value_table = get_model_value_table_cached()
-            values_now = {str(p["id"]): float(p.get("value") or 0) for p in value_table if isinstance(p, dict) and p.get("id")}
+        # Use the same value source as the player modal so all values are consistent.
+        value_table = get_model_value_table_cached() or []
+        values_now = {
+            str(p["id"]): float(p.get("value") or 0)
+            for p in value_table
+            if isinstance(p, dict) and p.get("id") and float(p.get("value") or 0) > 0
+        }
         
         # Load pick values for pick asset handling
         pick_values = load_pick_value_table()
 
         trade_date = str(payload.get("trade_date") or "")
-        trade_month = trade_date[:7] if trade_date else ""
 
-        def get_value_at_trade(pid: str) -> float:
-            """Return the closest historical value to trade_date; returns 0.0 if no history."""
+        def get_value_at_trade(pid: str):
+            """Return the closest historical value to trade_date within 30 days, or None."""
             if not trade_date:
-                return 0.0
+                return None
             from datetime import date as _date
             try:
                 target = _date.fromisoformat(trade_date[:10])
             except ValueError:
-                return 0.0
+                return None
             history = get_player_value_history(pid, days=800)
             if not history:
-                return 0.0
-            best_val = 0.0
+                return None
+
+            best_val = None
             best_diff = float("inf")
             for snap in history:
                 snap_date_str = str(snap.get("as_of_date") or "")[:10]
@@ -16151,8 +16243,11 @@ def api_trade_outcome():
                         best_val = float(snap.get("value") or 0)
                 except (ValueError, TypeError):
                     continue
-            print(best_val)
-            return best_val
+
+            # No snapshot within 30 days of the trade date — too stale to compare
+            if best_diff > 30 or not best_val:
+                return None
+            return round(best_val, 1)
         
         def get_pick_value(asset: dict) -> float:
             """Get current pick value, preferring WLS-derived bucket values."""
@@ -16200,7 +16295,7 @@ def api_trade_outcome():
         all_assets = [("received", a) for a in assets_received] + [("sent", a) for a in assets_sent]
         all_pids = [(side, str(a.get("id") or ""), str(a.get("name") or a.get("id") or "")) for side, a in all_assets]
 
-        # Fetch historical values in parallel
+        # Fetch historical values in parallel — only store when we found a reliable snapshot
         then_values: dict[str, float] = {}
         if trade_date:
             with ThreadPoolExecutor(max_workers=min(len(all_pids), 8)) as pool:
@@ -16208,9 +16303,11 @@ def api_trade_outcome():
                 for fut in as_completed(futures):
                     pid = futures[fut]
                     try:
-                        then_values[pid] = fut.result()
+                        result = fut.result()
+                        if result is not None:
+                            then_values[pid] = result
                     except Exception:
-                        then_values[pid] = 0.0
+                        pass  # Leave absent — _build_row treats missing pid as None
 
         received_rows = []
         sent_rows = []
@@ -18501,7 +18598,14 @@ def api_player_game_logs(player_id: str):
         # max(available_years)+1 because sleeper_stats files may already exist
         # for the current season (e.g. 2026), pushing the calculation to 2027.
         _upcoming = season  # season already parsed from request.args above
-        if _upcoming not in game_logs_by_year:
+        # Weeks already covered by actual stats — skip those when projecting
+        _actual_weeks = {
+            g.get("week") for g in (game_logs_by_year.get(_upcoming) or [])
+            if not g.get("is_projection")
+        }
+        # Show projections if: no actual data yet (pre-season) OR some weeks
+        # are still in the future (active season — fill the remaining weeks).
+        if _upcoming not in game_logs_by_year or _actual_weeks:
             try:
                 from utils.utils import pick_proj_variant, load_week_projection
                 from statistics import median as _med_fn
@@ -18554,6 +18658,8 @@ def api_player_game_logs(player_id: str):
 
                     _proj_logs = []
                     for _w in range(1, 19):
+                        if _w in _actual_weeks:
+                            continue  # already have real stats for this week
                         _pv = _proj_vals.get(_w, _med if _med > 0 else None)
                         if _pv and _med > 0 and _pv < _med * 0.5:
                             _pv = _med
@@ -18582,7 +18688,13 @@ def api_player_game_logs(player_id: str):
                             "is_projection": True,
                         })
                     if any(g["fantasy_pts"] for g in _proj_logs):
-                        game_logs_by_year[_upcoming] = _proj_logs
+                        existing = game_logs_by_year.get(_upcoming) or []
+                        # Merge: keep real games, append future projected weeks
+                        combined = sorted(
+                            existing + _proj_logs,
+                            key=lambda g: g.get("week") or 0
+                        )
+                        game_logs_by_year[_upcoming] = combined
             except Exception as _proj_err:
                 logger.debug(f"[game_logs] upcoming season projection failed: {_proj_err}")
 

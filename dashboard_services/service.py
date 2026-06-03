@@ -88,7 +88,8 @@ def matchup_cards_last_week(
         rosters: list,
         users: list,
         platform: str,
-        season: str
+        season: str,
+        roster_positions: list = None,
 ) -> tuple[int, str, dict]:
     """
     Returns: (week_number, html_for_matchup_cards, top_by_pos_dict)
@@ -213,7 +214,12 @@ def matchup_cards_last_week(
         """
         )
 
-    want_positions = ["QB", "RB", "WR", "TE", "K", "DEF"]
+    _base_positions = ["QB", "RB", "WR", "TE", "K", "DEF"]
+    rp_set = set(roster_positions or [])
+    want_positions = [
+        p for p in _base_positions
+        if p not in ("K", "DEF") or p in rp_set
+    ]
     top_by_pos = {}
     for pos in want_positions:
         pool = sorted(buckets.get(pos, []), key=lambda x: x["pts"], reverse=True)[:3]
@@ -248,7 +254,7 @@ def fantasy_team_and_roster_for_player(pid: str, rosters: list, roster_map: dict
     return "Free Agent", ""
 
 
-def render_top_three(top_by_pos: dict, rosters, roster_map) -> str:
+def render_top_three(top_by_pos: dict, rosters, roster_map, positions: list = None) -> str:
     def card(pos, rows):
         if not rows:
             return f"<div class='side-card'><h2>{pos}</h2><div class='muted'>No data</div></div>"
@@ -283,7 +289,8 @@ def render_top_three(top_by_pos: dict, rosters, roster_map) -> str:
             )
         return f"<div class='side-card'><h3>{pos}</h3>{''.join(lis)}</div>"
 
-    blocks = [card(pos, top_by_pos.get(pos, [])) for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]]
+    _render_positions = positions if positions else ["QB", "RB", "WR", "TE", "K", "DEF"]
+    blocks = [card(pos, top_by_pos.get(pos, [])) for pos in _render_positions]
     return "<div class='sidebar-grid'>" + "".join(blocks) + "</div>"
 
 
@@ -549,7 +556,7 @@ def _compute_team_records(df: pd.DataFrame) -> pd.DataFrame:
             ties[owner2] += 1
 
     results = []
-    owners = sorted(set(df["owner"]))
+    owners = sorted(set(df["owner"])) if "owner" in df.columns else []
     for owner in owners:
         w = wins[owner]
         l = losses[owner]
@@ -565,7 +572,9 @@ def _compute_team_records(df: pd.DataFrame) -> pd.DataFrame:
                 "Win%": (w + 0.5 * t) / g if g else 0.0,
             }
         )
-    return pd.DataFrame(results)
+    # Always return the expected schema so downstream merges on "owner" work even
+    # in the preseason when there are no games played yet (empty results).
+    return pd.DataFrame(results, columns=["owner", "Wins", "Losses", "Ties", "G", "Win%"])
 
 
 def _aggregate_team_stats(df_weekly: pd.DataFrame, records: pd.DataFrame) -> pd.DataFrame:
@@ -584,11 +593,16 @@ def _aggregate_team_stats(df_weekly: pd.DataFrame, records: pd.DataFrame) -> pd.
 
     team_stats = stats.merge(records, on="owner", how="left")
 
+    # Owners with no games yet (preseason) come through the left-merge as NaN.
+    for _col in ("Wins", "Losses", "Ties", "G"):
+        if _col in team_stats.columns:
+            team_stats[_col] = team_stats[_col].fillna(0)
+
     team_stats["Record"] = team_stats[["Wins", "Losses", "Ties"]].apply(
         lambda r: f"{int(r.Wins)}-{int(r.Losses)}"
                   + (f"-{int(r.Ties)}" if r.Ties else ""),
         axis=1,
-    )
+    ) if not team_stats.empty else pd.Series(dtype=str)
 
     return team_stats
 

@@ -4157,12 +4157,9 @@ window.initTradePage = function initTradePage(root = document) {
              </span>`
           : "";
 
-        // Win % + playoff odds
-        // Rebuilding/distribute: use net_* fields (trade net effect) for card;
-        // win_prob_delta / playoff_odds_delta hold departure cost (impact table).
-        const usesNet = archetype === "rebuilding" || archetype === "distribute";
-        const wpd    = (usesNet ? (t.net_win_prob_delta ?? t.win_prob_delta) : t.win_prob_delta) || 0;
-        const pod    = (usesNet ? (t.net_playoff_odds_delta ?? t.playoff_odds_delta) : t.playoff_odds_delta) || 0;
+        // Win % + playoff odds — always prefer net_* fields (full trade swap effect)
+        const wpd = (t.net_win_prob_delta ?? t.win_prob_delta) || 0;
+        const pod = (t.net_playoff_odds_delta ?? t.playoff_odds_delta) || 0;
         const wpdCol = wpd >= 0 ? "#10b981" : "#ef4444";
         const podCol = pod >= 0 ? "#6366f1" : "#ef4444";
         const wpdHtml = `<span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;background:${wpdCol}15;border:1px solid ${wpdCol}30;color:${wpdCol};white-space:nowrap;">${(wpd >= 0 ? "+" : "") + (wpd * 100).toFixed(1)}% wk</span>`;
@@ -7435,12 +7432,12 @@ function _buildBkTabHTML(data, scoreColor) {
 }
 
 // ── Stats tab HTML builder (returns HTML string, no DOM side effects) ─────────
-function _buildStatsHTML(game_logs_by_year) {
+function _buildStatsHTML(game_logs_by_year, skipHeader) {
   let statsHTML = '';
   if (game_logs_by_year && Object.keys(game_logs_by_year).length > 0) {
     statsHTML += `
       <div class="player-modal-section">
-        <div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>
+        ${skipHeader ? '' : '<div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>'}
     `;
 
     // Sort years in descending order (most recent first)
@@ -7449,54 +7446,59 @@ function _buildStatsHTML(game_logs_by_year) {
     years.forEach((year, index) => {
       const gameLogs = game_logs_by_year[year];
       const isFirstYear = index === 0;
-      const isProjection = gameLogs.length > 0 && gameLogs[0].is_projection === true;
+      const hasRealGames = gameLogs.some(g => !g.is_projection && !g.is_bye && g.fantasy_pts != null);
+      const hasProjGames = gameLogs.some(g => g.is_projection);
+      const isProjection = !hasRealGames && hasProjGames;   // ALL entries are projected
+      const isMixed      = hasRealGames && hasProjGames;    // active season mid-way
 
-      // Calculate season totals
+      // Accumulate real completed games for the header (never mix in projections)
       let totalFantasyPts = 0;
       let totalPassYd = 0, totalPassTd = 0, totalPassInt = 0;
       let totalRushAtt = 0, totalRushYd = 0, totalRushTd = 0;
       let totalRecTgt = 0, totalRec = 0, totalRecYd = 0, totalRecTd = 0;
       let totalFumLost = 0;
       let gamesPlayed = 0;
+      // Projected totals tracked separately for the tfoot footnote
+      let projTotalPts = 0, projGames = 0;
 
       gameLogs.forEach(game => {
         if (game.is_bye) return;
         if (game.is_projection) {
-          if (game.fantasy_pts != null) { totalFantasyPts += game.fantasy_pts; gamesPlayed++; }
+          if (game.fantasy_pts != null) { projTotalPts += game.fantasy_pts; projGames++; }
           return;
         }
         const s = game.stats || {};
-        // Only count weeks where the player actually had recorded stats (not DNP)
         const playedThisGame = game.stats != null && (
           s.pass_yd != null || s.rush_att != null || s.rec != null || s.rec_tgt != null
         );
         if (playedThisGame) gamesPlayed++;
         totalFantasyPts += game.fantasy_pts || 0;
-        totalPassYd += s.pass_yd || 0;
-        totalPassTd += s.pass_td || 0;
+        totalPassYd  += s.pass_yd  || 0;
+        totalPassTd  += s.pass_td  || 0;
         totalPassInt += s.pass_int || 0;
         totalRushAtt += s.rush_att || 0;
-        totalRushYd += s.rush_yd || 0;
-        totalRushTd += s.rush_td || 0;
-        totalRecTgt += s.rec_tgt || 0;
-        totalRec += s.rec || 0;
-        totalRecYd += s.rec_yd || 0;
-        totalRecTd += s.rec_td || 0;
+        totalRushYd  += s.rush_yd  || 0;
+        totalRushTd  += s.rush_td  || 0;
+        totalRecTgt  += s.rec_tgt  || 0;
+        totalRec     += s.rec      || 0;
+        totalRecYd   += s.rec_yd   || 0;
+        totalRecTd   += s.rec_td   || 0;
         totalFumLost += s.fum_lost || 0;
       });
 
-      // Build right-side header summary
+      // Header summary — always based on real completed games
       const ppg = gamesPlayed > 0 ? (totalFantasyPts / gamesPlayed).toFixed(1) : '0.0';
       let summaryHTML;
       if (isProjection) {
-        summaryHTML = `<span class="game-log-year-summary">~${ppg} ppg &nbsp;<span style="opacity:0.65;">(projected)</span></span>`;
+        const projPpg = projGames > 0 ? (projTotalPts / projGames).toFixed(1) : '0.0';
+        summaryHTML = `<span class="game-log-year-summary">~${projPpg} ppg &nbsp;<span style="opacity:0.65;"></span></span>`;
       } else {
         summaryHTML = `<span class="game-log-year-summary">${gamesPlayed}g &nbsp;·&nbsp; ${ppg} ppg &nbsp;·&nbsp; ${fmtPts(totalFantasyPts)} pts</span>`;
       }
 
       statsHTML += `
         <div class="game-log-year-section">
-          <div class="game-log-year-header" onclick="toggleGameLogYear('${year}')">
+          <div class="game-log-year-header" onclick="toggleGameLogYear(this)">
             <div class="game-log-year-header-main">
               <span class="game-log-year-toggle" id="toggle-${year}">▼</span>
               <span class="game-log-year-title">${year} Season</span>
@@ -7508,9 +7510,9 @@ function _buildStatsHTML(game_logs_by_year) {
             <table class="game-log-table">
               <thead>
                 <tr>
-                  <th>${isProjection ? 'Week' : 'Date'}</th>
+                  <th>Date</th>
                   <th>Opp</th>
-                  <th class="${isProjection ? 'game-log-proj-th' : ''}">Pts${isProjection ? ' *' : ''}</th>
+                  <th class="${isProjection ? 'game-log-proj-th' : ''}">Pts${(isProjection || isMixed) ? ' *' : ''}</th>
                   <th>Pass Yd</th>
                   <th>Pass TD</th>
                   <th>INT</th>
@@ -7597,8 +7599,8 @@ function _buildStatsHTML(game_logs_by_year) {
               <tfoot>
                 <tr class="game-log-table-total game-log-proj-row">
                   <td><strong>Total</strong></td>
-                  <td><strong>${gamesPlayed}G</strong></td>
-                  <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(totalFantasyPts)}</strong></td>
+                  <td><strong>${projGames}G</strong></td>
+                  <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(projTotalPts)}</strong></td>
                   <td colspan="10" style="text-align:left;font-size:11px;color:var(--text-muted);padding-left:8px;">* Projected — actuals update when games are played</td>
                 </tr>
               </tfoot>
@@ -7923,9 +7925,22 @@ function buildAdvancedMetricsHTML(metricsData) {
   return html;
 }
 
-function toggleGameLogYear(year) {
-  const content = document.getElementById(`year-${year}`);
-  const toggle = document.getElementById(`toggle-${year}`);
+function toggleGameLogYear(arg) {
+  // Resolve the header element. Accepts the clicked header (preferred — works
+  // when duplicate year IDs exist, e.g. both players in the compare modal) or
+  // a year string for backward compatibility.
+  let header;
+  if (typeof arg === 'string') {
+    const toggle = document.getElementById(`toggle-${arg}`);
+    header = toggle ? toggle.closest('.game-log-year-header') : null;
+  } else {
+    header = arg;
+  }
+  if (!header) return;
+
+  const content = header.nextElementSibling;
+  const toggle = header.querySelector('.game-log-year-toggle');
+  if (!content || !toggle) return;
 
   if (content.classList.contains('expanded')) {
     content.classList.remove('expanded');
@@ -8606,6 +8621,7 @@ function _buildComparePPGRow(p1, p2) {
   `;
 }
 
+
 function _buildCompareHeroHTML(p) {
   const val1qb = p.stats?.value || 0;
   const valsf  = p.stats?.sf_value || 0;
@@ -8974,6 +8990,14 @@ function openComparisonView(p1, p2) {
 
       <hr class="pm-section-divider">
 
+      <div class="pm-section-header"><span class="pm-section-label">Game Logs</span></div>
+      <div class="compare-gamelogs-section">
+        <div class="compare-gamelogs-col" id="compareGameLogs1"></div>
+        <div class="compare-gamelogs-col" id="compareGameLogs2"></div>
+      </div>
+
+      <hr class="pm-section-divider">
+
       <div class="pm-section-header"><span class="pm-section-label">Value History</span></div>
       <div id="compareValueChart" class="player-modal-chart-container" style="min-height:200px;"></div>
 
@@ -8983,6 +9007,12 @@ function openComparisonView(p1, p2) {
       </div>
     </div>
   `;
+
+  // Inject game logs for both players
+  const gl1 = document.getElementById('compareGameLogs1');
+  const gl2 = document.getElementById('compareGameLogs2');
+  if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year, true);
+  if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year, true);
 
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();
@@ -9272,6 +9302,18 @@ function tmSwitchTab(tab) {
   if (tab === 'trades' && !window._tmTradesLoaded) {
     window._tmTradesLoaded = true;
     tmLoadTrades(window._tmRosterId);
+  }
+
+  // Plotly charts are created while their panel is display:none (roster is the
+  // default tab), so they measure a 0-width container and fall back to a wide
+  // default that overflows the column. Resize them once the panel is visible.
+  if (tab === 'charts' && typeof Plotly !== 'undefined') {
+    requestAnimationFrame(() => {
+      ['teamWeeklyChart', 'teamRadarChart'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { try { Plotly.Plots.resize(el); } catch (_) {} }
+      });
+    });
   }
 }
 
@@ -9865,7 +9907,7 @@ function renderTeamDetails(data) {
         plot_bgcolor: 'rgba(0,0,0,0)'
       };
 
-      Plotly.newPlot('teamWeeklyChart', traces, weeklyLayout, { responsive: true });
+      Plotly.newPlot('teamWeeklyChart', traces, weeklyLayout, { responsive: true, displayModeBar: false });
     }
 
     // Render radar chart
@@ -9901,6 +9943,7 @@ function renderTeamDetails(data) {
       const radarLayout = {
         template: theme.template,
         polar: {
+          domain: { x: [0.05, 0.95], y: [0.05, 0.95] },
           radialaxis: {
             visible: true,
             range: [-3, 3],
@@ -9916,16 +9959,21 @@ function renderTeamDetails(data) {
           },
           bgcolor: 'rgba(0,0,0,0)'
         },
-        margin: { l: 60, r: 60, t: 40, b: 40 },
+        margin: { l: 40, r: 40, t: 24, b: 24 },
         showlegend: false,
+        autosize: true,
         paper_bgcolor: 'rgba(0,0,0,0)',
         plot_bgcolor: 'rgba(0,0,0,0)',
         font: {
-          color: theme.textColor
+          color: theme.textColor,
+          size: 11,
         }
       };
 
-      Plotly.newPlot('teamRadarChart', [radarTrace], radarLayout, { responsive: true });
+      Plotly.newPlot('teamRadarChart', [radarTrace], radarLayout, {
+        responsive: true,
+        displayModeBar: false,
+      });
     }
   }
 }
