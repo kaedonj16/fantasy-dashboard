@@ -7,13 +7,13 @@ CHANGELOG = [
     {
         "date": "2026-06-02",
         "tag": "feature",
-        "text": "Trade Suggestions: The Win % and playoff-odds pills now reflect the true net effect of a deal. Each package runs a full playoff simulation of your roster after the trade — accounting for both the players you send away and the one you get back — so the odds shift you see is what actually happens to your team, not just the value of the player added.",
+        "text": "Trade Suggestions: The Win % and playoff-odds pills now reflect the true net effect of a deal. Each package runs a full playoff simulation of your roster after the trade, accounting for both the players you send away and the one you get back, so the odds shift you see is what actually happens to your team, not just the value of the player added.",
         "link": "/trade?tab=suggestions"
     },
     {
         "date": "2026-06-02",
         "tag": "feature",
-        "text": "Trade Suggestions: The Consolidate strategy now only surfaces genuine trade-up packages — two or three assets for one difference-maker — and never a 1-for-1 swap.",
+        "text": "Trade Suggestions: The Consolidate strategy now only surfaces genuine trade-up packages, two or three assets for one difference-maker, and never a 1-for-1 swap.",
         "link": "/trade?tab=suggestions"
     },
     {
