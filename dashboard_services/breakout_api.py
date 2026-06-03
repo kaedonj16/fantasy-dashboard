@@ -525,13 +525,18 @@ def _get_peer_comparison(
     )
 
 
-def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0) -> Dict:
+def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0,
+                            limit: Optional[int] = None) -> Dict:
     """
     Get all breakout candidates for a season.
 
     Args:
         season: Season year (default: current season from NFL state)
         min_score: Minimum breakout score threshold (default: 0)
+        limit: If set, return only the top-N candidates by score. Keeps the
+            displayed list to a tight set of genuine breakouts (~8-15) even when
+            many players clear the score floor, and is robust to score-scale
+            shifts between runs (a fixed floor is not).
 
     Returns:
         {
@@ -618,6 +623,10 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
     candidates = filtered
 
     candidates.sort(key=lambda x: float(x['breakout_opportunity_score']), reverse=True)
+
+    # Top-N cap: show only the strongest breakouts, not everyone above the floor.
+    if limit and limit > 0:
+        candidates = candidates[:limit]
 
     # Fill in missing names and headshots from players_index
     try:
@@ -1008,10 +1017,11 @@ def get_roster_situation(team: str, season: Optional[int] = None) -> Dict:
 @breakout_bp.route('/candidates')
 @premium_required
 def candidates():
-    """Get all breakout candidates."""
+    """Get all breakout candidates (top-N by score; pass limit=0 for all)."""
     season = request.args.get('season', type=int)
     min_score = request.args.get('min_score', default=0.0, type=float)
-    return jsonify(get_breakout_candidates(season, min_score))
+    limit = request.args.get('limit', default=15, type=int)
+    return jsonify(get_breakout_candidates(season, min_score, limit=limit or None))
 
 
 @breakout_bp.route('/candidates/<position>')
