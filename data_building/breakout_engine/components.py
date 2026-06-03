@@ -13,6 +13,7 @@ Each function calculates one of the 7 component scores:
 All functions return (score: float, details: Dict) tuples.
 """
 
+import math
 from datetime import date, timedelta
 from typing import List, Optional, Tuple
 
@@ -336,6 +337,86 @@ def _pooled_list(cache, db_fn, team: str, position: str, season: int) -> List[Di
                 seen.add(pid)
             out.append(it)
     return out
+
+
+# ==============================================================================
+# ARCHETYPE / ROLE FIT (context only — does NOT affect the score)
+# ==============================================================================
+# Read-only explainability: how well a candidate's receiving role matches the
+# type of targets being vacated (a slot/possession vacancy "fits" a slot player
+# more than an outside burner). Surfaced as a label/insight; the numeric score
+# stays usage-based, since archetype data only exists for 2024-25 and can't be
+# backtested. Requires PFF-style fields (aDOT, slot/wide rate, YAC) which are
+# exported to cache/archetype_{season}.json. Degrades to None when unavailable.
+
+def _archetype_vector(profile: Optional[Dict]) -> Optional[Tuple[float, float, float]]:
+    """Normalized role vector (slot tendency, target depth, YAC) or None."""
+    if not profile:
+        return None
+    slot, adot, yac = profile.get("slot_rate"), profile.get("adot"), profile.get("yac_per_rec")
+    if slot is None and adot is None and yac is None:
+        return None
+    return (
+        _clamp(_safe_float(slot) / 100.0, 0.0, 1.0),   # 0=outside .. 1=pure slot
+        _clamp(_safe_float(adot) / 20.0, 0.0, 1.0),    # target depth (aDOT)
+        _clamp(_safe_float(yac) / 10.0, 0.0, 1.0),     # yards after catch
+    )
+
+
+def _vacated_archetype_profile(departed_players: List[Dict]) -> Optional[Tuple[float, float, float]]:
+    """Target-weighted average role vector of the departed players, or None."""
+    acc, wsum = [0.0, 0.0, 0.0], 0.0
+    for dp in departed_players or []:
+        vec = _archetype_vector(dp.get("archetype"))
+        if vec is None:
+            continue
+        w = max(_safe_float(dp.get("targets", 0)), 1.0)
+        for i in range(3):
+            acc[i] += vec[i] * w
+        wsum += w
+    return (acc[0] / wsum, acc[1] / wsum, acc[2] / wsum) if wsum > 0 else None
+
+
+def _describe_role(vec: Tuple[float, float, float]) -> str:
+    """Short human label for a role vector, e.g. 'slot, short-area'."""
+    slot, adot, _ = vec
+    align = "slot" if slot >= 0.6 else "outside" if slot <= 0.35 else "slot/outside"
+    depth = "deep" if adot >= 0.6 else "short-area" if adot <= 0.4 else "intermediate"
+    return f"{align}, {depth}"
+
+
+def compute_archetype_fit(
+    player_archetype: Optional[Dict], team: str, position: str, vacated_cache: Optional[Dict],
+) -> Optional[Dict]:
+    """How well the candidate's role matches the vacated targets (WR/TE only).
+
+    Returns {fit, label, candidate_role, vacated_role} or None when archetype
+    data is missing on either side. Pure context — never feeds the score.
+    """
+    if position not in PASS_CATCHER_POSITIONS:
+        return None
+    cand = _archetype_vector(player_archetype)
+    if cand is None:
+        return None
+    departed: List[Dict] = []
+    for key in _opportunity_group_keys(team, position):
+        v = (vacated_cache or {}).get(key)
+        if v:
+            departed += v.get("departed_players", []) or []
+    vac = _vacated_archetype_profile(departed)
+    if vac is None:
+        return None
+    dist = math.sqrt(sum((cand[i] - vac[i]) ** 2 for i in range(3)))
+    sim = max(0.0, 1.0 - dist / math.sqrt(3.0))
+    # Realistic role distances compress into ~0.6-1.0, so calibrate labels there:
+    # a clean alignment mismatch (slot vs outside) lands ~0.61 -> "low".
+    label = "high" if sim >= 0.85 else "medium" if sim >= 0.70 else "low"
+    return {
+        "fit": round(sim, 2),
+        "label": label,
+        "candidate_role": _describe_role(cand),
+        "vacated_role": _describe_role(vac),
+    }
 
 
 # ==============================================================================

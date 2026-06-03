@@ -67,6 +67,27 @@ for _mod in ("openai", "openai.types", "openai.types.chat"):
 
 POSITIONS = ("QB", "RB", "WR", "TE")
 
+
+def load_archetype_cache(season: int) -> dict[str, dict]:
+    """Load PFF-style archetype profiles for a season, keyed by sleeper_id.
+
+    Reads cache/archetype_{season}.json (produced by
+    scripts/export_archetype_cache.py). Returns {} when absent so the build runs
+    fine without archetype context — role-fit labels are simply omitted.
+    """
+    path = Path("cache") / f"archetype_{season}.json"
+    if not path.exists():
+        print(f"  [archetype] no cache at {path} — role-fit labels disabled")
+        return {}
+    try:
+        data = json.loads(path.read_text())
+        players = data.get("players", data) if isinstance(data, dict) else {}
+        print(f"  [archetype] loaded {len(players)} player profiles for {season}")
+        return players
+    except Exception as e:
+        print(f"  [archetype] failed to load {path}: {e}")
+        return {}
+
 # nfl_data_py team abbreviations (2021+ post-relocation era)
 VALID_TEAMS = frozenset({
     "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN",
@@ -705,6 +726,7 @@ def detect_changes(
             v["carries"] += u.get("carries", 0)
             v["snap_share"] = round(v["snap_share"] + u.get("snap_share", 0.0), 4)
             v["departed_players"].append({
+                "player_id": gsis_id,
                 "name": prev["name"],
                 "targets": u.get("targets", 0),
                 "carries": u.get("carries", 0),
@@ -1048,6 +1070,15 @@ def _generate_key_reasons(
         elif opp >= 50:
             reasons.append(f"Significant opportunity opened at {team}")
 
+        # Archetype/role fit (context only): flag when the candidate's role
+        # matches the type of targets being vacated.
+        fit = opp_d.get("archetype_fit")
+        if fit and fit.get("label") in ("high", "medium"):
+            reasons.append(
+                f"{fit['label'].title()} role fit for vacated targets "
+                f"({fit['candidate_role']} vs {fit['vacated_role']})"
+            )
+
     # Arrival: new team context
     if is_arrival and not reasons:
         reasons.append(f"New team situation at {team}")
@@ -1152,6 +1183,13 @@ def score_one_player(
     )
     component_scores["opportunity_opened"] = s
     component_details["opportunity_opened"] = d
+
+    # Archetype/role fit (context only — does not affect the score): how well
+    # this candidate's receiving role matches the vacated targets.
+    from data_building.breakout_engine.components import compute_archetype_fit
+    fit = compute_archetype_fit(roster_entry.get("archetype"), team, position, vacated_cache)
+    if fit:
+        d["archetype_fit"] = fit
 
     # 2. Competition removed
     s, d = calculate_competition_removed_score(
@@ -1424,6 +1462,26 @@ def build_season(
                   f"({prev['team']}→{curr['team']}, snap={float(u.get('snap_share',0)):.0%})")
     if reopened:
         print(f"  {reopened} split-backfield RB(s) re-opened as breakout candidates")
+
+    # Attach archetype profiles (context only) so score_one_player can label how
+    # well each candidate's role fits the vacated targets. Profiles are keyed by
+    # sleeper_id; map to gsis_id and attach to both the candidate roster entries
+    # and the departed players in the vacated cache. No effect on the score.
+    archetype_by_sleeper = load_archetype_cache(stats_season)
+    if archetype_by_sleeper:
+        arch_by_gsis = {
+            g: archetype_by_sleeper[s]
+            for g, s in gsis_to_sleeper.items()
+            if s in archetype_by_sleeper
+        }
+        for gsis_id, prof in arch_by_gsis.items():
+            if gsis_id in curr_rosters:
+                curr_rosters[gsis_id]["archetype"] = prof
+        for vac in vacated_cache.values():
+            for dp in vac.get("departed_players", []):
+                prof = arch_by_gsis.get(dp.get("player_id"))
+                if prof:
+                    dp["archetype"] = prof
 
     # Score each eligible player
     scored: list[dict] = []
