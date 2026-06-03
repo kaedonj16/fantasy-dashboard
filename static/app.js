@@ -7820,7 +7820,7 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.elusive_rating != null) {
       const v = metrics.elusive_rating;
-      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 180 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 200 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.avoided_tackles != null && metrics.avoided_tackles > 0) {
       const v = metrics.avoided_tackles;
@@ -8932,23 +8932,31 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     }
 
     const fmt = v => {
-      if (v == null) return 'â';
-      
-      // Only metrics stored as 0-1 decimals that need ×100 for display
-      const percentageMetrics = ['catch_rate', 'snap_share', 'rush_td_rate', 'td_rate', 'int_rate'];
-      
-      // Check if current metric is a percentage metric
-      const isPercentageMetric = percentageMetrics.includes(key);
-      
-      if (isPercentageMetric) {
-        // Display as percentage (e.g., .6 becomes 60.0%)
-        if (v < 0.1 && v > 0) return (v * 100).toFixed(1) + '%';
-        return (v * 100).toFixed(0) + '%';
-      } else {
-        // Regular formatting for other metrics
-        if (v < 0.1 && v > 0) return v.toFixed(3);
-        return Number.isInteger(v) ? v : v.toFixed(1);
+      if (v == null) return '—';
+
+      // 0-1 decimal metrics that need ×100 to display as %
+      const decimalPctMetrics = ['catch_rate', 'snap_share', 'rush_td_rate', 'td_rate', 'int_rate'];
+      // Raw-% metrics (already 0-100) that just need a % suffix
+      const rawPctMetrics = [
+        'completion_pct', 'adjusted_completion_rate', 'big_time_throw_rate',
+        'pressure_to_sack_rate', 'drop_rate', 'contested_catch_rate',
+        'slot_rate', 'wide_rate', 'inline_rate', 'pass_block_rate',
+        'breakaway_percentage', 'opportunity_share',
+      ];
+      // Count metrics that should always show as integers
+      const intMetrics = ['yards_after_catch', 'explosive_runs_10_plus', 'avoided_tackles'];
+
+      if (decimalPctMetrics.includes(key)) {
+        return (v * 100).toFixed(1) + '%';
       }
+      if (rawPctMetrics.includes(key)) {
+        return v.toFixed(1) + '%';
+      }
+      if (intMetrics.includes(key)) {
+        return Math.round(v).toString();
+      }
+      if (v < 0.1 && v > 0) return v.toFixed(3);
+      return Number.isInteger(v) ? v : v.toFixed(1);
     };
 
     return `
