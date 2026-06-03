@@ -496,16 +496,16 @@ def run_discovery(target: int = _MAX_LEAGUES, season: Optional[int] = None) -> i
         batch_to_save = []
         batch_new_frontier = []
         
-        def process_single_frontier_league(league_id: str) -> Tuple[Optional[Dict], List[str]]:
-            """Process a single frontier league and return (league_data, new_frontier_leagues)"""
+        def process_single_frontier_league(league_id: str) -> Tuple[Optional[Dict], List[str], List[str]]:
+            """Process a single frontier league and return (league_data, new_frontier_leagues, dynasty_owner_ids)"""
             time.sleep(_REQUEST_DELAY)
             meta = _league_meta(league_id)
             if not meta:
-                return None, []
+                return None, [], []
             
             league_type = meta.get("settings", {}).get("type")
             if league_type not in (1, 2):
-                return None, []
+                return None, [], []
 
             lg_season = int(meta.get("season") or season)
             num_teams = meta.get("total_rosters", 0)
