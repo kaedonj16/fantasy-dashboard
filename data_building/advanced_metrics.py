@@ -16,6 +16,20 @@ from typing import Dict, Any, List, Optional
 from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn
 
+# Map PFF/non-standard position codes to the canonical fantasy set
+# (QB / RB / WR / TE).  Anything not in this map is returned as-is.
+_POS_NORM: Dict[str, str] = {
+    "HB": "RB", "FB": "RB",
+    "SE": "WR", "FL": "WR",
+}
+
+
+def _normalize_position(pos: Optional[str]) -> Optional[str]:
+    """Return the canonical fantasy position for a raw position string."""
+    if not pos:
+        return pos
+    return _POS_NORM.get(pos.upper(), pos.upper())
+
 
 def init_advanced_metrics_db():
     """
@@ -846,10 +860,19 @@ def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
             
         # Convert to list of dicts
         metrics_list = [dict(row) for row in rows]
-        
-        # Get the most recent position and season info
+
         latest = metrics_list[0]
-        position = latest.get('position')
+        # Prefer the canonical fantasy position (QB/RB/WR/TE) — some import
+        # paths write PFF codes like "HB".  Search all rows newest-first.
+        _canonical = {"QB", "RB", "WR", "TE"}
+        position = None
+        for r in metrics_list:
+            p = _normalize_position(r.get("position"))
+            if p in _canonical:
+                position = p
+                break
+        if position is None:
+            position = _normalize_position(latest.get("position"))
         
         # Initialize aggregated metrics
         aggregated = {

@@ -58,6 +58,7 @@ def api_player_advanced_metrics(player_id: str):
             get_player_metrics_by_season,
             get_player_career_metrics,
             get_available_seasons_for_player,
+            _normalize_position,
         )
 
         # Determine default season from NFL state
@@ -144,7 +145,7 @@ def api_player_advanced_metrics(player_id: str):
 
         return jsonify({
             "player_id": str(player_id),
-            "position": metrics.get("position"),
+            "position": _normalize_position(metrics.get("position")),
             "season": season_val,
             "available_seasons": available_seasons,
             "metrics": metrics_payload,

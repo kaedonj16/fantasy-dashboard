@@ -7743,7 +7743,9 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
 
 function buildAdvancedMetricsHTML(metricsData) {
   const metrics = metricsData.metrics || {};
-  const position = metricsData.position;
+  // Normalize PFF position codes to canonical fantasy positions
+  const _posNorm = { HB: 'RB', FB: 'RB', SE: 'WR', FL: 'WR' };
+  const position = _posNorm[(metricsData.position || '').toUpperCase()] || metricsData.position;
 
   const defs = [];
 
