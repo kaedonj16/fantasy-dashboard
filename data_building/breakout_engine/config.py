@@ -24,18 +24,18 @@ PHASE_WEIGHTS: Dict[str, Dict[str, float]] = {
     # negative empirical r and adding noise hurts ranking quality.
     # Freed weight (0.05 + 0.05 = 0.10) redistributed to confidence and role_trajectory.
     'offseason': {
-        # Re-weighted to make a real opening matter (product intent: "breakout =
-        # an opportunity opened"), trading some backtest-optimal weight away from
-        # confidence. Opportunity is the gating signal via the gates below; this
-        # also lets it move the ranking among qualified candidates rather than
-        # being a near-zero 0.08 contributor.
-        'opportunity_opened': 0.16,
-        'competition_removed': 0.06,
+        # Quality-led: trajectory + confidence + readiness are the strongest
+        # breakout predictors (backtest AND scouting intuition agree — a real
+        # breakout is a clearly-ascending talent). Opportunity is a booster, not
+        # the driver, so a big opening alone can't promote a low-trajectory
+        # player over an ascending one (e.g. keeps Egbuka ahead of McMillan).
+        'opportunity_opened': 0.10,
+        'competition_removed': 0.00,   # Negative empirical r — zeroed out
         'competition_added_penalty': 0.07,
         'team_environment': 0.00,      # Negative empirical r — zeroed out
-        'player_readiness': 0.18,
-        'role_trajectory': 0.28,
-        'confidence': 0.25,
+        'player_readiness': 0.20,
+        'role_trajectory': 0.30,
+        'confidence': 0.33,
     },
     'post_free_agency': {
         'opportunity_opened': 0.15,
@@ -109,13 +109,12 @@ MIN_BREAKOUT_SCORE = 40.0
 # Calibrated for the contested-SHARE opportunity scale: a player's diluted share
 # of vacated work scores far lower than the old gross-team-total scale, so a
 # "real opening" is ~20, not 35.
-# A "real opening" means a meaningful vacated share, not a token one. Set to ~50
-# so a trivial opening (e.g. a backup leaving, opp≈20) does NOT qualify a player
-# as opportunity-driven — they must instead clear the stricter ascension path,
-# which is capped below the genuine opportunity breakouts. This is the primary
-# control on how many candidates surface (target ~8-15 legit breakouts).
-BREAKOUT_GATE_OPP_MIN = 50.0    # opportunity_opened floor (real vacated share)
-BREAKOUT_GATE_COMP_MIN = 50.0   # OR competition_removed floor
+# A modest real opening qualifies the opportunity path (e.g. a cleared backfield
+# at opp≈40). Ascension is an equally-valid path (below) for players with no
+# opening, so these floors are NOT the count control — the curve is. Kept off the
+# floor so a token opening (backup leaving) doesn't read as a real one.
+BREAKOUT_GATE_OPP_MIN = 35.0    # opportunity_opened floor (real vacated share)
+BREAKOUT_GATE_COMP_MIN = 40.0   # OR competition_removed floor
 
 # Readiness gate: pass if EITHER of these clears.
 BREAKOUT_GATE_READY_MIN = 50.0  # player_readiness floor
@@ -138,11 +137,12 @@ BREAKOUT_ASCENSION_TRAJ_MIN = 60.0   # AND role_trajectory floor (rising usage)
 # with no new opening sits clearly BELOW the genuine opportunity-driven breakouts
 # (which span ~58-90). Applied whenever the player qualifies via ascension but
 # NOT via the opportunity path. This is what keeps the top tier to the ~8-15
-# legit, opportunity-driven breakouts rather than every ascending young starter.
-# Set just below the page display floor (50) so ascension-only players are scored
-# but don't crowd the main breakout list — keeping it to the ~8-15 genuine
-# opportunity breakouts. Raise toward 50+ to surface ascension candidates too.
-BREAKOUT_ASCENSION_SCORE_CAP = 48.0
+# Ascension is a FIRST-CLASS breakout path (a clearly-ascending talent with no
+# new opening — e.g. Jeanty, Warren — is a real breakout). Cap only mildly, to
+# reflect that an inferred opening is a touch less certain than a quantified one,
+# so a pure ascender doesn't outrank a top opportunity+ascension breakout. The
+# candidate COUNT is controlled by the curve, not by suppressing this path.
+BREAKOUT_ASCENSION_SCORE_CAP = 85.0
 
 # If a player fails the gates, cap their final score here so they fall below
 # the candidate floor (40) and the page floor (50) and drop off the list.
@@ -165,8 +165,8 @@ BREAKOUT_GATE_FAIL_CAP = 38.0
 #   python -m data_building.breakout_engine.tune_selectivity
 # It reads the stored component scores and prints the count for a grid of
 # pivot/slope values so you can pick the pair that lands in range.
-BREAKOUT_CURVE_PIVOT = 52.0
-BREAKOUT_CURVE_SLOPE = 1.8
+BREAKOUT_CURVE_PIVOT = 55.0
+BREAKOUT_CURVE_SLOPE = 2.3
 
 # Component score ranges (most are 0-100)
 COMPONENT_SCORE_MIN = 0.0
