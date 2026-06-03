@@ -620,15 +620,21 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
     if limit and limit > 0:
         candidates = candidates[:limit]
 
-    # Fill in missing names and headshots from players_index
+    # Fill in missing names, headshots, and precise age from players_index.
+    # The age stored in component_details comes from nfl_data_py (integer);
+    # recomputing from bDay gives the correct decimal (e.g. 23.4 not 23.0).
     try:
         from utils.utils import load_players_index
+        from dashboard_services.service import age_from_bday
         players_index = load_players_index() or {}
         for c in candidates:
             pmeta = players_index.get(str(c.get('player_id') or ''), {})
             if not c.get('player_name'):
                 c['player_name'] = pmeta.get('full_name') or pmeta.get('name')
             c['espnHeadshot'] = pmeta.get('espnHeadshot')
+            precise = age_from_bday(pmeta.get('bDay'))
+            if precise is not None:
+                c['age'] = precise
     except Exception:
         logger.warning("breakout_api: failed to enrich candidates with player index", exc_info=True)
 

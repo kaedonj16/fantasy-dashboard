@@ -8287,7 +8287,7 @@ def build_teams_body(ctx: dict) -> str:
                   var sc = sigColor[p.signal] || 'var(--text-muted)';
                   var metaParts = [];
                   if (p.pos_rank_label) metaParts.push(p.pos_rank_label);
-                  if (p.age) metaParts.push('Age ' + p.age);
+                  if (p.age) metaParts.push('Age ' + parseFloat(p.age).toFixed(1));
                   if (p.fc_pos_rank) metaParts.push('FC ' + pos + p.fc_pos_rank);
                   var safeName = (p.name || '').replace(/"/g, '&quot;');
                   html += '<div class="ri-player-row">' +
@@ -9005,13 +9005,15 @@ def api_waiver_candidates():
             val = 0.0
         if val <= 0:
             continue
+        pmeta_wv = players_index.get(pid, {})
+        precise_age_wv = age_from_bday(pmeta_wv.get("bDay"))
         try:
-            age = float(row.get("age") or 0)
+            age = precise_age_wv if precise_age_wv is not None else float(row.get("age") or 0)
         except Exception:
             age = 0.0
         player_name = (
             row.get("name")
-            or players_index.get(pid, {}).get("name")
+            or pmeta_wv.get("name")
             or f"Player {pid}"
         )
         candidates.append({
@@ -17089,17 +17091,23 @@ def api_league_players():
         int(p.get("pos_rank") or 9999)
     ))
 
-    # Add birthday data for precise age calculation in frontend
+    # Add birthday data and compute precise decimal age for all pages that use
+    # this endpoint (trade calc, player modal, team modal, breakout, etc.).
+    # The value table stores age as a Sleeper integer (23); computing from bDay
+    # gives the correct decimal (23.4) that the rankings page already shows.
     try:
         from utils.utils import load_players_index
         players_index = load_players_index() or {}
-        
-        # Enrich player data with birthday information
+
         for player in model_value_table:
             player_id = str(player.get("id") or "")
             player_data = players_index.get(player_id)
             if player_data:
-                player["bDay"] = player_data.get("bDay")
+                bday = player_data.get("bDay")
+                player["bDay"] = bday
+                precise = age_from_bday(bday)
+                if precise is not None:
+                    player["age"] = precise
     except Exception as e:
         logger.info(f"[api/league-players] Could not add birthday data: {e}")
 
@@ -18808,12 +18816,9 @@ def api_team_details(roster_id: str):
                 position = "DEF"
                 player_team = pid_str
 
-            # Get age from value table (has calculated age) or player meta
-            # For kickers, prioritize players_index birthday info
-            if position == "K":
-                age = player_meta.get("age") or value_row.get("age")
-            else:
-                age = value_row.get("age") or player_meta.get("age")
+            # Compute precise decimal age from birthday (bDay) when available;
+            # fall back to value table integer only when birthday is absent.
+            age = age_from_bday(player_meta.get("bDay")) or value_row.get("age") or player_meta.get("age")
             if age is not None:
                 ages_found += 1
             else:

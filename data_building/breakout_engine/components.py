@@ -356,8 +356,10 @@ def _archetype_vector(profile: Optional[Dict]) -> Optional[Tuple[float, float, f
     slot, adot, yac = profile.get("slot_rate"), profile.get("adot"), profile.get("yac_per_rec")
     if slot is None and adot is None and yac is None:
         return None
+    # slot_rate=None means no alignment data — treat as 0.5 (neutral/unknown)
+    slot_norm = 0.5 if slot is None else _clamp(_safe_float(slot) / 100.0, 0.0, 1.0)
     return (
-        _clamp(_safe_float(slot) / 100.0, 0.0, 1.0),   # 0=outside .. 1=pure slot
+        slot_norm,
         _clamp(_safe_float(adot) / 20.0, 0.0, 1.0),    # target depth (aDOT)
         _clamp(_safe_float(yac) / 10.0, 0.0, 1.0),     # yards after catch
     )
@@ -495,8 +497,19 @@ def calculate_opportunity_opened_score(
         # But a RETURNING starter's job did not "open": only credit a QB stepping
         # into a vacated starting role, not one who already held it last season
         # (otherwise a backup leaving falsely reads as an opening for the starter).
-        qb_prev_snap = _safe_float((player_prev_usage or {}).get("snap_share", 0))
-        if qb_prev_snap >= QB_STARTER_SNAP_THRESHOLD:
+        #
+        # Sleeper doesn't always populate avg_off_snap_pct for QBs, so we use
+        # three independent signals — any one is enough to confirm incumbency.
+        _pu = player_prev_usage or {}
+        qb_prev_snap     = _safe_float(_pu.get("snap_share", 0))
+        qb_prev_games    = _safe_float(_pu.get("games", 0))
+        qb_prev_attempts = _safe_float(_pu.get("pass_attempts", _pu.get("attempts", 0)))
+        _was_starter = (
+            qb_prev_snap     >= QB_STARTER_SNAP_THRESHOLD  or
+            qb_prev_games    >= QB_STARTER_GAMES_MIN        or
+            qb_prev_attempts >= QB_STARTER_ATTEMPTS_MIN
+        )
+        if _was_starter:
             raw_score = 0.0
         else:
             raw_score = 100.0 if vacated_snap_share >= QB_STARTER_SNAP_THRESHOLD else 0.0
