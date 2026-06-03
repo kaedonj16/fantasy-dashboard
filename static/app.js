@@ -7278,22 +7278,23 @@ function _buildBkTabHTML(data, scoreColor) {
   const txnSummary    = data.vacated_usage_summary || '';
   const addedCompSumm = data.added_competition_summary || '';
 
-  // ── Role / archetype fit chip (context only — does not affect the score) ────
+  // ── Role / archetype fit factor (context only — does not affect the score) ──
   let cd = data.component_details;
   if (typeof cd === 'string') { try { cd = JSON.parse(cd); } catch (e) { cd = {}; } }
   const aFit = (cd && cd.opportunity_opened && cd.opportunity_opened.archetype_fit) || null;
-  let roleFitChip = '';
+  let roleFitItem = '';
   if (aFit && aFit.label) {
     const fitColor = aFit.label === 'high' ? '#10b981'
                    : aFit.label === 'medium' ? '#f59e0b' : '#6b7280';
-    const labelTxt = aFit.label.charAt(0).toUpperCase() + aFit.label.slice(1);
-    roleFitChip = `
+    roleFitItem = `
       <div title="How well this player's receiving role matches the vacated targets. Context only — it does not change the score."
-           style="display:inline-flex;align-items:center;gap:9px;padding:6px 11px;border-radius:8px;
-                  background:${fitColor}1a;border-left:3px solid ${fitColor};margin:2px 0 10px;">
-        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${fitColor};">
-          <i class="fa-solid fa-bullseye" aria-hidden="true"></i> Role fit: ${labelTxt}</span>
-        <span style="font-size:12px;color:var(--text-muted);">${aFit.candidate_role} ↔ ${aFit.vacated_role} <span style="opacity:.7;">(vacated)</span></span>
+           style="font-size:13px;display:flex;gap:12px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--surface-2,rgba(255,255,255,0.06));margin-bottom:2px;">
+        <span style="color:${fitColor};font-weight:700;flex-shrink:0;"><i class="fa-solid fa-bullseye" aria-hidden="true"></i></span>
+        <span>
+          <span style="font-weight:600;color:${fitColor};text-transform:capitalize;">${aFit.label} role fit for vacated targets</span>
+          <span style="display:block;color:var(--text-muted);margin-top:2px;">Targets that opened up: ${aFit.vacated_role}</span>
+          <span style="display:block;color:var(--text-muted);">His role: ${aFit.candidate_role}</span>
+        </span>
       </div>`;
   }
 
@@ -7407,8 +7408,6 @@ function _buildBkTabHTML(data, scoreColor) {
     { label: 'Confidence',      val: data.confidence_score,          color: '#6b7280' },
   ];
 
-  html += roleFitChip;
-
   html += `<div class='pm-two-column'>`;
 
   // ── Component breakdown (left on desktop, below on mobile) ─────────────────
@@ -7431,11 +7430,12 @@ function _buildBkTabHTML(data, scoreColor) {
   html += '</div></div>';
 
   // ── Key factors (right on desktop, above on mobile) ────────────────────────
-  if (reasons.length) {
+  if (reasons.length || roleFitItem) {
     html += `<div class='pm-right-column pm-bk-reasons-col'>`;
     html += `<hr class="pm-section-divider">`;
     html += `<div class="pm-section-header"><span class="pm-section-label">Key Factors</span></div>`;
     html += `<div style="display:flex;flex-direction:column;gap:6px;">`;
+    html += roleFitItem;
     reasons.forEach(r => {
       html += `<div style="font-size:13px;color:var(--text-muted);display:flex;gap:15px;align-items:flex-start;">
         <span style="color:${scoreColor};font-weight:700;flex-shrink:0;">•</span><span>${r}</span>
