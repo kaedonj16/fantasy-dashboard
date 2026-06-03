@@ -6296,32 +6296,35 @@ def build_activity_body(ctx: dict) -> str:
 
             trade_count += 1
 
-            def render_player_row(p, io_class="add"):
+            def render_player_row(p, io_class):
                 name = str(p.get("name") or "").strip()
                 if name:
                     traded_asset_counts[name] = traded_asset_counts.get(name, 0) + 1
 
                 val, pos_rank_label = player_value(p)
                 val_txt = f"{val:.1f}" if val > 0 else ""
-                val_html = f"<span class='tx-row-val'>{val_txt}</span>" if val_txt else ""
+                val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
 
                 pid = p.get("pid", "")
-                if pid:
-                    name_html = f"<span class='tx-row-name player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{name}'>{name}</span>"
-                else:
-                    name_html = f"<span class='tx-row-name'>{name}</span>"
-
-                return (
-                    "<div class='tx-row'>"
-                    "<div class='tx-row-info'>"
-                    f"{name_html}"
-                    f"<span class='tx-row-sub'>{pos_rank_label} · {p.get('team','')}</span>"
-                    "</div>"
-                    f"{val_html}"
-                    "</div>"
+                clickable_attrs = (
+                    f" class='player-clickable' style='cursor:pointer;font-weight:600;'"
+                    f" data-player-id='{pid}' data-player-name='{name}'"
+                    if pid else " style='font-weight:600'"
                 )
 
-            def render_pick_row(pick, io_class="add"):
+                return (
+                    "<div class='player-activity'>"
+                    "<div style='gap: 10px;display: flex;align-items: center;'>"
+                    f"<span class='io {io_class}'>"
+                    f"{'+' if io_class == 'add' else '−'}</span>"
+                    "<div>"
+                    f"  <div{clickable_attrs}>{name}</div>"
+                    f"  <div style='color:#64748b;font-size:12px'>{pos_rank_label} • {p.get('team','')}</div>"
+                    "</div></div>"
+                    f"{val_html}</div>"
+                )
+
+            def render_pick_row(pick, io_class):
                 import json as _json
                 traded_asset_counts["Draft Pick"] = traded_asset_counts.get("Draft Pick", 0) + 1
 
@@ -6334,16 +6337,35 @@ def build_activity_body(ctx: dict) -> str:
                 subline = pick_subline(pick, rid_to_name, users)
                 val = pick_value(pick, standings_map)
                 val_txt = f"{val:.1f}" if val > 0 else ""
-                val_html = f"<span class='tx-row-val'>{val_txt}</span>" if val_txt else ""
+                val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
+
+                yr = _safe_int(pick.get("season"), 0)
+                rnd = _safe_int(pick.get("round"), 0)
+                _pv = pick_values
+                tier_vals = {
+                    "early": float(_pv.get(f"{yr}_{rnd}_early") or _pv.get(f"{yr}_{rnd}") or 0),
+                    "mid":   float(_pv.get(f"{yr}_{rnd}_mid")   or _pv.get(f"{yr}_{rnd}") or 0),
+                    "late":  float(_pv.get(f"{yr}_{rnd}_late")  or _pv.get(f"{yr}_{rnd}") or 0),
+                }
+                pick_data = _json.dumps({
+                    "label": pick_label,
+                    "season": yr,
+                    "round": rnd,
+                    "value": round(val, 1),
+                    "tiers": tier_vals,
+                }, separators=(",", ":"))
+                pick_data_attr = pick_data.replace('"', '&quot;')
 
                 return (
-                    "<div class='tx-row tx-row-pick'>"
-                    "<div class='tx-row-info'>"
-                    f"<span class='tx-row-name'>{pick_label}</span>"
-                    f"<span class='tx-row-sub'>{subline}</span>"
-                    "</div>"
-                    f"{val_html}"
-                    "</div>"
+                    "<div class='player-activity'>"
+                    "<div style='gap: 10px;display: flex;align-items: center;'>"
+                    f"<span class='io {io_class}'>"
+                    f"{'+' if io_class == 'add' else '−'}</span>"
+                    "<div>"
+                    f"  <div style='font-weight:600'>{pick_label}</div>"
+                    f"  <div style='color:#64748b;font-size:12px'>{subline}</div>"
+                    "</div></div>"
+                    f"{val_html}</div>"
                 )
 
             draft_picks = data.get("draft_picks", []) or []
@@ -6406,47 +6428,62 @@ def build_activity_body(ctx: dict) -> str:
 
             net_values = []
 
-            # Identify the side(s) with the highest net value for a subtle
-            # winner accent — the trade is fully described by what each team
-            # *receives*, so we never duplicate the mirrored send rows.
-            best_net = max(
-                (side_map[r]["net_total"] for r in side_map if "net_total" in side_map[r]),
-                default=0.0,
-            )
-
             cols = []
             for tm in teams:
                 roster_id = tm.get("roster_id")
 
                 gets_parts = []
                 for p in (tm.get("gets") or []):
-                    gets_parts.append(render_player_row(p))
+                    gets_parts.append(render_player_row(p, "add"))
+                gets_players = "".join(gets_parts)
+
+                gets_pick_parts = []
                 if roster_id is not None:
                     for pick in picks_by_receiver.get(roster_id, []):
-                        gets_parts.append(render_pick_row(pick))
-                gets = "".join(gets_parts)
+                        gets_pick_parts.append(render_pick_row(pick, "add"))
+                gets_picks = "".join(gets_pick_parts)
+                gets = gets_players + gets_picks
                 if not gets:
-                    gets = "<div class='tx-empty-mini'>No incoming assets</div>"
+                    gets = "<div class='bract-empty-mini'>No incoming assets</div>"
+
+                sends_parts = []
+                for p in (tm.get("sends") or []):
+                    sends_parts.append(render_player_row(p, "drop"))
+                sends_players = "".join(sends_parts)
+
+                sends_pick_parts = []
+                if roster_id is not None:
+                    for pick in picks_by_sender.get(roster_id, []):
+                        sends_pick_parts.append(render_pick_row(pick, "drop"))
+                sends_picks = "".join(sends_pick_parts)
+                sends = sends_players + sends_picks
 
                 side_info = side_map.get(roster_id)
                 net_total  = side_info["net_total"]  if side_info else 0.0
-                raw_total  = side_info["raw_total"]  if side_info else 0.0
+                baseline   = side_info["baseline"]   if side_info else 300.0
                 net_values.append((tm.get("name", ""), net_total))
 
-                is_winner = side_info is not None and "net_total" in side_info \
-                    and net_total == best_net and net_total > 0
-                side_cls = "tx-side tx-side-win" if is_winner else "tx-side"
+                verdict_cls, verdict_txt = verdict_from_net(net_total, baseline)
+                net_num_cls = (
+                    "bract-net-pos" if net_total > 0 else
+                    "bract-net-neg" if net_total < 0 else
+                    "bract-net-even"
+                )
 
                 total_html = (
-                    "<div class='tx-side-total'>"
-                    "<span class='tx-total-label'>Receives</span>"
-                    f"<span class='tx-total-val'>{raw_total:.0f}</span>"
+                    "<div class='trade-total-row bract-total-row'>"
+                    "<hr style='margin-top:8px;margin-bottom:8px;border:none;border-top:1px solid #e2e8f0;'>"
+                    "<div class='bract-total-head'>"
+                    "<span>Total Value</span>"
+                    f"<span class='{net_num_cls}'>{net_total:.0f}</span>"
+                    "</div>"
+                    f"<div class='bract-verdict {verdict_cls}'>{verdict_txt}</div>"
                     "</div>"
                 )
 
                 avatar = tm.get("avatar") or ""
                 img = (
-                    f"<img class='tx-avatar' src='{avatar}' "
+                    f"<img class='avatar' src='{avatar}' "
                     "onerror=\"this.style.display='none'\">"
                     if avatar else ""
                 )
@@ -6454,37 +6491,18 @@ def build_activity_body(ctx: dict) -> str:
                 roster_id = tm.get('roster_id', '')
                 esc_name = html.escape(team_name)
                 esc_name_attr = html.escape(team_name, quote=True)
-                win_badge = "<span class='tx-win-badge'><i class='fa-solid fa-trophy'></i></span>" if is_winner else ""
                 cols.append(
-                    f"<div class='{side_cls}'>"
-                    f"  <div class='tx-side-head'>{img}<span class='tx-team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{esc_name_attr}'>{esc_name}</span>{win_badge}</div>"
-                    f"  <div class='tx-items'>{gets}</div>"
-                    f"  {total_html}"
+                    "<div class='team-col'>"
+                    f"  <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{esc_name_attr}'>{esc_name}</div></header>"
+                    f"  <div class='plist'>{gets}{sends}{total_html}</div>"
                     "</div>"
                 )
 
-            # Single centered verdict bar describing who won and by how much.
-            verdict_bar = ""
             if len(net_values) == 2:
                 delta = abs(net_values[0][1] - net_values[1][1])
                 if delta > biggest_trade_delta:
                     biggest_trade_delta = delta
                     biggest_trade_label = f"{net_values[0][0]} vs {net_values[1][0]}"
-
-                winner = max(net_values, key=lambda x: x[1])
-                if delta < 30:
-                    verdict_bar = (
-                        "<div class='tx-verdict-bar tx-verdict-even'>"
-                        "<i class='fa-solid fa-scale-balanced'></i> Even value</div>"
-                    )
-                else:
-                    swing = delta / 2.0
-                    win_name = html.escape(winner[0])
-                    verdict_bar = (
-                        "<div class='tx-verdict-bar tx-verdict-win'>"
-                        f"<i class='fa-solid fa-trophy'></i> <strong>{win_name}</strong> wins this trade "
-                        f"<span class='tx-swing'>+{swing:.0f}</span></div>"
-                    )
 
             when = _rel_time(txrow["ts"]) if pd.notna(txrow["ts"]) else ""
             # Build data payload for outcome check (sent/received per team)
@@ -6584,21 +6602,10 @@ def build_activity_body(ctx: dict) -> str:
                 f"onclick='checkTradeOutcome(this)'>Check Outcome</button>"
             )
             outcome_result_id = f"outcome_{trade_count}"
-            if len(cols) == 2:
-                sides_html = (
-                    "<div class='tx-sides'>"
-                    f"{cols[0]}"
-                    "<div class='tx-arrow'><i class='fa-solid fa-right-left'></i></div>"
-                    f"{cols[1]}"
-                    "</div>"
-                )
-            else:
-                sides_html = "<div class='tx-sides-multi'>" + "".join(cols) + "</div>"
             return (
                 "<div class='tx trade-card activity-item' data-kind='trade'>"
-                f"  <div class='tx-meta'><span class='tx-type-pill tx-pill-trade'>Trade</span><span class='tx-time'>{when}</span>{outcome_btn}</div>"
-                f"  {sides_html}"
-                f"  {verdict_bar}"
+                f"  <div class='meta'>{pill('Trade completed')} • {when}{outcome_btn}</div>"
+                f"  <div class='teams'>{''.join(cols)}</div>"
                 f"  <div id='{outcome_result_id}' class='trade-outcome-result' style='display:none;'></div>"
                 "</div>"
             )
@@ -6614,7 +6621,7 @@ def build_activity_body(ctx: dict) -> str:
 
             avatar = d.get("avatar") or ""
             img = (
-                f"<img class='tx-avatar' src='{avatar}' "
+                f"<img class='avatar' src='{avatar}' "
                 "onerror=\"this.style.display='none'\">"
                 if avatar else ""
             )
@@ -6626,34 +6633,29 @@ def build_activity_body(ctx: dict) -> str:
 
                 val, pos_rank_label = player_value(p)
                 val_txt = f"{val:.1f}" if val > 0 else ""
-                val_html = f"<span class='tx-row-val'>{val_txt}</span>" if val_txt else ""
-
-                pid = p.get("pid", "")
-                if pid:
-                    name_html = f"<span class='tx-row-name player-clickable' style='cursor:pointer;' data-player-id='{pid}' data-player-name='{name}'>{name}</span>"
-                else:
-                    name_html = f"<span class='tx-row-name'>{name}</span>"
-
+                val_html = f'<div class="player-trade-value">{val_txt}</div>' if val_txt else ""
                 adds_parts.append(
-                    "<div class='tx-row'>"
-                    "<div class='tx-row-info'>"
-                    f"{name_html}"
-                    f"<span class='tx-row-sub'>{pos_rank_label} · {p.get('team','')}</span>"
-                    "</div>"
-                    f"{val_html}"
-                    "</div>"
+                    "<div class='player-activity'>"
+                    "<div style='gap: 10px;display: flex;align-items: center;'>"
+                    "<span class='io add'>+</span>"
+                    "<div>"
+                    f"  <div style='font-weight:600'>{name}</div>"
+                    f"  <div style='color:#64748b;font-size:12px'>{pos_rank_label} • {p.get('team','')}</div>"
+                    "</div></div>"
+                    f"{val_html}</div>"
                 )
-            adds = "".join(adds_parts) or "<div class='tx-empty-mini'>No adds recorded</div>"
+            adds = "".join(adds_parts) or "<div class='bract-empty-mini'>No adds recorded</div>"
 
             when = _rel_time(txrow["ts"]) if pd.notna(txrow["ts"]) else ""
             esc_wv_name = html.escape(team_name)
             esc_wv_name_attr = html.escape(team_name, quote=True)
             return (
-                "<div class='tx waiver-card activity-item' data-kind='waiver'>"
-                f"  <div class='tx-meta'><span class='tx-type-pill tx-pill-waiver'>Waiver</span>"
-                f"{img}<span class='tx-team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{esc_wv_name_attr}'>{esc_wv_name}</span>"
-                f"<span class='tx-time'>{when}</span></div>"
-                f"  <div class='tx-items'>{adds}</div>"
+                "<div class='tx activity-item' data-kind='waiver'>"
+                f"  <div class='meta'>{pill('Waiver')} • {when}</div>"
+                "  <div class='team-col'>"
+                f"    <header>{img}<div class='team-name team-clickable' style='cursor:pointer;' data-roster-id='{roster_id}' data-team-name='{esc_wv_name_attr}'>{esc_wv_name}</div></header>"
+                f"    <div class='plist'>{adds}</div>"
+                "  </div>"
                 "</div>"
             )
 

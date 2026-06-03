@@ -9476,243 +9476,9 @@ html[data-theme="dark"] .contact-social-pill img {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--card-soft);
-  padding: 12px 14px;
+  padding: 10px;
 }
 
-.tx-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
-}
-
-.tx-type-pill {
-  flex: 0 0 auto;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 2px 9px;
-  border-radius: 999px;
-}
-
-.tx-pill-trade  { background: var(--accent-soft); color: var(--accent); }
-.tx-pill-waiver { background: #dcfce7; color: #15803d; }
-
-.tx-summary {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text);
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tx-time {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-/* Receives-ledger trade layout: two side panels + a centered swap icon. */
-.tx-sides {
-  display: grid;
-  grid-template-columns: 1fr 32px 1fr;
-  align-items: stretch;
-  gap: 0;
-}
-
-.tx-sides-multi {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-}
-
-.tx-arrow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.tx-arrow i {
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--card-soft);
-  border: 1px solid var(--border);
-}
-
-/* Each side is its own soft panel */
-.tx-side {
-  display: flex;
-  flex-direction: column;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 11px;
-}
-
-.tx-side-win {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  background: color-mix(in srgb, var(--accent) 5%, var(--card));
-}
-
-.tx-side-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 8px;
-  padding-bottom: 7px;
-  border-bottom: 1px solid var(--border);
-}
-
-.tx-side-head .tx-avatar,
-.tx-meta .tx-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex: 0 0 24px;
-}
-
-.tx-team-name {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: var(--accent);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tx-win-badge {
-  margin-left: auto;
-  color: #d97706;
-  font-size: 11px;
-  flex: 0 0 auto;
-}
-
-/* Item rows */
-.tx-items {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1 1 auto;
-}
-
-.tx-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0;
-}
-
-.tx-row-info {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.tx-row-name {
-  display: block;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tx-row-pick .tx-row-name { color: var(--text-muted); }
-
-.tx-row-sub {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tx-row-val {
-  flex: 0 0 50px;
-  font-size: 11.5px;
-  font-weight: 700;
-  color: var(--text);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Per-side total received */
-.tx-side-total {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-top: 8px;
-  padding-top: 7px;
-  border-top: 1px solid var(--border);
-}
-
-.tx-total-label {
-  font-size: 9.5px;
-  font-weight: 800;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.tx-total-val {
-  font-size: 14px;
-  font-weight: 800;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-.tx-side-win .tx-total-val { color: var(--accent); }
-
-/* Centered verdict bar */
-.tx-verdict-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  margin-top: 10px;
-  padding: 7px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.tx-verdict-bar i { font-size: 11px; }
-
-.tx-verdict-bar.tx-verdict-win {
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
-  color: var(--text);
-}
-.tx-verdict-bar.tx-verdict-win i { color: #d97706; }
-
-.tx-verdict-bar.tx-verdict-even {
-  background: var(--card-soft);
-  color: var(--text-muted);
-}
-
-.tx-swing {
-  font-weight: 800;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.tx-empty-mini {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  font-style: italic;
-  padding: 2px 0;
-}
 
 .verdict-text {
   text-align: center;
@@ -10933,20 +10699,69 @@ img, svg, canvas {
   }
 
   .tx {
-    padding: 10px 12px;
+    padding: 8px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+  }
+
+  .tx .meta {
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+
+  .trade-card .teams {
+    gap: 8px;
+  }
+
+  .team-col {
+    padding: 8px;
     border-radius: 10px;
   }
 
-  .tx-sides {
-    grid-template-columns: 1fr 18px 1fr;
+  .team-col header {
+    gap: 8px;
+    margin-bottom: 6px;
   }
 
-  .tx-row-name { font-size: 12px; }
-  .tx-row-sub  { font-size: 10px; }
-  .tx-row-val  { font-size: 11px; }
-  .tx-team-name { font-size: 12px; }
-  .tx-summary   { font-size: 12px; }
-  .tx-time      { font-size: 11px; }
+  .team-name {
+    font-size: 13px;
+  }
+
+  .avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .player-activity {
+    padding: 4px 6px;
+    font-size: 12px;
+    gap: 8px;
+  }
+
+  .player-activity .io {
+    width: 16px;
+    height: 16px;
+    font-size: 11px;
+  }
+
+  .player-trade-value {
+    font-size: 11px;
+    margin-right: 8px;
+  }
+
+  .bract-total-row {
+    margin-top: 6px;
+  }
+
+  .bract-total-head {
+    font-size: 12px;
+    margin-bottom: 3px;
+  }
+
+  .bract-verdict {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
 
   .activity-pill {
     font-size: 10px;
@@ -11507,20 +11322,69 @@ img, svg, canvas {
   }
 
   .tx {
-    padding: 9px 11px;
-    border-radius: 10px;
+    padding: 6px;
+    border-radius: 8px;
+    margin-bottom: 6px;
   }
 
-  .tx-sides {
-    grid-template-columns: 1fr 16px 1fr;
+  .tx .meta {
+    font-size: 10px;
+    margin-bottom: 4px;
   }
 
-  .tx-row-name { font-size: 11.5px; }
-  .tx-row-sub  { font-size: 9.5px; }
-  .tx-row-val  { font-size: 10.5px; }
-  .tx-team-name { font-size: 11.5px; }
-  .tx-summary   { font-size: 11.5px; }
-  .tx-time      { font-size: 10.5px; }
+  .trade-card .teams {
+    gap: 6px;
+  }
+
+  .team-col {
+    padding: 6px;
+    border-radius: 8px;
+  }
+
+  .team-col header {
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
+  .team-name {
+    font-size: 12px;
+  }
+
+  .avatar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .player-activity {
+    padding: 3px 4px;
+    font-size: 11px;
+    gap: 6px;
+  }
+
+  .player-activity .io {
+    width: 14px;
+    height: 14px;
+    font-size: 10px;
+  }
+
+  .player-trade-value {
+    font-size: 10px;
+    margin-right: 6px;
+  }
+
+  .bract-total-row {
+    margin-top: 4px;
+  }
+
+  .bract-total-head {
+    font-size: 11px;
+    margin-bottom: 2px;
+  }
+
+  .bract-verdict {
+    font-size: 9px;
+    padding: 2px 4px;
+  }
 
   .activity-pill {
     font-size: 9px;

@@ -17,12 +17,6 @@ CHANGELOG = [
         "link": "/trade?tab=suggestions"
     },
     {
-        "date": "2026-06-02",
-        "tag": "feature",
-        "text": "Activity: Redesigned trade cards show each side's incoming assets and total value at a glance, with a single clear verdict on who won the deal and by how much.",
-        "link": "/activity"
-    },
-    {
         "date": "2026-05-29",
         "tag": "new",
         "text": "Trade Strategy: Archetype-driven suggestions for all four team profiles: Contending, Rebuilding, Consolidate, and Distribute. Each package shows exactly what leaves, what comes back, and how the deal shifts your Win %, playoff odds, and championship probability.",
