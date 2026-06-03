@@ -7456,7 +7456,7 @@ function _buildBkTabHTML(data, scoreColor) {
 }
 
 // ── Stats tab HTML builder (returns HTML string, no DOM side effects) ─────────
-function _buildStatsHTML(game_logs_by_year, skipHeader) {
+function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
   let statsHTML = '';
   if (game_logs_by_year && Object.keys(game_logs_by_year).length > 0) {
     statsHTML += `
@@ -7488,7 +7488,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader) {
     if (_anyRush) statCols = statCols.concat(_RUSH);
     if (_anyRec)  statCols = statCols.concat(_REC);
     if (!statCols.length) {
-      const P = (position || '').toUpperCase();
+      const P = (positionHint || position || '').toUpperCase();
       statCols = P === 'QB' ? _PASS.concat(_RUSH)
                : P === 'RB' ? _RUSH.concat(_REC)
                : _REC;
@@ -7751,10 +7751,10 @@ function buildAdvancedMetricsHTML(metricsData) {
   if (metrics.role_score != null) {
     defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1), sub: getRoleGrade(metrics.role_score) });
   }
-  // Snap Share (0–1 → %)
+  // Snap Share (0–1 → %).  85 % = starter ceiling → full bar.
   if (metrics.snap_share != null && position !== "QB") {
     const pct = metrics.snap_share * 100;
-    defs.push({ label: 'Snap Share', fill: pct, display: pct.toFixed(1) + '%' });
+    defs.push({ label: 'Snap Share', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
   }
 
   if (position === 'QB') {
@@ -7764,23 +7764,28 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.big_time_throw_rate != null) {
       const v = metrics.big_time_throw_rate;
-      defs.push({ label: 'BTT Rate', fill: Math.min(v * 5, 100), display: v.toFixed(1) + '%' });
+      // BTT rate stored as % value (e.g. 6.5); 15 % = elite ceiling
+      defs.push({ label: 'BTT Rate', fill: Math.min(v / 15 * 100, 100), display: v.toFixed(1) + '%' });
     }
     if (metrics.adjusted_completion_rate != null) {
       const v = metrics.adjusted_completion_rate;
-      defs.push({ label: 'Adj Comp %', fill: v, display: v.toFixed(1) + '%' });
+      // ACR stored as 0-100 %; meaningful range 55-90
+      defs.push({ label: 'Adj Comp %', fill: Math.min(Math.max(v - 55, 0) / 35 * 100, 100), display: v.toFixed(1) + '%' });
     }
     if (metrics.nfl_passer_rating != null) {
       const v = metrics.nfl_passer_rating;
-      defs.push({ label: 'Passer Rating', fill: Math.min(v / 130 * 100, 100), display: v.toFixed(1) });
+      // Meaningful range 60-130; 60 = poor, 100 = average, 130 = elite
+      defs.push({ label: 'Passer Rating', fill: Math.min(Math.max(v - 60, 0) / 70 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.yards_per_attempt != null) {
       const v = metrics.yards_per_attempt;
-      defs.push({ label: 'Yds/Attempt', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1) });
+      // 4 = poor, 10 = elite
+      defs.push({ label: 'Yds/Attempt', fill: Math.min(Math.max(v - 4, 0) / 6 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.completion_pct != null) {
       const pct = metrics.completion_pct;
-      defs.push({ label: 'Completion %', fill: pct, display: pct.toFixed(1) + '%' });
+      // Meaningful range 50-85
+      defs.push({ label: 'Completion %', fill: Math.min(Math.max(pct - 50, 0) / 35 * 100, 100), display: pct.toFixed(1) + '%' });
     }
     if (metrics.td_rate != null && metrics.int_rate != null && metrics.int_rate > 0) {
       const ratio = metrics.td_rate / metrics.int_rate;
@@ -7815,7 +7820,7 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.elusive_rating != null) {
       const v = metrics.elusive_rating;
-      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 180 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 200 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.avoided_tackles != null && metrics.avoided_tackles > 0) {
       const v = metrics.avoided_tackles;
@@ -7841,7 +7846,12 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
-      defs.push({ label: 'Catch Rate', fill: pct, display: pct.toFixed(1) + '%' });
+      // RBs typically 80-95 %; 95 = elite ceiling
+      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 95 * 100, 100), display: pct.toFixed(1) + '%' });
+    }
+    if (metrics.grades_offense != null) {
+      const v = metrics.grades_offense;
+      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1) });
     }
   } else if (position === 'WR' || position === 'TE') {
     if (metrics.grades_offense != null) {
@@ -7850,7 +7860,8 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
-      defs.push({ label: 'Catch Rate', fill: pct, display: pct.toFixed(1) + '%' });
+      // WR/TE realistic range 40-85 %; 85 = elite ceiling
+      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
     }
     if (metrics.drop_rate != null) {
       const v = metrics.drop_rate;
@@ -7860,35 +7871,43 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.yards_per_target != null) {
       const v = metrics.yards_per_target;
-      defs.push({ label: 'Yds/Target', fill: Math.min(v / 14 * 100, 100), display: v.toFixed(1) });
+      // 2 = poor, 12 = elite deep threat
+      defs.push({ label: 'Yds/Target', fill: Math.min(Math.max(v - 2, 0) / 10 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.yards_per_reception != null) {
       const v = metrics.yards_per_reception;
-      defs.push({ label: 'Yds/Reception', fill: Math.min(v / 18 * 100, 100), display: v.toFixed(1) });
+      // 4 = short routes, 18 = elite deep
+      defs.push({ label: 'Yds/Reception', fill: Math.min(Math.max(v - 4, 0) / 14 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.yards_after_catch_per_reception != null) {
       const v = metrics.yards_after_catch_per_reception;
-      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 12 * 100, 100), display: v.toFixed(1) });
+      // 0-10 realistic; 10 = elite YAC receiver
+      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.yards_after_catch != null) {
       const v = metrics.yards_after_catch;
-      defs.push({ label: 'YAC (season)', fill: Math.min(v / 800 * 100, 100), display: Math.round(v).toString() });
+      // Season total; 600 = elite volume
+      defs.push({ label: 'YAC (season)', fill: Math.min(v / 600 * 100, 100), display: Math.round(v).toString() });
     }
     if (metrics.avg_depth_of_target != null) {
       const v = metrics.avg_depth_of_target;
+      // 0-20 yards; 20 = deep specialist ceiling
       defs.push({ label: 'aDOT', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.contested_catch_rate != null) {
       const v = metrics.contested_catch_rate;
-      defs.push({ label: 'Contested Catch %', fill: v, display: v.toFixed(1) + '%' });
+      // 65 % = elite contested catcher ceiling
+      defs.push({ label: 'Contested Catch %', fill: Math.min(v / 65 * 100, 100), display: v.toFixed(1) + '%' });
     }
     if (metrics.target_share != null) {
       const pct = metrics.target_share * 100;
-      defs.push({ label: 'Target Share', fill: pct, display: pct.toFixed(1) + '%' });
+      // 28 % target share = elite
+      defs.push({ label: 'Target Share', fill: Math.min(pct / 28 * 100, 100), display: pct.toFixed(1) + '%' });
     }
     if (metrics.target_quality_score != null) {
       const v = metrics.target_quality_score;
-      defs.push({ label: 'Target Quality', fill: Math.min(v, 100), display: v.toFixed(1) });
+      // PFF target quality; 20 = elite
+      defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1) });
     }
     // Alignment rates (slot / wide / inline)
     if (metrics.slot_rate != null) {
@@ -7903,11 +7922,19 @@ function buildAdvancedMetricsHTML(metricsData) {
       const v = metrics.inline_rate;
       defs.push({ label: 'Inline Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%' });
     }
+    if (metrics.pass_block_rate != null) {
+      const v = metrics.pass_block_rate;
+      defs.push({ label: 'Block Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%' });
+    }
+    if (metrics.grades_pass_block != null) {
+      const v = metrics.grades_pass_block;
+      defs.push({ label: 'PFF Block Grade', fill: v, display: v.toFixed(1) });
+    }
   }
 
   if (metrics.target_quality_score != null && position === 'RB') {
     const v = metrics.target_quality_score;
-    defs.push({ label: 'Target Quality', fill: Math.min(v, 100), display: v.toFixed(1) });
+    defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1) });
   }
 
   if (metrics.red_zone_usage != null && position !== 'QB') {
@@ -7939,19 +7966,26 @@ function buildAdvancedMetricsHTML(metricsData) {
 
   if (defs.length === 0) return '';
 
-  let html = '<div class="pm-comp-list">';
-  defs.forEach(m => {
+  function _renderMetricRow(m) {
     const fill = Math.max(0, Math.min(100, m.fill));
     const color = m.forceColor || (fill >= 60 ? '#10b981' : fill >= 35 ? '#3b82f6' : '#f59e0b');
     const subLine = m.sub ? `<div style="font-size:10px;font-weight:500;opacity:.65;line-height:1;">${m.sub}</div>` : '';
-    html += `
+    return `
       <div class="pm-comp-row">
         <span class="pm-comp-label">${m.label}</span>
         <div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>
         <div class="pm-comp-val" style="color:${color};">${m.display}${subLine}</div>
       </div>`;
-  });
-  html += '</div>';
+  }
+
+  const mid = Math.ceil(defs.length / 2);
+  let leftCol = '<div class="pm-comp-list">';
+  defs.slice(0, mid).forEach(m => { leftCol += _renderMetricRow(m); });
+  leftCol += '</div>';
+  let rightCol = '<div class="pm-comp-list">';
+  defs.slice(mid).forEach(m => { rightCol += _renderMetricRow(m); });
+  rightCol += '</div>';
+  let html = `<div class="adv-metrics-two-col">${leftCol}${rightCol}</div>`;
 
   if (metricsData.as_of_date) {
     html += `<div style="font-size:11px;color:var(--text-muted);margin-top:10px;text-align:right;">As of ${metricsData.as_of_date}</div>`;
@@ -8740,19 +8774,20 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
   ];
   
   const rbMetrics = [
-    'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share', 
+    'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share',
     'opportunity_share', 'red_zone_usage', 'role_score', 'explosive_runs_10_plus',
-    'breakaway_percentage', 'elusive_rating', 'pff_rushing_grade', 'grades_offense'
+    'breakaway_percentage', 'elusive_rating', 'pff_rushing_grade', 'grades_offense',
+    'avoided_tackles', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception'
   ];
-  
+
   const wrTeMetrics = [
     'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
     'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
     'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
     'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
-    'wide_rate', 'inline_rate', 'grades_offense'
+    'wide_rate', 'inline_rate', 'grades_offense', 'pass_block_rate', 'grades_pass_block'
   ];
-  
+
   const olMetrics = [
     'snap_share', 'pass_block_rate', 'grades_offense', 'grades_pass_block'
   ];
@@ -8797,6 +8832,12 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     opportunity_share: 'Opportunity Share',
     red_zone_usage: 'Red Zone Usage',
     role_score: 'Role Score',
+
+    // PFF grades (shared)
+    grades_offense: 'PFF Off Grade',
+    grades_pass_block: 'PFF Block Grade',
+    avoided_tackles: 'Avoided Tackles',
+    pass_block_rate: 'Block Rate',
   };
   
   // Determine relevant metrics based on positions
@@ -8833,37 +8874,39 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     const v1 = m1?.[key] ?? null;
     const v2 = m2?.[key] ?? null;
     
-    // Metric-specific scaling ranges for meaningful comparison
+    // Metric-specific scaling ranges — upper end of realistic elite values
     const metricRanges = {
-      // Percentage metrics (0-100)
-      'catch_rate': 1, 'completion_pct': 100, 'contested_catch_rate': 100,
-      'drop_rate': 100, 'slot_rate': 100, 'wide_rate': 100, 'inline_rate': 100,
-      'pass_block_rate': 100, 'snap_share': 1, 'opportunity_share': 25,
-      'red_zone_usage': 4,
-      
-      // Rate metrics (0-10 or 0-20)
-      'rush_td_rate': .05, 'td_rate': 8, 'int_rate': 3, 'avoided_tackles': 1,
-      'explosive_runs_10_plus': 20,
-      
-      // Yards per attempt metrics (0-20)
-      'yards_per_target': 20, 'yards_per_reception': 20, 'yards_per_carry': 10,
-      'yards_per_touch': 15, 'yards_per_attempt': 15, 'avg_depth_of_target': 20,
-      'yards_after_catch': 20, 'yards_after_catch_per_reception': 20,
-      
+      // Decimal-stored rates (0-1)
+      'catch_rate': 1, 'snap_share': 1, 'rush_td_rate': 0.08,
+
+      // Percentage-stored rates (0-100)
+      'completion_pct': 85, 'adjusted_completion_rate': 90,
+      'contested_catch_rate': 65, 'drop_rate': 20,
+      'slot_rate': 100, 'wide_rate': 100, 'inline_rate': 100,
+      'pass_block_rate': 100, 'breakaway_percentage': 40,
+      'opportunity_share': 25, 'red_zone_usage': 3,
+
+      // Raw rate metrics
+      'td_rate': 0.06, 'int_rate': 0.04,
+
+      // Counting / volume
+      'avoided_tackles': 30, 'explosive_runs_10_plus': 25,
+
+      // Yardage metrics
+      'yards_per_target': 12, 'yards_per_reception': 16, 'yards_per_carry': 7,
+      'yards_per_touch': 8, 'yards_per_attempt': 10, 'avg_depth_of_target': 20,
+      'yards_after_catch': 600, 'yards_after_catch_per_reception': 10,
+
       // PFF grades (0-100)
-      'pff_passing_grade': 100, 'pff_rushing_grade': 100, 'grades_offense': 100,
-      'grades_pass_block': 100,
-      
-      // Role score (0-100)
-      'role_score': 100,
-      
-      'big_time_throw_rate': 1, 'adjusted_completion_rate': 1,
-      
-      // Rating metrics (0-160)
-      'nfl_passer_rating': 160,
-      
-      // Other metrics
-      'target_quality_score': 50, 'elusive_rating': 100,
+      'pff_passing_grade': 100, 'pff_rushing_grade': 100,
+      'grades_offense': 100, 'grades_pass_block': 100,
+
+      // Stored as raw % values (0-20 or 0-100 range)
+      'big_time_throw_rate': 15, 'pressure_to_sack_rate': 50,
+
+      // Rating / score metrics
+      'nfl_passer_rating': 130, 'target_quality_score': 20,
+      'elusive_rating': 200, 'role_score': 100,
     };
     
     const range = metricRanges[key] || 100; // Default to 100 if not specified
@@ -8874,16 +8917,14 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       if (raw == null) return '#374151';
       
       // Inverse metrics where lower is better (INT rate, drop rate)
-      const inverseMetrics = ['int_rate', 'drop_rate', 'fumble_rate'];
+      const inverseMetrics = ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate'];
       const isInverse = inverseMetrics.includes(key);
       
       if (isInverse) {
-        // For inverse metrics: lower values are better (green), higher are worse (red)
-        if (pct <= 20) return '#10b981';  // Excellent
-        if (pct <= 40) return '#3b82f6';  // Good
-        return '#f59e0b';  // Poor
+        if (pct <= 25) return '#10b981';  // low value = excellent
+        if (pct <= 55) return '#3b82f6';  // moderate = acceptable
+        return '#ef4444';                 // high value = bad
       } else {
-        // For normal metrics: higher values are better
         if (pct >= 60) return '#10b981';
         if (pct >= 35) return '#3b82f6';
         return '#f59e0b';
@@ -8891,27 +8932,31 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     }
 
     const fmt = v => {
-      if (v == null) return 'â';
-      
-      // Metrics that should be displayed as percentages
-      const percentageMetrics = [
-        'catch_rate', 'snap_share', 'rush_td_rate',
-        'big_time_throw_rate', 'adjusted_completion_rate', 'pressure_to_sack_rate',
-        'breakaway_percentage'
+      if (v == null) return '—';
+
+      // 0-1 decimal metrics that need ×100 to display as %
+      const decimalPctMetrics = ['catch_rate', 'snap_share', 'rush_td_rate', 'td_rate', 'int_rate'];
+      // Raw-% metrics (already 0-100) that just need a % suffix
+      const rawPctMetrics = [
+        'completion_pct', 'adjusted_completion_rate', 'big_time_throw_rate',
+        'pressure_to_sack_rate', 'drop_rate', 'contested_catch_rate',
+        'slot_rate', 'wide_rate', 'inline_rate', 'pass_block_rate',
+        'breakaway_percentage', 'opportunity_share',
       ];
-      
-      // Check if current metric is a percentage metric
-      const isPercentageMetric = percentageMetrics.includes(key);
-      
-      if (isPercentageMetric) {
-        // Display as percentage (e.g., .6 becomes 60.0%)
-        if (v < 0.1 && v > 0) return (v * 100).toFixed(1) + '%';
-        return (v * 100).toFixed(0) + '%';
-      } else {
-        // Regular formatting for other metrics
-        if (v < 0.1 && v > 0) return v.toFixed(3);
-        return Number.isInteger(v) ? v : v.toFixed(1);
+      // Count metrics that should always show as integers
+      const intMetrics = ['yards_after_catch', 'explosive_runs_10_plus', 'avoided_tackles'];
+
+      if (decimalPctMetrics.includes(key)) {
+        return (v * 100).toFixed(1) + '%';
       }
+      if (rawPctMetrics.includes(key)) {
+        return v.toFixed(1) + '%';
+      }
+      if (intMetrics.includes(key)) {
+        return Math.round(v).toString();
+      }
+      if (v < 0.1 && v > 0) return v.toFixed(3);
+      return Number.isInteger(v) ? v : v.toFixed(1);
     };
 
     return `
@@ -9046,8 +9091,8 @@ function openComparisonView(p1, p2) {
   // Inject game logs for both players
   const gl1 = document.getElementById('compareGameLogs1');
   const gl2 = document.getElementById('compareGameLogs2');
-  if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year, true);
-  if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year, true);
+  if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year, true, p1.position);
+  if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year, true, p2.position);
 
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();

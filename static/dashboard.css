@@ -13118,6 +13118,18 @@ img, svg, canvas {
   flex-direction: column;
   gap: 35px;
 }
+.adv-metrics-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+  align-items: start;
+}
+.adv-metrics-two-col .pm-comp-list {
+  gap: 14px;
+}
+@media (max-width: 600px) {
+  .adv-metrics-two-col { grid-template-columns: 1fr; }
+}
 .pm-comp-list-bo {
   display: flex;
   flex-direction: column;
@@ -14532,8 +14544,22 @@ tr.team-clickable {
 .compare-gamelogs-col .game-log-year-section {
   margin-bottom: 8px;
 }
+.compare-gamelogs-col .game-log-year-content {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .compare-gamelogs-col .game-log-table {
   font-size: 11px;
+  width: max-content;
+  min-width: 100%;
+}
+.compare-gamelogs-col .game-log-table th,
+.compare-gamelogs-col .game-log-table td {
+  padding: 5px 5px;
+}
+.compare-gamelogs-col .game-log-table th:first-child,
+.compare-gamelogs-col .game-log-table td:first-child {
+  padding-left: 8px;
 }
 
 /* ── Nav buttons ────────────────────────────────────────────────── */
