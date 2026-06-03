@@ -606,18 +606,10 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             c['season1_ppr'] = None
         c['prev_ppr_ppg'] = float(cd_prev) if cd_prev is not None else None
 
-    # Age ceilings by position — players past these ages don't qualify as breakout candidates
-    _AGE_LIMIT = {"QB": 28, "RB": 26, "WR": 27, "TE": 28}
-
     filtered = []
     for c in candidates:
-        pos = c.get('position', '')
-        age = float(c.get('age') or 0)
-        age_limit = _AGE_LIMIT.get(pos)
-        if age_limit and age > 0 and age > age_limit:
-            continue
         # QB-specific: already an established veteran starter is not a breakout
-        if pos == 'QB' and age >= 26 and float(c.get('readiness_usage_baseline') or 0) >= 20:
+        if c.get('position') == 'QB' and float(c.get('age') or 0) >= 26 and float(c.get('readiness_usage_baseline') or 0) >= 20:
             continue
         filtered.append(c)
     candidates = filtered
