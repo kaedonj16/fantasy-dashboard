@@ -1,6 +1,15 @@
+import json
 import os
 
-from utils.utils import load_teams_index, load_players_index, path_players_index, write_json
+import requests
+
+from data_building.external_data.sleeper_bulk_stats import CACHE_DIR
+from utils.utils import (
+    load_players_index,
+    load_teams_index,
+    path_players_index,
+    write_json,
+)
 
 TANK01_URL = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com/getNFLPlayerList"
 TANK01_HEADERS = {
@@ -99,28 +108,10 @@ def build_idp_players_index() -> dict:
     return idp_index
 
 
-import json
-import os
-import requests
-
-from data_building.external_data.sleeper_bulk_stats import CACHE_DIR
-
-TANK01_URL = "https://tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com/getNFLPlayerList"
-TANK01_HEADERS = {
-    "x-rapidapi-host": "tank01-nfl-live-in-game-real-time-statistics-nfl.p.rapidapi.com",
-    # strongly recommend moving this to an env var:
-    "x-rapidapi-key": os.getenv("TANK01_API_KEY", "PUT_YOUR_KEY_HERE"),
-}
-
-
-def add_espn_id_to_players_index(
-) -> dict:
+def add_espn_id_to_players_index() -> dict:
     """
     Loads players_index.json and adds "espnID" to each player (all positions),
     matched by Sleeper player id (Tank01 sleeperBotID).
-
-    - players_index_path defaults to CACHE_DIR/players_index.json
-    - output_path defaults to overwrite players_index_path
     """
     players_index = load_players_index()
     output_path = path_players_index()
