@@ -1141,6 +1141,8 @@ def score_one_player(
     s, d = calculate_opportunity_opened_score(
         gsis_id, team, position, prediction_season,
         vacated_cache=vacated_cache,
+        incumbents_cache=incumbents_cache,
+        arrivals_cache=arrivals_cache,
     )
     component_scores["opportunity_opened"] = s
     component_details["opportunity_opened"] = d

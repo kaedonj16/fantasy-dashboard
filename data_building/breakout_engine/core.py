@@ -231,7 +231,11 @@ class BreakoutEngine:
         score, details = calculate_opportunity_opened_score(
             player_id, team, position, self.season,
             vacated_cache=self.db_cache['vacated'],
-            air_yards_data=air_yards_data
+            air_yards_data=air_yards_data,
+            # Incumbents aren't loaded in the live batch cache; arrivals still
+            # provide partial contested-share dilution. The rebuild path (which
+            # has full rosters) is authoritative for the displayed list.
+            arrivals_cache=self.db_cache.get('arrivals'),
         )
         component_scores['opportunity_opened'] = score
         component_details['opportunity_opened'] = details

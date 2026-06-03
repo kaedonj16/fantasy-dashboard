@@ -159,6 +159,25 @@ MAX_VACATED_TARGETS_RB = 100  # 100 targets = 30 points (secondary)
 # Snap share bonus
 MAX_SNAP_SHARE_BONUS = 20  # Up to 20 bonus points for high snap share vacated
 
+# --- Contested-share dilution --------------------------------------------------
+# Vacated opportunity is a TEAM-level quantity. Crediting it in full to every
+# pass-catcher who shares it (e.g. all of a team's WRs + TEs after one WR leaves)
+# saturates the score at 100 for ~everyone and makes it meaningless. Instead we
+# divide the vacated work among the credible competitors contesting it, so the
+# score reflects the opportunity actually AVAILABLE to this player. The caps
+# below are therefore PER-COMPETITOR (one player's plausible share), not team
+# totals. Readiness/trajectory then decide who actually seizes the share.
+PER_COMPETITOR_TARGETS_WR_TE = 90    # ~90 vacated targets to one player = max
+PER_COMPETITOR_CARRIES_RB = 170      # ~170 vacated carries to one RB = max (primary)
+PER_COMPETITOR_TARGETS_RB = 55       # secondary receiving work for an RB
+
+# A rostered player only counts as a competitor for vacated work if they have a
+# credible claim to it: meaningful prior usage OR notable draft capital.
+CREDIBLE_COMPETITOR_TARGETS = 30     # WR/TE: >=30 prior targets
+CREDIBLE_COMPETITOR_CARRIES = 40     # RB: >=40 prior carries
+CREDIBLE_COMPETITOR_SNAP = 0.25      # OR >=25% snap share
+CREDIBLE_COMPETITOR_DRAFT_ROUND = 3  # OR drafted in round <= 3
+
 # QB thresholds
 QB_STARTER_SNAP_THRESHOLD = 0.70  # 70%+ snap share = starter left
 

@@ -246,6 +246,46 @@ def _pooled_vacated(vacated_cache, team: str, position: str, season: int):
     return merged
 
 
+def _is_credible_competitor(position: str, entry: Dict) -> bool:
+    """True if a rostered player has a credible claim to vacated work.
+
+    Filters out deep-bench/practice-squad bodies so the dilution denominator
+    reflects real role-competitors, not every name on the roster.
+    """
+    targets = _safe_float(entry.get("last_season_targets", 0))
+    carries = _safe_float(entry.get("last_season_carries", 0))
+    snap = _safe_float(entry.get("last_season_snap_share", 0))
+    draft_meta = entry.get("draft_metadata") or {}
+    draft_round = draft_meta.get("round")
+    high_pick = draft_round is not None and draft_round <= CREDIBLE_COMPETITOR_DRAFT_ROUND
+
+    if snap >= CREDIBLE_COMPETITOR_SNAP or high_pick:
+        return True
+    if position == "RB":
+        return carries >= CREDIBLE_COMPETITOR_CARRIES
+    return targets >= CREDIBLE_COMPETITOR_TARGETS  # WR/TE (and any pass-catcher)
+
+
+def _count_opportunity_competitors(
+    player_id: str, team: str, position: str,
+    incumbents_cache: Optional[Dict], arrivals_cache: Optional[Dict],
+) -> int:
+    """How many credible players will share the vacated work in this group.
+
+    Counts credible returning incumbents + arrivals across the pass-catcher
+    group (WR+TE) or the exact position (RB), plus the player being scored.
+    Falls back to 1 (no dilution) when no roster context is provided.
+    """
+    ids = {player_id}  # the player being scored always competes
+    for key in _opportunity_group_keys(team, position):
+        for src in (incumbents_cache, arrivals_cache):
+            for e in (src or {}).get(key, []):
+                pid = e.get("player_id")
+                if pid and pid not in ids and _is_credible_competitor(position, e):
+                    ids.add(pid)
+    return max(len(ids), 1)
+
+
 def _pooled_list(cache, db_fn, team: str, position: str, season: int) -> List[Dict]:
     """Concatenate a list-valued cache (departures/arrivals) across the group.
 
@@ -276,10 +316,14 @@ def calculate_opportunity_opened_score(
         position: str,
         season: int,
         vacated_cache: Optional[Dict] = None,
-        air_yards_data: Optional[Dict] = None
+        air_yards_data: Optional[Dict] = None,
+        incumbents_cache: Optional[Dict] = None,
+        arrivals_cache: Optional[Dict] = None,
 ) -> Tuple[float, Dict]:
     """
-    Score (0-100) based on total opportunity vacated from team/position.
+    Score (0-100) based on the vacated opportunity actually AVAILABLE to this
+    player — the team's vacated work divided among the credible competitors
+    contesting it, not the gross team total credited to everyone.
 
     Args:
         vacated_cache: Optional dict mapping (team, position) to vacated opportunity.
@@ -287,6 +331,9 @@ def calculate_opportunity_opened_score(
         air_yards_data: Optional dict with air yards context for WR/TE quality bonus:
                         - 'vacated_air_yards' (int): total air yards from departed WRs/TEs
                         - 'avg_depth_of_target' (float): average aDOT of departed targets
+        incumbents_cache, arrivals_cache: Optional rosters used to count the
+                        credible competitors who will share the vacated work. When
+                        omitted, no dilution is applied (competitor count = 1).
     """
     # OPTIMIZED: Use cache if provided, otherwise fall back to DB query.
     # WR/TE pool receiving opportunity (see _pooled_vacated); RB/QB unchanged.
@@ -311,19 +358,31 @@ def calculate_opportunity_opened_score(
     vacated_snap_share = _safe_float(vac_opp.get("snap_share", 0))
     departed_players = vac_opp.get("departed_players", [])
 
+    # Contested-share dilution: split the vacated work among the credible
+    # competitors so the score reflects what is AVAILABLE to this player, not the
+    # gross team total. QB starter snaps are not shared, so they stay undivided.
+    competitor_count = _count_opportunity_competitors(
+        player_id, team, position, incumbents_cache, arrivals_cache
+    )
+    share_targets = vacated_targets / competitor_count
+    share_carries = vacated_carries / competitor_count
+    share_snap = vacated_snap_share / competitor_count
+
     if position in ["WR", "TE"]:
-        target_score = min((vacated_targets / MAX_VACATED_TARGETS_WR_TE) * 100.0, 100.0)
+        target_score = min((share_targets / PER_COMPETITOR_TARGETS_WR_TE) * 100.0, 100.0)
         raw_score = target_score
     elif position == "RB":
-        carry_score = min((vacated_carries / MAX_VACATED_CARRIES_RB) * 70.0, 70.0)
-        target_score = min((vacated_targets / MAX_VACATED_TARGETS_RB) * 30.0, 30.0)
+        carry_score = min((share_carries / PER_COMPETITOR_CARRIES_RB) * 70.0, 70.0)
+        target_score = min((share_targets / PER_COMPETITOR_TARGETS_RB) * 30.0, 30.0)
         raw_score = carry_score + target_score
     elif position == "QB":
+        # Starter snaps are not shared among competitors — use the gross value.
         raw_score = 100.0 if vacated_snap_share >= QB_STARTER_SNAP_THRESHOLD else 0.0
     else:
         raw_score = 0.0
 
-    snap_bonus = min(vacated_snap_share * 50.0, MAX_SNAP_SHARE_BONUS)
+    snap_for_bonus = vacated_snap_share if position == "QB" else share_snap
+    snap_bonus = min(snap_for_bonus * 50.0, MAX_SNAP_SHARE_BONUS)
 
     # --- Air yards quality bonus (WR/TE only) ---
     air_yards_bonus = 0.0
@@ -334,8 +393,9 @@ def calculate_opportunity_opened_score(
         vacated_air_yards = _safe_int(air_yards_data.get("vacated_air_yards", 0), 0)
         avg_depth_of_target = _safe_float(air_yards_data.get("avg_depth_of_target", 0.0), 0.0)
 
-        # Volume bonus: normalized against elite WR1 air yards season
-        volume_bonus = _normalize_to_one(vacated_air_yards, MAX_VACATED_AIR_YARDS) * AIR_YARDS_ELITE_BONUS
+        # Volume bonus: normalized against elite WR1 air yards season (the
+        # player's diluted share, consistent with target/carry dilution).
+        volume_bonus = _normalize_to_one(vacated_air_yards / competitor_count, MAX_VACATED_AIR_YARDS) * AIR_YARDS_ELITE_BONUS
 
         # Depth bonus: routes that go downfield are harder to replace and more valuable
         if avg_depth_of_target >= AIR_YARDS_ELITE_ADOT:
@@ -359,6 +419,9 @@ def calculate_opportunity_opened_score(
         "vacated_targets": round(vacated_targets, 1),
         "vacated_carries": round(vacated_carries, 1),
         "vacated_snap_share": round(vacated_snap_share, 3),
+        "competitor_count": competitor_count,
+        "share_targets": round(share_targets, 1),
+        "share_carries": round(share_carries, 1),
         "raw_score": round(raw_score, 2),
         "snap_bonus": round(snap_bonus, 2),
         "air_yards_bonus": round(air_yards_bonus, 2),
