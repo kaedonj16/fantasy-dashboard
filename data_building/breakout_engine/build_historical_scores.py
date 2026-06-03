@@ -1496,10 +1496,12 @@ def build_season(
         age = roster_entry.get("age")
         if age is None:
             continue
-        # Positional age ceiling: veteran players who haven't broken through by
-        # these ages are unlikely to do so and crowd out genuine emerging talent.
-        _MAX_AGE = {"RB": 27, "WR": 29, "TE": 27, "QB": 33}
-        if age >= _MAX_AGE.get(roster_entry["position"], 99):
+        # Positional age ceiling AND experience cap: a player who hasn't broken
+        # out by these ages, or who is already in their 3rd+ NFL season, is
+        # unlikely to be a true breakout — exclude to keep the list fresh talent.
+        _MAX_AGE = {"RB": 26, "WR": 25, "TE": 26, "QB": 27}
+        _years_exp = int(roster_entry.get("years_exp") or 0)
+        if age > _MAX_AGE.get(roster_entry["position"], 99) or _years_exp >= 3:
             skipped_age += 1
             continue
         if gsis_id in established_gsis:

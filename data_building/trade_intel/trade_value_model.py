@@ -33,6 +33,7 @@ Properties
 """
 from __future__ import annotations
 
+import gc
 import json
 import logging
 from collections import defaultdict
@@ -50,7 +51,7 @@ LAMBDA_REG         = 8.0   # regularization strength (lower = more market influe
 MAX_VALUE          = 999.9
 MAX_LIFT           = 1.25  # player values capped at 125% of prior; picks float freely
 TOP_N_AT_MAX       = 1     # only the #1 player lands at MAX_VALUE; all others separate naturally
-TRADES_LOOKBACK_DAYS = 365 # only load trades from the last N days to cap memory usage
+TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
@@ -265,6 +266,7 @@ def _load_trades(season: int, is_sf: bool = False, league_type: int = 2, league_
                 "pick_order":  r["pick_order"],
                 "pick_slot":   r["pick_slot"],
             })
+    del rows  # release raw DB result before building the final trades list
 
     now = datetime.now(tz=timezone.utc)
     trades = []
@@ -548,16 +550,16 @@ def run_trade_value_model(
 
     logger.info("[trade_value_model] Building normal equations (N=%d)...", N)
     AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, all_idx, N, season)
-    del trades_1qb
+    del trades_1qb; gc.collect()
     AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  all_idx, N, season)
-    del trades_sf
+    del trades_sf; gc.collect()
     M = M_1qb
 
     logger.info("[trade_value_model] %d trade constraints - solving...", M)
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)
-    del AtWA_1qb, AtWb_1qb
+    del AtWA_1qb, AtWb_1qb; gc.collect()
     v_sf  = _solve(AtWA_sf,  AtWb_sf,  prior_sf,  lambda_reg)
-    del AtWA_sf, AtWb_sf
+    del AtWA_sf, AtWb_sf; gc.collect()
 
     # Players: floor at prior, cap at MAX_LIFT × prior
     v_1qb_pos = np.clip(v_1qb, 0.0, None)
