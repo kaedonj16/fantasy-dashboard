@@ -8287,7 +8287,7 @@ def build_teams_body(ctx: dict) -> str:
                   var sc = sigColor[p.signal] || 'var(--text-muted)';
                   var metaParts = [];
                   if (p.pos_rank_label) metaParts.push(p.pos_rank_label);
-                  if (p.age) metaParts.push('Age ' + p.age);
+                  if (p.age) metaParts.push('Age ' + parseFloat(p.age).toFixed(1));
                   if (p.fc_pos_rank) metaParts.push('FC ' + pos + p.fc_pos_rank);
                   var safeName = (p.name || '').replace(/"/g, '&quot;');
                   html += '<div class="ri-player-row">' +
