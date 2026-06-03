@@ -1157,16 +1157,22 @@ def score_one_player(
     # If this player is themselves an arrival at this team (they moved here from
     # somewhere else), they also need to see the existing incumbents as competition.
     # Build a merged cache that combines new arrivals + existing teammates.
+    # Pool across the pass-catcher group (WR+TE) so an arriving WR/TE also sees
+    # cross-position incumbents as competition, matching the pooling done inside
+    # calculate_competition_added_penalty.
+    from data_building.breakout_engine.components import _opportunity_group_keys
+    group_keys = _opportunity_group_keys(team, position)
     is_arrival = any(
         a["player_id"] == gsis_id
-        for a in arrivals_cache.get((team, position), [])
+        for k in group_keys
+        for a in arrivals_cache.get(k, [])
     )
     if is_arrival and incumbents_cache:
         merged_arrivals = dict(arrivals_cache)
-        key = (team, position)
-        merged_arrivals[key] = (
-            arrivals_cache.get(key, []) + incumbents_cache.get(key, [])
-        )
+        for k in group_keys:
+            merged_arrivals[k] = (
+                arrivals_cache.get(k, []) + incumbents_cache.get(k, [])
+            )
         comp_cache = merged_arrivals
     else:
         comp_cache = arrivals_cache

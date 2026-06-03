@@ -205,6 +205,68 @@ def _score_bucket(value: float, thresholds: List[Tuple[float, float]], default: 
 
 
 # ==============================================================================
+# PASS-CATCHER OPPORTUNITY POOLING (WR + TE)
+# ==============================================================================
+# Receiving opportunity and competition are shared between WRs and TEs on the
+# same team: targets vacated (or added) by a WR are contestable by a TE, and
+# vice versa (e.g. a WR leaving Indianapolis frees up targets a pass-catching
+# TE can absorb). Carries stay position-exact (RB-only); RB/QB are unaffected.
+
+PASS_CATCHER_POSITIONS = ("WR", "TE")
+
+
+def _opportunity_group_keys(team: str, position: str) -> List[Tuple[str, str]]:
+    """(team, position) cache keys whose receiving opportunity this player shares."""
+    if position in PASS_CATCHER_POSITIONS:
+        return [(team, "WR"), (team, "TE")]
+    return [(team, position)]
+
+
+def _pooled_vacated(vacated_cache, team: str, position: str, season: int):
+    """Merge vacated opportunity across the player's opportunity group.
+
+    For RB/QB this is identical to a single-key lookup; for WR/TE it sums the
+    receiving opportunity vacated by both WRs and TEs on the team.
+    """
+    merged = None
+    for t, p in _opportunity_group_keys(team, position):
+        if vacated_cache is not None:
+            v = vacated_cache.get((t, p))
+        else:
+            v = get_vacated_opportunity(t, p, season)
+        if not v:
+            continue
+        if merged is None:
+            merged = {"targets": 0.0, "carries": 0.0, "snap_share": 0.0,
+                      "departed_players": []}
+        merged["targets"] += _safe_float(v.get("targets", 0))
+        merged["carries"] += _safe_float(v.get("carries", 0))
+        merged["snap_share"] += _safe_float(v.get("snap_share", 0))
+        merged["departed_players"] += list(v.get("departed_players", []) or [])
+    return merged
+
+
+def _pooled_list(cache, db_fn, team: str, position: str, season: int) -> List[Dict]:
+    """Concatenate a list-valued cache (departures/arrivals) across the group.
+
+    De-dupes by player_id for safety (a player only appears under their own
+    position, so concatenation normally has no overlap).
+    """
+    out: List[Dict] = []
+    seen = set()
+    for t, p in _opportunity_group_keys(team, position):
+        items = cache.get((t, p), []) if cache is not None else db_fn(t, p, season)
+        for it in items or []:
+            pid = it.get("player_id")
+            if pid is not None and pid in seen:
+                continue
+            if pid is not None:
+                seen.add(pid)
+            out.append(it)
+    return out
+
+
+# ==============================================================================
 # COMPONENT 1: OPPORTUNITY OPENED SCORE
 # ==============================================================================
 
@@ -226,11 +288,9 @@ def calculate_opportunity_opened_score(
                         - 'vacated_air_yards' (int): total air yards from departed WRs/TEs
                         - 'avg_depth_of_target' (float): average aDOT of departed targets
     """
-    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query
-    if vacated_cache is not None:
-        vac_opp = vacated_cache.get((team, position))
-    else:
-        vac_opp = get_vacated_opportunity(team, position, season)
+    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query.
+    # WR/TE pool receiving opportunity (see _pooled_vacated); RB/QB unchanged.
+    vac_opp = _pooled_vacated(vacated_cache, team, position, season)
 
     if not vac_opp:
         return 0.0, {
@@ -380,11 +440,12 @@ def calculate_competition_removed_score(
         departures_cache: Optional dict mapping (team, position) to list of departures.
                          If provided, uses O(1) cache lookup instead of DB query.
     """
-    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query
-    if departures_cache is not None:
-        departures = departures_cache.get((team, position), [])
-    else:
-        departures = get_departures_by_team_position(team, position, season)
+    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query.
+    # WR/TE pool pass-catcher departures so a TE sees a departing WR as removed
+    # competition (and vice versa); RB/QB unchanged.
+    departures = _pooled_list(
+        departures_cache, get_departures_by_team_position, team, position, season
+    )
 
     if not departures:
         return 0.0, {
@@ -639,11 +700,12 @@ def calculate_competition_added_penalty(
         arrivals_cache: Optional dict mapping (team, position) to list of arrivals.
                        If provided, uses O(1) cache lookup instead of DB query.
     """
-    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query
-    if arrivals_cache is not None:
-        arrivals = arrivals_cache.get((team, position), [])
-    else:
-        arrivals = get_arrivals_by_team_position(team, position, season)
+    # OPTIMIZED: Use cache if provided, otherwise fall back to DB query.
+    # WR/TE pool pass-catcher arrivals so an incoming WR counts as added
+    # competition for a TE (and vice versa); RB/QB unchanged.
+    arrivals = _pooled_list(
+        arrivals_cache, get_arrivals_by_team_position, team, position, season
+    )
 
     if not arrivals:
         return 0.0, {

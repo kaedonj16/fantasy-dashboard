@@ -108,6 +108,14 @@ BREAKOUT_GATE_COMP_MIN = 45.0   # OR competition_removed floor
 BREAKOUT_GATE_READY_MIN = 50.0  # player_readiness floor
 BREAKOUT_GATE_TRAJ_MIN = 60.0   # OR role_trajectory floor (clearly rising)
 
+# Ascension path: a player can qualify as a breakout WITHOUT a new opening if
+# they are clearly ascending on their own — the classic Year-2 / sophomore leap
+# (e.g. a stud young RB who already has the job and is trending up, with no
+# vacated role and no competition change). Because there is no opening to lean
+# on, this path demands BOTH a high readiness AND a strong upward trajectory.
+BREAKOUT_ASCENSION_READY_MIN = 62.0  # player_readiness floor (talent/profile)
+BREAKOUT_ASCENSION_TRAJ_MIN = 60.0   # AND role_trajectory floor (rising usage)
+
 # If a player fails the gates, cap their final score here so they fall below
 # the candidate floor (40) and the page floor (50) and drop off the list.
 BREAKOUT_GATE_FAIL_CAP = 38.0
