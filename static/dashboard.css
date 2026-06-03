@@ -2712,7 +2712,8 @@ thead th {
 .otc-balance-fair {
   left: 50%;
   transform: translateX(-50%);
-  width: 14%;
+  /* Default; JS sets the exact width from fair_threshold on each eval. */
+  width: 7%;
   background: rgba(14, 40, 71, 0.92);
   display: flex;
   align-items: center;

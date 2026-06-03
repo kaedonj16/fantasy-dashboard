@@ -2304,8 +2304,17 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       const fairZoneEl = root.querySelector(".otc-balance-fair");
-      if (fairZoneEl && data.fair_pct) {
-        fairZoneEl.style.width = (data.fair_pct * 200) + "%";
+      if (fairZoneEl) {
+        // The bar spans normalizedDiff [-1, +1] across its full width, so a diff
+        // of `d` sits (d / maxSide) * 50% from center. The fair zone is centered,
+        // so its full width must be (fair_threshold / maxSide) * 100 to line up
+        // exactly with where the verdict flips from "fair" to "favored". Use the
+        // server's fair_threshold (which already applies the 25-point floor)
+        // rather than fair_pct alone.
+        const ft = Number(data.fair_threshold) ||
+                   ((Number(data.fair_pct) || 0) * maxSideTotal);
+        const fairWidthPct = Math.max(0, Math.min(100, (ft / maxSideTotal) * 100));
+        fairZoneEl.style.width = fairWidthPct + "%";
       }
 
       if (verdictEl) {
