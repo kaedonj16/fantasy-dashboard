@@ -311,6 +311,12 @@ try:
 except Exception as e:
     logger.warning("[value-history] init skipped: %s", e)
 
+try:
+    from data_building.advanced_metrics import init_advanced_metrics_db
+    init_advanced_metrics_db()
+except Exception as e:
+    logger.warning("[advanced-metrics] init skipped: %s", e)
+
 # Register breakout detection API routes
 try:
     from dashboard_services.breakout_api import register_breakout_routes
@@ -18418,12 +18424,13 @@ def api_player_details(player_id: str):
         except Exception:
             pass
 
+        _modal_age = age_from_bday(player_meta.get("bDay")) or player_value.get("age") or player_meta.get("age")
         response = {
             "player_id": player_id,
             "name": player_meta.get("name", "Unknown"),
             "position": player_meta.get("pos"),
             "team": player_meta.get("team"),
-            "age": player_value.get("age"),
+            "age": _modal_age,
             "pos_rank": player_value.get("pos_rank"),
             "pos_rank_label": player_value.get("pos_rank_label"),
             "espnHeadshot": player_meta.get("espnHeadshot"),
