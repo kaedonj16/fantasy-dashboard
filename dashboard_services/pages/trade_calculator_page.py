@@ -302,11 +302,12 @@ def build_trade_calculator_body(
 
               <div class="otc-balance-wrap">
                 <div class="otc-balance-bar">
-                  <div class="otc-balance-fair">FAIR RANGE</div>
+                  <div class="otc-balance-fair" title="Fair range"></div>
                   <div class="trade-bar-indicator" id="tradeBarIndicator"></div>
                 </div>
                 <div class="otc-balance-labels">
                   <span>Team 1 favored</span>
+                  <span class="otc-balance-fair-label">Fair range</span>
                   <span>Team 2 favored</span>
                 </div>
               </div>

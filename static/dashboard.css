@@ -2712,16 +2712,19 @@ thead th {
 .otc-balance-fair {
   left: 50%;
   transform: translateX(-50%);
-  /* Default; JS sets the exact width from fair_threshold on each eval. */
+  /* Default; JS sets the exact width from fair_threshold on each eval.
+     The band is a pure visual marker — the label lives below the bar so it
+     never clips when the fair range is narrow on big trades. */
   width: 7%;
+  min-width: 6px;
   background: rgba(14, 40, 71, 0.92);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 800;
+}
+
+.otc-balance-fair-label {
+  color: #16365d;
+  text-transform: uppercase;
   letter-spacing: 0.04em;
+  font-size: 11px;
 }
 
 .otc-balance-labels {
@@ -10262,17 +10265,6 @@ img, svg, canvas {
 
   .otc-balance-bar {
     height: 8px;
-  }
-
-  .otc-balance-fair {
-    font-size: 0;
-  }
-
-  .otc-balance-fair::before {
-    content: "FAIR";
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.04em;
   }
 
   .trade-bar-indicator {
