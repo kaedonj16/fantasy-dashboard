@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -106,9 +108,26 @@ def _espn_to_canon_cached() -> Dict[str, str]:
     return build_espn_to_canonical(_players_index_cached())
 
 
-@lru_cache(maxsize=128)
+# Box scores change during live games, so they must NOT be cached for the
+# whole process lifetime (the old @lru_cache served stale scores until redeploy).
+# Use a short TTL instead.
+_BOX_SCORE_TTL = 90  # seconds
+_box_score_cache: Dict[Tuple[int, str, int], Tuple[float, Any]] = {}
+_box_score_lock = threading.Lock()
+
+
 def _box_scores_cached(season: int, league_id: str, week: int):
-    return _league(season, league_id).box_scores(week)
+    key = (int(season), str(league_id), int(week))
+    now = time.time()
+    with _box_score_lock:
+        hit = _box_score_cache.get(key)
+        if hit and (now - hit[0]) < _BOX_SCORE_TTL:
+            return hit[1]
+    # Fetch outside the lock so a slow ESPN call doesn't block other keys.
+    scores = _league(season, league_id).box_scores(week)
+    with _box_score_lock:
+        _box_score_cache[key] = (time.time(), scores)
+    return scores
 
 
 @lru_cache(maxsize=16)
