@@ -7751,10 +7751,10 @@ function buildAdvancedMetricsHTML(metricsData) {
   if (metrics.role_score != null) {
     defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1), sub: getRoleGrade(metrics.role_score) });
   }
-  // Snap Share (0–1 → %)
+  // Snap Share (0–1 → %).  85 % = starter ceiling → full bar.
   if (metrics.snap_share != null && position !== "QB") {
     const pct = metrics.snap_share * 100;
-    defs.push({ label: 'Snap Share', fill: pct, display: pct.toFixed(1) + '%' });
+    defs.push({ label: 'Snap Share', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
   }
 
   if (position === 'QB') {
@@ -7764,23 +7764,28 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.big_time_throw_rate != null) {
       const v = metrics.big_time_throw_rate;
-      defs.push({ label: 'BTT Rate', fill: Math.min(v * 5, 100), display: v.toFixed(1) + '%' });
+      // BTT rate stored as % value (e.g. 6.5); 15 % = elite ceiling
+      defs.push({ label: 'BTT Rate', fill: Math.min(v / 15 * 100, 100), display: v.toFixed(1) + '%' });
     }
     if (metrics.adjusted_completion_rate != null) {
       const v = metrics.adjusted_completion_rate;
-      defs.push({ label: 'Adj Comp %', fill: v, display: v.toFixed(1) + '%' });
+      // ACR stored as 0-100 %; meaningful range 55-90
+      defs.push({ label: 'Adj Comp %', fill: Math.min(Math.max(v - 55, 0) / 35 * 100, 100), display: v.toFixed(1) + '%' });
     }
     if (metrics.nfl_passer_rating != null) {
       const v = metrics.nfl_passer_rating;
-      defs.push({ label: 'Passer Rating', fill: Math.min(v / 130 * 100, 100), display: v.toFixed(1) });
+      // Meaningful range 60-130; 60 = poor, 100 = average, 130 = elite
+      defs.push({ label: 'Passer Rating', fill: Math.min(Math.max(v - 60, 0) / 70 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.yards_per_attempt != null) {
       const v = metrics.yards_per_attempt;
-      defs.push({ label: 'Yds/Attempt', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1) });
+      // 4 = poor, 10 = elite
+      defs.push({ label: 'Yds/Attempt', fill: Math.min(Math.max(v - 4, 0) / 6 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.completion_pct != null) {
       const pct = metrics.completion_pct;
-      defs.push({ label: 'Completion %', fill: pct, display: pct.toFixed(1) + '%' });
+      // Meaningful range 50-85
+      defs.push({ label: 'Completion %', fill: Math.min(Math.max(pct - 50, 0) / 35 * 100, 100), display: pct.toFixed(1) + '%' });
     }
     if (metrics.td_rate != null && metrics.int_rate != null && metrics.int_rate > 0) {
       const ratio = metrics.td_rate / metrics.int_rate;
@@ -7841,7 +7846,8 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
-      defs.push({ label: 'Catch Rate', fill: pct, display: pct.toFixed(1) + '%' });
+      // RBs typically 80-95 %; 95 = elite ceiling
+      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 95 * 100, 100), display: pct.toFixed(1) + '%' });
     }
     if (metrics.grades_offense != null) {
       const v = metrics.grades_offense;
@@ -7854,7 +7860,8 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
-      defs.push({ label: 'Catch Rate', fill: pct, display: pct.toFixed(1) + '%' });
+      // WR/TE realistic range 40-85 %; 85 = elite ceiling
+      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
     }
     if (metrics.drop_rate != null) {
       const v = metrics.drop_rate;
@@ -7864,35 +7871,43 @@ function buildAdvancedMetricsHTML(metricsData) {
     }
     if (metrics.yards_per_target != null) {
       const v = metrics.yards_per_target;
-      defs.push({ label: 'Yds/Target', fill: Math.min(v / 14 * 100, 100), display: v.toFixed(1) });
+      // 2 = poor, 12 = elite deep threat
+      defs.push({ label: 'Yds/Target', fill: Math.min(Math.max(v - 2, 0) / 10 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.yards_per_reception != null) {
       const v = metrics.yards_per_reception;
-      defs.push({ label: 'Yds/Reception', fill: Math.min(v / 18 * 100, 100), display: v.toFixed(1) });
+      // 4 = short routes, 18 = elite deep
+      defs.push({ label: 'Yds/Reception', fill: Math.min(Math.max(v - 4, 0) / 14 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.yards_after_catch_per_reception != null) {
       const v = metrics.yards_after_catch_per_reception;
-      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 12 * 100, 100), display: v.toFixed(1) });
+      // 0-10 realistic; 10 = elite YAC receiver
+      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.yards_after_catch != null) {
       const v = metrics.yards_after_catch;
-      defs.push({ label: 'YAC (season)', fill: Math.min(v / 800 * 100, 100), display: Math.round(v).toString() });
+      // Season total; 600 = elite volume
+      defs.push({ label: 'YAC (season)', fill: Math.min(v / 600 * 100, 100), display: Math.round(v).toString() });
     }
     if (metrics.avg_depth_of_target != null) {
       const v = metrics.avg_depth_of_target;
+      // 0-20 yards; 20 = deep specialist ceiling
       defs.push({ label: 'aDOT', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1) });
     }
     if (metrics.contested_catch_rate != null) {
       const v = metrics.contested_catch_rate;
-      defs.push({ label: 'Contested Catch %', fill: v, display: v.toFixed(1) + '%' });
+      // 65 % = elite contested catcher ceiling
+      defs.push({ label: 'Contested Catch %', fill: Math.min(v / 65 * 100, 100), display: v.toFixed(1) + '%' });
     }
     if (metrics.target_share != null) {
       const pct = metrics.target_share * 100;
-      defs.push({ label: 'Target Share', fill: pct, display: pct.toFixed(1) + '%' });
+      // 28 % target share = elite
+      defs.push({ label: 'Target Share', fill: Math.min(pct / 28 * 100, 100), display: pct.toFixed(1) + '%' });
     }
     if (metrics.target_quality_score != null) {
       const v = metrics.target_quality_score;
-      defs.push({ label: 'Target Quality', fill: Math.min(v, 100), display: v.toFixed(1) });
+      // PFF target quality; 20 = elite
+      defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1) });
     }
     // Alignment rates (slot / wide / inline)
     if (metrics.slot_rate != null) {
@@ -7919,7 +7934,7 @@ function buildAdvancedMetricsHTML(metricsData) {
 
   if (metrics.target_quality_score != null && position === 'RB') {
     const v = metrics.target_quality_score;
-    defs.push({ label: 'Target Quality', fill: Math.min(v, 100), display: v.toFixed(1) });
+    defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1) });
   }
 
   if (metrics.red_zone_usage != null && position !== 'QB') {
@@ -8859,39 +8874,39 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     const v1 = m1?.[key] ?? null;
     const v2 = m2?.[key] ?? null;
     
-    // Metric-specific scaling ranges for meaningful comparison
+    // Metric-specific scaling ranges — upper end of realistic elite values
     const metricRanges = {
-      // Percentage metrics (0-100)
-      'catch_rate': 1, 'completion_pct': 100, 'contested_catch_rate': 100,
-      'drop_rate': 100, 'slot_rate': 100, 'wide_rate': 100, 'inline_rate': 100,
-      'pass_block_rate': 100, 'snap_share': 1, 'opportunity_share': 25,
-      'red_zone_usage': 4,
-      
-      // Rate metrics (0-10 or 0-20)
-      'rush_td_rate': .05, 'td_rate': 8, 'int_rate': 3, 'avoided_tackles': 1,
-      'explosive_runs_10_plus': 20,
-      
-      // Yards per attempt metrics (0-20)
-      'yards_per_target': 20, 'yards_per_reception': 20, 'yards_per_carry': 10,
-      'yards_per_touch': 15, 'yards_per_attempt': 15, 'avg_depth_of_target': 20,
-      'yards_after_catch': 20, 'yards_after_catch_per_reception': 20,
-      
+      // Decimal-stored rates (0-1)
+      'catch_rate': 1, 'snap_share': 1, 'rush_td_rate': 0.08,
+
+      // Percentage-stored rates (0-100)
+      'completion_pct': 85, 'adjusted_completion_rate': 90,
+      'contested_catch_rate': 65, 'drop_rate': 20,
+      'slot_rate': 100, 'wide_rate': 100, 'inline_rate': 100,
+      'pass_block_rate': 100, 'breakaway_percentage': 40,
+      'opportunity_share': 25, 'red_zone_usage': 3,
+
+      // Raw rate metrics
+      'td_rate': 0.06, 'int_rate': 0.04,
+
+      // Counting / volume
+      'avoided_tackles': 30, 'explosive_runs_10_plus': 25,
+
+      // Yardage metrics
+      'yards_per_target': 12, 'yards_per_reception': 16, 'yards_per_carry': 7,
+      'yards_per_touch': 8, 'yards_per_attempt': 10, 'avg_depth_of_target': 20,
+      'yards_after_catch': 600, 'yards_after_catch_per_reception': 10,
+
       // PFF grades (0-100)
-      'pff_passing_grade': 100, 'pff_rushing_grade': 100, 'grades_offense': 100,
-      'grades_pass_block': 100,
-      
-      // Role score (0-100)
-      'role_score': 100,
-      
-      'big_time_throw_rate': 1, 'adjusted_completion_rate': 1,
-      
-      // Rating metrics (0-160)
-      'nfl_passer_rating': 160,
-      
-      // Other metrics
-      'target_quality_score': 50, 'elusive_rating': 100,
+      'pff_passing_grade': 100, 'pff_rushing_grade': 100,
       'grades_offense': 100, 'grades_pass_block': 100,
-      'avoided_tackles': 30, 'pass_block_rate': 100,
+
+      // Stored as raw % values (0-20 or 0-100 range)
+      'big_time_throw_rate': 15, 'pressure_to_sack_rate': 50,
+
+      // Rating / score metrics
+      'nfl_passer_rating': 130, 'target_quality_score': 20,
+      'elusive_rating': 200, 'role_score': 100,
     };
     
     const range = metricRanges[key] || 100; // Default to 100 if not specified
@@ -8906,12 +8921,10 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       const isInverse = inverseMetrics.includes(key);
       
       if (isInverse) {
-        // For inverse metrics: lower values are better (green), higher are worse (red)
-        if (pct <= 20) return '#10b981';  // Excellent
-        if (pct <= 40) return '#3b82f6';  // Good
-        return '#f59e0b';  // Poor
+        if (pct <= 25) return '#10b981';  // low value = excellent
+        if (pct <= 55) return '#3b82f6';  // moderate = acceptable
+        return '#ef4444';                 // high value = bad
       } else {
-        // For normal metrics: higher values are better
         if (pct >= 60) return '#10b981';
         if (pct >= 35) return '#3b82f6';
         return '#f59e0b';
@@ -8921,12 +8934,8 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     const fmt = v => {
       if (v == null) return 'â';
       
-      // Metrics that should be displayed as percentages
-      const percentageMetrics = [
-        'catch_rate', 'snap_share', 'rush_td_rate',
-        'big_time_throw_rate', 'adjusted_completion_rate', 'pressure_to_sack_rate',
-        'breakaway_percentage'
-      ];
+      // Only metrics stored as 0-1 decimals that need ×100 for display
+      const percentageMetrics = ['catch_rate', 'snap_share', 'rush_td_rate', 'td_rate', 'int_rate'];
       
       // Check if current metric is a percentage metric
       const isPercentageMetric = percentageMetrics.includes(key);
