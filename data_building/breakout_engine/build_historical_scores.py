@@ -748,6 +748,12 @@ def detect_changes(
         inc = _usage_arrival_dict(gsis_id, prev["name"], "incumbent", u)
         # Age used by the succession signal in _compute_projected_usage
         inc["player_age"] = curr.get("age") or prev.get("age")
+        # Draft capital lets the opportunity-share model credit a young incumbent
+        # (e.g. a Year-2 first-rounder) with more of the vacated work than a
+        # low-usage depth piece. Incumbents previously carried no draft metadata.
+        _inc_dn = curr.get("draft_number")
+        if _inc_dn is not None and not (isinstance(_inc_dn, float) and math.isnan(_inc_dn)):
+            inc["draft_metadata"] = {"round": _pick_to_round(_inc_dn), "pick": int(_inc_dn)}
         incumbents.setdefault((prev_team, prev_pos), []).append(inc)
 
     return vacated, departures, arrivals, incumbents

@@ -113,7 +113,10 @@ BREAKOUT_GATE_TRAJ_MIN = 60.0   # OR role_trajectory floor (clearly rising)
 # (e.g. a stud young RB who already has the job and is trending up, with no
 # vacated role and no competition change). Because there is no opening to lean
 # on, this path demands BOTH a high readiness AND a strong upward trajectory.
-BREAKOUT_ASCENSION_READY_MIN = 62.0  # player_readiness floor (talent/profile)
+# A strongly rising trajectory is the primary ascension signal; readiness only
+# needs to be moderate (a Year-2 stud like a 1st-round RB can sit at ~60 while
+# clearly ascending). Set the readiness floor too high and these get wrongly cut.
+BREAKOUT_ASCENSION_READY_MIN = 58.0  # player_readiness floor (talent/profile)
 BREAKOUT_ASCENSION_TRAJ_MIN = 60.0   # AND role_trajectory floor (rising usage)
 
 # If a player fails the gates, cap their final score here so they fall below

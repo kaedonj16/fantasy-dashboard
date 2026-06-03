@@ -266,24 +266,63 @@ def _is_credible_competitor(position: str, entry: Dict) -> bool:
     return targets >= CREDIBLE_COMPETITOR_TARGETS  # WR/TE (and any pass-catcher)
 
 
-def _count_opportunity_competitors(
+def _competitor_claim(position: str, entry: Dict) -> float:
+    """A player's claim on vacated work, blending prior role and draft pedigree.
+
+    A veteran claims via established usage; a young high-pick claims via draft
+    capital even with little prior usage (so a Year-2 first-rounder isn't split
+    down to a depth piece's share). Everyone gets a small floor.
+    """
+    targets = _safe_float(entry.get("last_season_targets", 0))
+    carries = _safe_float(entry.get("last_season_carries", 0))
+    snap = _safe_float(entry.get("last_season_snap_share", 0))
+    draft_round = (entry.get("draft_metadata") or {}).get("round")
+
+    if position == "RB":
+        usage_claim = carries + targets * 1.5
+    else:  # WR/TE (pass-catchers)
+        usage_claim = targets + snap * 50.0
+
+    pedigree = {1: 110.0, 2: 80.0, 3: 60.0, 4: 45.0}.get(draft_round, 25.0 if draft_round else 0.0)
+    return max(usage_claim, pedigree, 10.0)
+
+
+def _opportunity_share(
     player_id: str, team: str, position: str,
     incumbents_cache: Optional[Dict], arrivals_cache: Optional[Dict],
-) -> int:
-    """How many credible players will share the vacated work in this group.
+) -> Tuple[float, int]:
+    """The player's claim-weighted share of the vacated work, and competitor count.
 
-    Counts credible returning incumbents + arrivals across the pass-catcher
-    group (WR+TE) or the exact position (RB), plus the player being scored.
-    Falls back to 1 (no dilution) when no roster context is provided.
+    Returns (share_fraction, competitor_count). The vacated opportunity is split
+    among credible competitors (returning incumbents + arrivals across the
+    pass-catcher group, or the exact position for RB) in proportion to each
+    player's claim, rather than equally. Falls back to a full share (1.0) when
+    there is no roster context or no competition.
     """
-    ids = {player_id}  # the player being scored always competes
+    entries: Dict[str, Dict] = {}
     for key in _opportunity_group_keys(team, position):
         for src in (incumbents_cache, arrivals_cache):
             for e in (src or {}).get(key, []):
                 pid = e.get("player_id")
-                if pid and pid not in ids and _is_credible_competitor(position, e):
-                    ids.add(pid)
-    return max(len(ids), 1)
+                if pid:
+                    entries.setdefault(pid, e)
+
+    claims = {
+        pid: _competitor_claim(position, e)
+        for pid, e in entries.items()
+        if _is_credible_competitor(position, e)
+    }
+    # The player being scored always competes for the work they'd inherit.
+    if player_id not in claims:
+        if player_id in entries:
+            claims[player_id] = _competitor_claim(position, entries[player_id])
+        else:
+            claims[player_id] = 10.0  # roster context missing — assume a floor claim
+
+    total = sum(claims.values())
+    if total <= 0:
+        return 1.0, max(len(claims), 1)
+    return claims[player_id] / total, len(claims)
 
 
 def _pooled_list(cache, db_fn, team: str, position: str, season: int) -> List[Dict]:
@@ -358,15 +397,16 @@ def calculate_opportunity_opened_score(
     vacated_snap_share = _safe_float(vac_opp.get("snap_share", 0))
     departed_players = vac_opp.get("departed_players", [])
 
-    # Contested-share dilution: split the vacated work among the credible
-    # competitors so the score reflects what is AVAILABLE to this player, not the
+    # Contested-share dilution: split the vacated work among credible competitors
+    # in proportion to each player's claim (usage + draft pedigree), so the score
+    # reflects what is realistically AVAILABLE to this player rather than the
     # gross team total. QB starter snaps are not shared, so they stay undivided.
-    competitor_count = _count_opportunity_competitors(
+    share_fraction, competitor_count = _opportunity_share(
         player_id, team, position, incumbents_cache, arrivals_cache
     )
-    share_targets = vacated_targets / competitor_count
-    share_carries = vacated_carries / competitor_count
-    share_snap = vacated_snap_share / competitor_count
+    share_targets = vacated_targets * share_fraction
+    share_carries = vacated_carries * share_fraction
+    share_snap = vacated_snap_share * share_fraction
 
     if position in ["WR", "TE"]:
         target_score = min((share_targets / PER_COMPETITOR_TARGETS_WR_TE) * 100.0, 100.0)
@@ -395,7 +435,7 @@ def calculate_opportunity_opened_score(
 
         # Volume bonus: normalized against elite WR1 air yards season (the
         # player's diluted share, consistent with target/carry dilution).
-        volume_bonus = _normalize_to_one(vacated_air_yards / competitor_count, MAX_VACATED_AIR_YARDS) * AIR_YARDS_ELITE_BONUS
+        volume_bonus = _normalize_to_one(vacated_air_yards * share_fraction, MAX_VACATED_AIR_YARDS) * AIR_YARDS_ELITE_BONUS
 
         # Depth bonus: routes that go downfield are harder to replace and more valuable
         if avg_depth_of_target >= AIR_YARDS_ELITE_ADOT:
