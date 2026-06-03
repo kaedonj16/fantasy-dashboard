@@ -549,8 +549,14 @@ def run_trade_value_model(
         logger.info("  pid=%-12s  prior=%.2f", player_ids[i], prior_1qb[i])
 
     logger.info("[trade_value_model] Building normal equations (N=%d)...", N)
+    # Keep only one trade list resident during the heavy matrix builds (the cron
+    # box is capped at 512Mi). pick_keys_seen / all_idx were already computed from
+    # both lists above, so freeing SF here and reloading it below is exact — the
+    # query is deterministic and returns the same rows.
+    del trades_sf; gc.collect()
     AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, all_idx, N, season)
     del trades_1qb; gc.collect()
+    trades_sf = _load_trades(season, is_sf=True, league_type=league_type, league_size=league_size)
     AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  all_idx, N, season)
     del trades_sf; gc.collect()
     M = M_1qb
