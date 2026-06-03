@@ -7291,9 +7291,9 @@ function _buildBkTabHTML(data, scoreColor) {
            style="font-size:13px;display:flex;gap:12px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--surface-2,rgba(255,255,255,0.06));margin-bottom:2px;">
         <span style="color:${fitColor};font-weight:700;flex-shrink:0;"><i class="fa-solid fa-bullseye" aria-hidden="true"></i></span>
         <span>
-          <span style="font-weight:600;color:${fitColor};text-transform:capitalize;">${aFit.label} role fit for vacated targets</span>
-          <span style="display:block;color:var(--text-muted);margin-top:2px;">Targets that opened up: ${aFit.vacated_role}</span>
-          <span style="display:block;color:var(--text-muted);">His role: ${aFit.candidate_role}</span>
+          <span style="font-weight:600;color:${fitColor};text-transform:capitalize;">${aFit.label} Role Fit</span>
+          <span style="display:block;color:var(--text-muted);margin-top:2px;">Vacated Role: ${aFit.vacated_role}</span>
+          <span style="display:block;color:var(--text-muted);">His Role: ${aFit.candidate_role}</span>
         </span>
       </div>`;
   }
