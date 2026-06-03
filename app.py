@@ -21841,10 +21841,10 @@ def api_trade_intel_player_packages(player_id: str):
 
         # ── Value-based fallback: always fill to at least 5 packages ─────
         # Combines viewer players (and picks) whose total value sits within
-        # [85%, 125%] of focus_value. Works even with no trade history.
+        # [90%, 115%] of focus_value. Works even with no trade history.
         if viewer_players and len(primary_pkgs) < 5:
             _fv      = float(focus_value or 0)
-            _lo, _hi = _fv * 0.82, _fv * 1.25
+            _lo, _hi = _fv * 0.90, _fv * 1.15
             _used_sets = {
                 frozenset(
                     str(a.get("player_id") or a.get("name") or "")
@@ -21857,7 +21857,7 @@ def api_trade_intel_player_packages(player_id: str):
                 out: list = []
                 sorted_p = sorted(players, key=lambda p: -float(p.get("value") or 0))
                 sorted_k = sorted(picks,   key=lambda k:  int(k.get("pick_round") or 3))
-                lo, hi   = target * 0.82, target * 1.25
+                lo, hi   = target * 0.90, target * 1.15
 
                 def _add(assets):
                     key = frozenset(
@@ -22215,7 +22215,7 @@ def api_trade_intel_player_packages(player_id: str):
 
         # Drop packages where the viewer is sending more than 2× the target's value.
         # Real trades include extreme overpays — those are not useful suggestions.
-        _max_send = (focus_value or 1) * 1.3
+        _max_send = (focus_value or 1) * 1.15
         primary_pkgs = [p for p in primary_pkgs if p.get("send_value", 0) <= _max_send]
 
         _total_real = real_result.get("total_real_trades") or 1
@@ -22492,7 +22492,7 @@ def _real_trade_packages_for_target(
                       if _sig_estimate_value(k) >= _value_floor}
 
     # Value range for matching packages against the viewer's roster
-    max_send_value = focus_value * 1.30 if focus_value > 0 else float("inf")
+    max_send_value = focus_value * 1.15 if focus_value > 0 else float("inf")
     min_send_value = focus_value * 0.65 if focus_value > 0 else 0.0
     target_value   = focus_value  # alias used in anchor / tier checks below
 
