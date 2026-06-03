@@ -21633,14 +21633,28 @@ def api_trade_intel_player_packages(player_id: str):
                         else:
                             _sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
                             pk_name = f"{yr} {rnd}{_sfx} (Mid)"
+                        # Resolve pick value robustly. The value table only has
+                        # SLOT keys for the current year (e.g. 2026_1_01) and only
+                        # BUCKET keys for future years (e.g. 2027_1_mid) — never a
+                        # bare "{yr}_{rnd}" key. Try slot → bucket → average of that
+                        # round's slots, and only then a realistic hard default, so
+                        # picks are never silently collapsed to a flat 220.
+                        _bucket_l = (_pick_bucket(slot) or "Mid").lower()
+                        pval = 0.0
                         if slot:
-                            pval = (
-                                pick_val_lookup.get(f"{yr}_{rnd}_{slot:02d}")
-                                or pick_val_lookup.get(f"{yr}_{rnd}", 0)
-                            )
-                        else:
-                            pval = pick_val_lookup.get(f"{yr}_{rnd}", 0)
-                        pval = pval or (220 if rnd == 1 else 130 if rnd == 2 else 70)
+                            pval = float(pick_val_lookup.get(f"{yr}_{rnd}_{slot:02d}") or 0)
+                        if not pval:
+                            pval = float(pick_val_lookup.get(f"{yr}_{rnd}_{_bucket_l}") or 0)
+                        if not pval:
+                            _round_slot_vals = [
+                                float(v) for k, v in pick_val_lookup.items()
+                                if k.startswith(f"{yr}_{rnd}_")
+                                and k.split("_")[-1].isdigit() and v and float(v) > 0
+                            ]
+                            if _round_slot_vals:
+                                pval = round(sum(_round_slot_vals) / len(_round_slot_vals), 1)
+                        if not pval:
+                            pval = 300.0 if rnd == 1 else 150.0 if rnd == 2 else 70.0
                         viewer_picks.append({
                             "name": pk_name, "value": pval, "is_pick": True,
                             "pick_season": yr, "pick_round": rnd,
@@ -22310,14 +22324,23 @@ def _real_trade_packages_for_target(
         }
 
     def _pick_val(rnd: int, season=None) -> float:
-        if season:
-            v = _pick_val_map.get(f"{season}_{rnd}") or _pick_val_map.get(f"{season}_{rnd:02d}")
-            if v:
-                return float(v)
-        # fallback: find any key matching round
-        for k, v in _pick_val_map.items():
-            if k.endswith(f"_{rnd}") or k.endswith(f"_{rnd:02d}"):
-                return float(v)
+        # The table keys are "{season}_{round}_{slot|bucket}" (3 parts) — never a
+        # bare "{season}_{round}". Average all entries for the requested round so
+        # a generic round reference gets a representative value rather than the
+        # first arbitrary key that happens to end in "_{rnd}".
+        def _avg_for(yr) -> float:
+            vals = [
+                float(v) for k, v in _pick_val_map.items()
+                if v and float(v) > 0 and (parts := k.split("_")) and len(parts) >= 3
+                and (yr is None or parts[0] == str(yr)) and parts[1] == str(rnd)
+            ]
+            return round(sum(vals) / len(vals), 1) if vals else 0.0
+
+        v = _avg_for(season) if season else 0.0
+        if not v:
+            v = _avg_for(None)
+        if v:
+            return v
         return 450.0 if rnd == 1 else 175.0 if rnd == 2 else 70.0
 
     # Rough value by tier for pre-filtering low-value patterns
