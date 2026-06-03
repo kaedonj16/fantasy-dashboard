@@ -8,7 +8,16 @@ and provides appropriate component score weights for each phase.
 from datetime import date
 from typing import Dict
 
-from .config import PHASE_WEIGHTS
+from .config import (
+    PHASE_WEIGHTS,
+    BREAKOUT_GATE_OPP_MIN,
+    BREAKOUT_GATE_COMP_MIN,
+    BREAKOUT_GATE_READY_MIN,
+    BREAKOUT_GATE_TRAJ_MIN,
+    BREAKOUT_GATE_FAIL_CAP,
+    BREAKOUT_CURVE_PIVOT,
+    BREAKOUT_CURVE_SLOPE,
+)
 
 
 class PhaseDetector:
@@ -168,7 +177,38 @@ class PhaseDetector:
             return 0.0
 
         # Renormalize so the active-weight components span the full 0-100 range
-        return max(0.0, min(100.0, total / active_weight))
+        raw = max(0.0, min(100.0, total / active_weight))
+
+        # ── Steepen the curve so the mediocre middle collapses ────────────────
+        # The raw aggregate is an average and clusters near ~50; pivot+stretch
+        # pushes average players below the candidate floor while keeping genuine
+        # standouts high. See config BREAKOUT_CURVE_* for tuning.
+        curved = BREAKOUT_CURVE_PIVOT + (raw - BREAKOUT_CURVE_PIVOT) * BREAKOUT_CURVE_SLOPE
+        curved = max(0.0, min(100.0, curved))
+
+        # ── Qualification gates: require a real opening AND the ability to take
+        # it. A player elite on only one dimension is not a clean breakout. ────
+        opp = component_scores.get('opportunity_opened', 0.0)
+        comp_removed = component_scores.get('competition_removed', 0.0)
+        readiness = component_scores.get('player_readiness', 0.0)
+        trajectory = component_scores.get('role_trajectory', 0.0)
+
+        # Skip the opportunity gate only when the roster-change data is absent
+        # (otherwise we'd wrongly disqualify everyone); readiness is always known.
+        opportunity_ok = (
+            competition_data_absent
+            or opp >= BREAKOUT_GATE_OPP_MIN
+            or comp_removed >= BREAKOUT_GATE_COMP_MIN
+        )
+        readiness_ok = (
+            readiness >= BREAKOUT_GATE_READY_MIN
+            or trajectory >= BREAKOUT_GATE_TRAJ_MIN
+        )
+
+        if not (opportunity_ok and readiness_ok):
+            curved = min(curved, BREAKOUT_GATE_FAIL_CAP)
+
+        return curved
 
     @classmethod
     def get_phase_description(cls, phase: str) -> str:

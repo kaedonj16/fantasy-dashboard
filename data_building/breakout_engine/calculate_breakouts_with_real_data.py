@@ -716,7 +716,11 @@ def main() -> Dict[str, Any]:
 
     print(f"[calculate_breakouts] Season: {season}, scoring from {stats_season} stats with as_of_date={date.today()}")
 
-    run(seasons=[stats_season], min_score=55.0, as_of_date_override=date.today())
+    # Storage floor matches the breakouts page's request floor (50) so the
+    # stored set == the shown set; the curve + qualification gates in
+    # PhaseDetector.calculate_aggregate_score are what actually pare the list
+    # down to a small handful of legit candidates.
+    run(seasons=[stats_season], min_score=50.0, as_of_date_override=date.today())
 
     return {"season": season, "stats_season": stats_season, "as_of_date": date.today().isoformat()}
 

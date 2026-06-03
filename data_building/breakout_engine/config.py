@@ -78,6 +78,60 @@ PHASE_WEIGHTS: Dict[str, Dict[str, float]] = {
 # Set to 40 to be selective while capturing top RB opportunities
 MIN_BREAKOUT_SCORE = 40.0
 
+# ==============================================================================
+# SELECTIVITY: QUALIFICATION GATES + SCORE CURVE
+# ==============================================================================
+# The raw aggregate is a weighted *average*, which clusters most players near
+# the middle (~50). To surface only legitimate breakouts (a small handful, not
+# a wide net), we (1) require a player to clear qualification gates and (2)
+# steepen the score so the mediocre middle collapses below the candidate floor.
+#
+# A legit breakout needs BOTH a real opening AND the ability to seize it:
+#   - Opportunity dimension: a meaningful role opened up (vacated work) OR
+#     real same-position competition departed.
+#   - Readiness dimension: the player's profile is ready OR their role is
+#     already trending up.
+# A player elite on only one dimension is not a clean breakout.
+#
+# Tuning (if you see too many / too few candidates on the page, which uses a
+# min_score of 50):
+#   - Too MANY candidates  -> raise BREAKOUT_CURVE_PIVOT (e.g. 60 -> 63) and/or
+#     raise the gate floors (BREAKOUT_GATE_*_MIN).
+#   - Too FEW candidates   -> lower BREAKOUT_CURVE_PIVOT and/or the gate floors.
+#   - Want a sharper split -> raise BREAKOUT_CURVE_SLOPE (more separation).
+
+# Opportunity gate: pass if EITHER of these clears (component scores are 0-100).
+BREAKOUT_GATE_OPP_MIN = 35.0    # opportunity_opened floor (real vacated role)
+BREAKOUT_GATE_COMP_MIN = 45.0   # OR competition_removed floor
+
+# Readiness gate: pass if EITHER of these clears.
+BREAKOUT_GATE_READY_MIN = 50.0  # player_readiness floor
+BREAKOUT_GATE_TRAJ_MIN = 60.0   # OR role_trajectory floor (clearly rising)
+
+# If a player fails the gates, cap their final score here so they fall below
+# the candidate floor (40) and the page floor (50) and drop off the list.
+BREAKOUT_GATE_FAIL_CAP = 38.0
+
+# Score curve: pivots the raw aggregate and stretches the spread around it.
+# curved = PIVOT + (raw - PIVOT) * SLOPE, clamped to 0-100.
+#
+# NOTE on the raw distribution: the underlying components compress scores into
+# a dense ~50-58 band (competition_added_penalty=0 means "no competition added"
+# — the best case — yet contributes 0 to the weighted average, pulling even
+# strong profiles down). That compression is why a flat 50 threshold catches
+# ~80 players. The pivot must sit near the *candidate median*, not at 64.
+#
+# With PIVOT=52, SLOPE=1.8: raw 50 -> 48.4, raw 52 -> 52, raw 55 -> 57.4,
+# raw 58 -> 62.8, raw 45 -> 39.4. Players below ~raw 51 fall under the floor.
+#
+# These are SAFE STARTING VALUES. To dial in the exact 8-15 count against your
+# real data without rebuilding repeatedly, run:
+#   python -m data_building.breakout_engine.tune_selectivity
+# It reads the stored component scores and prints the count for a grid of
+# pivot/slope values so you can pick the pair that lands in range.
+BREAKOUT_CURVE_PIVOT = 52.0
+BREAKOUT_CURVE_SLOPE = 1.8
+
 # Component score ranges (most are 0-100)
 COMPONENT_SCORE_MIN = 0.0
 COMPONENT_SCORE_MAX = 100.0
