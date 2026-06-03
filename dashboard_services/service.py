@@ -1630,7 +1630,10 @@ def age_from_bday(bday: Optional[str]) -> Optional[float]:
         as_of = date.today()
         days = (as_of - dob).days
         age = days / 365.25
-        return round(age, 1)
+        # Floor-truncate to 1 decimal so a player 4 days from their 30th birthday
+        # shows 29.9, not 30.0 (round() would push 29.98 → 30.0).
+        import math
+        return math.floor(age * 10) / 10
     except Exception:
         return None
 

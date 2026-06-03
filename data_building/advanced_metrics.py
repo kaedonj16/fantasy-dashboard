@@ -110,6 +110,9 @@ def init_advanced_metrics_db():
                 ON player_advanced_metrics (player_id, season, as_of_date DESC);
             CREATE INDEX IF NOT EXISTS idx_adv_metrics_season
                 ON player_advanced_metrics (season, as_of_date DESC);
+            CREATE INDEX IF NOT EXISTS idx_adv_metrics_player_seasons_notnull
+                ON player_advanced_metrics (player_id, season DESC)
+                WHERE season IS NOT NULL;
         """)
 
         # Add rookie evaluation columns (safe migration - all nullable)

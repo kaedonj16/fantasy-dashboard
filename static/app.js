@@ -1237,7 +1237,7 @@ window.initTradePage = function initTradePage(root = document) {
     if (p.age != null && p.age !== "") {
       const ageNum = parseFloat(p.age);
       if (!isNaN(ageNum)) {
-        metaBits.push(`${parseFloat(ageNum.toFixed(1))} yrs`);
+        metaBits.push(`${ageNum.toFixed(1)} yrs`);
       }
     }
 
@@ -6524,7 +6524,7 @@ function openPlayerModal(playerId, playerName, opts) {
       if (data.position && data.pos_rank) metaParts.push(`<span style="font-weight:600;color:var(--text);">${data.position}${data.pos_rank}</span>`);
       if (data.team) metaParts.push(`<span>${data.team}</span>`);
       const ageNum = parseFloat(data.age);
-      if (!isNaN(ageNum)) metaParts.push(`<span>${parseFloat(ageNum.toFixed(1))} yrs</span>`);
+      if (!isNaN(ageNum)) metaParts.push(`<span>${ageNum.toFixed(1)} yrs</span>`);
       
       // ── Value trend classification (small meta pill) ──────────────────────
       const vt = data.value_trend || {};
