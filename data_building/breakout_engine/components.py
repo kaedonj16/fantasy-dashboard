@@ -495,8 +495,19 @@ def calculate_opportunity_opened_score(
         # But a RETURNING starter's job did not "open": only credit a QB stepping
         # into a vacated starting role, not one who already held it last season
         # (otherwise a backup leaving falsely reads as an opening for the starter).
-        qb_prev_snap = _safe_float((player_prev_usage or {}).get("snap_share", 0))
-        if qb_prev_snap >= QB_STARTER_SNAP_THRESHOLD:
+        #
+        # Sleeper doesn't always populate avg_off_snap_pct for QBs, so we use
+        # three independent signals — any one is enough to confirm incumbency.
+        _pu = player_prev_usage or {}
+        qb_prev_snap     = _safe_float(_pu.get("snap_share", 0))
+        qb_prev_games    = _safe_float(_pu.get("games", 0))
+        qb_prev_attempts = _safe_float(_pu.get("pass_attempts", _pu.get("attempts", 0)))
+        _was_starter = (
+            qb_prev_snap     >= QB_STARTER_SNAP_THRESHOLD  or
+            qb_prev_games    >= QB_STARTER_GAMES_MIN        or
+            qb_prev_attempts >= QB_STARTER_ATTEMPTS_MIN
+        )
+        if _was_starter:
             raw_score = 0.0
         else:
             raw_score = 100.0 if vacated_snap_share >= QB_STARTER_SNAP_THRESHOLD else 0.0

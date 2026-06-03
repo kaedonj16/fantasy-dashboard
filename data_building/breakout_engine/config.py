@@ -201,8 +201,9 @@ PER_COMPETITOR_CARRIES_RB = 170      # ~170 vacated carries to one RB = max (pri
 PER_COMPETITOR_TARGETS_RB = 55       # secondary receiving work for an RB
 
 # QB thresholds
-QB_STARTER_SNAP_THRESHOLD = 0.70  # 70%+ snap share = starter left
-
+QB_STARTER_SNAP_THRESHOLD = 0.70   # 70%+ snap share = starter left
+QB_STARTER_GAMES_MIN      = 10     # ≥10 games started = incumbent starter
+QB_STARTER_ATTEMPTS_MIN   = 250    # ≥250 pass attempts = starter-level volume
 # ==============================================================================
 # COMPETITION REMOVED SCORE - Thresholds
 # ==============================================================================
