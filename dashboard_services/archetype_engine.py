@@ -496,17 +496,33 @@ def _score_sends(
 def _select_packages(
     sends: List[Dict], target_val: float, archetype: str, max_pkgs: int = 2
 ) -> List[List[Dict]]:
-    """Return up to max_pkgs distinct send packages within −10% / +5% of target.
+    """Return up to max_pkgs distinct send packages within −4% / +6% of target.
 
     Surfaces different trade structures per target:
       1. Best player-only combo (1–3 players, no picks)
       2. Best player + draft-pick combo (if the viewer has picks)
     Falls back to the absolute-closest combo when nothing lands in the window.
+
+    The band is deliberately tight on the low side so the engine never
+    surfaces a lopsided underpay (e.g. sending 89% of a target's value).
+    Raw package value sits a touch above the effective value the trade card
+    shows once depth adjustments are applied, so a hard ~96% floor keeps the
+    *displayed* balance close to fair.
     """
     if not sends:
         return []
 
-    lo, hi = target_val * 0.90, target_val * 1.05
+    lo, hi = target_val * 0.96, target_val * 1.06
+
+    # Hard underpay floor: even the fallback paths (which otherwise pick the
+    # absolute-closest combo with no bounds) must not surface a package worth
+    # meaningfully less than the target. Showing no suggestion is better than a
+    # lopsided one the partner would never accept.
+    underpay_floor = target_val * 0.92
+
+    def _drop_underpays(pkgs: List[List[Dict]]) -> List[List[Dict]]:
+        return [p for p in pkgs
+                if sum(a.get("value", 0) for a in p) >= underpay_floor]
 
     player_pool = [s for s in sends
                    if not s.get("is_pick") and s.get("position") != "PICK"][:12]
@@ -518,8 +534,11 @@ def _select_packages(
 
     if archetype == "consolidate":
         # Consolidate = trade up: always send 2+ assets, never 1-for-1.
+        # Trading up should cost a small premium (you're paying for quality
+        # concentration), so the band leans slightly above target — but it
+        # must never dip into underpay territory.
         # Priority: 2 players → 3 players → 2 players + pick
-        lo_c, hi_c = target_val * 0.85, target_val * 1.10
+        lo_c, hi_c = target_val * 0.97, target_val * 1.12
         results_c: List[List[Dict]] = []
 
         # 1. Best 2-player package
@@ -576,7 +595,7 @@ def _select_packages(
             if fallback2:
                 results_c.append(fallback2)
 
-        return results_c[:max_pkgs]
+        return _drop_underpays(results_c)[:max_pkgs]
 
     results: List[List[Dict]] = []
 
@@ -671,7 +690,7 @@ def _select_packages(
         if fallback:
             results.append(fallback)
 
-    return results[:max_pkgs]
+    return _drop_underpays(results)[:max_pkgs]
 
 
 # ── Pick send candidates ──────────────────────────────────────────────────────
@@ -837,7 +856,10 @@ def _build_distribute(
         sval  = _f(values_by_id[stud].get("value"))
         sname = values_by_id[stud].get("name", "")
         spos  = values_by_id[stud].get("position", "")
-        lo, hi = sval * 0.75, sval * 1.25
+        # Viewer SENDS the stud and RECEIVES this depth package, so the low end
+        # is an underpay against the viewer — keep it tight (≥96%). Receiving a
+        # modest depth premium is fine, so the high end stays a touch generous.
+        lo, hi = sval * 0.96, sval * 1.18
 
         # In 1QB leagues a second QB has no FLEX slot and contributes nothing to
         # the lineup if the viewer already has a QB. RB/WR/TE all remain eligible
@@ -1028,7 +1050,11 @@ def _build_rebuilding(
         vval  = _f(values_by_id[vet].get("value"))
         vname = values_by_id[vet].get("name", "")
         vpos  = values_by_id[vet].get("position", "")
-        lo, hi = vval * 0.75, vval * 1.30
+        # Viewer SENDS the vet and RECEIVES youth/picks. The low end is an
+        # underpay against the viewer — keep it tight (≥92%); a small discount
+        # is acceptable when selling a declining vet for upside. The high end
+        # stays generous since receiving more (youth/pick premium) helps the viewer.
+        lo, hi = vval * 0.92, vval * 1.22
 
         # ── Build candidate receive options ──────────────────────────────
         options: List[Dict] = []  # each: {diff, recv_assets, partner_rid, recv_player_ids}
