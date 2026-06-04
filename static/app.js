@@ -2453,11 +2453,14 @@ window.initTradePage = function initTradePage(root = document) {
 
     // Guest — needs to sign in / connect a league
     if (isGuest || !leagueId) {
+      const signInBtn = leagueId
+        ? `<button class="pi-locked-btn" onclick="var m=document.getElementById('signinModal');if(m)m.style.display='flex'">Sign In</button>`
+        : `<a class="pi-locked-btn" href="/">Get Started</a>`;
       body.innerHTML = _piMessage(
         "fa-right-to-bracket",
         "Sign in for Playoff Impact",
         "Connect your league to simulate how a trade changes your playoff odds.",
-        `<button class="pi-locked-btn" onclick="document.getElementById('signinModal').style.display='flex'">Sign In</button>`
+        signInBtn
       );
       return;
     }
