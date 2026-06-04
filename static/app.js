@@ -2549,6 +2549,7 @@ window.initTradePage = function initTradePage(root = document) {
             <div class="pi-stat-label">${label}</div>
             <div class="pi-stat-values">
               <span class="pi-stat-before">${before}${suffix}</span>
+              <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
               <span class="pi-stat-after" style="color:${color};">${after}${suffix}</span>
             </div>
           </div>`;
@@ -2631,6 +2632,7 @@ window.initTradePage = function initTradePage(root = document) {
           <div class="pi-stat-label">Avg Age</div>
           <div class="pi-stat-values">
             <span class="pi-stat-before">${ageBeforeVal.toFixed(1)}</span>
+            <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
             <span class="pi-stat-after" style="color:${ageColor};">${ageAfterVal.toFixed(1)}</span>
           </div>
         </div>` : "";
@@ -2643,6 +2645,7 @@ window.initTradePage = function initTradePage(root = document) {
           <div class="pi-stat-label">Dynasty Val</div>
           <div class="pi-stat-values">
             <span class="pi-stat-before">${Math.round(valBeforeVal)}</span>
+            <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
             <span class="pi-stat-after" style="color:${valColor};">${Math.round(valAfterVal)}</span>
           </div>
         </div>` : "";

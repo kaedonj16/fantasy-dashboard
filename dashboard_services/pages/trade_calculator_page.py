@@ -404,6 +404,7 @@ def build_trade_calculator_body(
               display:flex;align-items:baseline;gap:5px;
             }}
             .pi-stat-before {{ font-size:11px;color:var(--text-muted); }}
+            .pi-stat-arrow  {{ font-size:8px;color:var(--text-muted);opacity:.5; }}
             .pi-stat-after  {{ font-size:17px;font-weight:800;line-height:1; }}
             .pi-delta-pill  {{ display:none; }}
             .pi-locked {{
