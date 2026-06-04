@@ -345,6 +345,14 @@ def build_trade_calculator_body(
             </section>
           </div>
 
+          <div id="playoffImpactSection" style="display:none;margin-top:28px;">
+            <div style="margin-bottom:14px;">
+              <h3 style="font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px;">Playoff Impact</h3>
+              <div style="font-size:12px;color:var(--text-muted);">How this trade affects your playoff odds</div>
+            </div>
+            <div id="playoffImpactBody"></div>
+          </div>
+
           <div id="similarTradesSection" style="display:none;margin-top:28px;">
             <div style="margin-bottom:14px;">
               <h3 class="stl-title">Recent Similar Trades</h3>
@@ -354,6 +362,27 @@ def build_trade_calculator_body(
           </div>
 
           <style>
+            /* ── Playoff Impact ─────────────────────────────────── */
+            .pi-grid {{
+              display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
+            }}
+            @media(max-width:520px) {{ .pi-grid {{ grid-template-columns:1fr; }} }}
+            .pi-stat {{
+              border:1px solid var(--border-color);border-radius:10px;
+              padding:12px 14px;background:var(--card-bg);
+            }}
+            .pi-stat-label {{
+              font-size:10px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px;
+            }}
+            .pi-stat-row {{
+              display:flex;align-items:center;gap:5px;flex-wrap:wrap;
+            }}
+            .pi-stat-before {{ font-size:13px;color:var(--text-muted); }}
+            .pi-stat-arrow  {{ font-size:11px;color:var(--text-muted); }}
+            .pi-stat-after  {{ font-size:15px;font-weight:700;color:var(--text); }}
+            .pi-stat-delta  {{ font-size:12px;font-weight:700;margin-left:2px; }}
+
             .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
             .stl-sub   {{ font-size:12px;color:var(--text-muted); }}
             .stl-list  {{ display:grid;grid-template-columns:repeat(2,1fr);gap:10px; }}

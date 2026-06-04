@@ -2337,7 +2337,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       _applyTierBadges(data);
 
-      Promise.all([fetchTradeIntel(), fetchSimilarTrades()]).catch(() => {});
+      Promise.all([fetchTradeIntel(), fetchSimilarTrades(), fetchPlayoffImpact()]).catch(() => {});
     } catch (err) {
       console.error("[trade] error in recomputeTrade:", err);
       if (errorBox) {
@@ -2417,6 +2417,74 @@ window.initTradePage = function initTradePage(root = document) {
 
     } catch (e) {
       if (listEl) listEl.innerHTML = '<div class="stl-empty">Trade data unavailable.</div>';
+    }
+  }
+
+  // ------------------------------------------------------------
+  // fetchPlayoffImpact - Monte Carlo before/after playoff odds
+  // ------------------------------------------------------------
+  async function fetchPlayoffImpact() {
+    const section = root.querySelector("#playoffImpactSection");
+    const body    = root.querySelector("#playoffImpactBody");
+    if (!section || !body) return;
+
+    const leagueId    = root.querySelector("#leagueIdInput")?.value || "";
+    const rosterId    = getCurrentRosterId();
+    const platform    = root.querySelector("#platformInput")?.value || "sleeper";
+    const season      = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
+
+    if (!leagueId || !rosterId) { section.style.display = "none"; return; }
+
+    const giveIds = state.sideAPlayers
+      .map(p => String(p.id)).filter(id => !id.startsWith("pick_") && !id.startsWith("PICK"));
+    const getIds  = state.sideBPlayers
+      .map(p => String(p.id)).filter(id => !id.startsWith("pick_") && !id.startsWith("PICK"));
+
+    if (!giveIds.length && !getIds.length) { section.style.display = "none"; return; }
+
+    section.style.display = "";
+    body.innerHTML = '<div style="display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:13px;padding:8px 0;"><div class="loading-spinner" style="width:13px;height:13px;margin:0;flex-shrink:0;"></div>Simulating playoff odds…</div>';
+
+    try {
+      const res = await fetch("/api/trade-eval/playoff-impact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ league_id: leagueId, platform, season, roster_id: rosterId, give_ids: giveIds, get_ids: getIds }),
+      });
+      const data = res.ok ? await res.json() : null;
+
+      if (!data || !data.available) {
+        section.style.display = "none";
+        return;
+      }
+
+      const fmt1 = v => (v > 0 ? "+" : "") + v.toFixed(1);
+      const deltaColor = v => v > 0 ? "#10b981" : v < 0 ? "#ef4444" : "var(--text-muted)";
+
+      const stat = (label, before, after, delta, suffix = "") => {
+        const color = deltaColor(delta);
+        const sign  = delta > 0 ? "↑ +" : delta < 0 ? "↓ " : "→ ";
+        return `
+          <div class="pi-stat">
+            <div class="pi-stat-label">${label}</div>
+            <div class="pi-stat-row">
+              <span class="pi-stat-before">${before}${suffix}</span>
+              <span class="pi-stat-arrow">→</span>
+              <span class="pi-stat-after">${after}${suffix}</span>
+              <span class="pi-stat-delta" style="color:${color};">${sign}${Math.abs(delta).toFixed(1)}${suffix}</span>
+            </div>
+          </div>`;
+      };
+
+      body.innerHTML = `
+        <div class="pi-grid">
+          ${stat("Playoff Odds", data.before.playoff_pct + "%", data.after.playoff_pct + "%", data.delta.playoff_pct, "%")}
+          ${stat("Proj. Wins",   data.before.avg_final_wins,    data.after.avg_final_wins,    data.delta.avg_final_wins)}
+          ${stat("Proj. PPG",    data.before.avg_ppg,           data.after.avg_ppg,           data.delta.avg_ppg)}
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Monte Carlo · 2,000 sims · League avg ${data.league_avg_ppg} PPG</div>`;
+    } catch (e) {
+      section.style.display = "none";
     }
   }
 

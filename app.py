@@ -16435,6 +16435,54 @@ def _sanitize_for_json(obj):
     return obj
 
 
+@app.route("/api/trade-eval/playoff-impact", methods=["POST"])
+@limiter.limit("20 per minute")
+def api_trade_eval_playoff_impact():
+    """
+    Return before/after playoff odds and win projections for a proposed trade.
+    Requires a league context (league_id + platform).
+    """
+    try:
+        payload = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify({"error": "Invalid JSON"}), 400
+
+    league_id    = str(payload.get("league_id") or "").strip()
+    platform     = str(payload.get("platform") or "sleeper").strip().lower()
+    season       = int(payload.get("season") or datetime.now().year)
+    roster_id    = payload.get("roster_id")
+    give_ids     = [str(p) for p in (payload.get("give_ids") or [])]
+    get_ids      = [str(p) for p in (payload.get("get_ids") or [])]
+
+    if not league_id or roster_id is None:
+        return jsonify({"available": False, "reason": "no_league"})
+
+    try:
+        roster_id = int(roster_id)
+    except (TypeError, ValueError):
+        return jsonify({"available": False, "reason": "bad_roster_id"})
+
+    if not give_ids and not get_ids:
+        return jsonify({"available": False, "reason": "empty_trade"})
+
+    try:
+        from data_building.simulate_playoff_odds import (
+            build_sim_state as _build_sim_state,
+            simulate_swap_impact as _simulate_swap_impact,
+        )
+        ctx = build_league_context(platform, league_id, season)
+        sim_state = _build_sim_state(ctx, platform)
+        if sim_state is None:
+            return jsonify({"available": False, "reason": "season_complete"})
+
+        result = _simulate_swap_impact(sim_state, roster_id, give_ids, get_ids)
+        return jsonify(result)
+
+    except Exception:
+        logger.exception("[trade-eval/playoff-impact] error")
+        return jsonify({"available": False, "reason": "error"})
+
+
 @app.route("/api/players")
 def api_players():
     """Compact player list for comparison search. No league context required.
