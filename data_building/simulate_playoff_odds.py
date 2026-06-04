@@ -312,7 +312,11 @@ def simulate_swap_impact(
 
     # Compute after roster
     current_pids = sim_state.get("roster_pid_map", {}).get(viewer_roster_id, [])
-    after_set = (set(current_pids) - set(give_pids)) | set(get_pids)
+    current_pids_set = set(current_pids)
+    # Detect give IDs that aren't actually on the viewer's roster — the removal
+    # will be a no-op for those players, which the caller should surface to the user.
+    missing_give_ids = [p for p in give_pids if p not in current_pids_set]
+    after_set = (current_pids_set - set(give_pids)) | set(get_pids)
     after_pids = list(after_set)
 
     proj_after, after_starters = _position_aware_lineup(
@@ -357,7 +361,8 @@ def simulate_swap_impact(
             "avg_final_wins": round(after_wins  - before_wins,  1),
             "avg_ppg":        round(after_ppg   - before_ppg,   1),
         },
-        "league_avg_ppg": league_avg_ppg,
+        "league_avg_ppg":   league_avg_ppg,
+        "missing_give_ids": missing_give_ids,
     }
 
 

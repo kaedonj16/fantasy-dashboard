@@ -431,6 +431,12 @@ def build_trade_calculator_body(
             .pi-message-icon  {{ font-size:20px;color:var(--text-muted);opacity:.55;margin-bottom:2px; }}
             .pi-message-title {{ font-size:13px;font-weight:700; }}
             .pi-message-sub   {{ font-size:12px;color:var(--text-muted);max-width:240px;line-height:1.5; }}
+            .pi-roster-warn {{
+              display:flex;align-items:flex-start;gap:6px;margin-top:10px;
+              padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.5;
+              background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.3);
+            }}
+            .pi-roster-warn i {{ color:#ca8a04;margin-top:1px;flex-shrink:0; }}
 
             .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
             .stl-sub   {{ font-size:12px;color:var(--text-muted); }}

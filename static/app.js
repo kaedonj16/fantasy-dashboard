@@ -2550,12 +2550,27 @@ window.initTradePage = function initTradePage(root = document) {
           </div>`;
       };
 
+      const missingIds = data.missing_give_ids || [];
+      const missingWarn = missingIds.length ? (() => {
+        const names = missingIds.map(id => {
+          const p = oppSidePlayers.find(op => String(op.id) === String(id));
+          return `<strong>${p ? p.name : id}</strong>`;
+        }).join(", ");
+        const plural = missingIds.length > 1;
+        return `<div class="pi-roster-warn">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          ${names} ${plural ? "aren't" : "isn't"} on your roster — the sim only modeled
+          receiving the incoming player${plural ? "s" : ""}.
+        </div>`;
+      })() : "";
+
       body.innerHTML = `
         <div class="pi-grid">
           ${stat("Playoff Odds",  data.before.playoff_pct,    data.after.playoff_pct,    data.delta.playoff_pct,    "%")}
           ${stat("Proj. Wins",    data.before.avg_final_wins, data.after.avg_final_wins, data.delta.avg_final_wins, "")}
           ${stat("Proj. PPG",     data.before.avg_ppg,        data.after.avg_ppg,        data.delta.avg_ppg,        "")}
-        </div>`;
+        </div>
+        ${missingWarn}`;
     } catch (e) {
       body.innerHTML = _piMessage(
         "fa-triangle-exclamation",
