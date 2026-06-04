@@ -11127,6 +11127,20 @@ def page_breakouts(platform: str, season: int, league_id: str):
     user_id = session.get("viewer_username")
     has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
 
+    # Breakout predictions are always for the UPCOMING NFL season, not the
+    # Sleeper league's season number (which lags by one year in the offseason).
+    # Use the latest season for which breakout data actually exists in the DB,
+    # falling back to max(league_season, current_year).
+    try:
+        from dashboard_services.breakout_api import get_conn as _bo_conn
+        with _bo_conn() as _bc:
+            with _bc.cursor() as _bcur:
+                _bcur.execute("SELECT MAX(season) FROM breakout_opportunity_scores")
+                _bo_row = _bcur.fetchone()
+                bo_season = int((_bo_row or {}).get("max") or _bo_row[0] or season)
+    except Exception:
+        bo_season = max(season, datetime.now().year)
+
     if not has_premium:
         # Show teaser and auto-open the paywall popup (also covers not-logged-in)
         teaser_html = """
@@ -11200,7 +11214,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
       const PAGE_SIZE = 12;
 
       // Fetch breakout candidates on page load (using new BreakoutEngine API)
-      fetch('/api/breakout/candidates?season={season}&min_score=50&league_id={league_id}&platform={platform}')
+      fetch('/api/breakout/candidates?season={bo_season}&min_score=50&limit=0&league_id={league_id}&platform={platform}')
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
