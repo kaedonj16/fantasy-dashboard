@@ -405,12 +405,7 @@ def build_trade_calculator_body(
             .pi-stat-before {{ font-size:11px;color:var(--text-muted); }}
             .pi-stat-arrow  {{ font-size:8px;color:var(--text-muted);opacity:.6; }}
             .pi-stat-after  {{ font-size:15px;font-weight:800;line-height:1; }}
-            .pi-delta-pill  {{
-              display:inline-flex;align-items:center;gap:2px;
-              font-size:10px;font-weight:700;
-              padding:2px 5px;border-radius:20px;border:1px solid;
-              margin-top:3px;
-            }}
+            .pi-delta-pill  {{ display:none; }}
             .pi-locked {{
               display:flex;flex-direction:column;align-items:center;
               text-align:center;padding:22px 16px;

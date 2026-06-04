@@ -2544,16 +2544,9 @@ window.initTradePage = function initTradePage(root = document) {
 
       const stat = (label, before, after, delta, suffix = "") => {
         const color = deltaColor(delta);
-        const icon  = deltaIcon(delta);
-        const sign  = delta > 0 ? "+" : "";
         return `
           <div class="pi-stat">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span class="pi-stat-label">${label}</span>
-              <span class="pi-delta-pill" style="background:${color}22;color:${color};border-color:${color}44;">
-                <i class="fa-solid ${icon}" style="font-size:8px;"></i> ${sign}${Math.abs(delta).toFixed(1)}${suffix}
-              </span>
-            </div>
+            <div class="pi-stat-label">${label}</div>
             <div class="pi-stat-values">
               <span class="pi-stat-before">${before}${suffix}</span>
               <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
@@ -2630,45 +2623,38 @@ window.initTradePage = function initTradePage(root = document) {
           </div>
         </div>`;
 
-      // Roster outlook chips (age + banked value)
-      const chips = [];
-      if (ageDelta != null && Math.abs(ageDelta) >= 0.1) {
-        const c = younger ? "#8b5cf6" : older ? "#f59e0b" : "var(--text-muted)";
-        chips.push(`<span class="pi-chip" style="color:${c};background:${c}1a;">
-          <i class="fa-solid fa-clock-rotate-left"></i>
-          ${younger ? "Younger" : "Older"} by ${Math.abs(ageDelta).toFixed(1)} yr${Math.abs(ageDelta) >= 1.5 ? "s" : ""}</span>`);
-      }
-      if (Math.abs(valDelta) >= 1) {
-        const c = valDelta > 0 ? "#10b981" : "#ef4444";
-        chips.push(`<span class="pi-chip" style="color:${c};background:${c}1a;">
-          <i class="fa-solid fa-coins"></i>
-          ${valDelta > 0 ? "+" : "−"}${Math.abs(valDelta).toFixed(0)} value</span>`);
-      }
-      const chipRow = chips.length ? `<div class="pi-chip-row">${chips.join("")}</div>` : "";
-
-      // Compact inline Future Outlook row for Top-3 Pick Odds
-      const pickBefore = data.before.top3_pick_pct != null ? data.before.top3_pick_pct.toFixed(1) + "%" : "—";
-      const pickAfter  = data.after.top3_pick_pct  != null ? data.after.top3_pick_pct.toFixed(0)  + "%" : "—";
-      const pickDelta  = data.delta.top3_pick_pct;
-      const pickDeltaSign = pickDelta >= 0 ? "+" : "";
-      const pickDeltaCol  = pickDelta >= 0.5 ? "#10b981" : pickDelta <= -0.5 ? "#ef4444" : "var(--text-muted)";
-      const pickDeltaPill = pickDelta != null
-        ? `<span class="pi-delta-pill" style="color:${pickDeltaCol};background:${pickDeltaCol}18;border-color:${pickDeltaCol}44;">${pickDeltaSign}${pickDelta.toFixed(1)}%</span>`
-        : "";
-
-      const outlookRow = data.before.top3_pick_pct != null ? `
-        <div class="pi-section-label">Future Outlook</div>
-        <div class="pi-outlook-row">
-          <div class="pi-outlook-left">
-            <span class="pi-outlook-label">Top-3 Pick Odds</span>
-            <div class="pi-outlook-vals">
-              <span class="pi-outlook-before">${pickBefore}</span>
-              <span class="pi-stat-arrow">›</span>
-              <span class="pi-outlook-after" style="color:${pickDeltaCol}">${pickAfter}</span>
-            </div>
+      // Age and Value as stat columns
+      const ageBeforeVal = outlook.incoming && outlook.outgoing
+        ? outlook.outgoing.avg_age : null;
+      const ageAfterVal = outlook.incoming
+        ? (outlook.incoming.avg_age != null ? outlook.incoming.avg_age : null) : null;
+      const ageColor = younger ? "#8b5cf6" : older ? "#f59e0b" : "var(--text-muted)";
+      const ageStat = (ageBeforeVal != null && ageAfterVal != null) ? `
+        <div class="pi-stat">
+          <div class="pi-stat-label">Avg Age</div>
+          <div class="pi-stat-values">
+            <span class="pi-stat-before">${ageBeforeVal.toFixed(1)}</span>
+            <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
+            <span class="pi-stat-after" style="color:${ageColor};">${ageAfterVal.toFixed(1)}</span>
           </div>
-          ${pickDeltaPill}
         </div>` : "";
+
+      const valBeforeVal = outlook.outgoing ? outlook.outgoing.total_value : null;
+      const valAfterVal  = outlook.incoming  ? outlook.incoming.total_value  : null;
+      const valColor = bankingVal ? "#10b981" : sheddingVal ? "#ef4444" : "var(--text-muted)";
+      const valStat = (valBeforeVal != null && valAfterVal != null) ? `
+        <div class="pi-stat">
+          <div class="pi-stat-label">Dynasty Val</div>
+          <div class="pi-stat-values">
+            <span class="pi-stat-before">${Math.round(valBeforeVal)}</span>
+            <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
+            <span class="pi-stat-after" style="color:${valColor};">${Math.round(valAfterVal)}</span>
+          </div>
+        </div>` : "";
+
+      const pickStat = data.before.top3_pick_pct != null
+        ? stat("Top-3 Pick", data.before.top3_pick_pct.toFixed(1), data.after.top3_pick_pct.toFixed(0), data.delta.top3_pick_pct, "%")
+        : "";
 
       body.innerHTML = `
         ${verdict}
@@ -2676,9 +2662,10 @@ window.initTradePage = function initTradePage(root = document) {
           ${stat("Playoff Odds",  data.before.playoff_pct,    data.after.playoff_pct,    data.delta.playoff_pct,    "%")}
           ${stat("Proj. Wins",    data.before.avg_final_wins, data.after.avg_final_wins, data.delta.avg_final_wins, "")}
           ${stat("Proj. PPG",     data.before.avg_ppg,        data.after.avg_ppg,        data.delta.avg_ppg,        "")}
+          ${pickStat}
+          ${ageStat}
+          ${valStat}
         </div>
-        ${outlookRow}
-        ${chipRow}
         ${missingWarn}`;
     } catch (e) {
       body.innerHTML = _piMessage(
