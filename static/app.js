@@ -3062,7 +3062,7 @@ window.initTradePage = function initTradePage(root = document) {
           return `<div class="otc-sugg-pkg-asset"><span class="otc-sugg-pkg-asset-pos" style="background:${col}20;color:${col};">${a.position}</span><span>${esc(a.name)}</span></div>`;
         };
 
-        resultsList.innerHTML = options.map(opt => `
+        const cardHtml = opt => `
           <div class="otc-sugg-package">
             <div class="otc-sugg-pkg-meta">
               <span class="otc-sugg-pkg-value ${vc(opt.value_class)}">${esc(opt.value_label)}</span>
@@ -3089,64 +3089,92 @@ window.initTradePage = function initTradePage(root = document) {
               data-receive='${esc(JSON.stringify(opt.receive)).replace(/'/g, "&#39;")}'>
               Analyze
             </button>
-          </div>`).join("");
+          </div>`;
 
-        resultsList.querySelectorAll(".otc-sugg-send-load-btn").forEach(btn => {
-          btn.addEventListener("click", async () => {
-            const origLabel = btn.textContent;
-            btn.textContent = "Loading…";
-            btn.disabled = true;
-            try {
-              await ensurePlayersLoaded();
-              let receiveAssets = [];
-              try { receiveAssets = JSON.parse(btn.dataset.receive || "[]"); } catch (_) {}
-              const fid   = btn.dataset.focusId;
-              const fname = btn.dataset.focusName;
+        const bindSendLoadBtns = () => {
+          resultsList.querySelectorAll(".otc-sugg-send-load-btn").forEach(btn => {
+            btn.addEventListener("click", async () => {
+              const origLabel = btn.textContent;
+              btn.textContent = "Loading…";
+              btn.disabled = true;
+              try {
+                await ensurePlayersLoaded();
+                let receiveAssets = [];
+                try { receiveAssets = JSON.parse(btn.dataset.receive || "[]"); } catch (_) {}
+                const fid   = btn.dataset.focusId;
+                const fname = btn.dataset.focusName;
 
-              state.sideAPlayers.length = 0;
-              state.sideBPlayers.length = 0;
-              state.sideAPicks.length   = 0;
-              state.sideBPicks.length   = 0;
+                state.sideAPlayers.length = 0;
+                state.sideBPlayers.length = 0;
+                state.sideAPicks.length   = 0;
+                state.sideBPicks.length   = 0;
 
-              // Side A = you get = the return package
-              receiveAssets.forEach(a => {
-                if (a.is_pick) {
-                  const yr = String(a.pick_season || "").replace(/\D/g, "");
-                  const rd = String(a.pick_round  || "").replace(/\D/g, "");
-                  const pickId = a.pick_id || (yr && rd ? `${yr}_${rd}_mid` : null);
-                  if (pickId) state.sideAPicks.push({ id: pickId, display: a.name || formatPickId(pickId) });
-                } else if (a.player_id) {
-                  const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
-                    || { id: String(a.player_id), name: a.name };
-                  state.sideAPlayers.push(pObj);
+                // Side A = you get = the return package
+                receiveAssets.forEach(a => {
+                  if (a.is_pick) {
+                    const yr = String(a.pick_season || "").replace(/\D/g, "");
+                    const rd = String(a.pick_round  || "").replace(/\D/g, "");
+                    const pickId = a.pick_id || (yr && rd ? `${yr}_${rd}_mid` : null);
+                    if (pickId) state.sideAPicks.push({ id: pickId, display: a.name || formatPickId(pickId) });
+                  } else if (a.player_id) {
+                    const pObj = allPlayers.find(p => String(p.id) === String(a.player_id))
+                      || { id: String(a.player_id), name: a.name };
+                    state.sideAPlayers.push(pObj);
+                  }
+                });
+
+                // Side B = you give = the focus player/pick
+                const studObj = allPlayers.find(p => String(p.id) === String(fid))
+                  || { id: fid, name: fname };
+                if (studObj.position === "PICK") {
+                  state.sideBPicks.push({ id: studObj.id, display: studObj.name });
+                } else {
+                  state.sideBPlayers.push(studObj);
                 }
-              });
 
-              // Side B = you give = the focus player/pick
-              const studObj = allPlayers.find(p => String(p.id) === String(fid))
-                || { id: fid, name: fname };
-              if (studObj.position === "PICK") {
-                state.sideBPicks.push({ id: studObj.id, display: studObj.name });
-              } else {
-                state.sideBPlayers.push(studObj);
+                saveState();
+                renderChips("A");
+                renderChips("B");
+                syncEmptyState("A");
+                syncEmptyState("B");
+                forceViewerSideA();
+                analyzeTrade();
+                switchToCalc();
+                const shell = root.querySelector(".otc-shell");
+                if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
+              } finally {
+                btn.textContent = origLabel;
+                btn.disabled = false;
               }
-
-              saveState();
-              renderChips("A");
-              renderChips("B");
-              syncEmptyState("A");
-              syncEmptyState("B");
-              forceViewerSideA();
-              analyzeTrade();
-              switchToCalc();
-              const shell = root.querySelector(".otc-shell");
-              if (shell) shell.scrollIntoView({ behavior: "smooth", block: "start" });
-            } finally {
-              btn.textContent = origLabel;
-              btn.disabled = false;
-            }
+            });
           });
-        });
+        };
+
+        // ── Paginate returns, 5 per page ──────────────────────────
+        const SEND_PAGE_SIZE = 5;
+        let sendPage = 0;
+        const totalSendPages = Math.ceil(options.length / SEND_PAGE_SIZE);
+
+        const renderSendPage = () => {
+          const start = sendPage * SEND_PAGE_SIZE;
+          const slice = options.slice(start, start + SEND_PAGE_SIZE);
+          const pagination = totalSendPages > 1 ? `
+            <div class="pagination pagination--center">
+              <button class="pagination-btn" data-send-dir="-1" ${sendPage === 0 ? "disabled" : ""}><i class="fa-solid fa-chevron-left"></i> Prev</button>
+              <span class="pagination-label">${sendPage + 1} / ${totalSendPages}</span>
+              <button class="pagination-btn" data-send-dir="1" ${sendPage >= totalSendPages - 1 ? "disabled" : ""}>Next <i class="fa-solid fa-chevron-right"></i></button>
+            </div>` : "";
+          resultsList.innerHTML = slice.map(cardHtml).join("") + pagination;
+          bindSendLoadBtns();
+          resultsList.querySelectorAll("[data-send-dir]").forEach(b => {
+            b.addEventListener("click", () => {
+              const dir = parseInt(b.dataset.sendDir, 10);
+              sendPage = Math.max(0, Math.min(totalSendPages - 1, sendPage + dir));
+              renderSendPage();
+            });
+          });
+        };
+        renderSendPage();
 
       } catch (err) {
         if (err.name === "AbortError") return;
