@@ -2266,6 +2266,9 @@ window.initTradePage = function initTradePage(root = document) {
       }
       const stlSec = root.querySelector("#similarTradesSection");
       if (stlSec) stlSec.style.display = "none";
+      // Reset the Playoff Impact card back to its default state instead of
+      // leaving the last trade's simulated numbers on screen.
+      fetchPlayoffImpact();
       return;
     }
 
@@ -2469,14 +2472,17 @@ window.initTradePage = function initTradePage(root = document) {
       return;
     }
 
-    // Determine viewer side and build give/get id lists
+    // Determine viewer side and build give/get id lists.
+    // The viewer's own side ("Team N gets…", tagged Your side) lists the players
+    // the viewer RECEIVES — so those are the get IDs. The opponent's side lists
+    // the players the viewer sends away — the give IDs.
     const viewerSide = root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
     const mySidePlayers  = viewerSide === "a" ? state.sideAPlayers : state.sideBPlayers;
     const oppSidePlayers = viewerSide === "a" ? state.sideBPlayers : state.sideAPlayers;
 
     const isPickId = id => id.startsWith("pick_") || id.startsWith("PICK");
-    const giveIds = mySidePlayers .map(p => String(p.id)).filter(id => !isPickId(id));
-    const getIds  = oppSidePlayers.map(p => String(p.id)).filter(id => !isPickId(id));
+    const getIds  = mySidePlayers .map(p => String(p.id)).filter(id => !isPickId(id));
+    const giveIds = oppSidePlayers.map(p => String(p.id)).filter(id => !isPickId(id));
 
     if (!rosterId) {
       body.innerHTML = _piMessage(
