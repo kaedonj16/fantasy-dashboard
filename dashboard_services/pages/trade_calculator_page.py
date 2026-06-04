@@ -396,15 +396,17 @@ def build_trade_calculator_body(
             }}
             .pi-stat-label {{
               font-size:9px;font-weight:700;text-transform:uppercase;
-              letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;
+              letter-spacing:.05em;color:var(--text-muted);margin-bottom:5px;
               white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+              display:block;
             }}
-            .pi-stat-values {{
-              display:flex;align-items:center;gap:4px;flex-wrap:wrap;
+            .pi-stat-before {{
+              font-size:11px;color:var(--text-muted);display:block;
+              margin-bottom:1px;
             }}
-            .pi-stat-before {{ font-size:11px;color:var(--text-muted); }}
-            .pi-stat-arrow  {{ font-size:8px;color:var(--text-muted);opacity:.6; }}
-            .pi-stat-after  {{ font-size:15px;font-weight:800;line-height:1; }}
+            .pi-stat-after  {{
+              font-size:17px;font-weight:800;line-height:1.1;display:block;
+            }}
             .pi-delta-pill  {{ display:none; }}
             .pi-locked {{
               display:flex;flex-direction:column;align-items:center;

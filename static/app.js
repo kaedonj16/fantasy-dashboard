@@ -2547,11 +2547,8 @@ window.initTradePage = function initTradePage(root = document) {
         return `
           <div class="pi-stat">
             <div class="pi-stat-label">${label}</div>
-            <div class="pi-stat-values">
-              <span class="pi-stat-before">${before}${suffix}</span>
-              <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
-              <span class="pi-stat-after" style="color:${color};">${after}${suffix}</span>
-            </div>
+            <span class="pi-stat-before">${before}${suffix}</span>
+            <span class="pi-stat-after" style="color:${color};">${after}${suffix}</span>
           </div>`;
       };
 
@@ -2623,20 +2620,15 @@ window.initTradePage = function initTradePage(root = document) {
           </div>
         </div>`;
 
-      // Age and Value as stat columns
-      const ageBeforeVal = outlook.incoming && outlook.outgoing
-        ? outlook.outgoing.avg_age : null;
-      const ageAfterVal = outlook.incoming
-        ? (outlook.incoming.avg_age != null ? outlook.incoming.avg_age : null) : null;
+      // Age and value as stat columns
+      const ageBeforeVal = outlook.outgoing ? outlook.outgoing.avg_age : null;
+      const ageAfterVal  = outlook.incoming ? outlook.incoming.avg_age  : null;
       const ageColor = younger ? "#8b5cf6" : older ? "#f59e0b" : "var(--text-muted)";
       const ageStat = (ageBeforeVal != null && ageAfterVal != null) ? `
         <div class="pi-stat">
           <div class="pi-stat-label">Avg Age</div>
-          <div class="pi-stat-values">
-            <span class="pi-stat-before">${ageBeforeVal.toFixed(1)}</span>
-            <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
-            <span class="pi-stat-after" style="color:${ageColor};">${ageAfterVal.toFixed(1)}</span>
-          </div>
+          <span class="pi-stat-before">${ageBeforeVal.toFixed(1)}</span>
+          <span class="pi-stat-after" style="color:${ageColor};">${ageAfterVal.toFixed(1)}</span>
         </div>` : "";
 
       const valBeforeVal = outlook.outgoing ? outlook.outgoing.total_value : null;
@@ -2645,16 +2637,19 @@ window.initTradePage = function initTradePage(root = document) {
       const valStat = (valBeforeVal != null && valAfterVal != null) ? `
         <div class="pi-stat">
           <div class="pi-stat-label">Dynasty Val</div>
-          <div class="pi-stat-values">
-            <span class="pi-stat-before">${Math.round(valBeforeVal)}</span>
-            <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
-            <span class="pi-stat-after" style="color:${valColor};">${Math.round(valAfterVal)}</span>
-          </div>
+          <span class="pi-stat-before">${Math.round(valBeforeVal)}</span>
+          <span class="pi-stat-after" style="color:${valColor};">${Math.round(valAfterVal)}</span>
         </div>` : "";
 
       const pickStat = data.before.top3_pick_pct != null
         ? stat("Top-3 Pick", data.before.top3_pick_pct.toFixed(1), data.after.top3_pick_pct.toFixed(0), data.delta.top3_pick_pct, "%")
         : "";
+
+      const outlookGrid = (pickStat || ageStat || valStat) ? `
+        <div class="pi-section-label">Future Outlook</div>
+        <div class="pi-grid">
+          ${pickStat}${ageStat}${valStat}
+        </div>` : "";
 
       body.innerHTML = `
         ${verdict}
@@ -2662,10 +2657,8 @@ window.initTradePage = function initTradePage(root = document) {
           ${stat("Playoff Odds",  data.before.playoff_pct,    data.after.playoff_pct,    data.delta.playoff_pct,    "%")}
           ${stat("Proj. Wins",    data.before.avg_final_wins, data.after.avg_final_wins, data.delta.avg_final_wins, "")}
           ${stat("Proj. PPG",     data.before.avg_ppg,        data.after.avg_ppg,        data.delta.avg_ppg,        "")}
-          ${pickStat}
-          ${ageStat}
-          ${valStat}
         </div>
+        ${outlookGrid}
         ${missingWarn}`;
     } catch (e) {
       body.innerHTML = _piMessage(
