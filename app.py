@@ -14804,15 +14804,23 @@ def _commissioner_history_layer(platform, league_id, season, lookback=3):
     return layer
 
 
-def _render_commissioner_history(layer, current_season, current_moves, current_trades, current_inactive_uids):
+def _render_commissioner_history(layer, current_season, current_moves, current_trades, current_inactive_uids, current_week=0, playoff_start=14):
     """Render the multi-season 'Chronic / Trend' panel. Current season is the
     headline (computed elsewhere); this is diagnosis context, not a blended score."""
     seasons = sorted((layer.get("seasons") or []), key=lambda s: s["season"])
-    moves_series  = [(s["season"], s["moves"])  for s in seasons] + [(int(current_season), int(current_moves))]
-    trades_series = [(s["season"], s["trades"]) for s in seasons] + [(int(current_season), int(current_trades))]
+    # Separate prior (completed) data from current in-progress season
+    prior_moves_series  = [(s["season"], s["moves"])  for s in seasons]
+    prior_trades_series = [(s["season"], s["trades"]) for s in seasons]
+    # Season is complete when playoffs have started (or it's a prior year entirely)
+    season_complete = int(current_week) >= int(playoff_start)
+    moves_series  = prior_moves_series  + [(int(current_season), int(current_moves))]
+    trades_series = prior_trades_series + [(int(current_season), int(current_trades))]
 
     def _dir(series):
-        vals = [v for _, v in series]
+        # Trend is always computed from completed seasons only — never compare
+        # a partial/preseason year against full seasons.
+        completed = prior_moves_series if series is moves_series else prior_trades_series
+        vals = [v for _, v in completed]
         if len(vals) < 2:
             return ("→", "var(--muted)", "flat")
         delta = vals[-1] - vals[0]
@@ -14824,18 +14832,33 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
         return ("→", "var(--muted)", "flat")
 
     def _series_html(series):
-        # Render each season as a connected chip, emphasising the latest one.
         parts = []
         last_idx = len(series) - 1
         for i, (yr, val) in enumerate(series):
             is_last = i == last_idx
-            chip_bg = "var(--accent,#3b82f6)" if is_last else "var(--row,rgba(127,127,127,.08))"
-            chip_fg = "#fff" if is_last else "var(--text)"
-            chip_border = "transparent" if is_last else "var(--border)"
+            if is_last and not season_complete:
+                # Current season still in progress — muted style with dashed border
+                chip_bg = "var(--row,rgba(127,127,127,.08))"
+                chip_fg = "var(--muted)"
+                chip_border = "var(--muted)"
+                border_style = "dashed"
+                yr_label = f"{yr} ↻"
+            elif is_last:
+                chip_bg = "var(--accent,#3b82f6)"
+                chip_fg = "#fff"
+                chip_border = "transparent"
+                border_style = "solid"
+                yr_label = str(yr)
+            else:
+                chip_bg = "var(--row,rgba(127,127,127,.08))"
+                chip_fg = "var(--text)"
+                chip_border = "var(--border)"
+                border_style = "solid"
+                yr_label = str(yr)
             parts.append(
                 f"<span class='msh-chip' style='background:{chip_bg};color:{chip_fg};"
-                f"border-color:{chip_border};'>"
-                f"<span class='msh-chip-yr'>{yr}</span>"
+                f"border-color:{chip_border};border-style:{border_style};'>"
+                f"<span class='msh-chip-yr'>{yr_label}</span>"
                 f"<span class='msh-chip-val'>{val}</span></span>"
             )
         connector = "<span class='msh-arrow'>›</span>"
@@ -15233,6 +15256,7 @@ def build_commissioner_body(ctx):
                 layer, current_season=season,
                 current_moves=total_txns, current_trades=total_trades,
                 current_inactive_uids=inactive_uids_now,
+                current_week=current_week, playoff_start=playoff_start,
             )
     except Exception:
         history_panel = ""
