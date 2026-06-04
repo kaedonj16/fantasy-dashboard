@@ -388,26 +388,28 @@ def build_trade_calculator_body(
 
             /* ── Playoff Impact stats ────────────────────────────── */
             .pi-grid {{
-              display:grid;grid-template-columns:1fr;gap:8px;
+              display:grid;grid-template-columns:repeat(3,1fr);gap:6px;
             }}
             .pi-stat {{
-              border:1px solid var(--border-color);border-radius:10px;
-              padding:12px 14px;background:var(--bg-alt,rgba(0,0,0,.02));
+              border:1px solid var(--border-color);border-radius:9px;
+              padding:8px 9px;background:var(--bg-alt,rgba(0,0,0,.02));
             }}
             .pi-stat-label {{
-              font-size:10px;font-weight:700;text-transform:uppercase;
-              letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px;
+              font-size:9px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.05em;color:var(--text-muted);margin-bottom:4px;
+              white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
             }}
             .pi-stat-values {{
-              display:flex;align-items:center;gap:6px;
+              display:flex;align-items:center;gap:4px;flex-wrap:wrap;
             }}
-            .pi-stat-before {{ font-size:12px;color:var(--text-muted); }}
-            .pi-stat-arrow  {{ font-size:9px;color:var(--text-muted);opacity:.6; }}
-            .pi-stat-after  {{ font-size:18px;font-weight:800;line-height:1; }}
+            .pi-stat-before {{ font-size:11px;color:var(--text-muted); }}
+            .pi-stat-arrow  {{ font-size:8px;color:var(--text-muted);opacity:.6; }}
+            .pi-stat-after  {{ font-size:15px;font-weight:800;line-height:1; }}
             .pi-delta-pill  {{
-              display:inline-flex;align-items:center;gap:3px;
-              font-size:11px;font-weight:700;
-              padding:2px 7px;border-radius:20px;border:1px solid;
+              display:inline-flex;align-items:center;gap:2px;
+              font-size:10px;font-weight:700;
+              padding:2px 5px;border-radius:20px;border:1px solid;
+              margin-top:3px;
             }}
             .pi-locked {{
               display:flex;flex-direction:column;align-items:center;
@@ -432,37 +434,57 @@ def build_trade_calculator_body(
             .pi-message-title {{ font-size:13px;font-weight:700; }}
             .pi-message-sub   {{ font-size:12px;color:var(--text-muted);max-width:240px;line-height:1.5; }}
             .pi-roster-warn {{
-              display:flex;align-items:flex-start;gap:6px;margin-top:10px;
-              padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.5;
+              display:flex;align-items:flex-start;gap:6px;margin-top:8px;
+              padding:7px 9px;border-radius:8px;font-size:11px;line-height:1.5;
               background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.3);
             }}
             .pi-roster-warn i {{ color:#ca8a04;margin-top:1px;flex-shrink:0; }}
 
-            /* ── Verdict banner + future-outlook ─────────────────── */
+            /* ── Verdict banner ──────────────────────────────────── */
             .pi-verdict {{
-              display:flex;align-items:center;gap:10px;margin-bottom:14px;
-              padding:11px 12px;border-radius:12px;border:1px solid;
+              display:flex;align-items:center;gap:9px;margin-bottom:10px;
+              padding:9px 11px;border-radius:11px;border:1px solid;
             }}
             .pi-verdict-icon {{
-              flex-shrink:0;width:30px;height:30px;border-radius:9px;color:#fff;
-              display:flex;align-items:center;justify-content:center;font-size:13px;
+              flex-shrink:0;width:28px;height:28px;border-radius:8px;color:#fff;
+              display:flex;align-items:center;justify-content:center;font-size:12px;
             }}
-            .pi-verdict-title {{ font-size:13px;font-weight:800;line-height:1.1;margin-bottom:2px; }}
-            .pi-verdict-sub   {{ font-size:11.5px;color:var(--text-muted);line-height:1.4; }}
+            .pi-verdict-title {{ font-size:12.5px;font-weight:800;line-height:1.1;margin-bottom:1px; }}
+            .pi-verdict-sub   {{ font-size:11px;color:var(--text-muted);line-height:1.35; }}
+
+            /* ── Future Outlook inline row ───────────────────────── */
+            .pi-outlook-row {{
+              display:flex;align-items:center;justify-content:space-between;
+              margin-top:8px;padding:7px 9px;
+              border:1px solid var(--border-color);border-radius:9px;
+              background:var(--bg-alt,rgba(0,0,0,.02));
+            }}
+            .pi-outlook-left {{
+              display:flex;flex-direction:column;gap:2px;
+            }}
+            .pi-outlook-label {{
+              font-size:9px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.05em;color:var(--text-muted);
+            }}
+            .pi-outlook-vals {{
+              display:flex;align-items:center;gap:4px;
+            }}
+            .pi-outlook-before {{ font-size:11px;color:var(--text-muted); }}
+            .pi-outlook-after  {{ font-size:14px;font-weight:800; }}
             .pi-section-label {{
-              font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-              color:var(--text-muted);margin:16px 0 8px;
-              display:flex;align-items:center;gap:8px;
+              font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+              color:var(--text-muted);margin:10px 0 5px;
+              display:flex;align-items:center;gap:7px;
             }}
             .pi-section-label::after {{
               content:"";flex:1;height:1px;background:var(--border-color);opacity:.6;
             }}
-            .pi-chip-row {{ display:flex;flex-wrap:wrap;gap:6px;margin-top:10px; }}
+            .pi-chip-row {{ display:flex;flex-wrap:wrap;gap:5px;margin-top:7px; }}
             .pi-chip {{
-              display:inline-flex;align-items:center;gap:5px;
-              padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;
+              display:inline-flex;align-items:center;gap:4px;
+              padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:700;
             }}
-            .pi-chip i {{ font-size:10px; }}
+            .pi-chip i {{ font-size:9.5px; }}
 
             .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
             .stl-sub   {{ font-size:12px;color:var(--text-muted); }}

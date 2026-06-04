@@ -2646,6 +2646,30 @@ window.initTradePage = function initTradePage(root = document) {
       }
       const chipRow = chips.length ? `<div class="pi-chip-row">${chips.join("")}</div>` : "";
 
+      // Compact inline Future Outlook row for Top-3 Pick Odds
+      const pickBefore = data.before.top3_pick_pct != null ? data.before.top3_pick_pct.toFixed(1) + "%" : "—";
+      const pickAfter  = data.after.top3_pick_pct  != null ? data.after.top3_pick_pct.toFixed(0)  + "%" : "—";
+      const pickDelta  = data.delta.top3_pick_pct;
+      const pickDeltaSign = pickDelta >= 0 ? "+" : "";
+      const pickDeltaCol  = pickDelta >= 0.5 ? "#10b981" : pickDelta <= -0.5 ? "#ef4444" : "var(--text-muted)";
+      const pickDeltaPill = pickDelta != null
+        ? `<span class="pi-delta-pill" style="color:${pickDeltaCol};background:${pickDeltaCol}18;border-color:${pickDeltaCol}44;">${pickDeltaSign}${pickDelta.toFixed(1)}%</span>`
+        : "";
+
+      const outlookRow = data.before.top3_pick_pct != null ? `
+        <div class="pi-section-label">Future Outlook</div>
+        <div class="pi-outlook-row">
+          <div class="pi-outlook-left">
+            <span class="pi-outlook-label">Top-3 Pick Odds</span>
+            <div class="pi-outlook-vals">
+              <span class="pi-outlook-before">${pickBefore}</span>
+              <span class="pi-stat-arrow">›</span>
+              <span class="pi-outlook-after" style="color:${pickDeltaCol}">${pickAfter}</span>
+            </div>
+          </div>
+          ${pickDeltaPill}
+        </div>` : "";
+
       body.innerHTML = `
         ${verdict}
         <div class="pi-grid">
@@ -2653,10 +2677,7 @@ window.initTradePage = function initTradePage(root = document) {
           ${stat("Proj. Wins",    data.before.avg_final_wins, data.after.avg_final_wins, data.delta.avg_final_wins, "")}
           ${stat("Proj. PPG",     data.before.avg_ppg,        data.after.avg_ppg,        data.delta.avg_ppg,        "")}
         </div>
-        <div class="pi-section-label">Future Outlook</div>
-        <div class="pi-grid">
-          ${stat("Top-3 Pick Odds", data.before.top3_pick_pct, data.after.top3_pick_pct, data.delta.top3_pick_pct, "%")}
-        </div>
+        ${outlookRow}
         ${chipRow}
         ${missingWarn}`;
     } catch (e) {
