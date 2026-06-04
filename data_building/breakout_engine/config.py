@@ -148,6 +148,12 @@ BREAKOUT_ASCENSION_SCORE_CAP = 85.0
 # the candidate floor (40) and the page floor (50) and drop off the list.
 BREAKOUT_GATE_FAIL_CAP = 38.0
 
+# Blocked-path gate: an ascending player with virtually no vacated opportunity
+# AND meaningful competition added has a directly blocked path — even a strong
+# profile can't actualize without targets. Both conditions must be true.
+BREAKOUT_BLOCKED_OPP_MAX = 15.0   # opportunity_opened must be below this
+BREAKOUT_BLOCKED_COMP_MIN = 8.0   # |competition_added_penalty| must exceed this
+
 # Score curve: pivots the raw aggregate and stretches the spread around it.
 # curved = PIVOT + (raw - PIVOT) * SLOPE, clamped to 0-100.
 #

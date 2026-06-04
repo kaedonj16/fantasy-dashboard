@@ -7367,8 +7367,8 @@ function _buildBkTabHTML(data, scoreColor) {
     // halfSpread: ±4% at conf=90, ±7% at conf=70, ±12% at conf=30
     const halfSpread = 0.04 + (0.12 - 0.04) * (90 - conf) / 60;
     const highRaw  = modelPpg * (1 + halfSpread);
-    const high     = (prevPpg > 0 && highRaw > prevPpg * 1.4) ? prevPpg * 1.4 : highRaw;
-    const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.4;
+    const high     = (prevPpg > 0 && highRaw > prevPpg * 1.25) ? prevPpg * 1.25 : highRaw;
+    const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.25;
     const rawLow   = isCapped ? high * (1 - halfSpread) : modelPpg * (1 - halfSpread * 0.8);
     const lowFloor = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
     const low      = Math.min(lowFloor, high);  // never let low exceed high
