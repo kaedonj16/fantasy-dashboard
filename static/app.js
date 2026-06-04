@@ -2556,11 +2556,9 @@ window.initTradePage = function initTradePage(root = document) {
           const p = oppSidePlayers.find(op => String(op.id) === String(id));
           return `<strong>${p ? p.name : id}</strong>`;
         }).join(", ");
-        const plural = missingIds.length > 1;
         return `<div class="pi-roster-warn">
           <i class="fa-solid fa-triangle-exclamation"></i>
-          ${names} ${plural ? "aren't" : "isn't"} on your roster — the sim only modeled
-          receiving the incoming player${plural ? "s" : ""}.
+          ${names} not on your roster. Sim reflects incoming side only.
         </div>`;
       })() : "";
 
