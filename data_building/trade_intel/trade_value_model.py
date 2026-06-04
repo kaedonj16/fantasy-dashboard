@@ -549,10 +549,25 @@ def run_trade_value_model(
         logger.info("  pid=%-12s  prior=%.2f", player_ids[i], prior_1qb[i])
 
     logger.info("[trade_value_model] Building normal equations (N=%d)...", N)
-    AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, all_idx, N, season)
-    del trades_1qb; gc.collect()
-    AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  all_idx, N, season)
+    # Keep only one trade list resident during the heavy matrix builds (the cron
+    # box is capped at 512Mi). pick_keys_seen / all_idx were already computed from
+    # both lists above, so freeing SF here and reloading it below is exact — the
+    # query is deterministic and returns the same rows. Whether SF was an alias of
+    # the 1QB list (the no-SF-trades fallback at the top) is tracked so we can
+    # reproduce it after reload instead of building an empty SF matrix.
+    sf_was_1qb_alias = trades_sf is trades_1qb
     del trades_sf; gc.collect()
+    AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, all_idx, N, season)
+    # Reload SF (or reuse 1QB if SF was the empty-fallback alias) BEFORE freeing
+    # the 1QB list, so the alias case can still point at it.
+    if sf_was_1qb_alias:
+        trades_sf = trades_1qb
+    else:
+        trades_sf = _load_trades(season, is_sf=True, league_type=league_type, league_size=league_size)
+        if not trades_sf:  # SF became empty since first load — preserve original fallback
+            trades_sf = trades_1qb
+    AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  all_idx, N, season)
+    del trades_sf, trades_1qb; gc.collect()
     M = M_1qb
 
     logger.info("[trade_value_model] %d trade constraints - solving...", M)

@@ -48,24 +48,20 @@ def fetch_weekly_stats_for_season(season: int) -> Dict[int, List[Dict[str, Any]]
     """
     Return {week: [player_stat_obj, ...]} for the given season.
 
-    This is intentionally generic. Inside the loop you hit Sleeper / FantasyPros / PFR.
+    NOT YET IMPLEMENTED. The per-week fetch (Sleeper / FantasyPros / PFR) was
+    never wired up. The previous version returned empty lists for every week
+    and wrote those empties to the week-long disk cache, silently masking the
+    missing data. Until the fetch is implemented this raises so callers fail
+    loudly instead of receiving (and caching) empty stats.
+
+    Disk-cache helpers (``_load_season_from_disk`` / ``_save_season_to_disk``)
+    remain available for the real implementation.
     """
     cached = _load_season_from_disk(season)
     if cached:
         return cached
 
-    season_stats: Dict[int, List[Dict[str, Any]]] = {}
-
-    # TODO: adjust range(max_week+1) etc
-    for week in range(1, 19):  # 1..18 regular season
-        # ---- EXAMPLE (Sleeper-ish; adjust URL/params/keys to your actual source) ----
-        # url = f"https://api.sleeper.app/v1/stats/nfl/regular/{week}"
-        # resp = requests.get(url, timeout=20)
-        # resp.raise_for_status()
-        # week_data = resp.json()
-        week_data: List[Dict[str, Any]] = []  # placeholder
-        # --------------------------------------------------------------------------
-        season_stats[week] = week_data
-
-    _save_season_to_disk(season, season_stats)
-    return season_stats
+    raise NotImplementedError(
+        "fetch_weekly_stats_for_season is not implemented; wire up the per-week "
+        "stats source before calling it."
+    )

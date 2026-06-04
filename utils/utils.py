@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import glob
 import json
-import numpy as np
 import os
-import pandas as pd
 import re
 import requests
 import time
@@ -69,7 +67,9 @@ CACHE_DIR = ROOT_DIR / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 BETTER_OUTWARD_METRICS = ["PF", "PA", "MAX", "MIN", "AVG", "STD"]
-BETTER_OUTWARD_SIGNS = np.array([1, -1, 1, 1, 1, -1], dtype=float)
+# Plain list (not np.array) so importing this module doesn't pull in numpy/pandas.
+# z_better_outward() converts it to an ndarray lazily when actually called.
+BETTER_OUTWARD_SIGNS = [1.0, -1.0, 1.0, 1.0, 1.0, -1.0]
 SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 PUNCT_RE = re.compile(r"[^a-z0-9 ]+")
 WS_RE = re.compile(r"\s+")
@@ -134,9 +134,11 @@ def scoring_key(scoring_params: Dict) -> str:
     return hashlib.md5(payload.encode("utf-8")).hexdigest()[:10]
 
 
-def z_better_outward(team_stats: pd.DataFrame,
+def z_better_outward(team_stats: "pd.DataFrame",
                      metrics=BETTER_OUTWARD_METRICS,
-                     signs=BETTER_OUTWARD_SIGNS) -> pd.DataFrame:
+                     signs=BETTER_OUTWARD_SIGNS) -> "pd.DataFrame":
+    import numpy as np
+    signs = np.asarray(signs, dtype=float)
     Z = (team_stats[metrics] - team_stats[metrics].mean()) / team_stats[metrics].std(ddof=0)
     return Z * signs
 
@@ -253,6 +255,7 @@ def load_usage_table() -> Optional[Dict]:
 
 
 def load_engine_table():
+    import pandas as pd
     try:
         df = pd.read_csv(path_engine_table())
     except Exception:

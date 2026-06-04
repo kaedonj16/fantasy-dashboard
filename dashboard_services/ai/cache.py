@@ -42,4 +42,14 @@ def save_cached_ai_text(cache_key: str, content: str) -> None:
         "ts": time.time(),
         "content": content,
     }
-    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Write to a temp file then atomically rename so a crash mid-write can't
+    # leave a half-written (corrupt) cache entry.
+    tmp = path.with_suffix(".json.tmp")
+    try:
+        tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass

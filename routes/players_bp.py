@@ -154,8 +154,6 @@ def api_player_advanced_metrics(player_id: str):
 
     except Exception as e:
         logger.exception("[player-advanced-metrics] Error for %s", player_id)
-        import traceback
-        traceback.print_exc()
         return jsonify({
             "player_id": str(player_id),
             "error": "Failed to retrieve metrics"

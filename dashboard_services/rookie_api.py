@@ -17,6 +17,8 @@ from typing import Any, Dict, List
 
 from flask import Blueprint, jsonify, request
 
+from dashboard_services.admin_auth import admin_required
+
 log = logging.getLogger(__name__)
 
 rookie_bp = Blueprint("prospects", __name__, url_prefix="/api/prospects")
@@ -358,6 +360,7 @@ def player_detail(player_id: str):
 
 
 @rookie_bp.route("/prospects", methods=["POST"])
+@admin_required
 def add_prospects():
     """
     Add or update one or more prospects with their full data.
@@ -663,12 +666,13 @@ def by_sleeper(sleeper_id: str):
 
 
 @rookie_bp.route("/link-sleeper", methods=["POST"])
+@admin_required
 def link_sleeper():
     """Link a prospect's rookie player_id to their Sleeper player ID and optionally promote to player_values."""
     try:
         body = request.json or {}
-        player_id = body.get("player_id", "").strip()
-        sleeper_id = body.get("sleeper_id", "").strip()
+        player_id = str(body.get("player_id") or "").strip()
+        sleeper_id = str(body.get("sleeper_id") or "").strip()
 
         if not player_id or not sleeper_id:
             return jsonify({"error": "player_id and sleeper_id are required"}), 400
@@ -687,7 +691,7 @@ def link_sleeper():
                 conn.commit()
         except Exception as db_exc:
             log.warning("[rookie_api] link-sleeper DB error: %s", db_exc)
-            return jsonify({"error": f"DB update failed: {db_exc}"}), 500
+            return jsonify({"error": "Database update failed"}), 500
 
         # Update in-memory cache
         year = get_active_rookie_class()
@@ -814,7 +818,7 @@ def auto_link(player_id: str):
                 conn.commit()
         except Exception as db_exc:
             log.warning("[rookie_api] auto-link DB error: %s", db_exc)
-            return jsonify({"error": f"DB update failed: {db_exc}"}), 500
+            return jsonify({"error": "Database update failed"}), 500
 
         for y in [year, year - 1]:
             for r in _get_rankings(y):
@@ -918,6 +922,7 @@ def draft_status():
 
 
 @rookie_bp.route("/refresh", methods=["POST"])
+@admin_required
 def refresh():
     """Re-run the pipeline and bust the in-memory cache."""
     try:

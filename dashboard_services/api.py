@@ -8,6 +8,7 @@ import time
 from typing import Any, List, Dict, Optional, Union
 
 import requests
+from flask import g, has_app_context
 
 from dashboard_services.circuit_breaker import get_breaker
 
@@ -16,13 +17,29 @@ logger = logging.getLogger(__name__)
 # Shared circuit breaker for all Tank01 calls
 _tank01_breaker = get_breaker("tank01", failure_threshold=5, reset_timeout=300)
 
-# ---- League context globals ----
-# Protected by _league_globals_lock to prevent concurrent league loads overwriting each other.
-_league_globals_lock = threading.Lock()
-SCORING_SETTINGS: Dict[str, Any] = {}
-ROSTER_POSITIONS: List[str] = []
-LEAGUE_SETTINGS: Dict[str, Any] = {}
-TOTAL_ROSTERS: int = 0
+# ---- League context (request-scoped) ----
+# League config (scoring/roster/settings) is stored per-request via Flask's ``g``
+# so concurrent requests for *different* leagues never clobber each other. Outside
+# a request/app context (cron jobs, scripts, background data builds) it falls back
+# to a thread-local, which is likewise isolated per thread.
+_thread_local = threading.local()
+
+
+def _league_state() -> Dict[str, Any]:
+    """Return the per-request (or per-thread) league-config store."""
+    if has_app_context():
+        state = getattr(g, "_league_state", None)
+        if state is None:
+            state = {}
+            g._league_state = state
+        return state
+    state = getattr(_thread_local, "league_state", None)
+    if state is None:
+        state = {}
+        _thread_local.league_state = state
+    return state
+
+
 SLEEPER_BASE = "https://api.sleeper.app/v1"
 SCORING_DEFAULTS = {
     # Passing
@@ -204,26 +221,33 @@ def fetch_json(path: str, timeout: int = 25, retries: int = 3) -> dict:
 
 
 @ttl_cache(ttl=300)
+def _fetch_league(league_id: str) -> dict:
+    """Cached raw Sleeper league fetch (no side effects)."""
+    return fetch_json(f"/league/{league_id}") or {}
+
+
 def get_league(league_id: str) -> dict:
     """
-    Fetch a Sleeper league and cache league-wide context in module globals.
+    Fetch a Sleeper league and populate the request-scoped league context.
 
-    Populates:
-      - SCORING_SETTINGS
-      - ROSTER_POSITIONS
-      - LEAGUE_SETTINGS
-      - TOTAL_ROSTERS
+    Populates (for the current request/thread only):
+      - scoring_settings
+      - roster_positions
+      - league_settings
+      - total_rosters
+
+    The HTTP fetch is cached, but the context is repopulated on *every* call
+    (including cache hits) so a request always sees its own league's config.
     """
-    global SCORING_SETTINGS, ROSTER_POSITIONS, LEAGUE_SETTINGS, TOTAL_ROSTERS
+    league = _fetch_league(league_id)
 
-    league = fetch_json(f"/league/{league_id}") or {}
-
-    if isinstance(league, dict):
-        with _league_globals_lock:
-            SCORING_SETTINGS = league.get("scoring_settings") or {}
-            ROSTER_POSITIONS = league.get("roster_positions") or []
-            LEAGUE_SETTINGS = league.get("settings") or {}
-            TOTAL_ROSTERS = int(league.get("total_rosters") or 0)
+    if isinstance(league, dict) and league:
+        set_league_globals(
+            scoring_settings=league.get("scoring_settings") or {},
+            roster_positions=league.get("roster_positions") or [],
+            league_settings=league.get("settings") or {},
+            total_rosters=int(league.get("total_rosters") or 0),
+        )
 
     return league
 
@@ -232,7 +256,7 @@ def get_scoring_settings() -> Dict[str, Any]:
     """
     Raw scoring_settings from Sleeper for the current league.
     """
-    return SCORING_SETTINGS
+    return _league_state().get("scoring_settings") or {}
 
 
 def get_effective_scoring_settings() -> Dict[str, float]:
@@ -241,20 +265,20 @@ def get_effective_scoring_settings() -> Dict[str, float]:
     League scoring overrides defaults.
     """
     merged = dict(SCORING_DEFAULTS)
-    merged.update(SCORING_SETTINGS or {})
+    merged.update(_league_state().get("scoring_settings") or {})
     return merged
 
 
 def get_roster_positions() -> List[str]:
-    return ROSTER_POSITIONS
+    return _league_state().get("roster_positions") or []
 
 
 def get_league_settings() -> Dict[str, Any]:
-    return LEAGUE_SETTINGS
+    return _league_state().get("league_settings") or {}
 
 
 def get_total_rosters() -> int:
-    return TOTAL_ROSTERS
+    return int(_league_state().get("total_rosters") or 0)
 
 
 def set_league_globals(
@@ -264,19 +288,18 @@ def set_league_globals(
         total_rosters: Optional[int] = None,
 ) -> None:
     """
-    Allow external callers (e.g. ESPN integration) to populate the league globals
-    that are normally populated by a Sleeper get_league() call.
+    Populate the request-scoped league context (e.g. from the ESPN integration,
+    which does not go through the Sleeper ``get_league()`` path).
     """
-    global SCORING_SETTINGS, ROSTER_POSITIONS, LEAGUE_SETTINGS, TOTAL_ROSTERS
-    with _league_globals_lock:
-        if scoring_settings is not None:
-            SCORING_SETTINGS = scoring_settings
-        if roster_positions is not None:
-            ROSTER_POSITIONS = roster_positions
-        if league_settings is not None:
-            LEAGUE_SETTINGS = league_settings
-        if total_rosters is not None:
-            TOTAL_ROSTERS = int(total_rosters)
+    state = _league_state()
+    if scoring_settings is not None:
+        state["scoring_settings"] = scoring_settings
+    if roster_positions is not None:
+        state["roster_positions"] = roster_positions
+    if league_settings is not None:
+        state["league_settings"] = league_settings
+    if total_rosters is not None:
+        state["total_rosters"] = int(total_rosters)
 
 
 @ttl_cache(ttl=300)

@@ -218,7 +218,7 @@ def scrape_pfn_mock_consensus(draft_year: int) -> List[Dict[str, Any]]:
                                     button.click()
                                     button_clicked = True
                                     break
-                            except:
+                            except Exception:
                                 continue
                         
                         if not button_clicked:
@@ -240,7 +240,7 @@ def scrape_pfn_mock_consensus(draft_year: int) -> List[Dict[str, Any]]:
                     try:
                         page.wait_for_selector('table', timeout=10000)
                         print("[pfn_scraper] Table found on page")
-                    except:
+                    except Exception:
                         print("[pfn_scraper] No table selector found, proceeding anyway")
                     
                     html_content = page.content()
