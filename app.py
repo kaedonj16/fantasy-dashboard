@@ -11127,6 +11127,20 @@ def page_breakouts(platform: str, season: int, league_id: str):
     user_id = session.get("viewer_username")
     has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
 
+    # Breakout predictions are always for the UPCOMING NFL season, not the
+    # Sleeper league's season number (which lags by one year in the offseason).
+    # Use the latest season for which breakout data actually exists in the DB,
+    # falling back to max(league_season, current_year).
+    try:
+        from dashboard_services.breakout_api import get_conn as _bo_conn
+        with _bo_conn() as _bc:
+            with _bc.cursor() as _bcur:
+                _bcur.execute("SELECT MAX(season) FROM breakout_opportunity_scores")
+                _bo_row = _bcur.fetchone()
+                bo_season = int((_bo_row or {}).get("max") or _bo_row[0] or season)
+    except Exception:
+        bo_season = max(season, datetime.now().year)
+
     if not has_premium:
         # Show teaser and auto-open the paywall popup (also covers not-logged-in)
         teaser_html = """
@@ -11200,7 +11214,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
       const PAGE_SIZE = 12;
 
       // Fetch breakout candidates on page load (using new BreakoutEngine API)
-      fetch('/api/breakout/candidates?season={season}&min_score=50&league_id={league_id}&platform={platform}')
+      fetch('/api/breakout/candidates?season={bo_season}&min_score=50&limit=15&league_id={league_id}&platform={platform}')
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
@@ -14696,6 +14710,162 @@ def recap_og_image(platform: str, season: int, league_id: str):
 # COMMISSIONER DASHBOARD
 # ══════════════════════════════════════════════════════════════════════════════
 
+_COMMISH_HISTORY_CACHE: dict = {}
+_COMMISH_HISTORY_TTL = 6 * 3600  # 6h — prior-season activity barely changes
+
+
+def _commissioner_history_layer(platform, league_id, season, lookback=3):
+    """
+    Multi-season league context for the commissioner tool, keyed by owner
+    user_id (stable across seasons; roster_id is not). Walks previous_league_id
+    for up to `lookback` prior seasons and computes, per prior season, each
+    owner's move count + inactivity and the league's total moves/trades.
+
+    Sleeper-only (ESPN has no previous_league_id chain). Cached, and any failure
+    returns None so the page degrades to the current-season view.
+    """
+    import time
+    platform = (platform or "sleeper").lower()
+    if platform != "sleeper" or not league_id:
+        return None
+
+    key = f"{platform}:{league_id}:{season}"
+    now = time.time()
+    cached = _COMMISH_HISTORY_CACHE.get(key)
+    if cached and now - cached["ts"] < _COMMISH_HISTORY_TTL:
+        return cached["layer"]
+
+    from dashboard_services.api import build_league_history_map, get_league
+    from dashboard_services.platform_api import get_rosters, get_users
+    from dashboard_services.service import get_transactions_by_week
+
+    layer = None
+    try:
+        hist = build_league_history_map(platform, league_id, season) or {}
+        prior = sorted(s for s in hist if int(s) < int(season))[-lookback:]
+        seasons_out = []
+        owners: dict = {}
+        for ps in prior:
+            lid = hist[ps]
+            try:
+                rosters = get_rosters(platform, lid, ps) or []
+                users   = get_users(platform, lid, ps) or []
+                league  = get_league(lid) or {}
+            except Exception:
+                continue
+            playoff_start = int((league.get("settings") or {}).get("playoff_week_start") or 14)
+            try:
+                txw = get_transactions_by_week(lid, range(1, playoff_start), platform=platform, season=ps) or {}
+            except Exception:
+                txw = {}
+
+            moves_by_rid: dict = {}
+            trades = 0
+            for _wk, txns in txw.items():
+                for tx in (txns or []):
+                    rids = {str(r) for r in (tx.get("roster_ids") or [])}
+                    rids |= {str(v) for v in (tx.get("adds") or {}).values()}
+                    rids |= {str(v) for v in (tx.get("drops") or {}).values()}
+                    if tx.get("type") == "trade":
+                        trades += 1
+                    for rid in rids:
+                        moves_by_rid[rid] = moves_by_rid.get(rid, 0) + 1
+
+            name_by_uid = {u.get("user_id"): (u.get("display_name") or u.get("username") or u.get("user_id"))
+                           for u in users}
+            season_moves = 0
+            inactive_owners = 0
+            for r in rosters:
+                rid = str(r.get("roster_id"))
+                uid = r.get("owner_id")
+                if not uid:
+                    continue
+                st = r.get("settings") or {}
+                games = int(st.get("wins") or 0) + int(st.get("losses") or 0)
+                mv = moves_by_rid.get(rid, 0)
+                season_moves += mv
+                inactive = mv == 0 and games > 3
+                inactive_owners += 1 if inactive else 0
+                o = owners.setdefault(uid, {"name": "Unknown", "seasons_present": 0, "inactive_seasons": 0})
+                o["name"] = name_by_uid.get(uid, o["name"])
+                o["seasons_present"] += 1
+                o["inactive_seasons"] += 1 if inactive else 0
+
+            seasons_out.append({"season": int(ps), "trades": trades,
+                                "moves": season_moves, "inactive_owners": inactive_owners,
+                                "n_teams": len(rosters)})
+
+        if seasons_out:
+            layer = {"seasons": seasons_out, "owners": owners}
+    except Exception:
+        layer = None
+
+    _COMMISH_HISTORY_CACHE[key] = {"ts": now, "layer": layer}
+    return layer
+
+
+def _render_commissioner_history(layer, current_season, current_moves, current_trades, current_inactive_uids):
+    """Render the multi-season 'Chronic / Trend' panel. Current season is the
+    headline (computed elsewhere); this is diagnosis context, not a blended score."""
+    seasons = sorted((layer.get("seasons") or []), key=lambda s: s["season"])
+    moves_series  = [(s["season"], s["moves"])  for s in seasons] + [(int(current_season), int(current_moves))]
+    trades_series = [(s["season"], s["trades"]) for s in seasons] + [(int(current_season), int(current_trades))]
+
+    def _dir(series):
+        vals = [v for _, v in series]
+        if len(vals) < 2:
+            return ("→", "var(--muted)")
+        delta = vals[-1] - vals[0]
+        thresh = max(2.0, 0.10 * abs(vals[0] or 1))
+        if delta > thresh:
+            return ("▲", "#22c55e")
+        if delta < -thresh:
+            return ("▼", "#ef4444")
+        return ("→", "var(--muted)")
+
+    def _series_html(series):
+        return " <span style='color:var(--muted)'>→</span> ".join(
+            f"<strong>{yr}</strong>&nbsp;{val}" for yr, val in series)
+
+    m_arrow, m_color = _dir(moves_series)
+    t_arrow, t_color = _dir(trades_series)
+
+    owners = layer.get("owners") or {}
+    chronic = []
+    for uid, o in owners.items():
+        windows = o["seasons_present"] + 1  # + current
+        inact = o["inactive_seasons"] + (1 if uid in current_inactive_uids else 0)
+        if inact >= 2:
+            chronic.append((o["name"], inact, windows))
+    chronic.sort(key=lambda x: -x[1])
+
+    chronic_rows = "".join(
+        f"<div style='display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;'>"
+        f"<span>{name}</span><span style='color:#ef4444;font-weight:600;'>inactive {inact} of last {windows}</span></div>"
+        for name, inact, windows in chronic
+    ) or "<div style='color:var(--muted);font-size:13px;'>No chronic inactivity — owners stay engaged across seasons.</div>"
+
+    n_prior = len(seasons)
+    return f"""
+<div class="card" style="padding:16px;margin-bottom:20px;">
+  <div style="font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--muted);margin-bottom:12px;">
+    MULTI-SEASON HEALTH <span style="font-weight:500;">· last {n_prior} prior season{'s' if n_prior != 1 else ''}</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px;">
+    <div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">TOTAL MOVES / SEASON <span style="color:{m_color};">{m_arrow}</span></div>
+      <div style="font-size:13px;">{_series_html(moves_series)}</div>
+    </div>
+    <div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">TRADES / SEASON <span style="color:{t_color};">{t_arrow}</span></div>
+      <div style="font-size:13px;">{_series_html(trades_series)}</div>
+    </div>
+  </div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">CHRONIC INACTIVITY</div>
+  {chronic_rows}
+</div>"""
+
+
 def build_commissioner_body(ctx):
     from dashboard_services.service import get_transactions_by_week
 
@@ -14993,7 +15163,26 @@ def build_commissioner_body(ctx):
         trade_card = ("<div class='card'><div class='card-body' style='padding:20px;color:var(--muted);'>"
                       "No trades recorded yet.</div></div>")
 
-    return health_html + roster_table + trade_card
+    # ── 5. Multi-season layer (chronic inactivity + engagement trend) ─────
+    # Current season stays the headline; history is diagnosis, not a blend.
+    history_panel = ""
+    try:
+        layer = _commissioner_history_layer(platform, league_id, season)
+        if layer:
+            rid_to_uid = {str(r.get("roster_id")): r.get("owner_id") for r in rosters}
+            inactive_uids_now = {
+                rid_to_uid.get(r["rid"]) for r in roster_infos
+                if r["inactive"] and rid_to_uid.get(r["rid"])
+            }
+            history_panel = _render_commissioner_history(
+                layer, current_season=season,
+                current_moves=total_txns, current_trades=total_trades,
+                current_inactive_uids=inactive_uids_now,
+            )
+    except Exception:
+        history_panel = ""
+
+    return health_html + history_panel + roster_table + trade_card
 
 
 @app.route("/<platform>/<int:season>/<league_id>/commissioner")
@@ -16937,11 +17126,16 @@ def api_player_indicators():
             elif rookie_year and int(rookie_year) == current_season:
                 rookies.append(str(player_id))
 
-        # Get breakouts from the same source as the Breakout Engine page
+        # Get breakouts from the same source as the Breakout Engine page,
+        # using the same season resolution so modal tabs match the page exactly.
         breakouts = []
         try:
-            from dashboard_services.breakout_api import get_breakout_candidates as _get_bo_indicators
-            _bo_result = _get_bo_indicators(season=current_season, min_score=50)
+            from dashboard_services.breakout_api import (
+                get_breakout_candidates as _get_bo_indicators,
+                _resolve_bo_season as _resolve_bo,
+            )
+            _bo_season = _resolve_bo(current_season)
+            _bo_result = _get_bo_indicators(season=_bo_season, min_score=50, limit=15)
             breakouts = [str(c["player_id"]) for c in (_bo_result.get("candidates") or [])]
         except Exception as e:
             logger.info(f"[player-indicators] Breakout candidates unavailable: {e}")
@@ -18068,8 +18262,16 @@ def api_player_game_logs(player_id: str):
         season    = int(request.args.get("season", datetime.now().year))
 
         if league_id:
-            sync_league_globals(platform, league_id, season)
-            scoring_settings = get_effective_scoring_settings()
+            # sync_league_globals is a no-op for Sleeper — must call get_league explicitly
+            from dashboard_services.api import SCORING_DEFAULTS as _SD
+            if platform == "sleeper":
+                from dashboard_services.api import get_league as _get_league
+                _league_data = _get_league(league_id) or {}
+                _raw_ss = _league_data.get("scoring_settings") or {}
+                scoring_settings = {**_SD, **_raw_ss}
+            else:
+                sync_league_globals(platform, league_id, season)
+                scoring_settings = get_effective_scoring_settings()
         else:
             scoring_settings = {
                 "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
@@ -18192,6 +18394,28 @@ def api_player_game_logs(player_id: str):
         # max(available_years)+1 because sleeper_stats files may already exist
         # for the current season (e.g. 2026), pushing the calculation to 2027.
         _upcoming = season  # season already parsed from request.args above
+        # Rookies drafted after the league's season year (e.g. 2026 draftees in
+        # a 2025 league) have no stats and no projections for `season`, only for
+        # `season+1`. Detect this and shift _upcoming so their projections show.
+        if not game_logs_by_year:
+            try:
+                from utils.utils import path_week_proj
+                import json as _pj_json
+                # Read the week-1 file only if it already exists on disk
+                # (no network fetch — just a cheap cache peek).
+                def _peek_proj(yr: int) -> dict:
+                    p = path_week_proj(yr, 1)
+                    if not os.path.exists(p):
+                        return {}
+                    try:
+                        with open(p) as _pf:
+                            return _pj_json.load(_pf) or {}
+                    except Exception:
+                        return {}
+                if not _peek_proj(_upcoming).get(player_id) and _peek_proj(_upcoming + 1).get(player_id):
+                    _upcoming = _upcoming + 1
+            except Exception:
+                pass
         # Weeks already covered by actual stats — skip those when projecting
         _actual_weeks = {
             g.get("week") for g in (game_logs_by_year.get(_upcoming) or [])
@@ -21019,6 +21243,178 @@ def api_archetype_suggestions():
         return _api_err("Archetype suggestions failed", exc)
 
 
+def _is_pick_asset_id(asset_id: str) -> bool:
+    """A draft-pick asset id looks like '2026_1_01' or '2026_1_early'
+    (year_round_slotOrBucket). Player ids are bare numeric Sleeper ids."""
+    parts = str(asset_id or "").split("_")
+    if len(parts) < 2:
+        return False
+    yr = parts[0]
+    return len(yr) == 4 and yr.isdigit() and parts[1].isdigit()
+
+
+def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: dict | None = None) -> dict | None:
+    """Resolve a draft-pick asset id to a focus-asset dict so picks can be the
+    focus of the trade-suggestions search (build-around / find-returns).
+
+    Returns {name, value, position:'PICK', is_pick, pick_season, pick_round,
+    pick_order} or None if the id is not a recognizable pick.
+    """
+    if not _is_pick_asset_id(pick_id):
+        return None
+    parts = str(pick_id).split("_")
+    try:
+        yr  = int(parts[0])
+        rnd = int(parts[1])
+    except (ValueError, IndexError):
+        return None
+    third = parts[2] if len(parts) >= 3 else ""
+    sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+    bkt = {"early": "Early", "mid": "Mid", "late": "Late"}.get(third.lower())
+    if bkt:
+        name = f"{yr} {rnd}{sfx} ({bkt})"
+    elif third.isdigit():
+        name = f"{yr} {rnd}.{int(third):02d}"
+    else:
+        name = f"{yr} {rnd}{sfx}"
+
+    # Value: in-memory value table → calibrated pick value table → model_values.json
+    # → realistic round default. Mirrors the slot→bucket→round-average hierarchy
+    # used elsewhere so picks are never silently collapsed to a flat number.
+    val = 0.0
+    if values_by_id:
+        info = values_by_id.get(str(pick_id)) or {}
+        if float(info.get("value") or 0) > 0:
+            val = float(info["value"])
+    if val <= 0:
+        try:
+            from dashboard_services.picks import load_pick_value_table as _lpvt
+            tbl = dict(_lpvt(league_teams=num_teams) or {})
+        except Exception:
+            tbl = {}
+        bucket_l = (bkt or "Mid").lower()
+        for key in (str(pick_id), f"{yr}_{rnd}_{bucket_l}", f"{yr}_{rnd}"):
+            if tbl.get(key) and float(tbl[key]) > 0:
+                val = float(tbl[key]); break
+        if val <= 0:
+            _slots = [float(v) for k, v in tbl.items()
+                      if k.startswith(f"{yr}_{rnd}_") and k.split("_")[-1].isdigit()
+                      and v and float(v) > 0]
+            if _slots:
+                val = round(sum(_slots) / len(_slots), 1)
+    if val <= 0:
+        try:
+            for _mp in (load_model_value_table(apply_calibration=False) or []):
+                if (str(_mp.get("position") or "").upper() == "PICK"
+                        and str(_mp.get("id")) == str(pick_id)):
+                    val = float(_mp.get("value") or 0); break
+        except Exception:
+            pass
+    if val <= 0:
+        val = {1: 300.0, 2: 150.0, 3: 70.0}.get(rnd, 40.0)
+
+    return {
+        "name": name, "value": round(val, 1), "position": "PICK",
+        "is_pick": True, "pick_season": yr, "pick_round": rnd,
+        "pick_order": third if third.isdigit() else (bkt or "Mid").lower(),
+    }
+
+
+def _value_matched_acquire_packages(focus_value: float, players: list, picks: list,
+                                     max_options: int = 12) -> list:
+    """Build value-matched ASSET packages (players + picks from the viewer's roster)
+    whose combined value is close to focus_value. Used for the pick build-around
+    path: 'what would I give to acquire this pick?'.
+
+    Returns a list shaped for renderPackagePage (assets / value_label / value_class).
+    """
+    if focus_value <= 0:
+        return []
+    lo, hi = focus_value * 0.82, focus_value * 1.12
+
+    def _passet(p: dict) -> dict:
+        return {
+            "name":      p.get("name", ""),
+            "position":  str(p.get("position") or "").upper(),
+            "value":     float(p.get("value") or 0),
+            "is_pick":   False,
+            "player_id": str(p.get("player_id") or p.get("id") or ""),
+        }
+
+    def _pkasset(pk: dict) -> dict:
+        return {
+            "name":        pk.get("name", "Pick"),
+            "position":    "PICK",
+            "value":       float(pk.get("value") or 0),
+            "is_pick":     True,
+            "pick_season": pk.get("pick_season"),
+            "pick_round":  pk.get("pick_round"),
+            "pick_slot":   pk.get("pick_slot"),
+            "pick_order":  pk.get("pick_order") or "mid",
+        }
+
+    players_a = sorted(
+        (_passet(p) for p in players if float(p.get("value") or 0) >= 50),
+        key=lambda x: -x["value"],
+    )
+    picks_a = sorted((_pkasset(p) for p in picks), key=lambda x: -x["value"])
+
+    out: list = []
+    seen: set = set()
+
+    def _label(total: float) -> tuple:
+        r = total / focus_value if focus_value else 0
+        if r <= 0.94:
+            return "Great deal", "great"
+        if r <= 1.08:
+            return "Fair value", "fair"
+        return "Overpay", "overpay"
+
+    def _add(assets: list):
+        total = round(sum(a["value"] for a in assets), 1)
+        if not (lo <= total <= hi):
+            return
+        key = frozenset(a.get("player_id") or a["name"] for a in assets)
+        if key in seen:
+            return
+        seen.add(key)
+        label, cls = _label(total)
+        out.append({
+            "assets":           assets,
+            "send_value":       total,
+            "value_label":      label,
+            "value_class":      cls,
+            "is_profile_match": True,
+            "frequency":        0,
+            "_fit":             abs(total - focus_value),
+        })
+
+    # 1 player / 1 pick
+    for a in players_a:
+        _add([a])
+    for a in picks_a:
+        _add([a])
+    # 1 player + 1 pick
+    for p in players_a:
+        for k in picks_a:
+            _add([p, k])
+    # 2 players (skip pairing two of the biggest single assets that already clear hi)
+    for i, p1 in enumerate(players_a):
+        if p1["value"] >= hi:
+            continue
+        for p2 in players_a[i + 1:]:
+            _add([p1, p2])
+    # 2 picks
+    for i, k1 in enumerate(picks_a):
+        for k2 in picks_a[i + 1:]:
+            _add([k1, k2])
+
+    out.sort(key=lambda x: x["_fit"])
+    for o in out:
+        o.pop("_fit", None)
+    return out[:max_options]
+
+
 @app.route("/api/trade-intel/player-packages/<player_id>")
 @limiter.limit("30 per minute")
 def api_trade_intel_player_packages(player_id: str):
@@ -21071,11 +21467,15 @@ def api_trade_intel_player_packages(player_id: str):
                 }
 
         target_info = values_by_id.get(str(player_id))
-        if not target_info:
+        # Picks can be the focus too (build-around a draft pick). Pick ids aren't
+        # in the player value table, so detect them and resolve later once league
+        # context (num_teams) is known.
+        _focus_is_pick = bool(_is_pick_asset_id(str(player_id)))
+        if not target_info and not _focus_is_pick:
             return jsonify({"error": "Player not found"}), 404
 
-        focus_value  = round(target_info["value"], 1)
-        player_name  = target_info["name"]
+        focus_value  = round((target_info or {}).get("value", 0) or 0, 1)
+        player_name  = (target_info or {}).get("name", "")
 
         # ── Viewer roster context (optional) ──────────────────────────────
         viewer_players: list[dict] = []
@@ -21302,6 +21702,46 @@ def api_trade_intel_player_packages(player_id: str):
             target_info = values_by_id.get(str(player_id))
             if target_info:
                 focus_value = round(target_info["value"], 1)
+
+        # ── Pick build-around: value-matched packages from the viewer's roster ─
+        # Draft picks aren't in the trade DB the way players are, so instead of
+        # historical archetypes we surface value-matched offers (what you'd give
+        # up to acquire this pick) drawn from the viewer's own players + picks.
+        if _focus_is_pick:
+            _pinfo = _resolve_pick_asset(str(player_id), num_teams, values_by_id)
+            if not _pinfo:
+                return jsonify({"error": "Pick not found"}), 404
+            player_name = _pinfo["name"]
+            focus_value = _pinfo["value"]
+            # Don't offer the focus pick back to acquire itself.
+            def _vpick_ids(pk: dict) -> set:
+                yr, rnd = pk.get("pick_season"), pk.get("pick_round")
+                ids = {f"{yr}_{rnd}_{pk.get('pick_order') or 'mid'}"}
+                slot = pk.get("pick_slot")
+                if slot:
+                    ids.add(f"{yr}_{rnd}_{int(slot):02d}")
+                return ids
+            _viewer_picks_offer = [
+                pk for pk in (viewer_picks or [])
+                if str(player_id) not in _vpick_ids(pk)
+            ]
+            pick_packages = _value_matched_acquire_packages(
+                focus_value, viewer_players, _viewer_picks_offer
+            )
+            return jsonify({
+                "player_name":         player_name,
+                "focus_value":         focus_value,
+                "focus_position":      "PICK",
+                "packages":            pick_packages,
+                "total_packages":      len(pick_packages),
+                "real_packages":       [],
+                "total_real_trades":   0,
+                "archetype_patterns":  [],
+                "package_source":      "value_match",
+                "model_stale_days":    None,
+                "query_window_days":   0,
+                "receiver_win_window": "",
+            })
 
         # ── ML model: primary package suggestions ─────────────────────────
         ml_pkgs: list = []
@@ -22215,6 +22655,10 @@ def api_trade_intel_player_send_packages(player_id: str):
             }
 
         target_info = values_by_id.get(str(player_id))
+        # The focus can also be a draft pick the viewer owns — "what can I get for
+        # this pick?". Pick ids aren't in the player value table, so resolve them.
+        if not target_info:
+            target_info = _resolve_pick_asset(str(player_id), num_teams, values_by_id)
         if not target_info:
             return jsonify({"error": "Player not found"}), 404
 

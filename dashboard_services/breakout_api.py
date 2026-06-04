@@ -1012,11 +1012,32 @@ def get_roster_situation(team: str, season: Optional[int] = None) -> Dict:
 # FLASK BLUEPRINT ROUTES
 # =============================================================================
 
+def _resolve_bo_season(requested: Optional[int]) -> Optional[int]:
+    """Return the latest season for which breakout data exists, unless the
+    caller explicitly requests a season that is >= that value (e.g. querying
+    future projections during an active season).  This prevents the stale-data
+    bug where a 2025 Sleeper league passes season=2025 but all fresh breakout
+    rows live under season=2026."""
+    try:
+        with get_conn() as _c:
+            with _c.cursor() as _cur:
+                _cur.execute("SELECT MAX(season) FROM breakout_opportunity_scores")
+                _row = _cur.fetchone()
+                latest = int((_row or {}).get("max") or _row[0] or 0)
+    except Exception:
+        latest = 0
+    if not latest:
+        return requested  # can't determine — pass through as-is
+    if requested is None or requested < latest:
+        return latest
+    return requested
+
+
 @breakout_bp.route('/candidates')
 @premium_required
 def candidates():
     """Get all breakout candidates (top-N by score; pass limit=0 for all)."""
-    season = request.args.get('season', type=int)
+    season = _resolve_bo_season(request.args.get('season', type=int))
     min_score = request.args.get('min_score', default=0.0, type=float)
     limit = request.args.get('limit', default=15, type=int)
     return jsonify(get_breakout_candidates(season, min_score, limit=limit or None))
@@ -1026,7 +1047,7 @@ def candidates():
 @premium_required
 def candidates_by_position(position):
     """Get breakout candidates by position."""
-    season = request.args.get('season', type=int)
+    season = _resolve_bo_season(request.args.get('season', type=int))
     min_score = request.args.get('min_score', default=0.0, type=float)
     limit = request.args.get('limit', default=50, type=int)
     return jsonify(get_breakout_candidates_by_position(position, season, min_score, limit))
@@ -1036,7 +1057,7 @@ def candidates_by_position(position):
 @premium_required
 def player_detail(player_id):
     """Get detailed breakout info for a player."""
-    season = request.args.get('season', type=int)
+    season = _resolve_bo_season(request.args.get('season', type=int))
     return jsonify(get_breakout_candidate_detail(player_id, season))
 
 
