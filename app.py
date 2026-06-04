@@ -16531,11 +16531,69 @@ def api_trade_eval_playoff_impact():
             return jsonify({"available": False, "reason": "season_complete"})
 
         result = _simulate_swap_impact(sim_state, roster_id, give_ids, get_ids)
+
+        # Future outlook: value-weighted age + total dynasty value of the
+        # players coming in vs going out. This is the counterweight to the
+        # win-now playoff metrics — getting younger / banking value is the
+        # upside when a deal dents this season's odds (and vice versa).
+        is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
+                    for s in (ctx.get("roster_positions") or []))
+        result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf)
+
         return jsonify(result)
 
     except Exception:
         logger.exception("[trade-eval/playoff-impact] error")
         return jsonify({"available": False, "reason": "error"})
+
+
+def _trade_future_outlook(give_ids, get_ids, is_sf=False):
+    """Compute value-weighted age and total value for the incoming vs outgoing
+    players in a trade. Returns the building-vs-win-now signal that balances the
+    Playoff Impact card."""
+    from utils.utils import load_players_index
+    players_index = load_players_index() or {}
+    value_table = get_model_value_table_cached() or []
+    val_key = "sf_value" if is_sf else "value"
+    vmap = {str(p.get("id")): p for p in value_table}
+
+    def _resolve(pids):
+        total_val = 0.0
+        wage_num = 0.0  # value-weighted age numerator
+        wage_den = 0.0
+        ages = []
+        for pid in pids:
+            mv = vmap.get(str(pid), {})
+            meta = players_index.get(str(pid), {}) or {}
+            val = safe_float(mv.get(val_key) or mv.get("value") or 0)
+            age = age_from_bday(meta.get("bDay")) or mv.get("age") or meta.get("age")
+            age = safe_float(age) if age not in (None, "") else None
+            total_val += val
+            if age:
+                ages.append(age)
+                if val > 0:
+                    wage_num += age * val
+                    wage_den += val
+        avg_age = round(wage_num / wage_den, 1) if wage_den else (
+            round(sum(ages) / len(ages), 1) if ages else None)
+        return {"total_value": round(total_val, 1), "avg_age": avg_age, "n": len(pids)}
+
+    incoming = _resolve(get_ids)   # players the viewer receives
+    outgoing = _resolve(give_ids)  # players the viewer sends away
+
+    age_delta = None
+    if incoming["avg_age"] is not None and outgoing["avg_age"] is not None:
+        # Negative = getting younger (incoming younger than outgoing).
+        age_delta = round(incoming["avg_age"] - outgoing["avg_age"], 1)
+
+    value_delta = round(incoming["total_value"] - outgoing["total_value"], 1)
+
+    return {
+        "incoming": incoming,
+        "outgoing": outgoing,
+        "age_delta": age_delta,        # < 0 means younger
+        "value_delta": value_delta,    # > 0 means banking value
+    }
 
 
 @app.route("/api/players")

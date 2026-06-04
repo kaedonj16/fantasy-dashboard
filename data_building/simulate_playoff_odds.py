@@ -345,21 +345,26 @@ def simulate_swap_impact(
     league_avgs = [t["avg"] for t in sim_state["teams"] if t["avg"] > 0]
     league_avg_ppg = round(statistics.median(league_avgs), 1) if league_avgs else 0.0
 
-    before_po   = round(float(before_row.get("playoff_pct",    0)), 1)
-    before_wins = round(float(before_row.get("avg_final_wins", 0)), 1)
-    before_ppg  = round(float(viewer_team["avg"]), 1)
-    after_po    = round(float(after_row.get("playoff_pct",    0)), 1)
-    after_wins  = round(float(after_row.get("avg_final_wins", 0)), 1)
-    after_ppg   = round(new_avg, 1)
+    before_po    = round(float(before_row.get("playoff_pct",    0)), 1)
+    before_wins  = round(float(before_row.get("avg_final_wins", 0)), 1)
+    before_ppg   = round(float(viewer_team["avg"]), 1)
+    before_top3  = round(float(before_row.get("top3_pick_pct",  0)), 1)
+    after_po     = round(float(after_row.get("playoff_pct",     0)), 1)
+    after_wins   = round(float(after_row.get("avg_final_wins",  0)), 1)
+    after_ppg    = round(new_avg, 1)
+    after_top3   = round(float(after_row.get("top3_pick_pct",   0)), 1)
 
     return {
         "available": True,
-        "before": {"playoff_pct": before_po, "avg_final_wins": before_wins, "avg_ppg": before_ppg},
-        "after":  {"playoff_pct": after_po,  "avg_final_wins": after_wins,  "avg_ppg": after_ppg},
+        "before": {"playoff_pct": before_po, "avg_final_wins": before_wins,
+                   "avg_ppg": before_ppg, "top3_pick_pct": before_top3},
+        "after":  {"playoff_pct": after_po,  "avg_final_wins": after_wins,
+                   "avg_ppg": after_ppg, "top3_pick_pct": after_top3},
         "delta":  {
             "playoff_pct":    round(after_po    - before_po,    1),
             "avg_final_wins": round(after_wins  - before_wins,  1),
             "avg_ppg":        round(after_ppg   - before_ppg,   1),
+            "top3_pick_pct":  round(after_top3  - before_top3,  1),
         },
         "league_avg_ppg":   league_avg_ppg,
         "missing_give_ids": missing_give_ids,
@@ -1221,6 +1226,15 @@ def _run_mc(
     got_bye     = (team_rank < n_byes).mean(axis=0) * 100 if n_byes else np.zeros(n)
     is_first    = (team_rank == 0).mean(axis=0) * 100
 
+    # Draft-pick outlook — the inverse of playoff success. Dynasty/rookie draft
+    # order is reverse standings, so the worst finishers hold the best picks.
+    # rank n-1 (dead last)  → pick 1.01;  rank >= n-3 → a top-3 pick.
+    pick_one    = (team_rank == n - 1).mean(axis=0) * 100
+    top3_pick   = (team_rank >= max(0, n - 3)).mean(axis=0) * 100
+    # Projected draft slot: best record (rank 0) drafts last (slot n),
+    # worst record (rank n-1) drafts first (slot 1).
+    avg_slot    = (n - team_rank).mean(axis=0)
+
     init_wins   = np.array([t["wins"]   for t in teams], dtype=np.float32)
     init_losses = np.array([t["losses"] for t in teams], dtype=np.float32)
     avg_wins    = wins.mean(axis=0)
@@ -1236,6 +1250,9 @@ def _run_mc(
         "playoff_pct":      round(float(in_playoffs[i]),  1),
         "bye_pct":          round(float(got_bye[i]),      1),
         "first_seed_pct":   round(float(is_first[i]),     1),
+        "pick_one_pct":     round(float(pick_one[i]),     1),
+        "top3_pick_pct":    round(float(top3_pick[i]),    1),
+        "avg_draft_slot":   round(float(avg_slot[i]),     1),
         "miss_pct":         round(100 - float(in_playoffs[i]), 1),
         "avg_final_wins":   round(float(avg_wins[i]),     1),
         "avg_final_losses": round(float(avg_losses[i]),   1),

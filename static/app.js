@@ -2436,6 +2436,14 @@ window.initTradePage = function initTradePage(root = document) {
       </div>`;
   }
 
+  // Join a list into a readable phrase: [a] → "a", [a,b] → "a and b",
+  // [a,b,c] → "a, b, and c".
+  function listPhrase(items) {
+    if (items.length <= 1) return items[0] || "";
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+  }
+
   async function fetchPlayoffImpact() {
     const section = root.querySelector("#playoffImpactSection");
     const body    = root.querySelector("#playoffImpactBody");
@@ -2566,12 +2574,90 @@ window.initTradePage = function initTradePage(root = document) {
         </div>`;
       })() : "";
 
+      // ── Future Outlook: the counterweight to the win-now metrics ──────────
+      const outlook   = data.outlook || {};
+      const ageDelta  = outlook.age_delta;          // < 0 means getting younger
+      const valDelta  = outlook.value_delta || 0;   // > 0 means banking value
+      const poD       = data.delta.playoff_pct;
+      const pickD     = data.delta.top3_pick_pct;
+
+      const younger     = ageDelta != null && ageDelta <= -0.5;
+      const older       = ageDelta != null && ageDelta >= 0.5;
+      const bankingVal  = valDelta >= 50;
+      const sheddingVal = valDelta <= -50;
+      const pickUp      = pickD >= 1;
+      const pickDown    = pickD <= -1;
+
+      // Classify the deal so the user reads the trade-off, not just the red.
+      let vTitle, vSub, vColor, vIcon;
+      if (poD <= -1) {
+        const gains = [];
+        if (pickUp)     gains.push("better draft positioning");
+        if (younger)    gains.push("a younger core");
+        if (bankingVal) gains.push("long-term value");
+        if (gains.length) {
+          vColor = "#8b5cf6"; vIcon = "fa-seedling"; vTitle = "Building Move";
+          vSub = `Trades some win-now equity for ${listPhrase(gains)}.`;
+        } else {
+          vColor = "#ef4444"; vIcon = "fa-arrow-trend-down"; vTitle = "Win-Now Downgrade";
+          vSub = "Lowers your odds without a clear long-term payoff.";
+        }
+      } else if (poD >= 1) {
+        const costs = [];
+        if (pickDown)    costs.push("draft capital");
+        if (older)       costs.push("an older roster");
+        if (sheddingVal) costs.push("long-term value");
+        vColor = "#10b981"; vIcon = "fa-arrow-trend-up"; vTitle = "Win-Now Move";
+        vSub = costs.length
+          ? `Boosts this season's odds at the cost of ${listPhrase(costs)}.`
+          : "Boosts this season's odds with no real downside.";
+      } else {
+        if (younger || bankingVal) {
+          vColor = "#8b5cf6"; vIcon = "fa-seedling"; vTitle = "Future Lean";
+          vSub = "Roughly flat for this season, but builds for later.";
+        } else {
+          vColor = "#64748b"; vIcon = "fa-scale-balanced"; vTitle = "Balanced";
+          vSub = "Little change to your win-now or future outlook.";
+        }
+      }
+
+      const verdict = `
+        <div class="pi-verdict" style="background:${vColor}14;border-color:${vColor}33;">
+          <div class="pi-verdict-icon" style="background:${vColor};"><i class="fa-solid ${vIcon}"></i></div>
+          <div>
+            <div class="pi-verdict-title" style="color:${vColor};">${vTitle}</div>
+            <div class="pi-verdict-sub">${vSub}</div>
+          </div>
+        </div>`;
+
+      // Roster outlook chips (age + banked value)
+      const chips = [];
+      if (ageDelta != null && Math.abs(ageDelta) >= 0.1) {
+        const c = younger ? "#8b5cf6" : older ? "#f59e0b" : "var(--text-muted)";
+        chips.push(`<span class="pi-chip" style="color:${c};background:${c}1a;">
+          <i class="fa-solid fa-clock-rotate-left"></i>
+          ${younger ? "Younger" : "Older"} by ${Math.abs(ageDelta).toFixed(1)} yr${Math.abs(ageDelta) >= 1.5 ? "s" : ""}</span>`);
+      }
+      if (Math.abs(valDelta) >= 1) {
+        const c = valDelta > 0 ? "#10b981" : "#ef4444";
+        chips.push(`<span class="pi-chip" style="color:${c};background:${c}1a;">
+          <i class="fa-solid fa-coins"></i>
+          ${valDelta > 0 ? "+" : "−"}${Math.abs(valDelta).toFixed(0)} value</span>`);
+      }
+      const chipRow = chips.length ? `<div class="pi-chip-row">${chips.join("")}</div>` : "";
+
       body.innerHTML = `
+        ${verdict}
         <div class="pi-grid">
           ${stat("Playoff Odds",  data.before.playoff_pct,    data.after.playoff_pct,    data.delta.playoff_pct,    "%")}
           ${stat("Proj. Wins",    data.before.avg_final_wins, data.after.avg_final_wins, data.delta.avg_final_wins, "")}
           ${stat("Proj. PPG",     data.before.avg_ppg,        data.after.avg_ppg,        data.delta.avg_ppg,        "")}
         </div>
+        <div class="pi-section-label">Future Outlook</div>
+        <div class="pi-grid">
+          ${stat("Top-3 Pick Odds", data.before.top3_pick_pct, data.after.top3_pick_pct, data.delta.top3_pick_pct, "%")}
+        </div>
+        ${chipRow}
         ${missingWarn}`;
     } catch (e) {
       body.innerHTML = _piMessage(

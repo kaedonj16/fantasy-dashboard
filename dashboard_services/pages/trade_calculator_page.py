@@ -438,6 +438,32 @@ def build_trade_calculator_body(
             }}
             .pi-roster-warn i {{ color:#ca8a04;margin-top:1px;flex-shrink:0; }}
 
+            /* ── Verdict banner + future-outlook ─────────────────── */
+            .pi-verdict {{
+              display:flex;align-items:center;gap:10px;margin-bottom:14px;
+              padding:11px 12px;border-radius:12px;border:1px solid;
+            }}
+            .pi-verdict-icon {{
+              flex-shrink:0;width:30px;height:30px;border-radius:9px;color:#fff;
+              display:flex;align-items:center;justify-content:center;font-size:13px;
+            }}
+            .pi-verdict-title {{ font-size:13px;font-weight:800;line-height:1.1;margin-bottom:2px; }}
+            .pi-verdict-sub   {{ font-size:11.5px;color:var(--text-muted);line-height:1.4; }}
+            .pi-section-label {{
+              font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+              color:var(--text-muted);margin:16px 0 8px;
+              display:flex;align-items:center;gap:8px;
+            }}
+            .pi-section-label::after {{
+              content:"";flex:1;height:1px;background:var(--border-color);opacity:.6;
+            }}
+            .pi-chip-row {{ display:flex;flex-wrap:wrap;gap:6px;margin-top:10px; }}
+            .pi-chip {{
+              display:inline-flex;align-items:center;gap:5px;
+              padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;
+            }}
+            .pi-chip i {{ font-size:10px; }}
+
             .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
             .stl-sub   {{ font-size:12px;color:var(--text-muted); }}
             .stl-list  {{ display:grid;grid-template-columns:repeat(2,1fr);gap:10px; }}
