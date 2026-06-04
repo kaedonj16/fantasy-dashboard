@@ -361,7 +361,7 @@ def simulate_swap_impact(
     }
 
 
-
+def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
     """
     Build (ppg_map, pos_map).
 
