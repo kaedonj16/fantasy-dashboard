@@ -400,13 +400,11 @@ def build_trade_calculator_body(
               white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
               display:block;
             }}
-            .pi-stat-before {{
-              font-size:11px;color:var(--text-muted);display:block;
-              margin-bottom:1px;
+            .pi-stat-values {{
+              display:flex;align-items:baseline;gap:5px;
             }}
-            .pi-stat-after  {{
-              font-size:17px;font-weight:800;line-height:1.1;display:block;
-            }}
+            .pi-stat-before {{ font-size:11px;color:var(--text-muted); }}
+            .pi-stat-after  {{ font-size:17px;font-weight:800;line-height:1; }}
             .pi-delta-pill  {{ display:none; }}
             .pi-locked {{
               display:flex;flex-direction:column;align-items:center;

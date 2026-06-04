@@ -2547,8 +2547,10 @@ window.initTradePage = function initTradePage(root = document) {
         return `
           <div class="pi-stat">
             <div class="pi-stat-label">${label}</div>
-            <span class="pi-stat-before">${before}${suffix}</span>
-            <span class="pi-stat-after" style="color:${color};">${after}${suffix}</span>
+            <div class="pi-stat-values">
+              <span class="pi-stat-before">${before}${suffix}</span>
+              <span class="pi-stat-after" style="color:${color};">${after}${suffix}</span>
+            </div>
           </div>`;
       };
 
@@ -2627,8 +2629,10 @@ window.initTradePage = function initTradePage(root = document) {
       const ageStat = (ageBeforeVal != null && ageAfterVal != null) ? `
         <div class="pi-stat">
           <div class="pi-stat-label">Avg Age</div>
-          <span class="pi-stat-before">${ageBeforeVal.toFixed(1)}</span>
-          <span class="pi-stat-after" style="color:${ageColor};">${ageAfterVal.toFixed(1)}</span>
+          <div class="pi-stat-values">
+            <span class="pi-stat-before">${ageBeforeVal.toFixed(1)}</span>
+            <span class="pi-stat-after" style="color:${ageColor};">${ageAfterVal.toFixed(1)}</span>
+          </div>
         </div>` : "";
 
       const valBeforeVal = outlook.outgoing ? outlook.outgoing.total_value : null;
@@ -2637,8 +2641,10 @@ window.initTradePage = function initTradePage(root = document) {
       const valStat = (valBeforeVal != null && valAfterVal != null) ? `
         <div class="pi-stat">
           <div class="pi-stat-label">Dynasty Val</div>
-          <span class="pi-stat-before">${Math.round(valBeforeVal)}</span>
-          <span class="pi-stat-after" style="color:${valColor};">${Math.round(valAfterVal)}</span>
+          <div class="pi-stat-values">
+            <span class="pi-stat-before">${Math.round(valBeforeVal)}</span>
+            <span class="pi-stat-after" style="color:${valColor};">${Math.round(valAfterVal)}</span>
+          </div>
         </div>` : "";
 
       const pickStat = data.before.top3_pick_pct != null
