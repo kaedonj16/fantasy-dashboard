@@ -4971,8 +4971,10 @@ window.initTradePage = function initTradePage(root = document) {
 
           // Priority 1: viewer_roster_id injected server-side (most reliable)
           const injectedRosterId = root.querySelector("#viewerRosterIdInput")?.value || "";
+          let autoSelectedRosterId = "";
           if (injectedRosterId) {
             selector.value = injectedRosterId;
+            autoSelectedRosterId = injectedRosterId;
           }
 
           // Priority 2: username match
@@ -4984,7 +4986,10 @@ window.initTradePage = function initTradePage(root = document) {
                   team.username === currentUsername ||
                   team.team_name.toLowerCase().includes(currentUsername.toLowerCase())
               );
-              if (userTeam) selector.value = userTeam.roster_id;
+              if (userTeam) {
+                selector.value = userTeam.roster_id;
+                autoSelectedRosterId = userTeam.roster_id;
+              }
             }
           }
 
@@ -4992,6 +4997,17 @@ window.initTradePage = function initTradePage(root = document) {
           if (!selector.value) {
             const currentRosterId = getCurrentRosterId();
             if (currentRosterId) selector.value = currentRosterId;
+          }
+
+          // When auto-selecting on sign-in, persist to session and refresh panels
+          // so the PI card doesn't stay stuck on "Select your team".
+          if (autoSelectedRosterId) {
+            fetch("/api/set-viewer-roster", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ roster_id: autoSelectedRosterId }),
+            }).catch(() => {});
+            recomputeTrade();
           }
 
           if (selector.value && root.querySelector("#targetsTabContent.is-active")) loadTradeTargets();

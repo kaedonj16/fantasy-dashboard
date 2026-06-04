@@ -367,18 +367,23 @@ def build_trade_calculator_body(
             /* ── Top-row 2-col + full-width AI row ──────────────── */
             .otc-lower-grid--top2 {{
               grid-template-columns: 2fr 1fr;
+              align-items: stretch;
             }}
+            /* Zero out margin-top on direct grid children so the grid's
+               gap is the only spacing and align-items:stretch can work. */
+            .otc-lower-grid--top2 > .otc-summary-card,
+            .otc-lower-grid--top2 > .otc-pi-card {{ margin-top: 0; }}
             @media(max-width:980px) {{ .otc-lower-grid--top2 {{ grid-template-columns: 1fr; }} }}
             .otc-ai-card--fullrow {{ grid-column: 1 / -1; }}
 
             .otc-pi-card {{
-              border:1px solid var(--border);border-radius:20px;margin-top:16px;
+              border:1px solid var(--border);border-radius:20px;
               padding:20px;background:var(--card-bg);display:flex;flex-direction:column;
             }}
             .otc-pi-head {{ margin-bottom:14px; }}
             .otc-pi-title {{ font-size:15px;font-weight:700;margin:0 0 2px; }}
             .otc-pi-sub   {{ font-size:12px;color:var(--text-muted); }}
-            .otc-pi-body  {{ flex:1; }}
+            .otc-pi-body  {{ flex:1;display:flex;flex-direction:column;justify-content:center; }}
 
             /* ── Playoff Impact stats ────────────────────────────── */
             .pi-grid {{
@@ -425,10 +430,6 @@ def build_trade_calculator_body(
             .pi-message-icon  {{ font-size:20px;color:var(--text-muted);opacity:.55;margin-bottom:2px; }}
             .pi-message-title {{ font-size:13px;font-weight:700; }}
             .pi-message-sub   {{ font-size:12px;color:var(--text-muted);max-width:240px;line-height:1.5; }}
-
-            /* ── Equal-height: body fills remaining card space ────── */
-            .otc-pi-card  {{ align-self:stretch; }}
-            .otc-pi-body  {{ flex:1;display:flex;flex-direction:column;justify-content:center; }}
 
             .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
             .stl-sub   {{ font-size:12px;color:var(--text-muted); }}
