@@ -22712,7 +22712,7 @@ def api_trade_intel_player_send_packages(player_id: str):
             return out
 
         # ── Per-team value-matched return packages ──────────────────────────
-        lo, hi = focus_value * 0.82, focus_value * 1.25
+        lo, hi = focus_value * 0.90, focus_value * 1.25
 
         # Viewer's position depth so we can prefer combos filling their weak spots
         viewer_roster_obj = next(
