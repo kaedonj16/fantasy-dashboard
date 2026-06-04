@@ -20248,7 +20248,11 @@ def api_trade_database():
         sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
 
         # Build side-specific EXISTS filters (all static SQL, no user data in f-strings)
-        filter_clauses: list = []
+        # Always require both sides to be present so the COUNT and rendered cards agree.
+        filter_clauses: list = [
+            "EXISTS (SELECT 1 FROM trade_intel_assets _sa WHERE _sa.trade_id = t.id AND _sa.side = 'a')",
+            "EXISTS (SELECT 1 FROM trade_intel_assets _sb WHERE _sb.trade_id = t.id AND _sb.side = 'b')",
+        ]
         filter_params:  list = []
 
         if player_a_ids:
