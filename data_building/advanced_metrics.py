@@ -634,23 +634,21 @@ def calculate_role_score(
 #   * v1's snap term was effectively dead: avg_off_snap_pct is a 0-1 fraction but
 #     v1 normalised it against 35-95, so _norm(0.85, 35, 95) clipped to 0.
 #
-# v2 is a two-pass batch computation (needs the whole cohort), exposed via
-# finalize_role_scores_v2():
+# v2 is a two-pass batch computation (needs team aggregates for shares), exposed
+# via finalize_role_scores_v2():
 #   Pass 1 — a raw 0-1 opportunity index from team-relative shares.
-#   Pass 2 — map each index to its percentile within the position cohort.
+#   Pass 2 — scale that index against a fixed per-position "elite role" anchor so
+#            100 means an alpha/bellcow workload. Absolute (not percentile) so a
+#            middling role reads as middling regardless of how strong the rest of
+#            the cohort is that season, and so scores are comparable across years.
 # Toggle with the ROLE_SCORE_V2 env var (default on); v1 stays reachable for A/B.
 
-# Min qualified players in a position cohort before percentile ranking is
-# trustworthy; below this we fall back to an absolute scaling of the index.
-_ROLE_MIN_COHORT = 8
-# Index value treated as "elite" when the cohort is too small to percentile.
-_ROLE_ABS_REFERENCE = 0.62
-# A player needs this many games to earn full sample confidence.
+# Index value of an elite role per position -> 100. Calibrated from what a true
+# alpha WR / receiving TE / bellcow RB / dual-threat-or-high-volume QB index to.
+_ROLE_ELITE_ANCHOR: Dict[str, float] = {"WR": 0.48, "TE": 0.40, "RB": 0.70, "QB": 0.78}
+# A player needs this many games to earn full sample confidence (small samples
+# shrink toward 0 so a 1-2 game fluke can't post an elite role score).
 _ROLE_FULL_SAMPLE_GAMES = 4.0
-# Qualification floor for the *reference* distribution (keeps small-sample flukes
-# from defining the top of the cohort). Players below it are still scored.
-_ROLE_QUAL_GAMES = 4.0
-_ROLE_QUAL_SNAP = 0.30
 
 
 def use_role_score_v2() -> bool:
@@ -739,24 +737,14 @@ def role_opportunity_index(
     return _clip(idx, 0.0, 1.0)
 
 
-def _percentile_of(sorted_ref: List[float], x: float) -> float:
-    """Midrank percentile (0-100) of x within an ascending reference list."""
-    n = len(sorted_ref)
-    if n == 0:
-        return 0.0
-    import bisect
-    lo = bisect.bisect_left(sorted_ref, x)
-    hi = bisect.bisect_right(sorted_ref, x)
-    # midpoint of the equal-value band gives ties a fair shared rank
-    return ((lo + hi) / 2.0) / n * 100.0
-
-
 def finalize_role_scores_v2(
     metrics_list: List[Dict[str, Any]],
     usage_table: List[Dict[str, Any]],
 ) -> None:
     """
-    Overwrite each metrics dict's "role_score" with the v2 percentile score.
+    Overwrite each metrics dict's "role_score" with the v2 score: the
+    team-relative opportunity index scaled against a fixed per-position elite
+    anchor (absolute, not percentile), lightly shrunk for small samples.
 
     No-op (leaves the v1 values from calculate_player_metrics in place) when
     ROLE_SCORE_V2 is disabled. Mutates metrics_list in place.
@@ -767,10 +755,6 @@ def finalize_role_scores_v2(
     team_ctx_map = build_team_opportunity_context(usage_table)
     usage_by_id = {str(p.get("id")): p for p in usage_table}
 
-    # Pass 1: raw opportunity index per player.
-    raw_by_id: Dict[str, float] = {}
-    games_by_id: Dict[str, float] = {}
-    ref_by_pos: Dict[str, List[float]] = {}
     for m in metrics_list:
         pid = str(m.get("player_id"))
         position = m.get("position")
@@ -778,36 +762,14 @@ def finalize_role_scores_v2(
         if entry is None:
             continue
         usage = entry.get("usage") or {}
-        team_ctx = team_ctx_map.get(entry.get("team"), {})
-        idx = role_opportunity_index(usage, position, team_ctx)
-        if idx is None:
+        idx = role_opportunity_index(usage, position, team_ctx_map.get(entry.get("team"), {}))
+        anchor = _ROLE_ELITE_ANCHOR.get(position)
+        if idx is None or not anchor:
             continue
-        raw_by_id[pid] = idx
-        games = _safe(usage.get("games"))
-        games_by_id[pid] = games
-        snap = _safe(usage.get("avg_off_snap_pct"))
-        # Build the reference distribution from qualified players only.
-        if games >= _ROLE_QUAL_GAMES and snap >= _ROLE_QUAL_SNAP:
-            ref_by_pos.setdefault(position, []).append(idx)
-
-    for refs in ref_by_pos.values():
-        refs.sort()
-
-    # Pass 2: percentile within position (absolute fallback for thin cohorts),
-    # lightly shrunk toward 0 for small samples so week-1 flukes can't top a cohort.
-    for m in metrics_list:
-        pid = str(m.get("player_id"))
-        if pid not in raw_by_id:
-            continue
-        position = m.get("position")
-        idx = raw_by_id[pid]
-        refs = ref_by_pos.get(position, [])
-        if len(refs) >= _ROLE_MIN_COHORT:
-            score = _percentile_of(refs, idx)
-        else:
-            score = _clip(idx / _ROLE_ABS_REFERENCE, 0.0, 1.0) * 100.0
-        conf = _clip(games_by_id.get(pid, 0.0) / _ROLE_FULL_SAMPLE_GAMES, 0.0, 1.0)
-        m["role_score"] = round(_clip(score * conf, 0.0, 100.0), 1)
+        # Absolute scaling: elite role -> ~100; middling role stays middling
+        # regardless of cohort strength. Small samples shrink toward 0.
+        conf = _clip(_safe(usage.get("games")) / _ROLE_FULL_SAMPLE_GAMES, 0.0, 1.0)
+        m["role_score"] = round(_clip(idx / anchor, 0.0, 1.0) * 100.0 * conf, 1)
 
 
 def calculate_player_metrics(

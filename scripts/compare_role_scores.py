@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-A/B compare role_score v1 (calculate_role_score) vs v2 (percentile of the
-team-relative opportunity index) on the current usage table.
+A/B compare role_score v1 (calculate_role_score) vs v2 (team-relative
+opportunity index scaled against a fixed per-position elite anchor) on the
+current usage table.
 
 Usage:
     python scripts/compare_role_scores.py            # top 25 per position by v2
