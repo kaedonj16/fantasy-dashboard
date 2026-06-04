@@ -372,7 +372,7 @@ def build_trade_calculator_body(
             .otc-ai-card--fullrow {{ grid-column: 1 / -1; }}
 
             .otc-pi-card {{
-              border:1px solid var(--border-color);border-radius:20px;
+              border:1px solid var(--border);border-radius:20px;margin-top:16px;
               padding:20px;background:var(--card-bg);display:flex;flex-direction:column;
             }}
             .otc-pi-head {{ margin-bottom:14px; }}

@@ -3057,7 +3057,6 @@ thead th {
 .otc-lower-grid {
   display: grid;
   gap: 16px;
-  margin-top: 16px;
 }
 
 .otc-main, .otc-side {
