@@ -732,13 +732,14 @@ def role_opportunity_index(
                  (snap, 0.18, False), (rz_tgt_share, 0.16, True)]
 
     elif position == "QB":
-        # No "share" at QB — workload + dual-threat, ranked. Rushing is additive
-        # upside (0.18) so pocket passers are not penalised: pass + snap = 0.72.
+        # No "share" at QB — workload + dual-threat, ranked. No red-zone term:
+        # "RZ role" isn't a meaningful axis for a QB (unlike a goal-line RB or a
+        # jump-ball WR/TE), and goal-line rushing is already captured by the
+        # designed-rush component. Rushing stays additive upside so pocket
+        # passers are not penalised: pass + snap = 0.80.
         pass_vol = _norm(_safe(usage.get("avg_pass_att")), 18, 42)
         rush_vol = _norm(_safe(usage.get("avg_carries")), 0, 9)
-        rz_vol   = _norm(_safe(usage.get("rush_rz_att_pg")), 0, 2.0)
-        comps = [(pass_vol, 0.42, False), (snap, 0.30, False),
-                 (rush_vol, 0.18, False), (rz_vol, 0.10, True)]
+        comps = [(pass_vol, 0.47, False), (snap, 0.33, False), (rush_vol, 0.20, False)]
 
     else:
         return None
