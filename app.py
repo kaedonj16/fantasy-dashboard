@@ -20247,25 +20247,42 @@ def api_trade_database():
             sf_param = False
         sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
 
-        # Build side-specific EXISTS filters (all static SQL, no user data in f-strings)
-        # Always require both sides to be present so the COUNT and rendered cards agree.
+        # Build player filter clauses.
+        # Always require both sides present so COUNT and rendered cards agree.
         filter_clauses: list = [
             "EXISTS (SELECT 1 FROM trade_intel_assets _sa WHERE _sa.trade_id = t.id AND _sa.side = 'a')",
             "EXISTS (SELECT 1 FROM trade_intel_assets _sb WHERE _sb.trade_id = t.id AND _sb.side = 'b')",
         ]
-        filter_params:  list = []
+        filter_params: list = []
 
-        if player_a_ids:
+        if player_a_ids and player_b_ids:
+            # Both sides specified: enforce that A and B land on opposite sides of
+            # the trade. DB side assignment is arbitrary, so accept either arrangement.
+            filter_clauses.append(
+                "("
+                "(EXISTS (SELECT 1 FROM trade_intel_assets _fa1 WHERE _fa1.trade_id = t.id"
+                "  AND _fa1.side = 'a' AND _fa1.asset_type = 'player' AND _fa1.player_id = ANY(%s))"
+                " AND EXISTS (SELECT 1 FROM trade_intel_assets _fb1 WHERE _fb1.trade_id = t.id"
+                "  AND _fb1.side = 'b' AND _fb1.asset_type = 'player' AND _fb1.player_id = ANY(%s)))"
+                " OR "
+                "(EXISTS (SELECT 1 FROM trade_intel_assets _fa2 WHERE _fa2.trade_id = t.id"
+                "  AND _fa2.side = 'b' AND _fa2.asset_type = 'player' AND _fa2.player_id = ANY(%s))"
+                " AND EXISTS (SELECT 1 FROM trade_intel_assets _fb2 WHERE _fb2.trade_id = t.id"
+                "  AND _fb2.side = 'a' AND _fb2.asset_type = 'player' AND _fb2.player_id = ANY(%s)))"
+                ")"
+            )
+            filter_params.extend([player_a_ids, player_b_ids, player_a_ids, player_b_ids])
+        elif player_a_ids:
+            # Only one side specified: match on either DB side
             filter_clauses.append(
                 "EXISTS (SELECT 1 FROM trade_intel_assets _fa WHERE _fa.trade_id = t.id"
-                " AND _fa.side = 'a' AND _fa.asset_type = 'player' AND _fa.player_id = ANY(%s))"
+                " AND _fa.asset_type = 'player' AND _fa.player_id = ANY(%s))"
             )
             filter_params.append(player_a_ids)
-
-        if player_b_ids:
+        elif player_b_ids:
             filter_clauses.append(
                 "EXISTS (SELECT 1 FROM trade_intel_assets _fb WHERE _fb.trade_id = t.id"
-                " AND _fb.side = 'b' AND _fb.asset_type = 'player' AND _fb.player_id = ANY(%s))"
+                " AND _fb.asset_type = 'player' AND _fb.player_id = ANY(%s))"
             )
             filter_params.append(player_b_ids)
 
