@@ -2812,7 +2812,7 @@ window.initTradePage = function initTradePage(root = document) {
     }
 
     function posColor(pos) {
-      return { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6" }[pos] || "var(--accent)";
+      return { QB: "#3b82f6", RB: "#22c55e", WR: "#f59e0b", TE: "#8b5cf6", PICK: "#6366f1" }[pos] || "var(--accent)";
     }
 
     function renderDropdown(matches) {
@@ -2832,7 +2832,7 @@ window.initTradePage = function initTradePage(root = document) {
       const q = playerInput.value.trim().toLowerCase();
       if (q.length < 2) { playerDropdown.style.display = "none"; return; }
       const matches = allPlayers.filter(p =>
-        ["QB","RB","WR","TE"].includes(p.position) &&
+        (["QB","RB","WR","TE"].includes(p.position) || p.position === "PICK") &&
         (p.name || "").toLowerCase().includes(q)
       ).sort((a,b) => getPlayerValue(b) - getPlayerValue(a));
       renderDropdown(matches);
@@ -2941,10 +2941,14 @@ window.initTradePage = function initTradePage(root = document) {
         const data = await res.json();
 
         const hasRealPkgs = (data.real_packages && data.real_packages.length) || (data.archetype_patterns && data.archetype_patterns.length);
-        if (!hasRealPkgs) {
+        const hasValuePkgs = data.packages && data.packages.length;
+        if (!hasRealPkgs && !hasValuePkgs) {
+          const _isPick = data.focus_position === "PICK";
           resultsList.innerHTML = `<div class="otc-sugg-empty">
-            <div class="otc-sugg-empty-title">No trade data yet</div>
-            <div class="otc-sugg-empty-sub">Not enough real trades for ${playerName} in similar leagues yet.</div>
+            <div class="otc-sugg-empty-title">${_isPick ? "No value-matched offers" : "No trade data yet"}</div>
+            <div class="otc-sugg-empty-sub">${_isPick
+              ? `No package on your roster lines up with the value of ${playerName}.`
+              : `Not enough real trades for ${playerName} in similar leagues yet.`}</div>
           </div>`;
           return;
         }
@@ -2952,7 +2956,7 @@ window.initTradePage = function initTradePage(root = document) {
         resultsMeta.style.display = "none";
 
         renderPackages(
-          [],
+          data.packages || [],
           data.player_name, playerId, data.focus_value,
           data.real_packages, data.total_real_trades,
           data.archetype_patterns,
@@ -3110,10 +3114,14 @@ window.initTradePage = function initTradePage(root = document) {
                 }
               });
 
-              // Side B = you give = the focus player
+              // Side B = you give = the focus player/pick
               const studObj = allPlayers.find(p => String(p.id) === String(fid))
                 || { id: fid, name: fname };
-              state.sideBPlayers.push(studObj);
+              if (studObj.position === "PICK") {
+                state.sideBPicks.push({ id: studObj.id, display: studObj.name });
+              } else {
+                state.sideBPlayers.push(studObj);
+              }
 
               saveState();
               renderChips("A");
@@ -3577,8 +3585,12 @@ window.initTradePage = function initTradePage(root = document) {
           state.sideAPicks.length   = 0;
           state.sideBPicks.length   = 0;
 
-          // Side A = what you receive (the target player, plus any combo throw-in)
-          state.sideAPlayers.push(focusPObj);
+          // Side A = what you receive (the target player/pick, plus any combo throw-in)
+          if (focusPObj.position === "PICK") {
+            state.sideAPicks.push({ id: focusPObj.id, display: focusPObj.name });
+          } else {
+            state.sideAPlayers.push(focusPObj);
+          }
           if (extraRaw) {
             const extraPObj = allPlayers.find(p => String(p.id) === String(extraRaw.player_id))
               || (extraRaw.name && allPlayers.find(p => p.name && p.name.toLowerCase() === extraRaw.name.toLowerCase()));

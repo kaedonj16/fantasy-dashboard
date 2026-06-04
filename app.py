@@ -21194,6 +21194,178 @@ def api_archetype_suggestions():
         return _api_err("Archetype suggestions failed", exc)
 
 
+def _is_pick_asset_id(asset_id: str) -> bool:
+    """A draft-pick asset id looks like '2026_1_01' or '2026_1_early'
+    (year_round_slotOrBucket). Player ids are bare numeric Sleeper ids."""
+    parts = str(asset_id or "").split("_")
+    if len(parts) < 2:
+        return False
+    yr = parts[0]
+    return len(yr) == 4 and yr.isdigit() and parts[1].isdigit()
+
+
+def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: dict | None = None) -> dict | None:
+    """Resolve a draft-pick asset id to a focus-asset dict so picks can be the
+    focus of the trade-suggestions search (build-around / find-returns).
+
+    Returns {name, value, position:'PICK', is_pick, pick_season, pick_round,
+    pick_order} or None if the id is not a recognizable pick.
+    """
+    if not _is_pick_asset_id(pick_id):
+        return None
+    parts = str(pick_id).split("_")
+    try:
+        yr  = int(parts[0])
+        rnd = int(parts[1])
+    except (ValueError, IndexError):
+        return None
+    third = parts[2] if len(parts) >= 3 else ""
+    sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+    bkt = {"early": "Early", "mid": "Mid", "late": "Late"}.get(third.lower())
+    if bkt:
+        name = f"{yr} {rnd}{sfx} ({bkt})"
+    elif third.isdigit():
+        name = f"{yr} {rnd}.{int(third):02d}"
+    else:
+        name = f"{yr} {rnd}{sfx}"
+
+    # Value: in-memory value table → calibrated pick value table → model_values.json
+    # → realistic round default. Mirrors the slot→bucket→round-average hierarchy
+    # used elsewhere so picks are never silently collapsed to a flat number.
+    val = 0.0
+    if values_by_id:
+        info = values_by_id.get(str(pick_id)) or {}
+        if float(info.get("value") or 0) > 0:
+            val = float(info["value"])
+    if val <= 0:
+        try:
+            from dashboard_services.picks import load_pick_value_table as _lpvt
+            tbl = dict(_lpvt(league_teams=num_teams) or {})
+        except Exception:
+            tbl = {}
+        bucket_l = (bkt or "Mid").lower()
+        for key in (str(pick_id), f"{yr}_{rnd}_{bucket_l}", f"{yr}_{rnd}"):
+            if tbl.get(key) and float(tbl[key]) > 0:
+                val = float(tbl[key]); break
+        if val <= 0:
+            _slots = [float(v) for k, v in tbl.items()
+                      if k.startswith(f"{yr}_{rnd}_") and k.split("_")[-1].isdigit()
+                      and v and float(v) > 0]
+            if _slots:
+                val = round(sum(_slots) / len(_slots), 1)
+    if val <= 0:
+        try:
+            for _mp in (load_model_value_table(apply_calibration=False) or []):
+                if (str(_mp.get("position") or "").upper() == "PICK"
+                        and str(_mp.get("id")) == str(pick_id)):
+                    val = float(_mp.get("value") or 0); break
+        except Exception:
+            pass
+    if val <= 0:
+        val = {1: 300.0, 2: 150.0, 3: 70.0}.get(rnd, 40.0)
+
+    return {
+        "name": name, "value": round(val, 1), "position": "PICK",
+        "is_pick": True, "pick_season": yr, "pick_round": rnd,
+        "pick_order": third if third.isdigit() else (bkt or "Mid").lower(),
+    }
+
+
+def _value_matched_acquire_packages(focus_value: float, players: list, picks: list,
+                                     max_options: int = 12) -> list:
+    """Build value-matched ASSET packages (players + picks from the viewer's roster)
+    whose combined value is close to focus_value. Used for the pick build-around
+    path: 'what would I give to acquire this pick?'.
+
+    Returns a list shaped for renderPackagePage (assets / value_label / value_class).
+    """
+    if focus_value <= 0:
+        return []
+    lo, hi = focus_value * 0.82, focus_value * 1.12
+
+    def _passet(p: dict) -> dict:
+        return {
+            "name":      p.get("name", ""),
+            "position":  str(p.get("position") or "").upper(),
+            "value":     float(p.get("value") or 0),
+            "is_pick":   False,
+            "player_id": str(p.get("player_id") or p.get("id") or ""),
+        }
+
+    def _pkasset(pk: dict) -> dict:
+        return {
+            "name":        pk.get("name", "Pick"),
+            "position":    "PICK",
+            "value":       float(pk.get("value") or 0),
+            "is_pick":     True,
+            "pick_season": pk.get("pick_season"),
+            "pick_round":  pk.get("pick_round"),
+            "pick_slot":   pk.get("pick_slot"),
+            "pick_order":  pk.get("pick_order") or "mid",
+        }
+
+    players_a = sorted(
+        (_passet(p) for p in players if float(p.get("value") or 0) >= 50),
+        key=lambda x: -x["value"],
+    )
+    picks_a = sorted((_pkasset(p) for p in picks), key=lambda x: -x["value"])
+
+    out: list = []
+    seen: set = set()
+
+    def _label(total: float) -> tuple:
+        r = total / focus_value if focus_value else 0
+        if r <= 0.94:
+            return "Great deal", "great"
+        if r <= 1.08:
+            return "Fair value", "fair"
+        return "Overpay", "overpay"
+
+    def _add(assets: list):
+        total = round(sum(a["value"] for a in assets), 1)
+        if not (lo <= total <= hi):
+            return
+        key = frozenset(a.get("player_id") or a["name"] for a in assets)
+        if key in seen:
+            return
+        seen.add(key)
+        label, cls = _label(total)
+        out.append({
+            "assets":           assets,
+            "send_value":       total,
+            "value_label":      label,
+            "value_class":      cls,
+            "is_profile_match": True,
+            "frequency":        0,
+            "_fit":             abs(total - focus_value),
+        })
+
+    # 1 player / 1 pick
+    for a in players_a:
+        _add([a])
+    for a in picks_a:
+        _add([a])
+    # 1 player + 1 pick
+    for p in players_a:
+        for k in picks_a:
+            _add([p, k])
+    # 2 players (skip pairing two of the biggest single assets that already clear hi)
+    for i, p1 in enumerate(players_a):
+        if p1["value"] >= hi:
+            continue
+        for p2 in players_a[i + 1:]:
+            _add([p1, p2])
+    # 2 picks
+    for i, k1 in enumerate(picks_a):
+        for k2 in picks_a[i + 1:]:
+            _add([k1, k2])
+
+    out.sort(key=lambda x: x["_fit"])
+    for o in out:
+        o.pop("_fit", None)
+    return out[:max_options]
+
+
 @app.route("/api/trade-intel/player-packages/<player_id>")
 @limiter.limit("30 per minute")
 def api_trade_intel_player_packages(player_id: str):
@@ -21246,11 +21418,15 @@ def api_trade_intel_player_packages(player_id: str):
                 }
 
         target_info = values_by_id.get(str(player_id))
-        if not target_info:
+        # Picks can be the focus too (build-around a draft pick). Pick ids aren't
+        # in the player value table, so detect them and resolve later once league
+        # context (num_teams) is known.
+        _focus_is_pick = bool(_is_pick_asset_id(str(player_id)))
+        if not target_info and not _focus_is_pick:
             return jsonify({"error": "Player not found"}), 404
 
-        focus_value  = round(target_info["value"], 1)
-        player_name  = target_info["name"]
+        focus_value  = round((target_info or {}).get("value", 0) or 0, 1)
+        player_name  = (target_info or {}).get("name", "")
 
         # ── Viewer roster context (optional) ──────────────────────────────
         viewer_players: list[dict] = []
@@ -21477,6 +21653,46 @@ def api_trade_intel_player_packages(player_id: str):
             target_info = values_by_id.get(str(player_id))
             if target_info:
                 focus_value = round(target_info["value"], 1)
+
+        # ── Pick build-around: value-matched packages from the viewer's roster ─
+        # Draft picks aren't in the trade DB the way players are, so instead of
+        # historical archetypes we surface value-matched offers (what you'd give
+        # up to acquire this pick) drawn from the viewer's own players + picks.
+        if _focus_is_pick:
+            _pinfo = _resolve_pick_asset(str(player_id), num_teams, values_by_id)
+            if not _pinfo:
+                return jsonify({"error": "Pick not found"}), 404
+            player_name = _pinfo["name"]
+            focus_value = _pinfo["value"]
+            # Don't offer the focus pick back to acquire itself.
+            def _vpick_ids(pk: dict) -> set:
+                yr, rnd = pk.get("pick_season"), pk.get("pick_round")
+                ids = {f"{yr}_{rnd}_{pk.get('pick_order') or 'mid'}"}
+                slot = pk.get("pick_slot")
+                if slot:
+                    ids.add(f"{yr}_{rnd}_{int(slot):02d}")
+                return ids
+            _viewer_picks_offer = [
+                pk for pk in (viewer_picks or [])
+                if str(player_id) not in _vpick_ids(pk)
+            ]
+            pick_packages = _value_matched_acquire_packages(
+                focus_value, viewer_players, _viewer_picks_offer
+            )
+            return jsonify({
+                "player_name":         player_name,
+                "focus_value":         focus_value,
+                "focus_position":      "PICK",
+                "packages":            pick_packages,
+                "total_packages":      len(pick_packages),
+                "real_packages":       [],
+                "total_real_trades":   0,
+                "archetype_patterns":  [],
+                "package_source":      "value_match",
+                "model_stale_days":    None,
+                "query_window_days":   0,
+                "receiver_win_window": "",
+            })
 
         # ── ML model: primary package suggestions ─────────────────────────
         ml_pkgs: list = []
@@ -22390,6 +22606,10 @@ def api_trade_intel_player_send_packages(player_id: str):
             }
 
         target_info = values_by_id.get(str(player_id))
+        # The focus can also be a draft pick the viewer owns — "what can I get for
+        # this pick?". Pick ids aren't in the player value table, so resolve them.
+        if not target_info:
+            target_info = _resolve_pick_asset(str(player_id), num_teams, values_by_id)
         if not target_info:
             return jsonify({"error": "Player not found"}), 404
 
