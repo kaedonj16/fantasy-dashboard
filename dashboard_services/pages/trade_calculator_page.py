@@ -321,7 +321,7 @@ def build_trade_calculator_body(
               </div>
             </section>
 
-            <section id="playoffImpactSection" class="otc-pi-card" style="display:none;">
+            <section id="playoffImpactSection" class="otc-pi-card">
               <div class="otc-pi-head">
                 <div>
                   <h2 class="otc-pi-title">Playoff Impact</h2>
@@ -416,6 +416,19 @@ def build_trade_calculator_body(
               padding:7px 18px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;
               background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;
             }}
+
+            /* ── Message / empty states ──────────────────────────── */
+            .pi-message {{
+              display:flex;flex-direction:column;align-items:center;text-align:center;
+              padding:24px 16px;gap:6px;
+            }}
+            .pi-message-icon  {{ font-size:20px;color:var(--text-muted);opacity:.55;margin-bottom:2px; }}
+            .pi-message-title {{ font-size:13px;font-weight:700; }}
+            .pi-message-sub   {{ font-size:12px;color:var(--text-muted);max-width:240px;line-height:1.5; }}
+
+            /* ── Equal-height: body fills remaining card space ────── */
+            .otc-pi-card  {{ align-self:stretch; }}
+            .otc-pi-body  {{ flex:1;display:flex;flex-direction:column;justify-content:center; }}
 
             .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
             .stl-sub   {{ font-size:12px;color:var(--text-muted); }}

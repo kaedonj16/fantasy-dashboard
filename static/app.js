@@ -2423,18 +2423,53 @@ window.initTradePage = function initTradePage(root = document) {
   // ------------------------------------------------------------
   // fetchPlayoffImpact - Monte Carlo before/after playoff odds (PRO)
   // ------------------------------------------------------------
+  function _piMessage(icon, title, sub, btn) {
+    return `
+      <div class="pi-message">
+        <i class="fa-solid ${icon} pi-message-icon"></i>
+        <div class="pi-message-title">${title}</div>
+        <div class="pi-message-sub">${sub}</div>
+        ${btn || ""}
+      </div>`;
+  }
+
   async function fetchPlayoffImpact() {
     const section = root.querySelector("#playoffImpactSection");
     const body    = root.querySelector("#playoffImpactBody");
     if (!section || !body) return;
 
+    // Always keep the card present so the row layout never has an empty gap.
+    section.style.display = "";
+
+    const isGuest    = (root.querySelector("#isGuestMode")?.value || "false") === "true";
     const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
     const leagueId   = root.querySelector("#leagueIdInput")?.value || "";
     const rosterId   = getCurrentRosterId();
     const platform   = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
     const season     = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
 
-    // Only show when in a league session with both sides populated
+    // Guest — needs to sign in / connect a league
+    if (isGuest || !leagueId) {
+      body.innerHTML = _piMessage(
+        "fa-right-to-bracket",
+        "Sign in for Playoff Impact",
+        "Connect your league to simulate how a trade changes your playoff odds."
+      );
+      return;
+    }
+
+    // Non-premium — pro gate
+    if (!hasPremium) {
+      body.innerHTML = _piMessage(
+        "fa-lock",
+        "Pro Feature",
+        "Upgrade to simulate how this trade affects your playoff odds.",
+        `<button class="pi-locked-btn" onclick="showPaywall('playoff-impact')">Unlock Playoff Impact</button>`
+      );
+      return;
+    }
+
+    // Determine viewer side and build give/get id lists
     const viewerSide = root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
     const mySidePlayers  = viewerSide === "a" ? state.sideAPlayers : state.sideBPlayers;
     const oppSidePlayers = viewerSide === "a" ? state.sideBPlayers : state.sideAPlayers;
@@ -2443,34 +2478,30 @@ window.initTradePage = function initTradePage(root = document) {
     const giveIds = mySidePlayers .map(p => String(p.id)).filter(id => !isPickId(id));
     const getIds  = oppSidePlayers.map(p => String(p.id)).filter(id => !isPickId(id));
 
-    if (!leagueId || (!giveIds.length && !getIds.length)) {
-      section.style.display = "none";
-      return;
-    }
-
-    section.style.display = "";
-
-    // Paywall gate — show locked state but still reveal the section exists
-    if (!hasPremium) {
-      body.innerHTML = `
-        <div class="pi-locked">
-          <i class="fa-solid fa-lock pi-locked-icon"></i>
-          <div class="pi-locked-title">Pro Feature</div>
-          <div class="pi-locked-sub">Upgrade to simulate how this trade affects your playoff odds.</div>
-          <button class="pi-locked-btn" onclick="showPaywall('playoff-impact')">Unlock Playoff Impact</button>
-        </div>`;
-      return;
-    }
-
     if (!rosterId) {
-      section.style.display = "none";
+      body.innerHTML = _piMessage(
+        "fa-users",
+        "Select your team",
+        "Choose your team in the Trade Summary to simulate playoff impact."
+      );
       return;
     }
 
+    // No trade yet — empty placeholder
+    if (!giveIds.length && !getIds.length) {
+      body.innerHTML = _piMessage(
+        "fa-trophy",
+        "Build a trade",
+        "Add players to both sides to see how the deal moves your playoff odds."
+      );
+      return;
+    }
+
+    // Loading state
     body.innerHTML = `
-      <div style="display:flex;align-items:center;gap:7px;color:var(--text-muted);font-size:13px;padding:10px 0;">
-        <div class="loading-spinner" style="width:13px;height:13px;margin:0;flex-shrink:0;"></div>
-        Simulating playoff odds…
+      <div class="pi-message">
+        <div class="loading-spinner" style="width:22px;height:22px;margin:0 auto 8px;"></div>
+        <div class="pi-message-sub">Simulating playoff odds…</div>
       </div>`;
 
     try {
@@ -2481,7 +2512,14 @@ window.initTradePage = function initTradePage(root = document) {
       });
       const data = res.ok ? await res.json() : null;
 
-      if (!data || !data.available) { section.style.display = "none"; return; }
+      if (!data || !data.available) {
+        body.innerHTML = _piMessage(
+          "fa-circle-info",
+          "Not available",
+          "Playoff odds can't be simulated for this league right now (the season may be complete)."
+        );
+        return;
+      }
 
       const deltaColor = v => v > 0 ? "#10b981" : v < 0 ? "#ef4444" : "var(--text-muted)";
       const deltaIcon  = v => v > 0 ? "fa-arrow-up" : v < 0 ? "fa-arrow-down" : "fa-minus";
@@ -2517,7 +2555,11 @@ window.initTradePage = function initTradePage(root = document) {
           Monte Carlo · 2,000 sims · League avg ${data.league_avg_ppg} PPG
         </div>`;
     } catch (e) {
-      section.style.display = "none";
+      body.innerHTML = _piMessage(
+        "fa-triangle-exclamation",
+        "Couldn't simulate",
+        "Something went wrong running the simulation. Try again."
+      );
     }
   }
 
