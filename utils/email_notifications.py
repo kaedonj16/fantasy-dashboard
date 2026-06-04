@@ -115,25 +115,3 @@ def send_cron_failure_notification(error: Exception, context: dict = None):
     )
 
 
-def send_database_save_notification(saved_count: int, expected_count: int = None):
-    """
-    Send a notification if database save count is unexpected.
-    
-    Args:
-        saved_count: Number of records actually saved
-        expected_count: Expected number of records (optional)
-    """
-    if expected_count and saved_count < expected_count * 0.8:  # Less than 80% of expected
-        context = {
-            'saved_count': saved_count,
-            'expected_count': expected_count,
-            'save_ratio': f"{(saved_count/expected_count)*100:.1f}%" if expected_count else None
-        }
-        
-        return send_error_email(
-            subject="Low Database Save Count - Possible Data Issue",
-            error_message=f"Only saved {saved_count} records, expected around {expected_count}",
-            context=context
-        )
-    
-    return True

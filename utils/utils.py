@@ -128,12 +128,6 @@ def _headers(api_key: str) -> dict:
     }
 
 
-def scoring_key(scoring_params: Dict) -> str:
-    payload = json.dumps(scoring_params or {}, sort_keys=True, separators=(",", ":"))
-    import hashlib
-    return hashlib.md5(payload.encode("utf-8")).hexdigest()[:10]
-
-
 def z_better_outward(team_stats: "pd.DataFrame",
                      metrics=BETTER_OUTWARD_METRICS,
                      signs=BETTER_OUTWARD_SIGNS) -> "pd.DataFrame":
@@ -254,15 +248,6 @@ def load_usage_table() -> Optional[Dict]:
     return None
 
 
-def load_engine_table():
-    import pandas as pd
-    try:
-        df = pd.read_csv(path_engine_table())
-    except Exception:
-        df = None
-    return df
-
-
 def load_model_value_table(apply_calibration: bool = True):
     # Return ONLY the parsed JSON data, not the path object
     result = read_json(path_model_value_table())
@@ -359,11 +344,6 @@ def load_week_sched(season: int, week: int) -> Optional[Dict]:
     return read_json(path_week_schedule(season, week))
 
 
-def save_players_index(index_data: Dict) -> None:
-    """index_data example: { sleeper_id: { 'name': ..., 'team': ..., 'tank01_id': ... }, ... }"""
-    write_json(path_players_index(), index_data)
-
-
 def load_week_schedule(season: int, w: int):
     """
     Load schedule for (season, week), fetching and caching if needed.
@@ -414,71 +394,6 @@ def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
 # Tank01 – indexes & projections
 # ------------------------------------------------
 
-def cache_tank01_sleeper_index(
-        rapidapi_key: str,
-        cache_path: Path = CACHE_DIR / "players_index.json",
-        force_refresh: bool = False,
-) -> Dict[str, dict]:
-    """
-    Returns { sleeperbotid(str): { 'name': str, 'team': str, 'tankId': str } }
-    """
-    if cache_path.exists() and not force_refresh:
-        cached = read_json(str(cache_path))
-        if isinstance(cached, dict) and cached:
-            return cached
-
-    url = f"{BASE}/getNFLPlayerList"
-    r = requests.get(url, headers=_headers(rapidapi_key), timeout=30)
-    r.raise_for_status()
-    data = r.json()
-
-    # Tank01 returns players under "body" (adjust if needed)
-    players = data.get("body") or data.get("players") or []
-
-    from datetime import datetime as _dt
-    _current_nfl_season = _dt.now().year
-
-    idx: Dict[str, dict] = {}
-    for p in players:
-        # Try multiple key variants Tank01 may use
-        sleeper = (
-                p.get("sleeperBotID")
-                or p.get("sleeperId")
-                or p.get("sleeper_id")
-                or p.get("sleeperid")
-        )
-        if not sleeper:  # skip if no Sleeper id available
-            continue
-        sleeper = str(sleeper)
-
-        tank_id = str(p.get("playerID") or p.get("playerId") or p.get("id") or "")
-        name = p.get("espnName", p.get("fullName", p.get("name", "")))
-        team = p.get("team", p.get("proTeam", ""))
-
-        # Derive draft_year from NFL experience (exp field from Tank01)
-        # exp=1 means playing their 1st NFL season, exp=2 means 2nd year, etc.
-        # draft_year = upcoming_season - exp + 1
-        raw_exp = p.get("exp") or p.get("espnYrsPro")
-        entry: dict = {
-            "name": name or "",
-            "team": team or "",
-            "tankId": tank_id,
-        }
-        if raw_exp is not None:
-            try:
-                exp_int = int(raw_exp)
-                if exp_int > 0:
-                    entry["exp"] = exp_int
-                    entry["draft_year"] = _current_nfl_season - exp_int + 1
-            except (TypeError, ValueError):
-                pass
-
-        idx[sleeper] = entry
-
-    write_json(str(cache_path), idx)
-    return idx
-
-
 def get_week_projections_cached(
         season: int,
         week: int,
@@ -496,10 +411,6 @@ def get_week_projections_cached(
     data = fetch_fn(season, week)
     save_week_projections(season, week, proj_map=data)
     return data
-
-
-def get_or_refresh_projection_path(season: int, week: int) -> str:
-    return path_week_proj(season, week)
 
 
 def get_or_refresh_schedule_path(season: int, week: int) -> Optional[str]:
@@ -974,50 +885,6 @@ def byes_for_season(payload: dict, season: int) -> dict[str, Optional[int]]:
     return out
 
 
-def cache_tank01_teams_index(
-        rapidapi_key: str,
-        season: int,
-        cache_path: Path,
-        force_refresh: bool = False,
-) -> Dict[str, dict]:
-    """
-    Builds and caches:
-      { teamAbv: { 'teamId': str, 'byeWeek': int|None, 'Logo': str } } for all 32 NFL teams.
-    """
-    if cache_path.exists() and not force_refresh:
-        cached = read_json(str(cache_path))
-        if isinstance(cached, dict) and cached:
-            return cached
-
-    url = f"{BASE}/getNFLTeams"
-    params = {"sortBy": "teamID", "season": season}
-    rs = requests.get(url, params=params, headers=_headers(rapidapi_key), timeout=30)
-    rs.raise_for_status()
-
-    bye_weeks = byes_for_season(rs.json(), season)
-    index: Dict[str, dict] = {}
-
-    body = rs.json().get("body", []) or []
-
-    for team_abv in NFL_TEAMS:
-        # Tank01 uses WSH for Washington; map WAS -> WSH when looking up
-        lookup_abv = "WSH" if team_abv == "WAS" else team_abv
-        team_id = None
-        for obj in body:
-            if obj.get("teamAbv") == lookup_abv:
-                team_id = obj.get("teamID")
-                break
-
-        index[team_abv] = {
-            "teamId": team_id,
-            "byeWeek": bye_weeks.get(lookup_abv),
-            "Logo": _espn_logo_url(team_abv),
-        }
-
-    write_json(str(cache_path), index)
-    return index
-
-
 # ------------------------------------------------
 # Game / player status for a given week
 # ------------------------------------------------
@@ -1184,28 +1051,6 @@ def build_status_by_pid(
     return status_by_pid
 
 
-def build_matchup_player(
-        pid: str,
-        proj_map: dict[str, float],
-        actual_map: dict[str, float],
-        status_by_pid: dict[str, str],
-        players_map: Optional[Dict[str, Any]] = None,
-) -> dict:
-    base = from_players_map(pid, players_map)
-    # base has: name, pos, nfl, etc.
-
-    player = {
-        "pid": pid,
-        "name": base["name"],
-        "pos": base["pos"],
-        "nfl": base["nfl"],
-        "projection": proj_map.get(pid),
-        "actual": actual_map.get(pid),
-        "status": status_by_pid.get(pid, STATUS_NOT_STARTED),
-    }
-    return decorate_player_display(player)
-
-
 def build_status_for_week(
         season: int,
         week: int,
@@ -1331,9 +1176,6 @@ def build_teams_overview(
     # Traditional ESPN-ish ordering target
     SLOT_ORDER = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"]
     ORDER_RANK = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "FLEX": 4, "K": 5, "DEF": 6}
-
-    def is_flex(pos: str) -> bool:
-        return pos in ("RB", "WR", "TE")
 
     def sort_starters_espn(starter_pids: List[str]) -> List[str]:
         """
@@ -1549,17 +1391,6 @@ def clear_activity_cache_for_league(league_id: str) -> None:
     _clear_func_cache_for_league(get_traded_picks, "get_traded_picks", league_id)
 
     # 3) Clear users/rosters for this league (more aggressive: wipe entire cache)
-    _clear_func_cache_for_league(get_users, "get_users", league_id)
-
-    _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
-
-
-def clear_standings_cache_for_league(league_id: str) -> None:
-    # These are global, not per-league in your code, so just nuke them
-    _clear_func_cache_for_league(get_nfl_state, "get_nfl_state", league_id)
-
-    _clear_func_cache_for_league(get_nfl_players, "get_nfl_players", league_id)
-
     _clear_func_cache_for_league(get_users, "get_users", league_id)
 
     _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
