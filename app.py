@@ -14696,6 +14696,162 @@ def recap_og_image(platform: str, season: int, league_id: str):
 # COMMISSIONER DASHBOARD
 # ══════════════════════════════════════════════════════════════════════════════
 
+_COMMISH_HISTORY_CACHE: dict = {}
+_COMMISH_HISTORY_TTL = 6 * 3600  # 6h — prior-season activity barely changes
+
+
+def _commissioner_history_layer(platform, league_id, season, lookback=3):
+    """
+    Multi-season league context for the commissioner tool, keyed by owner
+    user_id (stable across seasons; roster_id is not). Walks previous_league_id
+    for up to `lookback` prior seasons and computes, per prior season, each
+    owner's move count + inactivity and the league's total moves/trades.
+
+    Sleeper-only (ESPN has no previous_league_id chain). Cached, and any failure
+    returns None so the page degrades to the current-season view.
+    """
+    import time
+    platform = (platform or "sleeper").lower()
+    if platform != "sleeper" or not league_id:
+        return None
+
+    key = f"{platform}:{league_id}:{season}"
+    now = time.time()
+    cached = _COMMISH_HISTORY_CACHE.get(key)
+    if cached and now - cached["ts"] < _COMMISH_HISTORY_TTL:
+        return cached["layer"]
+
+    from dashboard_services.api import build_league_history_map, get_league
+    from dashboard_services.platform_api import get_rosters, get_users
+    from dashboard_services.service import get_transactions_by_week
+
+    layer = None
+    try:
+        hist = build_league_history_map(platform, league_id, season) or {}
+        prior = sorted(s for s in hist if int(s) < int(season))[-lookback:]
+        seasons_out = []
+        owners: dict = {}
+        for ps in prior:
+            lid = hist[ps]
+            try:
+                rosters = get_rosters(platform, lid, ps) or []
+                users   = get_users(platform, lid, ps) or []
+                league  = get_league(lid) or {}
+            except Exception:
+                continue
+            playoff_start = int((league.get("settings") or {}).get("playoff_week_start") or 14)
+            try:
+                txw = get_transactions_by_week(lid, range(1, playoff_start), platform=platform, season=ps) or {}
+            except Exception:
+                txw = {}
+
+            moves_by_rid: dict = {}
+            trades = 0
+            for _wk, txns in txw.items():
+                for tx in (txns or []):
+                    rids = {str(r) for r in (tx.get("roster_ids") or [])}
+                    rids |= {str(v) for v in (tx.get("adds") or {}).values()}
+                    rids |= {str(v) for v in (tx.get("drops") or {}).values()}
+                    if tx.get("type") == "trade":
+                        trades += 1
+                    for rid in rids:
+                        moves_by_rid[rid] = moves_by_rid.get(rid, 0) + 1
+
+            name_by_uid = {u.get("user_id"): (u.get("display_name") or u.get("username") or u.get("user_id"))
+                           for u in users}
+            season_moves = 0
+            inactive_owners = 0
+            for r in rosters:
+                rid = str(r.get("roster_id"))
+                uid = r.get("owner_id")
+                if not uid:
+                    continue
+                st = r.get("settings") or {}
+                games = int(st.get("wins") or 0) + int(st.get("losses") or 0)
+                mv = moves_by_rid.get(rid, 0)
+                season_moves += mv
+                inactive = mv == 0 and games > 3
+                inactive_owners += 1 if inactive else 0
+                o = owners.setdefault(uid, {"name": "Unknown", "seasons_present": 0, "inactive_seasons": 0})
+                o["name"] = name_by_uid.get(uid, o["name"])
+                o["seasons_present"] += 1
+                o["inactive_seasons"] += 1 if inactive else 0
+
+            seasons_out.append({"season": int(ps), "trades": trades,
+                                "moves": season_moves, "inactive_owners": inactive_owners,
+                                "n_teams": len(rosters)})
+
+        if seasons_out:
+            layer = {"seasons": seasons_out, "owners": owners}
+    except Exception:
+        layer = None
+
+    _COMMISH_HISTORY_CACHE[key] = {"ts": now, "layer": layer}
+    return layer
+
+
+def _render_commissioner_history(layer, current_season, current_moves, current_trades, current_inactive_uids):
+    """Render the multi-season 'Chronic / Trend' panel. Current season is the
+    headline (computed elsewhere); this is diagnosis context, not a blended score."""
+    seasons = sorted((layer.get("seasons") or []), key=lambda s: s["season"])
+    moves_series  = [(s["season"], s["moves"])  for s in seasons] + [(int(current_season), int(current_moves))]
+    trades_series = [(s["season"], s["trades"]) for s in seasons] + [(int(current_season), int(current_trades))]
+
+    def _dir(series):
+        vals = [v for _, v in series]
+        if len(vals) < 2:
+            return ("→", "var(--muted)")
+        delta = vals[-1] - vals[0]
+        thresh = max(2.0, 0.10 * abs(vals[0] or 1))
+        if delta > thresh:
+            return ("▲", "#22c55e")
+        if delta < -thresh:
+            return ("▼", "#ef4444")
+        return ("→", "var(--muted)")
+
+    def _series_html(series):
+        return " <span style='color:var(--muted)'>→</span> ".join(
+            f"<strong>{yr}</strong>&nbsp;{val}" for yr, val in series)
+
+    m_arrow, m_color = _dir(moves_series)
+    t_arrow, t_color = _dir(trades_series)
+
+    owners = layer.get("owners") or {}
+    chronic = []
+    for uid, o in owners.items():
+        windows = o["seasons_present"] + 1  # + current
+        inact = o["inactive_seasons"] + (1 if uid in current_inactive_uids else 0)
+        if inact >= 2:
+            chronic.append((o["name"], inact, windows))
+    chronic.sort(key=lambda x: -x[1])
+
+    chronic_rows = "".join(
+        f"<div style='display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;'>"
+        f"<span>{name}</span><span style='color:#ef4444;font-weight:600;'>inactive {inact} of last {windows}</span></div>"
+        for name, inact, windows in chronic
+    ) or "<div style='color:var(--muted);font-size:13px;'>No chronic inactivity — owners stay engaged across seasons.</div>"
+
+    n_prior = len(seasons)
+    return f"""
+<div class="card" style="padding:16px;margin-bottom:20px;">
+  <div style="font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--muted);margin-bottom:12px;">
+    MULTI-SEASON HEALTH <span style="font-weight:500;">· last {n_prior} prior season{'s' if n_prior != 1 else ''}</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px;">
+    <div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">TOTAL MOVES / SEASON <span style="color:{m_color};">{m_arrow}</span></div>
+      <div style="font-size:13px;">{_series_html(moves_series)}</div>
+    </div>
+    <div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">TRADES / SEASON <span style="color:{t_color};">{t_arrow}</span></div>
+      <div style="font-size:13px;">{_series_html(trades_series)}</div>
+    </div>
+  </div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">CHRONIC INACTIVITY</div>
+  {chronic_rows}
+</div>"""
+
+
 def build_commissioner_body(ctx):
     from dashboard_services.service import get_transactions_by_week
 
@@ -14993,7 +15149,26 @@ def build_commissioner_body(ctx):
         trade_card = ("<div class='card'><div class='card-body' style='padding:20px;color:var(--muted);'>"
                       "No trades recorded yet.</div></div>")
 
-    return health_html + roster_table + trade_card
+    # ── 5. Multi-season layer (chronic inactivity + engagement trend) ─────
+    # Current season stays the headline; history is diagnosis, not a blend.
+    history_panel = ""
+    try:
+        layer = _commissioner_history_layer(platform, league_id, season)
+        if layer:
+            rid_to_uid = {str(r.get("roster_id")): r.get("owner_id") for r in rosters}
+            inactive_uids_now = {
+                rid_to_uid.get(r["rid"]) for r in roster_infos
+                if r["inactive"] and rid_to_uid.get(r["rid"])
+            }
+            history_panel = _render_commissioner_history(
+                layer, current_season=season,
+                current_moves=total_txns, current_trades=total_trades,
+                current_inactive_uids=inactive_uids_now,
+            )
+    except Exception:
+        history_panel = ""
+
+    return health_html + history_panel + roster_table + trade_card
 
 
 @app.route("/<platform>/<int:season>/<league_id>/commissioner")
