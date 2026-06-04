@@ -11255,8 +11255,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
         const conf = Math.min(100, Math.max(30, parseFloat(candidate.confidence_score || 70)));
         const halfSpread = 0.04 + (0.12 - 0.04) * (90 - conf) / 60;
         const highRaw = modelPpg * (1 + halfSpread);
-        const high = (prevPpg > 0 && highRaw > prevPpg * 1.4) ? prevPpg * 1.4 : highRaw;
-        const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.4;
+        const high = (prevPpg > 0 && highRaw > prevPpg * 1.25) ? prevPpg * 1.25 : highRaw;
+        const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.25;
         const rawLow = isCapped ? high * (1 - halfSpread) : modelPpg * (1 - halfSpread * 0.8);
         const lowFloor = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
         const low = Math.min(lowFloor, high);
