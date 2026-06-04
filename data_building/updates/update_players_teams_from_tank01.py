@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import requests
 
-from utils.utils import TANK01_API_HOST, TANK01_API_KEY, path_players_index
+from utils.utils import TANK01_API_HOST, TANK01_API_KEY, path_players_index, path_relevant_index
 
 def update_players_teams_from_tank01():
     """Update team data for all existing players from Tank01."""
@@ -73,7 +73,7 @@ def update_players_teams_from_tank01():
     print(f"✅ Updated team data for {updated_count} players in players_index")
     
     # Also update relevant_players_index if it exists
-    relevant_path = Path("../../cache/players_index_relevant.json")
+    relevant_path = Path(path_relevant_index())
     if relevant_path.exists():
         with relevant_path.open("r", encoding="utf-8") as f:
             relevant_index = json.load(f)
