@@ -1000,6 +1000,14 @@ function tradePageExists(root = document) {
   return !!root.querySelector("#leagueIdInput");
 }
 
+// Global scoring format reader — reads from the trade page select when available,
+// otherwise returns the page-level default injected by the server (window.__SF__), or 'ppr'.
+function getScoringFormat(root = document) {
+  const sel = root.querySelector("#scoringFormatSelect") || document.getElementById("scoringFormatSelect");
+  if (sel) return sel.value || "ppr";
+  return window.__SF__ || "ppr";
+}
+
 window.initTradePage = function initTradePage(root = document) {
   const leagueInput = root.querySelector("#leagueIdInput");
   if (!leagueInput) return;
@@ -7167,7 +7175,7 @@ function pmSwitchTab(tab) {
     const _boMatch = window.location.pathname.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
     const _boLeague = _boMatch ? _boMatch[3] : '';
     const _boPlatform = _boMatch ? _boMatch[1] : 'sleeper';
-    fetch(`/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&league_id=${encodeURIComponent(_boLeague)}&platform=${encodeURIComponent(_boPlatform)}`)
+    fetch(`/api/breakout/player/${encodeURIComponent(playerId)}?season=${encodeURIComponent(season)}&league_id=${encodeURIComponent(_boLeague)}&platform=${encodeURIComponent(_boPlatform)}&scoring_format=${encodeURIComponent(getScoringFormat())}`)
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(data => {
         if (!panel.isConnected) return;
@@ -9697,7 +9705,7 @@ function openBreakoutModal(playerId, playerName) {
   const _bkPlatform = (pathParts[0] === 'sleeper' || pathParts[0] === 'espn') ? pathParts[0] : 'sleeper';
   const _bkLeague = pathParts[2] || '';
 
-  fetch(`/api/breakout/player/${playerId}?season=${season}&league_id=${encodeURIComponent(_bkLeague)}&platform=${encodeURIComponent(_bkPlatform)}`)
+  fetch(`/api/breakout/player/${playerId}?season=${season}&league_id=${encodeURIComponent(_bkLeague)}&platform=${encodeURIComponent(_bkPlatform)}&scoring_format=${encodeURIComponent(getScoringFormat())}`)
     .then(res => {
       if (!res.ok) {
         console.error('Breakout API request failed:', res.status, res.statusText);
