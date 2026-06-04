@@ -14814,21 +14814,42 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
     def _dir(series):
         vals = [v for _, v in series]
         if len(vals) < 2:
-            return ("→", "var(--muted)")
+            return ("→", "var(--muted)", "flat")
         delta = vals[-1] - vals[0]
         thresh = max(2.0, 0.10 * abs(vals[0] or 1))
         if delta > thresh:
-            return ("▲", "#22c55e")
+            return ("▲", "#22c55e", "up")
         if delta < -thresh:
-            return ("▼", "#ef4444")
-        return ("→", "var(--muted)")
+            return ("▼", "#ef4444", "down")
+        return ("→", "var(--muted)", "flat")
 
     def _series_html(series):
-        return " <span style='color:var(--muted)'>→</span> ".join(
-            f"<strong>{yr}</strong>&nbsp;{val}" for yr, val in series)
+        # Render each season as a connected chip, emphasising the latest one.
+        parts = []
+        last_idx = len(series) - 1
+        for i, (yr, val) in enumerate(series):
+            is_last = i == last_idx
+            chip_bg = "var(--accent,#3b82f6)" if is_last else "var(--row,rgba(127,127,127,.08))"
+            chip_fg = "#fff" if is_last else "var(--text)"
+            chip_border = "transparent" if is_last else "var(--border)"
+            parts.append(
+                f"<span class='msh-chip' style='background:{chip_bg};color:{chip_fg};"
+                f"border-color:{chip_border};'>"
+                f"<span class='msh-chip-yr'>{yr}</span>"
+                f"<span class='msh-chip-val'>{val}</span></span>"
+            )
+        connector = "<span class='msh-arrow'>›</span>"
+        return connector.join(parts)
 
-    m_arrow, m_color = _dir(moves_series)
-    t_arrow, t_color = _dir(trades_series)
+    m_arrow, m_color, m_dir = _dir(moves_series)
+    t_arrow, t_color, t_dir = _dir(trades_series)
+
+    def _trend_badge(arrow, color, direction):
+        label = {"up": "Rising", "down": "Falling", "flat": "Steady"}[direction]
+        return (
+            f"<span class='msh-trend' style='color:{color};background:{color}1a;'>"
+            f"{arrow} {label}</span>"
+        )
 
     owners = layer.get("owners") or {}
     chronic = []
@@ -14840,28 +14861,62 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
     chronic.sort(key=lambda x: -x[1])
 
     chronic_rows = "".join(
-        f"<div style='display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;'>"
-        f"<span>{name}</span><span style='color:#ef4444;font-weight:600;'>inactive {inact} of last {windows}</span></div>"
+        f"<div class='msh-chronic-row'>"
+        f"<span class='msh-chronic-name'>{name}</span>"
+        f"<span class='msh-chronic-flag'>inactive {inact} of last {windows}</span></div>"
         for name, inact, windows in chronic
-    ) or "<div style='color:var(--muted);font-size:13px;'>No chronic inactivity — owners stay engaged across seasons.</div>"
+    ) or (
+        "<div class='msh-chronic-ok'>"
+        "<span class='msh-chronic-ok-icon'>✓</span>"
+        "No chronic inactivity — owners stay engaged across seasons.</div>"
+    )
 
     n_prior = len(seasons)
     return f"""
-<div class="card" style="padding:16px;margin-bottom:20px;">
-  <div style="font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--muted);margin-bottom:12px;">
-    MULTI-SEASON HEALTH <span style="font-weight:500;">· last {n_prior} prior season{'s' if n_prior != 1 else ''}</span>
+<style>
+  .msh-card {{ padding:20px; margin-bottom:20px; }}
+  .msh-head {{ display:flex; align-items:baseline; gap:8px; margin-bottom:18px; }}
+  .msh-head-title {{ font-size:12px; font-weight:800; letter-spacing:.06em; color:var(--text); text-transform:uppercase; }}
+  .msh-head-sub {{ font-size:12px; color:var(--muted); }}
+  .msh-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; margin-bottom:18px; }}
+  .msh-stat {{ border:1px solid var(--border); border-radius:14px; padding:14px 16px; background:var(--row,rgba(127,127,127,.03)); }}
+  .msh-stat-head {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }}
+  .msh-stat-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; }}
+  .msh-trend {{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap; }}
+  .msh-series {{ display:flex; align-items:center; flex-wrap:wrap; gap:2px; }}
+  .msh-chip {{ display:inline-flex; flex-direction:column; align-items:center; gap:1px; padding:5px 11px; border-radius:10px; border:1px solid; line-height:1.1; }}
+  .msh-chip-yr {{ font-size:10px; font-weight:600; opacity:.75; }}
+  .msh-chip-val {{ font-size:15px; font-weight:800; }}
+  .msh-arrow {{ color:var(--muted); font-size:16px; font-weight:700; padding:0 2px; opacity:.5; }}
+  .msh-chronic-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; margin-bottom:8px; }}
+  .msh-chronic-row {{ display:flex; align-items:center; justify-content:space-between; padding:9px 12px; border-radius:10px; background:rgba(239,68,68,.06); border:1px solid rgba(239,68,68,.18); margin-bottom:6px; font-size:13px; }}
+  .msh-chronic-name {{ font-weight:600; color:var(--text); }}
+  .msh-chronic-flag {{ color:#ef4444; font-weight:700; font-size:12px; }}
+  .msh-chronic-ok {{ display:flex; align-items:center; gap:8px; padding:11px 14px; border-radius:10px; background:rgba(34,197,94,.07); border:1px solid rgba(34,197,94,.2); color:var(--text); font-size:13px; }}
+  .msh-chronic-ok-icon {{ display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:#22c55e; color:#fff; font-size:11px; font-weight:800; flex-shrink:0; }}
+</style>
+<div class="card msh-card">
+  <div class="msh-head">
+    <span class="msh-head-title">Multi-Season Health</span>
+    <span class="msh-head-sub">last {n_prior} prior season{'s' if n_prior != 1 else ''}</span>
   </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px;">
-    <div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">TOTAL MOVES / SEASON <span style="color:{m_color};">{m_arrow}</span></div>
-      <div style="font-size:13px;">{_series_html(moves_series)}</div>
+  <div class="msh-grid">
+    <div class="msh-stat">
+      <div class="msh-stat-head">
+        <span class="msh-stat-label">Total Moves / Season</span>
+        {_trend_badge(m_arrow, m_color, m_dir)}
+      </div>
+      <div class="msh-series">{_series_html(moves_series)}</div>
     </div>
-    <div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">TRADES / SEASON <span style="color:{t_color};">{t_arrow}</span></div>
-      <div style="font-size:13px;">{_series_html(trades_series)}</div>
+    <div class="msh-stat">
+      <div class="msh-stat-head">
+        <span class="msh-stat-label">Trades / Season</span>
+        {_trend_badge(t_arrow, t_color, t_dir)}
+      </div>
+      <div class="msh-series">{_series_html(trades_series)}</div>
     </div>
   </div>
-  <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">CHRONIC INACTIVITY</div>
+  <div class="msh-chronic-label">Chronic Inactivity</div>
   {chronic_rows}
 </div>"""
 
