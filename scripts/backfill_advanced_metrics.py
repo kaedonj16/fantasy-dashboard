@@ -16,7 +16,7 @@ Usage:
 
 import sys
 
-from data_building.advanced_metrics import calculate_player_metrics, save_metrics_snapshot
+from data_building.advanced_metrics import calculate_player_metrics, finalize_role_scores_v2, save_metrics_snapshot
 from data_building.external_data.sleeper_usage import build_usage_map_for_season
 from utils.utils import load_players_index
 
@@ -35,6 +35,7 @@ def backfill_season(season: int, players_index: dict) -> int:
     print(f"  Usage map built: {len(usage_map)} players found")
 
     metrics_list = []
+    usage_table = []  # {id, team, position, usage} for the v2 role-score finalizer
     skipped = 0
     failed = 0
 
@@ -53,6 +54,7 @@ def backfill_season(season: int, players_index: dict) -> int:
 
         try:
             metrics_list.append(calculate_player_metrics(str(pid), usage, pos))
+            usage_table.append({"id": str(pid), "team": meta.get("team"), "position": pos, "usage": usage})
         except Exception as e:
             print(f"  [warn] player {pid}: {e}")
             failed += 1
@@ -60,6 +62,9 @@ def backfill_season(season: int, players_index: dict) -> int:
     if not metrics_list:
         print(f"  No metrics to save (skipped={skipped}, failed={failed})")
         return 0
+
+    # Role score v2: percentile within position from team-relative shares.
+    finalize_role_scores_v2(metrics_list, usage_table)
 
     # Use early January of the following year as the representative snapshot date.
     # This places the snapshot firmly within the season's date range

@@ -260,7 +260,7 @@ for w in {_proj_weeks!r}:
 from dotenv import load_dotenv; load_dotenv()
 from datetime import datetime, date
 from dashboard_services.api import get_nfl_state
-from data_building.advanced_metrics import calculate_player_metrics, save_metrics_snapshot
+from data_building.advanced_metrics import calculate_player_metrics, finalize_role_scores_v2, save_metrics_snapshot
 from utils.utils import load_usage_table
 
 nfl_state = get_nfl_state() or {{}}
@@ -288,6 +288,9 @@ else:
                 metrics_list.append(calculate_player_metrics(player_id, usage, position))
             except Exception:
                 failed_count += 1
+        # Role score v2: percentile within position from team-relative shares
+        # (needs the whole cohort, so it runs once after the per-player loop).
+        finalize_role_scores_v2(metrics_list, usage_table)
         if metrics_list:
             save_metrics_snapshot(metrics_list, date.today().isoformat(), season=current_season)
             print(f"[cron] Advanced metrics: {{len(metrics_list)}} processed, {{failed_count}} failed")

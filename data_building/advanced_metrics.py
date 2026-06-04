@@ -11,6 +11,7 @@ These metrics inform the breakout detection algorithm and can be displayed in th
 
 from __future__ import annotations
 
+import os
 from typing import Dict, Any, List, Optional
 
 from dashboard_services.api import get_nfl_state
@@ -617,6 +618,196 @@ def calculate_role_score(
     score *= (0.94 + 0.06 * sample_mult)
 
     return round(_clip(score, 0.0, 100.0), 1)
+
+
+# ===========================================================================
+# Role score v2 — team-relative shares, opportunity-only, position percentile
+# ===========================================================================
+#
+# Why a rewrite (see calculate_role_score above for v1):
+#   * v1 scored raw per-game *volume* against absolute thresholds, so a back on
+#     a pass-heavy team looked identical to one on a run-heavy team — it never
+#     measured share of the team's opportunities.
+#   * v1 baked efficiency (ypt/ypc/catch rate/TD) into "role", conflating "is he
+#     featured" with "is he good". Those live in the dedicated efficiency
+#     metrics; role should be a near-orthogonal opportunity axis.
+#   * v1's snap term was effectively dead: avg_off_snap_pct is a 0-1 fraction but
+#     v1 normalised it against 35-95, so _norm(0.85, 35, 95) clipped to 0.
+#
+# v2 is a two-pass batch computation (needs the whole cohort), exposed via
+# finalize_role_scores_v2():
+#   Pass 1 — a raw 0-1 opportunity index from team-relative shares.
+#   Pass 2 — map each index to its percentile within the position cohort.
+# Toggle with the ROLE_SCORE_V2 env var (default on); v1 stays reachable for A/B.
+
+# Min qualified players in a position cohort before percentile ranking is
+# trustworthy; below this we fall back to an absolute scaling of the index.
+_ROLE_MIN_COHORT = 8
+# Index value treated as "elite" when the cohort is too small to percentile.
+_ROLE_ABS_REFERENCE = 0.62
+# A player needs this many games to earn full sample confidence.
+_ROLE_FULL_SAMPLE_GAMES = 4.0
+# Qualification floor for the *reference* distribution (keeps small-sample flukes
+# from defining the top of the cohort). Players below it are still scored.
+_ROLE_QUAL_GAMES = 4.0
+_ROLE_QUAL_SNAP = 0.30
+
+
+def use_role_score_v2() -> bool:
+    """v2 is the default; set ROLE_SCORE_V2=0 to fall back to the v1 formula."""
+    return os.getenv("ROLE_SCORE_V2", "1").strip().lower() not in ("0", "false", "no", "")
+
+
+def build_team_opportunity_context(usage_table: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
+    """
+    Sum per-game opportunities by team so each player's share can be derived.
+    usage_table entries are {id, team, position, usage:{...}}; only players with
+    games > 0 contribute. Returns {team: {targets, carries, rz_tgt, rz_rush}}.
+    """
+    ctx: Dict[str, Dict[str, float]] = {}
+    for p in usage_table:
+        team = p.get("team")
+        usage = p.get("usage") or {}
+        if not team or (usage.get("games") or 0) <= 0:
+            continue
+        agg = ctx.setdefault(team, {"targets": 0.0, "carries": 0.0, "rz_tgt": 0.0, "rz_rush": 0.0})
+        agg["targets"] += _safe(usage.get("avg_targets"))
+        agg["carries"] += _safe(usage.get("avg_carries"))
+        agg["rz_tgt"]  += _safe(usage.get("rec_rz_tgt_pg"))
+        agg["rz_rush"] += _safe(usage.get("rush_rz_att_pg"))
+    return ctx
+
+
+def _share(part: float, whole: float) -> float:
+    return _clip(part / whole, 0.0, 1.0) if whole > 0 else 0.0
+
+
+def role_opportunity_index(
+    usage: Dict[str, float],
+    position: str,
+    team_ctx: Dict[str, float],
+) -> Optional[float]:
+    """
+    Pass 1: a 0-1 opportunity index from team-relative shares (no efficiency).
+    team_ctx is the entry from build_team_opportunity_context for this player's
+    team. Returns None for non-skill positions or players who never played.
+    """
+    games = _safe(usage.get("games"))
+    if games <= 0:
+        return None
+
+    snap = _clip(_safe(usage.get("avg_off_snap_pct")), 0.0, 1.0)
+
+    # Receiving share: prefer Footballguys target_share (true team share);
+    # fall back to deriving it from the team aggregate.
+    tshare = _safe(usage.get("target_share"))
+    if tshare <= 0:
+        tshare = _share(_safe(usage.get("avg_targets")), _safe(team_ctx.get("targets")))
+    tshare = _clip(tshare, 0.0, 1.0)
+
+    rz_tgt_share  = _share(_safe(usage.get("rec_rz_tgt_pg")),  _safe(team_ctx.get("rz_tgt")))
+    rz_rush_share = _share(_safe(usage.get("rush_rz_att_pg")), _safe(team_ctx.get("rz_rush")))
+
+    if position == "WR":
+        # Alpha / slot / deep / RZ specialist all reachable; snap (0.28) keeps
+        # lower-target-share field-stretchers from cratering until air yards land.
+        idx = 0.50 * tshare + 0.28 * snap + 0.22 * rz_tgt_share
+
+    elif position == "TE":
+        # Snap deliberately low — TE snaps include blocking, which is not a
+        # fantasy role. Receiving + RZ involvement carry the score.
+        idx = 0.55 * tshare + 0.27 * rz_tgt_share + 0.18 * snap
+
+    elif position == "RB":
+        # PPR-weighted dual role: the 1.7x target premium lets pass-catching
+        # backs register, while rush + goal-line share reward early-down bellcows.
+        rshare = _share(_safe(usage.get("avg_carries")), _safe(team_ctx.get("carries")))
+        core   = _clip(rshare + 1.7 * tshare, 0.0, 1.0)
+        idx = 0.46 * core + 0.20 * rz_rush_share + 0.18 * snap + 0.16 * rz_tgt_share
+
+    elif position == "QB":
+        # No "share" at QB — workload + dual-threat, ranked. Rushing is additive
+        # upside (0.18) so pocket passers are not penalised: pass + snap = 0.72.
+        pass_vol = _norm(_safe(usage.get("avg_pass_att")), 18, 42)
+        rush_vol = _norm(_safe(usage.get("avg_carries")), 0, 9)
+        rz_vol   = _norm(_safe(usage.get("rush_rz_att_pg")), 0, 2.0)
+        idx = 0.42 * pass_vol + 0.30 * snap + 0.18 * rush_vol + 0.10 * rz_vol
+
+    else:
+        return None
+
+    return _clip(idx, 0.0, 1.0)
+
+
+def _percentile_of(sorted_ref: List[float], x: float) -> float:
+    """Midrank percentile (0-100) of x within an ascending reference list."""
+    n = len(sorted_ref)
+    if n == 0:
+        return 0.0
+    import bisect
+    lo = bisect.bisect_left(sorted_ref, x)
+    hi = bisect.bisect_right(sorted_ref, x)
+    # midpoint of the equal-value band gives ties a fair shared rank
+    return ((lo + hi) / 2.0) / n * 100.0
+
+
+def finalize_role_scores_v2(
+    metrics_list: List[Dict[str, Any]],
+    usage_table: List[Dict[str, Any]],
+) -> None:
+    """
+    Overwrite each metrics dict's "role_score" with the v2 percentile score.
+
+    No-op (leaves the v1 values from calculate_player_metrics in place) when
+    ROLE_SCORE_V2 is disabled. Mutates metrics_list in place.
+    """
+    if not use_role_score_v2():
+        return
+
+    team_ctx_map = build_team_opportunity_context(usage_table)
+    usage_by_id = {str(p.get("id")): p for p in usage_table}
+
+    # Pass 1: raw opportunity index per player.
+    raw_by_id: Dict[str, float] = {}
+    games_by_id: Dict[str, float] = {}
+    ref_by_pos: Dict[str, List[float]] = {}
+    for m in metrics_list:
+        pid = str(m.get("player_id"))
+        position = m.get("position")
+        entry = usage_by_id.get(pid)
+        if entry is None:
+            continue
+        usage = entry.get("usage") or {}
+        team_ctx = team_ctx_map.get(entry.get("team"), {})
+        idx = role_opportunity_index(usage, position, team_ctx)
+        if idx is None:
+            continue
+        raw_by_id[pid] = idx
+        games = _safe(usage.get("games"))
+        games_by_id[pid] = games
+        snap = _safe(usage.get("avg_off_snap_pct"))
+        # Build the reference distribution from qualified players only.
+        if games >= _ROLE_QUAL_GAMES and snap >= _ROLE_QUAL_SNAP:
+            ref_by_pos.setdefault(position, []).append(idx)
+
+    for refs in ref_by_pos.values():
+        refs.sort()
+
+    # Pass 2: percentile within position (absolute fallback for thin cohorts),
+    # lightly shrunk toward 0 for small samples so week-1 flukes can't top a cohort.
+    for m in metrics_list:
+        pid = str(m.get("player_id"))
+        if pid not in raw_by_id:
+            continue
+        position = m.get("position")
+        idx = raw_by_id[pid]
+        refs = ref_by_pos.get(position, [])
+        if len(refs) >= _ROLE_MIN_COHORT:
+            score = _percentile_of(refs, idx)
+        else:
+            score = _clip(idx / _ROLE_ABS_REFERENCE, 0.0, 1.0) * 100.0
+        conf = _clip(games_by_id.get(pid, 0.0) / _ROLE_FULL_SAMPLE_GAMES, 0.0, 1.0)
+        m["role_score"] = round(_clip(score * conf, 0.0, 100.0), 1)
 
 
 def calculate_player_metrics(
