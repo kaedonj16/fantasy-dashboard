@@ -22665,6 +22665,7 @@ def api_trade_intel_player_send_packages(player_id: str):
         focus_value = round(target_info["value"], 1)
         player_name = target_info["name"]
         focus_pos   = target_info["position"]
+        focus_is_pick = bool(target_info.get("is_pick")) or _is_pick_asset_id(str(player_id))
 
         if focus_value <= 0:
             return jsonify({
@@ -22735,6 +22736,33 @@ def api_trade_intel_player_send_packages(player_id: str):
                 return "Fair value", "fair"
             return "Light return", "light"
 
+        def _need_bonus(assets: list) -> int:
+            return sum(1 for a in assets if a.get("position") in viewer_weak)
+
+        def _option_quality(assets: list, total: float) -> float:
+            """Lower is better. Ranks returns the way a savvy manager would:
+            close to fair value, consolidated (fewer pieces), anchored by a real
+            player rather than two scrubs, filling needs, and — when sending a
+            future asset like a pick — skewing younger."""
+            score = abs(total - focus_value)                     # value distance
+            score += (len(assets) - 1) * focus_value * 0.07      # prefer consolidation
+            best_piece = max((float(a["value"]) for a in assets), default=0.0)
+            anchor_ratio = (best_piece / focus_value) if focus_value else 0.0
+            if anchor_ratio < 0.60:                              # avoid death-by-paper-cuts
+                score += (0.60 - anchor_ratio) * focus_value * 0.6
+            score -= _need_bonus(assets) * focus_value * 0.03    # reward filling weak spots
+            if focus_is_pick:                                    # picks are future assets → youth
+                for a in assets:
+                    if a.get("is_pick"):
+                        continue
+                    try:
+                        age = float(a.get("age")) if a.get("age") is not None else None
+                    except (TypeError, ValueError):
+                        age = None
+                    if age is not None and age >= 27:
+                        score += (age - 27) * focus_value * 0.02
+            return score
+
         options: list = []
         seen_shapes: set = set()
 
@@ -22752,6 +22780,7 @@ def api_trade_intel_player_send_packages(player_id: str):
                         "position":       values_by_id[str(pid)]["position"],
                         "value":          values_by_id[str(pid)]["value"],
                         "pos_rank_label": values_by_id[str(pid)]["pos_rank_label"],
+                        "age":            values_by_id[str(pid)].get("age"),
                         "is_pick":        False,
                     }
                     for pid in (r.get("players") or [])
@@ -22784,7 +22813,7 @@ def api_trade_intel_player_send_packages(player_id: str):
                     "receive_value": total,
                     "value_label":   label,
                     "value_class":   cls,
-                    "fit":           abs(total - focus_value),
+                    "qual":          _option_quality(assets, total),
                 })
 
             # 1 player
@@ -22807,17 +22836,14 @@ def api_trade_intel_player_send_packages(player_id: str):
                 for pk2 in team_picks[i + 1:]:
                     _add([pk1, pk2])
 
-            # Keep this team's 3 best-fitting options; prefer combos filling viewer's needs
-            def _need_bonus(assets: list) -> int:
-                return sum(1 for a in assets if a.get("position") in viewer_weak)
-            team_opts.sort(key=lambda x: (x["fit"] - _need_bonus(x["receive"]) * focus_value * 0.03,
-                                           -len(x["receive"])))
+            # Keep this team's 3 best-quality options (consolidation + need-aware)
+            team_opts.sort(key=lambda x: x["qual"])
             options.extend(team_opts[:3])
 
-        # Best fit across all teams first; cap the list
-        options.sort(key=lambda x: x["fit"])
+        # Best quality across all teams first; cap the list
+        options.sort(key=lambda x: x["qual"])
         for o in options:
-            o.pop("fit", None)
+            o.pop("qual", None)
         options = options[:12]
 
         return jsonify({
