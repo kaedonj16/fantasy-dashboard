@@ -44,14 +44,6 @@ def _ai_error_notice(reason: str = "") -> str:
     )
 
 
-def _wrap_text_html(text: str) -> str:
-    return (
-        "<div class='ai-copy'>"
-        f"<pre style='white-space:pre-wrap;font:inherit;margin:0'>{text}</pre>"
-        "</div>"
-    )
-
-
 def render_team_ai_result(result: dict, mode: str = "gm_memo") -> str:
     """
     Render the AI-generated team analysis result as HTML.

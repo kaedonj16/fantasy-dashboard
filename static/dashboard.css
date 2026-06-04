@@ -14837,9 +14837,15 @@ tr.team-clickable {
 
 /* ── Mobile: small phones ─────────────────────────────────────────────────── */
 @media (max-width: 480px) {
-  /* Metric rows: move label above bars so bars get full width */
+  /* Metric rows: move label above bars so bars get full width.
+     Must switch from the base grid to flex — flex-wrap/order only apply to
+     flex containers, otherwise the items stay in the 5 fixed grid tracks and
+     the label gets crammed into a narrow column. */
   .compare-metric-row {
+    display: flex;
     flex-wrap: wrap;
+    align-items: center;
+    column-gap: 6px;
     row-gap: 3px;
   }
   .compare-metric-label {
@@ -14856,9 +14862,13 @@ tr.team-clickable {
   }
   .compare-bar-left {
     order: 2;
+    flex: 1 1 0;
+    min-width: 0;
   }
   .compare-bar-right {
     order: 3;
+    flex: 1 1 0;
+    min-width: 0;
   }
   .compare-metric-p2-val {
     order: 4;

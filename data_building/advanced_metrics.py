@@ -11,6 +11,7 @@ These metrics inform the breakout detection algorithm and can be displayed in th
 
 from __future__ import annotations
 
+import os
 from typing import Dict, Any, List, Optional
 
 from dashboard_services.api import get_nfl_state
@@ -617,6 +618,183 @@ def calculate_role_score(
     score *= (0.94 + 0.06 * sample_mult)
 
     return round(_clip(score, 0.0, 100.0), 1)
+
+
+# ===========================================================================
+# Role score v2 — team-relative shares, opportunity-only, position percentile
+# ===========================================================================
+#
+# Why a rewrite (see calculate_role_score above for v1):
+#   * v1 scored raw per-game *volume* against absolute thresholds, so a back on
+#     a pass-heavy team looked identical to one on a run-heavy team — it never
+#     measured share of the team's opportunities.
+#   * v1 baked efficiency (ypt/ypc/catch rate/TD) into "role", conflating "is he
+#     featured" with "is he good". Those live in the dedicated efficiency
+#     metrics; role should be a near-orthogonal opportunity axis.
+#   * v1's snap term was effectively dead: avg_off_snap_pct is a 0-1 fraction but
+#     v1 normalised it against 35-95, so _norm(0.85, 35, 95) clipped to 0.
+#
+# v2 is a two-pass batch computation (needs team aggregates for shares), exposed
+# via finalize_role_scores_v2():
+#   Pass 1 — a raw 0-1 opportunity index from team-relative shares.
+#   Pass 2 — scale that index against a fixed per-position "elite role" anchor so
+#            100 means an alpha/bellcow workload. Absolute (not percentile) so a
+#            middling role reads as middling regardless of how strong the rest of
+#            the cohort is that season, and so scores are comparable across years.
+# Toggle with the ROLE_SCORE_V2 env var (default on); v1 stays reachable for A/B.
+
+# Index value of an elite role per position -> 100. Calibrated from what a true
+# alpha WR / receiving TE / bellcow RB / dual-threat-or-high-volume QB index to.
+_ROLE_ELITE_ANCHOR: Dict[str, float] = {"WR": 0.48, "TE": 0.40, "RB": 0.70, "QB": 0.78}
+# A player needs this many games to earn full sample confidence (small samples
+# shrink toward 0 so a 1-2 game fluke can't post an elite role score).
+_ROLE_FULL_SAMPLE_GAMES = 4.0
+
+
+def use_role_score_v2() -> bool:
+    """v2 is the default; set ROLE_SCORE_V2=0 to fall back to the v1 formula."""
+    return os.getenv("ROLE_SCORE_V2", "1").strip().lower() not in ("0", "false", "no", "")
+
+
+def build_team_opportunity_context(usage_table: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
+    """
+    Sum per-game opportunities by team so each player's share can be derived.
+    usage_table entries are {id, team, position, usage:{...}}; only players with
+    games > 0 contribute. Returns {team: {targets, carries, rz_tgt, rz_rush}}.
+    """
+    ctx: Dict[str, Dict[str, float]] = {}
+    for p in usage_table:
+        team = p.get("team")
+        usage = p.get("usage") or {}
+        if not team or (usage.get("games") or 0) <= 0:
+            continue
+        agg = ctx.setdefault(team, {"targets": 0.0, "carries": 0.0, "rz_tgt": 0.0, "rz_rush": 0.0})
+        agg["targets"] += _safe(usage.get("avg_targets"))
+        agg["carries"] += _safe(usage.get("avg_carries"))
+        agg["rz_tgt"]  += _safe(usage.get("rec_rz_tgt_pg"))
+        agg["rz_rush"] += _safe(usage.get("rush_rz_att_pg"))
+    return ctx
+
+
+def _share(part: float, whole: float) -> float:
+    return _clip(part / whole, 0.0, 1.0) if whole > 0 else 0.0
+
+
+def role_opportunity_index(
+    usage: Dict[str, float],
+    position: str,
+    team_ctx: Dict[str, float],
+    rz_available: bool = True,
+) -> Optional[float]:
+    """
+    Pass 1: a 0-1 opportunity index from team-relative shares (no efficiency).
+    team_ctx is the entry from build_team_opportunity_context for this player's
+    team. Returns None for non-skill positions or players who never played.
+
+    rz_available=False (no red-zone data in the slate, e.g. offseason / early
+    season) drops the RZ components and renormalises the remaining weights, so
+    the index is not artificially capped below the elite anchor — otherwise the
+    missing 0.22-0.27 RZ weight would undersell TEs/RBs.
+    """
+    games = _safe(usage.get("games"))
+    if games <= 0:
+        return None
+
+    snap = _clip(_safe(usage.get("avg_off_snap_pct")), 0.0, 1.0)
+
+    # Receiving share: prefer Footballguys target_share (true team share);
+    # fall back to deriving it from the team aggregate.
+    tshare = _safe(usage.get("target_share"))
+    if tshare <= 0:
+        tshare = _share(_safe(usage.get("avg_targets")), _safe(team_ctx.get("targets")))
+    tshare = _clip(tshare, 0.0, 1.0)
+
+    rz_tgt_share  = _share(_safe(usage.get("rec_rz_tgt_pg")),  _safe(team_ctx.get("rz_tgt")))
+    rz_rush_share = _share(_safe(usage.get("rush_rz_att_pg")), _safe(team_ctx.get("rz_rush")))
+
+    # Each component is (value, weight, is_red_zone).
+    if position == "WR":
+        # Alpha / slot / deep / RZ specialist all reachable; snap keeps
+        # lower-target-share field-stretchers from cratering until air yards land.
+        comps = [(tshare, 0.50, False), (snap, 0.28, False), (rz_tgt_share, 0.22, True)]
+
+    elif position == "TE":
+        # Snap deliberately low — TE snaps include blocking, not a fantasy role.
+        # RZ involvement is a big slice of TE value (they are red-zone weapons).
+        comps = [(tshare, 0.55, False), (rz_tgt_share, 0.27, True), (snap, 0.18, False)]
+
+    elif position == "RB":
+        # PPR-weighted dual role: the 1.7x target premium lets pass-catching
+        # backs register, while rush + goal-line share reward early-down bellcows.
+        rshare = _share(_safe(usage.get("avg_carries")), _safe(team_ctx.get("carries")))
+        core   = _clip(rshare + 1.7 * tshare, 0.0, 1.0)
+        comps = [(core, 0.46, False), (rz_rush_share, 0.20, True),
+                 (snap, 0.18, False), (rz_tgt_share, 0.16, True)]
+
+    elif position == "QB":
+        # No "share" at QB — workload + dual-threat, ranked. No red-zone term:
+        # "RZ role" isn't a meaningful axis for a QB (unlike a goal-line RB or a
+        # jump-ball WR/TE), and goal-line rushing is already captured by the
+        # designed-rush component. Rushing stays additive upside so pocket
+        # passers are not penalised: pass + snap = 0.80.
+        pass_vol = _norm(_safe(usage.get("avg_pass_att")), 18, 42)
+        rush_vol = _norm(_safe(usage.get("avg_carries")), 0, 9)
+        comps = [(pass_vol, 0.47, False), (snap, 0.33, False), (rush_vol, 0.20, False)]
+
+    else:
+        return None
+
+    if rz_available:
+        idx = sum(value * weight for value, weight, _ in comps)
+    else:
+        kept = [(value, weight) for value, weight, is_rz in comps if not is_rz]
+        wsum = sum(weight for _, weight in kept) or 1.0
+        idx = sum(value * (weight / wsum) for value, weight in kept)
+
+    return _clip(idx, 0.0, 1.0)
+
+
+def finalize_role_scores_v2(
+    metrics_list: List[Dict[str, Any]],
+    usage_table: List[Dict[str, Any]],
+) -> None:
+    """
+    Overwrite each metrics dict's "role_score" with the v2 score: the
+    team-relative opportunity index scaled against a fixed per-position elite
+    anchor (absolute, not percentile), lightly shrunk for small samples.
+
+    No-op (leaves the v1 values from calculate_player_metrics in place) when
+    ROLE_SCORE_V2 is disabled. Mutates metrics_list in place.
+    """
+    if not use_role_score_v2():
+        return
+
+    team_ctx_map = build_team_opportunity_context(usage_table)
+    usage_by_id = {str(p.get("id")): p for p in usage_table}
+
+    # Does the slate actually carry red-zone data? If not (offseason / early
+    # season / RZ source down), the index renormalises so TEs/RBs aren't
+    # undersold by a silently-zero RZ term.
+    rz_available = any(
+        (_safe(c.get("rz_tgt")) > 0 or _safe(c.get("rz_rush")) > 0)
+        for c in team_ctx_map.values()
+    )
+
+    for m in metrics_list:
+        pid = str(m.get("player_id"))
+        position = m.get("position")
+        entry = usage_by_id.get(pid)
+        if entry is None:
+            continue
+        usage = entry.get("usage") or {}
+        idx = role_opportunity_index(usage, position, team_ctx_map.get(entry.get("team"), {}), rz_available)
+        anchor = _ROLE_ELITE_ANCHOR.get(position)
+        if idx is None or not anchor:
+            continue
+        # Absolute scaling: elite role -> ~100; middling role stays middling
+        # regardless of cohort strength. Small samples shrink toward 0.
+        conf = _clip(_safe(usage.get("games")) / _ROLE_FULL_SAMPLE_GAMES, 0.0, 1.0)
+        m["role_score"] = round(_clip(idx / anchor, 0.0, 1.0) * 100.0 * conf, 1)
 
 
 def calculate_player_metrics(

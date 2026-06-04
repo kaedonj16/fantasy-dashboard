@@ -288,6 +288,63 @@ def _decay_weight(days_ago: float) -> float:
     return 0.08
 
 
+def _count_trades(season: int, is_sf: bool = False, league_type: int = 2, league_size: int = 10) -> int:
+    """Cheap existence check for a market segment without materialising trades."""
+    teams_clause = _teams_filter(league_size)
+    with get_conn() as conn:
+        row = conn.execute(
+            f"""
+            SELECT count(*) AS c
+            FROM trade_intel_trades t
+            JOIN trade_intel_leagues l ON l.league_id = t.league_id
+            WHERE t.season = %s
+              AND t.status = 'complete'
+              AND COALESCE(l.is_superflex, FALSE) = %s
+              AND l.league_type = %s
+              AND (t.created_at IS NULL
+                   OR t.created_at >= NOW() - make_interval(days => %s))
+              {teams_clause}
+            """,
+            (season, is_sf, league_type, TRADES_LOOKBACK_DAYS),
+        ).fetchone()
+    return int(row["c"]) if row else 0
+
+
+def _load_pick_keys(season: int, league_type: int = 2, league_size: int = 10) -> set[str]:
+    """
+    Union of pick-bucket keys across BOTH market segments (1QB + SF), via a
+    lightweight DISTINCT query. Lets run_trade_value_model size the unknown
+    vector without holding both full trade lists in memory at once (512Mi cap).
+    """
+    teams_clause = _teams_filter(league_size)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT a.pick_season, a.pick_round, a.pick_order, a.pick_slot
+            FROM trade_intel_trades t
+            JOIN trade_intel_leagues l ON l.league_id = t.league_id
+            JOIN trade_intel_assets a ON a.trade_id = t.id
+            WHERE t.season = %s
+              AND t.status = 'complete'
+              AND l.league_type = %s
+              AND a.asset_type = 'pick'
+              AND (t.created_at IS NULL
+                   OR t.created_at >= NOW() - make_interval(days => %s))
+              {teams_clause}
+            """,
+            (season, league_type, TRADES_LOOKBACK_DAYS),
+        ).fetchall()
+    keys: set[str] = set()
+    for r in rows:
+        keys.add(_pick_key({
+            "pick_season": r["pick_season"],
+            "pick_round":  r["pick_round"],
+            "pick_order":  r["pick_order"],
+            "pick_slot":   r["pick_slot"],
+        }, season))
+    return keys
+
+
 # ---------------------------------------------------------------------------
 # Normal equations - picks and players as joint unknowns
 # ---------------------------------------------------------------------------
@@ -342,6 +399,110 @@ def _build_normal_equations(
 
         n += 1
 
+    return AtWA, AtWb, n
+
+
+def _stream_normal_equations(
+    season: int,
+    is_sf: bool,
+    league_type: int,
+    league_size: int,
+    all_idx: dict[str, int],
+    N: int,
+    current_year: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """
+    Streaming equivalent of _load_trades + _build_normal_equations for the cron
+    path. Iterates trade rows with a server-side cursor (batched fetch) and folds
+    each trade into AᵀWA as it is read, so the full trade list is never resident.
+    Trade memory is O(batch) rather than O(all trades) — the cron box is capped at
+    512Mi and the popular league sizes carry very large trade volumes.
+
+    Produces the exact same AᵀWA / AᵀWb / constraint count as the list-based path.
+    """
+    teams_clause = _teams_filter(league_size)
+    AtWA = np.zeros((N, N))
+    AtWb = np.zeros(N)
+    n    = 0
+    now  = datetime.now(tz=timezone.utc)
+
+    def _flush(assets: list[dict], created) -> None:
+        nonlocal n
+        if not assets:
+            return
+        if created and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        days_ago = (now - created).total_seconds() / 86400 if created else 999
+        w = _decay_weight(days_ago)
+
+        terms: list[tuple[int, float]] = []
+        for a in assets:
+            if a["asset_type"] == "player" and a["player_id"]:
+                key = a["player_id"]
+            elif a["asset_type"] == "pick":
+                key = _pick_key(a, current_year)
+            else:
+                continue
+            if key not in all_idx:
+                continue
+            sign = 1.0 if a["side"] == "a" else -1.0
+            terms.append((all_idx[key], sign))
+
+        if not terms:
+            return
+        # Drop one-sided trades (multi-team fragments stored as separate records)
+        if not any(s > 0 for _, s in terms) or not any(s < 0 for _, s in terms):
+            return
+        for idx_i, sign_i in terms:
+            for idx_j, sign_j in terms:
+                AtWA[idx_i, idx_j] += w * sign_i * sign_j
+        n += 1
+
+    cur_tid = None
+    cur_assets: list[dict] = []
+    cur_created = None
+    with get_conn() as conn:
+        # Server-side cursor: rows stream from the DB in itersize batches instead
+        # of a single fetchall(), so memory stays flat regardless of row count.
+        with conn.cursor(name="wls_trades_stream") as cur:
+            cur.itersize = 5000
+            cur.execute(
+                f"""
+                SELECT t.id, t.created_at,
+                       a.side, a.asset_type, a.player_id,
+                       a.pick_season, a.pick_round, a.pick_order, a.pick_slot
+                FROM trade_intel_trades t
+                JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                LEFT JOIN trade_intel_assets a ON a.trade_id = t.id
+                WHERE t.season = %s
+                  AND t.status = 'complete'
+                  AND COALESCE(l.is_superflex, FALSE) = %s
+                  AND l.league_type = %s
+                  AND (t.created_at IS NULL
+                       OR t.created_at >= NOW() - make_interval(days => %s))
+                  {teams_clause}
+                ORDER BY t.id
+                """,
+                (season, is_sf, league_type, TRADES_LOOKBACK_DAYS),
+            )
+            for r in cur:
+                tid = r["id"]
+                if tid != cur_tid:
+                    _flush(cur_assets, cur_created)
+                    cur_tid = tid
+                    cur_assets = []
+                    cur_created = r["created_at"]
+                if r["side"] is not None:
+                    cur_assets.append({
+                        "side":        r["side"],
+                        "asset_type":  r["asset_type"],
+                        "player_id":   r["player_id"],
+                        "pick_season": r["pick_season"],
+                        "pick_round":  r["pick_round"],
+                        "pick_order":  r["pick_order"],
+                        "pick_slot":   r["pick_slot"],
+                    })
+            _flush(cur_assets, cur_created)
     return AtWA, AtWb, n
 
 
@@ -475,8 +636,6 @@ def run_trade_value_model(
     )
 
     player_prior  = _load_prior(league_type, league_size)
-    trades_1qb    = _load_trades(season, is_sf=False, league_type=league_type, league_size=league_size)
-    trades_sf     = _load_trades(season, is_sf=True,  league_type=league_type, league_size=league_size)
 
     # External pick table is the regularization prior for pick buckets.
     # Must bypass WLS overlay to avoid using our own previous output as prior.
@@ -487,29 +646,29 @@ def run_trade_value_model(
         logger.warning("[trade_value_model] Failed to load pick value prior: %s", e)
         ext_pick_values = {}
 
-    if not trades_1qb and not trades_sf:
+    # Segment existence is checked cheaply (COUNT) so we never hold both full
+    # trade lists resident at once — each trade carries a list of per-asset dicts
+    # and that is the dominant memory cost, with the cron box capped at 512Mi.
+    # Each segment's trades are loaded only while its matrix is built, then freed.
+    has_1qb = _count_trades(season, is_sf=False, league_type=league_type, league_size=league_size) > 0
+    has_sf  = _count_trades(season, is_sf=True,  league_type=league_type, league_size=league_size) > 0
+
+    if not has_1qb and not has_sf:
         logger.warning("[trade_value_model] No trade data - nothing to solve.")
         return {"written": 0, "trades_used": 0, "players": 0}
-
-    if not trades_1qb:
-        trades_1qb = trades_sf
-    if not trades_sf:
-        trades_sf = trades_1qb
 
     if not player_prior:
         logger.warning("[trade_value_model] No prior data - nothing to solve.")
         return {"written": 0, "trades_used": 0, "players": 0}
 
-    # Collect all pick keys seen in trades (exact slots for current year, buckets for future)
-    pick_keys_seen: set[str] = set()
-    for trade in trades_1qb:
-        for a in trade["assets"]:
-            if a["asset_type"] == "pick":
-                pick_keys_seen.add(_pick_key(a, season))
-    for trade in trades_sf:
-        for a in trade["assets"]:
-            if a["asset_type"] == "pick":
-                pick_keys_seen.add(_pick_key(a, season))
+    # Fallback: an empty segment borrows the other's trades (preserves prior
+    # behaviour where trades_1qb/trades_sf aliased each other when one was empty).
+    src_1qb_is_sf = not has_1qb   # 1QB matrix uses SF trades when the 1QB segment is empty
+    src_sf_is_sf  = has_sf        # SF matrix uses 1QB trades when the SF segment is empty
+
+    # Pick-bucket keys (exact slots for current year, buckets for future) across
+    # both segments — fetched directly so neither trade list need be resident yet.
+    pick_keys_seen = _load_pick_keys(season, league_type, league_size)
 
     player_ids = sorted(player_prior.keys())
     pick_keys  = sorted(pick_keys_seen)
@@ -521,9 +680,9 @@ def run_trade_value_model(
     n_pl    = len(player_ids)
 
     logger.info(
-        "[trade_value_model] %d players + %d pick buckets = %d unknowns | "
-        "1QB trades=%d | SF trades=%d",
-        n_pl, len(pick_keys), N, len(trades_1qb), len(trades_sf),
+        "[trade_value_model] %d players + %d pick buckets = %d unknowns "
+        "(1QB segment=%s, SF segment=%s)",
+        n_pl, len(pick_keys), N, has_1qb, has_sf,
     )
 
     # Build prior vectors: player priors then pick priors
@@ -549,25 +708,16 @@ def run_trade_value_model(
         logger.info("  pid=%-12s  prior=%.2f", player_ids[i], prior_1qb[i])
 
     logger.info("[trade_value_model] Building normal equations (N=%d)...", N)
-    # Keep only one trade list resident during the heavy matrix builds (the cron
-    # box is capped at 512Mi). pick_keys_seen / all_idx were already computed from
-    # both lists above, so freeing SF here and reloading it below is exact — the
-    # query is deterministic and returns the same rows. Whether SF was an alias of
-    # the 1QB list (the no-SF-trades fallback at the top) is tracked so we can
-    # reproduce it after reload instead of building an empty SF matrix.
-    sf_was_1qb_alias = trades_sf is trades_1qb
-    del trades_sf; gc.collect()
-    AtWA_1qb, AtWb_1qb, M_1qb = _build_normal_equations(trades_1qb, all_idx, N, season)
-    # Reload SF (or reuse 1QB if SF was the empty-fallback alias) BEFORE freeing
-    # the 1QB list, so the alias case can still point at it.
-    if sf_was_1qb_alias:
-        trades_sf = trades_1qb
-    else:
-        trades_sf = _load_trades(season, is_sf=True, league_type=league_type, league_size=league_size)
-        if not trades_sf:  # SF became empty since first load — preserve original fallback
-            trades_sf = trades_1qb
-    AtWA_sf,  AtWb_sf,  M_sf  = _build_normal_equations(trades_sf,  all_idx, N, season)
-    del trades_sf, trades_1qb; gc.collect()
+    # Stream each segment's trades straight into its matrix (server-side cursor,
+    # no full list resident). The empty-segment fallback just streams the other
+    # segment via the src_* flags chosen above. Both matrices are N×N (small);
+    # only the streaming batch and the current trade add to peak memory.
+    AtWA_1qb, AtWb_1qb, M_1qb = _stream_normal_equations(
+        season, src_1qb_is_sf, league_type, league_size, all_idx, N, season)
+    gc.collect()
+    AtWA_sf,  AtWb_sf,  M_sf  = _stream_normal_equations(
+        season, src_sf_is_sf, league_type, league_size, all_idx, N, season)
+    gc.collect()
     M = M_1qb
 
     logger.info("[trade_value_model] %d trade constraints - solving...", M)

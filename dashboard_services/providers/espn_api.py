@@ -24,13 +24,6 @@ class ESPNError(Exception):
 # Env + helpers
 # ============================================================
 
-def _require_env(name: str) -> str:
-    val = (os.getenv(name, "") or "").strip()
-    if not val:
-        raise ESPNError(f"Missing required env var: {name}")
-    return val
-
-
 def _normalize_swid(swid: str) -> str:
     swid = (swid or "").strip()
     if swid and not (swid.startswith("{") and swid.endswith("}")):

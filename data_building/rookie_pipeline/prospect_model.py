@@ -52,25 +52,10 @@ def _scale(raw: float, lo: float, hi: float) -> float:
     return _clip((raw - lo) / (hi - lo) * 100.0)
 
 
-def _sigmoid_score(x: float, midpoint: float, steepness: float = 1.0) -> float:
-    """Logistic curve scaled to 0-100, centred at `midpoint`."""
-    z = steepness * (x - midpoint)
-    return round(100.0 / (1.0 + math.exp(-z)), 2)
-
-
-def _best_season(seasons: List[Dict], key: str) -> float:
-    vals = [_safe(s.get(key)) for s in seasons if s.get(key) is not None]
-    return max(vals) if vals else 0.0
-
-
 def _latest_season(seasons: List[Dict]) -> Optional[Dict]:
     if not seasons:
         return None
     return max(seasons, key=lambda s: _safe(s.get("season"), 0))
-
-
-def _career_seasons(seasons: List[Dict]) -> int:
-    return len(seasons)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

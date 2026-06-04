@@ -238,24 +238,6 @@ def _get_actual_record(team_df, history_ctx: dict, roster_id: str) -> str:
     return f"{wins}-{losses}"
 
 
-def _calculate_record(team_df) -> str:
-    """Calculate win-loss record from weekly data."""
-    # Since we don't have actual win/loss results in the weekly data,
-    # we'll provide a more conservative estimate or skip record entirely
-    total_games = len(team_df)
-    if total_games == 0:
-        return "0-0"
-
-    # For now, let's use a more conservative estimate based on top 40% of scores
-    # This is still an approximation since we don't have actual matchup results
-    points = team_df["points"].sort_values(ascending=False)
-    wins_threshold = int(total_games * 0.4)  # Top 40% as wins
-    wins = wins_threshold if wins_threshold > 0 else 0
-    losses = total_games - wins
-
-    return f"{wins}-{losses}"
-
-
 def _get_best_week(team_df) -> dict:
     """Get best week performance."""
     best_row = team_df.loc[team_df["points"].idxmax()]

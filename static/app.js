@@ -7685,11 +7685,14 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
 }
 
 function getRoleGrade(roleScore) {
-  if (roleScore >= 80) return 'Elite';
-  if (roleScore >= 70) return 'Great';
-  if (roleScore >= 60) return 'Good';
-  if (roleScore >= 50) return 'Average';
-  if (roleScore >= 40) return 'Below Avg';
+  // Calibrated for role_score v2 (absolute "% of an elite role"): only true
+  // alphas/bellcows reach Elite, solid weekly starters land Good/Great, and the
+  // long tail of depth players is Limited.
+  if (roleScore >= 90) return 'Elite';      // true alpha / bellcow
+  if (roleScore >= 75) return 'Great';      // clear feature role
+  if (roleScore >= 60) return 'Good';       // solid starter
+  if (roleScore >= 45) return 'Average';    // rotational starter / flex
+  if (roleScore >= 30) return 'Below Avg';  // committee / depth
   return 'Limited';
 }
 

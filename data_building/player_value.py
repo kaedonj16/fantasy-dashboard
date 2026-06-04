@@ -39,14 +39,6 @@ def _clip(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, x))
 
 
-def _sigmoid(x: float) -> float:
-    if x >= 0:
-        z = math.exp(-x)
-        return 1.0 / (1.0 + z)
-    z = math.exp(x)
-    return z / (1.0 + z)
-
-
 def _smoothstep01(x: float) -> float:
     x = _clip(x, 0.0, 1.0)
     return x * x * (3.0 - 2.0 * x)

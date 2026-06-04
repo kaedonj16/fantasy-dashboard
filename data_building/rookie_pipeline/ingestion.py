@@ -913,60 +913,7 @@ def fetch_cfbd_college_stats(
 _ESPN_SEARCH_URL = "https://site.api.espn.com/apis/common/v3/search"
 
 
-def _extract_espn_items(data: dict) -> list:
-    """
-    Handle both ESPN search response shapes:
-      Format A (current):  {"items": [...]}
-      Format B (older):    {"results": [{"contents": [...]}]}
-    Returns a flat list of candidate item dicts.
-    """
-    items = data.get("items") or []
-    if items:
-        return list(items)
-    # Older format: results > contents
-    flat: list = []
-    for result in (data.get("results") or []):
-        flat.extend(result.get("contents") or [])
-    return flat
-
-
 _NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
-
-
-def _names_match(item_name: str, query_name: str) -> bool:
-    """
-    Tolerant name comparison: strip common suffixes, normalise
-    hyphens/apostrophes/periods to spaces, and compare case-insensitively.
-    Handles: "Patrick Mahomes II" == "Patrick Mahomes",
-             "Brian Robinson Jr." == "Brian Robinson",
-             "Ja'Marr Chase" == "JaMarr Chase", etc.
-    """
-    def _norm(n: str) -> str:
-        n = n.lower().strip()
-        n = re.sub(r"\.", "", n)                # remove periods entirely (D.J. → DJ)
-        n = re.sub(r"['\-\u2019]", " ", n)     # apostrophes/hyphens → space
-        n = re.sub(r"\s+", " ", n).strip()
-        parts = [p for p in n.split() if p not in _NAME_SUFFIXES]
-        return " ".join(parts)
-
-    return _norm(item_name) == _norm(query_name)
-
-
-def _age_at_date(dob_str: str, ref_year: int, ref_month: int = 4, ref_day: int = 25) -> Optional[float]:
-    """
-    Compute fractional age (years) at ref_year-ref_month-ref_day given a
-    'YYYY-MM-DD' (or 'YYYY-MM-DDTHH:MM:SSZ') date-of-birth string.
-    """
-    try:
-        dob_part = dob_str[:10]   # keep only 'YYYY-MM-DD'
-        from datetime import date
-        dob  = date.fromisoformat(dob_part)
-        ref  = date(ref_year, ref_month, ref_day)
-        days = (ref - dob).days
-        return round(days / 365.25, 2)
-    except (ValueError, TypeError):
-        return None
-
 
 
 # ─────────────────────────────────────────────────────────────────────────────

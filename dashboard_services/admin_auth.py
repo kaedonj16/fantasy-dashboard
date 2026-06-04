@@ -49,6 +49,7 @@ def is_admin() -> bool:
         return True
     provided = _provided_key()
     if provided and hmac.compare_digest(provided, configured):
+        session.permanent = True
         session["is_admin"] = True
         return True
     return False

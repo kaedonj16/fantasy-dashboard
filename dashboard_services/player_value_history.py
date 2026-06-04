@@ -490,19 +490,7 @@ def load_current_values_from_db() -> list[dict]:
                     year = parts[0]
                     round_num = parts[1]
                     pick_num = parts[2]
-                    
-                    # Helper function to get ordinal suffix
-                    def get_ordinal(n):
-                        n = int(n)
-                        if 11 <= (n % 100) <= 13:
-                            return f"{n}th"
-                        if n % 10 <= 3:
-                            suffixes = ['st', 'nd', 'rd']
-                            suffix = suffixes[min(n % 10 - 1, 2)]
-                            return f"{n}{suffix}"
-                        else:
-                            return f"{n}th"
-                    
+
                     # Handle special pick designations
                     _bucket_labels = {"early": "Early", "mid": "Mid", "late": "Late"}
                     _blabel = _bucket_labels.get(pick_num.lower())

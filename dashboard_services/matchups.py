@@ -21,10 +21,6 @@ STATUS_IN_PROGRESS = "in_progress"
 STATUS_FINAL = "final"
 
 
-def get_owner_id(rosters: Optional[list[dict]] = None, roster_id: Optional[str] = None) -> Optional[str]:
-    return next((r["owner_id"] for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
-
-
 def build_matchup_preview(
         league_id: str,
         week: int,
@@ -326,21 +322,6 @@ def render_matchup_carousel_weeks(
         </div>
       </div>
     """
-
-
-def add_bye_weeks_to_players():
-    player_path = Path("cache/players_index.json")
-    team_path = Path("cache/teams_index.json")
-    with open(player_path, "r") as file:
-        players = json.load(file)
-    with open(team_path, "r") as file:
-        teams = json.load(file)
-    for player_id, player_data in players.items():
-        team_abv = player_data.get("team")
-        if team_abv in teams:
-            player_data["byeWeek"] = teams[team_abv]["byeWeek"]
-
-    write_json(player_path, players)
 
 
 def team_live_totals(

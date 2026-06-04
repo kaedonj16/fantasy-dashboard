@@ -89,30 +89,6 @@ def download_csv(url: str, out_path: str) -> str:
     return out_path
 
 
-def _default_page_url(kind: str, season: int) -> str:
-    if kind == "receiving":
-        return f"{PFF_BASE}/nfl/positions/{season}/REGPO/receiving?position=WR,TE,RB&minimum=20p"
-    if kind == "rushing":
-        return f"{PFF_BASE}/nfl/positions/{season}/REGPO/rushing?position=RB&minimum=20p"
-    if kind == "passing":
-        return f"{PFF_BASE}/nfl/positions/{season}/REGPO/passing?position=QB&minimum=20p"
-    raise ValueError(f"Unknown PFF kind: {kind}")
-
-
-def _seasonize_page_url(url: str, season: int) -> str:
-    if "{season}" in url:
-        return url.format(season=season)
-    # Handle links like /positions/2016/REGPO/...
-    return re.sub(r"/positions/\d{4}/", f"/positions/{season}/", url)
-
-
-def _ensure_csv_export(url: str) -> str:
-    if "export=csv" in url:
-        return url
-    sep = "&" if "?" in url else "?"
-    return f"{url}{sep}export=csv"
-
-
 def resolve_seasons(explicit_seasons: Optional[str], last_n: int) -> List[int]:
     if explicit_seasons:
         vals: List[int] = []
@@ -154,13 +130,6 @@ def _f(v: Optional[str]) -> Optional[float]:
         return float(s)
     except ValueError:
         return None
-
-
-def _player_key(row: Dict[str, str]) -> tuple[str, str, str]:
-    name = normalize_name(row.get("player") or row.get("name") or "")
-    pos = (row.get("position") or row.get("pos") or "").upper()
-    team = (row.get("team") or row.get("team_name") or "").upper()
-    return name, pos, team
 
 
 def upsert_csv(
