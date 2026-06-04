@@ -2456,7 +2456,8 @@ window.initTradePage = function initTradePage(root = document) {
       body.innerHTML = _piMessage(
         "fa-right-to-bracket",
         "Sign in for Playoff Impact",
-        "Connect your league to simulate how a trade changes your playoff odds."
+        "Connect your league to simulate how a trade changes your playoff odds.",
+        `<button class="pi-locked-btn" onclick="document.getElementById('signinModal').style.display='flex'">Sign In</button>`
       );
       return;
     }
