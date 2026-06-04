@@ -6414,7 +6414,7 @@ document.addEventListener('DOMContentLoaded', function() {
         showFullscreenLoading('Switching leagues...');
 
         // Get current page from URL — only use it if it's a valid per-league route
-        const leaguePages = new Set(['dashboard','standings','weekly','teams','activity','graphs','waivers','trade','players','prospects','breakouts','awards','history','schedule','commissioner','optimal','scout']);
+        const leaguePages = new Set(['dashboard','standings','weekly','teams','activity','graphs','waivers','trade','players','prospects','breakouts','awards','history','schedule','commissioner','league_health','optimal','scout']);
         const pathParts = window.location.pathname.split('/');
         const lastSegment = pathParts[pathParts.length - 1] || '';
         const currentPage = leaguePages.has(lastSegment) ? lastSegment : 'dashboard';

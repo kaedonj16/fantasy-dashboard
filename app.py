@@ -1432,8 +1432,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Standings",     "page_standings",    "standings",    False),
         ("Teams",         "page_teams",        "teams",        False),
         ("Activity",      "page_activity",     "activity",     False),
-        ("League Health", "page_commissioner", "commissioner", False),
-    ], ["standings", "teams", "activity", "commissioner"], "teamsNavDropdown"))
+        ("League Health", "page_commissioner", "league_health", False),
+    ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
@@ -15264,11 +15264,12 @@ def build_commissioner_body(ctx):
     return health_html + history_panel + roster_table + trade_card
 
 
-@app.route("/<platform>/<int:season>/<league_id>/commissioner")
+@app.route("/<platform>/<int:season>/<league_id>/league_health")
+@app.route("/<platform>/<int:season>/<league_id>/commissioner")  # legacy redirect
 def page_commissioner(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     body = build_commissioner_body(ctx)
-    return render_page("League Health", league_id, "commissioner", body, platform, season)
+    return render_page("League Health", league_id, "league_health", body, platform, season)
 
 
 @app.before_request
