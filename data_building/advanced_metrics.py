@@ -684,11 +684,17 @@ def role_opportunity_index(
     usage: Dict[str, float],
     position: str,
     team_ctx: Dict[str, float],
+    rz_available: bool = True,
 ) -> Optional[float]:
     """
     Pass 1: a 0-1 opportunity index from team-relative shares (no efficiency).
     team_ctx is the entry from build_team_opportunity_context for this player's
     team. Returns None for non-skill positions or players who never played.
+
+    rz_available=False (no red-zone data in the slate, e.g. offseason / early
+    season) drops the RZ components and renormalises the remaining weights, so
+    the index is not artificially capped below the elite anchor — otherwise the
+    missing 0.22-0.27 RZ weight would undersell TEs/RBs.
     """
     games = _safe(usage.get("games"))
     if games <= 0:
@@ -706,22 +712,24 @@ def role_opportunity_index(
     rz_tgt_share  = _share(_safe(usage.get("rec_rz_tgt_pg")),  _safe(team_ctx.get("rz_tgt")))
     rz_rush_share = _share(_safe(usage.get("rush_rz_att_pg")), _safe(team_ctx.get("rz_rush")))
 
+    # Each component is (value, weight, is_red_zone).
     if position == "WR":
-        # Alpha / slot / deep / RZ specialist all reachable; snap (0.28) keeps
+        # Alpha / slot / deep / RZ specialist all reachable; snap keeps
         # lower-target-share field-stretchers from cratering until air yards land.
-        idx = 0.50 * tshare + 0.28 * snap + 0.22 * rz_tgt_share
+        comps = [(tshare, 0.50, False), (snap, 0.28, False), (rz_tgt_share, 0.22, True)]
 
     elif position == "TE":
-        # Snap deliberately low — TE snaps include blocking, which is not a
-        # fantasy role. Receiving + RZ involvement carry the score.
-        idx = 0.55 * tshare + 0.27 * rz_tgt_share + 0.18 * snap
+        # Snap deliberately low — TE snaps include blocking, not a fantasy role.
+        # RZ involvement is a big slice of TE value (they are red-zone weapons).
+        comps = [(tshare, 0.55, False), (rz_tgt_share, 0.27, True), (snap, 0.18, False)]
 
     elif position == "RB":
         # PPR-weighted dual role: the 1.7x target premium lets pass-catching
         # backs register, while rush + goal-line share reward early-down bellcows.
         rshare = _share(_safe(usage.get("avg_carries")), _safe(team_ctx.get("carries")))
         core   = _clip(rshare + 1.7 * tshare, 0.0, 1.0)
-        idx = 0.46 * core + 0.20 * rz_rush_share + 0.18 * snap + 0.16 * rz_tgt_share
+        comps = [(core, 0.46, False), (rz_rush_share, 0.20, True),
+                 (snap, 0.18, False), (rz_tgt_share, 0.16, True)]
 
     elif position == "QB":
         # No "share" at QB — workload + dual-threat, ranked. Rushing is additive
@@ -729,10 +737,18 @@ def role_opportunity_index(
         pass_vol = _norm(_safe(usage.get("avg_pass_att")), 18, 42)
         rush_vol = _norm(_safe(usage.get("avg_carries")), 0, 9)
         rz_vol   = _norm(_safe(usage.get("rush_rz_att_pg")), 0, 2.0)
-        idx = 0.42 * pass_vol + 0.30 * snap + 0.18 * rush_vol + 0.10 * rz_vol
+        comps = [(pass_vol, 0.42, False), (snap, 0.30, False),
+                 (rush_vol, 0.18, False), (rz_vol, 0.10, True)]
 
     else:
         return None
+
+    if rz_available:
+        idx = sum(value * weight for value, weight, _ in comps)
+    else:
+        kept = [(value, weight) for value, weight, is_rz in comps if not is_rz]
+        wsum = sum(weight for _, weight in kept) or 1.0
+        idx = sum(value * (weight / wsum) for value, weight in kept)
 
     return _clip(idx, 0.0, 1.0)
 
@@ -755,6 +771,14 @@ def finalize_role_scores_v2(
     team_ctx_map = build_team_opportunity_context(usage_table)
     usage_by_id = {str(p.get("id")): p for p in usage_table}
 
+    # Does the slate actually carry red-zone data? If not (offseason / early
+    # season / RZ source down), the index renormalises so TEs/RBs aren't
+    # undersold by a silently-zero RZ term.
+    rz_available = any(
+        (_safe(c.get("rz_tgt")) > 0 or _safe(c.get("rz_rush")) > 0)
+        for c in team_ctx_map.values()
+    )
+
     for m in metrics_list:
         pid = str(m.get("player_id"))
         position = m.get("position")
@@ -762,7 +786,7 @@ def finalize_role_scores_v2(
         if entry is None:
             continue
         usage = entry.get("usage") or {}
-        idx = role_opportunity_index(usage, position, team_ctx_map.get(entry.get("team"), {}))
+        idx = role_opportunity_index(usage, position, team_ctx_map.get(entry.get("team"), {}), rz_available)
         anchor = _ROLE_ELITE_ANCHOR.get(position)
         if idx is None or not anchor:
             continue
