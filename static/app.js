@@ -2549,10 +2549,6 @@ window.initTradePage = function initTradePage(root = document) {
           ${stat("Playoff Odds",  data.before.playoff_pct,    data.after.playoff_pct,    data.delta.playoff_pct,    "%")}
           ${stat("Proj. Wins",    data.before.avg_final_wins, data.after.avg_final_wins, data.delta.avg_final_wins, "")}
           ${stat("Proj. PPG",     data.before.avg_ppg,        data.after.avg_ppg,        data.delta.avg_ppg,        "")}
-        </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:12px;display:flex;align-items:center;gap:4px;">
-          <i class="fa-solid fa-circle-info" style="font-size:10px;"></i>
-          Monte Carlo · 2,000 sims · League avg ${data.league_avg_ppg} PPG
         </div>`;
     } catch (e) {
       body.innerHTML = _piMessage(

@@ -366,6 +366,7 @@ def build_trade_calculator_body(
           <style>
             /* ── Top-row 2-col + full-width AI row ──────────────── */
             .otc-lower-grid--top2 {{
+              margin-top:16px;
               grid-template-columns: 2fr 1fr;
               align-items: stretch;
             }}
@@ -378,7 +379,7 @@ def build_trade_calculator_body(
 
             .otc-pi-card {{
               border:1px solid var(--border);border-radius:20px;
-              padding:20px;background:var(--card-bg);display:flex;flex-direction:column;
+              padding:10px 15px;background:var(--card-bg);display:flex;flex-direction:column;
             }}
             .otc-pi-head {{ margin-bottom:14px; }}
             .otc-pi-title {{ font-size:15px;font-weight:700;margin:0 0 2px; }}
