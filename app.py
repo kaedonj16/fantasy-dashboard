@@ -11214,7 +11214,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
       const PAGE_SIZE = 12;
 
       // Fetch breakout candidates on page load (using new BreakoutEngine API)
-      fetch('/api/breakout/candidates?season={bo_season}&min_score=50&limit=0&league_id={league_id}&platform={platform}')
+      fetch('/api/breakout/candidates?season={bo_season}&min_score=50&limit=15&league_id={league_id}&platform={platform}')
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
@@ -17135,7 +17135,7 @@ def api_player_indicators():
                 _resolve_bo_season as _resolve_bo,
             )
             _bo_season = _resolve_bo(current_season)
-            _bo_result = _get_bo_indicators(season=_bo_season, min_score=50)
+            _bo_result = _get_bo_indicators(season=_bo_season, min_score=50, limit=15)
             breakouts = [str(c["player_id"]) for c in (_bo_result.get("candidates") or [])]
         except Exception as e:
             logger.info(f"[player-indicators] Breakout candidates unavailable: {e}")
