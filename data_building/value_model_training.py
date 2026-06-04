@@ -101,14 +101,6 @@ def _pick_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     return None
 
 
-def _ensure_columns(df: pd.DataFrame, cols: List[str], fill_value=0.0) -> pd.DataFrame:
-    df = df.copy()
-    for col in cols:
-        if col not in df.columns:
-            df[col] = fill_value
-    return df
-
-
 # ------------------------------------------------
 # Season helpers
 # ------------------------------------------------
@@ -528,28 +520,6 @@ def load_engine_df(path: Path = ENGINE_VALUES_PATH) -> pd.DataFrame:
 # ------------------------------------------------
 # Draft values helpers
 # ------------------------------------------------
-
-def _load_fantasycalc(csv_path: str) -> pd.DataFrame:
-    df = pd.read_csv(csv_path)
-    df["year"] = df["year"].astype(int)
-    df["round"] = df["round"].astype(int)
-    df["bucket"] = df["bucket"].str.lower().str.strip()
-    return df
-
-
-def _load_dynastyprocess(csv_path: str, num_teams: int = 10) -> pd.DataFrame:
-    df = pd.read_csv(csv_path)
-    df["year"] = df["year"].astype(int)
-    df["round"] = df["round"].astype(int)
-    df["pick"] = df["pick"].astype(int)
-    df["bucket"] = df["pick"].apply(lambda s: bucket_for_slot(int(s), num_teams=num_teams))
-
-    grouped = (
-        df.groupby(["year", "round", "bucket"], as_index=False)["value"]
-        .mean()
-    )
-    return grouped
-
 
 # ------------------------------------------------
 # Training data builder

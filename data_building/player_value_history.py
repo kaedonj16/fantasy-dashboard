@@ -301,15 +301,6 @@ def get_latest_snapshot_date(source: str = "model") -> Optional[str]:
     return result
 
 
-def _history_col(league_type: str = "1qb", league_size: int = 10) -> str:
-    """Column in player_value_history for a given league type/size."""
-    sf = league_type.lower() == "sf"
-    if league_size == 8:  return "sf_value_8"  if sf else "value_8"
-    if league_size == 12: return "sf_value_12" if sf else "value_12"
-    if league_size == 14: return "sf_value_14" if sf else "value_14"
-    return "value_sf" if sf else "value"
-
-
 def get_player_value_history(
         player_id: str,
         *,

@@ -5283,49 +5283,6 @@ def render_weekly_top_scorers_for_week(
     return render_top_three(top_by_pos, rosters, roster_map, active_positions)
 
 
-def _render_weekly_matchups(df_weekly: pd.DataFrame, week: int) -> str:
-    if df_weekly.empty or "week" not in df_weekly.columns:
-        return ""
-    wdf = df_weekly[df_weekly["week"] == week].copy()
-    if wdf.empty:
-        return ""
-
-    rows = []
-    for (wk, mid), grp in wdf.groupby(["week", "matchup_id"]):
-        if len(grp) != 2:
-            continue
-        g = grp.sort_values("points", ascending=False)
-        win = g.iloc[0]
-        lose = g.iloc[1]
-        margin = float(win["points"] - lose["points"])
-
-        rows.append(
-            f"<div class='matchup-row'>"
-            f"  <div class='m-team-col'>"
-            f"    <div class='m-team-name winner'>{html.escape(str(win['owner']))}</div>"
-            f"    <div class='m-score'>{float(win['points']):.1f}</div>"
-            f"  </div>"
-            f"  <div class='m-vs-col'>def</div>"
-            f"  <div class='m-team-col'>"
-            f"    <div class='m-team-name loser'>{html.escape(str(lose['owner']))}</div>"
-            f"    <div class='m-score'>{float(lose['points']):.1f}</div>"
-            f"  </div>"
-            f"  <div class='m-margin'>+{margin:.1f}</div>"
-            f"</div>"
-        )
-
-    return f"""
-    <div class="card">
-      <div class="card-header">
-        <h2>Week {week} Matchups</h2>
-      </div>
-      <div class="card-body matchup-list">
-        {''.join(rows)}
-      </div>
-    </div>
-    """
-
-
 def _render_weekly_highlights(
     df_weekly: pd.DataFrame,
     week: int,
@@ -13052,46 +13009,6 @@ def _matchup_cell_ease(rank, total, info):
     return 0.0
 
 
-def _team_sos_table(season: int, position: str, weeks):
-    """Return {team: (rank, total, ease)} for `position` over `weeks`.
-
-    rank 1 = easiest schedule among all NFL teams for that position. Reuses the
-    z-score matchup ratings (falling back to raw fpts-allowed). Shared by the
-    Schedule Assistant grid and the player-compare start/sit view."""
-    rank_map, total, info, _is_z = _matchup_rank_table(season, position)
-    if not rank_map:
-        return {}
-    schedules: dict = {}
-    for w in weeks:
-        try:
-            games = load_week_schedule(season, w) or []
-        except Exception:
-            games = []
-        lookup = {}
-        for g in games:
-            if not isinstance(g, dict):
-                continue
-            home = _norm_sched_team(g.get("home"))
-            away = _norm_sched_team(g.get("away"))
-            if home:
-                lookup[home] = away
-            if away:
-                lookup[away] = home
-        schedules[w] = lookup
-    team_ease: dict = {}
-    for t in rank_map.keys():
-        eases = []
-        for w in weeks:
-            opp = schedules.get(w, {}).get(t)
-            if not opp:
-                continue
-            eases.append(_matchup_cell_ease(rank_map.get(opp), total, info.get(opp, {})))
-        if eases:
-            team_ease[t] = sum(eases) / len(eases)
-    ranked = sorted(team_ease.items(), key=lambda x: -x[1])
-    return {t: (i + 1, len(ranked), round(e, 1)) for i, (t, e) in enumerate(ranked)}
-
-
 def _compute_schedule_grid(season: int, pids, weeks):
     """For each pid over the given weeks, return matchup + difficulty cells.
     Reuses the cached fpts-allowed table so this is cheap per request."""
@@ -15485,73 +15402,6 @@ def _score_stats(s: dict, ss: dict) -> float:
     elif rr >= 100: p += (ss.get("bonus_rush_rec_yd_100") or 0)
     return p
 
-
-def _compute_bulk_ppg_stats() -> dict:
-    """Read all sleeper_stats files for the most recent season and compute PPG per player using current league scoring.
-
-    Returns a dict keyed by player_id (str) with keys: ppg, total_pts, games, season.
-    Uses standard PPR scoring so the numbers are consistent across the app.
-    """
-    global _PPG_STATS_CACHE, _PPG_STATS_CACHE_TS
-    now = time.time()
-    if _PPG_STATS_CACHE and now - _PPG_STATS_CACHE_TS < _PPG_STATS_CACHE_TTL:
-        return _PPG_STATS_CACHE
-
-    # Find the most recent season that has stats files
-    stats_base = os.path.join("cache", "sleeper_stats")
-    all_files = glob.glob(os.path.join(stats_base, "sleeper_stats_s*_w*.json"))
-    season_years: set = set()
-    for f in all_files:
-        m = re.match(r'sleeper_stats_s(\d+)_w(\d+)', os.path.basename(f))
-        if m:
-            season_years.add(int(m.group(1)))
-
-    if not season_years:
-        return {}
-
-    latest_season = max(season_years)
-
-    try:
-        from dashboard_services.api import get_effective_scoring_settings as _gess
-        _ss = _gess()
-    except Exception:
-        _ss = {}
-
-    # Aggregate pts per player across all weeks of the latest season
-    player_totals: dict = {}  # player_id → {"pts": float, "games": int}
-    week_files = glob.glob(os.path.join(stats_base, f"sleeper_stats_s{latest_season}_w*.json"))
-
-    for wf in week_files:
-        try:
-            with open(wf) as fh:
-                week_stats = json.load(fh)
-        except Exception:
-            continue
-        if not isinstance(week_stats, dict):
-            continue
-        for pid, stats in week_stats.items():
-            if not isinstance(stats, dict):
-                continue
-            pts = _score_stats(stats, _ss)
-            if pts > 0:
-                rec = player_totals.setdefault(pid, {"pts": 0.0, "games": 0})
-                rec["pts"] += pts
-                rec["games"] += 1
-
-    result = {}
-    for pid, d in player_totals.items():
-        g = d["games"]
-        if g > 0:
-            result[str(pid)] = {
-                "ppg":       round(d["pts"] / g, 1),
-                "total_pts": round(d["pts"], 1),
-                "games":     g,
-                "season":    latest_season,
-            }
-
-    _PPG_STATS_CACHE = result
-    _PPG_STATS_CACHE_TS = now
-    return result
 
 def get_model_value_table_cached():
     global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
@@ -21219,48 +21069,6 @@ def api_trade_intel_player_packages(player_id: str):
                     "pos_rank_change_7d": p.get("pos_rank_change_7d"),
                 }
 
-        def _compute_profile(info: dict):
-            pos = info.get("position", "")
-            if pos in ("PICK", "K", "DEF"):
-                return None
-            age = float(info.get("age") or 0)
-            if age <= 0:
-                return None
-            rank   = int(info.get("pos_rank") or 99)
-            change = info.get("pos_rank_change_7d")  # negative = improving (rank went up)
-
-            # Age bracket
-            if age <= 24:
-                bracket = "young"
-            elif age <= 28:
-                bracket = "prime"
-            else:
-                bracket = "vet"
-
-            # Trend: prefer rank_change if available, otherwise infer from pos_rank
-            if change is not None:
-                try:
-                    c = float(change)
-                    if c <= -3:
-                        trend = "rising"
-                    elif c >= 3:
-                        trend = "falling"
-                    else:
-                        trend = "stable"
-                except (TypeError, ValueError):
-                    trend = None
-
-            if change is None or trend is None:
-                # Infer from absolute rank (higher rank = still performing)
-                if bracket == "young":
-                    trend = "rising" if rank <= 5 else ("stable" if rank <= 15 else "falling")
-                elif bracket == "prime":
-                    trend = "rising" if rank <= 3 else ("stable" if rank <= 10 else "falling")
-                else:  # vet
-                    trend = "rising" if rank <= 3 else ("stable" if rank <= 7 else "falling")
-
-            return f"{bracket}-{trend}"
-
         target_info = values_by_id.get(str(player_id))
         if not target_info:
             return jsonify({"error": "Player not found"}), 404
@@ -21407,17 +21215,6 @@ def api_trade_intel_player_packages(player_id: str):
                 logger.warning("[trade-intel-picks] ctx error: %s", _ctx_err)
 
         # ── Archetype helpers ──────────────────────────────────────────────
-        def _age_bracket(age) -> str:
-            try:
-                a = float(age)
-            except (TypeError, ValueError):
-                return "Prime"
-            if a <= 24:
-                return "Young"
-            if a <= 28:
-                return "Prime"
-            return "Vet"
-
         def _asset_archetype_label(asset: dict) -> str:
             if asset.get("is_pick") or asset.get("type") == "pick":
                 rnd = asset.get("pick_round") or asset.get("round") or ""

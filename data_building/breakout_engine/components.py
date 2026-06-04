@@ -86,12 +86,6 @@ def _sample_confidence(
     return min_confidence + (1.0 - min_confidence) * ratio
 
 
-def _pct_change(curr: float, prev: float, neutral_when_prev_zero: Optional[float] = None) -> Optional[float]:
-    if prev == 0:
-        return neutral_when_prev_zero
-    return ((curr - prev) / prev) * 100.0
-
-
 def _weighted_average(pairs: List[Tuple[float, float]]) -> float:
     total_weight = sum(weight for _, weight in pairs if weight > 0)
     if total_weight <= 0:

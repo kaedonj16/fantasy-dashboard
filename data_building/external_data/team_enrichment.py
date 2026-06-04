@@ -75,24 +75,6 @@ TEAMRANKINGS_TO_ABBR: Dict[str, str] = {
 }
 
 
-def _save_value_table(players, path: Path):
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(players, f, ensure_ascii=False, indent=2)
-
-
-def _load_teams_index_raw() -> Dict[str, dict]:
-    """
-    If you already have load_teams_index() returning a dict,
-    you can just call that instead. This raw loader expects
-    teams_index.json under DATA_DIR.
-    """
-
-    if not path_teams_index().exists():
-        raise FileNotFoundError(f"No teams index at {TEAMS_INDEX_PATH}")
-    with path_teams_index().open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
 def _save_teams_index_raw(teams_index: Dict[str, dict]):
     with Path(path_teams_index()).open("w", encoding="utf-8") as f:
         json.dump(teams_index, f, ensure_ascii=False, indent=2)

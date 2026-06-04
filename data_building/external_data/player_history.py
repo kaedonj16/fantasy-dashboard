@@ -12,10 +12,6 @@ from data_building.external_data.sleeper_bulk_stats import fetch_season_stats, f
 from utils.utils import load_players_index, canon_team, normalize_name
 
 
-def _history_path(season: int) -> Path:
-    return PLAYER_HISTORY_DIR / f"player_history_{season}.parquet"
-
-
 def history_path_for_season(season: int) -> Path:
     return PLAYER_HISTORY_DIR / f"player_history_{season}.parquet"
 

@@ -200,13 +200,6 @@ def collect_training_data(
 # WEIGHT OPTIMIZATION
 # ==============================================================================
 
-def _sigmoid(z):
-    """Numerically stable sigmoid."""
-    if HAS_NUMPY:
-        return 1.0 / (1.0 + np.exp(-np.clip(z, -500, 500)))
-    return 1.0 / (1.0 + math.exp(max(-500, min(500, -z))))
-
-
 def _log_loss_with_l2(weights, X, y, l2_lambda=0.1):
     """
     Logistic log-loss with L2 regularization.

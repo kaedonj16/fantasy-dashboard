@@ -136,34 +136,6 @@ def _load_market_values(season: int) -> dict[str, dict]:
 # Blend weight - volume + recency + trend
 # ---------------------------------------------------------------------------
 
-def _blend_weight(market: dict) -> float:
-    """
-    Compute how much the market signal should influence the final value.
-
-    Base: sqrt ramp from trade volume (saturates at MAX_BLEND around 50 trades)
-    Adjustments:
-      + trend boost  : if market has moved >TREND_BOOST_THRESHOLD in 14d
-      - stale penalty: if very few trades are recent (<15% from last 14d)
-    """
-    trade_count    = market["trade_count"]
-    trade_count_14d = market["trade_count_14d"]
-    trend_1qb      = market["trend_1qb"]
-
-    # Base weight from volume
-    base = min(MAX_BLEND, math.sqrt(trade_count / 50) * MAX_BLEND)
-
-    # Trend boost - market has repriced recently; lean into it
-    if abs(trend_1qb) >= TREND_BOOST_THRESHOLD:
-        base = min(MAX_BLEND, base + TREND_BOOST_AMOUNT)
-
-    # Staleness penalty - if hardly any trades in last 14 days, data is stale
-    recency_ratio = trade_count_14d / trade_count if trade_count else 0
-    if recency_ratio < STALENESS_PENALTY_THRESHOLD and trade_count >= 20:
-        base *= 0.6  # reduce confidence in old data
-
-    return round(base, 3)
-
-
 # ---------------------------------------------------------------------------
 # Tier anchor for rookies
 # ---------------------------------------------------------------------------
