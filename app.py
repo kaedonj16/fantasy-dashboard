@@ -929,6 +929,7 @@ def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: 
 
 
 def save_viewer_session(viewer: dict) -> None:
+    session.permanent = True  # persist across browser restarts / notification taps (30-day lifetime)
     session["viewer_username"] = viewer.get("viewer_username")
     session["viewer_user_id"] = viewer.get("viewer_user_id")
     session["viewer_roster_id"] = viewer.get("viewer_roster_id")

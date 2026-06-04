@@ -40,6 +40,7 @@ def api_identify():
     if not user:
         return jsonify({"error": "Username not found on Sleeper"}), 404
 
+    session.permanent = True  # persist across browser restarts / notification taps (30-day lifetime)
     session["viewer_username"] = user.get("username") or username
     session["viewer_user_id"] = str(user.get("user_id") or "")
 
