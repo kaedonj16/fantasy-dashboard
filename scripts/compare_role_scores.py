@@ -25,7 +25,9 @@ from utils.utils import load_players_index, load_usage_table
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pos", choices=["QB", "RB", "WR", "TE"], help="limit to one position")
-    ap.add_argument("--limit", type=int, default=25, help="rows per position")
+    ap.add_argument("--limit", type=int, default=25, help="rows per section")
+    ap.add_argument("--movers", action="store_true",
+                    help="rank by |v2 - v1| and show biggest risers + fallers")
     args = ap.parse_args()
 
     usage_table = load_usage_table()
@@ -49,6 +51,29 @@ def main() -> None:
     v1 = {m["player_id"]: m.get("role_score") for m in metrics}
 
     finalize_role_scores_v2(metrics, usage_table)  # mutates role_score -> v2
+
+    def line(m):
+        pid = m["player_id"]
+        old, new = v1.get(pid), m.get("role_score")
+        d = (new - old) if (old is not None and new is not None) else None
+        return (f"{m.get('position',''):4s}{names.get(pid, pid)[:22]:22s} "
+                f"{('-' if old is None else f'{old:7.1f}')} "
+                f"{('-' if new is None else f'{new:7.1f}')} "
+                f"{('-' if d is None else f'{d:+8.1f}')}")
+
+    if args.movers:
+        rows = [m for m in metrics
+                if (args.pos is None or m.get("position") == args.pos)
+                and v1.get(m["player_id"]) is not None and m.get("role_score") is not None]
+        rows.sort(key=lambda m: m["role_score"] - v1[m["player_id"]])
+        hdr = f"{'pos':4s}{'player':22s}{'v1':>8s}{'v2':>8s}{'Δ':>9s}"
+        print(f"\n=== BIGGEST RISERS (v2 - v1) ===\n{hdr}")
+        for m in reversed(rows[-args.limit:]):
+            print(line(m))
+        print(f"\n=== BIGGEST FALLERS (v2 - v1) ===\n{hdr}")
+        for m in rows[: args.limit]:
+            print(line(m))
+        return
 
     positions = [args.pos] if args.pos else ["QB", "RB", "WR", "TE"]
     for pos in positions:
