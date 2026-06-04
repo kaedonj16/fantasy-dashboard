@@ -17126,11 +17126,16 @@ def api_player_indicators():
             elif rookie_year and int(rookie_year) == current_season:
                 rookies.append(str(player_id))
 
-        # Get breakouts from the same source as the Breakout Engine page
+        # Get breakouts from the same source as the Breakout Engine page,
+        # using the same season resolution so modal tabs match the page exactly.
         breakouts = []
         try:
-            from dashboard_services.breakout_api import get_breakout_candidates as _get_bo_indicators
-            _bo_result = _get_bo_indicators(season=current_season, min_score=50)
+            from dashboard_services.breakout_api import (
+                get_breakout_candidates as _get_bo_indicators,
+                _resolve_bo_season as _resolve_bo,
+            )
+            _bo_season = _resolve_bo(current_season)
+            _bo_result = _get_bo_indicators(season=_bo_season, min_score=50)
             breakouts = [str(c["player_id"]) for c in (_bo_result.get("candidates") or [])]
         except Exception as e:
             logger.info(f"[player-indicators] Breakout candidates unavailable: {e}")
