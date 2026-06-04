@@ -2421,29 +2421,57 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // ------------------------------------------------------------
-  // fetchPlayoffImpact - Monte Carlo before/after playoff odds
+  // fetchPlayoffImpact - Monte Carlo before/after playoff odds (PRO)
   // ------------------------------------------------------------
   async function fetchPlayoffImpact() {
     const section = root.querySelector("#playoffImpactSection");
     const body    = root.querySelector("#playoffImpactBody");
     if (!section || !body) return;
 
-    const leagueId    = root.querySelector("#leagueIdInput")?.value || "";
-    const rosterId    = getCurrentRosterId();
-    const platform    = root.querySelector("#platformInput")?.value || "sleeper";
-    const season      = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
+    const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+    const leagueId   = root.querySelector("#leagueIdInput")?.value || "";
+    const rosterId   = getCurrentRosterId();
+    const platform   = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
+    const season     = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
 
-    if (!leagueId || !rosterId) { section.style.display = "none"; return; }
+    // Only show when in a league session with both sides populated
+    const viewerSide = root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
+    const mySidePlayers  = viewerSide === "a" ? state.sideAPlayers : state.sideBPlayers;
+    const oppSidePlayers = viewerSide === "a" ? state.sideBPlayers : state.sideAPlayers;
 
-    const giveIds = state.sideAPlayers
-      .map(p => String(p.id)).filter(id => !id.startsWith("pick_") && !id.startsWith("PICK"));
-    const getIds  = state.sideBPlayers
-      .map(p => String(p.id)).filter(id => !id.startsWith("pick_") && !id.startsWith("PICK"));
+    const isPickId = id => id.startsWith("pick_") || id.startsWith("PICK");
+    const giveIds = mySidePlayers .map(p => String(p.id)).filter(id => !isPickId(id));
+    const getIds  = oppSidePlayers.map(p => String(p.id)).filter(id => !isPickId(id));
 
-    if (!giveIds.length && !getIds.length) { section.style.display = "none"; return; }
+    if (!leagueId || (!giveIds.length && !getIds.length)) {
+      section.style.display = "none";
+      return;
+    }
 
     section.style.display = "";
-    body.innerHTML = '<div style="display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:13px;padding:8px 0;"><div class="loading-spinner" style="width:13px;height:13px;margin:0;flex-shrink:0;"></div>Simulating playoff odds…</div>';
+
+    // Paywall gate — show locked state but still reveal the section exists
+    if (!hasPremium) {
+      body.innerHTML = `
+        <div class="pi-locked">
+          <i class="fa-solid fa-lock pi-locked-icon"></i>
+          <div class="pi-locked-title">Pro Feature</div>
+          <div class="pi-locked-sub">Upgrade to simulate how this trade affects your playoff odds.</div>
+          <button class="pi-locked-btn" onclick="showPaywall('playoff-impact')">Unlock Playoff Impact</button>
+        </div>`;
+      return;
+    }
+
+    if (!rosterId) {
+      section.style.display = "none";
+      return;
+    }
+
+    body.innerHTML = `
+      <div style="display:flex;align-items:center;gap:7px;color:var(--text-muted);font-size:13px;padding:10px 0;">
+        <div class="loading-spinner" style="width:13px;height:13px;margin:0;flex-shrink:0;"></div>
+        Simulating playoff odds…
+      </div>`;
 
     try {
       const res = await fetch("/api/trade-eval/playoff-impact", {
@@ -2453,36 +2481,41 @@ window.initTradePage = function initTradePage(root = document) {
       });
       const data = res.ok ? await res.json() : null;
 
-      if (!data || !data.available) {
-        section.style.display = "none";
-        return;
-      }
+      if (!data || !data.available) { section.style.display = "none"; return; }
 
-      const fmt1 = v => (v > 0 ? "+" : "") + v.toFixed(1);
       const deltaColor = v => v > 0 ? "#10b981" : v < 0 ? "#ef4444" : "var(--text-muted)";
+      const deltaIcon  = v => v > 0 ? "fa-arrow-up" : v < 0 ? "fa-arrow-down" : "fa-minus";
 
       const stat = (label, before, after, delta, suffix = "") => {
         const color = deltaColor(delta);
-        const sign  = delta > 0 ? "↑ +" : delta < 0 ? "↓ " : "→ ";
+        const icon  = deltaIcon(delta);
+        const sign  = delta > 0 ? "+" : "";
         return `
           <div class="pi-stat">
-            <div class="pi-stat-label">${label}</div>
-            <div class="pi-stat-row">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="pi-stat-label">${label}</span>
+              <span class="pi-delta-pill" style="background:${color}22;color:${color};border-color:${color}44;">
+                <i class="fa-solid ${icon}" style="font-size:8px;"></i> ${sign}${Math.abs(delta).toFixed(1)}${suffix}
+              </span>
+            </div>
+            <div class="pi-stat-values">
               <span class="pi-stat-before">${before}${suffix}</span>
-              <span class="pi-stat-arrow">→</span>
-              <span class="pi-stat-after">${after}${suffix}</span>
-              <span class="pi-stat-delta" style="color:${color};">${sign}${Math.abs(delta).toFixed(1)}${suffix}</span>
+              <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
+              <span class="pi-stat-after" style="color:${color};">${after}${suffix}</span>
             </div>
           </div>`;
       };
 
       body.innerHTML = `
         <div class="pi-grid">
-          ${stat("Playoff Odds", data.before.playoff_pct + "%", data.after.playoff_pct + "%", data.delta.playoff_pct, "%")}
-          ${stat("Proj. Wins",   data.before.avg_final_wins,    data.after.avg_final_wins,    data.delta.avg_final_wins)}
-          ${stat("Proj. PPG",    data.before.avg_ppg,           data.after.avg_ppg,           data.delta.avg_ppg)}
+          ${stat("Playoff Odds",  data.before.playoff_pct,    data.after.playoff_pct,    data.delta.playoff_pct,    "%")}
+          ${stat("Proj. Wins",    data.before.avg_final_wins, data.after.avg_final_wins, data.delta.avg_final_wins, "")}
+          ${stat("Proj. PPG",     data.before.avg_ppg,        data.after.avg_ppg,        data.delta.avg_ppg,        "")}
         </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">Monte Carlo · 2,000 sims · League avg ${data.league_avg_ppg} PPG</div>`;
+        <div style="font-size:11px;color:var(--text-muted);margin-top:12px;display:flex;align-items:center;gap:4px;">
+          <i class="fa-solid fa-circle-info" style="font-size:10px;"></i>
+          Monte Carlo · 2,000 sims · League avg ${data.league_avg_ppg} PPG
+        </div>`;
     } catch (e) {
       section.style.display = "none";
     }

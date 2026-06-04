@@ -263,7 +263,7 @@ def build_trade_calculator_body(
             </section>
           </div>
 
-          <div class="otc-lower-grid">
+          <div class="otc-lower-grid otc-lower-grid--3col">
             <section class="otc-summary-card">
               <div class="otc-summary-head">
                 <div>
@@ -343,14 +343,16 @@ def build_trade_calculator_body(
                 <div id="aiAnalysisResult" style="display:none;"></div>
               </div>
             </section>
-          </div>
 
-          <div id="playoffImpactSection" style="display:none;margin-top:28px;">
-            <div style="margin-bottom:14px;">
-              <h3 style="font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px;">Playoff Impact</h3>
-              <div style="font-size:12px;color:var(--text-muted);">How this trade affects your playoff odds</div>
-            </div>
-            <div id="playoffImpactBody"></div>
+            <section id="playoffImpactSection" class="otc-pi-card" style="display:none;">
+              <div class="otc-pi-head">
+                <div>
+                  <h2 class="otc-pi-title">Playoff Impact</h2>
+                  <div class="otc-pi-sub">How this trade affects your playoff odds</div>
+                </div>
+              </div>
+              <div id="playoffImpactBody" class="otc-pi-body"></div>
+            </section>
           </div>
 
           <div id="similarTradesSection" style="display:none;margin-top:28px;">
@@ -362,26 +364,58 @@ def build_trade_calculator_body(
           </div>
 
           <style>
-            /* ── Playoff Impact ─────────────────────────────────── */
-            .pi-grid {{
-              display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
+            /* ── 3-col lower grid ───────────────────────────────── */
+            .otc-lower-grid--3col {{
+              grid-template-columns: 1fr 1fr 320px;
             }}
-            @media(max-width:520px) {{ .pi-grid {{ grid-template-columns:1fr; }} }}
+            @media(max-width:1100px) {{ .otc-lower-grid--3col {{ grid-template-columns: 1fr 1fr; }} }}
+            @media(max-width:980px)  {{ .otc-lower-grid--3col {{ grid-template-columns: 1fr; }} }}
+
+            .otc-pi-card {{
+              border:1px solid var(--border-color);border-radius:20px;
+              padding:20px;background:var(--card-bg);display:flex;flex-direction:column;
+            }}
+            .otc-pi-head {{ margin-bottom:14px; }}
+            .otc-pi-title {{ font-size:15px;font-weight:700;margin:0 0 2px; }}
+            .otc-pi-sub   {{ font-size:12px;color:var(--text-muted); }}
+            .otc-pi-body  {{ flex:1; }}
+
+            /* ── Playoff Impact stats ────────────────────────────── */
+            .pi-grid {{
+              display:grid;grid-template-columns:1fr;gap:8px;
+            }}
             .pi-stat {{
               border:1px solid var(--border-color);border-radius:10px;
-              padding:12px 14px;background:var(--card-bg);
+              padding:12px 14px;background:var(--bg-alt,rgba(0,0,0,.02));
             }}
             .pi-stat-label {{
               font-size:10px;font-weight:700;text-transform:uppercase;
-              letter-spacing:.05em;color:var(--text-muted);margin-bottom:6px;
+              letter-spacing:.06em;color:var(--text-muted);margin-bottom:6px;
             }}
-            .pi-stat-row {{
-              display:flex;align-items:center;gap:5px;flex-wrap:wrap;
+            .pi-stat-values {{
+              display:flex;align-items:center;gap:6px;
             }}
-            .pi-stat-before {{ font-size:13px;color:var(--text-muted); }}
-            .pi-stat-arrow  {{ font-size:11px;color:var(--text-muted); }}
-            .pi-stat-after  {{ font-size:15px;font-weight:700;color:var(--text); }}
-            .pi-stat-delta  {{ font-size:12px;font-weight:700;margin-left:2px; }}
+            .pi-stat-before {{ font-size:12px;color:var(--text-muted); }}
+            .pi-stat-arrow  {{ font-size:9px;color:var(--text-muted);opacity:.6; }}
+            .pi-stat-after  {{ font-size:18px;font-weight:800;line-height:1; }}
+            .pi-delta-pill  {{
+              display:inline-flex;align-items:center;gap:3px;
+              font-size:11px;font-weight:700;
+              padding:2px 7px;border-radius:20px;border:1px solid;
+            }}
+            .pi-locked {{
+              display:flex;flex-direction:column;align-items:center;
+              text-align:center;padding:22px 16px;
+              border:1px solid var(--border-color);border-radius:12px;
+              background:var(--bg-alt,rgba(0,0,0,.02));
+            }}
+            .pi-locked-icon {{ font-size:22px;color:var(--text-muted);opacity:.5;margin-bottom:8px; }}
+            .pi-locked-title {{ font-size:14px;font-weight:700;margin-bottom:4px; }}
+            .pi-locked-sub   {{ font-size:12px;color:var(--text-muted);max-width:260px;line-height:1.5;margin-bottom:12px; }}
+            .pi-locked-btn {{
+              padding:7px 18px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;
+              background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;
+            }}
 
             .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
             .stl-sub   {{ font-size:12px;color:var(--text-muted); }}
