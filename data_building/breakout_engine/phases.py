@@ -18,6 +18,8 @@ from .config import (
     BREAKOUT_ASCENSION_TRAJ_MIN,
     BREAKOUT_ASCENSION_SCORE_CAP,
     BREAKOUT_GATE_FAIL_CAP,
+    BREAKOUT_BLOCKED_OPP_MAX,
+    BREAKOUT_BLOCKED_COMP_MIN,
     BREAKOUT_CURVE_PIVOT,
     BREAKOUT_CURVE_SLOPE,
 )
@@ -234,6 +236,14 @@ class PhaseDetector:
             # exactly-zero case), so an ascending young starter with no vacancy
             # can't outrank a true opportunity breakout.
             curved = min(curved, BREAKOUT_ASCENSION_SCORE_CAP)
+
+        # Blocked-path override: ascending player with virtually no vacated
+        # opportunity AND meaningful competition added. A strong profile can't
+        # actualize without a path to targets — drop below the candidate floor.
+        if (opp < BREAKOUT_BLOCKED_OPP_MAX
+                and comp_added < -BREAKOUT_BLOCKED_COMP_MIN
+                and not opportunity_ok):
+            curved = min(curved, BREAKOUT_GATE_FAIL_CAP)
 
         return curved
 
