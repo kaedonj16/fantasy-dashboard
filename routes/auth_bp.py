@@ -123,6 +123,21 @@ def set_viewer():
     return redirect(url_for("page_dashboard", platform=platform, season=season, league_id=league_id))
 
 
+# ── Set viewer roster (AJAX) ──────────────────────────────────────────────────
+
+@auth_bp.route("/api/set-viewer-roster", methods=["POST"])
+def api_set_viewer_roster():
+    """Persist the selected roster_id to the session without a full page reload.
+    Called by the team-selector dropdown in the trade calculator.
+    """
+    data = request.get_json(force=True) or {}
+    roster_id = str(data.get("roster_id") or "").strip()
+    if not roster_id:
+        return jsonify({"error": "roster_id is required"}), 400
+    session["viewer_roster_id"] = roster_id
+    return jsonify({"ok": True, "roster_id": roster_id})
+
+
 # ── Logout ────────────────────────────────────────────────────────────────────
 
 @auth_bp.route("/logout")
