@@ -366,7 +366,7 @@ def build_trade_calculator_body(
           <style>
             /* ── Top-row 2-col + full-width AI row ──────────────── */
             .otc-lower-grid--top2 {{
-              grid-template-columns: 1fr 1fr;
+              grid-template-columns: 2fr 1fr;
             }}
             @media(max-width:980px) {{ .otc-lower-grid--top2 {{ grid-template-columns: 1fr; }} }}
             .otc-ai-card--fullrow {{ grid-column: 1 / -1; }}
@@ -382,9 +382,8 @@ def build_trade_calculator_body(
 
             /* ── Playoff Impact stats ────────────────────────────── */
             .pi-grid {{
-              display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
+              display:grid;grid-template-columns:1fr;gap:8px;
             }}
-            @media(max-width:600px) {{ .pi-grid {{ grid-template-columns:1fr; }} }}
             .pi-stat {{
               border:1px solid var(--border-color);border-radius:10px;
               padding:12px 14px;background:var(--bg-alt,rgba(0,0,0,.02));
