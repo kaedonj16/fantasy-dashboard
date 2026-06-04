@@ -21322,7 +21322,7 @@ def _is_pick_asset_id(asset_id: str) -> bool:
     return len(yr) == 4 and yr.isdigit() and parts[1].isdigit()
 
 
-def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: dict | None = None) -> dict | None:
+def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: Optional[dict] = None) -> Optional[dict]:
     """Resolve a draft-pick asset id to a focus-asset dict so picks can be the
     focus of the trade-suggestions search (build-around / find-returns).
 
