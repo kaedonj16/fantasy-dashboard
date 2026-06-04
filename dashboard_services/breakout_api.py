@@ -290,10 +290,8 @@ def _ppg_tier(pos: str, ppg: float) -> str:
     return "high"
 
 
-def _load_usage_ppg(season: int, min_games: int = 8, scoring_format: str = "ppr") -> dict[str, float]:
-    """Return {player_id: ppg} from usage_rows_{season}.json for the given scoring format."""
-    _key_map = {"ppr": "ppr_ppg", "half": "half_ppr_ppg", "std": "std_scoring_ppg"}
-    ppg_key = _key_map.get(scoring_format, "ppr_ppg")
+def _load_usage_ppg(season: int, min_games: int = 8) -> dict[str, float]:
+    """Return {player_id: ppr_ppg} from usage_rows_{season}.json, min_games filter."""
     try:
         path = _Path("cache/player_history") / f"usage_rows_{season}.json"
         if not path.exists():
@@ -303,26 +301,13 @@ def _load_usage_ppg(season: int, min_games: int = 8, scoring_format: str = "ppr"
         for r in rows:
             pid  = str(r.get("id") or "")
             u    = r.get("usage") or {}
-            ppg  = u.get(ppg_key) or u.get("ppr_ppg")
+            ppg  = u.get("ppr_ppg")
             games = int(u.get("games") or 0)
             if pid and ppg and games >= min_games:
                 out[pid] = float(ppg)
         return out
     except Exception:
         return {}
-
-
-def _apply_scoring_adjusted_ppg(candidates: list, season: int, scoring_format: str) -> None:
-    """Overwrite prev_ppr_ppg with scoring-format-adjusted PPG from the previous season's usage cache."""
-    if not scoring_format or scoring_format == "ppr":
-        return  # prev_ppr_ppg is already PPR — nothing to change
-    usage = _load_usage_ppg(season - 1, min_games=8, scoring_format=scoring_format)
-    if not usage:
-        return
-    for c in candidates:
-        pid = str(c.get("player_id") or "")
-        if pid in usage:
-            c["prev_ppr_ppg"] = usage[pid]
 
 
 def _build_comp_database() -> dict:
@@ -541,8 +526,7 @@ def _get_peer_comparison(
 
 
 def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0,
-                            limit: Optional[int] = None,
-                            scoring_format: str = "ppr") -> Dict:
+                            limit: Optional[int] = None) -> Dict:
     """
     Get all breakout candidates for a season.
 
@@ -654,9 +638,6 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
     except Exception:
         logger.warning("breakout_api: failed to enrich candidates with player index", exc_info=True)
 
-    # Override prev_ppr_ppg with scoring-format-adjusted PPG from usage cache
-    _apply_scoring_adjusted_ppg(candidates, season, scoring_format)
-
     return {
         'season': season,
         'candidates': candidates,
@@ -669,8 +650,7 @@ def get_breakout_candidates_by_position(
     position: str,
     season: Optional[int] = None,
     min_score: float = 0.0,
-    limit: int = 50,
-    scoring_format: str = "ppr"
+    limit: int = 50
 ) -> Dict:
     """
     Get breakout candidates filtered by position.
@@ -689,7 +669,7 @@ def get_breakout_candidates_by_position(
             'count': int
         }
     """
-    result = get_breakout_candidates(season, min_score, scoring_format=scoring_format)
+    result = get_breakout_candidates(season, min_score)
     candidates = [
         c for c in result['candidates']
         if c['position'] == position.upper()
@@ -703,8 +683,7 @@ def get_breakout_candidates_by_position(
     }
 
 
-def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None,
-                                   scoring_format: str = "ppr") -> Dict:
+def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None) -> Dict:
     """
     Get detailed breakout information for a specific player.
 
@@ -795,9 +774,6 @@ def get_breakout_candidate_detail(player_id: str, season: Optional[int] = None,
         candidate['espnHeadshot'] = player_meta.get('espnHeadshot')
     except Exception:
         logger.warning("breakout_api: failed to enrich candidate %s with player index", player_id, exc_info=True)
-
-    # Override prev_ppr_ppg with scoring-format-adjusted PPG from usage cache
-    _apply_scoring_adjusted_ppg([candidate], season, scoring_format)
 
     # Named + cohort peer comparison
     opp_score = float(candidate.get('opportunity_opened_score') or 0)
@@ -1064,9 +1040,7 @@ def candidates():
     season = _resolve_bo_season(request.args.get('season', type=int))
     min_score = request.args.get('min_score', default=0.0, type=float)
     limit = request.args.get('limit', default=15, type=int)
-    scoring_format = request.args.get('scoring_format', default='ppr', type=str).strip().lower()
-    return jsonify(get_breakout_candidates(season, min_score, limit=limit or None,
-                                           scoring_format=scoring_format))
+    return jsonify(get_breakout_candidates(season, min_score, limit=limit or None))
 
 
 @breakout_bp.route('/candidates/<position>')
@@ -1076,9 +1050,7 @@ def candidates_by_position(position):
     season = _resolve_bo_season(request.args.get('season', type=int))
     min_score = request.args.get('min_score', default=0.0, type=float)
     limit = request.args.get('limit', default=50, type=int)
-    scoring_format = request.args.get('scoring_format', default='ppr', type=str).strip().lower()
-    return jsonify(get_breakout_candidates_by_position(position, season, min_score, limit,
-                                                        scoring_format=scoring_format))
+    return jsonify(get_breakout_candidates_by_position(position, season, min_score, limit))
 
 
 @breakout_bp.route('/player/<player_id>')
@@ -1086,8 +1058,7 @@ def candidates_by_position(position):
 def player_detail(player_id):
     """Get detailed breakout info for a player."""
     season = _resolve_bo_season(request.args.get('season', type=int))
-    scoring_format = request.args.get('scoring_format', default='ppr', type=str).strip().lower()
-    return jsonify(get_breakout_candidate_detail(player_id, season, scoring_format=scoring_format))
+    return jsonify(get_breakout_candidate_detail(player_id, season))
 
 
 @breakout_bp.route('/statistics')

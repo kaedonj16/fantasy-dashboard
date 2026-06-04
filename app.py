@@ -11141,23 +11141,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
     except Exception:
         bo_season = max(season, datetime.now().year)
 
-    # Determine scoring format so PPG is displayed in the viewer's league format
-    scoring_format = "ppr"
-    try:
-        if platform == "sleeper" and league_id:
-            from dashboard_services.api import get_league as _get_league, get_effective_scoring_settings as _gess
-            _get_league(league_id)
-            _ss = _gess()
-            _rec = float((_ss or {}).get("rec") or 1.0)
-            scoring_format = "ppr" if _rec >= 1.0 else "half" if _rec >= 0.5 else "std"
-        elif platform != "sleeper":
-            from dashboard_services.api import get_effective_scoring_settings as _gess
-            _ss = _gess()
-            _rec = float((_ss or {}).get("rec") or 1.0)
-            scoring_format = "ppr" if _rec >= 1.0 else "half" if _rec >= 0.5 else "std"
-    except Exception:
-        scoring_format = "ppr"
-
     if not has_premium:
         # Show teaser and auto-open the paywall popup (also covers not-logged-in)
         teaser_html = """
@@ -11225,14 +11208,13 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
     <script>
       const BO_HAS_PREMIUM = {str(has_premium).lower()};
-      window.__SF__ = '{scoring_format}';
       let breakoutCandidates = [];
       let currentFilter = 'ALL';
       let currentPage = 1;
       const PAGE_SIZE = 12;
 
       // Fetch breakout candidates on page load (using new BreakoutEngine API)
-      fetch('/api/breakout/candidates?season={bo_season}&min_score=50&limit=0&league_id={league_id}&platform={platform}&scoring_format={scoring_format}')
+      fetch('/api/breakout/candidates?season={bo_season}&min_score=50&limit=0&league_id={league_id}&platform={platform}')
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
@@ -18275,8 +18257,16 @@ def api_player_game_logs(player_id: str):
         season    = int(request.args.get("season", datetime.now().year))
 
         if league_id:
-            sync_league_globals(platform, league_id, season)
-            scoring_settings = get_effective_scoring_settings()
+            # sync_league_globals is a no-op for Sleeper — must call get_league explicitly
+            from dashboard_services.api import SCORING_DEFAULTS as _SD
+            if platform == "sleeper":
+                from dashboard_services.api import get_league as _get_league
+                _league_data = _get_league(league_id) or {}
+                _raw_ss = _league_data.get("scoring_settings") or {}
+                scoring_settings = {**_SD, **_raw_ss}
+            else:
+                sync_league_globals(platform, league_id, season)
+                scoring_settings = get_effective_scoring_settings()
         else:
             scoring_settings = {
                 "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
