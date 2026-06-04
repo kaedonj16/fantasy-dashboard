@@ -263,7 +263,7 @@ def build_trade_calculator_body(
             </section>
           </div>
 
-          <div class="otc-lower-grid otc-lower-grid--3col">
+          <div class="otc-lower-grid otc-lower-grid--top2">
             <section class="otc-summary-card">
               <div class="otc-summary-head">
                 <div>
@@ -321,7 +321,17 @@ def build_trade_calculator_body(
               </div>
             </section>
 
-            <section class="otc-ai-card" id="tradeAiPanel">
+            <section id="playoffImpactSection" class="otc-pi-card" style="display:none;">
+              <div class="otc-pi-head">
+                <div>
+                  <h2 class="otc-pi-title">Playoff Impact</h2>
+                  <div class="otc-pi-sub">How this trade affects your playoff odds</div>
+                </div>
+              </div>
+              <div id="playoffImpactBody" class="otc-pi-body"></div>
+            </section>
+
+            <section class="otc-ai-card otc-ai-card--fullrow" id="tradeAiPanel">
               <div class="otc-ai-head">
                 <div>
                   <h2 class="otc-ai-title">BR Trade Analyst</h2>
@@ -343,16 +353,6 @@ def build_trade_calculator_body(
                 <div id="aiAnalysisResult" style="display:none;"></div>
               </div>
             </section>
-
-            <section id="playoffImpactSection" class="otc-pi-card" style="display:none;">
-              <div class="otc-pi-head">
-                <div>
-                  <h2 class="otc-pi-title">Playoff Impact</h2>
-                  <div class="otc-pi-sub">How this trade affects your playoff odds</div>
-                </div>
-              </div>
-              <div id="playoffImpactBody" class="otc-pi-body"></div>
-            </section>
           </div>
 
           <div id="similarTradesSection" style="display:none;margin-top:28px;">
@@ -364,12 +364,12 @@ def build_trade_calculator_body(
           </div>
 
           <style>
-            /* ── 3-col lower grid ───────────────────────────────── */
-            .otc-lower-grid--3col {{
-              grid-template-columns: 1fr 1fr 320px;
+            /* ── Top-row 2-col + full-width AI row ──────────────── */
+            .otc-lower-grid--top2 {{
+              grid-template-columns: 1fr 1fr;
             }}
-            @media(max-width:1100px) {{ .otc-lower-grid--3col {{ grid-template-columns: 1fr 1fr; }} }}
-            @media(max-width:980px)  {{ .otc-lower-grid--3col {{ grid-template-columns: 1fr; }} }}
+            @media(max-width:980px) {{ .otc-lower-grid--top2 {{ grid-template-columns: 1fr; }} }}
+            .otc-ai-card--fullrow {{ grid-column: 1 / -1; }}
 
             .otc-pi-card {{
               border:1px solid var(--border-color);border-radius:20px;
@@ -382,8 +382,9 @@ def build_trade_calculator_body(
 
             /* ── Playoff Impact stats ────────────────────────────── */
             .pi-grid {{
-              display:grid;grid-template-columns:1fr;gap:8px;
+              display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
             }}
+            @media(max-width:600px) {{ .pi-grid {{ grid-template-columns:1fr; }} }}
             .pi-stat {{
               border:1px solid var(--border-color);border-radius:10px;
               padding:12px 14px;background:var(--bg-alt,rgba(0,0,0,.02));
