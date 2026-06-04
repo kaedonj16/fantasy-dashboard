@@ -18367,6 +18367,28 @@ def api_player_game_logs(player_id: str):
         # max(available_years)+1 because sleeper_stats files may already exist
         # for the current season (e.g. 2026), pushing the calculation to 2027.
         _upcoming = season  # season already parsed from request.args above
+        # Rookies drafted after the league's season year (e.g. 2026 draftees in
+        # a 2025 league) have no stats and no projections for `season`, only for
+        # `season+1`. Detect this and shift _upcoming so their projections show.
+        if not game_logs_by_year:
+            try:
+                from utils.utils import path_week_proj
+                import json as _pj_json
+                # Read the week-1 file only if it already exists on disk
+                # (no network fetch — just a cheap cache peek).
+                def _peek_proj(yr: int) -> dict:
+                    p = path_week_proj(yr, 1)
+                    if not os.path.exists(p):
+                        return {}
+                    try:
+                        with open(p) as _pf:
+                            return _pj_json.load(_pf) or {}
+                    except Exception:
+                        return {}
+                if not _peek_proj(_upcoming).get(player_id) and _peek_proj(_upcoming + 1).get(player_id):
+                    _upcoming = _upcoming + 1
+            except Exception:
+                pass
         # Weeks already covered by actual stats — skip those when projecting
         _actual_weeks = {
             g.get("week") for g in (game_logs_by_year.get(_upcoming) or [])
