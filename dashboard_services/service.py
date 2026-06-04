@@ -228,19 +228,6 @@ def matchup_cards_last_week(
     return last_week, "".join(cards), top_by_pos
 
 
-def fantasy_team_for_player(pid: str, rosters: list, roster_map: dict) -> str:
-    """
-    pid: Sleeper player ID as string
-    rosters: list returned by get_rosters()
-    roster_map: maps roster_id -> fantasy team name
-    """
-    for r in rosters:
-        if pid in (r.get("players") or []):
-            rid = str(r["roster_id"])
-            return roster_map.get(rid, f"Roster {rid}")
-    return "Free Agent"
-
-
 def fantasy_team_and_roster_for_player(pid: str, rosters: list, roster_map: dict) -> tuple[str, str]:
     """
     Returns (team_name, roster_id) for a player.
@@ -607,13 +594,6 @@ def _aggregate_team_stats(df_weekly: pd.DataFrame, records: pd.DataFrame) -> pd.
     return team_stats
 
 
-def get_owner_id(
-        rosters: Optional[list[dict]] = None,
-        roster_id: Optional[str] = None,
-) -> Optional[str]:
-    return next((r["owner_id"] for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
-
-
 def build_matchups_by_week(league_id, weeks, roster_map, players_map, season, platform):
     week_list = list(weeks)
 
@@ -914,14 +894,6 @@ def compute_week_opponents(matchups_week: Iterable[Dict[str, Any]]) -> List[Tupl
             pairs.append((rids[0], rids[1]))
 
     return pairs
-
-
-def to_index(series):
-    mu = series.mean()
-    sigma = series.std(ddof=0)
-    if sigma == 0 or pd.isna(sigma):
-        return pd.Series(100.0, index=series.index)
-    return 100 + 10 * (series - mu) / sigma
 
 
 def build_team_strength(team_stats: pd.DataFrame) -> dict[str, float]:

@@ -252,13 +252,6 @@ def get_league(league_id: str) -> dict:
     return league
 
 
-def get_scoring_settings() -> Dict[str, Any]:
-    """
-    Raw scoring_settings from Sleeper for the current league.
-    """
-    return _league_state().get("scoring_settings") or {}
-
-
 def get_effective_scoring_settings() -> Dict[str, float]:
     """
     Defaults overlaid with league-specific scoring.
@@ -411,64 +404,6 @@ def get_sleeper_user_leagues(user_id: str, season: int, sport: str = "nfl") -> l
 
 class Tank01Error(Exception):
     pass
-
-
-@ttl_cache(ttl=300)
-def get_tank01_player_gamelogs(
-        tank_player_id: str,
-        season: Optional[int] = None,
-) -> List[Dict[str, Any]]:
-    """
-    Call Tank01 and return a list of game dicts for a given player.
-
-    Normalizes Tank01's body which may be:
-      - a list of games, or
-      - a dict keyed by gameId -> gameDict
-    """
-
-    if not TANK01_API_KEY:
-        raise Tank01Error("TANK01_API_KEY environment variable is not set.")
-
-    url = f"{BASE}/getNFLGamesForPlayer"  # or whatever your real endpoint is
-
-    querystring: Dict[str, Any] = {
-        "playerID": str(tank_player_id),
-    }
-    if season is not None:
-        querystring["season"] = str(season)
-
-    if _tank01_breaker.is_open():
-        raise Tank01Error("Tank01 circuit breaker OPEN - skipping request")
-
-    try:
-        resp = SESSION.get(url, headers=TANK01_HEADERS, params=querystring, timeout=20)
-        if resp.status_code != 200:
-            _tank01_breaker.record_failure()
-            raise Tank01Error(f"Tank01 API error {resp.status_code}: {resp.text[:200]}")
-
-        data = resp.json()
-        status_code = data.get("statusCode")
-        if status_code != 200:
-            _tank01_breaker.record_failure()
-            raise Tank01Error(f"Tank01 returned statusCode={status_code}: {data}")
-
-        _tank01_breaker.record_success()
-        raw_body = data.get("body") or {}
-
-        if isinstance(raw_body, list):
-            games: List[Dict[str, Any]] = [g for g in raw_body if isinstance(g, dict)]
-        elif isinstance(raw_body, dict):
-            games = [g for g in raw_body.values() if isinstance(g, dict)]
-        else:
-            logger.warning("[Tank01] Unexpected body type for %s: %s", tank_player_id, type(raw_body))
-            games = []
-
-        return games
-    except Tank01Error:
-        raise
-    except requests.exceptions.RequestException as e:
-        _tank01_breaker.record_failure()
-        raise Tank01Error(f"Tank01 request failed: {e}") from e
 
 
 @ttl_cache(ttl=300)

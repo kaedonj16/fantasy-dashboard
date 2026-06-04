@@ -101,11 +101,3 @@ def build_relevant_players_index(
     return relevant
 
 
-def write_relevant_players_index(
-        league_id: str,
-        out_path: str = "cache/players_index_relevant.json",
-):
-    relevant_index = build_relevant_players_index(league_id)
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(relevant_index, f, ensure_ascii=False, indent=2)
-    print(f"Saved {len(relevant_index)} fantasy-relevant players to {out_path}")

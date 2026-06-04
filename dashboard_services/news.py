@@ -187,51 +187,6 @@ def get_player_news(player_name: str, espn_headshot: str = "", limit: int = 4) -
     return matched[:limit]
 
 
-def get_players_news_batch(players: list[dict]) -> dict[str, list]:
-    """
-    Fetch news for multiple players concurrently.
-
-    Args:
-        players: list of dicts with keys: player_id, player_name, espn_headshot (optional)
-
-    Returns:
-        dict mapping player_id -> list of news items
-    """
-    now = time.time()
-
-    # Split into cached vs needs-fetch
-    id_to_eid: dict[str, str] = {}
-    result: dict[str, list] = {}
-
-    for p in players:
-        pid = str(p.get("player_id") or "")
-        if not pid:
-            continue
-        eid = _espn_id(p.get("espn_headshot") or p.get("espnHeadshot") or "")
-        if not eid:
-            result[pid] = []
-            continue
-        cache_key = f"athlete_{eid}"
-        cached = _CACHE.get(cache_key)
-        if cached and now - cached[0] < _TTL:
-            result[pid] = cached[1]
-        else:
-            id_to_eid[pid] = eid
-
-    if id_to_eid:
-        # Deduplicate ESPN IDs (multiple players can share an ESPN ID in edge cases)
-        eid_to_pids: dict[str, list[str]] = {}
-        for pid, eid in id_to_eid.items():
-            eid_to_pids.setdefault(eid, []).append(pid)
-
-        fetched = _run(_async_batch_athletes(list(eid_to_pids.keys())))
-        for eid, items in fetched.items():
-            for pid in eid_to_pids[eid]:
-                result[pid] = items
-
-    return result
-
-
 def get_nfl_news(limit: int = 20) -> list:
     """Return recent general NFL news headlines (for activity feed)."""
     return _run(_async_fetch_general())[:limit]

@@ -426,39 +426,6 @@ def _team_name_from_roster_id(roster_map: Dict[str, str], roster_id: Any) -> str
     )
 
 
-def _title_game_names(ctx: dict) -> tuple[str, str]:
-    platform = ctx["platform"]
-    season = int(ctx["season"])
-    league_id = ctx.get("resolved_league_id") or ctx["league_id"]
-    roster_map = ctx.get("roster_map") or {}
-
-    try:
-        winners_bracket = get_bracket(platform, league_id, season, "winners") or []
-    except Exception:
-        winners_bracket = []
-
-    if not winners_bracket:
-        return "-", "-"
-
-    # Prefer latest round / latest matchup
-    finalists = sorted(
-        winners_bracket,
-        key=lambda m: (_safe_int(m.get("r"), 0), _safe_int(m.get("m"), 0)),
-        reverse=True,
-    )
-
-    for matchup in finalists:
-        winner_id = matchup.get("w")
-        loser_id = matchup.get("l")
-        if winner_id is not None and loser_id is not None:
-            return (
-                _team_name_from_roster_id(roster_map, winner_id),
-                _team_name_from_roster_id(roster_map, loser_id),
-            )
-
-    return "-", "-"
-
-
 def _filtered_season_df(df_weekly: pd.DataFrame) -> pd.DataFrame:
     if df_weekly is None or df_weekly.empty:
         return pd.DataFrame()
@@ -591,29 +558,6 @@ def _build_summary(history_ctx: dict) -> dict:
             summary["biggest_blowout_margin"] = _safe_float(blowout["margin"])
 
     return summary
-
-
-def _build_recap_line(summary: dict, season: int) -> str:
-    champ = summary["champion"]
-    runner = summary["runner_up"]
-    scoring_leader = summary["top_scorer_team"]
-    unlucky = summary["unluckiest_team"]
-
-    parts = []
-    if champ != "-" and runner != "-":
-        parts.append(f"{champ} won the {season} title over {runner}.")
-    elif champ != "-":
-        parts.append(f"{champ} finished as the {season} champion.")
-
-    if scoring_leader != "-":
-        parts.append(f"{scoring_leader} led the league in total points.")
-
-    if unlucky != "-" and summary["unluckiest_delta"] > 0:
-        parts.append(
-            f"{unlucky} was the rough-luck team, finishing {summary['unluckiest_delta']} spots below its PF rank."
-        )
-
-    return " ".join(parts) or f"Review the biggest outcomes and trends from the {season} season."
 
 
 def _history_chart(df_weekly: pd.DataFrame) -> str:

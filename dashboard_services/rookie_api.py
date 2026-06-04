@@ -31,34 +31,6 @@ _cache: Dict[Any, List[Dict[str, Any]]] = {}
 _FC_ADP_CACHE: Dict[tuple, list] = {}
 
 
-def _get_fc_data(is_sf: bool) -> list:
-    from datetime import date
-    import requests, json as _json
-    key = ("sf" if is_sf else "1qb", date.today().isoformat())
-    if key in _FC_ADP_CACHE:
-        return _FC_ADP_CACHE[key]
-    try:
-        from utils.paths import DATA_DIR
-        cache_file = DATA_DIR / f"fc_dynasty_rookie_adp_{key[0]}_{key[1]}.json"
-        if cache_file.exists():
-            data = _json.loads(cache_file.read_text())
-        else:
-            num_qbs = 2 if is_sf else 1
-            resp = requests.get(
-                f"https://fantasycalc.com/api/values/current?numQbs={num_qbs}&type=1&ppr=0.5",
-                timeout=10, headers={"User-Agent": "fantasy-dashboard/1.0"},
-            )
-            data = resp.json() if resp.ok else []
-            try:
-                cache_file.write_text(_json.dumps(data))
-            except Exception:
-                pass
-        _FC_ADP_CACHE[key] = data
-        return data
-    except Exception:
-        return []
-
-
 def _nfl_draft_complete(draft_year: int) -> bool:
     from data_building.rookie_pipeline.pipeline import is_draft_complete
     try:
