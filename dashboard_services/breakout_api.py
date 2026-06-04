@@ -580,13 +580,18 @@ def get_breakout_candidates(season: Optional[int] = None, min_score: float = 0.0
             (component_details->'projections'->>'prev_ppr_ppg')::numeric as cd_prev_ppr_ppg
         FROM breakout_opportunity_scores
         WHERE season = %s
+          AND as_of_date = (
+              SELECT MAX(as_of_date)
+              FROM breakout_opportunity_scores
+              WHERE season = %s
+          )
           AND breakout_opportunity_score >= %s
         ORDER BY player_id, as_of_date DESC, calculated_at DESC
     """
 
     with get_conn() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(query, [season, min_score])
+            cursor.execute(query, [season, season, min_score])
             rows = cursor.fetchall()
 
     candidates = [enrich_candidate_with_type(dict(row)) for row in rows]
