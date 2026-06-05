@@ -327,6 +327,18 @@ def build_trade_calculator_body(
                   <h2 class="otc-pi-title">Playoff Impact</h2>
                   <div class="otc-pi-sub">How this trade affects your playoff odds</div>
                 </div>
+                <div class="pi-info-wrap">
+                  <button class="pi-info-btn" aria-label="Metric explanations" onclick="this.nextElementSibling.classList.toggle('pi-tooltip--open')">&#9432;</button>
+                  <div class="pi-tooltip">
+                    <div class="pi-tooltip-title">What each stat means</div>
+                    <div class="pi-tooltip-row"><strong>Playoff Odds</strong> Monte Carlo sim — % of seasons your roster makes the playoffs.</div>
+                    <div class="pi-tooltip-row"><strong>Proj. Wins</strong> Expected regular-season win total based on your projected PPG.</div>
+                    <div class="pi-tooltip-row"><strong>Proj. PPG</strong> Projected points per game using your starters after the swap.</div>
+                    <div class="pi-tooltip-row"><strong>Top-3 Pick</strong> Odds of finishing bottom-3 and landing a top-3 rookie pick.</div>
+                    <div class="pi-tooltip-row"><strong>Roster Age</strong> Value-weighted avg age of your whole roster before vs after the swap.</div>
+                    <div class="pi-tooltip-row"><strong>Prime Yrs Left</strong> Value-weighted avg of seasons until age 30 for the players being traded. Higher = more prime years ahead.</div>
+                  </div>
+                </div>
               </div>
               <div id="playoffImpactBody" class="otc-pi-body"></div>
             </section>
@@ -381,9 +393,34 @@ def build_trade_calculator_body(
               border:1px solid var(--border);border-radius:20px;
               padding:10px 15px;background:var(--card-bg);display:flex;flex-direction:column;
             }}
-            .otc-pi-head {{ margin-bottom:14px; }}
+            .otc-pi-head {{ margin-bottom:14px;display:flex;align-items:flex-start;justify-content:space-between; }}
             .otc-pi-title {{ font-size:15px;font-weight:700;margin:0 0 2px; }}
             .otc-pi-sub   {{ font-size:12px;color:var(--text-muted); }}
+            .pi-info-wrap {{ position:relative;flex-shrink:0;margin-top:2px; }}
+            .pi-info-btn  {{
+              background:none;border:none;cursor:pointer;padding:0;
+              font-size:15px;color:var(--text-muted);opacity:.55;line-height:1;
+              transition:opacity .15s;
+            }}
+            .pi-info-btn:hover {{ opacity:1; }}
+            .pi-tooltip {{
+              display:none;position:absolute;right:0;top:calc(100% + 6px);
+              width:260px;z-index:200;
+              background:var(--card-bg,#fff);border:1px solid var(--border-color);
+              border-radius:12px;padding:12px 14px;
+              box-shadow:0 8px 24px rgba(0,0,0,.12);
+            }}
+            .pi-tooltip--open {{ display:block; }}
+            .pi-tooltip-title {{
+              font-size:10px;font-weight:800;text-transform:uppercase;
+              letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px;
+            }}
+            .pi-tooltip-row {{
+              font-size:11.5px;color:var(--text);line-height:1.45;
+              padding:5px 0;border-top:1px solid var(--border-color);
+            }}
+            .pi-tooltip-row:first-of-type {{ border-top:none; }}
+            .pi-tooltip-row strong {{ color:var(--text);font-weight:700; }}
             .otc-pi-body  {{ flex:1;display:flex;flex-direction:column;justify-content:center; }}
 
             /* ── Playoff Impact stats ────────────────────────────── */

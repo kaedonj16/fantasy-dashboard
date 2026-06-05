@@ -5355,6 +5355,13 @@ window.initTradePage = function initTradePage(root = document) {
     bindSetupButton();
     bindClearTradeButton();
     bindShareButton();
+
+    // Close PI info tooltip when clicking outside it
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".pi-info-wrap")) {
+        root.querySelectorAll(".pi-tooltip--open").forEach(t => t.classList.remove("pi-tooltip--open"));
+      }
+    });
     initMoversBreakoutsTabs();
 
     // Re-verify premium status client-side so stale page renders don't lock out subscribers
