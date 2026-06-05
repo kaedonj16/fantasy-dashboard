@@ -386,6 +386,9 @@ def build_trade_calculator_body(
                gap is the only spacing and align-items:stretch can work. */
             .otc-lower-grid--top2 > .otc-summary-card,
             .otc-lower-grid--top2 > .otc-pi-card {{ margin-top: 0; }}
+            /* Mid widths: give Playoff Impact more room so its 3 stat
+               columns aren't squeezed. */
+            @media(max-width:1300px) {{ .otc-lower-grid--top2 {{ grid-template-columns: 3fr 2fr; }} }}
             @media(max-width:980px) {{ .otc-lower-grid--top2 {{ grid-template-columns: 1fr; }} }}
             .otc-ai-card--fullrow {{ grid-column: 1 / -1; }}
 
@@ -429,11 +432,12 @@ def build_trade_calculator_body(
 
             /* ── Playoff Impact stats ────────────────────────────── */
             .pi-grid {{
-              display:grid;grid-template-columns:repeat(3,1fr);gap:6px;
+              display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;
             }}
             .pi-stat {{
               border:1px solid var(--border-color);border-radius:9px;
               padding:8px 9px;background:var(--bg-alt,rgba(0,0,0,.02));
+              min-width:0;
             }}
             .pi-stat-label {{
               font-size:9px;font-weight:700;text-transform:uppercase;
@@ -442,11 +446,19 @@ def build_trade_calculator_body(
               display:block;
             }}
             .pi-stat-values {{
-              display:flex;align-items:baseline;gap:5px;
+              display:flex;align-items:baseline;gap:5px;min-width:0;
             }}
-            .pi-stat-before {{ font-size:11px;color:var(--text-muted); }}
-            .pi-stat-arrow  {{ font-size:8px;color:var(--text-muted);opacity:.5; }}
-            .pi-stat-after  {{ font-size:17px;font-weight:800;line-height:1; }}
+            .pi-stat-before {{ font-size:11px;color:var(--text-muted);flex-shrink:0; }}
+            .pi-stat-arrow  {{ font-size:8px;color:var(--text-muted);opacity:.5;flex-shrink:0; }}
+            .pi-stat-after  {{ font-size:17px;font-weight:800;line-height:1;min-width:0;overflow:hidden;text-overflow:ellipsis; }}
+            /* Tighten stat tiles when the card is narrow so all three
+               columns stay inside the card instead of clipping. */
+            @media(max-width:1200px) {{
+              .pi-stat {{ padding:7px 7px; }}
+              .pi-stat-after {{ font-size:15px; }}
+              .pi-stat-before {{ font-size:10px; }}
+              .pi-stat-values {{ gap:4px; }}
+            }}
             .pi-delta-pill  {{ display:none; }}
             .pi-locked {{
               display:flex;flex-direction:column;align-items:center;
