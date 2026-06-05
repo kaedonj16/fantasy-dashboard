@@ -2516,8 +2516,10 @@ window.initTradePage = function initTradePage(root = document) {
       return;
     }
 
-    // No trade yet — empty placeholder
-    if (!giveIds.length && !getIds.length) {
+    // No trade yet — empty placeholder (either side missing assets)
+    const sideAHasAssets = state.sideAPlayers.length + state.sideAPicks.length > 0;
+    const sideBHasAssets = state.sideBPlayers.length + state.sideBPicks.length > 0;
+    if (!sideAHasAssets || !sideBHasAssets) {
       body.innerHTML = _piMessage(
         "fa-trophy",
         "Build a trade",
