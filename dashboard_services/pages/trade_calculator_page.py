@@ -409,6 +409,11 @@ def build_trade_calculator_body(
               border-radius:12px;padding:12px 14px;
               box-shadow:0 8px 24px rgba(0,0,0,.12);
             }}
+            /* Transparent bridge across the gap so the hover doesn't drop when
+               moving the mouse from the icon down onto the tooltip. */
+            .pi-tooltip::before {{
+              content:"";position:absolute;left:0;right:0;top:-8px;height:8px;
+            }}
             .pi-info-wrap:hover .pi-tooltip {{ display:block; }}
             .pi-tooltip-title {{
               font-size:10px;font-weight:800;text-transform:uppercase;
