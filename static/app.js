@@ -2639,7 +2639,7 @@ window.initTradePage = function initTradePage(root = document) {
           vColor = "#7c3aed"; vIcon = "fa-chart-line"; vTitle = "Future Lean";
           vSub = "Roughly flat for this season, but builds for later.";
         } else {
-          vColor = "#475569"; vIcon = "fa-scale-balanced"; vTitle = "Balanced";
+          vColor = "#475569"; vIcon = "fa-equals"; vTitle = "Balanced";
           vSub = "Little change to your win-now or future outlook.";
         }
       }
