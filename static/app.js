@@ -2577,7 +2577,7 @@ window.initTradePage = function initTradePage(root = document) {
             <div class="pi-stat-label">${label}</div>
             <div class="pi-stat-values">
               <span class="pi-stat-before">${before}${suffix}</span>
-              <span class="pi-stat-arrow">&rarr;</span>
+              <i class="fa-solid fa-arrow-right-long pi-stat-arrow"></i>
               <span class="pi-stat-after" style="color:${color};">${after}${suffix}</span>
             </div>
           </div>`;
@@ -2663,7 +2663,7 @@ window.initTradePage = function initTradePage(root = document) {
           <div class="pi-stat-label">Roster Age</div>
           <div class="pi-stat-values">
             <span class="pi-stat-before">${ageBeforeVal.toFixed(1)}</span>
-            <span class="pi-stat-arrow">&rarr;</span>
+            <i class="fa-solid fa-arrow-right-long pi-stat-arrow"></i>
             <span class="pi-stat-after" style="color:${ageColor};">${ageAfterVal.toFixed(1)}</span>
           </div>
         </div>` : "";
@@ -2681,7 +2681,7 @@ window.initTradePage = function initTradePage(root = document) {
           <div class="pi-stat-label">Prime Yrs Left</div>
           <div class="pi-stat-values">
             <span class="pi-stat-before">${primeOut.toFixed(1)}</span>
-            <span class="pi-stat-arrow">&rarr;</span>
+            <i class="fa-solid fa-arrow-right-long pi-stat-arrow"></i>
             <span class="pi-stat-after" style="color:${primeColor};">${primeIn.toFixed(1)}</span>
           </div>
         </div>` : "";
