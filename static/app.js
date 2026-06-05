@@ -2639,14 +2639,14 @@ window.initTradePage = function initTradePage(root = document) {
           vColor = "#7c3aed"; vIcon = "fa-chart-line"; vTitle = "Future Lean";
           vSub = "Roughly flat for this season, but builds for later.";
         } else {
-          vColor = "#475569"; vIcon = "fa-minus"; vTitle = "Balanced";
+          vColor = "#475569"; vIcon = "fa-scale-balanced"; vTitle = "Balanced";
           vSub = "Little change to your win-now or future outlook.";
         }
       }
 
       const verdict = `
         <div class="pi-verdict" style="background:${vColor}1f;border-color:${vColor}59;">
-          <div class="pi-verdict-icon" style="background:${vColor};color:#fff;"><i class="fa-solid ${vIcon}" style="color:#fff;"></i></div>
+          <div class="pi-verdict-icon" style="background:${vColor};"><i class="fa-solid ${vIcon}" style="filter:brightness(0) invert(1);"></i></div>
           <div>
             <div class="pi-verdict-title" style="color:${vColor};">${vTitle}</div>
             <div class="pi-verdict-sub">${vSub}</div>
