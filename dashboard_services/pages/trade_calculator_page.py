@@ -465,12 +465,15 @@ def build_trade_calculator_body(
             }}
             /* Mobile: the lower grid collapses to one column so the card is
                full width. Keep the small "before" value alongside the
-               headline. */
+               headline, shrinking both so neither clips in the narrow tiles. */
             @media(max-width:980px) {{
-              .pi-stat {{ padding:7px 8px; }}
-              .pi-stat-before {{ font-size:10px; }}
-              .pi-stat-after {{ font-size:16px; }}
-              .pi-stat-values {{ gap:4px; }}
+              .pi-grid {{ gap:5px; }}
+              .pi-stat {{ padding:7px 6px; }}
+              .pi-stat-label {{ letter-spacing:.02em; }}
+              .pi-stat-before {{ font-size:9.5px; }}
+              .pi-stat-after {{ font-size:13.5px; }}
+              .pi-stat-arrow {{ font-size:10px; }}
+              .pi-stat-values {{ gap:3px; }}
             }}
             .pi-delta-pill  {{ display:none; }}
             .pi-locked {{
