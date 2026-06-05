@@ -328,15 +328,15 @@ def build_trade_calculator_body(
                   <div class="otc-pi-sub">How this trade affects your playoff odds</div>
                 </div>
                 <div class="pi-info-wrap">
-                  <button class="pi-info-btn" aria-label="Metric explanations" onclick="this.nextElementSibling.classList.toggle('pi-tooltip--open')">&#9432;</button>
+                  <span class="pi-info-btn" aria-label="Metric explanations">&#9432;</span>
                   <div class="pi-tooltip">
                     <div class="pi-tooltip-title">What each stat means</div>
-                    <div class="pi-tooltip-row"><strong>Playoff Odds</strong> Monte Carlo sim — % of seasons your roster makes the playoffs.</div>
+                    <div class="pi-tooltip-row"><strong>Playoff Odds</strong> Monte Carlo sim. % of seasons your roster makes the playoffs.</div>
                     <div class="pi-tooltip-row"><strong>Proj. Wins</strong> Expected regular-season win total based on your projected PPG.</div>
                     <div class="pi-tooltip-row"><strong>Proj. PPG</strong> Projected points per game using your starters after the swap.</div>
                     <div class="pi-tooltip-row"><strong>Top-3 Pick</strong> Odds of finishing bottom-3 and landing a top-3 rookie pick.</div>
                     <div class="pi-tooltip-row"><strong>Roster Age</strong> Value-weighted avg age of your whole roster before vs after the swap.</div>
-                    <div class="pi-tooltip-row"><strong>Prime Yrs Left</strong> Value-weighted avg of seasons until age 30 for the players being traded. Higher = more prime years ahead.</div>
+                    <div class="pi-tooltip-row"><strong>Prime Yrs Left</strong> Value-weighted avg of seasons until age 30 for the traded players. Higher is more prime years ahead.</div>
                   </div>
                 </div>
               </div>
@@ -398,9 +398,8 @@ def build_trade_calculator_body(
             .otc-pi-sub   {{ font-size:12px;color:var(--text-muted); }}
             .pi-info-wrap {{ position:relative;flex-shrink:0;margin-top:2px; }}
             .pi-info-btn  {{
-              background:none;border:none;cursor:pointer;padding:0;
               font-size:15px;color:var(--text-muted);opacity:.55;line-height:1;
-              transition:opacity .15s;
+              cursor:default;transition:opacity .15s;user-select:none;
             }}
             .pi-info-btn:hover {{ opacity:1; }}
             .pi-tooltip {{
@@ -410,7 +409,7 @@ def build_trade_calculator_body(
               border-radius:12px;padding:12px 14px;
               box-shadow:0 8px 24px rgba(0,0,0,.12);
             }}
-            .pi-tooltip--open {{ display:block; }}
+            .pi-info-wrap:hover .pi-tooltip {{ display:block; }}
             .pi-tooltip-title {{
               font-size:10px;font-weight:800;text-transform:uppercase;
               letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px;
