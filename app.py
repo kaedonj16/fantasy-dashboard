@@ -6374,11 +6374,13 @@ def build_activity_body(ctx: dict) -> str:
                 rid_list = list(side_map.keys())
                 side_a = side_map[rid_list[0]]
                 side_b = side_map[rid_list[1]]
-                # Match /api/trade-eval: only apply depth penalty when one side
-                # sends more assets than the other.  Penalising both sides of an
+                # Match /api/trade-eval: only apply depth penalty when both sides
+                # have assets and one side sends more than the other. A one-sided
+                # trade has no comparison, and penalising both sides of an
                 # equal-count trade just zeroes out the adjustment and produces
                 # misleadingly negative totals for both teams.
-                if side_a["asset_count"] != side_b["asset_count"]:
+                if (side_a["asset_count"] > 0 and side_b["asset_count"] > 0
+                        and side_a["asset_count"] != side_b["asset_count"]):
                     apply_tier_stack_adjustment(side_a, side_b)
                 # Pre-compute zero-sum net values so both sides are mirrors of
                 # each other — exactly how trade-eval reports the result.
@@ -16419,11 +16421,13 @@ def api_trade_eval():
     side_b = build_side(side_b_players, side_b_picks)
 
     tier_thresholds = compute_tier_thresholds(value_table, league_type, league_size)
-    # Only apply depth adjustment when asset counts differ — equal counts penalise both
-    # sides symmetrically and just confuse the result.
+    # Only apply depth adjustment when BOTH sides have assets and the counts
+    # differ. A one-sided trade (nothing on the other side) has no comparison to
+    # make, so each asset should report its full value — no stack penalty.
     side_a_count = len(side_a_players) + len(side_a_picks)
     side_b_count = len(side_b_players) + len(side_b_picks)
-    if side_a_count != side_b_count:
+    both_sides_filled = side_a_count > 0 and side_b_count > 0
+    if both_sides_filled and side_a_count != side_b_count:
         apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"), value_table=value_table, league_size=league_size)
 
     a_eff = side_a["effective_total"]
