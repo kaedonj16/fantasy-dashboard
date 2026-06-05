@@ -263,7 +263,7 @@ def build_trade_calculator_body(
             </section>
           </div>
 
-          <div class="otc-lower-grid">
+          <div class="otc-lower-grid otc-lower-grid--top2">
             <section class="otc-summary-card">
               <div class="otc-summary-head">
                 <div>
@@ -321,7 +321,29 @@ def build_trade_calculator_body(
               </div>
             </section>
 
-            <section class="otc-ai-card" id="tradeAiPanel">
+            <section id="playoffImpactSection" class="otc-pi-card">
+              <div class="otc-pi-head">
+                <div>
+                  <h2 class="otc-pi-title">Playoff Impact</h2>
+                  <div class="otc-pi-sub">How this trade affects your playoff odds</div>
+                </div>
+                <div class="pi-info-wrap">
+                  <span class="pi-info-btn" aria-label="Metric explanations">&#9432;</span>
+                  <div class="pi-tooltip">
+                    <div class="pi-tooltip-title">What each stat means</div>
+                    <div class="pi-tooltip-row"><strong>Playoff Odds</strong> Monte Carlo sim. % of seasons your roster makes the playoffs.</div>
+                    <div class="pi-tooltip-row"><strong>Proj. Wins</strong> Expected regular-season win total based on your projected PPG.</div>
+                    <div class="pi-tooltip-row"><strong>Proj. PPG</strong> Projected points per game using your starters after the swap.</div>
+                    <div class="pi-tooltip-row"><strong>Top-3 Pick</strong> Odds of finishing bottom-3 and landing a top-3 rookie pick.</div>
+                    <div class="pi-tooltip-row"><strong>Roster Age</strong> Value-weighted avg age of your whole roster before vs after the swap.</div>
+                    <div class="pi-tooltip-row"><strong>Prime Yrs Left</strong> Value-weighted avg of seasons until age 30 for the traded players. Higher is more prime years ahead.</div>
+                  </div>
+                </div>
+              </div>
+              <div id="playoffImpactBody" class="otc-pi-body"></div>
+            </section>
+
+            <section class="otc-ai-card otc-ai-card--fullrow" id="tradeAiPanel">
               <div class="otc-ai-head">
                 <div>
                   <h2 class="otc-ai-title">BR Trade Analyst</h2>
@@ -354,6 +376,174 @@ def build_trade_calculator_body(
           </div>
 
           <style>
+            /* ── Top-row 2-col + full-width AI row ──────────────── */
+            .otc-lower-grid--top2 {{
+              margin-top:16px;
+              grid-template-columns: 2fr 1fr;
+              align-items: stretch;
+            }}
+            /* Zero out margin-top on direct grid children so the grid's
+               gap is the only spacing and align-items:stretch can work. */
+            .otc-lower-grid--top2 > .otc-summary-card,
+            .otc-lower-grid--top2 > .otc-pi-card {{ margin-top: 0; }}
+            /* Mid widths: give Playoff Impact more room so its 3 stat
+               columns aren't squeezed. */
+            @media(max-width:1300px) {{ .otc-lower-grid--top2 {{ grid-template-columns: 3fr 2fr; }} }}
+            @media(max-width:980px) {{ .otc-lower-grid--top2 {{ grid-template-columns: 1fr; }} }}
+            .otc-ai-card--fullrow {{ grid-column: 1 / -1; }}
+
+            .otc-pi-card {{
+              border:1px solid var(--border);border-radius:20px;
+              padding:10px 15px;background:var(--card-bg);display:flex;flex-direction:column;
+            }}
+            .otc-pi-head {{ margin-bottom:14px;display:flex;align-items:flex-start;justify-content:space-between; }}
+            .otc-pi-title {{ font-size:15px;font-weight:700;margin:0 0 2px; }}
+            .otc-pi-sub   {{ font-size:12px;color:var(--text-muted); }}
+            .pi-info-wrap {{ position:relative;flex-shrink:0;margin-top:2px; }}
+            .pi-info-btn  {{
+              font-size:15px;color:var(--text-muted);opacity:.55;line-height:1;
+              cursor:default;transition:opacity .15s;user-select:none;
+            }}
+            .pi-info-btn:hover {{ opacity:1; }}
+            .pi-tooltip {{
+              display:none;position:absolute;right:0;top:calc(100% + 6px);
+              width:260px;z-index:200;
+              background:var(--card-bg,#fff);border:1px solid var(--border-color);
+              border-radius:12px;padding:12px 14px;
+              box-shadow:0 8px 24px rgba(0,0,0,.12);
+            }}
+            /* Transparent bridge across the gap so the hover doesn't drop when
+               moving the mouse from the icon down onto the tooltip. */
+            .pi-tooltip::before {{
+              content:"";position:absolute;left:0;right:0;top:-8px;height:8px;
+            }}
+            .pi-info-wrap:hover .pi-tooltip {{ display:block; }}
+            .pi-tooltip-title {{
+              font-size:10px;font-weight:800;text-transform:uppercase;
+              letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px;
+            }}
+            .pi-tooltip-row {{
+              font-size:11.5px;color:var(--text);line-height:1.45;
+              padding:5px 0;border-top:1px solid var(--border-color);
+            }}
+            .pi-tooltip-row:first-of-type {{ border-top:none; }}
+            .pi-tooltip-row strong {{ color:var(--text);font-weight:700; }}
+            .otc-pi-body  {{ flex:1;display:flex;flex-direction:column;justify-content:center; }}
+
+            /* ── Playoff Impact stats ────────────────────────────── */
+            .pi-grid {{
+              display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;
+            }}
+            .pi-stat {{
+              border:1px solid var(--border-color);border-radius:9px;
+              padding:8px 9px;background:var(--bg-alt,rgba(0,0,0,.02));
+              min-width:0;
+            }}
+            .pi-stat-label {{
+              font-size:9px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.05em;color:var(--text-muted);margin-bottom:5px;
+              white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+              display:block;
+            }}
+            .pi-stat-values {{
+              display:flex;align-items:baseline;gap:5px;min-width:0;
+            }}
+            .pi-stat-before {{
+              font-size:11px;color:var(--text-muted);min-width:0;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+            }}
+            .pi-stat-arrow  {{ font-size:8px;color:var(--text-muted);opacity:.5;flex-shrink:0; }}
+            .pi-stat-after  {{ font-size:17px;font-weight:800;line-height:1;flex-shrink:0;white-space:nowrap; }}
+            /* Tighten stat tiles when the card is narrow so all three
+               columns stay inside the card. The big "after" value always
+               stays fully visible; the small "before" value yields first. */
+            @media(max-width:1200px) {{
+              .pi-stat {{ padding:7px 7px; }}
+              .pi-stat-after {{ font-size:15px; }}
+              .pi-stat-before {{ font-size:10px; }}
+              .pi-stat-values {{ gap:4px; }}
+            }}
+            /* When even that is too tight, drop the "before" value and arrow
+               so the headline number is never clipped. */
+            @media(max-width:1100px) {{
+              .pi-stat-before, .pi-stat-arrow {{ display:none; }}
+            }}
+            .pi-delta-pill  {{ display:none; }}
+            .pi-locked {{
+              display:flex;flex-direction:column;align-items:center;
+              text-align:center;padding:22px 16px;
+              border:1px solid var(--border-color);border-radius:12px;
+              background:var(--bg-alt,rgba(0,0,0,.02));
+            }}
+            .pi-locked-icon {{ font-size:22px;color:var(--text-muted);opacity:.5;margin-bottom:8px; }}
+            .pi-locked-title {{ font-size:14px;font-weight:700;margin-bottom:4px; }}
+            .pi-locked-sub   {{ font-size:12px;color:var(--text-muted);max-width:260px;line-height:1.5;margin-bottom:12px; }}
+            .pi-locked-btn {{
+              padding:7px 18px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;
+              background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;
+            }}
+
+            /* ── Message / empty states ──────────────────────────── */
+            .pi-message {{
+              display:flex;flex-direction:column;align-items:center;text-align:center;
+              padding:24px 16px;gap:6px;
+            }}
+            .pi-message-icon  {{ font-size:20px;color:var(--text-muted);opacity:.55;margin-bottom:2px; }}
+            .pi-message-title {{ font-size:13px;font-weight:700; }}
+            .pi-message-sub   {{ font-size:12px;color:var(--text-muted);max-width:240px;line-height:1.5; }}
+            .pi-roster-warn {{
+              display:flex;align-items:flex-start;gap:6px;margin-top:8px;
+              padding:7px 9px;border-radius:8px;font-size:11px;line-height:1.5;
+              background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.3);
+            }}
+            .pi-roster-warn i {{ color:#ca8a04;margin-top:1px;flex-shrink:0; }}
+
+            /* ── Verdict banner ──────────────────────────────────── */
+            .pi-verdict {{
+              display:flex;align-items:center;gap:9px;margin-bottom:10px;
+              padding:9px 11px;border-radius:11px;border:1px solid;
+            }}
+            .pi-verdict-icon {{
+              flex-shrink:0;width:28px;height:28px;border-radius:8px;color:#fff;
+              display:flex;align-items:center;justify-content:center;font-size:12px;
+            }}
+            .pi-verdict-title {{ font-size:12.5px;font-weight:800;line-height:1.1;margin-bottom:1px; }}
+            .pi-verdict-sub   {{ font-size:11px;color:var(--text-muted);line-height:1.35; }}
+
+            /* ── Future Outlook inline row ───────────────────────── */
+            .pi-outlook-row {{
+              display:flex;align-items:center;justify-content:space-between;
+              margin-top:8px;padding:7px 9px;
+              border:1px solid var(--border-color);border-radius:9px;
+              background:var(--bg-alt,rgba(0,0,0,.02));
+            }}
+            .pi-outlook-left {{
+              display:flex;flex-direction:column;gap:2px;
+            }}
+            .pi-outlook-label {{
+              font-size:9px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.05em;color:var(--text-muted);
+            }}
+            .pi-outlook-vals {{
+              display:flex;align-items:center;gap:4px;
+            }}
+            .pi-outlook-before {{ font-size:11px;color:var(--text-muted); }}
+            .pi-outlook-after  {{ font-size:14px;font-weight:800; }}
+            .pi-section-label {{
+              font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+              color:var(--text-muted);margin:10px 0 5px;
+              display:flex;align-items:center;gap:7px;
+            }}
+            .pi-section-label::after {{
+              content:"";flex:1;height:1px;background:var(--border-color);opacity:.6;
+            }}
+            .pi-chip-row {{ display:flex;flex-wrap:wrap;gap:5px;margin-top:7px; }}
+            .pi-chip {{
+              display:inline-flex;align-items:center;gap:4px;
+              padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:700;
+            }}
+            .pi-chip i {{ font-size:9.5px; }}
+
             .stl-title {{ font-size:15px;font-weight:700;color:var(--text-color);margin:0 0 3px; }}
             .stl-sub   {{ font-size:12px;color:var(--text-muted); }}
             .stl-list  {{ display:grid;grid-template-columns:repeat(2,1fr);gap:10px; }}

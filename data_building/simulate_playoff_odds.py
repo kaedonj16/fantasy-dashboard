@@ -272,6 +272,105 @@ def simulate_with_swap(
     return 0.0, new_avg
 
 
+def simulate_swap_impact(
+    sim_state: dict,
+    viewer_roster_id: int,
+    give_pids: list[str],
+    get_pids: list[str],
+    n_sims: int = 2000,
+) -> dict:
+    """
+    Compute before/after playoff metrics for a trade.
+
+    Returns a dict:
+        before: {playoff_pct, avg_final_wins, avg_ppg}
+        after:  {playoff_pct, avg_final_wins, avg_ppg}
+        delta:  {playoff_pct, avg_final_wins, avg_ppg}
+        league_avg_ppg: float  (median projected PPG across all teams)
+        available: bool        (False when season is complete / no sim possible)
+    """
+    if not sim_state:
+        return {"available": False}
+
+    ppg_map          = sim_state["ppg_map"]
+    pos_map          = sim_state["pos_map"]
+    roster_positions = sim_state["roster_positions"]
+    blend            = float(sim_state.get("blend", 1.0))
+    matchups         = sim_state["matchups"]
+    playoff_teams    = sim_state["playoff_teams"]
+    seed             = sim_state.get("seed")
+
+    viewer_team = next(
+        (t for t in sim_state["teams"] if t["roster_id"] == viewer_roster_id), None
+    )
+    if viewer_team is None:
+        return {"available": False}
+
+    # Before simulation
+    before_results = _run_mc(sim_state["teams"], matchups, playoff_teams, n_sims, seed)
+    before_row = next((r for r in before_results if r["roster_id"] == viewer_roster_id), {})
+
+    # Compute after roster
+    current_pids = sim_state.get("roster_pid_map", {}).get(viewer_roster_id, [])
+    current_pids_set = set(current_pids)
+    # Detect give IDs that aren't actually on the viewer's roster — the removal
+    # will be a no-op for those players, which the caller should surface to the user.
+    missing_give_ids = [p for p in give_pids if p not in current_pids_set]
+    after_set = (current_pids_set - set(give_pids)) | set(get_pids)
+    after_pids = list(after_set)
+
+    proj_after, after_starters = _position_aware_lineup(
+        after_pids, ppg_map, pos_map, roster_positions
+    )
+
+    if blend >= 1.0:
+        new_avg = proj_after
+    else:
+        proj_before, _ = _position_aware_lineup(
+            current_pids, ppg_map, pos_map, roster_positions
+        )
+        new_avg = viewer_team["avg"] + blend * (proj_after - proj_before)
+
+    new_std = max(_team_std_from_starters(after_starters), _MIN_STD)
+
+    after_teams = [
+        {**t, "avg": round(new_avg, 1), "std": round(new_std, 1)}
+        if t["roster_id"] == viewer_roster_id else t
+        for t in sim_state["teams"]
+    ]
+    after_results = _run_mc(after_teams, matchups, playoff_teams, n_sims, seed)
+    after_row = next((r for r in after_results if r["roster_id"] == viewer_roster_id), {})
+
+    import statistics
+    league_avgs = [t["avg"] for t in sim_state["teams"] if t["avg"] > 0]
+    league_avg_ppg = round(statistics.median(league_avgs), 1) if league_avgs else 0.0
+
+    before_po    = round(float(before_row.get("playoff_pct",    0)), 1)
+    before_wins  = round(float(before_row.get("avg_final_wins", 0)), 1)
+    before_ppg   = round(float(viewer_team["avg"]), 1)
+    before_top3  = round(float(before_row.get("top3_pick_pct",  0)), 1)
+    after_po     = round(float(after_row.get("playoff_pct",     0)), 1)
+    after_wins   = round(float(after_row.get("avg_final_wins",  0)), 1)
+    after_ppg    = round(new_avg, 1)
+    after_top3   = round(float(after_row.get("top3_pick_pct",   0)), 1)
+
+    return {
+        "available": True,
+        "before": {"playoff_pct": before_po, "avg_final_wins": before_wins,
+                   "avg_ppg": before_ppg, "top3_pick_pct": before_top3},
+        "after":  {"playoff_pct": after_po,  "avg_final_wins": after_wins,
+                   "avg_ppg": after_ppg, "top3_pick_pct": after_top3},
+        "delta":  {
+            "playoff_pct":    round(after_po    - before_po,    1),
+            "avg_final_wins": round(after_wins  - before_wins,  1),
+            "avg_ppg":        round(after_ppg   - before_ppg,   1),
+            "top3_pick_pct":  round(after_top3  - before_top3,  1),
+        },
+        "league_avg_ppg":   league_avg_ppg,
+        "missing_give_ids": missing_give_ids,
+    }
+
+
 def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
     """
     Build (ppg_map, pos_map).
@@ -1127,6 +1226,15 @@ def _run_mc(
     got_bye     = (team_rank < n_byes).mean(axis=0) * 100 if n_byes else np.zeros(n)
     is_first    = (team_rank == 0).mean(axis=0) * 100
 
+    # Draft-pick outlook — the inverse of playoff success. Dynasty/rookie draft
+    # order is reverse standings, so the worst finishers hold the best picks.
+    # rank n-1 (dead last)  → pick 1.01;  rank >= n-3 → a top-3 pick.
+    pick_one    = (team_rank == n - 1).mean(axis=0) * 100
+    top3_pick   = (team_rank >= max(0, n - 3)).mean(axis=0) * 100
+    # Projected draft slot: best record (rank 0) drafts last (slot n),
+    # worst record (rank n-1) drafts first (slot 1).
+    avg_slot    = (n - team_rank).mean(axis=0)
+
     init_wins   = np.array([t["wins"]   for t in teams], dtype=np.float32)
     init_losses = np.array([t["losses"] for t in teams], dtype=np.float32)
     avg_wins    = wins.mean(axis=0)
@@ -1142,6 +1250,9 @@ def _run_mc(
         "playoff_pct":      round(float(in_playoffs[i]),  1),
         "bye_pct":          round(float(got_bye[i]),      1),
         "first_seed_pct":   round(float(is_first[i]),     1),
+        "pick_one_pct":     round(float(pick_one[i]),     1),
+        "top3_pick_pct":    round(float(top3_pick[i]),    1),
+        "avg_draft_slot":   round(float(avg_slot[i]),     1),
         "miss_pct":         round(100 - float(in_playoffs[i]), 1),
         "avg_final_wins":   round(float(avg_wins[i]),     1),
         "avg_final_losses": round(float(avg_losses[i]),   1),

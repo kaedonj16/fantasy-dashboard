@@ -1432,8 +1432,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Standings",     "page_standings",    "standings",    False),
         ("Teams",         "page_teams",        "teams",        False),
         ("Activity",      "page_activity",     "activity",     False),
-        ("League Health", "page_commissioner", "commissioner", False),
-    ], ["standings", "teams", "activity", "commissioner"], "teamsNavDropdown"))
+        ("League Health", "page_commissioner", "league_health", False),
+    ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
@@ -6374,11 +6374,13 @@ def build_activity_body(ctx: dict) -> str:
                 rid_list = list(side_map.keys())
                 side_a = side_map[rid_list[0]]
                 side_b = side_map[rid_list[1]]
-                # Match /api/trade-eval: only apply depth penalty when one side
-                # sends more assets than the other.  Penalising both sides of an
+                # Match /api/trade-eval: only apply depth penalty when both sides
+                # have assets and one side sends more than the other. A one-sided
+                # trade has no comparison, and penalising both sides of an
                 # equal-count trade just zeroes out the adjustment and produces
                 # misleadingly negative totals for both teams.
-                if side_a["asset_count"] != side_b["asset_count"]:
+                if (side_a["asset_count"] > 0 and side_b["asset_count"] > 0
+                        and side_a["asset_count"] != side_b["asset_count"]):
                     apply_tier_stack_adjustment(side_a, side_b)
                 # Pre-compute zero-sum net values so both sides are mirrors of
                 # each other — exactly how trade-eval reports the result.
@@ -11255,8 +11257,8 @@ def page_breakouts(platform: str, season: int, league_id: str):
         const conf = Math.min(100, Math.max(30, parseFloat(candidate.confidence_score || 70)));
         const halfSpread = 0.04 + (0.12 - 0.04) * (90 - conf) / 60;
         const highRaw = modelPpg * (1 + halfSpread);
-        const high = (prevPpg > 0 && highRaw > prevPpg * 1.4) ? prevPpg * 1.4 : highRaw;
-        const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.4;
+        const high = (prevPpg > 0 && highRaw > prevPpg * 1.25) ? prevPpg * 1.25 : highRaw;
+        const isCapped = prevPpg > 0 && highRaw > prevPpg * 1.25;
         const rawLow = isCapped ? high * (1 - halfSpread) : modelPpg * (1 - halfSpread * 0.8);
         const lowFloor = (prevPpg > 0 && rawLow < prevPpg) ? prevPpg : rawLow;
         const low = Math.min(lowFloor, high);
@@ -14804,31 +14806,75 @@ def _commissioner_history_layer(platform, league_id, season, lookback=3):
     return layer
 
 
-def _render_commissioner_history(layer, current_season, current_moves, current_trades, current_inactive_uids):
+def _render_commissioner_history(layer, current_season, current_moves, current_trades, current_inactive_uids, current_week=0, playoff_start=14):
     """Render the multi-season 'Chronic / Trend' panel. Current season is the
     headline (computed elsewhere); this is diagnosis context, not a blended score."""
     seasons = sorted((layer.get("seasons") or []), key=lambda s: s["season"])
-    moves_series  = [(s["season"], s["moves"])  for s in seasons] + [(int(current_season), int(current_moves))]
-    trades_series = [(s["season"], s["trades"]) for s in seasons] + [(int(current_season), int(current_trades))]
+    # Separate prior (completed) data from current in-progress season
+    prior_moves_series  = [(s["season"], s["moves"])  for s in seasons]
+    prior_trades_series = [(s["season"], s["trades"]) for s in seasons]
+    # Season is complete when playoffs have started (or it's a prior year entirely)
+    season_complete = int(current_week) >= int(playoff_start)
+    moves_series  = prior_moves_series  + [(int(current_season), int(current_moves))]
+    trades_series = prior_trades_series + [(int(current_season), int(current_trades))]
 
     def _dir(series):
-        vals = [v for _, v in series]
+        # Trend is always computed from completed seasons only — never compare
+        # a partial/preseason year against full seasons.
+        completed = prior_moves_series if series is moves_series else prior_trades_series
+        vals = [v for _, v in completed]
         if len(vals) < 2:
-            return ("→", "var(--muted)")
+            return ("→", "var(--muted)", "flat")
         delta = vals[-1] - vals[0]
         thresh = max(2.0, 0.10 * abs(vals[0] or 1))
         if delta > thresh:
-            return ("▲", "#22c55e")
+            return ("▲", "#22c55e", "up")
         if delta < -thresh:
-            return ("▼", "#ef4444")
-        return ("→", "var(--muted)")
+            return ("▼", "#ef4444", "down")
+        return ("→", "var(--muted)", "flat")
 
     def _series_html(series):
-        return " <span style='color:var(--muted)'>→</span> ".join(
-            f"<strong>{yr}</strong>&nbsp;{val}" for yr, val in series)
+        parts = []
+        last_idx = len(series) - 1
+        for i, (yr, val) in enumerate(series):
+            is_last = i == last_idx
+            if is_last and not season_complete:
+                # Current season still in progress — muted style with dashed border
+                chip_bg = "var(--row,rgba(127,127,127,.08))"
+                chip_fg = "var(--muted)"
+                chip_border = "var(--muted)"
+                border_style = "dashed"
+                yr_label = f"{yr} ↻"
+            elif is_last:
+                chip_bg = "var(--accent,#3b82f6)"
+                chip_fg = "#fff"
+                chip_border = "transparent"
+                border_style = "solid"
+                yr_label = str(yr)
+            else:
+                chip_bg = "var(--row,rgba(127,127,127,.08))"
+                chip_fg = "var(--text)"
+                chip_border = "var(--border)"
+                border_style = "solid"
+                yr_label = str(yr)
+            parts.append(
+                f"<span class='msh-chip' style='background:{chip_bg};color:{chip_fg};"
+                f"border-color:{chip_border};border-style:{border_style};'>"
+                f"<span class='msh-chip-yr'>{yr_label}</span>"
+                f"<span class='msh-chip-val'>{val}</span></span>"
+            )
+        connector = "<span class='msh-arrow'>›</span>"
+        return connector.join(parts)
 
-    m_arrow, m_color = _dir(moves_series)
-    t_arrow, t_color = _dir(trades_series)
+    m_arrow, m_color, m_dir = _dir(moves_series)
+    t_arrow, t_color, t_dir = _dir(trades_series)
+
+    def _trend_badge(arrow, color, direction):
+        label = {"up": "Rising", "down": "Falling", "flat": "Steady"}[direction]
+        return (
+            f"<span class='msh-trend' style='color:{color};background:{color}1a;'>"
+            f"{arrow} {label}</span>"
+        )
 
     owners = layer.get("owners") or {}
     chronic = []
@@ -14840,28 +14886,62 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
     chronic.sort(key=lambda x: -x[1])
 
     chronic_rows = "".join(
-        f"<div style='display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;'>"
-        f"<span>{name}</span><span style='color:#ef4444;font-weight:600;'>inactive {inact} of last {windows}</span></div>"
+        f"<div class='msh-chronic-row'>"
+        f"<span class='msh-chronic-name'>{name}</span>"
+        f"<span class='msh-chronic-flag'>inactive {inact} of last {windows}</span></div>"
         for name, inact, windows in chronic
-    ) or "<div style='color:var(--muted);font-size:13px;'>No chronic inactivity — owners stay engaged across seasons.</div>"
+    ) or (
+        "<div class='msh-chronic-ok'>"
+        "<span class='msh-chronic-ok-icon'>✓</span>"
+        "No chronic inactivity — owners stay engaged across seasons.</div>"
+    )
 
     n_prior = len(seasons)
     return f"""
-<div class="card" style="padding:16px;margin-bottom:20px;">
-  <div style="font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--muted);margin-bottom:12px;">
-    MULTI-SEASON HEALTH <span style="font-weight:500;">· last {n_prior} prior season{'s' if n_prior != 1 else ''}</span>
+<style>
+  .msh-card {{ padding:20px; margin-bottom:20px; }}
+  .msh-head {{ display:flex; align-items:baseline; gap:8px; margin-bottom:18px; }}
+  .msh-head-title {{ font-size:12px; font-weight:800; letter-spacing:.06em; color:var(--text); text-transform:uppercase; }}
+  .msh-head-sub {{ font-size:12px; color:var(--muted); }}
+  .msh-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; margin-bottom:18px; }}
+  .msh-stat {{ border:1px solid var(--border); border-radius:14px; padding:14px 16px; background:var(--row,rgba(127,127,127,.03)); }}
+  .msh-stat-head {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }}
+  .msh-stat-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; }}
+  .msh-trend {{ font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap; }}
+  .msh-series {{ display:flex; align-items:center; flex-wrap:wrap; gap:2px; }}
+  .msh-chip {{ display:inline-flex; flex-direction:column; align-items:center; gap:1px; padding:5px 11px; border-radius:10px; border:1px solid; line-height:1.1; }}
+  .msh-chip-yr {{ font-size:10px; font-weight:600; opacity:.75; }}
+  .msh-chip-val {{ font-size:15px; font-weight:800; }}
+  .msh-arrow {{ color:var(--muted); font-size:16px; font-weight:700; padding:0 2px; opacity:.5; }}
+  .msh-chronic-label {{ font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; margin-bottom:8px; }}
+  .msh-chronic-row {{ display:flex; align-items:center; justify-content:space-between; padding:9px 12px; border-radius:10px; background:rgba(239,68,68,.06); border:1px solid rgba(239,68,68,.18); margin-bottom:6px; font-size:13px; }}
+  .msh-chronic-name {{ font-weight:600; color:var(--text); }}
+  .msh-chronic-flag {{ color:#ef4444; font-weight:700; font-size:12px; }}
+  .msh-chronic-ok {{ display:flex; align-items:center; gap:8px; padding:11px 14px; border-radius:10px; background:rgba(34,197,94,.07); border:1px solid rgba(34,197,94,.2); color:var(--text); font-size:13px; }}
+  .msh-chronic-ok-icon {{ display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:#22c55e; color:#fff; font-size:11px; font-weight:800; flex-shrink:0; }}
+</style>
+<div class="card msh-card">
+  <div class="msh-head">
+    <span class="msh-head-title">Multi-Season Health</span>
+    <span class="msh-head-sub">last {n_prior} prior season{'s' if n_prior != 1 else ''}</span>
   </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px;">
-    <div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">TOTAL MOVES / SEASON <span style="color:{m_color};">{m_arrow}</span></div>
-      <div style="font-size:13px;">{_series_html(moves_series)}</div>
+  <div class="msh-grid">
+    <div class="msh-stat">
+      <div class="msh-stat-head">
+        <span class="msh-stat-label">Total Moves / Season</span>
+        {_trend_badge(m_arrow, m_color, m_dir)}
+      </div>
+      <div class="msh-series">{_series_html(moves_series)}</div>
     </div>
-    <div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">TRADES / SEASON <span style="color:{t_color};">{t_arrow}</span></div>
-      <div style="font-size:13px;">{_series_html(trades_series)}</div>
+    <div class="msh-stat">
+      <div class="msh-stat-head">
+        <span class="msh-stat-label">Trades / Season</span>
+        {_trend_badge(t_arrow, t_color, t_dir)}
+      </div>
+      <div class="msh-series">{_series_html(trades_series)}</div>
     </div>
   </div>
-  <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">CHRONIC INACTIVITY</div>
+  <div class="msh-chronic-label">Chronic Inactivity</div>
   {chronic_rows}
 </div>"""
 
@@ -15178,6 +15258,7 @@ def build_commissioner_body(ctx):
                 layer, current_season=season,
                 current_moves=total_txns, current_trades=total_trades,
                 current_inactive_uids=inactive_uids_now,
+                current_week=current_week, playoff_start=playoff_start,
             )
     except Exception:
         history_panel = ""
@@ -15185,11 +15266,12 @@ def build_commissioner_body(ctx):
     return health_html + history_panel + roster_table + trade_card
 
 
-@app.route("/<platform>/<int:season>/<league_id>/commissioner")
+@app.route("/<platform>/<int:season>/<league_id>/league_health")
+@app.route("/<platform>/<int:season>/<league_id>/commissioner")  # legacy redirect
 def page_commissioner(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
     body = build_commissioner_body(ctx)
-    return render_page("League Health", league_id, "commissioner", body, platform, season)
+    return render_page("League Health", league_id, "league_health", body, platform, season)
 
 
 @app.before_request
@@ -16339,11 +16421,13 @@ def api_trade_eval():
     side_b = build_side(side_b_players, side_b_picks)
 
     tier_thresholds = compute_tier_thresholds(value_table, league_type, league_size)
-    # Only apply depth adjustment when asset counts differ — equal counts penalise both
-    # sides symmetrically and just confuse the result.
+    # Only apply depth adjustment when BOTH sides have assets and the counts
+    # differ. A one-sided trade (nothing on the other side) has no comparison to
+    # make, so each asset should report its full value — no stack penalty.
     side_a_count = len(side_a_players) + len(side_a_picks)
     side_b_count = len(side_b_players) + len(side_b_picks)
-    if side_a_count != side_b_count:
+    both_sides_filled = side_a_count > 0 and side_b_count > 0
+    if both_sides_filled and side_a_count != side_b_count:
         apply_tier_stack_adjustment(side_a, side_b, tier_thresholds, is_sf=(league_type == "sf"), value_table=value_table, league_size=league_size)
 
     a_eff = side_a["effective_total"]
@@ -16433,6 +16517,153 @@ def _sanitize_for_json(obj):
         if math.isnan(obj) or math.isinf(obj):
             return None
     return obj
+
+
+@app.route("/api/trade-eval/playoff-impact", methods=["POST"])
+@limiter.limit("20 per minute")
+def api_trade_eval_playoff_impact():
+    """
+    Return before/after playoff odds and win projections for a proposed trade.
+    Requires a league context (league_id + platform).
+    """
+    try:
+        payload = request.get_json(force=True) or {}
+    except Exception:
+        return jsonify({"error": "Invalid JSON"}), 400
+
+    league_id    = str(payload.get("league_id") or "").strip()
+    platform     = str(payload.get("platform") or "sleeper").strip().lower()
+    season       = int(payload.get("season") or datetime.now().year)
+    roster_id    = payload.get("roster_id")
+    give_ids     = [str(p) for p in (payload.get("give_ids") or [])]
+    get_ids      = [str(p) for p in (payload.get("get_ids") or [])]
+
+    if not league_id or roster_id is None:
+        return jsonify({"available": False, "reason": "no_league"})
+
+    try:
+        roster_id = int(roster_id)
+    except (TypeError, ValueError):
+        return jsonify({"available": False, "reason": "bad_roster_id"})
+
+    if not give_ids and not get_ids:
+        return jsonify({"available": False, "reason": "empty_trade"})
+
+    try:
+        from data_building.simulate_playoff_odds import (
+            build_sim_state as _build_sim_state,
+            simulate_swap_impact as _simulate_swap_impact,
+        )
+        ctx = build_league_context(platform, league_id, season)
+        sim_state = _build_sim_state(ctx, platform)
+        if sim_state is None:
+            return jsonify({"available": False, "reason": "season_complete"})
+
+        result = _simulate_swap_impact(sim_state, roster_id, give_ids, get_ids)
+
+        # Future outlook: value-weighted age + total dynasty value of the
+        # players coming in vs going out. This is the counterweight to the
+        # win-now playoff metrics — getting younger / banking value is the
+        # upside when a deal dents this season's odds (and vice versa).
+        is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
+                    for s in (ctx.get("roster_positions") or []))
+        current_pids = sim_state.get("roster_pid_map", {}).get(roster_id, [])
+        result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf, current_pids)
+
+        return jsonify(result)
+
+    except Exception:
+        logger.exception("[trade-eval/playoff-impact] error")
+        return jsonify({"available": False, "reason": "error"})
+
+
+def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
+    """Compute future-outlook signals for the Playoff Impact card.
+
+    When current_pids (the viewer's full roster) is provided, the Roster Age
+    signal is the roster-wide value-weighted age before vs after the swap.
+    Prime Years Left is always computed from the traded players themselves.
+    """
+    from utils.utils import load_players_index
+    players_index = load_players_index() or {}
+    value_table = get_model_value_table_cached() or []
+    val_key = "sf_value" if is_sf else "value"
+    vmap = {str(p.get("id")): p for p in value_table}
+
+    def _player_val_age(pid):
+        mv = vmap.get(str(pid), {})
+        meta = players_index.get(str(pid), {}) or {}
+        val = safe_float(mv.get(val_key) or mv.get("value") or 0)
+        age = age_from_bday(meta.get("bDay")) or mv.get("age") or meta.get("age")
+        age = safe_float(age) if age not in (None, "") else None
+        return val, age
+
+    def _resolve(pids):
+        total_val = 0.0
+        age_num = 0.0
+        age_den = 0.0
+        prime_num = 0.0  # value-weighted prime years remaining (max 0, 30-age)
+        prime_den = 0.0
+        ages = []
+        for pid in pids:
+            val, age = _player_val_age(pid)
+            total_val += val
+            if age:
+                ages.append(age)
+                if val > 0:
+                    age_num += age * val
+                    age_den += val
+                    prime = max(0.0, 30.0 - age)
+                    prime_num += prime * val
+                    prime_den += val
+        avg_age = round(age_num / age_den, 1) if age_den else (
+            round(sum(ages) / len(ages), 1) if ages else None)
+        avg_prime = round(prime_num / prime_den, 1) if prime_den else None
+        return {
+            "total_value": round(total_val, 1),
+            "avg_age": avg_age,
+            "avg_prime_years": avg_prime,
+            "n": len(pids),
+        }
+
+    def _roster_avg_age(pids):
+        wage_num = 0.0
+        wage_den = 0.0
+        for pid in pids:
+            val, age = _player_val_age(pid)
+            if age and val > 0:
+                wage_num += age * val
+                wage_den += val
+        return round(wage_num / wage_den, 1) if wage_den else None
+
+    incoming = _resolve(get_ids)   # players the viewer receives
+    outgoing = _resolve(give_ids)  # players the viewer sends away
+
+    value_delta = round(incoming["total_value"] - outgoing["total_value"], 1)
+
+    # Roster-wide age shift (preferred): how the whole team ages after the swap.
+    roster_age_before = roster_age_after = age_delta = None
+    if current_pids:
+        before_set = set(str(p) for p in current_pids)
+        after_set = (before_set - set(str(p) for p in give_ids)) | set(str(p) for p in get_ids)
+        roster_age_before = _roster_avg_age(before_set)
+        roster_age_after = _roster_avg_age(after_set)
+        if roster_age_before is not None and roster_age_after is not None:
+            # Negative = roster got younger.
+            age_delta = round(roster_age_after - roster_age_before, 1)
+
+    # Fallback to traded-players age delta when no roster context is available.
+    if age_delta is None and incoming["avg_age"] is not None and outgoing["avg_age"] is not None:
+        age_delta = round(incoming["avg_age"] - outgoing["avg_age"], 1)
+
+    return {
+        "incoming": incoming,
+        "outgoing": outgoing,
+        "age_delta": age_delta,                 # < 0 means younger
+        "value_delta": value_delta,             # > 0 means banking value
+        "roster_age_before": roster_age_before,  # value-weighted roster age pre-swap
+        "roster_age_after": roster_age_after,    # value-weighted roster age post-swap
+    }
 
 
 @app.route("/api/players")
@@ -21274,7 +21505,7 @@ def _is_pick_asset_id(asset_id: str) -> bool:
     return len(yr) == 4 and yr.isdigit() and parts[1].isdigit()
 
 
-def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: dict | None = None) -> dict | None:
+def _resolve_pick_asset(pick_id: str, num_teams: int, values_by_id: Optional[dict] = None) -> Optional[dict]:
     """Resolve a draft-pick asset id to a focus-asset dict so picks can be the
     focus of the trade-suggestions search (build-around / find-returns).
 

@@ -50,6 +50,7 @@
 .fa-dumbbell          { background-image: url('images/dumbbell-solid.png'); filter: brightness(0) saturate(100%) invert(73%) sepia(12%) saturate(447%) hue-rotate(176deg) brightness(95%) contrast(88%); }
 .fa-heart-crack       { background-image: url('images/heart-crack-solid.png'); filter: brightness(0) saturate(100%) invert(64%) sepia(55%) saturate(600%) hue-rotate(314deg) brightness(105%) contrast(97%); }
 .fa-ring              { background-image: url('images/ring-solid.png'); filter: brightness(0) saturate(100%) invert(72%) sepia(78%) saturate(865%) hue-rotate(354deg) brightness(101%) contrast(105%); }
+.fa-scale-balanced    { background-image: url('images/scale-balanced-solid.png'); filter: brightness(0) saturate(100%) invert(37%) sepia(9%) saturate(620%) hue-rotate(176deg) brightness(97%) contrast(88%); }
 
 /* Blue version for prospect badges */
 .player-badge-rookie .fa-product-hunt-brands { filter: brightness(0) saturate(100%) invert(29%) sepia(91%) saturate(1165%) hue-rotate(211deg) brightness(94%) contrast(87%) !important; }

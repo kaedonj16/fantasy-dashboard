@@ -1028,6 +1028,10 @@ window.initTradePage = function initTradePage(root = document) {
     sideBPicks: [],
   };
 
+  // Generation counter — incremented on every recomputeTrade() call so that
+  // a stale in-flight fetch response never overwrites a more recent reset.
+  let _tradeGeneration = 0;
+
   async function loadPlayerDeltas() {
     try {
       const leagueType = getLeagueType();
@@ -2178,6 +2182,12 @@ window.initTradePage = function initTradePage(root = document) {
   const _TIER_LABELS = ['', 'Elite', 'Star', 'High-End Starter', 'Starter', 'Flex', 'Bench', 'Deep Bench', 'Handcuff', 'Fringe'];
 
   function _applyTierBadges(data) {
+    // Depth adjustment only makes sense as a comparison between two filled
+    // sides — hide it entirely when only one side has assets.
+    const sideAFilled = (state.sideAPlayers.length + state.sideAPicks.length) > 0;
+    const sideBFilled = (state.sideBPlayers.length + state.sideBPicks.length) > 0;
+    const bothSidesFilled = sideAFilled && sideBFilled;
+
     ['a', 'b'].forEach(side => {
       const sideData = data['side_' + side];
       if (!sideData) return;
@@ -2226,14 +2236,16 @@ window.initTradePage = function initTradePage(root = document) {
           noteEl.style.cssText = 'font-size:10px;color:var(--text-muted);margin-top:2px;text-align:center;';
           totalEl.parentNode.insertBefore(noteEl, totalEl.nextSibling);
         }
-        if (discount >= 5)  noteEl.textContent = `↓ ${Math.round(discount)} depth adj.`;
-        else               noteEl.textContent = '';
+        if (bothSidesFilled && discount >= 5)  noteEl.textContent = `↓ ${Math.round(discount)} depth adj.`;
+        else                                   noteEl.textContent = '';
       }
     });
 
   }
 
   async function recomputeTrade() {
+    const gen = ++_tradeGeneration;   // capture this call's generation
+
     const sideATotalEl = root.querySelector("#sideATotal");
     const sideBTotalEl = root.querySelector("#sideBTotal");
     const tradeDiffEl = root.querySelector("#tradeDiff");
@@ -2256,6 +2268,11 @@ window.initTradePage = function initTradePage(root = document) {
       if (sideBTotalEl) sideBTotalEl.textContent = "0.0";
       if (tradeDiffEl) tradeDiffEl.textContent = "0.0";
       if (barIndicator) barIndicator.style.left = "50%";
+      // Clear any stale depth-adjustment notes left from a prior trade.
+      ["sideDepthNoteA", "sideDepthNoteB"].forEach(id => {
+        const el = root.querySelector("#" + id);
+        if (el) el.textContent = "";
+      });
       if (verdictEl) {
         verdictEl.textContent = "Add players to both sides to see the trade balance.";
         verdictEl.className = "otc-verdict";
@@ -2266,6 +2283,9 @@ window.initTradePage = function initTradePage(root = document) {
       }
       const stlSec = root.querySelector("#similarTradesSection");
       if (stlSec) stlSec.style.display = "none";
+      // Reset the Playoff Impact card back to its default state instead of
+      // leaving the last trade's simulated numbers on screen.
+      fetchPlayoffImpact();
       return;
     }
 
@@ -2293,6 +2313,10 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       const data = await res.json();
+
+      // A newer recomputeTrade() call already ran — discard this stale response.
+      if (gen !== _tradeGeneration) return;
+
       const diff = Number(data.diff) || 0;
       const aEff = data.side_a ? Number(data.side_a.effective_total) || 0 : 0;
       const bEff = data.side_b ? Number(data.side_b.effective_total) || 0 : 0;
@@ -2337,7 +2361,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       _applyTierBadges(data);
 
-      Promise.all([fetchTradeIntel(), fetchSimilarTrades()]).catch(() => {});
+      Promise.all([fetchTradeIntel(), fetchSimilarTrades(), fetchPlayoffImpact()]).catch(() => {});
     } catch (err) {
       console.error("[trade] error in recomputeTrade:", err);
       if (errorBox) {
@@ -2417,6 +2441,276 @@ window.initTradePage = function initTradePage(root = document) {
 
     } catch (e) {
       if (listEl) listEl.innerHTML = '<div class="stl-empty">Trade data unavailable.</div>';
+    }
+  }
+
+  // ------------------------------------------------------------
+  // fetchPlayoffImpact - Monte Carlo before/after playoff odds (PRO)
+  // ------------------------------------------------------------
+  function _piMessage(icon, title, sub, btn) {
+    return `
+      <div class="pi-message">
+        <i class="fa-solid ${icon} pi-message-icon"></i>
+        <div class="pi-message-title">${title}</div>
+        <div class="pi-message-sub">${sub}</div>
+        ${btn || ""}
+      </div>`;
+  }
+
+  // Join a list into a readable phrase: [a] → "a", [a,b] → "a and b",
+  // [a,b,c] → "a, b, and c".
+  function listPhrase(items) {
+    if (items.length <= 1) return items[0] || "";
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+  }
+
+  async function fetchPlayoffImpact() {
+    const section = root.querySelector("#playoffImpactSection");
+    const body    = root.querySelector("#playoffImpactBody");
+    if (!section || !body) return;
+
+    // Always keep the card present so the row layout never has an empty gap.
+    section.style.display = "";
+
+    const isGuest    = (root.querySelector("#isGuestMode")?.value || "false") === "true";
+    const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+    const leagueId   = root.querySelector("#leagueIdInput")?.value || "";
+    const rosterId   = getCurrentRosterId();
+    const platform   = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
+    const season     = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
+
+    // Guest — needs to sign in / connect a league. Reuse the same trade login
+    // modal the Analyze Trade button opens, falling back to the nav sign-in
+    // modal, then to the homepage if neither modal exists on this page.
+    if (isGuest || !leagueId) {
+      const openLogin = "var t=document.getElementById('tradeLoginModal');"
+        + "if(t){t.style.display='flex';document.body.style.overflow='hidden';return;}"
+        + "var s=document.getElementById('signinModal');"
+        + "if(s){s.style.display='flex';return;}"
+        + "window.location.href='/';";
+      const signInBtn = `<button class="pi-locked-btn" onclick="${openLogin}">Sign In</button>`;
+      body.innerHTML = _piMessage(
+        "fa-right-to-bracket",
+        "Sign in for Playoff Impact",
+        "Connect your league to simulate how a trade changes your playoff odds.",
+        signInBtn
+      );
+      return;
+    }
+
+    // Non-premium — pro gate
+    if (!hasPremium) {
+      body.innerHTML = _piMessage(
+        "fa-lock",
+        "Pro Feature",
+        "Upgrade to simulate how this trade affects your playoff odds.",
+        `<button class="pi-locked-btn" onclick="showPaywall('playoff-impact')">Unlock Playoff Impact</button>`
+      );
+      return;
+    }
+
+    // Determine viewer side and build give/get id lists.
+    // The viewer's own side ("Team N gets…", tagged Your side) lists the players
+    // the viewer RECEIVES — so those are the get IDs. The opponent's side lists
+    // the players the viewer sends away — the give IDs.
+    const viewerSide = root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
+    const mySidePlayers  = viewerSide === "a" ? state.sideAPlayers : state.sideBPlayers;
+    const oppSidePlayers = viewerSide === "a" ? state.sideBPlayers : state.sideAPlayers;
+
+    const isPickId = id => id.startsWith("pick_") || id.startsWith("PICK");
+    const getIds  = mySidePlayers .map(p => String(p.id)).filter(id => !isPickId(id));
+    const giveIds = oppSidePlayers.map(p => String(p.id)).filter(id => !isPickId(id));
+
+    if (!rosterId) {
+      body.innerHTML = _piMessage(
+        "fa-users",
+        "Select your team",
+        "Choose your team in the Trade Summary to simulate playoff impact."
+      );
+      return;
+    }
+
+    // No trade yet — empty placeholder (either side missing assets)
+    const sideAHasAssets = state.sideAPlayers.length + state.sideAPicks.length > 0;
+    const sideBHasAssets = state.sideBPlayers.length + state.sideBPicks.length > 0;
+    if (!sideAHasAssets || !sideBHasAssets) {
+      body.innerHTML = _piMessage(
+        "fa-trophy",
+        "Build a trade",
+        "Add players to both sides to see how the deal moves your playoff odds."
+      );
+      return;
+    }
+
+    // Loading state
+    body.innerHTML = `
+      <div class="pi-message">
+        <div class="loading-spinner" style="width:22px;height:22px;margin:0 auto 8px;"></div>
+        <div class="pi-message-sub">Simulating playoff odds…</div>
+      </div>`;
+
+    try {
+      const res = await fetch("/api/trade-eval/playoff-impact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ league_id: leagueId, platform, season, roster_id: rosterId, give_ids: giveIds, get_ids: getIds }),
+      });
+      const data = res.ok ? await res.json() : null;
+
+      if (!data || !data.available) {
+        body.innerHTML = _piMessage(
+          "fa-circle-info",
+          "Not available",
+          "Playoff odds can't be simulated for this league right now (the season may be complete)."
+        );
+        return;
+      }
+
+      const deltaColor = v => v > 0 ? "#10b981" : v < 0 ? "#ef4444" : "var(--text-muted)";
+      const deltaIcon  = v => v > 0 ? "fa-arrow-up" : v < 0 ? "fa-arrow-down" : "fa-minus";
+
+      const stat = (label, before, after, delta, suffix = "") => {
+        const color = deltaColor(delta);
+        return `
+          <div class="pi-stat">
+            <div class="pi-stat-label">${label}</div>
+            <div class="pi-stat-values">
+              <span class="pi-stat-before">${before}${suffix}</span>
+              <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
+              <span class="pi-stat-after" style="color:${color};">${after}${suffix}</span>
+            </div>
+          </div>`;
+      };
+
+      const missingIds = data.missing_give_ids || [];
+      const missingWarn = missingIds.length ? (() => {
+        const names = missingIds.map(id => {
+          const p = oppSidePlayers.find(op => String(op.id) === String(id));
+          return `<strong>${p ? p.name : id}</strong>`;
+        }).join(", ");
+        return `<div class="pi-roster-warn">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          ${names} not on your roster. Sim reflects incoming side only.
+        </div>`;
+      })() : "";
+
+      // ── Future Outlook: the counterweight to the win-now metrics ──────────
+      const outlook   = data.outlook || {};
+      const ageDelta  = outlook.age_delta;          // < 0 means getting younger
+      const valDelta  = outlook.value_delta || 0;   // > 0 means banking value
+      const poD       = data.delta.playoff_pct;
+      const pickD     = data.delta.top3_pick_pct;
+
+      // Roster-wide age shifts are small (one swap on a full roster), so use a
+      // tighter threshold than the old traded-players-only comparison.
+      const younger     = ageDelta != null && ageDelta <= -0.2;
+      const older       = ageDelta != null && ageDelta >= 0.2;
+      const bankingVal  = valDelta >= 50;
+      const sheddingVal = valDelta <= -50;
+      const pickUp      = pickD >= 1;
+      const pickDown    = pickD <= -1;
+
+      // Classify the deal so the user reads the trade-off, not just the red.
+      let vTitle, vSub, vColor, vIcon;
+      if (poD <= -1) {
+        const gains = [];
+        if (pickUp)     gains.push("better draft positioning");
+        if (younger)    gains.push("a younger core");
+        if (bankingVal) gains.push("long-term value");
+        if (gains.length) {
+          vColor = "#7c3aed"; vIcon = "fa-chart-line"; vTitle = "Building Move";
+          vSub = `Trades some win-now equity for ${listPhrase(gains)}.`;
+        } else {
+          vColor = "#dc2626"; vIcon = "fa-arrow-trend-down"; vTitle = "Win-Now Downgrade";
+          vSub = "Lowers your odds without a clear long-term payoff.";
+        }
+      } else if (poD >= 1) {
+        const costs = [];
+        if (pickDown)    costs.push("draft capital");
+        if (older)       costs.push("an older roster");
+        if (sheddingVal) costs.push("long-term value");
+        vColor = "#059669"; vIcon = "fa-arrow-trend-up"; vTitle = "Win-Now Move";
+        vSub = costs.length
+          ? `Boosts this season's odds at the cost of ${listPhrase(costs)}.`
+          : "Boosts this season's odds with no real downside.";
+      } else {
+        if (younger || bankingVal) {
+          vColor = "#7c3aed"; vIcon = "fa-chart-line"; vTitle = "Future Lean";
+          vSub = "Roughly flat for this season, but builds for later.";
+        } else {
+          vColor = "#475569"; vIcon = "fa-scale-balanced"; vTitle = "Balanced";
+          vSub = "Little change to your win-now or future outlook.";
+        }
+      }
+
+      const verdict = `
+        <div class="pi-verdict" style="background:${vColor}1f;border-color:${vColor}59;">
+          <div class="pi-verdict-icon" style="background:${vColor};"><i class="fa-solid ${vIcon}" style="filter:brightness(0) invert(1);"></i></div>
+          <div>
+            <div class="pi-verdict-title" style="color:${vColor};">${vTitle}</div>
+            <div class="pi-verdict-sub">${vSub}</div>
+          </div>
+        </div>`;
+
+      // Age and value as stat columns. Age is the value-weighted age of your
+      // WHOLE roster before vs after the swap — not just the two players moved.
+      const ageBeforeVal = outlook.roster_age_before;
+      const ageAfterVal  = outlook.roster_age_after;
+      const ageColor = younger ? "#8b5cf6" : older ? "#f59e0b" : "var(--text-muted)";
+      const ageStat = (ageBeforeVal != null && ageAfterVal != null) ? `
+        <div class="pi-stat">
+          <div class="pi-stat-label">Roster Age</div>
+          <div class="pi-stat-values">
+            <span class="pi-stat-before">${ageBeforeVal.toFixed(1)}</span>
+            <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
+            <span class="pi-stat-after" style="color:${ageColor};">${ageAfterVal.toFixed(1)}</span>
+          </div>
+        </div>` : "";
+
+      // Prime years left: value-weighted avg of max(0, 30 - age) for traded players.
+      // More prime years incoming = positive signal (green).
+      const primeOut = outlook.outgoing ? outlook.outgoing.avg_prime_years : null;
+      const primeIn  = outlook.incoming ? outlook.incoming.avg_prime_years  : null;
+      const primeDelta = (primeOut != null && primeIn != null) ? primeIn - primeOut : null;
+      const primeColor = primeDelta != null && primeDelta >= 0.3 ? "#10b981"
+                       : primeDelta != null && primeDelta <= -0.3 ? "#ef4444"
+                       : "var(--text-muted)";
+      const primeStat = (primeOut != null && primeIn != null) ? `
+        <div class="pi-stat">
+          <div class="pi-stat-label">Prime Yrs Left</div>
+          <div class="pi-stat-values">
+            <span class="pi-stat-before">${primeOut.toFixed(1)}</span>
+            <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
+            <span class="pi-stat-after" style="color:${primeColor};">${primeIn.toFixed(1)}</span>
+          </div>
+        </div>` : "";
+
+      const pickStat = data.before.top3_pick_pct != null
+        ? stat("Top-3 Pick", data.before.top3_pick_pct.toFixed(1), data.after.top3_pick_pct.toFixed(0), data.delta.top3_pick_pct, "%")
+        : "";
+
+      const outlookGrid = (pickStat || ageStat || valStat) ? `
+        <div class="pi-section-label">Future Outlook</div>
+        <div class="pi-grid">
+          ${pickStat}${ageStat}${primeStat}
+        </div>` : "";
+
+      body.innerHTML = `
+        ${verdict}
+        <div class="pi-grid">
+          ${stat("Playoff Odds",  data.before.playoff_pct,    data.after.playoff_pct,    data.delta.playoff_pct,    "%")}
+          ${stat("Proj. Wins",    data.before.avg_final_wins, data.after.avg_final_wins, data.delta.avg_final_wins, "")}
+          ${stat("Proj. PPG",     data.before.avg_ppg,        data.after.avg_ppg,        data.delta.avg_ppg,        "")}
+        </div>
+        ${outlookGrid}
+        ${missingWarn}`;
+    } catch (e) {
+      body.innerHTML = _piMessage(
+        "fa-triangle-exclamation",
+        "Couldn't simulate",
+        "Something went wrong running the simulation. Try again."
+      );
     }
   }
 
@@ -4828,8 +5122,10 @@ window.initTradePage = function initTradePage(root = document) {
 
           // Priority 1: viewer_roster_id injected server-side (most reliable)
           const injectedRosterId = root.querySelector("#viewerRosterIdInput")?.value || "";
+          let autoSelectedRosterId = "";
           if (injectedRosterId) {
             selector.value = injectedRosterId;
+            autoSelectedRosterId = injectedRosterId;
           }
 
           // Priority 2: username match
@@ -4841,7 +5137,10 @@ window.initTradePage = function initTradePage(root = document) {
                   team.username === currentUsername ||
                   team.team_name.toLowerCase().includes(currentUsername.toLowerCase())
               );
-              if (userTeam) selector.value = userTeam.roster_id;
+              if (userTeam) {
+                selector.value = userTeam.roster_id;
+                autoSelectedRosterId = userTeam.roster_id;
+              }
             }
           }
 
@@ -4849,6 +5148,17 @@ window.initTradePage = function initTradePage(root = document) {
           if (!selector.value) {
             const currentRosterId = getCurrentRosterId();
             if (currentRosterId) selector.value = currentRosterId;
+          }
+
+          // When auto-selecting on sign-in, persist to session and refresh panels
+          // so the PI card doesn't stay stuck on "Select your team".
+          if (autoSelectedRosterId) {
+            fetch("/api/set-viewer-roster", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ roster_id: autoSelectedRosterId }),
+            }).catch(() => {});
+            recomputeTrade();
           }
 
           if (selector.value && root.querySelector("#targetsTabContent.is-active")) loadTradeTargets();
@@ -5045,6 +5355,7 @@ window.initTradePage = function initTradePage(root = document) {
     bindSetupButton();
     bindClearTradeButton();
     bindShareButton();
+
     initMoversBreakoutsTabs();
 
     // Re-verify premium status client-side so stale page renders don't lock out subscribers
@@ -6129,7 +6440,7 @@ document.addEventListener('DOMContentLoaded', function() {
         showFullscreenLoading('Switching leagues...');
 
         // Get current page from URL — only use it if it's a valid per-league route
-        const leaguePages = new Set(['dashboard','standings','weekly','teams','activity','graphs','waivers','trade','players','prospects','breakouts','awards','history','schedule','commissioner','optimal','scout']);
+        const leaguePages = new Set(['dashboard','standings','weekly','teams','activity','graphs','waivers','trade','players','prospects','breakouts','awards','history','schedule','commissioner','league_health','optimal','scout']);
         const pathParts = window.location.pathname.split('/');
         const lastSegment = pathParts[pathParts.length - 1] || '';
         const currentPage = leaguePages.has(lastSegment) ? lastSegment : 'dashboard';
