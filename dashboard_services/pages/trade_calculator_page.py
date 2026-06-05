@@ -448,16 +448,25 @@ def build_trade_calculator_body(
             .pi-stat-values {{
               display:flex;align-items:baseline;gap:5px;min-width:0;
             }}
-            .pi-stat-before {{ font-size:11px;color:var(--text-muted);flex-shrink:0; }}
+            .pi-stat-before {{
+              font-size:11px;color:var(--text-muted);min-width:0;
+              overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+            }}
             .pi-stat-arrow  {{ font-size:8px;color:var(--text-muted);opacity:.5;flex-shrink:0; }}
-            .pi-stat-after  {{ font-size:17px;font-weight:800;line-height:1;min-width:0;overflow:hidden;text-overflow:ellipsis; }}
+            .pi-stat-after  {{ font-size:17px;font-weight:800;line-height:1;flex-shrink:0;white-space:nowrap; }}
             /* Tighten stat tiles when the card is narrow so all three
-               columns stay inside the card instead of clipping. */
+               columns stay inside the card. The big "after" value always
+               stays fully visible; the small "before" value yields first. */
             @media(max-width:1200px) {{
               .pi-stat {{ padding:7px 7px; }}
               .pi-stat-after {{ font-size:15px; }}
               .pi-stat-before {{ font-size:10px; }}
               .pi-stat-values {{ gap:4px; }}
+            }}
+            /* When even that is too tight, drop the "before" value and arrow
+               so the headline number is never clipped. */
+            @media(max-width:1100px) {{
+              .pi-stat-before, .pi-stat-arrow {{ display:none; }}
             }}
             .pi-delta-pill  {{ display:none; }}
             .pi-locked {{
