@@ -452,21 +452,25 @@ def build_trade_calculator_body(
               font-size:11px;color:var(--text-muted);min-width:0;
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
             }}
-            .pi-stat-arrow  {{ font-size:8px;color:var(--text-muted);opacity:.5;flex-shrink:0; }}
+            .pi-stat-arrow  {{ font-size:11px;color:var(--text-muted);opacity:.55;flex-shrink:0;line-height:1; }}
             .pi-stat-after  {{ font-size:17px;font-weight:800;line-height:1;flex-shrink:0;white-space:nowrap; }}
-            /* Tighten stat tiles when the card is narrow so all three
-               columns stay inside the card. The big "after" value always
-               stays fully visible; the small "before" value yields first. */
-            @media(max-width:1200px) {{
+            /* Mid widths: the lower grid is two columns so the Playoff Impact
+               card is cramped. Drop the secondary "before" value and arrow so
+               the headline number is never clipped. */
+            @media(min-width:981px) and (max-width:1300px) {{
               .pi-stat {{ padding:7px 7px; }}
               .pi-stat-after {{ font-size:15px; }}
-              .pi-stat-before {{ font-size:10px; }}
               .pi-stat-values {{ gap:4px; }}
-            }}
-            /* When even that is too tight, drop the "before" value and arrow
-               so the headline number is never clipped. */
-            @media(max-width:1100px) {{
               .pi-stat-before, .pi-stat-arrow {{ display:none; }}
+            }}
+            /* Mobile: the lower grid collapses to one column so the card is
+               full width. Keep the small "before" value alongside the
+               headline. */
+            @media(max-width:980px) {{
+              .pi-stat {{ padding:7px 8px; }}
+              .pi-stat-before {{ font-size:10px; }}
+              .pi-stat-after {{ font-size:16px; }}
+              .pi-stat-values {{ gap:4px; }}
             }}
             .pi-delta-pill  {{ display:none; }}
             .pi-locked {{
