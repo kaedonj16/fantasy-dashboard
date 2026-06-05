@@ -452,7 +452,7 @@ def build_trade_calculator_body(
               font-size:11px;color:var(--text-muted);min-width:0;
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
             }}
-            .pi-stat-arrow  {{ font-size:8px;color:var(--text-muted);opacity:.5;flex-shrink:0; }}
+            .pi-stat-arrow  {{ font-size:11px;color:var(--text-muted);opacity:.55;flex-shrink:0;line-height:1; }}
             .pi-stat-after  {{ font-size:17px;font-weight:800;line-height:1;flex-shrink:0;white-space:nowrap; }}
             /* Mid widths: the lower grid is two columns so the Playoff Impact
                card is cramped. Drop the secondary "before" value and arrow so
