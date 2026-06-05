@@ -1028,6 +1028,10 @@ window.initTradePage = function initTradePage(root = document) {
     sideBPicks: [],
   };
 
+  // Generation counter — incremented on every recomputeTrade() call so that
+  // a stale in-flight fetch response never overwrites a more recent reset.
+  let _tradeGeneration = 0;
+
   async function loadPlayerDeltas() {
     try {
       const leagueType = getLeagueType();
@@ -2240,6 +2244,8 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   async function recomputeTrade() {
+    const gen = ++_tradeGeneration;   // capture this call's generation
+
     const sideATotalEl = root.querySelector("#sideATotal");
     const sideBTotalEl = root.querySelector("#sideBTotal");
     const tradeDiffEl = root.querySelector("#tradeDiff");
@@ -2307,6 +2313,10 @@ window.initTradePage = function initTradePage(root = document) {
       }
 
       const data = await res.json();
+
+      // A newer recomputeTrade() call already ran — discard this stale response.
+      if (gen !== _tradeGeneration) return;
+
       const diff = Number(data.diff) || 0;
       const aEff = data.side_a ? Number(data.side_a.effective_total) || 0 : 0;
       const bEff = data.side_b ? Number(data.side_b.effective_total) || 0 : 0;
