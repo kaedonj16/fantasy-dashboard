@@ -2178,6 +2178,12 @@ window.initTradePage = function initTradePage(root = document) {
   const _TIER_LABELS = ['', 'Elite', 'Star', 'High-End Starter', 'Starter', 'Flex', 'Bench', 'Deep Bench', 'Handcuff', 'Fringe'];
 
   function _applyTierBadges(data) {
+    // Depth adjustment only makes sense as a comparison between two filled
+    // sides — hide it entirely when only one side has assets.
+    const sideAFilled = (state.sideAPlayers.length + state.sideAPicks.length) > 0;
+    const sideBFilled = (state.sideBPlayers.length + state.sideBPicks.length) > 0;
+    const bothSidesFilled = sideAFilled && sideBFilled;
+
     ['a', 'b'].forEach(side => {
       const sideData = data['side_' + side];
       if (!sideData) return;
@@ -2226,8 +2232,8 @@ window.initTradePage = function initTradePage(root = document) {
           noteEl.style.cssText = 'font-size:10px;color:var(--text-muted);margin-top:2px;text-align:center;';
           totalEl.parentNode.insertBefore(noteEl, totalEl.nextSibling);
         }
-        if (discount >= 5)  noteEl.textContent = `↓ ${Math.round(discount)} depth adj.`;
-        else               noteEl.textContent = '';
+        if (bothSidesFilled && discount >= 5)  noteEl.textContent = `↓ ${Math.round(discount)} depth adj.`;
+        else                                   noteEl.textContent = '';
       }
     });
 
@@ -2256,6 +2262,11 @@ window.initTradePage = function initTradePage(root = document) {
       if (sideBTotalEl) sideBTotalEl.textContent = "0.0";
       if (tradeDiffEl) tradeDiffEl.textContent = "0.0";
       if (barIndicator) barIndicator.style.left = "50%";
+      // Clear any stale depth-adjustment notes left from a prior trade.
+      ["sideDepthNoteA", "sideDepthNoteB"].forEach(id => {
+        const el = root.querySelector("#" + id);
+        if (el) el.textContent = "";
+      });
       if (verdictEl) {
         verdictEl.textContent = "Add players to both sides to see the trade balance.";
         verdictEl.className = "otc-verdict";
@@ -2574,8 +2585,10 @@ window.initTradePage = function initTradePage(root = document) {
       const poD       = data.delta.playoff_pct;
       const pickD     = data.delta.top3_pick_pct;
 
-      const younger     = ageDelta != null && ageDelta <= -0.5;
-      const older       = ageDelta != null && ageDelta >= 0.5;
+      // Roster-wide age shifts are small (one swap on a full roster), so use a
+      // tighter threshold than the old traded-players-only comparison.
+      const younger     = ageDelta != null && ageDelta <= -0.2;
+      const older       = ageDelta != null && ageDelta >= 0.2;
       const bankingVal  = valDelta >= 50;
       const sheddingVal = valDelta <= -50;
       const pickUp      = pickD >= 1;
@@ -2589,10 +2602,10 @@ window.initTradePage = function initTradePage(root = document) {
         if (younger)    gains.push("a younger core");
         if (bankingVal) gains.push("long-term value");
         if (gains.length) {
-          vColor = "#8b5cf6"; vIcon = "fa-seedling"; vTitle = "Building Move";
+          vColor = "#7c3aed"; vIcon = "fa-chart-line"; vTitle = "Building Move";
           vSub = `Trades some win-now equity for ${listPhrase(gains)}.`;
         } else {
-          vColor = "#ef4444"; vIcon = "fa-arrow-trend-down"; vTitle = "Win-Now Downgrade";
+          vColor = "#dc2626"; vIcon = "fa-arrow-trend-down"; vTitle = "Win-Now Downgrade";
           vSub = "Lowers your odds without a clear long-term payoff.";
         }
       } else if (poD >= 1) {
@@ -2600,36 +2613,37 @@ window.initTradePage = function initTradePage(root = document) {
         if (pickDown)    costs.push("draft capital");
         if (older)       costs.push("an older roster");
         if (sheddingVal) costs.push("long-term value");
-        vColor = "#10b981"; vIcon = "fa-arrow-trend-up"; vTitle = "Win-Now Move";
+        vColor = "#059669"; vIcon = "fa-arrow-trend-up"; vTitle = "Win-Now Move";
         vSub = costs.length
           ? `Boosts this season's odds at the cost of ${listPhrase(costs)}.`
           : "Boosts this season's odds with no real downside.";
       } else {
         if (younger || bankingVal) {
-          vColor = "#8b5cf6"; vIcon = "fa-seedling"; vTitle = "Future Lean";
+          vColor = "#7c3aed"; vIcon = "fa-chart-line"; vTitle = "Future Lean";
           vSub = "Roughly flat for this season, but builds for later.";
         } else {
-          vColor = "#64748b"; vIcon = "fa-scale-balanced"; vTitle = "Balanced";
+          vColor = "#475569"; vIcon = "fa-scale-balanced"; vTitle = "Balanced";
           vSub = "Little change to your win-now or future outlook.";
         }
       }
 
       const verdict = `
-        <div class="pi-verdict" style="background:${vColor}14;border-color:${vColor}33;">
-          <div class="pi-verdict-icon" style="background:${vColor};"><i class="fa-solid ${vIcon}"></i></div>
+        <div class="pi-verdict" style="background:${vColor}1f;border-color:${vColor}59;">
+          <div class="pi-verdict-icon" style="background:${vColor};color:#fff;"><i class="fa-solid ${vIcon}" style="color:#fff;"></i></div>
           <div>
             <div class="pi-verdict-title" style="color:${vColor};">${vTitle}</div>
             <div class="pi-verdict-sub">${vSub}</div>
           </div>
         </div>`;
 
-      // Age and value as stat columns
-      const ageBeforeVal = outlook.outgoing ? outlook.outgoing.avg_age : null;
-      const ageAfterVal  = outlook.incoming ? outlook.incoming.avg_age  : null;
+      // Age and value as stat columns. Age is the value-weighted age of your
+      // WHOLE roster before vs after the swap — not just the two players moved.
+      const ageBeforeVal = outlook.roster_age_before;
+      const ageAfterVal  = outlook.roster_age_after;
       const ageColor = younger ? "#8b5cf6" : older ? "#f59e0b" : "var(--text-muted)";
       const ageStat = (ageBeforeVal != null && ageAfterVal != null) ? `
         <div class="pi-stat">
-          <div class="pi-stat-label">Avg Age</div>
+          <div class="pi-stat-label">Roster Age</div>
           <div class="pi-stat-values">
             <span class="pi-stat-before">${ageBeforeVal.toFixed(1)}</span>
             <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>

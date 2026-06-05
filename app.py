@@ -16563,7 +16563,8 @@ def api_trade_eval_playoff_impact():
         # upside when a deal dents this season's odds (and vice versa).
         is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
                     for s in (ctx.get("roster_positions") or []))
-        result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf)
+        current_pids = sim_state.get("roster_pid_map", {}).get(roster_id, [])
+        result["outlook"] = _trade_future_outlook(give_ids, get_ids, is_sf, current_pids)
 
         return jsonify(result)
 
@@ -16572,15 +16573,28 @@ def api_trade_eval_playoff_impact():
         return jsonify({"available": False, "reason": "error"})
 
 
-def _trade_future_outlook(give_ids, get_ids, is_sf=False):
+def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
     """Compute value-weighted age and total value for the incoming vs outgoing
     players in a trade. Returns the building-vs-win-now signal that balances the
-    Playoff Impact card."""
+    Playoff Impact card.
+
+    When current_pids (the viewer's full roster) is provided, the age signal is
+    the roster-wide value-weighted age before vs after the swap — a true measure
+    of how the deal ages your team, not just an average of the two players moved.
+    """
     from utils.utils import load_players_index
     players_index = load_players_index() or {}
     value_table = get_model_value_table_cached() or []
     val_key = "sf_value" if is_sf else "value"
     vmap = {str(p.get("id")): p for p in value_table}
+
+    def _player_val_age(pid):
+        mv = vmap.get(str(pid), {})
+        meta = players_index.get(str(pid), {}) or {}
+        val = safe_float(mv.get(val_key) or mv.get("value") or 0)
+        age = age_from_bday(meta.get("bDay")) or mv.get("age") or meta.get("age")
+        age = safe_float(age) if age not in (None, "") else None
+        return val, age
 
     def _resolve(pids):
         total_val = 0.0
@@ -16588,11 +16602,7 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False):
         wage_den = 0.0
         ages = []
         for pid in pids:
-            mv = vmap.get(str(pid), {})
-            meta = players_index.get(str(pid), {}) or {}
-            val = safe_float(mv.get(val_key) or mv.get("value") or 0)
-            age = age_from_bday(meta.get("bDay")) or mv.get("age") or meta.get("age")
-            age = safe_float(age) if age not in (None, "") else None
+            val, age = _player_val_age(pid)
             total_val += val
             if age:
                 ages.append(age)
@@ -16603,21 +16613,43 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False):
             round(sum(ages) / len(ages), 1) if ages else None)
         return {"total_value": round(total_val, 1), "avg_age": avg_age, "n": len(pids)}
 
+    def _roster_avg_age(pids):
+        wage_num = 0.0
+        wage_den = 0.0
+        for pid in pids:
+            val, age = _player_val_age(pid)
+            if age and val > 0:
+                wage_num += age * val
+                wage_den += val
+        return round(wage_num / wage_den, 1) if wage_den else None
+
     incoming = _resolve(get_ids)   # players the viewer receives
     outgoing = _resolve(give_ids)  # players the viewer sends away
 
-    age_delta = None
-    if incoming["avg_age"] is not None and outgoing["avg_age"] is not None:
-        # Negative = getting younger (incoming younger than outgoing).
-        age_delta = round(incoming["avg_age"] - outgoing["avg_age"], 1)
-
     value_delta = round(incoming["total_value"] - outgoing["total_value"], 1)
+
+    # Roster-wide age shift (preferred): how the whole team ages after the swap.
+    roster_age_before = roster_age_after = age_delta = None
+    if current_pids:
+        before_set = set(str(p) for p in current_pids)
+        after_set = (before_set - set(str(p) for p in give_ids)) | set(str(p) for p in get_ids)
+        roster_age_before = _roster_avg_age(before_set)
+        roster_age_after = _roster_avg_age(after_set)
+        if roster_age_before is not None and roster_age_after is not None:
+            # Negative = roster got younger.
+            age_delta = round(roster_age_after - roster_age_before, 1)
+
+    # Fallback to traded-players age delta when no roster context is available.
+    if age_delta is None and incoming["avg_age"] is not None and outgoing["avg_age"] is not None:
+        age_delta = round(incoming["avg_age"] - outgoing["avg_age"], 1)
 
     return {
         "incoming": incoming,
         "outgoing": outgoing,
-        "age_delta": age_delta,        # < 0 means younger
-        "value_delta": value_delta,    # > 0 means banking value
+        "age_delta": age_delta,                 # < 0 means younger
+        "value_delta": value_delta,             # > 0 means banking value
+        "roster_age_before": roster_age_before,  # value-weighted roster age pre-swap
+        "roster_age_after": roster_age_after,    # value-weighted roster age post-swap
     }
 
 
