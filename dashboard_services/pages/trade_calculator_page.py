@@ -395,6 +395,7 @@ def build_trade_calculator_body(
             .otc-pi-card {{
               border:1px solid var(--border);border-radius:20px;
               padding:10px 15px;background:var(--card-bg);display:flex;flex-direction:column;
+              container-type:inline-size;container-name:pi;
             }}
             .otc-pi-head {{ margin-bottom:14px;display:flex;align-items:flex-start;justify-content:space-between; }}
             .otc-pi-title {{ font-size:15px;font-weight:700;margin:0 0 2px; }}
@@ -452,25 +453,26 @@ def build_trade_calculator_body(
               font-size:11px;color:var(--text-muted);min-width:0;
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
             }}
-            .pi-stat-arrow  {{ font-size:11px;color:var(--text-muted);opacity:.55;flex-shrink:0;line-height:1; }}
+            .pi-stat-arrow  {{ font-size:13px;opacity:.55;flex-shrink:0;align-self:center; }}
             .pi-stat-after  {{ font-size:17px;font-weight:800;line-height:1;flex-shrink:0;white-space:nowrap; }}
-            /* Mid widths: the lower grid is two columns so the Playoff Impact
-               card is cramped. Drop the secondary "before" value and arrow so
-               the headline number is never clipped. */
-            @media(min-width:981px) and (max-width:1300px) {{
-              .pi-stat {{ padding:7px 7px; }}
-              .pi-stat-after {{ font-size:15px; }}
-              .pi-stat-values {{ gap:4px; }}
-              .pi-stat-before, .pi-stat-arrow {{ display:none; }}
+            /* Size the numbers off the CARD's own width (not the viewport) so
+               they fit whether the card is full-width on mobile or a narrow
+               sub-column on desktop. The viewport can't tell us the card width
+               because it depends on the sidebar and the lower-grid split. */
+            @container pi (max-width:360px) {{
+              .pi-grid {{ gap:5px; }}
+              .pi-stat {{ padding:7px 6px; }}
+              .pi-stat-label {{ letter-spacing:.02em; }}
+              .pi-stat-before {{ font-size:9.5px; }}
+              .pi-stat-after {{ font-size:14px; }}
+              .pi-stat-arrow {{ font-size:10px; }}
+              .pi-stat-values {{ gap:3px; }}
             }}
-            /* Mobile: the lower grid collapses to one column so the card is
-               full width. Keep the small "before" value alongside the
-               headline. */
-            @media(max-width:980px) {{
-              .pi-stat {{ padding:7px 8px; }}
-              .pi-stat-before {{ font-size:10px; }}
-              .pi-stat-after {{ font-size:16px; }}
-              .pi-stat-values {{ gap:4px; }}
+            /* Extremely narrow cards: drop the secondary "before" value and
+               arrow so the headline number is never clipped. */
+            @container pi (max-width:270px) {{
+              .pi-stat-before, .pi-stat-arrow {{ display:none; }}
+              .pi-stat-after {{ font-size:15px; }}
             }}
             .pi-delta-pill  {{ display:none; }}
             .pi-locked {{
