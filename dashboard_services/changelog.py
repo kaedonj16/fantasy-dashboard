@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-06-05",
         "tag": "new",
-        "text": "Playoff Impact: The trade calculator now shows how any deal shifts your playoff odds, projected wins, PPG, top-3 draft pick odds, roster age, and prime years left. All stats are simulated live as you build the trade. A verdict banner (Building Move, Win-Now Move, and more) summarises the trade-off at a glance.",
+        "text": "Playoff Impact: The trade calculator now shows how any deal shifts your playoff odds, projected wins, PPG, top-3 draft pick odds, roster age, and prime years left. All stats are simulated live as you build the trade.",
         "link": "/trade"
     },
     {
