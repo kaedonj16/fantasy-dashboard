@@ -16578,13 +16578,11 @@ def api_trade_eval_playoff_impact():
 
 
 def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
-    """Compute value-weighted age and total value for the incoming vs outgoing
-    players in a trade. Returns the building-vs-win-now signal that balances the
-    Playoff Impact card.
+    """Compute future-outlook signals for the Playoff Impact card.
 
-    When current_pids (the viewer's full roster) is provided, the age signal is
-    the roster-wide value-weighted age before vs after the swap — a true measure
-    of how the deal ages your team, not just an average of the two players moved.
+    When current_pids (the viewer's full roster) is provided, the Roster Age
+    signal is the roster-wide value-weighted age before vs after the swap.
+    Prime Years Left is always computed from the traded players themselves.
     """
     from utils.utils import load_players_index
     players_index = load_players_index() or {}
@@ -16602,8 +16600,10 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
 
     def _resolve(pids):
         total_val = 0.0
-        wage_num = 0.0  # value-weighted age numerator
-        wage_den = 0.0
+        age_num = 0.0
+        age_den = 0.0
+        prime_num = 0.0  # value-weighted prime years remaining (max 0, 30-age)
+        prime_den = 0.0
         ages = []
         for pid in pids:
             val, age = _player_val_age(pid)
@@ -16611,11 +16611,20 @@ def _trade_future_outlook(give_ids, get_ids, is_sf=False, current_pids=None):
             if age:
                 ages.append(age)
                 if val > 0:
-                    wage_num += age * val
-                    wage_den += val
-        avg_age = round(wage_num / wage_den, 1) if wage_den else (
+                    age_num += age * val
+                    age_den += val
+                    prime = max(0.0, 30.0 - age)
+                    prime_num += prime * val
+                    prime_den += val
+        avg_age = round(age_num / age_den, 1) if age_den else (
             round(sum(ages) / len(ages), 1) if ages else None)
-        return {"total_value": round(total_val, 1), "avg_age": avg_age, "n": len(pids)}
+        avg_prime = round(prime_num / prime_den, 1) if prime_den else None
+        return {
+            "total_value": round(total_val, 1),
+            "avg_age": avg_age,
+            "avg_prime_years": avg_prime,
+            "n": len(pids),
+        }
 
     def _roster_avg_age(pids):
         wage_num = 0.0

@@ -2668,16 +2668,21 @@ window.initTradePage = function initTradePage(root = document) {
           </div>
         </div>` : "";
 
-      const valBeforeVal = outlook.outgoing ? outlook.outgoing.total_value : null;
-      const valAfterVal  = outlook.incoming  ? outlook.incoming.total_value  : null;
-      const valColor = bankingVal ? "#10b981" : sheddingVal ? "#ef4444" : "var(--text-muted)";
-      const valStat = (valBeforeVal != null && valAfterVal != null) ? `
+      // Prime years left: value-weighted avg of max(0, 30 - age) for traded players.
+      // More prime years incoming = positive signal (green).
+      const primeOut = outlook.outgoing ? outlook.outgoing.avg_prime_years : null;
+      const primeIn  = outlook.incoming ? outlook.incoming.avg_prime_years  : null;
+      const primeDelta = (primeOut != null && primeIn != null) ? primeIn - primeOut : null;
+      const primeColor = primeDelta != null && primeDelta >= 0.3 ? "#10b981"
+                       : primeDelta != null && primeDelta <= -0.3 ? "#ef4444"
+                       : "var(--text-muted)";
+      const primeStat = (primeOut != null && primeIn != null) ? `
         <div class="pi-stat">
-          <div class="pi-stat-label">Dynasty Val</div>
+          <div class="pi-stat-label">Prime Yrs Left</div>
           <div class="pi-stat-values">
-            <span class="pi-stat-before">${Math.round(valBeforeVal)}</span>
+            <span class="pi-stat-before">${primeOut.toFixed(1)}</span>
             <i class="fa-solid fa-arrow-right pi-stat-arrow"></i>
-            <span class="pi-stat-after" style="color:${valColor};">${Math.round(valAfterVal)}</span>
+            <span class="pi-stat-after" style="color:${primeColor};">${primeIn.toFixed(1)}</span>
           </div>
         </div>` : "";
 
@@ -2688,7 +2693,7 @@ window.initTradePage = function initTradePage(root = document) {
       const outlookGrid = (pickStat || ageStat || valStat) ? `
         <div class="pi-section-label">Future Outlook</div>
         <div class="pi-grid">
-          ${pickStat}${ageStat}${valStat}
+          ${pickStat}${ageStat}${primeStat}
         </div>` : "";
 
       body.innerHTML = `
