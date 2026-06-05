@@ -2470,11 +2470,16 @@ window.initTradePage = function initTradePage(root = document) {
     const platform   = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
     const season     = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
 
-    // Guest — needs to sign in / connect a league
+    // Guest — needs to sign in / connect a league. Reuse the same trade login
+    // modal the Analyze Trade button opens, falling back to the nav sign-in
+    // modal, then to the homepage if neither modal exists on this page.
     if (isGuest || !leagueId) {
-      const signInBtn = leagueId
-        ? `<button class="pi-locked-btn" onclick="var m=document.getElementById('signinModal');if(m)m.style.display='flex'">Sign In</button>`
-        : `<a class="pi-locked-btn" href="/">Get Started</a>`;
+      const openLogin = "var t=document.getElementById('tradeLoginModal');"
+        + "if(t){t.style.display='flex';document.body.style.overflow='hidden';return;}"
+        + "var s=document.getElementById('signinModal');"
+        + "if(s){s.style.display='flex';return;}"
+        + "window.location.href='/';";
+      const signInBtn = `<button class="pi-locked-btn" onclick="${openLogin}">Sign In</button>`;
       body.innerHTML = _piMessage(
         "fa-right-to-bracket",
         "Sign in for Playoff Impact",
