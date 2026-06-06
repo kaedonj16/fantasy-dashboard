@@ -67,6 +67,19 @@ _FLEX_POSITIONS = {"FLEX", "WR/RB/TE", "RB/WR/TE", "W/R/T"}
 _FLEX_ELIGIBLE  = {"RB", "WR", "TE"}
 _SUPER_FLEX_POS = {"SUPER_FLEX", "SUPERFLEX", "QB/WR/RB/TE", "OP"}
 
+# Per-week injury hazard: the probability that a given starter misses that
+# week's game. When a starter is out, a bench player replaces them at a
+# fraction of their output, so the team loses (1 - _INJURY_REPLACEMENT) of the
+# starter's projected PPG for that week. Rates are per-game "miss next game"
+# approximations from empirical NFL availability by position (RBs miss the most,
+# QBs the least). This injects realistic week-to-week downside that the smooth
+# scoring distribution alone doesn't capture.
+_INJURY_HAZARD: dict[str, float] = {
+    "QB": 0.03, "RB": 0.07, "WR": 0.05, "TE": 0.05, "K": 0.01, "DEF": 0.0,
+}
+_INJURY_HAZARD_DEFAULT = 0.05
+_INJURY_REPLACEMENT    = 0.45   # replacement plays at ~45% of the starter's PPG
+
 
 def _n_byes(playoff_teams: int) -> int:
     """
@@ -258,7 +271,8 @@ def simulate_with_swap(
     new_std = max(_team_std_from_starters(after_starters), _MIN_STD)
 
     teams = [
-        {**t, "avg": round(new_avg, 1), "std": round(new_std, 1)}
+        {**t, "avg": round(new_avg, 1), "std": round(new_std, 1),
+         "starters": after_starters}
         if t["roster_id"] == viewer_roster_id else t
         for t in sim_state["teams"]
     ]
@@ -334,7 +348,8 @@ def simulate_swap_impact(
     new_std = max(_team_std_from_starters(after_starters), _MIN_STD)
 
     after_teams = [
-        {**t, "avg": round(new_avg, 1), "std": round(new_std, 1)}
+        {**t, "avg": round(new_avg, 1), "std": round(new_std, 1),
+         "starters": after_starters}
         if t["roster_id"] == viewer_roster_id else t
         for t in sim_state["teams"]
     ]
@@ -415,12 +430,16 @@ def build_ppg_map(ctx: dict) -> tuple[dict, dict]:
 
     ppg_map: dict = {}
 
-    # Priority 1: Sleeper weekly projections (in-season — same source as the
-    # team-avg blend so simulate_with_swap is consistent with the base sim)
-    if current_week > 0 and season > 0:
+    # Priority 1: Sleeper projections — the primary source at ALL points.
+    # In-season we use the upcoming week; offseason/preseason (current_week == 0)
+    # we use week 1 of the season as a representative weekly baseline. This keeps
+    # the simulation on Sleeper's numbers year-round, with FantasyPros and the
+    # usage cache only filling players Sleeper doesn't cover.
+    if season > 0:
+        proj_week = current_week + 1 if current_week > 0 else 1
         try:
             from utils.utils import fetch_week_projections, pick_proj_variant
-            multi_map = fetch_week_projections(season, current_week + 1, _rss)
+            multi_map = fetch_week_projections(season, proj_week, _rss)
             variant   = pick_proj_variant(_rss)
             for pid, variants in (multi_map or {}).items():
                 if not isinstance(variants, dict):
@@ -517,7 +536,10 @@ def simulate_playoff_odds(
 
     # ── Case 1: no game data yet (preseason / offseason of new year) ─────────
     if not has_games:
-        teams = _estimate_from_rosters(ctx)
+        # Build the PPG map Sleeper-first (same source as in-season / swap sims)
+        # so projections come from Sleeper at all points, not FantasyPros.
+        ppg_map, pos_map = build_ppg_map(ctx)
+        teams = _estimate_from_rosters(ctx, ppg_map=ppg_map, pos_map=pos_map)
         if not teams:
             return []
         remaining_weeks = list(range(1, playoff_week_start))
@@ -722,6 +744,7 @@ def _estimate_from_rosters(
                 "wins":      0, "losses": 0, "ties": 0, "pf": 0.0,
                 "avg":       round(projected_avg, 1),
                 "std":       round(projected_std, 1),
+                "starters":  starters,
             })
         return teams
 
@@ -814,6 +837,7 @@ def _estimate_from_rosters(
             "pf":        0.0,
             "avg":       round(projected_avg, 1),
             "std":       round(projected_std, 1),
+            "starters":  starters,
         })
     return teams
 
@@ -887,11 +911,14 @@ def _blend_weekly_projections(
         pids = rid_to_pids.get(rid)
         if not pids:
             continue
-        proj_score, _ = _position_aware_lineup(pids, week_ppg, pos_map, roster_positions)
+        proj_score, starters = _position_aware_lineup(pids, week_ppg, pos_map, roster_positions)
         if proj_score <= 0:
             continue
         historical_avg  = team["avg"]
         team["avg"]     = round(blend * proj_score + (1 - blend) * historical_avg, 1)
+        # Keep the projected starters so the Monte Carlo engine can model
+        # per-week injury hazard for this team in-season too.
+        team["starters"] = starters
         updated += 1
 
     if updated:
@@ -1179,6 +1206,49 @@ def _sample_scores(
     return np.maximum(scores, 0).astype(np.float32)
 
 
+def _injury_params(team: dict) -> Optional[tuple["np.ndarray", "np.ndarray"]]:
+    """Precompute (lost_points, hazard) arrays per starter for a team.
+
+    Returns None when the team has no starter breakdown (e.g. in-season teams
+    whose weekly projections were unavailable), in which case injuries are
+    skipped for that team.
+    """
+    starters = team.get("starters") or []
+    if not starters:
+        return None
+    lost = np.array(
+        [(1.0 - _INJURY_REPLACEMENT) * float(ppg) for _, ppg in starters],
+        dtype=np.float32,
+    )
+    haz = np.array(
+        [_INJURY_HAZARD.get(str(pos).upper(), _INJURY_HAZARD_DEFAULT) for pos, _ in starters],
+        dtype=np.float32,
+    )
+    return lost, haz
+
+
+def _apply_injuries(
+    rng: "np.random.Generator",
+    scores: "np.ndarray",
+    params: Optional[tuple["np.ndarray", "np.ndarray"]],
+    n_sims: int,
+) -> "np.ndarray":
+    """Subtract injury losses from a team's weekly scores.
+
+    For each sim, every starter independently misses the week with its position
+    hazard; a missed starter costs (1 - replacement) of its projected PPG. Using
+    the shared rng keeps the draws part of the common-random-numbers stream, so
+    before/after trade sims stay paired and the delta stays clean.
+    """
+    if params is None:
+        return scores
+    lost, haz = params
+    u = rng.random((n_sims, lost.shape[0]), dtype=np.float32)
+    out_mask = u < haz                       # (n_sims, k); haz broadcasts per column
+    lost_pts = (out_mask * lost).sum(axis=1)  # (n_sims,)
+    return np.maximum(scores - lost_pts, 0).astype(np.float32)
+
+
 def _run_mc(
     teams: list[dict],
     matchups_by_week: dict[int, list[tuple[int, int]]],
@@ -1192,6 +1262,7 @@ def _run_mc(
 
     avgs = np.array([t["avg"] for t in teams], dtype=np.float32)
     stds = np.array([t["std"] for t in teams], dtype=np.float32)
+    injury_params = [_injury_params(t) for t in teams]
 
     wins = np.tile([t["wins"] for t in teams], (n_sims, 1)).astype(np.float32)
     pf   = np.tile([t["pf"]   for t in teams], (n_sims, 1)).astype(np.float32)
@@ -1211,7 +1282,9 @@ def _run_mc(
             games_per_team[ia] += 1
             games_per_team[ib] += 1
             sa = _sample_scores(rng, avgs[ia], stds[ia], n_sims)
+            sa = _apply_injuries(rng, sa, injury_params[ia], n_sims)
             sb = _sample_scores(rng, avgs[ib], stds[ib], n_sims)
+            sb = _apply_injuries(rng, sb, injury_params[ib], n_sims)
             a_wins = sa > sb
             wins[:, ia] += a_wins.astype(np.float32)
             wins[:, ib] += (~a_wins).astype(np.float32)
