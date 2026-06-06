@@ -694,6 +694,15 @@ function _renderPlayoffOdds(data) {
 
   const showBye = nByes > 0;
 
+  // Projected odds only read a literal 100% / 0% when mathematically settled
+  // (the backend sends exactly 100.0 / 0.0 in that case). Otherwise keep a
+  // rounded value from showing 100/0 — e.g. 99.9 must display as 99, not 100.
+  const fmtProjPct = (v) => {
+    if (v >= 100) return '100';
+    if (v <= 0)   return '0';
+    return String(Math.min(99, Math.max(1, Math.round(v))));
+  };
+
   const rows = sorted.map(t => {
     const pct    = t.playoff_pct;
     const barCls = pct >= 70 ? 'po-bar-green' : pct >= 35 ? 'po-bar-yellow' : 'po-bar-red';
@@ -707,14 +716,14 @@ function _renderPlayoffOdds(data) {
     } else {
       oddsCell =
         `<div class="po-bar-wrap"><div class="po-bar ${barCls}" style="width:${Math.max(pct, 2)}%"></div></div>` +
-        `<span class="po-label">${pct.toFixed(0)}<span class="po-pct-sym">%</span></span>`;
+        `<span class="po-label">${fmtProjPct(pct)}<span class="po-pct-sym">%</span></span>`;
     }
 
     const byeCell = showBye
       ? `<td class="po-bye">${
           is_complete
             ? (t.bye_pct === 100 ? '✓' : '')
-            : (t.bye_pct > 0 ? t.bye_pct.toFixed(0) + '%' : '-')
+            : (t.bye_pct > 0 ? fmtProjPct(t.bye_pct) + '%' : '-')
         }</td>`
       : '';
 
