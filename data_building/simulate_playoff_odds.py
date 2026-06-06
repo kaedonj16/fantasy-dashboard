@@ -1755,13 +1755,33 @@ def _run_mc(
     # Use per-team games scheduled so bye weeks don't inflate projected losses.
     avg_losses  = init_losses + games_per_team - (avg_wins - init_wins)
 
-    # A projection should never read a literal 100% or 0%: with finite sims a
-    # saturated outcome just means the sample never hit the rare collapse / surge
-    # (multi-player injuries, a cold streak). Clamp projected odds to keep that
-    # residual uncertainty. Truly settled outcomes come from _actual_results
-    # (completed season), which is left at 100/0.
-    def _clamp(p: float) -> float:
-        return round(min(99.9, max(0.1, float(p))), 1)
+    # Mathematical clinch / elimination (consistent with the sim's top-N-by-record
+    # seeding). A team has CLINCHED a berth if, even losing out while everyone who
+    # could pass them wins out, fewer than `playoff_teams` teams can finish ahead.
+    # It's ELIMINATED if at least `playoff_teams` teams are guaranteed ahead even
+    # if it wins out. Bounds are conservative (ignore the joint schedule and
+    # tiebreakers) so they never falsely declare certainty.
+    rem      = games_per_team               # remaining games per team
+    t_min    = init_wins                    # worst case: lose out
+    t_max    = init_wins + rem              # best case: win out
+    opp_max  = init_wins + rem
+    clinched   = np.zeros(n, dtype=bool)
+    eliminated = np.zeros(n, dtype=bool)
+    for i in range(n):
+        can_be_ahead     = int(np.sum(opp_max >= t_min[i])) - 1   # exclude self
+        guaranteed_ahead = int(np.sum(init_wins > t_max[i]))
+        clinched[i]   = can_be_ahead < playoff_teams
+        eliminated[i] = guaranteed_ahead >= playoff_teams
+
+    # A projection should never read a literal 100% or 0% unless the spot is
+    # mathematically settled: with finite sims a saturated outcome just means the
+    # sample never hit the rare collapse/surge. Clamp the undecided ones.
+    def _playoff_pct(i: int) -> float:
+        if clinched[i]:
+            return 100.0
+        if eliminated[i]:
+            return 0.0
+        return round(min(99.9, max(0.1, float(in_playoffs[i]))), 1)
 
     return [{
         "roster_id":        t["roster_id"],
@@ -1769,13 +1789,13 @@ def _run_mc(
         "wins":             t["wins"],
         "losses":           t["losses"],
         "ties":             t["ties"],
-        "playoff_pct":      _clamp(in_playoffs[i]),
+        "playoff_pct":      _playoff_pct(i),
         "bye_pct":          round(min(99.9, float(got_bye[i])), 1),
         "first_seed_pct":   round(min(99.9, float(is_first[i])), 1),
         "pick_one_pct":     round(min(99.9, float(pick_one[i])), 1),
         "top3_pick_pct":    round(min(99.9, float(top3_pick[i])), 1),
         "avg_draft_slot":   round(float(avg_slot[i]),     1),
-        "miss_pct":         _clamp(100 - float(in_playoffs[i])),
+        "miss_pct":         round(100 - _playoff_pct(i), 1),
         "avg_final_wins":   round(float(avg_wins[i]),     1),
         "avg_final_losses": round(float(avg_losses[i]),   1),
         "n_sims":           n_sims,
