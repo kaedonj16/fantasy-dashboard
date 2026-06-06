@@ -1755,19 +1755,27 @@ def _run_mc(
     # Use per-team games scheduled so bye weeks don't inflate projected losses.
     avg_losses  = init_losses + games_per_team - (avg_wins - init_wins)
 
+    # A projection should never read a literal 100% or 0%: with finite sims a
+    # saturated outcome just means the sample never hit the rare collapse / surge
+    # (multi-player injuries, a cold streak). Clamp projected odds to keep that
+    # residual uncertainty. Truly settled outcomes come from _actual_results
+    # (completed season), which is left at 100/0.
+    def _clamp(p: float) -> float:
+        return round(min(99.9, max(0.1, float(p))), 1)
+
     return [{
         "roster_id":        t["roster_id"],
         "team_name":        t["name"],
         "wins":             t["wins"],
         "losses":           t["losses"],
         "ties":             t["ties"],
-        "playoff_pct":      round(float(in_playoffs[i]),  1),
-        "bye_pct":          round(float(got_bye[i]),      1),
-        "first_seed_pct":   round(float(is_first[i]),     1),
-        "pick_one_pct":     round(float(pick_one[i]),     1),
-        "top3_pick_pct":    round(float(top3_pick[i]),    1),
+        "playoff_pct":      _clamp(in_playoffs[i]),
+        "bye_pct":          round(min(99.9, float(got_bye[i])), 1),
+        "first_seed_pct":   round(min(99.9, float(is_first[i])), 1),
+        "pick_one_pct":     round(min(99.9, float(pick_one[i])), 1),
+        "top3_pick_pct":    round(min(99.9, float(top3_pick[i])), 1),
         "avg_draft_slot":   round(float(avg_slot[i]),     1),
-        "miss_pct":         round(100 - float(in_playoffs[i]), 1),
+        "miss_pct":         _clamp(100 - float(in_playoffs[i])),
         "avg_final_wins":   round(float(avg_wins[i]),     1),
         "avg_final_losses": round(float(avg_losses[i]),   1),
         "n_sims":           n_sims,
