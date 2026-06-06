@@ -695,12 +695,13 @@ function _renderPlayoffOdds(data) {
   const showBye = nByes > 0;
 
   // Projected odds only read a literal 100% / 0% when mathematically settled
-  // (the backend sends exactly 100.0 / 0.0 in that case). Otherwise keep a
-  // rounded value from showing 100/0 — e.g. 99.9 must display as 99, not 100.
+  // (the backend sends exactly 100.0 / 0.0 in that case). Otherwise show one
+  // decimal — and since the backend caps undecided odds at 99.9 / 0.1, that can
+  // never round to 100 / 0.
   const fmtProjPct = (v) => {
     if (v >= 100) return '100';
     if (v <= 0)   return '0';
-    return String(Math.min(99, Math.max(1, Math.round(v))));
+    return v.toFixed(1);
   };
 
   const rows = sorted.map(t => {
