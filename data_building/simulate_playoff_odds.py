@@ -991,19 +991,24 @@ def _team_week_profile(
 ) -> dict:
     """Build a single team's (mean, std, injury params) for one week.
 
-    mean = efficiency × (blend × week_projection + (1−blend) × season_avg)
-    Preseason uses blend = 1.0 (pure weekly projection); in-season blends the
-    week's projection with the season-to-date average. Efficiency scales the
-    whole output by the manager's historical actual/optimal ratio.
+    mean = blend × (efficiency × week_projection) + (1−blend) × season_avg
+
+    Efficiency (actual/optimal) discounts ONLY the projection term — you won't
+    realize a perfect lineup. The season average is already realized actual
+    scoring, so it is used as-is; applying efficiency to it again would
+    double-count the manager's inefficiency and drag the projection below the
+    team's true scoring level. Preseason uses blend = 1.0 (pure projection,
+    efficiency-discounted); in-season blends the week's projection with the
+    season-to-date average.
 
     Injury loss per starter = (starter − best replacement) put on the same scale
-    as the mean (× blend × efficiency), so a no-op stays a no-op and in-season
-    injuries are discounted consistently with the projection's weight.
+    as the projection term (× blend × efficiency), so a no-op stays a no-op and
+    in-season injuries are discounted consistently with the projection's weight.
     """
     proj, starters, repls = _lineup_with_replacements(
         pids, ppg_map, pos_map, roster_positions
     )
-    mean = efficiency * (blend * proj + (1.0 - blend) * hist_avg)
+    mean = blend * efficiency * proj + (1.0 - blend) * hist_avg
     if hist_std and hist_std > 0:
         std = max(hist_std, _MIN_STD)
     else:
