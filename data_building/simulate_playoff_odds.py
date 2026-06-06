@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+import time
 from collections import defaultdict
 from typing import Optional
 
@@ -80,6 +81,19 @@ _INJURY_HAZARD: dict[str, float] = {
 _INJURY_HAZARD_DEFAULT = 0.05
 _INJURY_REPLACEMENT    = 0.45   # replacement plays at ~45% of the starter's PPG
 
+# Injuries last multiple weeks, not one. When a starter goes down we sample a
+# duration (in weeks) from this distribution; while out, the substitution loss
+# applies every week. The per-week ONSET rate is the position hazard divided by
+# the mean duration, so the total expected games missed stays ≈ the hazard while
+# the misses now cluster into realistic multi-week absences.
+_INJURY_DURATION_CHOICES = (1, 2, 3, 4, 6, 8)
+_INJURY_DURATION_PROBS   = (0.50, 0.20, 0.12, 0.08, 0.06, 0.04)
+_INJURY_MEAN_DURATION    = sum(c * p for c, p in zip(_INJURY_DURATION_CHOICES, _INJURY_DURATION_PROBS))
+
+# Fantasy matchups occasionally tie (identical rounded scores). Treat scores
+# within this margin as a tie worth half a win to each side.
+_TIE_MARGIN = 0.05
+
 
 def _n_byes(playoff_teams: int) -> int:
     """
@@ -113,7 +127,60 @@ def _n_byes(playoff_teams: int) -> int:
 # Public helper — PPG map for use by other modules (e.g. archetype engine)
 # ---------------------------------------------------------------------------
 
-def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
+# In-process cache of built sim states. The Playoff Impact endpoint rebuilds
+# this on every trade edit, but the heavy parts (league context, ~14 weeks of
+# projections, per-team week profiles) only change when the rosters, week, or
+# settings change — so we key on exactly that and reuse otherwise.
+_SIM_STATE_CACHE: dict = {}
+_SIM_STATE_TTL   = 600        # seconds
+_SIM_STATE_MAX   = 64         # cap entries to bound memory
+
+
+def _ctx_signature(ctx: dict, platform: str) -> str:
+    league_id = str(ctx.get("league_id") or "")
+    season    = int(ctx.get("season") or 0)
+    cw        = int(ctx.get("current_week") or 0)
+    settings  = ctx.get("league_settings") or {}
+    h = hashlib.md5()
+    h.update(f"{settings.get('playoff_week_start')}:{settings.get('playoff_teams')};".encode())
+    for r in sorted(ctx.get("rosters") or [], key=lambda x: x.get("roster_id") or 0):
+        pids = ",".join(sorted(str(p) for p in (r.get("players") or [])))
+        h.update(f"{r.get('roster_id')}:{pids};".encode())
+    return f"{platform}:{league_id}:{season}:{cw}:{h.hexdigest()}"
+
+
+def _evict_sim_cache() -> None:
+    if len(_SIM_STATE_CACHE) <= _SIM_STATE_MAX:
+        return
+    # Drop the oldest entries down to the cap.
+    for key in sorted(_SIM_STATE_CACHE, key=lambda k: _SIM_STATE_CACHE[k][0])[
+        : len(_SIM_STATE_CACHE) - _SIM_STATE_MAX
+    ]:
+        _SIM_STATE_CACHE.pop(key, None)
+
+
+def build_sim_state(ctx: dict, platform: str = "sleeper", use_cache: bool = True) -> Optional[dict]:
+    """Cached wrapper around the sim-state build (see _build_sim_state_impl).
+
+    Reuses a recently built state when the league, week, settings, and every
+    roster are unchanged; the swap functions never mutate the state, so sharing
+    it across requests is safe.
+    """
+    if not use_cache:
+        return _build_sim_state_impl(ctx, platform)
+    sig = _ctx_signature(ctx, platform)
+    now = time.time()
+    hit = _SIM_STATE_CACHE.get(sig)
+    if hit and (now - hit[0]) < _SIM_STATE_TTL:
+        return hit[1]
+    state = _build_sim_state_impl(ctx, platform)
+    if state is not None:
+        _SIM_STATE_CACHE[sig] = (now, state)
+        _evict_sim_cache()
+    return state
+
+
+def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
     """
     Build everything needed for trade-swap simulations without running them.
 
@@ -318,21 +385,43 @@ def _viewer_profiles_for_roster(sim_state: dict, viewer_roster_id: int, pids: li
     return out
 
 
-def _override_viewer_profiles(sim_state: dict, viewer_roster_id: int, pids: list) -> dict:
-    """Clone the base week profiles, swapping the viewer's entry for `pids`.
+def _override_profiles(sim_state: dict, overrides: dict) -> dict:
+    """Clone the base week profiles, replacing each {roster_id: pids} override.
 
-    Only the viewer's per-week profile changes; every other team is untouched,
-    so the before/after sims differ by exactly the trade (common random numbers).
+    Every non-overridden team is untouched, so before/after sims differ by
+    exactly the trade (common random numbers).
     """
     base = sim_state.get("week_profiles") or {}
-    viewer_wk = _viewer_profiles_for_roster(sim_state, viewer_roster_id, pids)
+    per_rid_wk = {
+        rid: _viewer_profiles_for_roster(sim_state, rid, pids)
+        for rid, pids in overrides.items()
+    }
     merged: dict[int, dict] = {}
     for week, wp in base.items():
         nwp = dict(wp)
-        if week in viewer_wk:
-            nwp[viewer_roster_id] = viewer_wk[week]
+        for rid, wkprof in per_rid_wk.items():
+            if week in wkprof:
+                nwp[rid] = wkprof[week]
         merged[week] = nwp
     return merged
+
+
+def _override_viewer_profiles(sim_state: dict, viewer_roster_id: int, pids: list) -> dict:
+    """Override just the viewer's roster (used by suggestion-odds swaps)."""
+    return _override_profiles(sim_state, {viewer_roster_id: pids})
+
+
+def _infer_counterparty(roster_pid_map: dict, viewer_roster_id: int, get_pids: list) -> Optional[int]:
+    """The roster that currently owns the most of the incoming players, if any."""
+    gset = set(get_pids)
+    counts: dict[int, int] = {}
+    for rid, pids in (roster_pid_map or {}).items():
+        if rid == viewer_roster_id:
+            continue
+        c = len(gset & set(pids))
+        if c:
+            counts[rid] = c
+    return max(counts, key=counts.get) if counts else None
 
 
 def simulate_swap_impact(
@@ -380,7 +469,18 @@ def simulate_swap_impact(
     after_set = (current_pids_set - set(give_pids)) | set(get_pids)
     after_pids = list(after_set)
 
-    after_profiles = _override_viewer_profiles(sim_state, viewer_roster_id, after_pids)
+    # Reflect both sides of the deal: the players you send away strengthen the
+    # team you receive from (and vice versa), which matters when they're on your
+    # schedule or in your seeding race.
+    overrides = {viewer_roster_id: after_pids}
+    counterparty = _infer_counterparty(
+        sim_state.get("roster_pid_map", {}), viewer_roster_id, get_pids
+    )
+    if counterparty is not None:
+        cp_pids = sim_state.get("roster_pid_map", {}).get(counterparty, [])
+        overrides[counterparty] = list((set(cp_pids) - set(get_pids)) | set(give_pids))
+
+    after_profiles = _override_profiles(sim_state, overrides)
     after_results = _run_mc(sim_state["teams"], matchups, after_profiles,
                             playoff_teams, n_sims, seed)
     after_row = next((r for r in after_results if r["roster_id"] == viewer_roster_id), {})
@@ -1506,26 +1606,51 @@ def _sample_scores(
     return np.maximum(scores, 0).astype(np.float32)
 
 
+def _sample_injury_duration(rng: "np.random.Generator", shape) -> "np.ndarray":
+    """Draw injury durations (weeks) from the empirical distribution.
+
+    Always draws a full `shape` array (even where unused) so the rng stream is
+    consumed identically every week — preserving common random numbers between
+    before/after trade sims.
+    """
+    u = rng.random(shape, dtype=np.float32)
+    dur = np.ones(shape, dtype=np.int16)
+    thresh = 0.0
+    for choice, prob in zip(_INJURY_DURATION_CHOICES, _INJURY_DURATION_PROBS):
+        dur[u >= thresh] = choice
+        thresh += prob
+    return dur
+
+
 def _apply_injuries(
     rng: "np.random.Generator",
     scores: "np.ndarray",
-    params: Optional[tuple["np.ndarray", "np.ndarray"]],
+    lost: Optional["np.ndarray"],
+    onset_haz: Optional["np.ndarray"],
+    state: Optional["np.ndarray"],
     n_sims: int,
-) -> "np.ndarray":
-    """Subtract injury losses from a team's weekly scores.
+) -> tuple["np.ndarray", Optional["np.ndarray"]]:
+    """Subtract multi-week injury losses and advance per-starter injury state.
 
-    For each sim, every starter independently misses the week with its position
-    hazard; a missed starter costs (1 - replacement) of its projected PPG. Using
-    the shared rng keeps the draws part of the common-random-numbers stream, so
-    before/after trade sims stay paired and the delta stays clean.
+    `state` is an (n_sims, k) int array of weeks-remaining-out per starter slot,
+    carried across the schedule. Each week a healthy starter newly goes down with
+    its position ONSET rate and is then out for a sampled duration; while out, the
+    substitution loss (starter − best bench replacement) applies. Returns the
+    adjusted scores and the updated state. The rng is shared so before/after sims
+    stay paired.
     """
-    if params is None:
-        return scores
-    lost, haz = params
-    u = rng.random((n_sims, lost.shape[0]), dtype=np.float32)
-    out_mask = u < haz                       # (n_sims, k); haz broadcasts per column
-    lost_pts = (out_mask * lost).sum(axis=1)  # (n_sims,)
-    return np.maximum(scores - lost_pts, 0).astype(np.float32)
+    if lost is None or state is None or lost.shape[0] == 0:
+        return scores, state
+    k = lost.shape[0]
+    cur = state[:, :k]
+    currently_out = cur > 0
+    onset = (~currently_out) & (rng.random((n_sims, k), dtype=np.float32) < onset_haz)
+    dur = _sample_injury_duration(rng, (n_sims, k))
+    cur = np.where(onset, dur, cur)
+    is_out = cur > 0
+    lost_pts = (is_out * lost).sum(axis=1)
+    state[:, :k] = np.maximum(cur - 1, 0)   # decrement for next week
+    return np.maximum(scores - lost_pts, 0).astype(np.float32), state
 
 
 def _run_mc(
@@ -1555,8 +1680,20 @@ def _run_mc(
     def _profile(week: int, rid: int):
         p = (week_profiles.get(week) or {}).get(rid)
         if p is not None:
-            return p["mean"], p["std"], (p["lost"], p["haz"])
-        return fb_avg.get(rid, 0.0), fb_std.get(rid, _MIN_STD), None
+            onset = p["haz"] / np.float32(_INJURY_MEAN_DURATION) if p["haz"].shape[0] else p["haz"]
+            return p["mean"], p["std"], p["lost"], onset
+        return fb_avg.get(rid, 0.0), fb_std.get(rid, _MIN_STD), None, None
+
+    # Per-team injury state (weeks remaining out per starter slot), carried across
+    # the schedule so a single injury spans multiple weeks. Sized to each team's
+    # largest weekly starter count.
+    kmax: dict = {}
+    for wp in week_profiles.values():
+        for rid, p in wp.items():
+            kmax[rid] = max(kmax.get(rid, 0), int(p["lost"].shape[0]))
+    inj_state = {
+        rid: np.zeros((n_sims, k), dtype=np.int16) for rid, k in kmax.items() if k
+    }
 
     wins = np.tile([t["wins"] for t in teams], (n_sims, 1)).astype(np.float32)
     pf   = np.tile([t["pf"]   for t in teams], (n_sims, 1)).astype(np.float32)
@@ -1567,23 +1704,31 @@ def _run_mc(
     # gets a bye, so they play fewer games than len(matchups_by_week).
     games_per_team = np.zeros(n, dtype=np.float32)
 
-    for week, week_pairs in matchups_by_week.items():
-        for (rid_a, rid_b) in week_pairs:
+    # Chronological order so multi-week injuries carry forward correctly.
+    for week in sorted(matchups_by_week.keys()):
+        for (rid_a, rid_b) in matchups_by_week[week]:
             ia = idx.get(rid_a)
             ib = idx.get(rid_b)
             if ia is None or ib is None:
                 continue
             games_per_team[ia] += 1
             games_per_team[ib] += 1
-            mean_a, std_a, inj_a = _profile(week, rid_a)
-            mean_b, std_b, inj_b = _profile(week, rid_b)
+            mean_a, std_a, lost_a, onset_a = _profile(week, rid_a)
+            mean_b, std_b, lost_b, onset_b = _profile(week, rid_b)
             sa = _sample_scores(rng, mean_a, std_a, n_sims)
-            sa = _apply_injuries(rng, sa, inj_a, n_sims)
+            sa, st = _apply_injuries(rng, sa, lost_a, onset_a, inj_state.get(rid_a), n_sims)
+            if st is not None:
+                inj_state[rid_a] = st
             sb = _sample_scores(rng, mean_b, std_b, n_sims)
-            sb = _apply_injuries(rng, sb, inj_b, n_sims)
-            a_wins = sa > sb
-            wins[:, ia] += a_wins.astype(np.float32)
-            wins[:, ib] += (~a_wins).astype(np.float32)
+            sb, st = _apply_injuries(rng, sb, lost_b, onset_b, inj_state.get(rid_b), n_sims)
+            if st is not None:
+                inj_state[rid_b] = st
+            # Ties: near-identical scores split the win (half each).
+            tie    = np.abs(sa - sb) < _TIE_MARGIN
+            a_wins = (sa > sb) & ~tie
+            b_wins = (sb > sa) & ~tie
+            wins[:, ia] += a_wins.astype(np.float32) + 0.5 * tie.astype(np.float32)
+            wins[:, ib] += b_wins.astype(np.float32) + 0.5 * tie.astype(np.float32)
             pf[:, ia]   += sa
             pf[:, ib]   += sb
 
