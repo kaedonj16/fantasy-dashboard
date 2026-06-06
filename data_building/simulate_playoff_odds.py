@@ -75,6 +75,17 @@ _SUPER_FLEX_POS = {"SUPER_FLEX", "SUPERFLEX", "QB/WR/RB/TE", "OP"}
 # approximations from empirical NFL availability by position (RBs miss the most,
 # QBs the least). This injects realistic week-to-week downside that the smooth
 # scoring distribution alone doesn't capture.
+# Lineup-efficiency nudge weight.  The raw efficiency ratio (actual/optimal from
+# prior seasons) typically spans 0.80–1.00, a 20-point range.  Applying it
+# directly knocks 15-20 % off a top team's projection — empirically too large;
+# real-world manager-skill differences amount to ~2-3 pts/week.  We compress the
+# ratio toward 1.0 by this factor so the actual PPG impact stays realistic:
+#   eff 0.80 → eff_factor 0.95  (-5 %)
+#   eff 0.85 → eff_factor 0.96  (-3.75 %)
+#   eff 0.95 → eff_factor 0.99  (-1.25 %)
+#   eff 1.00 → eff_factor 1.00  (no change)
+_EFFICIENCY_WEIGHT = 0.25
+
 _INJURY_HAZARD: dict[str, float] = {
     "QB": 0.03, "RB": 0.07, "WR": 0.05, "TE": 0.05, "K": 0.01, "DEF": 0.0,
 }
@@ -1008,12 +1019,15 @@ def _team_week_profile(
     proj, starters, repls = _lineup_with_replacements(
         pids, ppg_map, pos_map, roster_positions
     )
-    mean = blend * efficiency * proj + (1.0 - blend) * hist_avg
+    # Compress the efficiency ratio toward 1.0 so manager skill nudges PPG by
+    # ~2-3 pts rather than applying a full 15-20 % discount to the projection.
+    eff_factor = 1.0 + (efficiency - 1.0) * _EFFICIENCY_WEIGHT
+    mean = blend * eff_factor * proj + (1.0 - blend) * hist_avg
     if hist_std and hist_std > 0:
         std = max(hist_std, _MIN_STD)
     else:
-        std = max(_team_std_from_starters(starters), _MIN_STD) * efficiency
-    scale = blend * efficiency
+        std = max(_team_std_from_starters(starters), _MIN_STD) * eff_factor
+    scale = blend * eff_factor
     lost = np.array(
         [max(s_ppg - r_ppg, 0.0) * scale for (_, s_ppg), r_ppg in zip(starters, repls)],
         dtype=np.float32,
