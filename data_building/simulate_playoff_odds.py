@@ -153,20 +153,23 @@ def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
             if rid is not None:
                 division_map[int(rid)] = div
 
-    ppg_map, pos_map = build_ppg_map(ctx)
+    season_ppg_map, pos_map = build_ppg_map(ctx)
     roster_positions = ctx.get("roster_positions") or []
+    raw_ss           = ctx.get("raw_scoring_settings") or {}
 
     team_stats = ctx.get("team_stats")
     has_games  = team_stats is not None and not team_stats.empty
 
     if not has_games:
-        # Share the exact PPG map used by swap sims so baseline == no-op swap.
-        # Offseason team avg is 100% projection, so swaps use blend = 1.0.
-        teams = _estimate_from_rosters(ctx, ppg_map=ppg_map, pos_map=pos_map)
+        # Preseason / offseason: project from rosters. blend = 1.0 → per-week
+        # mean is the pure weekly Sleeper projection.
+        teams = _estimate_from_rosters(ctx, ppg_map=season_ppg_map, pos_map=pos_map)
         if not teams:
             return None
         remaining_weeks = list(range(1, playoff_week_start))
         blend_factor = 1.0
+        hist_avg_by_rid = {t["roster_id"]: 0.0 for t in teams}
+        hist_std_by_rid = {t["roster_id"]: 0.0 for t in teams}
     else:
         if current_week > regular_season_end:
             return None  # season complete — no simulation
@@ -174,11 +177,12 @@ def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
         if not teams:
             return None
         remaining_weeks = list(range(current_week + 1, playoff_week_start))
-        # In-season avg blends historical results with weekly projections.
-        # Swaps must apply the same blend factor to the projection delta so a
-        # no-op swap leaves the avg unchanged.
+        # In-season: per-week mean blends that week's projection with the team's
+        # season-to-date average (captured here BEFORE any mutation) and realized
+        # weekly std. The per-week profiles apply the blend themselves.
         blend_factor = _WEEKLY_BLEND
-        _blend_weekly_projections(teams, ctx, season, current_week + 1, blend=blend_factor)
+        hist_avg_by_rid = {t["roster_id"]: float(t["avg"]) for t in teams}
+        hist_std_by_rid = {t["roster_id"]: float(t["std"]) for t in teams}
 
     matchups = _resolve_schedule(
         platform, league_id, season, remaining_weeks, teams, division_map
@@ -190,17 +194,54 @@ def build_sim_state(ctx: dict, platform: str = "sleeper") -> Optional[dict]:
         if rid is not None:
             roster_pid_map[int(rid)] = [str(p) for p in (r.get("players") or [])]
 
+    # Manager lineup efficiency (actual/optimal from prior seasons), cache-only.
+    efficiency_by_rid = _load_efficiency(platform, league_id, season, roster_pid_map.keys())
+
+    # Per-week Sleeper projection maps and the resulting per-team week profiles.
+    week_ppg_maps = _build_week_ppg_maps(
+        season, remaining_weeks, raw_ss, pos_map, season_ppg_map
+    )
+    week_profiles = _compute_week_profiles(
+        roster_pid_map, week_ppg_maps, pos_map, roster_positions,
+        hist_avg_by_rid, hist_std_by_rid, blend_factor, efficiency_by_rid,
+    )
+
     return {
         "teams":            teams,
         "matchups":         matchups,
         "playoff_teams":    playoff_teams,
         "seed":             seed,
-        "ppg_map":          ppg_map,
+        "ppg_map":          season_ppg_map,
         "pos_map":          pos_map,
         "roster_positions": roster_positions,
         "roster_pid_map":   roster_pid_map,
         "blend":            blend_factor,
+        "week_ppg_maps":    week_ppg_maps,
+        "week_profiles":    week_profiles,
+        "hist_avg_by_rid":  hist_avg_by_rid,
+        "hist_std_by_rid":  hist_std_by_rid,
+        "efficiency_by_rid": efficiency_by_rid,
     }
+
+
+def _load_efficiency(platform, league_id, season, roster_ids) -> dict[int, float]:
+    """Read cached per-manager lineup efficiency; default 1.0 (no adjustment)."""
+    try:
+        from dashboard_services.lineup_efficiency import get_efficiency
+        eff = get_efficiency(platform, league_id, season) or {}
+    except Exception:
+        eff = {}
+    return {int(rid): float(eff.get(int(rid), eff.get(str(rid), 1.0))) for rid in roster_ids}
+
+
+def _viewer_week_mean(week_profiles: dict, viewer_roster_id: int) -> float:
+    """Average of the viewer's per-week means — their effective projected PPG."""
+    means = [
+        wp[viewer_roster_id]["mean"]
+        for wp in week_profiles.values()
+        if viewer_roster_id in wp
+    ]
+    return round(sum(means) / len(means), 1) if means else 0.0
 
 
 def run_base_simulation(sim_state: dict, n_sims: int = 2000) -> dict[int, float]:
@@ -209,7 +250,7 @@ def run_base_simulation(sim_state: dict, n_sims: int = 2000) -> dict[int, float]
     Returns {roster_id: playoff_pct (0–100)}.
     """
     result = _run_mc(
-        sim_state["teams"], sim_state["matchups"],
+        sim_state["teams"], sim_state["matchups"], sim_state.get("week_profiles") or {},
         sim_state["playoff_teams"], n_sims, sim_state.get("seed"),
     )
     return {r["roster_id"]: r["playoff_pct"] for r in result}
@@ -245,45 +286,53 @@ def simulate_with_swap(
     factor applied to the team's blended baseline, so only the trade's true
     effect moves the odds.
     """
-    ppg_map          = sim_state["ppg_map"]
-    pos_map          = sim_state["pos_map"]
-    roster_positions = sim_state["roster_positions"]
-    blend            = float(sim_state.get("blend", 1.0))
-
-    viewer_team = next(
-        (t for t in sim_state["teams"] if t["roster_id"] == viewer_roster_id), None
+    after_profiles = _override_viewer_profiles(
+        sim_state, viewer_roster_id, viewer_pids_after
     )
-    current_avg = viewer_team["avg"] if viewer_team else 0.0
+    new_avg = _viewer_week_mean(after_profiles, viewer_roster_id)
 
-    proj_after, after_starters = _position_aware_lineup(
-        viewer_pids_after, ppg_map, pos_map, roster_positions
+    result = _run_mc(
+        sim_state["teams"], sim_state["matchups"], after_profiles,
+        sim_state["playoff_teams"], n_sims, sim_state.get("seed"),
     )
-
-    if blend >= 1.0:
-        new_avg = proj_after
-    else:
-        before_pids = sim_state.get("roster_pid_map", {}).get(viewer_roster_id, [])
-        proj_before, _ = _position_aware_lineup(
-            before_pids, ppg_map, pos_map, roster_positions
-        )
-        new_avg = current_avg + blend * (proj_after - proj_before)
-
-    new_std = max(_team_std_from_starters(after_starters), _MIN_STD)
-
-    teams = [
-        {**t, "avg": round(new_avg, 1), "std": round(new_std, 1),
-         "starters": after_starters}
-        if t["roster_id"] == viewer_roster_id else t
-        for t in sim_state["teams"]
-    ]
-
-    result = _run_mc(teams, sim_state["matchups"], sim_state["playoff_teams"],
-                     n_sims, sim_state.get("seed"))
     for r in result:
         if r["roster_id"] == viewer_roster_id:
             return r["playoff_pct"], new_avg
 
     return 0.0, new_avg
+
+
+def _viewer_profiles_for_roster(sim_state: dict, viewer_roster_id: int, pids: list) -> dict:
+    """Per-week profile for the viewer's hypothetical roster (one entry per week)."""
+    eff      = float((sim_state.get("efficiency_by_rid") or {}).get(viewer_roster_id, 1.0))
+    hist_avg = float((sim_state.get("hist_avg_by_rid") or {}).get(viewer_roster_id, 0.0))
+    hist_std = float((sim_state.get("hist_std_by_rid") or {}).get(viewer_roster_id, 0.0))
+    blend    = float(sim_state.get("blend", 1.0))
+    pos_map  = sim_state["pos_map"]
+    rpos     = sim_state["roster_positions"]
+    out: dict[int, dict] = {}
+    for week, ppg_map in (sim_state.get("week_ppg_maps") or {}).items():
+        out[week] = _team_week_profile(
+            pids, ppg_map, pos_map, rpos, hist_avg, hist_std, blend, eff
+        )
+    return out
+
+
+def _override_viewer_profiles(sim_state: dict, viewer_roster_id: int, pids: list) -> dict:
+    """Clone the base week profiles, swapping the viewer's entry for `pids`.
+
+    Only the viewer's per-week profile changes; every other team is untouched,
+    so the before/after sims differ by exactly the trade (common random numbers).
+    """
+    base = sim_state.get("week_profiles") or {}
+    viewer_wk = _viewer_profiles_for_roster(sim_state, viewer_roster_id, pids)
+    merged: dict[int, dict] = {}
+    for week, wp in base.items():
+        nwp = dict(wp)
+        if week in viewer_wk:
+            nwp[viewer_roster_id] = viewer_wk[week]
+        merged[week] = nwp
+    return merged
 
 
 def simulate_swap_impact(
@@ -306,13 +355,10 @@ def simulate_swap_impact(
     if not sim_state:
         return {"available": False}
 
-    ppg_map          = sim_state["ppg_map"]
-    pos_map          = sim_state["pos_map"]
-    roster_positions = sim_state["roster_positions"]
-    blend            = float(sim_state.get("blend", 1.0))
     matchups         = sim_state["matchups"]
     playoff_teams    = sim_state["playoff_teams"]
     seed             = sim_state.get("seed")
+    base_profiles    = sim_state.get("week_profiles") or {}
 
     viewer_team = next(
         (t for t in sim_state["teams"] if t["roster_id"] == viewer_roster_id), None
@@ -320,8 +366,9 @@ def simulate_swap_impact(
     if viewer_team is None:
         return {"available": False}
 
-    # Before simulation
-    before_results = _run_mc(sim_state["teams"], matchups, playoff_teams, n_sims, seed)
+    # Before simulation (base profiles already reflect the viewer's current roster)
+    before_results = _run_mc(sim_state["teams"], matchups, base_profiles,
+                             playoff_teams, n_sims, seed)
     before_row = next((r for r in before_results if r["roster_id"] == viewer_roster_id), {})
 
     # Compute after roster
@@ -333,36 +380,22 @@ def simulate_swap_impact(
     after_set = (current_pids_set - set(give_pids)) | set(get_pids)
     after_pids = list(after_set)
 
-    proj_after, after_starters = _position_aware_lineup(
-        after_pids, ppg_map, pos_map, roster_positions
-    )
-
-    if blend >= 1.0:
-        new_avg = proj_after
-    else:
-        proj_before, _ = _position_aware_lineup(
-            current_pids, ppg_map, pos_map, roster_positions
-        )
-        new_avg = viewer_team["avg"] + blend * (proj_after - proj_before)
-
-    new_std = max(_team_std_from_starters(after_starters), _MIN_STD)
-
-    after_teams = [
-        {**t, "avg": round(new_avg, 1), "std": round(new_std, 1),
-         "starters": after_starters}
-        if t["roster_id"] == viewer_roster_id else t
-        for t in sim_state["teams"]
-    ]
-    after_results = _run_mc(after_teams, matchups, playoff_teams, n_sims, seed)
+    after_profiles = _override_viewer_profiles(sim_state, viewer_roster_id, after_pids)
+    after_results = _run_mc(sim_state["teams"], matchups, after_profiles,
+                            playoff_teams, n_sims, seed)
     after_row = next((r for r in after_results if r["roster_id"] == viewer_roster_id), {})
 
     import statistics
-    league_avgs = [t["avg"] for t in sim_state["teams"] if t["avg"] > 0]
+    league_avgs = [
+        _viewer_week_mean(base_profiles, t["roster_id"]) for t in sim_state["teams"]
+    ]
+    league_avgs = [a for a in league_avgs if a > 0]
     league_avg_ppg = round(statistics.median(league_avgs), 1) if league_avgs else 0.0
 
+    new_avg      = _viewer_week_mean(after_profiles, viewer_roster_id)
     before_po    = round(float(before_row.get("playoff_pct",    0)), 1)
     before_wins  = round(float(before_row.get("avg_final_wins", 0)), 1)
-    before_ppg   = round(float(viewer_team["avg"]), 1)
+    before_ppg   = _viewer_week_mean(base_profiles, viewer_roster_id)
     before_top3  = round(float(before_row.get("top3_pick_pct",  0)), 1)
     after_po     = round(float(after_row.get("playoff_pct",     0)), 1)
     after_wins   = round(float(after_row.get("avg_final_wins",  0)), 1)
@@ -534,19 +567,27 @@ def simulate_playoff_odds(
     team_stats = ctx.get("team_stats")
     has_games  = team_stats is not None and not team_stats.empty
 
+    roster_positions = ctx.get("roster_positions") or []
+
     # ── Case 1: no game data yet (preseason / offseason of new year) ─────────
     if not has_games:
         # Build the PPG map Sleeper-first (same source as in-season / swap sims)
         # so projections come from Sleeper at all points, not FantasyPros.
-        ppg_map, pos_map = build_ppg_map(ctx)
-        teams = _estimate_from_rosters(ctx, ppg_map=ppg_map, pos_map=pos_map)
+        season_ppg_map, pos_map = build_ppg_map(ctx)
+        teams = _estimate_from_rosters(ctx, ppg_map=season_ppg_map, pos_map=pos_map)
         if not teams:
             return []
         remaining_weeks = list(range(1, playoff_week_start))
         matchups_by_week = _resolve_schedule(
             platform, league_id, season, remaining_weeks, teams, division_map
         )
-        result = _run_mc(teams, matchups_by_week, playoff_teams, n_sims, seed)
+        hist_avg = {t["roster_id"]: 0.0 for t in teams}
+        hist_std = {t["roster_id"]: 0.0 for t in teams}
+        week_profiles = _build_ctx_week_profiles(
+            ctx, platform, league_id, season, remaining_weeks, 1.0,
+            hist_avg, hist_std, pos_map, season_ppg_map, roster_positions,
+        )
+        result = _run_mc(teams, matchups_by_week, week_profiles, playoff_teams, n_sims, seed)
         for r in result:
             r["is_projected"] = True
         return result
@@ -565,15 +606,41 @@ def simulate_playoff_odds(
         platform, league_id, season, remaining_weeks, teams, division_map
     )
 
-    # Blend historical team avg with Sleeper's upcoming-week player projections.
-    # Using 30 % weekly projection + 70 % season average keeps the estimate
-    # stable while still reflecting injuries and matchups.
-    _blend_weekly_projections(teams, ctx, season, current_week + 1)
+    # Each remaining week uses that week's Sleeper projection blended with the
+    # team's season-to-date average (captured before any mutation), so byes and
+    # week-specific matchups flow through while keeping realized-scoring signal.
+    season_ppg_map, pos_map = build_ppg_map(ctx)
+    hist_avg = {t["roster_id"]: float(t["avg"]) for t in teams}
+    hist_std = {t["roster_id"]: float(t["std"]) for t in teams}
+    week_profiles = _build_ctx_week_profiles(
+        ctx, platform, league_id, season, remaining_weeks, _WEEKLY_BLEND,
+        hist_avg, hist_std, pos_map, season_ppg_map, roster_positions,
+    )
 
-    result = _run_mc(teams, matchups_by_week, playoff_teams, n_sims, seed)
+    result = _run_mc(teams, matchups_by_week, week_profiles, playoff_teams, n_sims, seed)
     for r in result:
         r["is_projected"] = False
     return result
+
+
+def _build_ctx_week_profiles(
+    ctx, platform, league_id, season, remaining_weeks, blend,
+    hist_avg_by_rid, hist_std_by_rid, pos_map, season_ppg_map, roster_positions,
+) -> dict:
+    """Shared per-week profile builder for the standalone playoff-odds page."""
+    raw_ss = ctx.get("raw_scoring_settings") or {}
+    roster_pid_map = {
+        int(r["roster_id"]): [str(p) for p in (r.get("players") or [])]
+        for r in (ctx.get("rosters") or []) if r.get("roster_id") is not None
+    }
+    eff = _load_efficiency(platform, league_id, season, roster_pid_map.keys())
+    week_ppg_maps = _build_week_ppg_maps(
+        season, remaining_weeks, raw_ss, pos_map, season_ppg_map
+    )
+    return _compute_week_profiles(
+        roster_pid_map, week_ppg_maps, pos_map, roster_positions,
+        hist_avg_by_rid, hist_std_by_rid, blend, eff,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -686,6 +753,239 @@ def _position_aware_lineup(
 
     total = sum(ppg for _, ppg in starters)
     return total, starters
+
+
+def _lineup_with_replacements(
+    pids: list,
+    ppg_map: dict,
+    pos_map: dict,
+    roster_positions: list,
+) -> tuple[float, list[tuple[str, float]], list[float]]:
+    """Optimal lineup plus, for each starter, the best benched replacement.
+
+    Returns (total, starters, replacements) where:
+      - starters       — [(pos, ppg), …] for each starting slot
+      - replacements   — [replacement_ppg, …] aligned to starters: the projected
+                         points of the best healthy rostered player eligible for
+                         that slot if the starter is unavailable that week.
+
+    Used by the injury model so an injured starter is replaced by the next best
+    available player on the roster (the realistic loss = starter − replacement),
+    not a flat fraction. Replacements are computed independently per starter
+    (single-injury assumption), which slightly understates rare multi-injury
+    weeks at one position — an acceptable approximation.
+    """
+    # Tally starting slots by type (mirrors _position_aware_lineup)
+    fixed_slots: dict[str, int] = {}
+    flex_slots  = 0
+    sflex_slots = 0
+    for slot in roster_positions:
+        s = str(slot).upper()
+        if s in _BENCH_SLOTS:
+            continue
+        if s in _SUPER_FLEX_POS:
+            sflex_slots += 1
+        elif s in _FLEX_POSITIONS:
+            flex_slots += 1
+        else:
+            fixed_slots[s] = fixed_slots.get(s, 0) + 1
+
+    # Per-position fallback averages for players lacking a projection
+    _pos_totals: dict[str, list] = {}
+    for _info in ppg_map.values():
+        _p, _g = _info.get("pos", ""), _info.get("ppg", 0)
+        if _p and _g > 0:
+            if _p not in _pos_totals:
+                _pos_totals[_p] = [_g, 1]
+            else:
+                _pos_totals[_p][0] += _g
+                _pos_totals[_p][1] += 1
+    pos_fallback = {p: v[0] / v[1] for p, v in _pos_totals.items()}
+
+    by_pos: dict[str, list[float]] = {}
+    for pid in pids:
+        info = ppg_map.get(str(pid))
+        if info:
+            pos = info["pos"]
+            ppg = info["ppg"] if info["ppg"] > 0 else (
+                pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+            )
+        else:
+            pos = pos_map.get(str(pid), "")
+            ppg = pos_fallback.get(pos) or _ROOKIE_PPG.get(pos, _ROOKIE_PPG_DEFAULT)
+        if pos:
+            by_pos.setdefault(pos, []).append(ppg)
+    for pos in by_pos:
+        by_pos[pos].sort(reverse=True)
+
+    used: dict[str, int] = {}
+    # Each starter recorded as (pos, ppg, slot_type) so we can find its replacement
+    starters_full: list[tuple[str, float, str]] = []
+
+    for slot_pos, count in fixed_slots.items():
+        pool = by_pos.get(slot_pos, [])
+        for _ in range(count):
+            i = used.get(slot_pos, 0)
+            ppg = pool[i] if i < len(pool) else 0.0
+            starters_full.append((slot_pos, ppg, slot_pos))
+            used[slot_pos] = i + 1
+
+    flex_pool = sorted(
+        [(pos, ppg) for pos in _FLEX_ELIGIBLE
+         for ppg in by_pos.get(pos, [])[used.get(pos, 0):]],
+        key=lambda x: x[1], reverse=True,
+    )
+    for i in range(flex_slots):
+        if i < len(flex_pool):
+            pos, ppg = flex_pool[i]
+            starters_full.append((pos, ppg, "FLEX"))
+            used[pos] = used.get(pos, 0) + 1
+    remaining_after_flex = flex_pool[flex_slots:]
+
+    sflex_pool = sorted(
+        [("QB", ppg) for ppg in by_pos.get("QB", [])[used.get("QB", 0):]]
+        + remaining_after_flex,
+        key=lambda x: x[1], reverse=True,
+    )
+    for i in range(sflex_slots):
+        if i < len(sflex_pool):
+            pos, ppg = sflex_pool[i]
+            starters_full.append((pos, ppg, "SFLEX"))
+            used[pos] = used.get(pos, 0) + 1
+
+    # Best benched player per position (first beyond the starters already used)
+    def _best_bench(positions: set) -> float:
+        best = 0.0
+        for p in positions:
+            pool = by_pos.get(p, [])
+            i = used.get(p, 0)
+            if i < len(pool):
+                best = max(best, pool[i])
+        return best
+
+    starters: list[tuple[str, float]] = []
+    replacements: list[float] = []
+    for pos, ppg, slot_type in starters_full:
+        if slot_type == "FLEX":
+            repl = _best_bench(_FLEX_ELIGIBLE)
+        elif slot_type == "SFLEX":
+            repl = _best_bench({"QB"} | _FLEX_ELIGIBLE)
+        else:
+            repl = _best_bench({slot_type})
+        starters.append((pos, ppg))
+        replacements.append(repl)
+
+    total = sum(ppg for _, ppg in starters)
+    return total, starters, replacements
+
+
+def _team_week_profile(
+    pids: list,
+    ppg_map: dict,
+    pos_map: dict,
+    roster_positions: list,
+    hist_avg: float,
+    hist_std: float,
+    blend: float,
+    efficiency: float,
+) -> dict:
+    """Build a single team's (mean, std, injury params) for one week.
+
+    mean = efficiency × (blend × week_projection + (1−blend) × season_avg)
+    Preseason uses blend = 1.0 (pure weekly projection); in-season blends the
+    week's projection with the season-to-date average. Efficiency scales the
+    whole output by the manager's historical actual/optimal ratio.
+
+    Injury loss per starter = (starter − best replacement) put on the same scale
+    as the mean (× blend × efficiency), so a no-op stays a no-op and in-season
+    injuries are discounted consistently with the projection's weight.
+    """
+    proj, starters, repls = _lineup_with_replacements(
+        pids, ppg_map, pos_map, roster_positions
+    )
+    mean = efficiency * (blend * proj + (1.0 - blend) * hist_avg)
+    if hist_std and hist_std > 0:
+        std = max(hist_std, _MIN_STD)
+    else:
+        std = max(_team_std_from_starters(starters), _MIN_STD) * efficiency
+    scale = blend * efficiency
+    lost = np.array(
+        [max(s_ppg - r_ppg, 0.0) * scale for (_, s_ppg), r_ppg in zip(starters, repls)],
+        dtype=np.float32,
+    )
+    haz = np.array(
+        [_INJURY_HAZARD.get(str(pos).upper(), _INJURY_HAZARD_DEFAULT) for pos, _ in starters],
+        dtype=np.float32,
+    )
+    return {"mean": round(mean, 2), "std": round(std, 2), "lost": lost, "haz": haz}
+
+
+def _build_week_ppg_maps(
+    season: int,
+    weeks: list[int],
+    raw_scoring_settings: dict,
+    pos_map: dict,
+    season_ppg_map: dict,
+) -> dict[int, dict]:
+    """Fetch each week's Sleeper projections so the sim uses week-specific PPG.
+
+    Weekly maps are disk-cached (get_week_projections_cached) so repeated sims
+    are cheap. A player's bye week naturally yields no weekly entry (PPG 0), so
+    the optimal lineup routes around it. If a week's Sleeper map is too sparse
+    (future weeks not yet published preseason), that week falls back to the
+    robust season baseline map so team strength never collapses to zero.
+    """
+    out: dict[int, dict] = {}
+    try:
+        from utils.utils import (
+            fetch_week_projections, get_week_projections_cached, pick_proj_variant,
+        )
+    except Exception:
+        return {w: season_ppg_map for w in weeks}
+
+    variant = pick_proj_variant(raw_scoring_settings)
+    for w in weeks:
+        wk_map: dict = {}
+        try:
+            multi = get_week_projections_cached(
+                season, w,
+                lambda s, wk: fetch_week_projections(s, wk, raw_scoring_settings),
+            ) or {}
+            for pid, variants in multi.items():
+                if not isinstance(variants, dict):
+                    continue
+                pts = variants.get(variant) or variants.get("ppr") or 0.0
+                if pts > 0:
+                    wk_map[str(pid)] = {"ppg": float(pts), "pos": pos_map.get(str(pid), "")}
+        except Exception:
+            wk_map = {}
+        # Too sparse to be a real weekly slate → use the season baseline instead.
+        out[w] = wk_map if len(wk_map) >= 50 else season_ppg_map
+    return out
+
+
+def _compute_week_profiles(
+    roster_pid_map: dict[int, list],
+    week_ppg_maps: dict[int, dict],
+    pos_map: dict,
+    roster_positions: list,
+    hist_avg_by_rid: dict[int, float],
+    hist_std_by_rid: dict[int, float],
+    blend: float,
+    eff_by_rid: dict[int, float],
+) -> dict[int, dict]:
+    """Per-week (mean, std, injury params) for every team."""
+    profiles: dict[int, dict] = {}
+    for week, ppg_map in week_ppg_maps.items():
+        wp: dict[int, dict] = {}
+        for rid, pids in roster_pid_map.items():
+            wp[rid] = _team_week_profile(
+                pids, ppg_map, pos_map, roster_positions,
+                hist_avg_by_rid.get(rid, 0.0), hist_std_by_rid.get(rid, 0.0),
+                blend, eff_by_rid.get(rid, 1.0),
+            )
+        profiles[week] = wp
+    return profiles
 
 
 def _estimate_from_rosters(
@@ -1206,27 +1506,6 @@ def _sample_scores(
     return np.maximum(scores, 0).astype(np.float32)
 
 
-def _injury_params(team: dict) -> Optional[tuple["np.ndarray", "np.ndarray"]]:
-    """Precompute (lost_points, hazard) arrays per starter for a team.
-
-    Returns None when the team has no starter breakdown (e.g. in-season teams
-    whose weekly projections were unavailable), in which case injuries are
-    skipped for that team.
-    """
-    starters = team.get("starters") or []
-    if not starters:
-        return None
-    lost = np.array(
-        [(1.0 - _INJURY_REPLACEMENT) * float(ppg) for _, ppg in starters],
-        dtype=np.float32,
-    )
-    haz = np.array(
-        [_INJURY_HAZARD.get(str(pos).upper(), _INJURY_HAZARD_DEFAULT) for pos, _ in starters],
-        dtype=np.float32,
-    )
-    return lost, haz
-
-
 def _apply_injuries(
     rng: "np.random.Generator",
     scores: "np.ndarray",
@@ -1252,17 +1531,32 @@ def _apply_injuries(
 def _run_mc(
     teams: list[dict],
     matchups_by_week: dict[int, list[tuple[int, int]]],
+    week_profiles: dict[int, dict],
     playoff_teams: int,
     n_sims: int,
     seed: Optional[int],
 ) -> list[dict]:
+    """Vectorised Monte Carlo over the remaining schedule.
+
+    Each week pulls that team's week-specific (mean, std, injury params) from
+    week_profiles[week][roster_id], so the sim uses Sleeper's projection for
+    that exact week (handling byes and matchup-specific strength) and the
+    per-week injury substitution loss. Falls back to a team's stored avg/std if
+    a week profile is missing.
+    """
     rng = np.random.default_rng(seed)
     n   = len(teams)
     idx = {t["roster_id"]: i for i, t in enumerate(teams)}
 
-    avgs = np.array([t["avg"] for t in teams], dtype=np.float32)
-    stds = np.array([t["std"] for t in teams], dtype=np.float32)
-    injury_params = [_injury_params(t) for t in teams]
+    # Fallback mean/std per team if a given week has no profile entry.
+    fb_avg = {t["roster_id"]: float(t.get("avg", 0.0)) for t in teams}
+    fb_std = {t["roster_id"]: max(float(t.get("std", _MIN_STD)), _MIN_STD) for t in teams}
+
+    def _profile(week: int, rid: int):
+        p = (week_profiles.get(week) or {}).get(rid)
+        if p is not None:
+            return p["mean"], p["std"], (p["lost"], p["haz"])
+        return fb_avg.get(rid, 0.0), fb_std.get(rid, _MIN_STD), None
 
     wins = np.tile([t["wins"] for t in teams], (n_sims, 1)).astype(np.float32)
     pf   = np.tile([t["pf"]   for t in teams], (n_sims, 1)).astype(np.float32)
@@ -1273,7 +1567,7 @@ def _run_mc(
     # gets a bye, so they play fewer games than len(matchups_by_week).
     games_per_team = np.zeros(n, dtype=np.float32)
 
-    for week_pairs in matchups_by_week.values():
+    for week, week_pairs in matchups_by_week.items():
         for (rid_a, rid_b) in week_pairs:
             ia = idx.get(rid_a)
             ib = idx.get(rid_b)
@@ -1281,10 +1575,12 @@ def _run_mc(
                 continue
             games_per_team[ia] += 1
             games_per_team[ib] += 1
-            sa = _sample_scores(rng, avgs[ia], stds[ia], n_sims)
-            sa = _apply_injuries(rng, sa, injury_params[ia], n_sims)
-            sb = _sample_scores(rng, avgs[ib], stds[ib], n_sims)
-            sb = _apply_injuries(rng, sb, injury_params[ib], n_sims)
+            mean_a, std_a, inj_a = _profile(week, rid_a)
+            mean_b, std_b, inj_b = _profile(week, rid_b)
+            sa = _sample_scores(rng, mean_a, std_a, n_sims)
+            sa = _apply_injuries(rng, sa, inj_a, n_sims)
+            sb = _sample_scores(rng, mean_b, std_b, n_sims)
+            sb = _apply_injuries(rng, sb, inj_b, n_sims)
             a_wins = sa > sb
             wins[:, ia] += a_wins.astype(np.float32)
             wins[:, ib] += (~a_wins).astype(np.float32)
