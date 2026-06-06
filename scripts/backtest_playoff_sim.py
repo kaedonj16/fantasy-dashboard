@@ -23,8 +23,13 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import sys
 from typing import List, Tuple
+
+# Allow running as a plain script (python scripts/backtest_playoff_sim.py) by
+# putting the repo root on the path so `app` and `data_building` import.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def calibration_report(samples: List[Tuple[float, bool]], n_bins: int = 10) -> str:
