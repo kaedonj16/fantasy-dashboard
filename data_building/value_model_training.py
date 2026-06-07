@@ -537,12 +537,7 @@ def rewrite_value_table_with_model() -> Path:
     # Build vendor value lookup for 1QB
     vendor_values: dict[str, float] = {}
 
-    # Get FC values normalized to 999.9 scale
-    print(f"[DEBUG] fc_df.empty: {fc_df.empty}")
-    print(f"[DEBUG] 'fc_value' in fc_df.columns: {'fc_value' in fc_df.columns}")
-    print(f"[DEBUG] 'sleeper_id' in fc_df.columns: {'sleeper_id' in fc_df.columns}")
-    print(f"[DEBUG] fc_df shape: {fc_df.shape}")
-    
+    # Get FC values normalized to a 0-999.9 scale (lowest FC player → 0, highest → 999.9)
     if not fc_df.empty and "fc_value" in fc_df.columns and "sleeper_id" in fc_df.columns:
         fc_values_nonzero = fc_df["fc_value"][fc_df["fc_value"] > 0]
         fc_max = fc_values_nonzero.max()
@@ -553,8 +548,8 @@ def rewrite_value_table_with_model() -> Path:
             pid = str(row.get("sleeper_id"))
             fc_val = row.get("fc_value")
             if pid and pd.notna(fc_val) and float(fc_val) > 0:
-                # Floor-at-100 normalization: lowest FC player → 100, highest → 999.9
-                vendor_values[pid] = (float(fc_val) - fc_min) / fc_range * 899.9 + 100.0
+                # Min-max normalization to 0-999.9 (consistent with engine + DP sources).
+                vendor_values[pid] = (float(fc_val) - fc_min) / fc_range * 999.9
     else:
         print("[DEBUG] vendor_values section SKIPPED due to missing conditions")
 
@@ -582,7 +577,7 @@ def rewrite_value_table_with_model() -> Path:
                     raw_val = r.get("ktc_value_1qb")
                     if raw_name and raw_val and float(raw_val) > 0:
                         ktc_name_map[raw_name] = (
-                            (float(raw_val) - ktc_min) / ktc_range * 899.9 + 100.0
+                            (float(raw_val) - ktc_min) / ktc_range * 999.9
                         )
                 # Blend: if we have both FC and KTC use 50/50; if only KTC use it solo
                 for pid_str, meta in (_load_pi() or {}).items():
@@ -604,7 +599,7 @@ def rewrite_value_table_with_model() -> Path:
         print(f"[DEBUG] KTC blend skipped: {_ktc_err}")
 
     # Load FC SF (numQbs=2) values — gives QBs their proper SF market premium.
-    # Normalized to 0-999.9 using the same floor-at-100 approach as 1QB FC values.
+    # Min-max normalized to 0-999.9 (same scale as the 1QB FC values).
     fc_sf_by_sid: dict[str, float] = {}
     try:
         from data_building.external_data.external_values_scraper import load_fantasycalc_sf_api_values
@@ -619,8 +614,7 @@ def rewrite_value_table_with_model() -> Path:
                     _sid = str(_r.get("sleeper_id") or "").strip()
                     _v = _r.get("value")
                     if _sid and _v and float(_v) > 0:
-                        fc_sf_by_sid[_sid] = (_fc_sf_max - _fc_sf_min) and \
-                            (float(_v) - _fc_sf_min) / _fc_sf_range * 899.9 + 100.0
+                        fc_sf_by_sid[_sid] = (float(_v) - _fc_sf_min) / _fc_sf_range * 999.9
             print(f"[rewrite_value_table] Loaded {len(fc_sf_by_sid)} FC SF values (numQbs=2)")
         else:
             print("[rewrite_value_table] FC SF CSV missing — SF QB premium will use DP 2QB only")
@@ -706,9 +700,12 @@ def rewrite_value_table_with_model() -> Path:
     except Exception as e:
         print(f"[ERROR] Failed to load value_2qb from dynastyprocess: {e}")
 
-    # Calculate Superflex vendor values: blend FC (50%), DP 2QB (35%), SF Engine (15%)
-    # First, normalize DP 2QB values to 999.9 scale
-    dp_2qb_max = max(dp_2qb_map.values()) if dp_2qb_map else 1.0
+    # Calculate Superflex vendor values: blend FC SF (50%), DP 2QB (30%), SF Engine (20%).
+    # Min-max normalize DP 2QB to 0-999.9 so it shares the scale of the other sources.
+    _dp_2qb_vals = [v for v in dp_2qb_map.values() if v > 0]
+    dp_2qb_max = max(_dp_2qb_vals) if _dp_2qb_vals else 1.0
+    dp_2qb_min = min(_dp_2qb_vals) if _dp_2qb_vals else 0.0
+    dp_2qb_range = max(dp_2qb_max - dp_2qb_min, 1.0)
 
     # Build sf_vendor_values for each player
     players_index = load_players_index() or {}
@@ -725,9 +722,9 @@ def rewrite_value_table_with_model() -> Path:
         # Get SF engine value
         sf_eng_val = sf_engine_map.get(pid, 0.0)
 
-        # Get DP 2QB value (normalized)
+        # Get DP 2QB value (min-max normalized to 0-999.9)
         dp_2qb_raw = dp_2qb_map.get((name, team), 0.0)
-        dp_2qb_norm = (dp_2qb_raw / dp_2qb_max * 999.9) if dp_2qb_max > 0 else 0.0
+        dp_2qb_norm = ((dp_2qb_raw - dp_2qb_min) / dp_2qb_range * 999.9) if dp_2qb_raw > 0 else 0.0
 
         # Superflex blend: 50% FC SF, 30% DP 2QB, 20% SF engine.
         # FC SF (numQbs=2) is now the primary signal — it directly encodes QB scarcity.
@@ -758,12 +755,10 @@ def rewrite_value_table_with_model() -> Path:
         pid = str(player.get("id"))
         row = df_by_id.get(pid)
 
-        # Gather all three value sources on the same 0-999.9 scale:
+        # Gather all three value sources, now all on the same 0-999.9 scale:
         #   FC (vendor), DP (vendor, non-TEs only), internal engine.
-        # Outlier rule: if any source deviates >15% from the avg of the other two,
-        # use the mean of all three - which pulls the outlier toward the centre and
-        # prevents any single inflated/stale value from dominating.
-        # When all three agree (no outlier) the mean is the final value too.
+        # They are combined with the fixed weighted blend below (renormalized when a
+        # source is missing); there is no separate outlier rule.
         player_position = str(player.get("position") or "").upper()
 
         # Resolve DP value for this player (matched by name + team, no sleeper_id in DP)
@@ -779,8 +774,8 @@ def rewrite_value_table_with_model() -> Path:
                 ]
                 if not dp_match.empty:
                     dp_val_raw = float(dp_match.iloc[0]['value_1qb'])
-        # Normalise DP: floor-at-100 (min → 100, max → 999.9)
-        dp_norm = ((dp_val_raw - DP_1QB_MIN) / DP_1QB_RANGE * 899.9 + 100.0) if dp_val_raw > 0 else 0.0
+        # Normalise DP to 0-999.9 (min → 0, max → 999.9), matching the other sources.
+        dp_norm = ((dp_val_raw - DP_1QB_MIN) / DP_1QB_RANGE * 999.9) if dp_val_raw > 0 else 0.0
 
         fc_val  = vendor_values.get(pid, 0.0)
         # DP undervalues TEs vs market consensus; exclude for that position.
