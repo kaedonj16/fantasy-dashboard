@@ -339,7 +339,9 @@ def calculate_role_score(
     - Position-specific scoring
     - Nonlinear dropoff so middling / low-usage players fall faster
     """
-    snap_pct = _safe(usage.get("avg_off_snap_pct"))
+    # avg_off_snap_pct is a 0-1 fraction (from PFR); the _norm bounds below are on a
+    # 0-100 percentage scale, so convert once here.
+    snap_pct = _safe(usage.get("avg_off_snap_pct")) * 100.0
     games = _safe(usage.get("games"))
 
     if games <= 0 or snap_pct <= 0:
@@ -352,10 +354,13 @@ def calculate_role_score(
 
     ypt = _safe(receiving_metrics.get("yards_per_target"))
     catch_rate = _safe(receiving_metrics.get("catch_rate"))
-    rec_td_rate = _safe(receiving_metrics.get("td_rate"))
+    # Receiving TD rate isn't part of the receiving-metrics dict; derive per-target
+    # rate directly from usage (matches the 0.02-0.12 _norm bounds used below).
+    _avg_tgts = _safe(usage.get("avg_targets"))
+    rec_td_rate = (_safe(usage.get("avg_rec_tds")) / _avg_tgts) if _avg_tgts > 0 else 0.0
 
     ypc = _safe(rushing_metrics.get("yards_per_carry"))
-    rush_td_rate = _safe(rushing_metrics.get("td_rate"))
+    rush_td_rate = _safe(rushing_metrics.get("rush_td_rate"))
 
     pass_att = _safe(usage.get("avg_pass_att"))
     qb_rush_att = _safe(usage.get("avg_carries"))
@@ -370,8 +375,10 @@ def calculate_role_score(
         att_score = _norm(pass_att, 18, 40) ** 1.20
         rush_score = _norm(qb_rush_att, 0, 8) ** 1.15
         ypa_score = _norm(ypa, 5.5, 8.8)
-        td_score = _norm(pass_td_rate, 0.02, 0.08)
-        int_penalty = _norm(int_rate, 0.01, 0.05) if int_rate > 0 else 0.0
+        # passing td_rate / int_rate come back as percentages (pass_tds/att * 100),
+        # so the bounds are on a 0-100 scale (2-8% TD, 1-5% INT), not fractions.
+        td_score = _norm(pass_td_rate, 2.0, 8.0)
+        int_penalty = _norm(int_rate, 1.0, 5.0) if int_rate > 0 else 0.0
 
         base = (
             snap_score * 0.20 +

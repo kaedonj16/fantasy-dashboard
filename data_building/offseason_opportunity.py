@@ -34,12 +34,14 @@ def calculate_snap_share_from_usage(usage: Dict[str, Any]) -> float:
     return snap_share
 
 
-def calculate_opportunity_share_from_usage(usage: Dict[str, Any], team_total_targets: float = 0) -> float:
+def calculate_opportunity_share_from_usage(usage: Dict[str, Any], team_total_opportunity: float = 0) -> float:
     """
     Calculate opportunity share from available usage data.
     
-    Opportunity share = (player's targets + carries) / team total opportunity
-    If team_total_targets not available, estimate based on typical team targets per game.
+    Opportunity share = (player's targets + carries) / team total opportunity,
+    where team total opportunity is also targets + carries so the numerator and
+    denominator share the same basis. If team_total_opportunity is not provided,
+    estimate from a typical team's combined pass + rush volume per game.
     
     Returns opportunity share as decimal (0.0 to 1.0)
     """
@@ -54,12 +56,14 @@ def calculate_opportunity_share_from_usage(usage: Dict[str, Any], team_total_tar
         return 0.0
 
     # Estimate team opportunity if not provided
-    if team_total_targets > 0:
-        team_opportunity_per_game = team_total_targets / games if games > 0 else 0
+    if team_total_opportunity > 0:
+        team_opportunity_per_game = team_total_opportunity / games if games > 0 else 0
     else:
-        # Typical team targets per game by position group
-        # This is a rough estimate - teams average ~35 passes/game
-        team_opportunity_per_game = 35.0
+        # Rough estimate of a team's combined opportunity per game: NFL teams average
+        # ~34 pass attempts (≈ targets) plus ~26 rush attempts ≈ 60 touches/game.
+        # Must include carries so the denominator matches the targets+carries numerator;
+        # using passes alone (the old 35.0) over-credited carry-heavy RBs.
+        team_opportunity_per_game = 60.0
 
     if team_opportunity_per_game <= 0:
         return 0.0
