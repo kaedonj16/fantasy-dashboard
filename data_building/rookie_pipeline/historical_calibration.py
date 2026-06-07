@@ -305,7 +305,7 @@ def _build_features_from_db(
     try:
         from .prospect_model import _conf_quality  # type: ignore
     except ImportError:
-        _conf_quality = lambda conf, pos: 0.65  # type: ignore
+        _conf_quality = lambda conf: 0.65  # type: ignore
 
     for name, seasons in player_seasons.items():
         # Use most recent season for advanced metrics / per-game features
@@ -353,7 +353,7 @@ def _build_features_from_db(
         # Competition / environment
         conf = latest.get("conference") or ""
         pos  = str(latest.get("position") or "WR").upper()
-        feat["conf_quality"] = _conf_quality(conf, pos)
+        feat["conf_quality"] = _conf_quality(conf)
         if latest.get("team_pass_rate") is not None:
             feat["team_pass_rate"] = _safe_float(latest["team_pass_rate"])
 
@@ -407,7 +407,7 @@ def _build_college_features(
     try:
         from .prospect_model import _conf_quality  # type: ignore
     except ImportError:
-        _conf_quality = lambda conf, pos: 0.65  # type: ignore
+        _conf_quality = lambda conf: 0.65  # type: ignore
 
     # CFBD API fetch for historical classes not in DB
     cfbd_features: Dict[str, Dict[str, float]] = {}
@@ -523,7 +523,7 @@ def _build_college_features(
         # Competition
         conf = s.get("_conf", "")
         pos  = "WR"  # default; CFBD stats don't reliably include position
-        feat["conf_quality"] = _conf_quality(conf, pos)
+        feat["conf_quality"] = _conf_quality(conf)
 
         cfbd_features[player] = feat
 

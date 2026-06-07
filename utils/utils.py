@@ -364,7 +364,8 @@ def load_week_projection(season: int, w: int, force_refresh: bool = False) -> Op
     Load projections cache for (season, week). Returns multi-variant dict or {}.
     """
     proj_path = Path(path_week_proj(season, w))
-    if not proj_path.exists() or force_refresh:
+    if (not proj_path.exists() or force_refresh
+            or _week_proj_is_stale(season, w, str(proj_path))):
         try:
             get_week_projections_cached(season, w, fetch_week_projections, force_refresh=force_refresh)
         except Exception as e:
@@ -394,6 +395,34 @@ def save_week_schedule(season: int, week: int, data: List[Dict]) -> None:
 # Tank01 – indexes & projections
 # ------------------------------------------------
 
+_WEEK_PROJ_TTL_HOURS = 1   # re-fetch the live week's projections at most hourly
+
+
+def _week_proj_is_stale(season: int, week: int, cache_path: str) -> bool:
+    """True only for the current/upcoming week of the live season.
+
+    Completed weeks (and past seasons) never change, so their cached files are
+    treated as permanent — re-fetching them would just burn API calls. The
+    current and future weeks of the in-progress season DO change (injuries,
+    inactives, role and projection updates), so those honor a short TTL.
+    """
+    try:
+        state = get_nfl_state() or {}
+        cur_season = int(state.get("season") or 0)
+        cur_week   = int(state.get("week") or state.get("leg") or 0)
+    except Exception:
+        return False
+    if cur_season == 0 or season < cur_season:
+        return False                      # past season → immutable
+    if season == cur_season and week < cur_week:
+        return False                      # already-completed week → immutable
+    try:
+        age = time.time() - os.path.getmtime(cache_path)
+    except OSError:
+        return True
+    return age > _WEEK_PROJ_TTL_HOURS * 3600
+
+
 def get_week_projections_cached(
         season: int,
         week: int,
@@ -406,7 +435,9 @@ def get_week_projections_cached(
     cache_path = path_week_proj(season, week)
 
     if os.path.exists(cache_path) and not force_refresh:
-        return load_week_projection(season, week) or {}
+        # Serve from disk unless this is the live week and its cache has aged out.
+        if not _week_proj_is_stale(season, week, cache_path):
+            return load_week_projection(season, week) or {}
 
     data = fetch_fn(season, week)
     save_week_projections(season, week, proj_map=data)
@@ -1409,11 +1440,13 @@ def clear_weekly_cache_for_league(league_id: str) -> None:
     # Weekly page touches NFL state, players, users, rosters.
     # If you later make them per-league, you can reuse _clear_func_cache_for_league.
     try:
-        _clear_func_cache_for_league(get_nfl_state, "get_nfl_state", league_id)
-        _clear_func_cache_for_league(get_nfl_players, "get_nfl_players", league_id)
+        # get_nfl_state / get_nfl_players take no league arg, so the per-league
+        # clearer can never match their (empty-args) cache key — it's a no-op.
+        # Use the decorator's clear_cache() to actually evict the global entry.
+        get_nfl_state.clear_cache()
+        get_nfl_players.clear_cache()
         _clear_func_cache_for_league(get_users, "get_users", league_id)
         _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
-        _clear_func_cache_for_league(get_nfl_state, "get_nfl_state", league_id)
         _clear_func_cache_for_league(get_matchups, "get_matchups", league_id)
     except Exception as e:
         print("clear_weekly_cache_for_league RAISED EXCEPTION:", repr(e))

@@ -5792,7 +5792,8 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
     # For players Sleeper doesn't project (e.g. fringe depth), use FantasyPros
     # preseason PPG as a flat per-week estimate.  The PPG file is PPR-based, so we
     # estimate other variants by backing out typical reception points by position.
-    _EST_REC = {"QB": 0.0, "RB": 3.0, "WR": 5.0, "TE": 4.0}
+    # K and DEF carry no receptions, so their PPG is variant-independent (0 rec).
+    _EST_REC = {"QB": 0.0, "RB": 3.0, "WR": 5.0, "TE": 4.0, "K": 0.0, "DEF": 0.0}
     try:
         import json as _json
         _fp_path = os.path.join("cache", f"fp_projections_{season}_ppr.json")
@@ -5820,13 +5821,51 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
     except Exception as _e:
         logger.debug(f"[projections] FP fallback load failed: {_e}")
 
+    # Kickers and team defenses are absent from the FP file (no DEF) and from
+    # Sleeper's weekly projections, so the optimal-lineup view would score those
+    # slots at 0.  Fill them from the prior-season usage cache — the same source
+    # the playoff simulator uses — so Start/Sit and the optimal lineup count K and
+    # DEF.  Team defenses appear under their team abbreviation id (pos blank);
+    # kickers under pos PK/K.  Their scoring is variant-independent, so the flat
+    # PPR per-game value is used as-is.
+    try:
+        import json as _json
+        for _yr in (season, season - 1):
+            _u_path = os.path.join("cache", "player_history", f"usage_rows_{_yr}.json")
+            if not os.path.exists(_u_path):
+                continue
+            with open(_u_path) as _u_f:
+                _usage = _json.load(_u_f)
+            for _p in _usage:
+                _pid = str(_p.get("id") or "")
+                if not _pid or _pid in fallback:
+                    continue
+                _pos = str(_p.get("position") or "").upper()
+                _is_k   = _pos in ("K", "PK")
+                _is_def = _pos in ("DEF", "DST") or (_pid.isalpha() and _pid.isupper() and len(_pid) <= 4)
+                if not (_is_k or _is_def):
+                    continue
+                _v = float((_p.get("usage") or {}).get("ppr_ppg") or 0)
+                if _v > 0:
+                    fallback[_pid] = round(_v, 2)
+            break
+    except Exception as _e:
+        logger.debug(f"[projections] K/DEF usage fallback failed: {_e}")
+
     bundles = {}
     for w in range(1, weeks + 1):
         week_proj = dict(fallback)
         for pid, val in raw[w].items():
             fb = fallback.get(pid, 0)
+            # A weekly value far below the player's season median usually means a
+            # stale/backup listing — but it can also be a legitimately low week
+            # (tough matchup, reduced role, injury ramp). Only treat near-zero as
+            # a stale listing; otherwise clamp to the median floor rather than
+            # discarding the real value and over-projecting the week.
             if fb > 0 and val < fb * 0.5:
-                continue  # skip outlier-low weekly entry (stale role/backup listing)
+                if val < 1.0:
+                    continue            # implausibly low → stale listing, drop it
+                val = fb * 0.5          # genuinely low week → clamp, don't inflate
             week_proj[pid] = val
         bundles[w] = {"projections": week_proj}
 
@@ -12490,10 +12529,12 @@ def build_optimal_body(ctx):
     league_id = ctx.get("league_id") or ""
     viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     roster_positions = ctx.get("roster_positions") or []
-    nfl_state = ctx.get("state") or {}
     settings  = (ctx.get("league") or {}).get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
-    current_week  = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
+    # current_week lives on ctx directly; build_league_context never exposes a
+    # "state" key, so reading ctx.get("state") here would pin current_week to 0
+    # and make the page render "No completed weeks yet" all season.
+    current_week  = int(ctx.get("current_week") or 0)
     players_idx   = get_players_index_global() or {}
     roster_map    = ctx.get("roster_map") or {}
     rosters       = ctx.get("rosters") or []
@@ -14956,8 +14997,8 @@ def build_commissioner_body(ctx):
     users      = ctx.get("users") or []
     roster_map = ctx.get("roster_map") or {}
     traded     = ctx.get("traded") or []
-    nfl_state  = ctx.get("state") or {}
-    current_week = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
+    # current_week is on ctx directly; ctx has no "state" key (see build_optimal_body).
+    current_week = int(ctx.get("current_week") or 0)
     settings   = (ctx.get("league") or {}).get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
     model_vals  = ctx.get("model_value_table") or get_model_value_table_cached() or []

@@ -196,8 +196,8 @@ def _run_step(code: str, step_name: str, timeout: int = 3600) -> bool:
 
 def main():
     state = get_nfl_state() or {}
-    season = int(state.get("season"))
-    week = int(state.get("week"))
+    season = int(state.get("season") or date.today().year)
+    week = int(state.get("week") or 0)
     season_type = str(state.get("season_type", "")).lower().strip()
     today_weekday = date.today().weekday()  # 6 = Sunday
 

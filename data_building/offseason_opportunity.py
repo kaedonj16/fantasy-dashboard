@@ -17,32 +17,20 @@ from typing import Dict, List, Optional, Any, Tuple
 
 def calculate_snap_share_from_usage(usage: Dict[str, Any]) -> float:
     """
-    Calculate snap share from available usage data.
-    
-    Since avg_off_snap_pct is often 0, we estimate snap share based on:
-    - For RBs: avg_off_snaps / 65 (typical RB offensive snaps per game)
-    - For WRs/TEs: avg_off_snaps / 70 (typical WR/TE offensive snaps per game)
-    - For QBs: avg_off_snaps / 70 (typical QB offensive snaps per game)
-    
+    Return the player's snap share from usage data.
+
+    avg_off_snap_pct is ALREADY a 0-1 decimal snap share (confirmed in the usage
+    cache and used directly in populate_roster_changes.py), so it is used as-is.
+    Earlier versions divided it by ~65-70 (treating it as a raw snap count),
+    which made every snap share ~70x too small.
+
     Returns snap share as decimal (0.0 to 1.0)
     """
     avg_off_snaps = usage.get("avg_off_snap_pct", 0) or 0
     if avg_off_snaps <= 0:
         return 0.0
 
-    # Estimate typical offensive snaps per game by position
-    typical_snaps = {
-        "RB": 65,  # RBs get ~65 snaps when active
-        "WR": 70,  # WRs get ~70 snaps when active
-        "TE": 70,  # TEs get ~70 snaps when active
-        "QB": 70,  # QBs get ~70 snaps when active
-    }
-
-    # Default to 70 if position unknown
-    position = usage.get("position", "UNKNOWN")
-    expected_snaps = typical_snaps.get(position, 70)
-
-    snap_share = min(avg_off_snaps / expected_snaps, 1.0)
+    snap_share = min(float(avg_off_snaps), 1.0)
     return snap_share
 
 
@@ -531,8 +519,8 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
                     carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
 
                     # Calculate snap share using helper function if standard field is 0
-                    standard_snap_pct = (usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0) / 100 if (
-                            usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
+                    # avg_off_snap_pct is already a 0-1 decimal — do not divide by 100.
+                    standard_snap_pct = min(float(usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0), 1.0)
                     if standard_snap_pct > 0:
                         snap_pct = standard_snap_pct
                     else:
@@ -558,8 +546,8 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
                     prev_carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
 
                     # Calculate snap share using helper function if standard field is 0
-                    standard_snap_share = (usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0) / 100 if (
-                            usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
+                    # avg_off_snap_pct is already a 0-1 decimal — do not divide by 100.
+                    standard_snap_share = min(float(usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0), 1.0)
                     if standard_snap_share > 0:
                         prev_snap_share = standard_snap_share
                     else:
@@ -694,8 +682,8 @@ def project_opportunity_redistribution(season: int, top_n_players: int = 600):
                 prev_carries = usage.get("carries") or (usage.get("avg_carries", 0) * games) or 0
 
                 # Calculate snap share using helper function if standard field is 0
-                standard_snap_share = (usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0) / 100 if (
-                        usage.get("snap_pct") or usage.get("avg_off_snap_pct")) else 0
+                # avg_off_snap_pct is already a 0-1 decimal — do not divide by 100.
+                standard_snap_share = min(float(usage.get("snap_pct") or usage.get("avg_off_snap_pct") or 0), 1.0)
                 if standard_snap_share > 0:
                     prev_snap_share = standard_snap_share
                 else:
