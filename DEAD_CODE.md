@@ -10,6 +10,14 @@ dynamically dispatched, called from notebooks/external scripts, or kept as inten
 
 ## 1. Unused functions (no reference anywhere in the repo)
 
+> **STATUS (2026-06-07): Section 1 cleared.** Re-verified against the current tree:
+> 56 of the original 95 had already been removed by interim audit commits, and the
+> remaining 39 (all confirmed 0-reference repo-wide, across every file type) were
+> deleted in the dead-code cleanup pass (−1,845 lines). The per-entry list below is
+> kept for historical reference; line numbers are from the original 2026-06-04 scan
+> and no longer apply. Sections 2 and 3 (duplicates / consolidation) are still open.
+
+
 **95 functions** have zero textual references across `app.py`, `dashboard_services/`, `routes/`, `utils/`, `data_building/`, `scripts/`
 (including inside cron string-exec steps). Flask route handlers and framework hooks are
 already excluded.

@@ -533,26 +533,6 @@ def build_usage_rows_for_season(
     return usage_rows
 
 
-def load_usage_history_df(current_season: int, num_past_seasons: int = 2) -> pd.DataFrame:
-    seasons = list(range(current_season - num_past_seasons, current_season + 1))
-
-    frames = []
-    for season in seasons:
-        path = usage_rows_json_path_for_season(season)
-        if not path.exists():
-            continue
-        with path.open("r", encoding="utf-8") as f:
-            rows = json.load(f)
-        if not rows:
-            continue
-        frames.append(pd.json_normalize(rows))
-
-    if not frames:
-        return pd.DataFrame()
-
-    return pd.concat(frames, ignore_index=True)
-
-
 def find_player(rows: list[dict[str, Any]], name: str) -> list[dict[str, Any]]:
     target = name.strip().lower()
     return [
@@ -568,13 +548,6 @@ def print_player(rows: list[dict[str, Any]], name: str) -> None:
 
     for p in matches:
         print(json.dumps(p, indent=2))
-
-
-def preview_player_df(rows: list[dict[str, Any]], name: str) -> pd.DataFrame:
-    df = pd.json_normalize(rows)
-    if df.empty or "name" not in df.columns:
-        return pd.DataFrame()
-    return df[df["name"].astype(str).str.lower() == name.strip().lower()].copy()
 
 
 if __name__ == "__main__":

@@ -745,12 +745,6 @@ def get_history_standings_html(history_ctx: dict) -> str:
     return _standings_table(regular_season_team_stats)
 
 
-def get_history_chart_html(history_ctx: dict) -> str:
-    """Generate season trend chart HTML."""
-    df_weekly = history_ctx.get("df_weekly", pd.DataFrame())
-    return _history_chart(df_weekly)
-
-
 def build_history_body(
         history_ctx: dict,
         available_seasons: List[int],

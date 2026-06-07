@@ -880,9 +880,6 @@ def render_matchup_slide(
             meta = f"<div class='m-team-meta'>@{username} &bull; {record}</div>"
             return f"<div class='m-team-col m-col-right'>{img_html}{name_el}{meta}</div>"
 
-    # keep for backward compat with any callers (unused in this render path)
-    def team_head(t, proj_mode: bool): return ""
-    def team_head_2nd(t, proj_mode: bool): return ""
 
     def format_team_game_line(team_abv: str, game: dict, pos: str, side: str) -> str:
         if not team_abv or not game:

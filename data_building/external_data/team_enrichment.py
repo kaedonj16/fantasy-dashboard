@@ -80,27 +80,6 @@ def _save_teams_index_raw(teams_index: Dict[str, dict]):
         json.dump(teams_index, f, ensure_ascii=False, indent=2)
 
 
-def enrich_teams_index_with_offense(season: int):
-    """
-    Load teams_index.json and add:
-
-      - pass_att_pg
-      - targets_pg
-      - off_snaps_pg
-
-    for each team present in team_offense.
-    """
-    teams_index = load_teams_index()
-    team_offense = enrich_teams_index_with_team_offense(season)
-
-    for team, ctx in team_offense.items():
-        entry = teams_index.get(team) or {}
-        entry["games_tracked"] = ctx["team_games"]
-        teams_index[team] = entry
-
-    _save_teams_index_raw(teams_index)
-
-
 def _to_float(value) -> float:
     """Helper: safely convert Tank01 string/None -> float."""
     if value is None:

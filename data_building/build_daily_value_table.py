@@ -416,21 +416,6 @@ def build_daily_market_pulse_for_league_type(league_type: str = "1qb"):
     return html
 
 
-def build_daily_market_pulse():
-    """
-    Build market pulse for both 1QB and Superflex league types.
-    This is called by the daily cron job to cache both versions.
-    """
-    # Build and cache 1QB market pulse
-    build_daily_market_pulse_for_league_type("1qb")
-
-    # Build and cache Superflex market pulse
-    build_daily_market_pulse_for_league_type("sf")
-
-    # Return 1QB for backwards compatibility
-    return build_daily_market_pulse_for_league_type("1qb")
-
-
 if __name__ == "__main__":
     current = get_nfl_state() or {}
     current_season = int(current.get("season"))

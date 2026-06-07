@@ -130,12 +130,3 @@ def write_rookie_snapshot(file_prefix: str, as_of_date: str, payload: Dict[str, 
         latest.write_text(text, encoding="utf-8")
     return latest, latest
 
-
-def read_json_file(path: Path) -> Optional[Dict[str, Any]]:
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-

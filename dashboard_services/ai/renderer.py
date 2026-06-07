@@ -732,47 +732,6 @@ def _fmt_pick_label(pk: dict) -> str:
     return f"{season} {rnd}{suffix} (Mid)"
 
 
-def _render_real_trade_suggestions(real_trades: list[dict]) -> str:
-    """Render a 'Based on real trades' section from league trade history."""
-    if not real_trades:
-        return ""
-
-    cards = ""
-    for item in real_trades[:6]:
-        sent_name = html.escape(str(item.get("sent_player_name") or ""))
-        total = int(item.get("total_trades") or 0)
-        received = item.get("received_assets") or []
-        if not received:
-            continue
-
-        parts = []
-        for a in received[:3]:
-            if a.get("type") == "player":
-                parts.append(html.escape(str(a.get("name") or "")))
-            else:
-                parts.append(html.escape(str(a.get("label") or "Pick")))
-        received_str = " + ".join(parts) if parts else "various assets"
-
-        freq_label = f"{total} similar {'trade' if total == 1 else 'trades'}"
-        cards += f"""
-        <div class="suggestion-card suggestion-card-real">
-          <div class="suggestion-title">Trade {sent_name}</div>
-          <div class="suggestion-reasoning">In {freq_label} across similar leagues, <strong>{sent_name}</strong> moved for <strong>{received_str}</strong>.</div>
-          <div class="suggestion-urgency urgency-info">market data</div>
-        </div>
-        """
-
-    if not cards:
-        return ""
-
-    return f"""
-    <div class="real-trades-section">
-      <div class="real-trades-header">Based on real trades in similar leagues</div>
-      {cards}
-    </div>
-    """
-
-
 def _render_trade_suggestions_fallback(ctx: dict) -> str:
     needs = ctx.get("viewer_needs") or []
     surplus = ctx.get("viewer_surplus") or []
