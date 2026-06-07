@@ -130,15 +130,6 @@ def build_usage_maps(usage_table: List[Dict]) -> Tuple[Dict[str, Dict], Dict[str
     return usage_by_id, age_by_id
 
 
-def _safe_float(value, default: float = 0.0) -> float:
-    try:
-        if value is None or value == "":
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
 def _resolve_position(position: Optional[str], payload: Dict[str, Any]) -> Optional[str]:
     """
     Resolve position from:

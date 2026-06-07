@@ -273,6 +273,30 @@ Multi-platform provider abstraction (Sleeper / ESPN / base / platform_api). Same
 
 ### 3b. Copy-paste private helpers — **consolidate into `utils`**
 
+> **STATUS (2026-06-07): investigated — do NOT bulk-consolidate.** This section's
+> premise turned out to be wrong. The names repeat, but the *bodies* do not: an
+> AST cluster-by-normalized-body analysis showed `_safe_float` (×11) has **9
+> distinct implementations** (largest identical cluster = 2), `_safe_int` (×10) has
+> **10 distinct implementations**, `_norm` (×8) has **8**, and almost every other
+> entry is unique per file. The differences are behavioral, not cosmetic — e.g.
+> `_safe_float` returns `None` by default in `rookie_api.py` but `0.0` elsewhere,
+> some variants strip `NaN`/`'NA'`/`'NULL'` and some don't; `_safe_int` ranges from
+> "no error handling, return 0" to `int(float(str(v)))` string parsing to
+> "return None on failure". Merging these into one shared helper would silently
+> change behavior at call sites (e.g. a caller using `None` to detect a failed
+> coercion would start receiving `0`). Partial consolidation is worse than none
+> here — it leaves several identically-named functions with different behavior,
+> which is more confusing, not less.
+>
+> A real consolidation would require choosing one canonical implementation per
+> helper and reviewing **every** call site for behavioral compatibility (default
+> values, NaN handling) before migrating — a deliberate per-helper refactor, not a
+> mechanical merge. Left as-is intentionally.
+>
+> One genuine defect was found and fixed: `_safe_float` was defined twice at top
+> level in `calculate_breakouts_with_real_data.py` (L28 and L133); the second
+> silently shadowed the first. Removed the dead duplicate.
+
 Small private helpers re-implemented across modules. Prime candidates for a shared module.
 
 - `_safe_float()` ×11: `dashboard_services/ai/context_builders.py:9`, `dashboard_services/pages/history_page.py:346`, `dashboard_services/rookie_api.py:149`, `data_building/breakout_engine/calculate_breakouts_with_real_data.py:28`, `data_building/breakout_engine/calculate_breakouts_with_real_data.py:133`, `data_building/breakout_engine/components.py:38`, `data_building/breakout_engine/display_results.py:26`, `data_building/build_daily_value_table.py:24`, `data_building/player_value.py:23`, `data_building/rookie_pipeline/historical_calibration.py:88`, `data_building/value_model_training.py:63`
