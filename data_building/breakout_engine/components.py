@@ -25,6 +25,7 @@ from .db_helpers import (
     get_team_stats,
     get_player_advanced_metrics,
 )
+from utils.coerce import safe_float as _safe_float, safe_int as _safe_int
 
 
 # ==============================================================================
@@ -33,24 +34,6 @@ from .db_helpers import (
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
-
-
-def _safe_float(value, default: float = 0.0) -> float:
-    try:
-        if value is None or value == "":
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _safe_int(value, default: int = 0) -> int:
-    try:
-        if value is None or value == "":
-            return default
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def _normalize_to_one(value: float, full_value: float) -> float:

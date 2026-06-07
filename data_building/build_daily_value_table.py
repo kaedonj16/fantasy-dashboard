@@ -19,14 +19,7 @@ from utils.utils import (
     get_live_game_ids_for_today,
     load_week_schedule,
     build_and_save_week_stats_for_league, )
-
-
-def _safe_float(value):
-    """Safely convert a value to float, returning 0.0 for None or invalid values."""
-    try:
-        return float(value) if value is not None else 0.0
-    except (TypeError, ValueError):
-        return 0.0
+from utils.coerce import safe_float as _safe_float
 
 
 def build_daily_data(season: int, week: int):

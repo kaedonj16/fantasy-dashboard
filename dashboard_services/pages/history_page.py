@@ -11,6 +11,7 @@ from plotly.offline import plot as plotly_plot
 
 from dashboard_services.ai.history_recap import get_league_season_summary
 from dashboard_services.platform_api import get_bracket
+from utils.coerce import safe_int as _safe_int
 
 
 def _playoff_start_week(league: dict) -> int:
@@ -334,13 +335,6 @@ def get_champion_and_runner_up(ctx: dict) -> tuple[str, str]:
     )
 
     return str(champion), str(runner_up)
-
-
-def _safe_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:

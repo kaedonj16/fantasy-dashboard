@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from espn_api.football import League
 
 from utils.utils import load_players_index
+from utils.coerce import safe_int as _safe_int
 
 
 # ============================================================
@@ -34,13 +35,6 @@ def _normalize_swid(swid: str) -> str:
 def safe_float(x: Any, default: float = 0.0) -> float:
     try:
         return default if x is None else float(x)
-    except Exception:
-        return default
-
-
-def _safe_int(x: Any, default: int = 0) -> int:
-    try:
-        return default if x is None else int(x)
     except Exception:
         return default
 

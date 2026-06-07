@@ -296,6 +296,24 @@ Multi-platform provider abstraction (Sleeper / ESPN / base / platform_api). Same
 > One genuine defect was found and fixed: `_safe_float` was defined twice at top
 > level in `calculate_breakouts_with_real_data.py` (L28 and L133); the second
 > silently shadowed the first. Removed the dead duplicate.
+>
+> **UPDATE (2026-06-07): a safe subset WAS consolidated.** Rather than a blind
+> merge, each `_safe_float`/`_safe_int` variant was executed against a full input
+> battery (`None`, `''`, `'  '`, `'3'`, `'3.5'`, `3.7`, `'abc'`, `nan`, `True`,
+> containers, …) under both call patterns (no-arg and explicit-default) and
+> compared to a canonical implementation. The **12 variants that matched on every
+> input** now import from the new leaf module `utils/coerce.py`
+> (`safe_float`/`safe_int`) via an alias, so call sites are untouched:
+> `_safe_float` ×7 (build_daily_value_table, player_value, historical_calibration,
+> breakout_engine/display_results, breakout_engine/calculate_breakouts,
+> breakout_engine/components, ai/context_builders) and `_safe_int` ×5
+> (value_model_training, breakout_engine/components, ai/context_builders,
+> providers/espn_api, pages/history_page).
+> The variants with genuinely different semantics were left in place on purpose:
+> `_safe_float` in value_model_training (pandas `pd.isna`), rookie_api
+> (`default=None`) and history_page (NaN-stripping); `_safe_int` in app.py /
+> ingestion (`default=None`), save_player_values (returns `None`) and utils/utils
+> (`int(float(s))` string parsing).
 
 Small private helpers re-implemented across modules. Prime candidates for a shared module.
 

@@ -19,19 +19,11 @@ from data_building.breakout_engine import BreakoutEngine
 from data_building.breakout_engine.db_helpers import get_all_players_with_opportunity
 from data_building.external_data.player_history import usage_rows_json_path_for_season
 from utils.utils import load_players_index, load_usage_table, read_json
+from utils.coerce import safe_float as _safe_float
 
 # Ensure DATABASE_URL is set
 if "DATABASE_URL" not in os.environ:
     os.environ["DATABASE_URL"] = f"postgresql://{os.environ.get('USER')}@localhost:5432/brfantasy"
-
-
-def _safe_float(value: Any, default: float = 0.0) -> float:
-    try:
-        if value is None or value == "":
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def load_season_aware_usage_data(season: int, week: int = 0, season_type: str = 'off') -> List[Dict]:

@@ -17,6 +17,7 @@ from data_building.external_data.player_history import load_player_history_df, b
 from data_building.external_data.player_investment import load_player_investment_context
 from utils.paths import DATA_DIR
 from utils.utils import load_teams_index, bucket_for_slot, normalize_name, load_players_index
+from utils.coerce import safe_int as _safe_int
 
 # ------------------------------------------------
 # Paths / constants
@@ -49,19 +50,6 @@ def _safe_float(x, default: float = 0.0) -> float:
         return float(x)
     except Exception:
         return float(default)
-
-
-def _safe_int(x, default: int = 0) -> int:
-    try:
-        if x is None:
-            return int(default)
-        if isinstance(x, str) and not x.strip():
-            return int(default)
-        if pd.isna(x):
-            return int(default)
-        return int(x)
-    except Exception:
-        return int(default)
 
 
 def _current_season_from_state() -> int:

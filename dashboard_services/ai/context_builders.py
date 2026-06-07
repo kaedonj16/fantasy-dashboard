@@ -1,27 +1,10 @@
 from __future__ import annotations
 
 from typing import Any, Union
+from utils.coerce import safe_float as _safe_float, safe_int as _safe_int
 
 # Core fantasy positions used for scarcity analysis
 _SCARCITY_POSITIONS = {"QB", "RB", "WR", "TE"}
-
-
-def _safe_float(v, default: float = 0.0) -> float:
-    try:
-        if v is None or v == "":
-            return default
-        return float(v)
-    except (TypeError, ValueError):
-        return default
-
-
-def _safe_int(v, default: int = 0) -> int:
-    try:
-        if v is None or v == "":
-            return default
-        return int(v)
-    except (TypeError, ValueError):
-        return default
 
 
 def _ctx_is_sf(ctx: dict) -> bool:
