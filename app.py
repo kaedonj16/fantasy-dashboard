@@ -4295,6 +4295,32 @@ def build_standings_body(ctx: dict) -> str:
     return body
 
 
+_WAIVER_PRIME_MAX = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
+
+
+def _waiver_pickup_score(c: dict, waiver_breakout: dict, prime_max: dict = _WAIVER_PRIME_MAX) -> float:
+    """Composite waiver-pickup score: value + trend + breakout + age bonuses.
+
+    Extracted from two identical request-scoped closures; the caller passes the
+    per-request ``waiver_breakout`` map so behavior is unchanged.
+    """
+    val = c["value"]
+    age = c["age"] or 0
+    pos = c["position"]
+    rank_chg = c["rank_change_7d"] or 0
+    bscore = waiver_breakout.get(c["player_id"], 0)
+    prime = prime_max.get(pos, 28)
+
+    # Trend bonus: up to +60 for strong 7d movement
+    trend_bonus = min(rank_chg * 4, 60) if rank_chg and rank_chg > 0 else 0
+    # Breakout bonus: up to +50
+    breakout_bonus = min(bscore * 0.5, 50)
+    # Age bonus: peak age = +30, every year past prime = -10
+    age_bonus = 30 - max(0, (age - prime) * 10) if age else 0
+
+    return val + trend_bonus + breakout_bonus + age_bonus
+
+
 def build_offseason_dashboard_body(ctx: dict) -> str:
     league = ctx["league"]
     platform = ctx["platform"]
@@ -4587,23 +4613,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     # Age primes by position (peak dynasty window)
     _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
-    def _waiver_pickup_score(c: dict) -> float:
-        val = c["value"]
-        age = c["age"] or 0
-        pos = c["position"]
-        rank_chg = c["rank_change_7d"] or 0
-        bscore = waiver_breakout.get(c["player_id"], 0)
-        prime = _prime_max.get(pos, 28)
-
-        # Trend bonus: up to +60 for strong 7d movement
-        trend_bonus = min(rank_chg * 4, 60) if rank_chg and rank_chg > 0 else 0
-        # Breakout bonus: up to +50
-        breakout_bonus = min(bscore * 0.5, 50)
-        # Age bonus: peak age = +30, every year past prime = -10
-        age_bonus = 30 - max(0, (age - prime) * 10) if age else 0
-
-        return val + trend_bonus + breakout_bonus + age_bonus
-
     def _waiver_signal(c: dict) -> tuple[str, str]:
         """Return (badge_class, label) for the pickup signal."""
         rank_chg = c["rank_change_7d"] or 0
@@ -4624,7 +4633,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             return ("signal-aging", "Sell Window")
         return ("signal-hold", "Available")
 
-    waiver_candidates.sort(key=_waiver_pickup_score, reverse=True)
+    waiver_candidates.sort(key=lambda c: _waiver_pickup_score(c, waiver_breakout, _prime_max), reverse=True)
 
     waiver_html = []
     for p in waiver_candidates[:10]:
@@ -8859,18 +8868,6 @@ def api_waiver_candidates():
 
     _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
-    def _wv_score(c: dict) -> float:
-        val = c["value"]
-        age = c["age"] or 0
-        pos = c["position"]
-        rank_chg = c["rank_change_7d"] or 0
-        bscore = waiver_breakout.get(c["player_id"], 0)
-        prime = _prime_max.get(pos, 28)
-        trend_bonus = min(rank_chg * 4, 60) if rank_chg and rank_chg > 0 else 0
-        breakout_bonus = min(bscore * 0.5, 50)
-        age_bonus = 30 - max(0, (age - prime) * 10) if age else 0
-        return val + trend_bonus + breakout_bonus + age_bonus
-
     def _wv_signal(c: dict) -> tuple:
         rank_chg = c["rank_change_7d"] or 0
         age = c["age"] or 0
@@ -8889,7 +8886,7 @@ def api_waiver_candidates():
             return ("signal-aging", "Sell Window")
         return ("signal-hold", "Available")
 
-    candidates.sort(key=_wv_score, reverse=True)
+    candidates.sort(key=lambda c: _waiver_pickup_score(c, waiver_breakout, _prime_max), reverse=True)
     if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
         candidates = [c for c in candidates if c["position"] == position_filter]
 
@@ -8909,7 +8906,7 @@ def api_waiver_candidates():
             "breakout_score": bscore,
             "signal": sig_label,
             "signal_class": sig_cls,
-            "composite_score": _wv_score(c),
+            "composite_score": _waiver_pickup_score(c, waiver_breakout, _prime_max),
         })
 
     return jsonify({"candidates": result, "total": len(result)})
