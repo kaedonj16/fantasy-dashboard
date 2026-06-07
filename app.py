@@ -5857,8 +5857,15 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
         week_proj = dict(fallback)
         for pid, val in raw[w].items():
             fb = fallback.get(pid, 0)
+            # A weekly value far below the player's season median usually means a
+            # stale/backup listing — but it can also be a legitimately low week
+            # (tough matchup, reduced role, injury ramp). Only treat near-zero as
+            # a stale listing; otherwise clamp to the median floor rather than
+            # discarding the real value and over-projecting the week.
             if fb > 0 and val < fb * 0.5:
-                continue  # skip outlier-low weekly entry (stale role/backup listing)
+                if val < 1.0:
+                    continue            # implausibly low → stale listing, drop it
+                val = fb * 0.5          # genuinely low week → clamp, don't inflate
             week_proj[pid] = val
         bundles[w] = {"projections": week_proj}
 

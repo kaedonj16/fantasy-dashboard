@@ -900,11 +900,15 @@ def build_value_table_for_usage(
         ceiling_proxy = 0.65 * career_best_ppg + 0.35 * max(current_ppg, last_year_ppg)
         floor_proxy = 0.70 * career_avg_ppg + 0.30 * last_year_ppg
 
-        # Red zone metric: prefer current-season data, fall back to 3-year weighted historical average
+        # Red zone metric: prefer current-season data, fall back to 3-year weighted
+        # historical average PER DIMENSION. A pass-catching back with real receiving
+        # red-zone usage but no rushing red-zone (or vice-versa) keeps its real value
+        # on the populated dimension instead of being zeroed there.
         rec_rz = _safe_float(usage.get("rec_rz_tgt_pg"))
         rush_rz = _safe_float(usage.get("rush_rz_att_pg"))
-        if (rec_rz is None or rec_rz == 0.0) and (rush_rz is None or rush_rz == 0.0):
+        if rec_rz is None or rec_rz == 0.0:
             rec_rz = _safe_float(hist.get("three_year_weighted_rec_rz"), 0.0)
+        if rush_rz is None or rush_rz == 0.0:
             rush_rz = _safe_float(hist.get("three_year_weighted_rush_rz"), 0.0)
         rz_metric = (rec_rz or 0.0) + (rush_rz or 0.0)
         role_security = _usage_role_security(usage, hist, pos)
@@ -917,10 +921,14 @@ def build_value_table_for_usage(
 
         # Offseason fallback: current-season rush stats are None - use the 3-year
         # weighted historical average so mobile QBs retain their rushing signal.
+        # Applied PER STAT: a mobile QB with rush yards but zero current rush TDs
+        # still recovers its historical rush-TD signal (the old code keyed the TD
+        # fallback off yards being zero, so it never fired in that case).
+        h_rush = hist_rush_map.get(pid, {})
         if rush_yds_pg is None or rush_yds_pg == 0.0:
-            h_rush = hist_rush_map.get(pid, {})
             rush_yds_pg = _safe_float(h_rush.get("avg_rush_yards"), 0.0)
-            rush_tds_pg = _safe_float(h_rush.get("avg_rush_tds"), rush_tds_pg or 0.0)
+        if rush_tds_pg is None or rush_tds_pg == 0.0:
+            rush_tds_pg = _safe_float(h_rush.get("avg_rush_tds"), 0.0)
 
         games_last_3yr = _safe_float(hist.get("games_last_3yr"), 0.0)
         risk_penalty = _risk_penalty(

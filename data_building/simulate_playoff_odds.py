@@ -1696,6 +1696,9 @@ def _run_mc(
 
     wins = np.tile([t["wins"] for t in teams], (n_sims, 1)).astype(np.float32)
     pf   = np.tile([t["pf"]   for t in teams], (n_sims, 1)).astype(np.float32)
+    # Ties gained over the remaining schedule (separate from wins so projected
+    # losses aren't inflated by counting half of each tie as a loss).
+    ties_gained = np.zeros((n_sims, n), dtype=np.float32)
 
     n_byes = _n_byes(playoff_teams)
 
@@ -1726,8 +1729,11 @@ def _run_mc(
             tie    = np.abs(sa - sb) < _TIE_MARGIN
             a_wins = (sa > sb) & ~tie
             b_wins = (sb > sa) & ~tie
-            wins[:, ia] += a_wins.astype(np.float32) + 0.5 * tie.astype(np.float32)
-            wins[:, ib] += b_wins.astype(np.float32) + 0.5 * tie.astype(np.float32)
+            tie_f = tie.astype(np.float32)
+            wins[:, ia] += a_wins.astype(np.float32) + 0.5 * tie_f
+            wins[:, ib] += b_wins.astype(np.float32) + 0.5 * tie_f
+            ties_gained[:, ia] += tie_f
+            ties_gained[:, ib] += tie_f
             pf[:, ia]   += sa
             pf[:, ib]   += sb
 
@@ -1750,9 +1756,15 @@ def _run_mc(
 
     init_wins   = np.array([t["wins"]   for t in teams], dtype=np.float32)
     init_losses = np.array([t["losses"] for t in teams], dtype=np.float32)
+    init_ties   = np.array([t["ties"]   for t in teams], dtype=np.float32)
     avg_wins    = wins.mean(axis=0)
+    avg_ties_gained = ties_gained.mean(axis=0)
+    avg_final_ties  = init_ties + avg_ties_gained
     # Use per-team games scheduled so bye weeks don't inflate projected losses.
-    avg_losses  = init_losses + games_per_team - (avg_wins - init_wins)
+    # `wins` already credits 0.5 per tie, so subtract that half back out — a tie is
+    # a tie, not half a loss.
+    avg_losses  = (init_losses + games_per_team
+                   - (avg_wins - init_wins) - 0.5 * avg_ties_gained)
 
     # Mathematical clinch / elimination (consistent with the sim's top-N-by-record
     # seeding). A team has CLINCHED a berth if, even losing out while everyone who
@@ -1797,6 +1809,7 @@ def _run_mc(
         "miss_pct":         round(100 - _playoff_pct(i), 1),
         "avg_final_wins":   round(float(avg_wins[i]),     1),
         "avg_final_losses": round(float(avg_losses[i]),   1),
+        "avg_final_ties":   round(float(avg_final_ties[i]), 1),
         "n_sims":           n_sims,
         "is_complete":      False,
     } for i, t in enumerate(teams)]

@@ -1440,11 +1440,13 @@ def clear_weekly_cache_for_league(league_id: str) -> None:
     # Weekly page touches NFL state, players, users, rosters.
     # If you later make them per-league, you can reuse _clear_func_cache_for_league.
     try:
-        _clear_func_cache_for_league(get_nfl_state, "get_nfl_state", league_id)
-        _clear_func_cache_for_league(get_nfl_players, "get_nfl_players", league_id)
+        # get_nfl_state / get_nfl_players take no league arg, so the per-league
+        # clearer can never match their (empty-args) cache key — it's a no-op.
+        # Use the decorator's clear_cache() to actually evict the global entry.
+        get_nfl_state.clear_cache()
+        get_nfl_players.clear_cache()
         _clear_func_cache_for_league(get_users, "get_users", league_id)
         _clear_func_cache_for_league(get_rosters, "get_rosters", league_id)
-        _clear_func_cache_for_league(get_nfl_state, "get_nfl_state", league_id)
         _clear_func_cache_for_league(get_matchups, "get_matchups", league_id)
     except Exception as e:
         print("clear_weekly_cache_for_league RAISED EXCEPTION:", repr(e))

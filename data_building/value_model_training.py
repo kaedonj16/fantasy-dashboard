@@ -1426,8 +1426,11 @@ def rewrite_value_table_with_model() -> Path:
                 continue
             eng_n = engine_size_map[n].get(pid) or 0.0
             sf_eng_n = sf_engine_size_map[n].get(pid) or 0.0
-            ratio = (eng_n / eng_base) if eng_base > 0 else 1.0
-            sf_ratio = (sf_eng_n / sf_eng_base) if sf_eng_base > 0 else 1.0
+            # A missing size-specific engine value means "no scarcity data," which
+            # should leave the player unadjusted (ratio 1.0) — not zero them out.
+            # Guard the numerator too, else eng_n == 0 collapses value_{n} to 0.
+            ratio = (eng_n / eng_base) if (eng_base > 0 and eng_n > 0) else 1.0
+            sf_ratio = (sf_eng_n / sf_eng_base) if (sf_eng_base > 0 and sf_eng_n > 0) else 1.0
             size_values[f"value_{n}"] = round(min(float(final_value) * ratio, 999.9), 1)
             sf_size_values[f"sf_value_{n}"] = round(min(float(sf_value) * sf_ratio, 999.9), 1)
 
