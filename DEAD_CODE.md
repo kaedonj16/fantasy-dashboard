@@ -180,6 +180,30 @@ already excluded.
 **11 groups / 23 functions.** Bodies are structurally identical
 after normalizing names — consolidating into one shared helper removes ~12 copies.
 
+> **STATUS (2026-06-07): partially consolidated.** Re-verified each group against
+> the current tree (all still identical except `_get_num`/`_raw_float`, which has
+> since diverged). Consolidated the groups that were genuinely pure top-level
+> functions:
+> - `_decay_weight` + `_size_bucket` (trade_intel) → new dependency-free
+>   `data_building/trade_intel/_helpers.py`, imported by analytics, trade_value_model,
+>   trade_pattern_model and the diagnose_wls script.
+> - `_normalize_profile_inline` → `normalize_profile` (sportradar_ncaa.py).
+> - `_slug`: pipeline.py now imports it from mock_draft_consensus.py.
+> - `_pearson`: train_ml_model.py now imports `_pearson_r` from backtest_prospect_model.py.
+>
+> **Deferred (not safe as a like-for-like merge):**
+> - `_waiver_pickup_score`/`_wv_score` (app.py) and `_lineup_score`/`_reb_lineup_score`
+>   (archetype_engine.py) — these are **nested closures** that capture different
+>   enclosing-scope variables, so the textually-identical bodies are not behaviorally
+>   interchangeable. Merging needs an explicit refactor (promote to a parameterized
+>   module-level helper), not a simple import.
+> - `_get_num`/`_raw_float` — bodies have diverged; no longer duplicates.
+> - `fetch_sleeper_players` + `update_player_teams_from_sleeper`: `data_building/players.py`
+>   and `data_building/updates/update_players.py` are **byte-identical standalone scripts**
+>   (each ends in `if __name__ == "__main__"`), neither imported anywhere. The right fix
+>   is deleting one file once the canonical entry point is confirmed — a file-deletion
+>   decision, not a function merge.
+
 
 - **3 copies** (4 stmts, same name)
   - `data_building/trade_intel/analytics.py:40` — `_decay_weight()`

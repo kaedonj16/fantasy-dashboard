@@ -41,6 +41,7 @@ from scripts.backtest_prospect_model import (
     _build_prospect_dicts,
     _build_nfl_ppr_per_player,
     _run_draft_class_backtest,
+    _pearson_r,
 )
 from data_building.rookie_pipeline.ml_model import (
     MLProspectScorer,
@@ -176,23 +177,9 @@ def evaluate_cv(training_rows: List[Dict[str, Any]]) -> None:
                 continue
 
             mae = mean_absolute_error(actuals, preds)
-            r_val = _pearson(preds, actuals)
+            r_val = _pearson_r(preds, actuals)
             r_str = f"{r_val:+.3f}" if not math.isnan(r_val) else "   n/a"
             print(f"  {held_year:<6} {pos:<5} {len(preds):>4}  {mae:>7.1f}  {r_str:>10}")
-
-
-def _pearson(xs: List[float], ys: List[float]) -> float:
-    n = len(xs)
-    if n < 3:
-        return float("nan")
-    mx = sum(xs) / n
-    my = sum(ys) / n
-    cov = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
-    sx = math.sqrt(sum((x - mx) ** 2 for x in xs) / n)
-    sy = math.sqrt(sum((y - my) ** 2 for y in ys) / n)
-    if sx == 0 or sy == 0:
-        return float("nan")
-    return cov / (sx * sy * n)
 
 
 def main() -> None:

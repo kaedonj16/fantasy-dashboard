@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from dashboard_services.db import get_conn
+from data_building.trade_intel._helpers import _decay_weight, _size_bucket
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +37,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Decay schedule
 # ---------------------------------------------------------------------------
-
-def _decay_weight(days_ago: float) -> float:
-    if days_ago <= 14:
-        return 1.0
-    if days_ago <= 30:
-        return 0.6
-    if days_ago <= 60:
-        return 0.25
-    return 0.08
-
 
 def _weighted_median(pairs: list[tuple[float, float]]) -> float | None:
     """
@@ -71,17 +62,6 @@ def _plain_median(values: list[float]) -> float | None:
         return None
     s = sorted(values)
     return round(s[len(s) // 2], 2)
-
-
-def _size_bucket(num_teams: int) -> str:
-    """Map raw team count to one of four canonical size buckets."""
-    if num_teams <= 9:
-        return "8"
-    if num_teams <= 11:
-        return "10"
-    if num_teams == 12:
-        return "12"
-    return "14"
 
 
 # ---------------------------------------------------------------------------

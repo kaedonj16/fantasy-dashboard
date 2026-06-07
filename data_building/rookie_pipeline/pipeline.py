@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
+from data_building.rookie_pipeline.mock_draft_consensus import _slug
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -293,12 +294,6 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                     },
                 )
     return saved
-
-
-def _slug(name: str) -> str:
-    """Convert 'Travis Hunter' → 'TRAVIS_HUNTER'. Strips periods so 'K.C.' → 'KC'."""
-    import re
-    return re.sub(r"[^A-Z0-9]+", "_", name.upper().replace(".", "")).strip("_")
 
 
 def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_year: int, conn) -> int:
