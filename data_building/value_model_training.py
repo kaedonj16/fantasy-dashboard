@@ -3,22 +3,13 @@
 from __future__ import annotations
 
 import json
-import pickle
 import re
-from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.impute import SimpleImputer
-from sklearn.metrics import mean_absolute_error
-from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.picks import load_pick_value_table
@@ -31,7 +22,6 @@ from utils.utils import load_teams_index, bucket_for_slot, normalize_name, load_
 # Paths / constants
 # ------------------------------------------------
 
-MODEL_PATH = DATA_DIR / "trade_value_model.pkl"
 DYNASTYPROCESS_VALUES_PATH = DATA_DIR / "dynastyprocess_values.csv"
 FANTASYCALC_VALUES_PATH    = DATA_DIR / "fantasycalc_api_values.csv"
 ENGINE_VALUES_PATH         = DATA_DIR / "engine_values.csv"
@@ -42,18 +32,6 @@ FANTASYCALC_URL = (
 )
 
 CORE_POSITIONS = {"QB", "RB", "WR", "TE"}
-
-
-# ------------------------------------------------
-# Trained model bundle
-# ------------------------------------------------
-
-@dataclass
-class TrainedModelBundle:
-    pipeline: Pipeline
-    scale_min: float
-    scale_max: float
-    feature_columns: List[str]
 
 
 # ------------------------------------------------
@@ -478,45 +456,6 @@ def load_dynastyprocess_df(
 # Engine loader
 # ------------------------------------------------
 
-def load_engine_df(path: Path = ENGINE_VALUES_PATH) -> pd.DataFrame:
-    if not path.exists():
-        print(f"[value_model] Engine CSV not found at {path}; continuing without engine values.")
-        return pd.DataFrame(columns=["sleeper_id", "engine_value"])
-
-    df_raw = pd.read_csv(path)
-
-    if df_raw.empty:
-        print("[value_model] Engine CSV is empty; continuing without engine values.")
-        return pd.DataFrame(columns=["sleeper_id", "engine_value"])
-
-    sid_col = _pick_col(df_raw, [
-        "sleeper_id", "id", "player_id", "sleeperId"
-    ])
-    val_col = _pick_col(df_raw, [
-        "engine_value", "value", "val", "score"
-    ])
-
-    if sid_col is None or val_col is None:
-        raise ValueError(
-            f"Could not find sleeper_id/value columns in engine CSV: {path}. "
-            f"Columns present: {list(df_raw.columns)}"
-        )
-
-    # CRITICAL FIX: Also load sf_engine_value if present
-    out = pd.DataFrame({
-        "sleeper_id": df_raw[sid_col].astype(str),
-        "engine_value": pd.to_numeric(df_raw[val_col], errors="coerce"),
-    })
-
-    if "sf_engine_value" in df_raw.columns:
-        out["sf_engine_value"] = pd.to_numeric(df_raw["sf_engine_value"], errors="coerce")
-    else:
-        out["sf_engine_value"] = None
-
-    out = out.dropna(subset=["sleeper_id", "engine_value"]).copy()
-    return out
-
-
 # ------------------------------------------------
 # Draft values helpers
 # ------------------------------------------------
@@ -525,479 +464,17 @@ def load_engine_df(path: Path = ENGINE_VALUES_PATH) -> pd.DataFrame:
 # Training data builder
 # ------------------------------------------------
 
-def build_training_dataframe() -> pd.DataFrame:
-    current_season = _current_season_from_state()
-
-    fc_df = load_fantasycalc_df()
-    dp_df = load_dynastyprocess_df()
-    engine_df = load_engine_df()
-    history_features_df = load_history_feature_df(current_season)
-    investment_df = load_player_investment_df()
-    advanced_metrics_df = load_advanced_metrics_df()
-
-    df = fc_df.merge(engine_df, on="sleeper_id", how="left")
-
-    if history_features_df is not None and not history_features_df.empty:
-        history_features_df = history_features_df.copy()
-        history_features_df["sleeper_id"] = history_features_df["sleeper_id"].astype(str)
-        df = df.merge(history_features_df, on="sleeper_id", how="left", suffixes=("", "_hist"))
-
-    if investment_df is not None and not investment_df.empty:
-        df = df.merge(investment_df, on="sleeper_id", how="left")
-
-    # ADVANCED METRICS: Merge efficiency metrics
-    if advanced_metrics_df is not None and not advanced_metrics_df.empty:
-        df = df.merge(advanced_metrics_df, on="sleeper_id", how="left")
-
-    if "dp_name" in dp_df.columns:
-        df["name_lower"] = df["name"].astype(str).str.lower().str.strip()
-        dp_df["dp_name_lower"] = dp_df["dp_name"].astype(str).str.lower().str.strip()
-
-        df = df.merge(
-            dp_df[["dp_name_lower", "dp_position", "dp_value_raw"]],
-            left_on="name_lower",
-            right_on="dp_name_lower",
-            how="left",
-        ).drop(columns=["dp_name_lower"], errors="ignore")
-
-        df.rename(columns={"dp_value_raw": "dp_value"}, inplace=True)
-    else:
-        df["dp_value"] = np.nan
-
-    if "age" not in df.columns and "fc_age" in df.columns:
-        df["age"] = pd.to_numeric(df["fc_age"], errors="coerce")
-
-    df = df[~df["fc_value"].isna()].copy()
-    return df
-
-
 # ------------------------------------------------
 # Target normalization helper
 # ------------------------------------------------
-
-def _normalize_series_0_1(s: pd.Series) -> pd.Series:
-    s = pd.to_numeric(s, errors="coerce")
-    mask = s.notna()
-
-    if not mask.any():
-        return pd.Series(np.nan, index=s.index)
-
-    vmin = s[mask].min()
-    vmax = s[mask].max()
-
-    if vmax <= vmin:
-        out = pd.Series(0.5, index=s.index)
-        out[~mask] = np.nan
-        return out
-
-    out = (s - vmin) / (vmax - vmin)
-    out[~mask] = np.nan
-    return out
-
 
 # ------------------------------------------------
 # Model training
 # ------------------------------------------------
 
-def train_trade_value_model(
-        test_size: float = 0.2,
-        random_state: int = 42,
-) -> TrainedModelBundle:
-    df = build_training_dataframe()
-
-    if df.empty:
-        raise ValueError("[value_model] Training dataframe is empty.")
-
-    # -----------------------------
-    # Target from consensus sources
-    # -----------------------------
-    fc_val = pd.to_numeric(df["fc_value"], errors="coerce")
-    dp_val = pd.to_numeric(
-        df.get("dp_value", pd.Series(np.nan, index=df.index)),
-        errors="coerce",
-    )
-    engine_val = pd.to_numeric(
-        df.get("engine_value", pd.Series(np.nan, index=df.index)),
-        errors="coerce",
-    )
-
-    fc_norm = _normalize_series_0_1(fc_val)
-    dp_norm = _normalize_series_0_1(dp_val)
-    engine_norm = _normalize_series_0_1(engine_val)
-
-    # NOTE: Vendor values used for TARGET only, not as features
-    # (They're not available during inference from usage_table.json)
-    
-    # Use max-based approach instead of weighted averaging to allow higher elite values
-    # This preserves the ability for top players to reach closer to theoretical max
-    
-    vals = np.vstack([fc_norm.values, dp_norm.values, engine_norm.values])
-    
-    # For each player, take the maximum normalized value across available sources
-    # This allows elite players to maintain higher target values
-    y_norm = np.nanmax(vals, axis=0)
-    
-    # Apply a slight boost for players with multiple high-value sources (consensus elites)
-    consensus_boost = np.sum(~np.isnan(vals), axis=0)  # Count of available sources
-    consensus_boost = np.where(consensus_boost >= 2, 1.05, 1.0)  # 5% boost for consensus
-    y_norm = y_norm * consensus_boost
-    
-    # Cap at 1.0 to maintain normalization
-    y_norm = np.minimum(y_norm, 1.0)
-
-    df["target_vendor_norm"] = y_norm
-    df["target_value"] = df["target_vendor_norm"] * 1000.0
-    df = df.dropna(subset=["target_value"]).copy()
-
-    if df.empty:
-        raise ValueError("[value_model] No rows remain after target construction.")
-
-    # -----------------------------
-    # Feature columns
-    # -----------------------------
-    numeric_cols: List[str] = []
-
-    # NOTE: Vendor values NOT used as features (only for target calculation)
-    # They're not available during inference
-
-    if "age" in df.columns:
-        df["age"] = pd.to_numeric(df["age"], errors="coerce")
-        if "fc_age" in df.columns:
-            df["age"] = df["age"].fillna(pd.to_numeric(df["fc_age"], errors="coerce"))
-        numeric_cols.append("age")
-    elif "fc_age" in df.columns:
-        df["fc_age"] = pd.to_numeric(df["fc_age"], errors="coerce")
-        numeric_cols.append("fc_age")
-
-    candidate_usage_cols = [
-        "games",
-        "avg_off_snap_pct",
-        "avg_off_snaps",
-        "avg_targets",
-        "avg_receptions",
-        "avg_rec_yards",
-        "avg_rec_tds",
-        "avg_carries",
-        "avg_rush_yards",
-        "avg_rush_tds",
-        "ppr_ppg",
-        "half_ppr_ppg",
-        "std_scoring_ppg",
-        "std_ppg",
-        "rec_rz_tgt_pg",
-        "rush_rz_att_pg",
-        "avg_pass_att",
-        "avg_pass_cmp",
-        "avg_pass_yds",
-        "avg_pass_tds",
-        "avg_pass_int",
-        "target_share",
-        "target_share_pct",
-        "total_targets",
-        # CRITICAL FIX: Rolling window features (captures breakouts, role changes)
-        "last_4_weeks_ppg",
-        "last_4_weeks_snap_pct",
-        "ppg_acceleration",
-    ]
-
-    candidate_history_cols = [
-        "last_year_ppg",
-        "prev_year_ppg",
-        "three_year_weighted_ppg",
-        "career_best_ppg",
-        "career_avg_ppg",
-        "last_year_snap_pct",
-        "three_year_weighted_snap_pct",
-        "last_year_target_share",
-        "three_year_weighted_target_share",
-        "ppg_trend_1yr",
-        "ppg_trend_2yr",
-        "target_share_trend_1yr",
-        "games_last_year",
-        "games_last_3yr",
-        "seasons_played",
-    ]
-
-    team_feature_cols = [
-        "team_pass_att_pg",
-        "team_off_snaps_pg",
-        "team_rush_att_pg",
-        "team_rush_yds_pg",
-        "team_pass_yds_pg",
-        "team_games_tracked",
-    ]
-
-    candidate_investment_cols = [
-        "draft_capital_score",
-        "draft_capital_pos_pct",
-        "contract_apy",
-        "guaranteed_money",
-        "guaranteed_pct",
-        "contract_score",
-        "team_investment_score",
-        "years_to_fa",
-        "contract_apy_pos_pct",
-        "guaranteed_money_pos_pct",
-        "guaranteed_pct_pos_pct",
-    ]
-
-    # ADVANCED METRICS: Efficiency and usage features
-    candidate_advanced_metrics_cols = [
-        # Receiving efficiency (WR/TE/RB)
-        "yards_per_target",
-        "catch_rate",
-        "yards_per_reception",
-        "target_quality_score",
-        # Rushing efficiency (RB)
-        "yards_per_carry",
-        "yards_per_touch",
-        "rush_td_rate",
-        # Passing efficiency (QB)
-        "yards_per_attempt",
-        "completion_pct",
-        "td_rate",
-        "int_rate",
-        # Usage metrics
-        "snap_share",
-        "opportunity_share",
-        "red_zone_usage",
-        # Composite scores
-        "role_score",
-        "usage_trend",
-        "efficiency_trend",
-        # ── Rookie evaluation features ─────────────────────────────────────────
-        # Derived / proxied from college stats for current draft-class prospects.
-        # Non-rookies have these as 0 (null-filled below); the model learns that
-        # is_rookie=1 combined with a high prospect_score signals upside value.
-        "rookie_eval_routes_run",
-        "rookie_eval_yprr",
-        "rookie_eval_tprr",
-        "rookie_eval_yac_per_att",
-        "rookie_eval_mtf_per_att",
-        "rookie_eval_explosive_run_rate",
-        "rookie_eval_adjusted_comp_pct",
-        "rookie_eval_twp_rate",
-        "rookie_eval_player_level_sos",
-        "rookie_eval_perf_vs_top_def",
-        "rookie_eval_true_early_declare_flag",   # 0/1 (BOOLEAN → int in query)
-        "rookie_eval_draft_class_year",
-        "rookie_eval_completeness",
-        "rookie_eval_prospect_score",
-        "rookie_eval_is_rookie_flag",             # 0/1 (BOOLEAN → int in query)
-    ]
-
-    for col in (
-            candidate_usage_cols
-            + candidate_history_cols
-            + team_feature_cols
-            + candidate_investment_cols
-            + candidate_advanced_metrics_cols
-    ):
-        if col in df.columns:
-            numeric_cols.append(col)
-
-    numeric_cols = list(dict.fromkeys(numeric_cols))
-    numeric_cols = [c for c in numeric_cols if c in df.columns]
-
-    cat_cols = ["position"]
-    cat_cols = [c for c in cat_cols if c in df.columns]
-
-    df_model = df.dropna(subset=["position"]).copy()
-    if df_model.empty:
-        raise ValueError("[value_model] No rows remain after requiring position.")
-
-    # Rookie eval columns are null for established NFL players.
-    # Fill with 0 so the imputer treats them as "not applicable" rather than missing.
-    # The is_rookie_flag column (0/1) lets the model distinguish the two groups.
-    _rookie_eval_cols = [c for c in numeric_cols if c.startswith("rookie_eval_")]
-    for col in _rookie_eval_cols:
-        if col in df_model.columns:
-            df_model[col] = df_model[col].fillna(0)
-
-    for col in numeric_cols:
-        df_model[col] = pd.to_numeric(df_model[col], errors="coerce")
-
-    # Drop columns that are entirely null - the median imputer can't handle them
-    # and emits a UserWarning. They carry no signal anyway.
-    numeric_cols = [c for c in numeric_cols if df_model[c].notna().any()]
-
-    for col in cat_cols:
-        df_model[col] = df_model[col].fillna("UNK").astype(str)
-
-    feature_columns = numeric_cols + cat_cols
-    if not feature_columns:
-        raise ValueError("[value_model] No usable feature columns found.")
-
-    X = df_model[feature_columns].copy()
-    y = df_model["target_value"].values
-
-    if len(df_model) < 25:
-        raise ValueError(f"[value_model] Not enough training rows: {len(df_model)}")
-
-    # -----------------------------
-    # Split
-    # -----------------------------
-    X_train, X_val, y_train, y_val = train_test_split(
-        X,
-        y,
-        test_size=test_size,
-        random_state=random_state,
-    )
-
-    # -----------------------------
-    # Preprocessing
-    # -----------------------------
-    transformers = []
-
-    if numeric_cols:
-        numeric_transformer = Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median", fill_value=0)),
-                ("scaler", StandardScaler()),
-            ]
-        )
-        transformers.append(("num", numeric_transformer, numeric_cols))
-
-    if cat_cols:
-        categorical_transformer = Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("onehot", OneHotEncoder(handle_unknown="ignore")),
-            ]
-        )
-        transformers.append(("cat", categorical_transformer, cat_cols))
-
-    preprocessor = ColumnTransformer(
-        transformers=transformers,
-        remainder="drop",
-    )
-
-    # -----------------------------
-    # Model
-    # -----------------------------
-    gbr = GradientBoostingRegressor(
-        n_estimators=400,
-        learning_rate=0.08,
-        max_depth=5,
-        random_state=random_state,
-        subsample=0.95,
-        min_samples_leaf=2,
-    )
-
-    model = Pipeline(
-        steps=[
-            ("preprocess", preprocessor),
-            ("regressor", gbr),
-        ]
-    )
-
-    model.fit(X_train, y_train)
-
-    # -----------------------------
-    # Validation
-    # -----------------------------
-    y_val_pred = model.predict(X_val)
-    mae = mean_absolute_error(y_val, y_val_pred)
-
-    # -----------------------------
-    # Scaling range for inference
-    # -----------------------------
-    # CRITICAL FIX: Use fixed scale (0-1000) since target_value is constructed in that range
-    # This ensures outputs reach full 999.9 scale even if model regresses to mean
-    scale_min = 0.0
-    scale_max = 1000.0
-
-    bundle = TrainedModelBundle(
-        pipeline=model,
-        scale_min=scale_min,
-        scale_max=scale_max,
-        feature_columns=feature_columns,
-    )
-
-    with MODEL_PATH.open("wb") as f:
-        pickle.dump(bundle, f)
-
-    debug_cols = [
-        "name",
-        "position",
-        "draft_capital_score",
-        "draft_capital_pos_pct",
-        "contract_apy",
-        "contract_score",
-        "team_investment_score",
-    ]
-
-    return bundle
-
-
 # ------------------------------------------------
 # Inference helpers
 # ------------------------------------------------
-
-def load_trained_bundle(path: Path = MODEL_PATH) -> TrainedModelBundle:
-    if not path.exists():
-        return train_trade_value_model()
-
-    try:
-        with path.open("rb") as f:
-            bundle: TrainedModelBundle = pickle.load(f)
-    except (AttributeError, ModuleNotFoundError):
-        print("[value_model] Incompatible pickle found. Deleting and retraining…")
-        try:
-            path.unlink()
-        except OSError:
-            pass
-        return train_trade_value_model()
-
-    if not isinstance(bundle, TrainedModelBundle):
-        print("[value_model] Invalid model bundle found. Retraining…")
-        try:
-            path.unlink()
-        except OSError:
-            pass
-        return train_trade_value_model()
-
-    return bundle
-
-
-def predict_scaled_value_from_row(bundle: TrainedModelBundle, row: pd.Series) -> float:
-    model = bundle.pipeline
-    scale_min = bundle.scale_min
-    scale_max = bundle.scale_max
-
-    row_dict = row.to_dict() if hasattr(row, "to_dict") else dict(row)
-
-    for col in bundle.feature_columns:
-        if col not in row_dict:
-            row_dict[col] = "UNK" if col == "position" else 0.0
-        else:
-            val = row_dict[col]
-            if col == "position":
-                if val is None or (isinstance(val, float) and pd.isna(val)) or val == "":
-                    row_dict[col] = "UNK"
-            else:
-                if val is None or (isinstance(val, float) and pd.isna(val)):
-                    row_dict[col] = 0.0
-
-    X_row = pd.DataFrame([{col: row_dict[col] for col in bundle.feature_columns}])
-
-    raw_pred = model.predict(X_row)[0]
-
-    # CRITICAL FIX: Model trained on 0-1000 scale, normalize to 0-1 then scale to 999.9
-    # Using fixed scale (0-1000) ensures predictions reach full range
-    if scale_max <= scale_min:
-        return 0.0
-
-    s01 = (raw_pred - scale_min) / (scale_max - scale_min)
-    s01 = max(0.0, min(1.0, s01))
-
-    # Apply power boost for elite players (top 10% of predictions)
-    if s01 > 0.85:
-        boost_factor = 1.0 + (s01 - 0.85) * 0.3
-        s01 = min(1.0, s01 * boost_factor)
-
-    return round(s01 * 999.9, 1)
-
 
 def build_inference_dataframe() -> pd.DataFrame:
     current_season = _current_season_from_state()
@@ -1035,30 +512,6 @@ def build_inference_dataframe() -> pd.DataFrame:
     return df
 
 
-def build_ml_value_table() -> Dict[str, float]:
-    bundle = load_trained_bundle()
-
-    df = build_inference_dataframe()
-    if df.empty:
-        return {}
-
-    if "position" in df.columns:
-        df = df[df["position"].isin(list(CORE_POSITIONS))].copy()
-    else:
-        return {}
-
-    for col in bundle.feature_columns:
-        if col not in df.columns:
-            df[col] = "UNK" if col == "position" else 0.0
-
-    values: Dict[str, float] = {}
-    for _, row in df.iterrows():
-        pid = str(row["sleeper_id"])
-        values[pid] = predict_scaled_value_from_row(bundle, row)
-
-    return values
-
-
 # ------------------------------------------------
 # Rewrite usage table with model outputs
 # ------------------------------------------------
@@ -1071,7 +524,6 @@ def rewrite_value_table_with_model() -> Path:
     with source_path.open("r", encoding="utf-8") as f:
         players = json.load(f)
 
-    bundle = load_trained_bundle()
     inference_df = build_inference_dataframe()
 
     # Load WLS calibrated SF values (produced by trade_value_model.py).
@@ -1318,19 +770,6 @@ def rewrite_value_table_with_model() -> Path:
         pid = str(player.get("id"))
         row = df_by_id.get(pid)
 
-        # Get ML model prediction first
-        ml_prediction = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
-        
-        # Store ML predictions for later ranking
-        if not hasattr(rewrite_value_table_with_model, '_ml_predictions'):
-            rewrite_value_table_with_model._ml_predictions = []
-        rewrite_value_table_with_model._ml_predictions.append({
-            'pid': pid,
-            'ml_prediction': ml_prediction,
-            'name': player.get('name', ''),
-            'position': player.get('position', '')
-        })
-        
         # Gather all three value sources on the same 0-999.9 scale:
         #   FC (vendor), DP (vendor, non-TEs only), internal engine.
         # Outlier rule: if any source deviates >15% from the avg of the other two,
@@ -1383,7 +822,10 @@ def rewrite_value_table_with_model() -> Path:
         if total_weight > 0:
             final_value = weighted_sum / total_weight
         else:
-            final_value = ml_prediction
+            # No vendor (FC/DP) and no engine record for this player — there's no
+            # signal to value them, so leave them at 0 (previously a rarely-used
+            # ML fallback).
+            final_value = 0.0
 
         # Calculate Superflex value - use engine values as primary source
         if pid in sf_engine_map:
@@ -1391,8 +833,8 @@ def rewrite_value_table_with_model() -> Path:
         elif pid in sf_vendor_values:
             sf_value = sf_vendor_values[pid]
         else:
-            # Fallback to ML model for SF (same as 1QB for now)
-            sf_value = predict_scaled_value_from_row(bundle, row) if row is not None else 0.0
+            # No SF engine value and no SF vendor blend → no SF signal.
+            sf_value = 0.0
 
         # Non-QB players are not less valuable in SF - QBs go up, everyone else stays the same.
         # Floor non-QB sf_value at their 1QB value to prevent the DP 2QB blend from pulling them down.
