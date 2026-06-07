@@ -839,6 +839,7 @@ def compute_sos_by_team(
         team_strength: Dict[int, float],
         weeks_past: int,
         users: Dict[int, str],
+        regular_season_weeks: int = 14,
 ) -> Dict[int, dict]:
     out: dict[Any, dict[str, Any]] = {
         owner: {"past_sos": 0.0, "past_cnt": 0, "ros_sos": 0.0, "ros_cnt": 0}
@@ -856,7 +857,11 @@ def compute_sos_by_team(
         )
         return match
 
-    for w in range(1, weeks_past):
+    # weeks_past is the latest *played* week, so it belongs in past SOS (inclusive),
+    # and the rest-of-season window starts the week after it. The regular season is
+    # assumed to be `regular_season_weeks` long (default 14); the matchup dict also
+    # carries playoff weeks 15-17, which are intentionally excluded from ROS SOS.
+    for w in range(1, weeks_past + 1):
         for a, b in compute_week_opponents(all_matchups.get(w, [])):
             username = _resolve_name(a)
             username2 = _resolve_name(b)
@@ -870,7 +875,7 @@ def compute_sos_by_team(
             out[username2]["past_sos"] += team_strength[username]
             out[username2]["past_cnt"] += 1
 
-    for w in range(weeks_past, 15):
+    for w in range(weeks_past + 1, regular_season_weeks + 1):
         for a, b in compute_week_opponents(all_matchups.get(w, [])):
             username = _resolve_name(a)
             username2 = _resolve_name(b)
