@@ -12522,10 +12522,12 @@ def build_optimal_body(ctx):
     league_id = ctx.get("league_id") or ""
     viewer_rid = str((ctx.get("viewer") or {}).get("viewer_roster_id") or "")
     roster_positions = ctx.get("roster_positions") or []
-    nfl_state = ctx.get("state") or {}
     settings  = (ctx.get("league") or {}).get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
-    current_week  = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
+    # current_week lives on ctx directly; build_league_context never exposes a
+    # "state" key, so reading ctx.get("state") here would pin current_week to 0
+    # and make the page render "No completed weeks yet" all season.
+    current_week  = int(ctx.get("current_week") or 0)
     players_idx   = get_players_index_global() or {}
     roster_map    = ctx.get("roster_map") or {}
     rosters       = ctx.get("rosters") or []
@@ -14988,8 +14990,8 @@ def build_commissioner_body(ctx):
     users      = ctx.get("users") or []
     roster_map = ctx.get("roster_map") or {}
     traded     = ctx.get("traded") or []
-    nfl_state  = ctx.get("state") or {}
-    current_week = int(nfl_state.get("leg") or nfl_state.get("week") or 0)
+    # current_week is on ctx directly; ctx has no "state" key (see build_optimal_body).
+    current_week = int(ctx.get("current_week") or 0)
     settings   = (ctx.get("league") or {}).get("settings") or {}
     playoff_start = int(settings.get("playoff_week_start") or 14)
     model_vals  = ctx.get("model_value_table") or get_model_value_table_cached() or []

@@ -262,8 +262,9 @@ def _raw_to_pts(st: dict, pos: str, scoring: str) -> float:
         + rec_yd  * 0.1  + rec_td   * 6.0
         + fum_lost * -2.0
     )
-    rec_pts  = 1.0 if scoring == "ppr" else (0.5 if scoring == "half_ppr" else 0.0)
-    tep_pts  = 0.5 if scoring == "tep" and pos == "TE" else 0.0
+    rec_pts  = 1.0 if scoring in ("ppr", "tep", "6pt_ppr", "6pt_tep") else (
+        0.5 if scoring in ("half_ppr", "6pt_half") else 0.0)
+    tep_pts  = 0.5 if (scoring in ("tep", "6pt_tep") and pos == "TE") else 0.0
     td6_pts  = pass_td * 2.0 if scoring in ("6pt_ppr", "6pt_half", "6pt_tep") else 0.0
     return round(base + rec * rec_pts + rec * tep_pts + td6_pts, 2)
 
