@@ -75,17 +75,6 @@ _SUPER_FLEX_POS = {"SUPER_FLEX", "SUPERFLEX", "QB/WR/RB/TE", "OP"}
 # approximations from empirical NFL availability by position (RBs miss the most,
 # QBs the least). This injects realistic week-to-week downside that the smooth
 # scoring distribution alone doesn't capture.
-# Lineup-efficiency nudge weight.  The raw efficiency ratio (actual/optimal from
-# prior seasons) typically spans 0.80–1.00, a 20-point range.  Applying it
-# directly knocks 15-20 % off a top team's projection — empirically too large;
-# real-world manager-skill differences amount to ~2-3 pts/week.  We compress the
-# ratio toward 1.0 by this factor so the actual PPG impact stays realistic:
-#   eff 0.80 → eff_factor 0.95  (-5 %)
-#   eff 0.85 → eff_factor 0.96  (-3.75 %)
-#   eff 0.95 → eff_factor 0.99  (-1.25 %)
-#   eff 1.00 → eff_factor 1.00  (no change)
-_EFFICIENCY_WEIGHT = 0.25
-
 _INJURY_HAZARD: dict[str, float] = {
     "QB": 0.03, "RB": 0.07, "WR": 0.05, "TE": 0.05, "K": 0.01, "DEF": 0.0,
 }
@@ -272,16 +261,13 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
         if rid is not None:
             roster_pid_map[int(rid)] = [str(p) for p in (r.get("players") or [])]
 
-    # Manager lineup efficiency (actual/optimal from prior seasons), cache-only.
-    efficiency_by_rid = _load_efficiency(platform, league_id, season, roster_pid_map.keys())
-
     # Per-week Sleeper projection maps and the resulting per-team week profiles.
     week_ppg_maps = _build_week_ppg_maps(
         season, remaining_weeks, raw_ss, pos_map, season_ppg_map
     )
     week_profiles = _compute_week_profiles(
         roster_pid_map, week_ppg_maps, pos_map, roster_positions,
-        hist_avg_by_rid, hist_std_by_rid, blend_factor, efficiency_by_rid,
+        hist_avg_by_rid, hist_std_by_rid, blend_factor,
     )
 
     return {
@@ -298,18 +284,7 @@ def _build_sim_state_impl(ctx: dict, platform: str = "sleeper") -> Optional[dict
         "week_profiles":    week_profiles,
         "hist_avg_by_rid":  hist_avg_by_rid,
         "hist_std_by_rid":  hist_std_by_rid,
-        "efficiency_by_rid": efficiency_by_rid,
     }
-
-
-def _load_efficiency(platform, league_id, season, roster_ids) -> dict[int, float]:
-    """Read cached per-manager lineup efficiency; default 1.0 (no adjustment)."""
-    try:
-        from dashboard_services.lineup_efficiency import get_efficiency
-        eff = get_efficiency(platform, league_id, season) or {}
-    except Exception:
-        eff = {}
-    return {int(rid): float(eff.get(int(rid), eff.get(str(rid), 1.0))) for rid in roster_ids}
 
 
 def _viewer_week_mean(week_profiles: dict, viewer_roster_id: int) -> float:
@@ -382,7 +357,6 @@ def simulate_with_swap(
 
 def _viewer_profiles_for_roster(sim_state: dict, viewer_roster_id: int, pids: list) -> dict:
     """Per-week profile for the viewer's hypothetical roster (one entry per week)."""
-    eff      = float((sim_state.get("efficiency_by_rid") or {}).get(viewer_roster_id, 1.0))
     hist_avg = float((sim_state.get("hist_avg_by_rid") or {}).get(viewer_roster_id, 0.0))
     hist_std = float((sim_state.get("hist_std_by_rid") or {}).get(viewer_roster_id, 0.0))
     blend    = float(sim_state.get("blend", 1.0))
@@ -391,7 +365,7 @@ def _viewer_profiles_for_roster(sim_state: dict, viewer_roster_id: int, pids: li
     out: dict[int, dict] = {}
     for week, ppg_map in (sim_state.get("week_ppg_maps") or {}).items():
         out[week] = _team_week_profile(
-            pids, ppg_map, pos_map, rpos, hist_avg, hist_std, blend, eff
+            pids, ppg_map, pos_map, rpos, hist_avg, hist_std, blend
         )
     return out
 
@@ -744,13 +718,12 @@ def _build_ctx_week_profiles(
         int(r["roster_id"]): [str(p) for p in (r.get("players") or [])]
         for r in (ctx.get("rosters") or []) if r.get("roster_id") is not None
     }
-    eff = _load_efficiency(platform, league_id, season, roster_pid_map.keys())
     week_ppg_maps = _build_week_ppg_maps(
         season, remaining_weeks, raw_ss, pos_map, season_ppg_map
     )
     return _compute_week_profiles(
         roster_pid_map, week_ppg_maps, pos_map, roster_positions,
-        hist_avg_by_rid, hist_std_by_rid, blend, eff,
+        hist_avg_by_rid, hist_std_by_rid, blend,
     )
 
 
@@ -998,36 +971,28 @@ def _team_week_profile(
     hist_avg: float,
     hist_std: float,
     blend: float,
-    efficiency: float,
 ) -> dict:
     """Build a single team's (mean, std, injury params) for one week.
 
-    mean = blend × (efficiency × week_projection) + (1−blend) × season_avg
+    mean = blend × week_projection + (1−blend) × season_avg
 
-    Efficiency (actual/optimal) discounts ONLY the projection term — you won't
-    realize a perfect lineup. The season average is already realized actual
-    scoring, so it is used as-is; applying efficiency to it again would
-    double-count the manager's inefficiency and drag the projection below the
-    team's true scoring level. Preseason uses blend = 1.0 (pure projection,
-    efficiency-discounted); in-season blends the week's projection with the
-    season-to-date average.
+    Preseason uses blend = 1.0 (pure projection — the optimal-lineup total from
+    Sleeper's weekly projections); in-season blends the week's projection with
+    the season-to-date average.
 
     Injury loss per starter = (starter − best replacement) put on the same scale
-    as the projection term (× blend × efficiency), so a no-op stays a no-op and
-    in-season injuries are discounted consistently with the projection's weight.
+    as the projection term (× blend), so a no-op stays a no-op and in-season
+    injuries are discounted consistently with the projection's weight.
     """
     proj, starters, repls = _lineup_with_replacements(
         pids, ppg_map, pos_map, roster_positions
     )
-    # Compress the efficiency ratio toward 1.0 so manager skill nudges PPG by
-    # ~2-3 pts rather than applying a full 15-20 % discount to the projection.
-    eff_factor = 1.0 + (efficiency - 1.0) * _EFFICIENCY_WEIGHT
-    mean = blend * eff_factor * proj + (1.0 - blend) * hist_avg
+    mean = blend * proj + (1.0 - blend) * hist_avg
     if hist_std and hist_std > 0:
         std = max(hist_std, _MIN_STD)
     else:
-        std = max(_team_std_from_starters(starters), _MIN_STD) * eff_factor
-    scale = blend * eff_factor
+        std = max(_team_std_from_starters(starters), _MIN_STD)
+    scale = blend
     lost = np.array(
         [max(s_ppg - r_ppg, 0.0) * scale for (_, s_ppg), r_ppg in zip(starters, repls)],
         dtype=np.float32,
@@ -1091,7 +1056,6 @@ def _compute_week_profiles(
     hist_avg_by_rid: dict[int, float],
     hist_std_by_rid: dict[int, float],
     blend: float,
-    eff_by_rid: dict[int, float],
 ) -> dict[int, dict]:
     """Per-week (mean, std, injury params) for every team."""
     profiles: dict[int, dict] = {}
@@ -1101,7 +1065,7 @@ def _compute_week_profiles(
             wp[rid] = _team_week_profile(
                 pids, ppg_map, pos_map, roster_positions,
                 hist_avg_by_rid.get(rid, 0.0), hist_std_by_rid.get(rid, 0.0),
-                blend, eff_by_rid.get(rid, 1.0),
+                blend,
             )
         profiles[week] = wp
     return profiles

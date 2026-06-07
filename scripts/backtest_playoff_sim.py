@@ -4,9 +4,9 @@ Calibration backtest for the playoff-odds simulator.
 
 For each completed league-season, it predicts every team's playoff odds from the
 preseason roster-projection model (the same code path the app uses in the
-offseason, including per-week Sleeper projections, the injury model, and cached
-manager efficiency) and compares those predictions to who ACTUALLY made the
-playoffs. It then reports calibration buckets, a Brier score, and log loss so you
+offseason, including per-week Sleeper projections and the injury model) and
+compares those predictions to who ACTUALLY made the playoffs. It then reports
+calibration buckets, a Brier score, and log loss so you
 can tell whether, say, teams given ~60% odds really made it ~60% of the time —
 and tune the hazard / std / blend with evidence instead of guesswork.
 

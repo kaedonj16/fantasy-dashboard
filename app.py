@@ -5792,7 +5792,8 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
     # For players Sleeper doesn't project (e.g. fringe depth), use FantasyPros
     # preseason PPG as a flat per-week estimate.  The PPG file is PPR-based, so we
     # estimate other variants by backing out typical reception points by position.
-    _EST_REC = {"QB": 0.0, "RB": 3.0, "WR": 5.0, "TE": 4.0}
+    # K and DEF carry no receptions, so their PPG is variant-independent (0 rec).
+    _EST_REC = {"QB": 0.0, "RB": 3.0, "WR": 5.0, "TE": 4.0, "K": 0.0, "DEF": 0.0}
     try:
         import json as _json
         _fp_path = os.path.join("cache", f"fp_projections_{season}_ppr.json")
@@ -5819,6 +5820,37 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
         pass
     except Exception as _e:
         logger.debug(f"[projections] FP fallback load failed: {_e}")
+
+    # Kickers and team defenses are absent from the FP file (no DEF) and from
+    # Sleeper's weekly projections, so the optimal-lineup view would score those
+    # slots at 0.  Fill them from the prior-season usage cache — the same source
+    # the playoff simulator uses — so Start/Sit and the optimal lineup count K and
+    # DEF.  Team defenses appear under their team abbreviation id (pos blank);
+    # kickers under pos PK/K.  Their scoring is variant-independent, so the flat
+    # PPR per-game value is used as-is.
+    try:
+        import json as _json
+        for _yr in (season, season - 1):
+            _u_path = os.path.join("cache", "player_history", f"usage_rows_{_yr}.json")
+            if not os.path.exists(_u_path):
+                continue
+            with open(_u_path) as _u_f:
+                _usage = _json.load(_u_f)
+            for _p in _usage:
+                _pid = str(_p.get("id") or "")
+                if not _pid or _pid in fallback:
+                    continue
+                _pos = str(_p.get("position") or "").upper()
+                _is_k   = _pos in ("K", "PK")
+                _is_def = _pos in ("DEF", "DST") or (_pid.isalpha() and _pid.isupper() and len(_pid) <= 4)
+                if not (_is_k or _is_def):
+                    continue
+                _v = float((_p.get("usage") or {}).get("ppr_ppg") or 0)
+                if _v > 0:
+                    fallback[_pid] = round(_v, 2)
+            break
+    except Exception as _e:
+        logger.debug(f"[projections] K/DEF usage fallback failed: {_e}")
 
     bundles = {}
     for w in range(1, weeks + 1):
