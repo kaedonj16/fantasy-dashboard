@@ -328,6 +328,15 @@ def simulate_with_swap(
 
     Returns (playoff_pct 0–100, new_avg_ppg).
 
+    Both sides of the deal are reflected: the give/get are derived from the
+    diff between the viewer's current roster and viewer_pids_after, and the
+    counterparty (the team that currently owns the incoming players) is
+    re-rostered with the players the viewer sends out. This matches
+    simulate_swap_impact, so a partner that sits on the viewer's schedule or in
+    their seeding race is correctly strengthened — otherwise the displayed
+    suggestion delta is systematically too favorable (the sent players would
+    simply vanish from the league).
+
     The viewer's new avg is computed as a *marginal* adjustment:
 
         new_avg = current_avg + blend * (proj_lineup(after) - proj_lineup(before))
@@ -339,9 +348,20 @@ def simulate_with_swap(
     factor applied to the team's blended baseline, so only the trade's true
     effect moves the odds.
     """
-    after_profiles = _override_viewer_profiles(
-        sim_state, viewer_roster_id, viewer_pids_after
-    )
+    overrides = {viewer_roster_id: viewer_pids_after}
+    # Reflect the counterparty: derive give/get from the roster diff and hand the
+    # sent players to whoever currently owns the incoming ones.
+    roster_pid_map = sim_state.get("roster_pid_map") or {}
+    before_set = set(roster_pid_map.get(viewer_roster_id, []))
+    after_set  = set(viewer_pids_after)
+    give_pids  = before_set - after_set
+    get_pids   = list(after_set - before_set)
+    counterparty = _infer_counterparty(roster_pid_map, viewer_roster_id, get_pids)
+    if counterparty is not None:
+        cp_pids = roster_pid_map.get(counterparty, [])
+        overrides[counterparty] = list((set(cp_pids) - set(get_pids)) | give_pids)
+
+    after_profiles = _override_profiles(sim_state, overrides)
     new_avg = _viewer_week_mean(after_profiles, viewer_roster_id)
 
     result = _run_mc(
@@ -390,10 +410,6 @@ def _override_profiles(sim_state: dict, overrides: dict) -> dict:
         merged[week] = nwp
     return merged
 
-
-def _override_viewer_profiles(sim_state: dict, viewer_roster_id: int, pids: list) -> dict:
-    """Override just the viewer's roster (used by suggestion-odds swaps)."""
-    return _override_profiles(sim_state, {viewer_roster_id: pids})
 
 
 def _infer_counterparty(roster_pid_map: dict, viewer_roster_id: int, get_pids: list) -> Optional[int]:
