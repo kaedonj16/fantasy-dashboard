@@ -295,7 +295,18 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
   .filter-row-secondary {
     padding-top: 4px;
+    flex-wrap: nowrap;
+    align-items: center;
   }
+  .filter-row-secondary .active-settings-indicator {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+  }
+  .filter-row-secondary .active-settings-indicator::-webkit-scrollbar { display: none; }
+  .filter-row-secondary .filter-sort { flex-shrink: 0; }
   .filter-search {
     position: relative;
     flex: 1;
@@ -441,32 +452,23 @@ def build_prospects_body(is_admin: bool = False) -> str:
   }
 
   /* Mobile responsive */
-  @media (max-width: 768px) {
+  @media (max-width: 600px) {
     .filter-row-primary {
-      flex-direction: column;
-      align-items: stretch;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      grid-template-rows: auto auto;
       gap: 8px;
     }
     .filter-search {
-      flex: none;
-      min-width: 0;
-      width: 100%;
-    }
-    .active-settings-indicator {
-      flex: 1;
+      grid-column: 1 / -1;
       min-width: 0;
     }
-    .filter-row-secondary {
-      flex-wrap: wrap;
-      gap: 8px;
-      justify-content: flex-start;
+    .filter-positions {
+      min-width: 0;
     }
-    .filter-sort {
-      flex: 1 1 100%;
-    }
-    .filter-sort select {
-      width: 100%;
-    }
+    .filter-row-secondary { gap: 8px; }
+    .manager-pills-row .manager-pill:not(.active) { display: none; }
+    .manager-pills-row { justify-content: center; }
   }
 
   /* Table grid */

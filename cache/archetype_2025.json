@@ -1,0 +1,2441 @@
+{
+  "season": 2025,
+  "players": {
+    "10212": {
+      "adot": 3.3,
+      "slot_rate": 18.7,
+      "wide_rate": 16.5,
+      "inline_rate": 61.5,
+      "yac_per_rec": 4.6
+    },
+    "10213": {
+      "adot": 10.7,
+      "slot_rate": 17.2,
+      "wide_rate": 81.7,
+      "inline_rate": 0.8,
+      "yac_per_rec": 5.1
+    },
+    "10214": {
+      "adot": 4.6,
+      "slot_rate": 16.0,
+      "wide_rate": 19.5,
+      "inline_rate": 59.9,
+      "yac_per_rec": 5.8
+    },
+    "10218": {
+      "adot": 11.0,
+      "slot_rate": 20.9,
+      "wide_rate": 78.9,
+      "inline_rate": 0.2,
+      "yac_per_rec": 4.2
+    },
+    "10220": {
+      "adot": 16.0,
+      "slot_rate": 37.5,
+      "wide_rate": 12.5,
+      "inline_rate": 50.0,
+      "yac_per_rec": 0.0
+    },
+    "10221": {
+      "adot": 22.0,
+      "slot_rate": 22.7,
+      "wide_rate": 77.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 0.5
+    },
+    "10222": {
+      "adot": 8.3,
+      "slot_rate": 73.9,
+      "wide_rate": 21.0,
+      "inline_rate": 1.7,
+      "yac_per_rec": 4.5
+    },
+    "10224": {
+      "adot": 2.0,
+      "slot_rate": 33.3,
+      "wide_rate": 16.7,
+      "inline_rate": 50.0,
+      "yac_per_rec": null
+    },
+    "10225": {
+      "adot": 14.3,
+      "slot_rate": 20.9,
+      "wide_rate": 79.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.0
+    },
+    "10226": {
+      "adot": 9.9,
+      "slot_rate": 58.2,
+      "wide_rate": 41.4,
+      "inline_rate": 0.2,
+      "yac_per_rec": 3.1
+    },
+    "10227": {
+      "adot": 5.7,
+      "slot_rate": 25.8,
+      "wide_rate": 5.0,
+      "inline_rate": 65.8,
+      "yac_per_rec": 10.0
+    },
+    "10228": {
+      "adot": 42.0,
+      "slot_rate": 25.0,
+      "wide_rate": 75.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": null
+    },
+    "10229": {
+      "adot": 4.9,
+      "slot_rate": 44.1,
+      "wide_rate": 54.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 8.1
+    },
+    "10231": {
+      "adot": 4.1,
+      "slot_rate": 41.5,
+      "wide_rate": 10.2,
+      "inline_rate": 45.2,
+      "yac_per_rec": 7.0
+    },
+    "10232": {
+      "adot": 12.2,
+      "slot_rate": 30.2,
+      "wide_rate": 69.5,
+      "inline_rate": 0.1,
+      "yac_per_rec": 3.6
+    },
+    "10234": {
+      "adot": 10.7,
+      "slot_rate": 28.6,
+      "wide_rate": 71.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.0
+    },
+    "10236": {
+      "adot": 9.5,
+      "slot_rate": 54.3,
+      "wide_rate": 21.5,
+      "inline_rate": 23.8,
+      "yac_per_rec": 6.7
+    },
+    "10444": {
+      "adot": 11.9,
+      "slot_rate": 31.9,
+      "wide_rate": 68.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.9
+    },
+    "10859": {
+      "adot": 5.7,
+      "slot_rate": 40.4,
+      "wide_rate": 18.1,
+      "inline_rate": 40.1,
+      "yac_per_rec": 6.8
+    },
+    "10867": {
+      "adot": 8.0,
+      "slot_rate": 41.0,
+      "wide_rate": 59.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.0
+    },
+    "10871": {
+      "adot": 7.0,
+      "slot_rate": 21.9,
+      "wide_rate": 7.5,
+      "inline_rate": 70.6,
+      "yac_per_rec": 6.1
+    },
+    "11034": {
+      "adot": 10.8,
+      "slot_rate": 24.7,
+      "wide_rate": 75.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.0
+    },
+    "11056": {
+      "adot": 9.0,
+      "slot_rate": 20.0,
+      "wide_rate": 80.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.0
+    },
+    "11068": {
+      "adot": 16.2,
+      "slot_rate": 19.6,
+      "wide_rate": 75.9,
+      "inline_rate": 3.2,
+      "yac_per_rec": 1.9
+    },
+    "11082": {
+      "adot": 9.2,
+      "slot_rate": 19.0,
+      "wide_rate": 16.7,
+      "inline_rate": 64.3,
+      "yac_per_rec": 1.3
+    },
+    "11157": {
+      "adot": 8.6,
+      "slot_rate": 35.0,
+      "wide_rate": 61.0,
+      "inline_rate": 1.6,
+      "yac_per_rec": 3.9
+    },
+    "11168": {
+      "adot": 16.2,
+      "slot_rate": 73.6,
+      "wide_rate": 25.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.0
+    },
+    "11201": {
+      "adot": 7.4,
+      "slot_rate": 28.0,
+      "wide_rate": 8.8,
+      "inline_rate": 57.6,
+      "yac_per_rec": 0.5
+    },
+    "11210": {
+      "adot": 9.3,
+      "slot_rate": 33.6,
+      "wide_rate": 61.7,
+      "inline_rate": 4.7,
+      "yac_per_rec": 4.8
+    },
+    "11257": {
+      "adot": 16.6,
+      "slot_rate": 52.6,
+      "wide_rate": 47.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.3
+    },
+    "11306": {
+      "adot": -4.0,
+      "slot_rate": 100.0,
+      "wide_rate": 0.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 7.0
+    },
+    "11311": {
+      "adot": 14.0,
+      "slot_rate": 5.6,
+      "wide_rate": 94.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": null
+    },
+    "11320": {
+      "adot": 18.0,
+      "slot_rate": 44.4,
+      "wide_rate": 55.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.0
+    },
+    "11371": {
+      "adot": 3.7,
+      "slot_rate": 15.9,
+      "wide_rate": 4.3,
+      "inline_rate": 70.2,
+      "yac_per_rec": 7.5
+    },
+    "11377": {
+      "adot": 13.9,
+      "slot_rate": 26.5,
+      "wide_rate": 63.3,
+      "inline_rate": 9.7,
+      "yac_per_rec": 4.3
+    },
+    "11421": {
+      "adot": 17.8,
+      "slot_rate": 27.8,
+      "wide_rate": 72.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 0.0
+    },
+    "11433": {
+      "adot": 4.0,
+      "slot_rate": 23.5,
+      "wide_rate": 7.1,
+      "inline_rate": 67.1,
+      "yac_per_rec": 4.2
+    },
+    "11474": {
+      "adot": 7.8,
+      "slot_rate": 31.7,
+      "wide_rate": 68.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.4
+    },
+    "11593": {
+      "adot": 9.1,
+      "slot_rate": 24.3,
+      "wide_rate": 1.9,
+      "inline_rate": 72.9,
+      "yac_per_rec": 3.8
+    },
+    "11595": {
+      "adot": -4.0,
+      "slot_rate": 6.7,
+      "wide_rate": 13.3,
+      "inline_rate": 66.7,
+      "yac_per_rec": 8.0
+    },
+    "11596": {
+      "adot": 7.4,
+      "slot_rate": 31.3,
+      "wide_rate": 7.8,
+      "inline_rate": 53.9,
+      "yac_per_rec": 5.7
+    },
+    "11597": {
+      "adot": 8.9,
+      "slot_rate": 49.4,
+      "wide_rate": 13.8,
+      "inline_rate": 30.6,
+      "yac_per_rec": 4.3
+    },
+    "11599": {
+      "adot": 1.9,
+      "slot_rate": 10.1,
+      "wide_rate": 9.0,
+      "inline_rate": 79.8,
+      "yac_per_rec": 4.3
+    },
+    "11600": {
+      "adot": 5.2,
+      "slot_rate": 58.1,
+      "wide_rate": 16.5,
+      "inline_rate": 23.8,
+      "yac_per_rec": 2.9
+    },
+    "11603": {
+      "adot": 5.3,
+      "slot_rate": 11.7,
+      "wide_rate": 3.5,
+      "inline_rate": 83.4,
+      "yac_per_rec": 5.2
+    },
+    "11604": {
+      "adot": 7.5,
+      "slot_rate": 47.6,
+      "wide_rate": 18.8,
+      "inline_rate": 32.7,
+      "yac_per_rec": 4.6
+    },
+    "11608": {
+      "adot": 3.1,
+      "slot_rate": 66.8,
+      "wide_rate": 32.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.7
+    },
+    "11610": {
+      "adot": 5.4,
+      "slot_rate": 48.2,
+      "wide_rate": 47.4,
+      "inline_rate": 0.5,
+      "yac_per_rec": 5.7
+    },
+    "11617": {
+      "adot": 0.4,
+      "slot_rate": 62.2,
+      "wide_rate": 34.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.5
+    },
+    "11618": {
+      "adot": 11.8,
+      "slot_rate": 19.8,
+      "wide_rate": 80.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.8
+    },
+    "11620": {
+      "adot": 14.5,
+      "slot_rate": 40.5,
+      "wide_rate": 59.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.8
+    },
+    "11623": {
+      "adot": 6.8,
+      "slot_rate": 58.4,
+      "wide_rate": 38.7,
+      "inline_rate": 2.1,
+      "yac_per_rec": 5.2
+    },
+    "11624": {
+      "adot": 12.5,
+      "slot_rate": 30.3,
+      "wide_rate": 69.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.9
+    },
+    "11625": {
+      "adot": 15.2,
+      "slot_rate": 18.3,
+      "wide_rate": 81.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.6
+    },
+    "11626": {
+      "adot": 11.0,
+      "slot_rate": 36.9,
+      "wide_rate": 63.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.1
+    },
+    "11627": {
+      "adot": 13.0,
+      "slot_rate": 45.1,
+      "wide_rate": 54.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.3
+    },
+    "11628": {
+      "adot": 13.9,
+      "slot_rate": 23.3,
+      "wide_rate": 76.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.9
+    },
+    "11629": {
+      "adot": 27.0,
+      "slot_rate": 17.9,
+      "wide_rate": 82.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.8
+    },
+    "11630": {
+      "adot": 13.8,
+      "slot_rate": 20.1,
+      "wide_rate": 79.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.6
+    },
+    "11631": {
+      "adot": 14.8,
+      "slot_rate": 24.6,
+      "wide_rate": 75.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.5
+    },
+    "11632": {
+      "adot": 18.2,
+      "slot_rate": 24.1,
+      "wide_rate": 75.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.8
+    },
+    "11633": {
+      "adot": 8.2,
+      "slot_rate": 55.8,
+      "wide_rate": 44.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.1
+    },
+    "11635": {
+      "adot": 10.5,
+      "slot_rate": 63.7,
+      "wide_rate": 35.3,
+      "inline_rate": 1.0,
+      "yac_per_rec": 4.7
+    },
+    "11637": {
+      "adot": 12.2,
+      "slot_rate": 17.8,
+      "wide_rate": 81.3,
+      "inline_rate": 0.9,
+      "yac_per_rec": 2.2
+    },
+    "11638": {
+      "adot": 14.0,
+      "slot_rate": 23.2,
+      "wide_rate": 76.8,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.2
+    },
+    "11646": {
+      "adot": 9.6,
+      "slot_rate": 58.4,
+      "wide_rate": 39.7,
+      "inline_rate": 1.0,
+      "yac_per_rec": 2.8
+    },
+    "11650": {
+      "adot": 15.0,
+      "slot_rate": 43.7,
+      "wide_rate": 56.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.6
+    },
+    "11716": {
+      "adot": 4.8,
+      "slot_rate": 6.3,
+      "wide_rate": 8.3,
+      "inline_rate": 81.3,
+      "yac_per_rec": 3.0
+    },
+    "11762": {
+      "adot": -1.0,
+      "slot_rate": 87.1,
+      "wide_rate": 9.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.0
+    },
+    "11783": {
+      "adot": 9.8,
+      "slot_rate": 35.6,
+      "wide_rate": 64.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.0
+    },
+    "11806": {
+      "adot": 18.2,
+      "slot_rate": 35.8,
+      "wide_rate": 64.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.0
+    },
+    "11820": {
+      "adot": 12.0,
+      "slot_rate": 27.6,
+      "wide_rate": 37.9,
+      "inline_rate": 34.5,
+      "yac_per_rec": 0.0
+    },
+    "11821": {
+      "adot": 23.6,
+      "slot_rate": 27.5,
+      "wide_rate": 72.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.0
+    },
+    "11834": {
+      "adot": 12.6,
+      "slot_rate": 41.6,
+      "wide_rate": 54.7,
+      "inline_rate": 3.4,
+      "yac_per_rec": 1.3
+    },
+    "11895": {
+      "adot": 8.8,
+      "slot_rate": 32.3,
+      "wide_rate": 67.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.6
+    },
+    "11921": {
+      "adot": 16.0,
+      "slot_rate": 20.9,
+      "wide_rate": 79.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.0
+    },
+    "11942": {
+      "adot": 7.0,
+      "slot_rate": 41.2,
+      "wide_rate": 9.8,
+      "inline_rate": 41.2,
+      "yac_per_rec": 2.0
+    },
+    "11959": {
+      "adot": 6.0,
+      "slot_rate": 22.7,
+      "wide_rate": 77.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.0
+    },
+    "11994": {
+      "adot": 11.7,
+      "slot_rate": 40.9,
+      "wide_rate": 59.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.8
+    },
+    "12062": {
+      "adot": -3.0,
+      "slot_rate": 14.3,
+      "wide_rate": 14.3,
+      "inline_rate": 42.9,
+      "yac_per_rec": 6.5
+    },
+    "12357": {
+      "adot": 6.6,
+      "slot_rate": 21.1,
+      "wide_rate": 15.8,
+      "inline_rate": 60.5,
+      "yac_per_rec": 4.3
+    },
+    "12374": {
+      "adot": 8.0,
+      "slot_rate": 5.9,
+      "wide_rate": 3.9,
+      "inline_rate": 88.2,
+      "yac_per_rec": 2.3
+    },
+    "12473": {
+      "adot": 4.0,
+      "slot_rate": 18.4,
+      "wide_rate": 3.7,
+      "inline_rate": 77.9,
+      "yac_per_rec": 5.6
+    },
+    "12480": {
+      "adot": 2.5,
+      "slot_rate": 25.0,
+      "wide_rate": 6.3,
+      "inline_rate": 68.8,
+      "yac_per_rec": 2.5
+    },
+    "12482": {
+      "adot": 1.2,
+      "slot_rate": 54.5,
+      "wide_rate": 31.8,
+      "inline_rate": 4.5,
+      "yac_per_rec": 6.6
+    },
+    "12483": {
+      "adot": 9.4,
+      "slot_rate": 27.6,
+      "wide_rate": 71.0,
+      "inline_rate": 1.4,
+      "yac_per_rec": 3.4
+    },
+    "12484": {
+      "adot": 12.4,
+      "slot_rate": 21.5,
+      "wide_rate": 78.0,
+      "inline_rate": 0.3,
+      "yac_per_rec": 3.0
+    },
+    "12485": {
+      "adot": 12.2,
+      "slot_rate": 39.6,
+      "wide_rate": 59.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.8
+    },
+    "12487": {
+      "adot": 18.3,
+      "slot_rate": 46.2,
+      "wide_rate": 23.7,
+      "inline_rate": 28.5,
+      "yac_per_rec": 3.4
+    },
+    "12492": {
+      "adot": 10.0,
+      "slot_rate": 57.8,
+      "wide_rate": 40.6,
+      "inline_rate": 0.9,
+      "yac_per_rec": 4.9
+    },
+    "12493": {
+      "adot": 9.4,
+      "slot_rate": 44.8,
+      "wide_rate": 14.1,
+      "inline_rate": 40.0,
+      "yac_per_rec": 4.4
+    },
+    "12496": {
+      "adot": 3.7,
+      "slot_rate": 4.3,
+      "wide_rate": 95.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.7
+    },
+    "12497": {
+      "adot": 16.5,
+      "slot_rate": 22.1,
+      "wide_rate": 77.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.2
+    },
+    "12498": {
+      "adot": 5.8,
+      "slot_rate": 31.7,
+      "wide_rate": 20.0,
+      "inline_rate": 46.7,
+      "yac_per_rec": 3.1
+    },
+    "12499": {
+      "adot": 12.8,
+      "slot_rate": 18.6,
+      "wide_rate": 81.2,
+      "inline_rate": 0.2,
+      "yac_per_rec": 3.0
+    },
+    "12501": {
+      "adot": 12.7,
+      "slot_rate": 41.3,
+      "wide_rate": 56.6,
+      "inline_rate": 2.1,
+      "yac_per_rec": 3.6
+    },
+    "12502": {
+      "adot": 5.7,
+      "slot_rate": 34.2,
+      "wide_rate": 9.1,
+      "inline_rate": 56.4,
+      "yac_per_rec": 3.7
+    },
+    "12503": {
+      "adot": 17.0,
+      "slot_rate": 45.5,
+      "wide_rate": 54.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.7
+    },
+    "12505": {
+      "adot": 7.0,
+      "slot_rate": 31.6,
+      "wide_rate": 68.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.0
+    },
+    "12506": {
+      "adot": 6.0,
+      "slot_rate": 41.4,
+      "wide_rate": 15.2,
+      "inline_rate": 42.0,
+      "yac_per_rec": 5.0
+    },
+    "12509": {
+      "adot": 9.5,
+      "slot_rate": 37.3,
+      "wide_rate": 60.7,
+      "inline_rate": 1.3,
+      "yac_per_rec": 4.7
+    },
+    "12514": {
+      "adot": 13.2,
+      "slot_rate": 37.0,
+      "wide_rate": 62.8,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.2
+    },
+    "12517": {
+      "adot": 9.5,
+      "slot_rate": 31.2,
+      "wide_rate": 24.2,
+      "inline_rate": 42.3,
+      "yac_per_rec": 4.5
+    },
+    "12518": {
+      "adot": 5.9,
+      "slot_rate": 43.6,
+      "wide_rate": 13.7,
+      "inline_rate": 39.4,
+      "yac_per_rec": 6.4
+    },
+    "12519": {
+      "adot": 7.5,
+      "slot_rate": 45.3,
+      "wide_rate": 53.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 7.3
+    },
+    "12520": {
+      "adot": 13.3,
+      "slot_rate": 70.8,
+      "wide_rate": 29.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.7
+    },
+    "12521": {
+      "adot": 9.0,
+      "slot_rate": 23.0,
+      "wide_rate": 16.7,
+      "inline_rate": 58.0,
+      "yac_per_rec": 4.4
+    },
+    "12523": {
+      "adot": 6.8,
+      "slot_rate": 67.8,
+      "wide_rate": 25.3,
+      "inline_rate": 1.1,
+      "yac_per_rec": 6.1
+    },
+    "12526": {
+      "adot": 12.3,
+      "slot_rate": 19.9,
+      "wide_rate": 80.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.9
+    },
+    "12530": {
+      "adot": 8.1,
+      "slot_rate": 64.7,
+      "wide_rate": 33.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.0
+    },
+    "12535": {
+      "adot": 14.8,
+      "slot_rate": 28.8,
+      "wide_rate": 70.5,
+      "inline_rate": 0.3,
+      "yac_per_rec": 3.4
+    },
+    "12536": {
+      "adot": 9.1,
+      "slot_rate": 65.9,
+      "wide_rate": 33.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.8
+    },
+    "12539": {
+      "adot": 14.7,
+      "slot_rate": 42.6,
+      "wide_rate": 57.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.3
+    },
+    "12540": {
+      "adot": 8.0,
+      "slot_rate": 68.0,
+      "wide_rate": 31.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.7
+    },
+    "12541": {
+      "adot": 17.9,
+      "slot_rate": 31.1,
+      "wide_rate": 68.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.8
+    },
+    "12542": {
+      "adot": 12.7,
+      "slot_rate": 20.5,
+      "wide_rate": 76.9,
+      "inline_rate": 2.6,
+      "yac_per_rec": 13.3
+    },
+    "12547": {
+      "adot": 18.7,
+      "slot_rate": 11.0,
+      "wide_rate": 89.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 7.8
+    },
+    "12634": {
+      "adot": 14.3,
+      "slot_rate": 33.3,
+      "wide_rate": 66.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 0.5
+    },
+    "12641": {
+      "adot": 14.9,
+      "slot_rate": 37.8,
+      "wide_rate": 62.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.4
+    },
+    "12658": {
+      "adot": 7.2,
+      "slot_rate": 18.5,
+      "wide_rate": 4.8,
+      "inline_rate": 76.7,
+      "yac_per_rec": 5.8
+    },
+    "12670": {
+      "adot": 17.6,
+      "slot_rate": 12.7,
+      "wide_rate": 87.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.2
+    },
+    "12718": {
+      "adot": 13.1,
+      "slot_rate": 20.4,
+      "wide_rate": 79.0,
+      "inline_rate": 0.5,
+      "yac_per_rec": 2.6
+    },
+    "12765": {
+      "adot": 2.8,
+      "slot_rate": 31.8,
+      "wide_rate": 15.9,
+      "inline_rate": 52.3,
+      "yac_per_rec": 6.0
+    },
+    "12829": {
+      "adot": 3.0,
+      "slot_rate": 100.0,
+      "wide_rate": 0.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": null
+    },
+    "12860": {
+      "adot": 14.2,
+      "slot_rate": 17.1,
+      "wide_rate": 82.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 10.0
+    },
+    "12889": {
+      "adot": 12.5,
+      "slot_rate": 30.4,
+      "wide_rate": 69.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.5
+    },
+    "12907": {
+      "adot": 4.0,
+      "slot_rate": 20.0,
+      "wide_rate": 80.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.0
+    },
+    "12935": {
+      "adot": 7.5,
+      "slot_rate": 35.3,
+      "wide_rate": 58.8,
+      "inline_rate": 5.9,
+      "yac_per_rec": 0.0
+    },
+    "12971": {
+      "adot": 4.0,
+      "slot_rate": 30.8,
+      "wide_rate": 69.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.0
+    },
+    "13079": {
+      "adot": 14.2,
+      "slot_rate": 34.3,
+      "wide_rate": 65.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.5
+    },
+    "13101": {
+      "adot": 9.4,
+      "slot_rate": 44.5,
+      "wide_rate": 55.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.3
+    },
+    "13120": {
+      "adot": 3.0,
+      "slot_rate": 33.3,
+      "wide_rate": 66.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 22.0
+    },
+    "13121": {
+      "adot": 4.0,
+      "slot_rate": 12.8,
+      "wide_rate": 5.1,
+      "inline_rate": 79.5,
+      "yac_per_rec": 4.0
+    },
+    "13122": {
+      "adot": -3.0,
+      "slot_rate": 5.6,
+      "wide_rate": 11.1,
+      "inline_rate": 66.7,
+      "yac_per_rec": 6.0
+    },
+    "13150": {
+      "adot": 9.7,
+      "slot_rate": 41.7,
+      "wide_rate": 57.4,
+      "inline_rate": 0.9,
+      "yac_per_rec": 2.7
+    },
+    "13151": {
+      "adot": 7.0,
+      "slot_rate": 14.3,
+      "wide_rate": 0.0,
+      "inline_rate": 82.1,
+      "yac_per_rec": null
+    },
+    "13210": {
+      "adot": 5.5,
+      "slot_rate": 22.2,
+      "wide_rate": 11.1,
+      "inline_rate": 66.7,
+      "yac_per_rec": 0.0
+    },
+    "1339": {
+      "adot": 9.3,
+      "slot_rate": 58.3,
+      "wide_rate": 12.3,
+      "inline_rate": 29.2,
+      "yac_per_rec": 2.6
+    },
+    "1426": {
+      "adot": 14.5,
+      "slot_rate": 27.3,
+      "wide_rate": 72.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.0
+    },
+    "1466": {
+      "adot": 6.9,
+      "slot_rate": 42.1,
+      "wide_rate": 22.7,
+      "inline_rate": 34.0,
+      "yac_per_rec": 5.7
+    },
+    "1479": {
+      "adot": 8.6,
+      "slot_rate": 40.3,
+      "wide_rate": 59.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.9
+    },
+    "1689": {
+      "adot": 8.9,
+      "slot_rate": 56.1,
+      "wide_rate": 43.2,
+      "inline_rate": 0.4,
+      "yac_per_rec": 2.5
+    },
+    "2133": {
+      "adot": 13.6,
+      "slot_rate": 14.4,
+      "wide_rate": 85.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.0
+    },
+    "2197": {
+      "adot": 14.7,
+      "slot_rate": 37.5,
+      "wide_rate": 61.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.8
+    },
+    "2216": {
+      "adot": 14.4,
+      "slot_rate": 25.8,
+      "wide_rate": 74.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.1
+    },
+    "2374": {
+      "adot": 7.3,
+      "slot_rate": 71.5,
+      "wide_rate": 28.3,
+      "inline_rate": 0.3,
+      "yac_per_rec": 2.6
+    },
+    "2449": {
+      "adot": 8.7,
+      "slot_rate": 52.4,
+      "wide_rate": 47.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.3
+    },
+    "2505": {
+      "adot": 11.9,
+      "slot_rate": 40.9,
+      "wide_rate": 38.0,
+      "inline_rate": 21.1,
+      "yac_per_rec": 2.9
+    },
+    "3048": {
+      "adot": 6.5,
+      "slot_rate": 1.7,
+      "wide_rate": 0.0,
+      "inline_rate": 98.3,
+      "yac_per_rec": 6.0
+    },
+    "3200": {
+      "adot": 9.1,
+      "slot_rate": 49.0,
+      "wide_rate": 51.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.8
+    },
+    "3202": {
+      "adot": 9.1,
+      "slot_rate": 9.5,
+      "wide_rate": 14.1,
+      "inline_rate": 75.5,
+      "yac_per_rec": 4.3
+    },
+    "3214": {
+      "adot": 8.2,
+      "slot_rate": 41.8,
+      "wide_rate": 13.9,
+      "inline_rate": 40.4,
+      "yac_per_rec": 5.6
+    },
+    "3269": {
+      "adot": 15.4,
+      "slot_rate": 19.1,
+      "wide_rate": 80.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.0
+    },
+    "3271": {
+      "adot": 6.1,
+      "slot_rate": 24.5,
+      "wide_rate": 13.0,
+      "inline_rate": 62.0,
+      "yac_per_rec": 5.5
+    },
+    "3286": {
+      "adot": 13.9,
+      "slot_rate": 38.3,
+      "wide_rate": 61.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.7
+    },
+    "3321": {
+      "adot": 13.1,
+      "slot_rate": 41.1,
+      "wide_rate": 58.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.9
+    },
+    "3423": {
+      "adot": 14.2,
+      "slot_rate": 12.5,
+      "wide_rate": 87.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.2
+    },
+    "3634": {
+      "adot": 5.9,
+      "slot_rate": 41.3,
+      "wide_rate": 58.3,
+      "inline_rate": 0.4,
+      "yac_per_rec": 6.8
+    },
+    "4033": {
+      "adot": 5.9,
+      "slot_rate": 28.7,
+      "wide_rate": 14.4,
+      "inline_rate": 55.7,
+      "yac_per_rec": 5.0
+    },
+    "4037": {
+      "adot": 7.8,
+      "slot_rate": 54.1,
+      "wide_rate": 45.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.2
+    },
+    "4039": {
+      "adot": 8.5,
+      "slot_rate": 48.1,
+      "wide_rate": 50.1,
+      "inline_rate": 0.2,
+      "yac_per_rec": 6.2
+    },
+    "4040": {
+      "adot": 5.2,
+      "slot_rate": 44.3,
+      "wide_rate": 54.7,
+      "inline_rate": 1.0,
+      "yac_per_rec": 5.9
+    },
+    "4054": {
+      "adot": 5.5,
+      "slot_rate": 7.0,
+      "wide_rate": 1.0,
+      "inline_rate": 91.5,
+      "yac_per_rec": 6.0
+    },
+    "4066": {
+      "adot": 4.2,
+      "slot_rate": 43.3,
+      "wide_rate": 12.3,
+      "inline_rate": 42.6,
+      "yac_per_rec": 5.9
+    },
+    "4080": {
+      "adot": 13.9,
+      "slot_rate": 28.4,
+      "wide_rate": 71.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.8
+    },
+    "4082": {
+      "adot": 15.9,
+      "slot_rate": 40.0,
+      "wide_rate": 58.9,
+      "inline_rate": 1.1,
+      "yac_per_rec": 3.9
+    },
+    "4144": {
+      "adot": 4.5,
+      "slot_rate": 43.2,
+      "wide_rate": 15.7,
+      "inline_rate": 39.4,
+      "yac_per_rec": 4.8
+    },
+    "4171": {
+      "adot": 13.6,
+      "slot_rate": 21.5,
+      "wide_rate": 78.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.3
+    },
+    "4177": {
+      "adot": 13.3,
+      "slot_rate": 23.4,
+      "wide_rate": 71.9,
+      "inline_rate": 4.1,
+      "yac_per_rec": 2.4
+    },
+    "4189": {
+      "adot": 6.0,
+      "slot_rate": 14.6,
+      "wide_rate": 1.0,
+      "inline_rate": 78.1,
+      "yac_per_rec": 4.0
+    },
+    "4217": {
+      "adot": 7.1,
+      "slot_rate": 29.0,
+      "wide_rate": 7.3,
+      "inline_rate": 61.0,
+      "yac_per_rec": 4.5
+    },
+    "4234": {
+      "adot": 15.2,
+      "slot_rate": 19.5,
+      "wide_rate": 80.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.0
+    },
+    "4274": {
+      "adot": 5.0,
+      "slot_rate": 28.6,
+      "wide_rate": 71.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 0.0
+    },
+    "4314": {
+      "adot": 6.1,
+      "slot_rate": 16.9,
+      "wide_rate": 6.8,
+      "inline_rate": 74.6,
+      "yac_per_rec": 8.4
+    },
+    "4351": {
+      "adot": 11.9,
+      "slot_rate": 39.3,
+      "wide_rate": 60.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.5
+    },
+    "4381": {
+      "adot": 1.3,
+      "slot_rate": 32.3,
+      "wide_rate": 25.3,
+      "inline_rate": 14.1,
+      "yac_per_rec": 8.0
+    },
+    "4435": {
+      "adot": 4.8,
+      "slot_rate": 42.1,
+      "wide_rate": 19.8,
+      "inline_rate": 32.2,
+      "yac_per_rec": 1.8
+    },
+    "4443": {
+      "adot": 0.0,
+      "slot_rate": 7.1,
+      "wide_rate": 3.6,
+      "inline_rate": 82.1,
+      "yac_per_rec": 0.5
+    },
+    "4454": {
+      "adot": 11.1,
+      "slot_rate": 25.1,
+      "wide_rate": 74.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.5
+    },
+    "4602": {
+      "adot": 1.0,
+      "slot_rate": 21.3,
+      "wide_rate": 17.0,
+      "inline_rate": 61.7,
+      "yac_per_rec": 0.0
+    },
+    "4950": {
+      "adot": 7.5,
+      "slot_rate": 72.0,
+      "wide_rate": 27.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.1
+    },
+    "4981": {
+      "adot": 13.5,
+      "slot_rate": 24.6,
+      "wide_rate": 75.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.1
+    },
+    "4983": {
+      "adot": 12.5,
+      "slot_rate": 31.7,
+      "wide_rate": 65.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.5
+    },
+    "4992": {
+      "adot": 8.9,
+      "slot_rate": 39.8,
+      "wide_rate": 60.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 9.6
+    },
+    "4993": {
+      "adot": 10.5,
+      "slot_rate": 78.4,
+      "wide_rate": 19.0,
+      "inline_rate": 2.6,
+      "yac_per_rec": 2.4
+    },
+    "4995": {
+      "adot": 2.9,
+      "slot_rate": 12.0,
+      "wide_rate": 7.0,
+      "inline_rate": 80.4,
+      "yac_per_rec": 5.8
+    },
+    "5001": {
+      "adot": 6.6,
+      "slot_rate": 32.3,
+      "wide_rate": 9.3,
+      "inline_rate": 56.4,
+      "yac_per_rec": 4.4
+    },
+    "5008": {
+      "adot": 3.5,
+      "slot_rate": 11.1,
+      "wide_rate": 8.5,
+      "inline_rate": 58.1,
+      "yac_per_rec": 3.8
+    },
+    "5010": {
+      "adot": 4.1,
+      "slot_rate": 18.7,
+      "wide_rate": 15.0,
+      "inline_rate": 65.4,
+      "yac_per_rec": 6.2
+    },
+    "5012": {
+      "adot": 8.0,
+      "slot_rate": 69.2,
+      "wide_rate": 17.9,
+      "inline_rate": 12.8,
+      "yac_per_rec": 2.1
+    },
+    "5022": {
+      "adot": 7.2,
+      "slot_rate": 48.5,
+      "wide_rate": 13.6,
+      "inline_rate": 37.4,
+      "yac_per_rec": 4.1
+    },
+    "5045": {
+      "adot": 13.3,
+      "slot_rate": 18.5,
+      "wide_rate": 81.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.9
+    },
+    "5086": {
+      "adot": 12.4,
+      "slot_rate": 28.1,
+      "wide_rate": 71.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.3
+    },
+    "5094": {
+      "adot": 4.4,
+      "slot_rate": 42.3,
+      "wide_rate": 14.4,
+      "inline_rate": 42.3,
+      "yac_per_rec": 8.4
+    },
+    "5096": {
+      "adot": 6.3,
+      "slot_rate": 34.0,
+      "wide_rate": 66.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.1
+    },
+    "5113": {
+      "adot": 10.2,
+      "slot_rate": 29.8,
+      "wide_rate": 66.7,
+      "inline_rate": 2.4,
+      "yac_per_rec": 5.4
+    },
+    "5121": {
+      "adot": 2.9,
+      "slot_rate": 66.0,
+      "wide_rate": 31.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.0
+    },
+    "5154": {
+      "adot": 8.6,
+      "slot_rate": 34.1,
+      "wide_rate": 63.6,
+      "inline_rate": 2.3,
+      "yac_per_rec": 4.3
+    },
+    "5185": {
+      "adot": 11.4,
+      "slot_rate": 46.8,
+      "wide_rate": 53.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.6
+    },
+    "5285": {
+      "adot": 1.8,
+      "slot_rate": 22.2,
+      "wide_rate": 8.9,
+      "inline_rate": 62.2,
+      "yac_per_rec": 3.5
+    },
+    "5374": {
+      "adot": 10.3,
+      "slot_rate": 75.0,
+      "wide_rate": 25.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.3
+    },
+    "5409": {
+      "adot": 6.0,
+      "slot_rate": 46.6,
+      "wide_rate": 19.0,
+      "inline_rate": 31.9,
+      "yac_per_rec": 4.5
+    },
+    "5773": {
+      "adot": 15.0,
+      "slot_rate": 22.0,
+      "wide_rate": 78.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.0
+    },
+    "5844": {
+      "adot": 5.2,
+      "slot_rate": 39.8,
+      "wide_rate": 16.7,
+      "inline_rate": 43.1,
+      "yac_per_rec": 4.4
+    },
+    "5846": {
+      "adot": 11.3,
+      "slot_rate": 19.0,
+      "wide_rate": 80.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 7.1
+    },
+    "5848": {
+      "adot": 11.8,
+      "slot_rate": 37.8,
+      "wide_rate": 61.8,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.9
+    },
+    "5857": {
+      "adot": 3.7,
+      "slot_rate": 23.5,
+      "wide_rate": 9.0,
+      "inline_rate": 66.2,
+      "yac_per_rec": 5.2
+    },
+    "5859": {
+      "adot": 11.9,
+      "slot_rate": 11.6,
+      "wide_rate": 88.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.5
+    },
+    "5872": {
+      "adot": 5.5,
+      "slot_rate": 64.3,
+      "wide_rate": 33.6,
+      "inline_rate": 0.2,
+      "yac_per_rec": 6.5
+    },
+    "5906": {
+      "adot": 7.5,
+      "slot_rate": 34.4,
+      "wide_rate": 13.3,
+      "inline_rate": 49.4,
+      "yac_per_rec": 5.1
+    },
+    "5917": {
+      "adot": 46.0,
+      "slot_rate": 33.3,
+      "wide_rate": 66.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": null
+    },
+    "5927": {
+      "adot": 14.1,
+      "slot_rate": 13.7,
+      "wide_rate": 86.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.6
+    },
+    "5938": {
+      "adot": 12.5,
+      "slot_rate": 32.6,
+      "wide_rate": 65.8,
+      "inline_rate": 1.6,
+      "yac_per_rec": 2.5
+    },
+    "5947": {
+      "adot": 9.4,
+      "slot_rate": 42.6,
+      "wide_rate": 57.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.9
+    },
+    "5955": {
+      "adot": 8.3,
+      "slot_rate": 80.0,
+      "wide_rate": 20.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.4
+    },
+    "5970": {
+      "adot": 1.7,
+      "slot_rate": 71.7,
+      "wide_rate": 24.8,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.9
+    },
+    "5973": {
+      "adot": 2.8,
+      "slot_rate": 13.9,
+      "wide_rate": 4.0,
+      "inline_rate": 80.9,
+      "yac_per_rec": 6.9
+    },
+    "5985": {
+      "adot": 2.6,
+      "slot_rate": 14.9,
+      "wide_rate": 5.0,
+      "inline_rate": 78.2,
+      "yac_per_rec": 6.0
+    },
+    "6001": {
+      "adot": -0.1,
+      "slot_rate": 8.1,
+      "wide_rate": 4.2,
+      "inline_rate": 64.2,
+      "yac_per_rec": 7.1
+    },
+    "6149": {
+      "adot": 13.8,
+      "slot_rate": 16.5,
+      "wide_rate": 83.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.1
+    },
+    "6154": {
+      "adot": 11.1,
+      "slot_rate": 41.2,
+      "wide_rate": 58.2,
+      "inline_rate": 0.3,
+      "yac_per_rec": 3.3
+    },
+    "6271": {
+      "adot": 7.4,
+      "slot_rate": 50.1,
+      "wide_rate": 49.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.7
+    },
+    "6290": {
+      "adot": 5.6,
+      "slot_rate": 23.9,
+      "wide_rate": 76.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.6
+    },
+    "6386": {
+      "adot": 4.7,
+      "slot_rate": 50.0,
+      "wide_rate": 50.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.0
+    },
+    "6402": {
+      "adot": 2.0,
+      "slot_rate": 0.0,
+      "wide_rate": 100.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": null
+    },
+    "6427": {
+      "adot": 16.0,
+      "slot_rate": 22.9,
+      "wide_rate": 74.7,
+      "inline_rate": 1.2,
+      "yac_per_rec": 10.4
+    },
+    "6588": {
+      "adot": 8.0,
+      "slot_rate": 64.5,
+      "wide_rate": 35.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.0
+    },
+    "6699": {
+      "adot": 11.2,
+      "slot_rate": 51.9,
+      "wide_rate": 48.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 7.4
+    },
+    "6783": {
+      "adot": 12.3,
+      "slot_rate": 18.6,
+      "wide_rate": 81.2,
+      "inline_rate": 0.2,
+      "yac_per_rec": 3.4
+    },
+    "6786": {
+      "adot": 12.7,
+      "slot_rate": 34.7,
+      "wide_rate": 64.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.3
+    },
+    "6794": {
+      "adot": 10.7,
+      "slot_rate": 27.0,
+      "wide_rate": 71.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.2
+    },
+    "6801": {
+      "adot": 13.9,
+      "slot_rate": 12.8,
+      "wide_rate": 87.0,
+      "inline_rate": 0.2,
+      "yac_per_rec": 2.8
+    },
+    "6819": {
+      "adot": 8.4,
+      "slot_rate": 28.9,
+      "wide_rate": 69.2,
+      "inline_rate": 1.0,
+      "yac_per_rec": 3.4
+    },
+    "6826": {
+      "adot": 9.4,
+      "slot_rate": 18.9,
+      "wide_rate": 18.7,
+      "inline_rate": 57.5,
+      "yac_per_rec": 5.0
+    },
+    "6843": {
+      "adot": 3.8,
+      "slot_rate": 48.0,
+      "wide_rate": 0.0,
+      "inline_rate": 52.0,
+      "yac_per_rec": 6.8
+    },
+    "6847": {
+      "adot": 16.2,
+      "slot_rate": 38.5,
+      "wide_rate": 53.8,
+      "inline_rate": 3.8,
+      "yac_per_rec": 0.0
+    },
+    "6850": {
+      "adot": 11.8,
+      "slot_rate": 14.1,
+      "wide_rate": 1.3,
+      "inline_rate": 80.8,
+      "yac_per_rec": 0.0
+    },
+    "6853": {
+      "adot": 12.6,
+      "slot_rate": 14.3,
+      "wide_rate": 85.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.9
+    },
+    "6865": {
+      "adot": 5.1,
+      "slot_rate": 11.8,
+      "wide_rate": 13.9,
+      "inline_rate": 74.0,
+      "yac_per_rec": 6.4
+    },
+    "6869": {
+      "adot": 5.2,
+      "slot_rate": 21.8,
+      "wide_rate": 7.0,
+      "inline_rate": 69.6,
+      "yac_per_rec": 5.1
+    },
+    "6920": {
+      "adot": 11.5,
+      "slot_rate": 36.6,
+      "wide_rate": 62.1,
+      "inline_rate": 1.3,
+      "yac_per_rec": 1.8
+    },
+    "6943": {
+      "adot": 9.6,
+      "slot_rate": 13.7,
+      "wide_rate": 84.2,
+      "inline_rate": 2.2,
+      "yac_per_rec": 2.5
+    },
+    "6957": {
+      "adot": 16.1,
+      "slot_rate": 26.7,
+      "wide_rate": 73.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 0.5
+    },
+    "6960": {
+      "adot": 13.4,
+      "slot_rate": 40.9,
+      "wide_rate": 59.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.5
+    },
+    "7002": {
+      "adot": 7.6,
+      "slot_rate": 53.6,
+      "wide_rate": 15.7,
+      "inline_rate": 27.8,
+      "yac_per_rec": 4.7
+    },
+    "7039": {
+      "adot": 10.3,
+      "slot_rate": 42.6,
+      "wide_rate": 57.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 19.0
+    },
+    "7049": {
+      "adot": 10.6,
+      "slot_rate": 29.0,
+      "wide_rate": 71.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.3
+    },
+    "7050": {
+      "adot": 5.5,
+      "slot_rate": 26.2,
+      "wide_rate": 18.0,
+      "inline_rate": 52.5,
+      "yac_per_rec": 1.7
+    },
+    "7075": {
+      "adot": 1.4,
+      "slot_rate": 7.9,
+      "wide_rate": 4.4,
+      "inline_rate": 49.8,
+      "yac_per_rec": 4.6
+    },
+    "7090": {
+      "adot": 14.4,
+      "slot_rate": 37.2,
+      "wide_rate": 62.8,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.3
+    },
+    "7216": {
+      "adot": 3.0,
+      "slot_rate": 0.0,
+      "wide_rate": 20.0,
+      "inline_rate": 66.7,
+      "yac_per_rec": null
+    },
+    "7233": {
+      "adot": 1.5,
+      "slot_rate": 40.3,
+      "wide_rate": 59.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.5
+    },
+    "7436": {
+      "adot": 22.5,
+      "slot_rate": 45.7,
+      "wide_rate": 54.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.5
+    },
+    "7496": {
+      "adot": 5.7,
+      "slot_rate": 40.4,
+      "wide_rate": 59.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.6
+    },
+    "7525": {
+      "adot": 12.4,
+      "slot_rate": 57.9,
+      "wide_rate": 41.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.8
+    },
+    "7526": {
+      "adot": 13.2,
+      "slot_rate": 23.0,
+      "wide_rate": 76.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.6
+    },
+    "7535": {
+      "adot": 4.1,
+      "slot_rate": 27.6,
+      "wide_rate": 18.6,
+      "inline_rate": 51.9,
+      "yac_per_rec": 2.8
+    },
+    "7536": {
+      "adot": 7.7,
+      "slot_rate": 22.1,
+      "wide_rate": 14.7,
+      "inline_rate": 62.1,
+      "yac_per_rec": 3.5
+    },
+    "7547": {
+      "adot": 8.4,
+      "slot_rate": 55.7,
+      "wide_rate": 43.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.1
+    },
+    "7553": {
+      "adot": 7.5,
+      "slot_rate": 34.7,
+      "wide_rate": 20.3,
+      "inline_rate": 45.0,
+      "yac_per_rec": 4.5
+    },
+    "7562": {
+      "adot": 20.4,
+      "slot_rate": 64.3,
+      "wide_rate": 35.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 10.8
+    },
+    "7564": {
+      "adot": 8.9,
+      "slot_rate": 32.6,
+      "wide_rate": 66.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.2
+    },
+    "7569": {
+      "adot": 13.3,
+      "slot_rate": 20.6,
+      "wide_rate": 79.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.6
+    },
+    "7571": {
+      "adot": 12.7,
+      "slot_rate": 11.3,
+      "wide_rate": 88.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.2
+    },
+    "7587": {
+      "adot": 14.4,
+      "slot_rate": 26.0,
+      "wide_rate": 74.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 1.8
+    },
+    "7595": {
+      "adot": 14.9,
+      "slot_rate": 38.3,
+      "wide_rate": 61.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.3
+    },
+    "7596": {
+      "adot": 8.4,
+      "slot_rate": 38.9,
+      "wide_rate": 59.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.3
+    },
+    "7600": {
+      "adot": 6.5,
+      "slot_rate": 61.2,
+      "wide_rate": 16.3,
+      "inline_rate": 22.6,
+      "yac_per_rec": 6.3
+    },
+    "7602": {
+      "adot": 7.6,
+      "slot_rate": 30.8,
+      "wide_rate": 8.7,
+      "inline_rate": 57.7,
+      "yac_per_rec": 1.7
+    },
+    "7612": {
+      "adot": 13.0,
+      "slot_rate": 32.8,
+      "wide_rate": 67.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.0
+    },
+    "7670": {
+      "adot": 11.1,
+      "slot_rate": 21.1,
+      "wide_rate": 77.7,
+      "inline_rate": 1.2,
+      "yac_per_rec": 2.5
+    },
+    "7694": {
+      "adot": 4.3,
+      "slot_rate": 35.2,
+      "wide_rate": 10.8,
+      "inline_rate": 50.9,
+      "yac_per_rec": 6.2
+    },
+    "7716": {
+      "adot": 4.7,
+      "slot_rate": 12.0,
+      "wide_rate": 5.3,
+      "inline_rate": 76.1,
+      "yac_per_rec": 6.3
+    },
+    "7746": {
+      "adot": 15.6,
+      "slot_rate": 51.0,
+      "wide_rate": 49.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 0.0
+    },
+    "7757": {
+      "adot": 11.2,
+      "slot_rate": 46.8,
+      "wide_rate": 53.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.3
+    },
+    "7828": {
+      "adot": 6.2,
+      "slot_rate": 29.2,
+      "wide_rate": 15.2,
+      "inline_rate": 53.7,
+      "yac_per_rec": 5.3
+    },
+    "7842": {
+      "adot": 3.3,
+      "slot_rate": 11.4,
+      "wide_rate": 7.8,
+      "inline_rate": 80.1,
+      "yac_per_rec": 5.0
+    },
+    "7891": {
+      "adot": 2.4,
+      "slot_rate": 20.4,
+      "wide_rate": 8.3,
+      "inline_rate": 64.1,
+      "yac_per_rec": 5.9
+    },
+    "7946": {
+      "adot": 4.8,
+      "slot_rate": 20.0,
+      "wide_rate": 2.5,
+      "inline_rate": 63.8,
+      "yac_per_rec": 3.0
+    },
+    "8013": {
+      "adot": 4.0,
+      "slot_rate": 27.3,
+      "wide_rate": 72.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 11.0
+    },
+    "8041": {
+      "adot": 8.2,
+      "slot_rate": 39.8,
+      "wide_rate": 18.4,
+      "inline_rate": 41.7,
+      "yac_per_rec": 0.7
+    },
+    "8076": {
+      "adot": 5.8,
+      "slot_rate": 78.6,
+      "wide_rate": 21.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.8
+    },
+    "8089": {
+      "adot": 11.8,
+      "slot_rate": 31.8,
+      "wide_rate": 18.2,
+      "inline_rate": 50.0,
+      "yac_per_rec": 2.5
+    },
+    "8110": {
+      "adot": 5.0,
+      "slot_rate": 54.2,
+      "wide_rate": 6.5,
+      "inline_rate": 37.9,
+      "yac_per_rec": 3.8
+    },
+    "8111": {
+      "adot": 5.1,
+      "slot_rate": 48.6,
+      "wide_rate": 16.6,
+      "inline_rate": 34.1,
+      "yac_per_rec": 5.2
+    },
+    "8112": {
+      "adot": 11.1,
+      "slot_rate": 33.7,
+      "wide_rate": 66.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.6
+    },
+    "8117": {
+      "adot": 12.4,
+      "slot_rate": 45.4,
+      "wide_rate": 54.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.7
+    },
+    "8119": {
+      "adot": 15.6,
+      "slot_rate": 41.6,
+      "wide_rate": 58.2,
+      "inline_rate": 0.2,
+      "yac_per_rec": 2.8
+    },
+    "8121": {
+      "adot": 13.2,
+      "slot_rate": 17.4,
+      "wide_rate": 82.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.0
+    },
+    "8125": {
+      "adot": 10.5,
+      "slot_rate": 48.2,
+      "wide_rate": 50.9,
+      "inline_rate": 0.6,
+      "yac_per_rec": 4.2
+    },
+    "8126": {
+      "adot": 9.0,
+      "slot_rate": 67.9,
+      "wide_rate": 31.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.3
+    },
+    "8127": {
+      "adot": 9.5,
+      "slot_rate": 8.7,
+      "wide_rate": 3.9,
+      "inline_rate": 85.8,
+      "yac_per_rec": 5.1
+    },
+    "8130": {
+      "adot": 7.0,
+      "slot_rate": 62.8,
+      "wide_rate": 8.9,
+      "inline_rate": 28.0,
+      "yac_per_rec": 4.6
+    },
+    "8131": {
+      "adot": 7.9,
+      "slot_rate": 73.2,
+      "wide_rate": 11.2,
+      "inline_rate": 14.5,
+      "yac_per_rec": 4.5
+    },
+    "8134": {
+      "adot": 3.9,
+      "slot_rate": 70.2,
+      "wide_rate": 26.7,
+      "inline_rate": 1.8,
+      "yac_per_rec": 7.6
+    },
+    "8135": {
+      "adot": 14.2,
+      "slot_rate": 20.8,
+      "wide_rate": 78.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.6
+    },
+    "8137": {
+      "adot": 12.0,
+      "slot_rate": 10.3,
+      "wide_rate": 89.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.1
+    },
+    "8142": {
+      "adot": 20.0,
+      "slot_rate": 13.4,
+      "wide_rate": 86.6,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.0
+    },
+    "8144": {
+      "adot": 12.3,
+      "slot_rate": 41.9,
+      "wide_rate": 58.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.9
+    },
+    "8145": {
+      "adot": 3.8,
+      "slot_rate": 15.5,
+      "wide_rate": 10.6,
+      "inline_rate": 70.2,
+      "yac_per_rec": 4.5
+    },
+    "8146": {
+      "adot": 9.8,
+      "slot_rate": 38.8,
+      "wide_rate": 61.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.7
+    },
+    "8147": {
+      "adot": 5.5,
+      "slot_rate": 37.1,
+      "wide_rate": 62.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.4
+    },
+    "8148": {
+      "adot": 12.7,
+      "slot_rate": 23.2,
+      "wide_rate": 76.7,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.9
+    },
+    "8167": {
+      "adot": 18.0,
+      "slot_rate": 30.5,
+      "wide_rate": 65.2,
+      "inline_rate": 4.3,
+      "yac_per_rec": 3.4
+    },
+    "8168": {
+      "adot": 16.0,
+      "slot_rate": 27.8,
+      "wide_rate": 72.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.4
+    },
+    "8170": {
+      "adot": 2.0,
+      "slot_rate": 31.3,
+      "wide_rate": 0.0,
+      "inline_rate": 68.8,
+      "yac_per_rec": 7.3
+    },
+    "8172": {
+      "adot": 5.6,
+      "slot_rate": 34.6,
+      "wide_rate": 16.7,
+      "inline_rate": 48.1,
+      "yac_per_rec": 7.5
+    },
+    "8177": {
+      "adot": 5.9,
+      "slot_rate": 34.4,
+      "wide_rate": 6.5,
+      "inline_rate": 55.8,
+      "yac_per_rec": 3.6
+    },
+    "8180": {
+      "adot": 13.1,
+      "slot_rate": 60.1,
+      "wide_rate": 39.5,
+      "inline_rate": 0.2,
+      "yac_per_rec": 3.9
+    },
+    "8181": {
+      "adot": 9.8,
+      "slot_rate": 25.9,
+      "wide_rate": 22.2,
+      "inline_rate": 18.5,
+      "yac_per_rec": 2.0
+    },
+    "8188": {
+      "adot": 27.8,
+      "slot_rate": 37.5,
+      "wide_rate": 62.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.3
+    },
+    "8200": {
+      "adot": 8.4,
+      "slot_rate": 37.3,
+      "wide_rate": 61.5,
+      "inline_rate": 1.2,
+      "yac_per_rec": 4.4
+    },
+    "8204": {
+      "adot": 18.5,
+      "slot_rate": 50.9,
+      "wide_rate": 47.2,
+      "inline_rate": 1.9,
+      "yac_per_rec": 1.5
+    },
+    "8210": {
+      "adot": 4.9,
+      "slot_rate": 46.0,
+      "wide_rate": 14.0,
+      "inline_rate": 38.4,
+      "yac_per_rec": 6.2
+    },
+    "8219": {
+      "adot": 5.0,
+      "slot_rate": 20.8,
+      "wide_rate": 12.5,
+      "inline_rate": 62.5,
+      "yac_per_rec": 2.0
+    },
+    "8225": {
+      "adot": 9.3,
+      "slot_rate": 34.5,
+      "wide_rate": 10.9,
+      "inline_rate": 37.8,
+      "yac_per_rec": 7.1
+    },
+    "8235": {
+      "adot": 12.3,
+      "slot_rate": 25.0,
+      "wide_rate": 75.0,
+      "inline_rate": 0.0,
+      "yac_per_rec": 0.0
+    },
+    "8249": {
+      "adot": 5.0,
+      "slot_rate": 45.5,
+      "wide_rate": 12.1,
+      "inline_rate": 42.4,
+      "yac_per_rec": 1.5
+    },
+    "8250": {
+      "adot": 9.0,
+      "slot_rate": 6.3,
+      "wide_rate": 93.8,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.5
+    },
+    "8253": {
+      "adot": 2.3,
+      "slot_rate": 11.1,
+      "wide_rate": 88.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.7
+    },
+    "8414": {
+      "adot": 2.5,
+      "slot_rate": 57.1,
+      "wide_rate": 42.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 9.5
+    },
+    "8489": {
+      "adot": 7.7,
+      "slot_rate": 17.2,
+      "wide_rate": 11.1,
+      "inline_rate": 67.7,
+      "yac_per_rec": 2.0
+    },
+    "8500": {
+      "adot": 2.8,
+      "slot_rate": 15.6,
+      "wide_rate": 7.8,
+      "inline_rate": 74.0,
+      "yac_per_rec": 4.6
+    },
+    "8527": {
+      "adot": 18.7,
+      "slot_rate": 5.9,
+      "wide_rate": 94.1,
+      "inline_rate": 0.0,
+      "yac_per_rec": 0.5
+    },
+    "8583": {
+      "adot": 4.8,
+      "slot_rate": 49.2,
+      "wide_rate": 14.3,
+      "inline_rate": 34.9,
+      "yac_per_rec": 3.7
+    },
+    "8676": {
+      "adot": 11.4,
+      "slot_rate": 34.1,
+      "wide_rate": 65.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 3.1
+    },
+    "8698": {
+      "adot": 5.9,
+      "slot_rate": 28.8,
+      "wide_rate": 8.0,
+      "inline_rate": 61.4,
+      "yac_per_rec": 4.4
+    },
+    "8799": {
+      "adot": 6.7,
+      "slot_rate": 7.4,
+      "wide_rate": 0.0,
+      "inline_rate": 37.0,
+      "yac_per_rec": 2.5
+    },
+    "8849": {
+      "adot": 8.4,
+      "slot_rate": 40.9,
+      "wide_rate": 12.9,
+      "inline_rate": 45.5,
+      "yac_per_rec": 4.1
+    },
+    "8885": {
+      "adot": 0.7,
+      "slot_rate": 6.1,
+      "wide_rate": 6.1,
+      "inline_rate": 84.1,
+      "yac_per_rec": 10.5
+    },
+    "8917": {
+      "adot": 9.2,
+      "slot_rate": 72.7,
+      "wide_rate": 25.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 8.2
+    },
+    "9479": {
+      "adot": 5.3,
+      "slot_rate": 16.8,
+      "wide_rate": 14.7,
+      "inline_rate": 68.5,
+      "yac_per_rec": 7.4
+    },
+    "9480": {
+      "adot": 7.0,
+      "slot_rate": 36.2,
+      "wide_rate": 15.2,
+      "inline_rate": 47.8,
+      "yac_per_rec": 5.6
+    },
+    "9481": {
+      "adot": 8.3,
+      "slot_rate": 28.0,
+      "wide_rate": 12.6,
+      "inline_rate": 59.4,
+      "yac_per_rec": 3.1
+    },
+    "9482": {
+      "adot": 4.8,
+      "slot_rate": 23.3,
+      "wide_rate": 8.6,
+      "inline_rate": 64.9,
+      "yac_per_rec": 5.7
+    },
+    "9484": {
+      "adot": 4.8,
+      "slot_rate": 29.0,
+      "wide_rate": 12.2,
+      "inline_rate": 58.8,
+      "yac_per_rec": 10.8
+    },
+    "9486": {
+      "adot": 11.6,
+      "slot_rate": 48.6,
+      "wide_rate": 47.8,
+      "inline_rate": 3.6,
+      "yac_per_rec": 2.3
+    },
+    "9487": {
+      "adot": 13.1,
+      "slot_rate": 50.3,
+      "wide_rate": 49.0,
+      "inline_rate": 0.5,
+      "yac_per_rec": 4.8
+    },
+    "9488": {
+      "adot": 11.7,
+      "slot_rate": 21.5,
+      "wide_rate": 76.8,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.4
+    },
+    "9493": {
+      "adot": 9.2,
+      "slot_rate": 33.7,
+      "wide_rate": 62.7,
+      "inline_rate": 2.7,
+      "yac_per_rec": 5.3
+    },
+    "9494": {
+      "adot": 9.6,
+      "slot_rate": 30.6,
+      "wide_rate": 65.3,
+      "inline_rate": 0.0,
+      "yac_per_rec": 6.1
+    },
+    "9497": {
+      "adot": 20.0,
+      "slot_rate": 18.6,
+      "wide_rate": 81.4,
+      "inline_rate": 0.0,
+      "yac_per_rec": 0.4
+    },
+    "9500": {
+      "adot": 8.4,
+      "slot_rate": 78.8,
+      "wide_rate": 20.2,
+      "inline_rate": 0.0,
+      "yac_per_rec": 2.5
+    },
+    "9501": {
+      "adot": 10.4,
+      "slot_rate": 82.4,
+      "wide_rate": 15.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 7.1
+    },
+    "9504": {
+      "adot": 17.5,
+      "slot_rate": 9.8,
+      "wide_rate": 89.9,
+      "inline_rate": 0.3,
+      "yac_per_rec": 1.2
+    },
+    "9754": {
+      "adot": 13.0,
+      "slot_rate": 14.5,
+      "wide_rate": 85.5,
+      "inline_rate": 0.0,
+      "yac_per_rec": 4.4
+    },
+    "9756": {
+      "adot": 14.5,
+      "slot_rate": 20.9,
+      "wide_rate": 78.4,
+      "inline_rate": 0.2,
+      "yac_per_rec": 3.2
+    },
+    "9997": {
+      "adot": 10.1,
+      "slot_rate": 33.9,
+      "wide_rate": 65.9,
+      "inline_rate": 0.0,
+      "yac_per_rec": 5.5
+    }
+  }
+}

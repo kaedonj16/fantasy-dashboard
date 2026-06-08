@@ -57,6 +57,193 @@ document.body.scrollTop = 0;
   window.addEventListener('DOMContentLoaded', finishBar);
 })();
 
+// ── Custom Select Dropdown (CSD) ─────────────────────────────────────────────
+// Replaces every native <select> with a fully-styled dropdown panel.
+// The original select stays in the DOM (CSS-hidden via .csd-wrap>select) so
+// existing JS can still read/write .value and fire change events normally.
+(function () {
+  var _seq = 0;
+  var _openWrap = null;
+  var ARROW = '<svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  function initOne(sel) {
+    if (sel._csdDone || sel.multiple || sel.getAttribute('data-no-custom') !== null) return;
+    sel._csdDone = true;
+
+    var wasHidden = sel.style.display === 'none';
+    var cs = getComputedStyle(sel); // read before moving
+
+    var wrap = document.createElement('div');
+    wrap.className = 'csd-wrap';
+    if (wasHidden) wrap.style.display = 'none';
+    // Full-width form selects are handled by CSS context rules (.csd-wrap inside
+    // form rows); for everything else carry over an explicit min-width.
+    var mw = parseFloat(cs.minWidth);
+    if (mw > 0) wrap.style.minWidth = mw + 'px';
+
+    var trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'csd-trigger';
+    var listId = 'csd-list-' + (++_seq);
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.setAttribute('aria-controls', listId);
+    // Inherit key sizing from original select
+    trigger.style.fontSize = cs.fontSize;
+    trigger.style.fontWeight = cs.fontWeight;
+    trigger.style.borderRadius = cs.borderRadius;
+    trigger.style.paddingTop = cs.paddingTop;
+    trigger.style.paddingBottom = cs.paddingBottom;
+    trigger.style.paddingLeft = cs.paddingLeft;
+
+    var valueEl = document.createElement('span');
+    valueEl.className = 'csd-value';
+    var arrowEl = document.createElement('span');
+    arrowEl.className = 'csd-arrow';
+    arrowEl.innerHTML = ARROW;
+    trigger.appendChild(valueEl);
+    trigger.appendChild(arrowEl);
+
+    var list = document.createElement('div');
+    list.id = listId;
+    list.className = 'csd-list';
+    list.setAttribute('role', 'listbox');
+    list.style.display = 'none';
+
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(trigger);
+    wrap.appendChild(list);
+    wrap.appendChild(sel); // CSS keeps select hidden inside wrap
+
+    function rebuild() {
+      list.innerHTML = '';
+      var cur = sel.value;
+      for (var i = 0; i < sel.children.length; i++) {
+        var child = sel.children[i];
+        if (child.tagName === 'OPTGROUP') {
+          var gl = document.createElement('div');
+          gl.className = 'csd-group-label';
+          gl.textContent = child.label;
+          list.appendChild(gl);
+          for (var j = 0; j < child.children.length; j++) list.appendChild(mkOpt(child.children[j], cur));
+        } else if (child.tagName === 'OPTION') {
+          list.appendChild(mkOpt(child, cur));
+        }
+      }
+    }
+
+    function mkOpt(opt, curVal) {
+      var el = document.createElement('div');
+      el.className = 'csd-option' + (opt.disabled ? ' is-disabled' : '') + (opt.value === curVal ? ' is-selected' : '');
+      el.dataset.value = opt.value;
+      el.textContent = opt.textContent.trim();
+      el.setAttribute('role', 'option');
+      return el;
+    }
+
+    function syncDisplay() {
+      var opt = sel.options[sel.selectedIndex];
+      valueEl.textContent = opt ? opt.textContent.trim() : '';
+      list.querySelectorAll('.csd-option').forEach(function (el) {
+        el.classList.toggle('is-selected', el.dataset.value === sel.value);
+      });
+    }
+
+    rebuild();
+    syncDisplay();
+
+    var isOpen = false;
+    var focIdx = -1;
+
+    function getEnabled() { return Array.from(list.querySelectorAll('.csd-option:not(.is-disabled)')); }
+
+    function setFocus(idx) {
+      var opts = getEnabled();
+      opts.forEach(function (el, i) { el.classList.toggle('is-focused', i === idx); });
+      focIdx = idx;
+      if (idx >= 0 && opts[idx]) opts[idx].scrollIntoView({ block: 'nearest' });
+    }
+
+    function openList() {
+      if (isOpen) return;
+      if (_openWrap && _openWrap !== wrap) _openWrap._csdClose();
+      _openWrap = wrap;
+      isOpen = true;
+      wrap.classList.add('is-open');
+      trigger.setAttribute('aria-expanded', 'true');
+      list.style.display = 'block';
+      requestAnimationFrame(function () { list.classList.add('is-visible'); });
+      var opts = getEnabled();
+      focIdx = opts.findIndex(function (el) { return el.dataset.value === sel.value; });
+      setFocus(focIdx);
+    }
+
+    function closeList() {
+      if (!isOpen) return;
+      isOpen = false;
+      if (_openWrap === wrap) _openWrap = null;
+      wrap.classList.remove('is-open');
+      trigger.setAttribute('aria-expanded', 'false');
+      list.classList.remove('is-visible');
+      var _l = list;
+      setTimeout(function () { if (!isOpen) _l.style.display = 'none'; }, 150);
+    }
+
+    wrap._csdClose = closeList;
+
+    function pick(val) {
+      sel.value = val;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      syncDisplay();
+      closeList();
+    }
+
+    trigger.addEventListener('click', function (e) { e.stopPropagation(); isOpen ? closeList() : openList(); });
+
+    list.addEventListener('click', function (e) {
+      var o = e.target.closest('.csd-option:not(.is-disabled)');
+      if (o) pick(o.dataset.value);
+    });
+
+    list.addEventListener('mousemove', function (e) {
+      var o = e.target.closest('.csd-option:not(.is-disabled)');
+      if (o) setFocus(getEnabled().indexOf(o));
+    });
+
+    trigger.addEventListener('keydown', function (e) {
+      var opts = getEnabled();
+      if (e.key === 'ArrowDown') { e.preventDefault(); isOpen ? setFocus(Math.min(focIdx + 1, opts.length - 1)) : openList(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); isOpen ? setFocus(Math.max(focIdx - 1, 0)) : openList(); }
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); isOpen ? (focIdx >= 0 ? pick(opts[focIdx].dataset.value) : closeList()) : openList(); }
+      else if (e.key === 'Escape') { closeList(); trigger.focus(); }
+      else if (e.key === 'Tab') { closeList(); }
+    });
+
+    sel.addEventListener('change', syncDisplay);
+
+    // Re-build when options are populated dynamically (team selects loaded via API)
+    new MutationObserver(function () { rebuild(); syncDisplay(); }).observe(sel, { childList: true, subtree: true });
+
+    // Mirror show/hide: when external JS sets sel.style.display, update the wrapper
+    new MutationObserver(function () {
+      wrap.style.display = (sel.style.display === 'none') ? 'none' : '';
+    }).observe(sel, { attributes: true, attributeFilter: ['style'] });
+  }
+
+  // One global outside-click handler closes any open dropdown
+  document.addEventListener('click', function () { if (_openWrap) _openWrap._csdClose(); });
+
+  window.initCustomSelects = function (root) {
+    (root || document).querySelectorAll('select:not([data-no-custom]):not([multiple])').forEach(initOne);
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { window.initCustomSelects(); });
+  } else {
+    window.initCustomSelects();
+  }
+}());
+
 // ── Global utilities ──────────────────────────────────────────────────────────
 
 /**
@@ -1042,6 +1229,141 @@ window.initTradePage = function initTradePage(root = document) {
   // a stale in-flight fetch response never overwrites a more recent reset.
   let _tradeGeneration = 0;
 
+  // ── Roster filter (logged-in only) ──────────────────────────────────────────
+  // Restrict each side's player search to a team's roster. Side A locks to the
+  // viewer's team; Side B is chosen from the opponent dropdown or auto-binds to the
+  // team of the first player added. The "Restrict to league rosters" toggle turns
+  // this off (free global search). Picks are filtered by round ownership (a team's
+  // owned "YYYY_R" rounds). If the roster data fails to load, the allowed helpers
+  // return null → no restriction, so the calculator falls back to original behavior.
+  const rosterFilter = {
+    loaded: false,        // true once /api/league-rosters returns teams
+    on: true,             // mirrors the toggle checkbox
+    byRid: {},            // roster_id -> Set(player_id)
+    pidToRid: {},         // player_id -> roster_id
+    pickIdsByRid: {},     // roster_id -> Set("YYYY_R_SS") exact owned pick assets
+    pickRoundsByRid: {},  // roster_id -> Set("YYYY_R") owned picks w/o a resolved slot
+    pickRoundCountsByRid: {}, // roster_id -> {"YYYY_R": count} of round-level owned picks
+    teamName: {},         // roster_id -> team name
+    viewerRid: "",        // Side A (locked) team
+    sideBRid: "",         // Side B bound opponent ("" = unbound / any team)
+    sideBAuto: false,     // true when sideBRid was auto-bound (not explicitly chosen)
+  };
+
+  function rosterFilterActive() {
+    return rosterFilter.loaded && rosterFilter.on;
+  }
+
+  // Reduce a PICK asset id (e.g. "2026_1_01", "2026_1_early", "2026_1") to its
+  // round key "YYYY_R" so round-level ownership maps onto all slot/bucket variants.
+  function pickRoundKey(id) {
+    const parts = String(id).split("_");
+    return parts.length >= 2 ? `${parts[0]}_${parts[1]}` : String(id);
+  }
+
+  // Generic side→Set resolver over one of the rosterFilter maps (player/pick).
+  // Sides are flipped from the labels: "{you} gets…" (Side A) is filled with the
+  // OPPONENT's assets (what you receive), and "{opponent} gets…" (Side B) is filled
+  // with YOUR assets (what they receive).
+  function _allowedSetForSide(side, map) {
+    if (!rosterFilterActive()) return null;
+    // Side B = your team. Viewer unknown → don't restrict (avoids an empty search).
+    if (side === "B") return (rosterFilter.viewerRid && map[rosterFilter.viewerRid]) || null;
+    // Side A = the opponent's team; unbound → any non-viewer team (first pick binds).
+    if (rosterFilter.sideBRid) return map[rosterFilter.sideBRid] || null;
+    const union = new Set();
+    for (const rid in map) {
+      if (rid === rosterFilter.viewerRid) continue;
+      map[rid].forEach(k => union.add(k));
+    }
+    return union.size ? union : null;
+  }
+
+  // Returns a Set of allowed player IDs for the side, or null for "no restriction".
+  function allowedPlayerIdsForSide(side) {
+    return _allowedSetForSide(side, rosterFilter.byRid);
+  }
+  // Exact owned pick asset ids for the side (resolved slots), or null.
+  function allowedPickIdsForSide(side) {
+    return _allowedSetForSide(side, rosterFilter.pickIdsByRid);
+  }
+  // Round-level fallback keys for picks whose slot couldn't be resolved, or null.
+  function allowedPickRoundsForSide(side) {
+    return _allowedSetForSide(side, rosterFilter.pickRoundsByRid);
+  }
+
+  // A slotted pick ("YYYY_R_SS", numeric slot) is unique — at most one can be added.
+  // Bucket ("YYYY_R_early") and round-only ("YYYY_R") picks are non-unique.
+  function isSlottedPick(id) {
+    const parts = String(id).split("_");
+    return parts.length >= 3 && /^\d+$/.test(parts[2]);
+  }
+
+  // How many non-slotted picks of a given round the side may add. Unlimited when the
+  // roster filter is off (or the opponent isn't bound yet); else the team's count.
+  // Side B = your picks; Side A = the opponent's picks.
+  function ownedRoundCount(side, roundKey) {
+    if (!rosterFilterActive()) return Infinity;
+    let rid = null;
+    if (side === "B") rid = rosterFilter.viewerRid;
+    else if (rosterFilter.sideBRid) rid = rosterFilter.sideBRid;
+    else return Infinity;  // opponent unbound → don't cap yet
+    return ((rosterFilter.pickRoundCountsByRid[rid] || {})[roundKey]) || 0;
+  }
+
+  // Bind the opponent from the players you ACQUIRE — Side A ("{you} gets…") holds the
+  // opponent's assets, so its first player determines the opponent. Auto-binding is
+  // released only if it was automatic and Side A is emptied.
+  function syncSideBBinding() {
+    if (!rosterFilterActive()) return;
+    const sel = root.querySelector("#sideBTeamSelect");
+    const hasAssets = state.sideAPlayers.length > 0 || state.sideAPicks.length > 0;
+    if (!rosterFilter.sideBRid && hasAssets) {
+      const fp = state.sideAPlayers.find(
+        p => p.position !== "PICK" && rosterFilter.pidToRid[String(p.id)]
+      );
+      if (fp) {
+        rosterFilter.sideBRid = rosterFilter.pidToRid[String(fp.id)];
+        rosterFilter.sideBAuto = true;
+        if (sel) sel.value = rosterFilter.sideBRid;
+      }
+    } else if (rosterFilter.sideBRid && rosterFilter.sideBAuto && !hasAssets) {
+      rosterFilter.sideBRid = "";
+      rosterFilter.sideBAuto = false;
+      if (sel) sel.value = "";
+    }
+    updateSideTitles();
+  }
+
+  // Reflect the chosen teams in the card titles: "{team} gets…" when the roster
+  // filter is active and that side's team is known, else the generic label.
+  function updateSideTitles() {
+    const active = rosterFilterActive();
+    const aTitle = root.querySelector("#sideATitle");
+    if (aTitle) {
+      const an = active && rosterFilter.viewerRid && rosterFilter.teamName[rosterFilter.viewerRid];
+      aTitle.textContent = an ? `${an} gets…` : "Team 1 gets…";
+    }
+    // Side B's name slot is the opponent <select> itself; show it when the filter is
+    // active, otherwise show the plain "Team 2" fallback so the heading still reads.
+    const selB = root.querySelector("#sideBTeamSelect");
+    const fbB = root.querySelector("#sideBTeamFallback");
+    if (selB) selB.style.display = active ? "" : "none";
+    if (fbB) fbB.style.display = active ? "none" : "";
+
+
+    // With the roster filter on, Side A is always your team, so the Team 1 / Team 2
+    // viewer-side radio is redundant — hide it and pin the viewer side to A.
+    const vt = root.querySelector(".otc-viewer-toggles");
+    if (vt) vt.style.display = active ? "none" : "";
+    if (active) {
+      const ra = root.querySelector('input[name="viewerSide"][value="a"]');
+      if (ra && !ra.checked) ra.checked = true;
+      const hid = root.querySelector("#viewerSideInput");
+      if (hid && hid.value !== "a") hid.value = "a";
+    }
+  }
+
   async function loadPlayerDeltas() {
     try {
       const leagueType = getLeagueType();
@@ -2004,6 +2326,10 @@ window.initTradePage = function initTradePage(root = document) {
     const picks = getSidePicks(side);
     if (!container) return;
 
+    // Side A ("{you} gets…") holds the opponent's assets, so keep the opponent
+    // binding in sync as Side A changes.
+    if (side === "A") syncSideBBinding();
+
     container.innerHTML = "";
     container.className = "otc-selected-list";
 
@@ -2045,25 +2371,33 @@ window.initTradePage = function initTradePage(root = document) {
 
       const metaBits = buildMetaBits(p);
 
-      // Add rookie/breakout/elite/prospect badges
-      if (isRookie(p.id) || p.is_rookie) {
-        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
+      // Badges in a fixed order: tier, elite, breakout, rookie. Kept separate from the
+      // text meta so the text bits join with " • " and the badges follow with spaces
+      // (e.g. "RB4 • ARI • 21.3 yrs T2 ★ Rookie").
+      const badges = [];
+      const _otcTier = _getOtcTier(p);
+      if (_otcTier) {
+        const _tc = _TIER_COLORS[_otcTier] || '#6b7280';
+        const _tl = _TIER_LABELS[_otcTier] || ('Tier ' + _otcTier);
+        badges.push(
+          `<span class="otc-tier-badge" title="${_tl}" style="display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${_tc}22;color:${_tc};border:1px solid ${_tc}44;vertical-align:middle;cursor:default;">T${_otcTier}</span>`
+        );
       }
       if (isElite(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
-      }
-      if (!p.is_rookie && isProspect(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
+        badges.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
       }
       if (isBreakout(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i></span>');
+        badges.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i></span>');
+      }
+      if (isRookie(p.id) || p.is_rookie || isProspect(p.id)) {
+        badges.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
       }
 
-      metaEl.innerHTML = metaBits.map((bit, i) => {
-        if (i === 0) return bit;
-        if (p.team && bit === p.team) return `<span class="otc-chip-team"> • ${bit}</span>`;
-        return ' • ' + bit;
-      }).join('');
+      // Text meta (pos · team · age) joined with " • "; badges appended space-separated.
+      const metaHtml = metaBits.map(bit =>
+        (p.team && bit === p.team) ? `<span class="otc-chip-team">${bit}</span>` : bit
+      ).join(" • ");
+      metaEl.innerHTML = badges.length ? `${metaHtml} ${badges.join(" ")}` : metaHtml;
 
       leftWrap.appendChild(nameEl);
       leftWrap.appendChild(metaEl);
@@ -2229,7 +2563,7 @@ window.initTradePage = function initTradePage(root = document) {
         }
         badge.textContent = 'T' + tier;
         badge.title = label;
-        badge.style.cssText = `display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px;background:${tc}22;color:${tc};border:1px solid ${tc}44;vertical-align:middle;cursor:default;`;
+        badge.style.cssText = `display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${tc}22;color:${tc};border:1px solid ${tc}44;vertical-align:middle;cursor:default;`;
       });
 
       // Depth-adjustment note beneath the side total
@@ -4787,6 +5121,89 @@ window.initTradePage = function initTradePage(root = document) {
     return 0;
   }
 
+  // Load per-team rosters and wire the roster-filter controls (logged-in only).
+  async function initRosterFilter() {
+    const leagueId = root.querySelector("#leagueIdInput")?.value || "";
+    const toggle = root.querySelector("#restrictRosterToggle");
+    const sel = root.querySelector("#sideBTeamSelect");
+    if (!leagueId || !toggle) return;  // guest / no league → feature disabled
+
+    try {
+      const res = await fetch(
+        `/api/league-rosters?league_id=${encodeURIComponent(leagueId)}&platform=sleeper`,
+        { cache: "no-store" }
+      );
+      const data = await res.json();
+      const teams = data.teams || [];
+
+      rosterFilter.byRid = {};
+      rosterFilter.pidToRid = {};
+      rosterFilter.pickIdsByRid = {};
+      rosterFilter.pickRoundsByRid = {};
+      rosterFilter.pickRoundCountsByRid = {};
+      rosterFilter.teamName = {};
+      teams.forEach(t => {
+        const rid = String(t.roster_id);
+        const set = new Set((t.player_ids || []).map(String));
+        const counts = t.pick_round_counts || {};
+        rosterFilter.byRid[rid] = set;
+        rosterFilter.pickIdsByRid[rid] = new Set((t.pick_ids || []).map(String));
+        rosterFilter.pickRoundCountsByRid[rid] = counts;
+        rosterFilter.pickRoundsByRid[rid] = new Set(Object.keys(counts));
+        rosterFilter.teamName[rid] = t.team_name;
+        set.forEach(pid => { rosterFilter.pidToRid[pid] = rid; });
+      });
+      rosterFilter.viewerRid = String(getCurrentRosterId() || data.viewer_roster_id || "");
+      rosterFilter.loaded = teams.length > 0;
+      // Restore the saved Roster Filter preference (defaults to on / checked).
+      const savedPref = (function () {
+        try { return localStorage.getItem("otc_roster_filter_on"); } catch (_) { return null; }
+      })();
+      if (savedPref !== null) toggle.checked = savedPref === "1";
+      rosterFilter.on = toggle.checked;
+
+      if (sel) {
+        sel.innerHTML = '<option value="">Team 2</option>';
+        teams
+          .filter(t => String(t.roster_id) !== rosterFilter.viewerRid)
+          .forEach(t => {
+            const o = document.createElement("option");
+            o.value = String(t.roster_id);
+            o.textContent = t.team_name;
+            sel.appendChild(o);
+          });
+        bindOnce(sel, "sideBTeamChange", "change", () => {
+          const rid = sel.value;
+          // Switching opponents clears Side A (which holds the opponent's players).
+          if (rid && rid !== rosterFilter.sideBRid &&
+              (state.sideAPlayers.length || state.sideAPicks.length)) {
+            state.sideAPlayers = [];
+            state.sideAPicks = [];
+            saveState();
+            renderChips("A");
+          }
+          rosterFilter.sideBRid = rid ? String(rid) : "";
+          rosterFilter.sideBAuto = false;
+          sel.value = rosterFilter.sideBRid;
+          updateSideTitles();
+        });
+      }
+
+      bindOnce(toggle, "restrictToggleChange", "change", () => {
+        rosterFilter.on = toggle.checked;
+        try { localStorage.setItem("otc_roster_filter_on", toggle.checked ? "1" : "0"); } catch (_) {}
+        updateSideTitles();
+      });
+
+      // Bind now in case a restored state already has Side B players, and set the
+      // side titles to the resolved team names.
+      syncSideBBinding();
+      updateSideTitles();
+    } catch (e) {
+      console.warn("[trade] roster filter load failed:", e);
+    }
+  }
+
   function setupSearch(side) {
     const input = root.querySelector(side === "A" ? "#sideASearch" : "#sideBSearch");
     const dropdown = root.querySelector(side === "A" ? "#sideADropdown" : "#sideBDropdown");
@@ -4795,12 +5212,14 @@ window.initTradePage = function initTradePage(root = document) {
     if (input.__tradeSearchBound) return;
     input.__tradeSearchBound = true;
 
-    input.addEventListener("input", async function () {
-      const query = input.value.trim().toLowerCase();
+    // Shared render for both fuzzy search (query present) and browse mode (empty
+    // query / focus). Browse shows the roster-allowed pool sorted by value so the
+    // user can scroll through everything available on that side.
+    async function renderSide(rawQuery) {
+      const query = (rawQuery || "").trim().toLowerCase();
       dropdown.innerHTML = "";
       dropdown.style.display = "none";
       dropdown.parentElement.classList.remove("dropdown-open");
-      if (!query) return;
 
       try {
         await ensurePlayersLoaded();
@@ -4816,32 +5235,78 @@ window.initTradePage = function initTradePage(root = document) {
       const selected = getSidePlayers(side);
       const selectedPicks = getSidePicks(side);
       const leagueType = getLeagueType();
+      const valueOf = p => (leagueType === "sf" ? (p.sf_value || p.value || 0) : (p.value || 0));
 
-      const matches = allPlayers
-        .filter(p => !selected.find(x => String(x.id) === String(p.id)))
-        .filter(p => !selectedPicks.find(x => String(x.id) === String(p.id)))
-        .map(p => {
-          // Score against display name and search_name (normalized, no punctuation)
-          const score = Math.max(
-            fuzzyNameScore(p.name, query),
-            fuzzyNameScore(p.search_name, query)
-          );
-          // Get player value for sorting
-          const value = leagueType === "sf" ? (p.sf_value || p.value || 0) : (p.value || 0);
-          return { p, score, value };
-        })
-        .filter(({ score }) => score > 0)
-        .sort((a, b) => {
-          // Primary sort by fuzzy score (better matches first)
-          if (b.score !== a.score) return b.score - a.score;
-          // Secondary sort by value (higher value first)
-          return b.value - a.value;
-        })
-        .slice(0, 20)
-        .map(({ p }) => p);
+      // Roster filter: players limited to the allowed team(s); picks matched first by
+      // exact resolved slot id, then by round-level fallback for picks too far out.
+      const allowedIds = allowedPlayerIdsForSide(side);
+      const allowedPickIds = allowedPickIdsForSide(side);
+      const allowedPickRounds = allowedPickRoundsForSide(side);
+      const pickAllowed = p => {
+        if (allowedPickIds === null && allowedPickRounds === null) return true; // no restriction
+        if (allowedPickIds && allowedPickIds.has(String(p.id))) return true;
+        if (allowedPickRounds && allowedPickRounds.has(pickRoundKey(p.id))) return true;
+        return false;
+      };
 
-      const overallRankMap = buildOverallRankMap(allPlayers);
+      let pool = allPlayers
+        .filter(p => p.position === "PICK"
+          ? pickAllowed(p)
+          : (!allowedIds || allowedIds.has(String(p.id))))
+        .filter(p => {
+          if (p.position !== "PICK") {
+            return !selected.some(x => String(x.id) === String(p.id));  // players: unique
+          }
+          if (isSlottedPick(p.id)) {
+            return !selectedPicks.some(x => String(x.id) === String(p.id));  // slotted: unique
+          }
+          // Non-slotted (bucket/round): multi-selectable up to the owned count
+          // (unlimited when the roster filter is off).
+          const cap = ownedRoundCount(side, pickRoundKey(p.id));
+          const added = selectedPicks.filter(
+            x => !isSlottedPick(x.id) && pickRoundKey(String(x.id)) === pickRoundKey(p.id)
+          ).length;
+          return added < cap;
+        });
+
+      // Exact-slot picks are the team's precise picks (show each). Round-fallback
+      // picks (slot unknown, e.g. 2+ years out) collapse to one entry per round so a
+      // side shows just the team's picks, not every slot/bucket variant.
+      // Default to "mid" because we don't know where the pick will land.
+      if (rosterFilterActive()) {
+        const midPick = new Map();
+        const kept = [];
+        for (const p of pool) {
+          if (p.position !== "PICK") { kept.push(p); continue; }
+          if (allowedPickIds && allowedPickIds.has(String(p.id))) { kept.push(p); continue; }
+          const k = pickRoundKey(p.id);
+          const parts = String(p.id).split("_");
+          const bucket = parts[2] || "";
+          // Prefer mid; only fall back to other buckets if mid isn't in the pool.
+          if (bucket === "mid" || !midPick.has(k)) midPick.set(k, p);
+        }
+        pool = kept.concat([...midPick.values()]);
+      }
+
+      let matches;
+      if (query) {
+        matches = pool
+          .map(p => ({
+            p,
+            score: Math.max(fuzzyNameScore(p.name, query), fuzzyNameScore(p.search_name, query)),
+            value: valueOf(p),
+          }))
+          .filter(({ score }) => score > 0)
+          .sort((a, b) => (b.score !== a.score ? b.score - a.score : b.value - a.value))
+          .slice(0, 20)
+          .map(({ p }) => p);
+      } else {
+        // Browse: everything available, highest value first (scrollable list).
+        matches = pool.slice().sort((a, b) => valueOf(b) - valueOf(a)).slice(0, 60);
+      }
+
       if (!matches.length) return;
+      const overallRankMap = buildOverallRankMap(allPlayers);
 
       matches.forEach(p => {
         const overallRank = overallRankMap.get(String(p.id));
@@ -4851,8 +5316,9 @@ window.initTradePage = function initTradePage(root = document) {
           if (!selected.find(x => String(x.id) === String(p.id))) {
             if (p.position === "PICK") {
               const picks = getSidePicks(side);
-              const isBucket = /_(early|mid|late)$/i.test(String(p.id));
-              if (isBucket || !picks.find(x => String(x.id) === String(p.id))) {
+              // Non-slotted picks (bucket/round) can be added multiple times; slotted
+              // picks are unique. The dropdown pool already enforces owned-count caps.
+              if (!isSlottedPick(p.id) || !picks.find(x => String(x.id) === String(p.id))) {
                 picks.push({ id: p.id, display: p.name });
               }
             } else {
@@ -4871,7 +5337,11 @@ window.initTradePage = function initTradePage(root = document) {
 
       dropdown.style.display = "block";
       dropdown.parentElement.classList.add("dropdown-open");
-    });
+    }
+
+    input.addEventListener("input", () => { renderSide(input.value); });
+    // Clicking into an empty search box opens the browse list.
+    input.addEventListener("focus", () => { if (!input.value.trim()) renderSide(""); });
 
     input.addEventListener("blur", function () {
       setTimeout(() => {
@@ -5356,6 +5826,7 @@ window.initTradePage = function initTradePage(root = document) {
   ]).then(() => {
     setupSearch("A");
     setupSearch("B");
+    initRosterFilter();
     bindLeagueTypeControls();
     bindLeagueSizeControls();
     bindScoringFormatControls();

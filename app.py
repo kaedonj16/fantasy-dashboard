@@ -540,7 +540,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span></span>
-            <span class="home-feature-row-desc">Archetype-driven suggestions with Monte Carlo win probability — see exactly how each trade shifts your playoff odds</span>
+            <span class="home-feature-row-desc">Archetype-driven suggestions with Monte Carlo win probability. See exactly how each trade shifts your playoff odds</span>
           </div>
         </div>
 
@@ -560,7 +560,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Dynasty Rankings</span>
-            <span class="home-feature-row-desc">Calibrated dynasty values updated daily — blending consensus data with advanced metrics, archetypes, and trend charts</span>
+            <span class="home-feature-row-desc">Calibrated dynasty values updated daily, blending consensus data with advanced metrics, archetypes, and trend charts</span>
           </div>
         </div>
 
@@ -580,7 +580,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Playoff Odds</span>
-            <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week — know your exact path to the playoffs and projected championship probability</span>
+            <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week. Know your exact path to the playoffs and projected championship probability</span>
           </div>
         </div>
 
@@ -600,7 +600,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Breakout Tracker</span>
-            <span class="home-feature-row-desc">Spot value shifts before the market moves — tracks target share, snap counts, and depth chart changes to surface opportunities</span>
+            <span class="home-feature-row-desc">Spot value shifts before the market moves. Tracks target share, snap counts, and depth chart changes to surface opportunities</span>
           </div>
         </div>
 
@@ -1253,9 +1253,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
+                ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "/metrics", "advanced-metrics"),
+                ("Breakouts <span class='nav-pro-badge'>PRO</span>",       "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
                 ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
-                ("Breakouts <span class='nav-pro-badge'>PRO</span>",       "/breakouts", "breakouts"),
             ], ["players", "prospects", "breakouts"], "playersNavDropdown"),
         ]
 
@@ -1376,9 +1377,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
+        ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "page_advanced_metrics", "advanced-metrics", False),
+        ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
-        ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
     ], ["players", "prospects", "breakouts", "waivers", "schedule"], "playersNavDropdown"))
@@ -9741,7 +9743,18 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       }
       .filter-row-secondary {
         padding-top: 4px;
+        flex-wrap: nowrap;
+        align-items: center;
       }
+      .filter-row-secondary .active-settings-indicator {
+        flex: 1;
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+        flex-wrap: nowrap;
+      }
+      .filter-row-secondary .active-settings-indicator::-webkit-scrollbar { display: none; }
+      .filter-row-secondary .filter-sort { flex-shrink: 0; }
       .filter-search {
         position: relative;
         flex: 1;
@@ -9863,6 +9876,28 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         color: var(--text-muted);
         text-transform: uppercase;
         letter-spacing: 0.04em;
+      }
+
+      @media (max-width: 600px) {
+        .filter-row-primary {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          grid-template-rows: auto auto;
+          gap: 8px;
+        }
+        .filter-search {
+          grid-column: 1 / -1;
+          min-width: 0;
+        }
+        .filter-positions {
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          scrollbar-width: none;
+          min-width: 0;
+          align-items: center;
+        }
+        .filter-positions::-webkit-scrollbar { display: none; }
+        .filter-row-secondary { gap: 8px; }
       }
 
       .pr-tier-divider {
@@ -10681,6 +10716,20 @@ def page_prospects(platform: str, season: int, league_id: str):
     from dashboard_services.admin_auth import is_admin
     body_html = build_prospects_body(is_admin=is_admin())
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
+
+
+@app.route("/metrics")
+@app.route("/<platform>/<int:season>/<league_id>/metrics")
+def page_advanced_metrics(platform: str = None, season: int = None, league_id: str = None):
+    """Premium Advanced Metrics leaderboard page."""
+    from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
+    from data_building.advanced_metrics import LEADERBOARD_METRICS
+    user_id = session.get("viewer_username")
+    has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
+    body = build_advanced_metrics_body(
+        has_premium, LEADERBOARD_METRICS, league_id, season, platform
+    )
+    return render_page("Advanced Metrics", league_id, "advanced-metrics", body, platform, season)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/breakouts")
@@ -16797,6 +16846,141 @@ def api_teams():
     except Exception as e:
         logger.info(f"[api/teams] error: {e}")
         return jsonify([])
+
+
+@app.route("/api/league-rosters")
+def api_league_rosters():
+    """Per-team rosters for the trade calculator's roster filter.
+
+    Returns {teams: [{roster_id, team_name, username, player_ids, pick_rounds}],
+    viewer_roster_id}. pick_rounds are "YYYY_R" keys (season + round) a team owns;
+    the front end matches PICK assets by their leading "YYYY_R" so round-level pick
+    ownership maps onto the slot/bucket pick assets in the value table.
+    """
+    league_id = (request.args.get("league_id") or "").strip()
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    season = int(request.args.get("season") or datetime.now().year)
+
+    if not league_id:
+        return jsonify({"teams": [], "viewer_roster_id": ""})
+
+    try:
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+        users = ctx.get("users", []) or []
+        rosters = ctx.get("rosters", []) or []
+        picks_by_roster = ctx.get("picks_by_roster", {}) or {}
+
+        teams = []
+        for roster in rosters:
+            roster_id = str(roster.get("roster_id", ""))
+            user_id = roster.get("owner_id")
+            user = next((u for u in users if u.get("user_id") == user_id), None)
+            if user:
+                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
+                username = user.get("username") or user.get("display_name") or ""
+            else:
+                team_name = f"Team {roster_id}"
+                username = ""
+            player_ids = [str(pid) for pid in (roster.get("players") or [])]
+            # Resolve each owned pick to its exact draft slot the same way the team
+            # modals do (resolve_exact_pick_slot, via the original owner's prior-season
+            # standings) → exact "{season}_{round}_{slot:02d}" asset ids. Picks too far
+            # out to resolve a slot fall back to round-level "{season}_{round}" keys.
+            # Slotted picks → exact unique asset ids (pick_ids). Picks whose slot can't
+            # be resolved (too far out) → round-level keys with a COUNT, so a team that
+            # owns e.g. two 2027 1sts can add both in the calculator.
+            pick_ids: list[str] = []
+            pick_round_counts: dict[str, int] = {}
+            for p in (picks_by_roster.get(roster_id) or []):
+                p_season = _safe_int(p.get("season"), 0)
+                p_round = _safe_int(p.get("round"), 0)
+                if not p_season or not p_round:
+                    continue
+                slot = None
+                if p.get("original_owner") is not None:
+                    try:
+                        slot = resolve_exact_pick_slot(platform, league_id, season, {
+                            "season": p_season,
+                            "round": p_round,
+                            "previous_owner_id": p.get("original_owner"),
+                        })
+                    except Exception:
+                        slot = None
+                if slot:
+                    pick_ids.append(f"{p_season}_{p_round}_{int(slot):02d}")
+                else:
+                    k = f"{p_season}_{p_round}"
+                    pick_round_counts[k] = pick_round_counts.get(k, 0) + 1
+            teams.append({
+                "roster_id": roster_id,
+                "team_name": team_name,
+                "username": username,
+                "player_ids": player_ids,
+                "pick_ids": sorted(pick_ids),
+                "pick_round_counts": pick_round_counts,
+            })
+
+        teams.sort(key=lambda x: x["team_name"])
+        viewer = get_viewer_session_for_league(users, rosters) or {}
+        return jsonify({
+            "teams": teams,
+            "viewer_roster_id": str(viewer.get("viewer_roster_id") or ""),
+        })
+    except Exception as e:
+        logger.info(f"[api/league-rosters] error: {e}")
+        return jsonify({"teams": [], "viewer_roster_id": ""})
+
+
+@app.route("/api/advanced-metrics/leaderboard")
+def api_advanced_metrics_leaderboard():
+    """Players ranked by a single advanced metric, for the Advanced Metrics page.
+
+    Premium-gated. Query params: metric (required, whitelisted), position (optional),
+    league_id/platform (for the premium check).
+    """
+    from data_building.advanced_metrics import get_metric_leaderboard, LEADERBOARD_METRICS
+
+    user_id = session.get("viewer_username") or None
+    league_id = (request.args.get("league_id") or "").strip() or None
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    if not has_premium_access(user_id, league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
+
+    metric = (request.args.get("metric") or "role_score").strip()
+    if metric not in LEADERBOARD_METRICS:
+        return jsonify({"error": "unknown metric"}), 400
+    position = (request.args.get("position") or "").strip().upper() or None
+    season_str = (request.args.get("season") or "").strip()
+    season = int(season_str) if season_str.isdigit() else None
+    min_vol_str = (request.args.get("min_vol") or "").strip()
+    min_vol = int(min_vol_str) if min_vol_str.isdigit() else None
+
+    try:
+        players = get_metric_leaderboard(metric, position=position, season=season, min_vol=min_vol)
+    except Exception as e:
+        logger.exception(f"[api/advanced-metrics/leaderboard] error for metric={metric}: {e}")
+        players = []
+
+    spec = LEADERBOARD_METRICS[metric]
+    return jsonify({
+        "metric": metric,
+        "label": spec["label"],
+        "positions": spec["positions"],
+        "lower_better": bool(spec.get("lower_better")),
+        "players": players,
+    })
+
+
+@app.route("/api/advanced-metrics/seasons")
+def api_advanced_metrics_seasons():
+    """Return available seasons in player_advanced_metrics, newest first."""
+    from data_building.advanced_metrics import get_available_seasons
+    user_id = session.get("viewer_username") or None
+    league_id = (request.args.get("league_id") or "").strip() or None
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    if not has_premium_access(user_id, league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
+    return jsonify({"seasons": get_available_seasons()})
 
 
 @app.route("/api/value-movers")

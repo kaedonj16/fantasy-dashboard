@@ -3444,13 +3444,6 @@ thead th {
   border: 1px solid #d8e3f2;
 }
 
-.otc-page-copy {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: #66758a;
-  line-height: 1.45;
-}
-
 .otc-page-head {
   margin-bottom: 14px;
 }
@@ -3466,16 +3459,25 @@ thead th {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
-  flex-shrink: 1;
+  flex-shrink: 0;
+}
+
+.otc-page-title-wrap {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .otc-settings-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: nowrap;
+}
+
+.otc-settings-row .csd-trigger,
+.otc-settings-row .otc-restrict-toggle {
+  height: 30px;
+  box-sizing: border-box;
 }
 
 .otc-viewer-toggles {
@@ -4732,6 +4734,15 @@ thead th {
   gap: 8px;
 }
 
+/* Title + opponent dropdown share one line in the Team 2 header. */
+.otc-team-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .otc-team-input {
   width: 100%;
   padding: 8px 12px;
@@ -4793,7 +4804,7 @@ thead th {
   padding: 8px 12px;
   border: 2px solid var(--border);
   border-radius: 8px;
-  background: var(--card-bg, #fff);
+  background-color: var(--card-bg, #fff);
   color: var(--text);
   font-size: 0.9rem;
   font-weight: 500;
@@ -4818,6 +4829,52 @@ thead th {
   border-color: var(--primary, #007bff);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   transform: translateY(-1px);
+}
+
+/* ── Roster filter controls (restrict toggle + opponent picker) ── */
+.otc-roster-filter-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin: 4px 0 14px;
+}
+
+.otc-restrict-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg, var(--card));
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.4;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.otc-restrict-toggle:hover {
+  border-color: var(--primary, #2563eb);
+}
+
+.otc-restrict-toggle input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--primary, #2563eb);
+  cursor: pointer;
+}
+
+/* Compact opponent dropdown that fits in the Team 2 header without truncating. */
+.otc-team-select-dropdown.otc-opponent-select {
+  min-width: 150px;
+  max-width: 220px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 10px;
 }
 
 .otc-team-select-label {
@@ -4846,6 +4903,20 @@ thead th {
   font-size: 16px;
   font-weight: 800;
   color: var(--text);
+}
+
+/* Opponent dropdown styled to read as the team-name part of the Team 2 title. */
+.otc-team-select-dropdown.otc-inline-team-select {
+  min-width: 0;
+  max-width: 240px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+  padding: 2px 24px 2px 8px;
+  border-width: 1px;
+  border-radius: 8px;
+  box-shadow: none;
+  vertical-align: baseline;
 }
 
 .otc-value-main {
@@ -5055,6 +5126,186 @@ thead th {
 
 .otc-pill-switch input:checked + .otc-pill-track::before {
   transform: translateX(16px);
+}
+
+/* ── Site-wide custom dropdown styling for native <select> ──────────────────
+   Gives every native select a consistent custom look (custom caret, border,
+   radius). Component-specific select classes have higher specificity and keep
+   their own sizing/tweaks on top of this base. Note: the OPEN option list is
+   rendered by the OS and can't be fully styled cross-browser. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: var(--card-bg, var(--card, #fff));
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  padding: 6px 30px 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+select:hover {
+  border-color: var(--accent, #2563eb);
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* ── Custom Select Dropdown (CSD) ───────────────────────────────────────────── */
+
+/* Keep the original <select> hidden inside its wrapper regardless of inline style */
+.csd-wrap > select {
+  display: none !important;
+  position: absolute;
+  pointer-events: none;
+}
+
+.csd-wrap {
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Full-width form contexts: the original <select> was width:100%, but it sits
+   in a display:none row at init so JS can't measure it. Force the wrapper to
+   fill the row to match the native layout. */
+.home-card .csd-wrap,
+.trade-login-row .csd-wrap,
+.otc-setup-form .csd-wrap {
+  display: block;
+  width: 100%;
+}
+
+.csd-trigger {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.4;
+  /* Base look — overridden by inline styles copied from the original select */
+  background-color: var(--card-bg, var(--card, #fff));
+  color: var(--text);
+  border: 1px solid var(--border, #dbe2ea);
+  border-radius: 8px;
+  padding: 6px 10px 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.csd-trigger:hover {
+  border-color: var(--accent);
+}
+
+.csd-trigger:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.csd-value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.csd-arrow {
+  flex-shrink: 0;
+  margin-left: 8px;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  transition: transform 0.2s ease;
+}
+
+.csd-wrap.is-open .csd-arrow {
+  transform: rotate(180deg);
+}
+
+.csd-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
+  z-index: 9999;
+  overflow: hidden;
+  overflow-y: auto;
+  max-height: 280px;
+  scrollbar-width: thin;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.csd-list.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.csd-option {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.08s;
+}
+
+.csd-option:hover,
+.csd-option.is-focused {
+  background: var(--bg-alt, #f4f6f8);
+}
+
+.csd-option.is-selected {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-soft, #e9eef5);
+}
+
+.csd-option.is-selected.is-focused,
+.csd-option.is-selected:hover {
+  background: var(--accent-soft-2, #eef4fb);
+}
+
+.csd-option.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.csd-group-label {
+  padding: 8px 14px 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.csd-option + .csd-group-label,
+.csd-group-label + .csd-group-label {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 10px;
 }
 
 /* Control select dropdowns (team size, scoring format) */
@@ -6349,6 +6600,9 @@ thead th {
   line-height: 1.25;
   font-weight: 800;
   color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .card-subhead {
@@ -8267,6 +8521,7 @@ thead th {
   gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
+  align-items: center;
 }
 
 .manager-pills-row::-webkit-scrollbar {
@@ -9150,22 +9405,29 @@ html[data-theme="dark"] .contact-social-pill img {
 }
 
 .team-panel {
-  display: none;
+  grid-area: 1 / 1;
+  display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .team-panel.active {
-  display: flex;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .team-panels {
+  display: grid;
   flex: 1;
   position: relative;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  scrollbar-width: thin;
+  padding-right: 2px;
 }
 
 .team-row {
@@ -9978,9 +10240,46 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 1180px) {
+@media (min-width: 601px) and (max-width: 1180px) {
+  .os-layout {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .os-main-col {
+    grid-column: 1 / -1;
+    order: 1;
+  }
+
+  .os-left-col {
+    order: 2;
+  }
+
+  .os-right-col {
+    order: 3;
+  }
+}
+
+@media (max-width: 600px) {
   .os-layout {
     grid-template-columns: 1fr;
+  }
+
+  .os-main-col {
+    grid-column: 1;
+    order: 1;
+  }
+
+  .os-left-col {
+    order: 2;
+  }
+
+  .os-right-col {
+    order: 3;
+  }
+}
+
+@media (max-width: 1180px) {
+  .os-layout {
     scroll-margin: 0;
     scroll-padding: 0;
     max-width: 100vw;
@@ -9988,13 +10287,11 @@ img, svg, canvas {
   }
 
   .os-left-col {
-    order: 2;
     scroll-margin: 0;
     max-width: 100%;
   }
 
   .os-main-col {
-    order: 1;
     scroll-margin: 0;
     max-width: 100%;
   }
@@ -10191,9 +10488,6 @@ img, svg, canvas {
     font-size: 20px;
   }
 
-  .otc-page-copy {
-    font-size: 12px;
-  }
 
   .otc-viewer-toggle {
     font-size: 12px;
@@ -10371,6 +10665,15 @@ img, svg, canvas {
   .otc-selected-list {
     margin-top: 8px;
     gap: 6px;
+  }
+
+  /* Dashboard team pills: show only active pill on mobile, centered */
+  .manager-pills-row .manager-pill:not(.active) {
+    display: none;
+  }
+
+  .manager-pills-row {
+    justify-content: center;
   }
 }
 
@@ -11718,7 +12021,17 @@ img, svg, canvas {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+  }
+
+  .otc-page-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .otc-info-tooltip-wrapper {
+    flex-shrink: 0;
   }
 
   .otc-page-title {
@@ -11727,55 +12040,42 @@ img, svg, canvas {
     min-width: 0;
   }
 
-  .otc-page-copy {
-    font-size: 13px;
-  }
-
   .otc-page-head-controls {
     width: 100%;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-  }
-
-  .otc-viewer-toggles {
-    width: 100%;
-    gap: 4px;
-    margin-left: 0 !important;
-    border-left: none;
-    padding-left: 0;
   }
 
   .otc-settings-row {
     width: 100%;
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
+    flex-wrap: wrap;
     gap: 6px;
   }
 
   .otc-settings-row .otc-ctrl-group {
-    flex: 1;
+    flex: 0 0 auto;
     display: flex;
     justify-content: center;
+  }
+
+  .otc-viewer-toggles {
+    flex: 0 0 auto;
+  }
+
+  .otc-restrict-toggle {
+    flex: 0 0 auto;
   }
 
   .otc-toggle-divider {
     border-left: none;
     padding-left: 0;
-    border-top: 1px solid var(--border);
-    padding-top: 6px;
   }
 
   .otc-ctrl-group.otc-toggle-divider {
     border-left: none;
     padding-left: 0;
-    border-top: 1px solid var(--border);
-    padding-top: 6px;
   }
 
   .otc-ctrl-select {
-    width: 100%;
+    width: auto;
   }
 
   .otc-viewer-toggle {
