@@ -12,6 +12,18 @@ CHANGELOG = [
     },
     {
         "date": "2026-06-08",
+        "tag": "feature",
+        "text": "Advanced Metrics: Minimum volume filter now uses the right stat for each metric: min targets for catch rate and yards per target, min carries for yards per carry and rush TD rate, min receptions for yards per reception, and min attempts for all QB passing metrics. No more misleading small-sample leaders.",
+        "link": "/metrics"
+    },
+    {
+        "date": "2026-06-08",
+        "tag": "feature",
+        "text": "Advanced Metrics: Leaderboard now paginates 25 players at a time. Filtering by roster or name preserves each player's original rank so your #13 WR still shows as #13. The league average line now renders correctly across all position filters.",
+        "link": "/metrics"
+    },
+    {
+        "date": "2026-06-08",
         "tag": "new",
         "text": "Roster Filter: The Trade Calculator now lets you search from actual rosters. Enable Roster Filter to restrict each side's search to that team's real players and picks, auto-binding Team 2 the moment you add your first opponent asset.",
         "link": "/trade"
