@@ -3479,14 +3479,10 @@ thead th {
 }
 
 .otc-viewer-toggles {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex-wrap: nowrap;
-  background: var(--bg-alt, #f1f5f9);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 2px;
 }
 
 .otc-info-tooltip-wrapper {
@@ -4806,7 +4802,7 @@ thead th {
   padding: 8px 12px;
   border: 2px solid var(--border);
   border-radius: 8px;
-  background: var(--card-bg, #fff);
+  background-color: var(--card-bg, #fff);
   color: var(--text);
   font-size: 0.9rem;
   font-weight: 500;
@@ -5028,40 +5024,39 @@ thead th {
   color: #2e9fff;
 }
 
-/* Segmented control (no visible radio dots; selected segment reads as a card). */
 .otc-viewer-toggle {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 4px 12px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--text-muted);
+  transition: all 0.2s;
+  font-weight: 500;
+  font-size: 11.5px;
   white-space: nowrap;
 }
 
 .otc-viewer-toggle:hover {
-  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.05);
 }
 
 .otc-viewer-toggle input[type="radio"] {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
   margin: 0;
-  pointer-events: none;
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  accent-color: var(--accent);
+  flex-shrink: 0;
 }
 
 .otc-viewer-toggle:has(input:checked) {
-  background: var(--card);
-  color: var(--text);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .otc-viewer-toggle span {

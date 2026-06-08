@@ -131,7 +131,7 @@ def build_advanced_metrics_body(
       .am-ctrl-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
       .am-select, .am-search, .am-sort-btn {
         padding:8px 12px; border:1px solid var(--border); border-radius:8px;
-        background:var(--card); color:var(--text); font-size:13px; outline:none;
+        background-color:var(--card); color:var(--text); font-size:13px; outline:none;
       }
       .am-select { min-width:180px; cursor:pointer; }
       .am-search { width:100%; box-sizing:border-box; }
