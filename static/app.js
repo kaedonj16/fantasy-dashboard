@@ -1067,23 +1067,6 @@ window.initTradePage = function initTradePage(root = document) {
     return rosterFilter.loaded && rosterFilter.on;
   }
 
-  // Returns a Set of allowed player IDs for the side, or null for "no restriction".
-  function allowedPlayerIdsForSide(side) {
-    if (!rosterFilterActive()) return null;
-    if (side === "A") {
-      // Viewer team unknown → don't restrict Side A (avoids an empty search).
-      return (rosterFilter.viewerRid && rosterFilter.byRid[rosterFilter.viewerRid]) || null;
-    }
-    if (rosterFilter.sideBRid) return rosterFilter.byRid[rosterFilter.sideBRid] || null;
-    // Side B unbound → allow any non-viewer team's players (first pick binds the team).
-    const union = new Set();
-    for (const rid in rosterFilter.byRid) {
-      if (rid === rosterFilter.viewerRid) continue;
-      rosterFilter.byRid[rid].forEach(id => union.add(id));
-    }
-    return union;
-  }
-
   // Reduce a PICK asset id (e.g. "2026_1_01", "2026_1_early", "2026_1") to its
   // round key "YYYY_R" so round-level ownership maps onto all slot/bucket variants.
   function pickRoundKey(id) {
@@ -1092,9 +1075,14 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // Generic side→Set resolver over one of the rosterFilter maps (player/pick).
+  // Sides are flipped from the labels: "{you} gets…" (Side A) is filled with the
+  // OPPONENT's assets (what you receive), and "{opponent} gets…" (Side B) is filled
+  // with YOUR assets (what they receive).
   function _allowedSetForSide(side, map) {
     if (!rosterFilterActive()) return null;
-    if (side === "A") return (rosterFilter.viewerRid && map[rosterFilter.viewerRid]) || null;
+    // Side B = your team. Viewer unknown → don't restrict (avoids an empty search).
+    if (side === "B") return (rosterFilter.viewerRid && map[rosterFilter.viewerRid]) || null;
+    // Side A = the opponent's team; unbound → any non-viewer team (first pick binds).
     if (rosterFilter.sideBRid) return map[rosterFilter.sideBRid] || null;
     const union = new Set();
     for (const rid in map) {
@@ -1102,6 +1090,11 @@ window.initTradePage = function initTradePage(root = document) {
       map[rid].forEach(k => union.add(k));
     }
     return union.size ? union : null;
+  }
+
+  // Returns a Set of allowed player IDs for the side, or null for "no restriction".
+  function allowedPlayerIdsForSide(side) {
+    return _allowedSetForSide(side, rosterFilter.byRid);
   }
   // Exact owned pick asset ids for the side (resolved slots), or null.
   function allowedPickIdsForSide(side) {
@@ -1120,24 +1113,26 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   // How many non-slotted picks of a given round the side may add. Unlimited when the
-  // roster filter is off (or Side B not yet bound); else the team's owned count.
+  // roster filter is off (or the opponent isn't bound yet); else the team's count.
+  // Side B = your picks; Side A = the opponent's picks.
   function ownedRoundCount(side, roundKey) {
     if (!rosterFilterActive()) return Infinity;
     let rid = null;
-    if (side === "A") rid = rosterFilter.viewerRid;
+    if (side === "B") rid = rosterFilter.viewerRid;
     else if (rosterFilter.sideBRid) rid = rosterFilter.sideBRid;
-    else return Infinity;  // Side B unbound → don't cap yet
+    else return Infinity;  // opponent unbound → don't cap yet
     return ((rosterFilter.pickRoundCountsByRid[rid] || {})[roundKey]) || 0;
   }
 
-  // Keep Side B's bound team in sync with its current assets: auto-bind to the first
-  // player's team, and unbind only if the binding was automatic and Side B is empty.
+  // Bind the opponent from the players you ACQUIRE — Side A ("{you} gets…") holds the
+  // opponent's assets, so its first player determines the opponent. Auto-binding is
+  // released only if it was automatic and Side A is emptied.
   function syncSideBBinding() {
     if (!rosterFilterActive()) return;
     const sel = root.querySelector("#sideBTeamSelect");
-    const hasAssets = state.sideBPlayers.length > 0 || state.sideBPicks.length > 0;
+    const hasAssets = state.sideAPlayers.length > 0 || state.sideAPicks.length > 0;
     if (!rosterFilter.sideBRid && hasAssets) {
-      const fp = state.sideBPlayers.find(
+      const fp = state.sideAPlayers.find(
         p => p.position !== "PICK" && rosterFilter.pidToRid[String(p.id)]
       );
       if (fp) {
@@ -2143,8 +2138,9 @@ window.initTradePage = function initTradePage(root = document) {
     const picks = getSidePicks(side);
     if (!container) return;
 
-    // Keep Side B's opponent binding in sync as assets are added/removed.
-    if (side === "B") syncSideBBinding();
+    // Side A ("{you} gets…") holds the opponent's assets, so keep the opponent
+    // binding in sync as Side A changes.
+    if (side === "A") syncSideBBinding();
 
     container.innerHTML = "";
     container.className = "otc-selected-list";
@@ -2208,11 +2204,11 @@ window.initTradePage = function initTradePage(root = document) {
         metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
       }
 
-      metaEl.innerHTML = metaBits.map((bit, i) => {
-        if (i === 0) return bit;
-        if (p.team && bit === p.team) return `<span class="otc-chip-team"> • ${bit}</span>`;
-        return ' • ' + bit;
-      }).join('');
+      // Space-separated meta (no "•" between items).
+      metaEl.innerHTML = metaBits.map(bit => {
+        if (p.team && bit === p.team) return `<span class="otc-chip-team">${bit}</span>`;
+        return bit;
+      }).join(' ');
 
       leftWrap.appendChild(nameEl);
       leftWrap.appendChild(metaEl);
@@ -4984,13 +4980,13 @@ window.initTradePage = function initTradePage(root = document) {
           });
         bindOnce(sel, "sideBTeamChange", "change", () => {
           const rid = sel.value;
-          // Switching to a different team clears Side B's current assets.
+          // Switching opponents clears Side A (which holds the opponent's players).
           if (rid && rid !== rosterFilter.sideBRid &&
-              (state.sideBPlayers.length || state.sideBPicks.length)) {
-            state.sideBPlayers = [];
-            state.sideBPicks = [];
+              (state.sideAPlayers.length || state.sideAPicks.length)) {
+            state.sideAPlayers = [];
+            state.sideAPicks = [];
             saveState();
-            renderChips("B");
+            renderChips("A");
           }
           rosterFilter.sideBRid = rid ? String(rid) : "";
           rosterFilter.sideBAuto = false;
