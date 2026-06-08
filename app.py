@@ -1253,6 +1253,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
+                ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "/metrics", "advanced-metrics"),
                 ("Prospects",       "/prospects",   "prospects"),
                 ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
                 ("Breakouts <span class='nav-pro-badge'>PRO</span>",       "/breakouts", "breakouts"),
@@ -1376,6 +1377,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
+        ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "page_advanced_metrics", "advanced-metrics", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
@@ -10683,6 +10685,20 @@ def page_prospects(platform: str, season: int, league_id: str):
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 
+@app.route("/metrics")
+@app.route("/<platform>/<int:season>/<league_id>/metrics")
+def page_advanced_metrics(platform: str = None, season: int = None, league_id: str = None):
+    """Premium Advanced Metrics leaderboard page."""
+    from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
+    from data_building.advanced_metrics import LEADERBOARD_METRICS
+    user_id = session.get("viewer_username")
+    has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
+    body = build_advanced_metrics_body(
+        has_premium, LEADERBOARD_METRICS, league_id, season, platform
+    )
+    return render_page("Advanced Metrics", league_id, "advanced-metrics", body, platform, season)
+
+
 @app.route("/<platform>/<int:season>/<league_id>/breakouts")
 def page_breakouts(platform: str, season: int, league_id: str):
     """Dedicated page for breakout candidates with detailed projections."""
@@ -16797,6 +16813,101 @@ def api_teams():
     except Exception as e:
         logger.info(f"[api/teams] error: {e}")
         return jsonify([])
+
+
+@app.route("/api/league-rosters")
+def api_league_rosters():
+    """Per-team rosters for the trade calculator's roster filter.
+
+    Returns {teams: [{roster_id, team_name, username, player_ids, pick_rounds}],
+    viewer_roster_id}. pick_rounds are "YYYY_R" keys (season + round) a team owns;
+    the front end matches PICK assets by their leading "YYYY_R" so round-level pick
+    ownership maps onto the slot/bucket pick assets in the value table.
+    """
+    league_id = (request.args.get("league_id") or "").strip()
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    season = int(request.args.get("season") or datetime.now().year)
+
+    if not league_id:
+        return jsonify({"teams": [], "viewer_roster_id": ""})
+
+    try:
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+        users = ctx.get("users", []) or []
+        rosters = ctx.get("rosters", []) or []
+        picks_by_roster = ctx.get("picks_by_roster", {}) or {}
+
+        teams = []
+        for roster in rosters:
+            roster_id = str(roster.get("roster_id", ""))
+            user_id = roster.get("owner_id")
+            user = next((u for u in users if u.get("user_id") == user_id), None)
+            if user:
+                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
+                username = user.get("username") or user.get("display_name") or ""
+            else:
+                team_name = f"Team {roster_id}"
+                username = ""
+            player_ids = [str(pid) for pid in (roster.get("players") or [])]
+            # Round-level pick ownership: "{season}_{round}" keys this team holds.
+            pick_rounds = sorted({
+                f"{p.get('season')}_{p.get('round')}"
+                for p in (picks_by_roster.get(roster_id) or [])
+                if p.get("season") and p.get("round")
+            })
+            teams.append({
+                "roster_id": roster_id,
+                "team_name": team_name,
+                "username": username,
+                "player_ids": player_ids,
+                "pick_rounds": pick_rounds,
+            })
+
+        teams.sort(key=lambda x: x["team_name"])
+        viewer = get_viewer_session_for_league(users, rosters) or {}
+        return jsonify({
+            "teams": teams,
+            "viewer_roster_id": str(viewer.get("viewer_roster_id") or ""),
+        })
+    except Exception as e:
+        logger.info(f"[api/league-rosters] error: {e}")
+        return jsonify({"teams": [], "viewer_roster_id": ""})
+
+
+@app.route("/api/advanced-metrics/leaderboard")
+def api_advanced_metrics_leaderboard():
+    """Players ranked by a single advanced metric, for the Advanced Metrics page.
+
+    Premium-gated. Query params: metric (required, whitelisted), position (optional),
+    league_id/platform (for the premium check).
+    """
+    from data_building.advanced_metrics import get_metric_leaderboard, LEADERBOARD_METRICS
+
+    user_id = session.get("viewer_username") or None
+    league_id = (request.args.get("league_id") or "").strip() or None
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    if not has_premium_access(user_id, league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
+
+    metric = (request.args.get("metric") or "role_score").strip()
+    if metric not in LEADERBOARD_METRICS:
+        return jsonify({"error": "unknown metric"}), 400
+    position = (request.args.get("position") or "").strip().upper() or None
+
+    try:
+        players = get_metric_leaderboard(metric, position=position)
+    except Exception as e:
+        logger.info(f"[api/advanced-metrics/leaderboard] error: {e}")
+        players = []
+
+    spec = LEADERBOARD_METRICS[metric]
+    return jsonify({
+        "metric": metric,
+        "label": spec["label"],
+        "positions": spec["positions"],
+        "lower_better": bool(spec.get("lower_better")),
+        "players": players,
+    })
 
 
 @app.route("/api/value-movers")

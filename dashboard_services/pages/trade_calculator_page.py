@@ -88,6 +88,23 @@ def build_trade_calculator_body(
                 </div>
     """
 
+    # Roster filter (logged-in only): restrict each side to that team's players.
+    # Side A locks to the viewer's team; Side B is chosen here or auto-binds to the
+    # first player added. The toggle lets the user fall back to free global search.
+    restrict_controls_row = '' if is_guest else """
+          <div class="otc-roster-filter-row" style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:0 0 10px;">
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted);cursor:pointer;" title="Limit each side to that team's roster">
+              <input type="checkbox" id="restrictRosterToggle" checked>
+              Restrict to league rosters
+            </label>
+          </div>
+    """
+    side_b_team_block = '' if is_guest else """
+                  <select id="sideBTeamSelect" class="otc-team-select-dropdown" style="margin-top:6px;max-width:200px;">
+                    <option value="">Any team (binds on first pick)</option>
+                  </select>
+    """
+
     ai_empty_title = 'Sign In for AI Analysis' if is_guest else 'Waiting on a deal'
     ai_empty_sub = (
         'Connect your league to get personalized trade analysis powered by AI.'
@@ -193,6 +210,7 @@ def build_trade_calculator_body(
             </div>
           </div>
 
+          {restrict_controls_row}
           <div class="otc-builder-grid">
             <section class="otc-team-card">
               <div class="otc-team-head">
@@ -235,6 +253,7 @@ def build_trade_calculator_body(
                 </div>
                 <div class="otc-team-head-right">
                   {side_b_owner_tag}
+                  {side_b_team_block}
                 </div>
               </div>
 
