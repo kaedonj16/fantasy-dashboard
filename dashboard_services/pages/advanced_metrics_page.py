@@ -292,7 +292,8 @@ _AM_JS = r"""
 
   const PAGE_SIZE = 25;
   const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', rows: [], search: '',
-                  season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0 };
+                  season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0,
+                  fetching: false };
   let ownedIds = new Set();
   const paginationEl = document.getElementById('amPagination');
   const volLabel = document.getElementById('amVolLabel');
@@ -339,6 +340,7 @@ _AM_JS = r"""
     });
   }
   function render() {
+    if (state.fetching) return; // keep the spinner up while a fetch is in flight
     const rel = new Set(relevantPositions(state.metric));
     const up = v => String(v || '').toUpperCase();
 
@@ -433,6 +435,7 @@ _AM_JS = r"""
   }
   function fetchData() {
     if (!cfg.hasPremium) { paywall.style.display = ''; loading.style.display = 'none'; return; }
+    state.fetching = true;
     loading.style.display = ''; empty.style.display = 'none'; paywall.style.display = 'none'; tbody.innerHTML = '';
     if (avgNote) avgNote.style.display = 'none';
     const params = new URLSearchParams({ metric: state.metric, platform: cfg.platform });
@@ -440,9 +443,9 @@ _AM_JS = r"""
     if (state.season) params.set('season', state.season);
     if (state.minVol) params.set('min_vol', state.minVol);
     fetch('/api/advanced-metrics/leaderboard?' + params)
-      .then(r => { if (r.status === 403) { paywall.style.display = ''; loading.style.display = 'none'; return null; } return r.json(); })
-      .then(d => { if (!d) return; state.rows = d.players || []; render(); })
-      .catch(() => { loading.style.display = 'none'; empty.style.display = ''; });
+      .then(r => { if (r.status === 403) { state.fetching = false; paywall.style.display = ''; loading.style.display = 'none'; return null; } return r.json(); })
+      .then(d => { if (!d) return; state.fetching = false; state.rows = d.players || []; render(); })
+      .catch(() => { state.fetching = false; loading.style.display = 'none'; empty.style.display = ''; });
   }
 
   // Load the viewer's roster so owned players can be highlighted / filtered.
