@@ -4840,15 +4840,17 @@ thead th {
 .otc-restrict-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 14px;
+  gap: 6px;
+  padding: 4px 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--card);
-  font-size: 13px;
+  border-radius: 6px;
+  background: var(--card-bg, var(--card));
+  font-size: 12px;
   font-weight: 500;
   color: var(--text);
   cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.4;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -4857,8 +4859,9 @@ thead th {
 }
 
 .otc-restrict-toggle input {
-  width: 15px;
-  height: 15px;
+  width: 13px;
+  height: 13px;
+  margin: 0;
   accent-color: var(--primary, #2563eb);
   cursor: pointer;
 }
