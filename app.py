@@ -9867,6 +9867,39 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         letter-spacing: 0.04em;
       }
 
+      @media (max-width: 600px) {
+        .filter-row-primary {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          grid-template-rows: auto auto;
+          gap: 8px;
+        }
+        .filter-search {
+          grid-column: 1 / -1;
+          min-width: 0;
+        }
+        .filter-positions {
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          scrollbar-width: none;
+          min-width: 0;
+          align-items: center;
+        }
+        .filter-positions::-webkit-scrollbar { display: none; }
+        .filter-row-secondary {
+          flex-wrap: nowrap;
+          gap: 8px;
+        }
+        .active-settings-indicator {
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          scrollbar-width: none;
+          min-width: 0;
+        }
+        .active-settings-indicator::-webkit-scrollbar { display: none; }
+        .filter-sort { flex-shrink: 0; }
+      }
+
       .pr-tier-divider {
         display: flex;
         align-items: center;
