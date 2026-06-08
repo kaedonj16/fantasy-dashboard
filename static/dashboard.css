@@ -5177,6 +5177,16 @@ select:focus {
   vertical-align: middle;
 }
 
+/* Full-width form contexts: the original <select> was width:100%, but it sits
+   in a display:none row at init so JS can't measure it. Force the wrapper to
+   fill the row to match the native layout. */
+.home-card .csd-wrap,
+.trade-login-row .csd-wrap,
+.otc-setup-form .csd-wrap {
+  display: block;
+  width: 100%;
+}
+
 .csd-trigger {
   display: inline-flex;
   align-items: center;

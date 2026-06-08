@@ -76,6 +76,8 @@ document.body.scrollTop = 0;
     var wrap = document.createElement('div');
     wrap.className = 'csd-wrap';
     if (wasHidden) wrap.style.display = 'none';
+    // Full-width form selects are handled by CSS context rules (.csd-wrap inside
+    // form rows); for everything else carry over an explicit min-width.
     var mw = parseFloat(cs.minWidth);
     if (mw > 0) wrap.style.minWidth = mw + 'px';
 
