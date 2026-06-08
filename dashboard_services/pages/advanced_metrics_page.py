@@ -187,12 +187,14 @@ def build_advanced_metrics_body(
       .am-season-select { min-width:90px; }
       .am-search { width:100%; box-sizing:border-box; }
       .am-sort-btn { cursor:pointer; font-weight:600; white-space:nowrap; }
-      .am-subcontrols { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
-      .am-positions { display:flex; gap:6px; flex-wrap:wrap; }
+      /* Subcontrols row: positions + roster toggle always on one line */
+      .am-subcontrols { display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:nowrap; }
+      .am-positions { display:flex; gap:6px; flex:1; min-width:0; overflow-x:auto; padding-bottom:1px; }
+      .am-roster-toggle { flex-shrink:0; }
       .am-pos {
         padding:6px 14px; border-radius:20px; border:1px solid var(--border);
         background:var(--card); color:var(--text-muted); cursor:pointer;
-        font-size:12px; font-weight:600; transition:all .15s;
+        font-size:12px; font-weight:600; transition:all .15s; white-space:nowrap;
       }
       .am-pos.active { background:var(--text); color:var(--card); border-color:var(--text); }
       /* Metric description tooltip */
@@ -244,7 +246,19 @@ def build_advanced_metrics_body(
       }
       .am-avg-note { font-size:11px; color:var(--text-muted); margin:0 0 10px; display:flex; align-items:center; gap:6px; }
       .am-avg-note .am-avg-swatch { display:inline-block; width:2px; height:12px; background:var(--text-muted); opacity:.55; }
-      @media (max-width:600px){ .am-barcell{ display:none; } .am-table th.am-barcell{ display:none; } }
+      @media (max-width:600px){
+        .am-barcell, .am-table th.am-barcell { display:none; }
+        .am-controls { gap:10px; }
+        /* Metric takes full width; Search fills the row below it */
+        .am-ctrl:first-child { flex:1 0 100%; }
+        .am-ctrl-search { flex:1 0 100%; }
+        /* Season, Min Games, Sort share a row */
+        .am-ctrl-season, .am-ctrl-games { flex:1; }
+        .am-select { min-width:0; width:100%; }
+        /* Smaller position pills on narrow screens */
+        .am-pos { padding:5px 10px; font-size:11px; }
+        .am-roster-toggle { padding:5px 10px; font-size:11px; }
+      }
       .am-pagination { display:flex; align-items:center; justify-content:center; gap:16px; padding:16px 0 4px; }
       .am-page-btn {
         padding:6px 14px; border-radius:8px; border:1px solid var(--border);
