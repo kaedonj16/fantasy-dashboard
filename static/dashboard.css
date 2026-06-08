@@ -4900,6 +4900,20 @@ thead th {
   color: var(--text);
 }
 
+/* Opponent dropdown styled to read as the team-name part of the Team 2 title. */
+.otc-team-select-dropdown.otc-inline-team-select {
+  min-width: 0;
+  max-width: 240px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+  padding: 2px 24px 2px 8px;
+  border-width: 1px;
+  border-radius: 8px;
+  box-shadow: none;
+  vertical-align: baseline;
+}
+
 .otc-value-main {
   min-width: 0;
   display: flex;

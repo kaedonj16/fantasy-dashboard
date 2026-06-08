@@ -1132,15 +1132,16 @@ window.initTradePage = function initTradePage(root = document) {
   function updateSideTitles() {
     const active = rosterFilterActive();
     const aTitle = root.querySelector("#sideATitle");
-    const bTitle = root.querySelector("#sideBTitle");
     if (aTitle) {
       const an = active && rosterFilter.viewerRid && rosterFilter.teamName[rosterFilter.viewerRid];
       aTitle.textContent = an ? `${an} gets…` : "Team 1 gets…";
     }
-    if (bTitle) {
-      const bn = active && rosterFilter.sideBRid && rosterFilter.teamName[rosterFilter.sideBRid];
-      bTitle.textContent = bn ? `${bn} gets…` : "Team 2 gets…";
-    }
+    // Side B's name slot is the opponent <select> itself; show it when the filter is
+    // active, otherwise show the plain "Team 2" fallback so the heading still reads.
+    const selB = root.querySelector("#sideBTeamSelect");
+    const fbB = root.querySelector("#sideBTeamFallback");
+    if (selB) selB.style.display = active ? "" : "none";
+    if (fbB) fbB.style.display = active ? "none" : "";
   }
 
   async function loadPlayerDeltas() {
@@ -2149,18 +2150,25 @@ window.initTradePage = function initTradePage(root = document) {
 
       const metaBits = buildMetaBits(p);
 
-      // Add rookie/breakout/elite/prospect badges
-      if (isRookie(p.id) || p.is_rookie) {
-        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
+      // Badges in a fixed order: tier, elite, breakout, rookie (e.g. "T2 ★ Rookie").
+      // The tier badge carries the .otc-tier-badge class so the later trade-eval pass
+      // updates it in place instead of appending a duplicate at the end.
+      const _otcTier = _getOtcTier(p);
+      if (_otcTier) {
+        const _tc = _TIER_COLORS[_otcTier] || '#6b7280';
+        const _tl = _TIER_LABELS[_otcTier] || ('Tier ' + _otcTier);
+        metaBits.push(
+          `<span class="otc-tier-badge" title="${_tl}" style="display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${_tc}22;color:${_tc};border:1px solid ${_tc}44;vertical-align:middle;cursor:default;">T${_otcTier}</span>`
+        );
       }
       if (isElite(p.id)) {
         metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
       }
-      if (!p.is_rookie && isProspect(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
-      }
       if (isBreakout(p.id)) {
         metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i></span>');
+      }
+      if (isRookie(p.id) || p.is_rookie || isProspect(p.id)) {
+        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
       }
 
       metaEl.innerHTML = metaBits.map((bit, i) => {
@@ -2333,7 +2341,7 @@ window.initTradePage = function initTradePage(root = document) {
         }
         badge.textContent = 'T' + tier;
         badge.title = label;
-        badge.style.cssText = `display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px;background:${tc}22;color:${tc};border:1px solid ${tc}44;vertical-align:middle;cursor:default;`;
+        badge.style.cssText = `display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${tc}22;color:${tc};border:1px solid ${tc}44;vertical-align:middle;cursor:default;`;
       });
 
       // Depth-adjustment note beneath the side total
@@ -4923,7 +4931,7 @@ window.initTradePage = function initTradePage(root = document) {
       rosterFilter.on = toggle.checked;
 
       if (sel) {
-        sel.innerHTML = '<option value="">Any team</option>';
+        sel.innerHTML = '<option value="">Team 2</option>';
         teams
           .filter(t => String(t.roster_id) !== rosterFilter.viewerRid)
           .forEach(t => {
@@ -4947,12 +4955,10 @@ window.initTradePage = function initTradePage(root = document) {
           sel.value = rosterFilter.sideBRid;
           updateSideTitles();
         });
-        sel.style.display = toggle.checked ? "" : "none";
       }
 
       bindOnce(toggle, "restrictToggleChange", "change", () => {
         rosterFilter.on = toggle.checked;
-        if (sel) sel.style.display = toggle.checked ? "" : "none";
         updateSideTitles();
       });
 
@@ -5003,7 +5009,7 @@ window.initTradePage = function initTradePage(root = document) {
       const allowedIds = allowedPlayerIdsForSide(side);
       const allowedPickKeys = allowedPickKeysForSide(side);
 
-      const pool = allPlayers
+      let pool = allPlayers
         .filter(p => {
           if (p.position === "PICK") {
             return !allowedPickKeys || allowedPickKeys.has(pickRoundKey(p.id));
@@ -5012,6 +5018,24 @@ window.initTradePage = function initTradePage(root = document) {
         })
         .filter(p => !selected.find(x => String(x.id) === String(p.id)))
         .filter(p => !selectedPicks.find(x => String(x.id) === String(p.id)));
+
+      // With the roster filter active, collapse picks to one entry per owned round
+      // (highest-value variant) so a side shows just the team's picks rather than
+      // every slot/bucket of each round it owns.
+      if (rosterFilterActive()) {
+        const bestPick = new Map();
+        const kept = [];
+        for (const p of pool) {
+          if (p.position === "PICK") {
+            const k = pickRoundKey(p.id);
+            const cur = bestPick.get(k);
+            if (!cur || valueOf(p) > valueOf(cur)) bestPick.set(k, p);
+          } else {
+            kept.push(p);
+          }
+        }
+        pool = kept.concat([...bestPick.values()]);
+      }
 
       let matches;
       if (query) {

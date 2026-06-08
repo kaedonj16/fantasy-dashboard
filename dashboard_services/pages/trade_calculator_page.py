@@ -91,19 +91,17 @@ def build_trade_calculator_body(
     # Roster filter (logged-in only): restrict each side to that team's players.
     # Side A locks to the viewer's team; Side B is chosen here or auto-binds to the
     # first player added. The toggle lets the user fall back to free global search.
-    restrict_controls_row = '' if is_guest else """
-          <div class="otc-roster-filter-row">
-            <label class="otc-restrict-toggle" title="Limit each side's search to that team's roster">
-              <input type="checkbox" id="restrictRosterToggle" checked>
-              <span>Roster filter</span>
-            </label>
-          </div>
+    # Roster-filter toggle — sits inline with the other top controls.
+    restrict_toggle_block = '' if is_guest else """
+                <label class="otc-restrict-toggle" title="Limit each side's search to that team's roster">
+                  <input type="checkbox" id="restrictRosterToggle" checked>
+                  <span>Roster filter</span>
+                </label>
     """
-    side_b_team_block = '' if is_guest else """
-                  <select id="sideBTeamSelect" class="otc-team-select-dropdown otc-opponent-select">
-                    <option value="">Any team</option>
-                  </select>
-    """
+    # Opponent picker rendered inline as the team-name part of the Team 2 title.
+    # Hidden until the roster filter activates (JS toggles it); default option reads
+    # "Team 2" so the heading reads "Team 2 gets…" until a team is chosen/bound.
+    side_b_team_block = '' if is_guest else """<select id="sideBTeamSelect" class="otc-team-select-dropdown otc-inline-team-select" style="display:none;"><option value="">Team 2</option></select>"""
 
     ai_empty_title = 'Sign In for AI Analysis' if is_guest else 'Waiting on a deal'
     ai_empty_sub = (
@@ -206,11 +204,11 @@ def build_trade_calculator_body(
                 {league_size_block}
                 {scoring_format_block}
                 {league_type_block}
+                {restrict_toggle_block}
               </div>
             </div>
           </div>
 
-          {restrict_controls_row}
           <div class="otc-builder-grid">
             <section class="otc-team-card">
               <div class="otc-team-head">
@@ -249,8 +247,7 @@ def build_trade_calculator_body(
             <section class="otc-team-card">
               <div class="otc-team-head">
                 <div class="otc-team-title-row">
-                  <h2 class="otc-team-title" id="sideBTitle">Team 2 gets...</h2>
-                  {side_b_team_block}
+                  <h2 class="otc-team-title" id="sideBTitle"><span id="sideBTeamFallback">Team 2</span>{side_b_team_block} gets...</h2>
                 </div>
                 <div class="otc-team-head-right">
                   {side_b_owner_tag}
