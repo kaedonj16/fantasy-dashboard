@@ -1056,6 +1056,7 @@ window.initTradePage = function initTradePage(root = document) {
     pidToRid: {},         // player_id -> roster_id
     pickIdsByRid: {},     // roster_id -> Set("YYYY_R_SS") exact owned pick assets
     pickRoundsByRid: {},  // roster_id -> Set("YYYY_R") owned picks w/o a resolved slot
+    pickRoundCountsByRid: {}, // roster_id -> {"YYYY_R": count} of round-level owned picks
     teamName: {},         // roster_id -> team name
     viewerRid: "",        // Side A (locked) team
     sideBRid: "",         // Side B bound opponent ("" = unbound / any team)
@@ -1109,6 +1110,24 @@ window.initTradePage = function initTradePage(root = document) {
   // Round-level fallback keys for picks whose slot couldn't be resolved, or null.
   function allowedPickRoundsForSide(side) {
     return _allowedSetForSide(side, rosterFilter.pickRoundsByRid);
+  }
+
+  // A slotted pick ("YYYY_R_SS", numeric slot) is unique — at most one can be added.
+  // Bucket ("YYYY_R_early") and round-only ("YYYY_R") picks are non-unique.
+  function isSlottedPick(id) {
+    const parts = String(id).split("_");
+    return parts.length >= 3 && /^\d+$/.test(parts[2]);
+  }
+
+  // How many non-slotted picks of a given round the side may add. Unlimited when the
+  // roster filter is off (or Side B not yet bound); else the team's owned count.
+  function ownedRoundCount(side, roundKey) {
+    if (!rosterFilterActive()) return Infinity;
+    let rid = null;
+    if (side === "A") rid = rosterFilter.viewerRid;
+    else if (rosterFilter.sideBRid) rid = rosterFilter.sideBRid;
+    else return Infinity;  // Side B unbound → don't cap yet
+    return ((rosterFilter.pickRoundCountsByRid[rid] || {})[roundKey]) || 0;
   }
 
   // Keep Side B's bound team in sync with its current assets: auto-bind to the first
@@ -4925,13 +4944,16 @@ window.initTradePage = function initTradePage(root = document) {
       rosterFilter.pidToRid = {};
       rosterFilter.pickIdsByRid = {};
       rosterFilter.pickRoundsByRid = {};
+      rosterFilter.pickRoundCountsByRid = {};
       rosterFilter.teamName = {};
       teams.forEach(t => {
         const rid = String(t.roster_id);
         const set = new Set((t.player_ids || []).map(String));
+        const counts = t.pick_round_counts || {};
         rosterFilter.byRid[rid] = set;
         rosterFilter.pickIdsByRid[rid] = new Set((t.pick_ids || []).map(String));
-        rosterFilter.pickRoundsByRid[rid] = new Set((t.pick_rounds || []).map(String));
+        rosterFilter.pickRoundCountsByRid[rid] = counts;
+        rosterFilter.pickRoundsByRid[rid] = new Set(Object.keys(counts));
         rosterFilter.teamName[rid] = t.team_name;
         set.forEach(pid => { rosterFilter.pidToRid[pid] = rid; });
       });
@@ -5029,8 +5051,21 @@ window.initTradePage = function initTradePage(root = document) {
         .filter(p => p.position === "PICK"
           ? pickAllowed(p)
           : (!allowedIds || allowedIds.has(String(p.id))))
-        .filter(p => !selected.find(x => String(x.id) === String(p.id)))
-        .filter(p => !selectedPicks.find(x => String(x.id) === String(p.id)));
+        .filter(p => {
+          if (p.position !== "PICK") {
+            return !selected.some(x => String(x.id) === String(p.id));  // players: unique
+          }
+          if (isSlottedPick(p.id)) {
+            return !selectedPicks.some(x => String(x.id) === String(p.id));  // slotted: unique
+          }
+          // Non-slotted (bucket/round): multi-selectable up to the owned count
+          // (unlimited when the roster filter is off).
+          const cap = ownedRoundCount(side, pickRoundKey(p.id));
+          const added = selectedPicks.filter(
+            x => !isSlottedPick(x.id) && pickRoundKey(String(x.id)) === pickRoundKey(p.id)
+          ).length;
+          return added < cap;
+        });
 
       // Exact-slot picks are the team's precise picks (show each). Round-fallback
       // picks (slot unknown, e.g. 2+ years out) collapse to one entry per round so a
@@ -5076,8 +5111,9 @@ window.initTradePage = function initTradePage(root = document) {
           if (!selected.find(x => String(x.id) === String(p.id))) {
             if (p.position === "PICK") {
               const picks = getSidePicks(side);
-              const isBucket = /_(early|mid|late)$/i.test(String(p.id));
-              if (isBucket || !picks.find(x => String(x.id) === String(p.id))) {
+              // Non-slotted picks (bucket/round) can be added multiple times; slotted
+              // picks are unique. The dropdown pool already enforces owned-count caps.
+              if (!isSlottedPick(p.id) || !picks.find(x => String(x.id) === String(p.id))) {
                 picks.push({ id: p.id, display: p.name });
               }
             } else {

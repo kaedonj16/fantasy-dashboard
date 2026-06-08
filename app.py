@@ -16853,8 +16853,11 @@ def api_league_rosters():
             # modals do (resolve_exact_pick_slot, via the original owner's prior-season
             # standings) → exact "{season}_{round}_{slot:02d}" asset ids. Picks too far
             # out to resolve a slot fall back to round-level "{season}_{round}" keys.
-            pick_ids: set[str] = set()
-            pick_rounds: set[str] = set()
+            # Slotted picks → exact unique asset ids (pick_ids). Picks whose slot can't
+            # be resolved (too far out) → round-level keys with a COUNT, so a team that
+            # owns e.g. two 2027 1sts can add both in the calculator.
+            pick_ids: list[str] = []
+            pick_round_counts: dict[str, int] = {}
             for p in (picks_by_roster.get(roster_id) or []):
                 p_season = _safe_int(p.get("season"), 0)
                 p_round = _safe_int(p.get("round"), 0)
@@ -16871,16 +16874,17 @@ def api_league_rosters():
                     except Exception:
                         slot = None
                 if slot:
-                    pick_ids.add(f"{p_season}_{p_round}_{int(slot):02d}")
+                    pick_ids.append(f"{p_season}_{p_round}_{int(slot):02d}")
                 else:
-                    pick_rounds.add(f"{p_season}_{p_round}")
+                    k = f"{p_season}_{p_round}"
+                    pick_round_counts[k] = pick_round_counts.get(k, 0) + 1
             teams.append({
                 "roster_id": roster_id,
                 "team_name": team_name,
                 "username": username,
                 "player_ids": player_ids,
                 "pick_ids": sorted(pick_ids),
-                "pick_rounds": sorted(pick_rounds),
+                "pick_round_counts": pick_round_counts,
             })
 
         teams.sort(key=lambda x: x["team_name"])
