@@ -5,6 +5,18 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-06-08",
+        "tag": "new",
+        "text": "Advanced Metrics Leaderboard: Rank every player by a single advanced metric — role score, snap share, target share, yards per carry, air yards, and more. Filter by position, search by name, and switch between seasons. Find it under the Players menu.",
+        "link": "/metrics"
+    },
+    {
+        "date": "2026-06-08",
+        "tag": "new",
+        "text": "Roster Filter: The Trade Calculator now lets you search from actual rosters. Enable Roster Filter to restrict each side's search to that team's real players and picks, auto-binding Team 2 the moment you add your first opponent asset.",
+        "link": "/trade"
+    },
+    {
         "date": "2026-06-05",
         "tag": "new",
         "text": "Playoff Impact: The trade calculator now shows how any deal shifts your playoff odds, projected wins, PPG, top-3 draft pick odds, roster age, and prime years left. All stats are simulated live as you build the trade.",
