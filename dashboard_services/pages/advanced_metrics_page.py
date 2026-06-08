@@ -17,6 +17,8 @@ def build_advanced_metrics_body(
     season: Optional[int] = None,
     platform: Optional[str] = None,
 ) -> str:
+    from data_building.advanced_metrics import get_available_seasons
+    available_seasons: list = get_available_seasons() if has_premium else []
     # Group metrics into <optgroup>s by the set of positions they apply to, ordered
     # broadest first (all positions → 3-position groups → 2 → single position).
     _POS_ORDER = ["QB", "RB", "WR", "TE"]
@@ -42,6 +44,7 @@ def build_advanced_metrics_body(
         "hasPremium": bool(has_premium),
         "leagueId": league_id or "",
         "platform": platform or "sleeper",
+        "seasons": available_seasons,
         "metrics": {
             key: {
                 "label": spec["label"],
@@ -51,6 +54,11 @@ def build_advanced_metrics_body(
             for key, spec in metrics_spec.items()
         },
     })
+
+    season_options = '<option value="">Latest</option>' + "".join(
+        f'<option value="{s}"{"selected" if s == season else ""}>{s}</option>'
+        for s in available_seasons
+    )
 
     html = """
     <div class="card central">
@@ -70,6 +78,10 @@ def build_advanced_metrics_body(
           <div class="am-ctrl am-ctrl-search">
             <label class="am-ctrl-label">Search</label>
             <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search">
+          </div>
+          <div class="am-ctrl am-ctrl-season" id="amSeasonCtrl">
+            <label class="am-ctrl-label">Season</label>
+            <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
           </div>
           <div class="am-ctrl">
             <label class="am-ctrl-label">Sort</label>
@@ -121,7 +133,7 @@ def build_advanced_metrics_body(
 
       </div>
     </div>
-    """.replace("__METRIC_OPTIONS__", metric_options)
+    """.replace("__METRIC_OPTIONS__", metric_options).replace("__SEASON_OPTIONS__", season_options)
 
     style = """
     <style>
@@ -134,6 +146,7 @@ def build_advanced_metrics_body(
         background-color:var(--card); color:var(--text); font-size:13px; outline:none;
       }
       .am-select { min-width:180px; cursor:pointer; }
+      .am-season-select { min-width:90px; }
       .am-search { width:100%; box-sizing:border-box; }
       .am-sort-btn { cursor:pointer; font-weight:600; white-space:nowrap; }
       .am-positions { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
@@ -176,13 +189,19 @@ _AM_JS = r"""
   const posWrap   = document.getElementById('amPositions');
   const searchEl  = document.getElementById('amSearch');
   const sortBtn   = document.getElementById('amSortBtn');
+  const seasonSel = document.getElementById('amSeason');
+  const seasonCtrl= document.getElementById('amSeasonCtrl');
   const tbody     = document.getElementById('amTableBody');
   const loading   = document.getElementById('amLoading');
   const empty     = document.getElementById('amEmpty');
   const paywall   = document.getElementById('amPaywall');
   if (!metricSel || !tbody) return;
 
-  const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', rows: [], search: '' };
+  // Hide season selector when only one season (or none) is available.
+  if (seasonCtrl && (!cfg.seasons || cfg.seasons.length <= 1)) seasonCtrl.style.display = 'none';
+
+  const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', rows: [], search: '',
+                  season: seasonSel ? (seasonSel.value || '') : '' };
 
   function relevantPositions(m) {
     return (cfg.metrics[m] && cfg.metrics[m].positions) || ['QB','RB','WR','TE'];
@@ -245,6 +264,7 @@ _AM_JS = r"""
     loading.style.display = ''; empty.style.display = 'none'; paywall.style.display = 'none'; tbody.innerHTML = '';
     const params = new URLSearchParams({ metric: state.metric, platform: cfg.platform });
     if (cfg.leagueId) params.set('league_id', cfg.leagueId);
+    if (state.season) params.set('season', state.season);
     fetch('/api/advanced-metrics/leaderboard?' + params)
       .then(r => { if (r.status === 403) { paywall.style.display = ''; loading.style.display = 'none'; return null; } return r.json(); })
       .then(d => { if (!d) return; state.rows = d.players || []; render(); })
@@ -269,6 +289,9 @@ _AM_JS = r"""
     state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc';
     updateSortBtn(); render();
   });
+  if (seasonSel) {
+    seasonSel.addEventListener('change', () => { state.season = seasonSel.value || ''; fetchData(); });
+  }
 
   updateSortBtn(); updatePosButtons(); fetchData();
 """

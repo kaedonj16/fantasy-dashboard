@@ -16917,9 +16917,11 @@ def api_advanced_metrics_leaderboard():
     if metric not in LEADERBOARD_METRICS:
         return jsonify({"error": "unknown metric"}), 400
     position = (request.args.get("position") or "").strip().upper() or None
+    season_str = (request.args.get("season") or "").strip()
+    season = int(season_str) if season_str.isdigit() else None
 
     try:
-        players = get_metric_leaderboard(metric, position=position)
+        players = get_metric_leaderboard(metric, position=position, season=season)
     except Exception as e:
         logger.info(f"[api/advanced-metrics/leaderboard] error: {e}")
         players = []
@@ -16932,6 +16934,18 @@ def api_advanced_metrics_leaderboard():
         "lower_better": bool(spec.get("lower_better")),
         "players": players,
     })
+
+
+@app.route("/api/advanced-metrics/seasons")
+def api_advanced_metrics_seasons():
+    """Return available seasons in player_advanced_metrics, newest first."""
+    from data_building.advanced_metrics import get_available_seasons
+    user_id = session.get("viewer_username") or None
+    league_id = (request.args.get("league_id") or "").strip() or None
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    if not has_premium_access(user_id, league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
+    return jsonify({"seasons": get_available_seasons()})
 
 
 @app.route("/api/value-movers")

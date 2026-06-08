@@ -1003,25 +1003,43 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
 }
 
 
-def get_metric_leaderboard(
-    metric: str, position: Optional[str] = None, limit: int = 500
-) -> List[Dict[str, Any]]:
-    """Players ranked by a single advanced metric from the latest snapshot.
+def get_available_seasons() -> List[int]:
+    """Return distinct seasons present in player_advanced_metrics, newest first."""
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT season FROM player_advanced_metrics "
+                "WHERE season IS NOT NULL ORDER BY season DESC"
+            ).fetchall()
+            return [int(r["season"]) for r in rows]
+    except Exception:
+        return []
 
-    `metric` must be a key of LEADERBOARD_METRICS (a whitelist, so it is safe to
-    inline into the SQL). Returns [{player_id, name, team, position, value}] ordered
-    by the metric descending with NULLs dropped; names/teams are enriched from the
-    players index since the metrics table stores neither.
+
+def get_metric_leaderboard(
+    metric: str,
+    position: Optional[str] = None,
+    limit: int = 500,
+    season: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Players ranked by a single advanced metric.
+
+    `metric` must be a key of LEADERBOARD_METRICS. When `season` is given the
+    snapshot for that season is used; otherwise the latest snapshot with data for
+    this metric is used. Returns [{player_id, name, team, position, value}].
     """
     if metric not in LEADERBOARD_METRICS:
         return []
     pos = (position or "").upper().strip() or None
     with get_conn() as conn:
-        # Latest snapshot that actually has values for THIS metric (the global
-        # MAX(as_of_date) can be a sparse/offseason stub with null metric columns).
+        # Find the representative snapshot date: latest date for the requested
+        # season (or globally latest when no season is specified).
+        season_gate = "AND season = %s" if season else ""
+        season_params = (season,) if season else ()
         latest = conn.execute(
             f"SELECT MAX(as_of_date) AS max_date FROM player_advanced_metrics "
-            f"WHERE {metric} IS NOT NULL"
+            f"WHERE {metric} IS NOT NULL {season_gate}",
+            season_params,
         ).fetchone()
         if not latest or not latest["max_date"]:
             return []
@@ -1031,7 +1049,7 @@ def get_metric_leaderboard(
         # with degenerate rates don't crowd the board. NULL snap share is allowed
         # through (some PFF-sourced rows may not carry one).
         gate = ""
-        params = [latest_date]
+        params: list = [latest_date]
         if pos:
             gate += " AND position = %s"
             params.append(pos)
