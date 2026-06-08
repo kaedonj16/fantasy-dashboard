@@ -9743,7 +9743,18 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       }
       .filter-row-secondary {
         padding-top: 4px;
+        flex-wrap: nowrap;
+        align-items: center;
       }
+      .filter-row-secondary .active-settings-indicator {
+        flex: 1;
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+        flex-wrap: nowrap;
+      }
+      .filter-row-secondary .active-settings-indicator::-webkit-scrollbar { display: none; }
+      .filter-row-secondary .filter-sort { flex-shrink: 0; }
       .filter-search {
         position: relative;
         flex: 1;
@@ -9886,18 +9897,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           align-items: center;
         }
         .filter-positions::-webkit-scrollbar { display: none; }
-        .filter-row-secondary {
-          flex-wrap: nowrap;
-          gap: 8px;
-        }
-        .active-settings-indicator {
-          flex-wrap: nowrap;
-          overflow-x: auto;
-          scrollbar-width: none;
-          min-width: 0;
-        }
-        .active-settings-indicator::-webkit-scrollbar { display: none; }
-        .filter-sort { flex-shrink: 0; }
+        .filter-row-secondary { gap: 8px; }
       }
 
       .pr-tier-divider {
