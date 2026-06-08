@@ -193,17 +193,30 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     total_r = total_w = total_p = 0
     for season in seasons:
-        # Use local summary files instead of downloading from PFF
-        rushing_csv = os.path.join(OUTPUT_DIR, f"rushing_summary_{season}.csv")
-        receiving_csv = os.path.join(OUTPUT_DIR, f"receiving_summary_{season}.csv")
-        passing_csv = os.path.join(OUTPUT_DIR, f"passing_summary_{season}.csv")
+        # Resolve each summary file. The exports live under data/pff_nfl_{season}/
+        # (per-season folder); older runs used a flat data/{name}_{season}.csv.
+        # Try the folder layout first, then fall back to the flat name so both
+        # layouts work.
+        def _resolve(name: str) -> Optional[str]:
+            candidates = [
+                os.path.join(OUTPUT_DIR, f"pff_nfl_{season}", f"{name}_summary.csv"),
+                os.path.join(OUTPUT_DIR, f"{name}_summary_{season}.csv"),
+            ]
+            for path in candidates:
+                if os.path.exists(path):
+                    return path
+            return None
+
+        rushing_csv = _resolve("rushing")
+        receiving_csv = _resolve("receiving")
+        passing_csv = _resolve("passing")
 
         # Check if files exist before processing
-        if os.path.exists(rushing_csv):
+        if rushing_csv:
             total_r += upsert_csv(rushing_csv, season, RUSHING_COLS, "RB", lookup)
-        if os.path.exists(receiving_csv):
+        if receiving_csv:
             total_w += upsert_csv(receiving_csv, season, RECEIVING_COLS, "WR", lookup)
-        if os.path.exists(passing_csv):
+        if passing_csv:
             total_p += upsert_csv(passing_csv, season, PASSING_COLS, "QB", lookup)
 
     print(f"Synced PFF metrics rows: rushing={total_r}, receiving={total_w}, passing={total_p}")
