@@ -195,10 +195,11 @@ _AM_JS = r"""
   }
   function render() {
     const rel = new Set(relevantPositions(state.metric));
+    const up = v => String(v || '').toUpperCase();
     let rows = state.rows.slice();
     rows = state.position === 'ALL'
-      ? rows.filter(r => rel.has(r.position))
-      : rows.filter(r => r.position === state.position);
+      ? rows.filter(r => rel.has(up(r.position)))
+      : rows.filter(r => up(r.position) === state.position);
     if (state.search) {
       const q = state.search.toLowerCase();
       rows = rows.filter(r => (r.name || '').toLowerCase().includes(q));

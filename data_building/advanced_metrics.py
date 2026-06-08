@@ -975,8 +975,11 @@ def get_metric_leaderboard(
         return []
     pos = (position or "").upper().strip() or None
     with get_conn() as conn:
+        # Latest snapshot that actually has values for THIS metric (the global
+        # MAX(as_of_date) can be a sparse/offseason stub with null metric columns).
         latest = conn.execute(
-            "SELECT MAX(as_of_date) AS max_date FROM player_advanced_metrics"
+            f"SELECT MAX(as_of_date) AS max_date FROM player_advanced_metrics "
+            f"WHERE {metric} IS NOT NULL"
         ).fetchone()
         if not latest or not latest["max_date"]:
             return []

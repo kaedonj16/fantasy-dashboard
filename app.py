@@ -16849,18 +16849,38 @@ def api_league_rosters():
                 team_name = f"Team {roster_id}"
                 username = ""
             player_ids = [str(pid) for pid in (roster.get("players") or [])]
-            # Round-level pick ownership: "{season}_{round}" keys this team holds.
-            pick_rounds = sorted({
-                f"{p.get('season')}_{p.get('round')}"
-                for p in (picks_by_roster.get(roster_id) or [])
-                if p.get("season") and p.get("round")
-            })
+            # Resolve each owned pick to its exact draft slot the same way the team
+            # modals do (resolve_exact_pick_slot, via the original owner's prior-season
+            # standings) → exact "{season}_{round}_{slot:02d}" asset ids. Picks too far
+            # out to resolve a slot fall back to round-level "{season}_{round}" keys.
+            pick_ids: set[str] = set()
+            pick_rounds: set[str] = set()
+            for p in (picks_by_roster.get(roster_id) or []):
+                p_season = _safe_int(p.get("season"), 0)
+                p_round = _safe_int(p.get("round"), 0)
+                if not p_season or not p_round:
+                    continue
+                slot = None
+                if p.get("original_owner") is not None:
+                    try:
+                        slot = resolve_exact_pick_slot(platform, league_id, season, {
+                            "season": p_season,
+                            "round": p_round,
+                            "previous_owner_id": p.get("original_owner"),
+                        })
+                    except Exception:
+                        slot = None
+                if slot:
+                    pick_ids.add(f"{p_season}_{p_round}_{int(slot):02d}")
+                else:
+                    pick_rounds.add(f"{p_season}_{p_round}")
             teams.append({
                 "roster_id": roster_id,
                 "team_name": team_name,
                 "username": username,
                 "player_ids": player_ids,
-                "pick_rounds": pick_rounds,
+                "pick_ids": sorted(pick_ids),
+                "pick_rounds": sorted(pick_rounds),
             })
 
         teams.sort(key=lambda x: x["team_name"])

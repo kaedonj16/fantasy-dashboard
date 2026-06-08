@@ -1054,7 +1054,8 @@ window.initTradePage = function initTradePage(root = document) {
     on: true,             // mirrors the toggle checkbox
     byRid: {},            // roster_id -> Set(player_id)
     pidToRid: {},         // player_id -> roster_id
-    pickRoundsByRid: {},  // roster_id -> Set("YYYY_R") owned pick rounds
+    pickIdsByRid: {},     // roster_id -> Set("YYYY_R_SS") exact owned pick assets
+    pickRoundsByRid: {},  // roster_id -> Set("YYYY_R") owned picks w/o a resolved slot
     teamName: {},         // roster_id -> team name
     viewerRid: "",        // Side A (locked) team
     sideBRid: "",         // Side B bound opponent ("" = unbound / any team)
@@ -1089,19 +1090,25 @@ window.initTradePage = function initTradePage(root = document) {
     return parts.length >= 2 ? `${parts[0]}_${parts[1]}` : String(id);
   }
 
-  // Returns a Set of allowed pick-round keys for the side, or null for "no restriction".
-  function allowedPickKeysForSide(side) {
+  // Generic side→Set resolver over one of the rosterFilter maps (player/pick).
+  function _allowedSetForSide(side, map) {
     if (!rosterFilterActive()) return null;
-    if (side === "A") {
-      return (rosterFilter.viewerRid && rosterFilter.pickRoundsByRid[rosterFilter.viewerRid]) || null;
-    }
-    if (rosterFilter.sideBRid) return rosterFilter.pickRoundsByRid[rosterFilter.sideBRid] || null;
+    if (side === "A") return (rosterFilter.viewerRid && map[rosterFilter.viewerRid]) || null;
+    if (rosterFilter.sideBRid) return map[rosterFilter.sideBRid] || null;
     const union = new Set();
-    for (const rid in rosterFilter.pickRoundsByRid) {
+    for (const rid in map) {
       if (rid === rosterFilter.viewerRid) continue;
-      rosterFilter.pickRoundsByRid[rid].forEach(k => union.add(k));
+      map[rid].forEach(k => union.add(k));
     }
-    return union.size ? union : null;  // no pick data → don't restrict picks
+    return union.size ? union : null;
+  }
+  // Exact owned pick asset ids for the side (resolved slots), or null.
+  function allowedPickIdsForSide(side) {
+    return _allowedSetForSide(side, rosterFilter.pickIdsByRid);
+  }
+  // Round-level fallback keys for picks whose slot couldn't be resolved, or null.
+  function allowedPickRoundsForSide(side) {
+    return _allowedSetForSide(side, rosterFilter.pickRoundsByRid);
   }
 
   // Keep Side B's bound team in sync with its current assets: auto-bind to the first
@@ -4916,12 +4923,14 @@ window.initTradePage = function initTradePage(root = document) {
 
       rosterFilter.byRid = {};
       rosterFilter.pidToRid = {};
+      rosterFilter.pickIdsByRid = {};
       rosterFilter.pickRoundsByRid = {};
       rosterFilter.teamName = {};
       teams.forEach(t => {
         const rid = String(t.roster_id);
         const set = new Set((t.player_ids || []).map(String));
         rosterFilter.byRid[rid] = set;
+        rosterFilter.pickIdsByRid[rid] = new Set((t.pick_ids || []).map(String));
         rosterFilter.pickRoundsByRid[rid] = new Set((t.pick_rounds || []).map(String));
         rosterFilter.teamName[rid] = t.team_name;
         set.forEach(pid => { rosterFilter.pidToRid[pid] = rid; });
@@ -5004,35 +5013,37 @@ window.initTradePage = function initTradePage(root = document) {
       const leagueType = getLeagueType();
       const valueOf = p => (leagueType === "sf" ? (p.sf_value || p.value || 0) : (p.value || 0));
 
-      // Roster filter: limit players to the allowed team(s), and picks to the rounds
-      // that team owns (matched by the pick's leading "YYYY_R").
+      // Roster filter: players limited to the allowed team(s); picks matched first by
+      // exact resolved slot id, then by round-level fallback for picks too far out.
       const allowedIds = allowedPlayerIdsForSide(side);
-      const allowedPickKeys = allowedPickKeysForSide(side);
+      const allowedPickIds = allowedPickIdsForSide(side);
+      const allowedPickRounds = allowedPickRoundsForSide(side);
+      const pickAllowed = p => {
+        if (allowedPickIds === null && allowedPickRounds === null) return true; // no restriction
+        if (allowedPickIds && allowedPickIds.has(String(p.id))) return true;
+        if (allowedPickRounds && allowedPickRounds.has(pickRoundKey(p.id))) return true;
+        return false;
+      };
 
       let pool = allPlayers
-        .filter(p => {
-          if (p.position === "PICK") {
-            return !allowedPickKeys || allowedPickKeys.has(pickRoundKey(p.id));
-          }
-          return !allowedIds || allowedIds.has(String(p.id));
-        })
+        .filter(p => p.position === "PICK"
+          ? pickAllowed(p)
+          : (!allowedIds || allowedIds.has(String(p.id))))
         .filter(p => !selected.find(x => String(x.id) === String(p.id)))
         .filter(p => !selectedPicks.find(x => String(x.id) === String(p.id)));
 
-      // With the roster filter active, collapse picks to one entry per owned round
-      // (highest-value variant) so a side shows just the team's picks rather than
-      // every slot/bucket of each round it owns.
+      // Exact-slot picks are the team's precise picks (show each). Round-fallback
+      // picks (slot unknown, e.g. 2+ years out) collapse to one entry per round so a
+      // side shows just the team's picks, not every slot/bucket variant.
       if (rosterFilterActive()) {
         const bestPick = new Map();
         const kept = [];
         for (const p of pool) {
-          if (p.position === "PICK") {
-            const k = pickRoundKey(p.id);
-            const cur = bestPick.get(k);
-            if (!cur || valueOf(p) > valueOf(cur)) bestPick.set(k, p);
-          } else {
-            kept.push(p);
-          }
+          if (p.position !== "PICK") { kept.push(p); continue; }
+          if (allowedPickIds && allowedPickIds.has(String(p.id))) { kept.push(p); continue; }
+          const k = pickRoundKey(p.id);
+          const cur = bestPick.get(k);
+          if (!cur || valueOf(p) > valueOf(cur)) bestPick.set(k, p);
         }
         pool = kept.concat([...bestPick.values()]);
       }
