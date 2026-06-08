@@ -490,9 +490,19 @@ def calculate_role_score(
 #            the cohort is that season, and so scores are comparable across years.
 # Toggle with the ROLE_SCORE_V2 env var (default on); v1 stays reachable for A/B.
 
-# Index value of an elite role per position -> 100. Calibrated from what a true
-# alpha WR / receiving TE / bellcow RB / dual-threat-or-high-volume QB index to.
-_ROLE_ELITE_ANCHOR: Dict[str, float] = {"WR": 0.48, "TE": 0.40, "RB": 0.70, "QB": 0.78}
+# Index value that maps to 100 per position. Set to the opportunity index of a
+# realistic peak role (not a theoretical maximum), so the top few players each
+# season score 90-100 and the distribution uses the full range.
+#
+# Previous anchors (WR=0.48, TE=0.40, RB=0.70, QB=0.78) were too high —
+# they represented near-impossible workloads, compressing all real scores
+# downward (top WR was capping at ~75). New anchors are calibrated so that
+# the actual best role at each position reads ~90-95:
+#   WR: 25% tshare + 85% snap + solid RZ presence  → idx ~0.42  → ~100
+#   TE: Kelce/Andrews receiving volume + RZ weapon  → idx ~0.35  → ~100
+#   RB: true bellcow (60%+ rush share + pass work)  → idx ~0.60  → ~100
+#   QB: elite dual-threat/high-volume starter       → idx ~0.73  → ~100
+_ROLE_ELITE_ANCHOR: Dict[str, float] = {"WR": 0.40, "TE": 0.33, "RB": 0.58, "QB": 0.68}
 # A player needs this many games to earn full sample confidence (small samples
 # shrink toward 0 so a 1-2 game fluke can't post an elite role score).
 _ROLE_FULL_SAMPLE_GAMES = 4.0
