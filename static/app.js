@@ -4906,7 +4906,7 @@ window.initTradePage = function initTradePage(root = document) {
       rosterFilter.on = toggle.checked;
 
       if (sel) {
-        sel.innerHTML = '<option value="">Any team (binds on first pick)</option>';
+        sel.innerHTML = '<option value="">Any team</option>';
         teams
           .filter(t => String(t.roster_id) !== rosterFilter.viewerRid)
           .forEach(t => {
@@ -4952,12 +4952,14 @@ window.initTradePage = function initTradePage(root = document) {
     if (input.__tradeSearchBound) return;
     input.__tradeSearchBound = true;
 
-    input.addEventListener("input", async function () {
-      const query = input.value.trim().toLowerCase();
+    // Shared render for both fuzzy search (query present) and browse mode (empty
+    // query / focus). Browse shows the roster-allowed pool sorted by value so the
+    // user can scroll through everything available on that side.
+    async function renderSide(rawQuery) {
+      const query = (rawQuery || "").trim().toLowerCase();
       dropdown.innerHTML = "";
       dropdown.style.display = "none";
       dropdown.parentElement.classList.remove("dropdown-open");
-      if (!query) return;
 
       try {
         await ensurePlayersLoaded();
@@ -4973,13 +4975,14 @@ window.initTradePage = function initTradePage(root = document) {
       const selected = getSidePlayers(side);
       const selectedPicks = getSidePicks(side);
       const leagueType = getLeagueType();
+      const valueOf = p => (leagueType === "sf" ? (p.sf_value || p.value || 0) : (p.value || 0));
 
       // Roster filter: limit players to the allowed team(s), and picks to the rounds
       // that team owns (matched by the pick's leading "YYYY_R").
       const allowedIds = allowedPlayerIdsForSide(side);
       const allowedPickKeys = allowedPickKeysForSide(side);
 
-      const matches = allPlayers
+      const pool = allPlayers
         .filter(p => {
           if (p.position === "PICK") {
             return !allowedPickKeys || allowedPickKeys.has(pickRoundKey(p.id));
@@ -4987,29 +4990,27 @@ window.initTradePage = function initTradePage(root = document) {
           return !allowedIds || allowedIds.has(String(p.id));
         })
         .filter(p => !selected.find(x => String(x.id) === String(p.id)))
-        .filter(p => !selectedPicks.find(x => String(x.id) === String(p.id)))
-        .map(p => {
-          // Score against display name and search_name (normalized, no punctuation)
-          const score = Math.max(
-            fuzzyNameScore(p.name, query),
-            fuzzyNameScore(p.search_name, query)
-          );
-          // Get player value for sorting
-          const value = leagueType === "sf" ? (p.sf_value || p.value || 0) : (p.value || 0);
-          return { p, score, value };
-        })
-        .filter(({ score }) => score > 0)
-        .sort((a, b) => {
-          // Primary sort by fuzzy score (better matches first)
-          if (b.score !== a.score) return b.score - a.score;
-          // Secondary sort by value (higher value first)
-          return b.value - a.value;
-        })
-        .slice(0, 20)
-        .map(({ p }) => p);
+        .filter(p => !selectedPicks.find(x => String(x.id) === String(p.id)));
 
-      const overallRankMap = buildOverallRankMap(allPlayers);
+      let matches;
+      if (query) {
+        matches = pool
+          .map(p => ({
+            p,
+            score: Math.max(fuzzyNameScore(p.name, query), fuzzyNameScore(p.search_name, query)),
+            value: valueOf(p),
+          }))
+          .filter(({ score }) => score > 0)
+          .sort((a, b) => (b.score !== a.score ? b.score - a.score : b.value - a.value))
+          .slice(0, 20)
+          .map(({ p }) => p);
+      } else {
+        // Browse: everything available, highest value first (scrollable list).
+        matches = pool.slice().sort((a, b) => valueOf(b) - valueOf(a)).slice(0, 60);
+      }
+
       if (!matches.length) return;
+      const overallRankMap = buildOverallRankMap(allPlayers);
 
       matches.forEach(p => {
         const overallRank = overallRankMap.get(String(p.id));
@@ -5039,7 +5040,11 @@ window.initTradePage = function initTradePage(root = document) {
 
       dropdown.style.display = "block";
       dropdown.parentElement.classList.add("dropdown-open");
-    });
+    }
+
+    input.addEventListener("input", () => { renderSide(input.value); });
+    // Clicking into an empty search box opens the browse list.
+    input.addEventListener("focus", () => { if (!input.value.trim()) renderSide(""); });
 
     input.addEventListener("blur", function () {
       setTimeout(() => {

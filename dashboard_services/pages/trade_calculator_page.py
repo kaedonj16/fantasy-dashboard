@@ -92,16 +92,16 @@ def build_trade_calculator_body(
     # Side A locks to the viewer's team; Side B is chosen here or auto-binds to the
     # first player added. The toggle lets the user fall back to free global search.
     restrict_controls_row = '' if is_guest else """
-          <div class="otc-roster-filter-row" style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:0 0 10px;">
-            <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted);cursor:pointer;" title="Limit each side to that team's roster">
+          <div class="otc-roster-filter-row">
+            <label class="otc-restrict-toggle" title="Limit each side's search to that team's roster">
               <input type="checkbox" id="restrictRosterToggle" checked>
-              Restrict to league rosters
+              <span>Restrict to league rosters</span>
             </label>
           </div>
     """
     side_b_team_block = '' if is_guest else """
-                  <select id="sideBTeamSelect" class="otc-team-select-dropdown" style="margin-top:6px;max-width:200px;">
-                    <option value="">Any team (binds on first pick)</option>
+                  <select id="sideBTeamSelect" class="otc-team-select-dropdown otc-opponent-select">
+                    <option value="">Any team</option>
                   </select>
     """
 

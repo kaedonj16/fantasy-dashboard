@@ -4820,6 +4820,49 @@ thead th {
   transform: translateY(-1px);
 }
 
+/* ── Roster filter controls (restrict toggle + opponent picker) ── */
+.otc-roster-filter-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin: 4px 0 14px;
+}
+
+.otc-restrict-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.otc-restrict-toggle:hover {
+  border-color: var(--primary, #2563eb);
+}
+
+.otc-restrict-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--primary, #2563eb);
+  cursor: pointer;
+}
+
+/* Compact opponent dropdown that fits in the Team 2 header without truncating. */
+.otc-team-select-dropdown.otc-opponent-select {
+  min-width: 150px;
+  max-width: 220px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 10px;
+}
+
 .otc-team-select-label {
   font-size: 0.85rem;
   color: var(--muted);
