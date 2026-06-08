@@ -1168,6 +1168,17 @@ window.initTradePage = function initTradePage(root = document) {
     const fbB = root.querySelector("#sideBTeamFallback");
     if (selB) selB.style.display = active ? "" : "none";
     if (fbB) fbB.style.display = active ? "none" : "";
+
+    // With the roster filter on, Side A is always your team, so the Team 1 / Team 2
+    // viewer-side radio is redundant — hide it and pin the viewer side to A.
+    const vt = root.querySelector(".otc-viewer-toggles");
+    if (vt) vt.style.display = active ? "none" : "";
+    if (active) {
+      const ra = root.querySelector('input[name="viewerSide"][value="a"]');
+      if (ra && !ra.checked) ra.checked = true;
+      const hid = root.querySelector("#viewerSideInput");
+      if (hid && hid.value !== "a") hid.value = "a";
+    }
   }
 
   async function loadPlayerDeltas() {

@@ -938,26 +938,58 @@ def get_available_seasons_for_player(player_id: str) -> List[int]:
         return [row["season"] for row in rows]
 
 
+# Minimum snap share required for a player to appear on an *efficiency* metric
+# leaderboard. Rate/grade metrics are noisy for low-snap players (e.g. a backup QB
+# who threw twice with 0 INTs shows a perfect INT rate), so they're excluded.
+# Players whose snap_share is unknown (NULL) are NOT filtered, to avoid dropping
+# PFF-sourced rows that may lack a snap share.
+_MIN_SNAP_FOR_EFFICIENCY = 0.30
+
 # Metrics exposed on the standalone Advanced Metrics leaderboard page, each mapped
 # to the positions where it is meaningful (drives the page's auto position filter).
 # Internal trend deltas (usage_trend, efficiency_trend) are intentionally excluded.
-# `lower_better` flags metrics where a smaller value is better (e.g. INT rate).
+#   lower_better  → a smaller value ranks better (e.g. INT rate, drop rate).
+#   efficiency    → rate/grade metric; gated by _MIN_SNAP_FOR_EFFICIENCY so low-snap
+#                   players with degenerate values don't crowd the leaderboard.
+# Usage/role metrics (role_score, snap_share, opportunity_share, red_zone_usage)
+# are NOT gated — a low value simply sorts low.
 LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
+    # Usage / role
     "role_score":           {"label": "Role Score",        "positions": ["QB", "RB", "WR", "TE"]},
     "snap_share":           {"label": "Snap Share",        "positions": ["QB", "RB", "WR", "TE"]},
     "opportunity_share":    {"label": "Opportunity Share", "positions": ["RB", "WR", "TE"]},
     "red_zone_usage":       {"label": "Red Zone Usage",    "positions": ["QB", "RB", "WR", "TE"]},
-    "yards_per_target":     {"label": "Yards / Target",     "positions": ["WR", "RB", "TE"]},
-    "catch_rate":           {"label": "Catch Rate",        "positions": ["WR", "RB", "TE"]},
-    "yards_per_reception":  {"label": "Yards / Reception",  "positions": ["WR", "RB", "TE"]},
-    "target_quality_score": {"label": "Target Quality",    "positions": ["WR", "RB", "TE"]},
-    "yards_per_carry":      {"label": "Yards / Carry",     "positions": ["RB", "QB"]},
-    "yards_per_touch":      {"label": "Yards / Touch",     "positions": ["RB", "WR", "TE"]},
-    "rush_td_rate":         {"label": "Rush TD Rate",      "positions": ["RB", "QB"]},
-    "yards_per_attempt":    {"label": "Yards / Attempt",    "positions": ["QB"]},
-    "completion_pct":       {"label": "Completion %",      "positions": ["QB"]},
-    "td_rate":              {"label": "Pass TD Rate",      "positions": ["QB"]},
-    "int_rate":             {"label": "INT Rate",          "positions": ["QB"], "lower_better": True},
+    "grades_offense":       {"label": "PFF Off Grade",     "positions": ["QB", "RB", "WR", "TE"], "efficiency": True},
+    # Receiving
+    "yards_per_target":     {"label": "Yards / Target",     "positions": ["WR", "RB", "TE"], "efficiency": True},
+    "yards_per_reception":  {"label": "Yards / Reception",  "positions": ["WR", "RB", "TE"], "efficiency": True},
+    "catch_rate":           {"label": "Catch Rate",        "positions": ["WR", "RB", "TE"], "efficiency": True},
+    "target_quality_score": {"label": "Target Quality",    "positions": ["WR", "RB", "TE"], "efficiency": True},
+    "avg_depth_of_target":  {"label": "aDOT",              "positions": ["WR", "RB", "TE"], "efficiency": True},
+    "contested_catch_rate": {"label": "Contested Catch %", "positions": ["WR", "TE"], "efficiency": True},
+    "yards_after_catch_per_reception": {"label": "YAC / Reception", "positions": ["WR", "RB", "TE"], "efficiency": True},
+    "drop_rate":            {"label": "Drop Rate",         "positions": ["WR", "RB", "TE"], "efficiency": True, "lower_better": True},
+    "slot_rate":            {"label": "Slot Rate",         "positions": ["WR", "TE"], "efficiency": True},
+    "wide_rate":            {"label": "Wide Rate",         "positions": ["WR", "TE"], "efficiency": True},
+    "inline_rate":          {"label": "Inline Rate",       "positions": ["TE"], "efficiency": True},
+    "pass_block_rate":      {"label": "Block Rate",        "positions": ["TE", "RB"], "efficiency": True},
+    # Rushing
+    "yards_per_carry":      {"label": "Yards / Carry",     "positions": ["RB", "QB"], "efficiency": True},
+    "yards_per_touch":      {"label": "Yards / Touch",     "positions": ["RB", "WR", "TE"], "efficiency": True},
+    "rush_td_rate":         {"label": "Rush TD Rate",      "positions": ["RB", "QB"], "efficiency": True},
+    "breakaway_percentage": {"label": "Breakaway %",       "positions": ["RB"], "efficiency": True},
+    "elusive_rating":       {"label": "Elusive Rating",    "positions": ["RB"], "efficiency": True},
+    "pff_rushing_grade":    {"label": "PFF Rush Grade",    "positions": ["RB", "QB"], "efficiency": True},
+    # Passing
+    "yards_per_attempt":    {"label": "Yards / Attempt",    "positions": ["QB"], "efficiency": True},
+    "completion_pct":       {"label": "Completion %",      "positions": ["QB"], "efficiency": True},
+    "adjusted_completion_rate": {"label": "Adj Completion %", "positions": ["QB"], "efficiency": True},
+    "td_rate":              {"label": "Pass TD Rate",      "positions": ["QB"], "efficiency": True},
+    "int_rate":             {"label": "INT Rate",          "positions": ["QB"], "efficiency": True, "lower_better": True},
+    "big_time_throw_rate":  {"label": "Big-Time Throw %",  "positions": ["QB"], "efficiency": True},
+    "pressure_to_sack_rate": {"label": "Pressure to Sack %", "positions": ["QB"], "efficiency": True, "lower_better": True},
+    "nfl_passer_rating":    {"label": "Passer Rating",     "positions": ["QB"], "efficiency": True},
+    "pff_passing_grade":    {"label": "PFF Pass Grade",    "positions": ["QB"], "efficiency": True},
 }
 
 
@@ -984,22 +1016,26 @@ def get_metric_leaderboard(
         if not latest or not latest["max_date"]:
             return []
         latest_date = latest["max_date"]
+
+        # Efficiency/grade metrics: require a minimum snap share so low-snap players
+        # with degenerate rates don't crowd the board. NULL snap share is allowed
+        # through (some PFF-sourced rows may not carry one).
+        gate = ""
+        params = [latest_date]
         if pos:
-            rows = conn.execute(
-                f"""SELECT player_id, position, {metric} AS value
-                    FROM player_advanced_metrics
-                    WHERE as_of_date = %s AND position = %s AND {metric} IS NOT NULL
-                    ORDER BY {metric} DESC LIMIT %s""",
-                (latest_date, pos, limit),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                f"""SELECT player_id, position, {metric} AS value
-                    FROM player_advanced_metrics
-                    WHERE as_of_date = %s AND {metric} IS NOT NULL
-                    ORDER BY {metric} DESC LIMIT %s""",
-                (latest_date, limit),
-            ).fetchall()
+            gate += " AND position = %s"
+            params.append(pos)
+        if LEADERBOARD_METRICS[metric].get("efficiency"):
+            gate += " AND (snap_share IS NULL OR snap_share >= %s)"
+            params.append(_MIN_SNAP_FOR_EFFICIENCY)
+        params.append(limit)
+        rows = conn.execute(
+            f"""SELECT player_id, position, {metric} AS value
+                FROM player_advanced_metrics
+                WHERE as_of_date = %s{gate} AND {metric} IS NOT NULL
+                ORDER BY {metric} DESC LIMIT %s""",
+            tuple(params),
+        ).fetchall()
 
     try:
         from utils.utils import load_players_index
