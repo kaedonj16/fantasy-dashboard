@@ -95,7 +95,7 @@ def build_trade_calculator_body(
           <div class="otc-roster-filter-row">
             <label class="otc-restrict-toggle" title="Limit each side's search to that team's roster">
               <input type="checkbox" id="restrictRosterToggle" checked>
-              <span>Restrict to league rosters</span>
+              <span>Roster filter</span>
             </label>
           </div>
     """
