@@ -12036,17 +12036,22 @@ img, svg, canvas {
 
   .otc-settings-row {
     width: 100%;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     gap: 6px;
-    overflow-x: auto;
-    scrollbar-width: none;
   }
-  .otc-settings-row::-webkit-scrollbar { display: none; }
 
   .otc-settings-row .otc-ctrl-group {
-    flex-shrink: 0;
+    flex: 0 0 auto;
     display: flex;
     justify-content: center;
+  }
+
+  .otc-viewer-toggles {
+    flex: 0 0 auto;
+  }
+
+  .otc-restrict-toggle {
+    flex: 0 0 auto;
   }
 
   .otc-toggle-divider {
@@ -12061,10 +12066,6 @@ img, svg, canvas {
 
   .otc-ctrl-select {
     width: auto;
-  }
-
-  .otc-restrict-toggle {
-    flex-shrink: 0;
   }
 
   .otc-viewer-toggle {
