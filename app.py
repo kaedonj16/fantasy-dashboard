@@ -16864,6 +16864,57 @@ def api_teams():
         return jsonify([])
 
 
+@app.route("/api/league-rosters")
+def api_league_rosters():
+    """Per-team rosters with player IDs, for the trade calculator's roster filter.
+
+    Returns {teams: [{roster_id, team_name, username, player_ids}], viewer_roster_id}.
+    Draft picks are intentionally omitted: ownership is tracked at the round level
+    ({season, round}) which doesn't map cleanly onto the slot/bucket PICK assets in
+    the value table, so the front end keeps picks addable on either side.
+    """
+    league_id = (request.args.get("league_id") or "").strip()
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    season = int(request.args.get("season") or datetime.now().year)
+
+    if not league_id:
+        return jsonify({"teams": [], "viewer_roster_id": ""})
+
+    try:
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+        users = ctx.get("users", []) or []
+        rosters = ctx.get("rosters", []) or []
+
+        teams = []
+        for roster in rosters:
+            roster_id = str(roster.get("roster_id", ""))
+            user_id = roster.get("owner_id")
+            user = next((u for u in users if u.get("user_id") == user_id), None)
+            if user:
+                team_name = user.get("team_name") or user.get("display_name") or f"Team {roster_id}"
+                username = user.get("username") or user.get("display_name") or ""
+            else:
+                team_name = f"Team {roster_id}"
+                username = ""
+            player_ids = [str(pid) for pid in (roster.get("players") or [])]
+            teams.append({
+                "roster_id": roster_id,
+                "team_name": team_name,
+                "username": username,
+                "player_ids": player_ids,
+            })
+
+        teams.sort(key=lambda x: x["team_name"])
+        viewer = get_viewer_session_for_league(users, rosters) or {}
+        return jsonify({
+            "teams": teams,
+            "viewer_roster_id": str(viewer.get("viewer_roster_id") or ""),
+        })
+    except Exception as e:
+        logger.info(f"[api/league-rosters] error: {e}")
+        return jsonify({"teams": [], "viewer_roster_id": ""})
+
+
 @app.route("/api/value-movers")
 def api_value_movers():
     try:

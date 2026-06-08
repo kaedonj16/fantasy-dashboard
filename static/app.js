@@ -1020,6 +1020,67 @@ window.initTradePage = function initTradePage(root = document) {
     sideBPicks: [],
   };
 
+  // ── Roster filter (logged-in only) ──────────────────────────────────────────
+  // Restrict each side's player search to a team's roster. Side A locks to the
+  // viewer's team; Side B is chosen from the opponent dropdown or auto-binds to the
+  // team of the first player added. The "Restrict to league rosters" toggle turns
+  // this off (free global search). Draft picks are never restricted. If the roster
+  // data fails to load, allowedPlayerIdsForSide returns null → no restriction, so
+  // the calculator falls back to its original behavior.
+  const rosterFilter = {
+    loaded: false,        // true once /api/league-rosters returns teams
+    on: true,             // mirrors the toggle checkbox
+    byRid: {},            // roster_id -> Set(player_id)
+    pidToRid: {},         // player_id -> roster_id
+    teamName: {},         // roster_id -> team name
+    viewerRid: "",        // Side A (locked) team
+    sideBRid: "",         // Side B bound opponent ("" = unbound / any team)
+    sideBAuto: false,     // true when sideBRid was auto-bound (not explicitly chosen)
+  };
+
+  function rosterFilterActive() {
+    return rosterFilter.loaded && rosterFilter.on;
+  }
+
+  // Returns a Set of allowed player IDs for the side, or null for "no restriction".
+  function allowedPlayerIdsForSide(side) {
+    if (!rosterFilterActive()) return null;
+    if (side === "A") {
+      // Viewer team unknown → don't restrict Side A (avoids an empty search).
+      return (rosterFilter.viewerRid && rosterFilter.byRid[rosterFilter.viewerRid]) || null;
+    }
+    if (rosterFilter.sideBRid) return rosterFilter.byRid[rosterFilter.sideBRid] || null;
+    // Side B unbound → allow any non-viewer team's players (first pick binds the team).
+    const union = new Set();
+    for (const rid in rosterFilter.byRid) {
+      if (rid === rosterFilter.viewerRid) continue;
+      rosterFilter.byRid[rid].forEach(id => union.add(id));
+    }
+    return union;
+  }
+
+  // Keep Side B's bound team in sync with its current assets: auto-bind to the first
+  // player's team, and unbind only if the binding was automatic and Side B is empty.
+  function syncSideBBinding() {
+    if (!rosterFilterActive()) return;
+    const sel = root.querySelector("#sideBTeamSelect");
+    const hasAssets = state.sideBPlayers.length > 0 || state.sideBPicks.length > 0;
+    if (!rosterFilter.sideBRid && hasAssets) {
+      const fp = state.sideBPlayers.find(
+        p => p.position !== "PICK" && rosterFilter.pidToRid[String(p.id)]
+      );
+      if (fp) {
+        rosterFilter.sideBRid = rosterFilter.pidToRid[String(fp.id)];
+        rosterFilter.sideBAuto = true;
+        if (sel) sel.value = rosterFilter.sideBRid;
+      }
+    } else if (rosterFilter.sideBRid && rosterFilter.sideBAuto && !hasAssets) {
+      rosterFilter.sideBRid = "";
+      rosterFilter.sideBAuto = false;
+      if (sel) sel.value = "";
+    }
+  }
+
   async function loadPlayerDeltas() {
     try {
       const leagueType = getLeagueType();
@@ -1981,6 +2042,9 @@ window.initTradePage = function initTradePage(root = document) {
     const players = getSidePlayers(side);
     const picks = getSidePicks(side);
     if (!container) return;
+
+    // Keep Side B's opponent binding in sync as assets are added/removed.
+    if (side === "B") syncSideBBinding();
 
     container.innerHTML = "";
     container.className = "otc-selected-list";
@@ -4429,6 +4493,74 @@ window.initTradePage = function initTradePage(root = document) {
     return 0;
   }
 
+  // Load per-team rosters and wire the roster-filter controls (logged-in only).
+  async function initRosterFilter() {
+    const leagueId = root.querySelector("#leagueIdInput")?.value || "";
+    const toggle = root.querySelector("#restrictRosterToggle");
+    const sel = root.querySelector("#sideBTeamSelect");
+    if (!leagueId || !toggle) return;  // guest / no league → feature disabled
+
+    try {
+      const res = await fetch(
+        `/api/league-rosters?league_id=${encodeURIComponent(leagueId)}&platform=sleeper`,
+        { cache: "no-store" }
+      );
+      const data = await res.json();
+      const teams = data.teams || [];
+
+      rosterFilter.byRid = {};
+      rosterFilter.pidToRid = {};
+      rosterFilter.teamName = {};
+      teams.forEach(t => {
+        const rid = String(t.roster_id);
+        const set = new Set((t.player_ids || []).map(String));
+        rosterFilter.byRid[rid] = set;
+        rosterFilter.teamName[rid] = t.team_name;
+        set.forEach(pid => { rosterFilter.pidToRid[pid] = rid; });
+      });
+      rosterFilter.viewerRid = String(getCurrentRosterId() || data.viewer_roster_id || "");
+      rosterFilter.loaded = teams.length > 0;
+      rosterFilter.on = toggle.checked;
+
+      if (sel) {
+        sel.innerHTML = '<option value="">Any team (binds on first pick)</option>';
+        teams
+          .filter(t => String(t.roster_id) !== rosterFilter.viewerRid)
+          .forEach(t => {
+            const o = document.createElement("option");
+            o.value = String(t.roster_id);
+            o.textContent = t.team_name;
+            sel.appendChild(o);
+          });
+        bindOnce(sel, "sideBTeamChange", "change", () => {
+          const rid = sel.value;
+          // Switching to a different team clears Side B's current assets.
+          if (rid && rid !== rosterFilter.sideBRid &&
+              (state.sideBPlayers.length || state.sideBPicks.length)) {
+            state.sideBPlayers = [];
+            state.sideBPicks = [];
+            saveState();
+            renderChips("B");
+          }
+          rosterFilter.sideBRid = rid ? String(rid) : "";
+          rosterFilter.sideBAuto = false;
+          sel.value = rosterFilter.sideBRid;
+        });
+        sel.style.display = toggle.checked ? "" : "none";
+      }
+
+      bindOnce(toggle, "restrictToggleChange", "change", () => {
+        rosterFilter.on = toggle.checked;
+        if (sel) sel.style.display = toggle.checked ? "" : "none";
+      });
+
+      // Bind now in case a restored state already has Side B players.
+      syncSideBBinding();
+    } catch (e) {
+      console.warn("[trade] roster filter load failed:", e);
+    }
+  }
+
   function setupSearch(side) {
     const input = root.querySelector(side === "A" ? "#sideASearch" : "#sideBSearch");
     const dropdown = root.querySelector(side === "A" ? "#sideADropdown" : "#sideBDropdown");
@@ -4459,7 +4591,11 @@ window.initTradePage = function initTradePage(root = document) {
       const selectedPicks = getSidePicks(side);
       const leagueType = getLeagueType();
 
+      // Roster filter: limit non-pick players to the allowed team(s) for this side.
+      const allowedIds = allowedPlayerIdsForSide(side);
+
       const matches = allPlayers
+        .filter(p => p.position === "PICK" || !allowedIds || allowedIds.has(String(p.id)))
         .filter(p => !selected.find(x => String(x.id) === String(p.id)))
         .filter(p => !selectedPicks.find(x => String(x.id) === String(p.id)))
         .map(p => {
@@ -4982,6 +5118,7 @@ window.initTradePage = function initTradePage(root = document) {
   ]).then(() => {
     setupSearch("A");
     setupSearch("B");
+    initRosterFilter();
     bindLeagueTypeControls();
     bindLeagueSizeControls();
     bindScoringFormatControls();
