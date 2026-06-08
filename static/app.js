@@ -5265,17 +5265,20 @@ window.initTradePage = function initTradePage(root = document) {
       // Exact-slot picks are the team's precise picks (show each). Round-fallback
       // picks (slot unknown, e.g. 2+ years out) collapse to one entry per round so a
       // side shows just the team's picks, not every slot/bucket variant.
+      // Default to "mid" because we don't know where the pick will land.
       if (rosterFilterActive()) {
-        const bestPick = new Map();
+        const midPick = new Map();
         const kept = [];
         for (const p of pool) {
           if (p.position !== "PICK") { kept.push(p); continue; }
           if (allowedPickIds && allowedPickIds.has(String(p.id))) { kept.push(p); continue; }
           const k = pickRoundKey(p.id);
-          const cur = bestPick.get(k);
-          if (!cur || valueOf(p) > valueOf(cur)) bestPick.set(k, p);
+          const parts = String(p.id).split("_");
+          const bucket = parts[2] || "";
+          // Prefer mid; only fall back to other buckets if mid isn't in the pool.
+          if (bucket === "mid" || !midPick.has(k)) midPick.set(k, p);
         }
-        pool = kept.concat([...bestPick.values()]);
+        pool = kept.concat([...midPick.values()]);
       }
 
       let matches;

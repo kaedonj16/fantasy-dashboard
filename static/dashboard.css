@@ -3481,6 +3481,12 @@ thead th {
   flex-wrap: nowrap;
 }
 
+.otc-settings-row .csd-trigger,
+.otc-settings-row .otc-restrict-toggle {
+  height: 30px;
+  box-sizing: border-box;
+}
+
 .otc-viewer-toggles {
   display: flex;
   align-items: center;
