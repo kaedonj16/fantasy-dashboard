@@ -490,19 +490,19 @@ def calculate_role_score(
 #            the cohort is that season, and so scores are comparable across years.
 # Toggle with the ROLE_SCORE_V2 env var (default on); v1 stays reachable for A/B.
 
-# Index value that maps to 100 per position. Set to the opportunity index of a
-# realistic peak role (not a theoretical maximum), so the top few players each
-# season score 90-100 and the distribution uses the full range.
+# Index value that maps to 100 per position. Calibrated empirically against the
+# 2025 cohort's opportunity-index distribution so that only the genuine top 2-4
+# roles per position reach 100, with a smooth gradient below (elite tier ~88-100,
+# strong starters ~75-88, role players lower).
 #
-# Previous anchors (WR=0.48, TE=0.40, RB=0.70, QB=0.78) were too high —
-# they represented near-impossible workloads, compressing all real scores
-# downward (top WR was capping at ~75). New anchors are calibrated so that
-# the actual best role at each position reads ~90-95:
-#   WR: 25% tshare + 85% snap + solid RZ presence  → idx ~0.42  → ~100
-#   TE: Kelce/Andrews receiving volume + RZ weapon  → idx ~0.35  → ~100
-#   RB: true bellcow (60%+ rush share + pass work)  → idx ~0.60  → ~100
-#   QB: elite dual-threat/high-volume starter       → idx ~0.73  → ~100
-_ROLE_ELITE_ANCHOR: Dict[str, float] = {"WR": 0.40, "TE": 0.33, "RB": 0.58, "QB": 0.68}
+# Calibration history (top WR / players at 100 across all positions):
+#   v2a  WR=0.48 TE=0.40 RB=0.70 QB=0.78  -> top WR ~75, only ~1 at 100 (too high)
+#   v2b  WR=0.40 TE=0.33 RB=0.58 QB=0.68  -> ~29 players at 100 (too low)
+#   v2c  WR=0.46 TE=0.35 RB=0.74 QB=0.77  -> ~8 players at 100 (this) ✓
+#
+# Anchors sit near the 2025 p98-p99 index per position (RB/WR/QB show a clear
+# elite cluster then a gap; the anchor lands just below the cluster's top).
+_ROLE_ELITE_ANCHOR: Dict[str, float] = {"WR": 0.46, "TE": 0.35, "RB": 0.74, "QB": 0.77}
 # A player needs this many games to earn full sample confidence (small samples
 # shrink toward 0 so a 1-2 game fluke can't post an elite role score).
 _ROLE_FULL_SAMPLE_GAMES = 4.0
