@@ -3466,15 +3466,19 @@ thead th {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 1;
+  flex-shrink: 0;
+}
+
+.otc-page-title-wrap {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .otc-settings-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 
 .otc-viewer-toggles {
@@ -3482,13 +3486,6 @@ thead th {
   align-items: center;
   gap: 4px;
   flex-wrap: nowrap;
-}
-
-.otc-ctrl-divider {
-  width: 1px;
-  height: 20px;
-  background: var(--border);
-  flex-shrink: 0;
 }
 
 .otc-info-tooltip-wrapper {
@@ -11847,10 +11844,6 @@ img, svg, canvas {
     width: 100%;
     flex-wrap: wrap;
     gap: 6px;
-  }
-
-  .otc-ctrl-divider {
-    display: none;
   }
 
   .otc-settings-row .otc-ctrl-group {

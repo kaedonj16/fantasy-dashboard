@@ -201,7 +201,6 @@ def build_trade_calculator_body(
                     <span>Team 2</span>
                   </label>
                 </div>
-                <div class="otc-ctrl-divider"></div>
                 {league_size_block}
                 {scoring_format_block}
                 {league_type_block}
