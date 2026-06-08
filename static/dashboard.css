@@ -6600,6 +6600,9 @@ select:focus {
   line-height: 1.25;
   font-weight: 800;
   color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .card-subhead {
@@ -8518,6 +8521,7 @@ select:focus {
   gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
+  align-items: center;
 }
 
 .manager-pills-row::-webkit-scrollbar {
@@ -9401,22 +9405,29 @@ html[data-theme="dark"] .contact-social-pill img {
 }
 
 .team-panel {
-  display: none;
+  grid-area: 1 / 1;
+  display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .team-panel.active {
-  display: flex;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .team-panels {
+  display: grid;
   flex: 1;
   position: relative;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  scrollbar-width: thin;
+  padding-right: 2px;
 }
 
 .team-row {
@@ -10229,9 +10240,46 @@ img, svg, canvas {
   }
 }
 
-@media (max-width: 1180px) {
+@media (min-width: 601px) and (max-width: 1180px) {
+  .os-layout {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .os-main-col {
+    grid-column: 1 / -1;
+    order: 1;
+  }
+
+  .os-left-col {
+    order: 2;
+  }
+
+  .os-right-col {
+    order: 3;
+  }
+}
+
+@media (max-width: 600px) {
   .os-layout {
     grid-template-columns: 1fr;
+  }
+
+  .os-main-col {
+    grid-column: 1;
+    order: 1;
+  }
+
+  .os-left-col {
+    order: 2;
+  }
+
+  .os-right-col {
+    order: 3;
+  }
+}
+
+@media (max-width: 1180px) {
+  .os-layout {
     scroll-margin: 0;
     scroll-padding: 0;
     max-width: 100vw;
@@ -10239,13 +10287,11 @@ img, svg, canvas {
   }
 
   .os-left-col {
-    order: 2;
     scroll-margin: 0;
     max-width: 100%;
   }
 
   .os-main-col {
-    order: 1;
     scroll-margin: 0;
     max-width: 100%;
   }
@@ -10619,6 +10665,15 @@ img, svg, canvas {
   .otc-selected-list {
     margin-top: 8px;
     gap: 6px;
+  }
+
+  /* Dashboard team pills: show only active pill on mobile, centered */
+  .manager-pills-row .manager-pill:not(.active) {
+    display: none;
+  }
+
+  .manager-pills-row {
+    justify-content: center;
   }
 }
 
