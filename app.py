@@ -16866,12 +16866,12 @@ def api_teams():
 
 @app.route("/api/league-rosters")
 def api_league_rosters():
-    """Per-team rosters with player IDs, for the trade calculator's roster filter.
+    """Per-team rosters for the trade calculator's roster filter.
 
-    Returns {teams: [{roster_id, team_name, username, player_ids}], viewer_roster_id}.
-    Draft picks are intentionally omitted: ownership is tracked at the round level
-    ({season, round}) which doesn't map cleanly onto the slot/bucket PICK assets in
-    the value table, so the front end keeps picks addable on either side.
+    Returns {teams: [{roster_id, team_name, username, player_ids, pick_rounds}],
+    viewer_roster_id}. pick_rounds are "YYYY_R" keys (season + round) a team owns;
+    the front end matches PICK assets by their leading "YYYY_R" so round-level pick
+    ownership maps onto the slot/bucket pick assets in the value table.
     """
     league_id = (request.args.get("league_id") or "").strip()
     platform = (request.args.get("platform") or "sleeper").strip().lower()
@@ -16884,6 +16884,7 @@ def api_league_rosters():
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
         users = ctx.get("users", []) or []
         rosters = ctx.get("rosters", []) or []
+        picks_by_roster = ctx.get("picks_by_roster", {}) or {}
 
         teams = []
         for roster in rosters:
@@ -16897,11 +16898,18 @@ def api_league_rosters():
                 team_name = f"Team {roster_id}"
                 username = ""
             player_ids = [str(pid) for pid in (roster.get("players") or [])]
+            # Round-level pick ownership: "{season}_{round}" keys this team holds.
+            pick_rounds = sorted({
+                f"{p.get('season')}_{p.get('round')}"
+                for p in (picks_by_roster.get(roster_id) or [])
+                if p.get("season") and p.get("round")
+            })
             teams.append({
                 "roster_id": roster_id,
                 "team_name": team_name,
                 "username": username,
                 "player_ids": player_ids,
+                "pick_rounds": pick_rounds,
             })
 
         teams.sort(key=lambda x: x["team_name"])

@@ -1024,14 +1024,15 @@ window.initTradePage = function initTradePage(root = document) {
   // Restrict each side's player search to a team's roster. Side A locks to the
   // viewer's team; Side B is chosen from the opponent dropdown or auto-binds to the
   // team of the first player added. The "Restrict to league rosters" toggle turns
-  // this off (free global search). Draft picks are never restricted. If the roster
-  // data fails to load, allowedPlayerIdsForSide returns null → no restriction, so
-  // the calculator falls back to its original behavior.
+  // this off (free global search). Picks are filtered by round ownership (a team's
+  // owned "YYYY_R" rounds). If the roster data fails to load, the allowed helpers
+  // return null → no restriction, so the calculator falls back to original behavior.
   const rosterFilter = {
     loaded: false,        // true once /api/league-rosters returns teams
     on: true,             // mirrors the toggle checkbox
     byRid: {},            // roster_id -> Set(player_id)
     pidToRid: {},         // player_id -> roster_id
+    pickRoundsByRid: {},  // roster_id -> Set("YYYY_R") owned pick rounds
     teamName: {},         // roster_id -> team name
     viewerRid: "",        // Side A (locked) team
     sideBRid: "",         // Side B bound opponent ("" = unbound / any team)
@@ -1057,6 +1058,28 @@ window.initTradePage = function initTradePage(root = document) {
       rosterFilter.byRid[rid].forEach(id => union.add(id));
     }
     return union;
+  }
+
+  // Reduce a PICK asset id (e.g. "2026_1_01", "2026_1_early", "2026_1") to its
+  // round key "YYYY_R" so round-level ownership maps onto all slot/bucket variants.
+  function pickRoundKey(id) {
+    const parts = String(id).split("_");
+    return parts.length >= 2 ? `${parts[0]}_${parts[1]}` : String(id);
+  }
+
+  // Returns a Set of allowed pick-round keys for the side, or null for "no restriction".
+  function allowedPickKeysForSide(side) {
+    if (!rosterFilterActive()) return null;
+    if (side === "A") {
+      return (rosterFilter.viewerRid && rosterFilter.pickRoundsByRid[rosterFilter.viewerRid]) || null;
+    }
+    if (rosterFilter.sideBRid) return rosterFilter.pickRoundsByRid[rosterFilter.sideBRid] || null;
+    const union = new Set();
+    for (const rid in rosterFilter.pickRoundsByRid) {
+      if (rid === rosterFilter.viewerRid) continue;
+      rosterFilter.pickRoundsByRid[rid].forEach(k => union.add(k));
+    }
+    return union.size ? union : null;  // no pick data → don't restrict picks
   }
 
   // Keep Side B's bound team in sync with its current assets: auto-bind to the first
@@ -4510,11 +4533,13 @@ window.initTradePage = function initTradePage(root = document) {
 
       rosterFilter.byRid = {};
       rosterFilter.pidToRid = {};
+      rosterFilter.pickRoundsByRid = {};
       rosterFilter.teamName = {};
       teams.forEach(t => {
         const rid = String(t.roster_id);
         const set = new Set((t.player_ids || []).map(String));
         rosterFilter.byRid[rid] = set;
+        rosterFilter.pickRoundsByRid[rid] = new Set((t.pick_rounds || []).map(String));
         rosterFilter.teamName[rid] = t.team_name;
         set.forEach(pid => { rosterFilter.pidToRid[pid] = rid; });
       });
@@ -4591,11 +4616,18 @@ window.initTradePage = function initTradePage(root = document) {
       const selectedPicks = getSidePicks(side);
       const leagueType = getLeagueType();
 
-      // Roster filter: limit non-pick players to the allowed team(s) for this side.
+      // Roster filter: limit players to the allowed team(s), and picks to the rounds
+      // that team owns (matched by the pick's leading "YYYY_R").
       const allowedIds = allowedPlayerIdsForSide(side);
+      const allowedPickKeys = allowedPickKeysForSide(side);
 
       const matches = allPlayers
-        .filter(p => p.position === "PICK" || !allowedIds || allowedIds.has(String(p.id)))
+        .filter(p => {
+          if (p.position === "PICK") {
+            return !allowedPickKeys || allowedPickKeys.has(pickRoundKey(p.id));
+          }
+          return !allowedIds || allowedIds.has(String(p.id));
+        })
         .filter(p => !selected.find(x => String(x.id) === String(p.id)))
         .filter(p => !selectedPicks.find(x => String(x.id) === String(p.id)))
         .map(p => {
