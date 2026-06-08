@@ -6,7 +6,6 @@ ranked at that metric in a sortable, searchable table with a relative bar. The
 position filter auto-narrows to the positions where the metric is meaningful
 (with manual override). Data comes from /api/advanced-metrics/leaderboard.
 """
-import datetime
 import json
 from typing import Optional
 
@@ -65,16 +64,11 @@ def build_advanced_metrics_body(
         },
     })
 
-    # Default to the most recent completed NFL season. The NFL season runs Sep–Jan;
-    # before September we're in the offseason so the current year hasn't started.
-    _today = datetime.date.today()
-    _preferred = _today.year - 1 if _today.month < 9 else _today.year
+    # available_seasons only contains seasons with real data, so [0] is always right.
     if season and season in available_seasons:
         _default_season = season
-    elif available_seasons:
-        _default_season = _preferred if _preferred in available_seasons else available_seasons[0]
     else:
-        _default_season = None
+        _default_season = available_seasons[0] if available_seasons else None
 
     season_options = "".join(
         f'<option value="{s}"{"selected" if s == _default_season else ""}>{s}</option>'
@@ -375,14 +369,15 @@ _AM_JS = r"""
     }
     empty.style.display = 'none';
 
-    // Average marker: meaningful only within a single position.
+    // Average marker across all displayed rows (position-filtered but not roster/search filtered).
     let avgPct = null;
-    if (state.position !== 'ALL' && posRows.length) {
+    if (posRows.length) {
       const avg = posRows.reduce((s, r) => s + (Number(r.value) || 0), 0) / posRows.length;
       avgPct = Math.max(0, Math.min(100, Math.round(Math.abs(avg) / maxAbs * 100)));
       if (avgNote) {
         avgNote.style.display = '';
-        avgNoteTxt.textContent = state.position + ' average: ' + fmtVal(avg);
+        const lbl = state.position !== 'ALL' ? state.position : 'Field';
+        avgNoteTxt.textContent = lbl + ' average: ' + fmtVal(avg);
       }
     } else if (avgNote) {
       avgNote.style.display = 'none';

@@ -1062,12 +1062,19 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
 
 
 def get_available_seasons() -> List[int]:
-    """Return distinct seasons present in player_advanced_metrics, newest first."""
+    """Return distinct seasons that have real player data, newest first.
+
+    Filters to seasons with at least one non-null metric so empty 2026-tagged
+    rows (snapshot taken in the offseason but no games played yet) don't appear.
+    """
     try:
         with get_conn() as conn:
             rows = conn.execute(
                 "SELECT DISTINCT season FROM player_advanced_metrics "
-                "WHERE season IS NOT NULL ORDER BY season DESC"
+                "WHERE season IS NOT NULL "
+                "AND (role_score IS NOT NULL OR snap_share IS NOT NULL "
+                "     OR yards_per_target IS NOT NULL OR yards_per_carry IS NOT NULL) "
+                "ORDER BY season DESC"
             ).fetchall()
             return [int(r["season"]) for r in rows]
     except Exception:
