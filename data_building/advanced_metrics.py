@@ -1133,24 +1133,53 @@ def get_metric_leaderboard(
             return []
         latest_date = latest["max_date"]
 
+        # The volume count is coalesced across ALL of the season's snapshot rows.
+        # Computed metrics (yards_per_carry, role_score, the volume totals) and PFF
+        # imports (drop rate, aDOT, YAC, grades, breakaway, elusive) land on
+        # different as_of_dates, so a PFF metric's value lives on a different row
+        # than the volume total. Reading volume off the single latest row would
+        # leave it NULL and make the min-volume filter a silent no-op. Join the
+        # per-player season max so the filter sees the count regardless of date.
+        apply_vol = bool(has_vol_col and min_vol and min_vol > 0)
+        season_for_vol = season
+        if apply_vol and season_for_vol is None:
+            srow = conn.execute(
+                "SELECT season FROM player_advanced_metrics "
+                "WHERE as_of_date = %s AND season IS NOT NULL LIMIT 1",
+                (latest_date,),
+            ).fetchone()
+            season_for_vol = srow["season"] if srow else None
+        apply_vol = apply_vol and season_for_vol is not None
+
         gate = ""
-        params: list = [latest_date]
+        vol_join = ""
+        params: list = []
+        if apply_vol:
+            vol_join = (
+                f" LEFT JOIN (SELECT player_id, MAX({vol_col}) AS vol "
+                "FROM player_advanced_metrics WHERE season = %s GROUP BY player_id) v "
+                "ON v.player_id = m.player_id"
+            )
+            params.append(season_for_vol)
+        params.append(latest_date)
         if pos:
-            gate += " AND position = %s"
+            gate += " AND m.position = %s"
             params.append(pos)
         if LEADERBOARD_METRICS[metric].get("efficiency"):
-            gate += " AND (snap_share IS NULL OR snap_share >= %s)"
+            gate += " AND (m.snap_share IS NULL OR m.snap_share >= %s)"
             params.append(_MIN_SNAP_FOR_EFFICIENCY)
-        if has_vol_col and min_vol and min_vol > 0:
-            gate += f" AND ({vol_col} IS NULL OR {vol_col} >= %s)"
+        if apply_vol:
+            # Keep rows with no volume data (older seasons predate the columns);
+            # filter only where we actually have a count.
+            gate += " AND (v.vol IS NULL OR v.vol >= %s)"
             params.append(min_vol)
         params.append(limit)
-        games_col = "games," if has_games else ""
+        games_col = "m.games AS games," if has_games else ""
         rows = conn.execute(
-            f"""SELECT player_id, position, {games_col} {metric} AS value
-                FROM player_advanced_metrics
-                WHERE as_of_date = %s{gate} AND {metric} IS NOT NULL
-                ORDER BY {metric} DESC LIMIT %s""",
+            f"""SELECT m.player_id, m.position, {games_col} m.{metric} AS value
+                FROM player_advanced_metrics m{vol_join}
+                WHERE m.as_of_date = %s{gate} AND m.{metric} IS NOT NULL
+                ORDER BY m.{metric} DESC LIMIT %s""",
             tuple(params),
         ).fetchall()
 
