@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-06-08",
         "tag": "new",
-        "text": "Advanced Metrics Leaderboard: Rank every player by a single advanced metric: role score, snap share, target share, yards per carry, air yards, and more. Filter by position, search by name, and switch between seasons. Find it under the Players menu.",
+        "text": "Advanced Metrics Leaderboard: See every player ranked by a single advanced metric: role score, snap share, target share, yards per carry, air yards, and more. Filter by position, search by name, and switch between seasons. Find it under the Players menu.",
         "link": "/metrics"
     },
     {
