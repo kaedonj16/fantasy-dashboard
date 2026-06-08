@@ -26,6 +26,7 @@ import statistics
 import urllib.request
 from urllib.error import HTTPError
 from typing import Any, Dict, List, Optional, Tuple
+from utils.coerce import safe_float as _safe_float
 
 log = logging.getLogger(__name__)
 
@@ -83,13 +84,6 @@ def _fetch_csv(url: str, *, quiet_404: bool = False) -> List[Dict[str, str]]:
     except Exception as exc:
         log.warning("[calibration] Failed to fetch %s: %s", url, exc)
         return []
-
-
-def _safe_float(v: Any, default: float = 0.0) -> float:
-    try:
-        return float(v) if v not in (None, "", "NA", "NULL") else default
-    except (TypeError, ValueError):
-        return default
 
 
 # ─────────────────────────────────────────────────────────────────────────────

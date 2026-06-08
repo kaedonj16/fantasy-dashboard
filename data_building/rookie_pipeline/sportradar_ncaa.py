@@ -441,7 +441,7 @@ def _build_index_from_cache(names: List[str]) -> SportradarNCAAIndex:
                 profile_name = profile_data.get('name', '')
                 if _normalize_name(profile_name) == _normalize_name(name):
                     # Manually normalize the profile data (inline version of normalize_profile)
-                    normalized = _normalize_profile_inline(profile_data)
+                    normalized = normalize_profile(profile_data)
                     if normalized:
                         data[_normalize_name(name)] = normalized
                         
@@ -458,97 +458,6 @@ def _build_index_from_cache(names: List[str]) -> SportradarNCAAIndex:
     
     print(f"[sr_ncaa] Built index from cache: {found} prospects found")
     return SportradarNCAAIndex(data, bio)
-
-def _normalize_profile_inline(raw: Dict) -> Dict[int, Dict[str, Any]]:
-    """
-    Inline version of normalize_profile - convert Sportradar profile to {year: stats}.
-    """
-    result: Dict[int, Dict[str, Any]] = {}
-
-    for season in raw.get("seasons", []):
-        if season.get("type") != "REG":
-            continue
-        year = season.get("year")
-        if not year:
-            continue
-
-        teams = season.get("teams", [])
-        if not teams:
-            continue
-        # Sum stats across teams for that year
-        rush_att = rush_yds = rush_tds = 0
-        rec_rec = rec_yds = rec_tds = 0
-        rec_yac_total = 0
-        rec_tgt_total = 0
-        pass_att = pass_yds = pass_tds = completions = interceptions = 0
-        games_played = 0
-        games_started = 0
-        has_tgt = False
-        has_yac = False
-
-        for team_entry in teams:
-            s = team_entry.get("statistics", {})
-            rush = s.get("rushing", {})
-            recv = s.get("receiving", {})
-            pass_ = s.get("passing", {})
-
-            rush_att  += rush.get("attempts", 0) or 0
-            rush_yds  += rush.get("yards", 0) or 0
-            rush_tds  += rush.get("touchdowns", 0) or 0
-
-            rec_rec += recv.get("receptions", 0) or 0
-            rec_yds += recv.get("yards", 0) or 0
-            rec_tds += recv.get("touchdowns", 0) or 0
-
-            tgt = recv.get("targets")
-            if tgt is not None:
-                rec_tgt_total += tgt
-                has_tgt = True
-
-            yac = recv.get("yards_after_catch")
-            if yac is not None:
-                rec_yac_total += yac
-                has_yac = True
-
-            pass_att      += pass_.get("attempts", 0) or 0
-            pass_yds      += pass_.get("yards", 0) or 0
-            pass_tds      += pass_.get("touchdowns", 0) or 0
-            completions   += pass_.get("completions", 0) or 0
-            interceptions += pass_.get("interceptions", 0) or 0
-
-            games_played  += s.get("games_played", 0) or 0
-            games_started += s.get("games_started", 0) or 0
-
-        row: Dict[str, Any] = {
-            "season":          year,
-            "games_played":    games_played or None,
-            "games_started":   games_started or None,
-            # Rushing
-            "rush_attempts":   rush_att,
-            "rush_yards":      rush_yds,
-            "rush_tds":        rush_tds,
-            "yds_per_carry":   round(rush_yds / rush_att, 3) if rush_att > 0 else None,
-            # Receiving
-            "receptions":      rec_rec,
-            "targets":         rec_tgt_total if has_tgt else None,
-            "receiving_yards": rec_yds,
-            "receiving_tds":   rec_tds,
-            "receiving_yac":   rec_yac_total if has_yac else None,
-            "yds_per_reception": round(rec_yds / rec_rec, 3) if rec_rec > 0 else None,
-            # Passing
-            "pass_attempts":   pass_att,
-            "pass_yards":      pass_yds,
-            "pass_tds":        pass_tds,
-            "completions":     completions,
-            "interceptions":   interceptions,
-            "completion_pct":  round(completions / pass_att * 100, 1) if pass_att > 0 else None,
-            "td_int_ratio":    round(pass_tds / max(interceptions, 1), 2) if pass_tds else None,
-            "yds_per_attempt": round(pass_yds / pass_att, 2) if pass_att > 0 else None,
-        }
-        result[year] = row
-
-    return result
-
 
 def build_sportradar_ncaa_index(names: List[str]) -> SportradarNCAAIndex:
     """

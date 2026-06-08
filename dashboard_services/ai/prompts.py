@@ -71,24 +71,6 @@ Do not invent roster needs, injuries, or format settings.
 """
 
 
-def build_trade_analysis_prompt(trade_ctx: dict) -> str:
-    return f"""
-Analyze this dynasty trade from the viewer team's perspective.
-
-Output format:
-1. Verdict line: ACCEPT / DECLINE / COUNTER
-2. One paragraph on fit with team direction
-3. Three bullets:
-   - what the viewer gains
-   - what the viewer risks
-   - the best counter idea, if needed
-4. Final line: "GM Take:" followed by one sentence
-
-Use only this JSON:
-{trade_ctx}
-""".strip()
-
-
 def generate_trade_ai_result(payload: dict) -> dict:
     """
     LLM-backed trade analysis with structured JSON output.

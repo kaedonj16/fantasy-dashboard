@@ -814,6 +814,26 @@ def _partner_phrase(
 
 # ── Distribute suggestion builder (viewer sends one stud for depth) ───────────
 
+def _compute_lineup_score(
+    pids: List[str],
+    use_ppg: bool,
+    ppg_map,
+    pos_map,
+    roster_positions,
+    values_by_id,
+    league_type,
+) -> float:
+    """Score a lineup either by projected PPG or by optimal trade value.
+
+    Shared dispatch extracted from the identical ``_lineup_score`` closures in
+    ``_build_distribute`` and ``_build_rebuilding``; each caller still binds its
+    own request-scoped context, so behavior is unchanged.
+    """
+    if use_ppg:
+        return _ppg_lineup(pids, ppg_map, pos_map or {}, roster_positions)  # type: ignore[arg-type]
+    return _optimal_lineup_value(pids, values_by_id, league_type, use_redraft=True)
+
+
 def _build_distribute(
     viewer_players: List[str],
     values_by_id: Dict[str, Any],
@@ -891,9 +911,9 @@ def _build_distribute(
         use_ppg = bool(ppg_map and roster_positions)
 
         def _lineup_score(pids: List[str]) -> float:
-            if use_ppg:
-                return _ppg_lineup(pids, ppg_map, pos_map or {}, roster_positions)  # type: ignore[arg-type]
-            return _optimal_lineup_value(pids, values_by_id, league_type, use_redraft=True)
+            return _compute_lineup_score(
+                pids, use_ppg, ppg_map, pos_map, roster_positions, values_by_id, league_type
+            )
 
         # Departure cost: what happens to win% if you just lose this stud
         dep_players = [p for p in viewer_players if p != stud]
@@ -1122,9 +1142,9 @@ def _build_rebuilding(
         use_ppg = bool(ppg_map and roster_positions)
 
         def _reb_lineup_score(pids: List[str]) -> float:
-            if use_ppg:
-                return _ppg_lineup(pids, ppg_map, pos_map or {}, roster_positions)  # type: ignore[arg-type]
-            return _optimal_lineup_value(pids, values_by_id, league_type, use_redraft=True)
+            return _compute_lineup_score(
+                pids, use_ppg, ppg_map, pos_map, roster_positions, values_by_id, league_type
+            )
 
         # ── Departure stats — computed once per vet, shared by all options ─
         dep_players   = [p for p in viewer_players if p != vet]

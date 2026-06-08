@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from dashboard_services.db import get_conn
+from data_building.trade_intel._helpers import _decay_weight
 
 _PICK_BASE_VALUES_1QB = {
     (1, "early"): 800, (1, "mid"): 650, (1, "late"): 480,
@@ -31,13 +32,6 @@ def _pick_value(asset: dict) -> float:
     rd    = int(asset.get("pick_round") or 4)
     order = str(asset.get("pick_order") or "mid")
     return _PICK_BASE_VALUES_1QB.get((min(rd, 4), order), 10)
-
-def _decay_weight(days_ago: float) -> float:
-    if days_ago <= 14: return 1.0
-    if days_ago <= 30: return 0.6
-    if days_ago <= 60: return 0.25
-    return 0.08
-
 
 def diagnose(target_pid: str, limit: int = 30):
     # Just load values + names separately

@@ -8,6 +8,7 @@ from dashboard_services.api import get_nfl_state
 from data_building.external_data.player_history import load_player_history_df, build_player_history_features
 from data_building.external_data.player_investment import load_player_investment_context
 from utils.utils import load_usage_table, load_teams_index
+from utils.coerce import safe_float as _safe_float
 
 CORE_POSITIONS = {"QB", "RB", "WR", "TE"}
 
@@ -18,15 +19,6 @@ NUM_TEAMS = 10
 
 # 1QB replacement / scarcity assumptions
 REPLACEMENT_MULT = {"QB": 1.50, "RB": 1.20, "WR": 1.20, "TE": 1.25}
-
-
-def _safe_float(v, default: float = 0.0) -> float:
-    try:
-        if v is None or v == "":
-            return default
-        return float(v)
-    except (TypeError, ValueError):
-        return default
 
 
 def _safe_str(v, default: str = "") -> str:

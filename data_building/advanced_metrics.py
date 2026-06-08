@@ -181,166 +181,6 @@ def _extract_metric_value(metrics: Dict, metric_name: str):
     return entry.get("value")
 
 
-def merge_rookie_profiles_to_advanced_metrics(
-    profiles: List[Dict],
-    as_of_date: str,
-    conn=None,
-) -> Dict[str, int]:
-    """
-    Upsert rookie evaluation metrics from profile snapshots into
-    player_advanced_metrics so they are available as model-training features.
-
-    For each profile:
-    - Extracts the latest-season values of each rookie_eval_* metric.
-    - If a row already exists (player_id, as_of_date), updates only the
-      rookie_eval_* columns (leaves NFL-side columns untouched).
-    - If no row exists yet (prospect not yet drafted / in usage table),
-      inserts a minimal row with position + rookie_eval columns; all
-      NFL-side metrics remain NULL.
-
-    Processes in batches of 25 to keep memory low (Render constraint).
-
-    Args:
-        profiles:   List of rookie profile dicts from run_rookie_evaluation_pipeline.
-        as_of_date: ISO date string (YYYY-MM-DD).
-        conn:       Optional existing psycopg connection; acquires one if None.
-
-    Returns:
-        {"updated": n, "inserted": n, "skipped": n}
-    """
-    if not profiles:
-        return {"updated": 0, "inserted": 0, "skipped": 0}
-
-    def _run(db_conn):
-        updated = inserted = skipped = 0
-        batch_size = 25
-
-        for i in range(0, len(profiles), batch_size):
-            batch = profiles[i : i + batch_size]
-            for profile in batch:
-                player_id = (
-                    profile.get("sleeper_id")
-                    or profile.get("player_id")
-                )
-                if not player_id:
-                    skipped += 1
-                    continue
-
-                rp = profile.get("rookie_profile") or {}
-                metrics = rp.get("metrics") or {}
-
-                # Pull latest values for each rookie_eval column
-                rv = {
-                    "routes_run":         _extract_metric_value(metrics, "routes_run"),
-                    "yprr":               _extract_metric_value(metrics, "yprr"),
-                    "tprr":               _extract_metric_value(metrics, "tprr"),
-                    "yac_per_att":        _extract_metric_value(metrics, "yac_per_att"),
-                    "mtf_per_att":        _extract_metric_value(metrics, "mtf_per_att"),
-                    "explosive_run_rate": _extract_metric_value(metrics, "explosive_run_rate"),
-                    "adjusted_comp_pct":  _extract_metric_value(metrics, "adjusted_comp_pct"),
-                    "twp_rate":           _extract_metric_value(metrics, "twp_rate"),
-                    "player_level_sos":   _extract_metric_value(metrics, "player_level_sos"),
-                    "perf_vs_top_def":    _extract_metric_value(metrics, "performance_vs_top_defenses"),
-                    "true_early_declare": _extract_metric_value(metrics, "true_early_declare"),
-                }
-                draft_class_year = profile.get("draft_class_year") or rp.get("draft_class_year")
-                completeness = rp.get("completeness")
-                prospect_score = profile.get("prospect_score")
-                position = (profile.get("position") or "").upper() or None
-
-                # Check if row already exists
-                row = db_conn.execute(
-                    "SELECT 1 FROM player_advanced_metrics WHERE player_id = %s AND as_of_date = %s",
-                    (str(player_id), as_of_date),
-                ).fetchone()
-
-                if row:
-                    db_conn.execute(
-                        """
-                        UPDATE player_advanced_metrics SET
-                            rookie_eval_routes_run         = %s,
-                            rookie_eval_yprr               = %s,
-                            rookie_eval_tprr               = %s,
-                            rookie_eval_yac_per_att        = %s,
-                            rookie_eval_mtf_per_att        = %s,
-                            rookie_eval_explosive_run_rate = %s,
-                            rookie_eval_adjusted_comp_pct  = %s,
-                            rookie_eval_twp_rate           = %s,
-                            rookie_eval_player_level_sos   = %s,
-                            rookie_eval_perf_vs_top_def    = %s,
-                            rookie_eval_true_early_declare = %s,
-                            rookie_eval_draft_class_year   = %s,
-                            rookie_eval_completeness       = %s,
-                            rookie_eval_prospect_score     = %s,
-                            rookie_eval_is_rookie          = TRUE
-                        WHERE player_id = %s AND as_of_date = %s
-                        """,
-                        (
-                            rv["routes_run"], rv["yprr"], rv["tprr"],
-                            rv["yac_per_att"], rv["mtf_per_att"], rv["explosive_run_rate"],
-                            rv["adjusted_comp_pct"], rv["twp_rate"],
-                            rv["player_level_sos"], rv["perf_vs_top_def"],
-                            rv["true_early_declare"],
-                            draft_class_year, completeness, prospect_score,
-                            str(player_id), as_of_date,
-                        ),
-                    )
-                    updated += 1
-                else:
-                    # INSERT minimal row: prospects not yet in usage table
-                    db_conn.execute(
-                        """
-                        INSERT INTO player_advanced_metrics (
-                            player_id, as_of_date, position,
-                            rookie_eval_routes_run, rookie_eval_yprr, rookie_eval_tprr,
-                            rookie_eval_yac_per_att, rookie_eval_mtf_per_att,
-                            rookie_eval_explosive_run_rate, rookie_eval_adjusted_comp_pct,
-                            rookie_eval_twp_rate, rookie_eval_player_level_sos,
-                            rookie_eval_perf_vs_top_def, rookie_eval_true_early_declare,
-                            rookie_eval_draft_class_year, rookie_eval_completeness,
-                            rookie_eval_prospect_score, rookie_eval_is_rookie
-                        ) VALUES (
-                            %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE
-                        )
-                        ON CONFLICT (player_id, as_of_date) DO UPDATE SET
-                            rookie_eval_routes_run         = EXCLUDED.rookie_eval_routes_run,
-                            rookie_eval_yprr               = EXCLUDED.rookie_eval_yprr,
-                            rookie_eval_tprr               = EXCLUDED.rookie_eval_tprr,
-                            rookie_eval_yac_per_att        = EXCLUDED.rookie_eval_yac_per_att,
-                            rookie_eval_mtf_per_att        = EXCLUDED.rookie_eval_mtf_per_att,
-                            rookie_eval_explosive_run_rate = EXCLUDED.rookie_eval_explosive_run_rate,
-                            rookie_eval_adjusted_comp_pct  = EXCLUDED.rookie_eval_adjusted_comp_pct,
-                            rookie_eval_twp_rate           = EXCLUDED.rookie_eval_twp_rate,
-                            rookie_eval_player_level_sos   = EXCLUDED.rookie_eval_player_level_sos,
-                            rookie_eval_perf_vs_top_def    = EXCLUDED.rookie_eval_perf_vs_top_def,
-                            rookie_eval_true_early_declare = EXCLUDED.rookie_eval_true_early_declare,
-                            rookie_eval_draft_class_year   = EXCLUDED.rookie_eval_draft_class_year,
-                            rookie_eval_completeness       = EXCLUDED.rookie_eval_completeness,
-                            rookie_eval_prospect_score     = EXCLUDED.rookie_eval_prospect_score,
-                            rookie_eval_is_rookie          = TRUE
-                        """,
-                        (
-                            str(player_id), as_of_date, position,
-                            rv["routes_run"], rv["yprr"], rv["tprr"],
-                            rv["yac_per_att"], rv["mtf_per_att"], rv["explosive_run_rate"],
-                            rv["adjusted_comp_pct"], rv["twp_rate"],
-                            rv["player_level_sos"], rv["perf_vs_top_def"],
-                            rv["true_early_declare"],
-                            draft_class_year, completeness, prospect_score,
-                        ),
-                    )
-                    inserted += 1
-
-        return {"updated": updated, "inserted": inserted, "skipped": skipped}
-
-    if conn is not None:
-        return _run(conn)
-
-    with get_conn() as db_conn:
-        return _run(db_conn)
-
-
 def calculate_receiving_metrics(usage: Dict[str, float]) -> Dict[str, Optional[float]]:
     """Calculate receiving efficiency metrics."""
     targets = usage.get("avg_targets", 0) or 0
@@ -499,7 +339,9 @@ def calculate_role_score(
     - Position-specific scoring
     - Nonlinear dropoff so middling / low-usage players fall faster
     """
-    snap_pct = _safe(usage.get("avg_off_snap_pct"))
+    # avg_off_snap_pct is a 0-1 fraction (from PFR); the _norm bounds below are on a
+    # 0-100 percentage scale, so convert once here.
+    snap_pct = _safe(usage.get("avg_off_snap_pct")) * 100.0
     games = _safe(usage.get("games"))
 
     if games <= 0 or snap_pct <= 0:
@@ -512,10 +354,13 @@ def calculate_role_score(
 
     ypt = _safe(receiving_metrics.get("yards_per_target"))
     catch_rate = _safe(receiving_metrics.get("catch_rate"))
-    rec_td_rate = _safe(receiving_metrics.get("td_rate"))
+    # Receiving TD rate isn't part of the receiving-metrics dict; derive per-target
+    # rate directly from usage (matches the 0.02-0.12 _norm bounds used below).
+    _avg_tgts = _safe(usage.get("avg_targets"))
+    rec_td_rate = (_safe(usage.get("avg_rec_tds")) / _avg_tgts) if _avg_tgts > 0 else 0.0
 
     ypc = _safe(rushing_metrics.get("yards_per_carry"))
-    rush_td_rate = _safe(rushing_metrics.get("td_rate"))
+    rush_td_rate = _safe(rushing_metrics.get("rush_td_rate"))
 
     pass_att = _safe(usage.get("avg_pass_att"))
     qb_rush_att = _safe(usage.get("avg_carries"))
@@ -530,8 +375,10 @@ def calculate_role_score(
         att_score = _norm(pass_att, 18, 40) ** 1.20
         rush_score = _norm(qb_rush_att, 0, 8) ** 1.15
         ypa_score = _norm(ypa, 5.5, 8.8)
-        td_score = _norm(pass_td_rate, 0.02, 0.08)
-        int_penalty = _norm(int_rate, 0.01, 0.05) if int_rate > 0 else 0.0
+        # passing td_rate / int_rate come back as percentages (pass_tds/att * 100),
+        # so the bounds are on a 0-100 scale (2-8% TD, 1-5% INT), not fractions.
+        td_score = _norm(pass_td_rate, 2.0, 8.0)
+        int_penalty = _norm(int_rate, 1.0, 5.0) if int_rate > 0 else 0.0
 
         base = (
             snap_score * 0.20 +
@@ -898,56 +745,6 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
             ))
 
     print(f"[advanced_metrics] Saved {len(metrics_list)} player metrics for {as_of_date} (season {season})")
-
-
-def calculate_trends(player_id: str, current_date: str, lookback_days: int = 14) -> Dict[str, Optional[float]]:
-    """
-    Calculate usage and efficiency trends by comparing current metrics to previous period.
-
-    Returns:
-        {
-            "usage_trend": % change in opportunity_share over lookback period
-            "efficiency_trend": % change in role_score over lookback period
-        }
-    """
-    from datetime import datetime, timedelta
-
-    current_dt = datetime.strptime(current_date, "%Y-%m-%d")
-    lookback_dt = current_dt - timedelta(days=lookback_days)
-    lookback_str = lookback_dt.strftime("%Y-%m-%d")
-
-    with get_conn() as conn:
-        # Get current metrics
-        current = conn.execute("""
-            SELECT opportunity_share, role_score
-            FROM player_advanced_metrics
-            WHERE player_id = %s AND as_of_date = %s
-        """, (player_id, current_date)).fetchone()
-
-        # Get previous metrics
-        previous = conn.execute("""
-            SELECT opportunity_share, role_score
-            FROM player_advanced_metrics
-            WHERE player_id = %s AND as_of_date >= %s AND as_of_date < %s
-            ORDER BY as_of_date DESC
-            LIMIT 1
-        """, (player_id, lookback_str, current_date)).fetchone()
-
-        if not current or not previous:
-            return {"usage_trend": None, "efficiency_trend": None}
-
-        current_opp = current["opportunity_share"] or 0
-        prev_opp = previous["opportunity_share"] or 0
-        current_role = current["role_score"] or 0
-        prev_role = previous["role_score"] or 0
-
-        usage_trend = ((current_opp - prev_opp) / prev_opp * 100) if prev_opp > 0 else None
-        efficiency_trend = ((current_role - prev_role) / prev_role * 100) if prev_role > 0 else None
-
-        return {
-            "usage_trend": usage_trend,
-            "efficiency_trend": efficiency_trend,
-        }
 
 
 def get_player_metrics(player_id: str, as_of_date: Optional[str] = None) -> Optional[Dict[str, Any]]:

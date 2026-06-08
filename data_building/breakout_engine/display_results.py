@@ -21,13 +21,7 @@ if "DATABASE_URL" not in os.environ:
 from dashboard_services.api import get_nfl_state
 from data_building.breakout_engine.core import BreakoutEngine
 from data_building.breakout_engine.explainability import ExplainabilityEngine
-
-
-def _safe_float(val, default=0.0):
-    try:
-        return float(val) if val is not None else default
-    except (TypeError, ValueError):
-        return default
+from utils.coerce import safe_float as _safe_float
 
 
 def format_score_bar(score: float, max_score: float = 100.0, width: int = 20) -> str:

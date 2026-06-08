@@ -50,6 +50,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import numpy as np
+from data_building.trade_intel._helpers import _size_bucket
 
 logger = logging.getLogger(__name__)
 
@@ -84,17 +85,6 @@ def _target_class(position: str, value: float) -> str:
         pos = "WR"
     tier = _value_to_tier(value)
     return f"{pos}-T{tier}"
-
-
-def _size_bucket(num_teams: int) -> str:
-    """Map team count to canonical size bucket."""
-    if num_teams <= 9:
-        return "8"
-    if num_teams <= 11:
-        return "10"
-    if num_teams == 12:
-        return "12"
-    return "14"
 
 
 # ---------------------------------------------------------------------------

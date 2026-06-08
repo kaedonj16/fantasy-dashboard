@@ -76,19 +76,6 @@ def _headers() -> Dict[str, str]:
     return h
 
 
-def download_csv(url: str, out_path: str) -> str:
-    if not url:
-        raise ValueError("Missing CSV URL env var")
-
-    resp = requests.get(url, headers=_headers(), timeout=60)
-    resp.raise_for_status()
-
-    with open(out_path, "w", encoding="utf-8", newline="") as f:
-        f.write(resp.text)
-
-    return out_path
-
-
 def resolve_seasons(explicit_seasons: Optional[str], last_n: int) -> List[int]:
     if explicit_seasons:
         vals: List[int] = []

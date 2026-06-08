@@ -36,50 +36,6 @@ def _team_city(abbr: str) -> str:
     return _NFL_CITY.get((abbr or "").upper(), abbr)
 
 
-def render_weekly_highlight_ticker(high: dict, week: int) -> str:
-    if not high:
-        return ""
-
-    def item(label, value):
-        return (
-            "<div class='tick-item'>"
-            f"  <span class='tick-label'>{label}</span>"
-            f"  <span class='tick-val'>{value}</span>"
-            "</div>"
-        )
-
-    items = []
-    tt = high.get("top_team")
-    if tt:
-        items.append(item("Highest Scoring Team", f"{tt[0]} - {tt[1]}"))
-
-    lt = high.get("low_team")
-    if lt:
-        items.append(item("Lowest Scoring Team", f"{lt[0]} - {lt[1]}"))
-
-    cl = high.get("closest")
-    if cl:
-        a, b, diff, pa, pb = cl
-        items.append(item("Closest Matchup", f"{a} {pa} – {pb} {b} (Δ{diff:.2f})"))
-
-    bl = high.get("blowout")
-    if bl:
-        a, b, diff, pa, pb = bl
-        items.append(item("Biggest Blowout", f"{a} {pa} – {pb} {b} (Δ{diff:.2f})"))
-
-    loop = "".join(items)
-    track_html = loop + loop if items else "<div class='tick-item'>No highlights</div>"
-
-    return f"""
-    <div class="grid tick-wrap ticker" aria-label="Week {week} Highlights" data-section="recap">
-      <div class="tick-head">Week {week} Highlights</div>
-      <div class="tick-viewport">
-        <div class="tick-track">{track_html}</div>
-      </div>
-    </div>
-    """
-
-
 def matchup_cards_last_week(
         league_id: str,
         df_weekly: pd.DataFrame,
@@ -467,51 +423,6 @@ def build_tables(
     team_stats["Streak"] = team_stats["Streak"].fillna("")
 
     return df_weekly, team_stats, roster_map
-
-
-def build_league_summary(team_stats, df_weekly) -> dict:
-    summary: dict[str, Any] = {}
-
-    if not team_stats.empty:
-        best_pf_row = team_stats.loc[team_stats["PF"].idxmax()]
-        worst_pf_row = team_stats.loc[team_stats["PF"].idxmin()]
-        best_avg_row = team_stats.loc[team_stats["AVG"].idxmax()]
-        most_vol_row = team_stats.loc[team_stats["STD"].idxmax()]
-
-        ts = team_stats.copy()
-        ts["pf_minus_pa"] = ts["PF"] - ts["PA"]
-        luckiest_row = ts.loc[ts["pf_minus_pa"].idxmax()]
-        unluckiest_row = ts.loc[ts["pf_minus_pa"].idxmin()]
-
-        summary["best_pf"] = {"owner": best_pf_row["owner"], "pf": float(best_pf_row["PF"])}
-        summary["worst_pf"] = {"owner": worst_pf_row["owner"], "pf": float(worst_pf_row["PF"])}
-        summary["best_avg"] = {"owner": best_avg_row["owner"], "avg": float(best_avg_row["AVG"])}
-        summary["most_vol"] = {"owner": most_vol_row["owner"], "std": float(most_vol_row["STD"])}
-        summary["luckiest"] = {
-            "owner": luckiest_row["owner"],
-            "delta": float(luckiest_row["pf_minus_pa"]),
-        }
-        summary["unluckiest"] = {
-            "owner": unluckiest_row["owner"],
-            "delta": float(unluckiest_row["pf_minus_pa"]),
-        }
-
-    if not df_weekly.empty:
-        best_week_row = df_weekly.loc[df_weekly["points"].idxmax()]
-        worst_week_row = df_weekly.loc[df_weekly["points"].idxmin()]
-
-        summary["best_week"] = {
-            "owner": best_week_row["owner"],
-            "week": int(best_week_row["week"]),
-            "points": float(best_week_row["points"]),
-        }
-        summary["worst_week"] = {
-            "owner": worst_week_row["owner"],
-            "week": int(worst_week_row["week"]),
-            "points": float(worst_week_row["points"]),
-        }
-
-    return summary
 
 
 def _compute_team_records(df: pd.DataFrame) -> pd.DataFrame:
@@ -928,6 +839,7 @@ def compute_sos_by_team(
         team_strength: Dict[int, float],
         weeks_past: int,
         users: Dict[int, str],
+        regular_season_weeks: int = 14,
 ) -> Dict[int, dict]:
     out: dict[Any, dict[str, Any]] = {
         owner: {"past_sos": 0.0, "past_cnt": 0, "ros_sos": 0.0, "ros_cnt": 0}
@@ -945,7 +857,11 @@ def compute_sos_by_team(
         )
         return match
 
-    for w in range(1, weeks_past):
+    # weeks_past is the latest *played* week, so it belongs in past SOS (inclusive),
+    # and the rest-of-season window starts the week after it. The regular season is
+    # assumed to be `regular_season_weeks` long (default 14); the matchup dict also
+    # carries playoff weeks 15-17, which are intentionally excluded from ROS SOS.
+    for w in range(1, weeks_past + 1):
         for a, b in compute_week_opponents(all_matchups.get(w, [])):
             username = _resolve_name(a)
             username2 = _resolve_name(b)
@@ -959,7 +875,7 @@ def compute_sos_by_team(
             out[username2]["past_sos"] += team_strength[username]
             out[username2]["past_cnt"] += 1
 
-    for w in range(weeks_past, 15):
+    for w in range(weeks_past + 1, regular_season_weeks + 1):
         for a, b in compute_week_opponents(all_matchups.get(w, [])):
             username = _resolve_name(a)
             username2 = _resolve_name(b)
@@ -1340,74 +1256,6 @@ def seed_top_n_from_team_stats(team_stats, roster_map, playoff_size: int = 6):
 # Backwards-compatible wrapper if you still use the old function name anywhere
 def seed_top6_from_team_stats(team_stats, roster_map):
     return seed_top_n_from_team_stats(team_stats, roster_map, playoff_size=6)
-
-
-def render_standings_table(team_stats, length):
-    rows = []
-
-    df = team_stats.copy()
-    df["WinPct"] = df["Win%"].astype(float)
-    df = (
-        df.sort_values(
-            by=["Wins", "PF", "PA"],
-            ascending=[False, False, True],
-        )
-        .reset_index(drop=True)
-    )
-
-    df["Rank"] = df.index + 1
-
-    for _, row in df.iterrows():
-        record = f"{int(row['Wins'])}-{int(row['Losses'])}"
-        if int(row.get("Ties", 0)):
-            record += f"-{int(row['Ties'])}"
-
-        streak = row.get("Streak", "")
-        avatar = row.get("avatar", "")
-
-        if avatar:
-            img = (
-                f"<img class='avatar sm' src='{avatar}' "
-                "onerror=\"this.style.display='none'\">"
-            )
-        else:
-            img = ""
-
-        rows.append(
-            f"""
-            <tr>
-              <td class="num">{int(row['Rank'])}</td>
-              <td class="team">{img} {row['owner']}</td>
-              <td>{record}</td>
-              <td>{row['PF']:.1f}</td>
-              <td>{row['PA']:.1f}</td>
-              <td>{streak}</td>
-              <td>{row['past_sos']:.1f}</td>
-              <td>{row['ros_sos']:.1f}</td>
-            </tr>
-        """
-        )
-    total_rows = rows[:length] if len(rows) != length else rows
-    return f"""
-        <table class="standings-table">
-          <h2>Standings</h2>
-          <thead>
-            <tr>
-              <th>Rank</th>
-              <th>Team</th>
-              <th>Record</th>
-              <th>PF</th>
-              <th>PA</th>
-              <th>Streak</th>
-              <th>SOS Past</th>
-              <th>SOS Future</th>
-            </tr>
-          </thead>
-          <tbody>
-            {''.join(total_rows)}
-          </tbody>
-        </table>
-    """
 
 
 def render_teams_sidebar(teams: List[dict]) -> str:

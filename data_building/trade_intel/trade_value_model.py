@@ -44,6 +44,7 @@ import numpy as np
 
 from dashboard_services.db import get_conn
 from dashboard_services.picks import load_pick_value_table
+from data_building.trade_intel._helpers import _decay_weight
 
 logger = logging.getLogger(__name__)
 
@@ -279,13 +280,6 @@ def _load_trades(season: int, is_sf: bool = False, league_type: int = 2, league_
             "decay_weight": _decay_weight(days_ago),
         })
     return trades
-
-
-def _decay_weight(days_ago: float) -> float:
-    if days_ago <= 14: return 1.0
-    if days_ago <= 30: return 0.6
-    if days_ago <= 60: return 0.25
-    return 0.08
 
 
 def _count_trades(season: int, is_sf: bool = False, league_type: int = 2, league_size: int = 10) -> int:

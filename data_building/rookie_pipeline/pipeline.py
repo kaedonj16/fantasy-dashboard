@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
+from data_building.rookie_pipeline.mock_draft_consensus import _slug
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -293,12 +294,6 @@ def upsert_prospects(prospects: List[Dict], conn) -> int:
                     },
                 )
     return saved
-
-
-def _slug(name: str) -> str:
-    """Convert 'Travis Hunter' → 'TRAVIS_HUNTER'. Strips periods so 'K.C.' → 'KC'."""
-    import re
-    return re.sub(r"[^A-Z0-9]+", "_", name.upper().replace(".", "")).strip("_")
 
 
 def upsert_prospect_source_data(prospects: List[Dict], cfbd_stats: Dict, draft_year: int, conn) -> int:
@@ -1492,54 +1487,6 @@ def load_prospects_from_db(draft_year: int, conn) -> List[Dict[str, Any]]:
                 prospect["_eval_metrics"] = eval_metrics
 
         return prospects
-
-
-def run_rookie_pipeline_inmemory(
-    draft_year: Optional[int] = None,
-    position_weights_override: Optional[Dict[str, Dict[str, float]]] = None,
-) -> Dict[str, Any]:
-    """
-    Run the full pipeline without writing to the database.
-    Returns a dict with prospects, scores, consensus, values - ready for the
-    page to consume directly or for the DB path to persist.
-    """
-    from .ingestion          import load_prospects_for_year
-    from .mock_draft_consensus import build_mock_draft_consensus
-    from .prospect_model     import score_all_prospects
-    from .value_translation  import translate_all
-
-    if draft_year is None:
-        draft_year = get_active_rookie_class()
-
-    print(f"[pipeline] Running in-memory pipeline for {draft_year} draft class")
-
-    prospects    = load_prospects_for_year(draft_year)
-    prospects    = _filter_active_nfl_players(prospects, draft_year)
-    consensus    = build_mock_draft_consensus(draft_year)
-
-    # If no prospects but we have mock draft data, create prospects from mocks
-    if not prospects and consensus:
-        print("[pipeline] No prospects found - creating from mock draft data")
-        from .ingestion import prospects_from_mock_draft
-        from .mock_draft_scraper import scrape_consensus_mock_draft
-
-        mock_picks = scrape_consensus_mock_draft(draft_year)
-        prospects = prospects_from_mock_draft(mock_picks, draft_year)
-
-    scores       = score_all_prospects(
-        prospects,
-        consensus,
-        position_weights_override=position_weights_override,
-    )
-    values       = translate_all(scores, prospects, consensus)
-
-    return {
-        "draft_year":  draft_year,
-        "prospects":   prospects,
-        "consensus":   consensus,
-        "scores":      scores,
-        "values":      values,
-    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

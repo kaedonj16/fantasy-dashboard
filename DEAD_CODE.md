@@ -10,6 +10,14 @@ dynamically dispatched, called from notebooks/external scripts, or kept as inten
 
 ## 1. Unused functions (no reference anywhere in the repo)
 
+> **STATUS (2026-06-07): Section 1 cleared.** Re-verified against the current tree:
+> 56 of the original 95 had already been removed by interim audit commits, and the
+> remaining 39 (all confirmed 0-reference repo-wide, across every file type) were
+> deleted in the dead-code cleanup pass (−1,845 lines). The per-entry list below is
+> kept for historical reference; line numbers are from the original 2026-06-04 scan
+> and no longer apply. Sections 2 and 3 (duplicates / consolidation) are still open.
+
+
 **95 functions** have zero textual references across `app.py`, `dashboard_services/`, `routes/`, `utils/`, `data_building/`, `scripts/`
 (including inside cron string-exec steps). Flask route handlers and framework hooks are
 already excluded.
@@ -172,6 +180,30 @@ already excluded.
 **11 groups / 23 functions.** Bodies are structurally identical
 after normalizing names — consolidating into one shared helper removes ~12 copies.
 
+> **STATUS (2026-06-07): partially consolidated.** Re-verified each group against
+> the current tree (all still identical except `_get_num`/`_raw_float`, which has
+> since diverged). Consolidated the groups that were genuinely pure top-level
+> functions:
+> - `_decay_weight` + `_size_bucket` (trade_intel) → new dependency-free
+>   `data_building/trade_intel/_helpers.py`, imported by analytics, trade_value_model,
+>   trade_pattern_model and the diagnose_wls script.
+> - `_normalize_profile_inline` → `normalize_profile` (sportradar_ncaa.py).
+> - `_slug`: pipeline.py now imports it from mock_draft_consensus.py.
+> - `_pearson`: train_ml_model.py now imports `_pearson_r` from backtest_prospect_model.py.
+>
+> **Deferred (not safe as a like-for-like merge):**
+> - `_waiver_pickup_score`/`_wv_score` (app.py) and `_lineup_score`/`_reb_lineup_score`
+>   (archetype_engine.py) — these are **nested closures** that capture different
+>   enclosing-scope variables, so the textually-identical bodies are not behaviorally
+>   interchangeable. Merging needs an explicit refactor (promote to a parameterized
+>   module-level helper), not a simple import.
+> - `_get_num`/`_raw_float` — bodies have diverged; no longer duplicates.
+> - `fetch_sleeper_players` + `update_player_teams_from_sleeper`: `data_building/players.py`
+>   and `data_building/updates/update_players.py` are **byte-identical standalone scripts**
+>   (each ends in `if __name__ == "__main__"`), neither imported anywhere. The right fix
+>   is deleting one file once the canonical entry point is confirmed — a file-deletion
+>   decision, not a function merge.
+
 
 - **3 copies** (4 stmts, same name)
   - `data_building/trade_intel/analytics.py:40` — `_decay_weight()`
@@ -240,6 +272,48 @@ Multi-platform provider abstraction (Sleeper / ESPN / base / platform_api). Same
 - `player_detail()` ×2: `dashboard_services/breakout_api.py:1037`, `dashboard_services/rookie_api.py:341`
 
 ### 3b. Copy-paste private helpers — **consolidate into `utils`**
+
+> **STATUS (2026-06-07): investigated — do NOT bulk-consolidate.** This section's
+> premise turned out to be wrong. The names repeat, but the *bodies* do not: an
+> AST cluster-by-normalized-body analysis showed `_safe_float` (×11) has **9
+> distinct implementations** (largest identical cluster = 2), `_safe_int` (×10) has
+> **10 distinct implementations**, `_norm` (×8) has **8**, and almost every other
+> entry is unique per file. The differences are behavioral, not cosmetic — e.g.
+> `_safe_float` returns `None` by default in `rookie_api.py` but `0.0` elsewhere,
+> some variants strip `NaN`/`'NA'`/`'NULL'` and some don't; `_safe_int` ranges from
+> "no error handling, return 0" to `int(float(str(v)))` string parsing to
+> "return None on failure". Merging these into one shared helper would silently
+> change behavior at call sites (e.g. a caller using `None` to detect a failed
+> coercion would start receiving `0`). Partial consolidation is worse than none
+> here — it leaves several identically-named functions with different behavior,
+> which is more confusing, not less.
+>
+> A real consolidation would require choosing one canonical implementation per
+> helper and reviewing **every** call site for behavioral compatibility (default
+> values, NaN handling) before migrating — a deliberate per-helper refactor, not a
+> mechanical merge. Left as-is intentionally.
+>
+> One genuine defect was found and fixed: `_safe_float` was defined twice at top
+> level in `calculate_breakouts_with_real_data.py` (L28 and L133); the second
+> silently shadowed the first. Removed the dead duplicate.
+>
+> **UPDATE (2026-06-07): a safe subset WAS consolidated.** Rather than a blind
+> merge, each `_safe_float`/`_safe_int` variant was executed against a full input
+> battery (`None`, `''`, `'  '`, `'3'`, `'3.5'`, `3.7`, `'abc'`, `nan`, `True`,
+> containers, …) under both call patterns (no-arg and explicit-default) and
+> compared to a canonical implementation. The **12 variants that matched on every
+> input** now import from the new leaf module `utils/coerce.py`
+> (`safe_float`/`safe_int`) via an alias, so call sites are untouched:
+> `_safe_float` ×7 (build_daily_value_table, player_value, historical_calibration,
+> breakout_engine/display_results, breakout_engine/calculate_breakouts,
+> breakout_engine/components, ai/context_builders) and `_safe_int` ×5
+> (value_model_training, breakout_engine/components, ai/context_builders,
+> providers/espn_api, pages/history_page).
+> The variants with genuinely different semantics were left in place on purpose:
+> `_safe_float` in value_model_training (pandas `pd.isna`), rookie_api
+> (`default=None`) and history_page (NaN-stripping); `_safe_int` in app.py /
+> ingestion (`default=None`), save_player_values (returns `None`) and utils/utils
+> (`int(float(s))` string parsing).
 
 Small private helpers re-implemented across modules. Prime candidates for a shared module.
 

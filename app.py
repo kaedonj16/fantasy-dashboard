@@ -1118,66 +1118,6 @@ def _weeks_hash(weeks):
     return hashlib.sha1(raw.encode()).hexdigest()[:10]
 
 
-def store_value_table(
-        league_id: str,
-        season: int,
-        weeks: List[int],
-        value_table: Dict[str, float],
-) -> None:
-    """
-    Store value table in:
-      1) in-memory DASHBOARD_CACHE
-      2) disk as JSON (for reuse / training), named value_table_{date}.json
-    """
-    key = f"values_{season}_{_weeks_hash(weeks)}"
-
-    # --- in-memory cache ---
-    entry = DASHBOARD_CACHE.setdefault(league_id, {})
-    bundle = entry.setdefault("value_tables", {})
-    bundle[key] = (time.time(), value_table)
-
-    # --- disk cache with date-stamped filename ---
-    today_str = date.today().isoformat()  # e.g. "2025-11-22"
-    value_dir = Path(VALUE_TABLE_DIR)
-    value_dir.mkdir(parents=True, exist_ok=True)
-
-    filename = f"usage_table_{today_str}.json"
-    value_path = value_dir / filename
-
-    with value_path.open("w", encoding="utf-8") as f:
-        json.dump(value_table, f, ensure_ascii=False)
-
-
-def store_model_values(
-        league_id: str,
-        season: int,
-        weeks: List[int],
-        value_table: Dict[str, float],
-) -> None:
-    """
-    Store value table in:
-      1) in-memory DASHBOARD_CACHE
-      2) disk as JSON (for reuse / training), named value_table_{date}.json
-    """
-    key = f"model_values_{season}_{_weeks_hash(weeks)}"
-
-    # --- in-memory cache ---
-    entry = DASHBOARD_CACHE.setdefault(league_id, {})
-    bundle = entry.setdefault("value_tables", {})
-    bundle[key] = (time.time(), value_table)
-
-    # --- disk cache with date-stamped filename ---
-    today_str = date.today().isoformat()  # e.g. "2025-11-22"
-    value_dir = Path(VALUE_TABLE_DIR)
-    value_dir.mkdir(parents=True, exist_ok=True)
-
-    filename = f"model_values_{today_str}.json"
-    value_path = value_dir / filename
-
-    with value_path.open("w", encoding="utf-8") as f:
-        json.dump(value_table, f, ensure_ascii=False)
-
-
 _HISTORY_SEASONS_CACHE: dict = {}
 _HISTORY_SEASONS_TTL = 600  # 10 minutes
 
@@ -2770,16 +2710,6 @@ def api_history_chart(platform: str, season: int, league_id: str):
         return _api_err("Request failed", e)
 
 
-def render_simple_ai_copy(title: str, subtitle: str, text: str) -> str:
-    return f"""
-    <div class="ai-copy">
-      <p><strong>{html.escape(title)}</strong></p>
-      <p>{html.escape(subtitle)}</p>
-      <div>{html.escape(text)}</div>
-    </div>
-    """
-
-
 def ensure_weekly_bits(ctx: dict) -> None:
     """
     Lazily populate projections, statuses, matchups, and df_weekly['proj']
@@ -4365,101 +4295,30 @@ def build_standings_body(ctx: dict) -> str:
     return body
 
 
-def build_draft_assistant_html(ctx: dict) -> str:
-    """Rookie Draft Assistant section for the offseason hub."""
-    import json as _json_da
+_WAIVER_PRIME_MAX = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
-    viewer = ctx.get("viewer") or {}
-    viewer_roster_id = viewer.get("viewer_roster_id")
-    roster_positions = ctx.get("roster_positions") or []
-    is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in roster_positions)
-    league_type = "sf" if is_sf else "1qb"
-    league_size = max(6, min(14, int(ctx.get("total_rosters") or 10)))
-    current_year = int(ctx.get("season") or datetime.now().year)
 
-    needs: dict = {}
-    if viewer_roster_id:
-        rosters = ctx.get("rosters") or []
-        roster = next((r for r in rosters if str(r.get("roster_id")) == str(viewer_roster_id)), None)
-        if roster:
-            players_index = ctx.get("players_index") or {}
-            value_table = ctx.get("model_value_table") or []
-            val_field = "sf_value" if is_sf else "value"
-            values_by_id = {str(row["id"]): row for row in value_table if isinstance(row, dict) and row.get("id")}
+def _waiver_pickup_score(c: dict, waiver_breakout: dict, prime_max: dict = _WAIVER_PRIME_MAX) -> float:
+    """Composite waiver-pickup score: value + trend + breakout + age bonuses.
 
-            pos_counts: dict = {}
-            pos_values: dict = {}
-            for pid in (roster.get("players") or []):
-                meta = players_index.get(str(pid)) or {}
-                pos = str(meta.get("pos") or "").upper()
-                if pos not in ("QB", "RB", "WR", "TE"):
-                    continue
-                vrow = values_by_id.get(str(pid)) or {}
-                val = float(vrow.get(val_field) or vrow.get("value") or 0)
-                pos_counts[pos] = pos_counts.get(pos, 0) + 1
-                pos_values[pos] = pos_values.get(pos, 0.0) + val
-
-            thresholds = {
-                "QB":  [(-2, 600), (-1, 400), (0, 200), (1, 50)],
-                "RB":  [(-2, 1500), (-1, 1000), (0, 600), (1, 250)],
-                "WR":  [(-2, 1500), (-1, 1000), (0, 600), (1, 250)],
-                "TE":  [(-2, 600), (-1, 400), (0, 150), (1, 50)],
-            }
-            for pos in ("QB", "RB", "WR", "TE"):
-                val = pos_values.get(pos, 0.0)
-                needs[f"{pos}_count"] = pos_counts.get(pos, 0)
-                needs[f"{pos}_value"] = round(val, 1)
-                need_level = 2
-                for level, cutoff in thresholds.get(pos, []):
-                    if val >= cutoff:
-                        need_level = level
-                        break
-                needs[pos] = need_level
-
-    needs_json = _json_da.dumps(needs)
-
-    return f"""
-    <section class="os-card os-col-fill" id="draftAssistantCard"
-             data-league-type="{league_type}"
-             data-league-size="{league_size}"
-             data-needs='{needs_json}'
-             data-year="{current_year}">
-      <div class="os-section-head">
-        <div class="os-section-head-content">
-          <h2 class="os-section-title">Rookie Draft Assistant</h2>
-          <div class="os-section-subtitle">Personalized pick recommendations based on your roster</div>
-        </div>
-        <div class="os-section-head-actions">
-          <button type="button" class="da-reset-btn" onclick="daReset()">Reset Board</button>
-          <button type="button" class="card-collapse-toggle" data-target="draft-assistant-body">▼</button>
-        </div>
-      </div>
-      <div class="card-collapsible-body" id="draft-assistant-body">
-        <div class="da-toolbar">
-          <button class="da-filter active" data-pos="ALL" onclick="daFilterPos('ALL')">All</button>
-          <button class="da-filter" data-pos="QB" onclick="daFilterPos('QB')">QB</button>
-          <button class="da-filter" data-pos="RB" onclick="daFilterPos('RB')">RB</button>
-          <button class="da-filter" data-pos="WR" onclick="daFilterPos('WR')">WR</button>
-          <button class="da-filter" data-pos="TE" onclick="daFilterPos('TE')">TE</button>
-        </div>
-        <div class="da-layout">
-          <div class="da-board">
-            <div class="da-board-header">
-              <span>Prospect</span><span>Pos</span><span></span><span class="da-col-right">Value</span><span></span>
-            </div>
-            <div class="da-board-list" id="daBoardList">
-              <div class="da-loading">
-                <div class="loading-spinner" style="width:24px;height:24px;flex-shrink:0;"></div>
-                <span>Loading prospects…</span>
-              </div>
-            </div>
-          </div>
-          <aside class="da-needs" id="daNeedsPanel">
-          </aside>
-        </div>
-      </div>
-    </section>
+    Extracted from two identical request-scoped closures; the caller passes the
+    per-request ``waiver_breakout`` map so behavior is unchanged.
     """
+    val = c["value"]
+    age = c["age"] or 0
+    pos = c["position"]
+    rank_chg = c["rank_change_7d"] or 0
+    bscore = waiver_breakout.get(c["player_id"], 0)
+    prime = prime_max.get(pos, 28)
+
+    # Trend bonus: up to +60 for strong 7d movement
+    trend_bonus = min(rank_chg * 4, 60) if rank_chg and rank_chg > 0 else 0
+    # Breakout bonus: up to +50
+    breakout_bonus = min(bscore * 0.5, 50)
+    # Age bonus: peak age = +30, every year past prime = -10
+    age_bonus = 30 - max(0, (age - prime) * 10) if age else 0
+
+    return val + trend_bonus + breakout_bonus + age_bonus
 
 
 def build_offseason_dashboard_body(ctx: dict) -> str:
@@ -4754,23 +4613,6 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     # Age primes by position (peak dynasty window)
     _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
-    def _waiver_pickup_score(c: dict) -> float:
-        val = c["value"]
-        age = c["age"] or 0
-        pos = c["position"]
-        rank_chg = c["rank_change_7d"] or 0
-        bscore = waiver_breakout.get(c["player_id"], 0)
-        prime = _prime_max.get(pos, 28)
-
-        # Trend bonus: up to +60 for strong 7d movement
-        trend_bonus = min(rank_chg * 4, 60) if rank_chg and rank_chg > 0 else 0
-        # Breakout bonus: up to +50
-        breakout_bonus = min(bscore * 0.5, 50)
-        # Age bonus: peak age = +30, every year past prime = -10
-        age_bonus = 30 - max(0, (age - prime) * 10) if age else 0
-
-        return val + trend_bonus + breakout_bonus + age_bonus
-
     def _waiver_signal(c: dict) -> tuple[str, str]:
         """Return (badge_class, label) for the pickup signal."""
         rank_chg = c["rank_change_7d"] or 0
@@ -4791,7 +4633,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
             return ("signal-aging", "Sell Window")
         return ("signal-hold", "Available")
 
-    waiver_candidates.sort(key=_waiver_pickup_score, reverse=True)
+    waiver_candidates.sort(key=lambda c: _waiver_pickup_score(c, waiver_breakout, _prime_max), reverse=True)
 
     waiver_html = []
     for p in waiver_candidates[:10]:
@@ -6060,17 +5902,6 @@ def resolve_exact_pick_slot(
     )
 
     return slot_map.get(orig_owner)
-
-
-def format_pick_round_label(pick: dict) -> str:
-    rnd = _safe_int(pick.get("round"), 0)
-    slot = _safe_int(pick.get("slot"), 0)
-    if rnd <= 0:
-        return "Pick"
-    if slot > 0:
-        return f"{rnd}.{slot:02d}"
-    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
-    return f"{rnd}{suffix}"
 
 
 def format_pick_display_label(
@@ -8548,29 +8379,6 @@ def build_teams_body(ctx: dict) -> str:
 
 
 
-def league_url(slug: str, league_id: Optional[str] = None, platform: Optional[str] = None, season: Optional[int] = None) -> str:
-    """
-    Build a URL that keeps league context if we have one.
-    slug examples: 'faq', 'privacy', 'support', 'contact'
-    """
-    # Build base URL
-    base_url = ""
-    
-    # Add platform if provided
-    if platform:
-        base_url += f"/{platform}"
-    
-    # Add season if provided
-    if season:
-        base_url += f"/{season}"
-    
-    # Add league_id if provided
-    if league_id:
-        base_url += f"/{league_id}"
-    
-    return f"{base_url}/{slug}"
-
-
 def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dict:
     key = _cache_key(platform, season, league_id)
     entry = DASHBOARD_CACHE.get(key)
@@ -9060,18 +8868,6 @@ def api_waiver_candidates():
 
     _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
-    def _wv_score(c: dict) -> float:
-        val = c["value"]
-        age = c["age"] or 0
-        pos = c["position"]
-        rank_chg = c["rank_change_7d"] or 0
-        bscore = waiver_breakout.get(c["player_id"], 0)
-        prime = _prime_max.get(pos, 28)
-        trend_bonus = min(rank_chg * 4, 60) if rank_chg and rank_chg > 0 else 0
-        breakout_bonus = min(bscore * 0.5, 50)
-        age_bonus = 30 - max(0, (age - prime) * 10) if age else 0
-        return val + trend_bonus + breakout_bonus + age_bonus
-
     def _wv_signal(c: dict) -> tuple:
         rank_chg = c["rank_change_7d"] or 0
         age = c["age"] or 0
@@ -9090,7 +8886,7 @@ def api_waiver_candidates():
             return ("signal-aging", "Sell Window")
         return ("signal-hold", "Available")
 
-    candidates.sort(key=_wv_score, reverse=True)
+    candidates.sort(key=lambda c: _waiver_pickup_score(c, waiver_breakout, _prime_max), reverse=True)
     if position_filter and position_filter in {"QB", "RB", "WR", "TE"}:
         candidates = [c for c in candidates if c["position"] == position_filter]
 
@@ -9110,7 +8906,7 @@ def api_waiver_candidates():
             "breakout_score": bscore,
             "signal": sig_label,
             "signal_class": sig_cls,
-            "composite_score": _wv_score(c),
+            "composite_score": _waiver_pickup_score(c, waiver_breakout, _prime_max),
         })
 
     return jsonify({"candidates": result, "total": len(result)})
@@ -9700,281 +9496,6 @@ def _build_career_graphs_ctx_live(
     }
 
 
-
-
-def page_auction_values(platform: str = None, season: int = None, league_id: str = None):
-    user_id = session.get("viewer_username")
-    has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
-
-    if not has_premium:
-        # Show teaser with paywall
-        body_html = """
-    <div class="card central" style="max-width:900px;">
-      <div class="card-header">
-        <h2>Startup Auction Values</h2>
-        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
-          Dynasty startup auction dollar values for every player — by league type, size, and budget
-        </div>
-      </div>
-      <div class="card-body" style="text-align:center;padding:60px 24px;">
-        <div style="font-size:40px;margin-bottom:16px;opacity:.3;"><i class="fa-solid fa-gavel"></i></div>
-        <div style="font-weight:700;font-size:18px;margin-bottom:8px;">Premium Feature</div>
-        <div style="color:var(--text-muted);font-size:14px;margin-bottom:24px;">
-          Get precise auction dollar values for dynasty startup drafts,<br>
-          customizable by league format and budget.
-        </div>
-        <button onclick="showPaywall('auction-values')"
-          style="padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;">
-          Unlock Auction Values
-        </button>
-      </div>
-    </div>
-    <script>
-      // Pre-open paywall so user sees it immediately
-      document.addEventListener('DOMContentLoaded', function() { showPaywall('auction-values'); });
-    </script>
-    """
-        return render_page("Auction Values", league_id, "auction-values", body_html, platform, season)
-
-    body_html = f"""
-    <div class="card central" style="max-width:900px;">
-      <div class="card-header" style="border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:0;">
-        <h2 style="margin:0 0 4px;">Startup Auction Values</h2>
-        <div style="font-size:13px;color:var(--text-muted);">
-          Dynasty startup dollar values based on BR model — adjust format and budget below
-        </div>
-      </div>
-      <div class="card-body" style="padding-top:20px;">
-
-        <!-- Settings row -->
-        <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;margin-bottom:20px;padding:14px 16px;background:var(--bg-alt,#f8fafc);border:1px solid var(--border);border-radius:10px;">
-          <div>
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">League Type</div>
-            <div style="display:flex;gap:4px;" id="avLeagueGroup">
-              <button class="av-toggle active" data-val="1qb" onclick="avSetLeague('1qb')">1QB</button>
-              <button class="av-toggle" data-val="sf" onclick="avSetLeague('sf')">SF</button>
-            </div>
-          </div>
-          <div>
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">League Size</div>
-            <div style="display:flex;gap:4px;" id="avSizeGroup">
-              <button class="av-toggle" data-val="8" onclick="avSetSize(8)">8</button>
-              <button class="av-toggle active" data-val="10" onclick="avSetSize(10)">10</button>
-              <button class="av-toggle" data-val="12" onclick="avSetSize(12)">12</button>
-              <button class="av-toggle" data-val="14" onclick="avSetSize(14)">14</button>
-            </div>
-          </div>
-          <div>
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">Budget / Team ($)</div>
-            <input id="avBudget" type="number" min="50" max="1000" step="10" value="200"
-              style="width:80px;padding:5px 9px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;font-weight:600;"
-              oninput="avRender()">
-          </div>
-          <div style="margin-left:auto;">
-            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px;">Position</div>
-            <div style="display:flex;gap:4px;">
-              <button class="av-pos active" data-pos="ALL" onclick="avSetPos('ALL')">All</button>
-              <button class="av-pos" data-pos="QB" onclick="avSetPos('QB')">QB</button>
-              <button class="av-pos" data-pos="RB" onclick="avSetPos('RB')">RB</button>
-              <button class="av-pos" data-pos="WR" onclick="avSetPos('WR')">WR</button>
-              <button class="av-pos" data-pos="TE" onclick="avSetPos('TE')">TE</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Summary strip -->
-        <div id="avSummary" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;"></div>
-
-        <!-- Table -->
-        <div id="avLoading" style="text-align:center;padding:48px 0;color:var(--text-muted);">
-          <div class="loading-spinner" style="margin:0 auto 12px;"></div>
-          Loading player values…
-        </div>
-        <div id="avTableWrap" style="display:none;overflow-x:auto;">
-          <table id="avTable" style="width:100%;border-collapse:collapse;font-size:13px;">
-            <thead>
-              <tr style="border-bottom:2px solid var(--border);text-align:left;">
-                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;cursor:pointer;" onclick="avSort('rank')"># <span id="avSortRank"></span></th>
-                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;">Name</th>
-                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;">Pos</th>
-                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;">Team</th>
-                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;cursor:pointer;" onclick="avSort('age')">Age <span id="avSortAge"></span></th>
-                <th style="padding:8px 6px;color:var(--text-muted);font-weight:600;cursor:pointer;" onclick="avSort('value')">Value <span id="avSortValue"></span></th>
-                <th style="padding:8px 10px 8px 6px;color:var(--text-muted);font-weight:600;cursor:pointer;" onclick="avSort('auction')">Auction $ <span id="avSortAuction"></span></th>
-              </tr>
-            </thead>
-            <tbody id="avBody"></tbody>
-          </table>
-        </div>
-
-      </div>
-    </div>
-
-    <style>
-      .av-toggle, .av-pos {{
-        padding:5px 12px;border-radius:7px;border:1px solid var(--border);
-        background:var(--card);color:var(--text-muted);cursor:pointer;
-        font-size:12px;font-weight:600;transition:all .15s;
-      }}
-      .av-toggle.active, .av-pos.active {{
-        background:var(--text);color:var(--card);border-color:var(--text);
-      }}
-      #avTable tbody tr:hover {{ background:var(--bg-alt,#f8fafc); }}
-      #avTable tbody td {{ padding:8px 6px;border-bottom:1px solid var(--border); }}
-      .av-dollar {{ font-weight:800;font-size:15px; }}
-      .av-dollar.top {{ color:#10b981; }}
-      .av-dollar.mid {{ color:#3b82f6; }}
-      .av-dollar.low {{ color:var(--text-muted); }}
-      @media (max-width:600px) {{
-        .av-col-team, .av-col-value {{ display:none; }}
-      }}
-    </style>
-
-    <script>
-    (function() {{
-      const POS_COLORS = {{QB:'#3b82f6',RB:'#22c55e',WR:'#f59e0b',TE:'#8b5cf6'}};
-      // Roster spots per team by league size (dynasty startup pool)
-      const ROSTER = {{8:25, 10:24, 12:23, 14:22}};
-
-      let allPlayers = [];
-      let avLeague = '1qb';
-      let avSize = 10;
-      let avPos = 'ALL';
-      let avSortCol = 'auction';
-      let avSortDir = -1; // -1 = desc
-
-      fetch('/api/league-players')
-        .then(r => r.json())
-        .then(data => {{
-          allPlayers = (data.players || []).filter(p =>
-            ['QB','RB','WR','TE'].includes((p.position || '').toUpperCase())
-          );
-          document.getElementById('avLoading').style.display = 'none';
-          document.getElementById('avTableWrap').style.display = '';
-          avRender();
-        }})
-        .catch(() => {{
-          document.getElementById('avLoading').innerHTML =
-            '<div style="color:var(--text-muted)">Could not load player data.</div>';
-        }});
-
-      function getVal(p) {{
-        const sz = avSize;
-        if (avLeague === 'sf') {{
-          if (sz === 8)  return p.sf_value_8  || p.sf_value || 0;
-          if (sz === 12) return p.sf_value_12 || p.sf_value || 0;
-          if (sz === 14) return p.sf_value_14 || p.sf_value || 0;
-          return p.sf_value || 0;
-        }} else {{
-          if (sz === 8)  return p.value_8  || p.value || 0;
-          if (sz === 12) return p.value_12 || p.value || 0;
-          if (sz === 14) return p.value_14 || p.value || 0;
-          return p.value || 0;
-        }}
-      }}
-
-      window.avRender = function() {{
-        const budget = Math.max(50, parseInt(document.getElementById('avBudget').value) || 200);
-        const totalBudget = budget * avSize;
-        const poolSize = (ROSTER[avSize] || 24) * avSize;
-
-        // Sort all players by value, take top poolSize
-        const sorted = [...allPlayers]
-          .map(p => ({{ ...p, _val: getVal(p) }}))
-          .sort((a, b) => b._val - a._val)
-          .slice(0, poolSize);
-
-        const totalVal = sorted.reduce((s, p) => s + p._val, 0);
-
-        // Calculate auction value: each rostered player gets at least $1
-        // surplus budget distributed proportionally
-        const minPerPlayer = 1;
-        const surplusBudget = totalBudget - poolSize * minPerPlayer;
-        const sortedWithAuction = sorted.map(p => ({{
-          ...p,
-          _auction: Math.max(1, Math.round(minPerPlayer + (p._val / totalVal) * surplusBudget)),
-        }}));
-
-        // Sort by selected column
-        sortedWithAuction.sort((a, b) => {{
-          let av, bv;
-          if (avSortCol === 'auction') {{ av = a._auction; bv = b._auction; }}
-          else if (avSortCol === 'value')  {{ av = a._val;    bv = b._val; }}
-          else if (avSortCol === 'age')    {{ av = parseFloat(a.age) || 99; bv = parseFloat(b.age) || 99; }}
-          else {{ av = a._auction; bv = b._auction; }} // rank = auction
-          return avSortDir * (bv - av);
-        }});
-
-        // Apply position filter
-        const display = avPos === 'ALL' ? sortedWithAuction
-          : sortedWithAuction.filter(p => (p.position || '').toUpperCase() === avPos);
-
-        // Update sort indicators
-        ['Rank','Age','Value','Auction'].forEach(c => {{
-          const el = document.getElementById('avSort' + c);
-          if (el) el.textContent = '';
-        }});
-        const colKey = avSortCol === 'rank' ? 'Rank' :
-                       avSortCol === 'age'  ? 'Age'  :
-                       avSortCol === 'value'? 'Value': 'Auction';
-        const sortEl = document.getElementById('avSort' + colKey);
-        if (sortEl) sortEl.textContent = avSortDir === -1 ? ' ↓' : ' ↑';
-
-        // Summary
-        document.getElementById('avSummary').textContent =
-          `${{avSize}}-team · ${{avLeague.toUpperCase()}} · ${{poolSize}} players in pool · ${{totalBudget}} total budget`;
-
-        // Render rows
-        const body = document.getElementById('avBody');
-        body.innerHTML = display.map((p, i) => {{
-          const pos = (p.position || '').toUpperCase();
-          const col = POS_COLORS[pos] || 'var(--text-muted)';
-          const age = p.age ? parseFloat(p.age).toFixed(1) : '—';
-          const val = p._val ? p._val.toFixed(1) : '—';
-          const auc = p._auction;
-          const dollarClass = auc >= 40 ? 'top' : auc >= 10 ? 'mid' : 'low';
-          return `<tr>
-            <td style="color:var(--text-muted);">${{i + 1}}</td>
-            <td style="font-weight:600;">${{p.name || '—'}}</td>
-            <td><span style="font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;background:${{col}}20;color:${{col}};">${{pos}}</span></td>
-            <td class="av-col-team" style="color:var(--text-muted);">${{p.team || '—'}}</td>
-            <td>${{age}}</td>
-            <td class="av-col-value" style="color:var(--text-muted);">${{val}}</td>
-            <td style="padding-right:10px;"><span class="av-dollar ${{dollarClass}}">$${{auc}}</span></td>
-          </tr>`;
-        }}).join('');
-      }};
-
-      window.avSetLeague = function(val) {{
-        avLeague = val;
-        document.querySelectorAll('#avLeagueGroup .av-toggle').forEach(b =>
-          b.classList.toggle('active', b.dataset.val === val));
-        avRender();
-      }};
-
-      window.avSetSize = function(val) {{
-        avSize = val;
-        document.querySelectorAll('#avSizeGroup .av-toggle').forEach(b =>
-          b.classList.toggle('active', b.dataset.val == val));
-        avRender();
-      }};
-
-      window.avSetPos = function(val) {{
-        avPos = val;
-        document.querySelectorAll('.av-pos').forEach(b =>
-          b.classList.toggle('active', b.dataset.pos === val));
-        avRender();
-      }};
-
-      window.avSort = function(col) {{
-        if (avSortCol === col) {{ avSortDir *= -1; }}
-        else {{ avSortCol = col; avSortDir = col === 'age' ? 1 : -1; }}
-        avRender();
-      }};
-    }})();
-    </script>
-    """
-    return render_page("Auction Values", league_id, "auction-values", body_html, platform, season)
 
 
 @app.route("/players")

@@ -19,14 +19,7 @@ from utils.utils import (
     get_live_game_ids_for_today,
     load_week_schedule,
     build_and_save_week_stats_for_league, )
-
-
-def _safe_float(value):
-    """Safely convert a value to float, returning 0.0 for None or invalid values."""
-    try:
-        return float(value) if value is not None else 0.0
-    except (TypeError, ValueError):
-        return 0.0
+from utils.coerce import safe_float as _safe_float
 
 
 def build_daily_data(season: int, week: int):
@@ -414,21 +407,6 @@ def build_daily_market_pulse_for_league_type(league_type: str = "1qb"):
 
     save_cached_ai_text(cache_key, html)
     return html
-
-
-def build_daily_market_pulse():
-    """
-    Build market pulse for both 1QB and Superflex league types.
-    This is called by the daily cron job to cache both versions.
-    """
-    # Build and cache 1QB market pulse
-    build_daily_market_pulse_for_league_type("1qb")
-
-    # Build and cache Superflex market pulse
-    build_daily_market_pulse_for_league_type("sf")
-
-    # Return 1QB for backwards compatibility
-    return build_daily_market_pulse_for_league_type("1qb")
 
 
 if __name__ == "__main__":
