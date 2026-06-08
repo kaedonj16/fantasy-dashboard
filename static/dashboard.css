@@ -12036,12 +12036,15 @@ img, svg, canvas {
 
   .otc-settings-row {
     width: 100%;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  .otc-settings-row::-webkit-scrollbar { display: none; }
 
   .otc-settings-row .otc-ctrl-group {
-    flex: 1;
+    flex-shrink: 0;
     display: flex;
     justify-content: center;
   }
@@ -12049,19 +12052,19 @@ img, svg, canvas {
   .otc-toggle-divider {
     border-left: none;
     padding-left: 0;
-    border-top: 1px solid var(--border);
-    padding-top: 6px;
   }
 
   .otc-ctrl-group.otc-toggle-divider {
     border-left: none;
     padding-left: 0;
-    border-top: 1px solid var(--border);
-    padding-top: 6px;
   }
 
   .otc-ctrl-select {
-    width: 100%;
+    width: auto;
+  }
+
+  .otc-restrict-toggle {
+    flex-shrink: 0;
   }
 
   .otc-viewer-toggle {
