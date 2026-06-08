@@ -17,9 +17,25 @@ def build_advanced_metrics_body(
     season: Optional[int] = None,
     platform: Optional[str] = None,
 ) -> str:
+    # Group metrics into <optgroup>s by the set of positions they apply to, ordered
+    # broadest first (all positions → 3-position groups → 2 → single position).
+    _POS_ORDER = ["QB", "RB", "WR", "TE"]
+    groups: dict = {}
+    for key, spec in metrics_spec.items():
+        posset = tuple(p for p in _POS_ORDER if p in spec.get("positions", []))
+        groups.setdefault(posset, []).append((key, spec["label"]))
+
+    def _group_key(posset):
+        return (-len(posset), [_POS_ORDER.index(p) for p in posset])
+
     metric_options = "\n".join(
-        f'<option value="{key}">{spec["label"]}</option>'
-        for key, spec in metrics_spec.items()
+        '<optgroup label="{label}">{opts}</optgroup>'.format(
+            label="All Positions" if len(posset) == len(_POS_ORDER) else " / ".join(posset),
+            opts="".join(
+                f'<option value="{k}">{lbl}</option>' for k, lbl in groups[posset]
+            ),
+        )
+        for posset in sorted(groups, key=_group_key)
     )
 
     cfg = json.dumps({

@@ -5131,6 +5131,39 @@ thead th {
   transform: translateX(16px);
 }
 
+/* ── Site-wide custom dropdown styling for native <select> ──────────────────
+   Gives every native select a consistent custom look (custom caret, border,
+   radius). Component-specific select classes have higher specificity and keep
+   their own sizing/tweaks on top of this base. Note: the OPEN option list is
+   rendered by the OS and can't be fully styled cross-browser. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: var(--card-bg, var(--card, #fff));
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 8px;
+  padding: 6px 30px 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+select:hover {
+  border-color: var(--accent, #2563eb);
+}
+
+select:focus {
+  outline: none;
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
 /* Control select dropdowns (team size, scoring format) */
 .otc-ctrl-select {
   appearance: none;

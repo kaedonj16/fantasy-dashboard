@@ -2183,32 +2183,33 @@ window.initTradePage = function initTradePage(root = document) {
 
       const metaBits = buildMetaBits(p);
 
-      // Badges in a fixed order: tier, elite, breakout, rookie (e.g. "T2 ★ Rookie").
-      // The tier badge carries the .otc-tier-badge class so the later trade-eval pass
-      // updates it in place instead of appending a duplicate at the end.
+      // Badges in a fixed order: tier, elite, breakout, rookie. Kept separate from the
+      // text meta so the text bits join with " • " and the badges follow with spaces
+      // (e.g. "RB4 • ARI • 21.3 yrs T2 ★ Rookie").
+      const badges = [];
       const _otcTier = _getOtcTier(p);
       if (_otcTier) {
         const _tc = _TIER_COLORS[_otcTier] || '#6b7280';
         const _tl = _TIER_LABELS[_otcTier] || ('Tier ' + _otcTier);
-        metaBits.push(
+        badges.push(
           `<span class="otc-tier-badge" title="${_tl}" style="display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;background:${_tc}22;color:${_tc};border:1px solid ${_tc}44;vertical-align:middle;cursor:default;">T${_otcTier}</span>`
         );
       }
       if (isElite(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
+        badges.push('<span class="player-badge player-badge-elite"><i class="fa-solid fa-star" aria-hidden="true"></i></span>');
       }
       if (isBreakout(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i></span>');
+        badges.push('<span class="player-badge player-badge-breakout"><i class="fa-solid fa-fire" aria-hidden="true"></i></span>');
       }
       if (isRookie(p.id) || p.is_rookie || isProspect(p.id)) {
-        metaBits.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
+        badges.push('<span class="player-badge player-badge-rookie"><i class="fa-solid fa-registered-solid" aria-hidden="true"></i></span>');
       }
 
-      // Space-separated meta (no "•" between items).
-      metaEl.innerHTML = metaBits.map(bit => {
-        if (p.team && bit === p.team) return `<span class="otc-chip-team">${bit}</span>`;
-        return bit;
-      }).join(' ');
+      // Text meta (pos · team · age) joined with " • "; badges appended space-separated.
+      const metaHtml = metaBits.map(bit =>
+        (p.team && bit === p.team) ? `<span class="otc-chip-team">${bit}</span>` : bit
+      ).join(" • ");
+      metaEl.innerHTML = badges.length ? `${metaHtml} ${badges.join(" ")}` : metaHtml;
 
       leftWrap.appendChild(nameEl);
       leftWrap.appendChild(metaEl);
