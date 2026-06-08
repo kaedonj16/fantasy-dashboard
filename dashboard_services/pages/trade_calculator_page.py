@@ -228,6 +228,11 @@ def build_trade_calculator_body(
                   </div>
                 </div>
 
+                <div class="otc-filter-hint" id="sideAFilterHint" style="display:none;">
+                  <i class="fa-solid fa-circle-info"></i>
+                  Pick Team 2 above to narrow the search, or add their player to lock it in.
+                </div>
+
                 <div class="otc-search-wrap">
                   <div class="search-wrapper">
                     <input

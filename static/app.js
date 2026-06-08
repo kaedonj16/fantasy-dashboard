@@ -1351,6 +1351,11 @@ window.initTradePage = function initTradePage(root = document) {
     if (selB) selB.style.display = active ? "" : "none";
     if (fbB) fbB.style.display = active ? "none" : "";
 
+    // Filter is on but no opponent is chosen yet: Side A searches across every
+    // team. Nudge the user to pick Team 2 (or let their first add bind it).
+    const aHint = root.querySelector("#sideAFilterHint");
+    if (aHint) aHint.style.display = (active && !rosterFilter.sideBRid) ? "" : "none";
+
     // With the roster filter on, Side A is always your team, so the Team 1 / Team 2
     // viewer-side radio is redundant — hide it and pin the viewer side to A.
     const vt = root.querySelector(".otc-viewer-toggles");
@@ -5154,6 +5159,11 @@ window.initTradePage = function initTradePage(root = document) {
       });
       rosterFilter.viewerRid = String(getCurrentRosterId() || data.viewer_roster_id || "");
       rosterFilter.loaded = teams.length > 0;
+      // Restore the saved Roster Filter preference (defaults to on / checked).
+      const savedPref = (function () {
+        try { return localStorage.getItem("otc_roster_filter_on"); } catch (_) { return null; }
+      })();
+      if (savedPref !== null) toggle.checked = savedPref === "1";
       rosterFilter.on = toggle.checked;
 
       if (sel) {
@@ -5185,6 +5195,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       bindOnce(toggle, "restrictToggleChange", "change", () => {
         rosterFilter.on = toggle.checked;
+        try { localStorage.setItem("otc_roster_filter_on", toggle.checked ? "1" : "0"); } catch (_) {}
         updateSideTitles();
       });
 
