@@ -16919,11 +16919,11 @@ def api_advanced_metrics_leaderboard():
     position = (request.args.get("position") or "").strip().upper() or None
     season_str = (request.args.get("season") or "").strip()
     season = int(season_str) if season_str.isdigit() else None
-    min_games_str = (request.args.get("min_games") or "").strip()
-    min_games = int(min_games_str) if min_games_str.isdigit() else None
+    min_vol_str = (request.args.get("min_vol") or "").strip()
+    min_vol = int(min_vol_str) if min_vol_str.isdigit() else None
 
     try:
-        players = get_metric_leaderboard(metric, position=position, season=season, min_games=min_games)
+        players = get_metric_leaderboard(metric, position=position, season=season, min_vol=min_vol)
     except Exception as e:
         logger.exception(f"[api/advanced-metrics/leaderboard] error for metric={metric}: {e}")
         players = []

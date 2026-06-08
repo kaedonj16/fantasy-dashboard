@@ -41,6 +41,12 @@ def build_advanced_metrics_body(
         for posset in sorted(groups, key=_group_key)
     )
 
+    def _min_vol_cfg(spec: dict) -> Optional[dict]:
+        mv = spec.get("min_vol")
+        if not mv:
+            return None
+        return {"label": mv["label"], "opts": mv["opts"]}
+
     cfg = json.dumps({
         "hasPremium": bool(has_premium),
         "leagueId": league_id or "",
@@ -53,6 +59,7 @@ def build_advanced_metrics_body(
                 "lowerBetter": bool(spec.get("lower_better")),
                 "efficiency": bool(spec.get("efficiency")),
                 "desc": spec.get("desc", ""),
+                "minVol": _min_vol_cfg(spec),
             }
             for key, spec in metrics_spec.items()
         },
@@ -104,14 +111,8 @@ def build_advanced_metrics_body(
             <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
           </div>
           <div class="am-ctrl am-ctrl-games" id="amGamesCtrl" style="display:none;">
-            <label class="am-ctrl-label">Min Games</label>
-            <select id="amMinGames" class="am-select am-season-select">
-              <option value="">Any</option>
-              <option value="4">4+</option>
-              <option value="8">8+</option>
-              <option value="12">12+</option>
-              <option value="16">16+</option>
-            </select>
+            <label class="am-ctrl-label" id="amVolLabel">Min</label>
+            <select id="amMinGames" class="am-select am-season-select"></select>
           </div>
           <div class="am-ctrl">
             <label class="am-ctrl-label">Sort</label>
@@ -292,9 +293,10 @@ _AM_JS = r"""
 
   const PAGE_SIZE = 25;
   const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', rows: [], search: '',
-                  season: seasonSel ? (seasonSel.value || '') : '', minGames: '', rosterOnly: false, page: 0 };
+                  season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0 };
   let ownedIds = new Set();
   const paginationEl = document.getElementById('amPagination');
+  const volLabel = document.getElementById('amVolLabel');
 
   function relevantPositions(m) {
     return (cfg.metrics[m] && cfg.metrics[m].positions) || ['QB','RB','WR','TE'];
@@ -315,9 +317,16 @@ _AM_JS = r"""
     if (!metricTip) return;
     metricTip.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].desc) || '';
   }
-  // Min-games filter only makes sense for efficiency/rate metrics.
-  function updateGamesCtrl() {
-    if (gamesCtrl) gamesCtrl.style.display = isEfficiency(state.metric) ? '' : 'none';
+  // Volume filter: updates label, options, and visibility based on the metric's min_vol spec.
+  function updateVolCtrl() {
+    const spec = cfg.metrics[state.metric] && cfg.metrics[state.metric].minVol;
+    if (!gamesCtrl || !minGamesSel) return;
+    if (!spec) { gamesCtrl.style.display = 'none'; return; }
+    if (volLabel) volLabel.textContent = spec.label;
+    const prev = minGamesSel.value;
+    minGamesSel.innerHTML = '<option value="">Any</option>'
+      + (spec.opts || []).map(v => '<option value="' + v + '"' + (String(v) === prev ? ' selected' : '') + '>' + v + '+</option>').join('');
+    gamesCtrl.style.display = '';
   }
   function updatePosButtons() {
     const rel = new Set(relevantPositions(state.metric));
@@ -426,7 +435,7 @@ _AM_JS = r"""
     const params = new URLSearchParams({ metric: state.metric, platform: cfg.platform });
     if (cfg.leagueId) params.set('league_id', cfg.leagueId);
     if (state.season) params.set('season', state.season);
-    if (state.minGames && isEfficiency(state.metric)) params.set('min_games', state.minGames);
+    if (state.minVol) params.set('min_vol', state.minVol);
     fetch('/api/advanced-metrics/leaderboard?' + params)
       .then(r => { if (r.status === 403) { paywall.style.display = ''; loading.style.display = 'none'; return null; } return r.json(); })
       .then(d => { if (!d) return; state.rows = d.players || []; render(); })
@@ -456,7 +465,8 @@ _AM_JS = r"""
     const rel = new Set(relevantPositions(state.metric));
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
-    updateSortBtn(); updatePosButtons(); updateMetricTip(); updateGamesCtrl(); fetchData();
+    state.minVol = '';
+    updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); fetchData();
   });
   posWrap.addEventListener('click', e => {
     const b = e.target.closest('[data-pos]');
@@ -473,12 +483,12 @@ _AM_JS = r"""
     seasonSel.addEventListener('change', () => { state.season = seasonSel.value || ''; state.page = 0; fetchData(); });
   }
   if (minGamesSel) {
-    minGamesSel.addEventListener('change', () => { state.minGames = minGamesSel.value || ''; state.page = 0; fetchData(); });
+    minGamesSel.addEventListener('change', () => { state.minVol = minGamesSel.value || ''; state.page = 0; fetchData(); });
   }
   if (rosterChk) {
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
   }
 
-  updateSortBtn(); updatePosButtons(); updateMetricTip(); updateGamesCtrl(); fetchData();
+  updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); fetchData();
   loadOwnedRoster();
 """
