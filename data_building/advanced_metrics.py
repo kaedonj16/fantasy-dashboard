@@ -1075,26 +1075,22 @@ def get_metric_leaderboard(
             gate += " AND (games IS NULL OR games >= %s)"
             params.append(min_games)
         params.append(limit)
-        # Try to include the games column (added in a migration; may not exist on
-        # older deployments that haven't restarted since the migration ran).
-        try:
-            rows = conn.execute(
-                f"""SELECT player_id, position, games, {metric} AS value
-                    FROM player_advanced_metrics
-                    WHERE as_of_date = %s{gate} AND {metric} IS NOT NULL
-                    ORDER BY {metric} DESC LIMIT %s""",
-                tuple(params),
-            ).fetchall()
-            has_games = True
-        except Exception:
-            rows = conn.execute(
-                f"""SELECT player_id, position, {metric} AS value
-                    FROM player_advanced_metrics
-                    WHERE as_of_date = %s{gate} AND {metric} IS NOT NULL
-                    ORDER BY {metric} DESC LIMIT %s""",
-                tuple(params),
-            ).fetchall()
-            has_games = False
+        # Check if the games column exists before including it in the SELECT.
+        # The column was added in a migration that runs on startup; older running
+        # instances won't have it yet and an unknown-column error inside the same
+        # connection aborts the whole transaction.
+        has_games = bool(conn.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='player_advanced_metrics' AND column_name='games'"
+        ).fetchone())
+        games_col = "games," if has_games else ""
+        rows = conn.execute(
+            f"""SELECT player_id, position, {games_col} {metric} AS value
+                FROM player_advanced_metrics
+                WHERE as_of_date = %s{gate} AND {metric} IS NOT NULL
+                ORDER BY {metric} DESC LIMIT %s""",
+            tuple(params),
+        ).fetchall()
 
     try:
         from utils.utils import load_players_index
