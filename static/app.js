@@ -1124,6 +1124,23 @@ window.initTradePage = function initTradePage(root = document) {
       rosterFilter.sideBAuto = false;
       if (sel) sel.value = "";
     }
+    updateSideTitles();
+  }
+
+  // Reflect the chosen teams in the card titles: "{team} gets…" when the roster
+  // filter is active and that side's team is known, else the generic label.
+  function updateSideTitles() {
+    const active = rosterFilterActive();
+    const aTitle = root.querySelector("#sideATitle");
+    const bTitle = root.querySelector("#sideBTitle");
+    if (aTitle) {
+      const an = active && rosterFilter.viewerRid && rosterFilter.teamName[rosterFilter.viewerRid];
+      aTitle.textContent = an ? `${an} gets…` : "Team 1 gets…";
+    }
+    if (bTitle) {
+      const bn = active && rosterFilter.sideBRid && rosterFilter.teamName[rosterFilter.sideBRid];
+      bTitle.textContent = bn ? `${bn} gets…` : "Team 2 gets…";
+    }
   }
 
   async function loadPlayerDeltas() {
@@ -4928,6 +4945,7 @@ window.initTradePage = function initTradePage(root = document) {
           rosterFilter.sideBRid = rid ? String(rid) : "";
           rosterFilter.sideBAuto = false;
           sel.value = rosterFilter.sideBRid;
+          updateSideTitles();
         });
         sel.style.display = toggle.checked ? "" : "none";
       }
@@ -4935,10 +4953,13 @@ window.initTradePage = function initTradePage(root = document) {
       bindOnce(toggle, "restrictToggleChange", "change", () => {
         rosterFilter.on = toggle.checked;
         if (sel) sel.style.display = toggle.checked ? "" : "none";
+        updateSideTitles();
       });
 
-      // Bind now in case a restored state already has Side B players.
+      // Bind now in case a restored state already has Side B players, and set the
+      // side titles to the resolved team names.
       syncSideBBinding();
+      updateSideTitles();
     } catch (e) {
       console.warn("[trade] roster filter load failed:", e);
     }

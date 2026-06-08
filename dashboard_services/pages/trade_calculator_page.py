@@ -215,7 +215,7 @@ def build_trade_calculator_body(
             <section class="otc-team-card">
               <div class="otc-team-head">
                 <div>
-                  <h2 class="otc-team-title">Team 1 gets...</h2>
+                  <h2 class="otc-team-title" id="sideATitle">Team 1 gets...</h2>
                 </div>
                 <div class="otc-team-head-right">
                   {side_a_owner_tag}
@@ -249,7 +249,7 @@ def build_trade_calculator_body(
             <section class="otc-team-card">
               <div class="otc-team-head">
                 <div>
-                  <h2 class="otc-team-title">Team 2 gets...</h2>
+                  <h2 class="otc-team-title" id="sideBTitle">Team 2 gets...</h2>
                 </div>
                 <div class="otc-team-head-right">
                   {side_b_owner_tag}
