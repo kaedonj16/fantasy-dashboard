@@ -4732,6 +4732,15 @@ thead th {
   gap: 8px;
 }
 
+/* Title + opponent dropdown share one line in the Team 2 header. */
+.otc-team-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .otc-team-input {
   width: 100%;
   padding: 8px 12px;
