@@ -12161,19 +12161,33 @@ img, svg, canvas {
   }
 
   .otc-summary-actions {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
     gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  .otc-summary-team-select {
+    flex: 1;
+    min-width: 0;
   }
 
   .otc-summary-team-select .otc-team-select-dropdown {
-    min-width: 100%;
+    min-width: 0;
+    width: 100%;
+    padding: 10px 8px;
   }
 
   .otc-clear-btn, .otc-add-pick-btn {
-    width: 100%;
-    font-size: 14px;
-    padding: 10px 16px;
+    flex-shrink: 0;
+    width: auto;
+    font-size: 13px;
+    padding: 10px 12px;
+    white-space: nowrap;
+  }
+
+  .otc-share-btn {
+    flex-shrink: 0;
   }
 
   .otc-balance-labels {
