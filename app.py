@@ -540,7 +540,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span></span>
-            <span class="home-feature-row-desc">Archetype-driven suggestions with Monte Carlo win probability — see exactly how each trade shifts your playoff odds</span>
+            <span class="home-feature-row-desc">Archetype-driven suggestions with Monte Carlo win probability. See exactly how each trade shifts your playoff odds</span>
           </div>
         </div>
 
@@ -560,7 +560,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Dynasty Rankings</span>
-            <span class="home-feature-row-desc">Calibrated dynasty values updated daily — blending consensus data with advanced metrics, archetypes, and trend charts</span>
+            <span class="home-feature-row-desc">Calibrated dynasty values updated daily, blending consensus data with advanced metrics, archetypes, and trend charts</span>
           </div>
         </div>
 
@@ -580,7 +580,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Playoff Odds</span>
-            <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week — know your exact path to the playoffs and projected championship probability</span>
+            <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week. Know your exact path to the playoffs and projected championship probability</span>
           </div>
         </div>
 
@@ -600,7 +600,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Breakout Tracker</span>
-            <span class="home-feature-row-desc">Spot value shifts before the market moves — tracks target share, snap counts, and depth chart changes to surface opportunities</span>
+            <span class="home-feature-row-desc">Spot value shifts before the market moves. Tracks target share, snap counts, and depth chart changes to surface opportunities</span>
           </div>
         </div>
 

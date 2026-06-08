@@ -73,7 +73,7 @@ CHANGELOG = [
     {
         "date": "2026-05-13",
         "tag": "feature",
-        "text": "Player Scoring: Player modals now show PPG and season total points side by side (e.g. 24.5 | 416.5) with positional ranks for both — PPG · RB1 | TOTAL · RB2. Compare player view shows the same scoring breakdown for both players.",
+        "text": "Player Scoring: Player modals now show PPG and season total points side by side (e.g. 24.5 | 416.5) with positional ranks for both: PPG · RB1 | TOTAL · RB2. Compare player view shows the same scoring breakdown for both players.",
         "link": "/players"
     },
     {
