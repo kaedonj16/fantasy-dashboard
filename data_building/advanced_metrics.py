@@ -1047,6 +1047,14 @@ def get_metric_leaderboard(
         return []
     pos = (position or "").upper().strip() or None
     with get_conn() as conn:
+        # Whether the games column exists yet (added in a migration that runs on
+        # startup). Older running instances won't have it; referencing an unknown
+        # column would abort the whole transaction, so gate every use on this.
+        has_games = bool(conn.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='player_advanced_metrics' AND column_name='games'"
+        ).fetchone())
+
         # Find the representative snapshot date: latest date for the requested
         # season (or globally latest when no season is specified).
         season_gate = "AND season = %s" if season else ""
@@ -1071,18 +1079,10 @@ def get_metric_leaderboard(
         if LEADERBOARD_METRICS[metric].get("efficiency"):
             gate += " AND (snap_share IS NULL OR snap_share >= %s)"
             params.append(_MIN_SNAP_FOR_EFFICIENCY)
-        if min_games and min_games > 0:
+        if has_games and min_games and min_games > 0:
             gate += " AND (games IS NULL OR games >= %s)"
             params.append(min_games)
         params.append(limit)
-        # Check if the games column exists before including it in the SELECT.
-        # The column was added in a migration that runs on startup; older running
-        # instances won't have it yet and an unknown-column error inside the same
-        # connection aborts the whole transaction.
-        has_games = bool(conn.execute(
-            "SELECT 1 FROM information_schema.columns "
-            "WHERE table_name='player_advanced_metrics' AND column_name='games'"
-        ).fetchone())
         games_col = "games," if has_games else ""
         rows = conn.execute(
             f"""SELECT player_id, position, {games_col} {metric} AS value

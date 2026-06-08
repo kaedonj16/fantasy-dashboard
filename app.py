@@ -16925,7 +16925,7 @@ def api_advanced_metrics_leaderboard():
     try:
         players = get_metric_leaderboard(metric, position=position, season=season, min_games=min_games)
     except Exception as e:
-        logger.info(f"[api/advanced-metrics/leaderboard] error: {e}")
+        logger.exception(f"[api/advanced-metrics/leaderboard] error for metric={metric}: {e}")
         players = []
 
     spec = LEADERBOARD_METRICS[metric]

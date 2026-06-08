@@ -6,6 +6,7 @@ ranked at that metric in a sortable, searchable table with a relative bar. The
 position filter auto-narrows to the positions where the metric is meaningful
 (with manual override). Data comes from /api/advanced-metrics/leaderboard.
 """
+import datetime
 import json
 from typing import Optional
 
@@ -57,10 +58,21 @@ def build_advanced_metrics_body(
         },
     })
 
-    season_options = '<option value="">Latest</option>' + "".join(
-        f'<option value="{s}"{"selected" if s == season else ""}>{s}</option>'
+    # Default to the most recent completed NFL season. The NFL season runs Sep–Jan;
+    # before September we're in the offseason so the current year hasn't started.
+    _today = datetime.date.today()
+    _preferred = _today.year - 1 if _today.month < 9 else _today.year
+    if season and season in available_seasons:
+        _default_season = season
+    elif available_seasons:
+        _default_season = _preferred if _preferred in available_seasons else available_seasons[0]
+    else:
+        _default_season = None
+
+    season_options = "".join(
+        f'<option value="{s}"{"selected" if s == _default_season else ""}>{s}</option>'
         for s in available_seasons
-    )
+    ) or '<option value="">No data</option>'
 
     html = """
     <div class="card central">
@@ -160,6 +172,8 @@ def build_advanced_metrics_body(
           <tbody id="amTableBody"></tbody>
         </table>
 
+        <div id="amPagination" class="am-pagination" style="display:none;"></div>
+
       </div>
     </div>
     """.replace("__METRIC_OPTIONS__", metric_options).replace("__SEASON_OPTIONS__", season_options)
@@ -231,6 +245,13 @@ def build_advanced_metrics_body(
       .am-avg-note { font-size:11px; color:var(--text-muted); margin:0 0 10px; display:flex; align-items:center; gap:6px; }
       .am-avg-note .am-avg-swatch { display:inline-block; width:2px; height:12px; background:var(--text-muted); opacity:.55; }
       @media (max-width:600px){ .am-barcell{ display:none; } .am-table th.am-barcell{ display:none; } }
+      .am-pagination { display:flex; align-items:center; justify-content:center; gap:16px; padding:16px 0 4px; }
+      .am-page-btn {
+        padding:6px 14px; border-radius:8px; border:1px solid var(--border);
+        background:var(--card); color:var(--text); font-size:13px; font-weight:600; cursor:pointer;
+      }
+      .am-page-btn:disabled { opacity:.35; cursor:not-allowed; }
+      .am-page-info { font-size:13px; color:var(--text-muted); white-space:nowrap; }
     </style>
     """
 
@@ -269,9 +290,11 @@ _AM_JS = r"""
   // Hide season selector when only one season (or none) is available.
   if (seasonCtrl && (!cfg.seasons || cfg.seasons.length <= 1)) seasonCtrl.style.display = 'none';
 
+  const PAGE_SIZE = 25;
   const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', rows: [], search: '',
-                  season: seasonSel ? (seasonSel.value || '') : '', minGames: '', rosterOnly: false };
+                  season: seasonSel ? (seasonSel.value || '') : '', minGames: '', rosterOnly: false, page: 0 };
   let ownedIds = new Set();
+  const paginationEl = document.getElementById('amPagination');
 
   function relevantPositions(m) {
     return (cfg.metrics[m] && cfg.metrics[m].positions) || ['QB','RB','WR','TE'];
@@ -310,32 +333,40 @@ _AM_JS = r"""
   function render() {
     const rel = new Set(relevantPositions(state.metric));
     const up = v => String(v || '').toUpperCase();
-    // Position-filtered set (stable reference for the positional average).
-    const posRows = state.position === 'ALL'
+
+    // Sort the full positional set first to establish canonical ranks.
+    const posRows = (state.position === 'ALL'
       ? state.rows.filter(r => rel.has(up(r.position)))
-      : state.rows.filter(r => up(r.position) === state.position);
-    let rows = posRows.slice();
-    if (state.rosterOnly) rows = rows.filter(r => ownedIds.has(String(r.player_id)));
-    if (state.search) {
-      const q = state.search.toLowerCase();
-      rows = rows.filter(r => (r.name || '').toLowerCase().includes(q));
-    }
-    rows.sort((a, b) => state.sortDir === 'desc'
+      : state.rows.filter(r => up(r.position) === state.position));
+    posRows.sort((a, b) => state.sortDir === 'desc'
       ? (Number(b.value) - Number(a.value))
       : (Number(a.value) - Number(b.value)));
-    const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
+
+    // Rank map so roster/search filters preserve original rank numbers.
+    const rankMap = new Map(posRows.map((r, i) => [String(r.player_id), i + 1]));
+
+    // maxAbs from the full positional set keeps bars proportional after filtering.
+    const maxAbs = posRows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
+
+    // Apply roster/search filters for display only (order already set by posRows sort).
+    let displayRows = posRows.slice();
+    if (state.rosterOnly) displayRows = displayRows.filter(r => ownedIds.has(String(r.player_id)));
+    if (state.search) {
+      const q = state.search.toLowerCase();
+      displayRows = displayRows.filter(r => (r.name || '').toLowerCase().includes(q));
+    }
+
     loading.style.display = 'none';
-    if (!rows.length) {
+    if (!displayRows.length) {
       empty.style.display = ''; tbody.innerHTML = '';
       if (avgNote) avgNote.style.display = 'none';
+      if (paginationEl) paginationEl.style.display = 'none';
       empty.textContent = state.rosterOnly ? 'None of your players rank for this metric.' : 'No data for this metric yet.';
       return;
     }
     empty.style.display = 'none';
 
-    // Average marker is meaningful only within a single position (mixing positions
-    // averages apples and oranges), so show it when one position is selected. The
-    // average is over the full positional field, not the searched/roster subset.
+    // Average marker: meaningful only within a single position.
     let avgPct = null;
     if (state.position !== 'ALL' && posRows.length) {
       const avg = posRows.reduce((s, r) => s + (Number(r.value) || 0), 0) / posRows.length;
@@ -348,22 +379,45 @@ _AM_JS = r"""
       avgNote.style.display = 'none';
     }
 
-    tbody.innerHTML = rows.map((r, i) => {
+    // Pagination: clamp current page then slice.
+    const total = displayRows.length;
+    const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
+    if (state.page > maxPage) state.page = maxPage;
+    const start = state.page * PAGE_SIZE;
+    const pageRows = displayRows.slice(start, start + PAGE_SIZE);
+
+    tbody.innerHTML = pageRows.map(r => {
       const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
       const safe = (r.name || '').replace(/'/g, "\\'");
       const col = posColor(r.position);
       const owned = ownedIds.has(String(r.player_id));
+      const rank = rankMap.get(String(r.player_id)) || '';
       const avgMark = (avgPct != null)
         ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + state.position + ' average"></div>'
         : '';
       return '<tr class="am-row' + (owned ? ' am-owned' : '') + '" style="cursor:pointer;" onclick="window.openPlayerModal&&openPlayerModal(\'' + r.player_id + '\',\'' + safe + '\')">'
-        + '<td class="am-rank">' + (i + 1) + '</td>'
+        + '<td class="am-rank">' + rank + '</td>'
         + '<td class="am-player"><span class="am-name">' + (r.name || '') + '</span>'
         + '<span class="am-meta" style="color:' + col + '">' + r.position + '</span>'
         + '<span class="am-meta">' + (r.team || '') + '</span></td>'
         + '<td class="am-barcell"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></td>'
         + '<td class="am-val">' + fmtVal(r.value) + '</td></tr>';
     }).join('');
+
+    // Pagination controls.
+    if (paginationEl) {
+      if (total > PAGE_SIZE) {
+        paginationEl.style.display = '';
+        const end = Math.min(start + PAGE_SIZE, total);
+        paginationEl.innerHTML = '<button class="am-page-btn" id="amPagePrev"' + (state.page === 0 ? ' disabled' : '') + '>&larr; Prev</button>'
+          + '<span class="am-page-info">' + (start + 1) + '–' + end + ' of ' + total + '</span>'
+          + '<button class="am-page-btn" id="amPageNext"' + (state.page >= maxPage ? ' disabled' : '') + '>Next &rarr;</button>';
+        document.getElementById('amPagePrev').onclick = () => { state.page--; render(); };
+        document.getElementById('amPageNext').onclick = () => { state.page++; render(); };
+      } else {
+        paginationEl.style.display = 'none';
+      }
+    }
   }
   function fetchData() {
     if (!cfg.hasPremium) { paywall.style.display = ''; loading.style.display = 'none'; return; }
@@ -398,7 +452,7 @@ _AM_JS = r"""
   }
 
   metricSel.addEventListener('change', () => {
-    state.metric = metricSel.value;
+    state.metric = metricSel.value; state.page = 0;
     const rel = new Set(relevantPositions(state.metric));
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
@@ -407,22 +461,22 @@ _AM_JS = r"""
   posWrap.addEventListener('click', e => {
     const b = e.target.closest('[data-pos]');
     if (!b || b.disabled) return;
-    state.position = b.dataset.pos;
+    state.position = b.dataset.pos; state.page = 0;
     updatePosButtons(); render();
   });
-  searchEl.addEventListener('input', () => { state.search = searchEl.value.trim(); render(); });
+  searchEl.addEventListener('input', () => { state.search = searchEl.value.trim(); state.page = 0; render(); });
   sortBtn.addEventListener('click', () => {
-    state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc';
+    state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc'; state.page = 0;
     updateSortBtn(); render();
   });
   if (seasonSel) {
-    seasonSel.addEventListener('change', () => { state.season = seasonSel.value || ''; fetchData(); });
+    seasonSel.addEventListener('change', () => { state.season = seasonSel.value || ''; state.page = 0; fetchData(); });
   }
   if (minGamesSel) {
-    minGamesSel.addEventListener('change', () => { state.minGames = minGamesSel.value || ''; fetchData(); });
+    minGamesSel.addEventListener('change', () => { state.minGames = minGamesSel.value || ''; state.page = 0; fetchData(); });
   }
   if (rosterChk) {
-    rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; render(); });
+    rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
   }
 
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateGamesCtrl(); fetchData();
