@@ -90,11 +90,14 @@ def build_usage_map_for_season(
             rec_tds = float(stats.get("rec_td", 0) or 0)
 
             carries = float(stats.get("rush_att", stats.get("rushing_att", 0)) or 0)
-            rush_yards = float(
-                stats.get("rush_yd", stats.get("rushing_yd", 0))
-                or stats.get("pass_rush_yd", 0)
-                or 0
-            )
+            # Rushing yards only. Do NOT fall back to any passing field: a pocket
+            # QB has rush_yd == 0 most weeks, and falling back would fold passing
+            # yardage into the rushing total while carries stay ~0, producing
+            # nonsense yards/carry (e.g. retired/low-rush QBs topping the board).
+            _ry = stats.get("rush_yd")
+            if _ry is None:
+                _ry = stats.get("rushing_yd", 0)
+            rush_yards = float(_ry or 0)
             rush_tds = float(stats.get("rush_td", stats.get("rushing_td", 0)) or 0)
 
             ppr = float(stats.get("pts_ppr", 0) or 0)

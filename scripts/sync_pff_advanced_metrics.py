@@ -30,6 +30,7 @@ from dashboard_services.db import get_conn
 from dashboard_services.api import get_nfl_state
 from data_building.advanced_metrics import init_advanced_metrics_db, _normalize_position
 from utils.utils import load_players_index, normalize_name
+from scripts.fix_advanced_metrics_ids import _build_index_maps, _resolve
 
 OUTPUT_DIR = "data"
 PFF_BASE = "https://premium.pff.com"
@@ -124,21 +125,18 @@ def upsert_csv(
     season: int,
     mapping: Dict[str, str],
     position_hint: str,
-    lookup: Dict[str, str],
+    index_maps: tuple,
 ) -> int:
     # Keep one stable snapshot date per season so we can store multi-year history
     # in a table keyed by (player_id, as_of_date).
     season_as_of_date = date(season + 1, 2, 15).isoformat()
+    by_name, by_lastname = index_maps
     count = 0
+    unmatched = 0
 
     with open(csv_path, "r", encoding="utf-8") as f, get_conn() as conn:
         reader = csv.DictReader(f)
         for row in reader:
-            # Use player_id directly from the local summary files
-            player_id = row.get("player_id")
-            if not player_id:
-                continue
-
             name = normalize_name(row.get("player") or "")
             pos = _normalize_position((row.get("position") or "").upper())
             team = (row.get("team_name") or "").upper()
@@ -146,6 +144,20 @@ def upsert_csv(
             if not name:
                 continue
             pos = pos or position_hint
+
+            # The CSV player_id is PFF's id; resolve it to the Sleeper id used
+            # everywhere else (players_index, leaderboard name lookup, the
+            # computed snapshot rows). Without this the rows are orphaned: names
+            # render as "Unknown" and they never combine with the computed row
+            # for the same player/season. Skip rows we can't resolve rather than
+            # writing an unresolvable id.
+            player_id = _resolve(
+                row.get("player"), row.get("position"),
+                row.get("team_name"), by_name, by_lastname,
+            )
+            if not player_id:
+                unmatched += 1
+                continue
 
             update_data = {}
             for source_col, target_col in mapping.items():
@@ -173,6 +185,9 @@ def upsert_csv(
             )
             count += 1
 
+    if unmatched:
+        print(f"    [warn] {unmatched} rows in {os.path.basename(csv_path)} "
+              f"could not be matched to a Sleeper id (skipped)")
     return count
 
 
@@ -185,7 +200,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     init_advanced_metrics_db()
-    lookup = build_player_lookup()
+
+    # Build the PFF-name -> Sleeper-id resolver from the same index the
+    # leaderboard uses to render names, so synced rows share the Sleeper id of
+    # the computed snapshot and combine under one player/season.
+    idx = load_players_index() or {}
+    index_maps = _build_index_maps(idx)
 
     seasons_arg = str(args.season) if args.season is not None else args.seasons
     seasons = resolve_seasons(seasons_arg, args.last_n)
@@ -193,18 +213,31 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     total_r = total_w = total_p = 0
     for season in seasons:
-        # Use local summary files instead of downloading from PFF
-        rushing_csv = os.path.join(OUTPUT_DIR, f"rushing_summary_{season}.csv")
-        receiving_csv = os.path.join(OUTPUT_DIR, f"receiving_summary_{season}.csv")
-        passing_csv = os.path.join(OUTPUT_DIR, f"passing_summary_{season}.csv")
+        # Resolve each summary file. The exports live under data/pff_nfl_{season}/
+        # (per-season folder); older runs used a flat data/{name}_{season}.csv.
+        # Try the folder layout first, then fall back to the flat name so both
+        # layouts work.
+        def _resolve_file(name: str) -> Optional[str]:
+            candidates = [
+                os.path.join(OUTPUT_DIR, f"pff_nfl_{season}", f"{name}_summary.csv"),
+                os.path.join(OUTPUT_DIR, f"{name}_summary_{season}.csv"),
+            ]
+            for path in candidates:
+                if os.path.exists(path):
+                    return path
+            return None
+
+        rushing_csv = _resolve_file("rushing")
+        receiving_csv = _resolve_file("receiving")
+        passing_csv = _resolve_file("passing")
 
         # Check if files exist before processing
-        if os.path.exists(rushing_csv):
-            total_r += upsert_csv(rushing_csv, season, RUSHING_COLS, "RB", lookup)
-        if os.path.exists(receiving_csv):
-            total_w += upsert_csv(receiving_csv, season, RECEIVING_COLS, "WR", lookup)
-        if os.path.exists(passing_csv):
-            total_p += upsert_csv(passing_csv, season, PASSING_COLS, "QB", lookup)
+        if rushing_csv:
+            total_r += upsert_csv(rushing_csv, season, RUSHING_COLS, "RB", index_maps)
+        if receiving_csv:
+            total_w += upsert_csv(receiving_csv, season, RECEIVING_COLS, "WR", index_maps)
+        if passing_csv:
+            total_p += upsert_csv(passing_csv, season, PASSING_COLS, "QB", index_maps)
 
     print(f"Synced PFF metrics rows: rushing={total_r}, receiving={total_w}, passing={total_p}")
     return 0
