@@ -238,7 +238,7 @@ def build_advanced_metrics_body(
       /* Positional-average marker on each bar */
       .am-bar-avg { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--text-muted); opacity:.55; border-radius:1px; }
       .am-bar-avg-lbl {
-        position:absolute; bottom:calc(100% + 3px); left:50%; transform:translateX(-50%);
+        position:absolute; bottom:calc(100% + 1px); left:50%; transform:translateX(-50%);
         font-size:8px; font-weight:800; letter-spacing:.06em; color:var(--text-muted);
         opacity:1; white-space:nowrap;
       }
