@@ -5162,6 +5162,143 @@ select:focus {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
 
+/* ── Custom Select Dropdown (CSD) ───────────────────────────────────────────── */
+
+/* Keep the original <select> hidden inside its wrapper regardless of inline style */
+.csd-wrap > select {
+  display: none !important;
+  position: absolute;
+  pointer-events: none;
+}
+
+.csd-wrap {
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.csd-trigger {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.4;
+  /* Base look — overridden by inline styles copied from the original select */
+  background-color: var(--card-bg, var(--card, #fff));
+  color: var(--text);
+  border: 1px solid var(--border, #dbe2ea);
+  border-radius: 8px;
+  padding: 6px 10px 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.csd-trigger:hover {
+  border-color: var(--accent);
+}
+
+.csd-trigger:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.csd-value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.csd-arrow {
+  flex-shrink: 0;
+  margin-left: 8px;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  transition: transform 0.2s ease;
+}
+
+.csd-wrap.is-open .csd-arrow {
+  transform: rotate(180deg);
+}
+
+.csd-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
+  z-index: 9999;
+  overflow: hidden;
+  overflow-y: auto;
+  max-height: 280px;
+  scrollbar-width: thin;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.csd-list.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.csd-option {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.08s;
+}
+
+.csd-option:hover,
+.csd-option.is-focused {
+  background: var(--bg-alt, #f4f6f8);
+}
+
+.csd-option.is-selected {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-soft, #e9eef5);
+}
+
+.csd-option.is-selected.is-focused,
+.csd-option.is-selected:hover {
+  background: var(--accent-soft-2, #eef4fb);
+}
+
+.csd-option.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.csd-group-label {
+  padding: 8px 14px 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.csd-option + .csd-group-label,
+.csd-group-label + .csd-group-label {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+
 /* Control select dropdowns (team size, scoring format) */
 .otc-ctrl-select {
   appearance: none;
