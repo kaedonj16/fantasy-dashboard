@@ -1351,10 +1351,6 @@ window.initTradePage = function initTradePage(root = document) {
     if (selB) selB.style.display = active ? "" : "none";
     if (fbB) fbB.style.display = active ? "none" : "";
 
-    // Filter is on but no opponent is chosen yet: Side A searches across every
-    // team. Nudge the user to pick Team 2 (or let their first add bind it).
-    const aHint = root.querySelector("#sideAFilterHint");
-    if (aHint) aHint.style.display = (active && !rosterFilter.sideBRid) ? "" : "none";
 
     // With the roster filter on, Side A is always your team, so the Team 1 / Team 2
     // viewer-side radio is redundant — hide it and pin the viewer side to A.

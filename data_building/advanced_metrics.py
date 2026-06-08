@@ -1075,13 +1075,26 @@ def get_metric_leaderboard(
             gate += " AND (games IS NULL OR games >= %s)"
             params.append(min_games)
         params.append(limit)
-        rows = conn.execute(
-            f"""SELECT player_id, position, games, {metric} AS value
-                FROM player_advanced_metrics
-                WHERE as_of_date = %s{gate} AND {metric} IS NOT NULL
-                ORDER BY {metric} DESC LIMIT %s""",
-            tuple(params),
-        ).fetchall()
+        # Try to include the games column (added in a migration; may not exist on
+        # older deployments that haven't restarted since the migration ran).
+        try:
+            rows = conn.execute(
+                f"""SELECT player_id, position, games, {metric} AS value
+                    FROM player_advanced_metrics
+                    WHERE as_of_date = %s{gate} AND {metric} IS NOT NULL
+                    ORDER BY {metric} DESC LIMIT %s""",
+                tuple(params),
+            ).fetchall()
+            has_games = True
+        except Exception:
+            rows = conn.execute(
+                f"""SELECT player_id, position, {metric} AS value
+                    FROM player_advanced_metrics
+                    WHERE as_of_date = %s{gate} AND {metric} IS NOT NULL
+                    ORDER BY {metric} DESC LIMIT %s""",
+                tuple(params),
+            ).fetchall()
+            has_games = False
 
     try:
         from utils.utils import load_players_index
@@ -1099,7 +1112,7 @@ def get_metric_leaderboard(
             "team": meta.get("team") or "",
             "position": r["position"],
             "value": float(r["value"]) if r["value"] is not None else None,
-            "games": int(r["games"]) if r["games"] is not None else None,
+            "games": (int(r["games"]) if r["games"] is not None else None) if has_games else None,
         })
     return out
 
