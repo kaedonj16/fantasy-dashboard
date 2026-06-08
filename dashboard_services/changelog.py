@@ -12,12 +12,6 @@ CHANGELOG = [
     },
     {
         "date": "2026-06-08",
-        "tag": "feature",
-        "text": "Advanced Metrics: The minimum volume filter now uses the right stat for each metric: min targets for catch rate and yards per target, min carries for yards per carry and rush TD rate, min receptions for yards per reception, and min attempts for all QB passing metrics.",
-        "link": "/metrics"
-    },
-    {
-        "date": "2026-06-08",
         "tag": "new",
         "text": "Roster Filter: The Trade Calculator now lets you search from actual rosters. Enable Roster Filter to restrict each side's search to that team's real players and picks, auto-binding Team 2 the moment you add your first opponent asset.",
         "link": "/trade"
