@@ -1254,9 +1254,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
                 ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "/metrics", "advanced-metrics"),
+                ("Breakouts <span class='nav-pro-badge'>PRO</span>",       "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
                 ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
-                ("Breakouts <span class='nav-pro-badge'>PRO</span>",       "/breakouts", "breakouts"),
             ], ["players", "prospects", "breakouts"], "playersNavDropdown"),
         ]
 
@@ -1378,9 +1378,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "page_advanced_metrics", "advanced-metrics", False),
+        ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
-        ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
     ], ["players", "prospects", "breakouts", "waivers", "schedule"], "playersNavDropdown"))
