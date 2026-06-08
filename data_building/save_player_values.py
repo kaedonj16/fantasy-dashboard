@@ -55,13 +55,15 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
 
     saved_count = 0
 
-    # Compute per-day normalization scales so no value exceeds 999.9
-    _max_1qb = max((float(r.get("value") or 0) for r in value_table if isinstance(r, dict)), default=0)
-    _max_sf  = max((float(r.get("sf_value") or 0) for r in value_table if isinstance(r, dict)), default=0)
-    _scale_1qb = (999.9 / _max_1qb) if _max_1qb > 0 else 1.0
-    _scale_sf  = (999.9 / _max_sf)  if _max_sf  > 0 else 1.0
-
-    def _norm(v, scale): return round(float(v) * scale, 2) if v is not None else None
+    # Values arrive already normalized by the model (value_model_training anchors the
+    # top non-QB to 999.9 and caps everything at 999.9), and model_values.json — the
+    # source the UI reads — uses those same numbers. Don't re-derive a per-day scale
+    # here: doing so re-anchors to a different population (top *overall* instead of top
+    # non-QB), which both diverges from the JSON the UI serves and corrupts the daily
+    # trend history this table exists for (a moving leaguewide max would silently
+    # rescale every player). Just clamp defensively to the column's [0, 999.9] range.
+    def _clamp(v):
+        return round(min(max(float(v), 0.0), 999.9), 2) if v is not None else None
 
     try:
         with get_conn() as conn:
@@ -74,9 +76,9 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                     if not player_id:
                         continue
 
-                    # Extract values, normalized so the day's top player = 999.9
-                    value_1qb = _norm(row.get("value"),    _scale_1qb)
-                    value_sf  = _norm(row.get("sf_value"), _scale_sf)
+                    # Extract values as normalized by the model (clamped to <= 999.9)
+                    value_1qb = _clamp(row.get("value"))
+                    value_sf  = _clamp(row.get("sf_value"))
                     redraft_value_1qb = row.get("redraft_value_1qb")
                     redraft_value_sf  = row.get("redraft_value_sf")
                     position = row.get("position") or row.get("pos")
@@ -88,13 +90,13 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
                     rank_change_7d = row.get("rank_change_7d")
                     pos_rank_change_7d = row.get("pos_rank_change_7d")
 
-                    # League-size specific values (normalized by same scales)
-                    value_8    = _norm(row.get("value_8"),    _scale_1qb)
-                    value_12   = _norm(row.get("value_12"),   _scale_1qb)
-                    value_14   = _norm(row.get("value_14"),   _scale_1qb)
-                    sf_value_8  = _norm(row.get("sf_value_8"),  _scale_sf)
-                    sf_value_12 = _norm(row.get("sf_value_12"), _scale_sf)
-                    sf_value_14 = _norm(row.get("sf_value_14"), _scale_sf)
+                    # League-size specific values (already model-normalized; clamp only)
+                    value_8    = _clamp(row.get("value_8"))
+                    value_12   = _clamp(row.get("value_12"))
+                    value_14   = _clamp(row.get("value_14"))
+                    sf_value_8  = _clamp(row.get("sf_value_8"))
+                    sf_value_12 = _clamp(row.get("sf_value_12"))
+                    sf_value_14 = _clamp(row.get("sf_value_14"))
                     sf_pos_rank = row.get("sf_pos_rank")
                     sf_pos_rank_label = row.get("sf_pos_rank_label")
 

@@ -293,10 +293,13 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
     snapshot_date = date.today()
     saved_count = 0
 
-    _max_val = max((float(p.get("value") or 0) for p in players if isinstance(p, dict)), default=0)
-    _max_sf  = max((float(p.get("sf_value") or 0) for p in players if isinstance(p, dict)), default=0)
-    _scale     = (999.9 / _max_val) if _max_val > 0 else 1.0
-    _scale_sf  = (999.9 / _max_sf)  if _max_sf  > 0 else _scale
+    # Values are already model-normalized (top non-QB = 999.9, all capped at 999.9).
+    # Re-deriving a per-day scale here would re-anchor to a different population and,
+    # worse for a *history* table, silently rescale every player whenever the daily
+    # leaguewide max moves — manufacturing day-over-day "changes" out of a flat value.
+    # Preserve the model's numbers; clamp defensively to [0, 999.9].
+    def _clamp(v):
+        return round(min(max(float(v or 0), 0.0), 999.9), 2)
 
     try:
         with get_conn() as conn:
@@ -306,8 +309,8 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
                     if not player_id:
                         continue
 
-                    _val    = round(float(player.get("value",    0)) * _scale,    2)
-                    _sf_val = round(float(player.get("sf_value", 0) or player.get("value", 0)) * _scale_sf, 2)
+                    _val    = _clamp(player.get("value", 0))
+                    _sf_val = _clamp(player.get("sf_value", 0) or player.get("value", 0))
 
                     # Insert into player_value_history
                     cur.execute(
