@@ -331,13 +331,20 @@ _AM_JS = r"""
     if (!metricTip) return;
     metricTip.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].desc) || '';
   }
+  // Lowest threshold for a metric — the sensible default so the leaderboard
+  // isn't dominated by tiny-sample players (e.g. 1-carry QBs at 198 yds/carry).
+  function defaultVol(m) {
+    const spec = cfg.metrics[m] && cfg.metrics[m].minVol;
+    return (spec && spec.opts && spec.opts.length) ? String(spec.opts[0]) : '';
+  }
   // Volume filter: updates label, options, and visibility based on the metric's min_vol spec.
+  // The selected option reflects state.minVol (the source of truth).
   function updateVolCtrl() {
     const spec = cfg.metrics[state.metric] && cfg.metrics[state.metric].minVol;
     if (!gamesCtrl || !minGamesSel) return;
     if (!spec) { gamesCtrl.style.display = 'none'; return; }
     if (volLabel) volLabel.textContent = spec.label;
-    const prev = minGamesSel.value;
+    const prev = state.minVol;
     minGamesSel.innerHTML = '<option value="">Any</option>'
       + (spec.opts || []).map(v => '<option value="' + v + '"' + (String(v) === prev ? ' selected' : '') + '>' + v + '+</option>').join('');
     gamesCtrl.style.display = '';
@@ -485,7 +492,7 @@ _AM_JS = r"""
     const rel = new Set(relevantPositions(state.metric));
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
-    state.minVol = '';
+    state.minVol = defaultVol(state.metric);
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); fetchData();
   });
   posWrap.addEventListener('click', e => {
@@ -509,6 +516,7 @@ _AM_JS = r"""
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
   }
 
+  state.minVol = defaultVol(state.metric);
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); fetchData();
   loadOwnedRoster();
 """
