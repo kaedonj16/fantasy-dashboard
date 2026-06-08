@@ -3466,7 +3466,6 @@ thead th {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
   flex-shrink: 1;
   min-width: 0;
 }
@@ -3475,7 +3474,7 @@ thead th {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .otc-viewer-toggles {
@@ -3483,6 +3482,13 @@ thead th {
   align-items: center;
   gap: 4px;
   flex-wrap: nowrap;
+}
+
+.otc-ctrl-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  flex-shrink: 0;
 }
 
 .otc-info-tooltip-wrapper {
@@ -11835,25 +11841,16 @@ img, svg, canvas {
 
   .otc-page-head-controls {
     width: 100%;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-  }
-
-  .otc-viewer-toggles {
-    width: 100%;
-    gap: 4px;
-    margin-left: 0 !important;
-    border-left: none;
-    padding-left: 0;
   }
 
   .otc-settings-row {
     width: 100%;
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
+    flex-wrap: wrap;
     gap: 6px;
+  }
+
+  .otc-ctrl-divider {
+    display: none;
   }
 
   .otc-settings-row .otc-ctrl-group {

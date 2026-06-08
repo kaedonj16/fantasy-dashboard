@@ -190,17 +190,18 @@ def build_trade_calculator_body(
               </p>
             </div>
             <div class="otc-page-head-controls">
-              <div class="otc-viewer-toggles">
-                <label class="otc-viewer-toggle">
-                  <input type="radio" name="viewerSide" value="a" checked>
-                  <span>Team 1</span>
-                </label>
-                <label class="otc-viewer-toggle">
-                  <input type="radio" name="viewerSide" value="b">
-                  <span>Team 2</span>
-                </label>
-              </div>
               <div class="otc-settings-row">
+                <div class="otc-viewer-toggles">
+                  <label class="otc-viewer-toggle">
+                    <input type="radio" name="viewerSide" value="a" checked>
+                    <span>Team 1</span>
+                  </label>
+                  <label class="otc-viewer-toggle">
+                    <input type="radio" name="viewerSide" value="b">
+                    <span>Team 2</span>
+                  </label>
+                </div>
+                <div class="otc-ctrl-divider"></div>
                 {league_size_block}
                 {scoring_format_block}
                 {league_type_block}
