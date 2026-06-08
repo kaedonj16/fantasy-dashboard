@@ -237,6 +237,11 @@ def build_advanced_metrics_body(
       .am-bar-fill { height:100%; border-radius:6px; }
       /* Positional-average marker on each bar */
       .am-bar-avg { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--text-muted); opacity:.55; border-radius:1px; }
+      .am-bar-avg-lbl {
+        position:absolute; bottom:calc(100% + 3px); left:50%; transform:translateX(-50%);
+        font-size:8px; font-weight:800; letter-spacing:.06em; color:var(--text-muted);
+        opacity:1; white-space:nowrap;
+      }
       .am-avg-note { font-size:11px; color:var(--text-muted); margin:0 0 10px; display:flex; align-items:center; gap:6px; }
       .am-avg-note .am-avg-swatch { display:inline-block; width:2px; height:12px; background:var(--text-muted); opacity:.55; }
       @media (max-width:600px){ .am-barcell{ display:none; } .am-table th.am-barcell{ display:none; } }
@@ -390,14 +395,17 @@ _AM_JS = r"""
     const start = state.page * PAGE_SIZE;
     const pageRows = displayRows.slice(start, start + PAGE_SIZE);
 
-    tbody.innerHTML = pageRows.map(r => {
+    tbody.innerHTML = pageRows.map((r, i) => {
       const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
       const safe = (r.name || '').replace(/'/g, "\\'");
       const col = posColor(r.position);
       const owned = ownedIds.has(String(r.player_id));
       const rank = rankMap.get(String(r.player_id)) || '';
+      // Show the avg marker on every bar, but label it only on the first row.
+      const avgLbl = (avgPct != null && i === 0)
+        ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
       const avgMark = (avgPct != null)
-        ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + state.position + ' average"></div>'
+        ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl + '</div>'
         : '';
       return '<tr class="am-row' + (owned ? ' am-owned' : '') + '" style="cursor:pointer;" onclick="window.openPlayerModal&&openPlayerModal(\'' + r.player_id + '\',\'' + safe + '\')">'
         + '<td class="am-rank">' + rank + '</td>'
