@@ -22,6 +22,15 @@ from data_building.populate_roster_changes import detect_roster_changes_between_
 from utils.utils import load_players_index
 
 
+# Only project players whose breakout score clears this bar (significant opportunity).
+MIN_BREAKOUT_SCORE = 30
+# Fraction of a team/position's vacated opportunity captured collectively by its
+# flagged (non-rookie, score >= MIN_BREAKOUT_SCORE) breakout candidates. The
+# remainder leaks to depth players, rookies, and free agents we don't project here,
+# so the flagged group never absorbs 100% of the pool.
+VACATED_CAPTURE_RATE = 0.8
+
+
 def detect_and_store_roster_changes(season: int) -> int:
     """
     Step 1: Detect roster changes and store to database.
@@ -251,82 +260,121 @@ def calculate_and_store_projections(season: int) -> int:
     usage_table = load_usage_table_for_season(prev_season) or []
     usage_by_player = {str(p.get('player_id') or p.get('id', '')): p for p in usage_table}
 
-    # Calculate projections for high-score breakout candidates
-    projections = []
+    # Project breakout candidates by distributing each team/position's *finite*
+    # vacated opportunity pool among its candidates in proportion to breakout score.
+    # The score is a relative tilt, not a share: the old code read breakout_score/100
+    # as an opportunity share and let every player independently claim a slice of the
+    # whole pool, which over-allocated the vacated work and produced implausible
+    # projected shares. Distributing a conserved pool fixes both.
+    #
+    # Brand-new rookies are excluded: with no prior-season usage they have no
+    # established role to break out from, and projecting them off the vacated pool
+    # alone yields unanchored numbers.
+    from data_building.offseason_opportunity import calculate_opportunity_share_from_usage
+
+    # Pass 1: select eligible candidates and tally each (team, position)'s total
+    # breakout score (the denominator for proportional allocation).
+    candidates: list[dict] = []
+    group_score_sum: dict[tuple, float] = {}
     for breakout in breakout_data:
-        if breakout['breakout_opportunity_score'] < 30:  # Only significant opportunities
+        score = float(breakout['breakout_opportunity_score'] or 0)
+        if score < MIN_BREAKOUT_SCORE:  # only significant opportunities
             continue
 
         player_id = breakout['player_id']
+        player_usage = usage_by_player.get(player_id)
+        if not player_usage:
+            continue  # no prior-season usage → brand-new rookie; can't break out
+
         team = breakout['team']
         position = breakout['position']
-
-        # Get player's previous usage
-        player_usage = usage_by_player.get(player_id, {})
-        usage = player_usage.get('usage', {})
+        usage = player_usage.get('usage', {}) or {}
         games = usage.get('games', 1) or 1
 
         prev_targets = int(
-            usage.get('targets') or usage.get('total_targets') or (usage.get('avg_targets', 0) * games) or 0)
-        prev_carries = int(usage.get('carries') or (usage.get('avg_carries', 0) * games) or 0)
-
-        # Snap share: avg_off_snap_pct is already a decimal (0-1), not a percentage (0-100)
+            usage.get('targets') or usage.get('total_targets')
+            or (usage.get('avg_targets', 0) * games) or 0)
+        prev_carries = int(
+            usage.get('carries') or (usage.get('avg_carries', 0) * games) or 0)
+        # avg_off_snap_pct is already a 0-1 decimal, not a percentage.
         prev_snap_share = usage.get('avg_off_snap_pct') or 0
+        # Use the shared helper for prev (and projected) share so the increase is a
+        # like-for-like comparison on one consistent 0-1 basis.
+        prev_opp_share = calculate_opportunity_share_from_usage(usage)
 
-        # Opportunity share: calculate from usage data
-        from data_building.offseason_opportunity import calculate_opportunity_share_from_usage
-        prev_opp_share = usage.get('opportunity_share', 0)
-        if prev_opp_share == 0:
-            prev_opp_share = calculate_opportunity_share_from_usage(usage)
-
-        # Calculate opportunity increases
-        vacated = vacated_by_team_pos.get((team, position), {})
-        targets_vacated = float(vacated.get('total_targets_vacated', 0))
-        carries_vacated = float(vacated.get('total_carries_vacated', 0))
-
-        # Simple projection: give them a share of vacated opportunity based on breakout score
-        breakout_score = float(breakout['breakout_opportunity_score'])
-        opportunity_share = min(breakout_score / 100, 1.0)  # Cap at 100%
-
-        target_increase = int(targets_vacated * opportunity_share * 0.5)  # Conservative estimate
-        carry_increase = int(carries_vacated * opportunity_share * 0.5)
-
-        projected_targets = prev_targets + target_increase
-        projected_carries = prev_carries + carry_increase
-        projected_snap_share = min(prev_snap_share + (opportunity_share * 0.1), 1.0)
-
-        # Get player name
-        player_name = "Unknown"
-        for p in usage_table:
-            if str(p.get('player_id') or p.get('id', '')) == player_id:
-                player_name = p.get('player_name') or p.get('name', 'Unknown')
-                break
-
-        projections.append({
+        candidates.append({
             "player_id": player_id,
-            "player_name": player_name,
-            "season": season,
+            "player_name": player_usage.get('player_name') or player_usage.get('name') or 'Unknown',
             "team": team,
             "position": position,
-            "prev_season_targets": prev_targets,
-            "prev_season_carries": prev_carries,
+            "score": score,
+            "usage": usage,
+            "games": games,
+            "prev_targets": prev_targets,
+            "prev_carries": prev_carries,
+            "prev_snap_share": prev_snap_share,
+            "prev_opp_share": prev_opp_share,
+        })
+        key = (team, position)
+        group_score_sum[key] = group_score_sum.get(key, 0.0) + score
+
+    # Pass 2: allocate each group's vacated pool proportional to breakout score.
+    projections = []
+    for cand in candidates:
+        key = (cand["team"], cand["position"])
+        vacated = vacated_by_team_pos.get(key, {})
+        targets_vacated = float(vacated.get('total_targets_vacated', 0) or 0)
+        carries_vacated = float(vacated.get('total_carries_vacated', 0) or 0)
+
+        score_sum = group_score_sum.get(key, 0.0)
+        # Player's slice of the flagged group (sums to 1 across the group), scaled by
+        # the group's overall capture of the pool.
+        capture_share = (cand["score"] / score_sum) if score_sum > 0 else 0.0
+        pool_share = capture_share * VACATED_CAPTURE_RATE
+
+        target_increase = int(round(targets_vacated * pool_share))
+        carry_increase = int(round(carries_vacated * pool_share))
+
+        projected_targets = cand["prev_targets"] + target_increase
+        projected_carries = cand["prev_carries"] + carry_increase
+
+        # Projected opportunity share on the same basis as prev_opp_share: rebuild a
+        # usage dict with the projected per-game volume and reuse the shared helper.
+        games = cand["games"]
+        proj_usage = dict(cand["usage"])
+        proj_usage["avg_targets"] = (projected_targets / games) if games else 0
+        proj_usage["avg_carries"] = (projected_carries / games) if games else 0
+        projected_opp_share = calculate_opportunity_share_from_usage(proj_usage)
+
+        prev_snap_share = cand["prev_snap_share"]
+        projected_snap_share = min(prev_snap_share + pool_share * 0.1, 1.0)
+
+        projections.append({
+            "player_id": cand["player_id"],
+            "player_name": cand["player_name"],
+            "season": season,
+            "team": cand["team"],
+            "position": cand["position"],
+            "prev_season_targets": cand["prev_targets"],
+            "prev_season_carries": cand["prev_carries"],
             "prev_season_snap_share": prev_snap_share,
-            "prev_season_opportunity_share": prev_opp_share,  # FIXED: Use calculated value
+            "prev_season_opportunity_share": cand["prev_opp_share"],
             "projected_targets": projected_targets,
             "projected_carries": projected_carries,
             "projected_snap_share": projected_snap_share,
-            "projected_opportunity_share": opportunity_share,
+            "projected_opportunity_share": projected_opp_share,
             "target_increase": target_increase,
             "carry_increase": carry_increase,
             "snap_share_increase": projected_snap_share - prev_snap_share,
-            "opportunity_share_increase": opportunity_share,
-            "breakout_score": breakout_score,
+            "opportunity_share_increase": projected_opp_share - cand["prev_opp_share"],
+            "breakout_score": cand["score"],
             "projection_factors": json.dumps({
-                "method": "from_breakout_scores",
-                "breakout_score": breakout_score,
+                "method": "vacated_pool_score_weighted",
+                "breakout_score": cand["score"],
                 "vacated_targets": targets_vacated,
                 "vacated_carries": carries_vacated,
-                "opportunity_share": opportunity_share
+                "capture_share": round(capture_share, 4),
+                "pool_capture_rate": VACATED_CAPTURE_RATE,
             })
         })
 
