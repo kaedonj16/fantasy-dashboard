@@ -185,9 +185,6 @@ def build_trade_calculator_body(
                   </div>
                 </div>
               </div>
-              <p class="otc-page-copy">
-                Compare both sides of a deal using BR values, balance, and roster-building context.
-              </p>
             </div>
             <div class="otc-page-head-controls">
               <div class="otc-settings-row">

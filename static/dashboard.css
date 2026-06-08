@@ -3444,13 +3444,6 @@ thead th {
   border: 1px solid #d8e3f2;
 }
 
-.otc-page-copy {
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: #66758a;
-  line-height: 1.45;
-}
-
 .otc-page-head {
   margin-bottom: 14px;
 }
@@ -10449,9 +10442,6 @@ img, svg, canvas {
     font-size: 20px;
   }
 
-  .otc-page-copy {
-    font-size: 12px;
-  }
 
   .otc-viewer-toggle {
     font-size: 12px;
@@ -11983,10 +11973,6 @@ img, svg, canvas {
     font-size: 22px;
     flex: 0 1 auto;
     min-width: 0;
-  }
-
-  .otc-page-copy {
-    font-size: 13px;
   }
 
   .otc-page-head-controls {
