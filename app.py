@@ -1285,6 +1285,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
+                ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "/metrics", "advanced-metrics"),
                 ("Prospects",       "/prospects",   "prospects"),
                 ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
                 ("Breakouts <span class='nav-pro-badge'>PRO</span>",       "/breakouts", "breakouts"),
@@ -1408,6 +1409,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "commissioner"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
+        ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "page_advanced_metrics", "advanced-metrics", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
@@ -11022,6 +11024,20 @@ def page_prospects(platform: str, season: int, league_id: str):
     return render_page("Prospect Rankings", league_id, "prospects", body_html, platform, season)
 
 
+@app.route("/metrics")
+@app.route("/<platform>/<int:season>/<league_id>/metrics")
+def page_advanced_metrics(platform: str = None, season: int = None, league_id: str = None):
+    """Premium Advanced Metrics leaderboard page."""
+    from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
+    from data_building.advanced_metrics import LEADERBOARD_METRICS
+    user_id = session.get("viewer_username")
+    has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
+    body = build_advanced_metrics_body(
+        has_premium, LEADERBOARD_METRICS, league_id, season, platform
+    )
+    return render_page("Advanced Metrics", league_id, "advanced-metrics", body, platform, season)
+
+
 @app.route("/<platform>/<int:season>/<league_id>/breakouts")
 def page_breakouts(platform: str, season: int, league_id: str):
     """Dedicated page for breakout candidates with detailed projections."""
@@ -16921,6 +16937,42 @@ def api_league_rosters():
     except Exception as e:
         logger.info(f"[api/league-rosters] error: {e}")
         return jsonify({"teams": [], "viewer_roster_id": ""})
+
+
+@app.route("/api/advanced-metrics/leaderboard")
+def api_advanced_metrics_leaderboard():
+    """Players ranked by a single advanced metric, for the Advanced Metrics page.
+
+    Premium-gated. Query params: metric (required, whitelisted), position (optional),
+    league_id/platform (for the premium check).
+    """
+    from data_building.advanced_metrics import get_metric_leaderboard, LEADERBOARD_METRICS
+
+    user_id = session.get("viewer_username") or None
+    league_id = (request.args.get("league_id") or "").strip() or None
+    platform = (request.args.get("platform") or "sleeper").strip().lower()
+    if not has_premium_access(user_id, league_id, platform):
+        return jsonify({"paywall": True, "error": "Premium required"}), 403
+
+    metric = (request.args.get("metric") or "role_score").strip()
+    if metric not in LEADERBOARD_METRICS:
+        return jsonify({"error": "unknown metric"}), 400
+    position = (request.args.get("position") or "").strip().upper() or None
+
+    try:
+        players = get_metric_leaderboard(metric, position=position)
+    except Exception as e:
+        logger.info(f"[api/advanced-metrics/leaderboard] error: {e}")
+        players = []
+
+    spec = LEADERBOARD_METRICS[metric]
+    return jsonify({
+        "metric": metric,
+        "label": spec["label"],
+        "positions": spec["positions"],
+        "lower_better": bool(spec.get("lower_better")),
+        "players": players,
+    })
 
 
 @app.route("/api/value-movers")

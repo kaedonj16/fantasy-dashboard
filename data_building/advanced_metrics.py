@@ -900,6 +900,86 @@ def get_available_seasons_for_player(player_id: str) -> List[int]:
         return [row["season"] for row in rows]
 
 
+# Metrics exposed on the standalone Advanced Metrics leaderboard page, each mapped
+# to the positions where it is meaningful (drives the page's auto position filter).
+# Internal trend deltas (usage_trend, efficiency_trend) are intentionally excluded.
+# `lower_better` flags metrics where a smaller value is better (e.g. INT rate).
+LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
+    "role_score":           {"label": "Role Score",        "positions": ["QB", "RB", "WR", "TE"]},
+    "snap_share":           {"label": "Snap Share",        "positions": ["QB", "RB", "WR", "TE"]},
+    "opportunity_share":    {"label": "Opportunity Share", "positions": ["RB", "WR", "TE"]},
+    "red_zone_usage":       {"label": "Red Zone Usage",    "positions": ["QB", "RB", "WR", "TE"]},
+    "yards_per_target":     {"label": "Yards / Target",     "positions": ["WR", "RB", "TE"]},
+    "catch_rate":           {"label": "Catch Rate",        "positions": ["WR", "RB", "TE"]},
+    "yards_per_reception":  {"label": "Yards / Reception",  "positions": ["WR", "RB", "TE"]},
+    "target_quality_score": {"label": "Target Quality",    "positions": ["WR", "RB", "TE"]},
+    "yards_per_carry":      {"label": "Yards / Carry",     "positions": ["RB", "QB"]},
+    "yards_per_touch":      {"label": "Yards / Touch",     "positions": ["RB", "WR", "TE"]},
+    "rush_td_rate":         {"label": "Rush TD Rate",      "positions": ["RB", "QB"]},
+    "yards_per_attempt":    {"label": "Yards / Attempt",    "positions": ["QB"]},
+    "completion_pct":       {"label": "Completion %",      "positions": ["QB"]},
+    "td_rate":              {"label": "Pass TD Rate",      "positions": ["QB"]},
+    "int_rate":             {"label": "INT Rate",          "positions": ["QB"], "lower_better": True},
+}
+
+
+def get_metric_leaderboard(
+    metric: str, position: Optional[str] = None, limit: int = 500
+) -> List[Dict[str, Any]]:
+    """Players ranked by a single advanced metric from the latest snapshot.
+
+    `metric` must be a key of LEADERBOARD_METRICS (a whitelist, so it is safe to
+    inline into the SQL). Returns [{player_id, name, team, position, value}] ordered
+    by the metric descending with NULLs dropped; names/teams are enriched from the
+    players index since the metrics table stores neither.
+    """
+    if metric not in LEADERBOARD_METRICS:
+        return []
+    pos = (position or "").upper().strip() or None
+    with get_conn() as conn:
+        latest = conn.execute(
+            "SELECT MAX(as_of_date) AS max_date FROM player_advanced_metrics"
+        ).fetchone()
+        if not latest or not latest["max_date"]:
+            return []
+        latest_date = latest["max_date"]
+        if pos:
+            rows = conn.execute(
+                f"""SELECT player_id, position, {metric} AS value
+                    FROM player_advanced_metrics
+                    WHERE as_of_date = %s AND position = %s AND {metric} IS NOT NULL
+                    ORDER BY {metric} DESC LIMIT %s""",
+                (latest_date, pos, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"""SELECT player_id, position, {metric} AS value
+                    FROM player_advanced_metrics
+                    WHERE as_of_date = %s AND {metric} IS NOT NULL
+                    ORDER BY {metric} DESC LIMIT %s""",
+                (latest_date, limit),
+            ).fetchall()
+
+    try:
+        from utils.utils import load_players_index
+        idx = load_players_index() or {}
+    except Exception:
+        idx = {}
+
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        pid = str(r["player_id"])
+        meta = idx.get(pid) or {}
+        out.append({
+            "player_id": pid,
+            "name": meta.get("name") or "Unknown",
+            "team": meta.get("team") or "",
+            "position": r["position"],
+            "value": float(r["value"]) if r["value"] is not None else None,
+        })
+    return out
+
+
 def get_top_role_players(position: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     """
     Get players with highest role scores (usage + efficiency).
