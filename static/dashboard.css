@@ -12021,7 +12021,17 @@ img, svg, canvas {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+  }
+
+  .otc-page-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .otc-info-tooltip-wrapper {
+    flex-shrink: 0;
   }
 
   .otc-page-title {
