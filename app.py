@@ -1404,12 +1404,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ("Weekly Recap",       "page_recap",            "recap",    False),
         ], ["weekly", "recap"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
-        ("Standings",       "page_standings",       "standings",       False),
-        ("Teams",           "page_teams",           "teams",           False),
-        ("Power Rankings",  "page_power_rankings",  "power-rankings",  False),
-        ("Activity",        "page_activity",        "activity",        False),
-        ("League Health",   "page_commissioner",    "league_health",   False),
-    ], ["standings", "teams", "power-rankings", "activity", "league_health"], "teamsNavDropdown"))
+        ("Standings",       "page_standings",    "standings",    False),
+        ("Teams",           "page_teams",        "teams",        False),
+        ("Power Rankings",  "page_teams",        "teams",        False, "#power-rankings"),
+        ("Activity",        "page_activity",     "activity",     False),
+        ("League Health",   "page_commissioner", "league_health", False),
+    ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "page_advanced_metrics", "advanced-metrics", False),
@@ -8274,10 +8274,19 @@ def build_teams_body(ctx: dict) -> str:
         loadBtm();  // load first tab immediately
       }}
 
+      // Auto-open a specific tab when navigated with a hash (e.g. #power-rankings from nav)
+      function _activateTabFromHash() {{
+        var hash = window.location.hash.replace('#', '');
+        if (!hash) return;
+        var btn = document.querySelector('#teamsAnalyticsTabs > .tab-btn[data-tab="' + hash + '"]');
+        if (btn) btn.click();
+      }}
+
       if (document.readyState === 'loading') {{
-        document.addEventListener('DOMContentLoaded', wireAnalyticsTabs);
+        document.addEventListener('DOMContentLoaded', function() {{ wireAnalyticsTabs(); _activateTabFromHash(); }});
       }} else {{
         wireAnalyticsTabs();
+        _activateTabFromHash();
       }}
     }})();
     </script>
@@ -8579,27 +8588,6 @@ def page_standings(platform: str, season: int, league_id: str):
         body = build_standings_body(ctx)
 
     return render_page("BR Fantasy Standings", league_id, "standings", body, platform, season)
-
-
-@app.route("/<platform>/<int:season>/<league_id>/power-rankings")
-def page_power_rankings(platform: str, season: int, league_id: str):
-    ctx = get_league_ctx_from_cache(platform, league_id, season)
-    pr_html = get_power_rankings_html(ctx)
-    current_week = ctx.get("current_week") or ""
-    week_label = f"Week {current_week}" if current_week else str(season)
-    body = f"""
-    <div class="page-layout">
-      <main class="page-main" style="max-width:800px;margin:0 auto;padding:24px 16px;">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
-          <h2 style="margin:0;font-size:20px;font-weight:700;">Power Rankings</h2>
-          <span style="font-size:13px;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:3px 10px;">{week_label}</span>
-          <span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Composite of Win%, Points For &amp; Roster Value</span>
-        </div>
-        {pr_html}
-      </main>
-    </div>
-    """
-    return render_page("Power Rankings", league_id, "power-rankings", body, platform, season)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/waivers")
