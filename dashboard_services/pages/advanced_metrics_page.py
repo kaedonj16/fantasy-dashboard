@@ -321,12 +321,13 @@ def build_advanced_metrics_body(
       }
       .am-rank { width:36px; color:var(--text-muted); font-size:12px; }
       .am-games { width:40px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
-      .am-barcell { width:45%; }
+      .am-player { width:220px; max-width:220px; }
+      .am-barcell { width:auto; min-width:0; }
       /* Player cell: name on left, pos+team on right */
       .am-player td, td.am-player { display:table-cell; }
-      .am-player-inner { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .am-player-inner { display:flex; align-items:center; justify-content:space-between; gap:8px; overflow:hidden; }
+      .am-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
       .am-player-right { display:flex; align-items:center; gap:4px; flex-shrink:0; }
-      .am-name { font-weight:600; }
       .am-meta { font-size:11px; color:var(--text-muted); }
       /* Merged metric cell: bar on left, value on right */
       .am-metric-cell { display:flex; align-items:center; gap:10px; }
