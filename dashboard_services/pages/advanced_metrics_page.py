@@ -314,6 +314,10 @@ def build_advanced_metrics_body(
       .am-table { width:100%; border-collapse:collapse; }
       .am-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em;
         color:var(--text-muted); padding:8px 10px; border-bottom:1px solid var(--border); }
+      .am-table th.am-sortable { cursor:pointer; user-select:none; }
+      .am-table th.am-sortable:hover { color:var(--text); }
+      .am-table th.am-sort-desc::after { content:' ↓'; }
+      .am-table th.am-sort-asc::after { content:' ↑'; }
       .am-table td { padding:9px 10px; border-bottom:1px solid var(--border); font-size:14px; }
       /* Column dividers */
       .am-games, .am-barcell,
@@ -487,7 +491,7 @@ _AM_JS = r"""
     games: 'G', total_pass_att: 'Att', total_carries: 'Car',
     total_touches: 'Tch', total_targets: 'Tgt', total_receptions: 'Rec',
   };
-  const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', rows: [], search: '',
+  const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', sortBy: 'metric', rows: [], search: '',
                   season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0,
                   fetching: false, volCol: 'games',
                   extraMetrics: [],     // up to 4 extra metric keys
@@ -617,6 +621,32 @@ _AM_JS = r"""
   function updateSortBtn() {
     sortBtn.innerHTML = state.sortDir === 'desc' ? 'High &rarr; Low' : 'Low &rarr; High';
   }
+  function updateSortHeaders() {
+    const ths = [
+      { el: document.querySelector('#amTable thead th.am-player'), col: 'name' },
+      { el: document.querySelector('#amTable thead th.am-games'), col: 'games' },
+      { el: document.getElementById('amMetricHeader'), col: 'metric' },
+    ];
+    ths.forEach(function({ el, col }) {
+      if (!el) return;
+      el.classList.add('am-sortable');
+      el.classList.toggle('am-sort-asc', state.sortBy === col && state.sortDir === 'asc');
+      el.classList.toggle('am-sort-desc', state.sortBy === col && state.sortDir === 'desc');
+    });
+  }
+  function sortByCol(col) {
+    if (state.sortBy === col) {
+      state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc';
+    } else {
+      state.sortBy = col;
+      state.sortDir = col === 'metric'
+        ? ((cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc')
+        : 'asc';
+    }
+    state.page = 0;
+    updateSortHeaders();
+    render();
+  }
   function updateMetricTip() {
     if (!metricTip) return;
     metricTip.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].desc) || '';
@@ -659,9 +689,19 @@ _AM_JS = r"""
     const posRows = (state.position === 'ALL'
       ? state.rows.filter(r => rel.has(up(r.position)))
       : state.rows.filter(r => up(r.position) === state.position));
-    posRows.sort((a, b) => state.sortDir === 'desc'
-      ? (Number(b.value) - Number(a.value))
-      : (Number(a.value) - Number(b.value)));
+    posRows.sort((a, b) => {
+      let diff;
+      if (state.sortBy === 'name') {
+        diff = (a.name || '').localeCompare(b.name || '');
+      } else if (state.sortBy === 'games') {
+        const av = Number(a.vol != null ? a.vol : (a.games != null ? a.games : 0));
+        const bv = Number(b.vol != null ? b.vol : (b.games != null ? b.games : 0));
+        diff = av - bv;
+      } else {
+        diff = Number(a.value) - Number(b.value);
+      }
+      return state.sortDir === 'desc' ? -diff : diff;
+    });
 
     // Rank map so roster/search filters preserve original rank numbers.
     const rankMap = new Map(posRows.map((r, i) => [String(r.player_id), i + 1]));
@@ -839,9 +879,10 @@ _AM_JS = r"""
     const rel = new Set(relevantPositions(state.metric));
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
+    state.sortBy = 'metric';
     state.minVol = defaultVol(state.metric);
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
-    updateCompareBar();
+    updateSortHeaders(); updateCompareBar();
     fetchData();
   });
   posWrap.addEventListener('click', e => {
@@ -852,8 +893,9 @@ _AM_JS = r"""
   });
   searchEl.addEventListener('input', () => { state.search = searchEl.value.trim(); state.page = 0; render(); });
   sortBtn.addEventListener('click', () => {
+    state.sortBy = 'metric';
     state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc'; state.page = 0;
-    updateSortBtn(); render();
+    updateSortBtn(); updateSortHeaders(); render();
   });
   if (seasonSel) {
     seasonSel.addEventListener('change', () => { state.season = seasonSel.value || ''; state.page = 0; fetchData(); });
@@ -865,7 +907,15 @@ _AM_JS = r"""
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
   }
 
+  // Wire column-header sort clicks.
+  const _thPlayer = document.querySelector('#amTable thead th.am-player');
+  const _thGames  = document.querySelector('#amTable thead th.am-games');
+  const _thMetric = document.getElementById('amMetricHeader');
+  if (_thPlayer) _thPlayer.addEventListener('click', () => sortByCol('name'));
+  if (_thGames)  _thGames.addEventListener('click', () => sortByCol('games'));
+  if (_thMetric) _thMetric.addEventListener('click', () => sortByCol('metric'));
+
   state.minVol = defaultVol(state.metric);
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
-  updateCompareBar(); fetchData(); loadOwnedRoster();
+  updateSortHeaders(); updateCompareBar(); fetchData(); loadOwnedRoster();
 """
