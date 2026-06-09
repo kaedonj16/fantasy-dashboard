@@ -18636,6 +18636,23 @@ button:disabled {
 }
 
 /* Share button in team cards */
+.share-report-icon {
+  width: 15px;
+  height: 15px;
+  display: block;
+  object-fit: contain;
+  filter: brightness(0) saturate(100%) invert(40%);
+  transition: filter .15s;
+}
+html[data-theme="dark"] .share-report-icon {
+  filter: brightness(0) saturate(100%) invert(80%);
+}
+.share-report-btn:hover .share-report-icon {
+  filter: brightness(0) saturate(100%) invert(15%);
+}
+html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
+  filter: brightness(0) saturate(100%) invert(100%);
+}
 .share-report-btn {
   display: inline-flex;
   align-items: center;
