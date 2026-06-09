@@ -13460,17 +13460,34 @@ img, svg, canvas {
   flex-direction: column;
   gap: 35px;
 }
-.adv-metrics-two-col {
+/* Flat 7-col grid so left & right metric rows share the same grid row */
+.adv-metrics-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 14px;
-  align-items: start;
+  grid-template-columns: 120px 1fr 54px 1px 120px 1fr 54px;
+  column-gap: 8px;
+  row-gap: 13px;
+  align-items: center;
 }
-.adv-metrics-two-col .pm-comp-list {
-  gap: 14px;
+.am-vert-sep {
+  width: 1px;
+  background: var(--border);
+  align-self: stretch;
+  min-height: 16px;
+}
+.pm-comp-sub {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.65;
+  line-height: 1.1;
+  margin-top: 2px;
 }
 @media (max-width: 600px) {
-  .adv-metrics-two-col { grid-template-columns: 1fr; }
+  .adv-metrics-grid {
+    grid-template-columns: 90px 1fr 44px;
+  }
+  /* display:contents removes the sep from grid flow; right-side cells
+     wrap onto the next row(s) making a single-column list */
+  .am-vert-sep { display: contents; }
 }
 .pm-comp-list-bo {
   display: flex;

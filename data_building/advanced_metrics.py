@@ -174,6 +174,21 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS rookie_eval_is_rookie          BOOLEAN;
     """)
 
+    # Route participation proxy (WR/TE offensive snap % = fraction of dropbacks
+    # they were on the field to run a route, sourced from nfl_data_py snap counts).
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS route_participation NUMERIC;
+    """)
+    # Backfill from snap_share for existing WR/TE rows that are missing it.
+    conn.execute("""
+        UPDATE player_advanced_metrics
+        SET route_participation = snap_share
+        WHERE position IN ('WR', 'TE')
+          AND snap_share IS NOT NULL
+          AND route_participation IS NULL;
+    """)
+
     # PFF feed columns (NFL) for player evaluation and modal display
     conn.execute("""
         ALTER TABLE player_advanced_metrics
@@ -753,6 +768,9 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
 
     with get_conn() as conn:
         for metrics in metrics_list:
+            pos = (metrics.get("position") or "").upper()
+            route_partic = metrics.get("snap_share") if pos in ("WR", "TE") else None
+
             # Upsert: update if exists, insert if not
             conn.execute("""
                 INSERT INTO player_advanced_metrics (
@@ -763,7 +781,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     snap_share, opportunity_share, red_zone_usage,
                     role_score, usage_trend, efficiency_trend, games,
                     total_targets, total_receptions, total_carries, total_touches, total_pass_att,
-                    target_share
+                    target_share, route_participation
                 )
                 VALUES (
                     %s, %s, %s, %s,
@@ -773,7 +791,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
-                    %s
+                    %s, %s
                 )
                 ON CONFLICT (player_id, as_of_date)
                 DO UPDATE SET
@@ -802,7 +820,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     total_carries = EXCLUDED.total_carries,
                     total_touches = EXCLUDED.total_touches,
                     total_pass_att = EXCLUDED.total_pass_att,
-                    target_share = EXCLUDED.target_share
+                    target_share = EXCLUDED.target_share,
+                    route_participation = COALESCE(EXCLUDED.route_participation, player_advanced_metrics.route_participation)
             """, (
                 metrics["player_id"], as_of_date, season, metrics["position"],
                 metrics.get("yards_per_target"), metrics.get("catch_rate"),
@@ -819,6 +838,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics.get("total_carries"), metrics.get("total_touches"),
                 metrics.get("total_pass_att"),
                 metrics.get("target_share"),
+                route_partic,
             ))
 
     print(f"[advanced_metrics] Saved {len(metrics_list)} player metrics for {as_of_date} (season {season})")
@@ -992,7 +1012,7 @@ def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
         'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
         'yards_per_carry', 'yards_per_touch', 'rush_td_rate',
         'yards_per_attempt', 'completion_pct', 'td_rate', 'int_rate',
-        'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
+        'snap_share', 'route_participation', 'opportunity_share', 'red_zone_usage', 'role_score',
         'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
         'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
         'wide_rate', 'inline_rate', 'pass_block_rate', 'grades_offense',
@@ -1142,6 +1162,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # ── Receiving ────────────────────────────────────────────────────────────
     "role_score":           {"label": "Role Score",          "category": "Receiving", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position."},
     "snap_share":           {"label": "Snap Share",          "category": "Receiving", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
+    "route_participation":  {"label": "Route Partic %",      "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_GAMES, "desc": "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means the player is a consistent full-time route runner."},
     "target_share":         {"label": "Target Share",        "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Percent of the team's total targets directed at this player."},
     "opportunity_share":    {"label": "Opportunity Share",   "category": "Receiving", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
     "air_yards_per_game":   {"label": "Air Yards / Game",    "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_GAMES, "desc": "Receiving air yards (distance thrown in the air to the player) per game; a measure of downfield target volume."},

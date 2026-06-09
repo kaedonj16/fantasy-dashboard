@@ -8620,7 +8620,8 @@ function buildAdvancedMetricsHTML(metricsData) {
   // Snap Share (0–1 → %).  85 % = starter ceiling → full bar.
   if (metrics.snap_share != null && position !== "QB") {
     const pct = metrics.snap_share * 100;
-    defs.push({ label: 'Snap Share', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
+    const snapLabel = (position === 'WR' || position === 'TE') ? 'Route Partic' : 'Snap Share';
+    defs.push({ label: snapLabel, fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
   }
 
   if (position === 'QB') {
@@ -8842,26 +8843,27 @@ function buildAdvancedMetricsHTML(metricsData) {
 
   if (defs.length === 0) return '';
 
-  function _renderMetricRow(m) {
+  function _cells(m) {
+    if (!m) return '<span class="pm-comp-label"></span><div class="pm-comp-bar-wrap"></div><div class="pm-comp-val"></div>';
     const fill = Math.max(0, Math.min(100, m.fill));
     const color = m.forceColor || (fill >= 60 ? '#10b981' : fill >= 35 ? '#3b82f6' : '#f59e0b');
-    const subLine = m.sub ? `<div style="font-size:10px;font-weight:500;opacity:.65;line-height:1;">${m.sub}</div>` : '';
-    return `
-      <div class="pm-comp-row">
-        <span class="pm-comp-label">${m.label}</span>
-        <div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>
-        <div class="pm-comp-val" style="color:${color};">${m.display}${subLine}</div>
-      </div>`;
+    const subLine = m.sub ? `<div class="pm-comp-sub">${m.sub}</div>` : '';
+    return `<span class="pm-comp-label">${m.label}</span>` +
+      `<div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>` +
+      `<div class="pm-comp-val" style="color:${color};">${m.display}${subLine}</div>`;
   }
 
   const mid = Math.ceil(defs.length / 2);
-  let leftCol = '<div class="pm-comp-list">';
-  defs.slice(0, mid).forEach(m => { leftCol += _renderMetricRow(m); });
-  leftCol += '</div>';
-  let rightCol = '<div class="pm-comp-list">';
-  defs.slice(mid).forEach(m => { rightCol += _renderMetricRow(m); });
-  rightCol += '</div>';
-  let html = `<div class="adv-metrics-two-col">${leftCol}${rightCol}</div>`;
+  const leftDefs = defs.slice(0, mid);
+  const rightDefs = defs.slice(mid);
+  const rowCount = Math.max(leftDefs.length, rightDefs.length);
+  let gridRows = '';
+  for (let i = 0; i < rowCount; i++) {
+    gridRows += _cells(leftDefs[i]);
+    gridRows += '<div class="am-vert-sep"></div>';
+    gridRows += _cells(rightDefs[i]);
+  }
+  let html = `<div class="adv-metrics-grid">${gridRows}</div>`;
 
   if (metricsData.as_of_date) {
     html += `<div style="font-size:11px;color:var(--text-muted);margin-top:10px;text-align:right;">As of ${metricsData.as_of_date}</div>`;
