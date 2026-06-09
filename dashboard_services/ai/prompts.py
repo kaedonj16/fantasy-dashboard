@@ -24,7 +24,7 @@ def ask_gm_stream(question: str, team_context: dict) -> Generator[str, None, Non
             {"role": "user", "content": user_msg},
         ],
         stream=True,
-        max_tokens=350,
+        max_completion_tokens=350,
     )
     for chunk in stream:
         delta = (chunk.choices[0].delta.content or "") if chunk.choices else ""
