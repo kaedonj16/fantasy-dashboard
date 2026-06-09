@@ -5135,8 +5135,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     try {
       const res = await fetch(
-        `/api/league-rosters?league_id=${encodeURIComponent(leagueId)}&platform=sleeper`,
-        { cache: "no-store" }
+        `/api/league-rosters?league_id=${encodeURIComponent(leagueId)}&platform=sleeper`
       );
       const data = await res.json();
       const teams = data.teams || [];
@@ -5828,6 +5827,10 @@ window.initTradePage = function initTradePage(root = document) {
     });
   });
 
+  // Fire roster filter fetch immediately — independent of player data and movers.
+  // This is the bottleneck for the "Roster filter" feature becoming usable.
+  initRosterFilter();
+
   Promise.allSettled([
     ensurePlayersLoaded(),
     loadTopMovers(),
@@ -5836,7 +5839,6 @@ window.initTradePage = function initTradePage(root = document) {
   ]).then(() => {
     setupSearch("A");
     setupSearch("B");
-    initRosterFilter();
     bindLeagueTypeControls();
     bindLeagueSizeControls();
     bindScoringFormatControls();

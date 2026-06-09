@@ -202,6 +202,9 @@ DASHBOARD_CACHE = {}
 # running the full build_league_context (~40 API calls) at the same time.
 _CTX_LOCKS: dict = {}
 _CTX_LOCKS_LOCK = threading.Lock()
+# Short-lived cache for /api/league-rosters responses (pick-slot resolution is expensive).
+_ROSTER_API_CACHE: dict = {}
+_ROSTER_API_CACHE_TTL = 180  # seconds
 
 # How long a league context is considered fresh
 CACHE_TTL = 60 * 60 * 12  # 12 hours
@@ -16895,6 +16898,12 @@ def api_league_rosters():
     if not league_id:
         return jsonify({"teams": [], "viewer_roster_id": ""})
 
+    # Return cached roster payload if still fresh (pick-slot resolution is expensive).
+    _roster_key = (platform, league_id, season)
+    _cached = _ROSTER_API_CACHE.get(_roster_key)
+    if _cached and time.time() - _cached["ts"] < _ROSTER_API_CACHE_TTL:
+        return jsonify(_cached["data"])
+
     try:
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
         users = ctx.get("users", []) or []
@@ -16953,10 +16962,12 @@ def api_league_rosters():
 
         teams.sort(key=lambda x: x["team_name"])
         viewer = get_viewer_session_for_league(users, rosters) or {}
-        return jsonify({
+        payload = {
             "teams": teams,
             "viewer_roster_id": str(viewer.get("viewer_roster_id") or ""),
-        })
+        }
+        _ROSTER_API_CACHE[_roster_key] = {"data": payload, "ts": time.time()}
+        return jsonify(payload)
     except Exception as e:
         logger.info(f"[api/league-rosters] error: {e}")
         return jsonify({"teams": [], "viewer_roster_id": ""})
