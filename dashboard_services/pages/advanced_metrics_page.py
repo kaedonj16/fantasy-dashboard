@@ -435,6 +435,10 @@ def build_advanced_metrics_body(
         color:var(--accent,#2563eb); padding:8px 14px 4px;
         border-bottom:1px solid var(--border);
       }
+      .am-sp-cat-note {
+        font-size:11px; color:var(--text-muted); padding:8px 14px;
+        border-top:1px solid var(--border); line-height:1.4; font-style:italic;
+      }
       .am-sp-item {
         display:flex; align-items:center; gap:8px;
         padding:7px 14px; font-size:13px; color:var(--text); cursor:pointer;
@@ -550,6 +554,7 @@ _AM_JS = r"""
     const active = new Set([state.metric, ...state.extraMetrics]);
     const items = Object.entries(cfg.metrics)
       .filter(([, spec]) => (spec.category || 'Other') === primaryCat);
+    const otherCats = ['Passing', 'Rushing', 'Receiving'].filter(c => c !== primaryCat);
     let html = '<div class="am-sp-cat-head">' + primaryCat + '</div>';
     for (const [key, spec] of items) {
       const on = active.has(key);
@@ -559,6 +564,11 @@ _AM_JS = r"""
         + spec.label
         + (isPrimary ? ' <span style="font-size:10px;opacity:.6">(primary)</span>' : '')
         + '</div>';
+    }
+    if (otherCats.length) {
+      html += '<div class="am-sp-cat-note">To compare '
+        + otherCats.join(' or ')
+        + ' stats, switch the primary metric above</div>';
     }
     picker.innerHTML = html;
   }
