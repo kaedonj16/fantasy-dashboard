@@ -4873,7 +4873,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Waiver Wire Targets</h2>
-              <div class="os-section-subtitle">Smart pickup recommendations — value + trend + breakout potential</div>
+              <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
             </div>
             <button type="button" class="card-collapse-toggle" data-target="waiver-assets-body">▼</button>
           </div>
