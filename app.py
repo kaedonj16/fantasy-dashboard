@@ -1744,29 +1744,13 @@ def render_page(
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
 
-    # Build Ask My GM widget when user has a league + roster context
+    # Inject Ask My GM context for JS to pick up and add to the floating pill group
     viewer_roster_id = session.get("viewer_roster_id") or ""
     if league_id and platform and season and viewer_roster_id:
-        ask_gm_widget = f"""<div id="askGmWidget" class="ask-gm-widget"
-  data-league="{league_id}" data-platform="{platform}"
-  data-season="{season}" data-roster="{viewer_roster_id}">
-  <button class="ask-gm-fab" id="askGmFab" aria-label="Ask My GM" title="Ask My GM">
-    <i class="fa-solid fa-robot"></i>
-  </button>
-  <div class="ask-gm-panel" id="askGmPanel" style="display:none;">
-    <div class="ask-gm-header">
-      <span><i class="fa-solid fa-robot" style="color:var(--accent)"></i> Ask My GM</span>
-      <button class="ask-gm-close" id="askGmClose" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
-    </div>
-    <div class="ask-gm-messages" id="askGmMessages">
-      <div class="ask-gm-msg ask-gm-msg--system">Ask me anything about your roster — trade advice, waiver targets, start/sit questions, and more.</div>
-    </div>
-    <div class="ask-gm-input-row">
-      <input class="ask-gm-input" id="askGmInput" type="text" placeholder="e.g. Should I trade Bijan Robinson?" maxlength="400" autocomplete="off">
-      <button class="ask-gm-send" id="askGmSend" aria-label="Send"><i class="fa-solid fa-paper-plane"></i></button>
-    </div>
-  </div>
-</div>"""
+        ask_gm_widget = (
+            f'<div id="askGmCtx" hidden data-league="{league_id}" '
+            f'data-platform="{platform}" data-season="{season}" data-roster="{viewer_roster_id}"></div>'
+        )
     else:
         ask_gm_widget = ""
 

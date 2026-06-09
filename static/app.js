@@ -12321,48 +12321,112 @@ function setupFunAwardsGrid() {
 })();
 
 
-// ── Feature 10 + 15: Ask My GM Chat Widget ──────────────────────────────────
+// ── Feature 10 + 15: Ask My GM — pill in floating group + panel above ────────
 (function initAskGm() {
-  var widget  = document.getElementById('askGmWidget');
-  if (!widget) return;
+  var ctx = document.getElementById('askGmCtx');
+  if (!ctx) return;
 
-  var fab     = document.getElementById('askGmFab');
-  var panel   = document.getElementById('askGmPanel');
-  var closeBtn= document.getElementById('askGmClose');
-  var input   = document.getElementById('askGmInput');
-  var sendBtn = document.getElementById('askGmSend');
-  var messages= document.getElementById('askGmMessages');
-
-  var leagueId = widget.dataset.league;
-  var platform = widget.dataset.platform;
-  var season   = widget.dataset.season;
-  var rosterId = widget.dataset.roster;
+  var leagueId = ctx.dataset.league;
+  var platform = ctx.dataset.platform;
+  var season   = ctx.dataset.season;
+  var rosterId = ctx.dataset.roster;
   var isOpen   = false;
   var isBusy   = false;
 
-  function togglePanel(open) {
-    isOpen = (open !== undefined) ? open : !isOpen;
-    panel.style.display = isOpen ? 'flex' : 'none';
-    fab.innerHTML = isOpen
-      ? '<i class="fa-solid fa-xmark"></i>'
-      : '<i class="fa-solid fa-robot"></i>';
-    if (isOpen && input) input.focus();
+  // Add pill to the shared floating pill group (created by initFreshness)
+  function addPill() {
+    var group = document.getElementById('floating-pill-group');
+    if (!group || document.getElementById('ask-gm-pill')) return;
+    var pill = document.createElement('button');
+    pill.id = 'ask-gm-pill';
+    pill.className = 'fp-pill';
+    pill.type = 'button';
+    pill.setAttribute('aria-label', 'Ask My GM');
+    pill.innerHTML =
+      '<span class="fp-pill-icon"><i class="fa-solid fa-robot" style="font-size:15px;"></i></span>' +
+      '<span class="fp-pill-label">Ask My GM</span>';
+    // Insert before discord pill so order is: GM · Discord · Refresh
+    var discord = document.getElementById('discord-pill');
+    group.insertBefore(pill, discord || group.firstChild);
+    pill.addEventListener('click', togglePanel);
   }
 
-  fab.addEventListener('click', function() { togglePanel(); });
-  if (closeBtn) closeBtn.addEventListener('click', function() { togglePanel(false); });
+  // Build the panel once, append to body
+  function buildPanel() {
+    if (document.getElementById('ask-gm-panel')) return;
+    var panel = document.createElement('div');
+    panel.id = 'ask-gm-panel';
+    panel.style.display = 'none';
+    panel.innerHTML =
+      '<div class="ask-gm-header">' +
+        '<div class="ask-gm-header-icon"><i class="fa-solid fa-robot"></i></div>' +
+        '<div class="ask-gm-header-text">' +
+          '<div class="ask-gm-header-title">Ask My GM</div>' +
+          '<div class="ask-gm-header-sub">Roster advice, trade analysis, start/sit</div>' +
+        '</div>' +
+        '<button class="ask-gm-close" id="ask-gm-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>' +
+      '</div>' +
+      '<div class="ask-gm-messages" id="ask-gm-messages">' +
+        '<div class="ask-gm-msg ask-gm-msg--system">Ask me anything about your roster — trades, waivers, start/sit, and more.</div>' +
+      '</div>' +
+      '<div class="ask-gm-input-row">' +
+        '<input class="ask-gm-input" id="ask-gm-input" type="text" placeholder="e.g. Should I trade Bijan Robinson?" maxlength="400" autocomplete="off">' +
+        '<button class="ask-gm-send" id="ask-gm-send" aria-label="Send"><i class="fa-solid fa-paper-plane"></i></button>' +
+      '</div>';
+    document.body.appendChild(panel);
 
-  function addMsg(cls, text) {
+    document.getElementById('ask-gm-close').addEventListener('click', function() { togglePanel(false); });
+
+    var input   = document.getElementById('ask-gm-input');
+    var sendBtn = document.getElementById('ask-gm-send');
+    sendBtn.addEventListener('click', sendQuestion);
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+    });
+  }
+
+  function togglePanel(open) {
+    isOpen = (open !== undefined) ? open : !isOpen;
+    var panel = document.getElementById('ask-gm-panel');
+    var pill  = document.getElementById('ask-gm-pill');
+    if (!panel) return;
+    panel.style.display = isOpen ? 'flex' : 'none';
+    if (pill) pill.classList.toggle('gm-active', isOpen);
+    if (isOpen) {
+      var inp = document.getElementById('ask-gm-input');
+      if (inp) inp.focus();
+    }
+  }
+
+  // Close when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!isOpen) return;
+    var panel = document.getElementById('ask-gm-panel');
+    var pill  = document.getElementById('ask-gm-pill');
+    if (panel && !panel.contains(e.target) && pill && !pill.contains(e.target)) {
+      togglePanel(false);
+    }
+  });
+
+  function addMsg(cls, html) {
+    var messages = document.getElementById('ask-gm-messages');
+    if (!messages) return null;
     var el = document.createElement('div');
     el.className = 'ask-gm-msg ask-gm-msg--' + cls;
-    el.textContent = text;
+    if (cls === 'typing') {
+      el.innerHTML = '<div class="ask-gm-typing-dot"></div><div class="ask-gm-typing-dot"></div><div class="ask-gm-typing-dot"></div>';
+    } else {
+      el.textContent = html;
+    }
     messages.appendChild(el);
     messages.scrollTop = messages.scrollHeight;
     return el;
   }
 
   async function sendQuestion() {
-    var q = (input.value || '').trim();
+    var input   = document.getElementById('ask-gm-input');
+    var sendBtn = document.getElementById('ask-gm-send');
+    var q = (input ? input.value : '').trim();
     if (!q || isBusy) return;
 
     isBusy = true;
@@ -12371,27 +12435,27 @@ function setupFunAwardsGrid() {
 
     addMsg('user', q);
     var aiEl = addMsg('ai', '');
+    // swap to typing animation immediately
+    aiEl.innerHTML = '<div class="ask-gm-typing-dot"></div><div class="ask-gm-typing-dot"></div><div class="ask-gm-typing-dot"></div>';
     aiEl.classList.add('ask-gm-msg--typing');
 
+    var messages = document.getElementById('ask-gm-messages');
     try {
       var resp = await fetch('/api/ask-gm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: q, league_id: leagueId, platform: platform, season: parseInt(season), roster_id: rosterId })
       });
-
-      if (!resp.ok) throw new Error('Request failed (' + resp.status + ')');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
 
       var reader = resp.body.getReader();
       var decoder = new TextDecoder();
-      var buf = '';
-      var text = '';
+      var buf = '', text = '', started = false;
 
       while (true) {
         var _ref = await reader.read();
-        var done = _ref.done, value = _ref.value;
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
+        if (_ref.done) break;
+        buf += decoder.decode(_ref.value, { stream: true });
         var lines = buf.split('\n');
         buf = lines.pop();
         for (var i = 0; i < lines.length; i++) {
@@ -12401,32 +12465,50 @@ function setupFunAwardsGrid() {
           if (raw === '[DONE]') break;
           try {
             var parsed = JSON.parse(raw);
-            if (parsed.error) { aiEl.textContent = parsed.error; aiEl.classList.add('ask-gm-msg--error'); break; }
-            if (parsed.text) { text += parsed.text; aiEl.textContent = text; }
-          } catch (e) {}
+            if (parsed.error) {
+              aiEl.textContent = parsed.error;
+              aiEl.classList.add('ask-gm-msg--error');
+              break;
+            }
+            if (parsed.text) {
+              if (!started) {
+                aiEl.classList.remove('ask-gm-msg--typing');
+                aiEl.innerHTML = '';
+                started = true;
+              }
+              text += parsed.text;
+              aiEl.textContent = text;
+            }
+          } catch (_) {}
         }
-        messages.scrollTop = messages.scrollHeight;
+        if (messages) messages.scrollTop = messages.scrollHeight;
       }
-
-      aiEl.classList.remove('ask-gm-msg--typing');
-      if (!text) aiEl.textContent = 'No response — try rephrasing.';
+      if (!text && !aiEl.classList.contains('ask-gm-msg--error')) {
+        aiEl.classList.remove('ask-gm-msg--typing');
+        aiEl.textContent = 'No response — try rephrasing.';
+      }
     } catch (err) {
+      aiEl.classList.remove('ask-gm-msg--typing');
       aiEl.textContent = 'Unable to reach GM. Try again in a moment.';
       aiEl.classList.add('ask-gm-msg--error');
-      aiEl.classList.remove('ask-gm-msg--typing');
     } finally {
       isBusy = false;
       sendBtn.disabled = false;
       if (input) input.focus();
-      messages.scrollTop = messages.scrollHeight;
+      if (messages) messages.scrollTop = messages.scrollHeight;
     }
   }
 
-  sendBtn.addEventListener('click', sendQuestion);
-  if (input) {
-    input.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
-    });
+  // Init after DOM is ready and pill group exists
+  function tryInit() {
+    var group = document.getElementById('floating-pill-group');
+    if (group) { addPill(); buildPanel(); }
+    else { setTimeout(tryInit, 100); }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tryInit);
+  } else {
+    tryInit();
   }
 })();
 
