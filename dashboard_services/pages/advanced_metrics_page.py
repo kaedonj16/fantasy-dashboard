@@ -314,10 +314,10 @@ def build_advanced_metrics_body(
       .am-row:hover { background:var(--bg-alt, rgba(0,0,0,.03)); }
       .am-row.am-owned { background:rgba(59,130,246,0.08); }
       .am-row.am-owned:hover { background:rgba(59,130,246,0.14); }
-      .am-row.am-owned .am-name::after {
-        content:"YOURS"; margin-left:7px; font-size:9px; font-weight:800; letter-spacing:.04em;
+      .am-owned-badge {
+        font-size:9px; font-weight:800; letter-spacing:.04em; flex-shrink:0;
         color:var(--accent,#2563eb); border:1px solid var(--accent,#2563eb); border-radius:4px;
-        padding:1px 4px; vertical-align:middle;
+        padding:1px 4px; white-space:nowrap;
       }
       .am-rank { width:36px; color:var(--text-muted); font-size:12px; }
       .am-games { width:40px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
@@ -536,11 +536,13 @@ _AM_JS = r"""
         : '';
       const volNum = r.vol != null ? r.vol : (r.games != null ? r.games : '–');
       const gamesCell = '<td class="am-games">' + volNum + '</td>';
+      const ownedBadge = owned ? '<span class="am-owned-badge">YOURS</span>' : '';
       const playerCell = '<td class="am-player"><div class="am-player-inner">'
         + '<span class="am-name">' + (r.name || '') + '</span>'
+        + ownedBadge
         + '<span class="am-player-right">'
-        + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
         + '<span class="am-meta">' + (r.team || '') + '</span>'
+        + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
         + '</span></div></td>';
       const metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
         + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
