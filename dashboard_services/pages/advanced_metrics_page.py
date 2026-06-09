@@ -106,17 +106,16 @@ def build_advanced_metrics_body(
     <div class="card central">
       <div class="card-header">
         <div>
-          <div class="am-title-row">
-            <h2>Advanced Metrics</h2>
-            <button id="amLegendBtn" type="button" class="am-legend-btn"
-              onclick="document.getElementById('amLegendModal').style.display='flex'">
-              <i class="fa-solid fa-circle-info"></i> Metric Glossary
-            </button>
-          </div>
+          <h2>Advanced Metrics</h2>
           <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
             Rank every player by a single advanced metric. Bars are relative to the leader.
           </div>
         </div>
+        <button id="amLegendBtn" type="button" class="am-legend-btn"
+          onclick="document.getElementById('amLegendModal').style.display='flex'">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          Metric Glossary
+        </button>
       </div>
 
       <div id="amLegendModal" class="am-legend-modal" style="display:none;"
@@ -222,15 +221,13 @@ def build_advanced_metrics_body(
 
     style = """
     <style>
-      .am-title-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-      .am-title-row h2 { margin:0; }
       .am-legend-btn {
-        flex-shrink:0; display:inline-flex; align-items:center; gap:6px;
-        padding:5px 11px; border:1px solid var(--border); border-radius:999px;
-        background:var(--card); color:var(--text-muted); font-size:12px; font-weight:600;
-        cursor:pointer; white-space:nowrap; transition:all .12s;
+        flex-shrink:0; display:flex; align-items:center; gap:6px;
+        padding:5px 10px; border:1px solid var(--border); border-radius:8px;
+        background:var(--card); color:var(--text-muted); font-size:12px;
+        cursor:pointer; white-space:nowrap; text-align:left; transition:background .14s;
       }
-      .am-legend-btn:hover { border-color:var(--accent); color:var(--accent); }
+      .am-legend-btn:hover { background:var(--row); }
       .am-legend-modal {
         position:fixed; inset:0; z-index:1000; display:flex; align-items:center;
         justify-content:center; padding:20px; background:rgba(0,0,0,.5);
