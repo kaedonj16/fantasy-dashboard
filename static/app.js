@@ -8730,6 +8730,11 @@ function buildAdvancedMetricsHTML(metricsData) {
       // WR/TE realistic range 40-85 %; 85 = elite ceiling
       defs.push({ label: 'Catch Rate', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
     }
+    if (metrics.yprr != null) {
+      const v = metrics.yprr;
+      // 1.0 = average, 2.0 = good, 3.0 = elite; scale to 3.0
+      defs.push({ label: 'Yds/Route Run', fill: Math.min(v / 3.0 * 100, 100), display: v.toFixed(2) });
+    }
     if (metrics.drop_rate != null) {
       const v = metrics.drop_rate;
       // Lower is better; flip color: green = low drop rate
@@ -9659,7 +9664,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
   ];
 
   const wrTeMetrics = [
-    'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
+    'yards_per_target', 'catch_rate', 'yprr', 'yards_per_reception', 'target_quality_score',
     'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
     'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
     'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
@@ -9674,6 +9679,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     // Receiving metrics
     yards_per_target: 'Yards/Target',
     catch_rate: 'Catch Rate',
+    yprr: 'Yds/Route Run',
     yards_per_reception: 'Yards/Rec',
     target_quality_score: 'Target Quality',
     yards_after_catch: 'YAC',
