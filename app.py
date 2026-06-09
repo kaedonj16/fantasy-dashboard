@@ -24426,16 +24426,19 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 
         pos_colors = {"QB": "#6366f1", "RB": "#10b981", "WR": "#3b82f6", "TE": "#f59e0b"}
 
-        rows_html = "".join(
-            f'<div class="sc-player-row">'
-            f'<span class="sc-pos-pill" style="background:{pos_colors.get(p["pos"], "#64748b")}26;color:{pos_colors.get(p["pos"], "#64748b")}">{p["pos"]}</span>'
-            f'<span class="sc-player-name">{p["name"]}</span>'
-            f'<span class="sc-player-team">{p["team"]}</span>'
-            f'{"<span class=\'sc-player-age\'>" + str(p["age"]) + "</span>" if p["age"] else ""}'
-            f'<span class="sc-player-val">{p["value"]:,}</span>'
-            f'</div>'
-            for p in top5
-        )
+        def _player_row(p):
+            age_span = f'<span class="sc-player-age">{p["age"]}</span>' if p["age"] else ""
+            col = pos_colors.get(p["pos"], "#64748b")
+            return (
+                f'<div class="sc-player-row">'
+                f'<span class="sc-pos-pill" style="background:{col}26;color:{col}">{p["pos"]}</span>'
+                f'<span class="sc-player-name">{p["name"]}</span>'
+                f'<span class="sc-player-team">{p["team"]}</span>'
+                f'{age_span}'
+                f'<span class="sc-player-val">{p["value"]:,}</span>'
+                f'</div>'
+            )
+        rows_html = "".join(_player_row(p) for p in top5)
 
         pos_rank_html = "".join(
             f'<div class="sc-pos-rank-cell">'
