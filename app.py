@@ -17084,11 +17084,13 @@ def api_advanced_metrics_leaderboard():
         players = []
 
     spec = LEADERBOARD_METRICS[metric]
+    vol_col = (spec.get("min_vol") or {}).get("col") or "games"
     return jsonify({
         "metric": metric,
         "label": spec["label"],
         "positions": spec["positions"],
         "lower_better": bool(spec.get("lower_better")),
+        "vol_col": vol_col,
         "players": players,
     })
 

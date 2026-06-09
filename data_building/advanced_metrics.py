@@ -1277,8 +1277,11 @@ def get_metric_leaderboard(
             params.append(min_vol)
         params.append(limit)
         games_col = "m.games AS games," if has_games else ""
+        # Also select the relevant volume column so the leaderboard can display it.
+        has_specific_vol = vol_col != "games" and vol_col in existing_cols
+        specific_vol_col = f"m.{vol_col} AS vol," if has_specific_vol else ""
         rows = conn.execute(
-            f"""SELECT m.player_id, m.position, {games_col} m.{metric} AS value
+            f"""SELECT m.player_id, m.position, {games_col} {specific_vol_col} m.{metric} AS value
                 FROM player_advanced_metrics m{vol_join}
                 WHERE m.as_of_date = %s{gate} AND m.{metric} IS NOT NULL
                 ORDER BY m.{metric} DESC LIMIT %s""",
@@ -1295,13 +1298,20 @@ def get_metric_leaderboard(
     for r in rows:
         pid = str(r["player_id"])
         meta = idx.get(pid) or {}
+        games_val = (int(r["games"]) if r["games"] is not None else None) if has_games else None
+        # Use the metric-specific volume column when available; fall back to games.
+        if has_specific_vol:
+            vol_val = int(r["vol"]) if r["vol"] is not None else None
+        else:
+            vol_val = games_val
         out.append({
             "player_id": pid,
             "name": meta.get("name") or "Unknown",
             "team": meta.get("team") or "",
             "position": r["position"],
             "value": float(r["value"]) if r["value"] is not None else None,
-            "games": (int(r["games"]) if r["games"] is not None else None) if has_games else None,
+            "games": games_val,
+            "vol": vol_val,
         })
     return out
 

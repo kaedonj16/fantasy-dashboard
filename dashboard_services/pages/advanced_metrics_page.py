@@ -204,6 +204,7 @@ def build_advanced_metrics_body(
             <tr>
               <th class="am-rank">#</th>
               <th class="am-player">Player</th>
+              <th class="am-games" title="Games played">G</th>
               <th class="am-barcell"></th>
               <th class="am-val">Value</th>
             </tr>
@@ -315,6 +316,7 @@ def build_advanced_metrics_body(
         padding:1px 4px; vertical-align:middle;
       }
       .am-rank { width:36px; color:var(--text-muted); font-size:12px; }
+      .am-games { width:36px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
       .am-barcell { width:42%; }
       .am-val { text-align:right; font-weight:700; white-space:nowrap; width:70px; }
       .am-name { font-weight:600; }
@@ -331,7 +333,8 @@ def build_advanced_metrics_body(
       .am-avg-note { font-size:11px; color:var(--text-muted); margin:0 0 10px; display:flex; align-items:center; gap:6px; }
       .am-avg-note .am-avg-swatch { display:inline-block; width:2px; height:12px; background:var(--text-muted); opacity:.55; }
       @media (max-width:600px){
-        .am-barcell, .am-table th.am-barcell { display:none; }
+        .am-barcell, .am-table th.am-barcell,
+        .am-games, .am-table th.am-games { display:none; }
         .am-controls { gap:10px; }
         /* Metric takes full width; Search fills the row below it */
         .am-ctrl:first-child { flex:1 0 100%; }
@@ -389,9 +392,13 @@ _AM_JS = r"""
   if (seasonCtrl && (!cfg.seasons || cfg.seasons.length <= 1)) seasonCtrl.style.display = 'none';
 
   const PAGE_SIZE = 25;
+  const VOL_LABELS = {
+    games: 'G', total_pass_att: 'Att', total_carries: 'Car',
+    total_touches: 'Tch', total_targets: 'Tgt', total_receptions: 'Rec',
+  };
   const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', rows: [], search: '',
                   season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0,
-                  fetching: false };
+                  fetching: false, volCol: 'games' };
   let ownedIds = new Set();
   const paginationEl = document.getElementById('amPagination');
   const volLabel = document.getElementById('amVolLabel');
@@ -514,11 +521,13 @@ _AM_JS = r"""
       const avgMark = (avgPct != null)
         ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl + '</div>'
         : '';
+      const gamesCell = '<td class="am-games">' + (r.vol != null ? r.vol : (r.games != null ? r.games : '–')) + '</td>';
       return '<tr class="am-row' + (owned ? ' am-owned' : '') + '" style="cursor:pointer;" onclick="window.openPlayerModal&&openPlayerModal(\'' + r.player_id + '\',\'' + safe + '\')">'
         + '<td class="am-rank">' + rank + '</td>'
         + '<td class="am-player"><span class="am-name">' + (r.name || '') + '</span>'
         + '<span class="am-meta" style="color:' + col + '">' + r.position + '</span>'
         + '<span class="am-meta">' + (r.team || '') + '</span></td>'
+        + gamesCell
         + '<td class="am-barcell"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></td>'
         + '<td class="am-val">' + fmtVal(r.value) + '</td></tr>';
     }).join('');
@@ -538,6 +547,15 @@ _AM_JS = r"""
       }
     }
   }
+  function updateVolHeader() {
+    const th = document.querySelector('#amTable thead th.am-games');
+    if (th) {
+      const lbl = VOL_LABELS[state.volCol] || 'G';
+      th.textContent = lbl;
+      th.title = { games: 'Games played', total_pass_att: 'Pass attempts', total_carries: 'Carries',
+                   total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
+    }
+  }
   function fetchData() {
     if (!cfg.hasPremium) { paywall.style.display = ''; loading.style.display = 'none'; return; }
     state.fetching = true;
@@ -549,7 +567,7 @@ _AM_JS = r"""
     if (state.minVol) params.set('min_vol', state.minVol);
     fetch('/api/advanced-metrics/leaderboard?' + params)
       .then(r => { if (r.status === 403) { state.fetching = false; paywall.style.display = ''; loading.style.display = 'none'; return null; } return r.json(); })
-      .then(d => { if (!d) return; state.fetching = false; state.rows = d.players || []; render(); })
+      .then(d => { if (!d) return; state.fetching = false; state.rows = d.players || []; state.volCol = d.vol_col || 'games'; updateVolHeader(); render(); })
       .catch(() => { state.fetching = false; loading.style.display = 'none'; empty.style.display = ''; });
   }
 
