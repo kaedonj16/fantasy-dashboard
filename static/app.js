@@ -8766,9 +8766,19 @@ function buildAdvancedMetricsHTML(metricsData) {
       defs.push({ label: 'Contested Catch %', fill: Math.min(v / 65 * 100, 100), display: v.toFixed(1) + '%' });
     }
     if (metrics.target_share != null) {
-      const pct = metrics.target_share * 100;
+      const pct = metrics.target_share;
       // 28 % target share = elite
       defs.push({ label: 'Target Share', fill: Math.min(pct / 28 * 100, 100), display: pct.toFixed(1) + '%' });
+    }
+    if (metrics.air_yards_per_game != null) {
+      const v = metrics.air_yards_per_game;
+      // 80+ air yards/game = elite target hog
+      defs.push({ label: 'Air Yds/Game', fill: Math.min(v / 80 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.air_yards_share != null) {
+      const pct = metrics.air_yards_share;
+      // 25%+ air yards share = featured receiver
+      defs.push({ label: 'Air Yards Share', fill: Math.min(pct / 25 * 100, 100), display: pct.toFixed(1) + '%' });
     }
     if (metrics.target_quality_score != null) {
       const v = metrics.target_quality_score;

@@ -210,6 +210,10 @@ _ROSTER_API_CACHE_TTL = 180  # seconds
 _PLAYOFF_SIM_CACHE: dict = {}
 _PLAYOFF_SIM_CACHE_TTL = 3600  # 1 hour
 
+# Cache for share card HTML (keyed by platform/league_id/season/roster_id).
+_SHARE_CARD_CACHE: dict = {}
+_SHARE_CARD_CACHE_TTL = 600  # 10 minutes
+
 # How long a league context is considered fresh
 CACHE_TTL = 60 * 60 * 12  # 12 hours
 
@@ -1400,11 +1404,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ("Weekly Recap",       "page_recap",            "recap",    False),
         ], ["weekly", "recap"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
-        ("Standings",     "page_standings",    "standings",    False),
-        ("Teams",         "page_teams",        "teams",        False),
-        ("Activity",      "page_activity",     "activity",     False),
-        ("League Health", "page_commissioner", "league_health", False),
-    ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
+        ("Standings",       "page_standings",       "standings",       False),
+        ("Teams",           "page_teams",           "teams",           False),
+        ("Power Rankings",  "page_power_rankings",  "power-rankings",  False),
+        ("Activity",        "page_activity",        "activity",        False),
+        ("League Health",   "page_commissioner",    "league_health",   False),
+    ], ["standings", "teams", "power-rankings", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
         ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "page_advanced_metrics", "advanced-metrics", False),
@@ -8320,6 +8325,7 @@ def build_teams_body(ctx: dict) -> str:
             <button class="teams-sort-btn" data-sort="posindex">Positional Index</button>
             <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
             <button class="teams-sort-btn" data-sort="archetype">Archetype</button>
+            <span id="teamsSortLabel" style="font-size:11px;color:var(--text-muted);margin-left:10px;opacity:0;transition:opacity .2s;"></span>
           </div>
           {_window_legend_html}
         </div>
@@ -8362,6 +8368,12 @@ def build_teams_body(ctx: dict) -> str:
         var viewer = grid.querySelector('.team-strength-card[data-roster-id="' + rid + '"]');
         if (viewer && grid.firstChild !== viewer) grid.insertBefore(viewer, grid.firstChild);
       }}
+      function _setSortLabel(text) {{
+        var lbl = document.getElementById('teamsSortLabel');
+        if (!lbl) return;
+        lbl.textContent = text ? ('Sorted by ' + text) : '';
+        lbl.style.opacity = text ? '1' : '0';
+      }}
       function restoreDefault() {{
         var grid = document.getElementById('teamsGrid');
         if (!grid) return;
@@ -8371,7 +8383,9 @@ def build_teams_body(ctx: dict) -> str:
         floatViewer();
         document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{ btn.classList.remove('active'); }});
         _sortKey = '';
+        _setSortLabel('');
       }}
+      var _sortKeyLabels = {{ posindex: 'Positional Index', grade: 'Team Grade', archetype: 'Archetype' }};
       function sortTeams(key) {{
         // clicking the active sort deselects it and restores default order
         if (_sortKey === key) {{ restoreDefault(); return; }}
@@ -8392,6 +8406,7 @@ def build_teams_body(ctx: dict) -> str:
         document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
           btn.classList.toggle('active', btn.dataset.sort === key);
         }});
+        _setSortLabel(_sortKeyLabels[key] || key);
       }}
       document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
         btn.addEventListener('click', function() {{ sortTeams(btn.dataset.sort); }});
@@ -8564,6 +8579,27 @@ def page_standings(platform: str, season: int, league_id: str):
         body = build_standings_body(ctx)
 
     return render_page("BR Fantasy Standings", league_id, "standings", body, platform, season)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/power-rankings")
+def page_power_rankings(platform: str, season: int, league_id: str):
+    ctx = get_league_ctx_from_cache(platform, league_id, season)
+    pr_html = get_power_rankings_html(ctx)
+    current_week = ctx.get("current_week") or ""
+    week_label = f"Week {current_week}" if current_week else str(season)
+    body = f"""
+    <div class="page-layout">
+      <main class="page-main" style="max-width:800px;margin:0 auto;padding:24px 16px;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+          <h2 style="margin:0;font-size:20px;font-weight:700;">Power Rankings</h2>
+          <span style="font-size:13px;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:3px 10px;">{week_label}</span>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:auto;">Composite of Win%, Points For &amp; Roster Value</span>
+        </div>
+        {pr_html}
+      </main>
+    </div>
+    """
+    return render_page("Power Rankings", league_id, "power-rankings", body, platform, season)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/waivers")
@@ -24227,6 +24263,11 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     """Shareable team report card with grade, positional rankings, and roster analytics."""
     if not roster_id:
         roster_id = session.get("viewer_roster_id") or ""
+    # Serve from cache if fresh
+    _sc_key = (platform, league_id, season, roster_id)
+    _sc_cached = _SHARE_CARD_CACHE.get(_sc_key)
+    if _sc_cached and time.time() - _sc_cached["ts"] < _SHARE_CARD_CACHE_TTL:
+        return _sc_cached["html"], 200, {"Content-Type": "text/html; charset=utf-8"}
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         rosters = ctx.get("rosters") or []
@@ -24329,22 +24370,45 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             break
 
         top5 = player_rows[:5]
-        total_value = sum(p["value"] for p in player_rows)
+        player_value = sum(p["value"] for p in player_rows)
 
-        # ── Dynasty rank across league ───────────────────────────────────────
+        # ── Add pick value to dynasty total ──────────────────────────────────
+        _picks = picks_by_roster.get(str(roster_id), [])
+        try:
+            _pick_tbl = load_pick_value_table() or {}
+            _pick_val = _team_pick_value(_picks, _pick_tbl, platform=platform,
+                                         league_id=league_id, season=season)
+        except Exception:
+            _pick_val = 0.0
+        total_value = player_value + _pick_val
+
+        # ── Dynasty rank across league (players + picks) ─────────────────────
+        _pick_tbl_rank = {}
+        try:
+            _pick_tbl_rank = load_pick_value_table() or {}
+        except Exception:
+            pass
         _all_totals = {}
         for _r2 in rosters:
             _rid2 = str(_r2.get("roster_id") or "")
             if not _rid2:
                 continue
-            _all_totals[_rid2] = sum(
+            _pv2 = sum(
                 float((values_by_id.get(str(_pid)) or {}).get(vfield) or 0)
                 for _pid in (_r2.get("players") or [])
             )
+            _pkv2 = 0.0
+            try:
+                _pkv2 = _team_pick_value(
+                    picks_by_roster.get(_rid2, []), _pick_tbl_rank,
+                    platform=platform, league_id=league_id, season=season,
+                )
+            except Exception:
+                pass
+            _all_totals[_rid2] = _pv2 + _pkv2
         dynasty_rank = sum(1 for v in _all_totals.values() if v > total_value) + 1
 
         # ── Top pick assets ──────────────────────────────────────────────────
-        _picks = picks_by_roster.get(str(roster_id), [])
         _pick_labels = []
         for _pk in sorted(_picks, key=lambda x: (int(x.get("season") or 9999), int(x.get("round") or 99)))[:3]:
             _yr = str(_pk.get("season") or "")[-2:]  # '26' from '2026'
@@ -24370,7 +24434,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         # ── Positional ranks ─────────────────────────────────────────────────
         pos_ranks = {pos: _pos_rank(str(roster_id), pos) for pos in POS_ORDER}
 
-        # ── Team grade via calculate_roster_grade ────────────────────────────
+        # ── Team grade via calculate_roster_grade (matches teams page) ───────
         grade_label, win_window = "–", ""
         try:
             from dashboard_services.ai.context_builders import calculate_roster_grade as _calc_grade
@@ -24378,28 +24442,50 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                 {"position": p["pos"], "value": p["value"], "age": p["age"]}
                 for p in player_rows if p["pos"] in CORE_POS
             ]
-            future_picks = picks_by_roster.get(str(roster_id), [])
-
-            # Compute dynasty and redraft percentiles vs league
-            all_dynasty = []
+            future_picks = _picks
             redraft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
-            for r2 in rosters:
-                rid2 = str(r2.get("roster_id") or "")
-                dv = sum(
-                    float((values_by_id.get(str(pid)) or {}).get(vfield) or 0)
-                    for pid in (r2.get("players") or [])
-                )
-                all_dynasty.append((rid2, dv))
-            all_dynasty.sort(key=lambda x: x[1])
-            _n = max(len(all_dynasty) - 1, 1)
-            target_dv = sum(p["value"] for p in player_rows)
-            dynasty_pct = sum(1 for _, dv in all_dynasty if dv < target_dv) / _n
+
+            # Build top-8 dynasty / redraft pairs per team (matching teams page logic)
+            _team_dyn: dict = {}
+            _team_rdraft: dict = {}
+            _team_dratio: dict = {}
+            for _r2 in rosters:
+                _rid2_int = _r2.get("roster_id")
+                if _rid2_int is None:
+                    continue
+                _p2: list = []
+                for _pid2 in (_r2.get("players") or []):
+                    _vr = values_by_id.get(str(_pid2)) or {}
+                    _pos2 = str(_vr.get("position") or "").upper()
+                    if _pos2 not in CORE_POS:
+                        continue
+                    _d2 = float(_vr.get(vfield) or 0)
+                    _rv2 = float(_vr.get(redraft_key) or 0)
+                    _p2.append((_d2, _rv2))
+                _p2.sort(reverse=True)
+                _team_dyn[_rid2_int] = sum(d for d, _ in _p2[:8])
+                _team_rdraft[_rid2_int] = sum(rv for _, rv in _p2[:8])
+                _ratios2 = [d / max(rv, 1) for d, rv in _p2[:10] if d > 50 or rv > 50]
+                _team_dratio[_rid2_int] = round(sum(_ratios2) / len(_ratios2), 3) if _ratios2 else 1.0
+
+            def _sc_pct(totals: dict, rid_int: int) -> float:
+                _srt = sorted(totals.values())
+                _nn = max(len(_srt) - 1, 1)
+                t = totals.get(rid_int, 0.0)
+                return sum(1 for v in _srt if v < t) / _nn
+
+            _rid_int = int(roster_id) if str(roster_id).isdigit() else -1
+            dynasty_pct = _sc_pct(_team_dyn, _rid_int)
+            redraft_pct = _sc_pct(_team_rdraft, _rid_int)
+            dr_ratio = _team_dratio.get(_rid_int, 1.0)
 
             grade_data = _calc_grade(
                 flat_players, future_picks,
                 position_ranks=pos_ranks,
                 num_teams=n_teams,
                 dynasty_pct_val=dynasty_pct,
+                redraft_pct_val=redraft_pct,
+                dr_ratio=dr_ratio,
             )
             grade_label = grade_data.get("grade", "–")
             win_window = grade_data.get("win_window", "")
@@ -24535,6 +24621,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   </div>
 </body>
 </html>"""
+        _SHARE_CARD_CACHE[_sc_key] = {"html": card_html, "ts": time.time()}
         return card_html, 200, {"Content-Type": "text/html; charset=utf-8"}
     except Exception as exc:
         logger.exception("[page-share-card] %s", exc)
