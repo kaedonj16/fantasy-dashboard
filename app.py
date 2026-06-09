@@ -24186,7 +24186,7 @@ def api_league_bulletins():
 @app.route("/<platform>/<int:season>/<league_id>/share-card")
 @app.route("/<platform>/<int:season>/<league_id>/share-card/<roster_id>")
 def page_share_card(platform: str, season: int, league_id: str, roster_id: str = ""):
-    """Minimal shareable team report card page."""
+    """Shareable team report card with grade, positional rankings, and roster analytics."""
     if not roster_id:
         roster_id = session.get("viewer_roster_id") or ""
     try:
@@ -24194,6 +24194,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         rosters = ctx.get("rosters") or []
         standings = ctx.get("standings_map") or {}
         users = ctx.get("users") or []
+        picks_by_roster = ctx.get("picks_by_roster") or {}
         players_index = {}
         try:
             from utils.utils import load_players_index
@@ -24208,6 +24209,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                     for s in (league_info.get("roster_positions") or []))
         vfield = "sf_value" if is_sf else "value"
         league_name = league_info.get("name", "Dynasty League")
+        n_teams = len(rosters)
 
         uid_to_name: dict = {}
         uid_to_avatar: dict = {}
@@ -24216,51 +24218,169 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             uid_to_name[uid] = str(u.get("display_name") or u.get("username") or "Unknown")
             uid_to_avatar[uid] = str(u.get("avatar") or "")
 
-        team_name, owner_name, record, pf, player_rows, avatar_url = "", "", "0-0", 0.0, [], ""
+        CORE_POS = {"QB", "RB", "WR", "TE"}
+        POS_ORDER = ["QB", "RB", "WR", "TE"]
+
+        # ── Build per-team positional value totals for ranking ──────────────
+        team_pos_totals: dict = {}  # rid -> {pos: total_value}
         for r in rosters:
-            if str(r.get("roster_id")) == str(roster_id):
-                owner_id = str(r.get("owner_id") or "")
-                owner_name = uid_to_name.get(owner_id, "Unknown")
-                avatar_url = uid_to_avatar.get(owner_id, "")
-                if avatar_url:
-                    avatar_url = f"https://sleepercdn.com/avatars/thumbs/{avatar_url}"
-                std = standings.get(roster_id) or standings.get(int(roster_id) if roster_id.isdigit() else -1) or {}
-                team_name = str(std.get("team_name") or owner_name)
-                record = f"{std.get('wins', 0)}–{std.get('losses', 0)}"
-                pf = round(float(std.get("pf") or 0), 1)
-                for pid in (r.get("players") or []):
-                    meta = players_index.get(str(pid)) or {}
-                    vrow = values_by_id.get(str(pid)) or {}
-                    val = float(vrow.get(vfield) or vrow.get("value") or 0)
-                    if meta.get("pos") and val > 0:
-                        player_rows.append({
-                            "name": meta.get("full_name") or meta.get("name") or str(pid),
-                            "pos": meta.get("pos", ""),
-                            "team": meta.get("team", ""),
-                            "value": round(val),
-                        })
-                player_rows.sort(key=lambda x: -x["value"])
-                break
+            rid = str(r.get("roster_id") or "")
+            if not rid:
+                continue
+            pos_vals: dict = {p: 0.0 for p in POS_ORDER}
+            for pid in (r.get("players") or []):
+                vrow = values_by_id.get(str(pid)) or {}
+                meta = players_index.get(str(pid)) or {}
+                pos = str(meta.get("pos") or vrow.get("position") or "").upper()
+                if pos not in CORE_POS:
+                    continue
+                val = float(vrow.get(vfield) or vrow.get("value") or 0)
+                pos_vals[pos] = pos_vals.get(pos, 0.0) + val
+            team_pos_totals[rid] = pos_vals
+
+        def _pos_rank(target_rid: str, pos: str) -> int:
+            """Rank 1 = best, n = worst by positional dynasty value."""
+            target_val = team_pos_totals.get(target_rid, {}).get(pos, 0.0)
+            return sum(
+                1 for v in team_pos_totals.values() if v.get(pos, 0.0) > target_val
+            ) + 1
+
+        # ── Build target roster's player list ───────────────────────────────
+        team_name, owner_name, record, pf, pa, player_rows, avatar_url = "", "", "0-0", 0.0, 0.0, [], ""
+        for r in rosters:
+            if str(r.get("roster_id")) != str(roster_id):
+                continue
+            owner_id = str(r.get("owner_id") or "")
+            owner_name = uid_to_name.get(owner_id, "Unknown")
+            avatar_url = uid_to_avatar.get(owner_id, "")
+            if avatar_url:
+                avatar_url = f"https://sleepercdn.com/avatars/thumbs/{avatar_url}"
+            std = standings.get(roster_id) or standings.get(int(roster_id) if roster_id.isdigit() else -1) or {}
+            team_name = str(std.get("team_name") or owner_name)
+            record = f"{std.get('wins', 0)}–{std.get('losses', 0)}"
+            pf = round(float(std.get("pf") or 0), 1)
+            pa = round(float(std.get("pa") or 0), 1)
+            for pid in (r.get("players") or []):
+                meta = players_index.get(str(pid)) or {}
+                vrow = values_by_id.get(str(pid)) or {}
+                val = float(vrow.get(vfield) or vrow.get("value") or 0)
+                pos = str(meta.get("pos") or "").upper()
+                if pos and val > 0:
+                    age_raw = meta.get("age")
+                    try:
+                        age = float(age_raw) if age_raw is not None else None
+                    except (TypeError, ValueError):
+                        age = None
+                    player_rows.append({
+                        "name": meta.get("full_name") or meta.get("name") or str(pid),
+                        "pos": pos,
+                        "team": meta.get("team", ""),
+                        "value": round(val),
+                        "age": age,
+                    })
+            player_rows.sort(key=lambda x: -x["value"])
+            break
 
         top5 = player_rows[:5]
         total_value = sum(p["value"] for p in player_rows)
 
+        # ── Average roster age (core positions, top 8 by value) ─────────────
+        core_players = [p for p in player_rows if p["pos"] in CORE_POS][:8]
+        ages = [p["age"] for p in core_players if p["age"] is not None]
+        if ages:
+            weights = [2.0 if i < 2 else 1.0 for i in range(len(ages))]
+            avg_age = round(sum(a * w for a, w in zip(ages, weights)) / sum(weights), 1)
+        else:
+            avg_age = None
+
+        # ── Positional ranks ─────────────────────────────────────────────────
+        pos_ranks = {pos: _pos_rank(str(roster_id), pos) for pos in POS_ORDER}
+
+        # ── Team grade via calculate_roster_grade ────────────────────────────
+        grade_label, win_window = "–", ""
+        try:
+            from dashboard_services.ai.context_builders import calculate_roster_grade as _calc_grade
+            flat_players = [
+                {"position": p["pos"], "value": p["value"], "age": p["age"]}
+                for p in player_rows if p["pos"] in CORE_POS
+            ]
+            future_picks = picks_by_roster.get(str(roster_id), [])
+
+            # Compute dynasty and redraft percentiles vs league
+            all_dynasty = []
+            redraft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+            for r2 in rosters:
+                rid2 = str(r2.get("roster_id") or "")
+                dv = sum(
+                    float((values_by_id.get(str(pid)) or {}).get(vfield) or 0)
+                    for pid in (r2.get("players") or [])
+                )
+                all_dynasty.append((rid2, dv))
+            all_dynasty.sort(key=lambda x: x[1])
+            _n = max(len(all_dynasty) - 1, 1)
+            target_dv = sum(p["value"] for p in player_rows)
+            dynasty_pct = sum(1 for _, dv in all_dynasty if dv < target_dv) / _n
+
+            grade_data = _calc_grade(
+                flat_players, future_picks,
+                position_ranks=pos_ranks,
+                num_teams=n_teams,
+                dynasty_pct_val=dynasty_pct,
+            )
+            grade_label = grade_data.get("grade", "–")
+            win_window = grade_data.get("win_window", "")
+        except Exception:
+            pass
+
+        # ── Grade colour ─────────────────────────────────────────────────────
+        _grade_color = (
+            "#4ade80" if grade_label.startswith("A") else
+            "#60a5fa" if grade_label.startswith("B") else
+            "#facc15" if grade_label.startswith("C") else
+            "#f87171"
+        )
+
+        # ── Window badge colour ──────────────────────────────────────────────
+        _window_color_map = {
+            "Contender": "#4ade80", "Win-Now": "#4ade80",
+            "Contender Window": "#86efac", "Aging Contender": "#fbbf24",
+            "2-3 Year Window": "#60a5fa", "Rising": "#60a5fa",
+            "Holding Pattern": "#94a3b8", "Retooling": "#f97316",
+            "Rebuilding": "#f87171", "Full Rebuild": "#f87171",
+        }
+        _wc = _window_color_map.get(win_window, "#94a3b8")
+
         pos_colors = {"QB": "#6366f1", "RB": "#10b981", "WR": "#3b82f6", "TE": "#f59e0b"}
 
         rows_html = "".join(
-            f"""<div class="sc-player-row">
-                  <span class="sc-pos-pill" style="background:{pos_colors.get(p['pos'], '#64748b')}20;color:{pos_colors.get(p['pos'], '#64748b')}">{p['pos']}</span>
-                  <span class="sc-player-name">{p['name']}</span>
-                  <span class="sc-player-team">{p['team']}</span>
-                  <span class="sc-player-val">{p['value']}</span>
-               </div>"""
+            f'<div class="sc-player-row">'
+            f'<span class="sc-pos-pill" style="background:{pos_colors.get(p["pos"], "#64748b")}26;color:{pos_colors.get(p["pos"], "#64748b")}">{p["pos"]}</span>'
+            f'<span class="sc-player-name">{p["name"]}</span>'
+            f'<span class="sc-player-team">{p["team"]}</span>'
+            f'<span class="sc-player-val">{p["value"]:,}</span>'
+            f'</div>'
             for p in top5
+        )
+
+        pos_rank_html = "".join(
+            f'<div class="sc-pos-rank-cell">'
+            f'<span class="sc-pos-rank-pos" style="color:{pos_colors[pos]}">{pos}</span>'
+            f'<span class="sc-pos-rank-num">#{pos_ranks[pos]}</span>'
+            f'<span class="sc-pos-rank-of">/{n_teams}</span>'
+            f'</div>'
+            for pos in POS_ORDER
         )
 
         avatar_html = (
             f'<img src="{avatar_url}" class="sc-avatar" alt="avatar" onerror="this.style.display=\'none\'">'
             if avatar_url else
             '<div class="sc-avatar-placeholder"><i class="fa-solid fa-user"></i></div>'
+        )
+
+        age_html = f"{avg_age}" if avg_age is not None else "–"
+        win_window_html = (
+            f'<span class="sc-window-badge" style="background:{_wc}22;color:{_wc};border-color:{_wc}44">{win_window}</span>'
+            if win_window else ""
         )
 
         share_url = request.url
@@ -24271,7 +24391,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   <title>{team_name} | BR Fantasy Report</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta property="og:title" content="{team_name} — BR Fantasy Report">
-  <meta property="og:description" content="{record} record · {pf} pts scored · {season} season">
+  <meta property="og:description" content="{record} · {grade_label} grade · {win_window} · {season} season">
   <meta property="og:image" content="{avatar_url or '/static/BR_Logo.png'}">
   <link rel="stylesheet" href="/static/dashboard.css?v={_CSS_V}">
   <link rel="stylesheet" href="/static/font-awesome.css?v={_CSS_V}">
@@ -24293,13 +24413,19 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
           <div class="sc-team-name">{team_name}</div>
           <div class="sc-owner">{owner_name}</div>
         </div>
-        <div class="sc-record">{record}</div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+          <div class="sc-record">{record}</div>
+          {win_window_html}
+        </div>
       </div>
       <div class="sc-stats-row">
-        <div class="sc-stat"><span class="sc-stat-val">{pf}</span><span class="sc-stat-lbl">Points For</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{total_value:,}</span><span class="sc-stat-lbl">Dynasty Value</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{len(player_rows)}</span><span class="sc-stat-lbl">Rostered</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{pf:,}</span><span class="sc-stat-lbl">Points For</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{pa:,}</span><span class="sc-stat-lbl">Points Vs</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{age_html}</span><span class="sc-stat-lbl">Avg Age</span></div>
+        <div class="sc-stat"><span class="sc-stat-val" style="color:{_grade_color}">{grade_label}</span><span class="sc-stat-lbl">Grade</span></div>
       </div>
+      <div class="sc-section-title">Positional Rankings</div>
+      <div class="sc-pos-ranks">{pos_rank_html}</div>
       <div class="sc-section-title">Top Players</div>
       <div class="sc-players">{rows_html}</div>
       <div class="sc-footer">

@@ -18538,7 +18538,7 @@ button:disabled {
   gap: 3px;
 }
 .sc-stat + .sc-stat { border-left: 1px solid var(--border, #334155); }
-.sc-stat-val { font-size: 16px; font-weight: 700; color: var(--text, #f1f5f9); }
+.sc-stat-val { font-size: 14px; font-weight: 700; color: var(--text, #f1f5f9); }
 .sc-stat-lbl { font-size: 10px; color: var(--text-muted, #94a3b8); text-transform: uppercase; letter-spacing: .5px; }
 .sc-section-title {
   padding: 12px 16px 6px;
@@ -18592,6 +18592,48 @@ button:disabled {
   white-space: nowrap;
 }
 .sc-copy-btn:hover { background: var(--hover, #334155); }
+
+/* Positional ranking grid */
+.sc-pos-ranks {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 8px 16px 14px;
+  gap: 6px;
+}
+.sc-pos-rank-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: rgba(255,255,255,.04);
+  border-radius: 8px;
+  padding: 8px 4px;
+}
+.sc-pos-rank-pos {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+.sc-pos-rank-num {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text, #f1f5f9);
+  line-height: 1;
+}
+.sc-pos-rank-of {
+  font-size: 10px;
+  color: var(--text-muted, #94a3b8);
+}
+/* Win window badge on share card */
+.sc-window-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  border: 1px solid;
+  white-space: nowrap;
+}
 
 /* Share button in team cards */
 .share-report-btn {

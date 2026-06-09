@@ -296,6 +296,14 @@ else:
             print(f"[cron] Advanced metrics: {{len(metrics_list)}} processed, {{failed_count}} failed")
         else:
             print("[cron] No advanced metrics calculated")
+
+        # Air yards from stats CSV (nfl_data_py) – runs after snapshot so the rows exist.
+        try:
+            from data_building.advanced_metrics import import_air_yards_from_stats_csv
+            updated = import_air_yards_from_stats_csv(current_season)
+            print(f"[cron] Air yards import: {{updated}} rows updated for season {{current_season}}")
+        except Exception as _e:
+            print(f"[cron] Air yards import failed: {{_e}}")
 """, "build_daily_advanced_metrics")
 
     # ------------------------------------------------------------------ #
