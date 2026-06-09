@@ -458,93 +458,80 @@ FORM_BODY = """
       <div class="home-card">
         <h2 class="home-card-title">Get started</h2>
 
-        <!-- Step indicator -->
-        <div class="onboarding-steps" id="onboardingSteps">
-          <div class="onboarding-step active" data-step="1">
-            <span class="step-num">1</span><span class="step-label">Platform</span>
-          </div>
-          <div class="onboarding-step-divider"></div>
-          <div class="onboarding-step" data-step="2">
-            <span class="step-num">2</span><span class="step-label">Username</span>
-          </div>
-          <div class="onboarding-step-divider"></div>
-          <div class="onboarding-step" data-step="3">
-            <span class="step-num">3</span><span class="step-label">League</span>
+        <div class="home-steps-hint">
+          <span class="home-step-item" id="hintStep1">① Platform</span>
+          <span class="home-step-arrow">→</span>
+          <span class="home-step-item" id="hintStep2">② Username</span>
+          <span class="home-step-arrow">→</span>
+          <span class="home-step-item" id="hintStep3">③ League</span>
+        </div>
+
+        <div class="row">
+          <label for="platformSelect">Platform</label>
+          <div class="platform-selector">
+            <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
+            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
           </div>
         </div>
 
-        <!-- Step 1: Platform -->
-        <div id="onboardStep1" class="onboard-step-panel">
+        <!-- Sleeper Flow -->
+        <div id="sleeperFlow">
           <div class="row">
-            <label for="platformSelect">Choose your platform</label>
-            <div class="platform-selector">
-              <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
-              <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
-            </div>
+            <label for="username">Sleeper Username</label>
+            <input type="text" id="username" name="username" value="{{ username or '' }}">
           </div>
-          <div class="row" id="step1Next">
-            <button type="button" class="onboard-next-btn" id="platformNextBtn">Continue <i class="fa-solid fa-arrow-right" style="font-size:12px;margin-left:4px;"></i></button>
+
+          <div class="row">
+            <button type="button" id="lookupBtn">Find My Leagues</button>
           </div>
         </div>
 
-        <!-- Step 2: Credentials -->
-        <div id="onboardStep2" class="onboard-step-panel" style="display:none;">
-          <button type="button" class="onboard-back-btn" id="step2BackBtn"><i class="fa-solid fa-arrow-left" style="font-size:11px;margin-right:4px;"></i> Back</button>
+        <!-- ESPN Flow -->
+        <div id="espnFlow" style="display:none;">
+          <div class="row">
+            <label for="espnLeagueIdInput">ESPN League ID</label>
+            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+            <input type="text" id="espnTeamName" placeholder="e.g. Dynasty Monsters">
+          </div>
+          <div class="row">
+            <button type="button" id="espnSubmitBtn">Find My League</button>
+          </div>
+          <div id="espnError" class="error-message" style="display:none;"></div>
+          <p class="hint" style="margin-top:6px;" id="espnHint">
+            Private leagues also need <code>ESPN_S2</code> and <code>ESPN_SWID</code> cookies set on the server.
+          </p>
+        </div>
 
-          <!-- Sleeper Flow -->
-          <div id="sleeperFlow">
-            <div class="row">
-              <label for="username">Sleeper Username</label>
-              <input type="text" id="username" name="username" value="{{ username or '' }}" placeholder="e.g. dynastyguru" autocomplete="username">
-            </div>
-            <div class="row">
-              <button type="button" id="lookupBtn">Find My Leagues</button>
-            </div>
-            <p class="hint" id="sleeperHint">Enter your Sleeper username to load your leagues.</p>
+        <form method="post" id="leagueSelectForm">
+          <input type="hidden" name="platform" id="formPlatform" value="sleeper">
+          <input type="hidden" name="season" value="{{ viewed_season }}">
+          <input type="hidden" name="username" id="formUsername" value="">
+          <input type="hidden" name="next" id="formNext" value="{{ next_url or '' }}">
+
+          <div class="row" id="leagueSelectWrap" style="display:none;">
+            <label for="league">Choose League</label>
+            <select id="league" name="league" required>
+              <option value="">Select a league</option>
+            </select>
           </div>
 
-          <!-- ESPN Flow -->
-          <div id="espnFlow" style="display:none;">
-            <div class="row">
-              <label for="espnLeagueIdInput">ESPN League ID</label>
-              <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
-            </div>
-            <div class="row">
-              <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
-              <input type="text" id="espnTeamName" placeholder="e.g. Dynasty Monsters">
-            </div>
-            <div class="row">
-              <button type="button" id="espnSubmitBtn">Find My League</button>
-            </div>
-            <div id="espnError" class="error-message" style="display:none;"></div>
-            <p class="hint" id="espnHint">Private leagues need ESPN_S2 and ESPN_SWID cookies.</p>
+          <div class="row" id="generateWrap" style="display:none;">
+            <button type="submit">Generate Dashboard</button>
           </div>
 
           <div id="lookupError" class="error-message" style="display:none;"></div>
-          {% if error %}<div class="error-message">{{ error }}</div>{% endif %}
-        </div>
 
-        <!-- Step 3: League selection + generate -->
-        <div id="onboardStep3" class="onboard-step-panel" style="display:none;">
-          <button type="button" class="onboard-back-btn" id="step3BackBtn"><i class="fa-solid fa-arrow-left" style="font-size:11px;margin-right:4px;"></i> Back</button>
-          <form method="post" id="leagueSelectForm">
-            <input type="hidden" name="platform" id="formPlatform" value="sleeper">
-            <input type="hidden" name="season" value="{{ viewed_season }}">
-            <input type="hidden" name="username" id="formUsername" value="">
-            <input type="hidden" name="next" id="formNext" value="{{ next_url or '' }}">
+          {% if error %}
+          <div class="error-message">{{ error }}</div>
+          {% endif %}
+        </form>
 
-            <div class="row" id="leagueSelectWrap">
-              <label for="league">Choose your league</label>
-              <select id="league" name="league" required>
-                <option value="">Select a league</option>
-              </select>
-            </div>
-            <div class="row" id="generateWrap">
-              <button type="submit">Generate Dashboard <i class="fa-solid fa-chart-line" style="font-size:12px;margin-left:4px;"></i></button>
-            </div>
-          </form>
-        </div>
-
+        <p class="hint" id="sleeperHint">
+          Enter your Sleeper username, choose one of your leagues, and unlock advanced analytics.
+        </p>
       </div>
     </div>
   </section>

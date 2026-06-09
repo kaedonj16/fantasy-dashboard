@@ -12248,55 +12248,43 @@ function setupFunAwardsGrid() {
 // NEW FEATURES JS
 // ════════════════════════════════════════════════════════════════════════════
 
-// ── Feature 5: Onboarding Step Flow ─────────────────────────────────────────
-(function initOnboardingSteps() {
-  var step1 = document.getElementById('onboardStep1');
-  var step2 = document.getElementById('onboardStep2');
-  var step3 = document.getElementById('onboardStep3');
-  if (!step1 || !step2) return;  // not the home page
+// ── Feature 5: Steps hint bar — highlight active step as user progresses ─────
+(function initStepsHint() {
+  var h1 = document.getElementById('hintStep1');
+  var h2 = document.getElementById('hintStep2');
+  var h3 = document.getElementById('hintStep3');
+  if (!h1) return;  // not the home page
 
-  var steps = document.querySelectorAll('.onboarding-step');
-  function setActiveStep(n) {
-    steps.forEach(function(s) {
-      var sn = parseInt(s.dataset.step);
-      s.classList.remove('active', 'done');
-      if (sn < n) s.classList.add('done');
-      else if (sn === n) s.classList.add('active');
+  function setStep(n) {
+    [h1, h2, h3].forEach(function(el, i) {
+      if (!el) return;
+      el.classList.remove('active', 'done');
+      if (i + 1 < n) el.classList.add('done');
+      else if (i + 1 === n) el.classList.add('active');
     });
   }
 
-  function showPanel(n) {
-    [step1, step2, step3].forEach(function(p, i) { if (p) p.style.display = (i + 1 === n) ? '' : 'none'; });
-    setActiveStep(n);
-  }
+  // Step 1 is active by default (platform is the first thing)
+  setStep(1);
 
-  // Step 1 → 2
-  var nextBtn = document.getElementById('platformNextBtn');
-  if (nextBtn) {
-    nextBtn.addEventListener('click', function() { showPanel(2); });
-  }
+  // Advance to step 2 when the username field is focused
+  var usernameEl = document.getElementById('username');
+  var espnLeagueEl = document.getElementById('espnLeagueIdInput');
+  if (usernameEl) usernameEl.addEventListener('focus', function() { setStep(2); });
+  if (espnLeagueEl) espnLeagueEl.addEventListener('focus', function() { setStep(2); });
 
-  // Step 2 → 1
-  var back2 = document.getElementById('step2BackBtn');
-  if (back2) back2.addEventListener('click', function() { showPanel(1); });
-
-  // Step 3 → 2
-  var back3 = document.getElementById('step3BackBtn');
-  if (back3) back3.addEventListener('click', function() { showPanel(2); });
-
-  // Auto-advance to step 3 when leagueSelectWrap becomes visible (lookup succeeded)
+  // Advance to step 3 when the league select becomes visible
   var leagueWrap = document.getElementById('leagueSelectWrap');
   if (leagueWrap) {
-    var obs = new MutationObserver(function() {
-      if (leagueWrap.style.display !== 'none' && leagueWrap.style.display !== '') {
-        showPanel(3);
-      }
-    });
-    obs.observe(leagueWrap, { attributes: true, attributeFilter: ['style'] });
+    new MutationObserver(function() {
+      if (leagueWrap.style.display !== 'none') setStep(3);
+    }).observe(leagueWrap, { attributes: true, attributeFilter: ['style'] });
   }
 
-  // Initialize — show step 1
-  showPanel(1);
+  // Platform buttons reset to step 1
+  document.querySelectorAll('.platform-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { setStep(1); });
+  });
 })();
 
 

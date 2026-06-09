@@ -18051,85 +18051,36 @@ button:disabled {
    NEW FEATURES CSS
    ════════════════════════════════════════════════════════════════════════════ */
 
-/* ── Feature 5: Onboarding Steps ────────────────────────────────────────────*/
-.onboarding-steps {
-  display: flex;
-  align-items: center;
-  margin-bottom: 20px;
-  gap: 0;
-}
-.onboarding-step {
+/* ── Feature 5: Steps hint bar ───────────────────────────────────────────────*/
+.home-steps-hint {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
+  margin-bottom: 18px;
+  padding: 7px 10px;
+  background: var(--surface2, #0f172a);
+  border: 1px solid var(--border, #334155);
+  border-radius: 8px;
 }
-.step-num {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--surface2, #1e293b);
-  color: var(--text-muted, #94a3b8);
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1.5px solid var(--border, #334155);
-  transition: background .2s, border-color .2s, color .2s;
-}
-.step-label {
-  font-size: 11px;
+.home-step-item {
+  font-size: 11.5px;
   color: var(--text-muted, #94a3b8);
   font-weight: 500;
-  transition: color .2s;
+  transition: color .2s, font-weight .2s;
+  white-space: nowrap;
 }
-.onboarding-step.active .step-num {
-  background: var(--accent, #38bdf8);
-  border-color: var(--accent, #38bdf8);
-  color: #fff;
+.home-step-item.active {
+  color: var(--accent, #38bdf8);
+  font-weight: 700;
 }
-.onboarding-step.active .step-label { color: var(--ink, #f1f5f9); font-weight: 600; }
-.onboarding-step.done .step-num {
-  background: #10b981;
-  border-color: #10b981;
-  color: #fff;
+.home-step-item.done {
+  color: #10b981;
 }
-.onboarding-step.done .step-label { color: #10b981; }
-.onboarding-step-divider {
-  flex: 1;
-  height: 1.5px;
-  background: var(--border, #334155);
-  margin: 0 8px;
-  min-width: 16px;
+.home-step-arrow {
+  font-size: 10px;
+  color: var(--border, #334155);
+  flex-shrink: 0;
 }
-.onboard-step-panel { animation: obFadeIn .2s ease; }
-@keyframes obFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-.onboard-next-btn {
-  width: 100%;
-  padding: 10px;
-  border-radius: 8px;
-  background: var(--accent, #38bdf8);
-  color: #fff;
-  border: none;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity .15s;
-}
-.onboard-next-btn:hover { opacity: .88; }
-.onboard-back-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted, #94a3b8);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 0 0 12px 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.onboard-back-btn:hover { color: var(--ink, #f1f5f9); }
 
 /* ── Feature 7: Enhanced Empty States ───────────────────────────────────────*/
 .empty-state {
