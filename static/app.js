@@ -89,7 +89,6 @@ document.body.scrollTop = 0;
     trigger.setAttribute('aria-expanded', 'false');
     trigger.setAttribute('aria-controls', listId);
     // Inherit key sizing from original select
-    trigger.style.fontSize = cs.fontSize;
     trigger.style.fontWeight = cs.fontWeight;
     trigger.style.borderRadius = cs.borderRadius;
     trigger.style.paddingTop = cs.paddingTop;
@@ -1325,12 +1324,18 @@ window.initTradePage = function initTradePage(root = document) {
       if (fp) {
         rosterFilter.sideBRid = rosterFilter.pidToRid[String(fp.id)];
         rosterFilter.sideBAuto = true;
-        if (sel) sel.value = rosterFilter.sideBRid;
+        if (sel) {
+          sel.value = rosterFilter.sideBRid;
+          sel.dispatchEvent(new Event('change', { bubbles: true })); // syncs CSD display
+        }
       }
     } else if (rosterFilter.sideBRid && rosterFilter.sideBAuto && !hasAssets) {
       rosterFilter.sideBRid = "";
       rosterFilter.sideBAuto = false;
-      if (sel) sel.value = "";
+      if (sel) {
+        sel.value = "";
+        sel.dispatchEvent(new Event('change', { bubbles: true })); // syncs CSD display
+      }
     }
     updateSideTitles();
   }
@@ -5174,17 +5179,22 @@ window.initTradePage = function initTradePage(root = document) {
           });
         bindOnce(sel, "sideBTeamChange", "change", () => {
           const rid = sel.value;
-          // Switching opponents clears Side A (which holds the opponent's players).
-          if (rid && rid !== rosterFilter.sideBRid &&
-              (state.sideAPlayers.length || state.sideAPicks.length)) {
+          const newRid = rid ? String(rid) : "";
+          // If this change event was fired programmatically (e.g. from syncSideBBinding),
+          // rosterFilter.sideBRid is already set to the same value — just refresh titles.
+          if (newRid === rosterFilter.sideBRid) {
+            updateSideTitles();
+            return;
+          }
+          // User explicitly chose a different opponent — clear Side A's opponent assets.
+          if (newRid && (state.sideAPlayers.length || state.sideAPicks.length)) {
             state.sideAPlayers = [];
             state.sideAPicks = [];
             saveState();
             renderChips("A");
           }
-          rosterFilter.sideBRid = rid ? String(rid) : "";
+          rosterFilter.sideBRid = newRid;
           rosterFilter.sideBAuto = false;
-          sel.value = rosterFilter.sideBRid;
           updateSideTitles();
         });
       }
@@ -12242,3 +12252,537 @@ function setupFunAwardsGrid() {
     }
   }
 })();
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// NEW FEATURES JS
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Feature 5: Steps hint bar — highlight active step as user progresses ─────
+(function initStepsHint() {
+  var h1 = document.getElementById('hintStep1');
+  var h2 = document.getElementById('hintStep2');
+  var h3 = document.getElementById('hintStep3');
+  if (!h1) return;  // not the home page
+
+  function setStep(n) {
+    [h1, h2, h3].forEach(function(el, i) {
+      if (!el) return;
+      el.classList.remove('active', 'done');
+      if (i + 1 < n) el.classList.add('done');
+      else if (i + 1 === n) el.classList.add('active');
+    });
+  }
+
+  // Step 1 is active by default (platform is the first thing)
+  setStep(1);
+
+  // Advance to step 2 when the username field is focused
+  var usernameEl = document.getElementById('username');
+  var espnLeagueEl = document.getElementById('espnLeagueIdInput');
+  if (usernameEl) usernameEl.addEventListener('focus', function() { setStep(2); });
+  if (espnLeagueEl) espnLeagueEl.addEventListener('focus', function() { setStep(2); });
+
+  // Advance to step 3 when the league select becomes visible
+  var leagueWrap = document.getElementById('leagueSelectWrap');
+  if (leagueWrap) {
+    new MutationObserver(function() {
+      if (leagueWrap.style.display !== 'none') setStep(3);
+    }).observe(leagueWrap, { attributes: true, attributeFilter: ['style'] });
+  }
+
+  // Platform buttons reset to step 1
+  document.querySelectorAll('.platform-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { setStep(1); });
+  });
+})();
+
+
+// ── Feature 7: Empty State Auto-Injection ────────────────────────────────────
+(function initEmptyStates() {
+  var CONFIG = [
+    {
+      selector: '.bulletins-list',
+      icon: '💬',
+      msg: 'No league bulletins yet. Be the first to post in your Sleeper league.',
+      check: function(el) { return el.children.length === 0; }
+    },
+    {
+      selector: '.activity-feed-list',
+      icon: '📋',
+      msg: 'No recent activity. Transactions and news will appear here.',
+      check: function(el) { return el.children.length === 0; }
+    },
+  ];
+
+  function inject(container, icon, msg) {
+    if (container.querySelector('.empty-state')) return;
+    var div = document.createElement('div');
+    div.className = 'empty-state';
+    div.innerHTML = '<div class="empty-state-icon">' + icon + '</div><p class="empty-state-msg">' + msg + '</p>';
+    container.appendChild(div);
+  }
+
+  CONFIG.forEach(function(cfg) {
+    document.querySelectorAll(cfg.selector).forEach(function(el) {
+      if (cfg.check(el)) inject(el, cfg.icon, cfg.msg);
+    });
+  });
+})();
+
+
+// ── Feature 10 + 15: Ask My GM — pill in floating group + panel above ────────
+(function initAskGm() {
+  var ctx = document.getElementById('askGmCtx');
+  if (!ctx) return;
+
+  var leagueId = ctx.dataset.league;
+  var platform = ctx.dataset.platform;
+  var season   = ctx.dataset.season;
+  var rosterId = ctx.dataset.roster;
+  var isOpen   = false;
+  var isBusy   = false;
+
+  // Add pill to the shared floating pill group (created by initFreshness)
+  function addPill() {
+    var group = document.getElementById('floating-pill-group');
+    if (!group || document.getElementById('ask-gm-pill')) return;
+    var pill = document.createElement('button');
+    pill.id = 'ask-gm-pill';
+    pill.className = 'fp-pill';
+    pill.type = 'button';
+    pill.setAttribute('aria-label', 'Ask My GM');
+    pill.innerHTML =
+      '<span class="fp-pill-icon"><img src="/static/images/robot-solid.png" alt="Ask My GM" class="fp-robot-icon"></span>' +
+      '<span class="fp-pill-label">Ask My GM</span>';
+    // Insert before discord pill so order is: GM · Discord · Refresh
+    var discord = document.getElementById('discord-pill');
+    group.insertBefore(pill, discord || group.firstChild);
+    pill.addEventListener('click', togglePanel);
+  }
+
+  // Build the panel once, append to body
+  function buildPanel() {
+    if (document.getElementById('ask-gm-panel')) return;
+    var panel = document.createElement('div');
+    panel.id = 'ask-gm-panel';
+    panel.style.display = 'none';
+    panel.innerHTML =
+      '<div class="ask-gm-header">' +
+        '<div class="ask-gm-header-icon"><img src="/static/images/robot-solid.png" alt="" class="ask-gm-robot-icon"></div>' +
+        '<div class="ask-gm-header-text">' +
+          '<div class="ask-gm-header-title">Ask My GM</div>' +
+          '<div class="ask-gm-header-sub">Roster advice, trade analysis, start/sit</div>' +
+        '</div>' +
+        '<button class="ask-gm-close" id="ask-gm-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>' +
+      '</div>' +
+      '<div class="ask-gm-messages" id="ask-gm-messages">' +
+        '<div class="ask-gm-msg ask-gm-msg--system">Ask me anything about your roster — trades, waivers, start/sit, and more.</div>' +
+      '</div>' +
+      '<div class="ask-gm-input-row">' +
+        '<input class="ask-gm-input" id="ask-gm-input" type="text" placeholder="e.g. Should I trade Bijan Robinson?" maxlength="400" autocomplete="off">' +
+        '<button class="ask-gm-send" id="ask-gm-send" aria-label="Send"><i class="fa-solid fa-paper-plane"></i></button>' +
+      '</div>';
+    document.body.appendChild(panel);
+
+    document.getElementById('ask-gm-close').addEventListener('click', function() { togglePanel(false); });
+
+    var input   = document.getElementById('ask-gm-input');
+    var sendBtn = document.getElementById('ask-gm-send');
+    sendBtn.addEventListener('click', sendQuestion);
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+    });
+  }
+
+  function togglePanel(open) {
+    isOpen = (open !== undefined) ? open : !isOpen;
+    var panel = document.getElementById('ask-gm-panel');
+    var pill  = document.getElementById('ask-gm-pill');
+    if (!panel) return;
+    panel.style.display = isOpen ? 'flex' : 'none';
+    if (pill) pill.classList.toggle('gm-active', isOpen);
+    if (isOpen) {
+      var inp = document.getElementById('ask-gm-input');
+      if (inp) inp.focus();
+    }
+  }
+
+  // Close when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!isOpen) return;
+    var panel = document.getElementById('ask-gm-panel');
+    var pill  = document.getElementById('ask-gm-pill');
+    if (panel && !panel.contains(e.target) && pill && !pill.contains(e.target)) {
+      togglePanel(false);
+    }
+  });
+
+  function addMsg(cls, html) {
+    var messages = document.getElementById('ask-gm-messages');
+    if (!messages) return null;
+    var el = document.createElement('div');
+    el.className = 'ask-gm-msg ask-gm-msg--' + cls;
+    if (cls === 'typing') {
+      el.innerHTML = '<div class="ask-gm-typing-dot"></div><div class="ask-gm-typing-dot"></div><div class="ask-gm-typing-dot"></div>';
+    } else {
+      el.textContent = html;
+    }
+    messages.appendChild(el);
+    messages.scrollTop = messages.scrollHeight;
+    return el;
+  }
+
+  async function sendQuestion() {
+    var input   = document.getElementById('ask-gm-input');
+    var sendBtn = document.getElementById('ask-gm-send');
+    var q = (input ? input.value : '').trim();
+    if (!q || isBusy) return;
+
+    isBusy = true;
+    input.value = '';
+    sendBtn.disabled = true;
+
+    addMsg('user', q);
+    var aiEl = addMsg('ai', '');
+    // swap to typing animation immediately
+    aiEl.innerHTML = '<div class="ask-gm-typing-dot"></div><div class="ask-gm-typing-dot"></div><div class="ask-gm-typing-dot"></div>';
+    aiEl.classList.add('ask-gm-msg--typing');
+
+    var messages = document.getElementById('ask-gm-messages');
+    try {
+      var resp = await fetch('/api/ask-gm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, league_id: leagueId, platform: platform, season: parseInt(season), roster_id: rosterId })
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+      var reader = resp.body.getReader();
+      var decoder = new TextDecoder();
+      var buf = '', text = '', started = false;
+
+      while (true) {
+        var _ref = await reader.read();
+        if (_ref.done) break;
+        buf += decoder.decode(_ref.value, { stream: true });
+        var lines = buf.split('\n');
+        buf = lines.pop();
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (!line.startsWith('data:')) continue;
+          var raw = line.slice(5).trim();
+          if (raw === '[DONE]') break;
+          try {
+            var parsed = JSON.parse(raw);
+            if (parsed.error) {
+              aiEl.textContent = parsed.error;
+              aiEl.classList.add('ask-gm-msg--error');
+              break;
+            }
+            if (parsed.text) {
+              if (!started) {
+                aiEl.classList.remove('ask-gm-msg--typing');
+                aiEl.innerHTML = '';
+                started = true;
+              }
+              text += parsed.text;
+              aiEl.textContent = text;
+            }
+          } catch (_) {}
+        }
+        if (messages) messages.scrollTop = messages.scrollHeight;
+      }
+      if (!text && !aiEl.classList.contains('ask-gm-msg--error')) {
+        aiEl.classList.remove('ask-gm-msg--typing');
+        aiEl.textContent = 'No response — try rephrasing.';
+      }
+    } catch (err) {
+      aiEl.classList.remove('ask-gm-msg--typing');
+      aiEl.textContent = 'Unable to reach GM. Try again in a moment.';
+      aiEl.classList.add('ask-gm-msg--error');
+    } finally {
+      isBusy = false;
+      sendBtn.disabled = false;
+      if (input) input.focus();
+      if (messages) messages.scrollTop = messages.scrollHeight;
+    }
+  }
+
+  // Init after DOM is ready and pill group exists
+  function tryInit() {
+    var group = document.getElementById('floating-pill-group');
+    if (group) { addPill(); buildPanel(); }
+    else { setTimeout(tryInit, 100); }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', tryInit);
+  } else {
+    tryInit();
+  }
+})();
+
+
+// ── Feature 11: Lazy-Load Players Page ──────────────────────────────────────
+(function initPlayersLazyLoad() {
+  var grid = document.getElementById('playerRankingsGrid');
+  if (!grid) return;
+
+  // Only activate if we see the sentinel already present or can add one
+  var sentinel = document.getElementById('prLazySentinel');
+  if (!sentinel) {
+    sentinel = document.createElement('div');
+    sentinel.id = 'prLazySentinel';
+    sentinel.className = 'lazy-load-sentinel';
+    grid.parentNode.insertBefore(sentinel, grid.nextSibling);
+  }
+
+  var indicator = document.getElementById('prLoadMoreIndicator');
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.id = 'prLoadMoreIndicator';
+    indicator.className = 'load-more-indicator';
+    indicator.style.display = 'none';
+    indicator.innerHTML = '<div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div><span>Loading more players…</span>';
+    sentinel.parentNode.insertBefore(indicator, sentinel.nextSibling);
+  }
+
+  // page state is managed by the existing player rankings JS; we just watch for
+  // the sentinel entering the viewport and trigger a synthetic "load more" click
+  // if the existing code exposes a loadNextPage function, else we do nothing.
+  if (typeof window._prLoadNextPage !== 'function') return;
+
+  var loading = false;
+  var observer = new IntersectionObserver(function(entries) {
+    if (entries[0].isIntersecting && !loading) {
+      loading = true;
+      indicator.style.display = 'flex';
+      Promise.resolve(window._prLoadNextPage()).then(function() {
+        loading = false;
+        indicator.style.display = 'none';
+      }).catch(function() {
+        loading = false;
+        indicator.style.display = 'none';
+      });
+    }
+  }, { rootMargin: '200px' });
+
+  observer.observe(sentinel);
+})();
+
+
+// ── Feature 12: League Bulletins ────────────────────────────────────────────
+(function initLeagueBulletins() {
+  var container = document.getElementById('leagueBulletinsContainer');
+  if (!container) return;
+
+  var leagueId = container.dataset.league;
+  if (!leagueId) return;
+
+  function timeAgo(ts) {
+    if (!ts) return '';
+    var ms = ts > 1e12 ? ts : ts * 1000;
+    var diff = Math.floor((Date.now() - ms) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return Math.floor(diff / 86400) + 'd ago';
+  }
+
+  function renderBulletins(bulletins) {
+    var list = container.querySelector('.bulletins-list');
+    if (!list) return;
+    if (!bulletins || !bulletins.length) {
+      list.innerHTML = '<div class="bulletins-empty">No bulletins yet. Post one in the Sleeper app!</div>';
+      return;
+    }
+    list.innerHTML = bulletins.map(function(b) {
+      var avatar = b.author_avatar
+        ? '<img class="bulletin-avatar" src="https://sleepercdn.com/avatars/thumbs/' + b.author_avatar + '" alt="" onerror="this.outerHTML=\'<div class=\\\"bulletin-avatar-fallback\\\"><i class=\\\"fa-solid fa-user\\\"></i></div>\'">'
+        : '<div class="bulletin-avatar-fallback"><i class="fa-solid fa-user"></i></div>';
+      var likes = b.likes > 0 ? '<div class="bulletin-likes"><i class="fa-solid fa-heart"></i> ' + b.likes + '</div>' : '';
+      return '<div class="bulletin-item">'
+        + '<div class="bulletin-author-row">' + avatar
+        + '<span class="bulletin-author">' + (b.author || 'Unknown') + '</span>'
+        + '<span class="bulletin-time">' + timeAgo(b.created) + '</span>'
+        + '</div>'
+        + '<div class="bulletin-body">' + (b.body || '') + '</div>'
+        + likes
+        + '</div>';
+    }).join('');
+  }
+
+  var platform = container.dataset.platform || 'sleeper';
+  var season   = container.dataset.season   || '';
+  var url = '/api/league-bulletins?league_id=' + encodeURIComponent(leagueId)
+    + '&platform=' + encodeURIComponent(platform)
+    + (season ? '&season=' + encodeURIComponent(season) : '');
+
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.unavailable) {
+        var list = container.querySelector('.bulletins-list');
+        if (list) list.innerHTML = '<div class="bulletins-empty">League bulletins are not available for this platform.</div>';
+        return;
+      }
+      renderBulletins(data.bulletins || []);
+    })
+    .catch(function() {
+      var list = container.querySelector('.bulletins-list');
+      if (list) list.innerHTML = '<div class="bulletins-empty">Could not load bulletins.</div>';
+    });
+})();
+
+
+// ── Feature 13: Share Report Card Buttons ────────────────────────────────────
+(function initShareReportButtons() {
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.share-report-btn[data-roster]');
+    if (!btn) return;
+    var rosterId = btn.dataset.roster;
+    var platform = btn.dataset.platform || window._page_platform;
+    var season   = btn.dataset.season   || window._page_season;
+    var leagueId = btn.dataset.league   || window._page_league;
+    if (!rosterId || !platform || !season || !leagueId) return;
+    var url = '/' + platform + '/' + season + '/' + leagueId + '/share-card/' + rosterId;
+    window.open(url, '_blank', 'noopener');
+  });
+})();
+
+
+// ── Feature 1: Live Draft Board Mode ─────────────────────────────────────────
+(function initLiveDraftBoard() {
+  var toggleBtn = document.getElementById('liveDraftModeBtn');
+  if (!toggleBtn) return;
+
+  var board = document.getElementById('liveDraftBoard');
+  var normalView = document.getElementById('daBoardList');
+  // Derive from URL: /<platform>/<season>/<league_id>/...
+  var _urlParts = location.pathname.split('/').filter(Boolean);
+  var leagueId = _urlParts[2] || '';
+  var platform = _urlParts[0] || 'sleeper';
+  var season   = _urlParts[1] || new Date().getFullYear();
+  var rosterId = document.querySelector('#viewerRosterIdInput')?.value || '';
+
+  var drafted = new Set();
+  var liveActive = false;
+  var currentPage = 1;
+  var totalPages = 1;
+  var isLoading = false;
+
+  function needPillHTML(level) {
+    var map = {2: ['major', 'Major Need'], 1: ['need', 'Need'], 0: ['neutral', 'Neutral'], '-1': ['depth', 'Depth'], '-2': ['stacked', 'Stacked']};
+    var info = map[String(level)] || ['neutral', ''];
+    return '<span class="ld-need-pill ld-need-pill--' + info[0] + '">' + info[1] + '</span>';
+  }
+
+  async function loadSuggestions(page) {
+    if (isLoading) return;
+    isLoading = true;
+    var draftedStr = Array.from(drafted).join(',');
+    var url = '/api/live-draft-suggest?league_id=' + encodeURIComponent(leagueId)
+      + '&platform=' + encodeURIComponent(platform)
+      + '&season=' + encodeURIComponent(season)
+      + '&roster_id=' + encodeURIComponent(rosterId)
+      + '&drafted=' + encodeURIComponent(draftedStr)
+      + '&page=' + page
+      + '&limit=25';
+    try {
+      var r = await fetch(url);
+      var data = await r.json();
+      totalPages = data.pages || 1;
+      currentPage = data.page || 1;
+      renderPlayers(data.players || [], page > 1);
+    } catch (e) {
+      if (board) board.innerHTML += '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px;">Error loading suggestions.</div>';
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  function renderPlayers(players, append) {
+    if (!board) return;
+    var countEl = document.getElementById('ldDraftedCount');
+    if (countEl) countEl.textContent = drafted.size + ' drafted';
+
+    var html = players.map(function(p) {
+      return '<div class="pr-player-row" data-pid="' + p.id + '" style="cursor:pointer;" title="Mark as drafted">'
+        + '<span class="pr-rank-cell" style="color:var(--text-muted);font-size:12px;">' + (p.adj_value > p.value ? '▲' : '') + '</span>'
+        + '<span class="pr-pos-badge pr-pos-' + (p.pos || '').toLowerCase() + '">' + (p.pos || '') + '</span>'
+        + '<span class="pr-name">' + p.name + '</span>'
+        + '<span class="pr-team-badge">' + (p.team || '') + '</span>'
+        + (p.need_level !== 0 ? needPillHTML(p.need_level) : '')
+        + '<span class="pr-value-cell" style="margin-left:auto;">' + p.value + '</span>'
+        + '</div>';
+    }).join('');
+
+    if (append) {
+      board.innerHTML += html;
+    } else {
+      board.innerHTML = html
+        + (currentPage < totalPages
+          ? '<button id="ldLoadMoreBtn" style="width:100%;padding:10px;margin-top:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:12px;cursor:pointer;">Load more</button>'
+          : '');
+    }
+
+    // Mark-as-drafted click handler
+    board.querySelectorAll('.pr-player-row').forEach(function(row) {
+      row.addEventListener('click', function() {
+        var pid = row.dataset.pid;
+        drafted.add(pid);
+        row.style.opacity = '0.3';
+        row.style.textDecoration = 'line-through';
+        row.style.pointerEvents = 'none';
+        if (countEl) countEl.textContent = drafted.size + ' drafted';
+      });
+    });
+
+    var loadMoreBtn = document.getElementById('ldLoadMoreBtn');
+    if (loadMoreBtn) {
+      loadMoreBtn.addEventListener('click', function() { loadSuggestions(currentPage + 1); });
+    }
+  }
+
+  function toggleLiveDraft() {
+    liveActive = !liveActive;
+    if (liveActive) {
+      toggleBtn.textContent = 'Exit Live Mode';
+      toggleBtn.style.background = 'rgba(239,68,68,.15)';
+      toggleBtn.style.color = '#f87171';
+      toggleBtn.style.borderColor = 'rgba(239,68,68,.3)';
+      if (normalView) normalView.style.display = 'none';
+      if (board) {
+        board.style.display = 'block';
+        var bar = document.getElementById('liveDraftBar');
+        if (bar) bar.style.display = 'flex';
+      }
+      currentPage = 1;
+      drafted.clear();
+      loadSuggestions(1);
+    } else {
+      toggleBtn.textContent = 'Live Draft Mode';
+      toggleBtn.style.background = '';
+      toggleBtn.style.color = '';
+      toggleBtn.style.borderColor = '';
+      if (normalView) normalView.style.display = '';
+      if (board) {
+        board.style.display = 'none';
+        var bar = document.getElementById('liveDraftBar');
+        if (bar) bar.style.display = 'none';
+      }
+    }
+  }
+
+  toggleBtn.addEventListener('click', toggleLiveDraft);
+
+  // Clear drafted button
+  document.addEventListener('click', function(e) {
+    if (e.target.id === 'ldClearDraftedBtn') {
+      drafted.clear();
+      currentPage = 1;
+      loadSuggestions(1);
+    }
+  });
+})();
+
