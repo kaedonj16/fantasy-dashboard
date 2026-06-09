@@ -7718,6 +7718,9 @@ function openPlayerModal(playerId, playerName, opts) {
       const tabBreakout = document.getElementById('pmTabBreakout');
       if (tabBreakout) tabBreakout.style.display = (isBreakout(pid) || (opts && opts.tab === 'breakout')) ? '' : 'none';
 
+      // Must be set before pmSwitchTab is called so the metrics lazy-load check works
+      if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
+
       // Switch to requested tab, or Overview by default
       const _initialTab = (opts && opts.tab) || 'overview';
       document.querySelectorAll('.pm-tab').forEach(t => t.classList.remove('active'));
@@ -7912,8 +7915,6 @@ function openPlayerModal(playerId, playerName, opts) {
         }
       }
 
-      // Store whether this player has metrics so pmSwitchTab can lazy-load them
-      if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
     })
     .catch(err => {
       console.error('Error loading player data:', err);
