@@ -362,8 +362,9 @@ def build_advanced_metrics_body(
       .am-avg-note .am-avg-swatch { display:inline-block; width:2px; height:12px; background:var(--text-muted); opacity:.55; }
       @media (max-width:600px){
         .am-games, .am-table th.am-games { display:none; }
-        .am-metric-cell { gap:6px; }
-        .am-val { min-width:38px; font-size:12px; }
+        .am-metric-bar { display:none; }
+        .am-metric-cell { gap:0; }
+        .am-val { min-width:38px; font-size:12px; text-align:center; }
         .am-controls { gap:10px; }
         /* Metric takes full width; Search fills the row below it */
         .am-ctrl:first-child { flex:1 0 100%; }
@@ -374,6 +375,7 @@ def build_advanced_metrics_body(
         /* Smaller position pills on narrow screens */
         .am-pos { padding:5px 10px; font-size:11px; }
         .am-roster-toggle { padding:5px 10px; font-size:11px; }
+        .am-barcell { min-width:52px; }
       }
       .am-pagination { display:flex; align-items:center; justify-content:center; gap:16px; padding:16px 0 4px; }
       .am-page-btn {
