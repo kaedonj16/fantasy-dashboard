@@ -766,6 +766,7 @@ _AM_JS = r"""
     const maxAbs = posRows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
 
 
+
     // Apply roster/search filters for display only (order already set by posRows sort).
     let displayRows = posRows.slice();
     if (state.rosterOnly) displayRows = displayRows.filter(r => ownedIds.has(String(r.player_id)));
