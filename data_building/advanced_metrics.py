@@ -851,19 +851,25 @@ def import_air_yards_from_stats_csv(season: int) -> int:
     with open(players_idx_path) as f:
         players_idx = json.load(f)
 
-    # Build nfl_id → sleeper_id map
-    nfl_to_sleeper: dict = {}
+    # Build name (lowercase) → sleeper_id map for skill-position players.
+    # players_index_relevant.json has no NFL/stats ID fields; name matching
+    # achieves ~70% coverage for QB/RB/WR/TE.
+    _skill = {"QB", "RB", "WR", "TE"}
+    name_to_sleeper: dict = {}
     for sleeper_id, info in players_idx.items():
-        nfl_id = info.get("stats_id") or info.get("rotowire_id") or ""
-        if nfl_id:
-            nfl_to_sleeper[str(nfl_id)] = str(sleeper_id)
+        pos = (info.get("pos") or "").upper()
+        if pos not in _skill:
+            continue
+        name = (info.get("name") or "").strip().lower()
+        if name:
+            name_to_sleeper[name] = str(sleeper_id)
 
     rows_by_player: dict = {}
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            nfl_id = row.get("player_id") or ""
-            sleeper_id = nfl_to_sleeper.get(nfl_id)
+            display_name = (row.get("player_display_name") or "").strip().lower()
+            sleeper_id = name_to_sleeper.get(display_name)
             if not sleeper_id:
                 continue
             try:
@@ -1116,45 +1122,44 @@ _V_PASS_ATT  = {"col": "total_pass_att",   "label": "Min Attempts",   "opts": [1
 _V_GAMES     = {"col": "games",            "label": "Min Games",      "opts": [4, 8, 12, 16]}
 
 LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
-    # Usage / role
-    "role_score":           {"label": "Role Score",        "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position."},
-    "snap_share":           {"label": "Snap Share",        "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
-    "target_share":         {"label": "Target Share",      "positions": ["WR", "TE", "RB"],       "min_vol": _V_GAMES, "desc": "Percent of the team's total targets directed at this player."},
-    "opportunity_share":    {"label": "Opportunity Share", "positions": ["RB", "WR", "TE"],        "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
-    "air_yards_per_game":   {"label": "Air Yards / Game",  "positions": ["WR", "TE"],              "min_vol": _V_GAMES, "desc": "Receiving air yards (distance thrown in the air to the player) per game; a measure of downfield target volume."},
-    "air_yards_share":      {"label": "Air Yards Share",   "positions": ["WR", "TE"],              "min_vol": _V_GAMES, "desc": "Share of the team's total passing air yards directed at this player; combines target share with depth of target."},
-    "red_zone_usage":       {"label": "Red Zone Usage",    "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
-    "grades_offense":       {"label": "PFF Off Grade",     "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
-    # Receiving
-    "yards_per_target":     {"label": "Yards / Target",     "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiving yards earned per time targeted; measures efficiency on volume."},
-    "yards_per_reception":  {"label": "Yards / Reception",  "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS,    "desc": "Average yards gained per catch; higher means a more downfield/explosive role."},
-    "catch_rate":           {"label": "Catch Rate",        "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS,  "desc": "Percent of targets caught."},
-    "target_quality_score": {"label": "Target Quality",    "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS,  "desc": "Composite of how valuable a player's targets are (depth, location, situation)."},
-    "avg_depth_of_target":  {"label": "aDOT",              "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS,  "desc": "Average depth of target: how far downfield (in yards) the player is thrown to."},
-    "contested_catch_rate": {"label": "Contested Catch %", "positions": ["WR", "TE"],        "efficiency": True, "min_vol": _V_TARGETS,  "desc": "Percent of contested (tightly covered) targets the player came down with."},
-    "yards_after_catch_per_reception": {"label": "YAC / Reception", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained after the catch per reception."},
-    "drop_rate":            {"label": "Drop Rate",         "positions": ["WR", "RB", "TE"], "efficiency": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of catchable targets dropped. Lower is better."},
-    "slot_rate":            {"label": "Slot Rate",         "positions": ["WR", "TE"],        "efficiency": True, "min_vol": _V_GAMES,   "desc": "Percent of routes run from the slot."},
-    "wide_rate":            {"label": "Wide Rate",         "positions": ["WR", "TE"],        "efficiency": True, "min_vol": _V_GAMES,   "desc": "Percent of routes run from out wide."},
-    "inline_rate":          {"label": "Inline Rate",       "positions": ["TE"],              "efficiency": True, "min_vol": _V_GAMES,   "desc": "Percent of snaps a tight end lined up inline (attached to the formation)."},
-    "pass_block_rate":      {"label": "Block Rate",        "positions": ["TE", "RB"],        "efficiency": True, "min_vol": _V_GAMES,   "desc": "Percent of pass snaps spent blocking rather than running a route."},
-    # Rushing
-    "yards_per_carry":      {"label": "Yards / Carry",     "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES,  "desc": "Rushing yards gained per carry."},
-    "yards_per_touch":      {"label": "Yards / Touch",     "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_TOUCHES,  "desc": "Yards gained per combined carry and reception."},
-    "rush_td_rate":         {"label": "Rush TD Rate",      "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES,  "desc": "Percent of carries that result in a touchdown."},
-    "breakaway_percentage": {"label": "Breakaway %",       "positions": ["RB"],        "efficiency": True, "min_vol": _V_CARRIES,  "desc": "Percent of rushing yards that came on runs of 15+ yards; explosiveness."},
-    "elusive_rating":       {"label": "Elusive Rating",    "positions": ["RB"],        "efficiency": True, "min_vol": _V_CARRIES,  "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
-    "pff_rushing_grade":    {"label": "PFF Rush Grade",    "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES,  "desc": "PFF's rushing grade (0-100)."},
-    # Passing
-    "yards_per_attempt":    {"label": "Yards / Attempt",    "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing yards per attempt; core passing efficiency stat."},
-    "completion_pct":       {"label": "Completion %",      "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts completed."},
-    "adjusted_completion_rate": {"label": "Adj Completion %", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Completion percent adjusted for drops, throwaways, spikes, and batted passes."},
-    "td_rate":              {"label": "Pass TD Rate",      "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that result in a touchdown."},
-    "int_rate":             {"label": "INT Rate",          "positions": ["QB"], "efficiency": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts intercepted. Lower is better."},
-    "big_time_throw_rate":  {"label": "Big-Time Throw %",  "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "PFF rate of high-difficulty, high-value throws (deep and into tight windows)."},
-    "pressure_to_sack_rate": {"label": "Pressure to Sack %", "positions": ["QB"], "efficiency": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pressured dropbacks that turn into sacks. Lower is better."},
-    "nfl_passer_rating":    {"label": "Passer Rating",     "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Standard NFL passer rating (0-158.3)."},
-    "pff_passing_grade":    {"label": "PFF Pass Grade",    "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "PFF's passing grade (0-100)."},
+    # ── Passing ──────────────────────────────────────────────────────────────
+    "yards_per_attempt":    {"label": "Yards / Attempt",    "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing yards per attempt; core passing efficiency stat."},
+    "completion_pct":       {"label": "Completion %",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts completed."},
+    "adjusted_completion_rate": {"label": "Adj Completion %", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Completion percent adjusted for drops, throwaways, spikes, and batted passes."},
+    "td_rate":              {"label": "Pass TD Rate",        "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that result in a touchdown."},
+    "int_rate":             {"label": "INT Rate",            "category": "Passing", "positions": ["QB"], "efficiency": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts intercepted. Lower is better."},
+    "big_time_throw_rate":  {"label": "Big-Time Throw %",   "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "PFF rate of high-difficulty, high-value throws (deep and into tight windows)."},
+    "pressure_to_sack_rate": {"label": "Pressure to Sack %","category": "Passing", "positions": ["QB"], "efficiency": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pressured dropbacks that turn into sacks. Lower is better."},
+    "nfl_passer_rating":    {"label": "Passer Rating",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Standard NFL passer rating (0-158.3)."},
+    "pff_passing_grade":    {"label": "PFF Pass Grade",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "PFF's passing grade (0-100)."},
+    # ── Rushing ──────────────────────────────────────────────────────────────
+    "yards_per_carry":      {"label": "Yards / Carry",       "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Rushing yards gained per carry."},
+    "yards_per_touch":      {"label": "Yards / Touch",       "category": "Rushing", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_TOUCHES, "desc": "Yards gained per combined carry and reception."},
+    "rush_td_rate":         {"label": "Rush TD Rate",        "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Percent of carries that result in a touchdown."},
+    "breakaway_percentage": {"label": "Breakaway %",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Percent of rushing yards that came on runs of 15+ yards; explosiveness."},
+    "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
+    "pff_rushing_grade":    {"label": "PFF Rush Grade",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF's rushing grade (0-100)."},
+    # ── Receiving ────────────────────────────────────────────────────────────
+    "role_score":           {"label": "Role Score",          "category": "Receiving", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position."},
+    "snap_share":           {"label": "Snap Share",          "category": "Receiving", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
+    "target_share":         {"label": "Target Share",        "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Percent of the team's total targets directed at this player."},
+    "opportunity_share":    {"label": "Opportunity Share",   "category": "Receiving", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
+    "air_yards_per_game":   {"label": "Air Yards / Game",    "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_GAMES, "desc": "Receiving air yards (distance thrown in the air to the player) per game; a measure of downfield target volume."},
+    "air_yards_share":      {"label": "Air Yards Share",     "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_GAMES, "desc": "Share of the team's total passing air yards directed at this player; combines target share with depth of target."},
+    "red_zone_usage":       {"label": "Red Zone Usage",      "category": "Receiving", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
+    "grades_offense":       {"label": "PFF Off Grade",       "category": "Receiving", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
+    "yards_per_target":     {"label": "Yards / Target",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiving yards earned per time targeted; measures efficiency on volume."},
+    "yards_per_reception":  {"label": "Yards / Reception",   "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained per catch; higher means a more downfield/explosive role."},
+    "catch_rate":           {"label": "Catch Rate",          "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Percent of targets caught."},
+    "target_quality_score": {"label": "Target Quality",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Composite of how valuable a player's targets are (depth, location, situation)."},
+    "avg_depth_of_target":  {"label": "aDOT",                "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Average depth of target: how far downfield (in yards) the player is thrown to."},
+    "contested_catch_rate": {"label": "Contested Catch %",   "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Percent of contested (tightly covered) targets the player came down with."},
+    "yards_after_catch_per_reception": {"label": "YAC / Reception", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained after the catch per reception."},
+    "drop_rate":            {"label": "Drop Rate",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of catchable targets dropped. Lower is better."},
+    "slot_rate":            {"label": "Slot Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from the slot."},
+    "wide_rate":            {"label": "Wide Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from out wide."},
+    "inline_rate":          {"label": "Inline Rate",         "category": "Receiving", "positions": ["TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Percent of snaps a tight end lined up inline (attached to the formation)."},
+    "pass_block_rate":      {"label": "Block Rate",          "category": "Receiving", "positions": ["TE", "RB"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Percent of pass snaps spent blocking rather than running a route."},
 }
 
 

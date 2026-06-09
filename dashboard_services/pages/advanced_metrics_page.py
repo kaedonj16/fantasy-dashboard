@@ -20,25 +20,27 @@ def build_advanced_metrics_body(
 ) -> str:
     from data_building.advanced_metrics import get_available_seasons
     available_seasons: list = get_available_seasons() if has_premium else []
-    # Group metrics into <optgroup>s by the set of positions they apply to, ordered
-    # broadest first (all positions → 3-position groups → 2 → single position).
-    _POS_ORDER = ["QB", "RB", "WR", "TE"]
+    # Group metrics into <optgroup>s by category (Passing / Rushing / Receiving).
+    _CAT_ORDER = ["Passing", "Rushing", "Receiving"]
     groups: dict = {}
     for key, spec in metrics_spec.items():
-        posset = tuple(p for p in _POS_ORDER if p in spec.get("positions", []))
-        groups.setdefault(posset, []).append((key, spec["label"]))
+        cat = spec.get("category", "Other")
+        groups.setdefault(cat, []).append((key, spec["label"]))
 
-    def _group_key(posset):
-        return (-len(posset), [_POS_ORDER.index(p) for p in posset])
+    def _group_key(cat):
+        try:
+            return _CAT_ORDER.index(cat)
+        except ValueError:
+            return len(_CAT_ORDER)
 
     metric_options = "\n".join(
         '<optgroup label="{label}">{opts}</optgroup>'.format(
-            label="All Positions" if len(posset) == len(_POS_ORDER) else " / ".join(posset),
+            label=cat,
             opts="".join(
-                f'<option value="{k}">{lbl}</option>' for k, lbl in groups[posset]
+                f'<option value="{k}">{lbl}</option>' for k, lbl in groups[cat]
             ),
         )
-        for posset in sorted(groups, key=_group_key)
+        for cat in sorted(groups, key=_group_key)
     )
 
     def _min_vol_cfg(spec: dict) -> Optional[dict]:
@@ -47,14 +49,9 @@ def build_advanced_metrics_body(
             return None
         return {"label": mv["label"], "opts": mv["opts"]}
 
-    # Glossary: every metric grouped by its position set (same order as the
-    # dropdown), each with its description, rendered into a modal the user can
-    # open from the header.
-    def _posset_label(posset) -> str:
-        return "All Positions" if len(posset) == len(_POS_ORDER) else " / ".join(posset)
-
+    # Glossary: every metric grouped by category (same order as the dropdown).
     _legend_sections = []
-    for posset in sorted(groups, key=_group_key):
+    for cat in sorted(groups, key=_group_key):
         _rows = "".join(
             '<div class="am-legend-row">'
             '<div class="am-legend-name">{label}</div>'
@@ -63,12 +60,12 @@ def build_advanced_metrics_body(
                 label=_esc(metrics_spec[k]["label"]),
                 desc=_esc(metrics_spec[k].get("desc") or "No description available."),
             )
-            for k, _lbl in groups[posset]
+            for k, _lbl in groups[cat]
         )
         _legend_sections.append(
             '<div class="am-legend-group">'
             '<div class="am-legend-grouphead">{head}</div>{rows}</div>'.format(
-                head=_esc(_posset_label(posset)), rows=_rows,
+                head=_esc(cat), rows=_rows,
             )
         )
     legend_html = "".join(_legend_sections)
@@ -82,6 +79,7 @@ def build_advanced_metrics_body(
             key: {
                 "label": spec["label"],
                 "positions": spec["positions"],
+                "category": spec.get("category", "Other"),
                 "lowerBetter": bool(spec.get("lower_better")),
                 "efficiency": bool(spec.get("efficiency")),
                 "desc": spec.get("desc", ""),
