@@ -1,9 +1,35 @@
 import json
 import os
+from typing import Generator
 
 from dashboard_services.ai.client import clean_ai_text, get_ai_client
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
+
+ASK_GM_SYSTEM = """You are a sharp dynasty fantasy football analyst giving personalized advice to a team owner.
+Be concise, direct, and grounded in the roster and league data provided.
+Answer the question in 2–4 sentences. Be specific about player names and values.
+Do not invent stats, injuries, or players not in the provided data."""
+
+
+def ask_gm_stream(question: str, team_context: dict) -> Generator[str, None, None]:
+    """Stream an AI answer to a free-form GM question. Yields text chunks."""
+    client = get_ai_client()
+    ctx_str = json.dumps(team_context, default=str)[:3000]
+    user_msg = f"Team context:\n{ctx_str}\n\nQuestion: {question}"
+    stream = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": ASK_GM_SYSTEM},
+            {"role": "user", "content": user_msg},
+        ],
+        stream=True,
+        max_tokens=350,
+    )
+    for chunk in stream:
+        delta = (chunk.choices[0].delta.content or "") if chunk.choices else ""
+        if delta:
+            yield delta
 
 GM_MEMO_SYSTEM = """
 You are a sharp dynasty fantasy football GM analyst based on the current date.

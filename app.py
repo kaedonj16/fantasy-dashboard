@@ -25,6 +25,8 @@ from flask import (
     session,
     send_file,
     make_response,
+    Response,
+    stream_with_context,
 )
 try:
     from flask_compress import Compress
@@ -456,72 +458,93 @@ FORM_BODY = """
       <div class="home-card">
         <h2 class="home-card-title">Get started</h2>
 
-        <div class="row">
-          <label for="platformSelect">Platform</label>
-          <div class="platform-selector">
-            <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
-            <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
+        <!-- Step indicator -->
+        <div class="onboarding-steps" id="onboardingSteps">
+          <div class="onboarding-step active" data-step="1">
+            <span class="step-num">1</span><span class="step-label">Platform</span>
+          </div>
+          <div class="onboarding-step-divider"></div>
+          <div class="onboarding-step" data-step="2">
+            <span class="step-num">2</span><span class="step-label">Username</span>
+          </div>
+          <div class="onboarding-step-divider"></div>
+          <div class="onboarding-step" data-step="3">
+            <span class="step-num">3</span><span class="step-label">League</span>
           </div>
         </div>
 
-        <!-- Sleeper Flow -->
-        <div id="sleeperFlow">
+        <!-- Step 1: Platform -->
+        <div id="onboardStep1" class="onboard-step-panel">
           <div class="row">
-            <label for="username">Sleeper Username</label>
-            <input type="text" id="username" name="username" value="{{ username or '' }}">
+            <label for="platformSelect">Choose your platform</label>
+            <div class="platform-selector">
+              <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
+              <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
+            </div>
           </div>
-
-          <div class="row">
-            <button type="button" id="lookupBtn">Find My Leagues</button>
+          <div class="row" id="step1Next">
+            <button type="button" class="onboard-next-btn" id="platformNextBtn">Continue <i class="fa-solid fa-arrow-right" style="font-size:12px;margin-left:4px;"></i></button>
           </div>
         </div>
 
-        <!-- ESPN Flow -->
-        <div id="espnFlow" style="display:none;">
-          <div class="row">
-            <label for="espnLeagueIdInput">ESPN League ID</label>
-            <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
-          </div>
-          <div class="row">
-            <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
-            <input type="text" id="espnTeamName" placeholder="e.g. Dynasty Monsters">
-          </div>
-          <div class="row">
-            <button type="button" id="espnSubmitBtn">Find My League</button>
-          </div>
-          <div id="espnError" class="error-message" style="display:none;"></div>
-          <p class="hint" style="margin-top:6px;" id="espnHint">
-            Private leagues also need <code>ESPN_S2</code> and <code>ESPN_SWID</code> cookies set on the server.
-          </p>
-        </div>
+        <!-- Step 2: Credentials -->
+        <div id="onboardStep2" class="onboard-step-panel" style="display:none;">
+          <button type="button" class="onboard-back-btn" id="step2BackBtn"><i class="fa-solid fa-arrow-left" style="font-size:11px;margin-right:4px;"></i> Back</button>
 
-        <form method="post" id="leagueSelectForm">
-          <input type="hidden" name="platform" id="formPlatform" value="sleeper">
-          <input type="hidden" name="season" value="{{ viewed_season }}">
-          <input type="hidden" name="username" id="formUsername" value="">
-          <input type="hidden" name="next" id="formNext" value="{{ next_url or '' }}">
-
-          <div class="row" id="leagueSelectWrap" style="display:none;">
-            <label for="league">Choose League</label>
-            <select id="league" name="league" required>
-              <option value="">Select a league</option>
-            </select>
+          <!-- Sleeper Flow -->
+          <div id="sleeperFlow">
+            <div class="row">
+              <label for="username">Sleeper Username</label>
+              <input type="text" id="username" name="username" value="{{ username or '' }}" placeholder="e.g. dynastyguru" autocomplete="username">
+            </div>
+            <div class="row">
+              <button type="button" id="lookupBtn">Find My Leagues</button>
+            </div>
+            <p class="hint" id="sleeperHint">Enter your Sleeper username to load your leagues.</p>
           </div>
 
-          <div class="row" id="generateWrap" style="display:none;">
-            <button type="submit">Generate Dashboard</button>
+          <!-- ESPN Flow -->
+          <div id="espnFlow" style="display:none;">
+            <div class="row">
+              <label for="espnLeagueIdInput">ESPN League ID</label>
+              <input type="text" id="espnLeagueIdInput" placeholder="e.g. 336414" autocomplete="off">
+            </div>
+            <div class="row">
+              <label for="espnTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+              <input type="text" id="espnTeamName" placeholder="e.g. Dynasty Monsters">
+            </div>
+            <div class="row">
+              <button type="button" id="espnSubmitBtn">Find My League</button>
+            </div>
+            <div id="espnError" class="error-message" style="display:none;"></div>
+            <p class="hint" id="espnHint">Private leagues need ESPN_S2 and ESPN_SWID cookies.</p>
           </div>
 
           <div id="lookupError" class="error-message" style="display:none;"></div>
+          {% if error %}<div class="error-message">{{ error }}</div>{% endif %}
+        </div>
 
-          {% if error %}
-          <div class="error-message">{{ error }}</div>
-          {% endif %}
-        </form>
+        <!-- Step 3: League selection + generate -->
+        <div id="onboardStep3" class="onboard-step-panel" style="display:none;">
+          <button type="button" class="onboard-back-btn" id="step3BackBtn"><i class="fa-solid fa-arrow-left" style="font-size:11px;margin-right:4px;"></i> Back</button>
+          <form method="post" id="leagueSelectForm">
+            <input type="hidden" name="platform" id="formPlatform" value="sleeper">
+            <input type="hidden" name="season" value="{{ viewed_season }}">
+            <input type="hidden" name="username" id="formUsername" value="">
+            <input type="hidden" name="next" id="formNext" value="{{ next_url or '' }}">
 
-        <p class="hint" id="sleeperHint">
-          Enter your Sleeper username, choose one of your leagues, and unlock advanced analytics.
-        </p>
+            <div class="row" id="leagueSelectWrap">
+              <label for="league">Choose your league</label>
+              <select id="league" name="league" required>
+                <option value="">Select a league</option>
+              </select>
+            </div>
+            <div class="row" id="generateWrap">
+              <button type="submit">Generate Dashboard <i class="fa-solid fa-chart-line" style="font-size:12px;margin-left:4px;"></i></button>
+            </div>
+          </form>
+        </div>
+
       </div>
     </div>
   </section>
@@ -750,6 +773,9 @@ BASE_HTML = """
         </div>
       </div>
     </div>
+
+    <!-- Feature 15: Ask My GM floating chat widget -->
+    {ask_gm_widget}
 
     <script src="/static/app.js?v={app_js_v}"></script>
     <script src="/static/paywall.js?v={paywall_js_v}"></script>
@@ -1731,6 +1757,32 @@ def render_page(
     user_id = session.get("viewer_username")
     is_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
 
+    # Build Ask My GM widget when user has a league + roster context
+    viewer_roster_id = session.get("viewer_roster_id") or ""
+    if league_id and platform and season and viewer_roster_id:
+        ask_gm_widget = f"""<div id="askGmWidget" class="ask-gm-widget"
+  data-league="{league_id}" data-platform="{platform}"
+  data-season="{season}" data-roster="{viewer_roster_id}">
+  <button class="ask-gm-fab" id="askGmFab" aria-label="Ask My GM" title="Ask My GM">
+    <i class="fa-solid fa-robot"></i>
+  </button>
+  <div class="ask-gm-panel" id="askGmPanel" style="display:none;">
+    <div class="ask-gm-header">
+      <span><i class="fa-solid fa-robot" style="color:var(--accent)"></i> Ask My GM</span>
+      <button class="ask-gm-close" id="askGmClose" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="ask-gm-messages" id="askGmMessages">
+      <div class="ask-gm-msg ask-gm-msg--system">Ask me anything about your roster — trade advice, waiver targets, start/sit questions, and more.</div>
+    </div>
+    <div class="ask-gm-input-row">
+      <input class="ask-gm-input" id="askGmInput" type="text" placeholder="e.g. Should I trade Bijan Robinson?" maxlength="400" autocomplete="off">
+      <button class="ask-gm-send" id="askGmSend" aria-label="Send"><i class="fa-solid fa-paper-plane"></i></button>
+    </div>
+  </div>
+</div>"""
+    else:
+        ask_gm_widget = ""
+
     return BASE_HTML.format(
         title=title,
         og_tags=og_tags,
@@ -1755,6 +1807,7 @@ def render_page(
         css_v=_CSS_V,
         fa_v=_FA_V,
         icons_v=_ICONS_V,
+        ask_gm_widget=ask_gm_widget,
     )
 
 
@@ -6598,6 +6651,23 @@ def build_activity_body(ctx: dict) -> str:
           </div>
         </div>
 
+        <!-- Feature 12: League Bulletins -->
+        <div class="card small bulletins-card" id="leagueBulletinsContainer"
+             data-league="{resolved_league_id}" style="margin-top:12px;">
+          <div class="bulletins-header">
+            <div class="bulletins-title">
+              <i class="fa-solid fa-comments" style="color:var(--accent);font-size:13px;"></i>
+              League Bulletin Board
+            </div>
+          </div>
+          <div class="bulletins-list" id="bulletinsList">
+            <div class="bulletins-empty" style="display:flex;align-items:center;gap:8px;padding:14px;">
+              <div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>
+              Loading…
+            </div>
+          </div>
+        </div>
+
         <div class="card small" id="nflNewsCard" style="margin-top:12px;">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
             <h3>NFL News</h3>
@@ -7499,6 +7569,10 @@ def build_teams_body(ctx: dict) -> str:
             f"<span class='tc-pi-text'> &bull; <span class='tc-pi-num'>{team_pos_index[rid]:+.2f}</span></span></div></div>"
             "    <div style='display:flex;align-items:center;gap:6px;flex-shrink:0;'>"
             f"      {_grade_badge}"
+            + (f"      <a href='/{platform}/{current_season}/{league_id}/share-card/{rid}' target='_blank' "
+               f"class='share-report-btn' title='Share team report card'>"
+               f"<i class='fa-solid fa-share-nodes'></i></a>"
+               if str(rid) == str(viewer_roster_id) else "") +
             "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
             "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
             "          <path d='M3 5l4 4 4-4' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>"
@@ -23952,6 +24026,351 @@ def _run_startup_daily() -> None:
 threading.Thread(target=_run_startup_daily, daemon=True).start()
 
 
+
+
+# ── Feature 10 + 15: Ask My GM — streaming AI chat ───────────────────────────
+@app.route("/api/ask-gm", methods=["POST"])
+@limiter.limit("15 per minute")
+def api_ask_gm():
+    """SSE streaming endpoint for the Ask My GM chat widget."""
+    from dashboard_services.ai.prompts import ask_gm_stream
+    from dashboard_services.ai.client import ai_enabled
+
+    payload = request.get_json(force=True) or {}
+    question = str(payload.get("question") or "").strip()[:500]
+    league_id = str(payload.get("league_id") or "").strip()
+    season = int(payload.get("season") or datetime.now().year)
+    platform = str(payload.get("platform") or "sleeper").strip()
+    roster_id = str(payload.get("roster_id") or "").strip()
+
+    if not question or not league_id:
+        return jsonify({"error": "Missing required parameters"}), 400
+
+    if not ai_enabled():
+        return jsonify({"error": "AI unavailable"}), 503
+
+    def _generate():
+        import json as _json
+        try:
+            ctx = get_league_ctx_from_cache(platform, league_id, season)
+            rosters = ctx.get("rosters") or []
+            standings = ctx.get("standings_map") or {}
+            users = ctx.get("users") or []
+            players_index = {}
+            try:
+                from utils.utils import load_players_index
+                players_index = load_players_index() or {}
+            except Exception:
+                pass
+
+            value_table = list(get_model_value_table_cached() or [])
+            values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
+
+            team_ctx: dict = {"league_id": league_id, "season": season}
+            league_info = ctx.get("league") or {}
+            is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
+                        for s in (league_info.get("roster_positions") or []))
+            vfield = "sf_value" if is_sf else "value"
+            team_ctx["league_type"] = "SF" if is_sf else "1QB"
+            team_ctx["league_name"] = league_info.get("name", "")
+
+            uid_to_name: dict = {}
+            for u in users:
+                uid_to_name[str(u.get("user_id", ""))] = str(u.get("display_name") or u.get("username") or "Unknown")
+
+            for r in rosters:
+                if str(r.get("roster_id")) == roster_id:
+                    std = standings.get(roster_id) or standings.get(int(roster_id)) or {}
+                    owner_id = str(r.get("owner_id") or "")
+                    team_ctx["owner"] = uid_to_name.get(owner_id, "Unknown")
+                    team_ctx["record"] = f"{std.get('wins', 0)}-{std.get('losses', 0)}"
+                    team_ctx["points_for"] = round(float(std.get("pf") or 0), 1)
+                    players_detail = []
+                    for pid in (r.get("players") or []):
+                        meta = players_index.get(str(pid)) or {}
+                        vrow = values_by_id.get(str(pid)) or {}
+                        val = float(vrow.get(vfield) or vrow.get("value") or 0)
+                        if val > 0 or meta.get("pos"):
+                            players_detail.append({
+                                "name": meta.get("full_name") or meta.get("name") or str(pid),
+                                "pos": meta.get("pos", ""),
+                                "team": meta.get("team", ""),
+                                "value": round(val, 0),
+                            })
+                    players_detail.sort(key=lambda x: -x["value"])
+                    team_ctx["top_players"] = players_detail[:20]
+                    team_ctx["roster_size"] = len(r.get("players") or [])
+                    break
+
+            for chunk in ask_gm_stream(question, team_ctx):
+                yield f"data: {_json.dumps({'text': chunk})}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as exc:
+            logger.exception("[api-ask-gm] %s", exc)
+            yield f"data: {_json.dumps({'error': 'AI unavailable, try again later.'})}\n\n"
+
+    return Response(
+        stream_with_context(_generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── Feature 12: League Bulletins ─────────────────────────────────────────────
+@app.route("/api/league-bulletins")
+@limiter.limit("30 per minute")
+def api_league_bulletins():
+    """Fetch Sleeper league bulletin board messages."""
+    league_id = request.args.get("league_id", "").strip()
+    if not league_id:
+        return jsonify({"error": "league_id required"}), 400
+    try:
+        import requests as _req
+        resp = _req.get(
+            f"https://api.sleeper.app/v1/league/{league_id}/bulletins",
+            timeout=5,
+        )
+        bulletins = resp.json() if resp.status_code == 200 else []
+        if not isinstance(bulletins, list):
+            bulletins = []
+        clean = []
+        for b in bulletins[:25]:
+            if not isinstance(b, dict):
+                continue
+            clean.append({
+                "author": str(b.get("author_display_name") or b.get("author_id") or ""),
+                "author_avatar": str(b.get("author_avatar") or ""),
+                "body": str(b.get("body") or b.get("message") or ""),
+                "created": int(b.get("created") or b.get("created_at") or 0),
+                "likes": len(b.get("reactions") or []),
+            })
+        return jsonify({"bulletins": clean})
+    except Exception as exc:
+        logger.warning("[api-league-bulletins] %s", exc)
+        return jsonify({"bulletins": []})
+
+
+# ── Feature 13: Shareable Team Report Card ────────────────────────────────────
+@app.route("/<platform>/<int:season>/<league_id>/share-card")
+@app.route("/<platform>/<int:season>/<league_id>/share-card/<roster_id>")
+def page_share_card(platform: str, season: int, league_id: str, roster_id: str = ""):
+    """Minimal shareable team report card page."""
+    if not roster_id:
+        roster_id = session.get("viewer_roster_id") or ""
+    try:
+        ctx = get_league_ctx_from_cache(platform, league_id, season)
+        rosters = ctx.get("rosters") or []
+        standings = ctx.get("standings_map") or {}
+        users = ctx.get("users") or []
+        players_index = {}
+        try:
+            from utils.utils import load_players_index
+            players_index = load_players_index() or {}
+        except Exception:
+            pass
+        value_table = list(get_model_value_table_cached() or [])
+        values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
+
+        league_info = ctx.get("league") or {}
+        is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
+                    for s in (league_info.get("roster_positions") or []))
+        vfield = "sf_value" if is_sf else "value"
+        league_name = league_info.get("name", "Dynasty League")
+
+        uid_to_name: dict = {}
+        uid_to_avatar: dict = {}
+        for u in users:
+            uid = str(u.get("user_id", ""))
+            uid_to_name[uid] = str(u.get("display_name") or u.get("username") or "Unknown")
+            uid_to_avatar[uid] = str(u.get("avatar") or "")
+
+        team_name, owner_name, record, pf, player_rows, avatar_url = "", "", "0-0", 0.0, [], ""
+        for r in rosters:
+            if str(r.get("roster_id")) == str(roster_id):
+                owner_id = str(r.get("owner_id") or "")
+                owner_name = uid_to_name.get(owner_id, "Unknown")
+                avatar_url = uid_to_avatar.get(owner_id, "")
+                if avatar_url:
+                    avatar_url = f"https://sleepercdn.com/avatars/thumbs/{avatar_url}"
+                std = standings.get(roster_id) or standings.get(int(roster_id) if roster_id.isdigit() else -1) or {}
+                team_name = str(std.get("team_name") or owner_name)
+                record = f"{std.get('wins', 0)}–{std.get('losses', 0)}"
+                pf = round(float(std.get("pf") or 0), 1)
+                for pid in (r.get("players") or []):
+                    meta = players_index.get(str(pid)) or {}
+                    vrow = values_by_id.get(str(pid)) or {}
+                    val = float(vrow.get(vfield) or vrow.get("value") or 0)
+                    if meta.get("pos") and val > 0:
+                        player_rows.append({
+                            "name": meta.get("full_name") or meta.get("name") or str(pid),
+                            "pos": meta.get("pos", ""),
+                            "team": meta.get("team", ""),
+                            "value": round(val),
+                        })
+                player_rows.sort(key=lambda x: -x["value"])
+                break
+
+        top5 = player_rows[:5]
+        total_value = sum(p["value"] for p in player_rows)
+
+        pos_colors = {"QB": "#6366f1", "RB": "#10b981", "WR": "#3b82f6", "TE": "#f59e0b"}
+
+        rows_html = "".join(
+            f"""<div class="sc-player-row">
+                  <span class="sc-pos-pill" style="background:{pos_colors.get(p['pos'], '#64748b')}20;color:{pos_colors.get(p['pos'], '#64748b')}">{p['pos']}</span>
+                  <span class="sc-player-name">{p['name']}</span>
+                  <span class="sc-player-team">{p['team']}</span>
+                  <span class="sc-player-val">{p['value']}</span>
+               </div>"""
+            for p in top5
+        )
+
+        avatar_html = (
+            f'<img src="{avatar_url}" class="sc-avatar" alt="avatar" onerror="this.style.display=\'none\'">'
+            if avatar_url else
+            '<div class="sc-avatar-placeholder"><i class="fa-solid fa-user"></i></div>'
+        )
+
+        share_url = request.url
+        card_html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{team_name} | BR Fantasy Report</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta property="og:title" content="{team_name} — BR Fantasy Report">
+  <meta property="og:description" content="{record} record · {pf} pts scored · {season} season">
+  <meta property="og:image" content="{avatar_url or '/static/BR_Logo.png'}">
+  <link rel="stylesheet" href="/static/dashboard.css?v={_CSS_V}">
+  <link rel="stylesheet" href="/static/font-awesome.css?v={_CSS_V}">
+  <style>
+    body {{ background: var(--bg, #0f172a); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }}
+    .share-card-wrap {{ max-width: 440px; width: 100%; }}
+  </style>
+</head>
+<body>
+  <div class="share-card-wrap">
+    <div class="share-card">
+      <div class="sc-header">
+        <div class="sc-brand"><img src="/static/BR_Logo.png" alt="BR Fantasy" style="height:22px;opacity:.7"> BR Fantasy</div>
+        <div class="sc-league">{league_name}</div>
+      </div>
+      <div class="sc-team-row">
+        {avatar_html}
+        <div class="sc-team-info">
+          <div class="sc-team-name">{team_name}</div>
+          <div class="sc-owner">{owner_name}</div>
+        </div>
+        <div class="sc-record">{record}</div>
+      </div>
+      <div class="sc-stats-row">
+        <div class="sc-stat"><span class="sc-stat-val">{pf}</span><span class="sc-stat-lbl">Points For</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{total_value:,}</span><span class="sc-stat-lbl">Dynasty Value</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{len(player_rows)}</span><span class="sc-stat-lbl">Rostered</span></div>
+      </div>
+      <div class="sc-section-title">Top Players</div>
+      <div class="sc-players">{rows_html}</div>
+      <div class="sc-footer">
+        <a href="/" class="sc-cta">View full dashboard at brfantasy.com</a>
+        <button class="sc-copy-btn" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')">Copy link</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+        return card_html, 200, {"Content-Type": "text/html; charset=utf-8"}
+    except Exception as exc:
+        logger.exception("[page-share-card] %s", exc)
+        return "<h2>Unable to load report card. Try again later.</h2>", 500
+
+
+# ── Feature 1: Live Draft Board Suggest ──────────────────────────────────────
+@app.route("/api/live-draft-suggest")
+def api_live_draft_suggest():
+    """
+    Given drafted player IDs and a team's positional needs, return a re-sorted
+    best-available list tuned to fill the biggest positional gaps.
+    """
+    try:
+        from utils.utils import load_players_index, load_model_value_table
+        league_id = request.args.get("league_id", "").strip()
+        platform = request.args.get("platform", "sleeper")
+        season = int(request.args.get("season") or datetime.now().year)
+        roster_id = request.args.get("roster_id", "").strip()
+        drafted_raw = request.args.get("drafted", "")
+        drafted_ids = set(str(x).strip() for x in drafted_raw.split(",") if x.strip())
+        format_raw = request.args.get("format", "").lower()
+        page = max(1, int(request.args.get("page") or 1))
+        limit = min(50, max(10, int(request.args.get("limit") or 25)))
+
+        value_table = list(get_model_value_table_cached() or [])
+        players_index = load_players_index() or {}
+
+        # Determine scoring format
+        is_sf = format_raw == "sf"
+        if league_id and not format_raw:
+            try:
+                league_info = get_league(platform, league_id, season) or {}
+                is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
+                            for s in (league_info.get("roster_positions") or []))
+            except Exception:
+                pass
+        vfield = "sf_value" if is_sf else "value"
+
+        # Build needs vector for the drafting team
+        needs: dict = {}
+        if league_id and roster_id:
+            try:
+                needs_resp = api_draft_needs()
+                if hasattr(needs_resp, "get_json"):
+                    ndata = needs_resp.get_json() or {}
+                    needs = ndata.get("needs") or {}
+            except Exception:
+                pass
+
+        NEED_BOOST = {2: 1.30, 1: 1.12, 0: 1.0, -1: 0.95, -2: 0.90}
+
+        available = []
+        for row in value_table:
+            if not isinstance(row, dict):
+                continue
+            pid = str(row.get("id") or row.get("player_id") or "")
+            if not pid or pid in drafted_ids:
+                continue
+            base_val = float(row.get(vfield) or row.get("value") or 0)
+            if base_val <= 0:
+                continue
+            meta = players_index.get(pid) or {}
+            pos = str(meta.get("pos") or row.get("position") or "").upper()
+            need_level = needs.get(pos, 0)
+            boost = NEED_BOOST.get(need_level, 1.0)
+            available.append({
+                "id": pid,
+                "name": meta.get("full_name") or meta.get("name") or row.get("name") or pid,
+                "pos": pos,
+                "team": meta.get("team") or row.get("team") or "",
+                "age": meta.get("age") or row.get("age") or "",
+                "value": round(base_val),
+                "adj_value": round(base_val * boost, 1),
+                "need_level": need_level,
+            })
+
+        available.sort(key=lambda x: -x["adj_value"])
+        total = len(available)
+        offset = (page - 1) * limit
+        page_data = available[offset: offset + limit]
+
+        return jsonify({
+            "players": page_data,
+            "total": total,
+            "page": page,
+            "pages": -(-total // limit),
+            "is_sf": is_sf,
+            "needs": needs,
+        })
+    except Exception as exc:
+        logger.exception("[api-live-draft-suggest] %s", exc)
+        return _api_err("Request failed", exc)
 
 
 @app.route("/robots.txt")

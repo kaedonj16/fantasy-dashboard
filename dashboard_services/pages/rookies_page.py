@@ -157,23 +157,41 @@ def build_prospects_body(is_admin: bool = False) -> str:
       <button class="da-filter" data-pos="TE"  onclick="daFilterPos('TE')">TE</button>
       <button class="da-info-btn" onclick="window._da.showHelp()" title="How to use">?</button>
       <button class="da-reset-btn" onclick="daReset()">Reset Board</button>
+      <button id="liveDraftModeBtn" class="share-report-btn" style="margin-left:auto;"
+              title="Re-sort best available by your roster needs and mark players as drafted">
+        <i class="fa-solid fa-bolt"></i> Live Draft Mode
+      </button>
     </div>
+
+    <!-- Live Draft Bar (hidden until active) -->
+    <div id="liveDraftBar" class="live-draft-bar" style="display:none;">
+      <div class="live-draft-badge">
+        <div class="live-draft-dot"></div>
+        Live Mode — click a player to mark as drafted
+      </div>
+      <span class="live-draft-count" id="ldDraftedCount">0 drafted</span>
+      <button class="live-draft-clear-btn" id="ldClearDraftedBtn">Clear</button>
+    </div>
+
     <div class="da-layout">
       <div class="da-board">
-        <!-- Available / Drafted sub-tabs -->
-        <div class="da-sub-tabs">
+        <!-- Available / Drafted sub-tabs (hidden in live mode) -->
+        <div class="da-sub-tabs" id="daSubTabsBar">
           <button class="da-sub-tab active" data-sub="available" onclick="daSubTab('available')">Available</button>
           <button class="da-sub-tab" data-sub="drafted" onclick="daSubTab('drafted')">Drafted <span id="daDraftedCount"></span></button>
         </div>
         <div class="da-board-header">
           <span>#</span><span>Prospect</span><span>Pos</span><span></span><span class="da-col-right">Value</span><span></span>
         </div>
+        <!-- Normal prospect board -->
         <div class="da-board-list" id="daBoardList">
           <div class="da-loading">
             <div class="loading-spinner" style="width:24px;height:24px;flex-shrink:0;"></div>
             <span>Loading prospects…</span>
           </div>
         </div>
+        <!-- Live draft suggestions board (replaces above when active) -->
+        <div id="liveDraftBoard" style="display:none;"></div>
       </div>
       <aside class="da-needs" id="daNeedsPanel">
         <div class="da-needs-title">My Roster Needs</div>
