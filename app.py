@@ -780,6 +780,7 @@ BASE_HTML = """
     <!-- Feature 15: Ask My GM floating chat widget -->
     {ask_gm_widget}
 
+    <script>window._viewerRid = {viewer_roster_id_js};</script>
     <script src="/static/app.js?v={app_js_v}"></script>
     <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
@@ -1764,6 +1765,7 @@ def render_page(
     viewer_roster_id = session.get("viewer_roster_id") or ""
     ask_gm_widget = ""  # Ask My GM hidden for now
 
+    import json as _json
     return BASE_HTML.format(
         title=title,
         og_tags=og_tags,
@@ -1789,6 +1791,7 @@ def render_page(
         fa_v=_FA_V,
         icons_v=_ICONS_V,
         ask_gm_widget=ask_gm_widget,
+        viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
     )
 
 
@@ -7543,7 +7546,8 @@ def build_teams_body(ctx: dict) -> str:
             f"      {_grade_badge}"
             + (f"      <a href='/{platform}/{current_season}/{league_id}/share-card/{rid}' target='_blank' "
                f"class='share-report-btn' title='Share team report card'>"
-               f"<i class='fa-solid fa-share-nodes'></i></a>"
+               f"<svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8'/><polyline points='16 6 12 2 8 6'/><line x1='12' y1='2' x2='12' y2='15'/></svg>"
+               f"</a>"
                if str(rid) == str(viewer_roster_id) else "") +
             "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
             "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
@@ -8353,11 +8357,13 @@ def build_teams_body(ctx: dict) -> str:
       document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
         btn.addEventListener('click', function() {{ sortTeams(btn.dataset.sort); }});
       }});
-      // Default: float the viewer's card to the top, no sort button active
+      // Default: float the viewer's card to the top using the session-injected _viewerRid
       (function() {{
+        var rid = (window._viewerRid || '').toString().trim();
+        if (!rid) return;
         var grid = document.getElementById('teamsGrid');
         if (!grid) return;
-        var viewer = grid.querySelector('.team-strength-card[data-viewer="1"]');
+        var viewer = grid.querySelector('.team-strength-card[data-roster-id="' + rid + '"]');
         if (viewer && grid.firstChild !== viewer) {{
           grid.insertBefore(viewer, grid.firstChild);
         }}
