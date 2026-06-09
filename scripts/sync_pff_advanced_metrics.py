@@ -47,6 +47,7 @@ RECEIVING_COLS = {
     "inline_rate": "inline_rate",
     "pass_block_rate": "pass_block_rate",
     "grades_offense": "grades_offense",
+    "yprr": "yprr",
 }
 
 RUSHING_COLS = {

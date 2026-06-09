@@ -212,7 +212,8 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS big_time_throw_rate NUMERIC,
             ADD COLUMN IF NOT EXISTS adjusted_completion_rate NUMERIC,
             ADD COLUMN IF NOT EXISTS pressure_to_sack_rate NUMERIC,
-            ADD COLUMN IF NOT EXISTS nfl_passer_rating NUMERIC;
+            ADD COLUMN IF NOT EXISTS nfl_passer_rating NUMERIC,
+            ADD COLUMN IF NOT EXISTS yprr NUMERIC;
     """)
 
 
@@ -1019,7 +1020,7 @@ def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
         'grades_pass_block', 'explosive_runs_10_plus', 'breakaway_percentage',
         'elusive_rating', 'pff_rushing_grade', 'pff_passing_grade',
         'big_time_throw_rate', 'adjusted_completion_rate', 'pressure_to_sack_rate',
-        'nfl_passer_rating',
+        'nfl_passer_rating', 'yprr',
     ]
 
     with get_conn() as conn:
@@ -1177,6 +1178,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "contested_catch_rate": {"label": "Contested Catch %",   "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Percent of contested (tightly covered) targets the player came down with."},
     "yards_after_catch_per_reception": {"label": "YAC / Reception", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained after the catch per reception."},
     "drop_rate":            {"label": "Drop Rate",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of catchable targets dropped. Lower is better."},
+    "yprr":                 {"label": "Yards / Route Run",   "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Receiving yards earned per route run (from PFF). Elite WRs are typically 2.0+; accounts for targets indirectly by rewarding yards on every snap."},
     "slot_rate":            {"label": "Slot Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from the slot."},
     "wide_rate":            {"label": "Wide Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from out wide."},
     "inline_rate":          {"label": "Inline Rate",         "category": "Receiving", "positions": ["TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Percent of snaps a tight end lined up inline (attached to the formation)."},
