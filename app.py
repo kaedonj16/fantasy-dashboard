@@ -7073,6 +7073,24 @@ def build_teams_body(ctx: dict) -> str:
         for pos, plist in pos_map.items():
             plist.sort(key=lambda x: float(x.get("value", 0.0)), reverse=True)
 
+    # value-weighted average age per team per position (top 8 players)
+    team_pos_age: Dict[int, Dict[str, Optional[float]]] = defaultdict(dict)
+    for _rid, _pos_map in roster_pos_players.items():
+        for _pos in POS_ORDER:
+            _plist = _pos_map.get(_pos, [])
+            _age_vals = []
+            for _p in _plist[:8]:
+                _nm = str(_p.get("search_name") or "").strip().lower()
+                _a = name_to_age.get(_nm)
+                _v = float(_p.get("value") or 0)
+                if _a is not None and _v > 0:
+                    _age_vals.append((_a, _v))
+            if _age_vals:
+                _tv = sum(v for _, v in _age_vals)
+                team_pos_age[_rid][_pos] = round(sum(a * v for a, v in _age_vals) / _tv, 1)
+            else:
+                team_pos_age[_rid][_pos] = None
+
     # ----------------- Build per-team position value buckets (for strength table) -----------------
     team_meta: Dict[int, Dict] = {}  # name, avatar
     team_pos_values: Dict[int, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
@@ -7350,7 +7368,7 @@ def build_teams_body(ctx: dict) -> str:
     # ----------------- Build HTML cards -----------------
     cards_html = []
 
-    for rid, meta in team_meta.items():
+    for _card_idx, (rid, meta) in enumerate(team_meta.items()):
         name = meta["name"]
         avatar = meta.get("avatar") or ""
         img_html = (
@@ -7385,6 +7403,8 @@ def build_teams_body(ctx: dict) -> str:
                 highlight_class = " pos-weakest"
 
             rank = pos_rank[pos].get(rid, 0)
+            _pos_age = team_pos_age.get(int(rid), {}).get(pos)
+            _age_txt = f"{_pos_age:.1f}" if _pos_age is not None else "–"
 
             # main row (clickable)
             main_row = (
@@ -7394,6 +7414,7 @@ def build_teams_body(ctx: dict) -> str:
                 "    <span class='pos-row-toggle'>▾</span> {pos}"
                 "  </td>"
                 "  <td class='pos-count'>{count}</td>"
+                "  <td class='pos-age'>{age}</td>"
                 "  <td class='pos-total'>{total:.1f}</td>"
                 "  <td class='pos-avg'>{strength_score:.1f}</td>"
                 "  <td class='pos-z'>{z:.2f}</td>"
@@ -7412,6 +7433,7 @@ def build_teams_body(ctx: dict) -> str:
                     z=z,
                     pct=pct,
                     strength_score=strength_score,
+                    age=_age_txt,
                 )
             )
 
@@ -7419,7 +7441,7 @@ def build_teams_body(ctx: dict) -> str:
             detail_html = render_pos_players(rid, pos)
             detail_row = (
                 f"<tr class='pos-detail-row' data-pos='{pos}' style='display:none;'>"
-                "  <td colspan='7'>"
+                "  <td colspan='8'>"
                 "    <div class='pos-detail-inner'>"
                 f"      {detail_html}"
                 "    </div>"
@@ -7444,6 +7466,7 @@ def build_teams_body(ctx: dict) -> str:
             "    <i class='fa-solid fa-clipboard-list' style='font-size:11px;opacity:0.7;'></i> PICKS"
             "  </td>"
             f"  <td class='pos-count'>{pick_count}</td>"
+            "  <td class='pos-age'>—</td>"
             f"  <td class='pos-total'>{pick_val:.1f}</td>"
             "  <td class='pos-avg'>—</td>"
             f"  <td class='pos-z'>{pick_z:+.2f}</td>"
@@ -7537,7 +7560,7 @@ def build_teams_body(ctx: dict) -> str:
 
         _is_viewer = str(rid) == str(viewer_roster_id or "")
         card_html = (
-            f"<div class='card team-strength-card {_window_cls}' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}' data-roster-id='{rid}'" + (" data-viewer='1'" if _is_viewer else "") + ">"
+            f"<div class='card team-strength-card {_window_cls}' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}' data-roster-id='{rid}' data-original-index='{_card_idx}'" + (" data-viewer='1'" if _is_viewer else "") + ">"
             "  <div class='card-header-row'>"
             f"    <div style='display:flex;align-items:center;gap:8px;min-width:0;flex:1;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>"
             f"<div class='mini-label' style='flex-shrink:0;'><span class='grade-window-label'>{_win_window}</span>"
@@ -7563,6 +7586,7 @@ def build_teams_body(ctx: dict) -> str:
             "        <tr>"
             "          <th>Pos</th>"
             "          <th>#</th>"
+            "          <th>Age</th>"
             "          <th>Value</th>"
             "          <th>Score</th>"
             "          <th>Z</th>"
@@ -8329,22 +8353,38 @@ def build_teams_body(ctx: dict) -> str:
       }});
 
       // Teams sort bar
-      var _sortKey = 'posindex';
+      var _sortKey = '';
+      function floatViewer() {{
+        var rid = (window._viewerRid || '').toString().trim();
+        if (!rid) return;
+        var grid = document.getElementById('teamsGrid');
+        if (!grid) return;
+        var viewer = grid.querySelector('.team-strength-card[data-roster-id="' + rid + '"]');
+        if (viewer && grid.firstChild !== viewer) grid.insertBefore(viewer, grid.firstChild);
+      }}
+      function restoreDefault() {{
+        var grid = document.getElementById('teamsGrid');
+        if (!grid) return;
+        var cards = Array.from(grid.querySelectorAll('.team-strength-card'));
+        cards.sort(function(a, b) {{ return Number(a.dataset.originalIndex) - Number(b.dataset.originalIndex); }});
+        cards.forEach(function(c) {{ grid.appendChild(c); }});
+        floatViewer();
+        document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{ btn.classList.remove('active'); }});
+        _sortKey = '';
+      }}
       function sortTeams(key) {{
+        // clicking the active sort deselects it and restores default order
+        if (_sortKey === key) {{ restoreDefault(); return; }}
         _sortKey = key;
         var grid = document.getElementById('teamsGrid');
         if (!grid) return;
         var cards = Array.from(grid.querySelectorAll('.team-strength-card'));
         cards.sort(function(a, b) {{
           if (key === 'grade') {{
-            var gradeA = Number(a.dataset.sortGrade) || 0;
-            var gradeB = Number(b.dataset.sortGrade) || 0;
-            // Higher grade numbers should come first (A+ = 10, A = 9, etc.)
-            return gradeB - gradeA;
+            return (Number(b.dataset.sortGrade) || 0) - (Number(a.dataset.sortGrade) || 0);
           }} else if (key === 'archetype') {{
             return Number(a.dataset.sortArchetype) - Number(b.dataset.sortArchetype);
           }} else {{
-            // posindex: higher is better
             return Number(b.dataset.sortPosindex) - Number(a.dataset.sortPosindex);
           }}
         }});
@@ -8358,14 +8398,7 @@ def build_teams_body(ctx: dict) -> str:
       }});
       // Default: float the viewer's card to the top using the session-injected _viewerRid
       (function() {{
-        var rid = (window._viewerRid || '').toString().trim();
-        if (!rid) return;
-        var grid = document.getElementById('teamsGrid');
-        if (!grid) return;
-        var viewer = grid.querySelector('.team-strength-card[data-roster-id="' + rid + '"]');
-        if (viewer && grid.firstChild !== viewer) {{
-          grid.insertBefore(viewer, grid.firstChild);
-        }}
+        floatViewer();
       }})();
 
       // Lazy-render Plotly charts as they scroll into view

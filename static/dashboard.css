@@ -9584,6 +9584,13 @@ html[data-theme="dark"] .contact-social-pill img {
   text-align: right;
 }
 
+.pos-age {
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .tick-head {
   font-weight: 900;
   font-size: 12px;
