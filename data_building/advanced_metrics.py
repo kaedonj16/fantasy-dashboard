@@ -836,14 +836,14 @@ def import_air_yards_from_stats_csv(season: int) -> int:
     import os
     import csv
     from pathlib import Path
-    from utils.paths import DATA_DIR
+    from utils.paths import CACHE_DIR
 
-    csv_path = Path(DATA_DIR) / "cache" / f"stats_player_reg_{season}.csv"
+    csv_path = Path(CACHE_DIR) / f"stats_player_reg_{season}.csv"
     if not csv_path.exists():
         return 0
 
-    # Load players index to map nfl player_id → sleeper player_id
-    players_idx_path = Path(DATA_DIR) / "cache" / "players_index_relevant.json"
+    # Load players index to map player display name → sleeper player_id
+    players_idx_path = Path(CACHE_DIR) / "players_index_relevant.json"
     if not players_idx_path.exists():
         return 0
 
