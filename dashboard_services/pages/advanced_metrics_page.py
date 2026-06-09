@@ -336,7 +336,7 @@ def build_advanced_metrics_body(
         color:var(--accent,#2563eb); border:1px solid var(--accent,#2563eb); border-radius:4px;
         padding:1px 4px; white-space:nowrap;
       }
-      .am-rank { width:36px; color:var(--text-muted); font-size:12px; }
+      .am-rank { width:52px; color:var(--text-muted); font-size:12px; }
       .am-games { width:40px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
       .am-player { width:220px; max-width:220px; }
       .am-barcell { width:auto; min-width:120px; }
@@ -479,6 +479,23 @@ def build_advanced_metrics_body(
         border-radius: 4px; height: 10px; width: 100%;
       }
       @media (max-width:600px) { .am-skel-bar { display:none; } }
+      /* Percentile badge */
+      .am-val-wrap { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; min-width:54px; }
+      .am-pct-badge { font-size:9px; font-weight:700; letter-spacing:.02em; line-height:1.3; white-space:nowrap; opacity:.85; }
+      @media (max-width:600px) { .am-pct-badge { display:none; } }
+      /* Pin button */
+      .am-rank-cell { display:flex; align-items:center; gap:3px; }
+      .am-pin-btn {
+        border:none; background:none; padding:1px 2px; margin:0; line-height:1;
+        cursor:pointer; color:var(--text-muted); opacity:0; transition:opacity .12s, color .12s;
+        flex-shrink:0;
+      }
+      .am-row:hover .am-pin-btn { opacity:.55; }
+      .am-pin-btn.am-pin-active { opacity:1 !important; color:var(--accent,#2563eb); }
+      .am-row.am-pinned { background:rgba(37,99,235,.05); }
+      .am-row.am-pinned:hover { background:rgba(37,99,235,.1); }
+      .am-row.am-pinned.am-owned { background:rgba(37,99,235,.1); }
+      .am-pin-divider td { border-bottom:2px dashed var(--accent,#2563eb) !important; padding:0 !important; height:2px !important; }
     </style>
     """
 
@@ -522,12 +539,38 @@ _AM_JS = r"""
     games: 'G', total_pass_att: 'Att', total_carries: 'Car',
     total_touches: 'Tch', total_targets: 'Tgt', total_receptions: 'Rec',
   };
+  function _loadPins() { try { return new Set(JSON.parse(localStorage.getItem('am_pins') || '[]')); } catch { return new Set(); } }
+  function _savePins() { try { localStorage.setItem('am_pins', JSON.stringify([...state.pinnedIds])); } catch {} }
+
   const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', sortBy: metricSel.value, rows: [], search: '',
                   season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0,
                   fetching: false, volCol: 'games',
                   extraMetrics: [],     // up to 4 extra metric keys
-                  extraData: {} };      // key -> { byId:{player_id->value}, maxAbs }
+                  extraData: {},        // key -> { byId:{player_id->value}, maxAbs }
+                  pinnedIds: _loadPins() };
   const MAX_COMPARE = 4;
+
+  const _PIN_SVG = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a5.922 5.922 0 0 1 1.013.16l3.134-3.133a2.772 2.772 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/></svg>';
+
+  function percentileBadge(rank, total) {
+    if (!total || !rank) return '';
+    const pct = rank / total;
+    let label, color;
+    if      (pct <= 0.05) { label = 'Top 5%';  color = '#10b981'; }
+    else if (pct <= 0.10) { label = 'Top 10%'; color = '#22c55e'; }
+    else if (pct <= 0.25) { label = 'Top 25%'; color = '#3b82f6'; }
+    else if (pct <= 0.50) { label = 'Top 50%'; color = '#94a3b8'; }
+    else return '';
+    return '<span class="am-pct-badge" style="color:' + color + '">' + label + '</span>';
+  }
+
+  window.amTogglePin = function(id) {
+    const sid = String(id);
+    if (state.pinnedIds.has(sid)) state.pinnedIds.delete(sid);
+    else state.pinnedIds.add(sid);
+    _savePins();
+    render();
+  };
   let ownedIds = new Set();
   const paginationEl = document.getElementById('amPagination');
   const volLabel = document.getElementById('amVolLabel');
@@ -787,7 +830,11 @@ _AM_JS = r"""
 
 
     // Apply roster/search filters for display only (order already set by posRows sort).
-    let displayRows = posRows.slice();
+    // Pinned players float to the top regardless of sort; ranks still reflect sort order.
+    let displayRows = state.pinnedIds.size > 0
+      ? [...posRows.filter(r => state.pinnedIds.has(String(r.player_id))),
+         ...posRows.filter(r => !state.pinnedIds.has(String(r.player_id)))]
+      : posRows.slice();
     if (state.rosterOnly) displayRows = displayRows.filter(r => ownedIds.has(String(r.player_id)));
     if (state.search) {
       const q = state.search.toLowerCase();
@@ -826,14 +873,20 @@ _AM_JS = r"""
     const pageRows = displayRows.slice(start, start + PAGE_SIZE);
 
     const multiMode = state.extraMetrics.length > 0;
+    const totalRanked = posRows.length;
     tbody.innerHTML = pageRows.map((r, i) => {
       const safe = (r.name || '').replace(/'/g, "\\'");
       const col = posColor(r.position);
       const owned = ownedIds.has(String(r.player_id));
+      const pinned = state.pinnedIds.has(String(r.player_id));
       const rank = rankMap.get(String(r.player_id)) || '';
       const volNum = r.vol != null ? r.vol : (r.games != null ? r.games : '–');
       const gamesCell = '<td class="am-games">' + volNum + '</td>';
       const ownedBadge = owned ? '<span class="am-owned-badge">YOURS</span>' : '';
+      const pinBtn = '<button class="am-pin-btn' + (pinned ? ' am-pin-active' : '') + '" '
+        + 'onclick="event.stopPropagation();amTogglePin(\'' + r.player_id + '\')" '
+        + 'title="' + (pinned ? 'Unpin' : 'Pin to top') + '">' + _PIN_SVG + '</button>';
+      const rankCell = '<td class="am-rank"><div class="am-rank-cell">' + pinBtn + '<span>' + rank + '</span></div></td>';
       const playerCell = '<td class="am-player"><div class="am-player-inner">'
         + '<span class="am-name">' + (r.name || '') + '</span>'
         + ownedBadge
@@ -842,6 +895,7 @@ _AM_JS = r"""
         + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
         + '</span></div></td>';
 
+      const badge = percentileBadge(rank, totalRanked);
       let metricCell;
       if (!multiMode) {
         const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
@@ -851,7 +905,7 @@ _AM_JS = r"""
           : '';
         metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
-          + '<span class="am-val">' + fmtVal(r.value) + '</span>'
+          + '<div class="am-val-wrap"><span class="am-val">' + fmtVal(r.value) + '</span>' + badge + '</div>'
           + '</div></td>';
       } else {
         const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
@@ -861,7 +915,7 @@ _AM_JS = r"""
           : '';
         metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark2 + '</div></div>'
-          + '<span class="am-val">' + fmtVal(r.value) + '</span>'
+          + '<div class="am-val-wrap"><span class="am-val">' + fmtVal(r.value) + '</span>' + badge + '</div>'
           + '</div></td>';
         state.extraMetrics.forEach(function(key) {
           const ed = state.extraData[key];
@@ -882,12 +936,20 @@ _AM_JS = r"""
         });
       }
 
-      return '<tr class="am-row' + (owned ? ' am-owned' : '') + '" style="cursor:pointer;" onclick="window.openPlayerModal&&openPlayerModal(\'' + r.player_id + '\',\'' + safe + '\')">'
-        + '<td class="am-rank">' + rank + '</td>'
+      // Divider row after the last pinned player (when pinned and unpinned are both present).
+      const nextRow = pageRows[i + 1];
+      const isPinBoundary = pinned && nextRow && !state.pinnedIds.has(String(nextRow.player_id));
+      const divider = isPinBoundary
+        ? '<tr class="am-pin-divider"><td colspan="99"></td></tr>'
+        : '';
+
+      return '<tr class="am-row' + (owned ? ' am-owned' : '') + (pinned ? ' am-pinned' : '') + '" style="cursor:pointer;" '
+        + 'onclick="window.openPlayerModal&&openPlayerModal(\'' + r.player_id + '\',\'' + safe + '\',{tab:\'metrics\'})">'
+        + rankCell
         + playerCell
         + gamesCell
         + metricCell
-        + '</tr>';
+        + '</tr>' + divider;
     }).join('');
 
     // Pagination controls.
