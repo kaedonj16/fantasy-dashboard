@@ -919,6 +919,7 @@ ul {
   font-size: 14px;
   font-weight: 500;
   text-align: left;
+  border-radius: 0px;
 }
 
 .settings-menu-item:first-child { border-radius: 10px 10px 0 0; }
