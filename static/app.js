@@ -1325,12 +1325,18 @@ window.initTradePage = function initTradePage(root = document) {
       if (fp) {
         rosterFilter.sideBRid = rosterFilter.pidToRid[String(fp.id)];
         rosterFilter.sideBAuto = true;
-        if (sel) sel.value = rosterFilter.sideBRid;
+        if (sel) {
+          sel.value = rosterFilter.sideBRid;
+          sel.dispatchEvent(new Event('change', { bubbles: true })); // syncs CSD display
+        }
       }
     } else if (rosterFilter.sideBRid && rosterFilter.sideBAuto && !hasAssets) {
       rosterFilter.sideBRid = "";
       rosterFilter.sideBAuto = false;
-      if (sel) sel.value = "";
+      if (sel) {
+        sel.value = "";
+        sel.dispatchEvent(new Event('change', { bubbles: true })); // syncs CSD display
+      }
     }
     updateSideTitles();
   }
@@ -5174,17 +5180,22 @@ window.initTradePage = function initTradePage(root = document) {
           });
         bindOnce(sel, "sideBTeamChange", "change", () => {
           const rid = sel.value;
-          // Switching opponents clears Side A (which holds the opponent's players).
-          if (rid && rid !== rosterFilter.sideBRid &&
-              (state.sideAPlayers.length || state.sideAPicks.length)) {
+          const newRid = rid ? String(rid) : "";
+          // If this change event was fired programmatically (e.g. from syncSideBBinding),
+          // rosterFilter.sideBRid is already set to the same value — just refresh titles.
+          if (newRid === rosterFilter.sideBRid) {
+            updateSideTitles();
+            return;
+          }
+          // User explicitly chose a different opponent — clear Side A's opponent assets.
+          if (newRid && (state.sideAPlayers.length || state.sideAPicks.length)) {
             state.sideAPlayers = [];
             state.sideAPicks = [];
             saveState();
             renderChips("A");
           }
-          rosterFilter.sideBRid = rid ? String(rid) : "";
+          rosterFilter.sideBRid = newRid;
           rosterFilter.sideBAuto = false;
-          sel.value = rosterFilter.sideBRid;
           updateSideTitles();
         });
       }
