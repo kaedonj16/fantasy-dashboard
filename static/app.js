@@ -12602,9 +12602,22 @@ function setupFunAwardsGrid() {
     }).join('');
   }
 
-  fetch('/api/league-bulletins?league_id=' + encodeURIComponent(leagueId))
+  var platform = container.dataset.platform || 'sleeper';
+  var season   = container.dataset.season   || '';
+  var url = '/api/league-bulletins?league_id=' + encodeURIComponent(leagueId)
+    + '&platform=' + encodeURIComponent(platform)
+    + (season ? '&season=' + encodeURIComponent(season) : '');
+
+  fetch(url)
     .then(function(r) { return r.json(); })
-    .then(function(data) { renderBulletins(data.bulletins || []); })
+    .then(function(data) {
+      if (data.unavailable) {
+        var list = container.querySelector('.bulletins-list');
+        if (list) list.innerHTML = '<div class="bulletins-empty">League bulletins are not available for this platform.</div>';
+        return;
+      }
+      renderBulletins(data.bulletins || []);
+    })
     .catch(function() {
       var list = container.querySelector('.bulletins-list');
       if (list) list.innerHTML = '<div class="bulletins-empty">Could not load bulletins.</div>';

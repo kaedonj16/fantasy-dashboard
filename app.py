@@ -6633,7 +6633,7 @@ def build_activity_body(ctx: dict) -> str:
 
         <!-- Feature 12: League Bulletins -->
         <div class="card small bulletins-card" id="leagueBulletinsContainer"
-             data-league="{resolved_league_id}" style="margin-top:12px;">
+             data-league="{resolved_league_id}" data-platform="{platform}" data-season="{season}" style="margin-top:12px;">
           <div class="bulletins-header">
             <div class="bulletins-title">
               <i class="fa-solid fa-comments" style="color:var(--accent);font-size:13px;"></i>
@@ -24115,7 +24115,9 @@ def api_league_bulletins():
             timeout=5,
         )
         logger.info("[bulletins] status=%s body=%s", resp.status_code, resp.text[:300])
-        bulletins = resp.json() if resp.status_code == 200 else []
+        if resp.status_code != 200:
+            return jsonify({"bulletins": [], "unavailable": True})
+        bulletins = resp.json()
         if not isinstance(bulletins, list):
             bulletins = []
 
