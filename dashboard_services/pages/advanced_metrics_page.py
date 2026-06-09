@@ -231,7 +231,7 @@ def build_advanced_metrics_body(
     style = """
     <style>
       /* Widen the card on desktop so 5 metric columns fit comfortably */
-      .card.central:has(#amTable) { max-width:1400px; }
+      .card.central:has(#amTable) { max-width:1050px; }
       .am-legend-btn {
         flex-shrink:0; display:flex; align-items:center; gap:6px;
         padding:5px 10px; border:1px solid var(--border); border-radius:8px;
@@ -455,6 +455,21 @@ def build_advanced_metrics_body(
         font-size:11px; font-weight:700; min-width:42px; text-align:right;
         white-space:nowrap; flex-shrink:0;
       }
+      /* Skeleton shimmer for loading extra metric columns */
+      @keyframes am-shimmer {
+        0%   { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+      .am-skel-bar {
+        background: linear-gradient(90deg,
+          var(--bg-alt,rgba(0,0,0,.06)) 25%,
+          rgba(0,0,0,.1) 50%,
+          var(--bg-alt,rgba(0,0,0,.06)) 75%);
+        background-size: 200% 100%;
+        animation: am-shimmer 1.2s ease-in-out infinite;
+        border-radius: 4px; height: 10px; width: 100%;
+      }
+      @media (max-width:600px) { .am-skel-bar { display:none; } }
     </style>
     """
 
@@ -561,6 +576,7 @@ _AM_JS = r"""
         state.extraMetrics.push(key);
         updateCompareBar();
         syncExtraCols();
+        render();        // show skeleton column immediately
         fetchExtraData(key);
       }
     }
@@ -747,6 +763,19 @@ _AM_JS = r"""
     // maxAbs from the full positional set keeps bars proportional after filtering.
     const maxAbs = posRows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
 
+    // Per-extra-key maxAbs computed from the same posRows so bars scale to the displayed players.
+    const extraMaxMap = {};
+    state.extraMetrics.forEach(function(key) {
+      const ed = state.extraData[key];
+      if (!ed) return;
+      let mx = 0;
+      posRows.forEach(function(r) {
+        const v = ed.byId[String(r.player_id)];
+        if (v != null) mx = Math.max(mx, Math.abs(Number(v) || 0));
+      });
+      extraMaxMap[key] = mx || 1;
+    });
+
     // Apply roster/search filters for display only (order already set by posRows sort).
     let displayRows = posRows.slice();
     if (state.rosterOnly) displayRows = displayRows.filter(r => ownedIds.has(String(r.player_id)));
@@ -826,9 +855,16 @@ _AM_JS = r"""
           + '</div></td>';
         state.extraMetrics.forEach(function(key) {
           const ed = state.extraData[key];
-          const val = ed ? (ed.byId[String(r.player_id)] !== undefined ? ed.byId[String(r.player_id)] : null) : null;
-          const pctBar = (ed && val != null) ? Math.max(2, Math.round(Math.abs(Number(val)) / ed.maxAbs * 100)) : 2;
-          const disp = val != null ? fmtVal(val) : (ed ? '–' : '…');
+          if (!ed) {
+            metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
+              + '<div class="am-metric-bar"><div class="am-skel-bar"></div></div>'
+              + '<span class="am-val" style="opacity:.25">—</span>'
+              + '</div></td>';
+            return;
+          }
+          const val = ed.byId[String(r.player_id)] !== undefined ? ed.byId[String(r.player_id)] : null;
+          const pctBar = val != null ? Math.max(2, Math.round(Math.abs(Number(val)) / extraMaxMap[key] * 100)) : 2;
+          const disp = val != null ? fmtVal(val) : '–';
           metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
             + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div></div></div>'
             + '<span class="am-val">' + disp + '</span>'
@@ -914,6 +950,7 @@ _AM_JS = r"""
 
   metricSel.addEventListener('change', () => {
     state.metric = metricSel.value; state.page = 0;
+    state.extraMetrics = []; state.extraData = {};
     const rel = new Set(relevantPositions(state.metric));
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
