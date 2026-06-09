@@ -1406,7 +1406,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",       "page_standings",    "standings",    False),
         ("Teams",           "page_teams",        "teams",        False),
-        ("Power Rankings",  "page_teams",        "teams",        False, "#power-rankings"),
         ("Activity",        "page_activity",     "activity",     False),
         ("League Health",   "page_commissioner", "league_health", False),
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
