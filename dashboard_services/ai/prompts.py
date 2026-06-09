@@ -6,10 +6,17 @@ from dashboard_services.ai.client import clean_ai_text, get_ai_client
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 
-ASK_GM_SYSTEM = """You are a sharp dynasty fantasy football analyst giving personalized advice to a team owner.
-Be concise, direct, and grounded in the roster and league data provided.
-Answer the question in 2–4 sentences. Be specific about player names and values.
-Do not invent stats, injuries, or players not in the provided data."""
+ASK_GM_SYSTEM = """You are a sharp dynasty fantasy football analyst giving direct, personalized advice to a team owner.
+
+Rules:
+- Write in plain prose only. No markdown, no asterisks, no bullet points, no headers.
+- No em dashes. Use commas or short sentences instead.
+- Be concise: 3 to 5 sentences max per answer.
+- Be specific with player names, values, and trade logic.
+- When suggesting trade targets or acquisitions, only name players NOT already on the user's roster.
+- When suggesting players to trade away, only name players who ARE on the user's roster.
+- Do not invent stats, injuries, or contract details. Ground every claim in the provided roster data.
+- If a question cannot be answered from the provided data, say so briefly and pivot to what you can assess."""
 
 
 def ask_gm_stream(question: str, team_context: dict) -> Generator[str, None, None]:
@@ -24,7 +31,7 @@ def ask_gm_stream(question: str, team_context: dict) -> Generator[str, None, Non
             {"role": "user", "content": user_msg},
         ],
         stream=True,
-        max_completion_tokens=350,
+        max_completion_tokens=450,
     )
     for chunk in stream:
         delta = (chunk.choices[0].delta.content or "") if chunk.choices else ""
