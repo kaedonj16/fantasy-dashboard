@@ -16,7 +16,7 @@ Usage:
 
 import sys
 
-from data_building.advanced_metrics import calculate_player_metrics, finalize_role_scores_v2, save_metrics_snapshot
+from data_building.advanced_metrics import calculate_player_metrics, finalize_role_scores_v2, save_metrics_snapshot, import_air_yards_from_stats_csv
 from data_building.external_data.sleeper_usage import build_usage_map_for_season
 from utils.utils import load_players_index
 
@@ -72,6 +72,15 @@ def backfill_season(season: int, players_index: dict) -> int:
     as_of_date = f"{season + 1}-01-10"
     save_metrics_snapshot(metrics_list, as_of_date, season=season)
     print(f"  Saved {len(metrics_list)} players (skipped={skipped}, failed={failed}, date={as_of_date})")
+
+    # Import air yards from nfl_data_py stats CSV if available for this season.
+    try:
+        ay_updated = import_air_yards_from_stats_csv(season)
+        if ay_updated:
+            print(f"  Air yards: updated {ay_updated} rows from stats CSV")
+    except Exception as e:
+        print(f"  [warn] Air yards import failed: {e}")
+
     return len(metrics_list)
 
 
