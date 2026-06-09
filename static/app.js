@@ -89,7 +89,6 @@ document.body.scrollTop = 0;
     trigger.setAttribute('aria-expanded', 'false');
     trigger.setAttribute('aria-controls', listId);
     // Inherit key sizing from original select
-    trigger.style.fontSize = cs.fontSize;
     trigger.style.fontWeight = cs.fontWeight;
     trigger.style.borderRadius = cs.borderRadius;
     trigger.style.paddingTop = cs.paddingTop;
