@@ -1755,13 +1755,7 @@ def render_page(
 
     # Inject Ask My GM context for JS to pick up and add to the floating pill group
     viewer_roster_id = session.get("viewer_roster_id") or ""
-    if league_id and platform and season and viewer_roster_id:
-        ask_gm_widget = (
-            f'<div id="askGmCtx" hidden data-league="{league_id}" '
-            f'data-platform="{platform}" data-season="{season}" data-roster="{viewer_roster_id}"></div>'
-        )
-    else:
-        ask_gm_widget = ""
+    ask_gm_widget = ""  # Ask My GM hidden for now
 
     return BASE_HTML.format(
         title=title,
@@ -6631,22 +6625,6 @@ def build_activity_body(ctx: dict) -> str:
           </div>
         </div>
 
-        <!-- Feature 12: League Bulletins -->
-        <div class="card small bulletins-card" id="leagueBulletinsContainer"
-             data-league="{resolved_league_id}" data-platform="{platform}" data-season="{season}" style="margin-top:12px;">
-          <div class="bulletins-header">
-            <div class="bulletins-title">
-              <i class="fa-solid fa-comments" style="color:var(--accent);font-size:13px;"></i>
-              League Bulletin Board
-            </div>
-          </div>
-          <div class="bulletins-list" id="bulletinsList">
-            <div class="bulletins-empty" style="display:flex;align-items:center;gap:8px;padding:14px;">
-              <div class="loading-spinner" style="width:14px;height:14px;margin:0;flex-shrink:0;"></div>
-              Loading…
-            </div>
-          </div>
-        </div>
 
         <div class="card small" id="nflNewsCard" style="margin-top:12px;">
           <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
