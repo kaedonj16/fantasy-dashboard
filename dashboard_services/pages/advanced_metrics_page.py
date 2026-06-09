@@ -148,6 +148,12 @@ def build_advanced_metrics_body(
             <label class="am-ctrl-label">Season</label>
             <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
           </div>
+          <div class="am-ctrl" id="amTeamCtrl">
+            <label class="am-ctrl-label">Team</label>
+            <select id="amTeamFilter" class="am-select am-season-select">
+              <option value="">All Teams</option>
+            </select>
+          </div>
           <div class="am-ctrl am-ctrl-games" id="amGamesCtrl" style="display:none;">
             <label class="am-ctrl-label" id="amVolLabel">Min</label>
             <select id="amMinGames" class="am-select am-season-select"></select>
@@ -483,6 +489,9 @@ def build_advanced_metrics_body(
       .am-val-wrap { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; min-width:54px; }
       .am-pct-badge { font-size:9px; font-weight:700; letter-spacing:.02em; line-height:1.3; white-space:nowrap; opacity:.85; }
       @media (max-width:600px) { .am-pct-badge { display:none; } }
+      /* YoY trend arrows */
+      .am-trend-up   { font-size:11px; font-weight:700; color:#10b981; line-height:1; }
+      .am-trend-down { font-size:11px; font-weight:700; color:#ef4444; line-height:1; }
       /* Pin button */
       .am-rank-cell { display:flex; align-items:center; gap:3px; }
       .am-pin-btn {
@@ -518,6 +527,7 @@ _AM_JS = r"""
   const sortBtn   = document.getElementById('amSortBtn');
   const seasonSel = document.getElementById('amSeason');
   const seasonCtrl= document.getElementById('amSeasonCtrl');
+  const teamSel   = document.getElementById('amTeamFilter');
   const minGamesSel = document.getElementById('amMinGames');
   const gamesCtrl = document.getElementById('amGamesCtrl');
   const rosterWrap= document.getElementById('amRosterToggleWrap');
@@ -544,9 +554,10 @@ _AM_JS = r"""
 
   const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', sortBy: metricSel.value, rows: [], search: '',
                   season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0,
-                  fetching: false, volCol: 'games',
+                  fetching: false, volCol: 'games', team: '',
                   extraMetrics: [],     // up to 4 extra metric keys
                   extraData: {},        // key -> { byId:{player_id->value}, maxAbs }
+                  prevData: {},         // player_id -> previous-season value (for YoY trend)
                   pinnedIds: _loadPins() };
   const MAX_COMPARE = 4;
 
@@ -780,6 +791,28 @@ _AM_JS = r"""
       b.classList.toggle('active', p === state.position);
     });
   }
+  function populateTeamFilter() {
+    if (!teamSel) return;
+    const teams = [...new Set(state.rows.map(r => r.team || '').filter(Boolean))].sort();
+    const prev = state.team;
+    teamSel.innerHTML = '<option value="">All Teams</option>'
+      + teams.map(t => '<option value="' + t + '"' + (t === prev ? ' selected' : '') + '>' + t + '</option>').join('');
+    if (!teams.includes(state.team)) state.team = '';
+  }
+
+  function trendArrow(curr, prev) {
+    if (prev == null || prev === undefined) return '';
+    const isLower = !!(cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter);
+    const delta = Number(curr) - Number(prev);
+    if (Math.abs(Number(prev)) < 0.001) return '';
+    const pct = Math.abs(delta / Number(prev));
+    if (pct < 0.03) return '';
+    const improved = isLower ? delta < 0 : delta > 0;
+    return improved
+      ? '<span class="am-trend-up">&#8593;</span>'
+      : '<span class="am-trend-down">&#8595;</span>';
+  }
+
   function render() {
     if (state.fetching) return; // keep the spinner up while a fetch is in flight
     const rel = new Set(relevantPositions(state.metric));
@@ -840,6 +873,7 @@ _AM_JS = r"""
       const q = state.search.toLowerCase();
       displayRows = displayRows.filter(r => (r.name || '').toLowerCase().includes(q));
     }
+    if (state.team) displayRows = displayRows.filter(r => (r.team || '').toUpperCase() === state.team.toUpperCase());
 
     loading.style.display = 'none';
     if (!displayRows.length) {
@@ -896,6 +930,8 @@ _AM_JS = r"""
         + '</span></div></td>';
 
       const badge = percentileBadge(rank, totalRanked);
+      const prevVal = state.prevData[String(r.player_id)];
+      const trend = trendArrow(r.value, prevVal);
       let metricCell;
       if (!multiMode) {
         const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
@@ -905,7 +941,7 @@ _AM_JS = r"""
           : '';
         metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
-          + '<div class="am-val-wrap"><span class="am-val">' + fmtVal(r.value) + '</span>' + badge + '</div>'
+          + '<div class="am-val-wrap"><span class="am-val">' + fmtVal(r.value) + '</span>' + trend + badge + '</div>'
           + '</div></td>';
       } else {
         const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
@@ -915,7 +951,7 @@ _AM_JS = r"""
           : '';
         metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark2 + '</div></div>'
-          + '<div class="am-val-wrap"><span class="am-val">' + fmtVal(r.value) + '</span>' + badge + '</div>'
+          + '<div class="am-val-wrap"><span class="am-val">' + fmtVal(r.value) + '</span>' + trend + badge + '</div>'
           + '</div></td>';
         state.extraMetrics.forEach(function(key) {
           const ed = state.extraData[key];
@@ -988,12 +1024,36 @@ _AM_JS = r"""
     if (cfg.leagueId) params.set('league_id', cfg.leagueId);
     if (state.season) params.set('season', state.season);
     if (state.minVol) params.set('min_vol', state.minVol);
-    fetch('/api/advanced-metrics/leaderboard?' + params)
-      .then(r => { if (r.status === 403) { state.fetching = false; paywall.style.display = ''; loading.style.display = 'none'; return null; } return r.json(); })
-      .then(d => {
-        if (!d) return;
-        state.fetching = false; state.rows = d.players || []; state.volCol = d.vol_col || 'games';
+
+    // Determine the previous season to fetch for YoY trend arrows.
+    const curSeason = state.season ? parseInt(state.season) : (cfg.seasons && cfg.seasons[0]);
+    const prevSeason = curSeason ? curSeason - 1 : null;
+    const hasPrevInData = prevSeason && cfg.seasons && cfg.seasons.includes(prevSeason);
+    const prevParams = new URLSearchParams({ metric: state.metric, platform: cfg.platform });
+    if (cfg.leagueId) prevParams.set('league_id', cfg.leagueId);
+    if (prevSeason) prevParams.set('season', String(prevSeason));
+    if (state.minVol) prevParams.set('min_vol', state.minVol);
+
+    const mainFetch = fetch('/api/advanced-metrics/leaderboard?' + params)
+      .then(r => { if (r.status === 403) return null; return r.json(); });
+    const prevFetch = hasPrevInData
+      ? fetch('/api/advanced-metrics/leaderboard?' + prevParams).then(r => r.ok ? r.json() : null).catch(() => null)
+      : Promise.resolve(null);
+
+    Promise.all([mainFetch, prevFetch])
+      .then(([d, pd]) => {
+        if (!d) { state.fetching = false; paywall.style.display = ''; loading.style.display = 'none'; return; }
+        state.fetching = false;
+        state.rows = d.players || [];
+        state.volCol = d.vol_col || 'games';
+        // Build previous-season lookup for trend arrows.
+        if (pd && pd.players) {
+          state.prevData = Object.fromEntries(pd.players.map(r => [String(r.player_id), Number(r.value)]));
+        } else {
+          state.prevData = {};
+        }
         updateVolHeader();
+        populateTeamFilter();
         // Re-fetch all extra metrics (season / filter may have changed).
         state.extraData = {};
         state.extraMetrics.forEach(k => fetchExtraData(k));
@@ -1022,7 +1082,7 @@ _AM_JS = r"""
 
   metricSel.addEventListener('change', () => {
     state.metric = metricSel.value; state.page = 0;
-    state.extraMetrics = []; state.extraData = {};
+    state.extraMetrics = []; state.extraData = {}; state.prevData = {};
     const rel = new Set(relevantPositions(state.metric));
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
@@ -1046,6 +1106,9 @@ _AM_JS = r"""
   });
   if (seasonSel) {
     seasonSel.addEventListener('change', () => { state.season = seasonSel.value || ''; state.page = 0; fetchData(); });
+  }
+  if (teamSel) {
+    teamSel.addEventListener('change', () => { state.team = teamSel.value || ''; state.page = 0; render(); });
   }
   if (minGamesSel) {
     minGamesSel.addEventListener('change', () => { state.minVol = minGamesSel.value || ''; state.page = 0; fetchData(); });

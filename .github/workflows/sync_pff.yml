@@ -1,0 +1,48 @@
+name: Sync PFF Advanced Metrics
+
+on:
+  # Run every Wednesday at 7 AM UTC (after PFF typically publishes updated data)
+  schedule:
+    - cron: '0 7 * * 3'
+  # Allow triggering manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: 'Comma-separated seasons to sync (e.g. 2025,2024). Leave blank for the 3 most recent.'
+        required: false
+        default: ''
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run PFF sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Optional: set these secrets if PFF exports are behind auth
+          PFF_COOKIE: ${{ secrets.PFF_COOKIE }}
+          PFF_AUTH_HEADER: ${{ secrets.PFF_AUTH_HEADER }}
+          # Optional: direct CSV download URLs (can include {season} token)
+          PFF_RUSHING_CSV_URL: ${{ secrets.PFF_RUSHING_CSV_URL }}
+          PFF_RECEIVING_CSV_URL: ${{ secrets.PFF_RECEIVING_CSV_URL }}
+          PFF_PASSING_CSV_URL: ${{ secrets.PFF_PASSING_CSV_URL }}
+        run: |
+          if [ -n "${{ github.event.inputs.seasons }}" ]; then
+            python -m scripts.sync_pff_advanced_metrics --seasons "${{ github.event.inputs.seasons }}"
+          else
+            python -m scripts.sync_pff_advanced_metrics --last-n 3
+          fi
