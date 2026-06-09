@@ -132,7 +132,7 @@ def build_advanced_metrics_body(
         <div class="am-controls">
           <div class="am-ctrl">
             <label class="am-ctrl-label">
-              Metric
+              Primary Metric
               <span class="am-info" id="amMetricInfo" tabindex="0" role="button" aria-label="Metric description">
                 <i class="fa-solid fa-circle-info"></i>
                 <span class="am-info-tip" id="amMetricTip"></span>
@@ -611,7 +611,7 @@ _AM_JS = r"""
     if (otherCats.length) {
       html += '<div class="am-sp-cat-note">To compare '
         + otherCats.join(' or ')
-        + ' stats, switch the primary metric above</div>';
+        + ' stats, switch the Primary Metric</div>';
     }
     picker.innerHTML = html;
   }
