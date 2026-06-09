@@ -7,6 +7,7 @@ position filter auto-narrows to the positions where the metric is meaningful
 (with manual override). Data comes from /api/advanced-metrics/leaderboard.
 """
 import json
+from html import escape as _esc
 from typing import Optional
 
 
@@ -46,6 +47,32 @@ def build_advanced_metrics_body(
             return None
         return {"label": mv["label"], "opts": mv["opts"]}
 
+    # Glossary: every metric grouped by its position set (same order as the
+    # dropdown), each with its description, rendered into a modal the user can
+    # open from the header.
+    def _posset_label(posset) -> str:
+        return "All Positions" if len(posset) == len(_POS_ORDER) else " / ".join(posset)
+
+    _legend_sections = []
+    for posset in sorted(groups, key=_group_key):
+        _rows = "".join(
+            '<div class="am-legend-row">'
+            '<div class="am-legend-name">{label}</div>'
+            '<div class="am-legend-desc">{desc}</div>'
+            '</div>'.format(
+                label=_esc(metrics_spec[k]["label"]),
+                desc=_esc(metrics_spec[k].get("desc") or "No description available."),
+            )
+            for k, _lbl in groups[posset]
+        )
+        _legend_sections.append(
+            '<div class="am-legend-group">'
+            '<div class="am-legend-grouphead">{head}</div>{rows}</div>'.format(
+                head=_esc(_posset_label(posset)), rows=_rows,
+            )
+        )
+    legend_html = "".join(_legend_sections)
+
     cfg = json.dumps({
         "hasPremium": bool(has_premium),
         "leagueId": league_id or "",
@@ -77,10 +104,28 @@ def build_advanced_metrics_body(
 
     html = """
     <div class="card central">
-      <div class="card-header">
-        <h2>Advanced Metrics</h2>
-        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
-          Rank every player by a single advanced metric. Bars are relative to the leader.
+      <div class="card-header am-card-header">
+        <div>
+          <h2>Advanced Metrics</h2>
+          <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+            Rank every player by a single advanced metric. Bars are relative to the leader.
+          </div>
+        </div>
+        <button id="amLegendBtn" type="button" class="am-legend-btn"
+          onclick="document.getElementById('amLegendModal').style.display='flex'">
+          <i class="fa-solid fa-circle-info"></i> Metric Glossary
+        </button>
+      </div>
+
+      <div id="amLegendModal" class="am-legend-modal" style="display:none;"
+        onclick="if(event.target===this)this.style.display='none'">
+        <div class="am-legend-card" role="dialog" aria-label="Metric glossary">
+          <div class="am-legend-head">
+            <span>Metric Glossary</span>
+            <button type="button" class="am-legend-close" aria-label="Close"
+              onclick="document.getElementById('amLegendModal').style.display='none'">&times;</button>
+          </div>
+          <div class="am-legend-body">__LEGEND__</div>
         </div>
       </div>
       <div class="card-body" style="padding-top:0;">
@@ -171,10 +216,51 @@ def build_advanced_metrics_body(
 
       </div>
     </div>
-    """.replace("__METRIC_OPTIONS__", metric_options).replace("__SEASON_OPTIONS__", season_options)
+    """.replace("__METRIC_OPTIONS__", metric_options).replace("__SEASON_OPTIONS__", season_options).replace("__LEGEND__", legend_html)
 
     style = """
     <style>
+      .am-card-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+      .am-legend-btn {
+        flex-shrink:0; display:inline-flex; align-items:center; gap:6px;
+        padding:7px 12px; border:1px solid var(--border); border-radius:8px;
+        background:var(--card); color:var(--text); font-size:12px; font-weight:600;
+        cursor:pointer; white-space:nowrap; transition:all .12s;
+      }
+      .am-legend-btn:hover { border-color:var(--accent); color:var(--accent); }
+      .am-legend-modal {
+        position:fixed; inset:0; z-index:1000; display:flex; align-items:center;
+        justify-content:center; padding:20px; background:rgba(0,0,0,.5);
+      }
+      .am-legend-card {
+        background:var(--card); border:1px solid var(--border); border-radius:14px;
+        width:100%; max-width:560px; max-height:82vh; display:flex; flex-direction:column;
+        box-shadow:0 16px 48px rgba(0,0,0,.3); overflow:hidden;
+      }
+      .am-legend-head {
+        display:flex; align-items:center; justify-content:space-between;
+        padding:14px 18px; border-bottom:1px solid var(--border);
+        font-size:15px; font-weight:800; color:var(--text);
+      }
+      .am-legend-close {
+        border:none; background:none; color:var(--text-muted); font-size:24px;
+        line-height:1; cursor:pointer; padding:0 4px;
+      }
+      .am-legend-close:hover { color:var(--text); }
+      .am-legend-body { padding:8px 18px 18px; overflow-y:auto; }
+      .am-legend-group { margin-top:14px; }
+      .am-legend-grouphead {
+        font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+        color:var(--accent); margin-bottom:6px; padding-bottom:4px;
+        border-bottom:1px solid var(--border);
+      }
+      .am-legend-row { padding:7px 0; border-bottom:1px solid var(--border); }
+      .am-legend-row:last-child { border-bottom:none; }
+      .am-legend-name { font-size:13px; font-weight:700; color:var(--text); }
+      .am-legend-desc { font-size:12px; color:var(--text-muted); margin-top:2px; line-height:1.4; }
+      @media (max-width:600px) {
+        .am-legend-btn { padding:6px 10px; font-size:11px; }
+      }
       .am-controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin:16px 0 12px; }
       .am-ctrl { display:flex; flex-direction:column; gap:4px; }
       .am-ctrl-search { flex:1; min-width:160px; }
