@@ -600,6 +600,8 @@ _AM_JS = r"""
     const params = new URLSearchParams({ metric: key, platform: cfg.platform });
     if (cfg.leagueId) params.set('league_id', cfg.leagueId);
     if (state.season) params.set('season', state.season);
+    const vol = defaultVol(key);
+    if (vol) params.set('min_vol', vol);
     fetch('/api/advanced-metrics/leaderboard?' + params)
       .then(r => r.ok ? r.json() : null)
       .then(d => {
@@ -763,18 +765,6 @@ _AM_JS = r"""
     // maxAbs from the full positional set keeps bars proportional after filtering.
     const maxAbs = posRows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
 
-    // Per-extra-key maxAbs computed from the same posRows so bars scale to the displayed players.
-    const extraMaxMap = {};
-    state.extraMetrics.forEach(function(key) {
-      const ed = state.extraData[key];
-      if (!ed) return;
-      let mx = 0;
-      posRows.forEach(function(r) {
-        const v = ed.byId[String(r.player_id)];
-        if (v != null) mx = Math.max(mx, Math.abs(Number(v) || 0));
-      });
-      extraMaxMap[key] = mx || 1;
-    });
 
     // Apply roster/search filters for display only (order already set by posRows sort).
     let displayRows = posRows.slice();
@@ -863,7 +853,7 @@ _AM_JS = r"""
             return;
           }
           const val = ed.byId[String(r.player_id)] !== undefined ? ed.byId[String(r.player_id)] : null;
-          const pctBar = val != null ? Math.max(2, Math.round(Math.abs(Number(val)) / extraMaxMap[key] * 100)) : 2;
+          const pctBar = val != null ? Math.max(2, Math.round(Math.abs(Number(val)) / ed.maxAbs * 100)) : 2;
           const disp = val != null ? fmtVal(val) : '–';
           metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
             + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div></div></div>'
