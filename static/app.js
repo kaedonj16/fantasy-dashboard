@@ -12343,7 +12343,7 @@ function setupFunAwardsGrid() {
     pill.type = 'button';
     pill.setAttribute('aria-label', 'Ask My GM');
     pill.innerHTML =
-      '<span class="fp-pill-icon"><i class="fa-solid fa-robot" style="font-size:15px;"></i></span>' +
+      '<span class="fp-pill-icon"><img src="/static/images/robot-solid.png" alt="Ask My GM" class="fp-robot-icon"></span>' +
       '<span class="fp-pill-label">Ask My GM</span>';
     // Insert before discord pill so order is: GM · Discord · Refresh
     var discord = document.getElementById('discord-pill');
@@ -12359,7 +12359,7 @@ function setupFunAwardsGrid() {
     panel.style.display = 'none';
     panel.innerHTML =
       '<div class="ask-gm-header">' +
-        '<div class="ask-gm-header-icon"><i class="fa-solid fa-robot"></i></div>' +
+        '<div class="ask-gm-header-icon"><img src="/static/images/robot-solid.png" alt="" class="ask-gm-robot-icon"></div>' +
         '<div class="ask-gm-header-text">' +
           '<div class="ask-gm-header-title">Ask My GM</div>' +
           '<div class="ask-gm-header-sub">Roster advice, trade analysis, start/sit</div>' +

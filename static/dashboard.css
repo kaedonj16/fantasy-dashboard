@@ -16762,6 +16762,20 @@ tr.team-clickable {
 html[data-theme="dark"] .fp-discord-icon {
   filter: brightness(0) saturate(100%) invert(90%);
 }
+.fp-robot-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+  filter: brightness(0) saturate(100%) invert(40%);
+}
+#ask-gm-pill:hover .fp-robot-icon,
+#ask-gm-pill.gm-active .fp-robot-icon { opacity: 1; filter: brightness(0) saturate(100%) invert(100%); }
+html[data-theme="dark"] .fp-robot-icon {
+  filter: brightness(0) saturate(100%) invert(90%);
+}
 
 /* ── Disabled button state ───────────────────────────────────────────────── */
 button:disabled {
@@ -18210,10 +18224,15 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  color: #fff;
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(56,189,248,.3);
+}
+.ask-gm-robot-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+  filter: brightness(0) saturate(100%) invert(100%);
 }
 .ask-gm-header-text { flex: 1; }
 .ask-gm-header-title {
