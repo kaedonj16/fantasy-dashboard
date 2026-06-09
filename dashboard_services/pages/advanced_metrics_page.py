@@ -205,8 +205,7 @@ def build_advanced_metrics_body(
               <th class="am-rank">#</th>
               <th class="am-player">Player</th>
               <th class="am-games" title="Games played">G</th>
-              <th class="am-barcell"></th>
-              <th class="am-val">Value</th>
+              <th class="am-barcell" id="amMetricHeader">—</th>
             </tr>
           </thead>
           <tbody id="amTableBody"></tbody>
@@ -307,6 +306,11 @@ def build_advanced_metrics_body(
       .am-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em;
         color:var(--text-muted); padding:8px 10px; border-bottom:1px solid var(--border); }
       .am-table td { padding:9px 10px; border-bottom:1px solid var(--border); font-size:14px; }
+      /* Column dividers */
+      .am-games, .am-barcell,
+      .am-table th.am-games, .am-table th.am-barcell {
+        border-left:1px solid var(--border);
+      }
       .am-row:hover { background:var(--bg-alt, rgba(0,0,0,.03)); }
       .am-row.am-owned { background:rgba(59,130,246,0.08); }
       .am-row.am-owned:hover { background:rgba(59,130,246,0.14); }
@@ -316,11 +320,18 @@ def build_advanced_metrics_body(
         padding:1px 4px; vertical-align:middle;
       }
       .am-rank { width:36px; color:var(--text-muted); font-size:12px; }
-      .am-games { width:36px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
-      .am-barcell { width:42%; }
-      .am-val { text-align:right; font-weight:700; white-space:nowrap; width:70px; }
+      .am-games { width:40px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
+      .am-barcell { width:45%; }
+      /* Player cell: name on left, pos+team on right */
+      .am-player td, td.am-player { display:table-cell; }
+      .am-player-inner { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .am-player-right { display:flex; align-items:center; gap:4px; flex-shrink:0; }
       .am-name { font-weight:600; }
-      .am-meta { font-size:11px; color:var(--text-muted); margin-left:4px; }
+      .am-meta { font-size:11px; color:var(--text-muted); }
+      /* Merged metric cell: bar on left, value on right */
+      .am-metric-cell { display:flex; align-items:center; gap:10px; }
+      .am-metric-bar { flex:1; min-width:0; }
+      .am-val { font-weight:700; white-space:nowrap; font-size:13px; flex-shrink:0; min-width:46px; text-align:right; }
       .am-bar-track { position:relative; background:var(--bg-alt, rgba(0,0,0,.06)); border-radius:6px; height:10px; width:100%; }
       .am-bar-fill { height:100%; border-radius:6px; }
       /* Positional-average marker on each bar */
@@ -333,8 +344,9 @@ def build_advanced_metrics_body(
       .am-avg-note { font-size:11px; color:var(--text-muted); margin:0 0 10px; display:flex; align-items:center; gap:6px; }
       .am-avg-note .am-avg-swatch { display:inline-block; width:2px; height:12px; background:var(--text-muted); opacity:.55; }
       @media (max-width:600px){
-        .am-barcell, .am-table th.am-barcell,
         .am-games, .am-table th.am-games { display:none; }
+        .am-metric-cell { gap:6px; }
+        .am-val { min-width:38px; font-size:12px; }
         .am-controls { gap:10px; }
         /* Metric takes full width; Search fills the row below it */
         .am-ctrl:first-child { flex:1 0 100%; }
@@ -521,15 +533,24 @@ _AM_JS = r"""
       const avgMark = (avgPct != null)
         ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl + '</div>'
         : '';
-      const gamesCell = '<td class="am-games">' + (r.vol != null ? r.vol : (r.games != null ? r.games : '–')) + '</td>';
+      const volNum = r.vol != null ? r.vol : (r.games != null ? r.games : '–');
+      const gamesCell = '<td class="am-games">' + volNum + '</td>';
+      const playerCell = '<td class="am-player"><div class="am-player-inner">'
+        + '<span class="am-name">' + (r.name || '') + '</span>'
+        + '<span class="am-player-right">'
+        + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
+        + '<span class="am-meta">' + (r.team || '') + '</span>'
+        + '</span></div></td>';
+      const metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
+        + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
+        + '<span class="am-val">' + fmtVal(r.value) + '</span>'
+        + '</div></td>';
       return '<tr class="am-row' + (owned ? ' am-owned' : '') + '" style="cursor:pointer;" onclick="window.openPlayerModal&&openPlayerModal(\'' + r.player_id + '\',\'' + safe + '\')">'
         + '<td class="am-rank">' + rank + '</td>'
-        + '<td class="am-player"><span class="am-name">' + (r.name || '') + '</span>'
-        + '<span class="am-meta" style="color:' + col + '">' + r.position + '</span>'
-        + '<span class="am-meta">' + (r.team || '') + '</span></td>'
+        + playerCell
         + gamesCell
-        + '<td class="am-barcell"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></td>'
-        + '<td class="am-val">' + fmtVal(r.value) + '</td></tr>';
+        + metricCell
+        + '</tr>';
     }).join('');
 
     // Pagination controls.
@@ -555,6 +576,8 @@ _AM_JS = r"""
       th.title = { games: 'Games played', total_pass_att: 'Pass attempts', total_carries: 'Carries',
                    total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
     }
+    const mh = document.getElementById('amMetricHeader');
+    if (mh) mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '—';
   }
   function fetchData() {
     if (!cfg.hasPremium) { paywall.style.display = ''; loading.style.display = 'none'; return; }
@@ -595,7 +618,7 @@ _AM_JS = r"""
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
     state.minVol = defaultVol(state.metric);
-    updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); fetchData();
+    updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader(); fetchData();
   });
   posWrap.addEventListener('click', e => {
     const b = e.target.closest('[data-pos]');
@@ -619,6 +642,6 @@ _AM_JS = r"""
   }
 
   state.minVol = defaultVol(state.metric);
-  updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); fetchData();
+  updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader(); fetchData();
   loadOwnedRoster();
 """
