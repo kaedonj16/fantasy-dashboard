@@ -110,6 +110,14 @@ def init_advanced_metrics_db():
                 ADD COLUMN IF NOT EXISTS total_pass_att NUMERIC;
         """)
 
+        # Target share and air yards (usage/stats CSV sourced).
+        conn.execute("""
+            ALTER TABLE player_advanced_metrics
+                ADD COLUMN IF NOT EXISTS target_share    NUMERIC,
+                ADD COLUMN IF NOT EXISTS air_yards_share NUMERIC,
+                ADD COLUMN IF NOT EXISTS air_yards_per_game NUMERIC;
+        """)
+
         # Backfill season from as_of_date for any rows that are missing it.
         # Regular season runs Sep–Dec of year Y and Jan of year Y+1, so:
         #   Jan–Feb  → season = year - 1  (e.g. 2026-01 → 2025 season)
@@ -698,6 +706,9 @@ def calculate_player_metrics(
             return None
         return round(avg * games, 1)
 
+    raw_tshare = _safe(usage.get("target_share"))
+    target_share = round(raw_tshare * 100.0, 1) if raw_tshare > 0 else None
+
     return {
         "player_id": player_id,
         "position": position,
@@ -720,6 +731,7 @@ def calculate_player_metrics(
             )
         ),
         "total_pass_att":   _vol("avg_pass_att"),
+        "target_share":     target_share,
     }
 
 
@@ -750,7 +762,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     yards_per_attempt, completion_pct, td_rate, int_rate,
                     snap_share, opportunity_share, red_zone_usage,
                     role_score, usage_trend, efficiency_trend, games,
-                    total_targets, total_receptions, total_carries, total_touches, total_pass_att
+                    total_targets, total_receptions, total_carries, total_touches, total_pass_att,
+                    target_share
                 )
                 VALUES (
                     %s, %s, %s, %s,
@@ -759,7 +772,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     %s, %s, %s, %s,
                     %s, %s, %s,
                     %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s,
+                    %s
                 )
                 ON CONFLICT (player_id, as_of_date)
                 DO UPDATE SET
@@ -787,7 +801,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     total_receptions = EXCLUDED.total_receptions,
                     total_carries = EXCLUDED.total_carries,
                     total_touches = EXCLUDED.total_touches,
-                    total_pass_att = EXCLUDED.total_pass_att
+                    total_pass_att = EXCLUDED.total_pass_att,
+                    target_share = EXCLUDED.target_share
             """, (
                 metrics["player_id"], as_of_date, season, metrics["position"],
                 metrics.get("yards_per_target"), metrics.get("catch_rate"),
@@ -803,9 +818,88 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics.get("total_targets"), metrics.get("total_receptions"),
                 metrics.get("total_carries"), metrics.get("total_touches"),
                 metrics.get("total_pass_att"),
+                metrics.get("target_share"),
             ))
 
     print(f"[advanced_metrics] Saved {len(metrics_list)} player metrics for {as_of_date} (season {season})")
+
+
+def import_air_yards_from_stats_csv(season: int) -> int:
+    """
+    Read cache/stats_player_reg_{season}.csv (produced by nfl_data_py) and upsert
+    air_yards_per_game and air_yards_share into player_advanced_metrics.
+
+    Matches rows by player_id (sleeper id from players_index) and updates the
+    most-recent snapshot row for each player/season.  Safe to call repeatedly.
+    Returns the number of rows updated.
+    """
+    import os
+    import csv
+    from pathlib import Path
+    from utils.paths import DATA_DIR
+
+    csv_path = Path(DATA_DIR) / "cache" / f"stats_player_reg_{season}.csv"
+    if not csv_path.exists():
+        return 0
+
+    # Load players index to map nfl player_id → sleeper player_id
+    players_idx_path = Path(DATA_DIR) / "cache" / "players_index_relevant.json"
+    if not players_idx_path.exists():
+        return 0
+
+    import json
+    with open(players_idx_path) as f:
+        players_idx = json.load(f)
+
+    # Build nfl_id → sleeper_id map
+    nfl_to_sleeper: dict = {}
+    for sleeper_id, info in players_idx.items():
+        nfl_id = info.get("stats_id") or info.get("rotowire_id") or ""
+        if nfl_id:
+            nfl_to_sleeper[str(nfl_id)] = str(sleeper_id)
+
+    rows_by_player: dict = {}
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            nfl_id = row.get("player_id") or ""
+            sleeper_id = nfl_to_sleeper.get(nfl_id)
+            if not sleeper_id:
+                continue
+            try:
+                games = float(row.get("games") or 0) or None
+                rec_air = float(row.get("receiving_air_yards") or 0) or None
+                ayr_share = float(row.get("air_yards_share") or 0) or None
+            except (TypeError, ValueError):
+                continue
+            air_pg = round(rec_air / games, 1) if rec_air and games else None
+            ayr_pct = round(ayr_share * 100.0, 1) if ayr_share else None
+            rows_by_player[sleeper_id] = {"air_yards_per_game": air_pg, "air_yards_share": ayr_pct}
+
+    if not rows_by_player:
+        return 0
+
+    updated = 0
+    with get_conn() as conn:
+        for sleeper_id, vals in rows_by_player.items():
+            result = conn.execute("""
+                UPDATE player_advanced_metrics
+                SET air_yards_per_game = %s,
+                    air_yards_share    = %s
+                WHERE player_id = %s
+                  AND season = %s
+                  AND as_of_date = (
+                      SELECT MAX(as_of_date) FROM player_advanced_metrics
+                      WHERE player_id = %s AND season = %s
+                  )
+            """, (
+                vals["air_yards_per_game"], vals["air_yards_share"],
+                sleeper_id, season, sleeper_id, season,
+            ))
+            if result.rowcount:
+                updated += result.rowcount
+
+    return updated
 
 
 def get_player_metrics(player_id: str, as_of_date: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -1025,7 +1119,10 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # Usage / role
     "role_score":           {"label": "Role Score",        "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position."},
     "snap_share":           {"label": "Snap Share",        "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
+    "target_share":         {"label": "Target Share",      "positions": ["WR", "TE", "RB"],       "min_vol": _V_GAMES, "desc": "Percent of the team's total targets directed at this player."},
     "opportunity_share":    {"label": "Opportunity Share", "positions": ["RB", "WR", "TE"],        "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
+    "air_yards_per_game":   {"label": "Air Yards / Game",  "positions": ["WR", "TE"],              "min_vol": _V_GAMES, "desc": "Receiving air yards (distance thrown in the air to the player) per game; a measure of downfield target volume."},
+    "air_yards_share":      {"label": "Air Yards Share",   "positions": ["WR", "TE"],              "min_vol": _V_GAMES, "desc": "Share of the team's total passing air yards directed at this player; combines target share with depth of target."},
     "red_zone_usage":       {"label": "Red Zone Usage",    "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
     "grades_offense":       {"label": "PFF Off Grade",     "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
     # Receiving

@@ -206,6 +206,10 @@ _CTX_LOCKS_LOCK = threading.Lock()
 _ROSTER_API_CACHE: dict = {}
 _ROSTER_API_CACHE_TTL = 180  # seconds
 
+# Cache for Monte Carlo playoff simulation results (keyed by platform/league_id/season).
+_PLAYOFF_SIM_CACHE: dict = {}
+_PLAYOFF_SIM_CACHE_TTL = 3600  # 1 hour
+
 # How long a league context is considered fresh
 CACHE_TTL = 60 * 60 * 12  # 12 hours
 
@@ -3955,7 +3959,13 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     # Playoff Odds tab), sort by first_seed → bye → overall playoff probability
     try:
         from data_building.simulate_playoff_odds import simulate_playoff_odds
-        odds_list = simulate_playoff_odds(ctx, platform=platform) or []
+        _sim_key = (platform, str(ctx.get("league_id") or ""), int(ctx.get("season") or 0))
+        _sim_cached = _PLAYOFF_SIM_CACHE.get(_sim_key)
+        if _sim_cached and time.time() - _sim_cached["ts"] < _PLAYOFF_SIM_CACHE_TTL:
+            odds_list = _sim_cached["data"]
+        else:
+            odds_list = simulate_playoff_odds(ctx, platform=platform) or []
+            _PLAYOFF_SIM_CACHE[_sim_key] = {"data": odds_list, "ts": time.time()}
     except Exception:
         odds_list = []
 
@@ -7522,8 +7532,9 @@ def build_teams_body(ctx: dict) -> str:
         }.get(_win_window, "wt-holding")
         _pos_idx = team_pos_index[rid]
 
+        _is_viewer = str(rid) == str(viewer_roster_id or "")
         card_html = (
-            f"<div class='card team-strength-card {_window_cls}' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}'>"
+            f"<div class='card team-strength-card {_window_cls}' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}' data-roster-id='{rid}'" + (" data-viewer='1'" if _is_viewer else "") + ">"
             "  <div class='card-header-row'>"
             f"    <div style='display:flex;align-items:center;gap:8px;min-width:0;flex:1;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>"
             f"<div class='mini-label' style='flex-shrink:0;'><span class='grade-window-label'>{_win_window}</span>"
@@ -8279,7 +8290,7 @@ def build_teams_body(ctx: dict) -> str:
         <div class="teams-topbar">
           <div class="teams-sort-bar">
             <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
-            <button class="teams-sort-btn active" data-sort="posindex">Positional Index</button>
+            <button class="teams-sort-btn" data-sort="posindex">Positional Index</button>
             <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
             <button class="teams-sort-btn" data-sort="archetype">Archetype</button>
           </div>
@@ -8342,8 +8353,15 @@ def build_teams_body(ctx: dict) -> str:
       document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
         btn.addEventListener('click', function() {{ sortTeams(btn.dataset.sort); }});
       }});
-      // Default sort on load
-      sortTeams('posindex');
+      // Default: float the viewer's card to the top, no sort button active
+      (function() {{
+        var grid = document.getElementById('teamsGrid');
+        if (!grid) return;
+        var viewer = grid.querySelector('.team-strength-card[data-viewer="1"]');
+        if (viewer && grid.firstChild !== viewer) {{
+          grid.insertBefore(viewer, grid.firstChild);
+        }}
+      }})();
 
       // Lazy-render Plotly charts as they scroll into view
       (function() {{
@@ -19534,7 +19552,13 @@ def api_playoff_odds():
             return jsonify({"error": "league not found"}), 404
 
         from data_building.simulate_playoff_odds import simulate_playoff_odds
-        odds = simulate_playoff_odds(ctx, platform=platform)
+        _sim_key2 = (platform, str(league_id), season)
+        _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
+        if _sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL:
+            odds = _sim_cached2["data"]
+        else:
+            odds = simulate_playoff_odds(ctx, platform=platform)
+            _PLAYOFF_SIM_CACHE[_sim_key2] = {"data": odds, "ts": time.time()}
 
         settings           = ctx.get("league_settings") or {}
         playoff_week_start = int(settings.get("playoff_week_start") or 15)
@@ -24241,7 +24265,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 
         share_url = request.url
         card_html = f"""<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <title>{team_name} | BR Fantasy Report</title>
