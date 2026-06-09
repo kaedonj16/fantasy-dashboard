@@ -726,6 +726,7 @@ BASE_HTML = """
 
       {ad_top}
 
+      <script>window._viewerRid = {viewer_roster_id_js};</script>
       <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -780,7 +781,6 @@ BASE_HTML = """
     <!-- Feature 15: Ask My GM floating chat widget -->
     {ask_gm_widget}
 
-    <script>window._viewerRid = {viewer_roster_id_js};</script>
     <script src="/static/app.js?v={app_js_v}"></script>
     <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
@@ -24249,13 +24249,11 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         league_name = league_info.get("name", "Dynasty League")
         n_teams = len(rosters)
 
+        from dashboard_services.api import avatar_from_users as _av_from_users
         uid_to_name: dict = {}
-        uid_to_avatar: dict = {}
         for u in users:
             uid = str(u.get("user_id", ""))
             uid_to_name[uid] = str(u.get("display_name") or u.get("username") or "Unknown")
-            # prefer team-specific avatar (metadata.avatar) over profile avatar
-            uid_to_avatar[uid] = str(u.get("metadata", {}).get("avatar") or u.get("avatar") or "")
 
         CORE_POS = {"QB", "RB", "WR", "TE"}
         POS_ORDER = ["QB", "RB", "WR", "TE"]
@@ -24291,9 +24289,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                 continue
             owner_id = str(r.get("owner_id") or "")
             owner_name = uid_to_name.get(owner_id, "Unknown")
-            avatar_url = uid_to_avatar.get(owner_id, "")
-            if avatar_url:
-                avatar_url = f"https://sleepercdn.com/avatars/thumbs/{avatar_url}"
+            avatar_url = _av_from_users(platform, users, owner_id) or ""
             std = standings.get(roster_id) or standings.get(int(roster_id) if roster_id.isdigit() else -1) or {}
             team_name = str(std.get("team_name") or owner_name)
             record = f"{std.get('wins', 0)}–{std.get('losses', 0)}"
@@ -24334,6 +24330,33 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
 
         top5 = player_rows[:5]
         total_value = sum(p["value"] for p in player_rows)
+
+        # ── Dynasty rank across league ───────────────────────────────────────
+        _all_totals = {}
+        for _r2 in rosters:
+            _rid2 = str(_r2.get("roster_id") or "")
+            if not _rid2:
+                continue
+            _all_totals[_rid2] = sum(
+                float((values_by_id.get(str(_pid)) or {}).get(vfield) or 0)
+                for _pid in (_r2.get("players") or [])
+            )
+        dynasty_rank = sum(1 for v in _all_totals.values() if v > total_value) + 1
+
+        # ── Top pick assets ──────────────────────────────────────────────────
+        _picks = picks_by_roster.get(str(roster_id), [])
+        _pick_labels = []
+        for _pk in sorted(_picks, key=lambda x: (int(x.get("season") or 9999), int(x.get("round") or 99)))[:3]:
+            _yr = str(_pk.get("season") or "")[-2:]  # '26' from '2026'
+            _rd = _pk.get("round") or "?"
+            _own = _pk.get("original_owner_id") or _pk.get("owner_id") or ""
+            # if it's not your own pick, note the original owner
+            _src = ""
+            if _own and str(_own) != str(roster_id):
+                _src_name = uid_to_name.get(str(_own), "")
+                if _src_name:
+                    _src = f" (via {_src_name[:10]})"
+            _pick_labels.append(f"'{_yr} R{_rd}{_src}")
 
         # ── Average roster age (core positions, top 8 by value) ─────────────
         core_players = [p for p in player_rows if p["pos"] in CORE_POS][:8]
@@ -24408,6 +24431,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             f'<span class="sc-pos-pill" style="background:{pos_colors.get(p["pos"], "#64748b")}26;color:{pos_colors.get(p["pos"], "#64748b")}">{p["pos"]}</span>'
             f'<span class="sc-player-name">{p["name"]}</span>'
             f'<span class="sc-player-team">{p["team"]}</span>'
+            f'{"<span class=\'sc-player-age\'>" + str(p["age"]) + "</span>" if p["age"] else ""}'
             f'<span class="sc-player-val">{p["value"]:,}</span>'
             f'</div>'
             for p in top5
@@ -24425,7 +24449,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         avatar_html = (
             f'<img src="{avatar_url}" class="sc-avatar" alt="avatar" onerror="this.style.display=\'none\'">'
             if avatar_url else
-            '<div class="sc-avatar-placeholder"><i class="fa-solid fa-user"></i></div>'
+            '<div class="sc-avatar sc-avatar-placeholder"></div>'
         )
 
         age_html = f"{avg_age}" if avg_age is not None else "–"
@@ -24433,6 +24457,18 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             f'<span class="sc-window-badge" style="background:{_wc}22;color:{_wc};border-color:{_wc}44">{win_window}</span>'
             if win_window else ""
         )
+
+        _dv_fmt = f"{round(total_value / 1000, 1)}k" if total_value >= 1000 else str(round(total_value))
+        dynasty_rank_html = f'<span style="font-weight:700;font-size:15px;">#{dynasty_rank}</span><span style="font-size:11px;color:var(--text-muted);margin-left:1px;">/{n_teams}</span>'
+
+        picks_html = ""
+        if _pick_labels:
+            picks_html = (
+                '<div class="sc-section-title">Draft Capital</div>'
+                '<div class="sc-picks-row">'
+                + "".join(f'<span class="sc-pick-chip">{lbl}</span>' for lbl in _pick_labels)
+                + '</div>'
+            )
 
         share_url = request.url
         card_html = f"""<!doctype html>
@@ -24443,19 +24479,23 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta property="og:title" content="{team_name} — BR Fantasy Report">
   <meta property="og:description" content="{record} · {grade_label} grade · {win_window} · {season} season">
-  <meta property="og:image" content="{avatar_url or '/static/BR_Logo.png'}">
+  <meta property="og:image" content="{avatar_url or '/static/BR_Logo_dark.png'}">
   <link rel="stylesheet" href="/static/dashboard.css?v={_CSS_V}">
   <link rel="stylesheet" href="/static/font-awesome.css?v={_CSS_V}">
   <style>
-    body {{ background: var(--bg, #0f172a); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }}
-    .share-card-wrap {{ max-width: 440px; width: 100%; }}
+    body {{ background:#0b1120; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px; }}
+    .share-card-wrap {{ max-width:440px; width:100%; }}
+    .sc-player-age {{ font-size:11px; color:var(--text-muted); margin-left:auto; margin-right:6px; }}
+    .sc-picks-row {{ display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px 14px; }}
+    .sc-pick-chip {{ font-size:11px; font-weight:600; padding:3px 8px; border-radius:20px;
+      background:rgba(139,92,246,.15); color:#a78bfa; border:1px solid rgba(139,92,246,.25); }}
   </style>
 </head>
 <body>
   <div class="share-card-wrap">
     <div class="share-card">
       <div class="sc-header">
-        <div class="sc-brand"><img src="/static/BR_Logo_dark.png" alt="BR Fantasy" style="height:22px;opacity:.85"> BR Fantasy</div>
+        <div class="sc-brand"><img src="/static/BR_Logo_dark.png" alt="BR Fantasy" style="height:20px;opacity:.9"> BR Fantasy</div>
         <div class="sc-league">{league_name}</div>
       </div>
       <div class="sc-team-row">
@@ -24470,15 +24510,20 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         </div>
       </div>
       <div class="sc-stats-row">
-        <div class="sc-stat"><span class="sc-stat-val">{pf:,}</span><span class="sc-stat-lbl">Points For</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{pa:,}</span><span class="sc-stat-lbl">Points Vs</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{age_html}</span><span class="sc-stat-lbl">Avg Age</span></div>
         <div class="sc-stat"><span class="sc-stat-val" style="color:{_grade_color}">{grade_label}</span><span class="sc-stat-lbl">Grade</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{dynasty_rank_html}</span><span class="sc-stat-lbl">Dynasty Rank</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{_dv_fmt}</span><span class="sc-stat-lbl">Dynasty Value</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{age_html}</span><span class="sc-stat-lbl">Avg Age</span></div>
+      </div>
+      <div class="sc-stats-row" style="border-top:1px solid rgba(255,255,255,.06);padding-top:10px;margin-top:0;">
+        <div class="sc-stat"><span class="sc-stat-val">{pf:,}</span><span class="sc-stat-lbl">Points For</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{pa:,}</span><span class="sc-stat-lbl">Points Against</span></div>
       </div>
       <div class="sc-section-title">Positional Rankings</div>
       <div class="sc-pos-ranks">{pos_rank_html}</div>
       <div class="sc-section-title">Top Players</div>
       <div class="sc-players">{rows_html}</div>
+      {picks_html}
       <div class="sc-footer">
         <a href="/" class="sc-cta">View full dashboard at brfantasy.com</a>
         <button class="sc-copy-btn" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')">Copy link</button>
