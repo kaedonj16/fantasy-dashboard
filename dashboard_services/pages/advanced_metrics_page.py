@@ -104,17 +104,19 @@ def build_advanced_metrics_body(
 
     html = """
     <div class="card central">
-      <div class="card-header am-card-header">
+      <div class="card-header">
         <div>
-          <h2>Advanced Metrics</h2>
+          <div class="am-title-row">
+            <h2>Advanced Metrics</h2>
+            <button id="amLegendBtn" type="button" class="am-legend-btn"
+              onclick="document.getElementById('amLegendModal').style.display='flex'">
+              <i class="fa-solid fa-circle-info"></i> Metric Glossary
+            </button>
+          </div>
           <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
             Rank every player by a single advanced metric. Bars are relative to the leader.
           </div>
         </div>
-        <button id="amLegendBtn" type="button" class="am-legend-btn"
-          onclick="document.getElementById('amLegendModal').style.display='flex'">
-          <i class="fa-solid fa-circle-info"></i> Metric Glossary
-        </button>
       </div>
 
       <div id="amLegendModal" class="am-legend-modal" style="display:none;"
@@ -220,11 +222,12 @@ def build_advanced_metrics_body(
 
     style = """
     <style>
-      .am-card-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+      .am-title-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+      .am-title-row h2 { margin:0; }
       .am-legend-btn {
         flex-shrink:0; display:inline-flex; align-items:center; gap:6px;
-        padding:7px 12px; border:1px solid var(--border); border-radius:8px;
-        background:var(--card); color:var(--text); font-size:12px; font-weight:600;
+        padding:5px 11px; border:1px solid var(--border); border-radius:999px;
+        background:var(--card); color:var(--text-muted); font-size:12px; font-weight:600;
         cursor:pointer; white-space:nowrap; transition:all .12s;
       }
       .am-legend-btn:hover { border-color:var(--accent); color:var(--accent); }
