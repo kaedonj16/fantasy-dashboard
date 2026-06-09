@@ -208,6 +208,7 @@ def build_advanced_metrics_body(
           <span id="amAvgNoteText"></span>
         </div>
 
+        <div class="am-table-wrap">
         <table id="amTable" class="am-table">
           <thead>
             <tr>
@@ -219,6 +220,7 @@ def build_advanced_metrics_body(
           </thead>
           <tbody id="amTableBody"></tbody>
         </table>
+        </div>
 
         <div id="amPagination" class="am-pagination" style="display:none;"></div>
 
@@ -335,7 +337,8 @@ def build_advanced_metrics_body(
       .am-rank { width:36px; color:var(--text-muted); font-size:12px; }
       .am-games { width:40px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
       .am-player { width:220px; max-width:220px; }
-      .am-barcell { width:auto; min-width:0; }
+      .am-barcell { width:auto; min-width:120px; }
+      .am-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
       /* Player cell: name on left, pos+team on right */
       .am-player td, td.am-player { display:table-cell; }
       .am-player-inner { display:flex; align-items:center; justify-content:space-between; gap:8px; overflow:hidden; }
@@ -491,7 +494,7 @@ _AM_JS = r"""
     games: 'G', total_pass_att: 'Att', total_carries: 'Car',
     total_touches: 'Tch', total_targets: 'Tgt', total_receptions: 'Rec',
   };
-  const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', sortBy: 'metric', rows: [], search: '',
+  const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', sortBy: metricSel.value, rows: [], search: '',
                   season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0,
                   fetching: false, volCol: 'games',
                   extraMetrics: [],     // up to 4 extra metric keys
@@ -553,6 +556,7 @@ _AM_JS = r"""
       if (state.extraMetrics.length < MAX_COMPARE) {
         state.extraMetrics.push(key);
         updateCompareBar();
+        syncExtraCols();
         fetchExtraData(key);
       }
     }
@@ -562,8 +566,13 @@ _AM_JS = r"""
   window.amRemoveExtra = function(key) {
     state.extraMetrics = state.extraMetrics.filter(k => k !== key);
     delete state.extraData[key];
+    if (state.sortBy === key) {
+      state.sortBy = state.metric;
+      state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
+    }
     updateCompareBar();
     buildStatPicker();
+    syncExtraCols();
     render();
   };
 
@@ -625,8 +634,12 @@ _AM_JS = r"""
     const ths = [
       { el: document.querySelector('#amTable thead th.am-player'), col: 'name' },
       { el: document.querySelector('#amTable thead th.am-games'), col: 'games' },
-      { el: document.getElementById('amMetricHeader'), col: 'metric' },
+      { el: document.getElementById('amMetricHeader'), col: state.metric },
     ];
+    state.extraMetrics.forEach(function(key) {
+      const el = document.getElementById('amExtraHeader_' + key);
+      if (el) ths.push({ el: el, col: key });
+    });
     ths.forEach(function({ el, col }) {
       if (!el) return;
       el.classList.add('am-sortable');
@@ -639,13 +652,29 @@ _AM_JS = r"""
       state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc';
     } else {
       state.sortBy = col;
-      state.sortDir = col === 'metric'
-        ? ((cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc')
-        : 'asc';
+      if (col === 'name' || col === 'games') {
+        state.sortDir = 'asc';
+      } else {
+        state.sortDir = (cfg.metrics[col] && cfg.metrics[col].lowerBetter) ? 'asc' : 'desc';
+      }
     }
     state.page = 0;
     updateSortHeaders();
     render();
+  }
+  function syncExtraCols() {
+    const thead = document.querySelector('#amTable thead tr');
+    if (!thead) return;
+    thead.querySelectorAll('.am-extra-header').forEach(function(el) { el.remove(); });
+    state.extraMetrics.forEach(function(key) {
+      const th = document.createElement('th');
+      th.id = 'amExtraHeader_' + key;
+      th.className = 'am-barcell am-extra-header';
+      th.textContent = (cfg.metrics[key] && cfg.metrics[key].label) || key;
+      th.addEventListener('click', function() { sortByCol(key); });
+      thead.appendChild(th);
+    });
+    updateSortHeaders();
   }
   function updateMetricTip() {
     if (!metricTip) return;
@@ -697,8 +726,13 @@ _AM_JS = r"""
         const av = Number(a.vol != null ? a.vol : (a.games != null ? a.games : 0));
         const bv = Number(b.vol != null ? b.vol : (b.games != null ? b.games : 0));
         diff = av - bv;
-      } else {
+      } else if (state.sortBy === state.metric || !state.extraData[state.sortBy]) {
         diff = Number(a.value) - Number(b.value);
+      } else {
+        const ed = state.extraData[state.sortBy];
+        const av = ed.byId[String(a.player_id)] ?? 0;
+        const bv = ed.byId[String(b.player_id)] ?? 0;
+        diff = Number(av) - Number(bv);
       }
       return state.sortDir === 'desc' ? -diff : diff;
     });
@@ -777,26 +811,25 @@ _AM_JS = r"""
           + '<span class="am-val">' + fmtVal(r.value) + '</span>'
           + '</div></td>';
       } else {
-        const allKeys = [state.metric, ...state.extraMetrics];
-        const miniRows = allKeys.map((key, ki) => {
-          const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
-          let val, pctBar;
-          if (ki === 0) {
-            val = r.value;
-            pctBar = Math.max(2, Math.round(Math.abs(Number(val) || 0) / maxAbs * 100));
-          } else {
-            const ed = state.extraData[key];
-            val = ed ? ed.byId[String(r.player_id)] : undefined;
-            pctBar = (ed && val != null) ? Math.max(2, Math.round(Math.abs(Number(val)) / ed.maxAbs * 100)) : 0;
-          }
-          const disp = (val != null && val !== undefined) ? fmtVal(val) : (state.extraData[key] ? '–' : '…');
-          return '<div class="am-mrow">'
-            + '<span class="am-mlabel" title="' + lbl + '">' + lbl + '</span>'
-            + '<div class="am-mbar-wrap"><div class="am-mbar-track"><div class="am-mbar-fill" style="width:' + pctBar + '%;background:' + col + '"></div></div></div>'
-            + '<span class="am-mval" style="color:' + col + '">' + disp + '</span>'
-            + '</div>';
-        }).join('');
-        metricCell = '<td class="am-barcell am-multi">' + miniRows + '</td>';
+        const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
+        const avgLbl2 = (avgPct != null && i === 0) ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
+        const avgMark2 = (avgPct != null)
+          ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl2 + '</div>'
+          : '';
+        metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
+          + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark2 + '</div></div>'
+          + '<span class="am-val">' + fmtVal(r.value) + '</span>'
+          + '</div></td>';
+        state.extraMetrics.forEach(function(key) {
+          const ed = state.extraData[key];
+          const val = ed ? (ed.byId[String(r.player_id)] !== undefined ? ed.byId[String(r.player_id)] : null) : null;
+          const pctBar = (ed && val != null) ? Math.max(2, Math.round(Math.abs(Number(val)) / ed.maxAbs * 100)) : 2;
+          const disp = val != null ? fmtVal(val) : (ed ? '–' : '…');
+          metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
+            + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div></div></div>'
+            + '<span class="am-val">' + disp + '</span>'
+            + '</div></td>';
+        });
       }
 
       return '<tr class="am-row' + (owned ? ' am-owned' : '') + '" style="cursor:pointer;" onclick="window.openPlayerModal&&openPlayerModal(\'' + r.player_id + '\',\'' + safe + '\')">'
@@ -831,7 +864,8 @@ _AM_JS = r"""
                    total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
     }
     const mh = document.getElementById('amMetricHeader');
-    if (mh) mh.textContent = state.extraMetrics.length > 0 ? 'Stats' : ((cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '—');
+    if (mh) mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '—';
+    syncExtraCols();
   }
   function fetchData() {
     if (!cfg.hasPremium) { paywall.style.display = ''; loading.style.display = 'none'; return; }
@@ -879,7 +913,7 @@ _AM_JS = r"""
     const rel = new Set(relevantPositions(state.metric));
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
-    state.sortBy = 'metric';
+    state.sortBy = state.metric;
     state.minVol = defaultVol(state.metric);
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
     updateSortHeaders(); updateCompareBar();
@@ -893,7 +927,7 @@ _AM_JS = r"""
   });
   searchEl.addEventListener('input', () => { state.search = searchEl.value.trim(); state.page = 0; render(); });
   sortBtn.addEventListener('click', () => {
-    state.sortBy = 'metric';
+    state.sortBy = state.metric;
     state.sortDir = state.sortDir === 'desc' ? 'asc' : 'desc'; state.page = 0;
     updateSortBtn(); updateSortHeaders(); render();
   });
@@ -913,7 +947,7 @@ _AM_JS = r"""
   const _thMetric = document.getElementById('amMetricHeader');
   if (_thPlayer) _thPlayer.addEventListener('click', () => sortByCol('name'));
   if (_thGames)  _thGames.addEventListener('click', () => sortByCol('games'));
-  if (_thMetric) _thMetric.addEventListener('click', () => sortByCol('metric'));
+  if (_thMetric) _thMetric.addEventListener('click', () => sortByCol(state.metric));
 
   state.minVol = defaultVol(state.metric);
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
