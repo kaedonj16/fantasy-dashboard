@@ -430,6 +430,11 @@ def build_advanced_metrics_body(
         font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
         color:var(--text-muted); padding:4px 14px 2px;
       }
+      .am-sp-cat-head {
+        font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+        color:var(--accent,#2563eb); padding:8px 14px 4px;
+        border-bottom:1px solid var(--border);
+      }
       .am-sp-item {
         display:flex; align-items:center; gap:8px;
         padding:7px 14px; font-size:13px; color:var(--text); cursor:pointer;
@@ -541,28 +546,19 @@ _AM_JS = r"""
   function buildStatPicker() {
     const picker = document.getElementById('amStatPicker');
     if (!picker) return;
-    const catOrder = ['Passing', 'Rushing', 'Receiving', 'Other'];
-    const groups = {};
-    for (const [key, spec] of Object.entries(cfg.metrics)) {
-      const cat = spec.category || 'Other';
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push({ key, label: spec.label });
-    }
+    const primaryCat = (cfg.metrics[state.metric] && cfg.metrics[state.metric].category) || 'Other';
     const active = new Set([state.metric, ...state.extraMetrics]);
-    let html = '';
-    for (const cat of catOrder) {
-      if (!groups[cat] || !groups[cat].length) continue;
-      html += '<div class="am-sp-group"><div class="am-sp-head">' + cat + '</div>';
-      for (const { key, label } of groups[cat]) {
-        const on = active.has(key);
-        const isPrimary = key === state.metric;
-        html += '<div class="am-sp-item' + (on ? ' am-sp-active' : '') + '" onclick="amPickerClick(\'' + key + '\')">'
-          + '<span class="am-sp-check">' + (on ? '&#10003;' : '') + '</span>'
-          + label
-          + (isPrimary ? ' <span style="font-size:10px;opacity:.6">(primary)</span>' : '')
-          + '</div>';
-      }
-      html += '</div>';
+    const items = Object.entries(cfg.metrics)
+      .filter(([, spec]) => (spec.category || 'Other') === primaryCat);
+    let html = '<div class="am-sp-cat-head">' + primaryCat + '</div>';
+    for (const [key, spec] of items) {
+      const on = active.has(key);
+      const isPrimary = key === state.metric;
+      html += '<div class="am-sp-item' + (on ? ' am-sp-active' : '') + '" onclick="amPickerClick(\'' + key + '\')">'
+        + '<span class="am-sp-check">' + (on ? '&#10003;' : '') + '</span>'
+        + spec.label
+        + (isPrimary ? ' <span style="font-size:10px;opacity:.6">(primary)</span>' : '')
+        + '</div>';
     }
     picker.innerHTML = html;
   }
