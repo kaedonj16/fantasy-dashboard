@@ -16922,13 +16922,10 @@ def api_league_rosters():
                 team_name = f"Team {roster_id}"
                 username = ""
             player_ids = [str(pid) for pid in (roster.get("players") or [])]
-            # Resolve each owned pick to its exact draft slot the same way the team
-            # modals do (resolve_exact_pick_slot, via the original owner's prior-season
-            # standings) → exact "{season}_{round}_{slot:02d}" asset ids. Picks too far
-            # out to resolve a slot fall back to round-level "{season}_{round}" keys.
-            # Slotted picks → exact unique asset ids (pick_ids). Picks whose slot can't
-            # be resolved (too far out) → round-level keys with a COUNT, so a team that
-            # owns e.g. two 2027 1sts can add both in the calculator.
+            # Resolve each owned pick to its exact draft slot using whichever
+            # slot maps are already in HISTORICAL_PICK_SLOT_CACHE (built during
+            # normal dashboard loads). If a map isn't cached yet, fall back to
+            # round-level counts — never trigger a fresh historical API fetch here.
             pick_ids: list[str] = []
             pick_round_counts: dict[str, int] = {}
             for p in (picks_by_roster.get(roster_id) or []):
@@ -16937,15 +16934,18 @@ def api_league_rosters():
                 if not p_season or not p_round:
                     continue
                 slot = None
-                if p.get("original_owner") is not None:
-                    try:
-                        slot = resolve_exact_pick_slot(platform, league_id, season, {
-                            "season": p_season,
-                            "round": p_round,
-                            "previous_owner_id": p.get("original_owner"),
-                        })
-                    except Exception:
-                        slot = None
+                orig = p.get("original_owner")
+                if orig is not None:
+                    # Use cached slot map if available — no blocking fetch.
+                    source_season = p_season - 1
+                    cached_map = HISTORICAL_PICK_SLOT_CACHE.get(
+                        (str(platform).lower(), str(league_id), int(source_season))
+                    )
+                    if cached_map:
+                        try:
+                            slot = cached_map.get(int(orig))
+                        except (TypeError, ValueError):
+                            slot = None
                 if slot:
                     pick_ids.append(f"{p_season}_{p_round}_{int(slot):02d}")
                 else:
