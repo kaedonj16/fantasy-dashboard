@@ -24221,7 +24221,8 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         for u in users:
             uid = str(u.get("user_id", ""))
             uid_to_name[uid] = str(u.get("display_name") or u.get("username") or "Unknown")
-            uid_to_avatar[uid] = str(u.get("avatar") or "")
+            # prefer team-specific avatar (metadata.avatar) over profile avatar
+            uid_to_avatar[uid] = str(u.get("metadata", {}).get("avatar") or u.get("avatar") or "")
 
         CORE_POS = {"QB", "RB", "WR", "TE"}
         POS_ORDER = ["QB", "RB", "WR", "TE"]
@@ -24265,17 +24266,29 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
             record = f"{std.get('wins', 0)}–{std.get('losses', 0)}"
             pf = round(float(std.get("pf") or 0), 1)
             pa = round(float(std.get("pa") or 0), 1)
+            from datetime import date as _date
+
+            def _age_from_bday(bday: str) -> "float | None":
+                if not bday:
+                    return None
+                try:
+                    parts = bday.split("/")
+                    if len(parts) == 3:
+                        m, d, y = int(parts[0]), int(parts[1]), int(parts[2])
+                        today = _date.today()
+                        age = today.year - y - ((today.month, today.day) < (m, d))
+                        return float(age) if 15 <= age <= 50 else None
+                except (ValueError, TypeError):
+                    pass
+                return None
+
             for pid in (r.get("players") or []):
                 meta = players_index.get(str(pid)) or {}
                 vrow = values_by_id.get(str(pid)) or {}
                 val = float(vrow.get(vfield) or vrow.get("value") or 0)
                 pos = str(meta.get("pos") or "").upper()
                 if pos and val > 0:
-                    age_raw = meta.get("age")
-                    try:
-                        age = float(age_raw) if age_raw is not None else None
-                    except (TypeError, ValueError):
-                        age = None
+                    age = _age_from_bday(meta.get("bDay") or "")
                     player_rows.append({
                         "name": meta.get("full_name") or meta.get("name") or str(pid),
                         "pos": pos,
@@ -24409,7 +24422,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   <div class="share-card-wrap">
     <div class="share-card">
       <div class="sc-header">
-        <div class="sc-brand"><img src="/static/BR_Logo.png" alt="BR Fantasy" style="height:22px;opacity:.7"> BR Fantasy</div>
+        <div class="sc-brand"><img src="/static/BR_Logo_dark.png" alt="BR Fantasy" style="height:22px;opacity:.85"> BR Fantasy</div>
         <div class="sc-league">{league_name}</div>
       </div>
       <div class="sc-team-row">
