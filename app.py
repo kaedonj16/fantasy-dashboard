@@ -24093,27 +24093,64 @@ def api_ask_gm():
 def api_league_bulletins():
     """Fetch Sleeper league bulletin board messages."""
     league_id = request.args.get("league_id", "").strip()
+    platform  = request.args.get("platform", "sleeper").strip()
+    season    = int(request.args.get("season") or datetime.now().year)
     if not league_id:
         return jsonify({"error": "league_id required"}), 400
     try:
         import requests as _req
+
+        # Fetch bulletins
         resp = _req.get(
             f"https://api.sleeper.app/v1/league/{league_id}/bulletins",
             timeout=5,
         )
+        logger.info("[bulletins] status=%s body=%s", resp.status_code, resp.text[:300])
         bulletins = resp.json() if resp.status_code == 200 else []
         if not isinstance(bulletins, list):
             bulletins = []
+
+        # Build author lookup from cached league context (names + avatars)
+        user_map: dict = {}
+        try:
+            ctx = get_league_ctx_from_cache(platform, league_id, season)
+            for u in (ctx.get("users") or []):
+                uid = str(u.get("user_id") or "")
+                if uid:
+                    user_map[uid] = {
+                        "name": str(u.get("display_name") or u.get("username") or uid),
+                        "avatar": str(u.get("avatar") or ""),
+                    }
+        except Exception:
+            pass
+
         clean = []
         for b in bulletins[:25]:
             if not isinstance(b, dict):
                 continue
+            author_id = str(b.get("author_id") or "")
+            user_info = user_map.get(author_id, {})
+            # Sleeper uses "message" for the text content
+            body = str(
+                b.get("metadata", {}).get("text") if isinstance(b.get("metadata"), dict) else None
+                or b.get("message")
+                or b.get("body")
+                or b.get("content")
+                or ""
+            )
+            # reactions is a dict {emoji: [user_ids]} or None
+            reactions = b.get("reactions") or {}
+            like_count = sum(len(v) for v in reactions.values()) if isinstance(reactions, dict) else 0
+            try:
+                created = int(b.get("created") or b.get("created_at") or 0)
+            except (TypeError, ValueError):
+                created = 0
             clean.append({
-                "author": str(b.get("author_display_name") or b.get("author_id") or ""),
-                "author_avatar": str(b.get("author_avatar") or ""),
-                "body": str(b.get("body") or b.get("message") or ""),
-                "created": int(b.get("created") or b.get("created_at") or 0),
-                "likes": len(b.get("reactions") or []),
+                "author": user_info.get("name") or author_id,
+                "author_avatar": user_info.get("avatar") or "",
+                "body": body,
+                "created": created,
+                "likes": like_count,
             })
         return jsonify({"bulletins": clean})
     except Exception as exc:
