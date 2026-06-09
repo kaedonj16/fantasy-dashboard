@@ -411,7 +411,7 @@ def build_advanced_metrics_body(
       .am-add-stat-btn:disabled { opacity:.35; cursor:not-allowed; }
       /* Stat picker dropdown */
       .am-stat-picker {
-        position:absolute; top:calc(100% + 6px); left:0; z-index:200;
+        position:absolute; top:calc(100% + 6px); right:0; z-index:200;
         background:var(--card); border:1px solid var(--border); border-radius:12px;
         box-shadow:0 8px 32px rgba(0,0,0,.18);
         min-width:220px; width:max-content; max-width:min(320px,90vw); max-height:300px; overflow-y:auto;
