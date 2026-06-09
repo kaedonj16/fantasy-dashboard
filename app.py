@@ -459,11 +459,20 @@ FORM_BODY = """
         <h2 class="home-card-title">Get started</h2>
 
         <div class="home-steps-hint">
-          <span class="home-step-item" id="hintStep1">① Platform</span>
-          <span class="home-step-arrow">→</span>
-          <span class="home-step-item" id="hintStep2">② Username</span>
-          <span class="home-step-arrow">→</span>
-          <span class="home-step-item" id="hintStep3">③ League</span>
+          <div class="home-step-item" id="hintStep1">
+            <span class="home-step-num">1</span>
+            <span class="home-step-label">Platform</span>
+          </div>
+          <div class="home-step-connector"></div>
+          <div class="home-step-item" id="hintStep2">
+            <span class="home-step-num">2</span>
+            <span class="home-step-label">Username</span>
+          </div>
+          <div class="home-step-connector"></div>
+          <div class="home-step-item" id="hintStep3">
+            <span class="home-step-num">3</span>
+            <span class="home-step-label">League</span>
+          </div>
         </div>
 
         <div class="row">
