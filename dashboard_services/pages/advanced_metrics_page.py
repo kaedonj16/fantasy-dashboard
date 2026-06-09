@@ -176,7 +176,7 @@ def build_advanced_metrics_body(
         <div id="amCompareBar" class="am-compare-bar">
           <div id="amCompareChips" class="am-compare-chips"></div>
           <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
-            <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Compare</button>
+            <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Add Metric</button>
             <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
           </div>
         </div>
@@ -414,7 +414,7 @@ def build_advanced_metrics_body(
         position:absolute; top:calc(100% + 6px); left:0; z-index:200;
         background:var(--card); border:1px solid var(--border); border-radius:12px;
         box-shadow:0 8px 32px rgba(0,0,0,.18);
-        min-width:210px; max-height:300px; overflow-y:auto;
+        min-width:220px; width:max-content; max-width:min(320px,90vw); max-height:300px; overflow-y:auto;
         padding:6px 0;
       }
       .am-sp-group { border-bottom:1px solid var(--border); padding:4px 0; }
