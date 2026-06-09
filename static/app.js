@@ -8844,7 +8844,7 @@ function buildAdvancedMetricsHTML(metricsData) {
   if (defs.length === 0) return '';
 
   function _cells(m) {
-    if (!m) return '<span class="pm-comp-label"></span><div class="pm-comp-bar-wrap"></div><div class="pm-comp-val"></div>';
+    if (!m) return '<span></span><span></span><span></span>';
     const fill = Math.max(0, Math.min(100, m.fill));
     const color = m.forceColor || (fill >= 60 ? '#10b981' : fill >= 35 ? '#3b82f6' : '#f59e0b');
     const subLine = m.sub ? `<div class="pm-comp-sub">${m.sub}</div>` : '';

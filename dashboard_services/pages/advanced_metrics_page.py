@@ -172,6 +172,15 @@ def build_advanced_metrics_body(
           </label>
         </div>
 
+        <!-- Compare bar: chips for active metrics + add-stat picker -->
+        <div id="amCompareBar" class="am-compare-bar">
+          <div id="amCompareChips" class="am-compare-chips"></div>
+          <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
+            <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Compare</button>
+            <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
+          </div>
+        </div>
+
         <div id="amLoading" style="text-align:center;padding:40px 0;color:var(--text-muted);">
           <div class="loading-spinner" style="margin:0 auto 12px;"></div>
           Loading metrics…
@@ -366,6 +375,75 @@ def build_advanced_metrics_body(
       }
       .am-page-btn:disabled { opacity:.35; cursor:not-allowed; }
       .am-page-info { font-size:13px; color:var(--text-muted); white-space:nowrap; }
+
+      /* ── Multi-stat compare bar ─────────────────────────────────────── */
+      .am-compare-bar {
+        display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+        margin-bottom:12px; min-height:28px;
+      }
+      .am-compare-chips { display:flex; flex-wrap:wrap; gap:6px; flex:1; min-width:0; }
+      .am-chip {
+        display:inline-flex; align-items:center; gap:5px;
+        padding:3px 10px; border-radius:14px;
+        border:1px solid var(--border); background:var(--bg-alt);
+        font-size:12px; font-weight:600; color:var(--text-muted); white-space:nowrap;
+      }
+      .am-chip.am-chip-primary {
+        background:var(--text); color:var(--card); border-color:var(--text);
+      }
+      .am-chip-x {
+        border:none; background:none; padding:0; margin:0; line-height:1;
+        font-size:15px; cursor:pointer; color:inherit; opacity:.6;
+      }
+      .am-chip-x:hover { opacity:1; }
+      .am-add-stat-btn {
+        display:inline-flex; align-items:center; gap:4px;
+        padding:3px 11px; border-radius:14px;
+        border:1px dashed var(--border); background:transparent;
+        color:var(--text-muted); font-size:12px; font-weight:600; cursor:pointer;
+        transition:border-color .15s, color .15s; white-space:nowrap;
+      }
+      .am-add-stat-btn:hover { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
+      .am-add-stat-btn:disabled { opacity:.35; cursor:not-allowed; }
+      /* Stat picker dropdown */
+      .am-stat-picker {
+        position:absolute; top:calc(100% + 6px); left:0; z-index:200;
+        background:var(--card); border:1px solid var(--border); border-radius:12px;
+        box-shadow:0 8px 32px rgba(0,0,0,.18);
+        min-width:210px; max-height:300px; overflow-y:auto;
+        padding:6px 0;
+      }
+      .am-sp-group { border-bottom:1px solid var(--border); padding:4px 0; }
+      .am-sp-group:last-child { border-bottom:none; }
+      .am-sp-head {
+        font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+        color:var(--text-muted); padding:4px 14px 2px;
+      }
+      .am-sp-item {
+        display:flex; align-items:center; gap:8px;
+        padding:7px 14px; font-size:13px; color:var(--text); cursor:pointer;
+      }
+      .am-sp-item:hover { background:var(--row,rgba(0,0,0,.04)); }
+      .am-sp-item.am-sp-active { color:var(--accent,#2563eb); font-weight:600; }
+      .am-sp-check { width:14px; text-align:center; flex-shrink:0; font-size:12px; }
+      /* Multi-stat stacked bar rows in table cell */
+      .am-multi { vertical-align:middle; }
+      .am-mrow {
+        display:flex; align-items:center; gap:8px;
+        padding:2px 0;
+      }
+      .am-mlabel {
+        font-size:10px; font-weight:600; color:var(--text-muted);
+        width:72px; flex-shrink:0;
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      }
+      .am-mbar-wrap { flex:1; min-width:0; }
+      .am-mbar-track { background:var(--bg-alt,rgba(0,0,0,.06)); border-radius:4px; height:7px; }
+      .am-mbar-fill { height:100%; border-radius:4px; transition:width .3s; }
+      .am-mval {
+        font-size:11px; font-weight:700; min-width:42px; text-align:right;
+        white-space:nowrap; flex-shrink:0;
+      }
     </style>
     """
 
@@ -411,10 +489,118 @@ _AM_JS = r"""
   };
   const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', rows: [], search: '',
                   season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0,
-                  fetching: false, volCol: 'games' };
+                  fetching: false, volCol: 'games',
+                  extraMetrics: [],     // up to 4 extra metric keys
+                  extraData: {} };      // key -> { byId:{player_id->value}, maxAbs }
+  const MAX_COMPARE = 4;
   let ownedIds = new Set();
   const paginationEl = document.getElementById('amPagination');
   const volLabel = document.getElementById('amVolLabel');
+
+  // ── Multi-stat compare ────────────────────────────────────────────────────
+  function updateCompareBar() {
+    const chipsEl = document.getElementById('amCompareChips');
+    const addBtn  = document.getElementById('amAddStatBtn');
+    if (!chipsEl) return;
+    const all = [state.metric, ...state.extraMetrics];
+    chipsEl.innerHTML = all.map((key, i) => {
+      const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
+      const primary = i === 0;
+      const x = primary ? '' : '<button class="am-chip-x" onclick="event.stopPropagation();amRemoveExtra(\'' + key + '\')" aria-label="Remove">×</button>';
+      return '<span class="am-chip' + (primary ? ' am-chip-primary' : '') + '">' + lbl + x + '</span>';
+    }).join('');
+    if (addBtn) addBtn.disabled = state.extraMetrics.length >= MAX_COMPARE;
+  }
+
+  function buildStatPicker() {
+    const picker = document.getElementById('amStatPicker');
+    if (!picker) return;
+    const catOrder = ['Passing', 'Rushing', 'Receiving', 'Other'];
+    const groups = {};
+    for (const [key, spec] of Object.entries(cfg.metrics)) {
+      const cat = spec.category || 'Other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push({ key, label: spec.label });
+    }
+    const active = new Set([state.metric, ...state.extraMetrics]);
+    let html = '';
+    for (const cat of catOrder) {
+      if (!groups[cat] || !groups[cat].length) continue;
+      html += '<div class="am-sp-group"><div class="am-sp-head">' + cat + '</div>';
+      for (const { key, label } of groups[cat]) {
+        const on = active.has(key);
+        const isPrimary = key === state.metric;
+        html += '<div class="am-sp-item' + (on ? ' am-sp-active' : '') + '" onclick="amPickerClick(\'' + key + '\')">'
+          + '<span class="am-sp-check">' + (on ? '&#10003;' : '') + '</span>'
+          + label
+          + (isPrimary ? ' <span style="font-size:10px;opacity:.6">(primary)</span>' : '')
+          + '</div>';
+      }
+      html += '</div>';
+    }
+    picker.innerHTML = html;
+  }
+
+  window.amPickerClick = function(key) {
+    if (key === state.metric) return;
+    if (state.extraMetrics.includes(key)) {
+      amRemoveExtra(key);
+    } else {
+      if (state.extraMetrics.length < MAX_COMPARE) {
+        state.extraMetrics.push(key);
+        updateCompareBar();
+        fetchExtraData(key);
+      }
+    }
+    buildStatPicker();
+  };
+
+  window.amRemoveExtra = function(key) {
+    state.extraMetrics = state.extraMetrics.filter(k => k !== key);
+    delete state.extraData[key];
+    updateCompareBar();
+    buildStatPicker();
+    render();
+  };
+
+  function fetchExtraData(key) {
+    const params = new URLSearchParams({ metric: key, platform: cfg.platform });
+    if (cfg.leagueId) params.set('league_id', cfg.leagueId);
+    if (state.season) params.set('season', state.season);
+    fetch('/api/advanced-metrics/leaderboard?' + params)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        const rows = d.players || [];
+        const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
+        state.extraData[key] = { byId: Object.fromEntries(rows.map(r => [String(r.player_id), Number(r.value)])), maxAbs };
+        render();
+      })
+      .catch(() => {});
+  }
+
+  function toggleStatPicker() {
+    const picker = document.getElementById('amStatPicker');
+    if (!picker) return;
+    const open = picker.style.display !== 'none' && picker.style.display !== '';
+    if (open) { picker.style.display = 'none'; return; }
+    buildStatPicker();
+    picker.style.display = '';
+  }
+
+  // Close picker when clicking outside.
+  document.addEventListener('click', function(e) {
+    const wrap = document.getElementById('amAddStatWrap');
+    if (wrap && !wrap.contains(e.target)) {
+      const p = document.getElementById('amStatPicker');
+      if (p) p.style.display = 'none';
+    }
+  });
+
+  document.getElementById('amAddStatBtn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    toggleStatPicker();
+  });
 
   function relevantPositions(m) {
     return (cfg.metrics[m] && cfg.metrics[m].positions) || ['QB','RB','WR','TE'];
@@ -522,18 +708,12 @@ _AM_JS = r"""
     const start = state.page * PAGE_SIZE;
     const pageRows = displayRows.slice(start, start + PAGE_SIZE);
 
+    const multiMode = state.extraMetrics.length > 0;
     tbody.innerHTML = pageRows.map((r, i) => {
-      const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
       const safe = (r.name || '').replace(/'/g, "\\'");
       const col = posColor(r.position);
       const owned = ownedIds.has(String(r.player_id));
       const rank = rankMap.get(String(r.player_id)) || '';
-      // Show the avg marker on every bar, but label it only on the first row.
-      const avgLbl = (avgPct != null && i === 0)
-        ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
-      const avgMark = (avgPct != null)
-        ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl + '</div>'
-        : '';
       const volNum = r.vol != null ? r.vol : (r.games != null ? r.games : '–');
       const gamesCell = '<td class="am-games">' + volNum + '</td>';
       const ownedBadge = owned ? '<span class="am-owned-badge">YOURS</span>' : '';
@@ -544,10 +724,41 @@ _AM_JS = r"""
         + '<span class="am-meta">' + (r.team || '') + '</span>'
         + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
         + '</span></div></td>';
-      const metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
-        + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
-        + '<span class="am-val">' + fmtVal(r.value) + '</span>'
-        + '</div></td>';
+
+      let metricCell;
+      if (!multiMode) {
+        const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
+        const avgLbl = (avgPct != null && i === 0) ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
+        const avgMark = (avgPct != null)
+          ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl + '</div>'
+          : '';
+        metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
+          + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
+          + '<span class="am-val">' + fmtVal(r.value) + '</span>'
+          + '</div></td>';
+      } else {
+        const allKeys = [state.metric, ...state.extraMetrics];
+        const miniRows = allKeys.map((key, ki) => {
+          const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
+          let val, pctBar;
+          if (ki === 0) {
+            val = r.value;
+            pctBar = Math.max(2, Math.round(Math.abs(Number(val) || 0) / maxAbs * 100));
+          } else {
+            const ed = state.extraData[key];
+            val = ed ? ed.byId[String(r.player_id)] : undefined;
+            pctBar = (ed && val != null) ? Math.max(2, Math.round(Math.abs(Number(val)) / ed.maxAbs * 100)) : 0;
+          }
+          const disp = (val != null && val !== undefined) ? fmtVal(val) : (state.extraData[key] ? '–' : '…');
+          return '<div class="am-mrow">'
+            + '<span class="am-mlabel" title="' + lbl + '">' + lbl + '</span>'
+            + '<div class="am-mbar-wrap"><div class="am-mbar-track"><div class="am-mbar-fill" style="width:' + pctBar + '%;background:' + col + '"></div></div></div>'
+            + '<span class="am-mval" style="color:' + col + '">' + disp + '</span>'
+            + '</div>';
+        }).join('');
+        metricCell = '<td class="am-barcell am-multi">' + miniRows + '</td>';
+      }
+
       return '<tr class="am-row' + (owned ? ' am-owned' : '') + '" style="cursor:pointer;" onclick="window.openPlayerModal&&openPlayerModal(\'' + r.player_id + '\',\'' + safe + '\')">'
         + '<td class="am-rank">' + rank + '</td>'
         + playerCell
@@ -580,7 +791,7 @@ _AM_JS = r"""
                    total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
     }
     const mh = document.getElementById('amMetricHeader');
-    if (mh) mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '—';
+    if (mh) mh.textContent = state.extraMetrics.length > 0 ? 'Stats' : ((cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '—');
   }
   function fetchData() {
     if (!cfg.hasPremium) { paywall.style.display = ''; loading.style.display = 'none'; return; }
@@ -593,7 +804,15 @@ _AM_JS = r"""
     if (state.minVol) params.set('min_vol', state.minVol);
     fetch('/api/advanced-metrics/leaderboard?' + params)
       .then(r => { if (r.status === 403) { state.fetching = false; paywall.style.display = ''; loading.style.display = 'none'; return null; } return r.json(); })
-      .then(d => { if (!d) return; state.fetching = false; state.rows = d.players || []; state.volCol = d.vol_col || 'games'; updateVolHeader(); render(); })
+      .then(d => {
+        if (!d) return;
+        state.fetching = false; state.rows = d.players || []; state.volCol = d.vol_col || 'games';
+        updateVolHeader();
+        // Re-fetch all extra metrics (season / filter may have changed).
+        state.extraData = {};
+        state.extraMetrics.forEach(k => fetchExtraData(k));
+        render();
+      })
       .catch(() => { state.fetching = false; loading.style.display = 'none'; empty.style.display = ''; });
   }
 
@@ -621,7 +840,9 @@ _AM_JS = r"""
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
     state.minVol = defaultVol(state.metric);
-    updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader(); fetchData();
+    updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
+    updateCompareBar();
+    fetchData();
   });
   posWrap.addEventListener('click', e => {
     const b = e.target.closest('[data-pos]');
@@ -645,6 +866,6 @@ _AM_JS = r"""
   }
 
   state.minVol = defaultVol(state.metric);
-  updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader(); fetchData();
-  loadOwnedRoster();
+  updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
+  updateCompareBar(); fetchData(); loadOwnedRoster();
 """
