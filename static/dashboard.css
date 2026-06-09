@@ -984,7 +984,19 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   border-bottom: 0.5px solid var(--border);
   display: block;
   position: relative;
-  z-index: 201; /* CSD list must paint above the items below it */
+  z-index: 201;
+}
+
+/* Constrain the CSD list to the panel width so it doesn't overflow horizontally */
+.settings-dropdown .csd-list {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-dropdown .csd-list .csd-option {
+  white-space: normal;
+  word-break: break-word;
 }
 
 .settings-dropdown .league-switcher {
