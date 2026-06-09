@@ -202,6 +202,17 @@ DASHBOARD_CACHE = {}
 # running the full build_league_context (~40 API calls) at the same time.
 _CTX_LOCKS: dict = {}
 _CTX_LOCKS_LOCK = threading.Lock()
+# Short-lived cache for /api/league-rosters responses (pick-slot resolution is expensive).
+_ROSTER_API_CACHE: dict = {}
+_ROSTER_API_CACHE_TTL = 180  # seconds
+
+# Cache for Monte Carlo playoff simulation results (keyed by platform/league_id/season).
+_PLAYOFF_SIM_CACHE: dict = {}
+_PLAYOFF_SIM_CACHE_TTL = 3600  # 1 hour
+
+# Cache for share card HTML (keyed by platform/league_id/season/roster_id).
+_SHARE_CARD_CACHE: dict = {}
+_SHARE_CARD_CACHE_TTL = 600  # 10 minutes
 
 # How long a league context is considered fresh
 CACHE_TTL = 60 * 60 * 12  # 12 hours
@@ -719,6 +730,7 @@ BASE_HTML = """
 
       {ad_top}
 
+      <script>window._viewerRid = {viewer_roster_id_js};</script>
       <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -1392,10 +1404,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ("Weekly Recap",       "page_recap",            "recap",    False),
         ], ["weekly", "recap"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
-        ("Standings",     "page_standings",    "standings",    False),
-        ("Teams",         "page_teams",        "teams",        False),
-        ("Activity",      "page_activity",     "activity",     False),
-        ("League Health", "page_commissioner", "league_health", False),
+        ("Standings",       "page_standings",    "standings",    False),
+        ("Teams",           "page_teams",        "teams",        False),
+        ("Power Rankings",  "page_teams",        "teams",        False, "#power-rankings"),
+        ("Activity",        "page_activity",     "activity",     False),
+        ("League Health",   "page_commissioner", "league_health", False),
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
@@ -1757,6 +1770,7 @@ def render_page(
     viewer_roster_id = session.get("viewer_roster_id") or ""
     ask_gm_widget = ""  # Ask My GM hidden for now
 
+    import json as _json
     return BASE_HTML.format(
         title=title,
         og_tags=og_tags,
@@ -1782,6 +1796,7 @@ def render_page(
         fa_v=_FA_V,
         icons_v=_ICONS_V,
         ask_gm_widget=ask_gm_widget,
+        viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
     )
 
 
@@ -3952,7 +3967,13 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     # Playoff Odds tab), sort by first_seed → bye → overall playoff probability
     try:
         from data_building.simulate_playoff_odds import simulate_playoff_odds
-        odds_list = simulate_playoff_odds(ctx, platform=platform) or []
+        _sim_key = (platform, str(ctx.get("league_id") or ""), int(ctx.get("season") or 0))
+        _sim_cached = _PLAYOFF_SIM_CACHE.get(_sim_key)
+        if _sim_cached and time.time() - _sim_cached["ts"] < _PLAYOFF_SIM_CACHE_TTL:
+            odds_list = _sim_cached["data"]
+        else:
+            odds_list = simulate_playoff_odds(ctx, platform=platform) or []
+            _PLAYOFF_SIM_CACHE[_sim_key] = {"data": odds_list, "ts": time.time()}
     except Exception:
         odds_list = []
 
@@ -4860,7 +4881,7 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
           <div class="os-section-head">
             <div class="os-section-head-content">
               <h2 class="os-section-title">Waiver Wire Targets</h2>
-              <div class="os-section-subtitle">Smart pickup recommendations — value + trend + breakout potential</div>
+              <div class="os-section-subtitle">Smart pickups based on value + trend + breakout potential</div>
             </div>
             <button type="button" class="card-collapse-toggle" data-target="waiver-assets-body">▼</button>
           </div>
@@ -7057,6 +7078,24 @@ def build_teams_body(ctx: dict) -> str:
         for pos, plist in pos_map.items():
             plist.sort(key=lambda x: float(x.get("value", 0.0)), reverse=True)
 
+    # value-weighted average age per team per position (top 8 players)
+    team_pos_age: Dict[int, Dict[str, Optional[float]]] = defaultdict(dict)
+    for _rid, _pos_map in roster_pos_players.items():
+        for _pos in POS_ORDER:
+            _plist = _pos_map.get(_pos, [])
+            _age_vals = []
+            for _p in _plist[:8]:
+                _nm = str(_p.get("search_name") or "").strip().lower()
+                _a = name_to_age.get(_nm)
+                _v = float(_p.get("value") or 0)
+                if _a is not None and _v > 0:
+                    _age_vals.append((_a, _v))
+            if _age_vals:
+                _tv = sum(v for _, v in _age_vals)
+                team_pos_age[_rid][_pos] = round(sum(a * v for a, v in _age_vals) / _tv, 1)
+            else:
+                team_pos_age[_rid][_pos] = None
+
     # ----------------- Build per-team position value buckets (for strength table) -----------------
     team_meta: Dict[int, Dict] = {}  # name, avatar
     team_pos_values: Dict[int, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
@@ -7334,7 +7373,7 @@ def build_teams_body(ctx: dict) -> str:
     # ----------------- Build HTML cards -----------------
     cards_html = []
 
-    for rid, meta in team_meta.items():
+    for _card_idx, (rid, meta) in enumerate(team_meta.items()):
         name = meta["name"]
         avatar = meta.get("avatar") or ""
         img_html = (
@@ -7369,6 +7408,8 @@ def build_teams_body(ctx: dict) -> str:
                 highlight_class = " pos-weakest"
 
             rank = pos_rank[pos].get(rid, 0)
+            _pos_age = team_pos_age.get(int(rid), {}).get(pos)
+            _age_txt = f"{_pos_age:.1f}" if _pos_age is not None else "–"
 
             # main row (clickable)
             main_row = (
@@ -7378,6 +7419,7 @@ def build_teams_body(ctx: dict) -> str:
                 "    <span class='pos-row-toggle'>▾</span> {pos}"
                 "  </td>"
                 "  <td class='pos-count'>{count}</td>"
+                "  <td class='pos-age'>{age}</td>"
                 "  <td class='pos-total'>{total:.1f}</td>"
                 "  <td class='pos-avg'>{strength_score:.1f}</td>"
                 "  <td class='pos-z'>{z:.2f}</td>"
@@ -7396,6 +7438,7 @@ def build_teams_body(ctx: dict) -> str:
                     z=z,
                     pct=pct,
                     strength_score=strength_score,
+                    age=_age_txt,
                 )
             )
 
@@ -7403,7 +7446,7 @@ def build_teams_body(ctx: dict) -> str:
             detail_html = render_pos_players(rid, pos)
             detail_row = (
                 f"<tr class='pos-detail-row' data-pos='{pos}' style='display:none;'>"
-                "  <td colspan='7'>"
+                "  <td colspan='8'>"
                 "    <div class='pos-detail-inner'>"
                 f"      {detail_html}"
                 "    </div>"
@@ -7428,6 +7471,7 @@ def build_teams_body(ctx: dict) -> str:
             "    <i class='fa-solid fa-clipboard-list' style='font-size:11px;opacity:0.7;'></i> PICKS"
             "  </td>"
             f"  <td class='pos-count'>{pick_count}</td>"
+            "  <td class='pos-age'>—</td>"
             f"  <td class='pos-total'>{pick_val:.1f}</td>"
             "  <td class='pos-avg'>—</td>"
             f"  <td class='pos-z'>{pick_z:+.2f}</td>"
@@ -7519,8 +7563,9 @@ def build_teams_body(ctx: dict) -> str:
         }.get(_win_window, "wt-holding")
         _pos_idx = team_pos_index[rid]
 
+        _is_viewer = str(rid) == str(viewer_roster_id or "")
         card_html = (
-            f"<div class='card team-strength-card {_window_cls}' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}'>"
+            f"<div class='card team-strength-card {_window_cls}' data-sort-grade='{_grade_num}' data-sort-posindex='{_pos_idx:.4f}' data-sort-archetype='{_archetype_num}' data-roster-id='{rid}' data-original-index='{_card_idx}'" + (" data-viewer='1'" if _is_viewer else "") + ">"
             "  <div class='card-header-row'>"
             f"    <div style='display:flex;align-items:center;gap:8px;min-width:0;flex:1;'>{img_html}<h2 class='team-clickable' style='cursor:pointer;' data-roster-id='{rid}' data-team-name='{name}'>{name}</h2>"
             f"<div class='mini-label' style='flex-shrink:0;'><span class='grade-window-label'>{_win_window}</span>"
@@ -7529,7 +7574,7 @@ def build_teams_body(ctx: dict) -> str:
             f"      {_grade_badge}"
             + (f"      <a href='/{platform}/{current_season}/{league_id}/share-card/{rid}' target='_blank' "
                f"class='share-report-btn' title='Share team report card'>"
-               f"<i class='fa-solid fa-share-nodes'></i></a>"
+               f"<img src='/static/images/share-solid.png' class='share-report-icon' alt='Share'></a>"
                if str(rid) == str(viewer_roster_id) else "") +
             "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
             "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
@@ -7546,6 +7591,7 @@ def build_teams_body(ctx: dict) -> str:
             "        <tr>"
             "          <th>Pos</th>"
             "          <th>#</th>"
+            "          <th>Age</th>"
             "          <th>Value</th>"
             "          <th>Score</th>"
             "          <th>Z</th>"
@@ -8228,10 +8274,19 @@ def build_teams_body(ctx: dict) -> str:
         loadBtm();  // load first tab immediately
       }}
 
+      // Auto-open a specific tab when navigated with a hash (e.g. #power-rankings from nav)
+      function _activateTabFromHash() {{
+        var hash = window.location.hash.replace('#', '');
+        if (!hash) return;
+        var btn = document.querySelector('#teamsAnalyticsTabs > .tab-btn[data-tab="' + hash + '"]');
+        if (btn) btn.click();
+      }}
+
       if (document.readyState === 'loading') {{
-        document.addEventListener('DOMContentLoaded', wireAnalyticsTabs);
+        document.addEventListener('DOMContentLoaded', function() {{ wireAnalyticsTabs(); _activateTabFromHash(); }});
       }} else {{
         wireAnalyticsTabs();
+        _activateTabFromHash();
       }}
     }})();
     </script>
@@ -8276,9 +8331,10 @@ def build_teams_body(ctx: dict) -> str:
         <div class="teams-topbar">
           <div class="teams-sort-bar">
             <span style="font-size:12px;color:var(--text-muted);margin-right:8px;">Sort by:</span>
-            <button class="teams-sort-btn active" data-sort="posindex">Positional Index</button>
+            <button class="teams-sort-btn" data-sort="posindex">Positional Index</button>
             <button class="teams-sort-btn" data-sort="grade">Team Grade</button>
             <button class="teams-sort-btn" data-sort="archetype">Archetype</button>
+            <span id="teamsSortLabel" style="font-size:11px;color:var(--text-muted);margin-left:10px;opacity:0;transition:opacity .2s;"></span>
           </div>
           {_window_legend_html}
         </div>
@@ -8312,22 +8368,46 @@ def build_teams_body(ctx: dict) -> str:
       }});
 
       // Teams sort bar
-      var _sortKey = 'posindex';
+      var _sortKey = '';
+      function floatViewer() {{
+        var rid = (window._viewerRid || '').toString().trim();
+        if (!rid) return;
+        var grid = document.getElementById('teamsGrid');
+        if (!grid) return;
+        var viewer = grid.querySelector('.team-strength-card[data-roster-id="' + rid + '"]');
+        if (viewer && grid.firstChild !== viewer) grid.insertBefore(viewer, grid.firstChild);
+      }}
+      function _setSortLabel(text) {{
+        var lbl = document.getElementById('teamsSortLabel');
+        if (!lbl) return;
+        lbl.textContent = text ? ('Sorted by ' + text) : '';
+        lbl.style.opacity = text ? '1' : '0';
+      }}
+      function restoreDefault() {{
+        var grid = document.getElementById('teamsGrid');
+        if (!grid) return;
+        var cards = Array.from(grid.querySelectorAll('.team-strength-card'));
+        cards.sort(function(a, b) {{ return Number(a.dataset.originalIndex) - Number(b.dataset.originalIndex); }});
+        cards.forEach(function(c) {{ grid.appendChild(c); }});
+        floatViewer();
+        document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{ btn.classList.remove('active'); }});
+        _sortKey = '';
+        _setSortLabel('');
+      }}
+      var _sortKeyLabels = {{ posindex: 'Positional Index', grade: 'Team Grade', archetype: 'Archetype' }};
       function sortTeams(key) {{
+        // clicking the active sort deselects it and restores default order
+        if (_sortKey === key) {{ restoreDefault(); return; }}
         _sortKey = key;
         var grid = document.getElementById('teamsGrid');
         if (!grid) return;
         var cards = Array.from(grid.querySelectorAll('.team-strength-card'));
         cards.sort(function(a, b) {{
           if (key === 'grade') {{
-            var gradeA = Number(a.dataset.sortGrade) || 0;
-            var gradeB = Number(b.dataset.sortGrade) || 0;
-            // Higher grade numbers should come first (A+ = 10, A = 9, etc.)
-            return gradeB - gradeA;
+            return (Number(b.dataset.sortGrade) || 0) - (Number(a.dataset.sortGrade) || 0);
           }} else if (key === 'archetype') {{
             return Number(a.dataset.sortArchetype) - Number(b.dataset.sortArchetype);
           }} else {{
-            // posindex: higher is better
             return Number(b.dataset.sortPosindex) - Number(a.dataset.sortPosindex);
           }}
         }});
@@ -8335,12 +8415,15 @@ def build_teams_body(ctx: dict) -> str:
         document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
           btn.classList.toggle('active', btn.dataset.sort === key);
         }});
+        _setSortLabel(_sortKeyLabels[key] || key);
       }}
       document.querySelectorAll('.teams-sort-btn').forEach(function(btn) {{
         btn.addEventListener('click', function() {{ sortTeams(btn.dataset.sort); }});
       }});
-      // Default sort on load
-      sortTeams('posindex');
+      // Default: float the viewer's card to the top using the session-injected _viewerRid
+      (function() {{
+        floatViewer();
+      }})();
 
       // Lazy-render Plotly charts as they scroll into view
       (function() {{
@@ -16895,6 +16978,12 @@ def api_league_rosters():
     if not league_id:
         return jsonify({"teams": [], "viewer_roster_id": ""})
 
+    # Return cached roster payload if still fresh (pick-slot resolution is expensive).
+    _roster_key = (platform, league_id, season)
+    _cached = _ROSTER_API_CACHE.get(_roster_key)
+    if _cached and time.time() - _cached["ts"] < _ROSTER_API_CACHE_TTL:
+        return jsonify(_cached["data"])
+
     try:
         ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
         users = ctx.get("users", []) or []
@@ -16913,13 +17002,10 @@ def api_league_rosters():
                 team_name = f"Team {roster_id}"
                 username = ""
             player_ids = [str(pid) for pid in (roster.get("players") or [])]
-            # Resolve each owned pick to its exact draft slot the same way the team
-            # modals do (resolve_exact_pick_slot, via the original owner's prior-season
-            # standings) → exact "{season}_{round}_{slot:02d}" asset ids. Picks too far
-            # out to resolve a slot fall back to round-level "{season}_{round}" keys.
-            # Slotted picks → exact unique asset ids (pick_ids). Picks whose slot can't
-            # be resolved (too far out) → round-level keys with a COUNT, so a team that
-            # owns e.g. two 2027 1sts can add both in the calculator.
+            # Resolve each owned pick to its exact draft slot using whichever
+            # slot maps are already in HISTORICAL_PICK_SLOT_CACHE (built during
+            # normal dashboard loads). If a map isn't cached yet, fall back to
+            # round-level counts — never trigger a fresh historical API fetch here.
             pick_ids: list[str] = []
             pick_round_counts: dict[str, int] = {}
             for p in (picks_by_roster.get(roster_id) or []):
@@ -16928,15 +17014,18 @@ def api_league_rosters():
                 if not p_season or not p_round:
                     continue
                 slot = None
-                if p.get("original_owner") is not None:
-                    try:
-                        slot = resolve_exact_pick_slot(platform, league_id, season, {
-                            "season": p_season,
-                            "round": p_round,
-                            "previous_owner_id": p.get("original_owner"),
-                        })
-                    except Exception:
-                        slot = None
+                orig = p.get("original_owner")
+                if orig is not None:
+                    # Use cached slot map if available — no blocking fetch.
+                    source_season = p_season - 1
+                    cached_map = HISTORICAL_PICK_SLOT_CACHE.get(
+                        (str(platform).lower(), str(league_id), int(source_season))
+                    )
+                    if cached_map:
+                        try:
+                            slot = cached_map.get(int(orig))
+                        except (TypeError, ValueError):
+                            slot = None
                 if slot:
                     pick_ids.append(f"{p_season}_{p_round}_{int(slot):02d}")
                 else:
@@ -16953,10 +17042,12 @@ def api_league_rosters():
 
         teams.sort(key=lambda x: x["team_name"])
         viewer = get_viewer_session_for_league(users, rosters) or {}
-        return jsonify({
+        payload = {
             "teams": teams,
             "viewer_roster_id": str(viewer.get("viewer_roster_id") or ""),
-        })
+        }
+        _ROSTER_API_CACHE[_roster_key] = {"data": payload, "ts": time.time()}
+        return jsonify(payload)
     except Exception as e:
         logger.info(f"[api/league-rosters] error: {e}")
         return jsonify({"teams": [], "viewer_roster_id": ""})
@@ -16993,11 +17084,13 @@ def api_advanced_metrics_leaderboard():
         players = []
 
     spec = LEADERBOARD_METRICS[metric]
+    vol_col = (spec.get("min_vol") or {}).get("col") or "games"
     return jsonify({
         "metric": metric,
         "label": spec["label"],
         "positions": spec["positions"],
         "lower_better": bool(spec.get("lower_better")),
+        "vol_col": vol_col,
         "players": players,
     })
 
@@ -19523,7 +19616,13 @@ def api_playoff_odds():
             return jsonify({"error": "league not found"}), 404
 
         from data_building.simulate_playoff_odds import simulate_playoff_odds
-        odds = simulate_playoff_odds(ctx, platform=platform)
+        _sim_key2 = (platform, str(league_id), season)
+        _sim_cached2 = _PLAYOFF_SIM_CACHE.get(_sim_key2)
+        if _sim_cached2 and time.time() - _sim_cached2["ts"] < _PLAYOFF_SIM_CACHE_TTL:
+            odds = _sim_cached2["data"]
+        else:
+            odds = simulate_playoff_odds(ctx, platform=platform)
+            _PLAYOFF_SIM_CACHE[_sim_key2] = {"data": odds, "ts": time.time()}
 
         settings           = ctx.get("league_settings") or {}
         playoff_week_start = int(settings.get("playoff_week_start") or 15)
@@ -24151,14 +24250,20 @@ def api_league_bulletins():
 @app.route("/<platform>/<int:season>/<league_id>/share-card")
 @app.route("/<platform>/<int:season>/<league_id>/share-card/<roster_id>")
 def page_share_card(platform: str, season: int, league_id: str, roster_id: str = ""):
-    """Minimal shareable team report card page."""
+    """Shareable team report card with grade, positional rankings, and roster analytics."""
     if not roster_id:
         roster_id = session.get("viewer_roster_id") or ""
+    # Serve from cache if fresh
+    _sc_key = (platform, league_id, season, roster_id)
+    _sc_cached = _SHARE_CARD_CACHE.get(_sc_key)
+    if _sc_cached and time.time() - _sc_cached["ts"] < _SHARE_CARD_CACHE_TTL:
+        return _sc_cached["html"], 200, {"Content-Type": "text/html; charset=utf-8"}
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         rosters = ctx.get("rosters") or []
         standings = ctx.get("standings_map") or {}
         users = ctx.get("users") or []
+        picks_by_roster = ctx.get("picks_by_roster") or {}
         players_index = {}
         try:
             from utils.utils import load_players_index
@@ -24173,83 +24278,303 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                     for s in (league_info.get("roster_positions") or []))
         vfield = "sf_value" if is_sf else "value"
         league_name = league_info.get("name", "Dynasty League")
+        n_teams = len(rosters)
 
+        from dashboard_services.api import avatar_from_users as _av_from_users
         uid_to_name: dict = {}
-        uid_to_avatar: dict = {}
         for u in users:
             uid = str(u.get("user_id", ""))
             uid_to_name[uid] = str(u.get("display_name") or u.get("username") or "Unknown")
-            uid_to_avatar[uid] = str(u.get("avatar") or "")
 
-        team_name, owner_name, record, pf, player_rows, avatar_url = "", "", "0-0", 0.0, [], ""
+        CORE_POS = {"QB", "RB", "WR", "TE"}
+        POS_ORDER = ["QB", "RB", "WR", "TE"]
+
+        # ── Build per-team positional value totals for ranking ──────────────
+        team_pos_totals: dict = {}  # rid -> {pos: total_value}
         for r in rosters:
-            if str(r.get("roster_id")) == str(roster_id):
-                owner_id = str(r.get("owner_id") or "")
-                owner_name = uid_to_name.get(owner_id, "Unknown")
-                avatar_url = uid_to_avatar.get(owner_id, "")
-                if avatar_url:
-                    avatar_url = f"https://sleepercdn.com/avatars/thumbs/{avatar_url}"
-                std = standings.get(roster_id) or standings.get(int(roster_id) if roster_id.isdigit() else -1) or {}
-                team_name = str(std.get("team_name") or owner_name)
-                record = f"{std.get('wins', 0)}–{std.get('losses', 0)}"
-                pf = round(float(std.get("pf") or 0), 1)
-                for pid in (r.get("players") or []):
-                    meta = players_index.get(str(pid)) or {}
-                    vrow = values_by_id.get(str(pid)) or {}
-                    val = float(vrow.get(vfield) or vrow.get("value") or 0)
-                    if meta.get("pos") and val > 0:
-                        player_rows.append({
-                            "name": meta.get("full_name") or meta.get("name") or str(pid),
-                            "pos": meta.get("pos", ""),
-                            "team": meta.get("team", ""),
-                            "value": round(val),
-                        })
-                player_rows.sort(key=lambda x: -x["value"])
-                break
+            rid = str(r.get("roster_id") or "")
+            if not rid:
+                continue
+            pos_vals: dict = {p: 0.0 for p in POS_ORDER}
+            for pid in (r.get("players") or []):
+                vrow = values_by_id.get(str(pid)) or {}
+                meta = players_index.get(str(pid)) or {}
+                pos = str(meta.get("pos") or vrow.get("position") or "").upper()
+                if pos not in CORE_POS:
+                    continue
+                val = float(vrow.get(vfield) or vrow.get("value") or 0)
+                pos_vals[pos] = pos_vals.get(pos, 0.0) + val
+            team_pos_totals[rid] = pos_vals
+
+        def _pos_rank(target_rid: str, pos: str) -> int:
+            """Rank 1 = best, n = worst by positional dynasty value."""
+            target_val = team_pos_totals.get(target_rid, {}).get(pos, 0.0)
+            return sum(
+                1 for v in team_pos_totals.values() if v.get(pos, 0.0) > target_val
+            ) + 1
+
+        # ── Build target roster's player list ───────────────────────────────
+        team_name, owner_name, record, pf, pa, player_rows, avatar_url = "", "", "0-0", 0.0, 0.0, [], ""
+        for r in rosters:
+            if str(r.get("roster_id")) != str(roster_id):
+                continue
+            owner_id = str(r.get("owner_id") or "")
+            owner_name = uid_to_name.get(owner_id, "Unknown")
+            avatar_url = _av_from_users(platform, users, owner_id) or ""
+            std = standings.get(roster_id) or standings.get(int(roster_id) if roster_id.isdigit() else -1) or {}
+            team_name = str(std.get("team_name") or owner_name)
+            record = f"{std.get('wins', 0)}–{std.get('losses', 0)}"
+            pf = round(float(std.get("pf") or 0), 1)
+            pa = round(float(std.get("pa") or 0), 1)
+            from datetime import date as _date
+
+            def _age_from_bday(bday: str) -> "float | None":
+                if not bday:
+                    return None
+                try:
+                    parts = bday.split("/")
+                    if len(parts) == 3:
+                        m, d, y = int(parts[0]), int(parts[1]), int(parts[2])
+                        today = _date.today()
+                        age = today.year - y - ((today.month, today.day) < (m, d))
+                        return float(age) if 15 <= age <= 50 else None
+                except (ValueError, TypeError):
+                    pass
+                return None
+
+            for pid in (r.get("players") or []):
+                meta = players_index.get(str(pid)) or {}
+                vrow = values_by_id.get(str(pid)) or {}
+                val = float(vrow.get(vfield) or vrow.get("value") or 0)
+                pos = str(meta.get("pos") or "").upper()
+                if pos and val > 0:
+                    age = _age_from_bday(meta.get("bDay") or "")
+                    player_rows.append({
+                        "name": meta.get("full_name") or meta.get("name") or str(pid),
+                        "pos": pos,
+                        "team": meta.get("team", ""),
+                        "value": round(val),
+                        "age": age,
+                    })
+            player_rows.sort(key=lambda x: -x["value"])
+            break
 
         top5 = player_rows[:5]
-        total_value = sum(p["value"] for p in player_rows)
+        player_value = sum(p["value"] for p in player_rows)
+
+        # ── Add pick value to dynasty total ──────────────────────────────────
+        _picks = picks_by_roster.get(str(roster_id), [])
+        try:
+            _pick_tbl = load_pick_value_table() or {}
+            _pick_val = _team_pick_value(_picks, _pick_tbl, platform=platform,
+                                         league_id=league_id, season=season)
+        except Exception:
+            _pick_val = 0.0
+        total_value = player_value + _pick_val
+
+        # ── Dynasty rank across league (players + picks) ─────────────────────
+        _pick_tbl_rank = {}
+        try:
+            _pick_tbl_rank = load_pick_value_table() or {}
+        except Exception:
+            pass
+        _all_totals = {}
+        for _r2 in rosters:
+            _rid2 = str(_r2.get("roster_id") or "")
+            if not _rid2:
+                continue
+            _pv2 = sum(
+                float((values_by_id.get(str(_pid)) or {}).get(vfield) or 0)
+                for _pid in (_r2.get("players") or [])
+            )
+            _pkv2 = 0.0
+            try:
+                _pkv2 = _team_pick_value(
+                    picks_by_roster.get(_rid2, []), _pick_tbl_rank,
+                    platform=platform, league_id=league_id, season=season,
+                )
+            except Exception:
+                pass
+            _all_totals[_rid2] = _pv2 + _pkv2
+        dynasty_rank = sum(1 for v in _all_totals.values() if v > total_value) + 1
+
+        # ── Top pick assets ──────────────────────────────────────────────────
+        _pick_labels = []
+        for _pk in sorted(_picks, key=lambda x: (int(x.get("season") or 9999), int(x.get("round") or 99)))[:3]:
+            _yr = str(_pk.get("season") or "")[-2:]  # '26' from '2026'
+            _rd = _pk.get("round") or "?"
+            _own = _pk.get("original_owner_id") or _pk.get("owner_id") or ""
+            # if it's not your own pick, note the original owner
+            _src = ""
+            if _own and str(_own) != str(roster_id):
+                _src_name = uid_to_name.get(str(_own), "")
+                if _src_name:
+                    _src = f" (via {_src_name[:10]})"
+            _pick_labels.append(f"'{_yr} R{_rd}{_src}")
+
+        # ── Average roster age (core positions, top 8 by value) ─────────────
+        core_players = [p for p in player_rows if p["pos"] in CORE_POS][:8]
+        ages = [p["age"] for p in core_players if p["age"] is not None]
+        if ages:
+            weights = [2.0 if i < 2 else 1.0 for i in range(len(ages))]
+            avg_age = round(sum(a * w for a, w in zip(ages, weights)) / sum(weights), 1)
+        else:
+            avg_age = None
+
+        # ── Positional ranks ─────────────────────────────────────────────────
+        pos_ranks = {pos: _pos_rank(str(roster_id), pos) for pos in POS_ORDER}
+
+        # ── Team grade via calculate_roster_grade (matches teams page) ───────
+        grade_label, win_window = "–", ""
+        try:
+            from dashboard_services.ai.context_builders import calculate_roster_grade as _calc_grade
+            flat_players = [
+                {"position": p["pos"], "value": p["value"], "age": p["age"]}
+                for p in player_rows if p["pos"] in CORE_POS
+            ]
+            future_picks = _picks
+            redraft_key = "redraft_value_sf" if is_sf else "redraft_value_1qb"
+
+            # Build top-8 dynasty / redraft pairs per team (matching teams page logic)
+            _team_dyn: dict = {}
+            _team_rdraft: dict = {}
+            _team_dratio: dict = {}
+            for _r2 in rosters:
+                _rid2_int = _r2.get("roster_id")
+                if _rid2_int is None:
+                    continue
+                _p2: list = []
+                for _pid2 in (_r2.get("players") or []):
+                    _vr = values_by_id.get(str(_pid2)) or {}
+                    _pos2 = str(_vr.get("position") or "").upper()
+                    if _pos2 not in CORE_POS:
+                        continue
+                    _d2 = float(_vr.get(vfield) or 0)
+                    _rv2 = float(_vr.get(redraft_key) or 0)
+                    _p2.append((_d2, _rv2))
+                _p2.sort(reverse=True)
+                _team_dyn[_rid2_int] = sum(d for d, _ in _p2[:8])
+                _team_rdraft[_rid2_int] = sum(rv for _, rv in _p2[:8])
+                _ratios2 = [d / max(rv, 1) for d, rv in _p2[:10] if d > 50 or rv > 50]
+                _team_dratio[_rid2_int] = round(sum(_ratios2) / len(_ratios2), 3) if _ratios2 else 1.0
+
+            def _sc_pct(totals: dict, rid_int: int) -> float:
+                _srt = sorted(totals.values())
+                _nn = max(len(_srt) - 1, 1)
+                t = totals.get(rid_int, 0.0)
+                return sum(1 for v in _srt if v < t) / _nn
+
+            _rid_int = int(roster_id) if str(roster_id).isdigit() else -1
+            dynasty_pct = _sc_pct(_team_dyn, _rid_int)
+            redraft_pct = _sc_pct(_team_rdraft, _rid_int)
+            dr_ratio = _team_dratio.get(_rid_int, 1.0)
+
+            grade_data = _calc_grade(
+                flat_players, future_picks,
+                position_ranks=pos_ranks,
+                num_teams=n_teams,
+                dynasty_pct_val=dynasty_pct,
+                redraft_pct_val=redraft_pct,
+                dr_ratio=dr_ratio,
+            )
+            grade_label = grade_data.get("grade", "–")
+            win_window = grade_data.get("win_window", "")
+        except Exception:
+            pass
+
+        # ── Grade colour ─────────────────────────────────────────────────────
+        _grade_color = (
+            "#4ade80" if grade_label.startswith("A") else
+            "#60a5fa" if grade_label.startswith("B") else
+            "#facc15" if grade_label.startswith("C") else
+            "#f87171"
+        )
+
+        # ── Window badge colour ──────────────────────────────────────────────
+        _window_color_map = {
+            "Contender": "#4ade80", "Win-Now": "#4ade80",
+            "Contender Window": "#86efac", "Aging Contender": "#fbbf24",
+            "2-3 Year Window": "#60a5fa", "Rising": "#60a5fa",
+            "Holding Pattern": "#94a3b8", "Retooling": "#f97316",
+            "Rebuilding": "#f87171", "Full Rebuild": "#f87171",
+        }
+        _wc = _window_color_map.get(win_window, "#94a3b8")
 
         pos_colors = {"QB": "#6366f1", "RB": "#10b981", "WR": "#3b82f6", "TE": "#f59e0b"}
 
-        rows_html = "".join(
-            f"""<div class="sc-player-row">
-                  <span class="sc-pos-pill" style="background:{pos_colors.get(p['pos'], '#64748b')}20;color:{pos_colors.get(p['pos'], '#64748b')}">{p['pos']}</span>
-                  <span class="sc-player-name">{p['name']}</span>
-                  <span class="sc-player-team">{p['team']}</span>
-                  <span class="sc-player-val">{p['value']}</span>
-               </div>"""
-            for p in top5
+        def _player_row(p):
+            age_span = f'<span class="sc-player-age">{p["age"]}</span>' if p["age"] else ""
+            col = pos_colors.get(p["pos"], "#64748b")
+            return (
+                f'<div class="sc-player-row">'
+                f'<span class="sc-pos-pill" style="background:{col}26;color:{col}">{p["pos"]}</span>'
+                f'<span class="sc-player-name">{p["name"]}</span>'
+                f'<span class="sc-player-team">{p["team"]}</span>'
+                f'{age_span}'
+                f'<span class="sc-player-val">{p["value"]:,}</span>'
+                f'</div>'
+            )
+        rows_html = "".join(_player_row(p) for p in top5)
+
+        pos_rank_html = "".join(
+            f'<div class="sc-pos-rank-cell">'
+            f'<span class="sc-pos-rank-pos" style="color:{pos_colors[pos]}">{pos}</span>'
+            f'<span class="sc-pos-rank-num">#{pos_ranks[pos]}</span>'
+            f'<span class="sc-pos-rank-of">/{n_teams}</span>'
+            f'</div>'
+            for pos in POS_ORDER
         )
 
         avatar_html = (
             f'<img src="{avatar_url}" class="sc-avatar" alt="avatar" onerror="this.style.display=\'none\'">'
             if avatar_url else
-            '<div class="sc-avatar-placeholder"><i class="fa-solid fa-user"></i></div>'
+            '<div class="sc-avatar sc-avatar-placeholder"></div>'
         )
+
+        age_html = f"{avg_age}" if avg_age is not None else "–"
+        win_window_html = (
+            f'<span class="sc-window-badge" style="background:{_wc}22;color:{_wc};border-color:{_wc}44">{win_window}</span>'
+            if win_window else ""
+        )
+
+        _dv_fmt = f"{round(total_value / 1000, 1)}k" if total_value >= 1000 else str(round(total_value))
+        dynasty_rank_html = f'<span style="font-weight:700;font-size:15px;">#{dynasty_rank}</span><span style="font-size:11px;color:var(--text-muted);margin-left:1px;">/{n_teams}</span>'
+
+        picks_html = ""
+        if _pick_labels:
+            picks_html = (
+                '<div class="sc-section-title">Draft Capital</div>'
+                '<div class="sc-picks-row">'
+                + "".join(f'<span class="sc-pick-chip">{lbl}</span>' for lbl in _pick_labels)
+                + '</div>'
+            )
 
         share_url = request.url
         card_html = f"""<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <title>{team_name} | BR Fantasy Report</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta property="og:title" content="{team_name} — BR Fantasy Report">
-  <meta property="og:description" content="{record} record · {pf} pts scored · {season} season">
-  <meta property="og:image" content="{avatar_url or '/static/BR_Logo.png'}">
+  <meta property="og:description" content="{record} · {grade_label} grade · {win_window} · {season} season">
+  <meta property="og:image" content="{avatar_url or '/static/BR_Logo_dark.png'}">
   <link rel="stylesheet" href="/static/dashboard.css?v={_CSS_V}">
   <link rel="stylesheet" href="/static/font-awesome.css?v={_CSS_V}">
   <style>
-    body {{ background: var(--bg, #0f172a); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }}
-    .share-card-wrap {{ max-width: 440px; width: 100%; }}
+    body {{ background:#0b1120; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px; }}
+    .share-card-wrap {{ max-width:440px; width:100%; }}
+    .sc-player-age {{ font-size:11px; color:var(--text-muted); margin-left:auto; margin-right:6px; }}
+    .sc-picks-row {{ display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px 14px; }}
+    .sc-pick-chip {{ font-size:11px; font-weight:600; padding:3px 8px; border-radius:20px;
+      background:rgba(139,92,246,.15); color:#a78bfa; border:1px solid rgba(139,92,246,.25); }}
   </style>
 </head>
 <body>
   <div class="share-card-wrap">
     <div class="share-card">
       <div class="sc-header">
-        <div class="sc-brand"><img src="/static/BR_Logo.png" alt="BR Fantasy" style="height:22px;opacity:.7"> BR Fantasy</div>
+        <div class="sc-brand"><img src="/static/BR_Logo_dark.png" alt="BR Fantasy" style="height:20px;opacity:.9"> BR Fantasy</div>
         <div class="sc-league">{league_name}</div>
       </div>
       <div class="sc-team-row">
@@ -24258,15 +24583,26 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
           <div class="sc-team-name">{team_name}</div>
           <div class="sc-owner">{owner_name}</div>
         </div>
-        <div class="sc-record">{record}</div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+          <div class="sc-record">{record}</div>
+          {win_window_html}
+        </div>
       </div>
       <div class="sc-stats-row">
-        <div class="sc-stat"><span class="sc-stat-val">{pf}</span><span class="sc-stat-lbl">Points For</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{total_value:,}</span><span class="sc-stat-lbl">Dynasty Value</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{len(player_rows)}</span><span class="sc-stat-lbl">Rostered</span></div>
+        <div class="sc-stat"><span class="sc-stat-val" style="color:{_grade_color}">{grade_label}</span><span class="sc-stat-lbl">Grade</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{dynasty_rank_html}</span><span class="sc-stat-lbl">Dynasty Rank</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{_dv_fmt}</span><span class="sc-stat-lbl">Dynasty Value</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{age_html}</span><span class="sc-stat-lbl">Avg Age</span></div>
       </div>
+      <div class="sc-stats-row" style="border-top:1px solid rgba(255,255,255,.06);padding-top:10px;margin-top:0;">
+        <div class="sc-stat"><span class="sc-stat-val">{pf:,}</span><span class="sc-stat-lbl">Points For</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{pa:,}</span><span class="sc-stat-lbl">Points Against</span></div>
+      </div>
+      <div class="sc-section-title">Positional Rankings</div>
+      <div class="sc-pos-ranks">{pos_rank_html}</div>
       <div class="sc-section-title">Top Players</div>
       <div class="sc-players">{rows_html}</div>
+      {picks_html}
       <div class="sc-footer">
         <a href="/" class="sc-cta">View full dashboard at brfantasy.com</a>
         <button class="sc-copy-btn" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')">Copy link</button>
@@ -24275,6 +24611,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   </div>
 </body>
 </html>"""
+        _SHARE_CARD_CACHE[_sc_key] = {"html": card_html, "ts": time.time()}
         return card_html, 200, {"Content-Type": "text/html; charset=utf-8"}
     except Exception as exc:
         logger.exception("[page-share-card] %s", exc)

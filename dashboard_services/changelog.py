@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-06-09",
+        "tag": "new",
+        "text": "Share Card: Generate a shareable report card for any team in your league. Shows team grade, dynasty rank, dynasty value with picks, positional rankings, top players with ages, draft capital, and average roster age. Copy the link and send it to anyone. Find it under each team on the Teams page.",
+        "link": "/teams"
+    },
+    {
         "date": "2026-06-08",
         "tag": "new",
         "text": "Advanced Metrics Leaderboard: See every player ranked by a single advanced metric: role score, snap share, target share, yards per carry, air yards, and more. Filter by position, search by name, and switch between seasons. Find it under the Players menu.",

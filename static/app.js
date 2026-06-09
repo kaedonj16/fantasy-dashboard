@@ -5135,8 +5135,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     try {
       const res = await fetch(
-        `/api/league-rosters?league_id=${encodeURIComponent(leagueId)}&platform=sleeper`,
-        { cache: "no-store" }
+        `/api/league-rosters?league_id=${encodeURIComponent(leagueId)}&platform=sleeper`
       );
       const data = await res.json();
       const teams = data.teams || [];
@@ -5828,6 +5827,10 @@ window.initTradePage = function initTradePage(root = document) {
     });
   });
 
+  // Fire roster filter fetch immediately — independent of player data and movers.
+  // This is the bottleneck for the "Roster filter" feature becoming usable.
+  initRosterFilter();
+
   Promise.allSettled([
     ensurePlayersLoaded(),
     loadTopMovers(),
@@ -5836,7 +5839,6 @@ window.initTradePage = function initTradePage(root = document) {
   ]).then(() => {
     setupSearch("A");
     setupSearch("B");
-    initRosterFilter();
     bindLeagueTypeControls();
     bindLeagueSizeControls();
     bindScoringFormatControls();
@@ -8764,9 +8766,19 @@ function buildAdvancedMetricsHTML(metricsData) {
       defs.push({ label: 'Contested Catch %', fill: Math.min(v / 65 * 100, 100), display: v.toFixed(1) + '%' });
     }
     if (metrics.target_share != null) {
-      const pct = metrics.target_share * 100;
+      const pct = metrics.target_share;
       // 28 % target share = elite
       defs.push({ label: 'Target Share', fill: Math.min(pct / 28 * 100, 100), display: pct.toFixed(1) + '%' });
+    }
+    if (metrics.air_yards_per_game != null) {
+      const v = metrics.air_yards_per_game;
+      // 80+ air yards/game = elite target hog
+      defs.push({ label: 'Air Yds/Game', fill: Math.min(v / 110 * 100, 100), display: v.toFixed(1) });
+    }
+    if (metrics.air_yards_share != null) {
+      const pct = metrics.air_yards_share;
+      // 25%+ air yards share = featured receiver
+      defs.push({ label: 'Air Yards Share', fill: Math.min(pct / 35 * 100, 100), display: pct.toFixed(1) + '%' });
     }
     if (metrics.target_quality_score != null) {
       const v = metrics.target_quality_score;

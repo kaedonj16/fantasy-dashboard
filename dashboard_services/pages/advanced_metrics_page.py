@@ -20,25 +20,27 @@ def build_advanced_metrics_body(
 ) -> str:
     from data_building.advanced_metrics import get_available_seasons
     available_seasons: list = get_available_seasons() if has_premium else []
-    # Group metrics into <optgroup>s by the set of positions they apply to, ordered
-    # broadest first (all positions → 3-position groups → 2 → single position).
-    _POS_ORDER = ["QB", "RB", "WR", "TE"]
+    # Group metrics into <optgroup>s by category (Passing / Rushing / Receiving).
+    _CAT_ORDER = ["Passing", "Rushing", "Receiving"]
     groups: dict = {}
     for key, spec in metrics_spec.items():
-        posset = tuple(p for p in _POS_ORDER if p in spec.get("positions", []))
-        groups.setdefault(posset, []).append((key, spec["label"]))
+        cat = spec.get("category", "Other")
+        groups.setdefault(cat, []).append((key, spec["label"]))
 
-    def _group_key(posset):
-        return (-len(posset), [_POS_ORDER.index(p) for p in posset])
+    def _group_key(cat):
+        try:
+            return _CAT_ORDER.index(cat)
+        except ValueError:
+            return len(_CAT_ORDER)
 
     metric_options = "\n".join(
         '<optgroup label="{label}">{opts}</optgroup>'.format(
-            label="All Positions" if len(posset) == len(_POS_ORDER) else " / ".join(posset),
+            label=cat,
             opts="".join(
-                f'<option value="{k}">{lbl}</option>' for k, lbl in groups[posset]
+                f'<option value="{k}">{lbl}</option>' for k, lbl in groups[cat]
             ),
         )
-        for posset in sorted(groups, key=_group_key)
+        for cat in sorted(groups, key=_group_key)
     )
 
     def _min_vol_cfg(spec: dict) -> Optional[dict]:
@@ -47,14 +49,9 @@ def build_advanced_metrics_body(
             return None
         return {"label": mv["label"], "opts": mv["opts"]}
 
-    # Glossary: every metric grouped by its position set (same order as the
-    # dropdown), each with its description, rendered into a modal the user can
-    # open from the header.
-    def _posset_label(posset) -> str:
-        return "All Positions" if len(posset) == len(_POS_ORDER) else " / ".join(posset)
-
+    # Glossary: every metric grouped by category (same order as the dropdown).
     _legend_sections = []
-    for posset in sorted(groups, key=_group_key):
+    for cat in sorted(groups, key=_group_key):
         _rows = "".join(
             '<div class="am-legend-row">'
             '<div class="am-legend-name">{label}</div>'
@@ -63,12 +60,12 @@ def build_advanced_metrics_body(
                 label=_esc(metrics_spec[k]["label"]),
                 desc=_esc(metrics_spec[k].get("desc") or "No description available."),
             )
-            for k, _lbl in groups[posset]
+            for k, _lbl in groups[cat]
         )
         _legend_sections.append(
             '<div class="am-legend-group">'
             '<div class="am-legend-grouphead">{head}</div>{rows}</div>'.format(
-                head=_esc(_posset_label(posset)), rows=_rows,
+                head=_esc(cat), rows=_rows,
             )
         )
     legend_html = "".join(_legend_sections)
@@ -82,6 +79,7 @@ def build_advanced_metrics_body(
             key: {
                 "label": spec["label"],
                 "positions": spec["positions"],
+                "category": spec.get("category", "Other"),
                 "lowerBetter": bool(spec.get("lower_better")),
                 "efficiency": bool(spec.get("efficiency")),
                 "desc": spec.get("desc", ""),
@@ -206,8 +204,8 @@ def build_advanced_metrics_body(
             <tr>
               <th class="am-rank">#</th>
               <th class="am-player">Player</th>
-              <th class="am-barcell"></th>
-              <th class="am-val">Value</th>
+              <th class="am-games" title="Games played">G</th>
+              <th class="am-barcell" id="amMetricHeader">—</th>
             </tr>
           </thead>
           <tbody id="amTableBody"></tbody>
@@ -308,19 +306,33 @@ def build_advanced_metrics_body(
       .am-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em;
         color:var(--text-muted); padding:8px 10px; border-bottom:1px solid var(--border); }
       .am-table td { padding:9px 10px; border-bottom:1px solid var(--border); font-size:14px; }
+      /* Column dividers */
+      .am-games, .am-barcell,
+      .am-table th.am-games, .am-table th.am-barcell {
+        border-left:1px solid var(--border);
+      }
       .am-row:hover { background:var(--bg-alt, rgba(0,0,0,.03)); }
       .am-row.am-owned { background:rgba(59,130,246,0.08); }
       .am-row.am-owned:hover { background:rgba(59,130,246,0.14); }
-      .am-row.am-owned .am-name::after {
-        content:"YOURS"; margin-left:7px; font-size:9px; font-weight:800; letter-spacing:.04em;
+      .am-owned-badge {
+        font-size:9px; font-weight:800; letter-spacing:.04em; flex-shrink:0;
         color:var(--accent,#2563eb); border:1px solid var(--accent,#2563eb); border-radius:4px;
-        padding:1px 4px; vertical-align:middle;
+        padding:1px 4px; white-space:nowrap;
       }
       .am-rank { width:36px; color:var(--text-muted); font-size:12px; }
-      .am-barcell { width:42%; }
-      .am-val { text-align:right; font-weight:700; white-space:nowrap; width:70px; }
-      .am-name { font-weight:600; }
-      .am-meta { font-size:11px; color:var(--text-muted); margin-left:4px; }
+      .am-games { width:40px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
+      .am-player { width:220px; max-width:220px; }
+      .am-barcell { width:auto; min-width:0; }
+      /* Player cell: name on left, pos+team on right */
+      .am-player td, td.am-player { display:table-cell; }
+      .am-player-inner { display:flex; align-items:center; justify-content:space-between; gap:8px; overflow:hidden; }
+      .am-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+      .am-player-right { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+      .am-meta { font-size:11px; color:var(--text-muted); }
+      /* Merged metric cell: bar on left, value on right */
+      .am-metric-cell { display:flex; align-items:center; gap:10px; }
+      .am-metric-bar { flex:1; min-width:0; }
+      .am-val { font-weight:700; white-space:nowrap; font-size:13px; flex-shrink:0; min-width:46px; text-align:right; }
       .am-bar-track { position:relative; background:var(--bg-alt, rgba(0,0,0,.06)); border-radius:6px; height:10px; width:100%; }
       .am-bar-fill { height:100%; border-radius:6px; }
       /* Positional-average marker on each bar */
@@ -333,7 +345,9 @@ def build_advanced_metrics_body(
       .am-avg-note { font-size:11px; color:var(--text-muted); margin:0 0 10px; display:flex; align-items:center; gap:6px; }
       .am-avg-note .am-avg-swatch { display:inline-block; width:2px; height:12px; background:var(--text-muted); opacity:.55; }
       @media (max-width:600px){
-        .am-barcell, .am-table th.am-barcell { display:none; }
+        .am-games, .am-table th.am-games { display:none; }
+        .am-metric-cell { gap:6px; }
+        .am-val { min-width:38px; font-size:12px; }
         .am-controls { gap:10px; }
         /* Metric takes full width; Search fills the row below it */
         .am-ctrl:first-child { flex:1 0 100%; }
@@ -391,9 +405,13 @@ _AM_JS = r"""
   if (seasonCtrl && (!cfg.seasons || cfg.seasons.length <= 1)) seasonCtrl.style.display = 'none';
 
   const PAGE_SIZE = 25;
+  const VOL_LABELS = {
+    games: 'G', total_pass_att: 'Att', total_carries: 'Car',
+    total_touches: 'Tch', total_targets: 'Tgt', total_receptions: 'Rec',
+  };
   const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', rows: [], search: '',
                   season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0,
-                  fetching: false };
+                  fetching: false, volCol: 'games' };
   let ownedIds = new Set();
   const paginationEl = document.getElementById('amPagination');
   const volLabel = document.getElementById('amVolLabel');
@@ -516,13 +534,26 @@ _AM_JS = r"""
       const avgMark = (avgPct != null)
         ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl + '</div>'
         : '';
+      const volNum = r.vol != null ? r.vol : (r.games != null ? r.games : '–');
+      const gamesCell = '<td class="am-games">' + volNum + '</td>';
+      const ownedBadge = owned ? '<span class="am-owned-badge">YOURS</span>' : '';
+      const playerCell = '<td class="am-player"><div class="am-player-inner">'
+        + '<span class="am-name">' + (r.name || '') + '</span>'
+        + ownedBadge
+        + '<span class="am-player-right">'
+        + '<span class="am-meta">' + (r.team || '') + '</span>'
+        + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
+        + '</span></div></td>';
+      const metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
+        + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
+        + '<span class="am-val">' + fmtVal(r.value) + '</span>'
+        + '</div></td>';
       return '<tr class="am-row' + (owned ? ' am-owned' : '') + '" style="cursor:pointer;" onclick="window.openPlayerModal&&openPlayerModal(\'' + r.player_id + '\',\'' + safe + '\')">'
         + '<td class="am-rank">' + rank + '</td>'
-        + '<td class="am-player"><span class="am-name">' + (r.name || '') + '</span>'
-        + '<span class="am-meta" style="color:' + col + '">' + r.position + '</span>'
-        + '<span class="am-meta">' + (r.team || '') + '</span></td>'
-        + '<td class="am-barcell"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></td>'
-        + '<td class="am-val">' + fmtVal(r.value) + '</td></tr>';
+        + playerCell
+        + gamesCell
+        + metricCell
+        + '</tr>';
     }).join('');
 
     // Pagination controls.
@@ -540,6 +571,17 @@ _AM_JS = r"""
       }
     }
   }
+  function updateVolHeader() {
+    const th = document.querySelector('#amTable thead th.am-games');
+    if (th) {
+      const lbl = VOL_LABELS[state.volCol] || 'G';
+      th.textContent = lbl;
+      th.title = { games: 'Games played', total_pass_att: 'Pass attempts', total_carries: 'Carries',
+                   total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
+    }
+    const mh = document.getElementById('amMetricHeader');
+    if (mh) mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '—';
+  }
   function fetchData() {
     if (!cfg.hasPremium) { paywall.style.display = ''; loading.style.display = 'none'; return; }
     state.fetching = true;
@@ -551,7 +593,7 @@ _AM_JS = r"""
     if (state.minVol) params.set('min_vol', state.minVol);
     fetch('/api/advanced-metrics/leaderboard?' + params)
       .then(r => { if (r.status === 403) { state.fetching = false; paywall.style.display = ''; loading.style.display = 'none'; return null; } return r.json(); })
-      .then(d => { if (!d) return; state.fetching = false; state.rows = d.players || []; render(); })
+      .then(d => { if (!d) return; state.fetching = false; state.rows = d.players || []; state.volCol = d.vol_col || 'games'; updateVolHeader(); render(); })
       .catch(() => { state.fetching = false; loading.style.display = 'none'; empty.style.display = ''; });
   }
 
@@ -579,7 +621,7 @@ _AM_JS = r"""
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
     state.minVol = defaultVol(state.metric);
-    updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); fetchData();
+    updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader(); fetchData();
   });
   posWrap.addEventListener('click', e => {
     const b = e.target.closest('[data-pos]');
@@ -603,6 +645,6 @@ _AM_JS = r"""
   }
 
   state.minVol = defaultVol(state.metric);
-  updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); fetchData();
+  updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader(); fetchData();
   loadOwnedRoster();
 """
