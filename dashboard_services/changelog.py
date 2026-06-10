@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-06-10",
+        "tag": "feature",
+        "text": "Advanced Metrics: Sort by any column, filter by team, and compare up to 4 metrics side by side. Year-over-year trend arrows show at a glance whether a player improved or declined from last season. PFF metrics now include Yards per Route Run. Clicking a player opens directly to their Advanced Metrics tab in the player modal.",
+        "link": "/metrics"
+    },
+    {
         "date": "2026-06-09",
         "tag": "new",
         "text": "Share Card: Generate a shareable report card for any team in your league. Shows team grade, dynasty rank, dynasty value with picks, positional rankings, top players with ages, draft capital, and average roster age. Copy the link and send it to anyone. Find it under each team on the Teams page.",
