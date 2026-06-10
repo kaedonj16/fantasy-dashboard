@@ -1169,7 +1169,7 @@ def get_available_seasons_for_player(player_id: str) -> List[int]:
 # who threw twice with 0 INTs shows a perfect INT rate), so they're excluded.
 # Players whose snap_share is unknown (NULL) are NOT filtered, to avoid dropping
 # PFF-sourced rows that may lack a snap share.
-_MIN_SNAP_FOR_EFFICIENCY = 0.30
+_MIN_SNAP_FOR_EFFICIENCY = 0.20
 
 # Metrics exposed on the standalone Advanced Metrics leaderboard page, each mapped
 # to the positions where it is meaningful (drives the page's auto position filter).
@@ -1212,7 +1212,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "breakaway_percentage": {"label": "Breakaway %",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rushing yards that came on runs of 15+ yards; explosiveness."},
     "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
     "pff_rushing_grade":    {"label": "PFF Rush Grade",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF's rushing grade (0-100)."},
-    "explosive_runs_10_plus": {"label": "Explosive Runs",   "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Count of runs gaining 10 or more yards in the season (PFF). Raw explosive-play volume."},
+    "explosive_runs_10_plus": {"label": "Explosive Runs",   "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "integer": True, "desc": "Count of runs gaining 10 or more yards in the season (PFF). Raw explosive-play volume."},
     "avoided_tackles":      {"label": "Avoided Tackles",    "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss."},
     # ── Receiving ────────────────────────────────────────────────────────────
     "route_participation":  {"label": "Route Partic %",      "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means the player is a consistent full-time route runner."},
@@ -1233,11 +1233,11 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "inline_rate":          {"label": "Inline Rate",         "category": "Receiving", "positions": ["TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of snaps a tight end lined up inline (attached to the formation)."},
     "pass_block_rate":      {"label": "Block Rate",          "category": "Receiving", "positions": ["TE", "RB"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of pass snaps spent blocking rather than running a route."},
     # ── Volume counts — useful as combo-filter targets ────────────────────────
-    "total_targets":      {"label": "Targets",      "category": "Volume", "positions": ["WR", "RB", "TE"], "desc": "Total targets in the season."},
-    "total_receptions":   {"label": "Receptions",   "category": "Volume", "positions": ["WR", "RB", "TE"], "desc": "Total receptions in the season."},
-    "total_routes":       {"label": "Routes",       "category": "Volume", "positions": ["WR", "TE", "RB"], "desc": "Estimated total routes run (= season receiving yards ÷ yprr). Requires both yprr and receptions data."},
-    "total_carries":      {"label": "Carries",      "category": "Volume", "positions": ["RB", "QB"], "desc": "Total carries in the season."},
-    "total_touches":      {"label": "Touches",      "category": "Volume", "positions": ["RB", "WR", "TE"], "desc": "Total carries plus receptions in the season."},
+    "total_targets":      {"label": "Targets",      "category": "Volume", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total targets in the season."},
+    "total_receptions":   {"label": "Receptions",   "category": "Volume", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total receptions in the season."},
+    "total_routes":       {"label": "Routes",       "category": "Volume", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Estimated total routes run (= season receiving yards ÷ yprr). Requires both yprr and receptions data."},
+    "total_carries":      {"label": "Carries",      "category": "Volume", "positions": ["RB", "QB"], "integer": True, "desc": "Total carries in the season."},
+    "total_touches":      {"label": "Touches",      "category": "Volume", "positions": ["RB", "WR", "TE"], "integer": True, "desc": "Total carries plus receptions in the season."},
 }
 
 
@@ -1335,11 +1335,24 @@ def get_metric_leaderboard(
         vol_join = ""
         params: list = []
         if use_vol_join:
-            vol_join = (
-                f" LEFT JOIN (SELECT player_id, MAX({vol_col}) AS vol "
-                "FROM player_advanced_metrics WHERE season = %s GROUP BY player_id) v "
-                "ON v.player_id = m.player_id"
-            )
+            if vol_col == "games":
+                # When gating by games, fall back to volume totals (carries + targets)
+                # to avoid dropping players whose games column is NULL because the
+                # snapshot was written before their season data was available.
+                vol_join = (
+                    " LEFT JOIN (SELECT player_id,"
+                    " COALESCE(MAX(games),"
+                    "   CASE WHEN COALESCE(MAX(total_carries),0)+COALESCE(MAX(total_targets),0)>0"
+                    "   THEN 1 ELSE NULL END) AS vol"
+                    " FROM player_advanced_metrics WHERE season = %s GROUP BY player_id) v"
+                    " ON v.player_id = m.player_id"
+                )
+            else:
+                vol_join = (
+                    f" LEFT JOIN (SELECT player_id, MAX({vol_col}) AS vol "
+                    "FROM player_advanced_metrics WHERE season = %s GROUP BY player_id) v "
+                    "ON v.player_id = m.player_id"
+                )
             params.append(season_for_vol)
         # Season filter always applied (required for correct DISTINCT ON results).
         gate += " AND m.season = %s"
