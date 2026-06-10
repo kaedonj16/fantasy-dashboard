@@ -1054,15 +1054,21 @@ _AM_JS = r"""
 
     // Extra columns: same logic — scale to the max among the displayed rows so the leader fills the bar.
     const extraMaxMap = {};
+    const extraAvgMap = {};
     state.extraMetrics.forEach(function(key) {
       const ed = state.extraData[key];
       if (!ed) return;
-      let mx = 0;
+      let mx = 0, sum = 0, n = 0;
       posRows.forEach(function(r) {
         const v = ed.byId[String(r.player_id)];
-        if (v != null) mx = Math.max(mx, Math.abs(Number(v) || 0));
+        if (v != null) {
+          mx = Math.max(mx, Math.abs(Number(v) || 0));
+          sum += Number(v) || 0;
+          n++;
+        }
       });
       extraMaxMap[key] = mx || 1;
+      if (n) extraAvgMap[key] = sum / n;
     });
 
 
@@ -1170,8 +1176,14 @@ _AM_JS = r"""
           const val = ed.byId[String(r.player_id)] !== undefined ? ed.byId[String(r.player_id)] : null;
           const pctBar = val != null ? Math.min(100, Math.max(2, Math.round(Math.abs(Number(val)) / extraMaxMap[key] * 100))) : 2;
           const disp = val != null ? fmtVal(val, key) : '–';
+          // Average tick for added metrics, same as the primary column.
+          const avgVE = extraAvgMap[key];
+          const avgMarkE = (avgVE != null)
+            ? '<div class="am-bar-avg" style="left:' + Math.max(0, Math.min(100, Math.round(Math.abs(avgVE) / extraMaxMap[key] * 100))) + '%" '
+              + 'title="Average: ' + fmtVal(avgVE, key) + '"></div>'
+            : '';
           metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
-            + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div></div></div>'
+            + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div>' + avgMarkE + '</div></div>'
             + '<span class="am-val">' + disp + '</span>'
             + '</div></td>';
         });
