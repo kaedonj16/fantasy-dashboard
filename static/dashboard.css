@@ -6957,43 +6957,6 @@ select:focus {
   letter-spacing: -0.3px;
 }
 
-/* Onboarding site tour */
-.fd-tour-backdrop {
-  position: fixed; inset: 0; z-index: 4000; background: transparent;
-}
-.fd-tour-spot {
-  position: fixed; z-index: 4001; border-radius: 10px; pointer-events: none;
-  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.55);
-  transition: top .25s ease, left .25s ease, width .25s ease, height .25s ease;
-}
-.fd-tour-tip {
-  position: fixed; z-index: 4002; width: 320px; max-width: calc(100vw - 24px);
-  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-  padding: 16px; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
-  transition: top .25s ease, left .25s ease;
-}
-.fd-tour-step-count {
-  font-size: 10px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .06em; color: var(--text-muted); margin-bottom: 4px;
-}
-.fd-tour-title { font-size: 15px; font-weight: 800; color: var(--text); margin-bottom: 5px; }
-.fd-tour-text { font-size: 13px; line-height: 1.5; color: var(--text-muted); }
-.fd-tour-actions {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-top: 14px; gap: 10px;
-}
-.fd-tour-skip {
-  border: none; background: none; color: var(--text-muted); font-size: 12px;
-  cursor: pointer; padding: 0; text-decoration: underline;
-}
-.fd-tour-nav-btns { display: flex; gap: 8px; }
-.fd-tour-btn {
-  padding: 7px 16px; border-radius: 8px; font-size: 12px; font-weight: 700;
-  cursor: pointer; border: 1px solid var(--border);
-}
-.fd-tour-back { background: var(--card); color: var(--text); }
-.fd-tour-next { background: var(--text); color: var(--card); border-color: var(--text); }
-
 /* Rivalry tracker (history page) */
 .rivalry-card { margin-top: 20px; }
 .rivalry-controls {
