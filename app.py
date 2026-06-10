@@ -587,7 +587,7 @@ FORM_BODY = """
     <section class="home-feature-list-card">
       <div class="home-features-header">
         <span class="home-features-label">Platform Features</span>
-        <span class="home-features-count">10 tools</span>
+        <span class="home-features-count">12 tools</span>
       </div>
       <div class="home-feature-list">
 
@@ -596,8 +596,9 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#6366f1;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14Z"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span></span>
+            <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span> <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
             <span class="home-feature-row-desc">Archetype-driven suggestions with Monte Carlo win probability. See exactly how each trade shifts your playoff odds</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -607,7 +608,19 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Calculator</span>
-            <span class="home-feature-row-desc">AI-powered deal grades, counter proposals, and real dynasty trade comparisons from thousands of logged transactions</span>
+            <span class="home-feature-row-desc">AI-powered deal grades, counter proposals, and real trade comparisons from thousands of logged transactions</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(139,92,246,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#8b5cf6;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 4-6"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Trade Intelligence <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
+            <span class="home-feature-row-desc">Real market values derived from thousands of actual trades. Trending, buy-low, and sell-high signals updated daily</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -616,8 +629,20 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Dynasty Rankings</span>
-            <span class="home-feature-row-desc">Calibrated dynasty values updated daily, blending consensus data with advanced metrics, archetypes, and trend charts</span>
+            <span class="home-feature-row-title">Player Rankings</span>
+            <span class="home-feature-row-desc">Calibrated dynasty and redraft values updated daily, blending consensus data with advanced metrics, archetypes, and trend charts</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(20,184,166,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#14b8a6;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8h.01M9 8h6M6 11h.01M9 11h9"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Advanced Metrics <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
+            <span class="home-feature-row-desc">Air yards, target share, snap counts, red zone usage, and 20+ efficiency metrics with positional percentile rankings</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -628,6 +653,7 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Rookie Prospects</span>
             <span class="home-feature-row-desc">Full prospect profiles with college metrics, RAS athleticism scores, draft capital analysis, and real-time ADP movement</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -638,6 +664,7 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Playoff Odds</span>
             <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week. Know your exact path to the playoffs and projected championship probability</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -648,6 +675,7 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Weekly Hub</span>
             <span class="home-feature-row-desc">Game-day command center with live scoring, optimal lineup suggestions, injury news, and head-to-head matchup breakdowns</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -656,8 +684,9 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#f97316;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Breakout Tracker</span>
+            <span class="home-feature-row-title">Breakout Engine <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
             <span class="home-feature-row-desc">Spot value shifts before the market moves. Tracks target share, snap counts, and depth chart changes to surface opportunities</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -668,6 +697,7 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Waiver Wire</span>
             <span class="home-feature-row-desc">Personalized pickup rankings tailored to your roster's needs, scoring format, positional scarcity, and remaining schedule</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -678,6 +708,7 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Team Analytics</span>
             <span class="home-feature-row-desc">Roster grades by position group, strength-of-schedule projections, and side-by-side comparisons across your entire league</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -688,6 +719,7 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">League History</span>
             <span class="home-feature-row-desc">AI season recaps, head-to-head rivalry records, historical draft grades, and complete year-by-year standings</span>
+            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 

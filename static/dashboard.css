@@ -7936,6 +7936,46 @@ select:focus {
   top: -1px;
 }
 
+.home-feature-badge-pro {
+  background: linear-gradient(135deg, rgba(245,158,11,.2), rgba(234,88,12,.2));
+  color: #f59e0b;
+}
+
+.home-feature-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.hfp-chip {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+}
+
+.hfp-sleeper {
+  background: rgba(99,102,241,.1);
+  color: #818cf8;
+  border-color: rgba(99,102,241,.2);
+}
+
+.hfp-espn {
+  background: rgba(239,68,68,.1);
+  color: #f87171;
+  border-color: rgba(239,68,68,.2);
+}
+
+.hfp-yahoo {
+  background: rgba(139,92,246,.1);
+  color: #a78bfa;
+  border-color: rgba(139,92,246,.2);
+}
+
 .home-feature-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -7975,7 +8015,6 @@ select:focus {
   font-size: 13px;
   font-weight: 700;
   color: var(--text);
-  white-space: nowrap;
 }
 
 .home-feature-row-desc {
