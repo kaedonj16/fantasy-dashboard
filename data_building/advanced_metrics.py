@@ -119,6 +119,13 @@ def init_advanced_metrics_db():
                 ADD COLUMN IF NOT EXISTS air_yards_per_game NUMERIC;
         """)
 
+        # Red zone breakdown (split from red_zone_usage).
+        conn.execute("""
+            ALTER TABLE player_advanced_metrics
+                ADD COLUMN IF NOT EXISTS rz_targets_pg NUMERIC,
+                ADD COLUMN IF NOT EXISTS rz_carries_pg NUMERIC;
+        """)
+
         # Backfill season from as_of_date for any rows that are missing it.
         # Regular season runs Sep–Dec of year Y and Jan of year Y+1, so:
         #   Jan–Feb  → season = year - 1  (e.g. 2026-01 → 2025 season)
@@ -346,6 +353,8 @@ def calculate_usage_metrics(usage: Dict[str, float], position: str) -> Dict[str,
         "snap_share": snap_share if snap_share > 0 else None,
         "opportunity_share": opportunity_share if opportunity_share > 0 else None,
         "red_zone_usage": red_zone_usage if red_zone_usage > 0 else None,
+        "rz_targets_pg": rz_targets if rz_targets > 0 else None,
+        "rz_carries_pg": rz_carries if rz_carries > 0 else None,
     }
 
 
@@ -810,6 +819,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     yards_per_carry, yards_per_touch, rush_td_rate,
                     yards_per_attempt, completion_pct, td_rate, int_rate,
                     snap_share, opportunity_share, red_zone_usage,
+                    rz_targets_pg, rz_carries_pg,
                     role_score, usage_trend, efficiency_trend, games,
                     total_targets, total_receptions, total_carries, total_touches, total_pass_att,
                     target_share, route_participation
@@ -820,6 +830,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s,
+                    %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
                     %s, %s
@@ -842,6 +853,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     snap_share = EXCLUDED.snap_share,
                     opportunity_share = EXCLUDED.opportunity_share,
                     red_zone_usage = EXCLUDED.red_zone_usage,
+                    rz_targets_pg = EXCLUDED.rz_targets_pg,
+                    rz_carries_pg = EXCLUDED.rz_carries_pg,
                     role_score = EXCLUDED.role_score,
                     usage_trend = EXCLUDED.usage_trend,
                     efficiency_trend = EXCLUDED.efficiency_trend,
@@ -863,6 +876,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics.get("td_rate"), metrics.get("int_rate"),
                 metrics.get("snap_share"), metrics.get("opportunity_share"),
                 metrics.get("red_zone_usage"),
+                metrics.get("rz_targets_pg"), metrics.get("rz_carries_pg"),
                 metrics.get("role_score"), metrics.get("usage_trend"),
                 metrics.get("efficiency_trend"), metrics.get("games"),
                 metrics.get("total_targets"), metrics.get("total_receptions"),
@@ -1178,6 +1192,8 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
     "opportunity_share":    {"label": "Opportunity Share",   "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
     "red_zone_usage":       {"label": "Red Zone Usage",      "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
+    "rz_targets_pg":        {"label": "RZ Targets/G",        "category": "General", "positions": ["QB", "WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Red zone targets per game (inside opponent's 20-yard line)."},
+    "rz_carries_pg":        {"label": "RZ Carries/G",        "category": "General", "positions": ["QB", "RB"], "min_vol": _V_GAMES, "desc": "Red zone rushing attempts per game (inside opponent's 20-yard line)."},
     "grades_offense":       {"label": "PFF Off Grade",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
     "yards_per_touch":      {"label": "Yards / Touch",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_TOUCHES, "desc": "Yards gained per combined carry and reception."},
     # ── Passing ──────────────────────────────────────────────────────────────
