@@ -232,6 +232,10 @@ def build_advanced_metrics_body(
         <div id="amAvgNote" class="am-avg-note" style="display:none;">
           <span class="am-avg-swatch"></span>
           <span id="amAvgNoteText"></span>
+          <span id="amTrendLegend" class="am-trend-legend" style="display:none;">
+            <span class="am-trend-up">&#8593;</span><span class="am-trend-down">&#8595;</span>
+            vs last season
+          </span>
         </div>
 
         <div class="am-table-wrap">
@@ -403,8 +407,10 @@ def build_advanced_metrics_body(
         font-size:8px; font-weight:800; letter-spacing:.06em; color:var(--text-muted);
         opacity:1; white-space:nowrap;
       }
-      .am-avg-note { font-size:11px; color:var(--text-muted); margin:0 0 10px; display:flex; align-items:center; gap:6px; }
+      .am-avg-note { font-size:11px; color:var(--text-muted); margin:0 0 10px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
       .am-avg-note .am-avg-swatch { display:inline-block; width:2px; height:12px; background:var(--text-muted); opacity:.55; }
+      .am-trend-legend { display:inline-flex; align-items:center; gap:3px; padding-left:8px; margin-left:2px; border-left:1px solid var(--border); }
+      .am-trend-legend .am-trend-up, .am-trend-legend .am-trend-down { font-size:11px; }
       @media (max-width:600px){
         .am-games, .am-table th.am-games { display:none; }
         .am-metric-bar { display:none; }
@@ -1026,9 +1032,16 @@ _AM_JS = r"""
     const pct = Math.abs(delta / Number(prev));
     if (pct < 0.03) return '';
     const improved = isLower ? delta < 0 : delta > 0;
+    const word = improved ? 'Up' : 'Down';
+    const tip = word + ' vs ' + (prevSeasonLabel() || 'last season') + ': '
+      + fmtVal(prev, state.metric) + ' → ' + fmtVal(curr, state.metric);
     return improved
-      ? '<span class="am-trend-up">&#8593;</span>'
-      : '<span class="am-trend-down">&#8595;</span>';
+      ? '<span class="am-trend-up" title="' + tip + '">&#8593;</span>'
+      : '<span class="am-trend-down" title="' + tip + '">&#8595;</span>';
+  }
+  function prevSeasonLabel() {
+    const cur = state.season ? parseInt(state.season) : (cfg.seasons && cfg.seasons[0]);
+    return cur ? String(cur - 1) : '';
   }
 
   function render() {
@@ -1061,6 +1074,17 @@ _AM_JS = r"""
 
     // Rank map so roster/search filters preserve original rank numbers.
     const rankMap = new Map(posRows.map((r, i) => [String(r.player_id), i + 1]));
+
+    // Quality rank: standing on the PRIMARY metric in its "good" direction
+    // (ascending for lower-is-better, descending otherwise), independent of the
+    // current display sort. Drives the percentile badge so flipping the sort to
+    // show the worst values first doesn't mislabel them as "Top 5%".
+    const _primLower = !!(cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter);
+    const qualityRankMap = new Map(
+      posRows.slice()
+        .sort((a, b) => { const d = Number(a.value) - Number(b.value); return _primLower ? d : -d; })
+        .map((r, i) => [String(r.player_id), i + 1])
+    );
 
     // Scale to the true max, but if the leader is a big outlier (>30% above the
     // 95th-percentile value) cap the scale so one player doesn't squish the rest.
@@ -1133,6 +1157,14 @@ _AM_JS = r"""
         });
         avgNoteTxt.textContent = lbl + ' averages: ' + parts.join(' · ');
         if (parts.length === 1) avgNoteTxt.textContent = lbl + ' average: ' + fmtVal(avg, state.metric);
+        // Legend only when there are trend arrows to explain (single-metric view
+        // with prior-season data loaded).
+        const trendLegend = document.getElementById('amTrendLegend');
+        if (trendLegend) {
+          const hasTrend = state.extraMetrics.length === 0
+            && state.prevData && Object.keys(state.prevData).length > 0;
+          trendLegend.style.display = hasTrend ? '' : 'none';
+        }
       }
     } else if (avgNote) {
       avgNote.style.display = 'none';
@@ -1168,7 +1200,7 @@ _AM_JS = r"""
         + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
         + '</span></div></td>';
 
-      const badge = percentileBadge(rank, totalRanked);
+      const badge = percentileBadge(qualityRankMap.get(String(r.player_id)) || rank, totalRanked);
       const prevVal = state.prevData[String(r.player_id)];
       const trend = trendArrow(r.value, prevVal);
       let metricCell;

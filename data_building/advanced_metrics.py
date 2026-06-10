@@ -1145,7 +1145,7 @@ _V_GAMES     = {"col": "games",            "label": "Min Games",      "opts": [4
 LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # ── General (applies across positions) ───────────────────────────────────
     "role_score":           {"label": "Role Score",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position."},
-    "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
+    "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
     "opportunity_share":    {"label": "Opportunity Share",   "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
     "red_zone_usage":       {"label": "Red Zone Usage",      "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
     "grades_offense":       {"label": "PFF Off Grade",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
@@ -1167,7 +1167,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
     "pff_rushing_grade":    {"label": "PFF Rush Grade",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF's rushing grade (0-100)."},
     # ── Receiving ────────────────────────────────────────────────────────────
-    "route_participation":  {"label": "Route Partic %",      "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means the player is a consistent full-time route runner."},
+    "route_participation":  {"label": "Route Partic %",      "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means the player is a consistent full-time route runner."},
     "target_share":         {"label": "Target Share",        "category": "Receiving", "positions": ["WR", "TE", "RB"], "pct": True, "min_vol": _V_GAMES, "desc": "Percent of the team's total targets directed at this player."},
     "air_yards_per_game":   {"label": "Air Yards / Game",    "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_GAMES, "desc": "Receiving air yards (distance thrown in the air to the player) per game; a measure of downfield target volume."},
     "air_yards_share":      {"label": "Air Yards Share",     "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's total passing air yards directed at this player; combines target share with depth of target."},
@@ -1282,6 +1282,20 @@ def get_metric_leaderboard(
         use_vol_join = bool(has_vol_col and season_for_vol is not None)
         apply_vol = apply_vol and use_vol_join
 
+        # Does this season actually have volume data for this stat? If so, a
+        # NULL count means the player genuinely had ~none of it (e.g. a blocking
+        # TE with a PFF drop-rate row but no targets), and the min filter should
+        # exclude them. Only keep NULLs when the whole season predates the
+        # volume columns, so an old season doesn't return an empty board.
+        season_has_vol = False
+        if apply_vol:
+            chk = conn.execute(
+                f"SELECT 1 FROM player_advanced_metrics "
+                f"WHERE season = %s AND {vol_col} IS NOT NULL LIMIT 1",
+                (season_for_vol,),
+            ).fetchone()
+            season_has_vol = chk is not None
+
         gate = ""
         vol_join = ""
         params: list = []
@@ -1300,9 +1314,13 @@ def get_metric_leaderboard(
             gate += " AND (m.snap_share IS NULL OR m.snap_share >= %s)"
             params.append(_MIN_SNAP_FOR_EFFICIENCY)
         if apply_vol:
-            # Keep rows with no volume data (older seasons predate the columns);
-            # filter only where we actually have a count.
-            gate += " AND (v.vol IS NULL OR v.vol >= %s)"
+            if season_has_vol:
+                # Season has volume data: a NULL count means ~none of the stat,
+                # so exclude it from a min-volume leaderboard.
+                gate += " AND v.vol IS NOT NULL AND v.vol >= %s"
+            else:
+                # Whole season predates the volume columns: keep all rows.
+                gate += " AND (v.vol IS NULL OR v.vol >= %s)"
             params.append(min_vol)
         params.append(limit)
         if has_games:
