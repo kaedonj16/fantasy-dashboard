@@ -1094,7 +1094,7 @@ _AM_JS = r"""
       const pct = spec.pctFrac ? n * 100 : n;
       return (Math.abs(pct) >= 10 ? pct.toFixed(1) : pct.toFixed(2)) + '%';
     }
-    if (Number.isInteger(n)) return n.toFixed(0);
+    if ((spec && spec.integer) || Number.isInteger(n)) return Math.round(n).toFixed(0);
     return Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(2);
   }
   function updateSortBtn() {
