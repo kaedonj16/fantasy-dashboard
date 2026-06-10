@@ -7661,6 +7661,11 @@ function openPlayerModal(playerId, playerName, opts) {
               <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
             </div>
           </div>
+          <div id="pmWeeklyTrendsWrap">
+            <button type="button" id="pmWeeklyTrendsBtn" class="pm-weekly-toggle"
+              onclick="pmToggleWeeklyTrends('${playerId}')">Weekly trends &#9662;</button>
+            <div id="pmWeeklyTrendsBody" style="display:none;"></div>
+          </div>
         </div>
       ` : '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Advanced metrics not available for this player.</div></div>';
 
@@ -7717,6 +7722,9 @@ function openPlayerModal(playerId, playerName, opts) {
       if (tabProspect) tabProspect.style.display = _isCurrentYearProspect ? '' : 'none';
       const tabBreakout = document.getElementById('pmTabBreakout');
       if (tabBreakout) tabBreakout.style.display = (isBreakout(pid) || (opts && opts.tab === 'breakout')) ? '' : 'none';
+
+      // Must be set before pmSwitchTab is called so the metrics lazy-load check works
+      if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
 
       // Switch to requested tab, or Overview by default
       const _initialTab = (opts && opts.tab) || 'overview';
@@ -7912,8 +7920,6 @@ function openPlayerModal(playerId, playerName, opts) {
         }
       }
 
-      // Store whether this player has metrics so pmSwitchTab can lazy-load them
-      if (pmTabBar) pmTabBar.dataset.pmHasMetrics = hasMetrics ? '1' : '';
     })
     .catch(err => {
       console.error('Error loading player data:', err);
@@ -8597,11 +8603,118 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
 
       // Populate just the bars column
       contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData);
+
+      // Reset the weekly-trends panel when the season pill changes so it
+      // refetches for the newly selected season.
+      const wtWrap = document.getElementById('pmWeeklyTrendsWrap');
+      if (wtWrap) {
+        const s = (!isCareer && activeSeason) ? String(activeSeason) : '';
+        if (wtWrap.dataset.season !== s) {
+          wtWrap.dataset.season = s;
+          wtWrap.dataset.loaded = '';
+          const wtBody = document.getElementById('pmWeeklyTrendsBody');
+          if (wtBody) { wtBody.style.display = 'none'; wtBody.innerHTML = ''; }
+          const wtBtn = document.getElementById('pmWeeklyTrendsBtn');
+          if (wtBtn) wtBtn.innerHTML = 'Weekly trends &#9662;';
+        }
+      }
     })
     .catch(err => {
       console.error('Error loading advanced metrics:', err);
       const section = document.getElementById('advancedMetricsSection');
       if (section) section.style.display = 'none';
+    });
+}
+
+// ── Player modal: weekly usage trends ────────────────────────────────────────
+function pmSparkline(series, color) {
+  if (!series || series.length < 2) return '';
+  const w = 120, h = 26;
+  const max = Math.max.apply(null, series.concat([1]));
+  const step = w / (series.length - 1);
+  const pts = series.map(function(v, i) {
+    return (i * step).toFixed(1) + ',' + (h - 2 - (v / max) * (h - 6)).toFixed(1);
+  }).join(' ');
+  return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block;">'
+    + '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" points="' + pts + '"/></svg>';
+}
+
+// Shared renderer: sparkline rows for a player's weekly usage series.
+function buildWeeklyTrendRows(weeks) {
+  if (!weeks || weeks.length < 2) {
+    return '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Not enough weekly data for this season.</div>';
+  }
+  function rowFor(label, key, color, suffix) {
+    const series = weeks.map(function(w) { return Number(w[key] || 0); });
+    if (!series.some(function(v) { return v > 0; })) return '';
+    const seasonAvg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
+    const r3 = series.slice(-3);
+    const recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
+    const delta = recentAvg - seasonAvg;
+    let deltaHtml = '';
+    if (delta >= 0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + delta.toFixed(1) + '</span>';
+    else if (delta <= -0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; ' + delta.toFixed(1) + '</span>';
+    const last = series[series.length - 1];
+    return '<div class="pm-wt-row">'
+      + '<div class="pm-wt-label">' + label + '</div>'
+      + pmSparkline(series, color)
+      + '<div class="pm-wt-stats">'
+      + '<span class="pm-wt-last">' + last.toFixed(1) + (suffix || '') + '</span>'
+      + '<span class="pm-wt-avg">avg ' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
+      + deltaHtml
+      + '</div></div>';
+  }
+  return '<div class="pm-wt-grid">'
+    + rowFor('Snap %', 'snap_pct', '#3b82f6', '%')
+    + rowFor('Targets', 'targets', '#f59e0b')
+    + rowFor('Touches', 'touches', '#22c55e')
+    + rowFor('PPR Pts', 'ppr_pts', '#8b5cf6')
+    + '</div>'
+    + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">Weeks '
+    + weeks[0].week + '&ndash;' + weeks[weeks.length - 1].week
+    + ' &middot; arrow compares last 3 weeks to the season average</div>';
+}
+
+// Collapse/expand a section in the player compare view.
+function cmpToggleSection(wrapId, headerEl) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  const collapsed = wrap.style.display === 'none';
+  wrap.style.display = collapsed ? '' : 'none';
+  const chev = headerEl ? headerEl.querySelector('.pm-collapse-chevron') : null;
+  if (chev) chev.innerHTML = collapsed ? '&#9662;' : '&#9656;';
+  const hint = headerEl ? headerEl.querySelector('.pm-collapse-hint') : null;
+  if (hint) hint.textContent = collapsed ? 'click to collapse' : 'click to expand';
+  // Keep the hint visible while a section is collapsed so it's discoverable
+  if (hint) hint.style.opacity = collapsed ? '' : '0.8';
+}
+
+function pmToggleWeeklyTrends(playerId) {
+  const wrap = document.getElementById('pmWeeklyTrendsWrap');
+  const body = document.getElementById('pmWeeklyTrendsBody');
+  const btn = document.getElementById('pmWeeklyTrendsBtn');
+  if (!wrap || !body || !btn) return;
+
+  const open = body.style.display !== 'none';
+  if (open) {
+    body.style.display = 'none';
+    btn.innerHTML = 'Weekly trends &#9662;';
+    return;
+  }
+  body.style.display = '';
+  btn.innerHTML = 'Weekly trends &#9652;';
+  if (wrap.dataset.loaded) return;
+  wrap.dataset.loaded = '1';
+
+  body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading weekly data…</div>';
+  const seasonParam = wrap.dataset.season ? ('?season=' + wrap.dataset.season) : '';
+  fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      body.innerHTML = buildWeeklyTrendRows(d.weeks || []);
+    })
+    .catch(function() {
+      body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Could not load weekly data.</div>';
     });
 }
 
@@ -8620,7 +8733,8 @@ function buildAdvancedMetricsHTML(metricsData) {
   // Snap Share (0–1 → %).  85 % = starter ceiling → full bar.
   if (metrics.snap_share != null && position !== "QB") {
     const pct = metrics.snap_share * 100;
-    defs.push({ label: 'Snap Share', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
+    const snapLabel = (position === 'WR' || position === 'TE') ? 'Route Partic' : 'Snap Share';
+    defs.push({ label: snapLabel, fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
   }
 
   if (position === 'QB') {
@@ -8728,6 +8842,11 @@ function buildAdvancedMetricsHTML(metricsData) {
       const pct = metrics.catch_rate * 100;
       // WR/TE realistic range 40-85 %; 85 = elite ceiling
       defs.push({ label: 'Catch Rate', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
+    }
+    if (metrics.yprr != null) {
+      const v = metrics.yprr;
+      // 1.0 = average, 2.0 = good, 3.0 = elite; scale to 3.0
+      defs.push({ label: 'Yds/Route Run', fill: Math.min(v / 3.0 * 100, 100), display: v.toFixed(2) });
     }
     if (metrics.drop_rate != null) {
       const v = metrics.drop_rate;
@@ -8842,26 +8961,27 @@ function buildAdvancedMetricsHTML(metricsData) {
 
   if (defs.length === 0) return '';
 
-  function _renderMetricRow(m) {
+  function _cells(m) {
+    if (!m) return '<span></span><span></span><span></span>';
     const fill = Math.max(0, Math.min(100, m.fill));
     const color = m.forceColor || (fill >= 60 ? '#10b981' : fill >= 35 ? '#3b82f6' : '#f59e0b');
-    const subLine = m.sub ? `<div style="font-size:10px;font-weight:500;opacity:.65;line-height:1;">${m.sub}</div>` : '';
-    return `
-      <div class="pm-comp-row">
-        <span class="pm-comp-label">${m.label}</span>
-        <div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>
-        <div class="pm-comp-val" style="color:${color};">${m.display}${subLine}</div>
-      </div>`;
+    const subLine = m.sub ? `<div class="pm-comp-sub">${m.sub}</div>` : '';
+    return `<span class="pm-comp-label">${m.label}</span>` +
+      `<div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>` +
+      `<div class="pm-comp-val" style="color:${color};">${m.display}${subLine}</div>`;
   }
 
   const mid = Math.ceil(defs.length / 2);
-  let leftCol = '<div class="pm-comp-list">';
-  defs.slice(0, mid).forEach(m => { leftCol += _renderMetricRow(m); });
-  leftCol += '</div>';
-  let rightCol = '<div class="pm-comp-list">';
-  defs.slice(mid).forEach(m => { rightCol += _renderMetricRow(m); });
-  rightCol += '</div>';
-  let html = `<div class="adv-metrics-two-col">${leftCol}${rightCol}</div>`;
+  const leftDefs = defs.slice(0, mid);
+  const rightDefs = defs.slice(mid);
+  const rowCount = Math.max(leftDefs.length, rightDefs.length);
+  let gridRows = '';
+  for (let i = 0; i < rowCount; i++) {
+    gridRows += _cells(leftDefs[i]);
+    gridRows += '<div class="am-vert-sep"></div>';
+    gridRows += _cells(rightDefs[i]);
+  }
+  let html = `<div class="adv-metrics-grid">${gridRows}</div>`;
 
   if (metricsData.as_of_date) {
     html += `<div style="font-size:11px;color:var(--text-muted);margin-top:10px;text-align:right;">As of ${metricsData.as_of_date}</div>`;
@@ -9657,7 +9777,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
   ];
 
   const wrTeMetrics = [
-    'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
+    'yards_per_target', 'catch_rate', 'yprr', 'yards_per_reception', 'target_quality_score',
     'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
     'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
     'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
@@ -9672,6 +9792,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     // Receiving metrics
     yards_per_target: 'Yards/Target',
     catch_rate: 'Catch Rate',
+    yprr: 'Yds/Route Run',
     yards_per_reception: 'Yards/Rec',
     target_quality_score: 'Target Quality',
     yards_after_catch: 'YAC',
@@ -9936,11 +10057,39 @@ function openComparisonView(p1, p2) {
 
       <hr class="pm-section-divider">
 
-      <div class="pm-section-header"><span class="pm-section-label">Advanced Metrics Comparison</span></div>
-      <div id="compareMetricsContent" class="compare-metrics-section">
-        <div style="display:flex;align-items:center;gap:10px;padding:12px 0;">
-          <div class="loading-spinner" style="width:16px;height:16px;"></div>
-          <span style="font-size:13px;color:var(--text-muted);">Loading metrics...</span>
+      <div class="pm-section-header pm-section-collapsible" title="Click to collapse or expand"
+           onclick="cmpToggleSection('compareMetricsWrap', this)">
+        <span class="pm-collapse-chevron">&#9662;</span>
+        <span class="pm-section-label">Advanced Metrics Comparison</span>
+        <span class="pm-collapse-hint">click to collapse</span>
+      </div>
+      <div id="compareMetricsWrap">
+        <div id="compareMetricsContent" class="compare-metrics-section">
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 0;">
+            <div class="loading-spinner" style="width:16px;height:16px;"></div>
+            <span style="font-size:13px;color:var(--text-muted);">Loading metrics...</span>
+          </div>
+        </div>
+      </div>
+
+      <hr class="pm-section-divider">
+
+      <div class="pm-section-header pm-section-collapsible" title="Click to collapse or expand"
+           onclick="cmpToggleSection('compareWeeklyWrap', this)">
+        <span class="pm-collapse-chevron">&#9662;</span>
+        <span class="pm-section-label">Weekly Usage Trends</span>
+        <span class="pm-collapse-hint">click to collapse</span>
+      </div>
+      <div id="compareWeeklyWrap">
+        <div class="compare-weekly-section">
+          <div class="compare-weekly-col">
+            <div class="compare-weekly-name">${p1.name || ''}</div>
+            <div id="compareWeekly1"><div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="compare-weekly-col">
+            <div class="compare-weekly-name">${p2.name || ''}</div>
+            <div id="compareWeekly2"><div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading…</div></div>
+          </div>
         </div>
       </div>
 
@@ -9969,6 +10118,21 @@ function openComparisonView(p1, p2) {
   const gl2 = document.getElementById('compareGameLogs2');
   if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year, true, p1.position);
   if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year, true, p2.position);
+
+  // Weekly usage trends, side by side (endpoint defaults to the current
+  // season, falling back to the prior one during the offseason)
+  [[p1.player_id, 'compareWeekly1'], [p2.player_id, 'compareWeekly2']].forEach(function(pair) {
+    fetch('/api/player-weekly-metrics/' + encodeURIComponent(pair[0]))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        const el = document.getElementById(pair[1]);
+        if (el) el.innerHTML = buildWeeklyTrendRows(d.weeks || []);
+      })
+      .catch(function() {
+        const el = document.getElementById(pair[1]);
+        if (el) el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Could not load weekly data.</div>';
+      });
+  });
 
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();
@@ -11033,57 +11197,54 @@ document.addEventListener('click', (e) => {
   }
 
   // ── Tour steps ──────────────────────────────────────────────────────────
+  // Opens/closes a nav dropdown around its step so users see what's inside.
+  function _navDropStep(id) {
+    return {
+      beforeShow: function () { var w = document.getElementById(id); if (w) w.classList.add('open'); },
+      afterLeave: function () { var w = document.getElementById(id); if (w) w.classList.remove('open'); },
+    };
+  }
+
   const TOUR_STEPS = [
     {
       page: 'dashboard', selector: null,
       title: 'Welcome to your dynasty hub!',
-      body: "Let's take a quick tour of the key features. Hit Next to get started.",
+      body: "Let's take a quick tour of the key features. Use the arrow keys to move around, or Esc to bail. You can replay this any time from the settings gear.",
     },
-    {
-      page: 'dashboard', selector: '#settingsGearBtn',
-      title: 'Settings & Leagues',
-      body: 'Manage leagues, refresh your data, toggle dark mode, and view the changelog here.',
-    },
-    {
-      page: 'dashboard', selector: '#settingsDropdown',
-      title: 'Settings Menu',
-      body: 'Switch between leagues, force a data refresh, or flip to dark mode - all in one place.',
-      beforeShow: function () {
-        var dd = document.getElementById('settingsDropdown');
-        if (dd) dd.style.display = 'block';
-      },
-      afterLeave: function () {
-        var dd = document.getElementById('settingsDropdown');
-        if (dd) dd.style.display = '';
-      },
-    },
-    {
-      page: 'dashboard', selector: '#settingsChangelogBtn',
-      title: "What's New",
-      body: 'The bell lights up when new features or data drop. Never miss an update.',
-      beforeShow: function () {
-        var dd = document.getElementById('settingsDropdown');
-        if (dd) dd.style.display = 'block';
-      },
-      afterLeave: function () {
-        var dd = document.getElementById('settingsDropdown');
-        if (dd) dd.style.display = '';
-      },
-    },
-    {
-      page: 'dashboard', selector: '.nav-pills-container',
-      title: 'Navigation',
-      body: 'Jump to Trade Calc, Teams, Activity, Players, Breakouts, Prospects, and more from here.',
-    },
+    Object.assign({
+      page: 'dashboard', selector: '#tradesNavDropdown',
+      title: 'Trades',
+      body: 'Evaluate any deal in the Trade Calculator, get AI suggestions built around your roster, and browse a database of real dynasty trades.',
+    }, _navDropStep('tradesNavDropdown')),
+    Object.assign({
+      page: 'dashboard', selector: '#teamsNavDropdown',
+      title: 'League',
+      body: 'Standings with weekly power rankings, every team’s roster breakdown, league activity, and league health checks.',
+    }, _navDropStep('teamsNavDropdown')),
+    Object.assign({
+      page: 'dashboard', selector: '#playersNavDropdown',
+      title: 'Players',
+      body: 'Player rankings, advanced metric leaderboards, the Breakout Engine, rookie prospects, waivers with start/sit advice, and the schedule assistant.',
+    }, _navDropStep('playersNavDropdown')),
+    Object.assign({
+      page: 'dashboard', selector: '#statsNavDropdown',
+      title: 'Stats',
+      body: 'All-time awards, trend graphs, and full league history — including head-to-head rivalry records between any two managers.',
+    }, _navDropStep('statsNavDropdown')),
     {
       page: 'dashboard', selector: '#navSearchWrapper',
       title: 'Player Search',
       body: 'Search any player from the nav bar — click the magnifying glass or press Ctrl+K, then click a result to open their full profile.',
     },
     {
+      page: 'dashboard', selector: '#settingsGearBtn',
+      title: 'Settings',
+      body: 'Switch between leagues, toggle dark mode, catch up on recent updates, and replay this tour whenever you want.',
+    },
+    {
       page: 'dashboard', selector: '.player-row, .otc-player-row',
       title: 'Player Cards',
-      body: 'Click any player to see their dynasty value history, trend, news, and breakout score.',
+      body: 'Click any player to see their dynasty value history, advanced metrics, weekly usage trends, news, and breakout score.',
       action: 'openPlayerModal',
     },
     {
@@ -11093,15 +11254,9 @@ document.addEventListener('click', (e) => {
       action: 'openTeamModal',
     },
     {
-      page: 'dashboard', selector: 'a[href*="/weekly"]',
-      title: 'Weekly Hub',
-      body: 'Live scores, matchup previews, and weekly projections during the season.',
-      onlyIfPresent: false,
-    },
-    {
       page: 'history', selector: '.card',
       title: 'Season History',
-      body: 'Week-by-week recaps, season standings, power rankings, and scoring trends for every past year.',
+      body: 'Season awards, standings, scoring trends, AI recaps, and the Rivalry Tracker for every past year of your league.',
       navigate: 'history',
     },
     {
@@ -11119,7 +11274,7 @@ document.addEventListener('click', (e) => {
     {
       page: 'dashboard', selector: null,
       title: "You're all set!",
-      body: "Explore your dynasty empire. Check out Trade Calc, Breakouts, and Prospects when you're ready.",
+      body: 'Explore from here — and remember you can replay this tour from the settings gear menu whenever you like.',
     },
   ];
 
@@ -11147,7 +11302,11 @@ document.addEventListener('click', (e) => {
     // Only auto-start on the dashboard for new users with league context
     if (currentPage !== 'dashboard') return;
     if (localStorage.getItem(tourKey)) return;
-    
+
+    // Don't auto-run on small screens — the nav pills the tour spotlights are
+    // collapsed behind the hamburger. (Manual start still works anywhere.)
+    if (window.innerWidth < 768) return;
+
     // Check if we have league context (not on demo/home page)
     const pathParts = window.location.pathname.split('/').filter(Boolean);
     const hasLeague = pathParts.length >= 3 && !isNaN(pathParts[1]);
@@ -11160,7 +11319,9 @@ document.addEventListener('click', (e) => {
   function startTour(fromStep) {
     tourActive   = true;
     currentStep  = fromStep;
+    _tourDir     = 1;
     createOverlayDOM();
+    document.addEventListener('keydown', _tourKeydown);
     showStep(currentStep);
   }
 
@@ -11189,10 +11350,15 @@ document.addEventListener('click', (e) => {
       return;
     }
 
-    // Skip if element required but missing
-    if (step.onlyIfPresent) {
-      const el = step.selector ? document.querySelector(step.selector) : null;
-      if (!el) { advanceTour(); return; }
+    // Skip steps whose target is missing or not rendered (e.g. collapsed
+    // mobile nav, empty dashboard) — in whichever direction we're moving.
+    if (step.selector) {
+      const el = document.querySelector(step.selector);
+      if (!el || el.getClientRects().length === 0) {
+        if (_tourDir < 0 && idx > 0) { currentStep = idx - 1; showStep(currentStep); }
+        else { advanceTour(); }
+        return;
+      }
     }
 
     // Run beforeShow hook (e.g. open settings dropdown)
@@ -11315,12 +11481,14 @@ document.addEventListener('click', (e) => {
     const isLast  = idx === TOUR_STEPS.length - 1;
     const isFirst = idx === 0;
     const count   = (idx + 1) + ' / ' + TOUR_STEPS.length;
+    const pct     = Math.round(((idx + 1) / TOUR_STEPS.length) * 100);
 
     tooltipEl.innerHTML =
       '<div class="tour-tooltip-header">' +
         '<span class="tour-step-count">' + count + '</span>' +
         '<button class="tour-skip-btn" type="button">Skip tour</button>' +
       '</div>' +
+      '<div class="tour-progress"><div class="tour-progress-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="tour-tooltip-title">' + step.title + '</div>' +
       '<div class="tour-tooltip-body">'  + step.body  + '</div>' +
       '<div class="tour-tooltip-footer">' +
@@ -11338,7 +11506,7 @@ document.addEventListener('click', (e) => {
 
     tooltipEl.querySelector('[data-action="next"]').addEventListener('click', advanceTour);
     const prevBtn = tooltipEl.querySelector('[data-action="prev"]');
-    if (prevBtn) prevBtn.addEventListener('click', function () { currentStep--; showStep(currentStep); });
+    if (prevBtn) prevBtn.addEventListener('click', backTour);
     tooltipEl.querySelector('.tour-skip-btn').addEventListener('click', endTour);
   }
 
@@ -11391,7 +11559,10 @@ document.addEventListener('click', (e) => {
     }
   }
 
+  let _tourDir = 1;  // 1 = forward, -1 = back (used when skipping hidden steps)
+
   function advanceTour() {
+    _tourDir = 1;
     leaveCurrentStep();
     const nextIdx  = currentStep + 1;
     if (nextIdx >= TOUR_STEPS.length) { endTour(); return; }
@@ -11405,11 +11576,28 @@ document.addEventListener('click', (e) => {
     showStep(currentStep);
   }
 
+  function backTour() {
+    if (currentStep <= 0) return;
+    _tourDir = -1;
+    leaveCurrentStep();   // close any dropdown/modal the current step opened
+    currentStep--;
+    showStep(currentStep);
+  }
+
+  // Keyboard: arrows to move, Enter for next, Esc to exit.
+  function _tourKeydown(e) {
+    if (!tourActive) return;
+    if (e.key === 'Escape') { endTour(); }
+    else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); advanceTour(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); backTour(); }
+  }
+
   function endTour() {
     leaveCurrentStep();
     localStorage.setItem(tourKey, '1');
     removeTourDOM();
     tourActive = false;
+    document.removeEventListener('keydown', _tourKeydown);
   }
 
   function removeTourDOM() {
@@ -11427,7 +11615,20 @@ document.addEventListener('click', (e) => {
     if (tooltipEl && target) placeTooltip(target);
   });
 
-  document.addEventListener('DOMContentLoaded', initTour);
+  // Manual restart (settings menu "Site Tour" / console). Clears the seen flag
+  // so the tour can navigate across pages and resume without re-marking done.
+  window.startSiteTour = function () {
+    try { localStorage.removeItem(tourKey); } catch (e) {}
+    var dd = document.getElementById('settingsDropdown');
+    if (dd) dd.style.display = 'none';
+    startTour(0);
+  };
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var tourBtn = document.getElementById('settingsTourBtn');
+    if (tourBtn) tourBtn.addEventListener('click', function () { window.startSiteTour(); });
+    initTour();
+  });
 }());
 
 // ── Pick value modal ──────────────────────────────────────────────────────────
@@ -12797,4 +12998,5 @@ function setupFunAwardsGrid() {
     }
   });
 })();
+
 

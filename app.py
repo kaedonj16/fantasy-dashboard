@@ -1231,6 +1231,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "</button>"
     )
 
+    # Site tour trigger — league pages only (the tour spotlights the league nav)
+    tour_menu_item = (
+        "<button type='button' class='settings-menu-item' id='settingsTourBtn'>"
+        "  <span class='settings-menu-icon' style='font-size:14px;line-height:16px;text-align:center;'>&#10024;</span>"
+        "  <span class='settings-menu-label'>Site Tour</span>"
+        "</button>"
+    ) if league_id else ""
+
     # Build settings dropdown content (minimal for logged-out users)
     settings_content = dark_mode_toggle_html
 
@@ -1406,7 +1414,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",       "page_standings",    "standings",    False),
         ("Teams",           "page_teams",        "teams",        False),
-        ("Power Rankings",  "page_teams",        "teams",        False, "#power-rankings"),
         ("Activity",        "page_activity",     "activity",     False),
         ("League Health",   "page_commissioner", "league_health", False),
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
@@ -1455,6 +1462,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  <span id='settingsNotifDot' class='settings-notif-dot' style='display:none'></span>"
             "</button>"
             f"{dark_mode_toggle_html}"
+            f"{tour_menu_item}"
             f"{league_switcher_html}"
             "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
             "  <img src='/static/logout.png' class='settings-menu-icon' alt='Logout'>"
@@ -1485,7 +1493,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  <span class='settings-menu-label'>Sign In</span>"
             "</button>"
         )
-        settings_content = signin_item + dark_mode_toggle_html
+        settings_content = signin_item + dark_mode_toggle_html + tour_menu_item
         settings_gear = (
             "<div class='settings-gear-wrapper'>"
             "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "
@@ -3470,6 +3478,32 @@ def render_power_and_playoffs(
 
     top3 = pr_sorted.head(3)
 
+    # ---- Weekly movement arrows (vs the previous week's snapshot) ----
+    movement: Dict[str, Optional[int]] = {}
+    try:
+        from dashboard_services.power_rank_history import record_and_movement
+        _nfl_state = get_nfl_state() or {}
+        _wk = int(_nfl_state.get("week") or 0)
+        _is_current_season = str(_nfl_state.get("season") or "") == str(season)
+        if _wk > 0 and _is_current_season:
+            _ranks = {
+                str(row.get("owner", "")): i + 1
+                for i, (_, row) in enumerate(pr_sorted.iterrows())
+            }
+            movement = record_and_movement(str(league_id), int(season), _wk, _ranks)
+    except Exception:
+        movement = {}
+
+    def move_arrow(owner_name) -> str:
+        delta = movement.get(str(owner_name))
+        if delta is None:
+            return ""
+        if delta > 0:
+            return f"<span class='pr-move pr-move-up' title='Up {delta} from last week'>&#9650;{delta}</span>"
+        if delta < 0:
+            return f"<span class='pr-move pr-move-down' title='Down {abs(delta)} from last week'>&#9660;{abs(delta)}</span>"
+        return "<span class='pr-move pr-move-flat' title='No change from last week'>&ndash;</span>"
+
     # width scaling based on PowerScore range
     if has_power:
         p = pr_sorted["PowerScore"].astype(float)
@@ -3547,7 +3581,7 @@ def render_power_and_playoffs(
           <div class="slot {base_cls} {streak_frame_cls}">
             <div class="wrap">
               <div class='podium-header'>
-                <h3>#{rank}</h3>
+                <h3>#{rank} {move_arrow(name)}</h3>
                 {avatar_html}
               </div>
               <div class="name">{name}</div>
@@ -3618,6 +3652,7 @@ def render_power_and_playoffs(
         rank_cards.append(
             f"<div class='rank-item {css_cls}'>"
             f"<span class='pos'>#{pos}</span>"
+            f"{move_arrow(team)}"
             f"{img}"
             f"<span class='name'>{team}</span>"
             f"<div class='bar'><div style='width:{bar_w:.1f}%'></div></div>"
@@ -8983,6 +9018,29 @@ def api_waiver_candidates():
     except Exception:
         pass
 
+    # Weekly usage trends: recent role growth is the strongest waiver signal.
+    usage_trends: dict = {}
+    try:
+        from data_building.weekly_metrics import get_usage_trends
+        _nfl_wv = get_nfl_state() or {}
+        _trend_season_wv = int(_nfl_wv.get("season") or season)
+        if str(_nfl_wv.get("season_type") or "").lower() == "off":
+            _trend_season_wv -= 1
+        usage_trends = get_usage_trends(_trend_season_wv)
+    except Exception:
+        usage_trends = {}
+
+    # Minimum last-3-week-vs-season rise to call it a usage spike, per stat.
+    _usage_spike_min = {"snap_pct": 8.0, "touches": 3.0, "targets": 2.0}
+
+    def _usage_spike(c: dict):
+        ut = usage_trends.get(c["player_id"])
+        if not ut or ut.get("delta") is None:
+            return None
+        if ut["delta"] >= _usage_spike_min.get(ut.get("stat"), 3.0):
+            return ut
+        return None
+
     _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
     def _wv_signal(c: dict) -> tuple:
@@ -8991,6 +9049,8 @@ def api_waiver_candidates():
         pos = c["position"]
         bscore = waiver_breakout.get(c["player_id"], 0)
         prime = _prime_max.get(pos, 28)
+        if _usage_spike(c):
+            return ("signal-usage", "Usage Spike")
         if bscore >= 55:
             return ("signal-breakout", "Breakout")
         if rank_chg >= 8:
@@ -9011,6 +9071,7 @@ def api_waiver_candidates():
     for c in candidates[:30]:
         sig_cls, sig_label = _wv_signal(c)
         bscore = waiver_breakout.get(c["player_id"], 0.0)
+        ut = usage_trends.get(c["player_id"]) or {}
         result.append({
             "player_id": c["player_id"],
             "name": c["name"],
@@ -9024,6 +9085,9 @@ def api_waiver_candidates():
             "signal": sig_label,
             "signal_class": sig_cls,
             "composite_score": _waiver_pickup_score(c, waiver_breakout, _prime_max),
+            "usage_delta": ut.get("delta"),
+            "usage_stat": ut.get("stat"),
+            "usage_series": ut.get("series"),
         })
 
     return jsonify({"candidates": result, "total": len(result)})
@@ -9186,6 +9250,14 @@ def api_start_sit_options():
     except Exception:
         pass
 
+    # ── Weekly usage trends: rising/falling role nudges close calls ──────────
+    _ss_usage_trends: dict = {}
+    try:
+        from data_building.weekly_metrics import get_usage_trends as _get_ut
+        _ss_usage_trends = _get_ut(int(season))
+    except Exception:
+        _ss_usage_trends = {}
+
     positions_out: dict = {"QB": [], "RB": [], "WR": [], "TE": []}
     for pid in player_ids:
         row  = rows_by_id.get(pid) or {}
@@ -9222,11 +9294,12 @@ def api_start_sit_options():
         else:
             def_rank, def_total = None, 32
 
-        # ── Start/sit score: projection × form × matchup ─────────────────────
-        # Projection is the dominant signal. Form (±10%) and matchup (±10%)
-        # each influence close calls but combined can only swing the score
-        # ~20% — not enough to flip a meaningful projection gap (e.g. 12.8 vs
-        # 9.8 stays the same regardless of matchup).
+        # ── Start/sit score: projection × form × matchup × usage ─────────────
+        # Projection is the dominant signal. Form (±10%), matchup (±10%), and
+        # usage trend (±5%) influence close calls but can't flip a meaningful
+        # projection gap (e.g. 12.8 vs 9.8 stays the same regardless).
+        _ut_ss = _ss_usage_trends.get(pid) or {}
+        usage_delta = _ut_ss.get("delta")
         if on_bye:
             score = 0.0
         else:
@@ -9241,7 +9314,15 @@ def api_start_sit_options():
                 _ease = (def_total - def_rank) / (def_total - 1)  # 0–1
                 _mu = 0.90 + _ease * 0.20  # 0.90–1.10
 
-            score = proj_pts * _form * _mu
+            # Usage trend: last-3-week role vs season avg, capped ±5%. A rising
+            # role means the trailing PPG (form) understates this week's
+            # opportunity; a shrinking one means it overstates it.
+            _ug = 1.0
+            if usage_delta is not None and _ut_ss.get("season_avg"):
+                _rel = usage_delta / max(float(_ut_ss["season_avg"]), 1.0)
+                _ug = min(1.05, max(0.95, 1.0 + _rel * 0.25))
+
+            score = proj_pts * _form * _mu * _ug
 
         full_player  = players_full.get(pid) or {}
         raw_status   = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
@@ -9262,6 +9343,8 @@ def api_start_sit_options():
             "def_total":     def_total,
             "pos_rank_label": row.get("pos_rank_label") or "",
             "injury_status": injury_status,
+            "usage_delta":   usage_delta,
+            "usage_stat":    _ut_ss.get("stat"),
             "_score":        score,
         })
 
@@ -19261,6 +19344,99 @@ def api_sleeper_user_leagues():
 def api_changelog():
     """Return the changelog entries."""
     return jsonify(CHANGELOG)
+
+
+@app.route("/api/weekly-trends")
+def api_weekly_trends():
+    """Bulk per-player usage trend map (last-6-week series + recent-vs-season
+    delta) for the leaderboard trend column and waivers usage risers."""
+    nfl_state = get_nfl_state() or {}
+    season_str = (request.args.get("season") or "").strip()
+    season = int(season_str) if season_str.isdigit() else int(
+        nfl_state.get("season") or datetime.now().year
+    )
+    try:
+        from data_building.weekly_metrics import get_usage_trends
+        trends = get_usage_trends(season)
+    except Exception as exc:
+        logger.warning("[weekly-trends] failed: %s", exc)
+        trends = {}
+    return jsonify({"season": season, "players": trends})
+
+
+@app.route("/api/rivalry/<platform>/<int:season>/<league_id>")
+def api_rivalry(platform: str, season: int, league_id: str):
+    """All-time head-to-head record between two managers (by user_id).
+
+    Scans every available historical season plus the current one, pairs
+    finalized matchup rows by (week, matchup_id), and returns the full
+    meeting list so the frontend can render record, streaks, and blowouts.
+    """
+    a = (request.args.get("a") or "").strip()
+    b = (request.args.get("b") or "").strip()
+    if not a or not b or a == b:
+        return jsonify({"error": "Pick two different managers."}), 400
+
+    try:
+        available = get_available_history_seasons(platform, league_id, season) or []
+    except Exception:
+        available = []
+    seasons_to_scan = sorted(set(int(s) for s in available) | {int(season)})
+
+    games = []
+    for hist_s in seasons_to_scan:
+        try:
+            rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
+            ctx = get_league_ctx_from_cache(platform, rid, hist_s)
+        except Exception:
+            continue
+
+        df = ctx.get("df_weekly", pd.DataFrame())
+        if df.empty or "matchup_id" not in df.columns or "roster_id" not in df.columns:
+            continue
+
+        roster_to_uid = {
+            str(r.get("roster_id")): str(r.get("owner_id") or "")
+            for r in (ctx.get("rosters") or [])
+        }
+
+        d = df.copy()
+        if "finalized" in d.columns:
+            d = d[d["finalized"] == True]  # noqa: E712
+        d["__uid"] = d["roster_id"].astype(str).map(roster_to_uid)
+        sub = d[d["__uid"].isin([a, b])]
+        if sub.empty:
+            continue
+
+        for (wk, mid), grp in sub.groupby(["week", "matchup_id"]):
+            if pd.isna(mid) or len(grp) != 2:
+                continue
+            if set(grp["__uid"]) != {a, b}:
+                continue
+            row_a = grp[grp["__uid"] == a].iloc[0]
+            row_b = grp[grp["__uid"] == b].iloc[0]
+            pts_a = float(row_a.get("points") or 0)
+            pts_b = float(row_b.get("points") or 0)
+            if pts_a == 0 and pts_b == 0:
+                continue  # unplayed/empty matchup
+            games.append({
+                "season": int(hist_s),
+                "week": int(wk),
+                "a_pts": round(pts_a, 2),
+                "b_pts": round(pts_b, 2),
+            })
+
+    games.sort(key=lambda g: (g["season"], g["week"]))
+    wins_a = sum(1 for g in games if g["a_pts"] > g["b_pts"])
+    wins_b = sum(1 for g in games if g["b_pts"] > g["a_pts"])
+    return jsonify({
+        "games": games,
+        "wins_a": wins_a,
+        "wins_b": wins_b,
+        "ties": len(games) - wins_a - wins_b,
+        "pts_a": round(sum(g["a_pts"] for g in games), 2),
+        "pts_b": round(sum(g["b_pts"] for g in games), 2),
+    })
 
 
 @app.route("/api/espn-validate-league")

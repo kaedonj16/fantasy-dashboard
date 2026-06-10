@@ -65,6 +65,11 @@ def build_waivers_body(platform: str, season: int, league_id: str, ctx: dict) ->
 .signal-value    { background: #8b5cf620; color: #8b5cf6; }
 .signal-aging    { background: #f59e0b20; color: #f59e0b; }
 .signal-hold     { background: var(--row); color: var(--text-muted); }
+.signal-usage    { background: #ef444420; color: #ef4444; }
+.wv-usage-chip {
+  display: inline-block; font-size: 10px; font-weight: 700; color: #10b981;
+  margin-left: 6px; white-space: nowrap;
+}
 
 /* Start/Sit player cards */
 .wv-ss-pos-group { margin-bottom: 16px; }
@@ -278,18 +283,25 @@ function wvRenderWaivers() {{
   let players = wvWaiverData;
   if (wvCurrentPos !== 'ALL') players = players.filter(p => p.position === wvCurrentPos);
   if (!players.length) {{ list.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:20px;">No players found</div>'; return; }}
-  list.innerHTML = players.slice(0, 20).map(p => `
+  list.innerHTML = players.slice(0, 20).map(p => {{
+    let usageChip = '';
+    if (p.usage_delta != null && p.usage_delta >= 1) {{
+      const statLbl = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
+      usageChip = `<span class="wv-usage-chip" title="Last-3-week avg vs season avg">&#9650; +${{p.usage_delta}} ${{statLbl}}</span>`;
+    }}
+    return `
     <div class="wv-player-row" onclick="openPlayerModal('${{p.player_id}}', '${{p.name.replace(/'/g,"\\'")}}')">
       <div>
         <div class="wv-player-name">${{p.name}}</div>
-        <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : ''].filter(Boolean).join(' · ')}}</div>
+        <div class="wv-player-sub">${{[p.position, p.team, p.pos_rank_label, p.age ? 'Age ' + parseFloat(p.age).toFixed(1) : ''].filter(Boolean).join(' · ')}}${{usageChip}}</div>
       </div>
       <div class="wv-right">
         <span class="wv-signal ${{p.signal_class}}">${{p.signal}}</span>
         <span class="wv-value">${{Math.round(p.value)}}</span>
       </div>
     </div>
-  `).join('');
+  `;
+  }}).join('');
 }}
 
 // ── Compare slot management ───────────────────────────────────────────────────
@@ -410,10 +422,18 @@ function wvRenderStartSit() {{
       const muChip   = !isBye ? wvMuChip(p.def_rank, p.def_total) : '';
       const cmpCls   = isSelected ? 'selected' : '';
 
+      let usageStat = '';
+      if (p.usage_delta != null && Math.abs(p.usage_delta) >= 1) {{
+        const upU = p.usage_delta > 0;
+        const lblU = p.usage_stat === 'snap_pct' ? 'snap%' : (p.usage_stat === 'touches' ? 'touches' : 'targets');
+        usageStat = `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Usage</span><span class="wv-ss-stat-val" style="color:${{upU ? '#10b981' : '#ef4444'}}" title="Last-3-week ${{lblU}} vs season avg">${{upU ? '&#9650;' : '&#9660;'}} ${{upU ? '+' : ''}}${{p.usage_delta}}</span></div>`;
+      }}
+
       const statsRow = `
         <div class="wv-ss-stats">
           ${{p.proj_pts > 0   ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Proj PPG</span><span class="wv-ss-stat-val">${{p.proj_pts}}</span></div>` : ''}}
           ${{p.recent_ppg > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">L4 PPG</span><span class="wv-ss-stat-val">${{p.recent_ppg}}</span></div>` : ''}}
+          ${{usageStat}}
           ${{p.opponent       ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Opp</span><span class="wv-ss-stat-val muted">${{p.opponent}}</span></div>` : ''}}
           ${{muChip ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Matchup</span><span class="wv-ss-stat-val">${{muChip}}</span></div>` : ''}}
           ${{p.fpts_against > 0 ? `<div class="wv-ss-stat"><span class="wv-ss-stat-lbl">Def allows</span><span class="wv-ss-stat-val muted">${{p.fpts_against}} pts</span></div>` : ''}}

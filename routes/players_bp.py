@@ -26,6 +26,30 @@ logger = logging.getLogger(__name__)
 players_bp = Blueprint("players", __name__)
 
 
+# ── /api/player-weekly-metrics/<player_id> ────────────────────────────────────
+
+@players_bp.route("/api/player-weekly-metrics/<player_id>")
+def api_player_weekly_metrics(player_id: str):
+    """Week-by-week usage series (snap %, targets, touches, PPR pts) for the
+    player modal's weekly trends view."""
+    nfl_state = get_nfl_state() or {}
+    season_str = (request.args.get("season") or "").strip()
+    if season_str.isdigit():
+        season = int(season_str)
+    else:
+        season = int(nfl_state.get("season") or datetime.now().year)
+        # During the offseason the current season has no weeks yet.
+        if str(nfl_state.get("season_type") or "").lower() == "off":
+            season -= 1
+    try:
+        from data_building.weekly_metrics import get_player_weekly_series
+        weeks = get_player_weekly_series(player_id, season)
+    except Exception as exc:
+        logger.warning("[player-weekly-metrics] %s failed: %s", player_id, exc)
+        weeks = []
+    return jsonify({"player_id": str(player_id), "season": season, "weeks": weeks})
+
+
 # ── /api/player-advanced-metrics/<player_id> ──────────────────────────────────
 
 @players_bp.route("/api/player-advanced-metrics/<player_id>")

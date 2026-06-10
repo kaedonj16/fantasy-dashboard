@@ -174,6 +174,21 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS rookie_eval_is_rookie          BOOLEAN;
     """)
 
+    # Route participation proxy (WR/TE offensive snap % = fraction of dropbacks
+    # they were on the field to run a route, sourced from nfl_data_py snap counts).
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS route_participation NUMERIC;
+    """)
+    # Backfill from snap_share for existing WR/TE rows that are missing it.
+    conn.execute("""
+        UPDATE player_advanced_metrics
+        SET route_participation = snap_share
+        WHERE position IN ('WR', 'TE')
+          AND snap_share IS NOT NULL
+          AND route_participation IS NULL;
+    """)
+
     # PFF feed columns (NFL) for player evaluation and modal display
     conn.execute("""
         ALTER TABLE player_advanced_metrics
@@ -197,7 +212,8 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS big_time_throw_rate NUMERIC,
             ADD COLUMN IF NOT EXISTS adjusted_completion_rate NUMERIC,
             ADD COLUMN IF NOT EXISTS pressure_to_sack_rate NUMERIC,
-            ADD COLUMN IF NOT EXISTS nfl_passer_rating NUMERIC;
+            ADD COLUMN IF NOT EXISTS nfl_passer_rating NUMERIC,
+            ADD COLUMN IF NOT EXISTS yprr NUMERIC;
     """)
 
 
@@ -753,6 +769,9 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
 
     with get_conn() as conn:
         for metrics in metrics_list:
+            pos = (metrics.get("position") or "").upper()
+            route_partic = metrics.get("snap_share") if pos in ("WR", "TE") else None
+
             # Upsert: update if exists, insert if not
             conn.execute("""
                 INSERT INTO player_advanced_metrics (
@@ -763,7 +782,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     snap_share, opportunity_share, red_zone_usage,
                     role_score, usage_trend, efficiency_trend, games,
                     total_targets, total_receptions, total_carries, total_touches, total_pass_att,
-                    target_share
+                    target_share, route_participation
                 )
                 VALUES (
                     %s, %s, %s, %s,
@@ -773,7 +792,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
-                    %s
+                    %s, %s
                 )
                 ON CONFLICT (player_id, as_of_date)
                 DO UPDATE SET
@@ -802,7 +821,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     total_carries = EXCLUDED.total_carries,
                     total_touches = EXCLUDED.total_touches,
                     total_pass_att = EXCLUDED.total_pass_att,
-                    target_share = EXCLUDED.target_share
+                    target_share = EXCLUDED.target_share,
+                    route_participation = COALESCE(EXCLUDED.route_participation, player_advanced_metrics.route_participation)
             """, (
                 metrics["player_id"], as_of_date, season, metrics["position"],
                 metrics.get("yards_per_target"), metrics.get("catch_rate"),
@@ -819,6 +839,7 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics.get("total_carries"), metrics.get("total_touches"),
                 metrics.get("total_pass_att"),
                 metrics.get("target_share"),
+                route_partic,
             ))
 
     print(f"[advanced_metrics] Saved {len(metrics_list)} player metrics for {as_of_date} (season {season})")
@@ -992,14 +1013,14 @@ def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
         'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
         'yards_per_carry', 'yards_per_touch', 'rush_td_rate',
         'yards_per_attempt', 'completion_pct', 'td_rate', 'int_rate',
-        'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
+        'snap_share', 'route_participation', 'opportunity_share', 'red_zone_usage', 'role_score',
         'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
         'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
         'wide_rate', 'inline_rate', 'pass_block_rate', 'grades_offense',
         'grades_pass_block', 'explosive_runs_10_plus', 'breakaway_percentage',
         'elusive_rating', 'pff_rushing_grade', 'pff_passing_grade',
         'big_time_throw_rate', 'adjusted_completion_rate', 'pressure_to_sack_rate',
-        'nfl_passer_rating',
+        'nfl_passer_rating', 'yprr',
     ]
 
     with get_conn() as conn:
@@ -1122,44 +1143,47 @@ _V_PASS_ATT  = {"col": "total_pass_att",   "label": "Min Attempts",   "opts": [1
 _V_GAMES     = {"col": "games",            "label": "Min Games",      "opts": [4, 8, 12, 16]}
 
 LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
+    # ── General (applies across positions) ───────────────────────────────────
+    "role_score":           {"label": "Role Score",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position."},
+    "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
+    "opportunity_share":    {"label": "Opportunity Share",   "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
+    "red_zone_usage":       {"label": "Red Zone Usage",      "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
+    "grades_offense":       {"label": "PFF Off Grade",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
+    "yards_per_touch":      {"label": "Yards / Touch",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_TOUCHES, "desc": "Yards gained per combined carry and reception."},
     # ── Passing ──────────────────────────────────────────────────────────────
     "yards_per_attempt":    {"label": "Yards / Attempt",    "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing yards per attempt; core passing efficiency stat."},
-    "completion_pct":       {"label": "Completion %",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts completed."},
-    "adjusted_completion_rate": {"label": "Adj Completion %", "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Completion percent adjusted for drops, throwaways, spikes, and batted passes."},
-    "td_rate":              {"label": "Pass TD Rate",        "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that result in a touchdown."},
-    "int_rate":             {"label": "INT Rate",            "category": "Passing", "positions": ["QB"], "efficiency": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts intercepted. Lower is better."},
-    "big_time_throw_rate":  {"label": "Big-Time Throw %",   "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "PFF rate of high-difficulty, high-value throws (deep and into tight windows)."},
-    "pressure_to_sack_rate": {"label": "Pressure to Sack %","category": "Passing", "positions": ["QB"], "efficiency": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pressured dropbacks that turn into sacks. Lower is better."},
+    "completion_pct":       {"label": "Completion %",       "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts completed."},
+    "adjusted_completion_rate": {"label": "Adj Completion %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion percent adjusted for drops, throwaways, spikes, and batted passes."},
+    "td_rate":              {"label": "Pass TD Rate",        "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that result in a touchdown."},
+    "int_rate":             {"label": "INT Rate",            "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts intercepted. Lower is better."},
+    "big_time_throw_rate":  {"label": "Big-Time Throw %",   "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "PFF rate of high-difficulty, high-value throws (deep and into tight windows)."},
+    "pressure_to_sack_rate": {"label": "Pressure to Sack %","category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pressured dropbacks that turn into sacks. Lower is better."},
     "nfl_passer_rating":    {"label": "Passer Rating",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Standard NFL passer rating (0-158.3)."},
     "pff_passing_grade":    {"label": "PFF Pass Grade",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "PFF's passing grade (0-100)."},
     # ── Rushing ──────────────────────────────────────────────────────────────
     "yards_per_carry":      {"label": "Yards / Carry",       "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Rushing yards gained per carry."},
-    "yards_per_touch":      {"label": "Yards / Touch",       "category": "Rushing", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_TOUCHES, "desc": "Yards gained per combined carry and reception."},
-    "rush_td_rate":         {"label": "Rush TD Rate",        "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Percent of carries that result in a touchdown."},
-    "breakaway_percentage": {"label": "Breakaway %",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Percent of rushing yards that came on runs of 15+ yards; explosiveness."},
+    "rush_td_rate":         {"label": "Rush TD Rate",        "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_CARRIES, "desc": "Percent of carries that result in a touchdown."},
+    "breakaway_percentage": {"label": "Breakaway %",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rushing yards that came on runs of 15+ yards; explosiveness."},
     "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
     "pff_rushing_grade":    {"label": "PFF Rush Grade",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF's rushing grade (0-100)."},
     # ── Receiving ────────────────────────────────────────────────────────────
-    "role_score":           {"label": "Role Score",          "category": "Receiving", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position."},
-    "snap_share":           {"label": "Snap Share",          "category": "Receiving", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
-    "target_share":         {"label": "Target Share",        "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Percent of the team's total targets directed at this player."},
-    "opportunity_share":    {"label": "Opportunity Share",   "category": "Receiving", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
+    "route_participation":  {"label": "Route Partic %",      "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means the player is a consistent full-time route runner."},
+    "target_share":         {"label": "Target Share",        "category": "Receiving", "positions": ["WR", "TE", "RB"], "pct": True, "min_vol": _V_GAMES, "desc": "Percent of the team's total targets directed at this player."},
     "air_yards_per_game":   {"label": "Air Yards / Game",    "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_GAMES, "desc": "Receiving air yards (distance thrown in the air to the player) per game; a measure of downfield target volume."},
-    "air_yards_share":      {"label": "Air Yards Share",     "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_GAMES, "desc": "Share of the team's total passing air yards directed at this player; combines target share with depth of target."},
-    "red_zone_usage":       {"label": "Red Zone Usage",      "category": "Receiving", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
-    "grades_offense":       {"label": "PFF Off Grade",       "category": "Receiving", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
+    "air_yards_share":      {"label": "Air Yards Share",     "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's total passing air yards directed at this player; combines target share with depth of target."},
     "yards_per_target":     {"label": "Yards / Target",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiving yards earned per time targeted; measures efficiency on volume."},
     "yards_per_reception":  {"label": "Yards / Reception",   "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained per catch; higher means a more downfield/explosive role."},
-    "catch_rate":           {"label": "Catch Rate",          "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Percent of targets caught."},
+    "catch_rate":           {"label": "Catch Rate",          "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_TARGETS, "desc": "Percent of targets caught."},
     "target_quality_score": {"label": "Target Quality",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Composite of how valuable a player's targets are (depth, location, situation)."},
     "avg_depth_of_target":  {"label": "aDOT",                "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Average depth of target: how far downfield (in yards) the player is thrown to."},
-    "contested_catch_rate": {"label": "Contested Catch %",   "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Percent of contested (tightly covered) targets the player came down with."},
+    "contested_catch_rate": {"label": "Contested Catch %",   "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_TARGETS, "desc": "Percent of contested (tightly covered) targets the player came down with."},
     "yards_after_catch_per_reception": {"label": "YAC / Reception", "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained after the catch per reception."},
-    "drop_rate":            {"label": "Drop Rate",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of catchable targets dropped. Lower is better."},
-    "slot_rate":            {"label": "Slot Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from the slot."},
-    "wide_rate":            {"label": "Wide Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from out wide."},
-    "inline_rate":          {"label": "Inline Rate",         "category": "Receiving", "positions": ["TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Percent of snaps a tight end lined up inline (attached to the formation)."},
-    "pass_block_rate":      {"label": "Block Rate",          "category": "Receiving", "positions": ["TE", "RB"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Percent of pass snaps spent blocking rather than running a route."},
+    "drop_rate":            {"label": "Drop Rate",           "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_TARGETS, "desc": "Percent of catchable targets dropped. Lower is better."},
+    "yprr":                 {"label": "Yards / Route Run",   "category": "Receiving", "positions": ["WR", "TE", "RB"], "efficiency": True, "min_vol": _V_GAMES, "desc": "Receiving yards earned per route run (from PFF). Elite WRs are typically 2.0+; accounts for targets indirectly by rewarding yards on every snap."},
+    "slot_rate":            {"label": "Slot Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from the slot."},
+    "wide_rate":            {"label": "Wide Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from out wide."},
+    "inline_rate":          {"label": "Inline Rate",         "category": "Receiving", "positions": ["TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of snaps a tight end lined up inline (attached to the formation)."},
+    "pass_block_rate":      {"label": "Block Rate",          "category": "Receiving", "positions": ["TE", "RB"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of pass snaps spent blocking rather than running a route."},
 }
 
 
@@ -1243,20 +1267,25 @@ def get_metric_leaderboard(
         # leave it NULL and make the min-volume filter a silent no-op. Join the
         # per-player season max so the filter sees the count regardless of date.
         apply_vol = bool(has_vol_col and min_vol and min_vol > 0)
+        # Resolve the season backing this snapshot. Needed for the min-volume
+        # filter AND for displaying volume: PFF-imported metrics (BTT rate,
+        # drop rate, grades, ...) live on rows whose volume totals are NULL,
+        # so both must read the coalesced per-season value, not the row's own.
         season_for_vol = season
-        if apply_vol and season_for_vol is None:
+        if has_vol_col and season_for_vol is None:
             srow = conn.execute(
                 "SELECT season FROM player_advanced_metrics "
                 "WHERE as_of_date = %s AND season IS NOT NULL LIMIT 1",
                 (latest_date,),
             ).fetchone()
             season_for_vol = srow["season"] if srow else None
-        apply_vol = apply_vol and season_for_vol is not None
+        use_vol_join = bool(has_vol_col and season_for_vol is not None)
+        apply_vol = apply_vol and use_vol_join
 
         gate = ""
         vol_join = ""
         params: list = []
-        if apply_vol:
+        if use_vol_join:
             vol_join = (
                 f" LEFT JOIN (SELECT player_id, MAX({vol_col}) AS vol "
                 "FROM player_advanced_metrics WHERE season = %s GROUP BY player_id) v "
@@ -1276,10 +1305,23 @@ def get_metric_leaderboard(
             gate += " AND (v.vol IS NULL OR v.vol >= %s)"
             params.append(min_vol)
         params.append(limit)
-        games_col = "m.games AS games," if has_games else ""
-        # Also select the relevant volume column so the leaderboard can display it.
+        if has_games:
+            games_col = (
+                "COALESCE(m.games, v.vol) AS games,"
+                if (use_vol_join and vol_col == "games") else "m.games AS games,"
+            )
+        else:
+            games_col = ""
+        # Also select the relevant volume column so the leaderboard can display
+        # it — coalesced with the season max so PFF rows still show a count.
         has_specific_vol = vol_col != "games" and vol_col in existing_cols
-        specific_vol_col = f"m.{vol_col} AS vol," if has_specific_vol else ""
+        if has_specific_vol:
+            specific_vol_col = (
+                f"COALESCE(m.{vol_col}, v.vol) AS vol,"
+                if use_vol_join else f"m.{vol_col} AS vol,"
+            )
+        else:
+            specific_vol_col = ""
         rows = conn.execute(
             f"""SELECT m.player_id, m.position, {games_col} {specific_vol_col} m.{metric} AS value
                 FROM player_advanced_metrics m{vol_join}

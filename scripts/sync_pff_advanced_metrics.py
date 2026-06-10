@@ -2,23 +2,21 @@
 """
 Download PFF CSV exports and upsert selected columns into player_advanced_metrics.
 
-Expected env vars:
-  PFF_RUSHING_CSV_URL
-  PFF_RECEIVING_CSV_URL
-  PFF_PASSING_CSV_URL
-Optional auth:
-  PFF_COOKIE
+Required env var when downloading automatically:
+  PFF_COOKIE  — your premium.pff.com session cookie (copy from browser DevTools)
+
+Optional:
   PFF_AUTH_HEADER  (e.g. 'Bearer ...')
 
-URL env vars may include a `{season}` token if your export links are season-scoped,
-for example:
-  PFF_RUSHING_CSV_URL="https://.../rushing?season={season}&export=csv"
+When PFF_COOKIE is set, the script downloads fresh CSVs directly from PFF's API
+before syncing. Without it, the script reads from local files in data/.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import io
 import os
 import re
 from datetime import date
@@ -35,6 +33,11 @@ from scripts.fix_advanced_metrics_ids import _build_index_maps, _resolve
 OUTPUT_DIR = "data"
 PFF_BASE = "https://premium.pff.com"
 
+# All regular-season weeks + playoff rounds (WC=28, Div=29, Conf=30, SB=32).
+# PFF just returns whatever weeks have data, so passing the full list is safe
+# mid-season.
+_ALL_WEEKS = "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,28,29,30,32"
+
 RECEIVING_COLS = {
     "yards_after_catch": "yards_after_catch",
     "yards_after_catch_per_reception": "yards_after_catch_per_reception",
@@ -47,6 +50,7 @@ RECEIVING_COLS = {
     "inline_rate": "inline_rate",
     "pass_block_rate": "pass_block_rate",
     "grades_offense": "grades_offense",
+    "yprr": "yprr",
 }
 
 RUSHING_COLS = {
@@ -75,6 +79,40 @@ def _headers() -> Dict[str, str]:
     if os.getenv("PFF_AUTH_HEADER"):
         h["Authorization"] = os.getenv("PFF_AUTH_HEADER", "")
     return h
+
+
+def download_pff_csv(facet: str, season: int, dest_path: str) -> bool:
+    """Download a PFF summary CSV for the given facet and season.
+
+    Returns True on success, False if the download should be skipped
+    (no cookie configured, HTTP error, or empty response).
+    """
+    if not os.getenv("PFF_COOKIE"):
+        return False
+
+    url = (
+        f"{PFF_BASE}/api/v1/facet/{facet}/summary"
+        f"?league=nfl&season={season}&week={_ALL_WEEKS}&export=true"
+    )
+    try:
+        resp = requests.get(url, headers=_headers(), timeout=60)
+        if resp.status_code == 401 or resp.status_code == 403:
+            print(f"    [warn] PFF returned {resp.status_code} for {facet} — "
+                  f"cookie may be expired")
+            return False
+        resp.raise_for_status()
+        content = resp.content
+        if len(content) < 50:
+            print(f"    [warn] PFF returned empty/tiny response for {facet}")
+            return False
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        with open(dest_path, "wb") as fh:
+            fh.write(content)
+        print(f"    Downloaded {facet} → {dest_path} ({len(content):,} bytes)")
+        return True
+    except requests.RequestException as exc:
+        print(f"    [warn] Failed to download {facet}: {exc}")
+        return False
 
 
 def resolve_seasons(explicit_seasons: Optional[str], last_n: int) -> List[int]:
@@ -201,6 +239,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     init_advanced_metrics_db()
 
+    has_cookie = bool(os.getenv("PFF_COOKIE"))
+    if has_cookie:
+        print("PFF_COOKIE set — will download fresh CSVs from PFF")
+    else:
+        print("No PFF_COOKIE — reading from local files only")
+
     # Build the PFF-name -> Sleeper-id resolver from the same index the
     # leaderboard uses to render names, so synced rows share the Sleeper id of
     # the computed snapshot and combine under one player/season.
@@ -213,25 +257,28 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     total_r = total_w = total_p = 0
     for season in seasons:
-        # Resolve each summary file. The exports live under data/pff_nfl_{season}/
-        # (per-season folder); older runs used a flat data/{name}_{season}.csv.
-        # Try the folder layout first, then fall back to the flat name so both
-        # layouts work.
-        def _resolve_file(name: str) -> Optional[str]:
+        season_dir = os.path.join(OUTPUT_DIR, f"pff_nfl_{season}")
+
+        def _resolve_file(facet: str) -> Optional[str]:
+            # If we have a cookie, download fresh and use that path.
+            download_path = os.path.join(season_dir, f"{facet}_summary.csv")
+            if has_cookie:
+                if download_pff_csv(facet, season, download_path):
+                    return download_path
+            # Fall back to any existing local file.
             candidates = [
-                os.path.join(OUTPUT_DIR, f"pff_nfl_{season}", f"{name}_summary.csv"),
-                os.path.join(OUTPUT_DIR, f"{name}_summary_{season}.csv"),
+                download_path,
+                os.path.join(OUTPUT_DIR, f"{facet}_summary_{season}.csv"),
             ]
             for path in candidates:
                 if os.path.exists(path):
                     return path
             return None
 
-        rushing_csv = _resolve_file("rushing")
+        rushing_csv  = _resolve_file("rushing")
         receiving_csv = _resolve_file("receiving")
-        passing_csv = _resolve_file("passing")
+        passing_csv  = _resolve_file("passing")
 
-        # Check if files exist before processing
         if rushing_csv:
             total_r += upsert_csv(rushing_csv, season, RUSHING_COLS, "RB", index_maps)
         if receiving_csv:

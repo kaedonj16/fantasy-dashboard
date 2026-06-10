@@ -1227,8 +1227,8 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 }
 
 .changelog-tag-feature {
-  background: #dcfce7;
-  color: #15803d;
+  background: rgba(16,185,129,.12);
+  color: #10b981;
 }
 
 .changelog-tag-fix {
@@ -1237,8 +1237,8 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 }
 
 .changelog-tag-new {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: rgba(59,130,246,.12);
+  color: #3b82f6;
 }
 
 .changelog-entry-text {
@@ -6957,6 +6957,123 @@ select:focus {
   letter-spacing: -0.3px;
 }
 
+/* Player compare: collapsible sections + weekly trends columns */
+.pm-section-collapsible {
+  cursor: pointer; user-select: none;
+  justify-content: flex-start; gap: 8px;
+  padding: 5px 10px; margin-left: -10px; border-radius: 7px;
+  transition: background 0.12s;
+}
+.pm-section-collapsible:hover { background: var(--row, rgba(127, 127, 127, 0.08)); }
+.pm-collapse-chevron {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; flex-shrink: 0;
+  border: 1px solid var(--border); border-radius: 5px;
+  font-size: 10px; color: var(--text-muted); line-height: 1;
+  transition: transform 0.15s;
+}
+.pm-section-collapsible:hover .pm-collapse-chevron { color: var(--text); border-color: var(--text-muted); }
+.pm-collapse-hint {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+  opacity: 0; transition: opacity 0.12s; text-transform: none; letter-spacing: 0;
+}
+.pm-section-collapsible:hover .pm-collapse-hint { opacity: 0.8; }
+.compare-weekly-section {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding-top: 6px;
+}
+.compare-weekly-name {
+  font-size: 12px; font-weight: 800; color: var(--text); margin-bottom: 6px;
+}
+@media (max-width: 600px) {
+  .compare-weekly-section { grid-template-columns: 1fr; }
+}
+
+/* Player modal weekly trends */
+#pmWeeklyTrendsWrap { margin-top: 14px; }
+.pm-weekly-toggle {
+  width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--card); color: var(--text-muted);
+  font-size: 12px; font-weight: 700; cursor: pointer; text-align: left;
+  transition: background 0.12s;
+}
+.pm-weekly-toggle:hover { background: var(--row, #f8fafc); color: var(--text); }
+.pm-wt-grid { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
+.pm-wt-row { display: flex; align-items: center; gap: 12px; }
+.pm-wt-label { flex: 0 0 64px; font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.pm-wt-stats { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.pm-wt-last { font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.pm-wt-avg { font-size: 10px; color: var(--text-muted); }
+.pm-wt-delta { font-size: 10px; font-weight: 700; }
+
+/* Rivalry tracker (history page) */
+.rivalry-card { margin-top: 20px; }
+.rivalry-controls {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.rivalry-select {
+  flex: 1; min-width: 160px; max-width: 260px;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card); color: var(--text); font-size: 13px; cursor: pointer;
+}
+.rivalry-vs {
+  font-size: 12px; font-weight: 800; color: var(--text-muted);
+  letter-spacing: 0.06em; flex-shrink: 0;
+}
+.rivalry-go-btn {
+  padding: 8px 18px; border: none; border-radius: 8px; cursor: pointer;
+  background: var(--text); color: var(--card); font-size: 13px; font-weight: 700;
+}
+.rivalry-go-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.rivalry-empty {
+  text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px;
+}
+.rivalry-scoreline {
+  display: flex; align-items: center; justify-content: center; gap: 24px;
+  padding: 14px 0 4px;
+}
+.rivalry-side { text-align: center; min-width: 110px; }
+.rivalry-name { font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 2px; }
+.rivalry-wins { font-size: 34px; font-weight: 800; color: var(--text); line-height: 1.1; }
+.rivalry-dash { font-size: 22px; color: var(--text-muted); }
+.rivalry-ties { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.rivalry-chips {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  margin: 14px 0 16px;
+}
+.rivalry-chip {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 14px; padding: 4px 11px;
+  background: var(--card);
+}
+.rivalry-chip-streak { color: #f59e0b; border-color: rgba(245,158,11,.4); }
+.rivalry-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rivalry-table th {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-muted); text-align: left; padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.rivalry-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text); }
+.rivalry-table .rivalry-w { font-weight: 800; color: #10b981; }
+@media (max-width: 600px) {
+  .rivalry-controls { flex-direction: column; align-items: stretch; }
+  .rivalry-select { max-width: none; }
+  .rivalry-vs { text-align: center; }
+}
+
+/* Weekly movement arrows (power rankings) */
+.pr-move {
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: -0.2px;
+}
+.pr-move-up   { color: #10b981; }
+.pr-move-down { color: #ef4444; }
+.pr-move-flat { color: var(--text-muted); opacity: 0.6; }
+.podium .podium-header h3 .pr-move { font-size: 11px; vertical-align: 2px; margin-left: 2px; }
+
 .rank-item > .avatar {
   flex: 0 0 26px;
   width: 26px;
@@ -8048,8 +8165,8 @@ select:focus {
 }
 
 .home-update-tag.update-tag-feature {
-  color: #3b82f6;
-  background: rgba(59, 130, 246, 0.1);
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
 }
 
 .home-update-tag.update-tag-improvement {
@@ -8058,8 +8175,8 @@ select:focus {
 }
 
 .home-update-tag.update-tag-new {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.12);
 }
 
 .home-update-date {
@@ -13460,17 +13577,34 @@ img, svg, canvas {
   flex-direction: column;
   gap: 35px;
 }
-.adv-metrics-two-col {
+/* Flat 7-col grid so left & right metric rows share the same grid row */
+.adv-metrics-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 14px;
-  align-items: start;
+  grid-template-columns: 120px 1fr 54px 1px 120px 1fr 54px;
+  column-gap: 8px;
+  row-gap: 13px;
+  align-items: center;
 }
-.adv-metrics-two-col .pm-comp-list {
-  gap: 14px;
+.am-vert-sep {
+  width: 1px;
+  background: var(--border);
+  align-self: stretch;
+  min-height: 16px;
+}
+.pm-comp-sub {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.65;
+  line-height: 1.1;
+  margin-top: 2px;
 }
 @media (max-width: 600px) {
-  .adv-metrics-two-col { grid-template-columns: 1fr; }
+  .adv-metrics-grid {
+    grid-template-columns: 90px 1fr 44px;
+  }
+  /* display:contents removes the sep from grid flow; right-side cells
+     wrap onto the next row(s) making a single-column list */
+  .am-vert-sep { display: contents; }
 }
 .pm-comp-list-bo {
   display: flex;
@@ -14497,6 +14631,21 @@ tr.team-clickable {
   color: var(--text-muted, #94a3b8);
   font-weight: 500;
   letter-spacing: 0.04em;
+}
+
+.tour-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border, #e2e8f0);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.tour-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent, #3b82f6);
+  transition: width 0.25s ease;
 }
 
 .tour-skip-btn {
@@ -17315,10 +17464,10 @@ button:disabled {
   align-self: flex-start;
 }
 /* Mirror changelog tag colours */
-.notif-toast-tag-new     { background: rgba(56,189,248,.15); color: #38bdf8; }
-.notif-toast-tag-fix     { background: rgba(34,197, 94,.15); color: #22c55e; }
+.notif-toast-tag-new     { background: rgba(59,130,246,.12);  color: #3b82f6; }
+.notif-toast-tag-fix     { background: rgba(34,197, 94,.15);  color: #22c55e; }
 .notif-toast-tag-update  { background: rgba(251,191, 36,.15); color: #fbbf24; }
-.notif-toast-tag-feature { background: rgba(168,85,247,.15);  color: #a855f7; }
+.notif-toast-tag-feature { background: rgba(16,185,129,.12);  color: #10b981; }
 .notif-toast-text {
   font-size: 13px;
   color: var(--muted, #94a3b8);
