@@ -131,7 +131,7 @@ def build_advanced_metrics_body(
       </div>
       <div class="card-body" style="padding-top:0;">
 
-        <div class="am-controls">
+        <div class="am-controls" id="amControls">
           <div class="am-ctrl">
             <label class="am-ctrl-label">
               Primary Metric
@@ -146,27 +146,23 @@ def build_advanced_metrics_body(
             <label class="am-ctrl-label">Season</label>
             <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
           </div>
-          <div class="am-ctrl am-ctrl-search">
-            <label class="am-ctrl-label">Search</label>
-            <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search">
-          </div>
-        </div>
-
-        <!-- Secondary filters: always visible on desktop, collapsible on mobile -->
-        <div class="am-controls am-filters-panel" id="amFiltersPanel">
-          <div class="am-ctrl" id="amTeamCtrl">
+          <div class="am-ctrl am-mobile-filter" id="amTeamCtrl">
             <label class="am-ctrl-label">Team</label>
             <select id="amTeamFilter" class="am-select am-season-select">
               <option value="">All Teams</option>
             </select>
           </div>
-          <div class="am-ctrl am-ctrl-games" id="amGamesCtrl" style="display:none;">
+          <div class="am-ctrl am-ctrl-games am-mobile-filter" id="amGamesCtrl" style="display:none;">
             <label class="am-ctrl-label" id="amVolLabel">Min</label>
             <select id="amMinGames" class="am-select am-season-select"></select>
           </div>
-          <div class="am-ctrl">
+          <div class="am-ctrl am-mobile-filter" id="amSortCtrl">
             <label class="am-ctrl-label">Sort</label>
             <button id="amSortBtn" type="button" class="am-sort-btn">High &rarr; Low</button>
+          </div>
+          <div class="am-ctrl am-ctrl-search">
+            <label class="am-ctrl-label">Search</label>
+            <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search">
           </div>
         </div>
 
@@ -318,22 +314,20 @@ def build_advanced_metrics_body(
       .am-subcontrols { display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:nowrap; }
       .am-positions { display:flex; gap:6px; flex:1; min-width:0; overflow-x:auto; padding-bottom:1px; }
       .am-roster-toggle { flex-shrink:0; }
-      /* Secondary filters row: stacked under the primary controls on desktop */
-      .am-filters-panel { margin-top:0; }
       .am-filters-btn { display:none; }
       /* Mobile: metric 2/3 + season 1/3 on the first row, search full width,
-         secondary filters collapsed behind a Filters button beside the
-         position pills, toggles wrap underneath */
+         Team/Min/Sort collapsed behind a Filters button beside the position
+         pills, toggles wrap underneath. Desktop keeps one aligned row. */
       @media (max-width:600px) {
         .am-controls { gap:10px; }
         .am-ctrl { flex:1 1 calc(50% - 5px); min-width:0; }
         .am-controls .am-ctrl:first-child { flex:2 1 0; }
         #amSeasonCtrl { flex:1 1 0; }
-        .am-ctrl-search { flex:1 1 100%; }
+        .am-ctrl-search { flex:1 1 100%; order:1; }
+        .am-mobile-filter { order:2; }
         .am-ctrl .am-select, .am-ctrl .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
+        .am-controls:not(.am-open) .am-mobile-filter { display:none !important; }
         .am-filters-btn { display:inline-block; flex-shrink:0; padding:6px 14px; font-size:12px; border-radius:20px; }
-        .am-filters-panel { display:none; margin:0 0 12px; }
-        .am-filters-panel.am-open { display:flex; }
         .am-subcontrols { flex-wrap:wrap; row-gap:10px; }
         .am-positions { flex:1 1 auto; flex-wrap:wrap; overflow-x:visible; min-width:0; }
       }
@@ -1371,10 +1365,10 @@ _AM_JS = r"""
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
   }
   const filtersBtn = document.getElementById('amFiltersBtn');
-  const filtersPanel = document.getElementById('amFiltersPanel');
-  if (filtersBtn && filtersPanel) {
+  const controlsRow = document.getElementById('amControls');
+  if (filtersBtn && controlsRow) {
     filtersBtn.addEventListener('click', () => {
-      const open = filtersPanel.classList.toggle('am-open');
+      const open = controlsRow.classList.toggle('am-open');
       filtersBtn.innerHTML = open ? 'Filters &#9652;' : 'Filters &#9662;';
     });
   }
