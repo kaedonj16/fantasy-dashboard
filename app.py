@@ -15943,6 +15943,10 @@ def api_roster_grade():
     if not league_id or not viewer_roster_id:
         return jsonify({"error": "Missing required parameters"}), 400
 
+    _user_id = session.get("viewer_username")
+    if not has_premium_for_viewer(_user_id, session.get("viewer_user_id"), league_id, platform, season):
+        return jsonify({"error": "premium_required"}), 403
+
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         grade_data = get_roster_grade(ctx, viewer_roster_id)
@@ -16372,8 +16376,12 @@ def api_trade_eval():
     depth_warnings = {}
     viewer_roster_id = payload.get("viewer_roster_id")
     viewer_team_name = payload.get("viewer_team_name")
+    _user_id = session.get("viewer_username")
+    _has_premium = has_premium_for_viewer(
+        _user_id, session.get("viewer_user_id"), league_id, platform, season
+    ) if league_id else False
 
-    if league_id and viewer_roster_id:
+    if league_id and viewer_roster_id and _has_premium:
         try:
             from dashboard_services.ai.context_builders import calculate_roster_depth_warning, build_model_value_lookup, _ctx_is_sf
             ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
@@ -24403,6 +24411,10 @@ def api_ask_gm():
 
     if not question or not league_id:
         return jsonify({"error": "Missing required parameters"}), 400
+
+    _user_id = session.get("viewer_username")
+    if not has_premium_for_viewer(_user_id, session.get("viewer_user_id"), league_id, platform, season):
+        return jsonify({"error": "premium_required"}), 403
 
     if not ai_enabled():
         return jsonify({"error": "AI unavailable"}), 503
