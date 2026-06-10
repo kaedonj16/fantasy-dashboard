@@ -142,14 +142,18 @@ def build_advanced_metrics_body(
             </label>
             <select id="amMetric" class="am-select">__METRIC_OPTIONS__</select>
           </div>
-          <div class="am-ctrl am-ctrl-search">
-            <label class="am-ctrl-label">Search</label>
-            <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search">
-          </div>
           <div class="am-ctrl am-ctrl-season" id="amSeasonCtrl">
             <label class="am-ctrl-label">Season</label>
             <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
           </div>
+          <div class="am-ctrl am-ctrl-search">
+            <label class="am-ctrl-label">Search</label>
+            <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search">
+          </div>
+        </div>
+
+        <!-- Secondary filters: always visible on desktop, collapsible on mobile -->
+        <div class="am-controls am-filters-panel" id="amFiltersPanel">
           <div class="am-ctrl" id="amTeamCtrl">
             <label class="am-ctrl-label">Team</label>
             <select id="amTeamFilter" class="am-select am-season-select">
@@ -174,6 +178,7 @@ def build_advanced_metrics_body(
             <button class="am-pos" data-pos="WR">WR</button>
             <button class="am-pos" data-pos="TE">TE</button>
           </div>
+          <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
           <label class="am-roster-toggle" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
             <input type="checkbox" id="amTrendToggle">
             <span>Usage trends</span>
@@ -313,6 +318,25 @@ def build_advanced_metrics_body(
       .am-subcontrols { display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:nowrap; }
       .am-positions { display:flex; gap:6px; flex:1; min-width:0; overflow-x:auto; padding-bottom:1px; }
       .am-roster-toggle { flex-shrink:0; }
+      /* Secondary filters row: stacked under the primary controls on desktop */
+      .am-filters-panel { margin-top:0; }
+      .am-filters-btn { display:none; }
+      /* Mobile: metric 2/3 + season 1/3 on the first row, search full width,
+         secondary filters collapsed behind a Filters button beside the
+         position pills, toggles wrap underneath */
+      @media (max-width:600px) {
+        .am-controls { gap:10px; }
+        .am-ctrl { flex:1 1 calc(50% - 5px); min-width:0; }
+        .am-controls .am-ctrl:first-child { flex:2 1 0; }
+        #amSeasonCtrl { flex:1 1 0; }
+        .am-ctrl-search { flex:1 1 100%; }
+        .am-ctrl .am-select, .am-ctrl .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
+        .am-filters-btn { display:inline-block; flex-shrink:0; padding:6px 14px; font-size:12px; border-radius:20px; }
+        .am-filters-panel { display:none; margin:0 0 12px; }
+        .am-filters-panel.am-open { display:flex; }
+        .am-subcontrols { flex-wrap:wrap; row-gap:10px; }
+        .am-positions { flex:1 1 auto; flex-wrap:wrap; overflow-x:visible; min-width:0; }
+      }
       .am-pos {
         padding:6px 14px; border-radius:20px; border:1px solid var(--border);
         background:var(--card); color:var(--text-muted); cursor:pointer;
@@ -1345,6 +1369,14 @@ _AM_JS = r"""
   }
   if (rosterChk) {
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
+  }
+  const filtersBtn = document.getElementById('amFiltersBtn');
+  const filtersPanel = document.getElementById('amFiltersPanel');
+  if (filtersBtn && filtersPanel) {
+    filtersBtn.addEventListener('click', () => {
+      const open = filtersPanel.classList.toggle('am-open');
+      filtersBtn.innerHTML = open ? 'Filters &#9652;' : 'Filters &#9662;';
+    });
   }
   const trendChk = document.getElementById('amTrendToggle');
   if (trendChk) {
