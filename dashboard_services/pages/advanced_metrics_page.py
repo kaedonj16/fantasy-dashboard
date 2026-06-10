@@ -313,6 +313,16 @@ def build_advanced_metrics_body(
       .am-subcontrols { display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:nowrap; }
       .am-positions { display:flex; gap:6px; flex:1; min-width:0; overflow-x:auto; padding-bottom:1px; }
       .am-roster-toggle { flex-shrink:0; }
+      /* Mobile: two controls per row (metric + search full width), and let
+         the toggles wrap under the position pills instead of crushing them */
+      @media (max-width:600px) {
+        .am-controls { gap:10px; }
+        .am-ctrl { flex:1 1 calc(50% - 5px); min-width:0; }
+        .am-controls .am-ctrl:first-child, .am-ctrl-search { flex:1 1 100%; }
+        .am-ctrl .am-select, .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
+        .am-subcontrols { flex-wrap:wrap; row-gap:10px; }
+        .am-positions { flex:1 1 100%; }
+      }
       .am-pos {
         padding:6px 14px; border-radius:20px; border:1px solid var(--border);
         background:var(--card); color:var(--text-muted); cursor:pointer;
