@@ -382,6 +382,13 @@ try:
 except Exception as e:
     logger.warning("[players-bp] skipped: %s", e)
 
+try:
+    from routes.yahoo_auth_bp import yahoo_auth_bp
+    app.register_blueprint(yahoo_auth_bp)
+    logger.info("[yahoo-auth-bp] registered")
+except Exception as e:
+    logger.warning("[yahoo-auth-bp] skipped: %s", e)
+
 
 
 def generate_recent_updates_html(limit=5):
@@ -491,6 +498,7 @@ FORM_BODY = """
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
             <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
+            <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
           </div>
         </div>
 
@@ -522,6 +530,25 @@ FORM_BODY = """
           <div id="espnError" class="error-message" style="display:none;"></div>
           <p class="hint" style="margin-top:6px;" id="espnHint">
             Private leagues also need <code>ESPN_S2</code> and <code>ESPN_SWID</code> cookies set on the server.
+          </p>
+        </div>
+
+        <!-- Yahoo Flow -->
+        <div id="yahooFlow" style="display:none;">
+          <div class="row">
+            <label for="yahooLeagueIdInput">Yahoo League ID</label>
+            <input type="text" id="yahooLeagueIdInput" placeholder="e.g. 123456" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="yahooTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+            <input type="text" id="yahooTeamName" placeholder="e.g. Dynasty Monsters">
+          </div>
+          <div class="row">
+            <button type="button" id="yahooConnectBtn">Connect Yahoo Account</button>
+          </div>
+          <div id="yahooError" class="error-message" style="display:none;"></div>
+          <p class="hint" style="margin-top:6px;">
+            You'll be redirected to Yahoo to authorize access, then returned here.
           </p>
         </div>
 
@@ -1824,6 +1851,11 @@ def validate_league_id(platform: str, league_id: str) -> tuple[bool, Optional[st
             return False, "Invalid ESPN league ID. It should be a number."
         return True, None
 
+    if platform == "yahoo":
+        if not league_id.isdigit():
+            return False, "Invalid Yahoo league ID. It should be a number."
+        return True, None
+
     return False, f"Unsupported platform: {platform}"
 
 
@@ -2055,11 +2087,11 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         league_settings = (league or {}).get("settings") or {}
         total_rosters = int((league or {}).get("total_rosters") or 0)
     else:
-        scoring_settings = get_effective_scoring_settings()
+        scoring_settings     = get_effective_scoring_settings()
         raw_scoring_settings = {}
-        roster_positions = get_roster_positions()
-        league_settings = get_league_settings()
-        total_rosters = get_total_rosters()
+        roster_positions     = get_roster_positions()
+        league_settings      = get_league_settings()
+        total_rosters        = get_total_rosters()
 
     # Core computed tables
     if offseason_mode:
