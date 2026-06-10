@@ -6952,7 +6952,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Handle success
-        if (data.leagues && data.leagues.length > 0) {
+        if (data.leagues && data.leagues.length > 1) {
           leagueSwitcher.innerHTML = '';
           data.leagues.forEach(league => {
             const option = document.createElement('option');
@@ -6965,7 +6965,8 @@ document.addEventListener('DOMContentLoaded', function() {
             leagueSwitcher.appendChild(option);
           });
         } else {
-          leagueSwitcher.innerHTML = '<option value="">No leagues found</option>';
+          const wrapper = leagueSwitcher.closest('.league-switcher-wrapper');
+          if (wrapper) wrapper.style.display = 'none';
         }
       })
       .catch(err => {

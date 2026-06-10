@@ -1470,7 +1470,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Single switcher for settings dropdown (works on both desktop and mobile)
     league_switcher_html = ""
     viewer_username = session.get("viewer_username")
-    if viewer_username:
+    if viewer_username and platform != "espn":
         league_switcher_html = (
             f"<div class='league-switcher-wrapper'>"
             f"  <select id='leagueSwitcher' class='league-switcher' "

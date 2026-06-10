@@ -447,6 +447,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     (function() {{
       const TI_SEASON = {season};
       const TI_HAS_PREMIUM = {str(has_premium).lower()};
+      const TI_PLATFORM = '{platform}';
       let TI_LEAGUE_TYPE = '{_ti_lt}';
       const TI_LEAGUE_SIZE = {_ti_sz};
       let currentPage = 1;
@@ -673,7 +674,14 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         const body = document.getElementById('tiTradesBody');
         _tiTrades.total = data.total || 0;
         _tiTrades.totalPages = data.total_pages || 1;
-        if (!data.trades || data.trades.length === 0) {{
+        let trades = data.trades || [];
+        if (TI_PLATFORM === 'espn') {{
+          trades = trades.filter(t =>
+            !(t.side_a || []).some(a => a.type === 'pick') &&
+            !(t.side_b || []).some(a => a.type === 'pick')
+          );
+        }}
+        if (trades.length === 0) {{
           body.innerHTML = '<div class="ti-trades-msg">No trades found for this filter.</div>';
           return;
         }}
@@ -683,7 +691,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           const cls = a.is_focus ? 'focus' : 'other';
           return `<div class="ti-trade-asset ${{cls}}">${{a.name}}${{posTag}}</div>`;
         }}
-        body.innerHTML = data.trades.map(t => {{
+        body.innerHTML = trades.map(t => {{
           const sideA = (t.side_a || []).map(assetHtml).join('');
           const sideB = (t.side_b || []).map(assetHtml).join('');
           const fmt   = t.is_superflex ? 'SF' : t.is_superflex === false ? '1QB' : '';
