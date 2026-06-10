@@ -20569,11 +20569,12 @@ def api_trade_database():
     ?q=<player name>  &page=<int>  &limit=<int>  &league_type=<all|1qb|sf>
     """
     try:
-        q           = (request.args.get("q") or "").strip().lower()
-        page        = max(0, int(request.args.get("page") or 0))
-        limit       = min(int(request.args.get("limit") or 20), 50)
-        league_type = (request.args.get("league_type") or "all").strip().lower()
-        season      = int(request.args.get("season") or datetime.now().year)
+        q             = (request.args.get("q") or "").strip().lower()
+        page          = max(0, int(request.args.get("page") or 0))
+        limit         = min(int(request.args.get("limit") or 20), 50)
+        league_type   = (request.args.get("league_type") or "all").strip().lower()
+        league_format = (request.args.get("league_format") or "all").strip().lower()
+        season        = int(request.args.get("season") or datetime.now().year)
 
         # ID-based filters (comma-separated player IDs)
         _pa_raw = (request.args.get("player_a") or "").strip()
@@ -20596,13 +20597,21 @@ def api_trade_database():
             if not match_ids:
                 return jsonify({"trades": [], "total": 0, "has_more": False})
 
-        # Build superflex filter as a parameterized condition (no f-string interpolation)
+        # Build superflex filter
         sf_param = None
         if league_type == "sf":
             sf_param = True
         elif league_type == "1qb":
             sf_param = False
         sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
+
+        # Build dynasty/redraft filter (league_type column: 2=dynasty, 1=redraft)
+        lf_param = None
+        if league_format == "dynasty":
+            lf_param = 2
+        elif league_format == "redraft":
+            lf_param = 1
+        lf_clause = "AND l.league_type = %s" if lf_param is not None else ""
 
         # Build player filter clauses.
         # Always require both sides present so COUNT and rendered cards agree.
@@ -20653,28 +20662,29 @@ def api_trade_database():
 
         filter_sql = (" AND " + " AND ".join(filter_clauses)) if filter_clauses else ""
         sf_p       = [sf_param] if sf_param is not None else []
+        lf_p       = [lf_param] if lf_param is not None else []
 
         with get_conn() as conn:
-            count_params = [season] + sf_p + filter_params
+            count_params = [season] + sf_p + lf_p + filter_params
             count_row = conn.execute(
                 f"""
                 SELECT COUNT(DISTINCT t.id) AS n
                 FROM trade_intel_trades t
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                WHERE t.season = %s {sf_clause}{filter_sql}
+                WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
                 """,
                 count_params,
             ).fetchone()
             total = int(count_row["n"]) if count_row else 0
 
-            row_params = [season] + sf_p + filter_params + [limit + 1, page * limit]
+            row_params = [season] + sf_p + lf_p + filter_params + [limit + 1, page * limit]
             trade_rows = conn.execute(
                 f"""
                 SELECT DISTINCT t.id, t.transaction_id, t.season, t.week, t.created_at,
                        l.scoring_type, l.is_superflex, l.num_teams
                 FROM trade_intel_trades t
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                WHERE t.season = %s {sf_clause}{filter_sql}
+                WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
                 ORDER BY t.created_at DESC NULLS LAST
                 LIMIT %s OFFSET %s
                 """,
@@ -20780,11 +20790,12 @@ def api_trade_intel_player_trades(player_id: str):
     Returns each trade with both sides and is_focus=True on the queried player.
     """
     try:
-        season      = int(request.args.get("season") or datetime.now().year)
-        league_type = (request.args.get("league_type") or "all").strip().lower()
-        page        = max(1, int(request.args.get("page") or 1))
-        limit       = min(int(request.args.get("limit") or 15), 50)
-        offset      = (page - 1) * limit
+        season        = int(request.args.get("season") or datetime.now().year)
+        league_type   = (request.args.get("league_type") or "all").strip().lower()
+        league_format = (request.args.get("league_format") or "all").strip().lower()
+        page          = max(1, int(request.args.get("page") or 1))
+        limit         = min(int(request.args.get("limit") or 15), 50)
+        offset        = (page - 1) * limit
 
         sf_param = None
         if league_type == "sf":
@@ -20793,13 +20804,22 @@ def api_trade_intel_player_trades(player_id: str):
             sf_param = False
         sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
 
+        lf_param = None
+        if league_format == "dynasty":
+            lf_param = 2
+        elif league_format == "redraft":
+            lf_param = 1
+        lf_clause = "AND l.league_type = %s" if lf_param is not None else ""
+
         from dashboard_services.db import get_conn
         from utils.utils import load_players_index
 
         players_map = load_players_index() or {}
 
         with get_conn() as conn:
-            base = [player_id, season] + ([sf_param] if sf_param is not None else [])
+            base = ([player_id, season]
+                    + ([sf_param] if sf_param is not None else [])
+                    + ([lf_param] if lf_param is not None else []))
 
             count_row = conn.execute(
                 f"""
@@ -20808,7 +20828,7 @@ def api_trade_intel_player_trades(player_id: str):
                 JOIN trade_intel_assets a ON a.trade_id = t.id
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                 WHERE a.player_id = %s AND a.asset_type = 'player'
-                  AND t.season = %s {sf_clause}
+                  AND t.season = %s {sf_clause}{lf_clause}
                 """,
                 base,
             ).fetchone()
@@ -20823,7 +20843,7 @@ def api_trade_intel_player_trades(player_id: str):
                 JOIN trade_intel_assets a ON a.trade_id = t.id
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                 WHERE a.player_id = %s AND a.asset_type = 'player'
-                  AND t.season = %s {sf_clause}
+                  AND t.season = %s {sf_clause}{lf_clause}
                 ORDER BY t.created_at DESC NULLS LAST
                 LIMIT %s OFFSET %s
                 """,

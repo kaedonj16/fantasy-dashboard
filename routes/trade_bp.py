@@ -448,6 +448,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
       const TI_SEASON = {season};
       const TI_HAS_PREMIUM = {str(has_premium).lower()};
       const TI_PLATFORM = '{platform}';
+      const TI_LEAGUE_FORMAT = TI_PLATFORM === 'espn' ? 'redraft' : TI_PLATFORM === 'sleeper' ? 'dynasty' : 'all';
       let TI_LEAGUE_TYPE = '{_ti_lt}';
       const TI_LEAGUE_SIZE = {_ti_sz};
       let currentPage = 1;
@@ -660,7 +661,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         _tiTrades.page = page;
         document.getElementById('tiTradesBody').innerHTML = '<div class="ti-trades-msg">Loading&hellip;</div>';
         document.getElementById('tiTradesPager').style.display = 'none';
-        const qs = new URLSearchParams({{ season: TI_SEASON, league_type: _tiTrades.leagueFilter, page, limit: 15 }});
+        const qs = new URLSearchParams({{ season: TI_SEASON, league_type: _tiTrades.leagueFilter, page, limit: 15, league_format: TI_LEAGUE_FORMAT }});
         fetch(`/api/trade-intel/player-trades/${{p.player_id}}?${{qs}}`)
           .then(r => {{ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }})
           .then(_renderTITrades)
@@ -1058,6 +1059,8 @@ def page_trade_database(platform: str, season: int, league_id: str):
     <script>
     (function() {{
       const TDB_SEASON = {season};
+      const TDB_PLATFORM = '{platform}';
+      const TDB_LEAGUE_FORMAT = TDB_PLATFORM === 'espn' ? 'redraft' : TDB_PLATFORM === 'sleeper' ? 'dynasty' : 'all';
       let currentPage = 1;
       let paginationData = null;
       let leagueType = 'all';
@@ -1187,7 +1190,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         listEl.style.display = 'none';
         document.getElementById('tdbLoading').style.display = '';
         document.getElementById('tdbPagination').style.display = 'none';
-        const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON }});
+        const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON, league_format: TDB_LEAGUE_FORMAT }});
         if (selectedA.length) params.set('player_a', selectedA.map(p => p.id).join(','));
         if (selectedB.length) params.set('player_b', selectedB.map(p => p.id).join(','));
         fetch('/api/trade-database?' + params)
