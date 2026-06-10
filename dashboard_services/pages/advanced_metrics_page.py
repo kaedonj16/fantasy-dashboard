@@ -142,6 +142,10 @@ def build_advanced_metrics_body(
             </label>
             <select id="amMetric" class="am-select">__METRIC_OPTIONS__</select>
           </div>
+          <div class="am-ctrl am-ctrl-season" id="amSeasonCtrl">
+            <label class="am-ctrl-label">Season</label>
+            <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
+          </div>
           <div class="am-ctrl am-ctrl-search">
             <label class="am-ctrl-label">Search</label>
             <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search">
@@ -153,10 +157,6 @@ def build_advanced_metrics_body(
 
         <!-- Secondary filters: always visible on desktop, collapsible on mobile -->
         <div class="am-controls am-filters-panel" id="amFiltersPanel">
-          <div class="am-ctrl am-ctrl-season" id="amSeasonCtrl">
-            <label class="am-ctrl-label">Season</label>
-            <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
-          </div>
           <div class="am-ctrl" id="amTeamCtrl">
             <label class="am-ctrl-label">Team</label>
             <select id="amTeamFilter" class="am-select am-season-select">
@@ -328,7 +328,7 @@ def build_advanced_metrics_body(
       @media (max-width:600px) {
         .am-controls { gap:10px; }
         .am-ctrl { flex:1 1 calc(50% - 5px); min-width:0; }
-        .am-controls .am-ctrl:first-child, .am-ctrl-search { flex:1 1 100%; }
+        .am-ctrl-search { flex:1 1 100%; }
         .am-ctrl .am-select, .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
         .am-filters-btn-wrap { display:flex; flex:1 1 100%; }
         .am-filters-panel { display:none; margin:0 0 12px; }
