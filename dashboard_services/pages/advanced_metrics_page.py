@@ -20,8 +20,8 @@ def build_advanced_metrics_body(
 ) -> str:
     from data_building.advanced_metrics import get_available_seasons
     available_seasons: list = get_available_seasons() if has_premium else []
-    # Group metrics into <optgroup>s by category (Passing / Rushing / Receiving).
-    _CAT_ORDER = ["Passing", "Rushing", "Receiving"]
+    # Group metrics into <optgroup>s by category (General / Passing / Rushing / Receiving).
+    _CAT_ORDER = ["General", "Passing", "Rushing", "Receiving"]
     groups: dict = {}
     for key, spec in metrics_spec.items():
         cat = spec.get("category", "Other")
@@ -653,7 +653,7 @@ _AM_JS = r"""
     const active = new Set([state.metric, ...state.extraMetrics]);
     const items = Object.entries(cfg.metrics)
       .filter(([, spec]) => (spec.category || 'Other') === primaryCat);
-    const otherCats = ['Passing', 'Rushing', 'Receiving'].filter(c => c !== primaryCat);
+    const otherCats = ['General', 'Passing', 'Rushing', 'Receiving'].filter(c => c !== primaryCat);
     let html = '<div class="am-sp-cat-head">' + primaryCat + '</div>';
     for (const [key, spec] of items) {
       const on = active.has(key);
