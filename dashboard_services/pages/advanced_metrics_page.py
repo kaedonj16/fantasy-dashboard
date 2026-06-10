@@ -1113,7 +1113,7 @@ _AM_JS = r"""
               + ' ' + fmtVal(extraAvgMap[key], key));
           }
         });
-        avgNoteTxt.textContent = lbl + ' averages — ' + parts.join(' · ');
+        avgNoteTxt.textContent = lbl + ' averages: ' + parts.join(' · ');
         if (parts.length === 1) avgNoteTxt.textContent = lbl + ' average: ' + fmtVal(avg, state.metric);
       }
     } else if (avgNote) {
