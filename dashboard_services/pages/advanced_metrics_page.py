@@ -1104,7 +1104,17 @@ _AM_JS = r"""
       if (avgNote) {
         avgNote.style.display = '';
         const lbl = state.position !== 'ALL' ? state.position : 'Field';
-        avgNoteTxt.textContent = lbl + ' average: ' + fmtVal(avg, state.metric);
+        // One entry per visible metric column: primary first, then extras.
+        const parts = [((cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric)
+          + ' ' + fmtVal(avg, state.metric)];
+        state.extraMetrics.forEach(function(key) {
+          if (extraAvgMap[key] != null) {
+            parts.push(((cfg.metrics[key] && cfg.metrics[key].label) || key)
+              + ' ' + fmtVal(extraAvgMap[key], key));
+          }
+        });
+        avgNoteTxt.textContent = lbl + ' averages — ' + parts.join(' · ');
+        if (parts.length === 1) avgNoteTxt.textContent = lbl + ' average: ' + fmtVal(avg, state.metric);
       }
     } else if (avgNote) {
       avgNote.style.display = 'none';
