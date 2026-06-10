@@ -602,7 +602,7 @@ def build_advanced_metrics_body(
       /* ── Filter bar ──────────────────────────────────────────────────────── */
       .am-filter-bar {
         display:flex; align-items:center; gap:6px; flex-wrap:wrap;
-        margin-bottom:10px; min-height:24px;
+        margin-bottom:10px; min-height:24px; padding-right:4px;
       }
       .am-filter-chips { display:flex; flex-wrap:wrap; gap:5px; flex:1; min-width:0; }
       .am-filter-chip {
