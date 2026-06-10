@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-06-10",
         "tag": "feature",
-        "text": "Advanced Metrics: Sort by any column, filter by team, and compare up to 4 metrics side by side. Year-over-year trend arrows show at a glance whether a player improved or declined from last season.",
+        "text": "Advanced Metrics: Sort by any column, filter by team, and compare up to 4 metrics side by side. Pin players to keep them at the top of the leaderboard. Year-over-year trend arrows show at a glance whether a player improved or declined from last season.",
         "link": "/metrics"
     },
     {
