@@ -11138,57 +11138,54 @@ document.addEventListener('click', (e) => {
   }
 
   // ── Tour steps ──────────────────────────────────────────────────────────
+  // Opens/closes a nav dropdown around its step so users see what's inside.
+  function _navDropStep(id) {
+    return {
+      beforeShow: function () { var w = document.getElementById(id); if (w) w.classList.add('open'); },
+      afterLeave: function () { var w = document.getElementById(id); if (w) w.classList.remove('open'); },
+    };
+  }
+
   const TOUR_STEPS = [
     {
       page: 'dashboard', selector: null,
       title: 'Welcome to your dynasty hub!',
-      body: "Let's take a quick tour of the key features. Hit Next to get started.",
+      body: "Let's take a quick tour of the key features. Use the arrow keys to move around, or Esc to bail. You can replay this any time from the settings gear.",
     },
-    {
-      page: 'dashboard', selector: '#settingsGearBtn',
-      title: 'Settings & Leagues',
-      body: 'Manage leagues, refresh your data, toggle dark mode, and view the changelog here.',
-    },
-    {
-      page: 'dashboard', selector: '#settingsDropdown',
-      title: 'Settings Menu',
-      body: 'Switch between leagues, force a data refresh, or flip to dark mode - all in one place.',
-      beforeShow: function () {
-        var dd = document.getElementById('settingsDropdown');
-        if (dd) dd.style.display = 'block';
-      },
-      afterLeave: function () {
-        var dd = document.getElementById('settingsDropdown');
-        if (dd) dd.style.display = '';
-      },
-    },
-    {
-      page: 'dashboard', selector: '#settingsChangelogBtn',
-      title: "What's New",
-      body: 'The bell lights up when new features or data drop. Never miss an update.',
-      beforeShow: function () {
-        var dd = document.getElementById('settingsDropdown');
-        if (dd) dd.style.display = 'block';
-      },
-      afterLeave: function () {
-        var dd = document.getElementById('settingsDropdown');
-        if (dd) dd.style.display = '';
-      },
-    },
-    {
-      page: 'dashboard', selector: '.nav-pills-container',
-      title: 'Navigation',
-      body: 'Jump to Trade Calc, Teams, Activity, Players, Breakouts, Prospects, and more from here.',
-    },
+    Object.assign({
+      page: 'dashboard', selector: '#tradesNavDropdown',
+      title: 'Trades',
+      body: 'Evaluate any deal in the Trade Calculator, get AI suggestions built around your roster, and browse a database of real dynasty trades.',
+    }, _navDropStep('tradesNavDropdown')),
+    Object.assign({
+      page: 'dashboard', selector: '#teamsNavDropdown',
+      title: 'League',
+      body: 'Standings with weekly power rankings, every team’s roster breakdown, league activity, and league health checks.',
+    }, _navDropStep('teamsNavDropdown')),
+    Object.assign({
+      page: 'dashboard', selector: '#playersNavDropdown',
+      title: 'Players',
+      body: 'Player rankings, advanced metric leaderboards, the Breakout Engine, rookie prospects, waivers with start/sit advice, and the schedule assistant.',
+    }, _navDropStep('playersNavDropdown')),
+    Object.assign({
+      page: 'dashboard', selector: '#statsNavDropdown',
+      title: 'Stats',
+      body: 'All-time awards, trend graphs, and full league history — including head-to-head rivalry records between any two managers.',
+    }, _navDropStep('statsNavDropdown')),
     {
       page: 'dashboard', selector: '#navSearchWrapper',
       title: 'Player Search',
       body: 'Search any player from the nav bar — click the magnifying glass or press Ctrl+K, then click a result to open their full profile.',
     },
     {
+      page: 'dashboard', selector: '#settingsGearBtn',
+      title: 'Settings',
+      body: 'Switch between leagues, toggle dark mode, catch up on recent updates, and replay this tour whenever you want.',
+    },
+    {
       page: 'dashboard', selector: '.player-row, .otc-player-row',
       title: 'Player Cards',
-      body: 'Click any player to see their dynasty value history, trend, news, and breakout score.',
+      body: 'Click any player to see their dynasty value history, advanced metrics, weekly usage trends, news, and breakout score.',
       action: 'openPlayerModal',
     },
     {
@@ -11198,15 +11195,9 @@ document.addEventListener('click', (e) => {
       action: 'openTeamModal',
     },
     {
-      page: 'dashboard', selector: 'a[href*="/weekly"]',
-      title: 'Weekly Hub',
-      body: 'Live scores, matchup previews, and weekly projections during the season.',
-      onlyIfPresent: false,
-    },
-    {
       page: 'history', selector: '.card',
       title: 'Season History',
-      body: 'Week-by-week recaps, season standings, power rankings, and scoring trends for every past year.',
+      body: 'Season awards, standings, scoring trends, AI recaps, and the Rivalry Tracker for every past year of your league.',
       navigate: 'history',
     },
     {
@@ -11224,7 +11215,7 @@ document.addEventListener('click', (e) => {
     {
       page: 'dashboard', selector: null,
       title: "You're all set!",
-      body: "Explore your dynasty empire. Check out Trade Calc, Breakouts, and Prospects when you're ready.",
+      body: 'Explore from here — and remember you can replay this tour from the settings gear menu whenever you like.',
     },
   ];
 
@@ -11252,7 +11243,11 @@ document.addEventListener('click', (e) => {
     // Only auto-start on the dashboard for new users with league context
     if (currentPage !== 'dashboard') return;
     if (localStorage.getItem(tourKey)) return;
-    
+
+    // Don't auto-run on small screens — the nav pills the tour spotlights are
+    // collapsed behind the hamburger. (Manual start still works anywhere.)
+    if (window.innerWidth < 768) return;
+
     // Check if we have league context (not on demo/home page)
     const pathParts = window.location.pathname.split('/').filter(Boolean);
     const hasLeague = pathParts.length >= 3 && !isNaN(pathParts[1]);
@@ -11265,7 +11260,9 @@ document.addEventListener('click', (e) => {
   function startTour(fromStep) {
     tourActive   = true;
     currentStep  = fromStep;
+    _tourDir     = 1;
     createOverlayDOM();
+    document.addEventListener('keydown', _tourKeydown);
     showStep(currentStep);
   }
 
@@ -11294,10 +11291,15 @@ document.addEventListener('click', (e) => {
       return;
     }
 
-    // Skip if element required but missing
-    if (step.onlyIfPresent) {
-      const el = step.selector ? document.querySelector(step.selector) : null;
-      if (!el) { advanceTour(); return; }
+    // Skip steps whose target is missing or not rendered (e.g. collapsed
+    // mobile nav, empty dashboard) — in whichever direction we're moving.
+    if (step.selector) {
+      const el = document.querySelector(step.selector);
+      if (!el || el.getClientRects().length === 0) {
+        if (_tourDir < 0 && idx > 0) { currentStep = idx - 1; showStep(currentStep); }
+        else { advanceTour(); }
+        return;
+      }
     }
 
     // Run beforeShow hook (e.g. open settings dropdown)
@@ -11420,12 +11422,14 @@ document.addEventListener('click', (e) => {
     const isLast  = idx === TOUR_STEPS.length - 1;
     const isFirst = idx === 0;
     const count   = (idx + 1) + ' / ' + TOUR_STEPS.length;
+    const pct     = Math.round(((idx + 1) / TOUR_STEPS.length) * 100);
 
     tooltipEl.innerHTML =
       '<div class="tour-tooltip-header">' +
         '<span class="tour-step-count">' + count + '</span>' +
         '<button class="tour-skip-btn" type="button">Skip tour</button>' +
       '</div>' +
+      '<div class="tour-progress"><div class="tour-progress-fill" style="width:' + pct + '%"></div></div>' +
       '<div class="tour-tooltip-title">' + step.title + '</div>' +
       '<div class="tour-tooltip-body">'  + step.body  + '</div>' +
       '<div class="tour-tooltip-footer">' +
@@ -11443,7 +11447,7 @@ document.addEventListener('click', (e) => {
 
     tooltipEl.querySelector('[data-action="next"]').addEventListener('click', advanceTour);
     const prevBtn = tooltipEl.querySelector('[data-action="prev"]');
-    if (prevBtn) prevBtn.addEventListener('click', function () { currentStep--; showStep(currentStep); });
+    if (prevBtn) prevBtn.addEventListener('click', backTour);
     tooltipEl.querySelector('.tour-skip-btn').addEventListener('click', endTour);
   }
 
@@ -11496,7 +11500,10 @@ document.addEventListener('click', (e) => {
     }
   }
 
+  let _tourDir = 1;  // 1 = forward, -1 = back (used when skipping hidden steps)
+
   function advanceTour() {
+    _tourDir = 1;
     leaveCurrentStep();
     const nextIdx  = currentStep + 1;
     if (nextIdx >= TOUR_STEPS.length) { endTour(); return; }
@@ -11510,11 +11517,28 @@ document.addEventListener('click', (e) => {
     showStep(currentStep);
   }
 
+  function backTour() {
+    if (currentStep <= 0) return;
+    _tourDir = -1;
+    leaveCurrentStep();   // close any dropdown/modal the current step opened
+    currentStep--;
+    showStep(currentStep);
+  }
+
+  // Keyboard: arrows to move, Enter for next, Esc to exit.
+  function _tourKeydown(e) {
+    if (!tourActive) return;
+    if (e.key === 'Escape') { endTour(); }
+    else if (e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); advanceTour(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); backTour(); }
+  }
+
   function endTour() {
     leaveCurrentStep();
     localStorage.setItem(tourKey, '1');
     removeTourDOM();
     tourActive = false;
+    document.removeEventListener('keydown', _tourKeydown);
   }
 
   function removeTourDOM() {
