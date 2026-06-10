@@ -1145,7 +1145,7 @@ _V_GAMES     = {"col": "games",            "label": "Min Games",      "opts": [4
 LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # ── General (applies across positions) ───────────────────────────────────
     "role_score":           {"label": "Role Score",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position."},
-    "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
+    "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
     "opportunity_share":    {"label": "Opportunity Share",   "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Share of the team's targets plus carries that went to this player."},
     "red_zone_usage":       {"label": "Red Zone Usage",      "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
     "grades_offense":       {"label": "PFF Off Grade",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
@@ -1166,8 +1166,10 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "breakaway_percentage": {"label": "Breakaway %",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rushing yards that came on runs of 15+ yards; explosiveness."},
     "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
     "pff_rushing_grade":    {"label": "PFF Rush Grade",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF's rushing grade (0-100)."},
+    "explosive_runs_10_plus": {"label": "Explosive Runs",   "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Count of runs gaining 10 or more yards in the season (PFF). Raw explosive-play volume."},
+    "avoided_tackles":      {"label": "Avoided Tackles",    "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss."},
     # ── Receiving ────────────────────────────────────────────────────────────
-    "route_participation":  {"label": "Route Partic %",      "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means the player is a consistent full-time route runner."},
+    "route_participation":  {"label": "Route Partic %",      "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means the player is a consistent full-time route runner."},
     "target_share":         {"label": "Target Share",        "category": "Receiving", "positions": ["WR", "TE", "RB"], "pct": True, "min_vol": _V_GAMES, "desc": "Percent of the team's total targets directed at this player."},
     "air_yards_per_game":   {"label": "Air Yards / Game",    "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_GAMES, "desc": "Receiving air yards (distance thrown in the air to the player) per game; a measure of downfield target volume."},
     "air_yards_share":      {"label": "Air Yards Share",     "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's total passing air yards directed at this player; combines target share with depth of target."},
@@ -1184,6 +1186,12 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "wide_rate":            {"label": "Wide Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from out wide."},
     "inline_rate":          {"label": "Inline Rate",         "category": "Receiving", "positions": ["TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of snaps a tight end lined up inline (attached to the formation)."},
     "pass_block_rate":      {"label": "Block Rate",          "category": "Receiving", "positions": ["TE", "RB"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of pass snaps spent blocking rather than running a route."},
+    # ── Volume counts — useful as combo-filter targets ────────────────────────
+    "total_targets":      {"label": "Targets",      "category": "Volume", "positions": ["WR", "RB", "TE"], "desc": "Total targets in the season."},
+    "total_receptions":   {"label": "Receptions",   "category": "Volume", "positions": ["WR", "RB", "TE"], "desc": "Total receptions in the season."},
+    "total_carries":      {"label": "Carries",      "category": "Volume", "positions": ["RB", "QB"], "desc": "Total carries in the season."},
+    "total_touches":      {"label": "Touches",      "category": "Volume", "positions": ["RB", "WR", "TE"], "desc": "Total carries plus receptions in the season."},
+    "games":              {"label": "Games Played", "category": "Volume", "positions": ["QB", "RB", "WR", "TE"], "desc": "Games played in the season."},
 }
 
 
@@ -1247,40 +1255,35 @@ def get_metric_leaderboard(
         has_games = "games" in existing_cols
         has_vol_col = vol_col in existing_cols
 
-        # Find the representative snapshot date.
-        season_gate = "AND season = %s" if season else ""
-        season_params = (season,) if season else ()
-        latest = conn.execute(
-            f"SELECT MAX(as_of_date) AS max_date FROM player_advanced_metrics "
-            f"WHERE {metric} IS NOT NULL {season_gate}",
-            season_params,
-        ).fetchone()
-        if not latest or not latest["max_date"]:
-            return []
-        latest_date = latest["max_date"]
-
-        # The volume count is coalesced across ALL of the season's snapshot rows.
-        # Computed metrics (yards_per_carry, role_score, the volume totals) and PFF
-        # imports (drop rate, aDOT, YAC, grades, breakaway, elusive) land on
-        # different as_of_dates, so a PFF metric's value lives on a different row
-        # than the volume total. Reading volume off the single latest row would
-        # leave it NULL and make the min-volume filter a silent no-op. Join the
-        # per-player season max so the filter sees the count regardless of date.
-        apply_vol = bool(has_vol_col and min_vol and min_vol > 0)
-        # Resolve the season backing this snapshot. Needed for the min-volume
-        # filter AND for displaying volume: PFF-imported metrics (BTT rate,
-        # drop rate, grades, ...) live on rows whose volume totals are NULL,
-        # so both must read the coalesced per-season value, not the row's own.
-        season_for_vol = season
-        if has_vol_col and season_for_vol is None:
+        # Resolve season if not provided: use the latest season with metric data.
+        if season is None:
             srow = conn.execute(
-                "SELECT season FROM player_advanced_metrics "
-                "WHERE as_of_date = %s AND season IS NOT NULL LIMIT 1",
-                (latest_date,),
+                f"SELECT season FROM player_advanced_metrics "
+                f"WHERE {metric} IS NOT NULL AND season IS NOT NULL "
+                f"ORDER BY season DESC LIMIT 1"
             ).fetchone()
-            season_for_vol = srow["season"] if srow else None
+            if not srow:
+                return []
+            season = int(srow["season"])
+
+        # Volume join: coalesce the season-max vol count across all snapshot rows
+        # so PFF-imported metrics (which land on a different as_of_date from the
+        # computed volume totals) still see the correct carry/target/games count.
+        season_for_vol = season
         use_vol_join = bool(has_vol_col and season_for_vol is not None)
-        apply_vol = apply_vol and use_vol_join
+
+        # Check whether this season has non-zero vol data for the vol column so
+        # we know whether a NULL/0 count means "no data" vs "predates the column".
+        season_has_vol = False
+        if use_vol_join:
+            chk = conn.execute(
+                f"SELECT 1 FROM player_advanced_metrics "
+                f"WHERE season = %s AND {vol_col} IS NOT NULL AND {vol_col} > 0 LIMIT 1",
+                (season_for_vol,),
+            ).fetchone()
+            season_has_vol = chk is not None
+
+        apply_vol = bool(season_has_vol and min_vol and min_vol > 0)
 
         gate = ""
         vol_join = ""
@@ -1292,19 +1295,26 @@ def get_metric_leaderboard(
                 "ON v.player_id = m.player_id"
             )
             params.append(season_for_vol)
-        params.append(latest_date)
+        # Season filter always applied (required for correct DISTINCT ON results).
+        gate += " AND m.season = %s"
+        params.append(season)
         if pos:
             gate += " AND m.position = %s"
             params.append(pos)
         if LEADERBOARD_METRICS[metric].get("efficiency"):
             gate += " AND (m.snap_share IS NULL OR m.snap_share >= %s)"
             params.append(_MIN_SNAP_FOR_EFFICIENCY)
-        if apply_vol:
-            # Keep rows with no volume data (older seasons predate the columns);
-            # filter only where we actually have a count.
-            gate += " AND (v.vol IS NULL OR v.vol >= %s)"
-            params.append(min_vol)
+        if season_has_vol:
+            # Always require vol > 0 when the season has vol data: hides players
+            # with no recorded volume (null carries, null targets, etc.) even
+            # when "Any" minimum is selected. Keeps "Any" clean of zero-vol rows.
+            if apply_vol:
+                gate += " AND v.vol IS NOT NULL AND v.vol >= %s"
+                params.append(min_vol)
+            else:
+                gate += " AND v.vol IS NOT NULL AND v.vol > 0"
         params.append(limit)
+
         if has_games:
             games_col = (
                 "COALESCE(m.games, v.vol) AS games,"
@@ -1312,8 +1322,6 @@ def get_metric_leaderboard(
             )
         else:
             games_col = ""
-        # Also select the relevant volume column so the leaderboard can display
-        # it — coalesced with the season max so PFF rows still show a count.
         has_specific_vol = vol_col != "games" and vol_col in existing_cols
         if has_specific_vol:
             specific_vol_col = (
@@ -1322,11 +1330,22 @@ def get_metric_leaderboard(
             )
         else:
             specific_vol_col = ""
+
+        # DISTINCT ON picks each player's most recent non-null snapshot for this
+        # metric within the season. This prevents the old single-max-date approach
+        # from dropping players whose computed metric (e.g. yards_per_carry) was
+        # written on a different date than the latest PFF sync.
         rows = conn.execute(
-            f"""SELECT m.player_id, m.position, {games_col} {specific_vol_col} m.{metric} AS value
-                FROM player_advanced_metrics m{vol_join}
-                WHERE m.as_of_date = %s{gate} AND m.{metric} IS NOT NULL
-                ORDER BY m.{metric} DESC LIMIT %s""",
+            f"""SELECT t.*
+                FROM (
+                    SELECT DISTINCT ON (m.player_id)
+                        m.player_id, m.position, {games_col} {specific_vol_col}
+                        m.{metric} AS value
+                    FROM player_advanced_metrics m{vol_join}
+                    WHERE m.{metric} IS NOT NULL{gate}
+                    ORDER BY m.player_id, m.as_of_date DESC
+                ) t
+                ORDER BY t.value DESC LIMIT %s""",
             tuple(params),
         ).fetchall()
 
@@ -1335,6 +1354,22 @@ def get_metric_leaderboard(
         idx = load_players_index() or {}
     except Exception:
         idx = {}
+
+    def _player_age(meta: dict) -> Optional[int]:
+        bday = meta.get("bDay") or meta.get("bday") or ""
+        if not bday:
+            return None
+        try:
+            from datetime import date as _date
+            parts = str(bday).split("/")
+            if len(parts) == 3:
+                m_b, d_b, y_b = int(parts[0]), int(parts[1]), int(parts[2])
+                born = _date(y_b, m_b, d_b)
+                today = _date.today()
+                return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+        except Exception:
+            return None
+        return None
 
     out: List[Dict[str, Any]] = []
     for r in rows:
@@ -1354,6 +1389,7 @@ def get_metric_leaderboard(
             "value": float(r["value"]) if r["value"] is not None else None,
             "games": games_val,
             "vol": vol_val,
+            "age": _player_age(meta),
         })
     return out
 
