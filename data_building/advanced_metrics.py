@@ -1184,6 +1184,12 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "wide_rate":            {"label": "Wide Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from out wide."},
     "inline_rate":          {"label": "Inline Rate",         "category": "Receiving", "positions": ["TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of snaps a tight end lined up inline (attached to the formation)."},
     "pass_block_rate":      {"label": "Block Rate",          "category": "Receiving", "positions": ["TE", "RB"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of pass snaps spent blocking rather than running a route."},
+    # ── Volume counts — useful as combo-filter targets ────────────────────────
+    "total_targets":      {"label": "Targets",      "category": "Volume", "positions": ["WR", "RB", "TE"], "desc": "Total targets in the season."},
+    "total_receptions":   {"label": "Receptions",   "category": "Volume", "positions": ["WR", "RB", "TE"], "desc": "Total receptions in the season."},
+    "total_carries":      {"label": "Carries",      "category": "Volume", "positions": ["RB", "QB"], "desc": "Total carries in the season."},
+    "total_touches":      {"label": "Touches",      "category": "Volume", "positions": ["RB", "WR", "TE"], "desc": "Total carries plus receptions in the season."},
+    "games":              {"label": "Games Played", "category": "Volume", "positions": ["QB", "RB", "WR", "TE"], "desc": "Games played in the season."},
 }
 
 
@@ -1354,6 +1360,22 @@ def get_metric_leaderboard(
     except Exception:
         idx = {}
 
+    def _player_age(meta: dict) -> Optional[int]:
+        bday = meta.get("bDay") or meta.get("bday") or ""
+        if not bday:
+            return None
+        try:
+            from datetime import date as _date
+            parts = str(bday).split("/")
+            if len(parts) == 3:
+                m_b, d_b, y_b = int(parts[0]), int(parts[1]), int(parts[2])
+                born = _date(y_b, m_b, d_b)
+                today = _date.today()
+                return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+        except Exception:
+            return None
+        return None
+
     out: List[Dict[str, Any]] = []
     for r in rows:
         pid = str(r["player_id"])
@@ -1372,6 +1394,7 @@ def get_metric_leaderboard(
             "value": float(r["value"]) if r["value"] is not None else None,
             "games": games_val,
             "vol": vol_val,
+            "age": _player_age(meta),
         })
     return out
 

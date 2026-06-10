@@ -21,7 +21,7 @@ def build_advanced_metrics_body(
     from data_building.advanced_metrics import get_available_seasons
     available_seasons: list = get_available_seasons() if has_premium else []
     # Group metrics into <optgroup>s by category (General / Passing / Rushing / Receiving).
-    _CAT_ORDER = ["General", "Passing", "Rushing", "Receiving"]
+    _CAT_ORDER = ["General", "Passing", "Rushing", "Receiving", "Volume"]
     groups: dict = {}
     for key, spec in metrics_spec.items():
         cat = spec.get("category", "Other")
@@ -192,6 +192,28 @@ def build_advanced_metrics_body(
           <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
             <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Add Metric</button>
             <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
+          </div>
+        </div>
+
+        <!-- Filter bar: age + combo conditions -->
+        <div id="amFilterBar" class="am-filter-bar">
+          <div class="am-filter-chips" id="amFilterChips"></div>
+          <div class="am-age-wrap" id="amAgeWrap" style="display:none;">
+            <span class="am-filter-label">Age:</span>
+            <input type="number" id="amAgeMin" class="am-age-input" placeholder="Min" min="18" max="45">
+            <span class="am-filter-sep">&#8211;</span>
+            <input type="number" id="amAgeMax" class="am-age-input" placeholder="Max" min="18" max="45">
+          </div>
+          <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
+          <div id="amFilterForm" class="am-filter-form" style="display:none;">
+            <select id="amFilterKey" class="am-select am-season-select" style="min-width:110px;font-size:12px;padding:5px 8px;"></select>
+            <select id="amFilterOp" class="am-select am-season-select" style="min-width:52px;font-size:12px;padding:5px 8px;">
+              <option value="gte">&ge;</option>
+              <option value="lte">&le;</option>
+            </select>
+            <input type="number" id="amFilterVal" class="am-age-input" placeholder="Value" style="width:70px;">
+            <button id="amFilterApply" type="button" class="am-filter-apply-btn">Add</button>
+            <button id="amFilterCancel" type="button" class="am-filter-cancel-btn">Cancel</button>
           </div>
         </div>
 
@@ -572,6 +594,44 @@ def build_advanced_metrics_body(
       .am-row.am-pinned:hover { background:rgba(37,99,235,.1); }
       .am-row.am-pinned.am-owned { background:rgba(37,99,235,.1); }
       .am-pin-divider td { border-bottom:2px dashed var(--accent,#2563eb) !important; padding:0 !important; height:2px !important; }
+      /* ── Filter bar ──────────────────────────────────────────────────────── */
+      .am-filter-bar {
+        display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+        margin-bottom:10px; min-height:24px;
+      }
+      .am-filter-chips { display:flex; flex-wrap:wrap; gap:5px; flex:1; min-width:0; }
+      .am-filter-chip {
+        display:inline-flex; align-items:center; gap:4px;
+        padding:3px 9px; border-radius:12px;
+        border:1px solid var(--accent,#2563eb); background:rgba(37,99,235,.08);
+        font-size:12px; font-weight:600; color:var(--accent,#2563eb); white-space:nowrap;
+      }
+      .am-filter-label { font-size:11px; font-weight:700; color:var(--text-muted); white-space:nowrap; }
+      .am-filter-sep { font-size:12px; color:var(--text-muted); }
+      .am-age-wrap { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+      .am-age-input {
+        padding:5px 8px; border:1px solid var(--border); border-radius:8px;
+        background:var(--card); color:var(--text); font-size:12px; width:58px;
+        outline:none; box-sizing:border-box;
+      }
+      .am-age-input:focus { border-color:var(--accent,#2563eb); }
+      .am-filter-form {
+        display:flex; align-items:center; gap:5px; flex-wrap:wrap;
+        padding:5px 10px; border:1px solid var(--border); border-radius:10px;
+        background:var(--card); box-shadow:0 2px 8px rgba(0,0,0,.08);
+      }
+      .am-filter-apply-btn {
+        padding:5px 12px; border-radius:8px; border:none;
+        background:var(--accent,#2563eb); color:#fff;
+        font-size:12px; font-weight:700; cursor:pointer;
+      }
+      .am-filter-apply-btn:hover { opacity:.88; }
+      .am-filter-cancel-btn {
+        padding:5px 10px; border-radius:8px; border:1px solid var(--border);
+        background:var(--card); color:var(--text-muted);
+        font-size:12px; font-weight:600; cursor:pointer;
+      }
+      .am-filter-cancel-btn:hover { background:var(--row,rgba(0,0,0,.04)); }
     </style>
     """
 
@@ -624,9 +684,12 @@ _AM_JS = r"""
                   fetching: false, volCol: 'games', team: '',
                   extraMetrics: [],     // up to 4 extra metric keys
                   extraData: {},        // key -> { byId:{player_id->value}, maxAbs }
+                  extraPrevData: {},    // key -> { player_id -> prev-season value }
                   prevData: {},         // player_id -> previous-season value (for YoY trend)
                   showTrends: false,    // weekly usage trend column toggle
                   trendsBySeason: {},   // seasonKey -> { player_id -> trend obj }
+                  ageMin: '', ageMax: '',
+                  comboFilters: [],     // [{key, op, val}]
                   pinnedIds: _loadPins() };
   const MAX_COMPARE = 4;
 
@@ -677,7 +740,7 @@ _AM_JS = r"""
     const active = new Set([state.metric, ...state.extraMetrics]);
     const items = Object.entries(cfg.metrics)
       .filter(([, spec]) => (spec.category || 'Other') === primaryCat);
-    const otherCats = ['General', 'Passing', 'Rushing', 'Receiving'].filter(c => c !== primaryCat);
+    const otherCats = ['General', 'Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
     let html = '<div class="am-sp-cat-head">' + primaryCat + '</div>';
     for (const [key, spec] of items) {
       const on = active.has(key);
@@ -705,6 +768,7 @@ _AM_JS = r"""
         state.extraMetrics.push(key);
         updateCompareBar();
         syncExtraCols();
+        updateFilterBar();
         render();        // show skeleton column immediately
         fetchExtraData(key);
       }
@@ -715,6 +779,8 @@ _AM_JS = r"""
   window.amRemoveExtra = function(key) {
     state.extraMetrics = state.extraMetrics.filter(k => k !== key);
     delete state.extraData[key];
+    delete state.extraPrevData[key];
+    state.comboFilters = state.comboFilters.filter(f => f.key !== key);
     if (state.sortBy === key) {
       state.sortBy = state.metric;
       state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
@@ -722,25 +788,43 @@ _AM_JS = r"""
     updateCompareBar();
     buildStatPicker();
     syncExtraCols();
+    updateFilterBar();
     render();
   };
 
   function fetchExtraData(key) {
-    const params = new URLSearchParams({ metric: key, platform: cfg.platform });
-    if (cfg.leagueId) params.set('league_id', cfg.leagueId);
-    if (state.season) params.set('season', state.season);
-    const vol = defaultVol(key);
-    if (vol) params.set('min_vol', vol);
-    fetch('/api/advanced-metrics/leaderboard?' + params)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (!d) return;
-        const rows = d.players || [];
-        const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
-        state.extraData[key] = { byId: Object.fromEntries(rows.map(r => [String(r.player_id), Number(r.value)])), maxAbs };
-        render();
-      })
-      .catch(() => {});
+    function _buildExtraParams(s) {
+      const p = new URLSearchParams({ metric: key, platform: cfg.platform });
+      if (cfg.leagueId) p.set('league_id', cfg.leagueId);
+      if (s) p.set('season', String(s));
+      const vol = defaultVol(key);
+      if (vol) p.set('min_vol', vol);
+      return p;
+    }
+    const curSeason = state.season || (cfg.seasons && cfg.seasons[0] ? String(cfg.seasons[0]) : '');
+    const seasons = cfg.seasons || [];
+    const curIdx = seasons.indexOf(Number(curSeason));
+    const prevSeason = (curIdx >= 0 && curIdx + 1 < seasons.length) ? seasons[curIdx + 1] : null;
+    const fetches = [
+      fetch('/api/advanced-metrics/leaderboard?' + _buildExtraParams(curSeason)).then(r => r.ok ? r.json() : null),
+    ];
+    if (prevSeason) {
+      fetches.push(
+        fetch('/api/advanced-metrics/leaderboard?' + _buildExtraParams(String(prevSeason))).then(r => r.ok ? r.json() : null)
+      );
+    }
+    Promise.all(fetches).then(function(results) {
+      const curr = results[0];
+      const prev = results[1] || null;
+      if (!curr) return;
+      const rows = curr.players || [];
+      const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
+      state.extraData[key] = { byId: Object.fromEntries(rows.map(r => [String(r.player_id), Number(r.value)])), maxAbs };
+      if (prev) {
+        state.extraPrevData[key] = Object.fromEntries((prev.players || []).map(r => [String(r.player_id), Number(r.value)]));
+      }
+      render();
+    }).catch(function() {});
   }
 
   // ── Weekly usage trends ───────────────────────────────────────────────────
@@ -891,11 +975,27 @@ _AM_JS = r"""
 
   function toggleStatPicker() {
     const picker = document.getElementById('amStatPicker');
+    const btn = document.getElementById('amAddStatBtn');
     if (!picker) return;
     const open = picker.style.display !== 'none' && picker.style.display !== '';
     if (open) { picker.style.display = 'none'; return; }
     buildStatPicker();
+    picker.style.position = 'fixed';
     picker.style.display = '';
+    requestAnimationFrame(function() {
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const ph = picker.offsetHeight;
+      picker.style.right = (window.innerWidth - rect.right) + 'px';
+      picker.style.left = 'auto';
+      if (rect.bottom + 6 + ph > window.innerHeight - 20) {
+        picker.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+        picker.style.top = 'auto';
+      } else {
+        picker.style.top = (rect.bottom + 6) + 'px';
+        picker.style.bottom = 'auto';
+      }
+    });
   }
 
   // Close picker when clicking outside.
@@ -1024,9 +1124,10 @@ _AM_JS = r"""
     if (!teams.includes(state.team)) state.team = '';
   }
 
-  function trendArrow(curr, prev) {
+  function trendArrow(curr, prev, metricKey) {
     if (prev == null || prev === undefined) return '';
-    const isLower = !!(cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter);
+    const mkey = metricKey || state.metric;
+    const isLower = !!(cfg.metrics[mkey] && cfg.metrics[mkey].lowerBetter);
     const delta = Number(curr) - Number(prev);
     if (Math.abs(Number(prev)) < 0.001) return '';
     const pct = Math.abs(delta / Number(prev));
@@ -1034,7 +1135,7 @@ _AM_JS = r"""
     const improved = isLower ? delta < 0 : delta > 0;
     const word = improved ? 'Up' : 'Down';
     const tip = word + ' vs ' + (prevSeasonLabel() || 'last season') + ': '
-      + fmtVal(prev, state.metric) + ' → ' + fmtVal(curr, state.metric);
+      + fmtVal(prev, mkey) + ' → ' + fmtVal(curr, mkey);
     return improved
       ? '<span class="am-trend-up" title="' + tip + '">&#8593;</span>'
       : '<span class="am-trend-down" title="' + tip + '">&#8595;</span>';
@@ -1097,6 +1198,8 @@ _AM_JS = r"""
     // Extra columns: same logic — scale to the max among the displayed rows so the leader fills the bar.
     const extraMaxMap = {};
     const extraAvgMap = {};
+    const extraRankMap = {};
+    const extraRankTotal = {};
     state.extraMetrics.forEach(function(key) {
       const ed = state.extraData[key];
       if (!ed) return;
@@ -1111,6 +1214,15 @@ _AM_JS = r"""
       });
       extraMaxMap[key] = mx || 1;
       if (n) extraAvgMap[key] = sum / n;
+      const _extraLower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
+      const _ePairs = posRows
+        .map(r => [String(r.player_id), ed.byId[String(r.player_id)]])
+        .filter(([, v]) => v != null)
+        .sort((a, b) => { const d = Number(a[1]) - Number(b[1]); return _extraLower ? d : -d; });
+      const _eRankMap = {};
+      _ePairs.forEach(([id], i) => { _eRankMap[id] = i + 1; });
+      extraRankMap[key] = _eRankMap;
+      extraRankTotal[key] = _ePairs.length;
     });
 
 
@@ -1127,6 +1239,31 @@ _AM_JS = r"""
       displayRows = displayRows.filter(r => (r.name || '').toLowerCase().includes(q));
     }
     if (state.team) displayRows = displayRows.filter(r => (r.team || '').toUpperCase() === state.team.toUpperCase());
+    if (state.ageMin !== '' || state.ageMax !== '') {
+      displayRows = displayRows.filter(function(r) {
+        const age = r.age;
+        if (age == null) return false;
+        if (state.ageMin !== '' && age < Number(state.ageMin)) return false;
+        if (state.ageMax !== '' && age > Number(state.ageMax)) return false;
+        return true;
+      });
+    }
+    state.comboFilters.forEach(function(f) {
+      displayRows = displayRows.filter(function(r) {
+        let v;
+        if (f.key === 'primary') {
+          v = Number(r.value);
+        } else if (f.key === 'age') {
+          v = r.age != null ? Number(r.age) : null;
+        } else {
+          const ed2 = state.extraData[f.key];
+          v = ed2 ? ed2.byId[String(r.player_id)] : undefined;
+          v = (v !== undefined && v !== null) ? Number(v) : null;
+        }
+        if (v == null) return false;
+        return f.op === 'gte' ? v >= Number(f.val) : v <= Number(f.val);
+      });
+    });
 
     loading.style.display = 'none';
     if (!displayRows.length) {
@@ -1229,22 +1366,25 @@ _AM_JS = r"""
           if (!ed) {
             metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
               + '<div class="am-metric-bar"><div class="am-skel-bar"></div></div>'
-              + '<span class="am-val" style="opacity:.25">—</span>'
+              + '<div class="am-val-wrap"><span class="am-val" style="opacity:.25">—</span></div>'
               + '</div></td>';
             return;
           }
           const val = ed.byId[String(r.player_id)] !== undefined ? ed.byId[String(r.player_id)] : null;
           const pctBar = val != null ? Math.min(100, Math.max(2, Math.round(Math.abs(Number(val)) / extraMaxMap[key] * 100))) : 2;
           const disp = val != null ? fmtVal(val, key) : '–';
-          // Average tick for added metrics, same as the primary column.
           const avgVE = extraAvgMap[key];
           const avgMarkE = (avgVE != null)
             ? '<div class="am-bar-avg" style="left:' + Math.max(0, Math.min(100, Math.round(Math.abs(avgVE) / extraMaxMap[key] * 100))) + '%" '
               + 'title="Average: ' + fmtVal(avgVE, key) + '"></div>'
             : '';
+          const rkE = extraRankMap[key] ? extraRankMap[key][String(r.player_id)] : null;
+          const badgeE = (rkE && extraRankTotal[key]) ? percentileBadge(rkE, extraRankTotal[key]) : '';
+          const prevE = state.extraPrevData[key] ? state.extraPrevData[key][String(r.player_id)] : undefined;
+          const trendE = (val != null && prevE !== undefined) ? trendArrow(val, prevE, key) : '';
           metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
             + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div>' + avgMarkE + '</div></div>'
-            + '<span class="am-val">' + disp + '</span>'
+            + '<div class="am-val-wrap"><div class="am-val-row">' + trendE + '<span class="am-val">' + disp + '</span></div>' + badgeE + '</div>'
             + '</div></td>';
         });
       }
@@ -1334,8 +1474,10 @@ _AM_JS = r"""
         }
         updateVolHeader();
         populateTeamFilter();
+        showAgeCtrl();
         // Re-fetch all extra metrics (season / filter may have changed).
         state.extraData = {};
+        state.extraPrevData = {};
         state.extraMetrics.forEach(k => fetchExtraData(k));
         render();
       })
@@ -1360,16 +1502,56 @@ _AM_JS = r"""
       .catch(() => {});
   }
 
+  function updateFilterBar() {
+    const bar = document.getElementById('amFilterBar');
+    const chips = document.getElementById('amFilterChips');
+    const filterKey = document.getElementById('amFilterKey');
+    if (!bar || !chips) return;
+    if (filterKey) {
+      const opts = [
+        { value: 'primary', label: (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric },
+        { value: 'age', label: 'Age' },
+      ];
+      state.extraMetrics.forEach(function(key) {
+        opts.push({ value: key, label: (cfg.metrics[key] && cfg.metrics[key].label) || key });
+      });
+      filterKey.innerHTML = opts.map(function(o) {
+        return '<option value="' + o.value + '">' + o.label + '</option>';
+      }).join('');
+    }
+    chips.innerHTML = state.comboFilters.map(function(f, idx) {
+      const lbl = f.key === 'primary'
+        ? ((cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric)
+        : f.key === 'age' ? 'Age'
+        : ((cfg.metrics[f.key] && cfg.metrics[f.key].label) || f.key);
+      const opSym = f.op === 'gte' ? '≥' : '≤';
+      return '<span class="am-filter-chip">' + lbl + ' ' + opSym + ' ' + f.val
+        + ' <button class="am-chip-x" onclick="amRemoveFilter(' + idx + ')" aria-label="Remove">\xd7</button></span>';
+    }).join('');
+  }
+  window.amRemoveFilter = function(idx) {
+    state.comboFilters.splice(idx, 1);
+    updateFilterBar();
+    state.page = 0;
+    render();
+  };
+  function showAgeCtrl() {
+    const wrap = document.getElementById('amAgeWrap');
+    if (!wrap) return;
+    wrap.style.display = state.rows.some(r => r.age != null) ? '' : 'none';
+  }
+
   metricSel.addEventListener('change', () => {
     state.metric = metricSel.value; state.page = 0;
-    state.extraMetrics = []; state.extraData = {}; state.prevData = {};
+    state.extraMetrics = []; state.extraData = {}; state.extraPrevData = {}; state.prevData = {};
+    state.comboFilters = [];
     const rel = new Set(relevantPositions(state.metric));
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
     state.sortBy = state.metric;
     state.minVol = defaultVol(state.metric);
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
-    updateSortHeaders(); updateCompareBar();
+    updateSortHeaders(); updateCompareBar(); updateFilterBar();
     fetchData();
   });
   posWrap.addEventListener('click', e => {
@@ -1414,6 +1596,42 @@ _AM_JS = r"""
     });
   }
 
+  // Age filter inputs.
+  const ageMinEl = document.getElementById('amAgeMin');
+  const ageMaxEl = document.getElementById('amAgeMax');
+  if (ageMinEl) ageMinEl.addEventListener('input', function() { state.ageMin = ageMinEl.value || ''; state.page = 0; render(); });
+  if (ageMaxEl) ageMaxEl.addEventListener('input', function() { state.ageMax = ageMaxEl.value || ''; state.page = 0; render(); });
+
+  // Combo filter form.
+  const addFilterBtn = document.getElementById('amAddFilterBtn');
+  const filterForm   = document.getElementById('amFilterForm');
+  const filterApply  = document.getElementById('amFilterApply');
+  const filterCancel = document.getElementById('amFilterCancel');
+  if (addFilterBtn && filterForm) {
+    addFilterBtn.addEventListener('click', function() {
+      filterForm.style.display = filterForm.style.display === 'none' ? '' : 'none';
+    });
+  }
+  if (filterApply) {
+    filterApply.addEventListener('click', function() {
+      const keyEl = document.getElementById('amFilterKey');
+      const opEl  = document.getElementById('amFilterOp');
+      const valEl = document.getElementById('amFilterVal');
+      if (!keyEl || !opEl || !valEl || !valEl.value.trim()) return;
+      state.comboFilters.push({ key: keyEl.value, op: opEl.value, val: valEl.value.trim() });
+      valEl.value = '';
+      if (filterForm) filterForm.style.display = 'none';
+      updateFilterBar();
+      state.page = 0;
+      render();
+    });
+  }
+  if (filterCancel) {
+    filterCancel.addEventListener('click', function() {
+      if (filterForm) filterForm.style.display = 'none';
+    });
+  }
+
   // Wire column-header sort clicks.
   const _thPlayer = document.querySelector('#amTable thead th.am-player');
   const _thGames  = document.querySelector('#amTable thead th.am-games');
@@ -1424,5 +1642,5 @@ _AM_JS = r"""
 
   state.minVol = defaultVol(state.metric);
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
-  updateSortHeaders(); updateCompareBar(); fetchData(); loadOwnedRoster();
+  updateSortHeaders(); updateCompareBar(); updateFilterBar(); fetchData(); loadOwnedRoster();
 """
