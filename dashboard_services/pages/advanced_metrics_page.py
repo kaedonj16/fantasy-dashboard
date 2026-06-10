@@ -38,11 +38,18 @@ def build_advanced_metrics_body(
         f'<option value="__preset__{cat}">{cat} Set</option>'
         for cat in _PRESET_CATS
     ) + '</optgroup>'
+    # Mark the first real metric option as selected so the browser doesn't default
+    # to the first preset option (which starts with __preset__ and is not a real key).
+    _first_real = [True]
+    def _opt(k, lbl):
+        sel = ' selected' if _first_real[0] else ''
+        _first_real[0] = False
+        return f'<option value="{k}"{sel}>{lbl}</option>'
     metric_options = preset_optgroup + "\n" + "\n".join(
         '<optgroup label="{label}">{opts}</optgroup>'.format(
             label=cat,
             opts="".join(
-                f'<option value="{k}">{lbl}</option>' for k, lbl in groups[cat]
+                _opt(k, lbl) for k, lbl in groups[cat]
             ),
         )
         for cat in sorted(groups, key=_group_key)
