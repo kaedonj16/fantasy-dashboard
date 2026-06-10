@@ -703,7 +703,7 @@ _AM_JS = r"""
 
   // Preset sets: clicking "Load X Set" clears current extras and loads these 4 metrics.
   const _PRESETS = {
-    'Rushing':   ['yards_per_carry', 'rush_td_rate', 'elusive_rating', 'breakaway_percentage', 'pff_rushing_grade'],
+    'Rushing':   ['yards_per_carry', 'elusive_rating', 'breakaway_percentage', 'explosive_runs_10_plus', 'pff_rushing_grade'],
     'Receiving': ['yprr', 'yards_per_target', 'catch_rate', 'yards_after_catch_per_reception', 'avg_depth_of_target'],
     'Passing':   ['pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate', 'nfl_passer_rating', 'pressure_to_sack_rate'],
   };
@@ -771,7 +771,7 @@ _AM_JS = r"""
     const otherCats = ['General', 'Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
     const _preset = _PRESETS[primaryCat];
     let html = (_preset
-      ? '<div class="am-sp-preset-wrap"><button type="button" class="am-sp-preset-btn" onclick="amLoadPreset(\'' + primaryCat + '\')">&#9889; Load ' + primaryCat + ' Set (5 stats)</button></div>'
+      ? '<div class="am-sp-preset-wrap"><button type="button" class="am-sp-preset-btn" onclick="amLoadPreset(\'' + primaryCat + '\')">&#9889; Load ' + primaryCat + ' Set</button></div>'
       : '')
       + '<div class="am-sp-cat-head">' + primaryCat + '</div>';
     for (const [key, spec] of items) {
