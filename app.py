@@ -1231,6 +1231,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "</button>"
     )
 
+    # Site tour trigger — league pages only (the tour spotlights the league nav)
+    tour_menu_item = (
+        "<button type='button' class='settings-menu-item' id='settingsTourBtn'>"
+        "  <span class='settings-menu-icon' style='font-size:14px;line-height:16px;text-align:center;'>&#10024;</span>"
+        "  <span class='settings-menu-label'>Site Tour</span>"
+        "</button>"
+    ) if league_id else ""
+
     # Build settings dropdown content (minimal for logged-out users)
     settings_content = dark_mode_toggle_html
 
@@ -1454,6 +1462,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  <span id='settingsNotifDot' class='settings-notif-dot' style='display:none'></span>"
             "</button>"
             f"{dark_mode_toggle_html}"
+            f"{tour_menu_item}"
             f"{league_switcher_html}"
             "<a href='/logout' class='settings-menu-item settings-menu-logout'>"
             "  <img src='/static/logout.png' class='settings-menu-icon' alt='Logout'>"
@@ -1484,7 +1493,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "  <span class='settings-menu-label'>Sign In</span>"
             "</button>"
         )
-        settings_content = signin_item + dark_mode_toggle_html
+        settings_content = signin_item + dark_mode_toggle_html + tour_menu_item
         settings_gear = (
             "<div class='settings-gear-wrapper'>"
             "  <button type='button' id='settingsGearBtn' class='utility-icon-btn' "

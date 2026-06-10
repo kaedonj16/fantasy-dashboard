@@ -12807,3 +12807,138 @@ function setupFunAwardsGrid() {
   });
 })();
 
+
+// ── Onboarding site tour ─────────────────────────────────────────────────────
+// Spotlights the main nav sections for first-time visitors on league pages.
+// Re-runnable any time via window.startSiteTour() or the settings menu.
+(function() {
+  var TOUR_KEY = 'fd_tour_seen';
+
+  var STEPS = [
+    { sel: '.nav-pills-container .nav-pill',
+      title: 'Dashboard',
+      text: 'Your league home: matchups, standings snapshot, news, and quick links to everything else.' },
+    { sel: '#tradesNavDropdown',
+      title: 'Trades',
+      text: 'Evaluate any deal in the Trade Calculator, get AI-powered suggestions tailored to your roster, and search a database of real dynasty trades.' },
+    { sel: '#weeklyNavDropdown',
+      title: 'Weekly',
+      text: 'Matchup previews and weekly recaps once the season is underway.' },
+    { sel: '#teamsNavDropdown',
+      title: 'League',
+      text: 'Standings with power rankings, every team’s roster breakdown, league activity, and league health checks.' },
+    { sel: '#playersNavDropdown',
+      title: 'Players',
+      text: 'Player rankings, advanced metric leaderboards, breakout candidates, rookie prospects, waivers, and start/sit help.' },
+    { sel: '#statsNavDropdown',
+      title: 'Stats',
+      text: 'All-time awards, trend graphs, and full league history including rivalries.' },
+    { sel: '#navSearchWrapper',
+      title: 'Player Search',
+      text: 'Search any player from anywhere — press Ctrl+K and start typing, then click a result to open their full profile.' }
+  ];
+
+  var idx = 0, backdrop = null, spot = null, tip = null;
+
+  function visibleSteps() {
+    return STEPS.filter(function(s) {
+      var el = document.querySelector(s.sel);
+      return el && el.offsetParent !== null;
+    });
+  }
+
+  function cleanup(markSeen) {
+    if (backdrop) backdrop.remove();
+    if (spot) spot.remove();
+    if (tip) tip.remove();
+    backdrop = spot = tip = null;
+    window.removeEventListener('resize', position);
+    if (markSeen) { try { localStorage.setItem(TOUR_KEY, '1'); } catch (e) {} }
+  }
+
+  var steps = [];
+
+  function position() {
+    if (!spot || !tip || !steps[idx]) return;
+    var el = document.querySelector(steps[idx].sel);
+    if (!el) return;
+    var r = el.getBoundingClientRect();
+    var pad = 6;
+    spot.style.top = (r.top - pad) + 'px';
+    spot.style.left = (r.left - pad) + 'px';
+    spot.style.width = (r.width + pad * 2) + 'px';
+    spot.style.height = (r.height + pad * 2) + 'px';
+
+    var tw = tip.offsetWidth || 320;
+    var left = Math.max(12, Math.min(r.left, window.innerWidth - tw - 12));
+    tip.style.top = (r.bottom + 14) + 'px';
+    tip.style.left = left + 'px';
+  }
+
+  function renderStep() {
+    var s = steps[idx];
+    if (!s) { cleanup(true); return; }
+    var last = idx === steps.length - 1;
+    tip.innerHTML =
+      '<div class="fd-tour-step-count">' + (idx + 1) + ' of ' + steps.length + '</div>' +
+      '<div class="fd-tour-title">' + s.title + '</div>' +
+      '<div class="fd-tour-text">' + s.text + '</div>' +
+      '<div class="fd-tour-actions">' +
+        '<button type="button" class="fd-tour-skip" id="fdTourSkip">Skip tour</button>' +
+        '<div class="fd-tour-nav-btns">' +
+          (idx > 0 ? '<button type="button" class="fd-tour-btn fd-tour-back" id="fdTourBack">Back</button>' : '') +
+          '<button type="button" class="fd-tour-btn fd-tour-next" id="fdTourNext">' + (last ? 'Finish' : 'Next') + '</button>' +
+        '</div>' +
+      '</div>';
+    position();
+    var nextBtn = document.getElementById('fdTourNext');
+    var backBtn = document.getElementById('fdTourBack');
+    var skipBtn = document.getElementById('fdTourSkip');
+    if (nextBtn) nextBtn.onclick = function() {
+      if (idx >= steps.length - 1) { cleanup(true); } else { idx++; renderStep(); }
+    };
+    if (backBtn) backBtn.onclick = function() { if (idx > 0) { idx--; renderStep(); } };
+    if (skipBtn) skipBtn.onclick = function() { cleanup(true); };
+  }
+
+  function startSiteTour() {
+    cleanup(false);
+    steps = visibleSteps();
+    if (steps.length < 2) return;
+    idx = 0;
+
+    backdrop = document.createElement('div');
+    backdrop.className = 'fd-tour-backdrop';
+    backdrop.addEventListener('click', function() { cleanup(true); });
+
+    spot = document.createElement('div');
+    spot.className = 'fd-tour-spot';
+
+    tip = document.createElement('div');
+    tip.className = 'fd-tour-tip';
+
+    document.body.appendChild(backdrop);
+    document.body.appendChild(spot);
+    document.body.appendChild(tip);
+    window.addEventListener('resize', position);
+    renderStep();
+  }
+
+  window.startSiteTour = startSiteTour;
+
+  document.addEventListener('DOMContentLoaded', function() {
+    var tourBtn = document.getElementById('settingsTourBtn');
+    if (tourBtn) tourBtn.addEventListener('click', function() {
+      var dd = document.getElementById('settingsDropdown');
+      if (dd) dd.style.display = 'none';
+      startSiteTour();
+    });
+
+    var seen = null;
+    try { seen = localStorage.getItem(TOUR_KEY); } catch (e) {}
+    if (seen) return;
+    if (window.innerWidth < 900) return;            // nav is collapsed on mobile
+    if (!document.getElementById('teamsNavDropdown')) return;  // league pages only
+    setTimeout(startSiteTour, 1200);
+  });
+})();
