@@ -852,10 +852,13 @@ _AM_JS = r"""
     // Rank map so roster/search filters preserve original rank numbers.
     const rankMap = new Map(posRows.map((r, i) => [String(r.player_id), i + 1]));
 
-    // Cap at the 95th-percentile value so one outlier doesn't squish everyone else.
+    // Scale to the true max, but if the leader is a big outlier (>30% above the
+    // 95th-percentile value) cap the scale so one player doesn't squish the rest.
+    // Bars above the cap clamp at 100% width.
     const _vals = posRows.map(r => Math.abs(Number(r.value) || 0)).sort((a, b) => a - b);
     const _p95 = _vals[Math.min(Math.floor(_vals.length * 0.95), _vals.length - 1)] || 1;
-    const maxAbs = _p95 || 1;
+    const _trueMax = _vals[_vals.length - 1] || 1;
+    const maxAbs = Math.min(_trueMax, _p95 * 1.3) || 1;
 
     // Extra columns: same logic — scale to the max among the displayed rows so the leader fills the bar.
     const extraMaxMap = {};
@@ -944,7 +947,7 @@ _AM_JS = r"""
       const trend = trendArrow(r.value, prevVal);
       let metricCell;
       if (!multiMode) {
-        const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
+        const pct = Math.min(100, Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100)));
         const avgLbl = (avgPct != null && i === 0) ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
         const avgMark = (avgPct != null)
           ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl + '</div>'
@@ -954,7 +957,7 @@ _AM_JS = r"""
           + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(r.value, state.metric) + '</span></div>' + badge + '</div>'
           + '</div></td>';
       } else {
-        const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
+        const pct = Math.min(100, Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100)));
         const avgLbl2 = (avgPct != null && i === 0) ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
         const avgMark2 = (avgPct != null)
           ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl2 + '</div>'
@@ -973,7 +976,7 @@ _AM_JS = r"""
             return;
           }
           const val = ed.byId[String(r.player_id)] !== undefined ? ed.byId[String(r.player_id)] : null;
-          const pctBar = val != null ? Math.max(2, Math.round(Math.abs(Number(val)) / extraMaxMap[key] * 100)) : 2;
+          const pctBar = val != null ? Math.min(100, Math.max(2, Math.round(Math.abs(Number(val)) / extraMaxMap[key] * 100))) : 2;
           const disp = val != null ? fmtVal(val, key) : '–';
           metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
             + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div></div></div>'
