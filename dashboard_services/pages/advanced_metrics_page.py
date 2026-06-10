@@ -82,6 +82,8 @@ def build_advanced_metrics_body(
                 "category": spec.get("category", "Other"),
                 "lowerBetter": bool(spec.get("lower_better")),
                 "efficiency": bool(spec.get("efficiency")),
+                "pct": bool(spec.get("pct")),
+                "pctFrac": bool(spec.get("pct_frac")),
                 "desc": spec.get("desc", ""),
                 "minVol": _min_vol_cfg(spec),
             }
@@ -705,9 +707,14 @@ _AM_JS = r"""
   function posColor(p) {
     return ({ QB:'#3b82f6', RB:'#22c55e', WR:'#f59e0b', TE:'#8b5cf6' })[p] || '#888';
   }
-  function fmtVal(v) {
+  function fmtVal(v, m) {
     if (v == null) return '-';
     const n = Number(v);
+    const spec = m ? cfg.metrics[m] : null;
+    if (spec && spec.pct) {
+      const pct = spec.pctFrac ? n * 100 : n;
+      return (Math.abs(pct) >= 10 ? pct.toFixed(1) : pct.toFixed(2)) + '%';
+    }
     return Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(2);
   }
   function updateSortBtn() {
@@ -845,8 +852,10 @@ _AM_JS = r"""
     // Rank map so roster/search filters preserve original rank numbers.
     const rankMap = new Map(posRows.map((r, i) => [String(r.player_id), i + 1]));
 
-    // maxAbs from the full positional set keeps bars proportional after filtering.
-    const maxAbs = posRows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
+    // Cap at the 95th-percentile value so one outlier doesn't squish everyone else.
+    const _vals = posRows.map(r => Math.abs(Number(r.value) || 0)).sort((a, b) => a - b);
+    const _p95 = _vals[Math.min(Math.floor(_vals.length * 0.95), _vals.length - 1)] || 1;
+    const maxAbs = _p95 || 1;
 
     // Extra columns: same logic — scale to the max among the displayed rows so the leader fills the bar.
     const extraMaxMap = {};
@@ -894,7 +903,7 @@ _AM_JS = r"""
       if (avgNote) {
         avgNote.style.display = '';
         const lbl = state.position !== 'ALL' ? state.position : 'Field';
-        avgNoteTxt.textContent = lbl + ' average: ' + fmtVal(avg);
+        avgNoteTxt.textContent = lbl + ' average: ' + fmtVal(avg, state.metric);
       }
     } else if (avgNote) {
       avgNote.style.display = 'none';
@@ -942,7 +951,7 @@ _AM_JS = r"""
           : '';
         metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
-          + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(r.value) + '</span></div>' + badge + '</div>'
+          + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(r.value, state.metric) + '</span></div>' + badge + '</div>'
           + '</div></td>';
       } else {
         const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
@@ -952,7 +961,7 @@ _AM_JS = r"""
           : '';
         metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark2 + '</div></div>'
-          + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(r.value) + '</span></div>' + badge + '</div>'
+          + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(r.value, state.metric) + '</span></div>' + badge + '</div>'
           + '</div></td>';
         state.extraMetrics.forEach(function(key) {
           const ed = state.extraData[key];
@@ -965,7 +974,7 @@ _AM_JS = r"""
           }
           const val = ed.byId[String(r.player_id)] !== undefined ? ed.byId[String(r.player_id)] : null;
           const pctBar = val != null ? Math.max(2, Math.round(Math.abs(Number(val)) / extraMaxMap[key] * 100)) : 2;
-          const disp = val != null ? fmtVal(val) : '–';
+          const disp = val != null ? fmtVal(val, key) : '–';
           metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
             + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div></div></div>'
             + '<span class="am-val">' + disp + '</span>'
