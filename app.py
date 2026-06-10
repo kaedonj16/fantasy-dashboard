@@ -598,7 +598,6 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span> <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
             <span class="home-feature-row-desc">Archetype-driven suggestions with Monte Carlo win probability. See exactly how each trade shifts your playoff odds</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -609,7 +608,6 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Calculator</span>
             <span class="home-feature-row-desc">AI-powered deal grades, counter proposals, and real trade comparisons from thousands of logged transactions</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -619,8 +617,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Trade Intelligence <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
-            <span class="home-feature-row-desc">Real market values derived from thousands of actual trades. Trending, buy-low, and sell-high signals updated daily</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
+            <span class="home-feature-row-desc">Real market values from thousands of actual trades. Trending, buy-low, and sell-high signals updated daily</span>
           </div>
         </div>
 
@@ -630,8 +627,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Player Rankings</span>
-            <span class="home-feature-row-desc">Calibrated dynasty and redraft values updated daily, blending consensus data with advanced metrics, archetypes, and trend charts</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
+            <span class="home-feature-row-desc">Calibrated dynasty and redraft values updated daily, blending consensus data with advanced metrics and trend charts</span>
           </div>
         </div>
 
@@ -640,9 +636,8 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#14b8a6;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8h.01M9 8h6M6 11h.01M9 11h9"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Advanced Metrics <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
+            <span class="home-feature-row-title">Advanced Metrics</span>
             <span class="home-feature-row-desc">Air yards, target share, snap counts, red zone usage, and 20+ efficiency metrics with positional percentile rankings</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -653,7 +648,6 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Rookie Prospects</span>
             <span class="home-feature-row-desc">Full prospect profiles with college metrics, RAS athleticism scores, draft capital analysis, and real-time ADP movement</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -663,8 +657,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Playoff Odds</span>
-            <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week. Know your exact path to the playoffs and projected championship probability</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
+            <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week. Know your exact path to the playoffs and championship probability</span>
           </div>
         </div>
 
@@ -675,7 +668,6 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Weekly Hub</span>
             <span class="home-feature-row-desc">Game-day command center with live scoring, optimal lineup suggestions, injury news, and head-to-head matchup breakdowns</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -686,7 +678,6 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Breakout Engine <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
             <span class="home-feature-row-desc">Spot value shifts before the market moves. Tracks target share, snap counts, and depth chart changes to surface opportunities</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -695,9 +686,8 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#ec4899;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Waiver Wire</span>
+            <span class="home-feature-row-title">Waivers &amp; Start/Sit <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
             <span class="home-feature-row-desc">Personalized pickup rankings tailored to your roster's needs, scoring format, positional scarcity, and remaining schedule</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -708,7 +698,6 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Team Analytics</span>
             <span class="home-feature-row-desc">Roster grades by position group, strength-of-schedule projections, and side-by-side comparisons across your entire league</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -719,7 +708,6 @@ FORM_BODY = """
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">League History</span>
             <span class="home-feature-row-desc">AI season recaps, head-to-head rivalry records, historical draft grades, and complete year-by-year standings</span>
-            <span class="home-feature-platforms"><span class="hfp-chip hfp-sleeper">Sleeper</span><span class="hfp-chip hfp-espn">ESPN</span><span class="hfp-chip hfp-yahoo">Yahoo</span></span>
           </div>
         </div>
 
@@ -1480,11 +1468,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
-        ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "page_advanced_metrics", "advanced-metrics", False),
+        ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
-        ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
+        ("Waivers & Start/Sit <span class='nav-pro-badge'>PRO</span>", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
     ], ["players", "prospects", "breakouts", "waivers", "schedule"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
@@ -2668,6 +2656,15 @@ def history_ai_recap():
 
     if not all([league_id, season, roster_id]):
         return jsonify({"error": "Missing required parameters"}), 400
+
+    # AI recap is a PRO feature
+    _user_id = session.get("viewer_username")
+    _has_premium = has_premium_for_viewer(
+        _user_id, session.get("viewer_user_id"), league_id,
+        (request.args.get("platform") or "sleeper"), int(season)
+    )
+    if not _has_premium:
+        return jsonify({"error": "premium_required", "message": "AI recaps require a premium subscription"}), 403
 
     try:
         # Get the same context that the history page uses
@@ -8706,7 +8703,36 @@ def page_standings(platform: str, season: int, league_id: str):
 
 @app.route("/<platform>/<int:season>/<league_id>/waivers")
 def page_waivers(platform: str, season: int, league_id: str):
+    user_id = session.get("viewer_username")
+    has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
     ctx = get_league_ctx_from_cache(platform, league_id, season)
+    if not has_premium:
+        teaser_html = """
+    <div class="card central">
+      <div class="card-header">
+        <h2>Waivers &amp; Start/Sit</h2>
+        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+          Personalized pickup rankings and start/sit advice tailored to your roster
+        </div>
+      </div>
+      <div class="card-body" style="text-align:center;padding:60px 24px;">
+        <div style="font-size:40px;margin-bottom:16px;opacity:.3;"><i class="fa-solid fa-rotate"></i></div>
+        <div style="font-weight:700;font-size:18px;margin-bottom:8px;">Premium Feature</div>
+        <div style="color:var(--text-muted);font-size:14px;margin-bottom:24px;">
+          Get personalized waiver wire recommendations based on your roster's needs,<br>
+          scoring format, positional scarcity, and remaining schedule.
+        </div>
+        <button onclick="showPaywall('waivers')"
+          style="padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;">
+          Unlock Waivers &amp; Start/Sit
+        </button>
+      </div>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() { showPaywall('waivers'); });
+    </script>
+    """
+        return render_page("BR Fantasy Waivers", league_id, "waivers", teaser_html, platform, season)
     body = build_waivers_body(platform, season, league_id, ctx)
     return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
 
@@ -11002,33 +11028,6 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
     from data_building.advanced_metrics import LEADERBOARD_METRICS
     user_id = session.get("viewer_username")
     has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
-    if not has_premium:
-        teaser_html = """
-    <div class="card central">
-      <div class="card-header">
-        <h2>Advanced Metrics</h2>
-        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
-          Per-metric leaderboards across every player — efficiency, usage, grades, and more
-        </div>
-      </div>
-      <div class="card-body" style="text-align:center;padding:60px 24px;">
-        <div style="font-size:40px;margin-bottom:16px;opacity:.3;"><i class="fa-solid fa-chart-bar"></i></div>
-        <div style="font-weight:700;font-size:18px;margin-bottom:8px;">Premium Feature</div>
-        <div style="color:var(--text-muted);font-size:14px;margin-bottom:24px;">
-          Rank every player by snap share, target share, yards after catch, PFF grades,<br>
-          red zone usage, and 30+ other metrics across multiple seasons.
-        </div>
-        <button onclick="showPaywall('advanced-metrics')"
-          style="padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;">
-          Unlock Advanced Metrics
-        </button>
-      </div>
-    </div>
-    <script>
-      document.addEventListener('DOMContentLoaded', function() { showPaywall('advanced-metrics'); });
-    </script>
-    """
-        return render_page("Advanced Metrics", league_id, "advanced-metrics", teaser_html, platform, season)
     body = build_advanced_metrics_body(
         has_premium, LEADERBOARD_METRICS, league_id, season, platform
     )

@@ -553,10 +553,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         if (filteredPlayers.length === 0) {{ grid.style.display = 'none'; empty.style.display = ''; return; }}
         empty.style.display = 'none';
         grid.style.display = '';
-        const FREE_LIMIT = 5;
-        const displayPlayers = TI_HAS_PREMIUM ? filteredPlayers : filteredPlayers.slice(0, FREE_LIMIT);
-        const showPaywallCard = !TI_HAS_PREMIUM && filteredPlayers.length > FREE_LIMIT;
-        grid.innerHTML = displayPlayers.map(p => {{
+        grid.innerHTML = filteredPlayers.map(p => {{
           const name   = p.name || 'Unknown';
           const pos    = p.position || '?';
           const team   = p.team || '?';
@@ -601,13 +598,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
             ${{momentumHtml ? `<div class="ti-momentum">${{momentumHtml}}</div>` : ''}}
           </div>`;
-        }}).join('') + (showPaywallCard ? `
-          <div class="ti-card" onclick="showPaywall('trade-history')" style="cursor:pointer;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:160px;background:var(--card);">
-            <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
-            <div style="font-weight:700;font-size:14px;">Unlock Full Access</div>
-            <div style="font-size:12px;color:var(--text-muted);text-align:center;">See all players &amp; trade history<br>with a premium subscription</div>
-            <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
-          </div>` : '');
+        }}).join('');
       }}
 
       const _tiTrades = {{ player: null, page: 1, leagueFilter: 'all', total: 0, totalPages: 1 }};
