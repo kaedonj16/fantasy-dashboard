@@ -9018,6 +9018,29 @@ def api_waiver_candidates():
     except Exception:
         pass
 
+    # Weekly usage trends: recent role growth is the strongest waiver signal.
+    usage_trends: dict = {}
+    try:
+        from data_building.weekly_metrics import get_usage_trends
+        _nfl_wv = get_nfl_state() or {}
+        _trend_season_wv = int(_nfl_wv.get("season") or season)
+        if str(_nfl_wv.get("season_type") or "").lower() == "off":
+            _trend_season_wv -= 1
+        usage_trends = get_usage_trends(_trend_season_wv)
+    except Exception:
+        usage_trends = {}
+
+    # Minimum last-3-week-vs-season rise to call it a usage spike, per stat.
+    _usage_spike_min = {"snap_pct": 8.0, "touches": 3.0, "targets": 2.0}
+
+    def _usage_spike(c: dict):
+        ut = usage_trends.get(c["player_id"])
+        if not ut or ut.get("delta") is None:
+            return None
+        if ut["delta"] >= _usage_spike_min.get(ut.get("stat"), 3.0):
+            return ut
+        return None
+
     _prime_max = {"QB": 33, "RB": 26, "WR": 28, "TE": 29}
 
     def _wv_signal(c: dict) -> tuple:
@@ -9026,6 +9049,8 @@ def api_waiver_candidates():
         pos = c["position"]
         bscore = waiver_breakout.get(c["player_id"], 0)
         prime = _prime_max.get(pos, 28)
+        if _usage_spike(c):
+            return ("signal-usage", "Usage Spike")
         if bscore >= 55:
             return ("signal-breakout", "Breakout")
         if rank_chg >= 8:
@@ -9046,6 +9071,7 @@ def api_waiver_candidates():
     for c in candidates[:30]:
         sig_cls, sig_label = _wv_signal(c)
         bscore = waiver_breakout.get(c["player_id"], 0.0)
+        ut = usage_trends.get(c["player_id"]) or {}
         result.append({
             "player_id": c["player_id"],
             "name": c["name"],
@@ -9059,6 +9085,9 @@ def api_waiver_candidates():
             "signal": sig_label,
             "signal_class": sig_cls,
             "composite_score": _waiver_pickup_score(c, waiver_breakout, _prime_max),
+            "usage_delta": ut.get("delta"),
+            "usage_stat": ut.get("stat"),
+            "usage_series": ut.get("series"),
         })
 
     return jsonify({"candidates": result, "total": len(result)})
@@ -9221,6 +9250,14 @@ def api_start_sit_options():
     except Exception:
         pass
 
+    # ── Weekly usage trends: rising/falling role nudges close calls ──────────
+    _ss_usage_trends: dict = {}
+    try:
+        from data_building.weekly_metrics import get_usage_trends as _get_ut
+        _ss_usage_trends = _get_ut(int(season))
+    except Exception:
+        _ss_usage_trends = {}
+
     positions_out: dict = {"QB": [], "RB": [], "WR": [], "TE": []}
     for pid in player_ids:
         row  = rows_by_id.get(pid) or {}
@@ -9257,11 +9294,12 @@ def api_start_sit_options():
         else:
             def_rank, def_total = None, 32
 
-        # ── Start/sit score: projection × form × matchup ─────────────────────
-        # Projection is the dominant signal. Form (±10%) and matchup (±10%)
-        # each influence close calls but combined can only swing the score
-        # ~20% — not enough to flip a meaningful projection gap (e.g. 12.8 vs
-        # 9.8 stays the same regardless of matchup).
+        # ── Start/sit score: projection × form × matchup × usage ─────────────
+        # Projection is the dominant signal. Form (±10%), matchup (±10%), and
+        # usage trend (±5%) influence close calls but can't flip a meaningful
+        # projection gap (e.g. 12.8 vs 9.8 stays the same regardless).
+        _ut_ss = _ss_usage_trends.get(pid) or {}
+        usage_delta = _ut_ss.get("delta")
         if on_bye:
             score = 0.0
         else:
@@ -9276,7 +9314,15 @@ def api_start_sit_options():
                 _ease = (def_total - def_rank) / (def_total - 1)  # 0–1
                 _mu = 0.90 + _ease * 0.20  # 0.90–1.10
 
-            score = proj_pts * _form * _mu
+            # Usage trend: last-3-week role vs season avg, capped ±5%. A rising
+            # role means the trailing PPG (form) understates this week's
+            # opportunity; a shrinking one means it overstates it.
+            _ug = 1.0
+            if usage_delta is not None and _ut_ss.get("season_avg"):
+                _rel = usage_delta / max(float(_ut_ss["season_avg"]), 1.0)
+                _ug = min(1.05, max(0.95, 1.0 + _rel * 0.25))
+
+            score = proj_pts * _form * _mu * _ug
 
         full_player  = players_full.get(pid) or {}
         raw_status   = str(full_player.get("injury_status") or full_player.get("status") or "").strip()
@@ -9297,6 +9343,8 @@ def api_start_sit_options():
             "def_total":     def_total,
             "pos_rank_label": row.get("pos_rank_label") or "",
             "injury_status": injury_status,
+            "usage_delta":   usage_delta,
+            "usage_stat":    _ut_ss.get("stat"),
             "_score":        score,
         })
 
@@ -19296,6 +19344,24 @@ def api_sleeper_user_leagues():
 def api_changelog():
     """Return the changelog entries."""
     return jsonify(CHANGELOG)
+
+
+@app.route("/api/weekly-trends")
+def api_weekly_trends():
+    """Bulk per-player usage trend map (last-6-week series + recent-vs-season
+    delta) for the leaderboard trend column and waivers usage risers."""
+    nfl_state = get_nfl_state() or {}
+    season_str = (request.args.get("season") or "").strip()
+    season = int(season_str) if season_str.isdigit() else int(
+        nfl_state.get("season") or datetime.now().year
+    )
+    try:
+        from data_building.weekly_metrics import get_usage_trends
+        trends = get_usage_trends(season)
+    except Exception as exc:
+        logger.warning("[weekly-trends] failed: %s", exc)
+        trends = {}
+    return jsonify({"season": season, "players": trends})
 
 
 @app.route("/api/rivalry/<platform>/<int:season>/<league_id>")

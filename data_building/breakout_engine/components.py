@@ -1706,7 +1706,22 @@ def _inseason_role_trajectory_score(
     elif snap_delta > 0.02 and opp_delta > 0.02:
         synergy_bonus += 2.5
 
-    total_score = _clamp(stabilized_total + synergy_bonus, 0.0, 100.0)
+    # Weekly usage momentum: per-week snap share gives a finer-grained read
+    # than the snapshot windows above. Last-3-week avg vs season avg (in
+    # percentage points), worth up to ±8 points. Guarded — the engine must
+    # work without weekly data.
+    momentum_bonus = 0.0
+    momentum_pp = None
+    try:
+        from data_building.weekly_metrics import get_recent_momentum
+        _wk_season = as_of_date.year if as_of_date.month >= 8 else as_of_date.year - 1
+        momentum_pp = get_recent_momentum(player_id, _wk_season)
+        if momentum_pp is not None:
+            momentum_bonus = _clamp(momentum_pp * 0.8, -8.0, 8.0)
+    except Exception:
+        momentum_bonus = 0.0
+
+    total_score = _clamp(stabilized_total + synergy_bonus + momentum_bonus, 0.0, 100.0)
 
     details = {
         "player_id": player_id,
@@ -1734,6 +1749,8 @@ def _inseason_role_trajectory_score(
         "raw_total": round(raw_total, 2),
         "stabilized_total": round(stabilized_total, 2),
         "synergy_bonus": round(synergy_bonus, 2),
+        "weekly_momentum_pp": momentum_pp,
+        "momentum_bonus": round(momentum_bonus, 2),
     }
 
     return round(total_score, 2), details

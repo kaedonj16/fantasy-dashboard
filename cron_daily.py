@@ -314,6 +314,27 @@ else:
 """, "build_daily_advanced_metrics")
 
     # ------------------------------------------------------------------ #
+    # Step 4a: Weekly usage metrics (snap/target share per week)          #
+    # Powers usage risers, trend sparklines, and start/sit usage factor.  #
+    # ------------------------------------------------------------------ #
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from datetime import datetime
+from dashboard_services.api import get_nfl_state
+from data_building.weekly_metrics import build_weekly_metrics
+
+nfl_state = get_nfl_state() or {{}}
+season_type = str(nfl_state.get("season_type", "")).lower().strip()
+current_season = int(nfl_state.get("season") or datetime.now().year)
+if season_type == "off":
+    print("[cron] Offseason - refreshing weekly metrics for prior season")
+    n = build_weekly_metrics(current_season - 1)
+else:
+    n = build_weekly_metrics(current_season)
+print(f"[cron] Weekly metrics: {{n}} rows upserted")
+""", "build_weekly_metrics")
+
+    # ------------------------------------------------------------------ #
     # Step 4b: Defense-vs-position matchup ratings (z-scores)             #
     # Powers the Schedule Assistant rankings / ease scores.               #
     # Only rebuilt on Wednesdays during the regular/post season so each   #

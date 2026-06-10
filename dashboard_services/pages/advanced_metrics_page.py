@@ -174,6 +174,10 @@ def build_advanced_metrics_body(
             <button class="am-pos" data-pos="WR">WR</button>
             <button class="am-pos" data-pos="TE">TE</button>
           </div>
+          <label class="am-roster-toggle" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
+            <input type="checkbox" id="amTrendToggle">
+            <span>Usage trends</span>
+          </label>
           <label class="am-roster-toggle" id="amRosterToggleWrap" style="display:none;">
             <input type="checkbox" id="amRosterToggle">
             <span>My roster only</span>
@@ -504,6 +508,16 @@ def build_advanced_metrics_body(
       .am-val-wrap { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; min-width:54px; }
       .am-pct-badge { font-size:9px; font-weight:700; letter-spacing:.02em; line-height:1.3; white-space:nowrap; opacity:.85; }
       @media (max-width:600px) { .am-pct-badge { display:none; } }
+      /* Weekly usage trend column */
+      .am-trendcell { white-space:nowrap; min-width:110px; }
+      th.am-trendcell { font-size:11px; }
+      .am-trend-inner { display:flex; align-items:center; gap:7px; }
+      .am-spark { display:block; opacity:.85; }
+      .am-trend-delta { font-size:10px; font-weight:700; white-space:nowrap; }
+      .am-trend-delta-up   { color:#10b981; }
+      .am-trend-delta-down { color:#ef4444; }
+      .am-trend-delta-flat { color:var(--text-muted); opacity:.6; }
+      @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { display:none; } }
       /* Pinned-player comparison modal */
       .am-cmp-card { max-width:720px; }
       .am-cmp-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
@@ -587,6 +601,8 @@ _AM_JS = r"""
                   extraMetrics: [],     // up to 4 extra metric keys
                   extraData: {},        // key -> { byId:{player_id->value}, maxAbs }
                   prevData: {},         // player_id -> previous-season value (for YoY trend)
+                  showTrends: false,    // weekly usage trend column toggle
+                  trendsBySeason: {},   // seasonKey -> { player_id -> trend obj }
                   pinnedIds: _loadPins() };
   const MAX_COMPARE = 4;
 
@@ -701,6 +717,62 @@ _AM_JS = r"""
         render();
       })
       .catch(() => {});
+  }
+
+  // ── Weekly usage trends ───────────────────────────────────────────────────
+  function trendSeasonKey() { return String(state.season || 'cur'); }
+  function fetchTrends() {
+    const q = state.season ? ('?season=' + encodeURIComponent(state.season)) : '';
+    fetch('/api/weekly-trends' + q)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        state.trendsBySeason[trendSeasonKey()] = (d && d.players) || {};
+        render();
+      })
+      .catch(() => { state.trendsBySeason[trendSeasonKey()] = {}; render(); });
+  }
+  function sparkline(series, color) {
+    if (!series || series.length < 2) return '';
+    const w = 60, h = 18;
+    const max = Math.max.apply(null, series.concat([1]));
+    const step = w / (series.length - 1);
+    const pts = series.map(function(v, i) {
+      return (i * step).toFixed(1) + ',' + (h - 1 - (v / max) * (h - 3)).toFixed(1);
+    }).join(' ');
+    return '<svg class="am-spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">'
+      + '<polyline fill="none" stroke="' + color + '" stroke-width="1.5" stroke-linejoin="round" points="' + pts + '"/></svg>';
+  }
+  function trendCellHtml(playerId, color) {
+    const tm = state.trendsBySeason[trendSeasonKey()];
+    if (!tm) {
+      return '<td class="am-trendcell"><div class="am-skel-bar" style="width:60px;height:10px;border-radius:4px;"></div></td>';
+    }
+    const t = tm[String(playerId)];
+    if (!t || !t.series || t.series.length < 2) {
+      return '<td class="am-trendcell"><span style="opacity:.35">–</span></td>';
+    }
+    const statLbl = { snap_pct: 'snap%', touches: 'touches', targets: 'targets' }[t.stat] || t.stat;
+    const d = t.delta;
+    let deltaHtml = '<span class="am-trend-delta am-trend-delta-flat">&ndash;</span>';
+    if (d >= 0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-up">&#9650; +' + d.toFixed(1) + '</span>';
+    else if (d <= -0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-down">&#9660; ' + d.toFixed(1) + '</span>';
+    return '<td class="am-trendcell" title="Last-3-week avg ' + statLbl + ' (' + t.recent_avg
+      + ') vs season avg (' + t.season_avg + ')">'
+      + '<div class="am-trend-inner">' + sparkline(t.series, color) + deltaHtml + '</div></td>';
+  }
+  function syncTrendHeader() {
+    const thead = document.querySelector('#amTable thead tr');
+    if (!thead) return;
+    const existing = document.getElementById('amTrendHeader');
+    if (existing) existing.remove();
+    if (state.showTrends) {
+      const th = document.createElement('th');
+      th.id = 'amTrendHeader';
+      th.className = 'am-trendcell';
+      th.textContent = 'Usage L6W';
+      th.title = 'Recent usage: last-6-week trend of the key volume stat for the position (QB snap %, RB touches, WR/TE targets)';
+      thead.appendChild(th);
+    }
   }
 
   // ── Pinned-player comparison ──────────────────────────────────────────────
@@ -869,6 +941,7 @@ _AM_JS = r"""
       th.addEventListener('click', function() { sortByCol(key); });
       thead.appendChild(th);
     });
+    syncTrendHeader();
     updateSortHeaders();
   }
   function updateMetricTip() {
@@ -1103,6 +1176,7 @@ _AM_JS = r"""
         + playerCell
         + gamesCell
         + metricCell
+        + (state.showTrends ? trendCellHtml(r.player_id, col) : '')
         + '</tr>' + divider;
     }).join('');
 
@@ -1235,6 +1309,15 @@ _AM_JS = r"""
   }
   if (rosterChk) {
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
+  }
+  const trendChk = document.getElementById('amTrendToggle');
+  if (trendChk) {
+    trendChk.addEventListener('change', () => {
+      state.showTrends = trendChk.checked;
+      syncTrendHeader();
+      if (state.showTrends && !state.trendsBySeason[trendSeasonKey()]) fetchTrends();
+      render();
+    });
   }
 
   // Wire column-header sort clicks.

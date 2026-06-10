@@ -7661,6 +7661,11 @@ function openPlayerModal(playerId, playerName, opts) {
               <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
             </div>
           </div>
+          <div id="pmWeeklyTrendsWrap">
+            <button type="button" id="pmWeeklyTrendsBtn" class="pm-weekly-toggle"
+              onclick="pmToggleWeeklyTrends('${playerId}')">Weekly trends &#9662;</button>
+            <div id="pmWeeklyTrendsBody" style="display:none;"></div>
+          </div>
         </div>
       ` : '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Advanced metrics not available for this player.</div></div>';
 
@@ -8598,11 +8603,102 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
 
       // Populate just the bars column
       contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData);
+
+      // Reset the weekly-trends panel when the season pill changes so it
+      // refetches for the newly selected season.
+      const wtWrap = document.getElementById('pmWeeklyTrendsWrap');
+      if (wtWrap) {
+        const s = (!isCareer && activeSeason) ? String(activeSeason) : '';
+        if (wtWrap.dataset.season !== s) {
+          wtWrap.dataset.season = s;
+          wtWrap.dataset.loaded = '';
+          const wtBody = document.getElementById('pmWeeklyTrendsBody');
+          if (wtBody) { wtBody.style.display = 'none'; wtBody.innerHTML = ''; }
+          const wtBtn = document.getElementById('pmWeeklyTrendsBtn');
+          if (wtBtn) wtBtn.innerHTML = 'Weekly trends &#9662;';
+        }
+      }
     })
     .catch(err => {
       console.error('Error loading advanced metrics:', err);
       const section = document.getElementById('advancedMetricsSection');
       if (section) section.style.display = 'none';
+    });
+}
+
+// ── Player modal: weekly usage trends ────────────────────────────────────────
+function pmSparkline(series, color) {
+  if (!series || series.length < 2) return '';
+  const w = 120, h = 26;
+  const max = Math.max.apply(null, series.concat([1]));
+  const step = w / (series.length - 1);
+  const pts = series.map(function(v, i) {
+    return (i * step).toFixed(1) + ',' + (h - 2 - (v / max) * (h - 6)).toFixed(1);
+  }).join(' ');
+  return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block;">'
+    + '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" points="' + pts + '"/></svg>';
+}
+
+function pmToggleWeeklyTrends(playerId) {
+  const wrap = document.getElementById('pmWeeklyTrendsWrap');
+  const body = document.getElementById('pmWeeklyTrendsBody');
+  const btn = document.getElementById('pmWeeklyTrendsBtn');
+  if (!wrap || !body || !btn) return;
+
+  const open = body.style.display !== 'none';
+  if (open) {
+    body.style.display = 'none';
+    btn.innerHTML = 'Weekly trends &#9662;';
+    return;
+  }
+  body.style.display = '';
+  btn.innerHTML = 'Weekly trends &#9652;';
+  if (wrap.dataset.loaded) return;
+  wrap.dataset.loaded = '1';
+
+  body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading weekly data…</div>';
+  const seasonParam = wrap.dataset.season ? ('?season=' + wrap.dataset.season) : '';
+  fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      const weeks = d.weeks || [];
+      if (weeks.length < 2) {
+        body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Not enough weekly data for this season.</div>';
+        return;
+      }
+      function rowFor(label, key, color, suffix) {
+        const series = weeks.map(function(w) { return Number(w[key] || 0); });
+        if (!series.some(function(v) { return v > 0; })) return '';
+        const seasonAvg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
+        const r3 = series.slice(-3);
+        const recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
+        const delta = recentAvg - seasonAvg;
+        let deltaHtml = '';
+        if (delta >= 0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + delta.toFixed(1) + '</span>';
+        else if (delta <= -0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; ' + delta.toFixed(1) + '</span>';
+        const last = series[series.length - 1];
+        return '<div class="pm-wt-row">'
+          + '<div class="pm-wt-label">' + label + '</div>'
+          + pmSparkline(series, color)
+          + '<div class="pm-wt-stats">'
+          + '<span class="pm-wt-last">' + last.toFixed(1) + (suffix || '') + '</span>'
+          + '<span class="pm-wt-avg">avg ' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
+          + deltaHtml
+          + '</div></div>';
+      }
+      let html = '<div class="pm-wt-grid">'
+        + rowFor('Snap %', 'snap_pct', '#3b82f6', '%')
+        + rowFor('Targets', 'targets', '#f59e0b')
+        + rowFor('Touches', 'touches', '#22c55e')
+        + rowFor('PPR Pts', 'ppr_pts', '#8b5cf6')
+        + '</div>'
+        + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">Weeks '
+        + weeks[0].week + '&ndash;' + weeks[weeks.length - 1].week
+        + ' &middot; arrow compares last 3 weeks to the season average</div>';
+      body.innerHTML = html;
+    })
+    .catch(function() {
+      body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Could not load weekly data.</div>';
     });
 }
 
