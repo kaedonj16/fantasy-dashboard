@@ -426,7 +426,7 @@ def build_advanced_metrics_body(
       .am-metric-cell { display:flex; align-items:center; gap:10px; }
       .am-metric-bar { flex:1; min-width:0; }
       .am-val { font-weight:700; white-space:nowrap; font-size:13px; flex-shrink:0; min-width:46px; text-align:right; }
-      .am-bar-track { position:relative; background:var(--bg-alt, rgba(0,0,0,.06)); border-radius:6px; height:10px; width:100%; }
+      .am-bar-track { position:relative; background:rgba(128,128,128,.18); border-radius:6px; height:10px; width:100%; }
       .am-bar-fill { height:100%; border-radius:6px; }
       /* Positional-average marker on each bar */
       .am-bar-avg { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--text-muted); opacity:.55; border-radius:1px; }
@@ -535,7 +535,7 @@ def build_advanced_metrics_body(
         overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
       }
       .am-mbar-wrap { flex:1; min-width:0; }
-      .am-mbar-track { background:var(--bg-alt,rgba(0,0,0,.06)); border-radius:4px; height:7px; }
+      .am-mbar-track { background:rgba(128,128,128,.18); border-radius:4px; height:7px; }
       .am-mbar-fill { height:100%; border-radius:4px; transition:width .3s; }
       .am-mval {
         font-size:11px; font-weight:700; min-width:42px; text-align:right;
@@ -581,7 +581,7 @@ def build_advanced_metrics_body(
       .am-cmp-val { font-weight:700; font-variant-numeric:tabular-nums; }
       .am-cmp-best { color:#10b981; }
       .am-cmp-rank { font-size:10px; color:var(--text-muted); margin-left:5px; font-weight:600; }
-      .am-cmp-bar { height:5px; border-radius:3px; background:var(--row,rgba(127,127,127,.12)); margin-top:5px; overflow:hidden; max-width:120px; }
+      .am-cmp-bar { height:5px; border-radius:3px; background:rgba(128,128,128,.18); margin-top:5px; overflow:hidden; max-width:120px; }
       .am-cmp-bar > div { height:100%; border-radius:3px; }
       /* YoY trend arrows — inline beside the value */
       .am-val-row { display:flex; align-items:center; gap:3px; }
