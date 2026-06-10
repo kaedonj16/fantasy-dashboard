@@ -3469,6 +3469,32 @@ def render_power_and_playoffs(
 
     top3 = pr_sorted.head(3)
 
+    # ---- Weekly movement arrows (vs the previous week's snapshot) ----
+    movement: Dict[str, Optional[int]] = {}
+    try:
+        from dashboard_services.power_rank_history import record_and_movement
+        _nfl_state = get_nfl_state() or {}
+        _wk = int(_nfl_state.get("week") or 0)
+        _is_current_season = str(_nfl_state.get("season") or "") == str(season)
+        if _wk > 0 and _is_current_season:
+            _ranks = {
+                str(row.get("owner", "")): i + 1
+                for i, (_, row) in enumerate(pr_sorted.iterrows())
+            }
+            movement = record_and_movement(str(league_id), int(season), _wk, _ranks)
+    except Exception:
+        movement = {}
+
+    def move_arrow(owner_name) -> str:
+        delta = movement.get(str(owner_name))
+        if delta is None:
+            return ""
+        if delta > 0:
+            return f"<span class='pr-move pr-move-up' title='Up {delta} from last week'>&#9650;{delta}</span>"
+        if delta < 0:
+            return f"<span class='pr-move pr-move-down' title='Down {abs(delta)} from last week'>&#9660;{abs(delta)}</span>"
+        return "<span class='pr-move pr-move-flat' title='No change from last week'>&ndash;</span>"
+
     # width scaling based on PowerScore range
     if has_power:
         p = pr_sorted["PowerScore"].astype(float)
@@ -3546,7 +3572,7 @@ def render_power_and_playoffs(
           <div class="slot {base_cls} {streak_frame_cls}">
             <div class="wrap">
               <div class='podium-header'>
-                <h3>#{rank}</h3>
+                <h3>#{rank} {move_arrow(name)}</h3>
                 {avatar_html}
               </div>
               <div class="name">{name}</div>
@@ -3617,6 +3643,7 @@ def render_power_and_playoffs(
         rank_cards.append(
             f"<div class='rank-item {css_cls}'>"
             f"<span class='pos'>#{pos}</span>"
+            f"{move_arrow(team)}"
             f"{img}"
             f"<span class='name'>{team}</span>"
             f"<div class='bar'><div style='width:{bar_w:.1f}%'></div></div>"

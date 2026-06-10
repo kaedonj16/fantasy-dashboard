@@ -183,9 +183,22 @@ def build_advanced_metrics_body(
         <!-- Compare bar: chips for active metrics + add-stat picker -->
         <div id="amCompareBar" class="am-compare-bar">
           <div id="amCompareChips" class="am-compare-chips"></div>
+          <button id="amComparePinnedBtn" type="button" class="am-add-stat-btn" style="display:none;">&#8645; Compare Pinned</button>
           <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
             <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Add Metric</button>
             <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
+          </div>
+        </div>
+
+        <div id="amCompareModal" class="am-legend-modal" style="display:none;"
+          onclick="if(event.target===this)this.style.display='none'">
+          <div class="am-legend-card am-cmp-card" role="dialog" aria-label="Compare pinned players">
+            <div class="am-legend-head">
+              <span>Compare Pinned Players</span>
+              <button type="button" class="am-legend-close" aria-label="Close"
+                onclick="document.getElementById('amCompareModal').style.display='none'">&times;</button>
+            </div>
+            <div class="am-legend-body" id="amCompareBody"></div>
           </div>
         </div>
 
@@ -491,6 +504,19 @@ def build_advanced_metrics_body(
       .am-val-wrap { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; min-width:54px; }
       .am-pct-badge { font-size:9px; font-weight:700; letter-spacing:.02em; line-height:1.3; white-space:nowrap; opacity:.85; }
       @media (max-width:600px) { .am-pct-badge { display:none; } }
+      /* Pinned-player comparison modal */
+      .am-cmp-card { max-width:720px; }
+      .am-cmp-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+      .am-cmp-table th, .am-cmp-table td { padding:9px 10px; border-bottom:1px solid var(--border); text-align:left; }
+      .am-cmp-table th { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); }
+      .am-cmp-player-head { font-size:13px !important; text-transform:none !important; letter-spacing:0 !important; color:var(--text) !important; font-weight:800 !important; }
+      .am-cmp-player-meta { font-size:11px; font-weight:600; color:var(--text-muted); margin-left:5px; }
+      .am-cmp-metric { font-weight:600; color:var(--text); white-space:nowrap; }
+      .am-cmp-val { font-weight:700; font-variant-numeric:tabular-nums; }
+      .am-cmp-best { color:#10b981; }
+      .am-cmp-rank { font-size:10px; color:var(--text-muted); margin-left:5px; font-weight:600; }
+      .am-cmp-bar { height:5px; border-radius:3px; background:var(--row,rgba(127,127,127,.12)); margin-top:5px; overflow:hidden; max-width:120px; }
+      .am-cmp-bar > div { height:100%; border-radius:3px; }
       /* YoY trend arrows — inline beside the value */
       .am-val-row { display:flex; align-items:center; gap:3px; }
       .am-trend-up   { font-size:11px; font-weight:700; color:#10b981; line-height:1; flex-shrink:0; }
@@ -677,6 +703,82 @@ _AM_JS = r"""
       .catch(() => {});
   }
 
+  // ── Pinned-player comparison ──────────────────────────────────────────────
+  function pinnedRows() {
+    return state.rows.filter(r => state.pinnedIds.has(String(r.player_id)));
+  }
+  function updateComparePinnedBtn() {
+    const btn = document.getElementById('amComparePinnedBtn');
+    if (btn) btn.style.display = pinnedRows().length >= 2 ? '' : 'none';
+  }
+  function _metricRanks(key) {
+    // player_id -> rank for a metric, among the players that have a value.
+    const lower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
+    let entries;
+    if (key === state.metric) {
+      entries = state.rows.map(r => [String(r.player_id), Number(r.value)]);
+    } else {
+      const ed = state.extraData[key];
+      if (!ed) return null; // still loading
+      entries = Object.entries(ed.byId).map(([id, v]) => [id, Number(v)]);
+    }
+    entries.sort((a, b) => lower ? a[1] - b[1] : b[1] - a[1]);
+    const ranks = {};
+    entries.forEach(([id], i) => { ranks[id] = i + 1; });
+    return ranks;
+  }
+  window.amShowCompare = function() {
+    const modal = document.getElementById('amCompareModal');
+    const body = document.getElementById('amCompareBody');
+    if (!modal || !body) return;
+    const players = pinnedRows();
+    if (players.length < 2) return;
+    const metricsList = [state.metric, ...state.extraMetrics];
+
+    let html = '<table class="am-cmp-table"><thead><tr><th>Metric</th>';
+    players.forEach(p => {
+      html += '<th class="am-cmp-player-head">' + (p.name || '')
+        + '<span class="am-cmp-player-meta" style="color:' + posColor(p.position) + '">' + (p.position || '') + '</span>'
+        + '<span class="am-cmp-player-meta">' + (p.team || '') + '</span></th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    metricsList.forEach(key => {
+      const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
+      const lower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
+      const ranks = _metricRanks(key);
+      const vals = players.map(p => {
+        if (key === state.metric) return Number(p.value);
+        const ed = state.extraData[key];
+        const v = ed ? ed.byId[String(p.player_id)] : undefined;
+        return v !== undefined && v !== null ? Number(v) : null;
+      });
+      const present = vals.filter(v => v != null);
+      const best = present.length
+        ? (lower ? Math.min(...present) : Math.max(...present))
+        : null;
+      const barMax = present.length ? Math.max(...present.map(v => Math.abs(v))) || 1 : 1;
+
+      html += '<tr><td class="am-cmp-metric">' + lbl + '</td>';
+      players.forEach((p, i) => {
+        const v = vals[i];
+        if (v == null) { html += '<td><span style="opacity:.4">–</span></td>'; return; }
+        const isBest = best != null && v === best && present.length > 1;
+        const rk = ranks ? ranks[String(p.player_id)] : null;
+        const w = Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
+        html += '<td><span class="am-cmp-val' + (isBest ? ' am-cmp-best' : '') + '">' + fmtVal(v, key) + '</span>'
+          + (rk ? '<span class="am-cmp-rank">#' + rk + '</span>' : '')
+          + '<div class="am-cmp-bar"><div style="width:' + w + '%;background:' + posColor(p.position) + '"></div></div></td>';
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;">'
+      + 'Showing the primary metric plus any added metrics. Add more with + Add Metric, or unpin players from the table.</div>';
+    body.innerHTML = html;
+    modal.style.display = 'flex';
+  };
+
   function toggleStatPicker() {
     const picker = document.getElementById('amStatPicker');
     if (!picker) return;
@@ -699,6 +801,9 @@ _AM_JS = r"""
     e.stopPropagation();
     toggleStatPicker();
   });
+
+  const _cmpBtn = document.getElementById('amComparePinnedBtn');
+  if (_cmpBtn) _cmpBtn.addEventListener('click', function() { amShowCompare(); });
 
   function relevantPositions(m) {
     return (cfg.metrics[m] && cfg.metrics[m].positions) || ['QB','RB','WR','TE'];
@@ -1000,6 +1105,8 @@ _AM_JS = r"""
         + metricCell
         + '</tr>' + divider;
     }).join('');
+
+    updateComparePinnedBtn();
 
     // Pagination controls.
     if (paginationEl) {

@@ -6957,6 +6957,19 @@ select:focus {
   letter-spacing: -0.3px;
 }
 
+/* Weekly movement arrows (power rankings) */
+.pr-move {
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: -0.2px;
+}
+.pr-move-up   { color: #10b981; }
+.pr-move-down { color: #ef4444; }
+.pr-move-flat { color: var(--text-muted); opacity: 0.6; }
+.podium .podium-header h3 .pr-move { font-size: 11px; vertical-align: 2px; margin-left: 2px; }
+
 .rank-item > .avatar {
   flex: 0 0 26px;
   width: 26px;
