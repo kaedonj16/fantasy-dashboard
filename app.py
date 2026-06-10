@@ -10923,6 +10923,33 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
     from data_building.advanced_metrics import LEADERBOARD_METRICS
     user_id = session.get("viewer_username")
     has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
+    if not has_premium:
+        teaser_html = """
+    <div class="card central">
+      <div class="card-header">
+        <h2>Advanced Metrics</h2>
+        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+          Per-metric leaderboards across every player — efficiency, usage, grades, and more
+        </div>
+      </div>
+      <div class="card-body" style="text-align:center;padding:60px 24px;">
+        <div style="font-size:40px;margin-bottom:16px;opacity:.3;"><i class="fa-solid fa-chart-bar"></i></div>
+        <div style="font-weight:700;font-size:18px;margin-bottom:8px;">Premium Feature</div>
+        <div style="color:var(--text-muted);font-size:14px;margin-bottom:24px;">
+          Rank every player by snap share, target share, yards after catch, PFF grades,<br>
+          red zone usage, and 30+ other metrics across multiple seasons.
+        </div>
+        <button onclick="showPaywall('advanced-metrics')"
+          style="padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;">
+          Unlock Advanced Metrics
+        </button>
+      </div>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() { showPaywall('advanced-metrics'); });
+    </script>
+    """
+        return render_page("Advanced Metrics", league_id, "advanced-metrics", teaser_html, platform, season)
     body = build_advanced_metrics_body(
         has_premium, LEADERBOARD_METRICS, league_id, season, platform
     )
