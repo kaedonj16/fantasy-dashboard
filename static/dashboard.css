@@ -1227,8 +1227,8 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 }
 
 .changelog-tag-feature {
-  background: #dcfce7;
-  color: #15803d;
+  background: rgba(59,130,246,.12);
+  color: #3b82f6;
 }
 
 .changelog-tag-fix {
@@ -1237,8 +1237,8 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
 }
 
 .changelog-tag-new {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: rgba(59,130,246,.12);
+  color: #3b82f6;
 }
 
 .changelog-entry-text {
@@ -8049,7 +8049,7 @@ select:focus {
 
 .home-update-tag.update-tag-feature {
   color: #3b82f6;
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(59, 130, 246, 0.12);
 }
 
 .home-update-tag.update-tag-improvement {
@@ -8058,8 +8058,8 @@ select:focus {
 }
 
 .home-update-tag.update-tag-new {
-  color: #f59e0b;
-  background: rgba(245, 158, 11, 0.1);
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.12);
 }
 
 .home-update-date {
@@ -17332,10 +17332,10 @@ button:disabled {
   align-self: flex-start;
 }
 /* Mirror changelog tag colours */
-.notif-toast-tag-new     { background: rgba(56,189,248,.15); color: #38bdf8; }
+.notif-toast-tag-new     { background: rgba(59,130,246,.12); color: #3b82f6; }
 .notif-toast-tag-fix     { background: rgba(34,197, 94,.15); color: #22c55e; }
 .notif-toast-tag-update  { background: rgba(251,191, 36,.15); color: #fbbf24; }
-.notif-toast-tag-feature { background: rgba(168,85,247,.15);  color: #a855f7; }
+.notif-toast-tag-feature { background: rgba(59,130,246,.12);  color: #3b82f6; }
 .notif-toast-text {
   font-size: 13px;
   color: var(--muted, #94a3b8);

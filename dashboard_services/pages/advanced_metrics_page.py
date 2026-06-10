@@ -489,9 +489,10 @@ def build_advanced_metrics_body(
       .am-val-wrap { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; min-width:54px; }
       .am-pct-badge { font-size:9px; font-weight:700; letter-spacing:.02em; line-height:1.3; white-space:nowrap; opacity:.85; }
       @media (max-width:600px) { .am-pct-badge { display:none; } }
-      /* YoY trend arrows */
-      .am-trend-up   { font-size:11px; font-weight:700; color:#10b981; line-height:1; }
-      .am-trend-down { font-size:11px; font-weight:700; color:#ef4444; line-height:1; }
+      /* YoY trend arrows — inline beside the value */
+      .am-val-row { display:flex; align-items:center; gap:3px; }
+      .am-trend-up   { font-size:11px; font-weight:700; color:#10b981; line-height:1; flex-shrink:0; }
+      .am-trend-down { font-size:11px; font-weight:700; color:#ef4444; line-height:1; flex-shrink:0; }
       /* Pin button */
       .am-rank-cell { display:flex; align-items:center; gap:3px; }
       .am-pin-btn {
@@ -941,7 +942,7 @@ _AM_JS = r"""
           : '';
         metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
-          + '<div class="am-val-wrap"><span class="am-val">' + fmtVal(r.value) + '</span>' + trend + badge + '</div>'
+          + '<div class="am-val-wrap"><div class="am-val-row"><span class="am-val">' + fmtVal(r.value) + '</span>' + trend + '</div>' + badge + '</div>'
           + '</div></td>';
       } else {
         const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
@@ -951,7 +952,7 @@ _AM_JS = r"""
           : '';
         metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark2 + '</div></div>'
-          + '<div class="am-val-wrap"><span class="am-val">' + fmtVal(r.value) + '</span>' + trend + badge + '</div>'
+          + '<div class="am-val-wrap"><div class="am-val-row"><span class="am-val">' + fmtVal(r.value) + '</span>' + trend + '</div>' + badge + '</div>'
           + '</div></td>';
         state.extraMetrics.forEach(function(key) {
           const ed = state.extraData[key];
