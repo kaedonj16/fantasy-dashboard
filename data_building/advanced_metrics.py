@@ -1253,54 +1253,35 @@ def get_metric_leaderboard(
         has_games = "games" in existing_cols
         has_vol_col = vol_col in existing_cols
 
-        # Find the representative snapshot date.
-        season_gate = "AND season = %s" if season else ""
-        season_params = (season,) if season else ()
-        latest = conn.execute(
-            f"SELECT MAX(as_of_date) AS max_date FROM player_advanced_metrics "
-            f"WHERE {metric} IS NOT NULL {season_gate}",
-            season_params,
-        ).fetchone()
-        if not latest or not latest["max_date"]:
-            return []
-        latest_date = latest["max_date"]
-
-        # The volume count is coalesced across ALL of the season's snapshot rows.
-        # Computed metrics (yards_per_carry, role_score, the volume totals) and PFF
-        # imports (drop rate, aDOT, YAC, grades, breakaway, elusive) land on
-        # different as_of_dates, so a PFF metric's value lives on a different row
-        # than the volume total. Reading volume off the single latest row would
-        # leave it NULL and make the min-volume filter a silent no-op. Join the
-        # per-player season max so the filter sees the count regardless of date.
-        apply_vol = bool(has_vol_col and min_vol and min_vol > 0)
-        # Resolve the season backing this snapshot. Needed for the min-volume
-        # filter AND for displaying volume: PFF-imported metrics (BTT rate,
-        # drop rate, grades, ...) live on rows whose volume totals are NULL,
-        # so both must read the coalesced per-season value, not the row's own.
-        season_for_vol = season
-        if has_vol_col and season_for_vol is None:
+        # Resolve season if not provided: use the latest season with metric data.
+        if season is None:
             srow = conn.execute(
-                "SELECT season FROM player_advanced_metrics "
-                "WHERE as_of_date = %s AND season IS NOT NULL LIMIT 1",
-                (latest_date,),
+                f"SELECT season FROM player_advanced_metrics "
+                f"WHERE {metric} IS NOT NULL AND season IS NOT NULL "
+                f"ORDER BY season DESC LIMIT 1"
             ).fetchone()
-            season_for_vol = srow["season"] if srow else None
-        use_vol_join = bool(has_vol_col and season_for_vol is not None)
-        apply_vol = apply_vol and use_vol_join
+            if not srow:
+                return []
+            season = int(srow["season"])
 
-        # Does this season actually have volume data for this stat? If so, a
-        # NULL count means the player genuinely had ~none of it (e.g. a blocking
-        # TE with a PFF drop-rate row but no targets), and the min filter should
-        # exclude them. Only keep NULLs when the whole season predates the
-        # volume columns, so an old season doesn't return an empty board.
+        # Volume join: coalesce the season-max vol count across all snapshot rows
+        # so PFF-imported metrics (which land on a different as_of_date from the
+        # computed volume totals) still see the correct carry/target/games count.
+        season_for_vol = season
+        use_vol_join = bool(has_vol_col and season_for_vol is not None)
+
+        # Check whether this season has non-zero vol data for the vol column so
+        # we know whether a NULL/0 count means "no data" vs "predates the column".
         season_has_vol = False
-        if apply_vol:
+        if use_vol_join:
             chk = conn.execute(
                 f"SELECT 1 FROM player_advanced_metrics "
-                f"WHERE season = %s AND {vol_col} IS NOT NULL LIMIT 1",
+                f"WHERE season = %s AND {vol_col} IS NOT NULL AND {vol_col} > 0 LIMIT 1",
                 (season_for_vol,),
             ).fetchone()
             season_has_vol = chk is not None
+
+        apply_vol = bool(season_has_vol and min_vol and min_vol > 0)
 
         gate = ""
         vol_join = ""
@@ -1312,23 +1293,26 @@ def get_metric_leaderboard(
                 "ON v.player_id = m.player_id"
             )
             params.append(season_for_vol)
-        params.append(latest_date)
+        # Season filter always applied (required for correct DISTINCT ON results).
+        gate += " AND m.season = %s"
+        params.append(season)
         if pos:
             gate += " AND m.position = %s"
             params.append(pos)
         if LEADERBOARD_METRICS[metric].get("efficiency"):
             gate += " AND (m.snap_share IS NULL OR m.snap_share >= %s)"
             params.append(_MIN_SNAP_FOR_EFFICIENCY)
-        if apply_vol:
-            if season_has_vol:
-                # Season has volume data: a NULL count means ~none of the stat,
-                # so exclude it from a min-volume leaderboard.
+        if season_has_vol:
+            # Always require vol > 0 when the season has vol data: hides players
+            # with no recorded volume (null carries, null targets, etc.) even
+            # when "Any" minimum is selected. Keeps "Any" clean of zero-vol rows.
+            if apply_vol:
                 gate += " AND v.vol IS NOT NULL AND v.vol >= %s"
+                params.append(min_vol)
             else:
-                # Whole season predates the volume columns: keep all rows.
-                gate += " AND (v.vol IS NULL OR v.vol >= %s)"
-            params.append(min_vol)
+                gate += " AND v.vol IS NOT NULL AND v.vol > 0"
         params.append(limit)
+
         if has_games:
             games_col = (
                 "COALESCE(m.games, v.vol) AS games,"
@@ -1336,8 +1320,6 @@ def get_metric_leaderboard(
             )
         else:
             games_col = ""
-        # Also select the relevant volume column so the leaderboard can display
-        # it — coalesced with the season max so PFF rows still show a count.
         has_specific_vol = vol_col != "games" and vol_col in existing_cols
         if has_specific_vol:
             specific_vol_col = (
@@ -1346,11 +1328,22 @@ def get_metric_leaderboard(
             )
         else:
             specific_vol_col = ""
+
+        # DISTINCT ON picks each player's most recent non-null snapshot for this
+        # metric within the season. This prevents the old single-max-date approach
+        # from dropping players whose computed metric (e.g. yards_per_carry) was
+        # written on a different date than the latest PFF sync.
         rows = conn.execute(
-            f"""SELECT m.player_id, m.position, {games_col} {specific_vol_col} m.{metric} AS value
-                FROM player_advanced_metrics m{vol_join}
-                WHERE m.as_of_date = %s{gate} AND m.{metric} IS NOT NULL
-                ORDER BY m.{metric} DESC LIMIT %s""",
+            f"""SELECT t.*
+                FROM (
+                    SELECT DISTINCT ON (m.player_id)
+                        m.player_id, m.position, {games_col} {specific_vol_col}
+                        m.{metric} AS value
+                    FROM player_advanced_metrics m{vol_join}
+                    WHERE m.{metric} IS NOT NULL{gate}
+                    ORDER BY m.player_id, m.as_of_date DESC
+                ) t
+                ORDER BY t.value DESC LIMIT %s""",
             tuple(params),
         ).fetchall()
 
