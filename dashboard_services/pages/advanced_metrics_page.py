@@ -146,6 +146,13 @@ def build_advanced_metrics_body(
             <label class="am-ctrl-label">Search</label>
             <input id="amSearch" type="text" autocomplete="off" placeholder="Search players…" class="am-search">
           </div>
+          <div class="am-ctrl am-filters-btn-wrap">
+            <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
+          </div>
+        </div>
+
+        <!-- Secondary filters: always visible on desktop, collapsible on mobile -->
+        <div class="am-controls am-filters-panel" id="amFiltersPanel">
           <div class="am-ctrl am-ctrl-season" id="amSeasonCtrl">
             <label class="am-ctrl-label">Season</label>
             <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
@@ -313,13 +320,19 @@ def build_advanced_metrics_body(
       .am-subcontrols { display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:nowrap; }
       .am-positions { display:flex; gap:6px; flex:1; min-width:0; overflow-x:auto; padding-bottom:1px; }
       .am-roster-toggle { flex-shrink:0; }
-      /* Mobile: two controls per row (metric + search full width), and let
-         the toggles wrap under the position pills instead of crushing them */
+      /* Secondary filters row: stacked under the primary controls on desktop */
+      .am-filters-panel { margin-top:0; }
+      .am-filters-btn-wrap { display:none; }
+      /* Mobile: two controls per row (metric + search full width), secondary
+         filters collapsed behind a Filters button, toggles wrap under pills */
       @media (max-width:600px) {
         .am-controls { gap:10px; }
         .am-ctrl { flex:1 1 calc(50% - 5px); min-width:0; }
         .am-controls .am-ctrl:first-child, .am-ctrl-search { flex:1 1 100%; }
         .am-ctrl .am-select, .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
+        .am-filters-btn-wrap { display:flex; flex:1 1 100%; }
+        .am-filters-panel { display:none; margin:0 0 12px; }
+        .am-filters-panel.am-open { display:flex; }
         .am-subcontrols { flex-wrap:wrap; row-gap:10px; }
         .am-positions { flex:1 1 100%; flex-wrap:wrap; overflow-x:visible; }
       }
@@ -1355,6 +1368,14 @@ _AM_JS = r"""
   }
   if (rosterChk) {
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
+  }
+  const filtersBtn = document.getElementById('amFiltersBtn');
+  const filtersPanel = document.getElementById('amFiltersPanel');
+  if (filtersBtn && filtersPanel) {
+    filtersBtn.addEventListener('click', () => {
+      const open = filtersPanel.classList.toggle('am-open');
+      filtersBtn.innerHTML = open ? 'Filters &#9652;' : 'Filters &#9662;';
+    });
   }
   const trendChk = document.getElementById('amTrendToggle');
   if (trendChk) {
