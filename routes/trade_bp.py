@@ -64,18 +64,19 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     from app import render_page
     user_id = session.get("viewer_username")
     has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
-    try:
-        from app import get_league_ctx_from_cache
-        _ti_ctx = get_league_ctx_from_cache(platform, league_id, season)
-        _ti_rp = _ti_ctx.get("roster_positions") or []
-        _ti_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _ti_rp)
-        _ti_lt = "sf" if _ti_sf else "1qb"
-        _ti_sz = len(_ti_ctx.get("rosters") or []) or 10
-    except Exception:
-        logger.warning("trade_bp: failed to load league context for trade intel page", exc_info=True)
-        _ti_sf = False
-        _ti_lt = "1qb"
-        _ti_sz = 10
+    _ti_sf = False
+    _ti_lt = "1qb"
+    _ti_sz = 10
+    if league_id:
+        try:
+            from app import get_league_ctx_from_cache
+            _ti_ctx = get_league_ctx_from_cache(platform, league_id, season)
+            _ti_rp = _ti_ctx.get("roster_positions") or []
+            _ti_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _ti_rp)
+            _ti_lt = "sf" if _ti_sf else "1qb"
+            _ti_sz = len(_ti_ctx.get("rosters") or []) or 10
+        except Exception:
+            logger.warning("trade_bp: failed to load league context for trade intel page", exc_info=True)
     body_html = f"""
     <script>var _leagueType = '{_ti_lt}'; var _leagueSize = {_ti_sz};</script>
     <div class="card central" style="max-width:960px;">
