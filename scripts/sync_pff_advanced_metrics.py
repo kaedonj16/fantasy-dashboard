@@ -287,6 +287,11 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             total_p += upsert_csv(passing_csv, season, PASSING_COLS, "QB", index_maps)
 
     print(f"Synced PFF metrics rows: rushing={total_r}, receiving={total_w}, passing={total_p}")
+
+    # Recompute total_routes for any player/season that now has fresh yprr data.
+    # init_advanced_metrics_db() runs this backfill at startup; calling it again
+    # here picks up the rows just upserted so the routes column is always current.
+    init_advanced_metrics_db()
     return 0
 
 

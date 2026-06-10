@@ -107,7 +107,8 @@ def init_advanced_metrics_db():
                 ADD COLUMN IF NOT EXISTS total_receptions NUMERIC,
                 ADD COLUMN IF NOT EXISTS total_carries  NUMERIC,
                 ADD COLUMN IF NOT EXISTS total_touches  NUMERIC,
-                ADD COLUMN IF NOT EXISTS total_pass_att NUMERIC;
+                ADD COLUMN IF NOT EXISTS total_pass_att NUMERIC,
+                ADD COLUMN IF NOT EXISTS total_routes   NUMERIC;
         """)
 
         # Target share and air yards (usage/stats CSV sourced).
@@ -146,6 +147,35 @@ def init_advanced_metrics_db():
 
         # Add rookie evaluation columns (safe migration - all nullable)
         _add_rookie_eval_columns(conn)
+
+        # Derive total_routes from (yards_per_reception × total_receptions) / yprr.
+        # yprr and the receiving yards live on different as_of_date rows within a
+        # season, so we aggregate the best non-null values per player/season and
+        # write the result to the most-recent row (which is what DISTINCT ON picks
+        # in get_metric_leaderboard).
+        conn.execute("""
+            UPDATE player_advanced_metrics m
+            SET total_routes = ROUND((b.ypr * b.recs) / b.yprr)
+            FROM (
+                SELECT player_id, season,
+                    MAX(yprr) FILTER (WHERE yprr IS NOT NULL AND yprr > 0) AS yprr,
+                    MAX(yards_per_reception) FILTER (WHERE yards_per_reception IS NOT NULL) AS ypr,
+                    MAX(total_receptions) FILTER (WHERE total_receptions IS NOT NULL) AS recs
+                FROM player_advanced_metrics
+                WHERE season IS NOT NULL
+                GROUP BY player_id, season
+            ) b
+            WHERE m.player_id = b.player_id
+              AND m.season = b.season
+              AND b.yprr IS NOT NULL
+              AND b.ypr  IS NOT NULL
+              AND b.recs IS NOT NULL
+              AND m.total_routes IS NULL
+              AND m.as_of_date = (
+                  SELECT MAX(as_of_date) FROM player_advanced_metrics
+                  WHERE player_id = m.player_id AND season = m.season
+              )
+        """)
 
 
 def _add_rookie_eval_columns(conn) -> None:
@@ -1189,6 +1219,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     # ── Volume counts — useful as combo-filter targets ────────────────────────
     "total_targets":      {"label": "Targets",      "category": "Volume", "positions": ["WR", "RB", "TE"], "desc": "Total targets in the season."},
     "total_receptions":   {"label": "Receptions",   "category": "Volume", "positions": ["WR", "RB", "TE"], "desc": "Total receptions in the season."},
+    "total_routes":       {"label": "Routes",       "category": "Volume", "positions": ["WR", "TE", "RB"], "desc": "Estimated total routes run (= season receiving yards ÷ yprr). Requires both yprr and receptions data."},
     "total_carries":      {"label": "Carries",      "category": "Volume", "positions": ["RB", "QB"], "desc": "Total carries in the season."},
     "total_touches":      {"label": "Touches",      "category": "Volume", "positions": ["RB", "WR", "TE"], "desc": "Total carries plus receptions in the season."},
 }
