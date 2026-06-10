@@ -632,6 +632,14 @@ def build_advanced_metrics_body(
         font-size:12px; font-weight:600; cursor:pointer;
       }
       .am-filter-cancel-btn:hover { background:var(--row,rgba(0,0,0,.04)); }
+      /* Preset load button in stat picker */
+      .am-sp-preset-wrap { padding:6px 10px; border-bottom:1px solid var(--border); }
+      .am-sp-preset-btn {
+        width:100%; padding:7px 10px; border:1px solid var(--accent,#2563eb); border-radius:8px;
+        background:rgba(37,99,235,.07); color:var(--accent,#2563eb);
+        font-size:12px; font-weight:700; cursor:pointer; text-align:center;
+      }
+      .am-sp-preset-btn:hover { background:rgba(37,99,235,.14); }
     </style>
     """
 
@@ -693,6 +701,26 @@ _AM_JS = r"""
                   pinnedIds: _loadPins() };
   const MAX_COMPARE = 4;
 
+  // Preset sets: clicking "Load X Set" clears current extras and loads these 4 metrics.
+  const _PRESETS = {
+    'Rushing':   ['yards_per_carry', 'rush_td_rate', 'elusive_rating', 'breakaway_percentage', 'pff_rushing_grade'],
+    'Receiving': ['yprr', 'yards_per_target', 'catch_rate', 'yards_after_catch_per_reception', 'avg_depth_of_target'],
+    'Passing':   ['pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate', 'nfl_passer_rating', 'pressure_to_sack_rate'],
+  };
+  window.amLoadPreset = function(cat) {
+    const keys = _PRESETS[cat];
+    if (!keys) return;
+    state.extraMetrics.forEach(k => { delete state.extraData[k]; delete state.extraPrevData[k]; });
+    state.extraMetrics = [];
+    state.comboFilters = state.comboFilters.filter(f => f.key === 'primary' || f.key === 'age');
+    const toAdd = keys.filter(k => k !== state.metric).slice(0, MAX_COMPARE);
+    toAdd.forEach(k => state.extraMetrics.push(k));
+    const picker = document.getElementById('amStatPicker');
+    if (picker) picker.style.display = 'none';
+    updateCompareBar(); syncExtraCols(); updateFilterBar(); render();
+    state.extraMetrics.forEach(k => fetchExtraData(k));
+  };
+
   const _PIN_SVG = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a5.922 5.922 0 0 1 1.013.16l3.134-3.133a2.772 2.772 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/></svg>';
 
   function percentileBadge(rank, total) {
@@ -741,7 +769,11 @@ _AM_JS = r"""
     const items = Object.entries(cfg.metrics)
       .filter(([, spec]) => (spec.category || 'Other') === primaryCat);
     const otherCats = ['General', 'Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
-    let html = '<div class="am-sp-cat-head">' + primaryCat + '</div>';
+    const _preset = _PRESETS[primaryCat];
+    let html = (_preset
+      ? '<div class="am-sp-preset-wrap"><button type="button" class="am-sp-preset-btn" onclick="amLoadPreset(\'' + primaryCat + '\')">&#9889; Load ' + primaryCat + ' Set (5 stats)</button></div>'
+      : '')
+      + '<div class="am-sp-cat-head">' + primaryCat + '</div>';
     for (const [key, spec] of items) {
       const on = active.has(key);
       const isPrimary = key === state.metric;
@@ -1264,6 +1296,22 @@ _AM_JS = r"""
         return f.op === 'gte' ? v >= Number(f.val) : v <= Number(f.val);
       });
     });
+    // Hide rows that lack data in most of the loaded extra metric columns (e.g. a
+    // fullback shown with all dashes when rushing efficiency metrics are added).
+    if (state.extraMetrics.length > 0) {
+      const loadedExtras = state.extraMetrics.filter(k => state.extraData[k]);
+      if (loadedExtras.length > 0) {
+        const minHits = Math.max(1, Math.ceil(loadedExtras.length / 2));
+        displayRows = displayRows.filter(function(r) {
+          let hits = 0;
+          for (let i = 0; i < loadedExtras.length; i++) {
+            const ed = state.extraData[loadedExtras[i]];
+            if (ed && ed.byId[String(r.player_id)] != null) { hits++; if (hits >= minHits) return true; }
+          }
+          return false;
+        });
+      }
+    }
 
     loading.style.display = 'none';
     if (!displayRows.length) {
