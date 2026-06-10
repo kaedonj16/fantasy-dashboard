@@ -727,9 +727,10 @@ _AM_JS = r"""
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         state.trendsBySeason[trendSeasonKey()] = (d && d.players) || {};
+        syncTrendHeader();  // header label reflects how many weeks exist
         render();
       })
-      .catch(() => { state.trendsBySeason[trendSeasonKey()] = {}; render(); });
+      .catch(() => { state.trendsBySeason[trendSeasonKey()] = {}; syncTrendHeader(); render(); });
   }
   function sparkline(series, color) {
     if (!series || series.length < 2) return '';
@@ -756,9 +757,21 @@ _AM_JS = r"""
     let deltaHtml = '<span class="am-trend-delta am-trend-delta-flat">&ndash;</span>';
     if (d >= 0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-up">&#9650; +' + d.toFixed(1) + '</span>';
     else if (d <= -0.5) deltaHtml = '<span class="am-trend-delta am-trend-delta-down">&#9660; ' + d.toFixed(1) + '</span>';
-    return '<td class="am-trendcell" title="Last-3-week avg ' + statLbl + ' (' + t.recent_avg
+    const recentN = Math.min(3, t.weeks_played || 3);
+    return '<td class="am-trendcell" title="Last-' + recentN + '-week avg ' + statLbl + ' (' + t.recent_avg
       + ') vs season avg (' + t.season_avg + ')">'
       + '<div class="am-trend-inner">' + sparkline(t.series, color) + deltaHtml + '</div></td>';
+  }
+  function trendWindowWeeks() {
+    // Longest series among loaded players — the label adapts to how many
+    // weeks of data actually exist (early season shows L1W/L2W, etc).
+    const tm = state.trendsBySeason[trendSeasonKey()];
+    if (!tm) return 0;
+    let n = 0;
+    Object.values(tm).forEach(function(t) {
+      if (t.series && t.series.length > n) n = t.series.length;
+    });
+    return n;
   }
   function syncTrendHeader() {
     const thead = document.querySelector('#amTable thead tr');
@@ -769,8 +782,9 @@ _AM_JS = r"""
       const th = document.createElement('th');
       th.id = 'amTrendHeader';
       th.className = 'am-trendcell';
-      th.textContent = 'Usage L6W';
-      th.title = 'Recent usage: last-6-week trend of the key volume stat for the position (QB snap %, RB touches, WR/TE targets)';
+      const n = trendWindowWeeks();
+      th.textContent = n > 0 ? ('Usage L' + n + 'W') : 'Usage Trend';
+      th.title = 'Recent usage: ' + (n > 0 ? 'last-' + n + '-week' : 'recent') + ' trend of the key volume stat for the position (QB snap %, RB touches, WR/TE targets)';
       thead.appendChild(th);
     }
   }

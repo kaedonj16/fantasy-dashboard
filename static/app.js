@@ -8639,6 +8639,52 @@ function pmSparkline(series, color) {
     + '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" points="' + pts + '"/></svg>';
 }
 
+// Shared renderer: sparkline rows for a player's weekly usage series.
+function buildWeeklyTrendRows(weeks) {
+  if (!weeks || weeks.length < 2) {
+    return '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Not enough weekly data for this season.</div>';
+  }
+  function rowFor(label, key, color, suffix) {
+    const series = weeks.map(function(w) { return Number(w[key] || 0); });
+    if (!series.some(function(v) { return v > 0; })) return '';
+    const seasonAvg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
+    const r3 = series.slice(-3);
+    const recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
+    const delta = recentAvg - seasonAvg;
+    let deltaHtml = '';
+    if (delta >= 0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + delta.toFixed(1) + '</span>';
+    else if (delta <= -0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; ' + delta.toFixed(1) + '</span>';
+    const last = series[series.length - 1];
+    return '<div class="pm-wt-row">'
+      + '<div class="pm-wt-label">' + label + '</div>'
+      + pmSparkline(series, color)
+      + '<div class="pm-wt-stats">'
+      + '<span class="pm-wt-last">' + last.toFixed(1) + (suffix || '') + '</span>'
+      + '<span class="pm-wt-avg">avg ' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
+      + deltaHtml
+      + '</div></div>';
+  }
+  return '<div class="pm-wt-grid">'
+    + rowFor('Snap %', 'snap_pct', '#3b82f6', '%')
+    + rowFor('Targets', 'targets', '#f59e0b')
+    + rowFor('Touches', 'touches', '#22c55e')
+    + rowFor('PPR Pts', 'ppr_pts', '#8b5cf6')
+    + '</div>'
+    + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">Weeks '
+    + weeks[0].week + '&ndash;' + weeks[weeks.length - 1].week
+    + ' &middot; arrow compares last 3 weeks to the season average</div>';
+}
+
+// Collapse/expand a section in the player compare view.
+function cmpToggleSection(wrapId, headerEl) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  const collapsed = wrap.style.display === 'none';
+  wrap.style.display = collapsed ? '' : 'none';
+  const chev = headerEl ? headerEl.querySelector('.pm-collapse-chevron') : null;
+  if (chev) chev.innerHTML = collapsed ? '&#9662;' : '&#9656;';
+}
+
 function pmToggleWeeklyTrends(playerId) {
   const wrap = document.getElementById('pmWeeklyTrendsWrap');
   const body = document.getElementById('pmWeeklyTrendsBody');
@@ -8661,41 +8707,7 @@ function pmToggleWeeklyTrends(playerId) {
   fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      const weeks = d.weeks || [];
-      if (weeks.length < 2) {
-        body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Not enough weekly data for this season.</div>';
-        return;
-      }
-      function rowFor(label, key, color, suffix) {
-        const series = weeks.map(function(w) { return Number(w[key] || 0); });
-        if (!series.some(function(v) { return v > 0; })) return '';
-        const seasonAvg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
-        const r3 = series.slice(-3);
-        const recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
-        const delta = recentAvg - seasonAvg;
-        let deltaHtml = '';
-        if (delta >= 0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + delta.toFixed(1) + '</span>';
-        else if (delta <= -0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; ' + delta.toFixed(1) + '</span>';
-        const last = series[series.length - 1];
-        return '<div class="pm-wt-row">'
-          + '<div class="pm-wt-label">' + label + '</div>'
-          + pmSparkline(series, color)
-          + '<div class="pm-wt-stats">'
-          + '<span class="pm-wt-last">' + last.toFixed(1) + (suffix || '') + '</span>'
-          + '<span class="pm-wt-avg">avg ' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
-          + deltaHtml
-          + '</div></div>';
-      }
-      let html = '<div class="pm-wt-grid">'
-        + rowFor('Snap %', 'snap_pct', '#3b82f6', '%')
-        + rowFor('Targets', 'targets', '#f59e0b')
-        + rowFor('Touches', 'touches', '#22c55e')
-        + rowFor('PPR Pts', 'ppr_pts', '#8b5cf6')
-        + '</div>'
-        + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">Weeks '
-        + weeks[0].week + '&ndash;' + weeks[weeks.length - 1].week
-        + ' &middot; arrow compares last 3 weeks to the season average</div>';
-      body.innerHTML = html;
+      body.innerHTML = buildWeeklyTrendRows(d.weeks || []);
     })
     .catch(function() {
       body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Could not load weekly data.</div>';
@@ -10041,11 +10053,35 @@ function openComparisonView(p1, p2) {
 
       <hr class="pm-section-divider">
 
-      <div class="pm-section-header"><span class="pm-section-label">Advanced Metrics Comparison</span></div>
-      <div id="compareMetricsContent" class="compare-metrics-section">
-        <div style="display:flex;align-items:center;gap:10px;padding:12px 0;">
-          <div class="loading-spinner" style="width:16px;height:16px;"></div>
-          <span style="font-size:13px;color:var(--text-muted);">Loading metrics...</span>
+      <div class="pm-section-header pm-section-collapsible" onclick="cmpToggleSection('compareMetricsWrap', this)">
+        <span class="pm-section-label">Advanced Metrics Comparison</span>
+        <span class="pm-collapse-chevron">&#9662;</span>
+      </div>
+      <div id="compareMetricsWrap">
+        <div id="compareMetricsContent" class="compare-metrics-section">
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 0;">
+            <div class="loading-spinner" style="width:16px;height:16px;"></div>
+            <span style="font-size:13px;color:var(--text-muted);">Loading metrics...</span>
+          </div>
+        </div>
+      </div>
+
+      <hr class="pm-section-divider">
+
+      <div class="pm-section-header pm-section-collapsible" onclick="cmpToggleSection('compareWeeklyWrap', this)">
+        <span class="pm-section-label">Weekly Usage Trends</span>
+        <span class="pm-collapse-chevron">&#9662;</span>
+      </div>
+      <div id="compareWeeklyWrap">
+        <div class="compare-weekly-section">
+          <div class="compare-weekly-col">
+            <div class="compare-weekly-name">${p1.name || ''}</div>
+            <div id="compareWeekly1"><div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading…</div></div>
+          </div>
+          <div class="compare-weekly-col">
+            <div class="compare-weekly-name">${p2.name || ''}</div>
+            <div id="compareWeekly2"><div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading…</div></div>
+          </div>
         </div>
       </div>
 
@@ -10074,6 +10110,21 @@ function openComparisonView(p1, p2) {
   const gl2 = document.getElementById('compareGameLogs2');
   if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year, true, p1.position);
   if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year, true, p2.position);
+
+  // Weekly usage trends, side by side (endpoint defaults to the current
+  // season, falling back to the prior one during the offseason)
+  [[p1.player_id, 'compareWeekly1'], [p2.player_id, 'compareWeekly2']].forEach(function(pair) {
+    fetch('/api/player-weekly-metrics/' + encodeURIComponent(pair[0]))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        const el = document.getElementById(pair[1]);
+        if (el) el.innerHTML = buildWeeklyTrendRows(d.weeks || []);
+      })
+      .catch(function() {
+        const el = document.getElementById(pair[1]);
+        if (el) el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Could not load weekly data.</div>';
+      });
+  });
 
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();
