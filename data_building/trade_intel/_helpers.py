@@ -15,7 +15,7 @@ def _decay_weight(days_ago: float) -> float:
         return 0.6
     if days_ago <= 60:
         return 0.25
-    return 0.08
+    return 0.12
 
 
 def _size_bucket(num_teams: int) -> str:

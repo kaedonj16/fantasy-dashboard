@@ -48,7 +48,7 @@ from data_building.trade_intel._helpers import _decay_weight
 
 logger = logging.getLogger(__name__)
 
-LAMBDA_REG         = 8.0   # regularization strength (lower = more market influence per trade)
+LAMBDA_REG         = 20.0  # regularization strength (higher = stronger pull toward model prior when trade data is thin)
 MAX_VALUE          = 999.9
 MAX_LIFT           = 1.25  # player values capped at 125% of prior; picks float freely
 TOP_N_AT_MAX       = 1     # only the #1 player lands at MAX_VALUE; all others separate naturally
