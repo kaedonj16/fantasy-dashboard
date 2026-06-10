@@ -33,7 +33,12 @@ def build_advanced_metrics_body(
         except ValueError:
             return len(_CAT_ORDER)
 
-    metric_options = "\n".join(
+    _PRESET_CATS = [c for c in ["Rushing", "Receiving", "Passing", "General"] if c in groups]
+    preset_optgroup = '<optgroup label="&#9889; Quick Sets">' + "".join(
+        f'<option value="__preset__{cat}">{cat} Set</option>'
+        for cat in _PRESET_CATS
+    ) + '</optgroup>'
+    metric_options = preset_optgroup + "\n" + "\n".join(
         '<optgroup label="{label}">{opts}</optgroup>'.format(
             label=cat,
             opts="".join(
@@ -710,16 +715,25 @@ _AM_JS = r"""
   };
   window.amLoadPreset = function(cat) {
     const keys = _PRESETS[cat];
-    if (!keys) return;
-    state.extraMetrics.forEach(k => { delete state.extraData[k]; delete state.extraPrevData[k]; });
-    state.extraMetrics = [];
+    if (!keys || !keys.length) return;
+    const primary = keys[0];
+    const extras = keys.slice(1).slice(0, MAX_COMPARE);
+    state.metric = primary;
+    if (metricSel) metricSel.value = primary;
+    state.page = 0;
+    state.extraMetrics = extras.slice();
     state.comboFilters = state.comboFilters.filter(f => f.key === 'primary' || f.key === 'age');
-    const toAdd = keys.filter(k => k !== state.metric).slice(0, MAX_COMPARE);
-    toAdd.forEach(k => state.extraMetrics.push(k));
+    state.prevData = {};
+    const rel = new Set(relevantPositions(state.metric));
+    if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
+    state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
+    state.sortBy = state.metric;
+    state.minVol = defaultVol(state.metric);
     const picker = document.getElementById('amStatPicker');
     if (picker) picker.style.display = 'none';
-    updateCompareBar(); syncExtraCols(); updateFilterBar(); render();
-    state.extraMetrics.forEach(k => fetchExtraData(k));
+    updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
+    updateSortHeaders(); updateCompareBar(); syncExtraCols(); updateFilterBar();
+    fetchData();
   };
 
   const _PIN_SVG = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a5.922 5.922 0 0 1 1.013.16l3.134-3.133a2.772 2.772 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/></svg>';
@@ -1591,6 +1605,8 @@ _AM_JS = r"""
   }
 
   metricSel.addEventListener('change', () => {
+    const _v = metricSel.value;
+    if (_v && _v.startsWith('__preset__')) { amLoadPreset(_v.replace('__preset__', '')); return; }
     state.metric = metricSel.value; state.page = 0;
     state.extraMetrics = []; state.extraData = {}; state.extraPrevData = {}; state.prevData = {};
     state.comboFilters = [];

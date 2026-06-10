@@ -1191,7 +1191,6 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "total_receptions":   {"label": "Receptions",   "category": "Volume", "positions": ["WR", "RB", "TE"], "desc": "Total receptions in the season."},
     "total_carries":      {"label": "Carries",      "category": "Volume", "positions": ["RB", "QB"], "desc": "Total carries in the season."},
     "total_touches":      {"label": "Touches",      "category": "Volume", "positions": ["RB", "WR", "TE"], "desc": "Total carries plus receptions in the season."},
-    "games":              {"label": "Games Played", "category": "Volume", "positions": ["QB", "RB", "WR", "TE"], "desc": "Games played in the season."},
 }
 
 
