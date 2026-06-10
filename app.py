@@ -498,7 +498,6 @@ FORM_BODY = """
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
             <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
-            <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
           </div>
         </div>
 
@@ -533,26 +532,7 @@ FORM_BODY = """
           </p>
         </div>
 
-        <!-- Yahoo Flow -->
-        <div id="yahooFlow" style="display:none;">
-          <div class="row">
-            <label for="yahooLeagueIdInput">Yahoo League ID</label>
-            <input type="text" id="yahooLeagueIdInput" placeholder="e.g. 123456" autocomplete="off">
-          </div>
-          <div class="row">
-            <label for="yahooTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
-            <input type="text" id="yahooTeamName" placeholder="e.g. Dynasty Monsters">
-          </div>
-          <div class="row">
-            <button type="button" id="yahooConnectBtn">Connect Yahoo Account</button>
-          </div>
-          <div id="yahooError" class="error-message" style="display:none;"></div>
-          <p class="hint" style="margin-top:6px;">
-            You'll be redirected to Yahoo to authorize access, then returned here.
-          </p>
-        </div>
-
-        <form method="post" id="leagueSelectForm">
+<form method="post" id="leagueSelectForm">
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
           <input type="hidden" name="season" value="{{ viewed_season }}">
           <input type="hidden" name="username" id="formUsername" value="">
