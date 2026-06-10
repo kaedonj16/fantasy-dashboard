@@ -6185,6 +6185,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const platformBtns = document.querySelectorAll(".platform-btn");
   const sleeperFlow = document.getElementById("sleeperFlow");
   const espnFlow = document.getElementById("espnFlow");
+  const yahooFlow = document.getElementById("yahooFlow");
   const sleeperHint = document.getElementById("sleeperHint");
   const lookupBtn = document.getElementById("lookupBtn");
   const usernameInput = document.getElementById("username");
@@ -6198,6 +6199,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const espnTeamName = document.getElementById("espnTeamName");
   const espnSubmitBtn = document.getElementById("espnSubmitBtn");
   const espnErrorBox = document.getElementById("espnError");
+
+  const yahooLeagueIdInput = document.getElementById("yahooLeagueIdInput");
+  const yahooTeamName = document.getElementById("yahooTeamName");
+  const yahooConnectBtn = document.getElementById("yahooConnectBtn");
+  const yahooErrorBox = document.getElementById("yahooError");
 
 if (!platformBtns.length) return;
 
@@ -6218,6 +6224,7 @@ if (!platformBtns.length) return;
 
     if (sleeperFlow) sleeperFlow.style.display = platform === "sleeper" ? "block" : "none";
     if (espnFlow)    espnFlow.style.display    = platform === "espn"    ? "block" : "none";
+    if (yahooFlow)   yahooFlow.style.display   = platform === "yahoo"   ? "block" : "none";
     if (sleeperHint) sleeperHint.style.display = platform === "sleeper" ? ""      : "none";
   }
 
@@ -6402,6 +6409,53 @@ if (!platformBtns.length) return;
         }
         espnSubmitBtn.disabled = false;
         espnSubmitBtn.textContent = "Find My League";
+      }
+    });
+  }
+
+  if (yahooConnectBtn) {
+    yahooConnectBtn.addEventListener("click", async () => {
+      const leagueId = yahooLeagueIdInput?.value.trim();
+      if (!leagueId || !/^\d+$/.test(leagueId)) {
+        if (yahooErrorBox) {
+          yahooErrorBox.textContent = "Enter a valid Yahoo League ID (numbers only).";
+          yahooErrorBox.style.display = "block";
+        }
+        return;
+      }
+
+      if (yahooErrorBox) yahooErrorBox.style.display = "none";
+
+      try {
+        const res = await fetch(`/api/yahoo-validate-league?league_id=${encodeURIComponent(leagueId)}`);
+        const data = await res.json();
+
+        if (res.status === 401 && data.needs_oauth) {
+          const teamName = yahooTeamName?.value.trim() || "";
+          const params = new URLSearchParams({ league_id: leagueId, team_name: teamName });
+          window.location.href = `/auth/yahoo?${params}`;
+          return;
+        }
+
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || "Unable to load Yahoo league.");
+        }
+
+        if (leagueSelect) {
+          leagueSelect.innerHTML = `<option value="${leagueId}" selected>${data.league?.name || "Yahoo League"}</option>`;
+        }
+        if (formPlatform) formPlatform.value = "yahoo";
+
+        const teamName = yahooTeamName?.value.trim() || "";
+        const formUsername = document.getElementById("formUsername");
+        if (formUsername) formUsername.value = teamName;
+
+        document.getElementById("leagueSelectForm")?.submit();
+      } catch (err) {
+        if (yahooErrorBox) {
+          yahooErrorBox.textContent = err.message || "Unable to connect to Yahoo.";
+          yahooErrorBox.style.display = "block";
+        }
       }
     });
   }
