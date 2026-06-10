@@ -42,7 +42,8 @@ def build_advanced_metrics_body(
         '<optgroup label="{label}">{opts}</optgroup>'.format(
             label=cat,
             opts="".join(
-                f'<option value="{k}">{lbl}</option>' for k, lbl in groups[cat]
+                f'<option value="{k}"{" selected" if k == "role_score" else ""}>{lbl}</option>'
+                for k, lbl in groups[cat]
             ),
         )
         for cat in sorted(groups, key=_group_key)
