@@ -942,7 +942,7 @@ _AM_JS = r"""
           : '';
         metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark + '</div></div>'
-          + '<div class="am-val-wrap"><div class="am-val-row"><span class="am-val">' + fmtVal(r.value) + '</span>' + trend + '</div>' + badge + '</div>'
+          + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(r.value) + '</span></div>' + badge + '</div>'
           + '</div></td>';
       } else {
         const pct = Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100));
@@ -952,7 +952,7 @@ _AM_JS = r"""
           : '';
         metricCell = '<td class="am-barcell"><div class="am-metric-cell">'
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark2 + '</div></div>'
-          + '<div class="am-val-wrap"><div class="am-val-row"><span class="am-val">' + fmtVal(r.value) + '</span>' + trend + '</div>' + badge + '</div>'
+          + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(r.value) + '</span></div>' + badge + '</div>'
           + '</div></td>';
         state.extraMetrics.forEach(function(key) {
           const ed = state.extraData[key];
