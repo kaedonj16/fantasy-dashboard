@@ -19289,6 +19289,81 @@ def api_changelog():
     return jsonify(CHANGELOG)
 
 
+@app.route("/api/rivalry/<platform>/<int:season>/<league_id>")
+def api_rivalry(platform: str, season: int, league_id: str):
+    """All-time head-to-head record between two managers (by user_id).
+
+    Scans every available historical season plus the current one, pairs
+    finalized matchup rows by (week, matchup_id), and returns the full
+    meeting list so the frontend can render record, streaks, and blowouts.
+    """
+    a = (request.args.get("a") or "").strip()
+    b = (request.args.get("b") or "").strip()
+    if not a or not b or a == b:
+        return jsonify({"error": "Pick two different managers."}), 400
+
+    try:
+        available = get_available_history_seasons(platform, league_id, season) or []
+    except Exception:
+        available = []
+    seasons_to_scan = sorted(set(int(s) for s in available) | {int(season)})
+
+    games = []
+    for hist_s in seasons_to_scan:
+        try:
+            rid = resolve_league_id_for_season(platform, league_id, season, hist_s)
+            ctx = get_league_ctx_from_cache(platform, rid, hist_s)
+        except Exception:
+            continue
+
+        df = ctx.get("df_weekly", pd.DataFrame())
+        if df.empty or "matchup_id" not in df.columns or "roster_id" not in df.columns:
+            continue
+
+        roster_to_uid = {
+            str(r.get("roster_id")): str(r.get("owner_id") or "")
+            for r in (ctx.get("rosters") or [])
+        }
+
+        d = df.copy()
+        if "finalized" in d.columns:
+            d = d[d["finalized"] == True]  # noqa: E712
+        d["__uid"] = d["roster_id"].astype(str).map(roster_to_uid)
+        sub = d[d["__uid"].isin([a, b])]
+        if sub.empty:
+            continue
+
+        for (wk, mid), grp in sub.groupby(["week", "matchup_id"]):
+            if pd.isna(mid) or len(grp) != 2:
+                continue
+            if set(grp["__uid"]) != {a, b}:
+                continue
+            row_a = grp[grp["__uid"] == a].iloc[0]
+            row_b = grp[grp["__uid"] == b].iloc[0]
+            pts_a = float(row_a.get("points") or 0)
+            pts_b = float(row_b.get("points") or 0)
+            if pts_a == 0 and pts_b == 0:
+                continue  # unplayed/empty matchup
+            games.append({
+                "season": int(hist_s),
+                "week": int(wk),
+                "a_pts": round(pts_a, 2),
+                "b_pts": round(pts_b, 2),
+            })
+
+    games.sort(key=lambda g: (g["season"], g["week"]))
+    wins_a = sum(1 for g in games if g["a_pts"] > g["b_pts"])
+    wins_b = sum(1 for g in games if g["b_pts"] > g["a_pts"])
+    return jsonify({
+        "games": games,
+        "wins_a": wins_a,
+        "wins_b": wins_b,
+        "ties": len(games) - wins_a - wins_b,
+        "pts_a": round(sum(g["a_pts"] for g in games), 2),
+        "pts_b": round(sum(g["b_pts"] for g in games), 2),
+    })
+
+
 @app.route("/api/espn-validate-league")
 def api_espn_validate_league():
     """

@@ -6957,6 +6957,62 @@ select:focus {
   letter-spacing: -0.3px;
 }
 
+/* Rivalry tracker (history page) */
+.rivalry-card { margin-top: 20px; }
+.rivalry-controls {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.rivalry-select {
+  flex: 1; min-width: 160px; max-width: 260px;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card); color: var(--text); font-size: 13px; cursor: pointer;
+}
+.rivalry-vs {
+  font-size: 12px; font-weight: 800; color: var(--text-muted);
+  letter-spacing: 0.06em; flex-shrink: 0;
+}
+.rivalry-go-btn {
+  padding: 8px 18px; border: none; border-radius: 8px; cursor: pointer;
+  background: var(--text); color: var(--card); font-size: 13px; font-weight: 700;
+}
+.rivalry-go-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.rivalry-empty {
+  text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px;
+}
+.rivalry-scoreline {
+  display: flex; align-items: center; justify-content: center; gap: 24px;
+  padding: 14px 0 4px;
+}
+.rivalry-side { text-align: center; min-width: 110px; }
+.rivalry-name { font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 2px; }
+.rivalry-wins { font-size: 34px; font-weight: 800; color: var(--text); line-height: 1.1; }
+.rivalry-dash { font-size: 22px; color: var(--text-muted); }
+.rivalry-ties { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.rivalry-chips {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  margin: 14px 0 16px;
+}
+.rivalry-chip {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 14px; padding: 4px 11px;
+  background: var(--card);
+}
+.rivalry-chip-streak { color: #f59e0b; border-color: rgba(245,158,11,.4); }
+.rivalry-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rivalry-table th {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--text-muted); text-align: left; padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.rivalry-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text); }
+.rivalry-table .rivalry-w { font-weight: 800; color: #10b981; }
+@media (max-width: 600px) {
+  .rivalry-controls { flex-direction: column; align-items: stretch; }
+  .rivalry-select { max-width: none; }
+  .rivalry-vs { text-align: center; }
+}
+
 /* Weekly movement arrows (power rankings) */
 .pr-move {
   font-size: 10px;

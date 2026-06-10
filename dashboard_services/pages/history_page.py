@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 import math
+from html import escape as _esc
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -739,6 +740,147 @@ def get_history_standings_html(history_ctx: dict) -> str:
     return _standings_table(regular_season_team_stats)
 
 
+def _build_rivalry_card(
+        history_ctx: dict,
+        base_platform: str,
+        base_season: int,
+        base_league_id: str,
+) -> str:
+    """All-time head-to-head card: pick two managers, see their full rivalry."""
+    users = history_ctx.get("users") or []
+    opts = []
+    for u in users:
+        uid = str(u.get("user_id") or "").strip()
+        if not uid:
+            continue
+        metadata = u.get("metadata") or {}
+        name = (
+            u.get("display_name")
+            or metadata.get("team_name")
+            or u.get("username")
+            or uid
+        )
+        opts.append((str(name), uid))
+    if len(opts) < 2:
+        return ""
+    opts.sort(key=lambda t: t[0].lower())
+    options_html = "".join(
+        f"<option value='{_esc(uid)}'>{_esc(name)}</option>" for name, uid in opts
+    )
+
+    card = """
+      <div class="card rivalry-card">
+        <div class="card-header">
+          <h2>Rivalry Tracker</h2>
+          <div style="font-size:13px;color:var(--text-muted);">All-time head-to-head, every season included</div>
+        </div>
+        <div class="card-body">
+          <div class="rivalry-controls">
+            <select id="rivalrySelA" class="rivalry-select">
+              <option value="">Select manager…</option>
+              __OPTIONS__
+            </select>
+            <span class="rivalry-vs">VS</span>
+            <select id="rivalrySelB" class="rivalry-select">
+              <option value="">Select manager…</option>
+              __OPTIONS__
+            </select>
+            <button id="rivalryGoBtn" class="rivalry-go-btn" disabled>Compare</button>
+          </div>
+          <div id="rivalryResult" class="rivalry-result"></div>
+        </div>
+      </div>
+      <script>
+      (function() {
+        var selA = document.getElementById('rivalrySelA');
+        var selB = document.getElementById('rivalrySelB');
+        var goBtn = document.getElementById('rivalryGoBtn');
+        var result = document.getElementById('rivalryResult');
+        if (!selA || !selB || !goBtn) return;
+
+        function syncBtn() {
+          goBtn.disabled = !(selA.value && selB.value && selA.value !== selB.value);
+        }
+        selA.addEventListener('change', syncBtn);
+        selB.addEventListener('change', syncBtn);
+
+        function nameOf(sel) { return sel.options[sel.selectedIndex].text; }
+
+        goBtn.addEventListener('click', function() {
+          var a = selA.value, b = selB.value;
+          if (!a || !b || a === b) return;
+          result.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);">Loading rivalry…</div>';
+          fetch('/api/rivalry/__PLATFORM__/__SEASON__/__LEAGUE_ID__?a=' + encodeURIComponent(a) + '&b=' + encodeURIComponent(b))
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+              if (d.error) { result.innerHTML = '<div class="rivalry-empty">' + d.error + '</div>'; return; }
+              var games = d.games || [];
+              if (!games.length) {
+                result.innerHTML = '<div class="rivalry-empty">These two managers have never faced each other.</div>';
+                return;
+              }
+              var nA = nameOf(selA), nB = nameOf(selB);
+              var margins = games.map(function(g) { return Math.abs(g.a_pts - g.b_pts); });
+              var avgMargin = margins.reduce(function(s, m) { return s + m; }, 0) / games.length;
+              var blowout = games.reduce(function(best, g) {
+                return Math.abs(g.a_pts - g.b_pts) > Math.abs(best.a_pts - best.b_pts) ? g : best;
+              }, games[0]);
+              var bWinner = blowout.a_pts > blowout.b_pts ? nA : nB;
+              var bMargin = Math.abs(blowout.a_pts - blowout.b_pts);
+
+              var streakLen = 0, streakSide = null;
+              for (var i = games.length - 1; i >= 0; i--) {
+                var w = games[i].a_pts > games[i].b_pts ? 'a' : (games[i].b_pts > games[i].a_pts ? 'b' : null);
+                if (w === null) break;
+                if (streakSide === null) { streakSide = w; streakLen = 1; }
+                else if (w === streakSide) { streakLen++; }
+                else break;
+              }
+              var streakName = streakSide === 'a' ? nA : nB;
+
+              var html = '<div class="rivalry-scoreline">'
+                + '<div class="rivalry-side"><div class="rivalry-name">' + nA + '</div><div class="rivalry-wins">' + d.wins_a + '</div></div>'
+                + '<div class="rivalry-dash">&ndash;</div>'
+                + '<div class="rivalry-side"><div class="rivalry-name">' + nB + '</div><div class="rivalry-wins">' + d.wins_b + '</div></div>'
+                + '</div>'
+                + (d.ties ? '<div class="rivalry-ties">' + d.ties + ' tie' + (d.ties > 1 ? 's' : '') + '</div>' : '');
+
+              html += '<div class="rivalry-chips">'
+                + '<span class="rivalry-chip">' + games.length + ' meetings</span>'
+                + '<span class="rivalry-chip">Total pts: ' + d.pts_a.toFixed(1) + ' &ndash; ' + d.pts_b.toFixed(1) + '</span>'
+                + '<span class="rivalry-chip">Avg margin: ' + avgMargin.toFixed(1) + '</span>'
+                + (streakLen > 1 ? '<span class="rivalry-chip rivalry-chip-streak">' + streakName + ' has won ' + streakLen + ' straight</span>' : '')
+                + '<span class="rivalry-chip">Biggest blowout: ' + bWinner + ' by ' + bMargin.toFixed(1) + ' (' + blowout.season + ' wk ' + blowout.week + ')</span>'
+                + '</div>';
+
+              html += '<table class="rivalry-table"><thead><tr><th>Season</th><th>Week</th><th style="text-align:right">' + nA + '</th><th style="text-align:right">' + nB + '</th></tr></thead><tbody>';
+              var recent = games.slice(-12).reverse();
+              recent.forEach(function(g) {
+                var aWin = g.a_pts > g.b_pts, bWin = g.b_pts > g.a_pts;
+                html += '<tr><td>' + g.season + '</td><td>' + g.week + '</td>'
+                  + '<td style="text-align:right" class="' + (aWin ? 'rivalry-w' : '') + '">' + g.a_pts.toFixed(1) + '</td>'
+                  + '<td style="text-align:right" class="' + (bWin ? 'rivalry-w' : '') + '">' + g.b_pts.toFixed(1) + '</td></tr>';
+              });
+              html += '</tbody></table>';
+              if (games.length > 12) html += '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Showing the 12 most recent of ' + games.length + ' meetings.</div>';
+              result.innerHTML = html;
+            })
+            .catch(function() {
+              result.innerHTML = '<div class="rivalry-empty">Could not load rivalry data. Try again.</div>';
+            });
+        });
+      })();
+      </script>
+    """
+    return (
+        card
+        .replace("__OPTIONS__", options_html)
+        .replace("__PLATFORM__", _esc(str(base_platform)))
+        .replace("__SEASON__", _esc(str(base_season)))
+        .replace("__LEAGUE_ID__", _esc(str(base_league_id)))
+    )
+
+
 def build_history_body(
         history_ctx: dict,
         available_seasons: List[int],
@@ -785,6 +927,10 @@ def build_history_body(
     standings_html = prerendered["standings"] if prerendered else loading_spinner
     chart_html     = prerendered["chart"]     if prerendered else loading_spinner
     tour_input     = '<input type="hidden" id="historyTourMode" value="1">' if prerendered else ""
+
+    rivalry_html = _build_rivalry_card(
+        history_ctx, base_platform, base_season, base_league_id,
+    )
 
     return f"""
     <div class="history-page">
@@ -875,5 +1021,7 @@ def build_history_body(
           </div>
         </div>
       </div>
+
+      {rivalry_html}
     </div>
     """
