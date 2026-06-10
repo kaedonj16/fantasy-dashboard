@@ -1425,11 +1425,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Navigation pills (no utilities)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
+    _is_espn = (platform == "espn")
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade",          "trade",          False),
         ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False, "?tab=suggestions"),
         ("Trade Database",   "trade.page_trade_database", "trade-database", False),
-        ("Trade Intel <span class='nav-pro-badge'>PRO</span>",      "trade.page_trade_intel",    "trade-intel",    False),
+        # Trade Intel uses Sleeper trade data — not applicable for ESPN
+        *([("Trade Intel <span class='nav-pro-badge'>PRO</span>", "trade.page_trade_intel", "trade-intel", False)] if not _is_espn else []),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
@@ -1569,17 +1571,20 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "</div>"
     )
 
+    _is_espn = (platform == "espn")
+    _signin_sub  = "Enter your ESPN team name to restore personalized features." if _is_espn else "Enter your Sleeper username to restore personalized features."
+    _signin_ph   = "Your ESPN team name" if _is_espn else "Sleeper username"
     signin_modal = (
         f"<div id='signinModal' class='signin-modal-overlay'>"
         f"  <div class='signin-modal-box'>"
         f"    <h3 class='signin-modal-title'>Sign in to your team</h3>"
-        f"    <p class='signin-modal-sub'>Enter your Sleeper username to restore personalized features.</p>"
+        f"    <p class='signin-modal-sub'>{_signin_sub}</p>"
         f"    <form method='POST' action='/set-viewer'>"
         f"      <input type='hidden' name='platform' value='{platform}'>"
         f"      <input type='hidden' name='season' value='{season}'>"
         f"      <input type='hidden' name='league_id' value='{league_id}'>"
         f"      <input type='hidden' name='next' value='{request.path + ('?' + request.query_string.decode() if request.query_string else '')}'>"
-        f"      <input class='signin-modal-input' type='text' name='username' placeholder='Sleeper username' autocomplete='username' autofocus>"
+        f"      <input class='signin-modal-input' type='text' name='username' placeholder='{_signin_ph}' autocomplete='username' autofocus>"
         f"      <div class='signin-modal-actions'>"
         f"        <button class='signin-modal-submit' type='submit'>Sign In</button>"
         f"        <button class='signin-modal-cancel' type='button'"
@@ -4140,18 +4145,25 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             if int(pk.get("round") or 0) == 1
         )
         picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "—"
+        picks_td = "" if platform == "espn" else f"<td class='num'>{picks_label}</td>"
         table_rows_html += (
             f"<tr>"
             f"<td class='num'>{i}</td>"
             f"<td class='team'>{img} {row['name']}</td>"
             f"<td class='num'>{row['total']:.0f}</td>"
             f"<td class='num'>{row['player_v']:.0f}</td>"
-            f"<td class='num'>{picks_label}</td>"
+            f"{picks_td}"
             f"<td class='num'>{row['value_pct']:.1f}%</td>"
             f"<td class='num'>{row['prod_pct']:.1f}%</td>"
             f"</tr>"
         )
 
+    draft_capital_th = "" if platform == "espn" else "<th>Draft Capital</th>"
+    standings_footer = (
+        "Roster value · players ranked by dynasty trade market value"
+        if platform == "espn"
+        else "Dynasty value · players + draft picks · no games played yet"
+    )
     table_html = f"""
         <div class="table-wrap">
           <table class="standings-table dynasty-table">
@@ -4161,7 +4173,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
                 <th>Team</th>
                 <th>Value</th>
                 <th>Players</th>
-                <th>Draft Capital</th>
+                {draft_capital_th}
                 <th>Val%</th>
                 <th>Proj%</th>
               </tr>
@@ -4169,7 +4181,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             <tbody>{table_rows_html}</tbody>
           </table>
         </div>
-        <div class="footer">Dynasty value · players + draft picks · no games played yet</div>
+        <div class="footer">{standings_footer}</div>
     """
 
     return f"""
@@ -5501,9 +5513,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
     except Exception:
         logger.debug("weekly: scout body build failed", exc_info=True)
 
+    _scout_sign_in_hint = (
+        "your ESPN team name" if platform == "espn" else "your Sleeper username"
+    )
     _scout_unavail = (
         "<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
-        "Scout report unavailable — sign in with your Sleeper username to see your opponent's breakdown."
+        f"Scout report unavailable — sign in with {_scout_sign_in_hint} to see your opponent's breakdown."
         "</div>"
     )
     scout_panel_content = scout_tab_html if scout_tab_html else _scout_unavail
@@ -24776,7 +24791,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         dynasty_rank_html = f'<span style="font-weight:700;font-size:15px;">#{dynasty_rank}</span><span style="font-size:11px;color:var(--text-muted);margin-left:1px;">/{n_teams}</span>'
 
         picks_html = ""
-        if _pick_labels:
+        if _pick_labels and platform != "espn":
             picks_html = (
                 '<div class="sc-section-title">Draft Capital</div>'
                 '<div class="sc-picks-row">'
@@ -24825,8 +24840,8 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
       </div>
       <div class="sc-stats-row">
         <div class="sc-stat"><span class="sc-stat-val" style="color:{_grade_color}">{grade_label}</span><span class="sc-stat-lbl">Grade</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{dynasty_rank_html}</span><span class="sc-stat-lbl">Dynasty Rank</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{_dv_fmt}</span><span class="sc-stat-lbl">Dynasty Value</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{dynasty_rank_html}</span><span class="sc-stat-lbl">{"Roster Rank" if platform == "espn" else "Dynasty Rank"}</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{_dv_fmt}</span><span class="sc-stat-lbl">{"Roster Value" if platform == "espn" else "Dynasty Value"}</span></div>
         <div class="sc-stat"><span class="sc-stat-val">{age_html}</span><span class="sc-stat-lbl">Avg Age</span></div>
       </div>
       <div class="sc-stats-row" style="border-top:1px solid rgba(255,255,255,.06);padding-top:10px;margin-top:0;">

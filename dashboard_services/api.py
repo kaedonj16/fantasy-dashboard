@@ -512,8 +512,32 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
         {season_int: league_id}
 
     Walks backward through previous_league_id for Sleeper.
+    For ESPN, the same league_id is reused across years — probe prior seasons directly.
     """
     platform = str(platform or "").strip().lower()
+
+    if platform == "espn":
+        cache_key = f"espn:{league_id}"
+        now = time.time()
+        cached = LEAGUE_HISTORY_CACHE.get(cache_key)
+        if cached and (now - cached["ts"] < LEAGUE_HISTORY_TTL):
+            return cached["map"]
+
+        season_map: dict[int, str] = {int(season): str(league_id)}
+        from dashboard_services.providers.espn_api import _league_cached as _espn_league
+        consecutive_failures = 0
+        for yr in range(int(season) - 1, max(int(season) - 10, 2010) - 1, -1):
+            try:
+                _espn_league(yr, str(league_id))
+                season_map[yr] = str(league_id)
+                consecutive_failures = 0
+            except Exception:
+                consecutive_failures += 1
+                if consecutive_failures >= 2:
+                    break
+
+        LEAGUE_HISTORY_CACHE[cache_key] = {"ts": now, "map": season_map}
+        return season_map
 
     if platform != "sleeper":
         return {int(season): str(league_id).strip()}
