@@ -33,7 +33,12 @@ def build_advanced_metrics_body(
         except ValueError:
             return len(_CAT_ORDER)
 
-    metric_options = "\n".join(
+    _PRESET_CATS = [c for c in ["Rushing", "Receiving", "Passing", "General"] if c in groups]
+    preset_optgroup = '<optgroup label="&#9889; Quick Sets">' + "".join(
+        f'<option value="__preset__{cat}">{cat} Set</option>'
+        for cat in _PRESET_CATS
+    ) + '</optgroup>'
+    metric_options = preset_optgroup + "\n" + "\n".join(
         '<optgroup label="{label}">{opts}</optgroup>'.format(
             label=cat,
             opts="".join(
@@ -597,7 +602,7 @@ def build_advanced_metrics_body(
       /* ── Filter bar ──────────────────────────────────────────────────────── */
       .am-filter-bar {
         display:flex; align-items:center; gap:6px; flex-wrap:wrap;
-        margin-bottom:10px; min-height:24px;
+        margin-bottom:10px; min-height:24px; padding-right:4px;
       }
       .am-filter-chips { display:flex; flex-wrap:wrap; gap:5px; flex:1; min-width:0; }
       .am-filter-chip {
@@ -640,6 +645,14 @@ def build_advanced_metrics_body(
         font-size:12px; font-weight:700; cursor:pointer; text-align:center;
       }
       .am-sp-preset-btn:hover { background:rgba(37,99,235,.14); }
+      /* Filter column headers inserted before primary metric column */
+      th.am-filter-col-hdr { border-left:1px solid var(--border); }
+      /* Mobile: hide the age filter and + Filter button unless Filters dropdown is open */
+      @media (max-width:600px) {
+        #amAddFilterBtn { display:none !important; }
+        #amFilterBar.am-mobile-open #amAddFilterBtn { display:inline-flex !important; }
+        #amFilterBar.am-mobile-open { flex-wrap:wrap; }
+      }
     </style>
     """
 
@@ -698,27 +711,39 @@ _AM_JS = r"""
                   trendsBySeason: {},   // seasonKey -> { player_id -> trend obj }
                   ageMin: '', ageMax: '',
                   comboFilters: [],     // [{key, op, val}]
+                  filterColKeys: new Set(), // keys auto-shown as compact cols when used in filters
                   pinnedIds: _loadPins() };
   const MAX_COMPARE = 4;
 
   // Preset sets: clicking "Load X Set" clears current extras and loads these 4 metrics.
   const _PRESETS = {
+    'General':   ['snap_share', 'opportunity_share', 'red_zone_usage', 'grades_offense', 'yards_per_touch'],
     'Rushing':   ['yards_per_carry', 'elusive_rating', 'breakaway_percentage', 'explosive_runs_10_plus', 'pff_rushing_grade'],
     'Receiving': ['yprr', 'yards_per_target', 'catch_rate', 'yards_after_catch_per_reception', 'avg_depth_of_target'],
     'Passing':   ['pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate', 'nfl_passer_rating', 'pressure_to_sack_rate'],
   };
   window.amLoadPreset = function(cat) {
     const keys = _PRESETS[cat];
-    if (!keys) return;
-    state.extraMetrics.forEach(k => { delete state.extraData[k]; delete state.extraPrevData[k]; });
-    state.extraMetrics = [];
+    if (!keys || !keys.length) return;
+    const primary = keys[0];
+    const extras = keys.slice(1).slice(0, MAX_COMPARE);
+    state.metric = primary;
+    if (metricSel) metricSel.value = primary;
+    state.page = 0;
+    state.extraMetrics = extras.slice();
     state.comboFilters = state.comboFilters.filter(f => f.key === 'primary' || f.key === 'age');
-    const toAdd = keys.filter(k => k !== state.metric).slice(0, MAX_COMPARE);
-    toAdd.forEach(k => state.extraMetrics.push(k));
+    state.filterColKeys = new Set();
+    state.prevData = {};
+    const rel = new Set(relevantPositions(state.metric));
+    if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
+    state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
+    state.sortBy = state.metric;
+    state.minVol = defaultVol(state.metric);
     const picker = document.getElementById('amStatPicker');
     if (picker) picker.style.display = 'none';
-    updateCompareBar(); syncExtraCols(); updateFilterBar(); render();
-    state.extraMetrics.forEach(k => fetchExtraData(k));
+    updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
+    updateSortHeaders(); updateCompareBar(); syncExtraCols(); updateFilterBar();
+    fetchData();
   };
 
   const _PIN_SVG = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a5.922 5.922 0 0 1 1.013.16l3.134-3.133a2.772 2.772 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/></svg>';
@@ -797,6 +822,11 @@ _AM_JS = r"""
       amRemoveExtra(key);
     } else {
       if (state.extraMetrics.length < MAX_COMPARE) {
+        // If this key was a filter col, promote it to extra metric (richer view).
+        if (state.filterColKeys && state.filterColKeys.has(key)) {
+          state.filterColKeys.delete(key);
+          syncFilterCols();
+        }
         state.extraMetrics.push(key);
         updateCompareBar();
         syncExtraCols();
@@ -812,6 +842,7 @@ _AM_JS = r"""
     state.extraMetrics = state.extraMetrics.filter(k => k !== key);
     delete state.extraData[key];
     delete state.extraPrevData[key];
+    if (state.filterColKeys) state.filterColKeys.delete(key);
     state.comboFilters = state.comboFilters.filter(f => f.key !== key);
     if (state.sortBy === key) {
       state.sortBy = state.metric;
@@ -1077,6 +1108,12 @@ _AM_JS = r"""
       const el = document.getElementById('amExtraHeader_' + key);
       if (el) ths.push({ el: el, col: key });
     });
+    if (state.filterColKeys) {
+      [...state.filterColKeys].forEach(function(key) {
+        const el = document.getElementById('amFilterColHdr_' + key);
+        if (el) ths.push({ el: el, col: key });
+      });
+    }
     ths.forEach(function({ el, col }) {
       if (!el) return;
       el.classList.add('am-sortable');
@@ -1099,6 +1136,27 @@ _AM_JS = r"""
     updateSortHeaders();
     render();
   }
+  // Filter columns: compact columns inserted right before the primary metric column
+  // when a metric key is used as a combo filter condition. Share extraData with
+  // extra metrics but render differently (number only, no bar, after Games column).
+  function syncFilterCols() {
+    const thead = document.querySelector('#amTable thead tr');
+    if (!thead) return;
+    thead.querySelectorAll('.am-filter-col-hdr').forEach(function(el) { el.remove(); });
+    const metricHdr = document.getElementById('amMetricHeader');
+    if (!state.filterColKeys || !state.filterColKeys.size) return;
+    [...state.filterColKeys].forEach(function(key) {
+      const th = document.createElement('th');
+      th.id = 'amFilterColHdr_' + key;
+      th.className = 'am-games am-sortable am-filter-col-hdr';
+      th.textContent = (cfg.metrics[key] && cfg.metrics[key].label) || key;
+      th.title = (cfg.metrics[key] && cfg.metrics[key].desc) || key;
+      th.addEventListener('click', function() { sortByCol(key); });
+      if (metricHdr) thead.insertBefore(th, metricHdr);
+      else thead.appendChild(th);
+    });
+  }
+
   function syncExtraCols() {
     const thead = document.querySelector('#amTable thead tr');
     if (!thead) return;
@@ -1111,6 +1169,7 @@ _AM_JS = r"""
       th.addEventListener('click', function() { sortByCol(key); });
       thead.appendChild(th);
     });
+    syncFilterCols();
     syncTrendHeader();
     updateSortHeaders();
   }
@@ -1385,6 +1444,20 @@ _AM_JS = r"""
         + '<span class="am-meta" style="color:' + col + ';font-weight:600">' + r.position + '</span>'
         + '</span></div></td>';
 
+      // Compact filter-column cells (appear right before the primary metric cell).
+      let filterColCells = '';
+      if (state.filterColKeys && state.filterColKeys.size) {
+        [...state.filterColKeys].forEach(function(fkey) {
+          const fed = state.extraData[fkey];
+          if (!fed) {
+            filterColCells += '<td class="am-games" style="opacity:.35">–</td>';
+            return;
+          }
+          const fval = fed.byId[String(r.player_id)];
+          filterColCells += '<td class="am-games">' + (fval != null ? fmtVal(fval, fkey) : '–') + '</td>';
+        });
+      }
+
       const badge = percentileBadge(qualityRankMap.get(String(r.player_id)) || rank, totalRanked);
       const prevVal = state.prevData[String(r.player_id)];
       const trend = trendArrow(r.value, prevVal);
@@ -1449,6 +1522,7 @@ _AM_JS = r"""
         + rankCell
         + playerCell
         + gamesCell
+        + filterColCells
         + metricCell
         + (state.showTrends ? trendCellHtml(r.player_id, col) : '')
         + '</tr>' + divider;
@@ -1523,10 +1597,11 @@ _AM_JS = r"""
         updateVolHeader();
         populateTeamFilter();
         showAgeCtrl();
-        // Re-fetch all extra metrics (season / filter may have changed).
+        // Re-fetch all extra metrics and filter col metrics (season / filter may have changed).
         state.extraData = {};
         state.extraPrevData = {};
         state.extraMetrics.forEach(k => fetchExtraData(k));
+        if (state.filterColKeys) [...state.filterColKeys].forEach(k => fetchExtraData(k));
         render();
       })
       .catch(() => { state.fetching = false; loading.style.display = 'none'; empty.style.display = ''; });
@@ -1563,6 +1638,24 @@ _AM_JS = r"""
       state.extraMetrics.forEach(function(key) {
         opts.push({ value: key, label: (cfg.metrics[key] && cfg.metrics[key].label) || key });
       });
+      // Add volume/context metrics relevant to the primary metric's positions.
+      // Covers: targets, receptions, carries, touches for the position group; also
+      // route_participation for WR/TE (the "routes" the user mentioned).
+      const primaryPositions = new Set(relevantPositions(state.metric));
+      const added = new Set(opts.map(function(o) { return o.value; }));
+      const _contextKeys = Object.keys(cfg.metrics).concat(['route_participation']);
+      Object.entries(cfg.metrics).forEach(function([key, spec]) {
+        if (added.has(key)) return;
+        const cat = spec.category || '';
+        const isVol = cat === 'Volume';
+        const isRoute = key === 'route_participation';
+        if (!isVol && !isRoute) return;
+        const mpos = new Set(spec.positions || []);
+        const relevant = [...primaryPositions].some(function(p) { return mpos.has(p); });
+        if (!relevant) return;
+        opts.push({ value: key, label: spec.label });
+        added.add(key);
+      });
       filterKey.innerHTML = opts.map(function(o) {
         return '<option value="' + o.value + '">' + o.label + '</option>';
       }).join('');
@@ -1578,7 +1671,18 @@ _AM_JS = r"""
     }).join('');
   }
   window.amRemoveFilter = function(idx) {
+    const removed = state.comboFilters[idx];
     state.comboFilters.splice(idx, 1);
+    // Clean up auto-added filter col if no other filter still references it
+    if (removed && removed.key !== 'primary' && removed.key !== 'age' && state.filterColKeys && state.filterColKeys.has(removed.key)) {
+      const stillUsed = state.comboFilters.some(function(f) { return f.key === removed.key; });
+      if (!stillUsed && !state.extraMetrics.includes(removed.key)) {
+        state.filterColKeys.delete(removed.key);
+        delete state.extraData[removed.key];
+        delete state.extraPrevData[removed.key];
+        syncFilterCols();
+      }
+    }
     updateFilterBar();
     state.page = 0;
     render();
@@ -1586,13 +1690,24 @@ _AM_JS = r"""
   function showAgeCtrl() {
     const wrap = document.getElementById('amAgeWrap');
     if (!wrap) return;
-    wrap.style.display = state.rows.some(r => r.age != null) ? '' : 'none';
+    const hasAge = state.rows.some(r => r.age != null);
+    if (!hasAge) { wrap.style.display = 'none'; return; }
+    // On mobile, only show the age inputs when the Filters dropdown is open.
+    const isMobile = window.innerWidth <= 600;
+    if (isMobile) {
+      const fb = document.getElementById('amFilterBar');
+      wrap.style.display = (fb && fb.classList.contains('am-mobile-open')) ? '' : 'none';
+    } else {
+      wrap.style.display = '';
+    }
   }
 
   metricSel.addEventListener('change', () => {
+    const _v = metricSel.value;
+    if (_v && _v.startsWith('__preset__')) { amLoadPreset(_v.replace('__preset__', '')); return; }
     state.metric = metricSel.value; state.page = 0;
     state.extraMetrics = []; state.extraData = {}; state.extraPrevData = {}; state.prevData = {};
-    state.comboFilters = [];
+    state.comboFilters = []; state.filterColKeys = new Set();
     const rel = new Set(relevantPositions(state.metric));
     if (state.position !== 'ALL' && !rel.has(state.position)) state.position = 'ALL';
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
@@ -1632,6 +1747,15 @@ _AM_JS = r"""
     filtersBtn.addEventListener('click', () => {
       const open = controlsRow.classList.toggle('am-open');
       filtersBtn.innerHTML = open ? 'Filters &#9652;' : 'Filters &#9662;';
+      // On mobile, also toggle the filter bar so age + filter controls become accessible.
+      const filterBar = document.getElementById('amFilterBar');
+      if (filterBar) filterBar.classList.toggle('am-mobile-open', open);
+      showAgeCtrl();
+      // Close the filter form if the dropdown is closing.
+      if (!open && window.innerWidth <= 600) {
+        const ff = document.getElementById('amFilterForm');
+        if (ff) ff.style.display = 'none';
+      }
     });
   }
   const trendChk = document.getElementById('amTrendToggle');
@@ -1666,9 +1790,19 @@ _AM_JS = r"""
       const opEl  = document.getElementById('amFilterOp');
       const valEl = document.getElementById('amFilterVal');
       if (!keyEl || !opEl || !valEl || !valEl.value.trim()) return;
-      state.comboFilters.push({ key: keyEl.value, op: opEl.value, val: valEl.value.trim() });
+      const fkey = keyEl.value;
+      state.comboFilters.push({ key: fkey, op: opEl.value, val: valEl.value.trim() });
       valEl.value = '';
       if (filterForm) filterForm.style.display = 'none';
+      // Auto-add a compact filter column for metric keys that aren't already shown
+      if (fkey !== 'primary' && fkey !== 'age' && cfg.metrics[fkey]) {
+        if (!state.extraMetrics.includes(fkey) && (!state.filterColKeys || !state.filterColKeys.has(fkey))) {
+          if (!state.filterColKeys) state.filterColKeys = new Set();
+          state.filterColKeys.add(fkey);
+          fetchExtraData(fkey);
+          syncFilterCols();
+        }
+      }
       updateFilterBar();
       state.page = 0;
       render();
