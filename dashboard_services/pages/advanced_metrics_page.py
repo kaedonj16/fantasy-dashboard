@@ -289,7 +289,7 @@ def build_advanced_metrics_body(
     style = """
     <style>
       /* Widen the card on desktop so 5 metric columns fit comfortably */
-      .card.central:has(#amTable) { max-width:1050px; }
+      .card.central:has(#amTable) { max-width:1180px; }
       .am-legend-btn {
         flex-shrink:0; display:flex; align-items:center; gap:6px;
         padding:5px 10px; border:1px solid var(--border); border-radius:8px;
