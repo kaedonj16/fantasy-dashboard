@@ -321,7 +321,7 @@ def build_advanced_metrics_body(
         .am-controls .am-ctrl:first-child, .am-ctrl-search { flex:1 1 100%; }
         .am-ctrl .am-select, .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
         .am-subcontrols { flex-wrap:wrap; row-gap:10px; }
-        .am-positions { flex:1 1 100%; }
+        .am-positions { flex:1 1 100%; flex-wrap:wrap; overflow-x:visible; }
       }
       .am-pos {
         padding:6px 14px; border-radius:20px; border:1px solid var(--border);
