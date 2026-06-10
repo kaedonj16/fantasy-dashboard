@@ -55,7 +55,9 @@ def yahoo_auth_start():
     })
     session["yahoo_oauth_state"] = state_payload
 
-    return redirect(get_authorization_url(state=state_payload))
+    auth_url = get_authorization_url(state=state_payload)
+    logger.info("[yahoo-auth] redirecting to: %s", auth_url)
+    return redirect(auth_url)
 
 
 @yahoo_auth_bp.route("/auth/yahoo/callback")
