@@ -6958,9 +6958,26 @@ select:focus {
 }
 
 /* Player compare: collapsible sections + weekly trends columns */
-.pm-section-collapsible { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 8px; }
-.pm-section-collapsible:hover .pm-section-label { color: var(--text); }
-.pm-collapse-chevron { font-size: 12px; color: var(--text-muted); line-height: 1; }
+.pm-section-collapsible {
+  cursor: pointer; user-select: none;
+  justify-content: flex-start; gap: 8px;
+  padding: 5px 10px; margin-left: -10px; border-radius: 7px;
+  transition: background 0.12s;
+}
+.pm-section-collapsible:hover { background: var(--row, rgba(127, 127, 127, 0.08)); }
+.pm-collapse-chevron {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; flex-shrink: 0;
+  border: 1px solid var(--border); border-radius: 5px;
+  font-size: 10px; color: var(--text-muted); line-height: 1;
+  transition: transform 0.15s;
+}
+.pm-section-collapsible:hover .pm-collapse-chevron { color: var(--text); border-color: var(--text-muted); }
+.pm-collapse-hint {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+  opacity: 0; transition: opacity 0.12s; text-transform: none; letter-spacing: 0;
+}
+.pm-section-collapsible:hover .pm-collapse-hint { opacity: 0.8; }
 .compare-weekly-section {
   display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding-top: 6px;
 }

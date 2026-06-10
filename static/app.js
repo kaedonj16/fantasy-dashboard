@@ -8683,6 +8683,10 @@ function cmpToggleSection(wrapId, headerEl) {
   wrap.style.display = collapsed ? '' : 'none';
   const chev = headerEl ? headerEl.querySelector('.pm-collapse-chevron') : null;
   if (chev) chev.innerHTML = collapsed ? '&#9662;' : '&#9656;';
+  const hint = headerEl ? headerEl.querySelector('.pm-collapse-hint') : null;
+  if (hint) hint.textContent = collapsed ? 'click to collapse' : 'click to expand';
+  // Keep the hint visible while a section is collapsed so it's discoverable
+  if (hint) hint.style.opacity = collapsed ? '' : '0.8';
 }
 
 function pmToggleWeeklyTrends(playerId) {
@@ -10053,9 +10057,11 @@ function openComparisonView(p1, p2) {
 
       <hr class="pm-section-divider">
 
-      <div class="pm-section-header pm-section-collapsible" onclick="cmpToggleSection('compareMetricsWrap', this)">
-        <span class="pm-section-label">Advanced Metrics Comparison</span>
+      <div class="pm-section-header pm-section-collapsible" title="Click to collapse or expand"
+           onclick="cmpToggleSection('compareMetricsWrap', this)">
         <span class="pm-collapse-chevron">&#9662;</span>
+        <span class="pm-section-label">Advanced Metrics Comparison</span>
+        <span class="pm-collapse-hint">click to collapse</span>
       </div>
       <div id="compareMetricsWrap">
         <div id="compareMetricsContent" class="compare-metrics-section">
@@ -10068,9 +10074,11 @@ function openComparisonView(p1, p2) {
 
       <hr class="pm-section-divider">
 
-      <div class="pm-section-header pm-section-collapsible" onclick="cmpToggleSection('compareWeeklyWrap', this)">
-        <span class="pm-section-label">Weekly Usage Trends</span>
+      <div class="pm-section-header pm-section-collapsible" title="Click to collapse or expand"
+           onclick="cmpToggleSection('compareWeeklyWrap', this)">
         <span class="pm-collapse-chevron">&#9662;</span>
+        <span class="pm-section-label">Weekly Usage Trends</span>
+        <span class="pm-collapse-hint">click to collapse</span>
       </div>
       <div id="compareWeeklyWrap">
         <div class="compare-weekly-section">
