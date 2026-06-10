@@ -148,13 +148,13 @@ def record_model_value_snapshot(
         *,
         as_of: Optional[date] = None,
         source: str = "model",
-        ema_alpha: float = 0.70,
+        ema_alpha: float = 0.35,
         min_change_pct: float = 0.005,
 ) -> int:
     """
     Write a smoothed daily value snapshot using EMA blending.
 
-    ema_alpha: weight for new value (0.70 = 70% new, 30% previous).
+    ema_alpha: weight for new value (0.35 = 35% new, 65% previous).
       Softens step-function jumps when the model is retrained.
     min_change_pct: skip writing if ALL value columns changed less than
       this fraction (reduces DB noise from micro-fluctuations).

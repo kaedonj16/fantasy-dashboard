@@ -27,6 +27,13 @@ DYNASTYPROCESS_VALUES_PATH = DATA_DIR / "dynastyprocess_values.csv"
 FANTASYCALC_VALUES_PATH    = DATA_DIR / "fantasycalc_api_values.csv"
 ENGINE_VALUES_PATH         = DATA_DIR / "engine_values.csv"
 
+# Cache file that persists the smoothed 1QB normalization scale across runs.
+_SCALE_CACHE_PATH = DATA_DIR.parent / "cache" / "value_scale_1qb.json"
+# Weight given to TODAY's raw scale when blending with yesterday's smoothed scale.
+# 0.15 means a true 10% shift in the top player's value only moves the scale ~1.5%
+# today; it takes ~2 weeks to fully propagate — preventing overnight team-value swings.
+_SCALE_EMA_ALPHA = 0.15
+
 FANTASYCALC_URL = (
     "https://api.fantasycalc.com/values/current"
     "?isDynasty=true&numQbs=1&numTeams=10&ppr=1"
@@ -970,6 +977,10 @@ def rewrite_value_table_with_model() -> Path:
     # In 1QB leagues QBs are not premium, so the best RB/WR/TE should anchor the
     # ceiling.  This replaces the old _max_sf > _max_1qb approach which silently
     # skipped normalization whenever the QB SF engine value failed to load.
+    #
+    # The raw scale is EMA-smoothed against the previous run's scale so that
+    # day-to-day noise in trade data (different trades sampled each day) doesn't
+    # cause the entire roster to jump in value overnight.
     _SKILL_POS   = {"QB", "RB", "WR", "TE"}
     _NON_QB_POS  = {"RB", "WR", "TE"}
     _1qb_keys    = ["value", "value_8", "value_12", "value_14"]
@@ -979,7 +990,21 @@ def rewrite_value_table_with_model() -> Path:
         default=0.0,
     )
     if 0 < _max_non_qb < 999.9:
-        _1qb_scale = 999.9 / _max_non_qb
+        _raw_scale = 999.9 / _max_non_qb
+        # Load previous smoothed scale and blend with today's raw scale.
+        try:
+            _prev_scale = float(json.loads(_SCALE_CACHE_PATH.read_text()).get("scale", 0) or 0)
+        except Exception:
+            _prev_scale = 0.0
+        _1qb_scale = (
+            _SCALE_EMA_ALPHA * _raw_scale + (1.0 - _SCALE_EMA_ALPHA) * _prev_scale
+            if _prev_scale > 0 else _raw_scale
+        )
+        try:
+            _SCALE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _SCALE_CACHE_PATH.write_text(json.dumps({"scale": round(_1qb_scale, 6)}))
+        except Exception:
+            pass
         for _a in cleaned_assets:
             if str(_a.get("position") or "").upper() not in _SKILL_POS:
                 continue
