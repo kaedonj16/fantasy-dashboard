@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-06-10",
         "tag": "feature",
-        "text": "Advanced Metrics: Sort by any column, filter by team, and compare up to 4 metrics side by side. Year-over-year trend arrows show at a glance whether a player improved or declined from last season. PFF metrics now include Yards per Route Run. Clicking a player opens directly to their Advanced Metrics tab in the player modal.",
+        "text": "Advanced Metrics: Sort by any column, filter by team, and compare up to 4 metrics side by side. Year-over-year trend arrows show at a glance whether a player improved or declined from last season.",
         "link": "/metrics"
     },
     {
