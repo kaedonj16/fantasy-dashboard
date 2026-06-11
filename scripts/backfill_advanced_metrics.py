@@ -16,7 +16,7 @@ Usage:
 
 import sys
 
-from data_building.advanced_metrics import calculate_player_metrics, finalize_role_scores_v2, save_metrics_snapshot, import_air_yards_from_stats_csv
+from data_building.advanced_metrics import calculate_player_metrics, finalize_role_scores_v2, save_metrics_snapshot, import_air_yards_from_stats_csv, load_matchup_ease
 from data_building.external_data.sleeper_usage import build_usage_map_for_season
 from utils.utils import load_players_index
 
@@ -38,6 +38,7 @@ def backfill_season(season: int, players_index: dict) -> int:
     usage_table = []  # {id, team, position, usage} for the v2 role-score finalizer
     skipped = 0
     failed = 0
+    ease_map = load_matchup_ease(season)  # {team: {pos: ease}}
 
     for pid, usage in usage_map.items():
         if usage.get("games", 0) == 0:
@@ -53,8 +54,12 @@ def backfill_season(season: int, players_index: dict) -> int:
             continue
 
         try:
-            metrics_list.append(calculate_player_metrics(str(pid), usage, pos))
-            usage_table.append({"id": str(pid), "team": meta.get("team"), "position": pos, "usage": usage})
+            m = calculate_player_metrics(str(pid), usage, pos)
+            team = meta.get("team") or ""
+            m["nfl_team"] = team or None
+            m["schedule_ease"] = (ease_map.get(team) or {}).get(pos) if team else None
+            metrics_list.append(m)
+            usage_table.append({"id": str(pid), "team": team, "position": pos, "usage": usage})
         except Exception as e:
             print(f"  [warn] player {pid}: {e}")
             failed += 1

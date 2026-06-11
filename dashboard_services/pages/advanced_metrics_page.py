@@ -18,8 +18,9 @@ def build_advanced_metrics_body(
     season: Optional[int] = None,
     platform: Optional[str] = None,
 ) -> str:
-    from data_building.advanced_metrics import get_available_seasons
+    from data_building.advanced_metrics import get_available_seasons, _WEEKLY_METRICS
     available_seasons: list = get_available_seasons() if has_premium else []
+    weekly_metric_keys: list = sorted(_WEEKLY_METRICS.keys())
     # Group metrics into <optgroup>s by category (General / Passing / Rushing / Receiving).
     _CAT_ORDER = ["General", "Passing", "Rushing", "Receiving", "Volume"]
     groups: dict = {}
@@ -76,11 +77,29 @@ def build_advanced_metrics_body(
         )
     legend_html = "".join(_legend_sections)
 
+    # Determine the max week with data for the current season (for "Last N weeks" presets)
+    _current_week = 18
+    if has_premium:
+        try:
+            from dashboard_services.db import get_conn
+            _ref_season = season or (available_seasons[0] if available_seasons else 2025)
+            with get_conn() as _conn:
+                _wrow = _conn.execute(
+                    "SELECT MAX(week) AS mw FROM player_weekly_metrics WHERE season = %s",
+                    (_ref_season,),
+                ).fetchone()
+                if _wrow and _wrow["mw"]:
+                    _current_week = int(_wrow["mw"])
+        except Exception:
+            pass
+
     cfg = json.dumps({
         "hasPremium": bool(has_premium),
         "leagueId": league_id or "",
         "platform": platform or "sleeper",
         "seasons": available_seasons,
+        "currentWeek": _current_week,
+        "weeklyMetrics": weekly_metric_keys,
         "metrics": {
             key: {
                 "label": spec["label"],
@@ -92,6 +111,7 @@ def build_advanced_metrics_body(
                 "pctFrac": bool(spec.get("pct_frac")),
                 "desc": spec.get("desc", ""),
                 "minVol": _min_vol_cfg(spec),
+                "weeklyCapable": key in weekly_metric_keys,
             }
             for key, spec in metrics_spec.items()
         },
@@ -158,6 +178,24 @@ def build_advanced_metrics_body(
           <div class="am-ctrl am-ctrl-season" id="amSeasonCtrl">
             <label class="am-ctrl-label">Season</label>
             <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
+          </div>
+          <div class="am-ctrl am-mobile-filter" id="amWeekCtrl">
+            <label class="am-ctrl-label">Week Range</label>
+            <select id="amWeekRange" class="am-select am-season-select">
+              <option value="">Full Season</option>
+              <option value="last4">Last 4 Weeks</option>
+              <option value="last8">Last 8 Weeks</option>
+              <option value="last12">Last 12 Weeks</option>
+              <option value="custom">Custom&hellip;</option>
+            </select>
+          </div>
+          <div class="am-ctrl am-mobile-filter" id="amWeekCustomCtrl" style="display:none;">
+            <label class="am-ctrl-label">Weeks</label>
+            <div style="display:flex;align-items:center;gap:4px;">
+              <input type="number" id="amWeekStart" class="am-age-input" placeholder="1" min="1" max="18" style="width:48px;">
+              <span style="font-size:11px;color:var(--text-muted);">&#8211;</span>
+              <input type="number" id="amWeekEnd" class="am-age-input" placeholder="18" min="1" max="18" style="width:48px;">
+            </div>
           </div>
           <div class="am-ctrl am-mobile-filter" id="amTeamCtrl">
             <label class="am-ctrl-label">Team</label>
@@ -271,6 +309,11 @@ def build_advanced_metrics_body(
             <span class="am-trend-up">&#8593;</span><span class="am-trend-down">&#8595;</span>
             vs last season
           </span>
+        </div>
+
+        <div id="amWeekNote" class="am-week-note" style="display:none;">
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style="flex-shrink:0;opacity:.7"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.4"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <span id="amWeekNoteText">Full Season Only &mdash; this metric doesn't support week filtering.</span>
         </div>
 
         <div class="am-table-wrap">
@@ -667,6 +710,13 @@ def build_advanced_metrics_body(
         #amFilterBar.am-mobile-open #amAddFilterBtn { display:inline-flex !important; }
         #amFilterBar.am-mobile-open { flex-wrap:wrap; }
       }
+      /* Week range note */
+      .am-week-note {
+        display:flex; align-items:center; gap:6px;
+        font-size:12px; font-weight:600; color:var(--text-muted);
+        background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.25);
+        border-radius:8px; padding:6px 12px; margin-bottom:10px;
+      }
     </style>
     """
 
@@ -703,6 +753,15 @@ _AM_JS = r"""
   const paywall   = document.getElementById('amPaywall');
   if (!metricSel || !tbody) return;
 
+  // ── Read URL params and pre-set controls so state inherits them ───────────
+  (function() {
+    const p = new URLSearchParams(window.location.search);
+    const m = p.get('metric');
+    if (m && Array.from(metricSel.options).some(o => o.value === m)) metricSel.value = m;
+    const s = p.get('season');
+    if (s && seasonSel && Array.from(seasonSel.options).some(o => o.value === s)) seasonSel.value = s;
+  })();
+
   // Hide season selector when only one season (or none) is available.
   if (seasonCtrl && (!cfg.seasons || cfg.seasons.length <= 1)) seasonCtrl.style.display = 'none';
 
@@ -714,9 +773,29 @@ _AM_JS = r"""
   function _loadPins() { try { return new Set(JSON.parse(localStorage.getItem('am_pins') || '[]')); } catch { return new Set(); } }
   function _savePins() { try { localStorage.setItem('am_pins', JSON.stringify([...state.pinnedIds])); } catch {} }
 
-  const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', sortBy: metricSel.value, rows: [], search: '',
-                  season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0,
+  const _initParams = new URLSearchParams(window.location.search);
+  function syncURL() {
+    const p = new URLSearchParams();
+    if (state.metric) p.set('metric', state.metric);
+    if (state.position && state.position !== 'ALL') p.set('pos', state.position);
+    if (state.season) p.set('season', state.season);
+    if (state.minVol) p.set('minvol', String(state.minVol));
+    if (state.team) p.set('team', state.team);
+    const qs = p.toString();
+    history.replaceState(null, '', qs ? '?' + qs : window.location.pathname);
+  }
+
+  const state = { metric: metricSel.value,
+                  position: _initParams.get('pos') || 'ALL',
+                  sortDir: 'desc', sortBy: metricSel.value, rows: [], search: '',
+                  season: seasonSel ? (seasonSel.value || '') : '',
+                  minVol: _initParams.get('minvol') || '',
+                  rosterOnly: false, page: 0,
+                  team: _initParams.get('team') || '',
                   fetching: false, volCol: 'games', team: '',
+                  weekRange: '',       // '', 'last4', 'last8', 'last12', 'custom'
+                  weekStart: null,     // resolved numeric week start
+                  weekEnd: null,       // resolved numeric week end
                   extraMetrics: [],     // up to 4 extra metric keys
                   extraData: {},        // key -> { byId:{player_id->value}, maxAbs }
                   extraPrevData: {},    // key -> { player_id -> prev-season value }
@@ -1572,6 +1651,28 @@ _AM_JS = r"""
     if (mh) mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '–';
     syncExtraCols();
   }
+  // Resolve the active week range into {week_start, week_end} integers or null.
+  function resolveWeekRange() {
+    const cw = cfg.currentWeek || 18;
+    if (!state.weekRange) return { ws: null, we: null };
+    if (state.weekRange === 'last4')  return { ws: Math.max(1, cw - 3), we: cw };
+    if (state.weekRange === 'last8')  return { ws: Math.max(1, cw - 7), we: cw };
+    if (state.weekRange === 'last12') return { ws: Math.max(1, cw - 11), we: cw };
+    if (state.weekRange === 'custom') return { ws: state.weekStart, we: state.weekEnd };
+    return { ws: null, we: null };
+  }
+
+  function updateWeekNote(isWeekFiltered, weekCapable) {
+    const el = document.getElementById('amWeekNote');
+    if (!el) return;
+    const hasFilter = state.weekRange && state.weekRange !== '';
+    if (hasFilter && !weekCapable) {
+      el.style.display = 'flex';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
   function fetchData() {
     if (!cfg.hasPremium) { paywall.style.display = ''; loading.style.display = 'none'; return; }
     state.fetching = true;
@@ -1582,10 +1683,18 @@ _AM_JS = r"""
     if (state.season) params.set('season', state.season);
     if (state.minVol) params.set('min_vol', state.minVol);
 
+    // Add week range params when a filter is active.
+    const weekCapable = cfg.metrics[state.metric] && cfg.metrics[state.metric].weeklyCapable;
+    const { ws, we } = resolveWeekRange();
+    if (ws) params.set('week_start', String(ws));
+    if (we) params.set('week_end',   String(we));
+
     // Determine the previous season to fetch for YoY trend arrows.
+    // Skip YoY when a week range is active (not meaningful cross-season).
     const curSeason = state.season ? parseInt(state.season) : (cfg.seasons && cfg.seasons[0]);
     const prevSeason = curSeason ? curSeason - 1 : null;
-    const hasPrevInData = prevSeason && cfg.seasons && cfg.seasons.includes(prevSeason);
+    const isWeekFiltered = !!(ws || we);
+    const hasPrevInData = !isWeekFiltered && prevSeason && cfg.seasons && cfg.seasons.includes(prevSeason);
     const prevParams = new URLSearchParams({ metric: state.metric, platform: cfg.platform });
     if (cfg.leagueId) prevParams.set('league_id', cfg.leagueId);
     if (prevSeason) prevParams.set('season', String(prevSeason));
@@ -1609,6 +1718,7 @@ _AM_JS = r"""
         } else {
           state.prevData = {};
         }
+        updateWeekNote(d.is_week_filtered, weekCapable);
         updateVolHeader();
         populateTeamFilter();
         showAgeCtrl();
@@ -1730,13 +1840,13 @@ _AM_JS = r"""
     state.minVol = defaultVol(state.metric);
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
     updateSortHeaders(); updateCompareBar(); updateFilterBar();
-    fetchData();
+    syncURL(); fetchData();
   });
   posWrap.addEventListener('click', e => {
     const b = e.target.closest('[data-pos]');
     if (!b || b.disabled) return;
     state.position = b.dataset.pos; state.page = 0;
-    updatePosButtons(); render();
+    updatePosButtons(); syncURL(); render();
   });
   searchEl.addEventListener('input', () => { state.search = searchEl.value.trim(); state.page = 0; render(); });
   sortBtn.addEventListener('click', () => {
@@ -1745,14 +1855,36 @@ _AM_JS = r"""
     updateSortBtn(); updateSortHeaders(); render();
   });
   if (seasonSel) {
-    seasonSel.addEventListener('change', () => { state.season = seasonSel.value || ''; state.page = 0; fetchData(); });
+    seasonSel.addEventListener('change', () => { state.season = seasonSel.value || ''; state.page = 0; syncURL(); fetchData(); });
   }
   if (teamSel) {
-    teamSel.addEventListener('change', () => { state.team = teamSel.value || ''; state.page = 0; render(); });
+    teamSel.addEventListener('change', () => { state.team = teamSel.value || ''; state.page = 0; syncURL(); render(); });
   }
   if (minGamesSel) {
-    minGamesSel.addEventListener('change', () => { state.minVol = minGamesSel.value || ''; state.page = 0; fetchData(); });
+    minGamesSel.addEventListener('change', () => { state.minVol = minGamesSel.value || ''; state.page = 0; syncURL(); fetchData(); });
   }
+  // Week range controls.
+  const weekRangeSel   = document.getElementById('amWeekRange');
+  const weekCustomCtrl = document.getElementById('amWeekCustomCtrl');
+  const weekStartEl    = document.getElementById('amWeekStart');
+  const weekEndEl      = document.getElementById('amWeekEnd');
+  if (weekRangeSel) {
+    weekRangeSel.addEventListener('change', function() {
+      state.weekRange = weekRangeSel.value || '';
+      state.weekStart = null; state.weekEnd = null;
+      if (weekCustomCtrl) weekCustomCtrl.style.display = state.weekRange === 'custom' ? '' : 'none';
+      if (weekStartEl) weekStartEl.value = '';
+      if (weekEndEl)   weekEndEl.value   = '';
+      state.page = 0; fetchData();
+    });
+  }
+  function _applyCustomWeeks() {
+    const ws = parseInt(weekStartEl && weekStartEl.value) || null;
+    const we = parseInt(weekEndEl   && weekEndEl.value)   || null;
+    if (ws || we) { state.weekStart = ws; state.weekEnd = we; state.page = 0; fetchData(); }
+  }
+  if (weekStartEl) weekStartEl.addEventListener('change', _applyCustomWeeks);
+  if (weekEndEl)   weekEndEl.addEventListener('change', _applyCustomWeeks);
   if (rosterChk) {
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
   }
@@ -1837,9 +1969,9 @@ _AM_JS = r"""
   if (_thGames)  _thGames.addEventListener('click', () => sortByCol('games'));
   if (_thMetric) _thMetric.addEventListener('click', () => sortByCol(state.metric));
 
-  state.minVol = defaultVol(state.metric);
+  state.minVol = _initParams.get('minvol') || defaultVol(state.metric);
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
-  updateSortHeaders(); updateCompareBar(); updateFilterBar(); fetchData(); loadOwnedRoster();
+  updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL(); fetchData(); loadOwnedRoster();
 
   // Info tooltip: position:fixed so it escapes the card's overflow:hidden container
   const _infoEl = document.getElementById('amMetricInfo');

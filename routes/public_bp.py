@@ -70,7 +70,7 @@ def sitemap_xml():
         ("", "1.0", "daily"),
         ("/trade", "0.9", "daily"),
         ("/dynasty-trade-value-chart", "0.9", "weekly"),
-        ("/risers-fallers", "0.8", "weekly"),
+        ("/top-movers", "0.8", "weekly"),
         ("/rankings/dynasty", "0.8", "weekly"),
         ("/rankings/dynasty-qb", "0.8", "weekly"),
         ("/rankings/dynasty-rb", "0.8", "weekly"),

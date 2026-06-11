@@ -1348,12 +1348,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
-                ("Risers &amp; Fallers", "/risers-fallers", "risers-fallers"),
+                ("Top Movers", "/top-movers", "top-movers"),
                 ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "/metrics", "advanced-metrics"),
                 ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
                 ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
-            ], ["players", "prospects", "breakouts", "risers-fallers"], "playersNavDropdown"),
+            ], ["players", "prospects", "breakouts", "top-movers"], "playersNavDropdown"),
         ]
 
         player_search_html = (
@@ -1475,14 +1475,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
-        ("Risers &amp; Fallers", "risers_fallers_page", "risers-fallers", False),
+        ("Top Movers", "top_movers_page", "top-movers", False),
         ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Waivers & Start/Sit <span class='nav-pro-badge'>PRO</span>", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
-    ], ["players", "prospects", "breakouts", "waivers", "schedule", "risers-fallers"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts", "waivers", "schedule", "top-movers"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -17468,7 +17468,10 @@ def api_advanced_metrics_leaderboard():
     Premium-gated. Query params: metric (required, whitelisted), position (optional),
     league_id/platform (for the premium check).
     """
-    from data_building.advanced_metrics import get_metric_leaderboard, LEADERBOARD_METRICS
+    from data_building.advanced_metrics import (
+        get_metric_leaderboard, get_weekly_range_leaderboard,
+        LEADERBOARD_METRICS, _WEEKLY_METRICS,
+    )
 
     user_id = session.get("viewer_username") or None
     league_id = (request.args.get("league_id") or "").strip() or None
@@ -17484,9 +17487,22 @@ def api_advanced_metrics_leaderboard():
     season = int(season_str) if season_str.isdigit() else None
     min_vol_str = (request.args.get("min_vol") or "").strip()
     min_vol = int(min_vol_str) if min_vol_str.isdigit() else None
+    week_start_str = (request.args.get("week_start") or "").strip()
+    week_end_str   = (request.args.get("week_end") or "").strip()
+    week_start = int(week_start_str) if week_start_str.isdigit() else None
+    week_end   = int(week_end_str)   if week_end_str.isdigit()   else None
+
+    weekly_capable   = metric in _WEEKLY_METRICS
+    is_week_filtered = bool(week_start or week_end) and weekly_capable
 
     try:
-        players = get_metric_leaderboard(metric, position=position, season=season, min_vol=min_vol)
+        if is_week_filtered:
+            players = get_weekly_range_leaderboard(
+                metric, position=position, season=season,
+                week_start=week_start, week_end=week_end, min_vol=min_vol,
+            )
+        else:
+            players = get_metric_leaderboard(metric, position=position, season=season, min_vol=min_vol)
     except Exception as e:
         logger.exception(f"[api/advanced-metrics/leaderboard] error for metric={metric}: {e}")
         players = []
@@ -17499,6 +17515,8 @@ def api_advanced_metrics_leaderboard():
         "positions": spec["positions"],
         "lower_better": bool(spec.get("lower_better")),
         "vol_col": vol_col,
+        "weekly_capable": weekly_capable,
+        "is_week_filtered": is_week_filtered,
         "players": players,
     })
 
@@ -25322,10 +25340,15 @@ def dynasty_trade_value_chart():
     )
 
 
-# ── Risers & Fallers ──────────────────────────────────────────────────────────
+# ── Top Movers (was Risers & Fallers) ─────────────────────────────────────────
 
 @app.route("/risers-fallers")
-def risers_fallers_page():
+def risers_fallers_redirect():
+    from flask import redirect as _redir
+    return _redir("/top-movers", 301)
+
+@app.route("/top-movers")
+def top_movers_page():
     """Weekly dynasty risers and fallers — freshness content for SEO."""
     from dashboard_services.pages.dynasty_pages import build_risers_fallers_body
     from data_building.player_value_history import get_top_movers
@@ -25339,7 +25362,7 @@ def risers_fallers_page():
     body = build_risers_fallers_body(movers, as_of_date=date_label)
 
     return render_page(
-        f"Dynasty Risers & Fallers — {date_label} | BR Fantasy",
+        f"Top Movers — {date_label} | BR Fantasy",
         None, "players", body,
         description=(
             f"Dynasty fantasy football risers and fallers for the week of {date_label}. "
@@ -25822,11 +25845,28 @@ def page_trade_card(share_id: str):
       color:var(--tc-muted);border-radius:8px;padding:5px 10px;font-size:14px;cursor:pointer;}}
     .asset-row{{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--tc-border-sub)}}
     .asset-row:last-child{{border-bottom:none}}
-    .asset-name{{flex:1;font-size:13px;font-weight:600;color:var(--tc-text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+    .asset-name{{flex:1;font-size:13px;font-weight:600;color:var(--tc-text);min-width:0;word-break:break-word}}
     .asset-val{{font-size:12px;color:var(--tc-muted);flex-shrink:0}}
     .asset-pos{{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0}}
     .empty-side{{font-size:13px;color:var(--tc-dim);padding:8px 0}}
     @media(max-width:480px){{.side{{padding:12px}}.side-total{{font-size:18px}}}}
+    @media(max-width:400px){{
+      .card-header{{padding:10px 12px}}
+      .side{{padding:10px 8px}}
+      .side-title{{font-size:8px}}
+      .side-total{{font-size:16px;margin-bottom:8px}}
+      .asset-row{{gap:4px;padding:5px 0}}
+      .asset-name{{font-size:12px}}
+      .asset-val{{font-size:11px}}
+      .asset-pos{{font-size:8px;padding:2px 4px}}
+      .bar-wrap{{padding:0 10px 10px}}
+      .bar-labels{{font-size:9px}}
+      .verdict{{font-size:12px;padding:8px 12px 10px}}
+      .footer{{padding:10px 12px;gap:6px}}
+      .btn{{padding:7px 12px;font-size:11px}}
+      .pi-grid{{grid-template-columns:repeat(2,1fr)}}
+      .pi-cell{{padding:7px 5px}}
+    }}
   </style>
 </head>
 <body>
@@ -26072,7 +26112,7 @@ def api_push_broadcast():
     data  = request.get_json(force=True) or {}
     title = data.get("title", "BR Fantasy Update")
     body  = data.get("body",  "Your weekly dynasty risers and fallers are ready!")
-    url   = data.get("url",   "/risers-fallers")
+    url   = data.get("url",   "/top-movers")
     tag   = data.get("tag",   "weekly-update")
     return _push_broadcast(title=title, body=body, url=url, tag=tag)
 
@@ -26191,6 +26231,57 @@ def _notify_changelog_on_startup():
 # Run once at import time (gunicorn workers each run this, but the DB dedup prevents
 # duplicate sends — only the first worker to run wins the upsert race).
 _notify_changelog_on_startup()
+
+
+def _notify_top_movers_weekly():
+    """Send a weekly push with the top dynasty value movers (at most once per 7 days)."""
+    try:
+        from datetime import date as _date
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            conn.commit()
+            row = conn.execute(
+                "SELECT value FROM app_state WHERE key = 'top_movers_last_pushed'"
+            ).fetchone()
+            last = row[0] if row else None
+
+        if last:
+            if (_date.today() - _date.fromisoformat(last)).days < 7:
+                return
+
+        from data_building.player_value_history import get_top_movers
+        movers = get_top_movers(days=7, limit=3)
+        risers = movers.get("risers", [])
+        if not risers:
+            return
+
+        names = ", ".join(r.get("name") or r.get("player_id", "?") for r in risers[:3])
+        delta_str = ""
+        if risers[0].get("delta") is not None:
+            delta_str = f" (+{risers[0]['delta']:.0f})"
+        body = f"Top risers: {names}{delta_str}"
+
+        _push_broadcast(
+            title="BR Fantasy — Weekly Top Movers",
+            body=body,
+            url="/top-movers",
+            tag=f"top-movers-{_date.today().isoformat()}",
+        )
+
+        today = _date.today().isoformat()
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO app_state (key, value) VALUES ('top_movers_last_pushed', %s) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                (today,),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[top-movers-push] failed: %s", exc)
+
+
+_notify_top_movers_weekly()
 
 
 if __name__ == "__main__":

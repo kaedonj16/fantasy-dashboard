@@ -11,6 +11,7 @@ These metrics inform the breakout detection algorithm and can be displayed in th
 
 from __future__ import annotations
 
+import json as _json
 import os
 from typing import Dict, Any, List, Optional
 
@@ -260,6 +261,13 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS total_rec_tds   NUMERIC,
             ADD COLUMN IF NOT EXISTS total_pass_tds  NUMERIC,
             ADD COLUMN IF NOT EXISTS total_tds       NUMERIC;
+    """)
+
+    # Team and schedule ease.
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS nfl_team      VARCHAR(10),
+            ADD COLUMN IF NOT EXISTS schedule_ease NUMERIC;
     """)
 
 
@@ -809,6 +817,24 @@ def calculate_player_metrics(
     }
 
 
+def load_matchup_ease(season: int) -> Dict[str, Dict[str, float]]:
+    """Return {team: {pos: ease}} from the matchup_ratings cache for a season.
+
+    ease is 0-100 (100 = easiest matchup). Returns empty dict if cache missing.
+    """
+    try:
+        from data_building.matchup_ratings import out_path
+        path = out_path(season)
+        if not os.path.exists(path):
+            return {}
+        with open(path) as f:
+            data = _json.load(f)
+        ratings = data.get("ratings") or {}
+        return {team: {pos: v["ease"] for pos, v in pos_map.items()} for team, pos_map in ratings.items()}
+    except Exception:
+        return {}
+
+
 def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, season: Optional[int] = None):
     """
     Save calculated metrics to database for a specific date.
@@ -842,7 +868,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     role_score, usage_trend, efficiency_trend, games,
                     total_targets, total_receptions, total_carries, total_touches, total_pass_att,
                     target_share, route_participation,
-                    total_rush_tds, total_rec_tds, total_pass_tds, total_tds
+                    total_rush_tds, total_rec_tds, total_pass_tds, total_tds,
+                    nfl_team, schedule_ease
                 )
                 VALUES (
                     %s, %s, %s, %s,
@@ -854,7 +881,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
                     %s, %s,
-                    %s, %s, %s, %s
+                    %s, %s, %s, %s,
+                    %s, %s
                 )
                 ON CONFLICT (player_id, as_of_date)
                 DO UPDATE SET
@@ -890,7 +918,9 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     total_rush_tds = EXCLUDED.total_rush_tds,
                     total_rec_tds = EXCLUDED.total_rec_tds,
                     total_pass_tds = EXCLUDED.total_pass_tds,
-                    total_tds = EXCLUDED.total_tds
+                    total_tds = EXCLUDED.total_tds,
+                    nfl_team = COALESCE(EXCLUDED.nfl_team, player_advanced_metrics.nfl_team),
+                    schedule_ease = COALESCE(EXCLUDED.schedule_ease, player_advanced_metrics.schedule_ease)
             """, (
                 metrics["player_id"], as_of_date, season, metrics["position"],
                 metrics.get("yards_per_target"), metrics.get("catch_rate"),
@@ -911,6 +941,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 route_partic,
                 metrics.get("total_rush_tds"), metrics.get("total_rec_tds"),
                 metrics.get("total_pass_tds"), metrics.get("total_tds"),
+                metrics.get("nfl_team") or None,
+                metrics.get("schedule_ease"),
             ))
 
     print(f"[advanced_metrics] Saved {len(metrics_list)} player metrics for {as_of_date} (season {season})")
@@ -1221,6 +1253,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "red_zone_usage":       {"label": "Red Zone Usage",      "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity."},
     "grades_offense":       {"label": "PFF Off Grade",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "efficiency": True, "min_vol": _V_GAMES, "desc": "PFF's overall offensive grade (0-100) from play-by-play charting."},
     "yards_per_touch":      {"label": "Yards / Touch",       "category": "General", "positions": ["RB", "WR", "TE"], "efficiency": True, "min_vol": _V_TOUCHES, "desc": "Yards gained per combined carry and reception."},
+    "schedule_ease":        {"label": "Schedule Ease",       "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "How easy the player's remaining schedule is vs. their position (0-100, 100 = easiest). Based on opponent defensive ratings from matchup_ratings."},
     # ── Passing ──────────────────────────────────────────────────────────────
     "yards_per_attempt":    {"label": "Yards / Attempt",    "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing yards per attempt; core passing efficiency stat."},
     "completion_pct":       {"label": "Completion %",       "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts completed."},
@@ -1281,6 +1314,107 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "total_tds":          {"label": "Total TDs",    "category": "Volume", "positions": ["QB", "RB", "WR", "TE"], "integer": True, "desc": "Total touchdowns (rush + receiving + passing) in the season."},
     "total_tds_per_game": {"label": "Total TDs/G",  "category": "Volume", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Total touchdowns per game.", "computed_sql": "m.total_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
 }
+
+# Metrics that can be filtered to a week range using player_weekly_metrics.
+# Each value is the SQL aggregation expression over that table's columns.
+_WEEKLY_METRICS: Dict[str, str] = {
+    "snap_share":           "AVG(snap_pct)",
+    "target_share":         "AVG(target_share)",
+    "yards_per_target":     "SUM(rec_yards)::float / NULLIF(SUM(targets), 0)",
+    "yards_per_reception":  "SUM(rec_yards)::float / NULLIF(SUM(receptions), 0)",
+    "catch_rate":           "SUM(receptions)::float / NULLIF(SUM(targets), 0)",
+    "yards_per_carry":      "SUM(rush_yards)::float / NULLIF(SUM(carries), 0)",
+    "yards_per_touch":      "(SUM(rec_yards) + SUM(rush_yards))::float / NULLIF(SUM(touches), 0)",
+    "total_targets":        "SUM(targets)",
+    "targets_per_game":     "AVG(targets)",
+    "total_receptions":     "SUM(receptions)",
+    "receptions_per_game":  "AVG(receptions)",
+    "total_carries":        "SUM(carries)",
+    "carries_per_game":     "AVG(carries)",
+    "total_touches":        "SUM(touches)",
+    "touches_per_game":     "AVG(touches)",
+}
+
+
+def get_weekly_range_leaderboard(
+    metric: str,
+    position: Optional[str] = None,
+    season: Optional[int] = None,
+    week_start: Optional[int] = None,
+    week_end: Optional[int] = None,
+    min_vol: Optional[int] = None,
+    limit: int = 500,
+) -> List[Dict[str, Any]]:
+    """Players ranked by a weekly-aggregate metric over a week range.
+
+    Queries player_weekly_metrics. Returns [{player_id, name, team, position, value, games, vol}].
+    games/vol here is weeks played in the range (not season games).
+    """
+    agg_sql = _WEEKLY_METRICS.get(metric)
+    if not agg_sql or metric not in LEADERBOARD_METRICS:
+        return []
+
+    pos = (position or "").upper().strip() or None
+    where_parts: list = []
+    params: list = []
+
+    if season:
+        where_parts.append("season = %s")
+        params.append(season)
+    if week_start:
+        where_parts.append("week >= %s")
+        params.append(week_start)
+    if week_end:
+        where_parts.append("week <= %s")
+        params.append(week_end)
+    if pos:
+        where_parts.append("position = %s")
+        params.append(pos)
+
+    where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+    min_weeks = max(1, int(min_vol)) if (min_vol and int(min_vol) > 0) else 1
+    query_params = tuple(params + [min_weeks, limit])
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT t.player_id, t.position, t.weeks_played, t.value
+            FROM (
+                SELECT player_id, position,
+                       COUNT(*) AS weeks_played,
+                       {agg_sql} AS value
+                FROM player_weekly_metrics
+                {where_clause}
+                GROUP BY player_id, position
+            ) t
+            WHERE t.weeks_played >= %s AND t.value IS NOT NULL
+            ORDER BY t.value DESC
+            LIMIT %s
+            """,
+            query_params,
+        ).fetchall()
+
+    try:
+        from utils.utils import load_players_index
+        idx = load_players_index() or {}
+    except Exception:
+        idx = {}
+
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        pid = str(r["player_id"])
+        meta = idx.get(pid) or {}
+        weeks = int(r["weeks_played"]) if r["weeks_played"] is not None else None
+        out.append({
+            "player_id": pid,
+            "name": meta.get("name") or "Unknown",
+            "team": meta.get("team") or "",
+            "position": r["position"],
+            "value": float(r["value"]) if r["value"] is not None else None,
+            "games": weeks,
+            "vol": weeks,
+        })
+    return out
 
 
 def get_available_seasons() -> List[int]:
