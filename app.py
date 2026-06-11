@@ -25437,12 +25437,18 @@ def api_save_trade():
     _init_shared_trades_table()
     try:
         from dashboard_services.db import get_conn
+        import random as _random
         with get_conn() as conn:
             conn.execute(
                 "INSERT INTO shared_trades (share_id, params) VALUES (%s, %s) "
                 "ON CONFLICT (share_id) DO NOTHING",
                 (share_id, params),
             )
+            # Probabilistic cleanup: prune shares older than 5 days (~10% of saves)
+            if _random.random() < 0.10:
+                conn.execute(
+                    "DELETE FROM shared_trades WHERE created_at < NOW() - INTERVAL '5 days'"
+                )
             conn.commit()
     except Exception as exc:
         logger.warning("[save-trade] DB error: %s", exc)
@@ -25480,7 +25486,9 @@ def shared_trade_page(share_id: str):
     except Exception:
         abort(404)
     from urllib.parse import urlencode
-    qs = urlencode({k: v for k, v in p.items() if v})
+    # Pass player/pick IDs, team names, and league context so the calc loads fully
+    _CALC_KEYS = {"a", "b", "ap", "bp", "t1", "t2", "league_id", "season", "platform", "roster_id"}
+    qs = urlencode({k: v for k, v in p.items() if k in _CALC_KEYS and v})
     from flask import redirect as _redirect
     return _redirect(f"/trade?{qs}", 302)
 
@@ -25495,16 +25503,28 @@ def page_trade_card(share_id: str):
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             row = conn.execute(
-                "SELECT params FROM shared_trades WHERE share_id = %s", (share_id,)
+                "SELECT params, created_at FROM shared_trades WHERE share_id = %s", (share_id,)
             ).fetchone()
     except Exception as _e:
         logger.warning("[trade-card] lookup error for %s: %s", share_id, _e)
     if not row:
         return "<h2 style='font-family:sans-serif;padding:40px'>Trade not found.</h2>", 404
     try:
-        p = _json.loads(row["params"] if hasattr(row, "__getitem__") else row[0])
+        _row = row if hasattr(row, "__getitem__") else {"params": row[0], "created_at": row[1]}
+        p = _json.loads(_row["params"])
+        _created_at = _row.get("created_at") if hasattr(_row, "get") else row[1]
     except Exception:
         abort(404)
+
+    # Format shared date
+    try:
+        from datetime import timezone as _tz
+        _dt = _created_at
+        if hasattr(_dt, "astimezone"):
+            _dt = _dt.astimezone(_tz.utc)
+        shared_date = _dt.strftime("%-m/%-d/%y") if _dt else ""
+    except Exception:
+        shared_date = ""
 
     from utils.utils import load_players_index
     players_index = load_players_index() or {}
@@ -25691,8 +25711,8 @@ def page_trade_card(share_id: str):
           var s=document.getElementById('piSection');
           var open=s.style.display!=='none';
           s.style.display=open?'none':'block';
-          this.textContent=open?'Show Playoff Impact ▾':'Hide Playoff Impact ▴';
-        ">Show Playoff Impact ▾</button>
+          this.textContent=open?'Show Impact for {t1} ▾':'Hide Playoff Impact ▴';
+        ">Show Impact for {t1} ▾</button>
       </div>"""
         except Exception:
             pass
@@ -25703,8 +25723,14 @@ def page_trade_card(share_id: str):
   <meta charset="utf-8">
   <title>Trade Card | BR Fantasy</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta property="og:title" content="BR Fantasy Trade Analysis">
-  <meta property="og:description" content="{t1} vs {t2} — {verdict}">
+  <meta property="og:title" content="{t1} vs {t2} | BR Fantasy Trade">
+  <meta property="og:description" content="{verdict}">
+  <meta property="og:image" content="{request.host_url.rstrip('/')}/static/BR_Logo_dark.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="{t1} vs {t2} | BR Fantasy Trade">
+  <meta name="twitter:description" content="{verdict}">
+  <meta name="twitter:image" content="{request.host_url.rstrip('/')}/static/BR_Logo_dark.png">
   <link rel="icon" href="/static/BR_Logo.png" type="image/png">
   <style>
     :root{{--tc-bg:#0b1120;--tc-card:#0f1d36;--tc-hdr:#0b1628;--tc-border:rgba(255,255,255,.1);--tc-border-sub:rgba(255,255,255,.07);--tc-text:#e2e8f0;--tc-text2:#f1f5f9;--tc-muted:#94a3b8;--tc-dim:#64748b;--tc-dimmer:#475569;--tc-bar:rgba(255,255,255,.08);}}
@@ -25802,6 +25828,7 @@ def page_trade_card(share_id: str):
     </div>
     <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--tc-dimmer);{'display:none' if is_embed else ''}">
       <a href="/" style="color:var(--tc-dimmer);text-decoration:none">brfantasyfootball.com</a>
+      {f'<span style="margin:0 6px;opacity:.4">·</span><span>Shared {shared_date}</span>' if shared_date else ''}
     </div>
   </div>
   <script>
