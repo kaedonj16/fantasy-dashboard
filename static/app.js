@@ -612,22 +612,35 @@ function emptyState(container, message, iconClass) {
 
   var asked = localStorage.getItem(NOTIF_KEY);
 
-  // Only prompt signed-in users — no point asking anonymous visitors
+  // Only prompt signed-in users
   if (!window._isSignedIn) return;
+  // Never prompt if browser explicitly blocked
+  if (Notification.permission === 'denied') return;
 
-  // Show after 45 seconds if user hasn't responded yet and browser allows it
-  if (!asked && Notification.permission === 'default') {
-    setTimeout(showNotifBanner, 45000);
-  }
-
-  // Re-register subscription if it was lost (e.g., browser cleared it)
-  if (asked === 'subscribed' && Notification.permission === 'granted') {
-    navigator.serviceWorker.ready.then(function (reg) {
-      reg.pushManager.getSubscription().then(function (sub) {
-        if (!sub) subscribePush().catch(function () {});
-      });
-    }).catch(function () {});
-  }
+  // Check actual subscription state before deciding whether to prompt
+  navigator.serviceWorker.ready.then(function (reg) {
+    reg.pushManager.getSubscription().then(function (sub) {
+      if (sub && Notification.permission === 'granted') {
+        // Already subscribed — sync localStorage and stay quiet
+        localStorage.setItem(NOTIF_KEY, 'subscribed');
+        return;
+      }
+      if (Notification.permission === 'granted' && !sub) {
+        // Permission granted but subscription was lost — re-subscribe silently
+        subscribePush().catch(function () {});
+        return;
+      }
+      // Permission is 'default' and no active subscription — show banner once
+      if (!asked) {
+        setTimeout(showNotifBanner, 45000);
+      }
+    });
+  }).catch(function () {
+    // Service worker unavailable — fall back to simple check
+    if (!asked && Notification.permission === 'default') {
+      setTimeout(showNotifBanner, 45000);
+    }
+  });
 })();
 
 // ── Login / subscribe gate ────────────────────────────────────────────────────
