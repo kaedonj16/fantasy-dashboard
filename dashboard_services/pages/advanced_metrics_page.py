@@ -146,7 +146,14 @@ def build_advanced_metrics_body(
                 <span class="am-info-tip" id="amMetricTip"></span>
               </span>
             </label>
-            <select id="amMetric" class="am-select">__METRIC_OPTIONS__</select>
+            <div class="am-metric-picker search-wrapper" id="amMetricPickerWrap">
+              <button type="button" class="am-select am-metric-btn" id="amMetricBtn" aria-haspopup="listbox" aria-expanded="false">
+                <span id="amMetricBtnLabel"></span>
+                <i class="fa-solid fa-chevron-down am-metric-chevron"></i>
+              </button>
+              <div class="dropdown am-metric-dropdown" id="amMetricDropdown" role="listbox"></div>
+            </div>
+            <select id="amMetric" style="display:none">__METRIC_OPTIONS__</select>
           </div>
           <div class="am-ctrl am-ctrl-season" id="amSeasonCtrl">
             <label class="am-ctrl-label">Season</label>
@@ -339,6 +346,27 @@ def build_advanced_metrics_body(
         background-color:var(--card); color:var(--text); font-size:13px; outline:none;
       }
       .am-select { min-width:180px; cursor:pointer; }
+      /* Custom metric picker */
+      .am-metric-picker { position:relative; }
+      .am-metric-btn { min-width:180px; display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; }
+      .am-metric-chevron { font-size:10px; opacity:.55; flex-shrink:0; transition:transform .15s; }
+      .am-metric-picker.open .am-metric-chevron { transform:rotate(180deg); }
+      .am-metric-dropdown {
+        display:none; position:absolute; left:0; top:calc(100% + 2px); width:100%; min-width:220px;
+        max-height:420px; overflow-y:auto; z-index:300;
+        border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.15);
+      }
+      .am-metric-picker.open .am-metric-dropdown { display:block; }
+      .am-metric-picker.open .am-metric-btn { border-bottom-left-radius:0; border-bottom-right-radius:0; }
+      .am-metric-group-head {
+        font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.07em;
+        color:var(--text-muted); padding:10px 12px 4px;
+        border-top:1px solid var(--border);
+      }
+      .am-metric-group:first-child .am-metric-group-head { border-top:none; padding-top:6px; }
+      .am-metric-opt { padding:7px 12px; font-size:13px; cursor:pointer; color:var(--text); }
+      .am-metric-opt:hover { background:var(--bg-alt, rgba(0,0,0,.04)); }
+      .am-metric-opt.selected { color:var(--accent,#3b82f6); font-weight:600; }
       .am-season-select { min-width:90px; }
       .am-search { width:100%; box-sizing:border-box; }
       .am-sort-btn { cursor:pointer; font-weight:600; white-space:nowrap; }
@@ -1844,4 +1872,64 @@ _AM_JS = r"""
     _infoEl.addEventListener('focus', function() { _placeTip(); metricTip.style.opacity = '1'; metricTip.style.visibility = 'visible'; });
     _infoEl.addEventListener('blur', function() { metricTip.style.opacity = '0'; metricTip.style.visibility = 'hidden'; });
   }
+
+  // ── Custom metric picker ──────────────────────────────────────────────────
+  (function() {
+    const wrap   = document.getElementById('amMetricPickerWrap');
+    const btn    = document.getElementById('amMetricBtn');
+    const label  = document.getElementById('amMetricBtnLabel');
+    const panel  = document.getElementById('amMetricDropdown');
+    if (!wrap || !btn || !panel) return;
+
+    function syncLabel() {
+      const opt = metricSel.options[metricSel.selectedIndex];
+      label.textContent = opt ? opt.textContent : '';
+    }
+    syncLabel();
+
+    function buildPanel() {
+      let html = '';
+      for (const og of metricSel.querySelectorAll('optgroup')) {
+        html += '<div class="am-metric-group">';
+        html += '<div class="am-metric-group-head">' + og.label + '</div>';
+        for (const o of og.querySelectorAll('option')) {
+          const sel = o.value === metricSel.value ? ' selected' : '';
+          html += '<div class="am-metric-opt' + sel + '" data-val="' + o.value + '">' + o.textContent + '</div>';
+        }
+        html += '</div>';
+      }
+      panel.innerHTML = html;
+      panel.querySelectorAll('.am-metric-opt').forEach(function(el) {
+        el.addEventListener('click', function() {
+          metricSel.value = el.dataset.val;
+          syncLabel();
+          closePanel();
+          metricSel.dispatchEvent(new Event('change'));
+        });
+      });
+      // Scroll selected item into view
+      const sel = panel.querySelector('.am-metric-opt.selected');
+      if (sel) sel.scrollIntoView({ block: 'nearest' });
+    }
+
+    function openPanel() {
+      buildPanel();
+      wrap.classList.add('open');
+      btn.setAttribute('aria-expanded', 'true');
+    }
+    function closePanel() {
+      wrap.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      wrap.classList.contains('open') ? closePanel() : openPanel();
+    });
+    panel.addEventListener('click', function(e) { e.stopPropagation(); });
+    document.addEventListener('click', closePanel);
+
+    // Keep label in sync when metric changes via other code (e.g. amLoadPreset)
+    metricSel.addEventListener('change', syncLabel);
+  })();
 """
