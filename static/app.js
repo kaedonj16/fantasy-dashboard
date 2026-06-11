@@ -612,19 +612,152 @@ function emptyState(container, message, iconClass) {
 
   var asked = localStorage.getItem(NOTIF_KEY);
 
-  // Show after 45 seconds if user hasn't responded yet and browser allows it
-  if (!asked && Notification.permission === 'default') {
-    setTimeout(showNotifBanner, 45000);
+  // Only prompt signed-in users
+  if (!window._isSignedIn) return;
+  // Never prompt if browser explicitly blocked
+  if (Notification.permission === 'denied') return;
+
+  // Check actual subscription state before deciding whether to prompt
+  navigator.serviceWorker.ready.then(function (reg) {
+    reg.pushManager.getSubscription().then(function (sub) {
+      if (sub && Notification.permission === 'granted') {
+        // Already subscribed — sync localStorage and stay quiet
+        localStorage.setItem(NOTIF_KEY, 'subscribed');
+        return;
+      }
+      if (Notification.permission === 'granted' && !sub) {
+        // Permission granted but subscription was lost — re-subscribe silently
+        subscribePush().catch(function () {});
+        return;
+      }
+      // Permission is 'default' and no active subscription — show banner once
+      if (!asked) {
+        setTimeout(showNotifBanner, 45000);
+      }
+    });
+  }).catch(function () {
+    // Service worker unavailable — fall back to simple check
+    if (!asked && Notification.permission === 'default') {
+      setTimeout(showNotifBanner, 45000);
+    }
+  });
+})();
+
+// ── Share card modal ──────────────────────────────────────────────────────────
+(function () {
+  var _scmTheme = localStorage.getItem('sc-card-theme') || 'dark';
+
+  function _loadScript(src) {
+    return new Promise(function (res, rej) {
+      if (document.querySelector('script[src^="' + src.split('?')[0] + '"]')) { res(); return; }
+      var s = document.createElement('script');
+      s.src = src; s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
   }
 
-  // Re-register subscription if it was lost (e.g., browser cleared it)
-  if (asked === 'subscribed' && Notification.permission === 'granted') {
-    navigator.serviceWorker.ready.then(function (reg) {
-      reg.pushManager.getSubscription().then(function (sub) {
-        if (!sub) subscribePush().catch(function () {});
-      });
-    }).catch(function () {});
-  }
+  window.openShareCardModal = function (cardUrl, shareUrl) {
+    var existing = document.getElementById('scm-overlay');
+    if (existing) existing.remove();
+
+    var overlay = document.createElement('div');
+    overlay.id = 'scm-overlay';
+    overlay.className = 'scm-overlay';
+    var frameSrc = cardUrl + (cardUrl.includes('?') ? '&' : '?') + 'embed=1';
+    overlay.innerHTML =
+      '<div class="scm-dialog">' +
+        '<div class="scm-toolbar">' +
+          '<button class="scm-btn scm-theme-btn" id="scmThemeBtn" title="Toggle dark/light">' +
+            (_scmTheme === 'dark' ? '&#9728;' : '&#9790;') +
+          '</button>' +
+          '<span class="scm-toolbar-spacer"></span>' +
+          '<button class="scm-btn" id="scmDownloadBtn">Download</button>' +
+          '<button class="scm-btn scm-btn-primary" id="scmShareBtn">Copy link</button>' +
+          '<button class="scm-btn scm-close-btn" id="scmCloseBtn" aria-label="Close">&#x2715;</button>' +
+        '</div>' +
+        '<div class="scm-frame-wrap">' +
+          '<iframe id="scmFrame" src="' + frameSrc + '" frameborder="0" scrolling="no" class="scm-frame" title="Share card"></iframe>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+
+    var frame = document.getElementById('scmFrame');
+
+    function _onMsg(e) {
+      if (!e.data) return;
+      if (e.data.type === 'scCardHeight' && frame) {
+        frame.style.height = (e.data.height + 2) + 'px';
+      }
+    }
+    window.addEventListener('message', _onMsg);
+
+    function _close() {
+      overlay.remove();
+      window.removeEventListener('message', _onMsg);
+    }
+    document.getElementById('scmCloseBtn').onclick = _close;
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) _close(); });
+    document.addEventListener('keydown', function _esc(e) {
+      if (e.key === 'Escape') { _close(); document.removeEventListener('keydown', _esc); }
+    }, { once: true });
+
+    document.getElementById('scmThemeBtn').onclick = function () {
+      _scmTheme = _scmTheme === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('sc-card-theme', _scmTheme);
+      this.innerHTML = _scmTheme === 'dark' ? '&#9728;' : '&#9790;';
+      if (frame && frame.contentWindow) {
+        frame.contentWindow.postMessage({ type: 'scSetTheme', theme: _scmTheme }, '*');
+      }
+    };
+
+    document.getElementById('scmShareBtn').onclick = function () {
+      var btn = this;
+      navigator.clipboard.writeText(shareUrl).then(function () {
+        btn.textContent = 'Copied!';
+        setTimeout(function () { btn.textContent = 'Copy link'; }, 2000);
+      }).catch(function () { showToast('Failed to copy link.', 'error'); });
+    };
+
+    document.getElementById('scmDownloadBtn').onclick = async function () {
+      var btn = this;
+      var origText = btn.textContent;
+      btn.textContent = 'Saving...';
+      btn.disabled = true;
+      try {
+        await _loadScript('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js');
+        var fd = frame.contentDocument || frame.contentWindow.document;
+        if (fd.readyState !== 'complete') {
+          await new Promise(function (res) { frame.addEventListener('load', res, { once: true }); });
+          fd = frame.contentDocument || frame.contentWindow.document;
+        }
+        var cardEl = fd.querySelector('.share-card') || fd.querySelector('.card');
+        if (!cardEl) throw new Error('card element not found');
+        var canvas = await html2canvas(cardEl, {
+          useCORS: true, allowTaint: true, scale: 2, logging: false,
+          width: cardEl.scrollWidth, height: cardEl.scrollHeight,
+          windowWidth: fd.documentElement.scrollWidth,
+          windowHeight: fd.documentElement.scrollHeight,
+        });
+        var a = document.createElement('a');
+        a.download = 'br-fantasy-card.png';
+        a.href = canvas.toDataURL('image/png');
+        a.click();
+      } catch (err) {
+        console.warn('[scm] download failed, opening tab:', err);
+        window.open(cardUrl, '_blank', 'noopener');
+      } finally {
+        btn.textContent = origText;
+        btn.disabled = false;
+      }
+    };
+
+    // Send initial theme once iframe loads
+    frame.addEventListener('load', function () {
+      if (frame.contentWindow) {
+        frame.contentWindow.postMessage({ type: 'scSetTheme', theme: _scmTheme }, '*');
+      }
+    }, { once: true });
+  };
 })();
 
 // ── Login / subscribe gate ────────────────────────────────────────────────────
@@ -1718,11 +1851,21 @@ window.initTradePage = function initTradePage(root = document) {
 
   function shareTradeToClipboard() {
     const btn = root.querySelector("#shareTradeBtn");
+
+    // Collect team display names if roster filter is active
+    const aTitle = root.querySelector("#sideATitle");
+    const bSel   = root.querySelector("#sideBTeamSelect");
+    const t1 = (aTitle && aTitle.textContent && !aTitle.textContent.includes("Team 1"))
+      ? aTitle.textContent.replace(/ gets…$/, "").trim() : "";
+    const t2 = (bSel && bSel.selectedOptions[0] && bSel.selectedOptions[0].text !== "Select opponent")
+      ? bSel.selectedOptions[0].text.trim() : "";
+
     const tradeData = {
       a:  state.sideAPlayers.map(p => p.id).join(','),
       b:  state.sideBPlayers.map(p => p.id).join(','),
       ap: state.sideAPicks.map(p => p.id).join(','),
       bp: state.sideBPicks.map(p => p.id).join(','),
+      t1, t2,
     };
 
     function _flashSuccess() {
@@ -1733,18 +1876,24 @@ window.initTradePage = function initTradePage(root = document) {
       setTimeout(() => { btn.innerHTML = orig; btn.classList.remove("otc-share-btn-success"); }, 2000);
     }
 
-    // POST to /api/save-trade for a short /t/<id> URL; fall back to URL params
+    // POST to /api/save-trade; open the visual trade card in a modal
     fetch("/api/save-trade", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(tradeData),
     })
       .then(r => r.ok ? r.json() : Promise.reject())
-      .then(d => d.share_id ? `${window.location.origin}/t/${d.share_id}` : encodeTradeToURL())
-      .catch(() => encodeTradeToURL())
-      .then(shareUrl => navigator.clipboard.writeText(shareUrl))
-      .then(() => { _flashSuccess(); showToast("Link copied!", "success"); })
-      .catch(() => showToast("Failed to copy link. Please try again.", "error"));
+      .then(function (d) {
+        if (d.share_id) {
+          var cardUrl = window.location.origin + '/trade-card/' + d.share_id;
+          openShareCardModal(cardUrl, cardUrl);
+          _flashSuccess();
+        } else {
+          navigator.clipboard.writeText(encodeTradeToURL())
+            .then(function () { _flashSuccess(); showToast('Link copied!', 'success'); });
+        }
+      })
+      .catch(function () { showToast('Failed to share trade. Please try again.', 'error'); });
   }
 
   function formatValue(v) {
@@ -13235,8 +13384,8 @@ function setupFunAwardsGrid() {
     var season   = btn.dataset.season   || window._page_season;
     var leagueId = btn.dataset.league   || window._page_league;
     if (!rosterId || !platform || !season || !leagueId) return;
-    var url = '/' + platform + '/' + season + '/' + leagueId + '/share-card/' + rosterId;
-    window.open(url, '_blank', 'noopener');
+    var cardUrl = window.location.origin + '/' + platform + '/' + season + '/' + leagueId + '/share-card/' + rosterId;
+    openShareCardModal(cardUrl, cardUrl);
   });
 })();
 

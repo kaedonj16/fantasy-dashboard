@@ -24780,8 +24780,9 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         roster_id = session.get("viewer_roster_id") or ""
     # Serve from cache if fresh
     _sc_key = (platform, league_id, season, roster_id)
+    _is_embed_req = request.args.get('embed') == '1'
     _sc_cached = _SHARE_CARD_CACHE.get(_sc_key)
-    if _sc_cached and time.time() - _sc_cached["ts"] < _SHARE_CARD_CACHE_TTL:
+    if not _is_embed_req and _sc_cached and time.time() - _sc_cached["ts"] < _SHARE_CARD_CACHE_TTL:
         return _sc_cached["html"], 200, {"Content-Type": "text/html; charset=utf-8"}
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -25074,9 +25075,11 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                 + '</div>'
             )
 
-        share_url = request.url
+        is_embed = request.args.get('embed') == '1'
+        share_url = request.url.split('?')[0]  # strip ?embed=1 from canonical share URL
+        footer_style = 'display:none' if is_embed else ''
         card_html = f"""<!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dark" id="scRoot">
 <head>
   <meta charset="utf-8">
   <title>{team_name} | BR Fantasy Report</title>
@@ -25087,16 +25090,23 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   <link rel="stylesheet" href="/static/dashboard.css?v={_CSS_V}">
   <link rel="stylesheet" href="/static/font-awesome.css?v={_CSS_V}">
   <style>
-    body {{ background:#0b1120; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px; }}
+    body {{ background:var(--bg,#020617); min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:{'0' if is_embed else '16px'}; }}
     .share-card-wrap {{ max-width:440px; width:100%; }}
     .sc-player-age {{ font-size:11px; color:var(--text-muted); margin-left:auto; margin-right:6px; }}
     .sc-picks-row {{ display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px 14px; }}
     .sc-pick-chip {{ font-size:11px; font-weight:600; padding:3px 8px; border-radius:20px;
       background:rgba(139,92,246,.15); color:#a78bfa; border:1px solid rgba(139,92,246,.25); }}
+    .sc-toggle-btn {{ position:absolute; top:12px; right:12px; background:var(--row,rgba(255,255,255,.08));
+      border:1px solid var(--border,#334155); color:var(--text-muted,#94a3b8); border-radius:8px;
+      padding:5px 10px; font-size:13px; cursor:pointer; }}
+    .sc-toggle-wrap {{ position:relative; }}
   </style>
 </head>
 <body>
   <div class="share-card-wrap">
+    <div class="sc-toggle-wrap" {'style="display:none"' if is_embed else ''}>
+      <button class="sc-toggle-btn" id="scThemeToggle" title="Toggle dark/light">&#9728;</button>
+    </div>
     <div class="share-card">
       <div class="sc-header">
         <div class="sc-brand"><img src="/static/BR_Logo_dark.png" alt="BR Fantasy" style="height:20px;opacity:.9"> BR Fantasy</div>
@@ -25128,15 +25138,53 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
       <div class="sc-section-title">Top Players</div>
       <div class="sc-players">{rows_html}</div>
       {picks_html}
-      <div class="sc-footer">
-        <a href="/" class="sc-cta">View full dashboard at brfantasy.com</a>
+      <div class="sc-footer" style="{footer_style}">
+        <a href="/" class="sc-cta">View full dashboard at brfantasyfootball.com</a>
         <button class="sc-copy-btn" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')">Copy link</button>
       </div>
     </div>
   </div>
+  <script>
+  (function() {{
+    var root = document.getElementById('scRoot');
+    var THEME_KEY = 'sc-card-theme';
+    function applyTheme(t) {{
+      root.setAttribute('data-theme', t);
+      var logo = document.querySelector('.sc-brand img');
+      if (logo) logo.src = t === 'dark' ? '/static/BR_Logo_dark.png' : '/static/BR_Logo.png';
+      var btn = document.getElementById('scThemeToggle');
+      if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
+    }}
+    // Load saved or default theme
+    var saved = localStorage.getItem(THEME_KEY) || 'dark';
+    applyTheme(saved);
+    // Standalone toggle button
+    var toggleBtn = document.getElementById('scThemeToggle');
+    if (toggleBtn) {{
+      toggleBtn.addEventListener('click', function() {{
+        var t = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        localStorage.setItem(THEME_KEY, t);
+        applyTheme(t);
+      }});
+    }}
+    // postMessage from modal parent
+    window.addEventListener('message', function(e) {{
+      if (e.data && e.data.type === 'scSetTheme') applyTheme(e.data.theme);
+    }});
+    // Report height to parent (for iframe auto-sizing)
+    function sendHeight() {{
+      window.parent.postMessage({{ type: 'scCardHeight', height: document.body.scrollHeight }}, '*');
+    }}
+    if (window.parent !== window) {{
+      window.addEventListener('load', sendHeight);
+      new MutationObserver(sendHeight).observe(document.body, {{ subtree: true, childList: true, attributes: true }});
+    }}
+  }})();
+  </script>
 </body>
 </html>"""
-        _SHARE_CARD_CACHE[_sc_key] = {"html": card_html, "ts": time.time()}
+        if not is_embed:
+            _SHARE_CARD_CACHE[_sc_key] = {"html": card_html, "ts": time.time()}
         return card_html, 200, {"Content-Type": "text/html; charset=utf-8"}
     except Exception as exc:
         logger.exception("[page-share-card] %s", exc)
@@ -25374,6 +25422,8 @@ def api_save_trade():
         "b":  data.get("b", ""),
         "ap": data.get("ap", ""),
         "bp": data.get("bp", ""),
+        "t1": str(data.get("t1") or "")[:40],
+        "t2": str(data.get("t2") or "")[:40],
     })
     share_id = secrets.token_urlsafe(6)
     _init_shared_trades_table()
@@ -25425,6 +25475,266 @@ def shared_trade_page(share_id: str):
     qs = urlencode({k: v for k, v in p.items() if v})
     from flask import redirect as _redirect
     return _redirect(f"/trade?{qs}", 302)
+
+
+@app.route("/trade-card/<share_id>")
+def page_trade_card(share_id: str):
+    """Standalone visual trade card for sharing."""
+    _init_shared_trades_table()
+    import json as _json
+    row = None
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT params FROM shared_trades WHERE share_id = %s", (share_id,)
+            ).fetchone()
+    except Exception as _e:
+        logger.warning("[trade-card] lookup error for %s: %s", share_id, _e)
+    if not row:
+        return "<h2 style='font-family:sans-serif;padding:40px'>Trade not found.</h2>", 404
+    try:
+        p = _json.loads(row["params"] if hasattr(row, "__getitem__") else row[0])
+    except Exception:
+        abort(404)
+
+    from utils.utils import load_players_index
+    players_index = load_players_index() or {}
+    value_table = list(get_model_value_table_cached() or [])
+    values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
+
+    # Detect if any team has SF value (best-effort)
+    vfield = "value"
+
+    def _fmt_pick(id_str):
+        parts = id_str.split("_")
+        if len(parts) < 3:
+            return id_str.replace("_", " ")
+        year = parts[0]
+        try:
+            rnd = int(parts[1])
+        except (ValueError, IndexError):
+            return id_str.replace("_", " ")
+        third = "_".join(parts[2:])
+        sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+        buckets = {"early": "Early", "mid": "Mid", "late": "Late"}
+        if third in buckets:
+            return f"{year} {rnd}{sfx} ({buckets[third]})"
+        try:
+            return f"{year} {rnd}.{str(int(third)).zfill(2)}"
+        except ValueError:
+            return id_str.replace("_", " ")
+
+    def _resolve_players(ids_str):
+        result = []
+        for pid in (ids_str or "").split(","):
+            pid = pid.strip()
+            if not pid:
+                continue
+            meta = players_index.get(pid) or {}
+            vrow = values_by_id.get(pid) or {}
+            pos = str(meta.get("pos") or vrow.get("position") or "").upper()
+            val = float(vrow.get(vfield) or 0)
+            result.append({
+                "name": meta.get("full_name") or meta.get("name") or pid,
+                "pos": pos,
+                "val": round(val),
+            })
+        return result
+
+    def _resolve_picks(ids_str):
+        return [{"name": _fmt_pick(pid.strip()), "val": 0}
+                for pid in (ids_str or "").split(",") if pid.strip()]
+
+    pos_colors = {"QB": "#6366f1", "RB": "#10b981", "WR": "#3b82f6", "TE": "#f59e0b"}
+
+    side_a = _resolve_players(p.get("a", ""))
+    side_b = _resolve_players(p.get("b", ""))
+    picks_a = _resolve_picks(p.get("ap", ""))
+    picks_b = _resolve_picks(p.get("bp", ""))
+
+    total_a = sum(pl["val"] for pl in side_a)
+    total_b = sum(pl["val"] for pl in side_b)
+    diff = total_a - total_b
+
+    t1 = p.get("t1") or "Team 1"
+    t2 = p.get("t2") or "Team 2"
+
+    if abs(diff) <= max(50, 0.03 * max(total_a, total_b, 1)):
+        verdict = "Fair Trade"
+        verdict_color = "#4ade80"
+    elif diff > 0:
+        pct = round(abs(diff) / max(total_b, 1) * 100)
+        verdict = f"{t1} favored +{abs(diff):,} ({pct}%)"
+        verdict_color = "#60a5fa"
+    else:
+        pct = round(abs(diff) / max(total_a, 1) * 100)
+        verdict = f"{t2} favored +{abs(diff):,} ({pct}%)"
+        verdict_color = "#f97316"
+
+    bar_pct = round((total_a / (total_a + total_b)) * 100) if (total_a + total_b) > 0 else 50
+
+    def _asset_html(players, picks):
+        rows = []
+        for pl in players:
+            col = pos_colors.get(pl["pos"], "#64748b")
+            pos_tag = (f'<span class="asset-pos" style="background:{col}22;color:{col}">{pl["pos"]}</span>'
+                       if pl["pos"] else "")
+            val_str = f'{pl["val"]:,}' if pl["val"] else ""
+            rows.append(
+                f'<div class="asset-row">'
+                f'{pos_tag}'
+                f'<span class="asset-name">{pl["name"]}</span>'
+                f'<span class="asset-val">{val_str}</span>'
+                f'</div>'
+            )
+        for pk in picks:
+            rows.append(
+                f'<div class="asset-row">'
+                f'<span class="asset-pos" style="background:rgba(139,92,246,.2);color:#a78bfa">PICK</span>'
+                f'<span class="asset-name">{pk["name"]}</span>'
+                f'</div>'
+            )
+        if not rows:
+            rows.append('<div class="empty-side">No assets</div>')
+        return "".join(rows)
+
+    side_a_html = _asset_html(side_a, picks_a)
+    side_b_html = _asset_html(side_b, picks_b)
+    total_a_str = f"{total_a:,}" if total_a else "0"
+    total_b_str = f"{total_b:,}" if total_b else "0"
+    is_embed = request.args.get('embed') == '1'
+    footer_style = 'display:none' if is_embed else ''
+    body_pad = '0' if is_embed else '16px'
+    share_url = request.url.split('?')[0]
+    trade_url = f"{request.host_url}t/{share_id}"
+
+    card_html = f"""<!doctype html>
+<html lang="en" id="tcRoot" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <title>Trade Card | BR Fantasy</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta property="og:title" content="BR Fantasy Trade Analysis">
+  <meta property="og:description" content="{t1} vs {t2} — {verdict}">
+  <link rel="icon" href="/static/BR_Logo.png" type="image/png">
+  <style>
+    :root{{--tc-bg:#0b1120;--tc-card:#0f1d36;--tc-hdr:#0b1628;--tc-border:rgba(255,255,255,.1);--tc-border-sub:rgba(255,255,255,.07);--tc-text:#e2e8f0;--tc-text2:#f1f5f9;--tc-muted:#94a3b8;--tc-dim:#64748b;--tc-dimmer:#475569;--tc-bar:rgba(255,255,255,.08);}}
+    [data-theme="light"]{{--tc-bg:#f1f5f9;--tc-card:#ffffff;--tc-hdr:#f8fafc;--tc-border:rgba(0,0,0,.1);--tc-border-sub:rgba(0,0,0,.06);--tc-text:#1e293b;--tc-text2:#0f172a;--tc-muted:#475569;--tc-dim:#64748b;--tc-dimmer:#94a3b8;--tc-bar:rgba(0,0,0,.07);}}
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{background:var(--tc-bg);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:{body_pad};font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;transition:background .2s}}
+    .wrap{{max-width:520px;width:100%;position:relative}}
+    .card{{background:var(--tc-card);border:1px solid var(--tc-border);border-radius:20px;overflow:hidden;transition:background .2s,border-color .2s}}
+    .card-header{{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--tc-border-sub);background:var(--tc-hdr)}}
+    .brand{{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--tc-muted)}}
+    .badge{{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.25)}}
+    .sides{{display:grid;grid-template-columns:1fr 1fr;gap:0}}
+    .side{{padding:14px 16px}}
+    .side+.side{{border-left:1px solid var(--tc-border-sub)}}
+    .side-title{{font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--tc-dim);text-transform:uppercase;margin-bottom:4px}}
+    .side-total{{font-size:22px;font-weight:900;color:var(--tc-text2);margin-bottom:10px}}
+    .bar-wrap{{padding:0 16px 14px}}
+    .bar-bg{{height:6px;background:var(--tc-bar);border-radius:3px;position:relative;overflow:hidden}}
+    .bar-fill{{position:absolute;left:0;top:0;height:100%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:3px}}
+    .bar-labels{{display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:var(--tc-dimmer);font-weight:600}}
+    .verdict{{text-align:center;padding:10px 16px 14px;font-size:13px;font-weight:700}}
+    .divider{{border-top:1px solid var(--tc-border-sub)}}
+    .footer{{padding:14px 18px;display:flex;gap:8px;justify-content:flex-end;background:var(--tc-hdr);border-top:1px solid var(--tc-border-sub)}}
+    .btn{{font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;display:inline-block}}
+    .btn-outline{{background:transparent;color:var(--tc-muted);border:1px solid var(--tc-border)}}
+    .btn-primary{{background:#3b82f6;color:#fff}}
+    .tc-toggle{{position:absolute;top:-36px;right:0;background:var(--tc-card);border:1px solid var(--tc-border);
+      color:var(--tc-muted);border-radius:8px;padding:5px 10px;font-size:14px;cursor:pointer;}}
+    .asset-row{{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--tc-border-sub)}}
+    .asset-row:last-child{{border-bottom:none}}
+    .asset-name{{flex:1;font-size:13px;font-weight:600;color:var(--tc-text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+    .asset-val{{font-size:12px;color:var(--tc-muted);flex-shrink:0}}
+    .asset-pos{{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0}}
+    .empty-side{{font-size:13px;color:var(--tc-dim);padding:8px 0}}
+    @media(max-width:480px){{.side{{padding:12px}}.side-total{{font-size:18px}}}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <button class="tc-toggle" id="tcToggle" style="{'display:none' if is_embed else ''}" title="Toggle dark/light">&#9728;</button>
+    <div class="card">
+      <div class="card-header">
+        <div class="brand">
+          <img src="/static/BR_Logo_dark.png" id="tcLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
+          BR Fantasy
+        </div>
+        <span class="badge">Trade Analysis</span>
+      </div>
+
+      <div class="sides">
+        <div class="side">
+          <div class="side-title">{t1} receives</div>
+          <div class="side-total">{total_a_str}</div>
+          {side_a_html}
+        </div>
+        <div class="side">
+          <div class="side-title">{t2} receives</div>
+          <div class="side-total">{total_b_str}</div>
+          {side_b_html}
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="bar-wrap" style="padding-top:12px">
+        <div class="bar-bg">
+          <div class="bar-fill" style="width:{bar_pct}%"></div>
+        </div>
+        <div class="bar-labels">
+          <span>{t1} favored</span><span>{t2} favored</span>
+        </div>
+      </div>
+      <div class="verdict" style="color:{verdict_color}">{verdict}</div>
+
+      <div class="footer" style="{footer_style}">
+        <button class="btn btn-outline" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')">Copy link</button>
+        <a href="{trade_url}" class="btn btn-primary">Open in Calculator</a>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--tc-dimmer);{'display:none' if is_embed else ''}">
+      <a href="/" style="color:var(--tc-dimmer);text-decoration:none">brfantasyfootball.com</a>
+    </div>
+  </div>
+  <script>
+  (function(){{
+    var root = document.getElementById('tcRoot');
+    var THEME_KEY = 'sc-card-theme';
+    function applyTheme(t){{
+      root.setAttribute('data-theme', t);
+      var logo = document.getElementById('tcLogo');
+      if (logo) logo.src = t === 'dark' ? '/static/BR_Logo_dark.png' : '/static/BR_Logo.png';
+      var btn = document.getElementById('tcToggle');
+      if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
+    }}
+    var saved = localStorage.getItem(THEME_KEY) || 'dark';
+    applyTheme(saved);
+    var toggleBtn = document.getElementById('tcToggle');
+    if (toggleBtn) {{
+      toggleBtn.addEventListener('click', function(){{
+        var t = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        localStorage.setItem(THEME_KEY, t);
+        applyTheme(t);
+      }});
+    }}
+    window.addEventListener('message', function(e){{
+      if (e.data && e.data.type === 'scSetTheme') applyTheme(e.data.theme);
+    }});
+    function sendHeight(){{
+      window.parent.postMessage({{ type: 'scCardHeight', height: document.body.scrollHeight }}, '*');
+    }}
+    if (window.parent !== window) {{
+      window.addEventListener('load', sendHeight);
+      new MutationObserver(sendHeight).observe(document.body, {{ subtree: true, childList: true, attributes: true }});
+    }}
+  }})();
+  </script>
+</body>
+</html>"""
+    return card_html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
 # ── Push notifications ─────────────────────────────────────────────────────────
