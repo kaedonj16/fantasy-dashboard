@@ -152,7 +152,7 @@
         "<div class='pp-signin-platforms'>" +
           "<button type='button' class='pp-plat-btn' data-platform='sleeper'>Sleeper</button>" +
           "<button type='button' class='pp-plat-btn' data-platform='espn'>ESPN</button>" +
-          "<button type='button' class='pp-plat-btn' data-platform='yahoo'>Yahoo</button>" +
+          "<button type='button' class='pp-plat-btn pp-plat-soon' data-platform='yahoo' disabled>Yahoo <span class='pp-soon'>Soon</span></button>" +
         "</div>" +
         "<div id='ppStep'></div>" +
         "<div class='pp-signin-err' id='ppSigninErr'></div>" +

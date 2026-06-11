@@ -15009,32 +15009,18 @@ tr.team-clickable {
 }
 .pp-plat-btn:hover { color: var(--text); }
 .pp-plat-btn.active { background: rgba(59,130,246,.1); border-color: #3b82f6; color: #3b82f6; }
+.pp-plat-btn:disabled, .pp-plat-soon { opacity: 0.5; cursor: not-allowed; }
+.pp-soon, .platform-soon {
+  display: inline-block; font-size: 8px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .04em; background: var(--border); color: var(--text-muted);
+  padding: 1px 5px; border-radius: 6px; margin-left: 4px; vertical-align: middle;
+}
+.platform-soon { font-size: 9px; }
+.platform-btn-soon { opacity: 0.5; cursor: not-allowed; }
 .pp-signin-or { text-align: center; font-size: 11px; color: var(--text-muted); margin-bottom: 12px; }
 .pp-signin-note { font-size: 11px; color: var(--text-muted); margin-top: 8px; line-height: 1.4; }
 .pp-link-btn { background: none; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer; padding: 0; }
 .pp-link-btn:hover { color: var(--text); text-decoration: underline; }
-
-/* Player page header action (Open Trade Calculator) */
-.pp-page-header .pp-header-action { flex-shrink: 0; }
-
-@media (max-width: 768px) {
-  /* The player page reuses .player-modal-header, whose mobile rules pin the last
-     child top-right for the modal's small icon buttons. The page's wide
-     "Open Trade Calculator" button needs to flow normally instead. */
-  .pp-page-header { flex-wrap: wrap; align-items: center; }
-  .pp-page-header .player-modal-title-section { padding-top: 0 !important; padding-right: 0 !important; }
-  .pp-page-header .player-modal-headshot { width: 64px !important; height: 72px !important; }
-  .pp-page-header .pp-header-action {
-    position: static !important; top: auto !important; right: auto !important;
-    width: 100%; margin-top: 10px; order: 3;
-  }
-  .pp-page-header .pp-header-action .otc-btn { display: block; width: 100%; text-align: center; }
-}
-
-@media (max-width: 600px) {
-  .page-shell-narrow { padding-left: 10px; padding-right: 10px; }
-  .pp-similar { grid-template-columns: 1fr; }
-}
 
 @media (max-width: 600px) {
   .pp-similar { grid-template-columns: 1fr; }

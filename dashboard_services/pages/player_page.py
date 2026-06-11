@@ -266,7 +266,7 @@ def build_player_page_body(
       </nav>
 
       <div class="card central" style="max-width:760px;">
-        <div class="player-modal-header pp-page-header" style="border-bottom:1px solid var(--border);">
+        <div class="player-modal-header" style="border-bottom:1px solid var(--border);">
           <div class="player-modal-headshot-container">{headshot_html}</div>
           <div class="player-modal-title-section">
             <div class="player-modal-title-text">
@@ -274,7 +274,7 @@ def build_player_page_body(
               <div class="player-modal-meta">{meta_line}</div>
             </div>
           </div>
-          <div class="pp-header-action">
+          <div style="flex-shrink:0;">
             <a href="/trade" class="otc-btn otc-btn-primary" style="text-decoration:none;white-space:nowrap;">Open Trade Calculator</a>
           </div>
         </div>
