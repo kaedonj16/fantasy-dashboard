@@ -25397,15 +25397,26 @@ def shared_trade_page(share_id: str):
     """Redirect a short trade share URL to /trade with its params."""
     _init_shared_trades_table()
     import json as _json
+    row = None
     try:
         from dashboard_services.db import get_conn
-        row = get_conn().execute(
-            "SELECT params FROM shared_trades WHERE share_id = %s", (share_id,)
-        ).fetchone()
-    except Exception:
-        row = None
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT params FROM shared_trades WHERE share_id = %s", (share_id,)
+            ).fetchone()
+    except Exception as _e:
+        logger.warning("[shared_trade] lookup error for %s: %s", share_id, _e)
     if not row:
-        abort(404)
+        # Render a friendly page instead of a bare 404
+        body = """
+        <div style="max-width:520px;margin:60px auto;text-align:center;padding:0 16px;">
+          <div style="font-size:48px;margin-bottom:16px;">🏈</div>
+          <h2 style="font-size:22px;font-weight:700;margin:0 0 8px;">Trade link not found</h2>
+          <p style="color:var(--text-muted);margin:0 0 24px;">This link may have expired or the trade was never saved.</p>
+          <a href="/trade" style="display:inline-block;padding:10px 24px;background:var(--accent,#3b82f6);color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">Open Trade Calculator</a>
+        </div>"""
+        from app import render_page
+        return render_page("Trade Not Found | BR Fantasy", None, "trade", body), 404
     try:
         p = _json.loads(row["params"] if hasattr(row, "__getitem__") else row[0])
     except Exception:

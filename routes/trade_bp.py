@@ -105,8 +105,8 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
           </h2>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
             <div style="display:flex;gap:10px;align-items:flex-start;">
-              <span style="width:22px;height:22px;border-radius:6px;background:#f59e0b20;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
-                <i class="fa-solid fa-layer-group" style="color:#f59e0b;font-size:10px;"></i>
+              <span style="width:28px;height:28px;border-radius:7px;background:#f59e0b35;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
+                <i class="fa-solid fa-layer-group" style="color:#f59e0b;font-size:13px;"></i>
               </span>
               <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
                 Don't trade purely by total value — roster construction matters. Two solid
@@ -114,8 +114,8 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
               </p>
             </div>
             <div style="display:flex;gap:10px;align-items:flex-start;">
-              <span style="width:22px;height:22px;border-radius:6px;background:#ef444420;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
-                <i class="fa-solid fa-gem" style="color:#ef4444;font-size:10px;"></i>
+              <span style="width:28px;height:28px;border-radius:7px;background:#ef444435;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
+                <i class="fa-solid fa-gem" style="color:#ef4444;font-size:13px;"></i>
               </span>
               <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
                 Account for positional scarcity. An elite tight end or superflex QB is harder
@@ -123,8 +123,8 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
               </p>
             </div>
             <div style="display:flex;gap:10px;align-items:flex-start;">
-              <span style="width:22px;height:22px;border-radius:6px;background:#3b82f620;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
-                <i class="fa-solid fa-clock-rotate-left" style="color:#3b82f6;font-size:10px;"></i>
+              <span style="width:28px;height:28px;border-radius:7px;background:#3b82f635;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
+                <i class="fa-solid fa-clock-rotate-left" style="color:#3b82f6;font-size:13px;"></i>
               </span>
               <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
                 In dynasty, weigh your timeline. Contenders should pay a premium for win-now
@@ -132,8 +132,8 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
               </p>
             </div>
             <div style="display:flex;gap:10px;align-items:flex-start;">
-              <span style="width:22px;height:22px;border-radius:6px;background:#10b98120;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
-                <i class="fa-solid fa-magnifying-glass-chart" style="color:#10b981;font-size:10px;"></i>
+              <span style="width:28px;height:28px;border-radius:7px;background:#10b98135;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
+                <i class="fa-solid fa-magnifying-glass-chart" style="color:#10b981;font-size:13px;"></i>
               </span>
               <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
                 Use real trade comparisons to sanity-check a deal — if similar trades have
@@ -238,6 +238,14 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         get_nfl_state, get_viewer_session_for_league, render_page,
     )
     user_id = session.get("viewer_username") or None
+    # Redirect to league-specific URL when user is logged in but hit the public /trade path
+    if not league_id and user_id:
+        _lid = session.get("last_league_id") or session.get("viewer_league_id") or None
+        _plt = session.get("last_platform") or session.get("viewer_platform") or "sleeper"
+        _ssn = session.get("last_season") or session.get("viewer_season") or None
+        if _lid and _ssn:
+            from flask import redirect as _redir
+            return _redir(f"/{_plt}/{_ssn}/{_lid}/trade", 302)
     if league_id:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         league_id_safe = ctx.get("league_id") or league_id
