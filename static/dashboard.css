@@ -7136,10 +7136,16 @@ select:focus {
   margin-bottom: 20px;
 }
 .rivalry-chip {
+  display: inline-flex; align-items: center; gap: 5px;
   font-size: 11px; font-weight: 600; color: var(--text-muted);
   border: 1px solid var(--border); border-radius: 99px; padding: 4px 12px;
   background: var(--bg, #f8fafc);
   white-space: nowrap;
+}
+/* Neutral chip icons: override the baked-in color filter to match muted text */
+.rivalry-chip-icon {
+  filter: brightness(0) saturate(100%) invert(55%) sepia(8%) saturate(400%) hue-rotate(180deg) brightness(95%) contrast(90%) !important;
+  opacity: 0.85;
 }
 .rivalry-chip-streak {
   color: #d97706; border-color: rgba(217,119,6,.3);
