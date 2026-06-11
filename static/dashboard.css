@@ -8289,7 +8289,7 @@ select:focus {
   border-radius: var(--radius);
   padding: 20px;
   overflow: hidden;
-  max-height: 517px;
+  max-height: 608px;
   display: flex;
   flex-direction: column;
 }
