@@ -25586,7 +25586,12 @@ def page_trade_card(share_id: str):
     t1 = p.get("t1") or "Team 1"
     t2 = p.get("t2") or "Team 2"
 
-    baseline = max(total_a, total_b, 1.0)
+    # Use depth-adjusted effective totals if saved, otherwise fall back to raw totals
+    eff_a = float(p.get("eff_a") or 0) or float(total_a)
+    eff_b = float(p.get("eff_b") or 0) or float(total_b)
+    eff_diff = eff_a - eff_b
+
+    baseline = max(eff_a, eff_b, 1.0)
     if baseline >= 600:
         _fair_pct = 0.05
     elif baseline >= 300:
@@ -25595,22 +25600,17 @@ def page_trade_card(share_id: str):
         _fair_pct = 0.10
     fair_band = max(baseline * _fair_pct, 25.0)
 
-    if abs(diff) <= fair_band:
+    if abs(eff_diff) <= fair_band:
         verdict = "Fair Trade"
         verdict_color = "#4ade80"
-    elif diff > 0:
-        pct = round(abs(diff) / max(total_b, 1) * 100)
-        verdict = f"{t1} favored +{abs(diff):,} ({pct}%)"
+    elif eff_diff > 0:
+        pct = round(abs(eff_diff) / max(eff_b, 1) * 100)
+        verdict = f"{t1} favored +{round(abs(eff_diff)):,} ({pct}%)"
         verdict_color = "#60a5fa"
     else:
-        pct = round(abs(diff) / max(total_a, 1) * 100)
-        verdict = f"{t2} favored +{abs(diff):,} ({pct}%)"
+        pct = round(abs(eff_diff) / max(eff_a, 1) * 100)
+        verdict = f"{t2} favored +{round(abs(eff_diff)):,} ({pct}%)"
         verdict_color = "#f97316"
-
-    # Use depth-adjusted effective totals if saved, otherwise fall back to raw totals
-    eff_a = float(p.get("eff_a") or 0) or float(total_a)
-    eff_b = float(p.get("eff_b") or 0) or float(total_b)
-    eff_diff = eff_a - eff_b
     max_side = max(abs(eff_a), abs(eff_b), 1.0)
     normalized_diff = max(-1.0, min(1.0, eff_diff / max_side))
     # leftPct: 50% = center (fair), <50 = Team 1 favored, >50 = Team 2 favored
@@ -25647,8 +25647,9 @@ def page_trade_card(share_id: str):
 
     side_a_html = _asset_html(side_a, picks_a)
     side_b_html = _asset_html(side_b, picks_b)
-    total_a_str = f"{total_a:,}" if total_a else "0"
-    total_b_str = f"{total_b:,}" if total_b else "0"
+    # Show depth-adjusted totals in headers when available (matches what the calc showed)
+    total_a_str = f"{round(eff_a):,}" if eff_a else (f"{total_a:,}" if total_a else "0")
+    total_b_str = f"{round(eff_b):,}" if eff_b else (f"{total_b:,}" if total_b else "0")
     is_embed = request.args.get('embed') == '1'
     copy_link_style = 'display:none' if is_embed else ''
     body_pad = '0' if is_embed else '16px'
@@ -25682,7 +25683,7 @@ def page_trade_card(share_id: str):
                 pi_html = f"""
       <div class="divider"></div>
       <div class="pi-section" id="piSection" style="display:none">
-        <div class="pi-title">Playoff Impact (your team)</div>
+        <div class="pi-title">Playoff Impact · {t1}</div>
         <div class="pi-grid">{cells}</div>
       </div>
       <div class="pi-toggle-wrap">
