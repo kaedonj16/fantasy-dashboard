@@ -1676,10 +1676,18 @@ _AM_JS = r"""
   function updateVolHeader() {
     const th = document.querySelector('#amTable thead th.am-games');
     if (th) {
-      const lbl = VOL_LABELS[state.volCol] || 'G';
+      let lbl, title;
+      if (state.weekRange) {
+        const wkMap = { last4: 'W4', last8: 'W8', last12: 'W12', custom: 'Wks' };
+        lbl = wkMap[state.weekRange] || 'Wks';
+        title = 'Weeks played in selected range';
+      } else {
+        lbl = VOL_LABELS[state.volCol] || 'G';
+        title = { games: 'Games played', total_pass_att: 'Pass attempts', total_carries: 'Carries',
+                  total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
+      }
       th.textContent = lbl;
-      th.title = { games: 'Games played', total_pass_att: 'Pass attempts', total_carries: 'Carries',
-                   total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
+      th.title = title;
     }
     const mh = document.getElementById('amMetricHeader');
     if (mh) mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '–';
@@ -1913,6 +1921,7 @@ _AM_JS = r"""
       state.minVol = '';
       if (minGamesSel) minGamesSel.value = '';
       updateVolCtrl();
+      updateVolHeader();
       state.page = 0; fetchData();
     });
   }
@@ -2039,7 +2048,11 @@ _AM_JS = r"""
 
     function syncLabel() {
       const opt = metricSel.options[metricSel.selectedIndex];
-      label.textContent = opt ? opt.textContent : '';
+      const txt = opt ? opt.textContent : '';
+      const isWeekly = opt && new Set(cfg.weeklyMetrics || []).has(opt.value);
+      label.innerHTML = txt + (isWeekly
+        ? ' <span class="am-sp-weekly-badge" title="Supports week-range filtering">W</span>'
+        : '');
     }
     syncLabel();
 
