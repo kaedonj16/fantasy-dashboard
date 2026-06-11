@@ -25895,7 +25895,7 @@ def page_trade_card(share_id: str):
       window.addEventListener('load', function(){{
         sendHeight();
         var _piEl = document.getElementById('piSection');
-        if (_piEl) {{
+        if (_piEl && {str(_pi_default).lower()}) {{
           window.parent.postMessage({{ type: 'scHasPi', visible: _piEl.style.display !== 'none' }}, '*');
         }}
       }});
