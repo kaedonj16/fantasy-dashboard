@@ -129,7 +129,7 @@
         try { saved = JSON.parse(localStorage.getItem("saved_viewer") || "null"); } catch (_) {}
         if (saved && saved.league_id && saved.platform) {
           _goToLeaguePlayer(saved.platform, saved.season || window.__ppSeason || new Date().getFullYear(),
-                            saved.league_id, pid);
+                            saved.league_id, pid, name);
           return;
         }
       }
@@ -137,9 +137,10 @@
     });
   }
 
-  function _goToLeaguePlayer(platform, season, leagueId, pid) {
-    window.location.href = "/" + platform + "/" + season + "/" + leagueId +
-      "/players?player=" + encodeURIComponent(pid);
+  function _goToLeaguePlayer(platform, season, leagueId, pid, name) {
+    var qs = "?player=" + encodeURIComponent(pid);
+    if (name) qs += "&player_name=" + encodeURIComponent(name);
+    window.location.href = "/" + platform + "/" + season + "/" + leagueId + "/dashboard" + qs;
   }
 
   function openSignInModal(pid, name) {
@@ -217,8 +218,7 @@
       }
       window._isSignedIn = true;
       overlay.remove();
-      // Navigate to the league players page with this player pre-selected.
-      _goToLeaguePlayer(platform, season, leagueId, pid);
+      _goToLeaguePlayer(platform, season, leagueId, pid, name);
     }
 
     if (document.getElementById("ppContinue")) {
