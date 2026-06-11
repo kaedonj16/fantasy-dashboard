@@ -25494,11 +25494,20 @@ def shared_trade_page(share_id: str):
     except Exception:
         abort(404)
     from urllib.parse import urlencode
-    # Pass player/pick IDs, team names, and league context so the calc loads fully
-    _CALC_KEYS = {"a", "b", "ap", "bp", "t1", "t2", "league_id", "season", "platform", "roster_id"}
-    qs = urlencode({k: v for k, v in p.items() if k in _CALC_KEYS and v})
     from flask import redirect as _redirect
-    return _redirect(f"/trade?{qs}", 302)
+    # Player/pick params that should always survive the redirect
+    _PLAY_KEYS = {"a", "b", "ap", "bp", "t1", "t2", "roster_id"}
+    play_qs = urlencode({k: v for k, v in p.items() if k in _PLAY_KEYS and v})
+    # If the shared trade has full league context, go straight to the league URL
+    # so logged-in users don't hit a second redirect that strips the player params.
+    _plt = p.get("platform") or ""
+    _lid = p.get("league_id") or ""
+    _ssn = p.get("season") or ""
+    if _plt and _lid and _ssn:
+        return _redirect(f"/{_plt}/{_ssn}/{_lid}/trade?{play_qs}", 302)
+    _ALL_KEYS = _PLAY_KEYS | {"league_id", "season", "platform"}
+    all_qs = urlencode({k: v for k, v in p.items() if k in _ALL_KEYS and v})
+    return _redirect(f"/trade?{all_qs}", 302)
 
 
 @app.route("/trade-card/<share_id>")
@@ -25866,7 +25875,7 @@ def page_trade_card(share_id: str):
 
       <div class="footer">
         <button class="btn btn-outline" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')" style="{copy_link_style}">Copy link</button>
-        <a href="{trade_url}" class="btn btn-primary" target="_top">Open in Calculator</a>
+        <a href="{trade_url}" class="btn btn-primary" target="_blank" rel="noopener">Open in Calculator</a>
       </div>
     </div>
     <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--tc-dimmer);{'display:none' if is_embed else ''}">
