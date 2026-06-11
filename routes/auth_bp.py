@@ -123,6 +123,62 @@ def set_viewer():
     return redirect(url_for("page_dashboard", platform=platform, season=season, league_id=league_id))
 
 
+# ── Full sign-in for a league (JSON, no navigation) ──────────────────────────
+
+@auth_bp.route("/api/sign-in-league", methods=["POST"])
+def api_sign_in_league():
+    """Fully sign a viewer into a league and return JSON (no redirect).
+
+    Same resolution as /set-viewer (username/team -> roster, full session via
+    save_viewer_session), so the in-page "View in your league" flow leaves the
+    user as genuinely logged in. ESPN viewer matching is optional, mirroring the
+    home flow.
+    """
+    from app import (
+        _background_seed_user, get_league_ctx_from_cache,
+        resolve_viewer_for_league, save_viewer_session,
+    )
+    data = request.get_json(force=True) or {}
+    platform  = (data.get("platform") or "sleeper").strip().lower()
+    league_id = str(data.get("league_id") or "").strip()
+    season    = int(data.get("season") or datetime.now().year)
+    username  = str(data.get("username") or data.get("team_name") or "").strip()
+
+    if not league_id:
+        return jsonify({"ok": False, "error": "league_id required"}), 400
+
+    try:
+        ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
+    except Exception as exc:
+        logger.warning("[sign-in-league] league load failed: %s", exc)
+        return jsonify({"ok": False, "error": "Could not load that league."}), 400
+
+    viewer = None
+    if username:
+        viewer = resolve_viewer_for_league(ctx.get("users") or [], ctx.get("rosters") or [], username)
+
+    if not viewer:
+        if platform == "espn":
+            # ESPN doesn't have Sleeper-style usernames; a match is optional.
+            session.permanent = True
+            session["viewer_username"] = username or "ESPN Manager"
+            return jsonify({"ok": True, "matched": False})
+        return jsonify({"ok": False,
+                        "error": "Could not match that username to a team in this league."}), 404
+
+    save_viewer_session(viewer)
+    if platform == "sleeper" and viewer.get("viewer_user_id"):
+        _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
+
+    return jsonify({
+        "ok": True, "matched": True,
+        "username":  viewer.get("viewer_username"),
+        "user_id":   viewer.get("viewer_user_id"),
+        "roster_id": viewer.get("viewer_roster_id"),
+        "team_name": viewer.get("viewer_team_name"),
+    })
+
+
 # ── Quick-set viewer from localStorage (no league context fetch) ─────────────
 
 @auth_bp.route("/api/quick-set-viewer", methods=["POST"])

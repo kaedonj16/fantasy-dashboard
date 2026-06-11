@@ -166,17 +166,40 @@
     var stepEl = document.getElementById("ppStep");
     var errEl = document.getElementById("ppSigninErr");
 
-    function finishSignIn(platform, leagueId, username, teamName) {
+    var signingIn = false;
+    async function finishSignIn(platform, leagueId, username, teamName) {
+      if (signingIn) return;
+      signingIn = true;
+      errEl.textContent = "Signing in…";
       try {
-        localStorage.setItem("saved_viewer", JSON.stringify({
-          username: username || "", team_name: teamName || "", platform: platform,
-          season: season, league_id: leagueId, ts: Date.now()
-        }));
-      } catch (_) {}
-      try {
-        fetch("/api/quick-set-viewer", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: username || teamName || "", team_name: teamName || "" }) });
-      } catch (_) {}
+        var res = await fetch("/api/sign-in-league", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            platform: platform, league_id: leagueId, season: season,
+            username: username || teamName || "",
+          }),
+        });
+        var data = await res.json();
+        if (!res.ok || !data.ok) {
+          errEl.textContent = data.error || "Sign-in failed. Try again.";
+          signingIn = false;
+          return;
+        }
+        try {
+          localStorage.setItem("saved_viewer", JSON.stringify({
+            username: data.username || username || "",
+            team_name: data.team_name || teamName || "",
+            user_id: data.user_id || "", roster_id: data.roster_id || "",
+            platform: platform, season: season, league_id: leagueId, ts: Date.now()
+          }));
+        } catch (_) {}
+      } catch (e) {
+        errEl.textContent = "Sign-in failed. Try again.";
+        signingIn = false;
+        return;
+      }
+      // Genuinely signed in now: reflect it for the rest of this page too.
+      window._isSignedIn = true;
       overlay.remove();
       if (typeof openPlayerModal === "function") {
         openPlayerModal(pid, name, { force: true, platform: platform, season: season, leagueId: leagueId });

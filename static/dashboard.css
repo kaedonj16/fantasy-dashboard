@@ -15014,6 +15014,28 @@ tr.team-clickable {
 .pp-link-btn { background: none; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer; padding: 0; }
 .pp-link-btn:hover { color: var(--text); text-decoration: underline; }
 
+/* Player page header action (Open Trade Calculator) */
+.pp-page-header .pp-header-action { flex-shrink: 0; }
+
+@media (max-width: 768px) {
+  /* The player page reuses .player-modal-header, whose mobile rules pin the last
+     child top-right for the modal's small icon buttons. The page's wide
+     "Open Trade Calculator" button needs to flow normally instead. */
+  .pp-page-header { flex-wrap: wrap; align-items: center; }
+  .pp-page-header .player-modal-title-section { padding-top: 0 !important; padding-right: 0 !important; }
+  .pp-page-header .player-modal-headshot { width: 64px !important; height: 72px !important; }
+  .pp-page-header .pp-header-action {
+    position: static !important; top: auto !important; right: auto !important;
+    width: 100%; margin-top: 10px; order: 3;
+  }
+  .pp-page-header .pp-header-action .otc-btn { display: block; width: 100%; text-align: center; }
+}
+
+@media (max-width: 600px) {
+  .page-shell-narrow { padding-left: 10px; padding-right: 10px; }
+  .pp-similar { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 600px) {
   .pp-similar { grid-template-columns: 1fr; }
 }
