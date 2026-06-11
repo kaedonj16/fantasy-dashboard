@@ -869,11 +869,11 @@ def _build_rivalry_card(
 
               // Stat chips
               html += '<div class="rivalry-chips">'
-                + '<span class="rivalry-chip">⚔️ ' + games.length + ' meetings</span>'
-                + '<span class="rivalry-chip">🏆 Total pts: ' + d.pts_a.toFixed(1) + ' – ' + d.pts_b.toFixed(1) + '</span>'
-                + '<span class="rivalry-chip">📊 Avg margin: ' + avgMargin.toFixed(1) + '</span>'
-                + (streakLen > 1 ? '<span class="rivalry-chip rivalry-chip-streak">🔥 ' + streakName + ' won ' + streakLen + ' straight</span>' : '')
-                + '<span class="rivalry-chip rivalry-chip-blowout">💥 ' + bWinner + ' by ' + bMargin.toFixed(1) + ' (' + blowout.season + ' wk ' + blowout.week + ')</span>'
+                + '<span class="rivalry-chip">' + games.length + ' meetings</span>'
+                + '<span class="rivalry-chip">Total pts: ' + d.pts_a.toFixed(1) + ' – ' + d.pts_b.toFixed(1) + '</span>'
+                + '<span class="rivalry-chip">Avg margin: ' + avgMargin.toFixed(1) + '</span>'
+                + (streakLen > 1 ? '<span class="rivalry-chip rivalry-chip-streak">' + streakName + ' won ' + streakLen + ' straight</span>' : '')
+                + '<span class="rivalry-chip rivalry-chip-blowout">Biggest blowout: ' + bWinner + ' by ' + bMargin.toFixed(1) + ' (' + blowout.season + ' wk ' + blowout.week + ')</span>'
                 + '</div>';
 
               // Matchup history table
