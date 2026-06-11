@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-06-11",
+        "tag": "update",
+        "text": "We've moved to brfantasyfootball.com — same app, new home. Update your bookmarks!",
+        "link": "/"
+    },
+    {
         "date": "2026-06-10",
         "tag": "feature",
         "text": "Advanced Metrics: Sort by any column, filter by team, and compare up to 4 metrics side by side. Pin players to keep them at the top of the leaderboard. Year-over-year trend arrows show at a glance whether a player improved or declined from last season.",
