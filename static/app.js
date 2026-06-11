@@ -664,9 +664,6 @@ function emptyState(container, message, iconClass) {
     overlay.id = 'scm-overlay';
     overlay.className = 'scm-overlay';
     var frameSrc = cardUrl + (cardUrl.includes('?') ? '&' : '?') + 'embed=1';
-    var calcBtnHtml = calcUrl
-      ? '<a class="scm-btn scm-btn-calc" id="scmCalcBtn" href="' + calcUrl + '" target="_blank" rel="noopener">Open in Calc</a>'
-      : '';
     overlay.innerHTML =
       '<div class="scm-dialog">' +
         '<div class="scm-toolbar">' +
@@ -674,7 +671,6 @@ function emptyState(container, message, iconClass) {
             (_scmTheme === 'dark' ? '&#9728;' : '&#9790;') +
           '</button>' +
           '<span class="scm-toolbar-spacer"></span>' +
-          calcBtnHtml +
           '<button class="scm-btn" id="scmDownloadBtn">Download</button>' +
           '<button class="scm-btn scm-btn-primary" id="scmShareBtn">Copy link</button>' +
           '<button class="scm-btn scm-close-btn" id="scmCloseBtn" aria-label="Close">&#x2715;</button>' +
@@ -1881,6 +1877,8 @@ window.initTradePage = function initTradePage(root = document) {
       roster_id: rosterId,
       platform,
       pi: (state._lastPiData && state._lastPiData.available) ? JSON.stringify(state._lastPiData) : '',
+      eff_a: state._lastEffA || 0,
+      eff_b: state._lastEffB || 0,
     };
 
     function _flashSuccess() {
@@ -3058,6 +3056,8 @@ window.initTradePage = function initTradePage(root = document) {
       const diff = Number(data.diff) || 0;
       const aEff = data.side_a ? Number(data.side_a.effective_total) || 0 : 0;
       const bEff = data.side_b ? Number(data.side_b.effective_total) || 0 : 0;
+      state._lastEffA = aEff;
+      state._lastEffB = bEff;
 
       if (sideATotalEl) sideATotalEl.textContent = formatValue(aEff);
       if (sideBTotalEl) sideBTotalEl.textContent = formatValue(bEff);

@@ -18954,7 +18954,7 @@ button:disabled {
 }
 .bulletin-item {
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border-subtle, #1e293b);
+  border-bottom: 1px solid var(--grid, #1e293b);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -19000,7 +19000,7 @@ button:disabled {
 
 /* ── Feature 13: Share Card ──────────────────────────────────────────────────*/
 .share-card {
-  background: var(--surface, #1e293b);
+  background: var(--card, #1e293b);
   border: 1px solid var(--border, #334155);
   border-radius: 16px;
   overflow: hidden;
@@ -19088,7 +19088,7 @@ button:disabled {
   align-items: center;
   gap: 8px;
   padding: 5px 0;
-  border-bottom: 1px solid var(--border-subtle, #1e293b);
+  border-bottom: 1px solid var(--grid, #1e293b);
 }
 .sc-player-row:last-child { border-bottom: none; }
 .sc-pos-pill {
@@ -19125,7 +19125,7 @@ button:disabled {
   transition: background .15s;
   white-space: nowrap;
 }
-.sc-copy-btn:hover { background: var(--hover, #334155); }
+.sc-copy-btn:hover { background: var(--grid, #334155); }
 
 /* Positional ranking grid */
 .sc-pos-ranks {
