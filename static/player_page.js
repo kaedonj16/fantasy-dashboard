@@ -144,9 +144,96 @@
         window.location.href = "/" + saved.platform + "/" + saved.season + "/" +
           saved.league_id + "/players?" + q;
       } else {
-        // No saved league: open the modal on the guest players page.
-        window.location.href = "/players?" + q;
+        // No saved league: open a sign-in modal (username -> pick league -> go).
+        openSignInModal(pid, name);
       }
+    });
+  }
+
+  // Sign-in modal: Sleeper username -> league picker -> set viewer and land on
+  // the league players page with this player's modal open.
+  function openSignInModal(pid, name) {
+    if (document.getElementById("ppSignin")) return;
+    var season = window.__ppSeason || new Date().getFullYear();
+    var overlay = document.createElement("div");
+    overlay.id = "ppSignin";
+    overlay.className = "pp-signin-overlay";
+    overlay.innerHTML =
+      "<div class='pp-signin-box' role='dialog' aria-label='Sign in'>" +
+        "<h3 class='pp-signin-title'>Sign in to your league</h3>" +
+        "<p class='pp-signin-sub'>Enter your Sleeper username to see " + escapeHtml(name) +
+          "'s value in your league.</p>" +
+        "<input class='pp-signin-input' id='ppSigninUser' type='text' placeholder='Sleeper username' autocomplete='username'>" +
+        "<div id='ppSigninLeagueWrap' style='display:none;'>" +
+          "<select class='pp-signin-select' id='ppSigninLeague'></select>" +
+        "</div>" +
+        "<div class='pp-signin-err' id='ppSigninErr'></div>" +
+        "<div class='pp-signin-actions'>" +
+          "<button class='otc-btn otc-btn-primary' id='ppSigninGo' style='flex:1;'>Find my leagues</button>" +
+          "<button class='otc-btn' id='ppSigninCancel'>Cancel</button>" +
+        "</div>" +
+        "<div class='pp-signin-foot'>Use ESPN or Yahoo? <a href='/?next=" +
+          encodeURIComponent("/players?player=" + pid + "&player_name=" + name) + "'>Sign in here</a></div>" +
+      "</div>";
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) overlay.remove(); });
+    document.getElementById("ppSigninCancel").addEventListener("click", function () { overlay.remove(); });
+
+    var userEl = document.getElementById("ppSigninUser");
+    var wrap = document.getElementById("ppSigninLeagueWrap");
+    var sel = document.getElementById("ppSigninLeague");
+    var err = document.getElementById("ppSigninErr");
+    var go = document.getElementById("ppSigninGo");
+    var stage = "lookup";
+    userEl.focus();
+
+    async function doLookup() {
+      var u = (userEl.value || "").trim();
+      if (!u) { err.textContent = "Enter your username."; return; }
+      err.textContent = "";
+      go.disabled = true; go.textContent = "Loading…";
+      try {
+        var res = await fetch("/api/sleeper-user-leagues?username=" + encodeURIComponent(u));
+        var data = await res.json();
+        if (!res.ok || !data.ok || !(data.leagues || []).length) {
+          throw new Error(data.error || "No leagues found for that username.");
+        }
+        sel.innerHTML = data.leagues.map(function (lg) {
+          return "<option value='" + escapeHtml(lg.league_id) + "'>" + escapeHtml(lg.label || lg.name || lg.league_id) + "</option>";
+        }).join("");
+        wrap.style.display = "block";
+        stage = "go";
+        go.textContent = "View " + name;
+      } catch (e2) {
+        err.textContent = e2.message || "Could not load leagues.";
+        go.textContent = "Find my leagues";
+      } finally {
+        go.disabled = false;
+      }
+    }
+
+    function doGo() {
+      var u = (userEl.value || "").trim();
+      var lid = sel.value;
+      if (!u || !lid) { err.textContent = "Pick a league."; return; }
+      var next = "/sleeper/" + season + "/" + lid + "/players?player=" +
+        encodeURIComponent(pid) + "&player_name=" + encodeURIComponent(name);
+      var form = document.createElement("form");
+      form.method = "POST";
+      form.action = "/set-viewer";
+      form.innerHTML =
+        "<input type='hidden' name='platform' value='sleeper'>" +
+        "<input type='hidden' name='season' value='" + season + "'>" +
+        "<input type='hidden' name='league_id' value='" + escapeHtml(lid) + "'>" +
+        "<input type='hidden' name='username' value='" + escapeHtml(u) + "'>" +
+        "<input type='hidden' name='next' value='" + escapeHtml(next) + "'>";
+      document.body.appendChild(form);
+      form.submit();
+    }
+
+    go.addEventListener("click", function () { stage === "lookup" ? doLookup() : doGo(); });
+    userEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); stage === "lookup" ? doLookup() : doGo(); }
     });
   }
 
