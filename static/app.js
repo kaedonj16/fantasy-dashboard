@@ -170,7 +170,37 @@ document.body.scrollTop = 0;
       isOpen = true;
       wrap.classList.add('is-open');
       trigger.setAttribute('aria-expanded', 'true');
+
+      // Reset flip so we can measure correctly
+      list.style.top    = '';
+      list.style.bottom = '';
+      list.style.maxHeight = '';
       list.style.display = 'block';
+
+      // Smart flip: position above if not enough room below
+      var rect    = trigger.getBoundingClientRect();
+      var vp      = window.innerHeight;
+      var spaceBelow = vp - rect.bottom - 8;
+      var spaceAbove = rect.top - 8;
+      var maxH    = 280;
+
+      if (spaceBelow >= Math.min(maxH, 120)) {
+        // Enough room below — standard position
+        list.style.top    = 'calc(100% + 4px)';
+        list.style.bottom = 'auto';
+        list.style.maxHeight = Math.min(maxH, spaceBelow) + 'px';
+      } else if (spaceAbove > spaceBelow) {
+        // More room above — flip upward
+        list.style.top    = 'auto';
+        list.style.bottom = 'calc(100% + 4px)';
+        list.style.maxHeight = Math.min(maxH, spaceAbove) + 'px';
+      } else {
+        // Default to below with available space
+        list.style.top    = 'calc(100% + 4px)';
+        list.style.bottom = 'auto';
+        list.style.maxHeight = Math.max(spaceBelow, 80) + 'px';
+      }
+
       requestAnimationFrame(function () { list.classList.add('is-visible'); });
       var opts = getEnabled();
       focIdx = opts.findIndex(function (el) { return el.dataset.value === sel.value; });
