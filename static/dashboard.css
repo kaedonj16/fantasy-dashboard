@@ -19156,3 +19156,120 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .ld-need-pill--neutral{ background: rgba(100,116,139,.12); color: #64748b; }
 .ld-need-pill--depth  { background: rgba(16,185,129,.10); color: #34d399; }
 .ld-need-pill--stacked{ background: rgba(99,102,241,.12); color: #818cf8; }
+
+/* ── Affiliate CTA (player pages) ────────────────────────────────────────── */
+.pp-affiliate-cta {
+  background: linear-gradient(135deg, rgba(59,130,246,.15), rgba(139,92,246,.15));
+  border: 1px solid rgba(99,102,241,.3);
+  border-radius: 10px; padding: 14px 16px; margin: 20px 0;
+}
+.pp-affiliate-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pp-affiliate-label { font-size: 14px; font-weight: 600; color: var(--text, #e2e8f0); }
+.pp-affiliate-btn {
+  display: inline-block; padding: 8px 18px;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  color: #fff; font-size: 13px; font-weight: 700; border-radius: 7px;
+  text-decoration: none; white-space: nowrap;
+}
+.pp-affiliate-btn:hover { opacity: .9; }
+
+/* ── Dynasty Trade Value Chart ───────────────────────────────────────────── */
+.dvt-page { max-width: 900px; margin: 0 auto; padding: 16px 16px 48px; }
+.dvt-hero { margin-bottom: 20px; }
+.dvt-title { font-size: clamp(20px, 4vw, 28px); font-weight: 800; color: var(--text, #e2e8f0); margin: 0 0 8px; }
+.dvt-subtitle { font-size: 14px; color: var(--text-muted, #94a3b8); margin: 0; line-height: 1.5; }
+.dvt-subtitle a { color: #38bdf8; }
+.dvt-controls { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+.dvt-pos-filter { display: flex; gap: 6px; flex-wrap: wrap; }
+.dvt-pos-btn {
+  padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border, #1e3a5f);
+  background: var(--card-bg, #1a2744); color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+}
+.dvt-pos-btn-active { border-color: #38bdf8; color: #38bdf8; background: rgba(56,189,248,.1); }
+.dvt-search {
+  flex: 1; min-width: 160px; max-width: 260px;
+  padding: 6px 10px; border-radius: 7px;
+  border: 1px solid var(--border, #1e3a5f);
+  background: var(--card-bg, #1a2744); color: var(--text, #e2e8f0);
+  font-size: 13px;
+}
+.dvt-table-wrap { overflow-x: auto; }
+.dvt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dvt-table th { padding: 8px 10px; text-align: left; color: var(--text-muted, #94a3b8); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border, #1e3a5f); }
+.dvt-table td { padding: 8px 10px; border-bottom: 1px solid rgba(30,58,95,.5); vertical-align: middle; }
+.dvt-table tr:hover td { background: rgba(255,255,255,.03); }
+.dvt-rank { color: var(--text-muted, #94a3b8); width: 36px; text-align: center; }
+.dvt-name-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dvt-player-link { color: var(--text, #e2e8f0); text-decoration: none; font-weight: 600; }
+.dvt-player-link:hover { color: #38bdf8; text-decoration: underline; }
+.dvt-pos-badge { font-size: 10px; font-weight: 700; color: #fff; border-radius: 4px; padding: 1px 5px; }
+.dvt-team { font-size: 11px; color: var(--text-muted, #94a3b8); }
+.dvt-val { text-align: right; font-weight: 700; color: var(--text, #e2e8f0); }
+.dvt-sf { color: #a78bfa; }
+.dvt-pos-rank { color: var(--text-muted, #94a3b8); font-size: 12px; }
+.dvt-age { color: var(--text-muted, #94a3b8); text-align: center; font-size: 12px; }
+.dvt-change { font-size: 11px; font-weight: 600; }
+.dvt-change-up { color: #22c55e; }
+.dvt-change-down { color: #ef4444; }
+.dvt-change-flat { color: var(--text-muted, #94a3b8); }
+.dvt-seo-content { margin-top: 40px; border-top: 1px solid var(--border, #1e3a5f); padding-top: 24px; }
+.dvt-seo-content h2 { font-size: 17px; font-weight: 700; color: var(--text, #e2e8f0); margin: 0 0 8px; }
+.dvt-seo-content p { font-size: 14px; color: var(--text-muted, #94a3b8); line-height: 1.6; margin: 0 0 20px; }
+
+/* ── Risers & Fallers ────────────────────────────────────────────────────── */
+.rf-page { max-width: 900px; margin: 0 auto; padding: 16px 16px 48px; }
+.rf-hero { margin-bottom: 20px; }
+.rf-title { font-size: clamp(18px, 4vw, 26px); font-weight: 800; color: var(--text, #e2e8f0); margin: 0 0 8px; }
+.rf-subtitle { font-size: 14px; color: var(--text-muted, #94a3b8); margin: 0; line-height: 1.5; }
+.rf-subtitle a { color: #38bdf8; }
+.rf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 640px) { .rf-grid { grid-template-columns: 1fr; } }
+.rf-col-title { font-size: 15px; font-weight: 700; color: var(--text, #e2e8f0); margin: 0 0 10px; display: flex; align-items: center; gap: 7px; }
+.rf-list { display: flex; flex-direction: column; gap: 6px; }
+.rf-row {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--card-bg, #1a2744);
+  border: 1px solid var(--border, #1e3a5f);
+  border-radius: 8px; padding: 9px 12px; gap: 8px;
+}
+.rf-info { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; }
+.rf-name { font-size: 13px; font-weight: 600; color: var(--text, #e2e8f0); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rf-name:hover { color: #38bdf8; text-decoration: underline; }
+.rf-pos-badge { font-size: 10px; font-weight: 700; color: #fff; border-radius: 4px; padding: 1px 5px; flex-shrink: 0; }
+.rf-team { font-size: 11px; color: var(--text-muted, #94a3b8); flex-shrink: 0; }
+.rf-val-wrap { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; }
+.rf-val  { font-size: 14px; font-weight: 700; color: var(--text, #e2e8f0); }
+.rf-delta { font-size: 11px; font-weight: 700; }
+.rf-empty { color: var(--text-muted, #94a3b8); font-size: 13px; padding: 12px 0; }
+.rf-seo-content { margin-top: 40px; border-top: 1px solid var(--border, #1e3a5f); padding-top: 24px; }
+.rf-seo-content h2 { font-size: 17px; font-weight: 700; color: var(--text, #e2e8f0); margin: 0 0 8px; }
+.rf-seo-content p { font-size: 14px; color: var(--text-muted, #94a3b8); line-height: 1.6; margin: 0 0 20px; }
+.rf-seo-content a { color: #38bdf8; }
+
+/* ── Rankings Hub ────────────────────────────────────────────────────────── */
+.rnk-page { max-width: 860px; margin: 0 auto; padding: 16px 16px 48px; }
+.rnk-hero { margin-bottom: 16px; }
+.rnk-title { font-size: clamp(18px, 4vw, 26px); font-weight: 800; color: var(--text, #e2e8f0); margin: 0 0 8px; }
+.rnk-subtitle { font-size: 14px; color: var(--text-muted, #94a3b8); margin: 0; line-height: 1.5; }
+.rnk-pos-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.rnk-nav-btn {
+  padding: 5px 14px; border-radius: 6px; font-size: 12px; font-weight: 600;
+  text-decoration: none; border: 1px solid var(--border, #1e3a5f);
+  background: var(--card-bg, #1a2744); color: var(--text-muted, #94a3b8);
+}
+.rnk-nav-btn-active { border-color: #38bdf8; color: #38bdf8; background: rgba(56,189,248,.1); }
+.rnk-table-wrap { overflow-x: auto; }
+.rnk-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.rnk-table th { padding: 8px 10px; text-align: left; color: var(--text-muted, #94a3b8); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border, #1e3a5f); }
+.rnk-table td { padding: 8px 10px; border-bottom: 1px solid rgba(30,58,95,.5); vertical-align: middle; }
+.rnk-table tr:hover td { background: rgba(255,255,255,.03); }
+.rnk-rank { color: var(--text-muted, #94a3b8); width: 36px; text-align: center; }
+.rnk-name-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rnk-player-link { color: var(--text, #e2e8f0); text-decoration: none; font-weight: 600; }
+.rnk-player-link:hover { color: #38bdf8; text-decoration: underline; }
+.rnk-pos-badge { font-size: 10px; font-weight: 700; color: #fff; border-radius: 4px; padding: 1px 5px; }
+.rnk-team { font-size: 11px; color: var(--text-muted, #94a3b8); }
+.rnk-val { text-align: right; font-weight: 700; color: var(--text, #e2e8f0); }
+.rnk-age { color: var(--text-muted, #94a3b8); text-align: center; font-size: 12px; }

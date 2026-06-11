@@ -1348,11 +1348,13 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
+                ("Dynasty Value Chart", "/dynasty-trade-value-chart", "dynasty-chart"),
+                ("Risers &amp; Fallers", "/risers-fallers", "risers-fallers"),
                 ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "/metrics", "advanced-metrics"),
                 ("Breakouts <span class='nav-pro-badge'>PRO</span>",       "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
                 ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
-            ], ["players", "prospects", "breakouts"], "playersNavDropdown"),
+            ], ["players", "prospects", "breakouts", "dynasty-chart", "risers-fallers"], "playersNavDropdown"),
         ]
 
         player_search_html = (
@@ -1474,13 +1476,15 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
+        ("Dynasty Value Chart", "dynasty_trade_value_chart", "dynasty-chart", False),
+        ("Risers &amp; Fallers", "risers_fallers_page", "risers-fallers", False),
         ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Waivers & Start/Sit <span class='nav-pro-badge'>PRO</span>", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
-    ], ["players", "prospects", "breakouts", "waivers", "schedule"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts", "waivers", "schedule", "dynasty-chart", "risers-fallers"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -25235,6 +25239,183 @@ def robots_txt():
         f"Sitemap: {host}/sitemap.xml\n"
     )
     return app.response_class(txt, mimetype="text/plain")
+
+
+# ── Dynasty Trade Value Chart ─────────────────────────────────────────────────
+
+@app.route("/dynasty-trade-value-chart")
+def dynasty_trade_value_chart():
+    """Public dynasty trade value chart — high-SEO hub page."""
+    from dashboard_services.pages.dynasty_pages import build_dynasty_value_chart_body
+    try:
+        from dashboard_services.player_value_history import load_current_values_from_db
+        value_table = load_current_values_from_db() or get_model_value_table_cached() or []
+    except Exception:
+        value_table = get_model_value_table_cached() or []
+
+    from datetime import datetime as _dt
+    as_of = _dt.now().strftime("%B %Y")
+    body  = build_dynasty_value_chart_body(value_table, as_of_date=as_of)
+    year  = _dt.now().year
+
+    return render_page(
+        f"Dynasty Trade Value Chart {year} | BR Fantasy",
+        None, "players", body,
+        description=(
+            f"Updated {as_of} dynasty fantasy football trade values for 1QB and Superflex leagues. "
+            f"Sortable chart with all positions — use these values in the free Trade Calculator."
+        ),
+    )
+
+
+# ── Risers & Fallers ──────────────────────────────────────────────────────────
+
+@app.route("/risers-fallers")
+def risers_fallers_page():
+    """Weekly dynasty risers and fallers — freshness content for SEO."""
+    from dashboard_services.pages.dynasty_pages import build_risers_fallers_body
+    from data_building.player_value_history import get_top_movers
+    try:
+        movers = get_top_movers(days=7, limit=20, min_baseline_value=5)
+    except Exception:
+        movers = {"risers": [], "fallers": []}
+
+    from datetime import datetime as _dt
+    date_label = _dt.now().strftime("%B %d, %Y")
+    body = build_risers_fallers_body(movers, as_of_date=date_label)
+
+    return render_page(
+        f"Dynasty Risers & Fallers — {date_label} | BR Fantasy",
+        None, "players", body,
+        description=(
+            f"Dynasty fantasy football risers and fallers for the week of {date_label}. "
+            f"Biggest trade value movers — act fast with the BR Fantasy Trade Calculator."
+        ),
+    )
+
+
+# ── Rankings Hub ──────────────────────────────────────────────────────────────
+
+def _rankings_page(position: str | None = None):
+    from dashboard_services.pages.dynasty_pages import build_rankings_hub_body
+    try:
+        from dashboard_services.player_value_history import load_current_values_from_db
+        value_table = load_current_values_from_db() or get_model_value_table_cached() or []
+    except Exception:
+        value_table = get_model_value_table_cached() or []
+
+    from datetime import datetime as _dt
+    as_of  = _dt.now().strftime("%B %Y")
+    year   = _dt.now().year
+    body   = build_rankings_hub_body(value_table, position=position, as_of_date=as_of)
+    pos_lbl = f" {position}" if position else ""
+    return render_page(
+        f"Dynasty{pos_lbl} Rankings {year} | BR Fantasy",
+        None, "players", body,
+        description=(
+            f"Dynasty fantasy football{pos_lbl.lower()} rankings updated {as_of}. "
+            f"Real trade values for 1QB and Superflex leagues."
+        ),
+    )
+
+
+@app.route("/rankings/dynasty")
+def rankings_dynasty():
+    return _rankings_page(None)
+
+@app.route("/rankings/dynasty-qb")
+def rankings_dynasty_qb():
+    return _rankings_page("QB")
+
+@app.route("/rankings/dynasty-rb")
+def rankings_dynasty_rb():
+    return _rankings_page("RB")
+
+@app.route("/rankings/dynasty-wr")
+def rankings_dynasty_wr():
+    return _rankings_page("WR")
+
+@app.route("/rankings/dynasty-te")
+def rankings_dynasty_te():
+    return _rankings_page("TE")
+
+
+# ── Shareable trade short URLs (/t/<share_id>) ────────────────────────────────
+
+_SHARE_TABLE_INIT = False
+
+def _init_shared_trades_table():
+    global _SHARE_TABLE_INIT
+    if _SHARE_TABLE_INIT:
+        return
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS shared_trades (
+                    share_id   TEXT PRIMARY KEY,
+                    params     TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            conn.commit()
+        _SHARE_TABLE_INIT = True
+    except Exception as exc:
+        logger.warning("[shared_trades] table init failed: %s", exc)
+
+
+@app.route("/api/save-trade", methods=["POST"])
+@limiter.limit("60 per minute")
+def api_save_trade():
+    """Save trade params; return a short share_id for the /t/<id> short URL."""
+    import secrets
+    import json as _json
+    data   = request.get_json(force=True) or {}
+    params = _json.dumps({
+        "a":  data.get("a", ""),
+        "b":  data.get("b", ""),
+        "ap": data.get("ap", ""),
+        "bp": data.get("bp", ""),
+    })
+    share_id = secrets.token_urlsafe(6)
+    _init_shared_trades_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO shared_trades (share_id, params) VALUES (%s, %s) "
+                "ON CONFLICT (share_id) DO NOTHING",
+                (share_id, params),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[save-trade] DB error: %s", exc)
+        return jsonify({"error": "Could not save trade"}), 500
+    return jsonify({"ok": True, "share_id": share_id})
+
+
+@app.route("/t/<share_id>")
+def shared_trade_page(share_id: str):
+    """Redirect a short trade share URL to /trade with its params."""
+    _init_shared_trades_table()
+    import json as _json
+    try:
+        from dashboard_services.db import get_conn
+        row = get_conn().execute(
+            "SELECT params FROM shared_trades WHERE share_id = %s", (share_id,)
+        ).fetchone()
+    except Exception:
+        row = None
+    if not row:
+        abort(404)
+    try:
+        p = _json.loads(row["params"] if hasattr(row, "__getitem__") else row[0])
+    except Exception:
+        abort(404)
+    from urllib.parse import urlencode
+    qs = urlencode({k: v for k, v in p.items() if v})
+    from flask import redirect as _redirect
+    return _redirect(f"/trade?{qs}", 302)
 
 
 if __name__ == "__main__":

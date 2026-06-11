@@ -1551,23 +1551,34 @@ window.initTradePage = function initTradePage(root = document) {
   }
 
   function shareTradeToClipboard() {
-    const url = encodeTradeToURL();
-    navigator.clipboard.writeText(url).then(() => {
-      // Show success feedback
-      const btn = root.querySelector("#shareTradeBtn");
-      if (btn) {
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<svg class="otc-share-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-        btn.classList.add("otc-share-btn-success");
-        setTimeout(() => {
-          btn.innerHTML = originalHTML;
-          btn.classList.remove("otc-share-btn-success");
-        }, 2000);
-      }
-    }).catch(err => {
-      console.error("Failed to copy to clipboard:", err);
-      showToast("Failed to copy link. Please try again.", "error");
-    });
+    const btn = root.querySelector("#shareTradeBtn");
+    const tradeData = {
+      a:  state.sideAPlayers.map(p => p.id).join(','),
+      b:  state.sideBPlayers.map(p => p.id).join(','),
+      ap: state.sideAPicks.map(p => p.id).join(','),
+      bp: state.sideBPicks.map(p => p.id).join(','),
+    };
+
+    function _flashSuccess() {
+      if (!btn) return;
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<svg class="otc-share-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+      btn.classList.add("otc-share-btn-success");
+      setTimeout(() => { btn.innerHTML = orig; btn.classList.remove("otc-share-btn-success"); }, 2000);
+    }
+
+    // POST to /api/save-trade for a short /t/<id> URL; fall back to URL params
+    fetch("/api/save-trade", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(tradeData),
+    })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => d.share_id ? `${window.location.origin}/t/${d.share_id}` : encodeTradeToURL())
+      .catch(() => encodeTradeToURL())
+      .then(shareUrl => navigator.clipboard.writeText(shareUrl))
+      .then(() => { _flashSuccess(); showToast("Link copied!", "success"); })
+      .catch(() => showToast("Failed to copy link. Please try again.", "error"));
   }
 
   function formatValue(v) {
