@@ -4989,6 +4989,9 @@ thead th {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Name rendered as an <a> to the player page: keep the plain look */
+a.otc-value-name { text-decoration: none; }
+a.otc-value-name:hover { text-decoration: underline; }
 
 .otc-value-rank {
   display: flex;
@@ -8286,7 +8289,7 @@ select:focus {
   border-radius: var(--radius);
   padding: 20px;
   overflow: hidden;
-  max-height: 517px;
+  max-height: 608px;
   display: flex;
   flex-direction: column;
 }
