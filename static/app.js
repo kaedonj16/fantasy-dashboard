@@ -8448,15 +8448,54 @@ function openPlayerModal(playerId, playerName, opts) {
             { ...trace1qb, name: 'Value', text: [...xData.map((date, i) => `<b>${date}</b><br>Value: ${y1qb[i]?.toFixed(1) || ''}`), '', '', '', ''] }
           ];
 
+          // Age curve overlay: show expected positional aging trajectory relative to player's current value.
+          const playerAge = parseFloat(data.age);
+          const playerPos = data.position;
+          const _AGE_CURVES = {
+            RB: { peak: 24.5, pre: 3.0, post: 2.0 },
+            WR: { peak: 27.0, pre: 3.5, post: 2.8 },
+            QB: { peak: 29.5, pre: 4.0, post: 3.5 },
+            TE: { peak: 27.5, pre: 3.5, post: 2.5 },
+          };
+          const ageCurve = _AGE_CURVES[playerPos];
+          if (!isNaN(playerAge) && ageCurve && data.value_history.length > 2) {
+            const today = new Date();
+            function _ageAtDate(dateStr) {
+              const d = new Date(dateStr);
+              return playerAge - (today - d) / (365.25 * 24 * 3600 * 1000);
+            }
+            function _ageCurveNorm(age) {
+              const diff = age - ageCurve.peak;
+              const sigma = diff < 0 ? ageCurve.pre : ageCurve.post;
+              return Math.exp(-0.5 * Math.pow(diff / sigma, 2));
+            }
+            // Scale so the curve passes through the player's current value at their current age.
+            const lastVal = y1qb[y1qb.length - 1];
+            const curveAtNow = _ageCurveNorm(playerAge);
+            const scale = lastVal && curveAtNow > 0 ? lastVal / curveAtNow : 1;
+            const yCurve = data.value_history.map(h => _ageCurveNorm(_ageAtDate(h.as_of_date)) * scale);
+            // Clamp to visible range (don't let the curve go below 0 or wildly above the chart).
+            const curveExtended = [...yCurve, null, null, null, null];
+            const traceAge = {
+              x: extendedX, y: curveExtended,
+              type: 'scatter', mode: 'lines', name: 'Age Curve',
+              line: { color: 'rgba(148,163,184,0.55)', width: 1.5, dash: 'dot', shape: 'spline', smoothing: 1.2 },
+              hovertemplate: '<b>%{text}</b><br>Age Curve: %{y:.1f}<extra></extra>',
+              text: [...xData.map((date, i) => `${date} (age ${_ageAtDate(data.value_history[i].as_of_date).toFixed(1)})`), '', '', '', ''],
+            };
+            traces.push(traceAge);
+          }
+
           const isMobile = window.innerWidth <= 768;
           const chartHeight = isMobile ? 200 : 250;
 
+          const hasAgeCurve = traces.length > (hasDualSeries ? 2 : 1);
           const layout = {
             margin: { l: 30, r: 20, t: 10, b: 36 },
             height: chartHeight,
             paper_bgcolor: 'transparent',
             plot_bgcolor: 'transparent',
-            showlegend: hasDualSeries,
+            showlegend: hasDualSeries || hasAgeCurve,
             legend: { orientation: 'h', x: 0.5, xanchor: 'center', y: 1.1, font: { size: 11, color: mutedColor } },
             xaxis: {
               showgrid: false,

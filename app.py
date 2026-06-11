@@ -17468,7 +17468,10 @@ def api_advanced_metrics_leaderboard():
     Premium-gated. Query params: metric (required, whitelisted), position (optional),
     league_id/platform (for the premium check).
     """
-    from data_building.advanced_metrics import get_metric_leaderboard, LEADERBOARD_METRICS
+    from data_building.advanced_metrics import (
+        get_metric_leaderboard, get_weekly_range_leaderboard,
+        LEADERBOARD_METRICS, _WEEKLY_METRICS,
+    )
 
     user_id = session.get("viewer_username") or None
     league_id = (request.args.get("league_id") or "").strip() or None
@@ -17484,9 +17487,22 @@ def api_advanced_metrics_leaderboard():
     season = int(season_str) if season_str.isdigit() else None
     min_vol_str = (request.args.get("min_vol") or "").strip()
     min_vol = int(min_vol_str) if min_vol_str.isdigit() else None
+    week_start_str = (request.args.get("week_start") or "").strip()
+    week_end_str   = (request.args.get("week_end") or "").strip()
+    week_start = int(week_start_str) if week_start_str.isdigit() else None
+    week_end   = int(week_end_str)   if week_end_str.isdigit()   else None
+
+    weekly_capable   = metric in _WEEKLY_METRICS
+    is_week_filtered = bool(week_start or week_end) and weekly_capable
 
     try:
-        players = get_metric_leaderboard(metric, position=position, season=season, min_vol=min_vol)
+        if is_week_filtered:
+            players = get_weekly_range_leaderboard(
+                metric, position=position, season=season,
+                week_start=week_start, week_end=week_end, min_vol=min_vol,
+            )
+        else:
+            players = get_metric_leaderboard(metric, position=position, season=season, min_vol=min_vol)
     except Exception as e:
         logger.exception(f"[api/advanced-metrics/leaderboard] error for metric={metric}: {e}")
         players = []
@@ -17499,6 +17515,8 @@ def api_advanced_metrics_leaderboard():
         "positions": spec["positions"],
         "lower_better": bool(spec.get("lower_better")),
         "vol_col": vol_col,
+        "weekly_capable": weekly_capable,
+        "is_week_filtered": is_week_filtered,
         "players": players,
     })
 
