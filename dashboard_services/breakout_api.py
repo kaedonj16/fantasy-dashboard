@@ -178,7 +178,7 @@ def _generate_key_reasons_from_details(row: dict) -> str:
     if read_score >= 75 and yrs_exp <= 3:
         dr = read_d.get('draft_round')
         if dr and int(dr) <= 2 and not any('Year' in r for r in reasons):
-            reasons.append(f'Round {int(dr)} draft capital — high-ceiling profile')
+            reasons.append(f'Round {int(dr)} draft capital - high-ceiling profile')
 
     snap_already_mentioned = any('snap' in r.lower() or 'starter' in r.lower() for r in reasons)
     if len(reasons) < 2 and not snap_already_mentioned and prev_snap >= 0.55 and prev_ppg >= 8:
@@ -331,7 +331,7 @@ def _build_comp_database() -> dict:
             # Historical range: all completed seasons before the current cycle
             hist_max = current_season - 1
 
-            # Grab player_ids that are active candidates this cycle — exclude
+            # Grab player_ids that are active candidates this cycle - exclude
             # them from the comp pool so active candidates don't appear as comps
             active_ids: set[str] = {
                 str(r["player_id"])
@@ -386,12 +386,12 @@ def _build_comp_database() -> dict:
             if not next_ppg or next_ppg <= 0:
                 continue
 
-            # Require a meaningful improvement — flat/declining seasons
+            # Require a meaningful improvement - flat/declining seasons
             # add noise and confuse the comparison
             if next_ppg < prior * 1.10 or next_ppg < prior + 1.0:
                 continue
 
-            # Require a meaningful absolute PPG floor — weak producers (e.g. a RB
+            # Require a meaningful absolute PPG floor - weak producers (e.g. a RB
             # at 9.8 PPG) are not useful comps even if they technically "improved"
             _MIN_COMP_PPG = {"WR": 10.0, "RB": 10.0, "TE": 8.0, "QB": 20.0}
             if next_ppg < _MIN_COMP_PPG.get(pos, 10.0):
@@ -415,7 +415,7 @@ def _build_comp_database() -> dict:
             db[key] = db[key][:7]
 
         logger.info(
-            "breakout_api: comp database built — %d buckets, %d total comps",
+            "breakout_api: comp database built - %d buckets, %d total comps",
             len(db), sum(len(v) for v in db.values()),
         )
         return db
@@ -520,7 +520,7 @@ def _get_peer_comparison(
         names_part = comp_strs[0]
 
     return (
-        f"Like {names_part} — "
+        f"Like {names_part} - "
         f"{pos_label} in {opp_label} situations averaged {avg_next:.1f} PPG"
     )
 
@@ -1032,7 +1032,7 @@ def _resolve_bo_season(requested: Optional[int]) -> Optional[int]:
     except Exception:
         latest = 0
     if not latest:
-        return requested  # can't determine — pass through as-is
+        return requested  # can't determine - pass through as-is
     if requested is None or requested < latest:
         return latest
     return requested

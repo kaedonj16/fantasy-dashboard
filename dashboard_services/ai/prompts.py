@@ -149,14 +149,14 @@ def generate_trade_ai_result(payload: dict) -> dict:
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 1: DATA FIDELITY
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    - Use the provided JSON for market values, roster composition, and pick slots. These numbers are ground truth — do not override them with intuition.
+    - Use the provided JSON for market values, roster composition, and pick slots. These numbers are ground truth - do not override them with intuition.
     - If two assets have explicit values and one is clearly higher, never conclude the lower-valued asset is worth more.
     - You MAY and SHOULD apply your training knowledge about players to enrich the narrative: current injuries, NFL team situations, recent performance, draft pedigree, contract status, role changes. This is what makes the analysis useful.
-    - Do NOT fabricate values, pick slots, or roster composition — those must come from the JSON.
+    - Do NOT fabricate values, pick slots, or roster composition - those must come from the JSON.
     - injury_status and injury_body_part are provided per asset when applicable. If injury_status is "IR", "OUT", or similar, work this into the player narrative explicitly.
-    - pick_prospects maps pick IDs to the likely prospect at that slot (from ADP). Use these names when discussing picks — e.g., "the 2.03 projects as Marcus Johnson (WR)". If no prospect is listed for a pick, use your training knowledge or say "a mid-second prospect".
+    - pick_prospects maps pick IDs to the likely prospect at that slot (from ADP). Use these names when discussing picks - e.g., "the 2.03 projects as Marcus Johnson (WR)". If no prospect is listed for a pick, use your training knowledge or say "a mid-second prospect".
     - opponent_team gives you the trade partner's team context (direction, record, top assets). Use it to explain WHY they'd make this trade and whether they'd likely accept.
-    - post_trade_roster shows the viewer's actual top players after the deal — reference these by name when explaining roster impact.
+    - post_trade_roster shows the viewer's actual top players after the deal - reference these by name when explaining roster impact.
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     SECTION 2: VALUE HIERARCHY - READ THIS FIRST
@@ -176,8 +176,8 @@ def generate_trade_ai_result(payload: dict) -> dict:
     - delta >= +250: Overwhelming value win. Accept unless a catastrophic structural flaw exists (rare).
     - delta +150 to +249: Strong value win. Accept in nearly all cases.
     - delta +50 to +149: Clear value win. Accept unless a significant structural concern exists.
-    - delta +11 to +49: Slight value win. Accept — don't ask for more when you're already winning.
-    - delta -10 to +10: ESSENTIALLY FAIR — treat as market-neutral. ALWAYS verdict ACCEPT.
+    - delta +11 to +49: Slight value win. Accept - don't ask for more when you're already winning.
+    - delta -10 to +10: ESSENTIALLY FAIR - treat as market-neutral. ALWAYS verdict ACCEPT.
       The summary must explicitly say this is a near-mirror trade, highlight how close the
       values are, and focus the analysis on fit/preference rather than value extraction.
       Do NOT suggest asking for sweeteners. Do NOT say "should be pushed to include more."
@@ -249,7 +249,7 @@ def generate_trade_ai_result(payload: dict) -> dict:
 
     CRITICAL: If delta is between -10 and +10, the verdict MUST be ACCEPT.
     The summary should acknowledge the trade is essentially even and let the viewer
-    decide based on preference — not suggest extracting more value from the other team.
+    decide based on preference - not suggest extracting more value from the other team.
 
     Counter field:
       - Include ONLY if verdict is COUNTER or DECLINE.
@@ -285,11 +285,11 @@ def generate_trade_ai_result(payload: dict) -> dict:
          Include concrete NFL context: team fit, target share, backfield situation, draft pedigree, contract.
          (e.g., "Kenneth Walker slides into the KC backfield after a Super Bowl run, now the clear RB1 on a contender")
       3. What does this mean for the viewer's roster after the trade?
-         Reference the post_trade_roster by name — who stays, what roles they fill, where depth gaps open.
+         Reference the post_trade_roster by name - who stays, what roles they fill, where depth gaps open.
          (e.g., "You'd still lead with CeeDee Lamb and Drake London at WR, giving you elite floor even while Nabers recovers")
       4. Will the opponent accept? Use opponent_team context to explain their motivation.
          Reference their direction, record, top assets, and what filling their weak positions means for them.
-         (e.g., "They're a rebuilding team (3-9) with no RB depth — Walker fills their biggest need immediately")
+         (e.g., "They're a rebuilding team (3-9) with no RB depth - Walker fills their biggest need immediately")
       5. Only THEN introduce value delta as confirmation of the player-based read.
          (e.g., "The market reflects this: you're sending ~141 more in value, a reasonable premium for an elite asset")
       6. Verdict and counter (if applicable) framed in player terms.
@@ -367,10 +367,10 @@ def generate_power_rankings_result(rankings_ctx: dict) -> dict:
 
     system_prompt = """
 You are a sharp dynasty fantasy football analyst writing weekly power rankings.
-Write like a beat reporter — vivid, specific, punchy. One sentence per team, max 30 words.
+Write like a beat reporter - vivid, specific, punchy. One sentence per team, max 30 words.
 Each sentence must be DIFFERENT in structure and opening. Never start two sentences the same way.
-win_window is the team's pre-computed competitive window label — use it as the primary frame for every narrative.
-Do not invent injuries, news, or player traits — use only the supplied JSON.
+win_window is the team's pre-computed competitive window label - use it as the primary frame for every narrative.
+Do not invent injuries, news, or player traits - use only the supplied JSON.
 Momentum: rising if value is high but record lags, or window is building; falling if aging/declining; steady otherwise.
 
 win_window guide (let this shape the TONE and ANGLE of each narrative):
@@ -387,7 +387,7 @@ win_window guide (let this shape the TONE and ANGLE of each narrative):
 """.strip()
 
     user_prompt = f"""
-Generate power rankings narratives for each team. Lead every sentence with a specific detail — a player name, a position strength, a roster age note, or pick capital — that SUPPORTS the win_window label.
+Generate power rankings narratives for each team. Lead every sentence with a specific detail - a player name, a position strength, a roster age note, or pick capital - that SUPPORTS the win_window label.
 
 For each team in "teams", produce:
 - roster_id: exact string from the data
@@ -395,7 +395,7 @@ For each team in "teams", produce:
 - momentum: rising | falling | steady
 
 Key signals:
-- win_window: PRIMARY frame — the narrative tone must match this label
+- win_window: PRIMARY frame - the narrative tone must match this label
 - top_assets: name the best player(s) to make each sentence specific
 - position_strengths: reference dominant or weak groups when notable
 - avg_age: reinforce young/aging angle when it drives the win_window

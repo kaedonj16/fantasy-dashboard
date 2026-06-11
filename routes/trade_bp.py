@@ -27,7 +27,7 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
         <h2 style="font-size:20px;margin:0 0 10px;">How the Fantasy Football Trade Calculator Works</h2>
         <p style="color:var(--text-muted);margin:0 0 16px;">
           Add players and draft picks to each side of a proposed deal and the calculator
-          returns an instant verdict on who wins the trade. Values aren't guesses — they're
+          returns an instant verdict on who wins the trade. Values aren't guesses - they're
           calibrated from thousands of real fantasy football trades logged across Sleeper,
           ESPN, and Yahoo dynasty and redraft leagues, then blended with expert consensus
           rankings and advanced metrics. Because the model watches the actual market, values
@@ -47,20 +47,20 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
 
         <h2 style="font-size:20px;margin:22px 0 10px;">Tips for Evaluating a Trade</h2>
         <ul style="color:var(--text-muted);margin:0 0 16px;padding-left:20px;">
-          <li>Don't trade purely by total value — roster construction matters. Two solid
+          <li>Don't trade purely by total value - roster construction matters. Two solid
               starters often beat one star plus a bench piece if you need depth.</li>
           <li>Account for positional scarcity. An elite tight end or superflex-eligible
               quarterback is harder to replace than a mid-tier running back.</li>
           <li>In dynasty, weigh your timeline: contenders should pay a premium for win-now
               talent, while rebuilders should bank youth and picks.</li>
-          <li>Use real trade comparisons to sanity-check a deal — if similar trades have
+          <li>Use real trade comparisons to sanity-check a deal - if similar trades have
               happened before, you'll see how the market actually valued them.</li>
         </ul>
 
         <h2 style="font-size:20px;margin:22px 0 10px;">Frequently Asked Questions</h2>
         <p style="margin:0 0 6px;"><strong>Is the trade calculator free?</strong></p>
         <p style="color:var(--text-muted);margin:0 0 14px;">
-          Yes. The trade calculator and player trade values are free to use — no account
+          Yes. The trade calculator and player trade values are free to use - no account
           required. Connecting your Sleeper, ESPN, or Yahoo league unlocks personalized
           analysis tailored to your roster and scoring settings.
         </p>
@@ -117,7 +117,7 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         body += _TRADE_CALCULATOR_SEO_CONTENT
 
     return render_page(
-        "Fantasy Football Trade Calculator — Dynasty & Redraft Trade Values | BR Fantasy",
+        "Fantasy Football Trade Calculator - Dynasty & Redraft Trade Values | BR Fantasy",
         league_id, "trade", body, platform, season,
         description=(
             "Free fantasy football trade calculator. Compare any trade with dynasty and "
@@ -896,7 +896,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     </script>
     """
     return render_page(
-        "Fantasy Football Trade Values & Market Trends — Trade Intelligence | BR Fantasy",
+        "Fantasy Football Trade Values & Market Trends - Trade Intelligence | BR Fantasy",
         league_id, "trade-intel", body_html, platform, season,
         description=(
             "Live fantasy football trade values and market trends from thousands of real "
@@ -1361,7 +1361,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
     </script>
     """
     return render_page(
-        "Fantasy Football Trade Database — Search Real Dynasty Trades | BR Fantasy",
+        "Fantasy Football Trade Database - Search Real Dynasty Trades | BR Fantasy",
         league_id, "trade-database", body_html, platform, season,
         description=(
             "Search thousands of real fantasy football trades to see how players and draft "

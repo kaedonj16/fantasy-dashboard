@@ -20,7 +20,7 @@ def premium_required(fn):
     """Decorator that enforces premium access on a Flask route.
 
     Identity comes from the server-side session (``viewer_username`` /
-    ``viewer_user_id``) — never from the client — while ``league_id`` /
+    ``viewer_user_id``) - never from the client - while ``league_id`` /
     ``platform`` / ``season`` are read from the request (query string, form, or
     JSON body). A league subscription is only honored when the viewer is an
     actual member of that league, so a tampered ``league_id`` cannot unlock
@@ -133,7 +133,7 @@ def viewer_is_league_member(
     """Whether the given viewer actually belongs to the league.
 
     League-plan premium is shared across a league, so we must confirm the
-    requester is a member before honoring it — otherwise anyone who knows a
+    requester is a member before honoring it - otherwise anyone who knows a
     paid league's (non-secret) id would unlock premium for free.
 
     Membership is only verifiable for Sleeper; for other platforms we do not

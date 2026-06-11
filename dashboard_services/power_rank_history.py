@@ -3,7 +3,7 @@ Weekly power-ranking snapshots so the standings page can show movement arrows.
 
 Each render of the power rankings upserts the current week's ranks, then loads
 the most recent earlier week to compute per-team movement. Failures are
-swallowed by the caller — arrows are decorative and must never break the page.
+swallowed by the caller - arrows are decorative and must never break the page.
 """
 from typing import Dict, Optional
 

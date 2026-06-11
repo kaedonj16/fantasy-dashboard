@@ -508,7 +508,7 @@ def api_subscription_status():
 
     try:
         sub_info = get_subscription_info(user_id, league_id, platform)
-        # Strip internal/PII fields — the client only needs entitlement flags.
+        # Strip internal/PII fields - the client only needs entitlement flags.
         for _k in ("stripe_customer_id", "subscriber_user_id"):
             sub_info.pop(_k, None)
         return jsonify(sub_info)

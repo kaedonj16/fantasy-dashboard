@@ -512,7 +512,7 @@ def build_league_history_map(platform: str, league_id: str, season: int) -> dict
         {season_int: league_id}
 
     Walks backward through previous_league_id for Sleeper.
-    For ESPN, the same league_id is reused across years — probe prior seasons directly.
+    For ESPN, the same league_id is reused across years - probe prior seasons directly.
     """
     platform = str(platform or "").strip().lower()
 

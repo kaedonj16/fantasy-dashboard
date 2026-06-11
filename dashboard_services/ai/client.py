@@ -39,5 +39,5 @@ class AIUnavailableError(Exception):
 
 def clean_ai_text(text: str) -> str:
     import re
-    return re.sub(r'\s*—\s*', ', ', text)
+    return re.sub(r'\s*–\s*', ', ', text)
 

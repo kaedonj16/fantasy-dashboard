@@ -204,7 +204,7 @@ def load_pick_value_table(
                                 _myr = int(_mparts[0])
                             except ValueError:
                                 continue
-                            # Only override future years (not current-year — those
+                            # Only override future years (not current-year - those
                             # have FC-normalized slot picks already)
                             if _myr <= current_year:
                                 continue
