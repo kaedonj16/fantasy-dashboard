@@ -536,7 +536,7 @@ FORM_BODY = """
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
             <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
-            <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
+            <button type="button" class="platform-btn platform-btn-soon" data-platform="yahoo" disabled aria-disabled="true">Yahoo <span class="platform-soon">Soon</span></button>
           </div>
         </div>
 
