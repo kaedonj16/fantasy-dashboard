@@ -17670,6 +17670,36 @@ button:disabled {
 }
 .pwa-btn-dismiss:hover { opacity: .8; }
 
+/* ── Push notification opt-in banner ────────────────────────────────────── */
+#push-notif-banner {
+  position: fixed;
+  bottom: 88px; /* sits above the PWA install banner if both show */
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  z-index: 9989;
+  background: var(--card, #1e293b);
+  border: 1px solid var(--border, rgba(255,255,255,.08));
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.3);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: clamp(280px, 90vw, 400px);
+  opacity: 0;
+  transition: opacity .3s ease, transform .3s ease;
+}
+#push-notif-banner.pwa-banner-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.push-bell-icon {
+  font-size: 28px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 /* ── Notification toast (changelog new-entry popup) ──────────────────────── */
 .notif-toast {
   position: fixed;

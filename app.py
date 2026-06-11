@@ -25418,6 +25418,201 @@ def shared_trade_page(share_id: str):
     return _redirect(f"/trade?{qs}", 302)
 
 
+# ── Push notifications ─────────────────────────────────────────────────────────
+
+_PUSH_TABLE_INIT = False
+_VAPID_KEYS: dict | None = None
+
+
+def _init_push_table():
+    global _PUSH_TABLE_INIT
+    if _PUSH_TABLE_INIT:
+        return
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS push_subscriptions (
+                    id         SERIAL PRIMARY KEY,
+                    endpoint   TEXT UNIQUE NOT NULL,
+                    p256dh     TEXT NOT NULL,
+                    auth       TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            conn.commit()
+        _PUSH_TABLE_INIT = True
+    except Exception as exc:
+        logger.warning("[push] table init failed: %s", exc)
+
+
+def _get_vapid_keys() -> dict | None:
+    global _VAPID_KEYS
+    if _VAPID_KEYS:
+        return _VAPID_KEYS
+    pub  = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+    priv = os.environ.get("VAPID_PRIVATE_KEY", "").replace("\\n", "\n").strip()
+    if pub and priv:
+        _VAPID_KEYS = {"public": pub, "private": priv}
+        return _VAPID_KEYS
+    # Generate ephemeral keys for this session; set env vars to persist
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives import serialization
+        import base64 as _b64
+        priv_key = ec.generate_private_key(ec.SECP256R1(), default_backend())
+        pub_raw  = priv_key.public_key().public_bytes(
+            serialization.Encoding.X962,
+            serialization.PublicFormat.UncompressedPoint,
+        )
+        priv_pem = priv_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        ).decode()
+        pub_b64  = _b64.urlsafe_b64encode(pub_raw).rstrip(b"=").decode()
+        logger.info(
+            "[vapid] Generated ephemeral VAPID keys. Add to Render env vars to persist:\n"
+            "  VAPID_PUBLIC_KEY=%s\n  VAPID_PRIVATE_KEY=%s",
+            pub_b64,
+            priv_pem.replace("\n", "\\n"),
+        )
+        _VAPID_KEYS = {"public": pub_b64, "private": priv_pem}
+        return _VAPID_KEYS
+    except Exception as exc:
+        logger.warning("[vapid] key generation failed: %s", exc)
+        return None
+
+
+@app.route("/api/push/vapid-public-key")
+def api_push_vapid_public_key():
+    keys = _get_vapid_keys()
+    if not keys:
+        return jsonify({"error": "Push not configured"}), 503
+    return jsonify({"publicKey": keys["public"]})
+
+
+@app.route("/api/push/subscribe", methods=["POST"])
+@limiter.limit("30 per minute")
+def api_push_subscribe():
+    data     = request.get_json(force=True) or {}
+    endpoint = data.get("endpoint", "").strip()
+    p256dh   = (data.get("keys") or {}).get("p256dh", "").strip()
+    auth     = (data.get("keys") or {}).get("auth",   "").strip()
+    if not (endpoint and p256dh and auth):
+        return jsonify({"error": "Invalid subscription"}), 400
+    _init_push_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO push_subscriptions (endpoint, p256dh, auth)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (endpoint) DO UPDATE
+                    SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth
+                """,
+                (endpoint, p256dh, auth),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[push] subscribe error: %s", exc)
+        return jsonify({"error": "Could not save subscription"}), 500
+    return jsonify({"ok": True})
+
+
+@app.route("/api/push/unsubscribe", methods=["POST"])
+@limiter.limit("30 per minute")
+def api_push_unsubscribe():
+    data     = request.get_json(force=True) or {}
+    endpoint = data.get("endpoint", "").strip()
+    if not endpoint:
+        return jsonify({"error": "Missing endpoint"}), 400
+    _init_push_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                "DELETE FROM push_subscriptions WHERE endpoint = %s", (endpoint,)
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[push] unsubscribe error: %s", exc)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/push/broadcast", methods=["POST"])
+@limiter.limit("10 per minute")
+def api_push_broadcast():
+    """Send a push to all subscribers. Requires X-Admin-Secret header."""
+    secret = request.headers.get("X-Admin-Secret", "")
+    admin_secret = os.environ.get("ADMIN_SECRET", "")
+    if not admin_secret or secret != admin_secret:
+        return jsonify({"error": "Forbidden"}), 403
+    data  = request.get_json(force=True) or {}
+    title = data.get("title", "BR Fantasy Update")
+    body  = data.get("body",  "Your weekly dynasty risers and fallers are ready!")
+    url   = data.get("url",   "/risers-fallers")
+    tag   = data.get("tag",   "weekly-update")
+    return _push_broadcast(title=title, body=body, url=url, tag=tag)
+
+
+def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
+    import json as _json
+    keys = _get_vapid_keys()
+    if not keys:
+        return jsonify({"error": "Push not configured"}), 503
+    _init_push_table()
+    try:
+        from pywebpush import webpush, WebPushException
+        from dashboard_services.db import get_conn
+        rows = get_conn().execute(
+            "SELECT endpoint, p256dh, auth FROM push_subscriptions"
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("[push] broadcast query failed: %s", exc)
+        return jsonify({"error": "DB error"}), 500
+
+    payload       = _json.dumps({"title": title, "body": body, "url": url, "tag": tag})
+    sent = failed = 0
+    stale         = []
+
+    for row in rows:
+        ep, p256dh, auth = row[0], row[1], row[2]
+        try:
+            webpush(
+                subscription_info={"endpoint": ep, "keys": {"p256dh": p256dh, "auth": auth}},
+                data=payload,
+                vapid_private_key=keys["private"],
+                vapid_claims={"sub": "mailto:admin@brfantasy.com"},
+            )
+            sent += 1
+        except WebPushException as exc:
+            if exc.response and exc.response.status_code in (404, 410):
+                stale.append(ep)
+            else:
+                logger.warning("[push] send failed %s: %s", ep[:50], exc)
+            failed += 1
+        except Exception as exc:
+            logger.warning("[push] unexpected: %s", exc)
+            failed += 1
+
+    if stale:
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                for ep in stale:
+                    conn.execute(
+                        "DELETE FROM push_subscriptions WHERE endpoint = %s", (ep,)
+                    )
+                conn.commit()
+        except Exception:
+            pass
+
+    return jsonify({"ok": True, "sent": sent, "failed": failed})
+
+
 if __name__ == "__main__":
     # Debug mode (Werkzeug interactive debugger) is opt-in via FLASK_DEBUG=1 and
     # never on in production. Production is served by gunicorn (see startup.py),
