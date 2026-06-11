@@ -352,7 +352,7 @@ def build_advanced_metrics_body(
       .am-metric-chevron { font-size:10px; opacity:.55; flex-shrink:0; transition:transform .15s; }
       .am-metric-picker.open .am-metric-chevron { transform:rotate(180deg); }
       .am-metric-picker.open .am-metric-dropdown { display:block !important; }
-      .am-stat-picker { max-height:460px; }
+      .am-metric-dropdown { max-height:560px; }
       .am-season-select { min-width:90px; }
       .am-search { width:100%; box-sizing:border-box; }
       .am-sort-btn { cursor:pointer; font-weight:600; white-space:nowrap; }
