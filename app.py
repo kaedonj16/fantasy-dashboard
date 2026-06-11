@@ -858,19 +858,7 @@ BASE_HTML = """
     <!-- Toast notifications -->
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-    <!-- Cookie Consent Banner -->
-    <div id="cookieConsent" class="cookie-consent" role="dialog" aria-label="Cookie consent" style="display: none;">
-      <div class="cookie-consent-content">
-        <p>
-          We use cookies to improve your experience and show relevant ads. By continuing to use this site, you consent to our use of cookies.
-          <a href="{privacy_url}" target="_blank">Learn more</a>
-        </p>
-        <div class="cookie-consent-buttons">
-          <button id="acceptCookies" class="cookie-btn cookie-btn-accept">Accept</button>
-          <button id="declineCookies" class="cookie-btn cookie-btn-decline">Decline</button>
-        </div>
-      </div>
-    </div>
+    <!-- Cookie consent handled by Google's certified CMP (Funding Choices) -->
 
     <!-- Feature 15: Ask My GM floating chat widget -->
     {ask_gm_widget}
@@ -879,31 +867,6 @@ BASE_HTML = """
     <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
       {adsense_init}
-
-      // Cookie consent handling
-      (function() {{
-        const consentKey = 'brfantasy_cookie_consent';
-        const consentBanner = document.getElementById('cookieConsent');
-        const acceptBtn = document.getElementById('acceptCookies');
-        const declineBtn = document.getElementById('declineCookies');
-
-        // Check if user has already made a choice
-        const consent = localStorage.getItem(consentKey);
-        if (!consent) {{
-          consentBanner.style.display = 'block';
-        }}
-
-        acceptBtn.addEventListener('click', function() {{
-          localStorage.setItem(consentKey, 'accepted');
-          consentBanner.style.display = 'none';
-        }});
-
-        declineBtn.addEventListener('click', function() {{
-          localStorage.setItem(consentKey, 'declined');
-          consentBanner.style.display = 'none';
-          // Optionally disable ads for users who decline
-        }});
-      }})();
 
       // Page navigation loading spinner
       (function() {{

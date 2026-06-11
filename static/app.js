@@ -1648,14 +1648,21 @@ window.initTradePage = function initTradePage(root = document) {
     const row = document.createElement("div");
     row.className = "otc-value-row";
 
+    // Undrafted rookies open the prospect modal (no trade-value page); everyone
+    // else gets the player modal / public player page.
+    const _drafted = p.is_rookie && p.is_rookie != 'False' && p.team && p.team !== 'FA';
+    const _isProspectRow = p.is_rookie && p.is_rookie != 'False' && !_drafted;
+
     // Make row clickable - use only onclick, not data-player-id, to avoid double-fire
     // from the global delegated handler in initGlobalPlayerModals
     if (p.id) {
       row.style.cursor = "pointer";
       row.onclick = (e) => {
+        // Let modified clicks on the name link open the player page in a new tab.
+        if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+        e.preventDefault();
         e.stopPropagation();
-        const _drafted = p.is_rookie && p.is_rookie != 'False' && p.team && p.team !== 'FA';
-        if (p.is_rookie && p.is_rookie != 'False' && !_drafted) {
+        if (_isProspectRow) {
           if (typeof rkOpenModal === 'function') {
             rkOpenModal(p);
           } else {
@@ -1681,9 +1688,19 @@ window.initTradePage = function initTradePage(root = document) {
     const topLine = document.createElement("div");
     topLine.className = "otc-value-topline";
 
-    const nameSpan = document.createElement("div");
-    nameSpan.className = "otc-value-name player-clickable";
-    nameSpan.textContent = p.name || "Unknown";
+    // Real <a> link to the player's trade-value page for crawlers and
+    // open-in-new-tab; plain clicks are handled by the row handler above.
+    let nameSpan;
+    if (!_isProspectRow && p.id && p.name) {
+      nameSpan = document.createElement("a");
+      nameSpan.href = "/player/" + pmSlugify(p.name) + "/trade-value";
+      nameSpan.className = "otc-value-name player-clickable";
+      nameSpan.textContent = p.name;
+    } else {
+      nameSpan = document.createElement("div");
+      nameSpan.className = "otc-value-name player-clickable";
+      nameSpan.textContent = p.name || "Unknown";
+    }
 
     const valueSpan = document.createElement("div");
     valueSpan.className = "otc-value-score";
