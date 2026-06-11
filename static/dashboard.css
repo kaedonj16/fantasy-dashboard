@@ -10386,6 +10386,16 @@ img, svg, canvas {
   .weekly-hub .matchups-shell .p .meta { font-size: 11px; }
 }
 
+/* Wide screens: widen the standings sidebar and rebalance inner columns */
+@media (min-width: 1400px) {
+  .weekly-hub {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+  .weekly-hub .standings-main.two-col-standings {
+    grid-template-columns: minmax(220px, 1fr) minmax(0, 1.6fr);
+  }
+}
+
 @media (max-width: 640px) {
   /* ── Matchup carousel header ─────────────────────────── */
   .m-nav h2 { font-size: 15px; }

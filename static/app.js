@@ -612,6 +612,9 @@ function emptyState(container, message, iconClass) {
 
   var asked = localStorage.getItem(NOTIF_KEY);
 
+  // Only prompt signed-in users — no point asking anonymous visitors
+  if (!window._isSignedIn) return;
+
   // Show after 45 seconds if user hasn't responded yet and browser allows it
   if (!asked && Notification.permission === 'default') {
     setTimeout(showNotifBanner, 45000);
