@@ -25866,7 +25866,7 @@ def page_trade_card(share_id: str):
 
       <div class="footer">
         <button class="btn btn-outline" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')" style="{copy_link_style}">Copy link</button>
-        <a href="{trade_url}" class="btn btn-primary" target="_top">Open in Calculator</a>
+        <a href="{trade_url}" class="btn btn-primary" target="_blank" rel="noopener">Open in Calculator</a>
       </div>
     </div>
     <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--tc-dimmer);{'display:none' if is_embed else ''}">
