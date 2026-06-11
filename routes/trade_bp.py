@@ -22,15 +22,15 @@ trade_bp = Blueprint("trade", __name__)
 # Crawlable explanatory content shown beneath the public trade calculator. Gives
 # search engines (and AdSense reviewers) real text to index instead of a bare widget.
 _TRADE_CALCULATOR_SEO_CONTENT = """
-    <section class="card central" style="max-width:960px;margin:24px auto 0;overflow:hidden;">
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding:22px 0 0;">
 
       <!-- Section bridge header -->
-      <div style="padding:16px 24px;border-bottom:1px solid var(--border);background:var(--bg-alt,rgba(0,0,0,.03));display:flex;align-items:center;gap:10px;">
-        <i class="fa-solid fa-circle-info" style="color:var(--text-muted);font-size:14px;"></i>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;">
+        <i class="fa-solid fa-circle-info" style="color:var(--text-muted);font-size:13px;"></i>
         <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);">About This Calculator</span>
       </div>
 
-      <div style="padding:24px 26px;">
+      <div>
 
         <!-- How it works: 3-step strip -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:28px;">
@@ -176,7 +176,7 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
         </div>
 
       </div>
-    </section>
+    </div>
 
     <style>
       .tc-faq { display: flex; flex-direction: column; gap: 2px; }
@@ -260,9 +260,8 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         state = get_nfl_state() or {}
         current_season = int(state.get("season") or datetime.now().year)
         has_premium = has_premium_access(user_id, None, "sleeper")
-        body = build_trade_calculator_body(None, current_season, has_premium=has_premium)
-        # Append crawlable explanatory content for the public (guest) calculator.
-        body += _TRADE_CALCULATOR_SEO_CONTENT
+        body = build_trade_calculator_body(None, current_season, has_premium=has_premium,
+                                           seo_footer=_TRADE_CALCULATOR_SEO_CONTENT)
 
     return render_page(
         "Fantasy Football Trade Calculator - Dynasty & Redraft Trade Values | BR Fantasy",

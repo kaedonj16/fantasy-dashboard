@@ -17,6 +17,7 @@ def build_trade_calculator_body(
         has_premium: bool = False,
         is_superflex: bool = False,
         platform: Optional[str] = None,
+        seo_footer: str = "",
 ) -> str:
     league_val = league_id or ""
     season_val = season if season is not None else ""
@@ -911,6 +912,7 @@ def build_trade_calculator_body(
           </div><!-- /#otcSuggestionsTab -->
 
         </div><!-- /.otc-shell -->
+        {seo_footer}
       </main>
 
       <aside class="otc-side">
