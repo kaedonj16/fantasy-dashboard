@@ -24780,8 +24780,9 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         roster_id = session.get("viewer_roster_id") or ""
     # Serve from cache if fresh
     _sc_key = (platform, league_id, season, roster_id)
+    _is_embed_req = request.args.get('embed') == '1'
     _sc_cached = _SHARE_CARD_CACHE.get(_sc_key)
-    if _sc_cached and time.time() - _sc_cached["ts"] < _SHARE_CARD_CACHE_TTL:
+    if not _is_embed_req and _sc_cached and time.time() - _sc_cached["ts"] < _SHARE_CARD_CACHE_TTL:
         return _sc_cached["html"], 200, {"Content-Type": "text/html; charset=utf-8"}
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
