@@ -14,7 +14,7 @@ const PRECACHE_URLS = [
 // Navigation pages to cache as user visits them
 const CACHE_ON_VISIT = new Set([
   '/dynasty-trade-value-chart',
-  '/risers-fallers',
+  '/top-movers',
   '/players',
   '/rankings/dynasty',
   '/rankings/dynasty-qb',

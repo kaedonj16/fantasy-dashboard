@@ -326,7 +326,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None) -> st
     return f"""
 <div class="rf-page">
   <div class="rf-hero">
-    <h1 class="rf-title">Dynasty Fantasy Football Risers &amp; Fallers</h1>
+    <h1 class="rf-title">Dynasty Fantasy Football Top Movers</h1>
     <p class="rf-subtitle">
       Biggest dynasty trade value movers this week &mdash; {range_note}.
       Use the <a href="/trade">Trade Calculator</a> to act on these moves.
@@ -355,7 +355,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None) -> st
     breakout performances or positive depth chart news; big fallers often reflect injuries
     or increased competition.</p>
 
-    <h2>How to Use Risers and Fallers</h2>
+    <h2>How to Use Top Movers</h2>
     <p>Risers are buy candidates &mdash; their real market value is rising but roster holders
     may not have adjusted their asking price yet. Fallers are sell candidates for the same
     reason. Use the <a href="/trade">BR Fantasy Trade Calculator</a> to turn this intel

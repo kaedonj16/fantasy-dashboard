@@ -1348,12 +1348,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
-                ("Risers &amp; Fallers", "/risers-fallers", "risers-fallers"),
+                ("Top Movers", "/top-movers", "top-movers"),
                 ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "/metrics", "advanced-metrics"),
                 ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
                 ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
-            ], ["players", "prospects", "breakouts", "risers-fallers"], "playersNavDropdown"),
+            ], ["players", "prospects", "breakouts", "top-movers"], "playersNavDropdown"),
         ]
 
         player_search_html = (
@@ -1475,14 +1475,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
-        ("Risers &amp; Fallers", "risers_fallers_page", "risers-fallers", False),
+        ("Top Movers", "top_movers_page", "top-movers", False),
         ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Waivers & Start/Sit <span class='nav-pro-badge'>PRO</span>", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
-    ], ["players", "prospects", "breakouts", "waivers", "schedule", "risers-fallers"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts", "waivers", "schedule", "top-movers"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -25322,10 +25322,15 @@ def dynasty_trade_value_chart():
     )
 
 
-# ── Risers & Fallers ──────────────────────────────────────────────────────────
+# ── Top Movers (was Risers & Fallers) ─────────────────────────────────────────
 
 @app.route("/risers-fallers")
-def risers_fallers_page():
+def risers_fallers_redirect():
+    from flask import redirect as _redir
+    return _redir("/top-movers", 301)
+
+@app.route("/top-movers")
+def top_movers_page():
     """Weekly dynasty risers and fallers — freshness content for SEO."""
     from dashboard_services.pages.dynasty_pages import build_risers_fallers_body
     from data_building.player_value_history import get_top_movers
@@ -25339,7 +25344,7 @@ def risers_fallers_page():
     body = build_risers_fallers_body(movers, as_of_date=date_label)
 
     return render_page(
-        f"Dynasty Risers & Fallers — {date_label} | BR Fantasy",
+        f"Top Movers — {date_label} | BR Fantasy",
         None, "players", body,
         description=(
             f"Dynasty fantasy football risers and fallers for the week of {date_label}. "
@@ -25822,7 +25827,7 @@ def page_trade_card(share_id: str):
       color:var(--tc-muted);border-radius:8px;padding:5px 10px;font-size:14px;cursor:pointer;}}
     .asset-row{{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--tc-border-sub)}}
     .asset-row:last-child{{border-bottom:none}}
-    .asset-name{{flex:1;font-size:13px;font-weight:600;color:var(--tc-text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+    .asset-name{{flex:1;font-size:13px;font-weight:600;color:var(--tc-text);min-width:0;word-break:break-word}}
     .asset-val{{font-size:12px;color:var(--tc-muted);flex-shrink:0}}
     .asset-pos{{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0}}
     .empty-side{{font-size:13px;color:var(--tc-dim);padding:8px 0}}
@@ -26089,7 +26094,7 @@ def api_push_broadcast():
     data  = request.get_json(force=True) or {}
     title = data.get("title", "BR Fantasy Update")
     body  = data.get("body",  "Your weekly dynasty risers and fallers are ready!")
-    url   = data.get("url",   "/risers-fallers")
+    url   = data.get("url",   "/top-movers")
     tag   = data.get("tag",   "weekly-update")
     return _push_broadcast(title=title, body=body, url=url, tag=tag)
 
