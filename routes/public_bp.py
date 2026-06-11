@@ -91,6 +91,17 @@ def sitemap_xml():
         ET.SubElement(url_el, "priority").text = priority
         ET.SubElement(url_el, "changefreq").text = changefreq
 
+    # Per-player trade-value pages
+    try:
+        from app import get_player_slug_index
+        for slug in sorted(get_player_slug_index().keys()):
+            url_el = ET.SubElement(urlset, "url")
+            ET.SubElement(url_el, "loc").text = f"{base}/player/{slug}/trade-value"
+            ET.SubElement(url_el, "priority").text = "0.7"
+            ET.SubElement(url_el, "changefreq").text = "weekly"
+    except Exception:
+        pass  # never let player-page enumeration break the sitemap
+
     xml_bytes = ET.tostring(urlset, encoding="unicode", xml_declaration=False)
     body = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml_bytes
     return body, 200, {"Content-Type": "application/xml; charset=utf-8"}
