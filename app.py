@@ -1351,7 +1351,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Dynasty Value Chart", "/dynasty-trade-value-chart", "dynasty-chart"),
                 ("Risers &amp; Fallers", "/risers-fallers", "risers-fallers"),
                 ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "/metrics", "advanced-metrics"),
-                ("Breakouts <span class='nav-pro-badge'>PRO</span>",       "/breakouts", "breakouts"),
+                ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
                 ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
             ], ["players", "prospects", "breakouts", "dynasty-chart", "risers-fallers"], "playersNavDropdown"),
@@ -1872,7 +1872,13 @@ def render_page(
         session["last_league_id"] = league_id
         session["last_platform"] = platform
         session["last_season"] = season
-    nav_html = build_nav(league_id, active, platform, season)
+    # For public pages (no league context), inherit the session's last league so
+    # logged-in users see their league nav rather than the guest nav.
+    _nav_lid      = league_id or session.get("last_league_id") or None
+    _nav_platform = platform  or session.get("last_platform")  or None
+    _nav_season_raw = session.get("last_season") if not season else None
+    _nav_season   = season or (int(_nav_season_raw) if _nav_season_raw else None)
+    nav_html = build_nav(_nav_lid, active, _nav_platform, _nav_season)
 
     meta_tags = _build_seo_meta_tags(
         description, canonical, noindex,
