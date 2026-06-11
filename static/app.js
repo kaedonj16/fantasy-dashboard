@@ -8469,12 +8469,14 @@ function openPlayerModal(playerId, playerName, opts) {
               const sigma = diff < 0 ? ageCurve.pre : ageCurve.post;
               return Math.exp(-0.5 * Math.pow(diff / sigma, 2));
             }
-            // Scale so the curve passes through the player's current value at their current age.
-            const lastVal = y1qb[y1qb.length - 1];
-            const curveAtNow = _ageCurveNorm(playerAge);
-            const scale = lastVal && curveAtNow > 0 ? lastVal / curveAtNow : 1;
+            // Scale: curve peaks at the player's best historical value.
+            // Anchoring to current value causes distortion for young stars (their
+            // peak projection can be 10x the chart range). Anchoring to max historical
+            // value keeps the curve within the visible chart while still showing the
+            // expected trajectory shape relative to what the player has achieved.
+            const maxHistVal = Math.max(...y1qb.filter(v => v != null && !isNaN(v)));
+            const scale = maxHistVal || lastVal || 1;
             const yCurve = data.value_history.map(h => _ageCurveNorm(_ageAtDate(h.as_of_date)) * scale);
-            // Clamp to visible range (don't let the curve go below 0 or wildly above the chart).
             const curveExtended = [...yCurve, null, null, null, null];
             const traceAge = {
               x: extendedX, y: curveExtended,
