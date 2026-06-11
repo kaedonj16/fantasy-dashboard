@@ -757,7 +757,7 @@ function emptyState(container, message, iconClass) {
         var cardEl = fd.querySelector('.share-card') || fd.querySelector('.card');
         if (!cardEl) throw new Error('card element not found');
         var canvas = await html2canvas(cardEl, {
-          useCORS: true, allowTaint: true, scale: window.devicePixelRatio || 2, logging: false,
+          useCORS: true, allowTaint: true, scale: Math.max(window.devicePixelRatio || 2, 3), logging: false,
           width: cardEl.scrollWidth, height: cardEl.scrollHeight,
           windowWidth: fd.documentElement.scrollWidth,
           windowHeight: fd.documentElement.scrollHeight,
@@ -9166,8 +9166,20 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
         pillsEl.innerHTML = pillsHTML;
       }
 
-      // Populate just the bars column
-      contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData);
+      // Populate just the bars column (initial render without ranks)
+      contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null);
+
+      // Fetch position ranks in background and re-render with rank badges
+      if (!isCareer && activeSeason) {
+        fetch(`/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(ranksData => {
+            if (ranksData && ranksData.ranks && Object.keys(ranksData.ranks).length) {
+              contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranksData.ranks);
+            }
+          })
+          .catch(() => {});
+      }
 
       // Reset the weekly-trends panel when the season pill changes so it
       // refetches for the newly selected season.
@@ -9283,7 +9295,7 @@ function pmToggleWeeklyTrends(playerId) {
     });
 }
 
-function buildAdvancedMetricsHTML(metricsData) {
+function buildAdvancedMetricsHTML(metricsData, ranks) {
   const metrics = metricsData.metrics || {};
   // Normalize PFF position codes to canonical fantasy positions
   const _posNorm = { HB: 'RB', FB: 'RB', SE: 'WR', FL: 'WR' };
@@ -9526,27 +9538,77 @@ function buildAdvancedMetricsHTML(metricsData) {
 
   if (defs.length === 0) return '';
 
-  function _cells(m) {
+  function _cells(m, isRank) {
     if (!m) return '<span></span><span></span><span></span>';
     const fill = Math.max(0, Math.min(100, m.fill));
     const color = m.forceColor || (fill >= 60 ? '#10b981' : fill >= 35 ? '#3b82f6' : '#f59e0b');
-    const subLine = m.sub ? `<div class="pm-comp-sub">${m.sub}</div>` : '';
+    const subCls = isRank ? ' rank-badge' : '';
+    const subLine = m.sub ? `<div class="pm-comp-sub${subCls}">${m.sub}</div>` : '';
     return `<span class="pm-comp-label">${m.label}</span>` +
       `<div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>` +
       `<div class="pm-comp-val" style="color:${color};">${m.display}${subLine}</div>`;
   }
 
-  const mid = Math.ceil(defs.length / 2);
-  const leftDefs = defs.slice(0, mid);
-  const rightDefs = defs.slice(mid);
-  const rowCount = Math.max(leftDefs.length, rightDefs.length);
-  let gridRows = '';
-  for (let i = 0; i < rowCount; i++) {
-    gridRows += _cells(leftDefs[i]);
-    gridRows += '<div class="am-vert-sep"></div>';
-    gridRows += _cells(rightDefs[i]);
+  function _grid(arr, isRank) {
+    const mid = Math.ceil(arr.length / 2);
+    const left = arr.slice(0, mid);
+    const right = arr.slice(mid);
+    let rows = '';
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+      rows += _cells(left[i], isRank);
+      rows += '<div class="am-vert-sep"></div>';
+      rows += _cells(right[i], isRank);
+    }
+    return `<div class="adv-metrics-grid">${rows}</div>`;
   }
-  let html = `<div class="adv-metrics-grid">${gridRows}</div>`;
+
+  let html = _grid(defs, false);
+
+  // ── Volume section ──────────────────────────────────────────────────────────
+  const volDefs = [];
+  const g = metrics.games || 0;
+
+  function _rankSub(key) {
+    if (!ranks || !ranks[key]) return null;
+    return `(#${ranks[key]})`;
+  }
+  function _pg(total) { return (g > 0 && total != null) ? total / g : null; }
+
+  if (position === 'RB') {
+    const cpg = _pg(metrics.total_carries);
+    if (cpg != null) volDefs.push({ label: 'Carries/G', fill: Math.min(cpg / 22 * 100, 100), display: cpg.toFixed(1), sub: _rankSub('carries_per_game') });
+    if (metrics.total_carries != null) volDefs.push({ label: 'Carries', fill: Math.min(metrics.total_carries / 300 * 100, 100), display: Math.round(metrics.total_carries), sub: _rankSub('total_carries') });
+    const tpg = _pg(metrics.total_targets);
+    if (tpg != null) volDefs.push({ label: 'Targets/G', fill: Math.min(tpg / 7 * 100, 100), display: tpg.toFixed(1), sub: _rankSub('targets_per_game') });
+    if (metrics.total_targets != null) volDefs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / 100 * 100, 100), display: Math.round(metrics.total_targets), sub: _rankSub('total_targets') });
+    const thpg = _pg(metrics.total_touches);
+    if (thpg != null) volDefs.push({ label: 'Touches/G', fill: Math.min(thpg / 25 * 100, 100), display: thpg.toFixed(1), sub: _rankSub('touches_per_game') });
+    if (metrics.total_rush_tds != null) volDefs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 16 * 100, 100), display: Math.round(metrics.total_rush_tds), sub: _rankSub('total_rush_tds') });
+    if (metrics.total_rec_tds != null) volDefs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / 8 * 100, 100), display: Math.round(metrics.total_rec_tds), sub: _rankSub('total_rec_tds') });
+    if (metrics.total_tds != null) volDefs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 20 * 100, 100), display: Math.round(metrics.total_tds), sub: _rankSub('total_tds') });
+  } else if (position === 'WR' || position === 'TE') {
+    const tgtMax = position === 'WR' ? 12 : 8;
+    const totTgtMax = position === 'WR' ? 180 : 120;
+    const tpg = _pg(metrics.total_targets);
+    if (tpg != null) volDefs.push({ label: 'Targets/G', fill: Math.min(tpg / tgtMax * 100, 100), display: tpg.toFixed(1), sub: _rankSub('targets_per_game') });
+    if (metrics.total_targets != null) volDefs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / totTgtMax * 100, 100), display: Math.round(metrics.total_targets), sub: _rankSub('total_targets') });
+    const rpg = _pg(metrics.total_receptions);
+    if (rpg != null) volDefs.push({ label: 'Receptions/G', fill: Math.min(rpg / 9 * 100, 100), display: rpg.toFixed(1), sub: _rankSub('receptions_per_game') });
+    if (metrics.total_receptions != null) volDefs.push({ label: 'Receptions', fill: Math.min(metrics.total_receptions / 130 * 100, 100), display: Math.round(metrics.total_receptions), sub: _rankSub('total_receptions') });
+    const recTdMax = position === 'WR' ? 14 : 12;
+    if (metrics.total_rec_tds != null) volDefs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / recTdMax * 100, 100), display: Math.round(metrics.total_rec_tds), sub: _rankSub('total_rec_tds') });
+    if (metrics.total_tds != null) volDefs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 15 * 100, 100), display: Math.round(metrics.total_tds), sub: _rankSub('total_tds') });
+  } else if (position === 'QB') {
+    if (metrics.total_pass_tds != null) volDefs.push({ label: 'Pass TDs', fill: Math.min(metrics.total_pass_tds / 40 * 100, 100), display: Math.round(metrics.total_pass_tds), sub: _rankSub('total_pass_tds') });
+    const ptpg = _pg(metrics.total_pass_tds);
+    if (ptpg != null) volDefs.push({ label: 'Pass TDs/G', fill: Math.min(ptpg / 3 * 100, 100), display: ptpg.toFixed(1), sub: _rankSub('pass_tds_per_game') });
+    if (metrics.total_rush_tds != null) volDefs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 15 * 100, 100), display: Math.round(metrics.total_rush_tds), sub: _rankSub('total_rush_tds') });
+    if (metrics.total_tds != null) volDefs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 45 * 100, 100), display: Math.round(metrics.total_tds), sub: _rankSub('total_tds') });
+  }
+
+  if (volDefs.length > 0) {
+    html += `<div class="am-section-header">Volume</div>${_grid(volDefs, true)}`;
+  }
 
   if (metricsData.as_of_date) {
     html += `<div style="font-size:11px;color:var(--text-muted);margin-top:10px;text-align:right;">As of ${metricsData.as_of_date}</div>`;
@@ -10330,15 +10392,17 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
   // Position-aware metric groups
   const qbMetrics = [
     'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
-    'pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate', 
-    'pressure_to_sack_rate', 'snap_share', 'role_score'
+    'pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate',
+    'pressure_to_sack_rate', 'snap_share', 'role_score',
+    'total_pass_tds', 'total_rush_tds', 'total_tds',
   ];
-  
+
   const rbMetrics = [
     'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share',
     'opportunity_share', 'red_zone_usage', 'role_score', 'explosive_runs_10_plus',
     'breakaway_percentage', 'elusive_rating', 'pff_rushing_grade', 'grades_offense',
-    'avoided_tackles', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception'
+    'avoided_tackles', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
+    'total_carries', 'total_touches', 'total_targets', 'total_rush_tds', 'total_rec_tds', 'total_tds',
   ];
 
   const wrTeMetrics = [
@@ -10346,7 +10410,8 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
     'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
     'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
-    'wide_rate', 'inline_rate', 'grades_offense', 'pass_block_rate', 'grades_pass_block'
+    'wide_rate', 'inline_rate', 'grades_offense', 'pass_block_rate', 'grades_pass_block',
+    'total_targets', 'total_receptions', 'total_rec_tds', 'total_tds',
   ];
 
   const olMetrics = [
@@ -10400,6 +10465,16 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     grades_pass_block: 'PFF Block Grade',
     avoided_tackles: 'Avoided Tackles',
     pass_block_rate: 'Block Rate',
+
+    // Volume
+    total_carries: 'Carries',
+    total_targets: 'Targets',
+    total_receptions: 'Receptions',
+    total_touches: 'Touches',
+    total_rush_tds: 'Rush TDs',
+    total_rec_tds: 'Rec TDs',
+    total_pass_tds: 'Pass TDs',
+    total_tds: 'Total TDs',
   };
   
   // Determine relevant metrics based on positions
@@ -10469,6 +10544,11 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       // Rating / score metrics
       'nfl_passer_rating': 130, 'target_quality_score': 20,
       'elusive_rating': 200, 'role_score': 100,
+
+      // Volume counts
+      'total_carries': 300, 'total_targets': 180, 'total_receptions': 130,
+      'total_touches': 350, 'total_rush_tds': 18, 'total_rec_tds': 14,
+      'total_pass_tds': 40, 'total_tds': 45,
     };
     
     const range = metricRanges[key] || 100; // Default to 100 if not specified
@@ -10506,7 +10586,9 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
         'breakaway_percentage', 'opportunity_share',
       ];
       // Count metrics that should always show as integers
-      const intMetrics = ['yards_after_catch', 'explosive_runs_10_plus', 'avoided_tackles'];
+      const intMetrics = ['yards_after_catch', 'explosive_runs_10_plus', 'avoided_tackles',
+        'total_carries', 'total_targets', 'total_receptions', 'total_touches',
+        'total_rush_tds', 'total_rec_tds', 'total_pass_tds', 'total_tds'];
 
       if (decimalPctMetrics.includes(key)) {
         return (v * 100).toFixed(1) + '%';

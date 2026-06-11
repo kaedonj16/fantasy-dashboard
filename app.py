@@ -25087,6 +25087,9 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   <meta property="og:title" content="{team_name} - BR Fantasy Report">
   <meta property="og:description" content="{record} · {grade_label} grade · {win_window} · {season} season">
   <meta property="og:image" content="{avatar_url or '/static/BR_Logo_dark.png'}">
+  <script>
+    (function(){{var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}})();
+  </script>
   <link rel="stylesheet" href="/static/dashboard.css?v={_CSS_V}">
   <link rel="stylesheet" href="/static/font-awesome.css?v={_CSS_V}">
   <style>
@@ -25155,8 +25158,8 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
       var btn = document.getElementById('scThemeToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
-    // Load saved or default theme
-    var saved = localStorage.getItem(THEME_KEY) || 'dark';
+    // Load saved or default theme (falls back to browser preference)
+    var saved = localStorage.getItem(THEME_KEY) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     applyTheme(saved);
     // Standalone toggle button
     var toggleBtn = document.getElementById('scThemeToggle');
@@ -25611,6 +25614,20 @@ def page_trade_card(share_id: str):
     t1 = p.get("t1") or "Team 1"
     t2 = p.get("t2") or "Team 2"
 
+    def _og_assets(players, picks, limit=2):
+        parts = []
+        for pl in players[:limit]:
+            name = pl["name"]
+            # Last name only keeps it short; full name if single word
+            words = name.split()
+            parts.append(words[-1] if len(words) > 1 else name)
+        remaining = limit - len(players)
+        for pk in picks[:max(0, remaining)]:
+            # Shorten "2028 1st (Mid)" → "2028 1st"
+            parts.append(pk["name"].split(" (")[0])
+        return " & ".join(parts) if parts else "Assets"
+    og_title = f'{_og_assets(side_a, picks_a)} for {_og_assets(side_b, picks_b)} | BR Fantasy Trade'
+
     # Use depth-adjusted effective totals if saved, otherwise fall back to raw totals
     eff_a = float(p.get("eff_a") or 0) or float(total_a)
     eff_b = float(p.get("eff_b") or 0) or float(total_b)
@@ -25743,15 +25760,18 @@ def page_trade_card(share_id: str):
   <meta charset="utf-8">
   <title>Trade Card | BR Fantasy</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta property="og:title" content="{t1} vs {t2} | BR Fantasy Trade">
+  <meta property="og:title" content="{og_title}">
   <meta property="og:description" content="{verdict}">
-  <meta property="og:image" content="{request.host_url.rstrip('/')}/static/BR_Logo_dark.png">
+  <meta property="og:image" content="{request.host_url.rstrip('/')}/static/BR_Logo.png">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="{t1} vs {t2} | BR Fantasy Trade">
+  <meta name="twitter:title" content="{og_title}">
   <meta name="twitter:description" content="{verdict}">
-  <meta name="twitter:image" content="{request.host_url.rstrip('/')}/static/BR_Logo_dark.png">
+  <meta name="twitter:image" content="{request.host_url.rstrip('/')}/static/BR_Logo.png">
   <link rel="icon" href="/static/BR_Logo.png" type="image/png">
+  <script>
+    (function(){{var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}})();
+  </script>
   <style>
     :root{{--tc-bg:#0b1120;--tc-card:#0f1d36;--tc-hdr:#0b1628;--tc-border:rgba(255,255,255,.1);--tc-border-sub:rgba(255,255,255,.07);--tc-text:#e2e8f0;--tc-text2:#f1f5f9;--tc-muted:#94a3b8;--tc-dim:#64748b;--tc-dimmer:#475569;--tc-bar:rgba(255,255,255,.08);}}
     [data-theme="light"]{{--tc-bg:#f1f5f9;--tc-card:#ffffff;--tc-hdr:#f8fafc;--tc-border:rgba(0,0,0,.1);--tc-border-sub:rgba(0,0,0,.06);--tc-text:#1e293b;--tc-text2:#0f172a;--tc-muted:#475569;--tc-dim:#64748b;--tc-dimmer:#94a3b8;--tc-bar:rgba(0,0,0,.07);}}
@@ -25865,7 +25885,7 @@ def page_trade_card(share_id: str):
       var btn = document.getElementById('tcToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
-    var saved = localStorage.getItem(THEME_KEY) || 'dark';
+    var saved = localStorage.getItem(THEME_KEY) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     applyTheme(saved);
     var toggleBtn = document.getElementById('tcToggle');
     if (toggleBtn) {{

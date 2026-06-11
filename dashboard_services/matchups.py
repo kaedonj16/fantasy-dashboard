@@ -989,7 +989,7 @@ def render_matchup_slide(
             pos = "IDP"
 
         if pos == "IDP":
-            team_stats = week_stats.get(nfl, {})
+            team_stats = (week_stats or {}).get(nfl, {})
             pos_data = team_stats.get(pos, {})
             player_stats = pos_data.get(normalize_name(name), {})
             actual = player_stats.get('pts_idp', 0.0)

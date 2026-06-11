@@ -253,6 +253,15 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS yprr NUMERIC;
     """)
 
+    # Touchdown volume totals.
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS total_rush_tds  NUMERIC,
+            ADD COLUMN IF NOT EXISTS total_rec_tds   NUMERIC,
+            ADD COLUMN IF NOT EXISTS total_pass_tds  NUMERIC,
+            ADD COLUMN IF NOT EXISTS total_tds       NUMERIC;
+    """)
+
 
 def _extract_metric_value(metrics: Dict, metric_name: str):
     """Safely pull the scalar value from a metric payload dict."""
@@ -787,6 +796,16 @@ def calculate_player_metrics(
         ),
         "total_pass_att":   _vol("avg_pass_att"),
         "target_share":     target_share,
+        "total_rush_tds":   _vol("avg_rush_tds"),
+        "total_rec_tds":    _vol("avg_rec_tds"),
+        "total_pass_tds":   _vol("avg_pass_tds"),
+        "total_tds": (
+            None if all(
+                _vol(k) is None for k in ("avg_rush_tds", "avg_rec_tds", "avg_pass_tds")
+            ) else round(sum(
+                _vol(k) or 0 for k in ("avg_rush_tds", "avg_rec_tds", "avg_pass_tds")
+            ), 1)
+        ),
     }
 
 
@@ -822,7 +841,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     rz_targets_pg, rz_carries_pg,
                     role_score, usage_trend, efficiency_trend, games,
                     total_targets, total_receptions, total_carries, total_touches, total_pass_att,
-                    target_share, route_participation
+                    target_share, route_participation,
+                    total_rush_tds, total_rec_tds, total_pass_tds, total_tds
                 )
                 VALUES (
                     %s, %s, %s, %s,
@@ -833,7 +853,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
-                    %s, %s
+                    %s, %s,
+                    %s, %s, %s, %s
                 )
                 ON CONFLICT (player_id, as_of_date)
                 DO UPDATE SET
@@ -865,7 +886,11 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                     total_touches = EXCLUDED.total_touches,
                     total_pass_att = EXCLUDED.total_pass_att,
                     target_share = EXCLUDED.target_share,
-                    route_participation = COALESCE(EXCLUDED.route_participation, player_advanced_metrics.route_participation)
+                    route_participation = COALESCE(EXCLUDED.route_participation, player_advanced_metrics.route_participation),
+                    total_rush_tds = EXCLUDED.total_rush_tds,
+                    total_rec_tds = EXCLUDED.total_rec_tds,
+                    total_pass_tds = EXCLUDED.total_pass_tds,
+                    total_tds = EXCLUDED.total_tds
             """, (
                 metrics["player_id"], as_of_date, season, metrics["position"],
                 metrics.get("yards_per_target"), metrics.get("catch_rate"),
@@ -884,6 +909,8 @@ def save_metrics_snapshot(metrics_list: List[Dict[str, Any]], as_of_date: str, s
                 metrics.get("total_pass_att"),
                 metrics.get("target_share"),
                 route_partic,
+                metrics.get("total_rush_tds"), metrics.get("total_rec_tds"),
+                metrics.get("total_pass_tds"), metrics.get("total_tds"),
             ))
 
     print(f"[advanced_metrics] Saved {len(metrics_list)} player metrics for {as_of_date} (season {season})")
@@ -1234,18 +1261,25 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "pass_block_rate":      {"label": "Block Rate",          "category": "Receiving", "positions": ["TE", "RB"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of pass snaps spent blocking rather than running a route."},
     "explosive_runs_pg":       {"label": "Explosive Runs/G",  "category": "Rushing", "positions": ["RB"], "min_vol": _V_GAMES, "desc": "Explosive runs (10+ yards) per game.", "computed_sql": "m.explosive_runs_10_plus::float / NULLIF(m.games, 0)", "computed_null": "m.explosive_runs_10_plus IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "avoided_tackles_pg":      {"label": "Avoided Tackles/G", "category": "Rushing", "positions": ["RB"], "min_vol": _V_GAMES, "desc": "Tackles avoided per game (PFF).", "computed_sql": "m.avoided_tackles::float / NULLIF(m.games, 0)", "computed_null": "m.avoided_tackles IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    # ── Volume counts — useful as combo-filter targets ────────────────────────
-    "total_targets":      {"label": "Targets",      "category": "Volume", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total targets in the season."},
-    "total_receptions":   {"label": "Receptions",   "category": "Volume", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total receptions in the season."},
-    "total_routes":       {"label": "Routes",       "category": "Volume", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Estimated total routes run (= season receiving yards ÷ yprr). Requires both yprr and receptions data."},
+    # ── Volume counts with paired per-game rates ─────────────────────────────
     "total_carries":      {"label": "Carries",      "category": "Volume", "positions": ["RB", "QB"], "integer": True, "desc": "Total carries in the season."},
-    "total_touches":      {"label": "Touches",      "category": "Volume", "positions": ["RB", "WR", "TE"], "integer": True, "desc": "Total carries plus receptions in the season."},
-    # ── Per-game volume rates ─────────────────────────────────────────────────
-    "carries_per_game":    {"label": "Carries/G",    "category": "Volume", "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Carries per game.", "computed_sql": "m.total_carries::float / NULLIF(m.games, 0)", "computed_null": "m.total_carries IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "targets_per_game":    {"label": "Targets/G",    "category": "Volume", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Targets per game.", "computed_sql": "m.total_targets::float / NULLIF(m.games, 0)", "computed_null": "m.total_targets IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "carries_per_game":   {"label": "Carries/G",    "category": "Volume", "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Carries per game.", "computed_sql": "m.total_carries::float / NULLIF(m.games, 0)", "computed_null": "m.total_carries IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_targets":      {"label": "Targets",      "category": "Volume", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total targets in the season."},
+    "targets_per_game":   {"label": "Targets/G",    "category": "Volume", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Targets per game.", "computed_sql": "m.total_targets::float / NULLIF(m.games, 0)", "computed_null": "m.total_targets IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_receptions":   {"label": "Receptions",   "category": "Volume", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total receptions in the season."},
     "receptions_per_game": {"label": "Receptions/G", "category": "Volume", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Receptions per game.", "computed_sql": "m.total_receptions::float / NULLIF(m.games, 0)", "computed_null": "m.total_receptions IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "routes_per_game":     {"label": "Routes/G",     "category": "Volume", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Routes run per game.", "computed_sql": "m.total_routes::float / NULLIF(m.games, 0)", "computed_null": "m.total_routes IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "touches_per_game":    {"label": "Touches/G",    "category": "Volume", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Carries plus receptions per game.", "computed_sql": "m.total_touches::float / NULLIF(m.games, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_routes":       {"label": "Routes",       "category": "Volume", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Estimated total routes run (= season receiving yards ÷ yprr). Requires both yprr and receptions data."},
+    "routes_per_game":    {"label": "Routes/G",     "category": "Volume", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Routes run per game.", "computed_sql": "m.total_routes::float / NULLIF(m.games, 0)", "computed_null": "m.total_routes IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_touches":      {"label": "Touches",      "category": "Volume", "positions": ["RB", "WR", "TE"], "integer": True, "desc": "Total carries plus receptions in the season."},
+    "touches_per_game":   {"label": "Touches/G",    "category": "Volume", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Carries plus receptions per game.", "computed_sql": "m.total_touches::float / NULLIF(m.games, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_rush_tds":     {"label": "Rush TDs",     "category": "Volume", "positions": ["RB", "QB"], "integer": True, "desc": "Total rushing touchdowns in the season."},
+    "rush_tds_per_game":  {"label": "Rush TDs/G",   "category": "Volume", "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Rushing touchdowns per game.", "computed_sql": "m.total_rush_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_rush_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_rec_tds":      {"label": "Rec TDs",      "category": "Volume", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Total receiving touchdowns in the season."},
+    "rec_tds_per_game":   {"label": "Rec TDs/G",    "category": "Volume", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Receiving touchdowns per game.", "computed_sql": "m.total_rec_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_rec_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_pass_tds":     {"label": "Pass TDs",     "category": "Volume", "positions": ["QB"], "integer": True, "desc": "Total passing touchdowns in the season."},
+    "pass_tds_per_game":  {"label": "Pass TDs/G",   "category": "Volume", "positions": ["QB"], "min_vol": _V_GAMES, "desc": "Passing touchdowns per game.", "computed_sql": "m.total_pass_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_pass_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_tds":          {"label": "Total TDs",    "category": "Volume", "positions": ["QB", "RB", "WR", "TE"], "integer": True, "desc": "Total touchdowns (rush + receiving + passing) in the season."},
+    "total_tds_per_game": {"label": "Total TDs/G",  "category": "Volume", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Total touchdowns per game.", "computed_sql": "m.total_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
 }
 
 
@@ -1289,7 +1323,10 @@ def get_metric_leaderboard(
     if metric not in LEADERBOARD_METRICS:
         return []
     pos = (position or "").upper().strip() or None
-    vol_spec = LEADERBOARD_METRICS[metric].get("min_vol") or {}
+    _spec = LEADERBOARD_METRICS[metric]
+    _computed_sql = _spec.get("computed_sql")
+    _computed_null = _spec.get("computed_null")
+    vol_spec = _spec.get("min_vol") or {}
     vol_col = vol_spec.get("col") or "games"
 
     with get_conn() as conn:
@@ -1303,19 +1340,28 @@ def get_metric_leaderboard(
                 "WHERE table_name='player_advanced_metrics' "
                 "AND column_name = ANY(%s)",
                 (["games", "total_targets", "total_receptions",
-                  "total_carries", "total_touches", "total_pass_att"],),
+                  "total_carries", "total_touches", "total_pass_att",
+                  "total_rush_tds", "total_rec_tds", "total_pass_tds", "total_tds"],),
             ).fetchall()
         }
         has_games = "games" in existing_cols
         has_vol_col = vol_col in existing_cols
 
         # Resolve season if not provided: use the latest season with metric data.
+        # Computed metrics don't have a direct column, so fall back to games.
         if season is None:
-            srow = conn.execute(
-                f"SELECT season FROM player_advanced_metrics "
-                f"WHERE {metric} IS NOT NULL AND season IS NOT NULL "
-                f"ORDER BY season DESC LIMIT 1"
-            ).fetchone()
+            if _computed_sql:
+                srow = conn.execute(
+                    "SELECT season FROM player_advanced_metrics "
+                    "WHERE games IS NOT NULL AND season IS NOT NULL "
+                    "ORDER BY season DESC LIMIT 1"
+                ).fetchone()
+            else:
+                srow = conn.execute(
+                    f"SELECT season FROM player_advanced_metrics "
+                    f"WHERE {metric} IS NOT NULL AND season IS NOT NULL "
+                    f"ORDER BY season DESC LIMIT 1"
+                ).fetchone()
             if not srow:
                 return []
             season = int(srow["season"])
@@ -1399,9 +1445,6 @@ def get_metric_leaderboard(
             specific_vol_col = ""
 
         # Computed metrics (per-game rates) use SQL expressions instead of columns.
-        _spec = LEADERBOARD_METRICS[metric]
-        _computed_sql = _spec.get("computed_sql")
-        _computed_null = _spec.get("computed_null")
         if _computed_sql:
             metric_value_expr = f"{_computed_sql} AS value"
             metric_where = _computed_null
@@ -1470,6 +1513,85 @@ def get_metric_leaderboard(
             "age": _player_age(meta),
         })
     return out
+
+
+def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Return position-relative volume ranks for one player in a given season.
+    Ranks each volume metric (total carries, targets, TDs, per-game rates, etc.)
+    using SQL window functions across all players at the same position.
+    Returns {position, season, ranks: {metric_key: rank}}.
+    Empty dict when the player has no data or the season has no volume records.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT position, season FROM player_advanced_metrics "
+            "WHERE player_id = %s AND season IS NOT NULL "
+            "ORDER BY as_of_date DESC LIMIT 1",
+            (player_id,)
+        ).fetchone()
+        if not row:
+            return {}
+        position = row["position"]
+        if season is None:
+            season = int(row["season"])
+
+        try:
+            result = conn.execute("""
+                WITH snapshot AS (
+                    SELECT DISTINCT ON (player_id)
+                        player_id,
+                        total_carries, total_targets, total_receptions,
+                        total_touches, total_rush_tds, total_rec_tds,
+                        total_pass_tds, total_tds, games,
+                        CASE WHEN games > 0 THEN total_carries::float / games    END AS carries_pg,
+                        CASE WHEN games > 0 THEN total_targets::float / games    END AS targets_pg,
+                        CASE WHEN games > 0 THEN total_receptions::float / games END AS recs_pg,
+                        CASE WHEN games > 0 THEN total_touches::float / games    END AS touches_pg,
+                        CASE WHEN games > 0 THEN total_rush_tds::float / games   END AS rush_tds_pg,
+                        CASE WHEN games > 0 THEN total_rec_tds::float / games    END AS rec_tds_pg,
+                        CASE WHEN games > 0 THEN total_pass_tds::float / games   END AS pass_tds_pg,
+                        CASE WHEN games > 0 THEN total_tds::float / games        END AS total_tds_pg
+                    FROM player_advanced_metrics
+                    WHERE season = %s AND position = %s
+                      AND games IS NOT NULL AND games > 0
+                    ORDER BY player_id, as_of_date DESC
+                ),
+                r AS (
+                    SELECT player_id,
+                        RANK() OVER (ORDER BY total_carries DESC NULLS LAST)    AS total_carries,
+                        RANK() OVER (ORDER BY total_targets DESC NULLS LAST)    AS total_targets,
+                        RANK() OVER (ORDER BY total_receptions DESC NULLS LAST) AS total_receptions,
+                        RANK() OVER (ORDER BY total_touches DESC NULLS LAST)    AS total_touches,
+                        RANK() OVER (ORDER BY total_rush_tds DESC NULLS LAST)   AS total_rush_tds,
+                        RANK() OVER (ORDER BY total_rec_tds DESC NULLS LAST)    AS total_rec_tds,
+                        RANK() OVER (ORDER BY total_pass_tds DESC NULLS LAST)   AS total_pass_tds,
+                        RANK() OVER (ORDER BY total_tds DESC NULLS LAST)        AS total_tds,
+                        RANK() OVER (ORDER BY carries_pg DESC NULLS LAST)       AS carries_per_game,
+                        RANK() OVER (ORDER BY targets_pg DESC NULLS LAST)       AS targets_per_game,
+                        RANK() OVER (ORDER BY recs_pg DESC NULLS LAST)          AS receptions_per_game,
+                        RANK() OVER (ORDER BY touches_pg DESC NULLS LAST)       AS touches_per_game,
+                        RANK() OVER (ORDER BY rush_tds_pg DESC NULLS LAST)      AS rush_tds_per_game,
+                        RANK() OVER (ORDER BY rec_tds_pg DESC NULLS LAST)       AS rec_tds_per_game,
+                        RANK() OVER (ORDER BY pass_tds_pg DESC NULLS LAST)      AS pass_tds_per_game,
+                        RANK() OVER (ORDER BY total_tds_pg DESC NULLS LAST)     AS total_tds_per_game
+                    FROM snapshot
+                )
+                SELECT * FROM r WHERE player_id = %s
+            """, (season, position, player_id)).fetchone()
+        except Exception:
+            return {"position": position, "season": season, "ranks": {}}
+
+        if not result:
+            return {"position": position, "season": season, "ranks": {}}
+
+        rank_dict = dict(result)
+        rank_dict.pop("player_id", None)
+        return {
+            "position": position,
+            "season": season,
+            "ranks": {k: int(v) for k, v in rank_dict.items() if v is not None},
+        }
 
 
 def get_top_role_players(position: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
