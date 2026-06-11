@@ -25397,15 +25397,26 @@ def shared_trade_page(share_id: str):
     """Redirect a short trade share URL to /trade with its params."""
     _init_shared_trades_table()
     import json as _json
+    row = None
     try:
         from dashboard_services.db import get_conn
-        row = get_conn().execute(
-            "SELECT params FROM shared_trades WHERE share_id = %s", (share_id,)
-        ).fetchone()
-    except Exception:
-        row = None
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT params FROM shared_trades WHERE share_id = %s", (share_id,)
+            ).fetchone()
+    except Exception as _e:
+        logger.warning("[shared_trade] lookup error for %s: %s", share_id, _e)
     if not row:
-        abort(404)
+        # Render a friendly page instead of a bare 404
+        body = """
+        <div style="max-width:520px;margin:60px auto;text-align:center;padding:0 16px;">
+          <div style="font-size:48px;margin-bottom:16px;">🏈</div>
+          <h2 style="font-size:22px;font-weight:700;margin:0 0 8px;">Trade link not found</h2>
+          <p style="color:var(--text-muted);margin:0 0 24px;">This link may have expired or the trade was never saved.</p>
+          <a href="/trade" style="display:inline-block;padding:10px 24px;background:var(--accent,#3b82f6);color:#fff;border-radius:8px;text-decoration:none;font-weight:600;">Open Trade Calculator</a>
+        </div>"""
+        from app import render_page
+        return render_page("Trade Not Found | BR Fantasy", None, "trade", body), 404
     try:
         p = _json.loads(row["params"] if hasattr(row, "__getitem__") else row[0])
     except Exception:
@@ -25609,6 +25620,67 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
             pass
 
     return jsonify({"ok": True, "sent": sent, "failed": failed})
+
+
+def _notify_changelog_on_startup():
+    """Send a push notification when a new changelog entry is deployed.
+
+    Stores the last-notified entry date in the DB so this fires at most
+    once per changelog entry, even across restarts on the same deploy.
+    """
+    try:
+        from dashboard_services.changelog import CHANGELOG
+        if not CHANGELOG:
+            return
+        latest = CHANGELOG[0]
+        latest_date = latest.get("date", "")
+        if not latest_date:
+            return
+
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS app_state (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+            """)
+            conn.commit()
+            row = conn.execute(
+                "SELECT value FROM app_state WHERE key = 'changelog_last_pushed'"
+            ).fetchone()
+            last_pushed = (row[0] if row else None)
+
+        if last_pushed == latest_date:
+            return  # already notified for this entry
+
+        tag  = latest.get("tag", "update")
+        text = latest.get("text", "")
+        link = latest.get("link", "/")
+        # Trim long text to a push-friendly length
+        body = text if len(text) <= 120 else text[:117] + "…"
+        tag_labels = {"feature": "New feature", "new": "New", "fix": "Fix", "update": "Update"}
+        title = f"BR Fantasy — {tag_labels.get(tag, 'Update')}"
+
+        result = _push_broadcast(title=title, body=body, url=link, tag=f"changelog-{latest_date}")
+        sent = result.get_json().get("sent", 0) if hasattr(result, "get_json") else 0
+        logger.info("[changelog-push] sent %d notifications for entry %s", sent, latest_date)
+
+        # Mark this date as notified regardless of send count
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO app_state (key, value) VALUES ('changelog_last_pushed', %s) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                (latest_date,),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[changelog-push] startup notification failed: %s", exc)
+
+
+# Run once at import time (gunicorn workers each run this, but the DB dedup prevents
+# duplicate sends — only the first worker to run wins the upsert race).
+_notify_changelog_on_startup()
 
 
 if __name__ == "__main__":

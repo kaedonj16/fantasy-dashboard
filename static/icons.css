@@ -53,6 +53,17 @@
 .fa-scale-balanced    { background-image: url('images/scale-balanced-solid.png'); filter: brightness(0) saturate(100%) invert(37%) sepia(9%) saturate(620%) hue-rotate(176deg) brightness(97%) contrast(88%); }
 .fa-arrow-right-long  { background-image: url('images/arrow-right-long-solid.png'); filter: brightness(0) saturate(100%) invert(55%); }
 
+/* Extended icon mappings */
+.fa-layer-group        { background-image: url('images/chart-simple-solid.png');    filter: brightness(0) saturate(100%) invert(72%) sepia(97%) saturate(1001%) hue-rotate(359deg) brightness(104%) contrast(100%); }
+.fa-clock-rotate-left  { background-image: url('images/calendar-days-solid.png');   filter: brightness(0) saturate(100%) invert(44%) sepia(80%) saturate(998%) hue-rotate(199deg) brightness(101%) contrast(96%); }
+.fa-magnifying-glass-chart { background-image: url('images/magnifying-glass-solid.png'); filter: brightness(0) saturate(100%) invert(59%) sepia(56%) saturate(527%) hue-rotate(87deg) brightness(98%) contrast(89%); }
+.fa-lightbulb          { background-image: url('images/bolt-solid.png');             filter: brightness(0) saturate(100%) invert(69%) sepia(9%) saturate(560%) hue-rotate(175deg) brightness(98%) contrast(87%); }
+.fa-circle-info        { background-image: url('images/circle-solid.png');           filter: brightness(0) saturate(100%) invert(69%) sepia(9%) saturate(560%) hue-rotate(175deg) brightness(98%) contrast(87%); }
+.fa-circle-question    { background-image: url('images/circle-solid.png');           filter: brightness(0) saturate(100%) invert(69%) sepia(9%) saturate(560%) hue-rotate(175deg) brightness(98%) contrast(87%); }
+.fa-flag-checkered     { background-image: url('images/trophy-solid.png');           filter: brightness(0) saturate(100%) invert(59%) sepia(56%) saturate(527%) hue-rotate(87deg) brightness(98%) contrast(89%); }
+.fa-plus               { background-image: url('images/bullseye-solid.png');         filter: brightness(0) saturate(100%) invert(44%) sepia(80%) saturate(998%) hue-rotate(199deg) brightness(101%) contrast(96%); }
+.fa-arrow-right-arrow-left { background-image: url('images/arrow-right-long-solid.png'); filter: brightness(0) saturate(100%) invert(69%) sepia(9%) saturate(560%) hue-rotate(175deg) brightness(98%) contrast(87%); }
+
 /* Blue version for prospect badges */
 .player-badge-rookie .fa-product-hunt-brands { filter: brightness(0) saturate(100%) invert(29%) sepia(91%) saturate(1165%) hue-rotate(211deg) brightness(94%) contrast(87%) !important; }
 

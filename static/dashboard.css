@@ -19344,11 +19344,11 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 }
 .rf-info { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; overflow: hidden; }
 .rf-pos-badge { font-size: 10px; font-weight: 700; color: #fff; border-radius: 4px; padding: 1px 5px; flex-shrink: 0; }
-.rf-name { font-size: 13px; font-weight: 600; color: var(--text, #e2e8f0); text-decoration: none; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rf-name { font-size: 13px; font-weight: 600; color: #e2e8f0; text-decoration: none; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .rf-name:hover { color: #38bdf8; text-decoration: underline; }
-.rf-team { font-size: 11px; color: var(--text-muted, #94a3b8); flex-shrink: 0; }
+.rf-team { font-size: 11px; color: #94a3b8; flex-shrink: 0; }
 .rf-val-wrap { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; min-width: 52px; }
-.rf-val  { font-size: 14px; font-weight: 700; color: var(--text, #e2e8f0); }
+.rf-val  { font-size: 14px; font-weight: 700; color: #e2e8f0; }
 .rf-delta { font-size: 11px; font-weight: 700; }
 .rf-delta small { font-weight: 500; opacity: .75; }
 .rf-col-title-up  { color: #22c55e !important; }

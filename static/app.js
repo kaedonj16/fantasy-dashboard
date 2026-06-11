@@ -7574,9 +7574,11 @@ document.addEventListener('DOMContentLoaded', function () {
   try {
     var params = new URLSearchParams(window.location.search);
     var pid = params.get('player');
-    if (pid && typeof openPlayerModal === 'function') {
-      openPlayerModal(pid, params.get('player_name') || '', { force: true });
-    }
+    if (!pid || typeof openPlayerModal !== 'function') return;
+    // Don't open during a session-restore reload — the modal will open
+    // correctly on the next load once the session is set.
+    if (sessionStorage.getItem('_sessionRestoreAttempted')) return;
+    openPlayerModal(pid, params.get('player_name') || '', { force: true });
   } catch (e) {}
 });
 
