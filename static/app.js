@@ -695,7 +695,8 @@ function emptyState(container, message, iconClass) {
           var piBtn = document.createElement('button');
           piBtn.className = 'scm-btn scm-pi-btn';
           piBtn.id = 'scmPiBtn';
-          piBtn.textContent = 'Playoff Impact';
+          piBtn.title = 'Toggle Playoff Impact';
+          piBtn.innerHTML = '&#x1F4CA; PI';
           piBtn.onclick = function() {
             var on = piBtn.classList.toggle('scm-pi-btn-active');
             if (frame && frame.contentWindow) {
