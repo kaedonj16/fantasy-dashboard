@@ -59,17 +59,22 @@
       { displayModeBar: false, responsive: true });
   }
 
-  function assetText(side, focusFirst) {
-    return side.map(function (a) {
-      var nm = a.name || "?";
-      return a.is_focus ? "<strong style='color:var(--text);'>" + escapeHtml(nm) + "</strong>" : escapeHtml(nm);
-    }).join(", ");
-  }
-
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  }
+
+  // Mirrors _renderTITrades() in the Trade Intelligence modal so trades look
+  // identical across the site (uses the shared .ti-trade-* classes).
+  function assetHtml(a) {
+    if (a.type === "pick") {
+      return "<div class='ti-trade-asset pick'>" + escapeHtml(a.name || "") + "</div>";
+    }
+    var posTag = a.position && a.position !== "?"
+      ? " <span style='font-size:11px;opacity:.6;'>" + escapeHtml(a.position) + "</span>" : "";
+    var cls = a.is_focus ? "focus" : "other";
+    return "<div class='ti-trade-asset " + cls + "'>" + escapeHtml(a.name || "") + posTag + "</div>";
   }
 
   function renderTrades() {
@@ -88,28 +93,151 @@
           box.innerHTML = "<div style='padding:6px 0;'>No logged trades for this player yet this season.</div>";
           return;
         }
-        var rows = trades.map(function (t) {
-          var fmt = (t.is_superflex ? "SF" : "1QB") + (t.num_teams ? " &middot; " + t.num_teams + "-team" : "");
-          return "" +
-            "<div class='pp-trade-row' style='padding:10px 0;border-bottom:1px solid var(--border);'>" +
-              "<div style='display:flex;justify-content:space-between;gap:10px;align-items:baseline;'>" +
-                "<div style='flex:1;min-width:0;'>" + assetText(t.side_a) + "</div>" +
-                "<div style='color:var(--text-muted);flex-shrink:0;'>for</div>" +
-                "<div style='flex:1;min-width:0;text-align:right;'>" + assetText(t.side_b) + "</div>" +
-              "</div>" +
-              "<div style='font-size:11px;color:var(--text-muted);margin-top:3px;'>" +
-                escapeHtml(t.date || "") + " &middot; " + fmt +
+        box.innerHTML = trades.map(function (t) {
+          var sideA = (t.side_a || []).map(assetHtml).join("");
+          var sideB = (t.side_b || []).map(assetHtml).join("");
+          var fmt = t.is_superflex ? "SF" : t.is_superflex === false ? "1QB" : "";
+          var teams = t.num_teams ? t.num_teams + "-team" : "";
+          var ctx = [teams, fmt].filter(Boolean).join(" ");
+          var meta = [t.date, ctx].filter(Boolean).join(" · ");
+          return "<div class='ti-trade-item'>" +
+              "<div class='ti-trade-date'>" + escapeHtml(meta) + "</div>" +
+              "<div class='ti-trade-sides'>" +
+                "<div><div class='ti-trade-side-label'>Side A</div>" + sideA + "</div>" +
+                "<div class='ti-trade-arrow'>⇄</div>" +
+                "<div><div class='ti-trade-side-label'>Side B</div>" + sideB + "</div>" +
               "</div>" +
             "</div>";
         }).join("");
-        box.innerHTML = rows;
       })
       .catch(function () {
         box.innerHTML = "<div style='padding:6px 0;'>Could not load recent trades.</div>";
       });
   }
 
-  function init() { renderChart(); renderTrades(); }
+  // "View X in your league" CTA: sign the returning user in (from saved_viewer),
+  // then land on their league players page with the modal auto-opening.
+  function wireLeagueCta() {
+    var btn = document.querySelector(".pp-league-modal-btn");
+    if (!btn) return;
+    btn.addEventListener("click", async function () {
+      var pid = btn.getAttribute("data-player-id");
+      var name = btn.getAttribute("data-player-name") || "";
+      var q = "player=" + encodeURIComponent(pid) + "&player_name=" + encodeURIComponent(name);
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem("saved_viewer") || "null"); } catch (_) {}
+
+      if (saved && saved.league_id && saved.platform && saved.season) {
+        btn.disabled = true;
+        try {
+          await fetch("/api/quick-set-viewer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username:  saved.username,
+              roster_id: saved.roster_id || "",
+              user_id:   saved.user_id || "",
+              team_name: saved.team_name || "",
+            }),
+          });
+        } catch (_) { /* best effort; navigate anyway */ }
+        window.location.href = "/" + saved.platform + "/" + saved.season + "/" +
+          saved.league_id + "/players?" + q;
+      } else {
+        // No saved league: open a sign-in modal (username -> pick league -> go).
+        openSignInModal(pid, name);
+      }
+    });
+  }
+
+  // Sign-in modal: Sleeper username -> league picker -> set viewer and land on
+  // the league players page with this player's modal open.
+  function openSignInModal(pid, name) {
+    if (document.getElementById("ppSignin")) return;
+    var season = window.__ppSeason || new Date().getFullYear();
+    var overlay = document.createElement("div");
+    overlay.id = "ppSignin";
+    overlay.className = "pp-signin-overlay";
+    overlay.innerHTML =
+      "<div class='pp-signin-box' role='dialog' aria-label='Sign in'>" +
+        "<h3 class='pp-signin-title'>Sign in to your league</h3>" +
+        "<p class='pp-signin-sub'>Enter your Sleeper username to see " + escapeHtml(name) +
+          "'s value in your league.</p>" +
+        "<input class='pp-signin-input' id='ppSigninUser' type='text' placeholder='Sleeper username' autocomplete='username'>" +
+        "<div id='ppSigninLeagueWrap' style='display:none;'>" +
+          "<select class='pp-signin-select' id='ppSigninLeague'></select>" +
+        "</div>" +
+        "<div class='pp-signin-err' id='ppSigninErr'></div>" +
+        "<div class='pp-signin-actions'>" +
+          "<button class='otc-btn otc-btn-primary' id='ppSigninGo' style='flex:1;'>Find my leagues</button>" +
+          "<button class='otc-btn' id='ppSigninCancel'>Cancel</button>" +
+        "</div>" +
+        "<div class='pp-signin-foot'>Use ESPN or Yahoo? <a href='/?next=" +
+          encodeURIComponent("/players?player=" + pid + "&player_name=" + name) + "'>Sign in here</a></div>" +
+      "</div>";
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", function (e) { if (e.target === overlay) overlay.remove(); });
+    document.getElementById("ppSigninCancel").addEventListener("click", function () { overlay.remove(); });
+
+    var userEl = document.getElementById("ppSigninUser");
+    var wrap = document.getElementById("ppSigninLeagueWrap");
+    var sel = document.getElementById("ppSigninLeague");
+    var err = document.getElementById("ppSigninErr");
+    var go = document.getElementById("ppSigninGo");
+    var stage = "lookup";
+    userEl.focus();
+
+    async function doLookup() {
+      var u = (userEl.value || "").trim();
+      if (!u) { err.textContent = "Enter your username."; return; }
+      err.textContent = "";
+      go.disabled = true; go.textContent = "Loading…";
+      try {
+        var res = await fetch("/api/sleeper-user-leagues?username=" + encodeURIComponent(u));
+        var data = await res.json();
+        if (!res.ok || !data.ok || !(data.leagues || []).length) {
+          throw new Error(data.error || "No leagues found for that username.");
+        }
+        sel.innerHTML = data.leagues.map(function (lg) {
+          return "<option value='" + escapeHtml(lg.league_id) + "'>" + escapeHtml(lg.label || lg.name || lg.league_id) + "</option>";
+        }).join("");
+        wrap.style.display = "block";
+        stage = "go";
+        go.textContent = "View " + name;
+      } catch (e2) {
+        err.textContent = e2.message || "Could not load leagues.";
+        go.textContent = "Find my leagues";
+      } finally {
+        go.disabled = false;
+      }
+    }
+
+    function doGo() {
+      var u = (userEl.value || "").trim();
+      var lid = sel.value;
+      if (!u || !lid) { err.textContent = "Pick a league."; return; }
+      var next = "/sleeper/" + season + "/" + lid + "/players?player=" +
+        encodeURIComponent(pid) + "&player_name=" + encodeURIComponent(name);
+      var form = document.createElement("form");
+      form.method = "POST";
+      form.action = "/set-viewer";
+      form.innerHTML =
+        "<input type='hidden' name='platform' value='sleeper'>" +
+        "<input type='hidden' name='season' value='" + season + "'>" +
+        "<input type='hidden' name='league_id' value='" + escapeHtml(lid) + "'>" +
+        "<input type='hidden' name='username' value='" + escapeHtml(u) + "'>" +
+        "<input type='hidden' name='next' value='" + escapeHtml(next) + "'>";
+      document.body.appendChild(form);
+      form.submit();
+    }
+
+    go.addEventListener("click", function () { stage === "lookup" ? doLookup() : doGo(); });
+    userEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); stage === "lookup" ? doLookup() : doGo(); }
+    });
+  }
+
+  function init() { renderChart(); renderTrades(); wireLeagueCta(); }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {

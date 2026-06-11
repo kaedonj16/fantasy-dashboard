@@ -14927,6 +14927,82 @@ tr.team-clickable {
   background: rgba(59, 130, 246, 0.2);
 }
 
+.player-modal-page-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.player-modal-page-btn:hover {
+  background: var(--hover-bg, rgba(0,0,0,.04));
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+/* Shared trade-row styling (matches the Trade Intelligence trade list). Defined
+   globally so the per-player page and any other surface render trades the same. */
+.ti-trade-item { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.ti-trade-item:last-child { border-bottom: none; }
+.ti-trade-date {
+  font-size: 11px; color: var(--text-muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
+}
+.ti-trade-sides {
+  display: grid; grid-template-columns: 1fr 28px 1fr; gap: 8px; align-items: start;
+}
+.ti-trade-side-label {
+  font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;
+}
+.ti-trade-asset { font-size: 13px; padding: 2px 0; line-height: 1.4; }
+.ti-trade-asset.focus { font-weight: 700; }
+.ti-trade-asset.other { color: var(--text-muted); }
+.ti-trade-asset.pick { color: var(--text-muted); font-style: italic; }
+.ti-trade-arrow { text-align: center; color: var(--text-muted); padding-top: 22px; font-size: 15px; }
+
+/* Player page: similar-value player links */
+.pp-similar { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 4px 0; }
+.pp-similar-link {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px;
+  text-decoration: none; transition: background 0.12s, border-color 0.12s;
+}
+.pp-similar-link:hover { background: var(--hover-bg, rgba(0,0,0,.03)); border-color: var(--text-muted); }
+.pp-similar-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.pp-similar-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.pp-faq { padding: 4px 0; }
+
+/* Player page: sign-in modal */
+.pp-signin-overlay {
+  position: fixed; inset: 0; background: rgba(15,23,42,.55); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center; z-index: 100000; padding: 20px;
+}
+.pp-signin-box {
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+  width: 100%; max-width: 380px; padding: 24px;
+}
+.pp-signin-title { font-size: 18px; font-weight: 700; color: var(--text); margin: 0 0 4px; }
+.pp-signin-sub { font-size: 13px; color: var(--text-muted); margin: 0 0 16px; }
+.pp-signin-input, .pp-signin-select {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--bg, #fff); color: var(--text); font-size: 14px; margin-bottom: 10px;
+}
+.pp-signin-err { color: #ef4444; font-size: 12px; margin: 2px 0 8px; min-height: 14px; }
+.pp-signin-actions { display: flex; gap: 8px; margin-top: 4px; }
+.pp-signin-foot { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 12px; }
+.pp-signin-foot a { color: var(--accent, #38bdf8); }
+
+@media (max-width: 600px) {
+  .pp-similar { grid-template-columns: 1fr; }
+}
+
 /* Widened modal in compare mode */
 .player-modal.compare-mode {
   max-width: 1000px;

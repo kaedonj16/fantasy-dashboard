@@ -7371,7 +7371,43 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 // Player Modal
+// Auto-open a player modal when arriving with ?player=<id> (e.g. after the
+// "view in your league" sign-in flow from a player page). force:true bypasses
+// the guest redirect since the user is signed in by the time they land here.
+document.addEventListener('DOMContentLoaded', function () {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var pid = params.get('player');
+    if (pid && typeof openPlayerModal === 'function') {
+      openPlayerModal(pid, params.get('player_name') || '', { force: true });
+    }
+  } catch (e) {}
+});
+
+// Mirror of the server-side slugify() in dashboard_services/pages/player_page.py
+function pmSlugify(name) {
+  return String(name || "").toLowerCase().trim()
+    .replace(/&/g, " and ")
+    .replace(/[‘’']/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function openPlayerModal(playerId, playerName, opts) {
+  opts = opts || {};
+
+  // Guests: a player-name click goes to the public player page (SEO landing),
+  // not the in-app modal. Signed-in users keep the modal. opts.force bypasses
+  // this (used when auto-opening from ?player= after sign-in).
+  if (!opts.force && !window._isSignedIn) {
+    const _guestSlug = pmSlugify(playerName);
+    if (_guestSlug) {
+      window.location.href = '/player/' + _guestSlug + '/trade-value';
+      return;
+    }
+  }
+
+  const _ppSlug = pmSlugify(playerName);
 
   // Extract league context from URL path: /<platform>/<season>/<league_id>/<page>
   // For non-league pages (portfolio, home, etc.) fall back to query params.
@@ -7421,6 +7457,7 @@ function openPlayerModal(playerId, playerName, opts) {
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         <button class="player-modal-watchlist-btn" id="playerModalWatchlistBtn" title="Add to watchlist" style="display: none;"><i class="fa-regular fa-star" aria-hidden="true"></i></button>
+        ${_ppSlug ? `<a class="player-modal-page-btn" href="/player/${_ppSlug}/trade-value" title="View full player page">Player Page</a>` : ''}
         <button class="player-modal-compare-btn" id="playerModalCompareBtn" title="Compare players">Compare Player</button>
         <button class="player-modal-close" onclick="closePlayerModal()">×</button>
       </div>

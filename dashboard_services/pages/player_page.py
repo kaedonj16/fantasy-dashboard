@@ -109,9 +109,11 @@ def build_player_page_body(
         ppg,
         value_history: list,
         season: int,
+        similar_players: Optional[list] = None,
 ) -> str:
     """Server-rendered body for a player's trade-value page."""
     esc_name = html.escape(name or "Player")
+    esc_attr_name = html.escape(name or "Player", quote=True)
     pos = (position or "").upper()
     team_u = (team or "").upper()
 
@@ -197,6 +199,63 @@ def build_player_page_body(
           <div class="player-modal-chart-container" id="ppValueChart" style="min-height:240px;"></div>
         """
 
+    # ── FAQ (crawlable Q&A targeting common search queries) ──────────────────
+    if trend_cls == "up":
+        buy_sell = (
+            f"{esc_name}'s trade value has been climbing, which often signals a "
+            f"sell-high window where you may capture peak return."
+        )
+    elif trend_cls == "down":
+        buy_sell = (
+            f"{esc_name}'s value has dipped recently, which can be a buy-low "
+            f"opportunity if you expect a rebound."
+        )
+    else:
+        buy_sell = f"{esc_name}'s value has been steady lately, making it a fair-market hold."
+
+    _v1 = _fmt(value_1qb)
+    _vsf = _fmt(sf_value)
+    _rank_clause = f" ({html.escape(str(pos_rank_label))} at the position)" if pos_rank_label else ""
+    faq_pairs = [
+        (
+            f"What is {esc_name}'s dynasty trade value in {season}?",
+            f"{esc_name}'s 1QB dynasty trade value is <strong>{_v1}</strong>{_rank_clause}. "
+            f"In superflex leagues {esc_name} is worth <strong>{_vsf}</strong>.",
+        ),
+        (
+            f"Is {esc_name} a buy-low or sell-high?",
+            buy_sell,
+        ),
+        (
+            f"How is {esc_name}'s trade value calculated?",
+            f"Values are built from thousands of real {season} fantasy trades, blended "
+            f"with expert consensus rankings and advanced metrics, and refreshed daily.",
+        ),
+    ]
+    faq_html = "".join(
+        f"""<details class="faq-item"{' open' if i == 0 else ''}>
+              <summary>{q}</summary>
+              <p>{a}</p>
+            </details>"""
+        for i, (q, a) in enumerate(faq_pairs)
+    )
+
+    # ── Similar-value players (internal links) ───────────────────────────────
+    similar_html = ""
+    if similar_players:
+        links = "".join(
+            f"""<a class="pp-similar-link" href="/player/{html.escape(sp['slug'], quote=True)}/trade-value">
+                  <span class="pp-similar-name">{html.escape(sp['name'])}</span>
+                  <span class="pp-similar-meta">{html.escape(str(sp.get('pos_rank_label') or ''))} &middot; {_fmt(sp.get('value'))}</span>
+                </a>"""
+            for sp in similar_players
+        )
+        similar_html = f"""
+          <hr class="pm-section-divider">
+          <div class="pm-section-header"><span class="pm-section-label">Players with Similar Value</span></div>
+          <div class="pp-similar">{links}</div>
+        """
+
     trade_value_label = "Dynasty Trade Value"
     return f"""
     <div class="page-shell-narrow" style="max-width:760px;margin:0 auto;">
@@ -245,18 +304,26 @@ def build_player_page_body(
 
           <hr class="pm-section-divider">
           <div class="pm-section-header"><span class="pm-section-label">Recent Trades</span></div>
-          <div id="ppRecentTrades" data-player-id="{html.escape(str(player_id))}" data-season="{season}"
-               style="font-size:13px;color:var(--text-muted);padding:6px 0;">
-            <div style="display:flex;align-items:center;gap:8px;">
+          <div id="ppRecentTrades" data-player-id="{html.escape(str(player_id), quote=True)}" data-season="{season}"
+               style="font-size:13px;color:var(--text-muted);padding:2px 0;">
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 0;">
               <div class="loading-spinner" style="width:14px;height:14px;flex-shrink:0;"></div>Loading recent trades&hellip;
             </div>
           </div>
 
+          {similar_html}
+
+          <hr class="pm-section-divider">
+          <div class="pm-section-header"><span class="pm-section-label">{esc_name} Trade Value FAQ</span></div>
+          <div class="pp-faq">{faq_html}</div>
+
           <hr class="pm-section-divider">
           <div class="pp-cta" style="text-align:center;padding:8px 0 4px;">
-            <a href="/trade" class="otc-btn otc-btn-primary" style="text-decoration:none;display:inline-block;">
-              Value {esc_name} in your league &rarr;
-            </a>
+            <button type="button" class="otc-btn otc-btn-primary pp-league-modal-btn"
+                    data-player-id="{html.escape(str(player_id), quote=True)}" data-player-name="{esc_attr_name}"
+                    style="display:inline-block;">
+              View {esc_name} in your league &rarr;
+            </button>
           </div>
         </div>
       </div>
@@ -265,6 +332,6 @@ def build_player_page_body(
     <script>
       window.__ppHistory = {history_json};
       window.__ppName = {json.dumps(name or "Player")};
+      window.__ppSeason = {season};
     </script>
-    <script src="/static/player_page.js?v={season}"></script>
-    """
+    <script src="/static/player_page.js?v={season}"></script>"""

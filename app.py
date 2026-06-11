@@ -777,6 +777,7 @@ BASE_HTML = """
     <meta charset="utf-8">
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <meta name="google-site-verification" content="zuH_tCWKG_L4hm4eRDFit3xfMi-ZPFXwK2s9eap20FA">
+    <meta name="google-site-verification" content="I_Fkx1dlwJvI96dzPkbM1TkUzT4Nw8DdCtSLvm7MlD4">
     <title>{title}</title>
     {meta_tags}
     {og_tags}
@@ -819,7 +820,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js};</script>
       <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -1954,6 +1955,7 @@ def render_page(
         ask_gm_widget=ask_gm_widget,
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
+        signed_in_js="true" if session.get("viewer_username") else "false",
     )
 
 
@@ -11483,16 +11485,38 @@ def page_player_trade_value(slug: str):
     table = get_model_value_table_cached() or []
     pv = next((p for p in table if str(p.get("id")) == str(pid)), {})
 
-    def _ovr_rank(field: str):
-        ranked = sorted(
-            [x for x in table
-             if x.get("position") not in ("K", "DEF", "PICK") and float(x.get(field) or 0) > 0],
-            key=lambda x: float(x.get(field) or 0), reverse=True,
-        )
-        return next((i + 1 for i, p in enumerate(ranked) if str(p.get("id")) == str(pid)), None)
+    # Single sorted ranking by 1QB value, reused for overall rank + neighbors.
+    ranked_1qb = sorted(
+        [x for x in table
+         if x.get("position") not in ("K", "DEF", "PICK") and float(x.get("value") or 0) > 0],
+        key=lambda x: float(x.get("value") or 0), reverse=True,
+    )
+    my_idx = next((i for i, p in enumerate(ranked_1qb) if str(p.get("id")) == str(pid)), None)
+    ovr_rank = (my_idx + 1) if my_idx is not None else None
 
-    ovr_rank = _ovr_rank("value")
-    sf_ovr_rank = _ovr_rank("sf_value")
+    ranked_sf = sorted(
+        [x for x in table
+         if x.get("position") not in ("K", "DEF", "PICK") and float(x.get("sf_value") or 0) > 0],
+        key=lambda x: float(x.get("sf_value") or 0), reverse=True,
+    )
+    sf_ovr_rank = next((i + 1 for i, p in enumerate(ranked_sf) if str(p.get("id")) == str(pid)), None)
+
+    # Players with the nearest 1QB value (internal links / discovery)
+    from dashboard_services.pages.player_page import slugify as _slugify
+    similar_players = []
+    if my_idx is not None:
+        lo = max(0, my_idx - 3)
+        neighbors = ranked_1qb[lo:my_idx] + ranked_1qb[my_idx + 1:my_idx + 4]
+        for sp in neighbors:
+            sp_name = sp.get("name") or ""
+            sp_slug = _slugify(sp_name)
+            if sp_slug:
+                similar_players.append({
+                    "name": sp_name,
+                    "slug": sp_slug,
+                    "value": sp.get("value"),
+                    "pos_rank_label": sp.get("pos_rank_label"),
+                })
 
     try:
         history = get_player_value_history(pid, days=365, league_type="1qb", league_size=10)
@@ -11511,6 +11535,7 @@ def page_player_trade_value(slug: str):
         pos_rank_label=pv.get("pos_rank_label"), ovr_rank=ovr_rank,
         sf_pos_rank_label=pv.get("sf_pos_rank_label"), sf_ovr_rank=sf_ovr_rank,
         ppg=None, value_history=history, season=season,
+        similar_players=similar_players,
     )
 
     _val = pv.get("value")
