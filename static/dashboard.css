@@ -10462,9 +10462,24 @@ img, svg, canvas {
 }
 
 @media (max-width: 860px) {
-  .otc-builder-grid,
-  .otc-summary-stats {
+  .otc-builder-grid {
     grid-template-columns: 1fr;
+  }
+  /* Keep the 3 stat boxes (Team 1 | Diff | Team 2) in a row on mobile */
+  .otc-summary-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .otc-summary-stats .otc-stat-box {
+    padding: 10px 6px;
+    border-radius: 12px;
+  }
+  .otc-summary-stats .otc-stat-label {
+    font-size: 9px;
+    letter-spacing: 0.04em;
+  }
+  .otc-summary-stats .otc-stat-value {
+    font-size: 15px;
   }
 }
 

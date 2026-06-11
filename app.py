@@ -25374,6 +25374,8 @@ def api_save_trade():
         "b":  data.get("b", ""),
         "ap": data.get("ap", ""),
         "bp": data.get("bp", ""),
+        "t1": str(data.get("t1") or "")[:40],
+        "t2": str(data.get("t2") or "")[:40],
     })
     share_id = secrets.token_urlsafe(6)
     _init_shared_trades_table()
@@ -25425,6 +25427,228 @@ def shared_trade_page(share_id: str):
     qs = urlencode({k: v for k, v in p.items() if v})
     from flask import redirect as _redirect
     return _redirect(f"/trade?{qs}", 302)
+
+
+@app.route("/trade-card/<share_id>")
+def page_trade_card(share_id: str):
+    """Standalone visual trade card for sharing."""
+    _init_shared_trades_table()
+    import json as _json
+    row = None
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT params FROM shared_trades WHERE share_id = %s", (share_id,)
+            ).fetchone()
+    except Exception as _e:
+        logger.warning("[trade-card] lookup error for %s: %s", share_id, _e)
+    if not row:
+        return "<h2 style='font-family:sans-serif;padding:40px'>Trade not found.</h2>", 404
+    try:
+        p = _json.loads(row["params"] if hasattr(row, "__getitem__") else row[0])
+    except Exception:
+        abort(404)
+
+    from utils.utils import load_players_index
+    players_index = load_players_index() or {}
+    value_table = list(get_model_value_table_cached() or [])
+    values_by_id = {str(r["id"]): r for r in value_table if isinstance(r, dict) and r.get("id")}
+
+    # Detect if any team has SF value (best-effort)
+    vfield = "value"
+
+    def _fmt_pick(id_str):
+        parts = id_str.split("_")
+        if len(parts) < 3:
+            return id_str.replace("_", " ")
+        year = parts[0]
+        try:
+            rnd = int(parts[1])
+        except (ValueError, IndexError):
+            return id_str.replace("_", " ")
+        third = "_".join(parts[2:])
+        sfx = {1: "st", 2: "nd", 3: "rd"}.get(rnd, "th")
+        buckets = {"early": "Early", "mid": "Mid", "late": "Late"}
+        if third in buckets:
+            return f"{year} {rnd}{sfx} ({buckets[third]})"
+        try:
+            return f"{year} {rnd}.{str(int(third)).zfill(2)}"
+        except ValueError:
+            return id_str.replace("_", " ")
+
+    def _resolve_players(ids_str):
+        result = []
+        for pid in (ids_str or "").split(","):
+            pid = pid.strip()
+            if not pid:
+                continue
+            meta = players_index.get(pid) or {}
+            vrow = values_by_id.get(pid) or {}
+            pos = str(meta.get("pos") or vrow.get("position") or "").upper()
+            val = float(vrow.get(vfield) or 0)
+            result.append({
+                "name": meta.get("full_name") or meta.get("name") or pid,
+                "pos": pos,
+                "val": round(val),
+            })
+        return result
+
+    def _resolve_picks(ids_str):
+        return [{"name": _fmt_pick(pid.strip()), "val": 0}
+                for pid in (ids_str or "").split(",") if pid.strip()]
+
+    pos_colors = {"QB": "#6366f1", "RB": "#10b981", "WR": "#3b82f6", "TE": "#f59e0b"}
+
+    side_a = _resolve_players(p.get("a", ""))
+    side_b = _resolve_players(p.get("b", ""))
+    picks_a = _resolve_picks(p.get("ap", ""))
+    picks_b = _resolve_picks(p.get("bp", ""))
+
+    total_a = sum(pl["val"] for pl in side_a)
+    total_b = sum(pl["val"] for pl in side_b)
+    diff = total_a - total_b
+
+    t1 = p.get("t1") or "Team 1"
+    t2 = p.get("t2") or "Team 2"
+
+    if abs(diff) <= max(50, 0.03 * max(total_a, total_b, 1)):
+        verdict = "Fair Trade"
+        verdict_color = "#4ade80"
+    elif diff > 0:
+        pct = round(abs(diff) / max(total_b, 1) * 100)
+        verdict = f"{t1} favored +{abs(diff):,} ({pct}%)"
+        verdict_color = "#60a5fa"
+    else:
+        pct = round(abs(diff) / max(total_a, 1) * 100)
+        verdict = f"{t2} favored +{abs(diff):,} ({pct}%)"
+        verdict_color = "#f97316"
+
+    bar_pct = round((total_a / (total_a + total_b)) * 100) if (total_a + total_b) > 0 else 50
+
+    def _asset_html(players, picks):
+        rows = []
+        for pl in players:
+            col = pos_colors.get(pl["pos"], "#64748b")
+            pos_tag = (f'<span style="font-size:9px;font-weight:700;padding:2px 5px;'
+                       f'border-radius:4px;background:{col}22;color:{col};flex-shrink:0">{pl["pos"]}</span> '
+                       if pl["pos"] else "")
+            val_str = f'{pl["val"]:,}' if pl["val"] else ""
+            rows.append(
+                f'<div style="display:flex;align-items:center;gap:6px;padding:6px 0;'
+                f'border-bottom:1px solid rgba(255,255,255,.05)">'
+                f'{pos_tag}'
+                f'<span style="flex:1;font-size:13px;font-weight:600;color:#e2e8f0;min-width:0;overflow:hidden;'
+                f'text-overflow:ellipsis;white-space:nowrap">{pl["name"]}</span>'
+                f'<span style="font-size:12px;color:#94a3b8;flex-shrink:0">{val_str}</span>'
+                f'</div>'
+            )
+        for pk in picks:
+            rows.append(
+                f'<div style="display:flex;align-items:center;gap:6px;padding:6px 0;'
+                f'border-bottom:1px solid rgba(255,255,255,.05)">'
+                f'<span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;'
+                f'background:rgba(139,92,246,.2);color:#a78bfa;flex-shrink:0">PICK</span>'
+                f'<span style="flex:1;font-size:13px;font-weight:600;color:#e2e8f0">{pk["name"]}</span>'
+                f'</div>'
+            )
+        if not rows:
+            rows.append('<div style="font-size:13px;color:#64748b;padding:8px 0">No assets</div>')
+        return "".join(rows)
+
+    side_a_html = _asset_html(side_a, picks_a)
+    side_b_html = _asset_html(side_b, picks_b)
+    total_a_str = f"{total_a:,}" if total_a else "0"
+    total_b_str = f"{total_b:,}" if total_b else "0"
+    share_url = request.url
+    trade_url = f"{request.host_url}t/{share_id}"
+
+    card_html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Trade Card | BR Fantasy</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta property="og:title" content="BR Fantasy Trade Analysis">
+  <meta property="og:description" content="{t1} vs {t2} — {verdict}">
+  <link rel="icon" href="/static/BR_Logo.png" type="image/png">
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{background:#0b1120;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
+    .wrap{{max-width:520px;width:100%}}
+    .card{{background:#0f1d36;border:1px solid rgba(255,255,255,.1);border-radius:20px;overflow:hidden}}
+    .card-header{{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.07);background:#0b1628}}
+    .brand{{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#94a3b8}}
+    .badge{{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.25)}}
+    .sides{{display:grid;grid-template-columns:1fr 1fr;gap:0}}
+    .side{{padding:14px 16px}}
+    .side+.side{{border-left:1px solid rgba(255,255,255,.07)}}
+    .side-title{{font-size:9px;font-weight:700;letter-spacing:.08em;color:#64748b;text-transform:uppercase;margin-bottom:4px}}
+    .side-name{{font-size:14px;font-weight:800;color:#e2e8f0;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+    .side-total{{font-size:22px;font-weight:900;color:#f1f5f9;margin-bottom:10px}}
+    .bar-wrap{{padding:0 16px 14px}}
+    .bar-bg{{height:6px;background:rgba(255,255,255,.08);border-radius:3px;position:relative;overflow:hidden}}
+    .bar-fill{{position:absolute;left:0;top:0;height:100%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:3px;transition:width .3s}}
+    .verdict{{text-align:center;padding:10px 16px 14px;font-size:13px;font-weight:700}}
+    .divider{{border-top:1px solid rgba(255,255,255,.07)}}
+    .footer{{padding:14px 18px;display:flex;gap:8px;justify-content:flex-end;background:#0b1628;border-top:1px solid rgba(255,255,255,.07)}}
+    .btn{{font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;display:inline-block}}
+    .btn-outline{{background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,.15)}}
+    .btn-primary{{background:#3b82f6;color:#fff}}
+    @media(max-width:480px){{
+      .sides{{grid-template-columns:1fr 1fr}}
+      .side{{padding:12px}}
+      .side-total{{font-size:18px}}
+    }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="card-header">
+        <div class="brand">
+          <img src="/static/BR_Logo_dark.png" alt="BR Fantasy" style="height:18px;opacity:.9">
+          BR Fantasy
+        </div>
+        <span class="badge">Trade Analysis</span>
+      </div>
+
+      <div class="sides">
+        <div class="side">
+          <div class="side-title">{t1} receives</div>
+          <div class="side-total">{total_a_str}</div>
+          {side_a_html}
+        </div>
+        <div class="side">
+          <div class="side-title">{t2} receives</div>
+          <div class="side-total">{total_b_str}</div>
+          {side_b_html}
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="bar-wrap" style="padding-top:12px">
+        <div class="bar-bg">
+          <div class="bar-fill" style="width:{bar_pct}%"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:#475569;font-weight:600">
+          <span>{t1} favored</span><span>{t2} favored</span>
+        </div>
+      </div>
+      <div class="verdict" style="color:{verdict_color}">{verdict}</div>
+
+      <div class="footer">
+        <button class="btn btn-outline" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')">Copy link</button>
+        <a href="{trade_url}" class="btn btn-primary">Open in Calculator</a>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:12px;font-size:11px;color:#334155">
+      <a href="/" style="color:#475569;text-decoration:none">brfantasyfootball.com</a>
+    </div>
+  </div>
+</body>
+</html>"""
+    return card_html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
 # ── Push notifications ─────────────────────────────────────────────────────────

@@ -1734,11 +1734,21 @@ window.initTradePage = function initTradePage(root = document) {
 
   function shareTradeToClipboard() {
     const btn = root.querySelector("#shareTradeBtn");
+
+    // Collect team display names if roster filter is active
+    const aTitle = root.querySelector("#sideATitle");
+    const bSel   = root.querySelector("#sideBTeamSelect");
+    const t1 = (aTitle && aTitle.textContent && !aTitle.textContent.includes("Team 1"))
+      ? aTitle.textContent.replace(/ gets…$/, "").trim() : "";
+    const t2 = (bSel && bSel.selectedOptions[0] && bSel.selectedOptions[0].text !== "Select opponent")
+      ? bSel.selectedOptions[0].text.trim() : "";
+
     const tradeData = {
       a:  state.sideAPlayers.map(p => p.id).join(','),
       b:  state.sideBPlayers.map(p => p.id).join(','),
       ap: state.sideAPicks.map(p => p.id).join(','),
       bp: state.sideBPicks.map(p => p.id).join(','),
+      t1, t2,
     };
 
     function _flashSuccess() {
@@ -1749,14 +1759,14 @@ window.initTradePage = function initTradePage(root = document) {
       setTimeout(() => { btn.innerHTML = orig; btn.classList.remove("otc-share-btn-success"); }, 2000);
     }
 
-    // POST to /api/save-trade for a short /t/<id> URL; fall back to URL params
+    // POST to /api/save-trade; share the visual trade card URL
     fetch("/api/save-trade", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(tradeData),
     })
       .then(r => r.ok ? r.json() : Promise.reject())
-      .then(d => d.share_id ? `${window.location.origin}/t/${d.share_id}` : encodeTradeToURL())
+      .then(d => d.share_id ? `${window.location.origin}/trade-card/${d.share_id}` : encodeTradeToURL())
       .catch(() => encodeTradeToURL())
       .then(shareUrl => navigator.clipboard.writeText(shareUrl))
       .then(() => { _flashSuccess(); showToast("Link copied!", "success"); })
