@@ -4,7 +4,51 @@ All pages are public (no league context required).
 """
 from __future__ import annotations
 import html
+import re
 from datetime import datetime
+
+# Regex to detect raw pick IDs: "2027_5_early", "2027_1", "2028_3_mid", etc.
+_PICK_ID_RE = re.compile(r'^\d{4}_\d+')
+# Regex to detect formatted pick names: "2027 5th (Early)", "2027 1st", etc.
+_PICK_NAME_RE = re.compile(r'^\d{4}\s+\d+(st|nd|rd|th)', re.IGNORECASE)
+# Max pick round to show (rounds 4+ are filtered out even if position isn't "PICK")
+_MAX_PICK_ROUND = 3
+
+
+def _pick_round(p: dict) -> int | None:
+    """Return pick round from player_id or formatted name, or None if not a pick."""
+    pid  = str(p.get("player_id") or "")
+    name = p.get("name") or ""
+    m = _PICK_ID_RE.match(pid)
+    if m:
+        try:
+            return int(pid.split("_")[1])
+        except (IndexError, ValueError):
+            pass
+    m2 = _PICK_NAME_RE.match(name)
+    if m2:
+        try:
+            return int(re.split(r'\s+', name)[1])
+        except (IndexError, ValueError):
+            pass
+    return None
+
+
+def _should_skip_mover(p: dict) -> bool:
+    """Return True if this mover entry should be hidden from the risers/fallers page."""
+    pos  = (p.get("position") or "").upper()
+    name = p.get("name") or ""
+    # Explicit skip positions
+    if pos in ("PICK", "K", "DEF"):
+        return True
+    # Fallback "Player {raw_id}" names — data never resolved a real name
+    if name.startswith("Player ") and "_" in name:
+        return True
+    # Raw pick IDs stored as names (e.g. "2027_5_early" or "2027 5th (Early)")
+    if _PICK_ID_RE.match(name) or _PICK_NAME_RE.match(name):
+        rd = _pick_round(p)
+        return rd is None or rd > _MAX_PICK_ROUND
+    return False
 
 _POS_COLOR = {
     "QB": "#f59e0b", "RB": "#22c55e", "WR": "#3b82f6",
@@ -228,8 +272,6 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
 
 # ── Risers & Fallers ──────────────────────────────────────────────────────────
 
-_SKIP_POSITIONS = {"PICK", "K", "DEF"}
-
 def build_risers_fallers_body(movers: dict, as_of_date: str | None = None) -> str:
     """Weekly risers and fallers page."""
     from dashboard_services.pages.player_page import slugify
@@ -237,10 +279,8 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None) -> st
     date_str    = as_of_date or datetime.now().strftime("%B %d, %Y")
     latest_date = movers.get("latest_date", "")
     comp_date   = movers.get("comparison_date", "")
-    risers      = [p for p in (movers.get("risers") or [])
-                   if (p.get("position") or "").upper() not in _SKIP_POSITIONS]
-    fallers     = [p for p in (movers.get("fallers") or [])
-                   if (p.get("position") or "").upper() not in _SKIP_POSITIONS]
+    risers      = [p for p in (movers.get("risers")  or []) if not _should_skip_mover(p)]
+    fallers     = [p for p in (movers.get("fallers") or []) if not _should_skip_mover(p)]
 
     def _player_row(p: dict, direction: str) -> str:
         name   = p.get("name") or "Unknown"
