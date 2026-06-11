@@ -265,10 +265,15 @@ def _add_cache_headers(response):
 
 @app.before_request
 def _canonical_host_redirect():
-    """301 non-canonical hosts (the onrender URL and www.) to PRIMARY_DOMAIN.
+    """301 the *.onrender.com URL to PRIMARY_DOMAIN.
 
     Dormant unless PRIMARY_DOMAIN is set. Only safe (GET/HEAD) requests are
     redirected so POST webhooks (Stripe, etc.) are never broken.
+
+    NOTE: this deliberately does NOT touch the www. variant. Render performs the
+    www<->apex redirect itself; if the app also redirected www->apex while Render
+    redirected apex->www, the two would bounce forever (ERR_TOO_MANY_REDIRECTS).
+    The www<->apex direction is owned entirely by Render's primary-domain setting.
     """
     if not PRIMARY_DOMAIN:
         return
@@ -279,10 +284,8 @@ def _canonical_host_redirect():
     if request.path == "/health":
         return
     host = (request.host or "").split(":")[0].lower()
-    if not host or host == PRIMARY_DOMAIN:
-        return
-    # Only canonicalize hosts we own: the Render URL and the www. variant.
-    if not (host.endswith(".onrender.com") or host == "www." + PRIMARY_DOMAIN):
+    # Only canonicalize the Render URL. Leave both apex and www to Render.
+    if not host.endswith(".onrender.com"):
         return
     qs = request.query_string.decode("utf-8", "ignore")
     target = f"https://{PRIMARY_DOMAIN}{request.path}" + (f"?{qs}" if qs else "")
