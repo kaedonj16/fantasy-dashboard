@@ -79,7 +79,7 @@ def _parse(article: dict) -> dict:
 # ──────────────────────────────────────────────────────────────────────────────
 
 async def _async_fetch_athlete(client: httpx.AsyncClient, espn_id: str) -> tuple[str, list]:
-    """Return (espn_id, items) — never raises."""
+    """Return (espn_id, items) - never raises."""
     now = time.time()
     key = f"athlete_{espn_id}"
     cached = _CACHE.get(key)
@@ -140,7 +140,7 @@ def _run(coro):
     except RuntimeError:
         loop = None
     if loop and loop.is_running():
-        # We're inside an async context (e.g. Flask async route) — use a new thread
+        # We're inside an async context (e.g. Flask async route) - use a new thread
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(asyncio.run, coro)

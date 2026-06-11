@@ -335,7 +335,7 @@ function wvRenderCompare() {{
     const muChip = wvMuChip(p.def_rank, p.def_total);
     const defLabel = p.fpts_against > 0
       ? `${{p.fpts_against}} pts/gm allowed`
-      : (p.on_bye ? 'BYE' : '—');
+      : (p.on_bye ? 'BYE' : '–');
     const projWin  = (other && p.proj_pts > 0 && other.proj_pts > 0)    ? (p.proj_pts   > other.proj_pts   ? 'wv-compare-win' : 'wv-compare-lose') : '';
     const l4ppg    = p.recent_ppg > 0 ? p.recent_ppg : p.season_ppg;
     const l4ppgOth = other && (other.recent_ppg > 0 ? other.recent_ppg : other.season_ppg);
@@ -347,15 +347,15 @@ function wvRenderCompare() {{
         <div class="wv-compare-player-sub">${{[p.team, p.pos_rank_label, p.opponent || (p.on_bye ? 'BYE' : '')].filter(Boolean).join(' · ')}}</div>
         <div class="wv-compare-row">
           <span class="wv-compare-lbl">Proj PPG</span>
-          <span class="wv-compare-val ${{projWin}}">${{p.proj_pts > 0 ? p.proj_pts : '—'}}</span>
+          <span class="wv-compare-val ${{projWin}}">${{p.proj_pts > 0 ? p.proj_pts : '–'}}</span>
         </div>
         <div class="wv-compare-row">
           <span class="wv-compare-lbl">L4 PPG</span>
-          <span class="wv-compare-val ${{ppgWin}}">${{p.recent_ppg > 0 ? p.recent_ppg : (p.season_ppg > 0 ? p.season_ppg : '—')}}</span>
+          <span class="wv-compare-val ${{ppgWin}}">${{p.recent_ppg > 0 ? p.recent_ppg : (p.season_ppg > 0 ? p.season_ppg : '–')}}</span>
         </div>
         <div class="wv-compare-row">
           <span class="wv-compare-lbl">Opponent</span>
-          <span class="wv-compare-val">${{p.opponent || (p.on_bye ? 'BYE' : '—')}}</span>
+          <span class="wv-compare-val">${{p.opponent || (p.on_bye ? 'BYE' : '–')}}</span>
         </div>
         <div class="wv-compare-row">
           <span class="wv-compare-lbl">Def vs pos</span>
@@ -363,11 +363,11 @@ function wvRenderCompare() {{
         </div>
         <div class="wv-compare-row">
           <span class="wv-compare-lbl">Matchup rank</span>
-          <span class="wv-compare-val">${{muChip || (p.on_bye ? '—' : 'No data')}}</span>
+          <span class="wv-compare-val">${{muChip || (p.on_bye ? '–' : 'No data')}}</span>
         </div>
         <div class="wv-compare-row">
           <span class="wv-compare-lbl">Dynasty rank</span>
-          <span class="wv-compare-val">${{p.pos_rank_label || '—'}}</span>
+          <span class="wv-compare-val">${{p.pos_rank_label || '–'}}</span>
         </div>
       </div>`;
   }}

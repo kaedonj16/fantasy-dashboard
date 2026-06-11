@@ -76,7 +76,7 @@ def yahoo_auth_callback():
     # Verify state matches what we stored
     stored_state = session.pop("yahoo_oauth_state", None)
     if not stored_state or stored_state != state:
-        logger.warning("[yahoo_auth] State mismatch — possible CSRF")
+        logger.warning("[yahoo_auth] State mismatch - possible CSRF")
         return redirect("/?yahoo_error=state_mismatch")
 
     try:

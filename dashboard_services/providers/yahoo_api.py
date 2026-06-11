@@ -628,7 +628,7 @@ def get_drafts(season: int, league_id: str, access_token: str) -> List[Dict[str,
 
 
 def get_bracket_like(league_id: str, season: int, kind: str, access_token: str) -> List[Dict[str, Any]]:
-    """Yahoo playoff bracket — returns an empty list; bracket rendering is best-effort."""
+    """Yahoo playoff bracket - returns an empty list; bracket rendering is best-effort."""
     return []
 
 

@@ -215,7 +215,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     .rk-page-tabs { margin: 0; }
   }
 
-  /* Page-level tabs (Rankings / Draft Board) — OTC pill style */
+  /* Page-level tabs (Rankings / Draft Board) - OTC pill style */
   .rk-page-tabs {
     display: flex;
     gap: 4px;
@@ -240,7 +240,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
   .rk-page-tab:hover { color: var(--text); background: var(--border); }
   .rk-page-tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
 
-  /* DA sub-tabs (Available / Drafted) — OTC pill style, smaller */
+  /* DA sub-tabs (Available / Drafted) - OTC pill style, smaller */
   .da-sub-tabs {
     display: flex;
     gap: 4px;
@@ -1228,7 +1228,7 @@ def build_prospects_body(is_admin: bool = False) -> str:
     if (existingSleeperIdVal) {
       return '<div style="font-size:12px;color:var(--text-muted);">Sleeper ID: <strong style="color:var(--text);">' + existingSleeperIdVal + '</strong> <span style="color:#10b981;">✓ linked</span></div>';
     }
-    // Linking writes to the database — only admins see the controls.
+    // Linking writes to the database - only admins see the controls.
     if (!window.RK_IS_ADMIN) { return ''; }
     return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
       '<span style="font-size:12px;color:var(--text-muted);">Sleeper ID:</span>' +

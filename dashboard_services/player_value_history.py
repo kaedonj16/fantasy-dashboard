@@ -525,7 +525,7 @@ def load_calibration_overrides() -> dict[str, dict]:
     FC/DP market corrections are now applied directly in get_model_value_table_cached()
     in app.py, where the loaded player values are already available for comparison.
     This function is kept for the load_model_value_table() call path but returns
-    empty — the cache path handles corrections without needing an extra DB round-trip.
+    empty - the cache path handles corrections without needing an extra DB round-trip.
     """
     return {}
 
@@ -703,7 +703,7 @@ def _get_top_movers_from_db(
     for row in rows:
         row_dict = dict(row)
         player_id = str(row_dict["player_id"])
-        # Skip picks — they're not players and their value swings are data noise
+        # Skip picks - they're not players and their value swings are data noise
         if _pick_re.match(player_id):
             continue
         # Trust the name column from the DB; fall back to players_index then a placeholder
@@ -751,7 +751,7 @@ def _get_top_movers_from_parquet(days: int, limit: int) -> dict:
             "fallers": [],
         }
     
-    # Parquet files contain only a single snapshot — no historical deltas are available,
+    # Parquet files contain only a single snapshot - no historical deltas are available,
     # so we cannot compute real risers/fallers. Return empty lists rather than fabricating
     # movement from random data.
     return {

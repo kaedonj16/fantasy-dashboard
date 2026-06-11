@@ -2,9 +2,9 @@
 
 Some endpoints mutate shared data (rookie prospects, player values, pipeline
 runs) and must not be callable anonymously. Admin status is granted when the
-request carries the configured ``ADMIN_KEY`` — via the ``X-Admin-Key`` header,
+request carries the configured ``ADMIN_KEY`` - via the ``X-Admin-Key`` header,
 an ``admin_key`` field in the JSON body / form, or an ``admin_key`` query
-parameter — or when the server-side session was already marked admin by a prior
+parameter - or when the server-side session was already marked admin by a prior
 successful key check (so an operator can authenticate once by visiting a page
 with ``?admin_key=...`` and then use the controls normally).
 

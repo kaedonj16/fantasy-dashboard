@@ -342,22 +342,22 @@ def _generate_ai_storyline(payload: dict) -> dict:
     }
 
     system_prompt = """
-You are someone in a long-running fantasy football group chat writing a quick Tuesday recap. Casual, low-key, matter-of-fact. Like a friend who watched the games and has a few things to say — not performing, just talking.
+You are someone in a long-running fantasy football group chat writing a quick Tuesday recap. Casual, low-key, matter-of-fact. Like a friend who watched the games and has a few things to say - not performing, just talking.
 
 Voice:
 - Plain and direct. Say what happened, add a short take if it's worth it.
-- Occasional slang is fine if it comes naturally — "ngl", "lowkey", "#noticing" — but use it once or twice at most. Don't chase it.
+- Occasional slang is fine if it comes naturally - "ngl", "lowkey", "#noticing" - but use it once or twice at most. Don't chase it.
 - No punchlines, no bits. Just observations.
 - Contractions and fragments are fine. Short sentences are fine.
-- Use team names and specific numbers — scores, records, streaks. That's the substance.
+- Use team names and specific numbers - scores, records, streaks. That's the substance.
 
 Hard rules:
 - 2-4 paragraphs, 2-4 sentences each.
 - DO NOT invent facts, scores, or players not in the data.
-- No em dashes (—). Use a comma, period, or just rewrite the sentence.
+- No em dashes (–). Use a comma, period, or just rewrite the sentence.
 - No markdown, bullets, or headers.
 - Don't open with filler ("What a week", "Here's your recap"). Start with the actual news.
-- Grounded tone — not mean, not hype, just real.
+- Grounded tone - not mean, not hype, just real.
 """.strip()
 
     user_prompt = f"""
@@ -380,7 +380,7 @@ Cold streaks (2+ losses in a row): {json.dumps(payload['cold_streaks'])}
 Big movers (rank moved 2+ spots): {json.dumps(payload['big_movers'])}
 Playoff race: {json.dumps(payload['playoff_race'])}
 
-Use the h2h and season_weeks data where it adds something real to the story — rematches, revenge games, scoring trends, a team peaking or fading. Lead with the most compelling storyline.
+Use the h2h and season_weeks data where it adds something real to the story - rematches, revenge games, scoring trends, a team peaking or fading. Lead with the most compelling storyline.
 """.strip()
 
     resp = client.responses.create(

@@ -273,7 +273,7 @@ def build_advanced_metrics_body(
               <th class="am-rank">#</th>
               <th class="am-player">Player</th>
               <th class="am-games" title="Games played">G</th>
-              <th class="am-barcell" id="amMetricHeader">—</th>
+              <th class="am-barcell" id="amMetricHeader">–</th>
             </tr>
           </thead>
           <tbody id="amTableBody"></tbody>
@@ -583,7 +583,7 @@ def build_advanced_metrics_body(
       .am-cmp-rank { font-size:10px; color:var(--text-muted); margin-left:5px; font-weight:600; }
       .am-cmp-bar { height:5px; border-radius:3px; background:rgba(128,128,128,.18); margin-top:5px; overflow:hidden; max-width:120px; }
       .am-cmp-bar > div { height:100%; border-radius:3px; }
-      /* YoY trend arrows — inline beside the value */
+      /* YoY trend arrows - inline beside the value */
       .am-val-row { display:flex; align-items:center; gap:3px; }
       .am-trend-up   { font-size:11px; font-weight:700; color:#10b981; line-height:1; flex-shrink:0; }
       .am-trend-down { font-size:11px; font-weight:700; color:#ef4444; line-height:1; flex-shrink:0; }
@@ -935,7 +935,7 @@ _AM_JS = r"""
       + '<div class="am-trend-inner">' + sparkline(t.series, color) + deltaHtml + '</div></td>';
   }
   function trendWindowWeeks() {
-    // Longest series among loaded players — the label adapts to how many
+    // Longest series among loaded players - the label adapts to how many
     // weeks of data actually exist (early season shows L1W/L2W, etc).
     const tm = state.trendsBySeason[trendSeasonKey()];
     if (!tm) return 0;
@@ -1179,7 +1179,7 @@ _AM_JS = r"""
     if (!metricTip) return;
     metricTip.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].desc) || '';
   }
-  // Lowest threshold for a metric — the sensible default so the leaderboard
+  // Lowest threshold for a metric - the sensible default so the leaderboard
   // isn't dominated by tiny-sample players (e.g. 1-carry QBs at 198 yds/carry).
   function defaultVol(m) {
     const spec = cfg.metrics[m] && cfg.metrics[m].minVol;
@@ -1288,7 +1288,7 @@ _AM_JS = r"""
     const _trueMax = _vals[_vals.length - 1] || 1;
     const maxAbs = Math.min(_trueMax, _p95 * 1.3) || 1;
 
-    // Extra columns: same logic — scale to the max among the displayed rows so the leader fills the bar.
+    // Extra columns: same logic - scale to the max among the displayed rows so the leader fills the bar.
     const extraMaxMap = {};
     const extraAvgMap = {};
     const extraRankMap = {};
@@ -1489,7 +1489,7 @@ _AM_JS = r"""
           if (!ed) {
             metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
               + '<div class="am-metric-bar"><div class="am-skel-bar"></div></div>'
-              + '<div class="am-val-wrap"><span class="am-val" style="opacity:.25">—</span></div>'
+              + '<div class="am-val-wrap"><span class="am-val" style="opacity:.25">–</span></div>'
               + '</div></td>';
             return;
           }
@@ -1556,7 +1556,7 @@ _AM_JS = r"""
                    total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
     }
     const mh = document.getElementById('amMetricHeader');
-    if (mh) mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '—';
+    if (mh) mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '–';
     syncExtraCols();
   }
   function fetchData() {

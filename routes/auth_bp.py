@@ -128,7 +128,7 @@ def set_viewer():
 @auth_bp.route("/api/quick-set-viewer", methods=["POST"])
 def api_quick_set_viewer():
     """Set viewer session variables directly from trusted localStorage data.
-    Skips get_league_ctx_from_cache entirely — used by the 'Continue as X'
+    Skips get_league_ctx_from_cache entirely - used by the 'Continue as X'
     returning-user flow where we already know the viewer is valid.
     """
     data = request.get_json(force=True) or {}

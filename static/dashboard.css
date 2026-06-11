@@ -2381,7 +2381,7 @@ button:hover {
   .standings-table[data-page="standings"] td:nth-child(5) {
     display: none;
   }
-  /* Hide Players (col 4) on dynasty table — too many columns at this width */
+  /* Hide Players (col 4) on dynasty table - too many columns at this width */
   .standings-table.dynasty-table th:nth-child(4),
   .standings-table.dynasty-table td:nth-child(4) {
     display: none;
@@ -2742,7 +2742,7 @@ thead th {
   left: 50%;
   transform: translateX(-50%);
   /* Default; JS sets the exact width from fair_threshold on each eval.
-     The band is a pure visual marker — the label lives below the bar so it
+     The band is a pure visual marker - the label lives below the bar so it
      never clips when the fair range is narrow on big trades. */
   width: 7%;
   min-width: 6px;
@@ -4225,7 +4225,7 @@ thead th {
     text-align: center;
     padding: 7px 0;
   }
-  /* Strategy chips: 4 across is too tight at 600px — keep 4 but shrink */
+  /* Strategy chips: 4 across is too tight at 600px - keep 4 but shrink */
   .otc-arch-chip {
     font-size: 11px;
     padding: 6px 6px;
@@ -4287,7 +4287,7 @@ thead th {
 
 /* ── Strategy cards: phone layout (≤ 480px) ──────────────────────────────── */
 @media (max-width: 480px) {
-  /* Chips scroll horizontally as pills — no grid override needed */
+  /* Chips scroll horizontally as pills - no grid override needed */
 
   /* Trade card: stack YOU GET / YOU GIVE vertically */
   .otc-rt-body {
@@ -5248,7 +5248,7 @@ select:focus {
   cursor: pointer;
   font-family: inherit;
   line-height: 1.4;
-  /* Base look — overridden by inline styles copied from the original select */
+  /* Base look - overridden by inline styles copied from the original select */
   background-color: var(--card-bg, var(--card, #fff));
   color: var(--text);
   border: 1px solid var(--border, #dbe2ea);
@@ -6421,7 +6421,7 @@ select:focus {
   .da-name { font-size: 12px; }
 }
 
-/* Value Rankings card header — sits above the table on all screen sizes */
+/* Value Rankings card header - sits above the table on all screen sizes */
 .os-vr-header {
   font-size: 15px;
   font-weight: 700;
@@ -7073,7 +7073,7 @@ select:focus {
   text-align: center; padding: 32px 24px; color: var(--text-muted); font-size: 13px;
 }
 
-/* Score banner — 3-column grid: side A | divider | side B */
+/* Score banner - 3-column grid: side A | divider | side B */
 .rivalry-banner {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -7143,7 +7143,7 @@ select:focus {
   background: var(--bg, #f8fafc);
   white-space: nowrap;
 }
-/* Neutral chip icons — desaturate to match muted text tone */
+/* Neutral chip icons - desaturate to match muted text tone */
 .rivalry-chip i { flex-shrink: 0; width: 11px; height: 11px; }
 .rivalry-chip-icon {
   filter: brightness(0) invert(0.5) !important;
@@ -10357,7 +10357,7 @@ img, svg, canvas {
   }
 }
 
-/* Stats injected inline into player cells — only shown on mobile where
+/* Stats injected inline into player cells - only shown on mobile where
    the stat-stack columns are hidden. */
 .m-cell-stats { display: none; }
 @media (max-width: 900px) {
@@ -14041,7 +14041,7 @@ img, svg, canvas {
   min-height: 0;
 }
 
-/* Team modal tabs — mirrors .pm-tab-bar / .pm-tab */
+/* Team modal tabs - mirrors .pm-tab-bar / .pm-tab */
 .tm-tab-bar {
   display: flex;
   background: var(--bg-alt, rgba(0,0,0,.03));
@@ -15510,7 +15510,7 @@ tr.team-clickable {
 /* ── Mobile: small phones ─────────────────────────────────────────────────── */
 @media (max-width: 480px) {
   /* Metric rows: move label above bars so bars get full width.
-     Must switch from the base grid to flex — flex-wrap/order only apply to
+     Must switch from the base grid to flex - flex-wrap/order only apply to
      flex containers, otherwise the items stay in the 5 fixed grid tracks and
      the label gets crammed into a narrow column. */
   .compare-metric-row {
@@ -17157,7 +17157,7 @@ button:disabled {
 .pm-panel { display: none; }
 .pm-panel.pm-panel-active { display: block; }
 
-/* ── Weekly Hub tab bar — matches trade calculator otc-main-tabs style ──────── */
+/* ── Weekly Hub tab bar - matches trade calculator otc-main-tabs style ──────── */
 #weeklyLeftTabs {
   background: var(--card);
   border-radius: 8px;
@@ -17933,7 +17933,7 @@ button:disabled {
   .sched-sort-btn { font-size: 12px; padding: 5px 10px; }
   .sched-rank-pos { font-size: 11px; padding: 4px 8px; }
 
-  /* Rankings view — tighter cells so more weeks fit */
+  /* Rankings view - tighter cells so more weeks fit */
   .sched-th { padding: 6px 6px; font-size: 10px; }
   .sched-td { padding: 5px 6px; }
   .sched-opp { font-size: 11px; }
@@ -17956,7 +17956,7 @@ button:disabled {
   .sched-nfl { font-size: 9px; }
   .sched-pos { font-size: 9px; padding: 1px 3px; margin-right: 2px; flex-shrink: 0; }
 
-  /* Hide ease bar column on mobile — saves ~90px */
+  /* Hide ease bar column on mobile - saves ~90px */
   .sched-ease-td,
   th.sched-th:last-child { display: none; }
 

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def _atomic_json_write(path, data) -> None:
-    """Write JSON to a temp file then rename — prevents partial reads on crash."""
+    """Write JSON to a temp file then rename - prevents partial reads on crash."""
     import json as _json
     tmp = str(path) + ".tmp"
     with open(tmp, "w") as f:
@@ -139,7 +139,7 @@ def fetch_fc_startup_adp(is_sf: bool) -> dict:
         resp = _req.get(url, timeout=15, headers={"User-Agent": "fantasy-dashboard/1.0"})
         resp.raise_for_status()
         if not resp.text.strip():
-            logger.info("adp_service: FantasyCalc startup returned empty body (sf=%s) — skipping", is_sf)
+            logger.info("adp_service: FantasyCalc startup returned empty body (sf=%s) - skipping", is_sf)
             return {}
         fc_data = resp.json()
     except Exception as _exc:

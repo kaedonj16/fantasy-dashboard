@@ -148,7 +148,7 @@ logger = logging.getLogger(__name__)
 
 
 def _api_err(msg: str = "Request failed", e: Exception = None, code: int = 500):
-    """Return a safe API error response — logs the real exception, sends generic message to client."""
+    """Return a safe API error response - logs the real exception, sends generic message to client."""
     if e is not None:
         logger.warning("API error: %s", msg, exc_info=True)
     return jsonify({"error": msg, "ok": False}), code
@@ -193,9 +193,9 @@ if _sentry_dsn:
         )
         logger.info("[sentry] Error tracking enabled")
     except ImportError:
-        logger.warning("[sentry] sentry-sdk not installed — error tracking disabled")
+        logger.warning("[sentry] sentry-sdk not installed - error tracking disabled")
 else:
-    logger.info("[sentry] SENTRY_DSN not set — error tracking disabled")
+    logger.info("[sentry] SENTRY_DSN not set - error tracking disabled")
 
 DASHBOARD_CACHE = {}
 # Per-key locks prevent simultaneous first-loads for the same league from both
@@ -262,6 +262,40 @@ def _add_cache_headers(response):
             response.headers["Cache-Control"] = "public, max-age=86400"
     return response
 
+
+@app.before_request
+def _canonical_host_redirect():
+    """301 non-canonical hosts (the onrender URL and www.) to PRIMARY_DOMAIN.
+
+    Dormant unless PRIMARY_DOMAIN is set. Only safe (GET/HEAD) requests are
+    redirected so POST webhooks (Stripe, etc.) are never broken.
+    """
+    if not PRIMARY_DOMAIN:
+        return
+    if request.method not in ("GET", "HEAD"):
+        return
+    # Never redirect the health-check endpoint — Render probes it on the
+    # onrender.com host and treats a 301 as an unhealthy response.
+    if request.path == "/health":
+        return
+    host = (request.host or "").split(":")[0].lower()
+    if not host or host == PRIMARY_DOMAIN:
+        return
+    # Only canonicalize hosts we own: the Render URL and the www. variant.
+    if not (host.endswith(".onrender.com") or host == "www." + PRIMARY_DOMAIN):
+        return
+    qs = request.query_string.decode("utf-8", "ignore")
+    target = f"https://{PRIMARY_DOMAIN}{request.path}" + (f"?{qs}" if qs else "")
+    return redirect(target, code=301)
+
+
+# Canonical host for SEO. When set (e.g. "brfantasyfootball.com"), all traffic on
+# other hosts (the *.onrender.com URL, the www. variant) is 301-redirected here and
+# canonical tags point here. Left unset, the site behaves exactly as before.
+PRIMARY_DOMAIN = os.environ.get("PRIMARY_DOMAIN", "").strip().lower()
+if PRIMARY_DOMAIN.startswith("www."):
+    PRIMARY_DOMAIN = PRIMARY_DOMAIN[4:]
+
 _secret_key = os.environ.get('FLASK_SECRET_KEY', '')
 _is_production = os.environ.get('PYTHON_ENV', '').strip().lower() == 'production'
 if not _secret_key:
@@ -270,10 +304,10 @@ if not _secret_key:
         # cookies (and thus any viewer identity + premium access).
         raise RuntimeError(
             "FLASK_SECRET_KEY is not set. Refusing to start in production with an "
-            "insecure default key — set FLASK_SECRET_KEY in the environment."
+            "insecure default key - set FLASK_SECRET_KEY in the environment."
         )
     logging.warning(
-        "FLASK_SECRET_KEY is not set — using insecure development default. "
+        "FLASK_SECRET_KEY is not set - using insecure development default. "
         "The app will refuse to start without it when PYTHON_ENV=production."
     )
     _secret_key = 'dev-secret-key-change-in-production'
@@ -304,7 +338,7 @@ try:
     backend = "redis" if _redis_url else "memory (set REDIS_URL for multi-worker)"
     logger.info("[limiter] Flask-Limiter enabled (%s backend)", backend)
 except ImportError:
-    logger.warning("[limiter] Flask-Limiter not installed — rate limiting disabled")
+    logger.warning("[limiter] Flask-Limiter not installed - rate limiting disabled")
     class _NoopLimiter:
         def limit(self, *a, **kw):
             def decorator(f): return f
@@ -465,10 +499,10 @@ FORM_BODY = """
       </p>
 
       <ul class="home-bullets">
-        <li><strong>AI Trade Analyst</strong> — Personalized deal evaluation with counter suggestions</li>
-        <li><strong>Dynasty Value Engine</strong> — Hybrid model combining consensus data and advanced metrics</li>
-        <li><strong>Weekly Projections</strong> — Live scoring, matchup previews, and storyline tracking</li>
-        <li><strong>Historical Analysis</strong> — Season recaps, power rankings, and trend visualization</li>
+        <li><strong>AI Trade Analyst</strong> - Personalized deal evaluation with counter suggestions</li>
+        <li><strong>Dynasty Value Engine</strong> - Hybrid model combining consensus data and advanced metrics</li>
+        <li><strong>Weekly Projections</strong> - Live scoring, matchup previews, and storyline tracking</li>
+        <li><strong>Historical Analysis</strong> - Season recaps, power rankings, and trend visualization</li>
       </ul>
     </div>
 
@@ -738,7 +772,9 @@ BASE_HTML = """
   <head>
     <meta charset="utf-8">
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
+    <meta name="google-site-verification" content="zuH_tCWKG_L4hm4eRDFit3xfMi-ZPFXwK2s9eap20FA">
     <title>{title}</title>
+    {meta_tags}
     {og_tags}
     <meta name="viewport" content="width=device-width, initial-scale=1">
     
@@ -943,7 +979,7 @@ def resolve_viewer_for_league(users: List[Dict], rosters: List[Dict], username: 
     """
     matched_user = None
 
-    # Primary: match by user_id — avoids false matches on team_name collisions
+    # Primary: match by user_id - avoids false matches on team_name collisions
     if user_id:
         for u in users or []:
             if str(u.get("user_id") or "") == str(user_id):
@@ -1071,7 +1107,7 @@ def get_viewer_session() -> dict:
             "viewer_team_name": session.get("viewer_team_name"),
         }
     except RuntimeError:
-        # Called outside a request context (e.g. background thread) — no session available
+        # Called outside a request context (e.g. background thread) - no session available
         viewer_data = {
             "viewer_username": None,
             "viewer_user_id": None,
@@ -1117,7 +1153,7 @@ def get_page_html_from_cache(platform: str, season: int, league_id: str, page: s
             if time.time() - ts <= PAGE_HTML_TTL:
                 return html
 
-    # Cross-worker fallback: /tmp file — all gunicorn workers share the container fs
+    # Cross-worker fallback: /tmp file - all gunicorn workers share the container fs
     try:
         path = _page_html_tmp_path(platform, season, league_id, page)
         if os.path.exists(path) and time.time() - os.path.getmtime(path) <= PAGE_HTML_TTL:
@@ -1139,7 +1175,7 @@ def store_page_html(platform: str, season: int, league_id: str, page: str, html:
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(html)
-        os.replace(tmp, path)  # atomic — readers never see a partial file
+        os.replace(tmp, path)  # atomic - readers never see a partial file
     except Exception:
         pass
 
@@ -1280,7 +1316,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "</button>"
     )
 
-    # Site tour trigger — league pages only (the tour spotlights the league nav)
+    # Site tour trigger - league pages only (the tour spotlights the league nav)
     tour_menu_item = (
         "<button type='button' class='settings-menu-item' id='settingsTourBtn'>"
         "  <span class='settings-menu-icon' style='font-size:14px;line-height:16px;text-align:center;'>&#10024;</span>"
@@ -1452,7 +1488,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Trade Calculator", "trade.page_trade",          "trade",          False),
         ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False, "?tab=suggestions"),
         ("Trade Database",   "trade.page_trade_database", "trade-database", False),
-        # Trade Intel uses Sleeper trade data — not applicable for ESPN
+        # Trade Intel uses Sleeper trade data - not applicable for ESPN
         *([("Trade Intel <span class='nav-pro-badge'>PRO</span>", "trade.page_trade_intel", "trade-intel", False)] if not _is_espn else []),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Weekly dropdown is available as soon as the draft is done
@@ -1535,7 +1571,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             "</div>"
         )
     else:
-        # Logged-out user on a league page — offer quick sign-in
+        # Logged-out user on a league page - offer quick sign-in
         signin_item = (
             "<button type='button' class='settings-menu-item' "
             "        onclick='document.getElementById(\"signinModal\").style.display=\"flex\"'>"
@@ -1658,7 +1694,7 @@ def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
         return ""
 
     recap_url = f"/{platform}/{season}/{league_id}/recap"
-    # Week-scoped key — dismissal resets automatically the following Tuesday
+    # Week-scoped key - dismissal resets automatically the following Tuesday
     iso_week = now.isocalendar()[1]
     dismiss_key = f"recap-banner-{now.year}-w{iso_week}"
 
@@ -1802,6 +1838,50 @@ def _discord_banner() -> str:
 </script>"""
 
 
+DEFAULT_META_DESCRIPTION = (
+    "BR Fantasy is a free fantasy football toolkit: a dynasty and redraft trade "
+    "calculator, daily-updated player trade values, real-trade market data, breakout "
+    "candidate rankings, and advanced metrics for Sleeper, ESPN, and Yahoo leagues."
+)
+
+
+def _build_seo_meta_tags(
+        description: str,
+        canonical: Optional[str],
+        noindex: Optional[bool],
+        is_league_scoped: bool,
+) -> str:
+    """Assemble <meta description>, robots, and canonical tags for the page head.
+
+    League-scoped (personalized) pages default to noindex,follow so the thousands
+    of per-league URL variants don't dilute the canonical public tool pages.
+    """
+    # Default: noindex personalized league pages unless a caller overrides.
+    do_noindex = noindex if noindex is not None else is_league_scoped
+
+    parts = []
+    desc = (description or DEFAULT_META_DESCRIPTION).strip()
+    parts.append(f"<meta name=\"description\" content=\"{html.escape(desc, quote=True)}\">")
+
+    if do_noindex:
+        parts.append("<meta name=\"robots\" content=\"noindex, follow\">")
+    else:
+        parts.append("<meta name=\"robots\" content=\"index, follow\">")
+        canon = canonical
+        if not canon:
+            try:
+                if PRIMARY_DOMAIN:
+                    canon = f"https://{PRIMARY_DOMAIN}{request.path}"
+                else:
+                    canon = request.base_url
+            except Exception:
+                canon = ""
+        if canon:
+            parts.append(f"<link rel=\"canonical\" href=\"{html.escape(canon, quote=True)}\">")
+
+    return "\n    ".join(parts)
+
+
 def render_page(
         title: str,
         league_id: Optional[str],
@@ -1811,6 +1891,9 @@ def render_page(
         season: Optional[int] = None,
         *args,
         og_tags: str = "",
+        description: str = "",
+        canonical: Optional[str] = None,
+        noindex: Optional[bool] = None,
         **kwargs,
 ) -> str:
     if league_id and platform and season:
@@ -1818,6 +1901,11 @@ def render_page(
         session["last_platform"] = platform
         session["last_season"] = season
     nav_html = build_nav(league_id, active, platform, season)
+
+    meta_tags = _build_seo_meta_tags(
+        description, canonical, noindex,
+        is_league_scoped=bool(league_id and platform and season),
+    )
 
     banner_html = _discord_banner()
     if session.get("viewer_username"):
@@ -1836,6 +1924,7 @@ def render_page(
     import json as _json
     return BASE_HTML.format(
         title=title,
+        meta_tags=meta_tags,
         og_tags=og_tags,
         nav=nav_html,
         recap_banner=banner_html,
@@ -2105,7 +2194,7 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
     # For ESPN we need an explicit sync step.
     sync_league_globals(platform, resolved_league_id, season)
 
-    # League settings — read directly from the league dict for Sleeper to avoid reading
+    # League settings - read directly from the league dict for Sleeper to avoid reading
     # module-level globals that may have been overwritten by a concurrent request.
     if platform == "sleeper":
         from dashboard_services.api import SCORING_DEFAULTS as _SCORING_DEFAULTS
@@ -2599,7 +2688,7 @@ def get_trade_ai_analysis(
 def handle_500(e):
     logger.exception("[500] Internal server error")
     return (
-        "<!doctype html><html lang='en'><head><title>Error — BR Fantasy</title>"
+        "<!doctype html><html lang='en'><head><title>Error - BR Fantasy</title>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
         "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
@@ -2611,7 +2700,7 @@ def handle_500(e):
         "</head><body><div class='box'>"
         "<div class='logo'>BR Fantasy</div>"
         "<h2>Something went wrong</h2>"
-        "<p>The server hit an unexpected error. This usually fixes itself — please try again in a moment.</p>"
+        "<p>The server hit an unexpected error. This usually fixes itself - please try again in a moment.</p>"
         "<a href='/'>&#8592; Back to home</a>"
         "</div></body></html>"
     ), 500
@@ -2620,7 +2709,7 @@ def handle_500(e):
 @app.errorhandler(404)
 def handle_404(e):
     return (
-        "<!doctype html><html lang='en'><head><title>Page Not Found — BR Fantasy</title>"
+        "<!doctype html><html lang='en'><head><title>Page Not Found - BR Fantasy</title>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<style>body{font-family:sans-serif;background:#0f1623;color:#e2e8f0;"
         "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;}"
@@ -4177,7 +4266,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             1 for pk in (picks_by_roster.get(row["rid"], []) if isinstance(picks_by_roster, dict) else [])
             if int(pk.get("round") or 0) == 1
         )
-        picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "—"
+        picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "–"
         picks_td = "" if platform == "espn" else f"<td class='num'>{picks_label}</td>"
         table_rows_html += (
             f"<tr>"
@@ -5518,7 +5607,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
         proj_warn_html = (
             "<div class='card' style='margin-bottom:12px;background:#fffbeb;border:1px solid #f59e0b;'>"
             "  <div class='card-body' style='padding:10px 14px;font-size:13px;color:#92400e;'>"
-            "    <strong>Projections unavailable</strong> — projected scores can't be loaded right now. "
+            "    <strong>Projections unavailable</strong> - projected scores can't be loaded right now. "
             "    Actual scores will still appear once games are final."
             "  </div>"
             "</div>"
@@ -5551,7 +5640,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     )
     _scout_unavail = (
         "<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
-        f"Scout report unavailable — sign in with {_scout_sign_in_hint} to see your opponent's breakdown."
+        f"Scout report unavailable - sign in with {_scout_sign_in_hint} to see your opponent's breakdown."
         "</div>"
     )
     scout_panel_content = scout_tab_html if scout_tab_html else _scout_unavail
@@ -5830,8 +5919,8 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
 
     # Kickers and team defenses are absent from the FP file (no DEF) and from
     # Sleeper's weekly projections, so the optimal-lineup view would score those
-    # slots at 0.  Fill them from the prior-season usage cache — the same source
-    # the playoff simulator uses — so Start/Sit and the optimal lineup count K and
+    # slots at 0.  Fill them from the prior-season usage cache - the same source
+    # the playoff simulator uses - so Start/Sit and the optimal lineup count K and
     # DEF.  Team defenses appear under their team abbreviation id (pos blank);
     # kickers under pos PK/K.  Their scoring is variant-independent, so the flat
     # PPR per-game value is used as-is.
@@ -5865,7 +5954,7 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
         for pid, val in raw[w].items():
             fb = fallback.get(pid, 0)
             # A weekly value far below the player's season median usually means a
-            # stale/backup listing — but it can also be a legitimately low week
+            # stale/backup listing - but it can also be a legitimately low week
             # (tough matchup, reduced role, injury ramp). Only treat near-zero as
             # a stale listing; otherwise clamp to the median floor rather than
             # discarding the real value and over-projecting the week.
@@ -6046,7 +6135,7 @@ def resolve_exact_pick_slot(
         return None
 
     # roster_id = original pick owner whose standing determines the draft slot.
-    # previous_owner_id = who is SENDING the pick in this transaction — wrong
+    # previous_owner_id = who is SENDING the pick in this transaction - wrong
     # for traded picks (they may have a different standing than the original owner).
     orig_owner = pick.get("roster_id")
     if orig_owner is None:
@@ -6253,7 +6342,7 @@ def build_activity_body(ctx: dict) -> str:
         return f"{bucket_label} • {owner_txt}" if bucket_label else owner_txt
 
     def verdict_from_net(net_total: float, baseline: float = 300.0) -> tuple[str, str]:
-        # Dynamic fair band that scales with trade size — matches /api/trade-eval logic.
+        # Dynamic fair band that scales with trade size - matches /api/trade-eval logic.
         if baseline >= 600:
             fair_pct = 0.05
         elif baseline >= 300:
@@ -6418,7 +6507,7 @@ def build_activity_body(ctx: dict) -> str:
                         and side_a["asset_count"] != side_b["asset_count"]):
                     apply_tier_stack_adjustment(side_a, side_b)
                 # Pre-compute zero-sum net values so both sides are mirrors of
-                # each other — exactly how trade-eval reports the result.
+                # each other - exactly how trade-eval reports the result.
                 a_eff = side_a["effective_total"]
                 b_eff = side_b["effective_total"]
                 baseline_val = max(a_eff, b_eff, 1.0)
@@ -7586,9 +7675,9 @@ def build_teams_body(ctx: dict) -> str:
             "    <i class='fa-solid fa-clipboard-list' style='font-size:11px;opacity:0.7;'></i> PICKS"
             "  </td>"
             f"  <td class='pos-count'>{pick_count}</td>"
-            "  <td class='pos-age'>—</td>"
+            "  <td class='pos-age'>–</td>"
             f"  <td class='pos-total'>{pick_val:.1f}</td>"
-            "  <td class='pos-avg'>—</td>"
+            "  <td class='pos-avg'>–</td>"
             f"  <td class='pos-z'>{pick_z:+.2f}</td>"
             "  <td class='pos-bar-cell'>"
             "    <div class='pos-bar-outer'>"
@@ -7924,7 +8013,7 @@ def build_teams_body(ctx: dict) -> str:
             var html = '<div class="analytics-btm-header"><span class="analytics-date-label">Weeks remaining: ' + wr +
               '</span><span class="analytics-avg-label">' + sortLabel + '</span></div>';
             if (usingPR) {{
-              html += '<p class="analytics-empty" style="margin:4px 0 8px;font-size:12px;color:var(--text-muted)">No games played — opponent strength estimated from roster values.</p>';
+              html += '<p class="analytics-empty" style="margin:4px 0 8px;font-size:12px;color:var(--text-muted)">No games played - opponent strength estimated from roster values.</p>';
             }}
             html += '<div class="analytics-bar-list">';
             teams.forEach(function(t) {{
@@ -8337,7 +8426,7 @@ def build_teams_body(ctx: dict) -> str:
               }});
             }});
 
-            panel.innerHTML = html || '<p class="analytics-empty">Roster looks stable — no actions flagged.</p>';
+            panel.innerHTML = html || '<p class="analytics-empty">Roster looks stable - no actions flagged.</p>';
           }})
           .catch(function(err) {{
             console.warn('[roster-intel]', err);
@@ -8627,7 +8716,7 @@ def get_league_ctx_from_cache(platform: str, league_id: str, season: int) -> dic
         key_lock = _CTX_LOCKS[key]
 
     with key_lock:
-        # Re-check after acquiring lock — another thread may have built it while we waited
+        # Re-check after acquiring lock - another thread may have built it while we waited
         entry = DASHBOARD_CACHE.get(key)
         if entry and (time.time() - entry.get("ts", 0) <= CACHE_TTL):
             ctx = entry["ctx"]
@@ -8962,7 +9051,7 @@ def page_portfolio():
                 pid_meta[pid] = p
             pid_leagues.setdefault(pid, []).append(lg_abbrev)
 
-    # Top NFL teams by player count — deduplicate players, sort by value
+    # Top NFL teams by player count - deduplicate players, sort by value
     nfl_exposure = []
     for t, d in nfl_team_data.items():
         seen_pids: set = set()
@@ -8996,7 +9085,7 @@ def page_portfolio():
         holdings, num_leagues, nfl_exposure, cross_pos,
         total_wins, total_losses, total_ties,
     )
-    # Always render with a league nav context — fall back to first valid league
+    # Always render with a league nav context - fall back to first valid league
     nav_league_id = from_league
     nav_platform = from_platform
     nav_season = from_season or season
@@ -9309,7 +9398,7 @@ def api_start_sit_options():
     except Exception:
         pass
 
-    # ── Weekly projections — SAME source as the player modal & matchups page ───
+    # ── Weekly projections - SAME source as the player modal & matchups page ───
     # build_projections_by_week() returns Tank01 weekly values (variant-adjusted,
     # with per-player median outlier correction) and FantasyPros season PPG as a
     # fallback for players with no weekly data. Reuse the cached ctx bundle when
@@ -9391,7 +9480,7 @@ def api_start_sit_options():
 
         fpts_vs = round(fpts_against.get(opponent, {}).get(pos, 0.0), 1) if opponent else 0.0
         # Z-score matchup rank (rank 1 = easiest); fall back to fpts-against rank.
-        # Shown as the matchup chip for context — the weekly projection already
+        # Shown as the matchup chip for context - the weekly projection already
         # reflects the opponent, so it is NOT re-applied to the start/sit score.
         _z_opp = _norm_sched_team(opponent) if opponent else ""
         _z_map = _z_rank_tables.get(pos, {})
@@ -9810,7 +9899,7 @@ def _build_career_graphs_ctx_live(
 @app.route("/players")
 @app.route("/<platform>/<int:season>/<league_id>/players")
 def page_players(platform: str = None, season: int = None, league_id: str = None):
-    """Player Rankings page — searchable, filterable, sortable list of all players."""
+    """Player Rankings page - searchable, filterable, sortable list of all players."""
     body_html = """
     <div class="card central">
       <div class="card-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
@@ -10259,12 +10348,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         .filter-sort select {
           width: 100%;
         }
-        /* Table: hide Age on tablets — rank | arrow | name | pos | team | sort */
+        /* Table: hide Age on tablets - rank | arrow | name | pos | team | sort */
         .pr-grid-row { grid-template-columns: 28px 42px 1fr 44px 42px 56px !important; }
         .pr-age,  #prAgeHeader  { display: none !important; }
       }
       @media (max-width: 480px) {
-        /* Phone: rank | arrow | name | sort — hide pos and team */
+        /* Phone: rank | arrow | name | sort - hide pos and team */
         .pr-grid-row { grid-template-columns: 28px 42px 1fr 56px !important; }
         .pr-pos-cell, #prTableHeader span:nth-child(4) { display: none !important; }
         .pr-team,     #prTableHeader span:nth-child(6) { display: none !important; }
@@ -10534,12 +10623,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       const PR_SORT_META = {
         rank:      { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
         value:     { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
-        age:       { label: 'Age',      cell: p => p.age != null ? Number(p.age).toFixed(1) : '—' },
+        age:       { label: 'Age',      cell: p => p.age != null ? Number(p.age).toFixed(1) : '–' },
         pos_rank:  { label: 'Pos Rank', cell: p => prLeagueType === 'sf'
           ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
           : (p.pos_rank_label || p.position) },
-        ppg:       { label: 'PPG',       cell: p => p.ppg != null ? p.ppg.toFixed(1) : '—' },
-        total_pts: { label: 'Total Pts', cell: p => p.total_pts != null ? p.total_pts.toFixed(1) : '—' },
+        ppg:       { label: 'PPG',       cell: p => p.ppg != null ? p.ppg.toFixed(1) : '–' },
+        total_pts: { label: 'Total Pts', cell: p => p.total_pts != null ? p.total_pts.toFixed(1) : '–' },
       };
 
       // Sort and filter players, then render rows into the main table
@@ -10586,7 +10675,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         }
 
         // Compute rank numbers from the full sorted list BEFORE applying search.
-        // This keeps rank #s stable — e.g. searching for a player still shows #47, not #1.
+        // This keeps rank #s stable - e.g. searching for a player still shows #47, not #1.
         const _sortedForRank = players.slice().sort((a, b) => {
           if (sortBy === 'age')       return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
           if (sortBy === 'pos_rank')  { const rA = prLeagueType==='sf'?(a.sf_pos_rank||a.pos_rank||9999):(a.pos_rank||9999); const rB = prLeagueType==='sf'?(b.sf_pos_rank||b.pos_rank||9999):(b.pos_rank||9999); return rA - rB; }
@@ -10602,7 +10691,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           }
         });
 
-        // Search filter — fuzzy match, sort by score when query present
+        // Search filter - fuzzy match, sort by score when query present
         if (prSearchQuery.length > 0) {
           const scored = players
             .map(p => ({
@@ -10703,7 +10792,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           const posRank = prLeagueType === 'sf'
             ? (p.sf_pos_rank_label || p.pos_rank_label || p.position)
             : (p.pos_rank_label || p.position);
-          const age = p.age != null ? Number(p.age).toFixed(1) : '—';
+          const age = p.age != null ? Number(p.age).toFixed(1) : '–';
           const val = prGetValue(p);
 
           let badges = '';
@@ -10725,7 +10814,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
             arrowCell = `<span class="pr-rank-arrow ${dir}" title="${Math.abs(rankChange)} spot${Math.abs(rankChange)!==1?'s':''} in 7 days"><i class="fa-solid ${icon}" aria-hidden="true"></i></span>`;
           }
 
-          const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '—' : sortMeta.cell(p);
+          const sortDisplay = p.position === 'PICK' && sortBy === 'age' ? '–' : sortMeta.cell(p);
           let sortDisplayHTML;
           if (p.position !== 'PICK' && sortBy === 'ppg' && p.ppg != null) {
             const pRank = p.ppg_rank ? (p.position + p.ppg_rank) : '-';
@@ -10744,12 +10833,12 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           }
 
           row.innerHTML =
-            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '—') + '</span>' +
+            '<span class="pr-rank">'  + (displayRank ? '#' + displayRank : '–') + '</span>' +
             '<span class="pr-arrows">' + arrowCell + '</span>' +
             '<span class="pr-name player-clickable">'  + (p.name || 'Unknown') + badges + '</span>' +
             '<span class="pr-pos-cell">' + posRank + '</span>' +
-            '<span class="pr-age">'   + (p.position === 'PICK' ? '—' : age) + '</span>' +
-            '<span class="pr-team">'  + (p.team || '—') + '</span>' +
+            '<span class="pr-age">'   + (p.position === 'PICK' ? '–' : age) + '</span>' +
+            '<span class="pr-team">'  + (p.team || '–') + '</span>' +
             '<span class="pr-value">' + sortDisplayHTML + '</span>';
 
           if (sparkData && sparkData.length >= 2) {
@@ -10798,7 +10887,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         document.getElementById('prPrevBtn').disabled = page === 1;
         document.getElementById('prNextBtn').disabled = page === totalPages;
 
-        // Page number buttons — show up to 5, centred on current page
+        // Page number buttons - show up to 5, centred on current page
         const pageNumbers = document.getElementById('prPageNumbers');
         pageNumbers.innerHTML = '';
         const maxPages = 5;
@@ -10907,7 +10996,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         for (let i = 0; i < tbl.length; i++) {
           if (val >= tbl[i]) return Math.min(i + 1, 9);
         }
-        return 9; // T9 catch-all — matches Python _asset_tier clamp
+        return 9; // T9 catch-all - matches Python _asset_tier clamp
       }
 
       // Load data
@@ -10997,7 +11086,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         document.getElementById('prLoading').style.display = 'none';
         prLoaded = true;
         prRender();
-        // Lazy-load sparklines — re-render with sparkline data once ready
+        // Lazy-load sparklines - re-render with sparkline data once ready
         fetch('/api/sparklines?v=4').then(r => r.json()).then(function(data) {
           prSparklines = data || {};
           prRender();
@@ -11009,15 +11098,23 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       });
     </script>
     """
+    _players_desc = (
+        "Daily-updated fantasy football player rankings and trade values for dynasty and "
+        "redraft leagues. Compare players with consensus rankings, trend charts, and advanced "
+        "metrics for Sleeper, ESPN, and Yahoo."
+    )
     if platform:
-        return render_page("Player Rankings", league_id, "players", body_html, platform, season)
+        return render_page("Fantasy Football Player Rankings & Trade Values | BR Fantasy",
+                           league_id, "players", body_html, platform, season,
+                           description=_players_desc)
 
-    return render_page("Player Rankings", None, "players", body_html)
+    return render_page("Fantasy Football Player Rankings & Trade Values | BR Fantasy",
+                       None, "players", body_html, description=_players_desc)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/prospects")
 def page_prospects(platform: str, season: int, league_id: str):
-    """Rookie prospect rankings page — active class auto-detected."""
+    """Rookie prospect rankings page - active class auto-detected."""
     from dashboard_services.pages.rookies_page import build_prospects_body
     from dashboard_services.admin_auth import is_admin
     body_html = build_prospects_body(is_admin=is_admin())
@@ -11168,7 +11265,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
         const prevPpg = parseFloat(candidate.prev_ppr_ppg || 0);
         if (!s1) return null;
         const modelPpg = s1 / 17;
-        // Confidence-adjusted spread — matches the modal formula in app.js
+        // Confidence-adjusted spread - matches the modal formula in app.js
         const conf = Math.min(100, Math.max(30, parseFloat(candidate.confidence_score || 70)));
         const halfSpread = 0.04 + (0.12 - 0.04) * (90 - conf) / 60;
         const highRaw = modelPpg * (1 + halfSpread);
@@ -11489,7 +11586,7 @@ def page_teams(platform: str, season: int, league_id: str):
         return render_page("BR Fantasy Teams", league_id, "teams", cached, platform, season)
 
     # If the league context is already warm (user visited any other page), build
-    # synchronously right now — takes ~1-2s and skips the whole skeleton/polling dance.
+    # synchronously right now - takes ~1-2s and skips the whole skeleton/polling dance.
     ctx_entry = DASHBOARD_CACHE.get(_cache_key(platform, season, league_id))
     if ctx_entry and (time.time() - ctx_entry.get("ts", 0) <= CACHE_TTL):
         try:
@@ -11500,7 +11597,7 @@ def page_teams(platform: str, season: int, league_id: str):
             import logging as _log
             _log.getLogger(__name__).error("Sync teams build failed: %s", exc, exc_info=True)
 
-    # Cold load — kick off background build and show skeleton while it runs.
+    # Cold load - kick off background build and show skeleton while it runs.
     # The /tmp file written by store_page_html is visible to all gunicorn workers
     # so whichever worker handles the poll will see it as ready.
     build_key = f"{platform}:{season}:{league_id}"
@@ -11587,7 +11684,7 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             for r in season_rosters
         }
 
-        # df_weekly has roster_id column — use it as the stable team key.
+        # df_weekly has roster_id column - use it as the stable team key.
         # Team names can collide in larger leagues, which can hide/merge users.
         has_roster_id = "roster_id" in df.columns
         df_for_stats = df
@@ -11722,7 +11819,7 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
         champ_name, runner_up_name = get_champion_and_runner_up(ctx)
         champ_uid = name_to_uid.get(champ_name) or champ_name
         runner_up_uid = name_to_uid.get(runner_up_name) or runner_up_name
-        if champ_name != "—":
+        if champ_name != "–":
             championships.setdefault(champ_uid, []).append(hist_s)
 
         summary = _build_history_summary(ctx)
@@ -11732,12 +11829,12 @@ def _collect_all_season_data(platform: str, league_id: str, season: int):
             "champion_uid": champ_uid,
             "runner_up": runner_up_name,
             "runner_up_uid": runner_up_uid,
-            "champion_record": summary.get("champion_record", "—"),
-            "top_pf_team": summary.get("top_scorer_team", "—"),
+            "champion_record": summary.get("champion_record", "–"),
+            "top_pf_team": summary.get("top_scorer_team", "–"),
             "top_pf": float(summary.get("top_scorer_value") or 0),
-            "highest_week_team": summary.get("highest_week_team", "—"),
+            "highest_week_team": summary.get("highest_week_team", "–"),
             "highest_week_value": float(summary.get("highest_week_value") or 0),
-            "closest_matchup": summary.get("closest_matchup", "—"),
+            "closest_matchup": summary.get("closest_matchup", "–"),
             "closest_margin": float(summary.get("closest_margin") or 0),
         })
 
@@ -11874,7 +11971,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
 
     # ── Championship timeline ───────────────────────────────────────────────
     def _cell(v: str) -> str:
-        return html.escape(v) if v and v != "—" else "<span style='color:var(--text-muted)'>—</span>"
+        return html.escape(v) if v and v != "–" else "<span style='color:var(--text-muted)'>–</span>"
 
     sorted_records = sorted(season_records, key=lambda x: x["season"], reverse=True)
     most_recent_season = sorted_records[0]["season"] if sorted_records else None
@@ -11983,12 +12080,12 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
     # ── Fun Awards ──────────────────────────────────────────────────────────
     fun_awards_html = ""
 
-    # The Bridesmaid — most runner-up appearances without a title
+    # The Bridesmaid - most runner-up appearances without a title
     runner_up_counts: dict = {}
     for rec in season_records:
         ru_uid = rec.get("runner_up_uid")
         ru_display = _display_name(ru_uid) if ru_uid else rec.get("runner_up", "")
-        if ru_display and ru_display != "—":
+        if ru_display and ru_display != "–":
             runner_up_counts[ru_display] = runner_up_counts.get(ru_display, 0) + 1
     no_title_names = set(career_df[career_df["Championships"] == 0]["display_name"].astype(str).tolist())
     bridesmaid_candidates = {k: v for k, v in runner_up_counts.items() if k in no_title_names and v >= 1}
@@ -12003,7 +12100,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "#f59e0b",
         )
 
-    # Most Dominant — best career win% (2+ seasons)
+    # Most Dominant - best career win% (2+ seasons)
     if not eligible.empty:
         dominant_row = eligible.loc[eligible["Win%"].idxmax()]
         fun_awards_html += _fun_award(
@@ -12014,7 +12111,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "#f59e0b",
         )
 
-    # The Punching Bag — most PA with a losing record
+    # The Punching Bag - most PA with a losing record
     losing = career_df[career_df["Losses"] > career_df["Wins"]]
     if not losing.empty:
         punching_bag_row = losing.loc[losing["PA"].idxmax()]
@@ -12026,7 +12123,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "#94a3b8",
         )
 
-    # Boom or Bust — highest weekly score std dev
+    # Boom or Bust - highest weekly score std dev
     boom_eligible = career_df[career_df["Seasons"] >= 1].copy()
     if not boom_eligible.empty:
         boom_row = boom_eligible.loc[boom_eligible["STD"].idxmax()]
@@ -12038,7 +12135,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "#f97316",
         )
 
-    # Barely Breathing — most wins by <5 points
+    # Barely Breathing - most wins by <5 points
     if "CloseWins" in career_df.columns and career_df["CloseWins"].sum() > 0:
         close_row = career_df.loc[career_df["CloseWins"].idxmax()]
         if int(close_row["CloseWins"]) > 0:
@@ -12050,7 +12147,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
                 "#ef4444",
             )
 
-    # Consistency King — lowest weekly score std dev (2+ seasons)
+    # Consistency King - lowest weekly score std dev (2+ seasons)
     if not eligible.empty:
         consistent_row = eligible.loc[eligible["STD"].idxmin()]
         fun_awards_html += _fun_award(
@@ -12061,7 +12158,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
             "#60a5fa",
         )
 
-    # Main Character — most total league activity (trades + pickups)
+    # Main Character - most total league activity (trades + pickups)
     if "Activity" in career_df.columns and career_df["Activity"].sum() > 0:
         main_row = career_df.loc[career_df["Activity"].idxmax()]
         if int(main_row["Activity"]) > 0:
@@ -12075,7 +12172,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
                 "#a855f7",
             )
 
-    # Bench Warmer MVP — most career points left on bench
+    # Bench Warmer MVP - most career points left on bench
     if "BenchPts" in career_df.columns and career_df["BenchPts"].sum() > 0:
         bench_row = career_df.loc[career_df["BenchPts"].idxmax()]
         if float(bench_row["BenchPts"]) > 0:
@@ -12087,7 +12184,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
                 "#64748b",
             )
 
-    # Waiver Wire Demon — most FA/waiver pickups
+    # Waiver Wire Demon - most FA/waiver pickups
     if "WaiverAdds" in career_df.columns and career_df["WaiverAdds"].sum() > 0:
         waiver_row = career_df.loc[career_df["WaiverAdds"].idxmax()]
         if int(waiver_row["WaiverAdds"]) > 0:
@@ -12099,7 +12196,7 @@ def _build_awards_html(career_owners: dict, championships: dict, season_records:
                 "#22c55e",
             )
 
-    # Playoff Riser — biggest avg pts jump from regular season to playoffs
+    # Playoff Riser - biggest avg pts jump from regular season to playoffs
     po_eligible = career_df[career_df["PlayoffDelta"].notna()].copy() if "PlayoffDelta" in career_df.columns else pd.DataFrame()
     if not po_eligible.empty:
         riser_row = po_eligible.loc[po_eligible["PlayoffDelta"].idxmax()]
@@ -12569,7 +12666,7 @@ def build_optimal_body(ctx):
             )
         body_html = (
             f"<div class='card' style='overflow:auto;'>"
-            f"<div class='card-header'><h3>League Lineup Efficiency — Season</h3></div>"
+            f"<div class='card-header'><h3>League Lineup Efficiency - Season</h3></div>"
             f"<table style='width:100%;min-width:520px;border-collapse:collapse;'>"
             f"<thead><tr style='border-bottom:2px solid var(--border);'>"
             f"{_TH}#</th>{_TH}TEAM</th>{_TH}EFFICIENCY</th>"
@@ -12636,7 +12733,7 @@ def build_optimal_body(ctx):
             )
         body_html = (
             f"<div class='card' style='overflow:auto;'>"
-            f"<div class='card-header'><h3>Week {sel_week} — League Efficiency</h3></div>"
+            f"<div class='card-header'><h3>Week {sel_week} - League Efficiency</h3></div>"
             f"<table style='width:100%;min-width:520px;border-collapse:collapse;'>"
             f"<thead><tr style='border-bottom:2px solid var(--border);'>"
             f"{_TH}TEAM</th>{_TH}ACTUAL</th>{_TH}OPTIMAL</th>{_TH}LEFT ON BENCH</th>"
@@ -12681,7 +12778,7 @@ def build_optimal_body(ctx):
         )
         detail = (
             f"<div class='card'>"
-            f"<div class='card-header'><h3>Week {sel_week} — Player Breakdown</h3></div>"
+            f"<div class='card-header'><h3>Week {sel_week} - Player Breakdown</h3></div>"
             f"<div style='padding:12px;'>"
             f"<div style='font-size:12px;color:var(--muted);margin-bottom:8px;'>"
             f"<span style='color:#ef4444'>&#9660; Should have benched</span> &nbsp; "
@@ -13321,7 +13418,7 @@ def build_schedule_body(ctx):
           return;
         }
 
-        // Group players from the same NFL team into one row — their schedule,
+        // Group players from the same NFL team into one row - their schedule,
         // avg rank and ease are identical, so separate rows just repeat values.
         var groups = [];
         var byTeam = {};
@@ -13366,7 +13463,7 @@ def build_schedule_body(ctx):
           });
 
           var ar = p.avg_rank;
-          var avgTxt   = ar < 900 ? ('#' + ar) : '—';
+          var avgTxt   = ar < 900 ? ('#' + ar) : '–';
           var avgColor = ar <= total * 0.25 ? '#22c55e'
                        : ar <= total * 0.50 ? '#84cc16'
                        : ar <= total * 0.75 ? '#f59e0b' : '#ef4444';
@@ -13604,7 +13701,7 @@ def api_schedule_rankings():
             except Exception:
                 pass
 
-        # Build value lookup once — used for depth-chart cap and final sort
+        # Build value lookup once - used for depth-chart cap and final sort
         value_by_pid: dict = {}
         for _p in (get_model_value_table_cached() or []):
             _pid = str(_p.get("id") or "")
@@ -13770,7 +13867,7 @@ def page_schedule(platform: str, season: int, league_id: str):
 def _player_row(p: dict, owner: str, team_label: str, ava_html: str,
                 tag: str, tag_color: str) -> str:
     name = html.escape(str(p.get("name") or "Unknown"))
-    pos  = html.escape(str(p.get("pos") or "—"))
+    pos  = html.escape(str(p.get("pos") or "–"))
     nfl  = html.escape(str(p.get("nfl") or ""))
     pts  = float(p.get("pts") or 0)
     return f"""
@@ -13924,17 +14021,17 @@ def _build_lineup_analysis_html(
 </div>"""
 
     mistakes_rows = "".join(mistake_row(item) for item in coaching_mistakes) \
-                    or "<div style='padding:18px;color:var(--muted);font-size:13px;text-align:center;'>No major lineup mistakes this week — nice job, league.</div>"
+                    or "<div style='padding:18px;color:var(--muted);font-size:13px;text-align:center;'>No major lineup mistakes this week - nice job, league.</div>"
 
     return f"""
 <div class="recap-lineup-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:20px;">
   <div class="card" style="overflow:hidden;">
     <div class="card-header"><h3>Busts</h3><span style="font-size:12px;color:var(--muted);">Worst starters</span></div>
-    {bust_rows or '<div style="padding:14px;color:var(--muted);">—</div>'}
+    {bust_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
   </div>
   <div class="card" style="overflow:hidden;">
     <div class="card-header"><h3>Sleepers</h3><span style="font-size:12px;color:var(--muted);">Best bench performers</span></div>
-    {sleeper_rows or '<div style="padding:14px;color:var(--muted);">—</div>'}
+    {sleeper_rows or '<div style="padding:14px;color:var(--muted);">–</div>'}
   </div>
   <div class="card" style="overflow:hidden;">
     <div class="card-header"><h3>Coaching Mistakes</h3>
@@ -14152,7 +14249,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
                 f"flex-shrink:0;'>{initials}</div>")
 
     def team_name(owner, rid=""):
-        return html.escape(team_by_rid.get(rid) or owner or "—")
+        return html.escape(team_by_rid.get(rid) or owner or "–")
 
     # ── Week selector ──────────────────────────────────────────────────────
     week_opts = "".join(
@@ -14272,7 +14369,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     </div>
   </div>
   <div style="text-align:center;flex-shrink:0;min-width:110px;">
-    <div style="font-size:15px;font-weight:800;">{m['w_pts']:.2f} <span style="color:var(--muted);font-weight:400;font-size:12px;">—</span> {m['l_pts']:.2f}</div>
+    <div style="font-size:15px;font-weight:800;">{m['w_pts']:.2f} <span style="color:var(--muted);font-weight:400;font-size:12px;">–</span> {m['l_pts']:.2f}</div>
     <div style="font-size:10px;color:{margin_color};font-weight:700;">+{m['margin']:.2f}</div>
   </div>
   <div style="flex:1;min-width:0;display:flex;align-items:center;gap:8px;justify-content:flex-end;">
@@ -14375,7 +14472,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
             border:1px solid var(--accent);border-radius:8px;background:rgba(99,102,241,0.08);">
   <span style="font-size:18px;">👁️</span>
   <div style="font-size:13px;color:var(--text);">
-    <strong>Preview</strong> — this is sample data. Your real weekly recap will appear here after Week 1 completes.
+    <strong>Preview</strong> - this is sample data. Your real weekly recap will appear here after Week 1 completes.
   </div>
 </div>"""
 
@@ -14404,7 +14501,7 @@ def page_recap(platform: str, season: int, league_id: str):
     week_param = f"?week={week}" if week else ""
     og_image = f"{base_url}/{platform}/{season}/{league_id}/recap/og.png{week_param}"
     og_tags = (
-        f"<meta property='og:title' content='{week_label} — {league_name} | BR Fantasy'>"
+        f"<meta property='og:title' content='{week_label} - {league_name} | BR Fantasy'>"
         f"<meta property='og:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
         f"<meta property='og:image' content='{og_image}'>"
         f"<meta property='og:image:width' content='1200'>"
@@ -14412,7 +14509,7 @@ def page_recap(platform: str, season: int, league_id: str):
         f"<meta property='og:type' content='website'>"
         f"<meta property='og:url' content='{html.escape(page_url)}'>"
         f"<meta name='twitter:card' content='summary_large_image'>"
-        f"<meta name='twitter:title' content='{week_label} — {league_name} | BR Fantasy'>"
+        f"<meta name='twitter:title' content='{week_label} - {league_name} | BR Fantasy'>"
         f"<meta name='twitter:description' content='Weekly fantasy football recap: scoreboard, highlights, and AI analysis.'>"
         f"<meta name='twitter:image' content='{og_image}'>"
     )
@@ -14447,8 +14544,8 @@ def recap_og_image(platform: str, season: int, league_id: str):
     league_name = (league.get("name") or "Fantasy League")[:32]
 
     # ── Resolve week and pull stats ────────────────────────────────────────
-    high_name, high_pts = "—", 0.0
-    low_name,  low_pts  = "—", 0.0
+    high_name, high_pts = "–", 0.0
+    low_name,  low_pts  = "–", 0.0
     matchups_display    = []
 
     if df_weekly is not None and not df_weekly.empty and "finalized" in df_weekly.columns:
@@ -14630,7 +14727,7 @@ def recap_og_image(platform: str, season: int, league_id: str):
 # ══════════════════════════════════════════════════════════════════════════════
 
 _COMMISH_HISTORY_CACHE: dict = {}
-_COMMISH_HISTORY_TTL = 6 * 3600  # 6h — prior-season activity barely changes
+_COMMISH_HISTORY_TTL = 6 * 3600  # 6h - prior-season activity barely changes
 
 
 def _commissioner_history_layer(platform, league_id, season, lookback=3):
@@ -14736,7 +14833,7 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
     trades_series = prior_trades_series + [(int(current_season), int(current_trades))]
 
     def _dir(series):
-        # Trend is always computed from completed seasons only — never compare
+        # Trend is always computed from completed seasons only - never compare
         # a partial/preseason year against full seasons.
         completed = prior_moves_series if series is moves_series else prior_trades_series
         vals = [v for _, v in completed]
@@ -14756,7 +14853,7 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
         for i, (yr, val) in enumerate(series):
             is_last = i == last_idx
             if is_last and not season_complete:
-                # Current season still in progress — muted style with dashed border
+                # Current season still in progress - muted style with dashed border
                 chip_bg = "var(--row,rgba(127,127,127,.08))"
                 chip_fg = "var(--muted)"
                 chip_border = "var(--muted)"
@@ -14810,7 +14907,7 @@ def _render_commissioner_history(layer, current_season, current_moves, current_t
     ) or (
         "<div class='msh-chronic-ok'>"
         "<span class='msh-chronic-ok-icon'>✓</span>"
-        "No chronic inactivity — owners stay engaged across seasons.</div>"
+        "No chronic inactivity - owners stay engaged across seasons.</div>"
     )
 
     n_prior = len(seasons)
@@ -15259,7 +15356,7 @@ def index():
                 if platform == "sleeper" and viewer.get("viewer_user_id"):
                     _background_seed_user(viewer["viewer_user_id"], viewer.get("viewer_username"))
             else:
-                # For ESPN, skip the hard error — viewer matching is optional
+                # For ESPN, skip the hard error - viewer matching is optional
                 if platform != "espn":
                     body_html = render_template_string(
                         FORM_BODY,
@@ -15315,7 +15412,7 @@ def index():
         ))
 
     next_url = (request.args.get("next") or "").strip()
-    # Reject open redirects — only allow local paths
+    # Reject open redirects - only allow local paths
     if not (next_url.startswith("/") and not next_url.startswith("//")):
         next_url = ""
     body_html = render_template_string(
@@ -15326,7 +15423,15 @@ def index():
         next_url=next_url,
         recent_updates=generate_recent_updates_html(),
     )
-    return render_page("BR Fantasy Dashboard", None, "home", body_html)
+    return render_page(
+        "BR Fantasy - Free Fantasy Football Trade Calculator & Dynasty Tools",
+        None, "home", body_html,
+        description=(
+            "Free fantasy football tools for Sleeper, ESPN, and Yahoo: a dynasty and "
+            "redraft trade calculator, daily player trade values, real-trade market data, "
+            "power rankings, breakout candidates, and advanced metrics."
+        ),
+    )
 
 
 @app.route("/api/weekly-week")
@@ -15559,7 +15664,7 @@ _PLAYER_DETAIL_YEARS_CACHE: set = set()
 _PLAYER_DETAIL_YEARS_CACHE_TS = 0.0
 _PLAYER_DETAIL_YEARS_TTL = 300
 
-# Cache for bulk PPG stats (2-hour TTL) — computed from sleeper_stats files
+# Cache for bulk PPG stats (2-hour TTL) - computed from sleeper_stats files
 _PPG_STATS_CACHE: dict = {}   # player_id → {ppg, total_pts, games, season}
 _PPG_STATS_CACHE_TS = 0.0
 _PPG_STATS_CACHE_TTL = 7200
@@ -15614,7 +15719,7 @@ def get_model_value_table_cached():
     # Zero out players not tracked by any external market source (FC or DP).
     # The ML model assigns some value to every player in the index; without this
     # guard, washed-up vets and low-usage players leak into the rankings.
-    # We only do the presence check — DB values for tracked players are untouched.
+    # We only do the presence check - DB values for tracked players are untouched.
     if tbl:
         try:
             from data_building.external_data.external_values_scraper import (
@@ -15648,7 +15753,7 @@ def get_model_value_table_cached():
                     if _pos == "PICK":
                         continue  # picks have no FC entry, always keep
                     if _pid in _fc_sids:
-                        continue  # tracked by FC — keep DB value as-is
+                        continue  # tracked by FC - keep DB value as-is
                     _p["value"]    = 0
                     _p["sf_value"] = 0
                     _zeroed += 1
@@ -15659,7 +15764,7 @@ def get_model_value_table_cached():
 
     # Append rookie prospects for players not already tracked in player_values.
     # player_values (EMA-synced from player_value_history) takes priority when a
-    # rookie already has a history value — this keeps rankings consistent with
+    # rookie already has a history value - this keeps rankings consistent with
     # the values shown everywhere else on the site.  The pipeline only fills in
     # true gaps: undrafted prospects or newly-signed players not yet in the DB.
     try:
@@ -15732,7 +15837,7 @@ def api_flush_value_cache():
     """
     secret = os.environ.get("CRON_SECRET", "")
     provided = (request.get_json(force=True, silent=True) or {}).get("secret", "")
-    # Require the secret to be set AND match — when CRON_SECRET is unset the
+    # Require the secret to be set AND match - when CRON_SECRET is unset the
     # old `if secret and …` guard would pass any request (short-circuit on falsy).
     if not secret or provided != secret:
         return jsonify({"error": "unauthorized"}), 403
@@ -15740,7 +15845,7 @@ def api_flush_value_cache():
     global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
     _MODEL_VALUE_CACHE    = None
     _MODEL_VALUE_CACHE_TS = 0
-    return jsonify({"ok": True, "message": "Model value cache cleared — next request will reload from DB."})
+    return jsonify({"ok": True, "message": "Model value cache cleared - next request will reload from DB."})
 
 
 @app.route("/api/run-daily-cron", methods=["POST"])
@@ -15781,7 +15886,7 @@ def api_run_daily_cron():
             global _MODEL_VALUE_CACHE, _MODEL_VALUE_CACHE_TS
             _MODEL_VALUE_CACHE    = None
             _MODEL_VALUE_CACHE_TS = 0
-            logger.info("[run-daily-cron] Completed — cache flushed")
+            logger.info("[run-daily-cron] Completed - cache flushed")
         except Exception as _e:
             logger.error("[run-daily-cron] Failed: %s", _e, exc_info=True)
 
@@ -15789,7 +15894,7 @@ def api_run_daily_cron():
     return jsonify({
         "ok":     True,
         "force":  force,
-        "message": "Daily cron triggered in background — check server logs for progress.",
+        "message": "Daily cron triggered in background - check server logs for progress.",
     })
 
 
@@ -16023,7 +16128,7 @@ def api_trade_outcome():
                 except (ValueError, TypeError):
                     continue
 
-            # No snapshot within 30 days of the trade date — too stale to compare
+            # No snapshot within 30 days of the trade date - too stale to compare
             if best_diff > 30 or not best_val:
                 return None
             return round(best_val, 1)
@@ -16050,7 +16155,7 @@ def api_trade_outcome():
                 except (ValueError, TypeError):
                     pass
 
-            # Bucket lookup — derive bucket from slot if pick_order is absent
+            # Bucket lookup - derive bucket from slot if pick_order is absent
             order = asset.get("pick_order")
             if not order and slot:
                 try:
@@ -16074,7 +16179,7 @@ def api_trade_outcome():
         all_assets = [("received", a) for a in assets_received] + [("sent", a) for a in assets_sent]
         all_pids = [(side, str(a.get("id") or ""), str(a.get("name") or a.get("id") or "")) for side, a in all_assets]
 
-        # Fetch historical values in parallel — only store when we found a reliable snapshot
+        # Fetch historical values in parallel - only store when we found a reliable snapshot
         then_values: dict[str, float] = {}
         if trade_date:
             with ThreadPoolExecutor(max_workers=min(len(all_pids), 8)) as pool:
@@ -16086,7 +16191,7 @@ def api_trade_outcome():
                         if result is not None:
                             then_values[pid] = result
                     except Exception:
-                        pass  # Leave absent — _build_row treats missing pid as None
+                        pass  # Leave absent - _build_row treats missing pid as None
 
         received_rows = []
         sent_rows = []
@@ -16344,7 +16449,7 @@ def api_trade_eval():
     tier_thresholds = compute_tier_thresholds(value_table, league_type, league_size)
     # Only apply depth adjustment when BOTH sides have assets and the counts
     # differ. A one-sided trade (nothing on the other side) has no comparison to
-    # make, so each asset should report its full value — no stack penalty.
+    # make, so each asset should report its full value - no stack penalty.
     side_a_count = len(side_a_players) + len(side_a_picks)
     side_b_count = len(side_b_players) + len(side_b_picks)
     both_sides_filled = side_a_count > 0 and side_b_count > 0
@@ -16488,7 +16593,7 @@ def api_trade_eval_playoff_impact():
 
         # Future outlook: value-weighted age + total dynasty value of the
         # players coming in vs going out. This is the counterweight to the
-        # win-now playoff metrics — getting younger / banking value is the
+        # win-now playoff metrics - getting younger / banking value is the
         # upside when a deal dents this season's odds (and vice versa).
         is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"}
                     for s in (ctx.get("roster_positions") or []))
@@ -16632,7 +16737,7 @@ def api_players():
         if q:
             results = [r for r in results if q in r["name"].lower()]
 
-        # Pagination — limit=0 (default) returns the full list for backwards compat
+        # Pagination - limit=0 (default) returns the full list for backwards compat
         total = len(results)
         try:
             limit = max(0, int(request.args.get("limit", 0)))
@@ -16714,7 +16819,7 @@ def api_sparklines():
                 vals = data[c]
                 if len(vals) < 2:
                     continue
-                # sf_value_* cols start with "sf_"; value_sf does not — detect by suffix
+                # sf_value_* cols start with "sf_"; value_sf does not - detect by suffix
                 is_sf_col = c.startswith("sf_") or c == "value_sf"
                 scale = ssf if is_sf_col else s1qb
                 # JS expects key "sf_value" (the alias used everywhere in player data)
@@ -16750,7 +16855,7 @@ def api_league_players():
             str(p.get("id") or "") for p in model_value_table
             if str(p.get("position") or "").upper() == "PICK"
         }
-        # Build pick-type sets per (year, round) — slot > bucket > generic hierarchy.
+        # Build pick-type sets per (year, round) - slot > bucket > generic hierarchy.
         _bucket_keywords = {"early", "mid", "late"}
         _slot_yr_rnd: set = set()
         _bucket_yr_rnd: set = set()
@@ -16825,7 +16930,7 @@ def api_league_players():
         # Current-year slot picks (already FC-normalized in picks.py) are kept.
         try:
             _cur_year = str(date.today().year)
-            # Load picks directly from model_values.json — get_model_value_table_cached()
+            # Load picks directly from model_values.json - get_model_value_table_cached()
             # returns DB players (non-empty) so never falls back to model_values.json picks.
             _raw_model = load_model_value_table(apply_calibration=False) or []
             _json_picks = [p for p in _raw_model
@@ -16967,7 +17072,7 @@ def api_league_players():
             if norm and norm in name_to_idx:
                 # Player already in model table (drafted + linked to Sleeper).
                 # Mark as rookie and update team. Preserve player_values DB values
-                # when present — only fill in gaps with pipeline values.
+                # when present - only fill in gaps with pipeline values.
                 existing = model_value_table[name_to_idx[norm]]
                 existing["is_rookie"] = True
                 if _team and _team != "FA":
@@ -16994,7 +17099,7 @@ def api_league_players():
     except Exception as _e:
         logger.info(f"[api/league-players] rookies skipped: {_e}")
 
-    # --- Rank labels (no decay applied — DB values are source of truth) ---
+    # --- Rank labels (no decay applied - DB values are source of truth) ---
     from collections import defaultdict as _dd_prl
 
     def _recompute_ranks(table, val_key, rank_key, label_key):
@@ -17205,7 +17310,7 @@ def api_league_rosters():
             # Resolve each owned pick to its exact draft slot using whichever
             # slot maps are already in HISTORICAL_PICK_SLOT_CACHE (built during
             # normal dashboard loads). If a map isn't cached yet, fall back to
-            # round-level counts — never trigger a fresh historical API fetch here.
+            # round-level counts - never trigger a fresh historical API fetch here.
             pick_ids: list[str] = []
             pick_round_counts: dict[str, int] = {}
             for p in (picks_by_roster.get(roster_id) or []):
@@ -17216,7 +17321,7 @@ def api_league_rosters():
                 slot = None
                 orig = p.get("original_owner")
                 if orig is not None:
-                    # Use cached slot map if available — no blocking fetch.
+                    # Use cached slot map if available - no blocking fetch.
                     source_season = p_season - 1
                     cached_map = HISTORICAL_PICK_SLOT_CACHE.get(
                         (str(platform).lower(), str(league_id), int(source_season))
@@ -18085,7 +18190,7 @@ def api_player_details(player_id: str):
         # Load game logs from sleeper_stats for all available seasons
         game_logs_by_year = {}
 
-        # Find all available season years — cached for 5 minutes to avoid
+        # Find all available season years - cached for 5 minutes to avoid
         # repeated glob scans on every player-details request.
         global _PLAYER_DETAIL_YEARS_CACHE, _PLAYER_DETAIL_YEARS_CACHE_TS
         now = time.time()
@@ -18289,7 +18394,7 @@ def api_player_details(player_id: str):
                 game_logs.sort(key=lambda g: g.get("date", "") or "")
                 game_logs_by_year[season_year] = game_logs
 
-        # Try to attach prospect data — use game_logs to detect rookies rather than years_exp
+        # Try to attach prospect data - use game_logs to detect rookies rather than years_exp
         prospect_data = None
         has_game_logs = bool(game_logs_by_year)
         if not has_game_logs:
@@ -18456,7 +18561,7 @@ def api_player_details(player_id: str):
                         _ppg_rank = _all_ppg.index(_ppg) + 1
                     except ValueError:
                         _ppg_rank = None
-                    # Total points rank — round ppg before multiplying so values match
+                    # Total points rank - round ppg before multiplying so values match
                     _all_total = sorted(
                         [round(round(float(_pick_ppg(p.get("usage") or {})), 1) * int((p.get("usage") or {}).get("games") or 0), 1)
                          for p in _pos_players],
@@ -18563,7 +18668,7 @@ def api_player_game_logs(player_id: str):
         season    = int(request.args.get("season", datetime.now().year))
 
         if league_id:
-            # sync_league_globals is a no-op for Sleeper — must call get_league explicitly
+            # sync_league_globals is a no-op for Sleeper - must call get_league explicitly
             from dashboard_services.api import SCORING_DEFAULTS as _SD
             if platform == "sleeper":
                 from dashboard_services.api import get_league as _get_league
@@ -18640,7 +18745,7 @@ def api_player_game_logs(player_id: str):
                 return {k: s.get(k) for k in ["pass_yd","pass_td","pass_int","rush_att","rush_yd","rush_td","rec","rec_tgt","rec_yd","rec_td","fum_lost"]}
 
             if schedule_by_week:
-                # Full path: schedule available — include opponent and date
+                # Full path: schedule available - include opponent and date
                 for week_num in sorted(schedule_by_week.keys()):
                     games = schedule_by_week[week_num]
                     if not isinstance(games, list):
@@ -18675,7 +18780,7 @@ def api_player_game_logs(player_id: str):
                             "opponent": f"@{opponent}" if is_away else opponent,
                             "fantasy_pts": None, "stats": None})
             else:
-                # Fallback: no schedule files — show stats without opponent/date
+                # Fallback: no schedule files - show stats without opponent/date
                 for week_num in sorted(stats_by_week.keys()):
                     stats = stats_by_week[week_num].get(player_id)
                     if stats:
@@ -18703,7 +18808,7 @@ def api_player_game_logs(player_id: str):
                 from utils.utils import path_week_proj
                 import json as _pj_json
                 # Read the week-1 file only if it already exists on disk
-                # (no network fetch — just a cheap cache peek).
+                # (no network fetch - just a cheap cache peek).
                 def _peek_proj(yr: int) -> dict:
                     p = path_week_proj(yr, 1)
                     if not os.path.exists(p):
@@ -18717,13 +18822,13 @@ def api_player_game_logs(player_id: str):
                     _upcoming = _upcoming + 1
             except Exception:
                 pass
-        # Weeks already covered by actual stats — skip those when projecting
+        # Weeks already covered by actual stats - skip those when projecting
         _actual_weeks = {
             g.get("week") for g in (game_logs_by_year.get(_upcoming) or [])
             if not g.get("is_projection")
         }
         # Show projections if: no actual data yet (pre-season) OR some weeks
-        # are still in the future (active season — fill the remaining weeks).
+        # are still in the future (active season - fill the remaining weeks).
         if _upcoming not in game_logs_by_year or _actual_weeks:
             try:
                 from utils.utils import pick_proj_variant, load_week_projection
@@ -18784,17 +18889,17 @@ def api_player_game_logs(player_id: str):
                             _pv = _med
 
                         # Resolve opponent from schedule
-                        _opp = "—"
+                        _opp = "–"
                         _game_date = ""
                         for _g in (_sched.get(_w) or []):
                             if not isinstance(_g, dict):
                                 continue
                             if player_team and player_team == _g.get("home"):
-                                _opp = _g.get("away", "—")
+                                _opp = _g.get("away", "–")
                                 _game_date = _g.get("gameDate", "")
                                 break
                             elif player_team and player_team == _g.get("away"):
-                                _opp = f"@{_g.get('home', '—')}"
+                                _opp = f"@{_g.get('home', '–')}"
                                 _game_date = _g.get("gameDate", "")
                                 break
 
@@ -19037,7 +19142,7 @@ def api_team_details(roster_id: str):
                         if original_owner != int(roster_id):
                             # Always show the team whose draft slot this pick originates from.
                             # Using previous_owner (last trader) was wrong when a pick changes
-                            # hands more than once — multiple picks could share the same
+                            # hands more than once - multiple picks could share the same
                             # previous_owner while having different original owners.
                             via_roster = next((r for r in rosters if r.get("roster_id") == original_owner), None)
                             if via_roster:
@@ -19958,9 +20063,9 @@ def _fetch_league_adp_from_db(
 def api_draft_grades():
     """
     Grade each team's rookie draft class using three signals:
-      1. ADP value   — actual pick slot vs FantasyCalc rookie ADP (external)
-      2. BPA / board — who was still available with better ADP at that pick
-      3. Team need   — did the pick fill a positional need on the roster?
+      1. ADP value   - actual pick slot vs FantasyCalc rookie ADP (external)
+      2. BPA / board - who was still available with better ADP at that pick
+      3. Team need   - did the pick fill a positional need on the roster?
 
     Grading is rookie-draft-specific: only compares picks against other rookies
     in that draft, not against the full dynasty player pool.
@@ -20050,7 +20155,7 @@ def api_draft_grades():
         roster_map = _build_roster_map(users, rosters)
 
         # Pre-draft roster: each team's existing players by position
-        # (excluding picks made in this draft — we'll account for those)
+        # (excluding picks made in this draft - we'll account for those)
         roster_pos_counts: dict[str, dict[str, int]] = {}   # rid -> {pos: count}
         CORE_POS = {"QB", "RB", "WR", "TE"}
         # IDs that appear in any team's pre-draft roster (non-rookie veterans)
@@ -20086,7 +20191,7 @@ def api_draft_grades():
 
         # For rookie drafts only, restrict the board to confirmed rookies so
         # veterans don't pollute the BPA comparison.  Startup drafts use the
-        # full FC dynasty pool — no filtering needed.
+        # full FC dynasty pool - no filtering needed.
         eligible_sids: set[str] = set()
         if _draft_type == "rookie":
             eligible_sids = set(drafted_player_ids)
@@ -20185,7 +20290,7 @@ def api_draft_grades():
                 score += 1 if adp_diff < -3 else 2
             elif bpa_gap is not None and bpa_gap >= 5:
                 score = max(score - 1, 0)   # better player available (was -2)
-            # Moderate BPA gap (3-4) no longer penalises — adp_diff already
+            # Moderate BPA gap (3-4) no longer penalises - adp_diff already
             # captures whether the pick was a reach
 
             # Need modifier with positional context
@@ -20331,7 +20436,7 @@ def api_draft_grades():
 # Cache of which optional columns exist on trade_intel_player_stats. The
 # size-bucketed market_value_*_8/10/12/14 columns are created lazily by the
 # analytics pipeline (data_building/trade_intel/analytics._ensure_size_columns)
-# so deployments that haven't run the pipeline yet won't have them — we check
+# so deployments that haven't run the pipeline yet won't have them - we check
 # once per process and skip the bucketed column in the SELECT if missing.
 _TRADE_INTEL_COL_CACHE: dict = {}
 
@@ -20581,7 +20686,7 @@ def api_trade_intel_player(player_id: str):
         model_val = float(stat_row["model_value"] or 0)
         market_val = float(stat_row["market_value"] or 0)
         calibrated_val = float(stat_row["calibrated_value"] or 0)
-        # Delta is market vs raw model — shows how much the model diverges from real trades
+        # Delta is market vs raw model - shows how much the model diverges from real trades
         delta = round(market_val - model_val, 1) if model_val and market_val else None
 
         return jsonify({
@@ -21021,7 +21126,7 @@ def api_trade_intel_similar_trades():
                     (side_a_ids, side_b_ids, season, fetch_limit),
                 ).fetchall()
             else:
-                # Only one side populated — match any trade with those players
+                # Only one side populated - match any trade with those players
                 all_ids = side_a_ids or side_b_ids
                 trade_rows = conn.execute(
                     """
@@ -21205,7 +21310,7 @@ def api_roster_intel():
     # Fall back to session if the template didn't inject a viewer roster id
     if not viewer_rid_raw:
         viewer_rid_raw = str(session.get("viewer_roster_id") or "").strip()
-    # FC dynasty ADP — sent by browser because server IP is blocked by FC
+    # FC dynasty ADP - sent by browser because server IP is blocked by FC
     fc_adp: dict    = (body.get("fc_adp") or {}) if isinstance(body.get("fc_adp"), dict) else {}
 
     if not league_id:
@@ -21267,7 +21372,7 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
     except Exception:
         pass
 
-    # Breakout candidates — use the SAME source as the Breakout Engine page so the
+    # Breakout candidates - use the SAME source as the Breakout Engine page so the
     # "Breakout" signal here is consistent with what shows up there.
     breakout_pids: set = set()
     try:
@@ -21299,14 +21404,14 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         if past_prime and val < 175:
             return "Cut"
 
-        # Sell windows — aging players still holding value
+        # Sell windows - aging players still holding value
         if past_prime and val >= 350:
             return "Sell High"
-        # Market overvalues vs our model — sell into the hype.
-        # Exclude young ascending players (≤24) — market premium on youth is justified.
+        # Market overvalues vs our model - sell into the hype.
+        # Exclude young ascending players (≤24) - market premium on youth is justified.
         if mkt_gap >= 5 and val >= 250 and not past_prime and not young:
             return "Sell High"
-        # Severe 7-day rank jump for a prime player — sell into momentum
+        # Severe 7-day rank jump for a prime player - sell into momentum
         if not past_prime and not young and val >= 450 and rank_chg >= 10:
             return "Sell High"
 
@@ -21314,17 +21419,17 @@ def _api_roster_intel_compute(ctx, league_type, viewer_rid_raw, fc_adp, season: 
         if not past_prime and val >= 700:
             return "Core"
 
-        # Breakout — only if the player appears on the actual Breakout Engine page
+        # Breakout - only if the player appears on the actual Breakout Engine page
         if not past_prime and pid in breakout_pids and val >= 80:
             return "Breakout"
 
-        # Sleeper — our model values significantly more than the dynasty market.
+        # Sleeper - our model values significantly more than the dynasty market.
         # Only applies to mid-tier players; top-tier players are never "sleepers".
         _sleeper_rank_floor = {"QB": 10, "RB": 14, "WR": 16, "TE": 6}.get(pos, 16)
         if mkt_gap <= -5 and val >= 200 and not past_prime and internal_pos_rk >= _sleeper_rank_floor:
             return "Sleeper"
 
-        # Severe 7-day drop — consider selling before value erodes further
+        # Severe 7-day drop - consider selling before value erodes further
         if not past_prime and rank_chg <= -10 and val >= 175:
             return "Monitor"
 
@@ -21949,7 +22054,7 @@ def api_trade_intel_player_packages(player_id: str):
                     if untouchable_ids:
                         viewer_players = [p for p in viewer_players if p["player_id"] not in untouchable_ids]
                     # Use draft_ended=True if the fantasy rookie draft for this season
-                    # is already complete — those picks no longer exist as assets.
+                    # is already complete - those picks no longer exist as assets.
                     try:
                         _drafts_for_check = ctx.get("drafts") or []
                         _latest_d = get_most_recent_valid_draft_for_season(_drafts_for_check, season)
@@ -21983,7 +22088,7 @@ def api_trade_intel_player_packages(player_id: str):
                     # Backfill slot/bucket pick values straight from model_values.json.
                     # The DB value table excludes picks (position != 'PICK'), and
                     # load_pick_value_table can return without current-year slot keys
-                    # in this code path — which previously collapsed every pick onto a
+                    # in this code path - which previously collapsed every pick onto a
                     # weak round-average/flat fallback, making big overpays (e.g. two
                     # R1 picks for a mid-RB) grade as "slight overpay". model_values.json
                     # is a static file present in prod with correct slot values
@@ -22027,7 +22132,7 @@ def api_trade_intel_player_packages(player_id: str):
                             pk_name = f"{yr} {rnd}{_sfx} (Mid)"
                         # Resolve pick value robustly. The value table only has
                         # SLOT keys for the current year (e.g. 2026_1_01) and only
-                        # BUCKET keys for future years (e.g. 2027_1_mid) — never a
+                        # BUCKET keys for future years (e.g. 2027_1_mid) - never a
                         # bare "{yr}_{rnd}" key. Try slot → bucket → average of that
                         # round's slots, and only then a realistic hard default, so
                         # picks are never silently collapsed to a flat 220.
@@ -22276,7 +22381,7 @@ def api_trade_intel_player_packages(player_id: str):
                         return True
                     return False
 
-                # 1-player — at most 2 per position for variety
+                # 1-player - at most 2 per position for variety
                 pos_count: dict = {}
                 for p in sorted_p:
                     if len(out) >= limit: break
@@ -22313,7 +22418,7 @@ def api_trade_intel_player_packages(player_id: str):
                             break
 
                 # Throw-in: player slightly under floor + cheap sweetener (pick or player)
-                # Main piece in [65%, 82%) of target — below floor on its own
+                # Main piece in [65%, 82%) of target - below floor on its own
                 for p in sorted_p:
                     if len(out) >= limit: break
                     v = float(p.get("value") or 0)
@@ -22333,7 +22438,7 @@ def api_trade_intel_player_packages(player_id: str):
                         if lo <= v + p2v <= hi:
                             _add([p, p2]); break
 
-                # 2-player — prefer different positions
+                # 2-player - prefer different positions
                 for i, p1 in enumerate(sorted_p):
                     if len(out) >= limit: break
                     v1 = float(p1.get("value") or 0)
@@ -22540,11 +22645,11 @@ def api_trade_intel_player_packages(player_id: str):
                     elif depth_val < 150:
                         need_adj += 2               # strong starter, thin depth
                     else:
-                        need_adj -= 3               # stacked at this pos — harder sell
+                        need_adj -= 3               # stacked at this pos - harder sell
 
                 need_adj = max(-10, min(need_adj, 18))
 
-                # 4. Win/rebuild window — use same grade as Teams page
+                # 4. Win/rebuild window - use same grade as Teams page
                 grade_data = _roster_grade(owner_roster)
                 win_window = grade_data.get("win_window", "")
                 # Map Teams-page labels to rebuild / win_now / competitive
@@ -22621,7 +22726,7 @@ def api_trade_intel_player_packages(player_id: str):
             _enrich_pkg(pkg)
 
         # Drop packages where the viewer is sending more than 2× the target's value.
-        # Real trades include extreme overpays — those are not useful suggestions.
+        # Real trades include extreme overpays - those are not useful suggestions.
         _max_send = (focus_value or 1) * 1.15
         primary_pkgs = [p for p in primary_pkgs if p.get("send_value", 0) <= _max_send]
 
@@ -22637,7 +22742,7 @@ def api_trade_intel_player_packages(player_id: str):
             pkg["likely_takers"]   = _likely_takers(sent_pos)
             pkg["acceptance_prob"] = _acceptance_prob(pkg, _total_real)
 
-        # ── Archetype patterns — always from real DB sig_counts ───────────
+        # ── Archetype patterns - always from real DB sig_counts ───────────
         total_trade_count = real_result["total_real_trades"] or 1
         from collections import defaultdict as _dfd
         merged: dict = _dfd(int)
@@ -22745,7 +22850,7 @@ def _real_trade_packages_for_target(
         }
 
     def _pick_val(rnd: int, season=None) -> float:
-        # The table keys are "{season}_{round}_{slot|bucket}" (3 parts) — never a
+        # The table keys are "{season}_{round}_{slot|bucket}" (3 parts) - never a
         # bare "{season}_{round}". Average all entries for the requested round so
         # a generic round reference gets a representative value rather than the
         # first arbitrary key that happens to end in "_{rnd}".
@@ -23096,7 +23201,7 @@ def api_trade_intel_player_send_packages(player_id: str):
             }
 
         target_info = values_by_id.get(str(player_id))
-        # The focus can also be a draft pick the viewer owns — "what can I get for
+        # The focus can also be a draft pick the viewer owns - "what can I get for
         # this pick?". Pick ids aren't in the player value table, so resolve them.
         if not target_info:
             target_info = _resolve_pick_asset(str(player_id), num_teams, values_by_id)
@@ -23183,8 +23288,8 @@ def api_trade_intel_player_send_packages(player_id: str):
         def _option_quality(assets: list, total: float) -> float:
             """Lower is better. Ranks returns the way a savvy manager would:
             close to fair value, consolidated (fewer pieces), anchored by a real
-            player rather than two scrubs, filling needs, and — when sending a
-            future asset like a pick — skewing younger."""
+            player rather than two scrubs, filling needs, and - when sending a
+            future asset like a pick - skewing younger."""
             score = abs(total - focus_value)                     # value distance
             score += (len(assets) - 1) * focus_value * 0.07      # prefer consolidation
             best_piece = max((float(a["value"]) for a in assets), default=0.0)
@@ -23264,7 +23369,7 @@ def api_trade_intel_player_send_packages(player_id: str):
             for p in team_players:
                 for pk in team_picks:
                     _add([p, pk])
-            # 2 players — never offer two QBs
+            # 2 players - never offer two QBs
             for i, p1 in enumerate(team_players):
                 if p1["value"] >= hi:
                     continue
@@ -23358,7 +23463,7 @@ def api_trade_ideas_for_target():
                     values_by_id[_pid]["buy_sell_ratio"] = float(_r["buy_sell_ratio"] or 1.0)
                     values_by_id[_pid]["market_trend"]   = round(float(_r["market_trend"] or 0.0) * _market_scale(), 1)
         except Exception:
-            pass  # market signals optional — fall back to rank_change_7d only
+            pass  # market signals optional - fall back to rank_change_7d only
 
         target_info = values_by_id.get(target_player_id)
         if not target_info:
@@ -23379,7 +23484,7 @@ def api_trade_ideas_for_target():
             pos = info.get("position", "")
             if pos in ("PICK", "K", "DEF"):
                 return 1.0
-            # QBs don't carry dynasty premium in 1QB — their value tracks production
+            # QBs don't carry dynasty premium in 1QB - their value tracks production
             if pos == "QB" and league_type == "1qb":
                 return 1.0
             age      = float(info.get("age") or 99)
@@ -23409,7 +23514,7 @@ def api_trade_ideas_for_target():
 
         target_owner_name = roster_map.get(target_owner_rid, "Unknown")
 
-        # Viewer's roster — players with value ≥50, sorted desc
+        # Viewer's roster - players with value ≥50, sorted desc
         viewer_roster_obj = next(
             (r for r in rosters if str(r.get("roster_id")) == viewer_roster_id), None
         )
@@ -23436,7 +23541,7 @@ def api_trade_ideas_for_target():
             reverse=True,
         )
 
-        # Viewer's picks (current + next season only) — use real values from value table
+        # Viewer's picks (current + next season only) - use real values from value table
         pick_val_lookup = {
             str(p.get("id") or ""): float(p.get("value") or 0)
             for p in value_table
@@ -23531,9 +23636,9 @@ def api_trade_ideas_for_target():
 
         target_tier = _tier(effective_target)
         # Anchor floors: lead player must be this fraction of target value.
-        # 2-for-1: 75% — near-equal piece + sweetener
-        # 3-for-1: 65% — strong piece + two contributors
-        # player+pick: 65% — strong piece + pick
+        # 2-for-1: 75% - near-equal piece + sweetener
+        # 3-for-1: 65% - strong piece + two contributors
+        # player+pick: 65% - strong piece + pick
         ANCHOR_2 = effective_target * 0.75
         ANCHOR_3 = effective_target * 0.65
 
@@ -23825,7 +23930,7 @@ def build_portfolio_body(
         f"</div>"
     )
 
-    # ── League list — standings-table ─────────────────────────────────────
+    # ── League list - standings-table ─────────────────────────────────────
     league_rows = ""
     all_rows = valid_leagues + [lg for lg in all_leagues_data if lg.get("error") or lg.get("not_in_league")]
     for lg in all_rows:
@@ -24398,7 +24503,7 @@ threading.Thread(target=_run_startup_daily, daemon=True).start()
 
 
 
-# ── Feature 10 + 15: Ask My GM — streaming AI chat ───────────────────────────
+# ── Feature 10 + 15: Ask My GM - streaming AI chat ───────────────────────────
 @app.route("/api/ask-gm", methods=["POST"])
 @limiter.limit("15 per minute")
 def api_ask_gm():
@@ -24873,7 +24978,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   <meta charset="utf-8">
   <title>{team_name} | BR Fantasy Report</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta property="og:title" content="{team_name} — BR Fantasy Report">
+  <meta property="og:title" content="{team_name} - BR Fantasy Report">
   <meta property="og:description" content="{record} · {grade_label} grade · {win_window} · {season} season">
   <meta property="og:image" content="{avatar_url or '/static/BR_Logo_dark.png'}">
   <link rel="stylesheet" href="/static/dashboard.css?v={_CSS_V}">

@@ -227,7 +227,7 @@ def rankings():
             
             result.append(d)
 
-        # Overlay dynasty rookie ADP — read directly from dated cache files,
+        # Overlay dynasty rookie ADP - read directly from dated cache files,
         # no DB connection required. Falls back to adp_service chain if files absent.
         try:
             import re as _re, glob as _glob, json as _adpj

@@ -185,12 +185,12 @@ document.body.scrollTop = 0;
       var maxH    = 280;
 
       if (spaceBelow >= Math.min(maxH, 120)) {
-        // Enough room below — standard position
+        // Enough room below - standard position
         list.style.top    = 'calc(100% + 4px)';
         list.style.bottom = 'auto';
         list.style.maxHeight = Math.min(maxH, spaceBelow) + 'px';
       } else if (spaceAbove > spaceBelow) {
-        // More room above — flip upward
+        // More room above - flip upward
         list.style.top    = 'auto';
         list.style.bottom = 'calc(100% + 4px)';
         list.style.maxHeight = Math.min(maxH, spaceAbove) + 'px';
@@ -281,7 +281,7 @@ document.body.scrollTop = 0;
  */
 function fmtPts(v) {
   const n = parseFloat(v);
-  if (isNaN(n)) return '—';
+  if (isNaN(n)) return '–';
   return n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
@@ -291,7 +291,7 @@ function fmtPts(v) {
  */
 function fmtInt(v) {
   const n = parseInt(v, 10);
-  if (isNaN(n)) return '—';
+  if (isNaN(n)) return '–';
   return n.toLocaleString('en-US');
 }
 
@@ -359,7 +359,7 @@ function emptyState(container, message, iconClass) {
   var bannerShown = false;
   var DISMISS_KEY = 'pwa-install-dismissed-v1';
 
-  // iOS Safari never fires beforeinstallprompt — detect it separately.
+  // iOS Safari never fires beforeinstallprompt - detect it separately.
   var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   var isStandalone = (navigator.standalone === true) ||
                      window.matchMedia('(display-mode: standalone)').matches;
@@ -513,7 +513,7 @@ function showLoginGate(target, opts) {
       document.body.appendChild(group);
     }
 
-    // Discord pill — always visible
+    // Discord pill - always visible
     if (!document.getElementById('discord-pill')) {
       var dp = document.createElement('a');
       dp.id = 'discord-pill';
@@ -528,7 +528,7 @@ function showLoginGate(target, opts) {
       group.appendChild(dp);
     }
 
-    // Refresh pill — only when a cache timestamp is available (league pages)
+    // Refresh pill - only when a cache timestamp is available (league pages)
     var main = document.getElementById('page-root');
     if (!main) return;
     var ts = parseInt(main.dataset.cacheTs || '0', 10);
@@ -912,7 +912,7 @@ function _renderPlayoffOdds(data) {
 
   // Projected odds only read a literal 100% / 0% when mathematically settled
   // (the backend sends exactly 100.0 / 0.0 in that case). Otherwise show one
-  // decimal — and since the backend caps undecided odds at 99.9 / 0.1, that can
+  // decimal - and since the backend caps undecided odds at 99.9 / 0.1, that can
   // never round to 100 / 0.
   const fmtProjPct = (v) => {
     if (v >= 100) return '100';
@@ -1226,7 +1226,7 @@ function tradePageExists(root = document) {
   return !!root.querySelector("#leagueIdInput");
 }
 
-// Global scoring format reader — reads from the trade page select when available,
+// Global scoring format reader - reads from the trade page select when available,
 // otherwise returns the page-level default injected by the server (window.__SF__), or 'ppr'.
 function getScoringFormat(root = document) {
   const sel = root.querySelector("#scoringFormatSelect") || document.getElementById("scoringFormatSelect");
@@ -1254,7 +1254,7 @@ window.initTradePage = function initTradePage(root = document) {
     sideBPicks: [],
   };
 
-  // Generation counter — incremented on every recomputeTrade() call so that
+  // Generation counter - incremented on every recomputeTrade() call so that
   // a stale in-flight fetch response never overwrites a more recent reset.
   let _tradeGeneration = 0;
 
@@ -1321,7 +1321,7 @@ window.initTradePage = function initTradePage(root = document) {
     return _allowedSetForSide(side, rosterFilter.pickRoundsByRid);
   }
 
-  // A slotted pick ("YYYY_R_SS", numeric slot) is unique — at most one can be added.
+  // A slotted pick ("YYYY_R_SS", numeric slot) is unique - at most one can be added.
   // Bucket ("YYYY_R_early") and round-only ("YYYY_R") picks are non-unique.
   function isSlottedPick(id) {
     const parts = String(id).split("_");
@@ -1340,7 +1340,7 @@ window.initTradePage = function initTradePage(root = document) {
     return ((rosterFilter.pickRoundCountsByRid[rid] || {})[roundKey]) || 0;
   }
 
-  // Bind the opponent from the players you ACQUIRE — Side A ("{you} gets…") holds the
+  // Bind the opponent from the players you ACQUIRE - Side A ("{you} gets…") holds the
   // opponent's assets, so its first player determines the opponent. Auto-binding is
   // released only if it was automatic and Side A is emptied.
   function syncSideBBinding() {
@@ -1388,7 +1388,7 @@ window.initTradePage = function initTradePage(root = document) {
 
 
     // With the roster filter on, Side A is always your team, so the Team 1 / Team 2
-    // viewer-side radio is redundant — hide it and pin the viewer side to A.
+    // viewer-side radio is redundant - hide it and pin the viewer side to A.
     const vt = root.querySelector(".otc-viewer-toggles");
     if (vt) vt.style.display = active ? "none" : "";
     if (active) {
@@ -2562,7 +2562,7 @@ window.initTradePage = function initTradePage(root = document) {
 
   function _applyTierBadges(data) {
     // Depth adjustment only makes sense as a comparison between two filled
-    // sides — hide it entirely when only one side has assets.
+    // sides - hide it entirely when only one side has assets.
     const sideAFilled = (state.sideAPlayers.length + state.sideAPicks.length) > 0;
     const sideBFilled = (state.sideBPlayers.length + state.sideBPicks.length) > 0;
     const bothSidesFilled = sideAFilled && sideBFilled;
@@ -2693,7 +2693,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       const data = await res.json();
 
-      // A newer recomputeTrade() call already ran — discard this stale response.
+      // A newer recomputeTrade() call already ran - discard this stale response.
       if (gen !== _tradeGeneration) return;
 
       const diff = Number(data.diff) || 0;
@@ -2859,7 +2859,7 @@ window.initTradePage = function initTradePage(root = document) {
     const platform   = window.location.pathname.split("/").filter(Boolean)[0] || "sleeper";
     const season     = root.querySelector("#seasonInput")?.value || new Date().getFullYear();
 
-    // Guest — needs to sign in / connect a league. Reuse the same trade login
+    // Guest - needs to sign in / connect a league. Reuse the same trade login
     // modal the Analyze Trade button opens, falling back to the nav sign-in
     // modal, then to the homepage if neither modal exists on this page.
     if (isGuest || !leagueId) {
@@ -2878,7 +2878,7 @@ window.initTradePage = function initTradePage(root = document) {
       return;
     }
 
-    // Non-premium — pro gate
+    // Non-premium - pro gate
     if (!hasPremium) {
       body.innerHTML = _piMessage(
         "fa-lock",
@@ -2891,8 +2891,8 @@ window.initTradePage = function initTradePage(root = document) {
 
     // Determine viewer side and build give/get id lists.
     // The viewer's own side ("Team N gets…", tagged Your side) lists the players
-    // the viewer RECEIVES — so those are the get IDs. The opponent's side lists
-    // the players the viewer sends away — the give IDs.
+    // the viewer RECEIVES - so those are the get IDs. The opponent's side lists
+    // the players the viewer sends away - the give IDs.
     const viewerSide = root.querySelector('input[name="viewerSide"]:checked')?.value || "a";
     const mySidePlayers  = viewerSide === "a" ? state.sideAPlayers : state.sideBPlayers;
     const oppSidePlayers = viewerSide === "a" ? state.sideBPlayers : state.sideAPlayers;
@@ -2910,7 +2910,7 @@ window.initTradePage = function initTradePage(root = document) {
       return;
     }
 
-    // No trade yet — empty placeholder (either side missing assets)
+    // No trade yet - empty placeholder (either side missing assets)
     const sideAHasAssets = state.sideAPlayers.length + state.sideAPicks.length > 0;
     const sideBHasAssets = state.sideBPlayers.length + state.sideBPicks.length > 0;
     if (!sideAHasAssets || !sideBHasAssets) {
@@ -3033,7 +3033,7 @@ window.initTradePage = function initTradePage(root = document) {
         </div>`;
 
       // Age and value as stat columns. Age is the value-weighted age of your
-      // WHOLE roster before vs after the swap — not just the two players moved.
+      // WHOLE roster before vs after the swap - not just the two players moved.
       const ageBeforeVal = outlook.roster_age_before;
       const ageAfterVal  = outlook.roster_age_after;
       const ageColor = younger ? "#8b5cf6" : older ? "#f59e0b" : "var(--text-muted)";
@@ -3274,7 +3274,7 @@ window.initTradePage = function initTradePage(root = document) {
 
       body.innerHTML = html;
 
-      // Delegate Get clicks — navigate to Suggestions tab with this player pre-loaded
+      // Delegate Get clicks - navigate to Suggestions tab with this player pre-loaded
       body.addEventListener("click", function(e) {
         const btn = e.target.closest(".get-target-btn");
         if (!btn) return;
@@ -3412,7 +3412,7 @@ window.initTradePage = function initTradePage(root = document) {
       if (!suggTargetsLoaded && getCurrentRosterId()) loadSuggTargets();
     }
     function _onContextChange() {
-      // League or season changed — stale targets must be re-fetched
+      // League or season changed - stale targets must be re-fetched
       suggTargetsLoaded = false;
       if (suggTab.style.display !== "none") loadSuggTargets();
     }
@@ -3432,7 +3432,7 @@ window.initTradePage = function initTradePage(root = document) {
       switchTab("suggestions");
       if (playerInput) playerInput.value = playerName;
       fetchPackages(playerId, playerName);
-      // On mobile the tab content is below the fold — scroll to it after paint.
+      // On mobile the tab content is below the fold - scroll to it after paint.
       // Two frames: first lets the tab display change settle, second lets the
       // browser finish reflowing before measuring the scroll target's position.
       // Only scrolls on mobile-width viewports to avoid jarring jumps on desktop.
@@ -3608,7 +3608,7 @@ window.initTradePage = function initTradePage(root = document) {
           { signal }
         );
 
-        // A newer search was started — discard this response silently
+        // A newer search was started - discard this response silently
         if (signal.aborted || suggCurrentPlayerId !== playerId) return;
 
         if (res.status === 403) {
@@ -4319,7 +4319,7 @@ window.initTradePage = function initTradePage(root = document) {
               // For slot picks: only add if not already present (no duplicates allowed)
               // For bucket picks: allow multiple (e.g. two "2027 1st Early" is valid)
               if (isSlotPick && pickId && state.sideBPicks.some(p => p.id === pickId)) return;
-              // Exact match only — no prefix fallback (prefix match always finds 1.01)
+              // Exact match only - no prefix fallback (prefix match always finds 1.01)
               const pickObj = pickId ? allPlayers.find(p => p.id === pickId) : null;
               if (pickObj) {
                 state.sideBPicks.push({ id: pickObj.id, display: pickObj.name });
@@ -4356,7 +4356,7 @@ window.initTradePage = function initTradePage(root = document) {
 
     // ── Suggestions-tab Trade Targets (different from sidebar) ───
     async function loadSuggTargets() {
-      // Skip if Strategy sub-tab is active — strategy loader handles that
+      // Skip if Strategy sub-tab is active - strategy loader handles that
       if ((localStorage.getItem("sugg-subtab") || "build") === "strategy") return;
 
       const container = root.querySelector("#otcSuggTargetsBody");
@@ -4374,7 +4374,7 @@ window.initTradePage = function initTradePage(root = document) {
       const viewerRosterId = getCurrentRosterId();
 
       if (!leagueId || !viewerRosterId) {
-        // Don't mark loaded — retry next time the tab is opened
+        // Don't mark loaded - retry next time the tab is opened
         container.innerHTML = '<div class="otc-movers-empty">Select your team to see targets.</div>';
         return;
       }
@@ -4418,7 +4418,7 @@ window.initTradePage = function initTradePage(root = document) {
 
         let html = "";
         if (isBalanced) {
-          html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">Roster is balanced — top available at each position:</div>`;
+          html += `<div style="font-size:11px;color:var(--text-muted);padding:2px 0 8px;">Roster is balanced - top available at each position:</div>`;
           Object.keys(allGrouped).forEach(pos => {
             (allGrouped[pos] || []).forEach(t => { html += renderRow(t, pos); });
           });
@@ -4731,7 +4731,7 @@ window.initTradePage = function initTradePage(root = document) {
       const isSellArch = _activeArchetype === "distribute" || _activeArchetype === "rebuilding";
 
       // For sell archetypes (rebuilding/distribute), each vet may generate multiple
-      // suggestion cards — deduplicate the impact table so each vet appears once.
+      // suggestion cards - deduplicate the impact table so each vet appears once.
       const _impactSeen = new Set();
       const _impactData = data.filter(t => {
         const key = isSellArch && t.suggested_send && t.suggested_send[0]
@@ -4842,7 +4842,7 @@ window.initTradePage = function initTradePage(root = document) {
         }
 
         function renderAssetHtml(assets) {
-          if (!assets.length) return `<div class="otc-rt-asset"><span class="otc-rt-name" style="color:var(--text-muted);">—</span></div>`;
+          if (!assets.length) return `<div class="otc-rt-asset"><span class="otc-rt-name" style="color:var(--text-muted);">–</span></div>`;
           return assets.map(a => {
             if (a.is_pick || a.position === "PICK") {
               return `<div class="otc-rt-asset">
@@ -4887,7 +4887,7 @@ window.initTradePage = function initTradePage(root = document) {
              </span>`
           : "";
 
-        // Win % + playoff odds — always prefer net_* fields (full trade swap effect)
+        // Win % + playoff odds - always prefer net_* fields (full trade swap effect)
         const wpd = (t.net_win_prob_delta ?? t.win_prob_delta) || 0;
         const pod = (t.net_playoff_odds_delta ?? t.playoff_odds_delta) || 0;
         const wpdCol = wpd >= 0 ? "#10b981" : "#ef4444";
@@ -5032,7 +5032,7 @@ window.initTradePage = function initTradePage(root = document) {
           resultState.innerHTML = `
             <div class="otc-ai-empty">
               <div class="otc-ai-empty-title">Slow down a moment</div>
-              <div class="otc-ai-empty-sub">You're evaluating trades quickly — wait a few seconds and try again.</div>
+              <div class="otc-ai-empty-sub">You're evaluating trades quickly - wait a few seconds and try again.</div>
             </div>`;
         }
         return;
@@ -5220,12 +5220,12 @@ window.initTradePage = function initTradePage(root = document) {
           const rid = sel.value;
           const newRid = rid ? String(rid) : "";
           // If this change event was fired programmatically (e.g. from syncSideBBinding),
-          // rosterFilter.sideBRid is already set to the same value — just refresh titles.
+          // rosterFilter.sideBRid is already set to the same value - just refresh titles.
           if (newRid === rosterFilter.sideBRid) {
             updateSideTitles();
             return;
           }
-          // User explicitly chose a different opponent — clear Side A's opponent assets.
+          // User explicitly chose a different opponent - clear Side A's opponent assets.
           if (newRid && (state.sideAPlayers.length || state.sideAPicks.length)) {
             state.sideAPlayers = [];
             state.sideAPicks = [];
@@ -5867,7 +5867,7 @@ window.initTradePage = function initTradePage(root = document) {
     });
   });
 
-  // Fire roster filter fetch immediately — independent of player data and movers.
+  // Fire roster filter fetch immediately - independent of player data and movers.
   // This is the bottleneck for the "Roster filter" feature becoming usable.
   initRosterFilter();
 
@@ -6367,12 +6367,12 @@ if (!platformBtns.length) return;
     });
 
     document.getElementById("continueAsBtn")?.addEventListener("click", async function() {
-      // Show loading overlay immediately — before any network request
+      // Show loading overlay immediately - before any network request
       showDashboardLoadingOverlay("Loading your dashboard…", "Picking up where you left off");
       this.disabled = true;
 
       try {
-        // Fast session set — no league context fetch on server side
+        // Fast session set - no league context fetch on server side
         await fetch("/api/quick-set-viewer", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -6673,7 +6673,7 @@ function _showNotifToast(entry) {
   var popup = document.createElement('div');
   popup.className = 'notif-toast';
 
-  // Sanitize tag to alphanumerics/hyphens only — prevents CSS class injection.
+  // Sanitize tag to alphanumerics/hyphens only - prevents CSS class injection.
   var safeTag = (entry.tag || 'update').replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'update';
   var tagClass = 'notif-toast-tag notif-toast-tag-' + safeTag;
 
@@ -6781,7 +6781,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (!changelogData || changelogData.length === 0) return;
 
-      // Detect if user is logged in — prefer server-injected __brctx; fall back to
+      // Detect if user is logged in - prefer server-injected __brctx; fall back to
       // URL heuristic only when the context object is absent.
       const _ictx = window.__brctx || {};
       const pathParts = window.location.pathname.split('/').filter(p => p);
@@ -6819,7 +6819,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Build the dropdown HTML
   function buildDropdown() {
-    // Detect league context — prefer server-injected __brctx over URL heuristic.
+    // Detect league context - prefer server-injected __brctx over URL heuristic.
     const _bctx = window.__brctx || {};
     const pathParts = window.location.pathname.split('/').filter(p => p);
     const isLoggedIn = (_bctx.is_logged_in != null)
@@ -7065,7 +7065,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Show full-screen loading overlay
         showFullscreenLoading('Switching leagues...');
 
-        // Get current page from URL — only use it if it's a valid per-league route
+        // Get current page from URL - only use it if it's a valid per-league route
         const leaguePages = new Set(['dashboard','standings','weekly','teams','activity','graphs','waivers','trade','players','prospects','breakouts','awards','history','schedule','commissioner','league_health','optimal','scout']);
         const pathParts = window.location.pathname.split('/');
         const lastSegment = pathParts[pathParts.length - 1] || '';
@@ -7595,14 +7595,14 @@ function openPlayerModal(playerId, playerName, opts) {
         ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">PPG${seasonLabel}</div>
             <div class="pm-hero-val">${ppgVal}</div>
-            <div class="pm-hero-sub">${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '—'}` : '-'}</div>
+            <div class="pm-hero-sub">${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '–'}` : '-'}</div>
           </div>`
         : '';
       const totalCard = totalPts != null
         ? `<div class="pm-hero-stat">
             <div class="pm-hero-label">Total Pts${seasonLabel}</div>
             <div class="pm-hero-val">${fmtPts(totalPts)}</div>
-            <div class="pm-hero-sub">${totalPtsRank ? `POS : ${totalPtsRank} · OVR : ${totalPtsOvrRank ?? '—'}` : '-'}</div>
+            <div class="pm-hero-sub">${totalPtsRank ? `POS : ${totalPtsRank} · OVR : ${totalPtsOvrRank ?? '–'}` : '-'}</div>
           </div>`
         : '';
 
@@ -7752,12 +7752,12 @@ function openPlayerModal(playerId, playerName, opts) {
           <div class="pm-hero-stat pm-hero-primary">
             <div class="pm-hero-label">1QB Value</div>
             <div class="pm-hero-val" style="color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
-            <div class="pm-hero-sub">${valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '—'}` : '-'}</div>
+            <div class="pm-hero-sub">${valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '–'}` : '-'}</div>
           </div>
           <div class="pm-hero-stat">
             <div class="pm-hero-label">SF Value</div>
             <div class="pm-hero-val">${valsf > 0 ? valsf : '-'}</div>
-            <div class="pm-hero-sub">${sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '—'}` : '-'}</div>
+            <div class="pm-hero-sub">${sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '–'}` : '-'}</div>
           </div>
           ${ppgCard}
           ${totalCard}
@@ -8275,13 +8275,13 @@ function _buildBkTabHTML(data, scoreColor) {
   const reasons = (data.key_reasons || '').split('\n')
     .map(r => r.replace(/^[•\-]\s*/, '').trim())
     .filter(r => r.length > 0)
-    // Role fit is rendered as a dedicated chip below — drop the text duplicate.
+    // Role fit is rendered as a dedicated chip below - drop the text duplicate.
     .filter(r => !/role fit for vacated targets/i.test(r));
 
   const txnSummary    = data.vacated_usage_summary || '';
   const addedCompSumm = data.added_competition_summary || '';
 
-  // ── Role / archetype fit factor (context only — does not affect the score) ──
+  // ── Role / archetype fit factor (context only - does not affect the score) ──
   let cd = data.component_details;
   if (typeof cd === 'string') { try { cd = JSON.parse(cd); } catch (e) { cd = {}; } }
   const aFit = (cd && cd.opportunity_opened && cd.opportunity_opened.archetype_fit) || null;
@@ -8290,7 +8290,7 @@ function _buildBkTabHTML(data, scoreColor) {
     const fitColor = aFit.label === 'high' ? '#10b981'
                    : aFit.label === 'medium' ? '#f59e0b' : '#6b7280';
     roleFitItem = `
-      <div title="How well this player's receiving role matches the vacated targets. Context only — it does not change the score."
+      <div title="How well this player's receiving role matches the vacated targets. Context only - it does not change the score."
            style="font-size:13px;display:flex;gap:12px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--surface-2,rgba(255,255,255,0.06));margin-bottom:2px;">
         <span style="color:${fitColor};font-weight:700;flex-shrink:0;"><i class="fa-solid fa-bullseye" aria-hidden="true"></i></span>
         <span>
@@ -8331,7 +8331,7 @@ function _buildBkTabHTML(data, scoreColor) {
     ? Math.round(parseFloat(data.hit_probability) * 100) + '%'
     : null;
 
-  // ── Hero: 2-column layout — PPG Range left, Score + Hit Prob stacked right ─
+  // ── Hero: 2-column layout - PPG Range left, Score + Hit Prob stacked right ─
   // Fixed 2-col avoids the orphaned-score problem on mobile (3-item grids wrap).
   let html = `<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:8px;margin-bottom:6px;align-items:stretch;">`;
 
@@ -8472,7 +8472,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
 
     // Show only the stat groups this player actually has, so a WR isn't padded
     // with empty passing/rushing columns (which pushed the real columns off-screen
-    // — worse in the side-by-side compare modal). Computed once across all years
+    // - worse in the side-by-side compare modal). Computed once across all years
     // so the columns stay consistent between year sections. Falls back to the
     // position default for projection-only players with no real stats yet.
     // Each column: [statKey, header, roundFlag].
@@ -8546,7 +8546,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
         totalFumLost += s.fum_lost || 0;
       });
 
-      // Header summary — always based on real completed games
+      // Header summary - always based on real completed games
       const ppg = gamesPlayed > 0 ? (totalFantasyPts / gamesPlayed).toFixed(1) : '0.0';
       let summaryHTML;
       if (isProjection) {
@@ -8582,7 +8582,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
       gameLogs.forEach(game => {
         // Projection row
         if (game.is_projection) {
-          const projVal = game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '—';
+          const projVal = game.fantasy_pts != null ? fmtPts(game.fantasy_pts) : '–';
           let projDate = game.date || '';
           if (projDate.length === 8) {
             projDate = `${parseInt(projDate.substring(4,6))}/${parseInt(projDate.substring(6,8))}`;
@@ -8590,9 +8590,9 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
           statsHTML += `
             <tr class="game-log-table-row game-log-proj-row">
               <td>${projDate || `Wk ${game.week}`}</td>
-              <td class="game-log-table-opp">${game.opponent || '—'}</td>
+              <td class="game-log-table-opp">${game.opponent || '–'}</td>
               <td class="game-log-table-pts game-log-proj-pts">${projVal}</td>
-              ${statCols.map(() => '<td>—</td>').join('')}
+              ${statCols.map(() => '<td>–</td>').join('')}
             </tr>
           `;
           return;
@@ -8643,7 +8643,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
                   <td><strong>Total</strong></td>
                   <td><strong>${projGames}G</strong></td>
                   <td class="game-log-table-pts game-log-proj-pts"><strong>${fmtPts(projTotalPts)}</strong></td>
-                  <td colspan="${statCols.length}" style="text-align:left;font-size:11px;color:var(--text-muted);padding-left:8px;">* Projected — actuals update when games are played</td>
+                  <td colspan="${statCols.length}" style="text-align:left;font-size:11px;color:var(--text-muted);padding-left:8px;">* Projected - actuals update when games are played</td>
                 </tr>
               </tfoot>
             </table>
@@ -8723,7 +8723,7 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
       const seasonLabelEl = document.getElementById('advMetricsSeasonLabel');
       if (seasonLabelEl) seasonLabelEl.textContent = isCareer ? 'Career' : (activeSeason || '');
 
-      // Season pills above the layout — always show when there's at least 1 season
+      // Season pills above the layout - always show when there's at least 1 season
       const pillsEl = document.getElementById('advMetricsPills');
       if (pillsEl && availableSeasons.length >= 1) {
         const lidExpr = leagueId ? `'${leagueId}'` : 'null';
@@ -9127,7 +9127,7 @@ function buildAdvancedMetricsHTML(metricsData) {
 }
 
 function toggleGameLogYear(arg) {
-  // Resolve the header element. Accepts the clicked header (preferred — works
+  // Resolve the header element. Accepts the clicked header (preferred - works
   // when duplicate year IDs exist, e.g. both players in the compare modal) or
   // a year string for backward compatibility.
   let header;
@@ -9796,7 +9796,7 @@ function _buildComparePPGRow(p1, p2) {
 
   function cell(val, label) {
     return `<div class="compare-pts-cell">
-      <div class="compare-pts-val">${val !== null ? val : '—'}</div>
+      <div class="compare-pts-val">${val !== null ? val : '–'}</div>
       <div class="compare-pts-label">${label}</div>
     </div>`;
   }
@@ -9847,13 +9847,13 @@ function _buildCompareHeroHTML(p) {
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">PPG${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${ppg}</div>
-        <div class="pm-hero-sub">${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '—'}` : '-'}</div>
+        <div class="pm-hero-sub">${ppgRank ? `POS : ${ppgRank} · OVR : ${ppgOvrRank ?? '–'}` : '-'}</div>
       </div>` : ''}
       ${total != null ? `
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">Total Pts${season}</div>
         <div class="pm-hero-val" style="font-size:20px;">${total}</div>
-        <div class="pm-hero-sub">${totalRank ? `POS : ${totalRank} · OVR : ${totalOvrRank ?? '—'}` : '-'}</div>
+        <div class="pm-hero-sub">${totalRank ? `POS : ${totalRank} · OVR : ${totalOvrRank ?? '–'}` : '-'}</div>
       </div>` : ''}
     </div>` : '';
 
@@ -9862,12 +9862,12 @@ function _buildCompareHeroHTML(p) {
       <div class="pm-hero-stat pm-hero-primary" style="padding:10px 10px;">
         <div class="pm-hero-label">1QB Value</div>
         <div class="pm-hero-val" style="font-size:20px;color:#3b82f6;">${val1qb > 0 ? val1qb : '-'}</div>
-        <div class="pm-hero-sub">${valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '—'}` : '-'}</div>
+        <div class="pm-hero-sub">${valPosRank ? `POS : ${valPosRank} · OVR : ${valOvrRank ?? '–'}` : '-'}</div>
       </div>
       <div class="pm-hero-stat" style="padding:10px 10px;">
         <div class="pm-hero-label">SF Value</div>
         <div class="pm-hero-val" style="font-size:20px;">${valsf > 0 ? valsf : '-'}</div>
-        <div class="pm-hero-sub">${sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '—'}` : '-'}</div>
+        <div class="pm-hero-sub">${sfPosRank ? `POS : ${sfPosRank} · OVR : ${sfOvrRank ?? '–'}` : '-'}</div>
       </div>
     </div>
     ${scoringRow}
@@ -9881,7 +9881,7 @@ function _buildComparePlayerHeader(p) {
   if (p.team) metaParts.push(`<span>${p.team}</span>`);
   const _pAge = parseFloat(p.age);
   if (!isNaN(_pAge)) metaParts.push(`<span>${_pAge.toFixed(1)} yrs</span>`);
-  const _ownerLine = ''; // omit fantasy team from compare header — too cluttered
+  const _ownerLine = ''; // omit fantasy team from compare header - too cluttered
   return `
     <div class="compare-player-header">
       <img src="${p.espnHeadshot || ''}" class="compare-player-headshot" alt="${p.name}" />
@@ -10007,7 +10007,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     const v1 = m1?.[key] ?? null;
     const v2 = m2?.[key] ?? null;
     
-    // Metric-specific scaling ranges — upper end of realistic elite values
+    // Metric-specific scaling ranges - upper end of realistic elite values
     const metricRanges = {
       // Decimal-stored rates (0-1)
       'catch_rate': 1, 'snap_share': 1, 'rush_td_rate': 0.08,
@@ -10065,7 +10065,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     }
 
     const fmt = v => {
-      if (v == null) return '—';
+      if (v == null) return '–';
 
       // 0-1 decimal metrics that need ×100 to display as %
       const decimalPctMetrics = ['catch_rate', 'snap_share', 'rush_td_rate', 'td_rate', 'int_rate'];
@@ -10124,7 +10124,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       const m1 = data1.metrics || {};
       const m2 = data2.metrics || {};
       
-      // Get available seasons from both players — only show years both have data for
+      // Get available seasons from both players - only show years both have data for
       const seasons1 = data1.available_seasons || [];
       const seasons2 = data2.available_seasons || [];
       const set2 = new Set(seasons2);
@@ -10307,7 +10307,7 @@ function openComparisonView(p1, p2) {
           const m1 = data1.metrics || {};
           const m2 = data2.metrics || {};
           
-          // Get available seasons from both players — intersection only
+          // Get available seasons from both players - intersection only
           const seasons1 = data1.available_seasons || [];
           const seasons2 = data2.available_seasons || [];
           const _set2 = new Set(seasons2);
@@ -10602,7 +10602,7 @@ async function tmLoadTrades(rosterId) {
         ...players.map(p => `<div class="pm-trade-asset player-clickable" data-player-id="${p.player_id}" data-player-name="${p.name}" style="cursor:pointer">${p.name}${p.position ? `<span style="font-size:11px;color:var(--text-muted);margin-left:4px;">${p.position}</span>` : ''}</div>`),
         ...picks.map(p => `<div class="pm-trade-asset pm-pick">${p.season} Rd ${p.round}</div>`),
       ];
-      return parts.length ? parts.join('') : '<div class="pm-trade-asset" style="color:var(--text-muted);">—</div>';
+      return parts.length ? parts.join('') : '<div class="pm-trade-asset" style="color:var(--text-muted);">–</div>';
     };
 
     const cards = trades.map(tr => {
@@ -11064,7 +11064,7 @@ function renderTeamDetails(data) {
 
   picksHTML += '</div>';
 
-  // Build graphs section — each chart in its own section for side-by-side layout
+  // Build graphs section - each chart in its own section for side-by-side layout
   let graphsHTML = '';
 
   if (data.graphs && (data.graphs.weekly_scores || data.graphs.radar)) {
@@ -11365,12 +11365,12 @@ document.addEventListener('click', (e) => {
     Object.assign({
       page: 'dashboard', selector: '#statsNavDropdown',
       title: 'Stats',
-      body: 'All-time awards, trend graphs, and full league history — including head-to-head rivalry records between any two managers.',
+      body: 'All-time awards, trend graphs, and full league history - including head-to-head rivalry records between any two managers.',
     }, _navDropStep('statsNavDropdown')),
     {
       page: 'dashboard', selector: '#navSearchWrapper',
       title: 'Player Search',
-      body: 'Search any player from the nav bar — click the magnifying glass or press Ctrl+K, then click a result to open their full profile.',
+      body: 'Search any player from the nav bar - click the magnifying glass or press Ctrl+K, then click a result to open their full profile.',
     },
     {
       page: 'dashboard', selector: '#settingsGearBtn',
@@ -11410,7 +11410,7 @@ document.addEventListener('click', (e) => {
     {
       page: 'dashboard', selector: null,
       title: "You're all set!",
-      body: 'Explore from here — and remember you can replay this tour from the settings gear menu whenever you like.',
+      body: 'Explore from here - and remember you can replay this tour from the settings gear menu whenever you like.',
     },
   ];
 
@@ -11439,7 +11439,7 @@ document.addEventListener('click', (e) => {
     if (currentPage !== 'dashboard') return;
     if (localStorage.getItem(tourKey)) return;
 
-    // Don't auto-run on small screens — the nav pills the tour spotlights are
+    // Don't auto-run on small screens - the nav pills the tour spotlights are
     // collapsed behind the hamburger. (Manual start still works anywhere.)
     if (window.innerWidth < 768) return;
 
@@ -11487,7 +11487,7 @@ document.addEventListener('click', (e) => {
     }
 
     // Skip steps whose target is missing or not rendered (e.g. collapsed
-    // mobile nav, empty dashboard) — in whichever direction we're moving.
+    // mobile nav, empty dashboard) - in whichever direction we're moving.
     if (step.selector) {
       const el = document.querySelector(step.selector);
       if (!el || el.getClientRects().length === 0) {
@@ -11972,7 +11972,7 @@ function setupFunAwardsGrid() {
              onerror="this.style.visibility='hidden'" />
         <div class="nav-search-info">
           <div class="nav-search-name">${p.name}</div>
-          <div class="nav-search-meta">${p.team || '—'}</div>
+          <div class="nav-search-meta">${p.team || '–'}</div>
         </div>
         <span class="nav-search-pos nav-search-pos-${posColor(p.pos)}">${p.pos}</span>
       </div>
@@ -12207,13 +12207,13 @@ function setupFunAwardsGrid() {
         const overallPick = draftedArr.indexOf(sid) + 1;
         return `<div class="da-row${isMine ? ' da-my-pick' : ''}">
           <div class="da-rank"><span style="color:${isMine ? 'var(--accent)' : 'var(--text-muted)'};font-weight:${isMine ? '800' : '400'};">${overallPick}</span></div>
-          <div class="da-info"><span class="da-name">${p.name || '—'}</span><span class="da-meta">${dMeta}</span></div>
+          <div class="da-info"><span class="da-name">${p.name || '–'}</span><span class="da-meta">${dMeta}</span></div>
           <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
           <label class="da-mine-label" title="My pick">
             <input type="checkbox" class="da-mine-cb" ${isMine ? 'checked' : ''} onchange="window._da.toggleMine('${p.player_id}')">
             <span>Mine</span>
           </label>
-          <div class="da-col-right da-val">${Math.round(parseFloat(p.display_value||0))||'—'}</div>
+          <div class="da-col-right da-val">${Math.round(parseFloat(p.display_value||0))||'–'}</div>
           <button class="otc-chip-remove" onclick="window._da.undraft('${p.player_id}')" title="Remove">×</button>
         </div>`;
       }).join('');
@@ -12251,7 +12251,7 @@ function setupFunAwardsGrid() {
         ? [teamTxt, gradeTxt, adpTxt].filter(Boolean).join(' · ')
         : baseMeta;
 
-      // Need badge goes in the badge column (col 4) — same slot as PICK for rec rows
+      // Need badge goes in the badge column (col 4) - same slot as PICK for rec rows
       const needBadge = isNeed && !isRec
         ? `<span style="font-size:10px;font-weight:700;color:${needCol};background:${needCol}18;border:1px solid ${needCol}33;border-radius:4px;padding:2px 6px;">${needTxt}</span>`
         : '';
@@ -12259,12 +12259,12 @@ function setupFunAwardsGrid() {
       return `<div class="da-row${isRec ? ' da-recommended' : ''}">
         <div class="da-rank">${i + 1}</div>
         <div class="da-info">
-          <span class="da-name">${p.name || '—'}${isRec && isNeed ? `<span style="font-size:10px;font-weight:700;color:${needCol};margin-left:6px;">▲ ${needTxt}</span>` : ''}</span>
+          <span class="da-name">${p.name || '–'}${isRec && isNeed ? `<span style="font-size:10px;font-weight:700;color:${needCol};margin-left:6px;">▲ ${needTxt}</span>` : ''}</span>
           <span class="da-meta">${recMeta}</span>
         </div>
         <span class="pos-badge ${p.position}" style="background:${col}22;color:${col};border:1px solid ${col}44;font-size:10px;padding:2px 6px;">${p.position}</span>
         ${isRec ? '<div class="da-rec-badge">PICK</div>' : (needBadge || '<div></div>')}
-        <div class="da-col-right da-val">${val || '—'}</div>
+        <div class="da-col-right da-val">${val || '–'}</div>
         <button class="da-draft-btn" onclick="window._da.draft('${p.player_id}')">Draft</button>
       </div>`;
     }).join('');
@@ -12280,10 +12280,10 @@ function setupFunAwardsGrid() {
 
   function showDraftHelp() {
     const steps = [
-      { icon: '1', title: 'Draft players in order', body: 'As each pick happens — yours or anyone else\'s — tap <strong>Draft</strong> to remove them from the board. Do this in real draft order so pick numbers are accurate.' },
+      { icon: '1', title: 'Draft players in order', body: 'As each pick happens - yours or anyone else\'s - tap <strong>Draft</strong> to remove them from the board. Do this in real draft order so pick numbers are accurate.' },
       { icon: '2', title: 'Mark your picks', body: 'Switch to the <strong>Drafted</strong> tab and tap <strong>Mine</strong> on each player you actually selected. The pick number is set automatically based on when you drafted them.' },
       { icon: '3', title: 'Watch your needs update', body: 'The <strong>Roster Needs</strong> panel reflects your current roster vs. the league. Marking a pick as Mine adjusts the needs panel live.' },
-      { icon: '4', title: 'End Draft &amp; grade', body: 'Once you\'ve marked your picks, tap <strong>End Draft &amp; Grade My Picks</strong>. Each pick is graded A+–F using ADP value, positional need, and QB context — the same formula as the Teams page Draft Grades.' },
+      { icon: '4', title: 'End Draft &amp; grade', body: 'Once you\'ve marked your picks, tap <strong>End Draft &amp; Grade My Picks</strong>. Each pick is graded A+–F using ADP value, positional need, and QB context - the same formula as the Teams page Draft Grades.' },
     ];
     const html = `
       <div style="padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;">
@@ -12607,7 +12607,7 @@ function setupFunAwardsGrid() {
 // NEW FEATURES JS
 // ════════════════════════════════════════════════════════════════════════════
 
-// ── Feature 5: Steps hint bar — highlight active step as user progresses ─────
+// ── Feature 5: Steps hint bar - highlight active step as user progresses ─────
 (function initStepsHint() {
   var h1 = document.getElementById('hintStep1');
   var h2 = document.getElementById('hintStep2');
@@ -12680,7 +12680,7 @@ function setupFunAwardsGrid() {
 })();
 
 
-// ── Feature 10 + 15: Ask My GM — pill in floating group + panel above ────────
+// ── Feature 10 + 15: Ask My GM - pill in floating group + panel above ────────
 (function initAskGm() {
   var ctx = document.getElementById('askGmCtx');
   if (!ctx) return;
@@ -12730,7 +12730,7 @@ function setupFunAwardsGrid() {
         '<button class="ask-gm-close" id="ask-gm-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>' +
       '</div>' +
       '<div class="ask-gm-messages" id="ask-gm-messages">' +
-        '<div class="ask-gm-msg ask-gm-msg--system">Ask me anything about your roster — trades, waivers, start/sit, and more.</div>' +
+        '<div class="ask-gm-msg ask-gm-msg--system">Ask me anything about your roster - trades, waivers, start/sit, and more.</div>' +
       '</div>' +
       '<div class="ask-gm-input-row">' +
         '<input class="ask-gm-input" id="ask-gm-input" type="text" placeholder="e.g. Should I trade Bijan Robinson?" maxlength="400" autocomplete="off">' +
@@ -12848,7 +12848,7 @@ function setupFunAwardsGrid() {
       }
       if (!text && !aiEl.classList.contains('ask-gm-msg--error')) {
         aiEl.classList.remove('ask-gm-msg--typing');
-        aiEl.textContent = 'No response — try rephrasing.';
+        aiEl.textContent = 'No response - try rephrasing.';
       }
     } catch (err) {
       aiEl.classList.remove('ask-gm-msg--typing');

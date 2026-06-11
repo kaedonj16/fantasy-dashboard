@@ -4,7 +4,7 @@ Archetype-based trade suggestion engine.
 Computes Contending / Rebuilding / Consolidate / Distribute suggestions
 based on roster composition, value trends, and win probability modeling.
 
-No imports from app.py — safe for use from any blueprint or endpoint.
+No imports from app.py - safe for use from any blueprint or endpoint.
 """
 from __future__ import annotations
 
@@ -142,7 +142,7 @@ def _ppg_lineup(
     roster_positions: List[str],
 ) -> float:
     """
-    Compute projected weekly lineup score using actual PPG data — the same
+    Compute projected weekly lineup score using actual PPG data - the same
     logic used by simulate_playoff_odds._position_aware_lineup.
 
     Falls back to _optimal_lineup_value (dynasty value) when ppg_map is empty.
@@ -225,7 +225,7 @@ def _win_prob(team_val: float, league_avg: float) -> float:
 
     k=2 keeps most realistic dynasty rosters in the 0.25–0.75 range so
     that small lineup changes still produce meaningful playoff-odds deltas.
-    (k=4 saturated too quickly — a roster 20 % above average hit ~70 % WP,
+    (k=4 saturated too quickly - a roster 20 % above average hit ~70 % WP,
     pushing playoff-odds deltas to near zero for any further acquisition.)
     """
     ratio = team_val / max(1.0, league_avg)
@@ -535,7 +535,7 @@ def _select_packages(
     if archetype == "consolidate":
         # Consolidate = trade up: always send 2+ assets, never 1-for-1.
         # Trading up should cost a small premium (you're paying for quality
-        # concentration), so the band leans slightly above target — but it
+        # concentration), so the band leans slightly above target - but it
         # must never dip into underpay territory.
         # Priority: 2 players → 3 players → 2 players + pick
         lo_c, hi_c = target_val * 0.97, target_val * 1.12
@@ -731,7 +731,7 @@ def _pick_send_candidates(
         if not season or rnd <= 0:
             continue
 
-        # Resolve exact slot from pre-computed map — only valid for the current draft year
+        # Resolve exact slot from pre-computed map - only valid for the current draft year
         slot   = 0
         bucket = "mid"
         pick_yr = int(season) if season else 0
@@ -877,7 +877,7 @@ def _build_distribute(
         sname = values_by_id[stud].get("name", "")
         spos  = values_by_id[stud].get("position", "")
         # Viewer SENDS the stud and RECEIVES this depth package, so the low end
-        # is an underpay against the viewer — keep it tight (≥96%). Receiving a
+        # is an underpay against the viewer - keep it tight (≥96%). Receiving a
         # modest depth premium is fine, so the high end stays a touch generous.
         lo, hi = sval * 0.96, sval * 1.18
 
@@ -1071,7 +1071,7 @@ def _build_rebuilding(
         vname = values_by_id[vet].get("name", "")
         vpos  = values_by_id[vet].get("position", "")
         # Viewer SENDS the vet and RECEIVES youth/picks. The low end is an
-        # underpay against the viewer — keep it tight (≥92%); a small discount
+        # underpay against the viewer - keep it tight (≥92%); a small discount
         # is acceptable when selling a declining vet for upside. The high end
         # stays generous since receiving more (youth/pick premium) helps the viewer.
         lo, hi = vval * 0.92, vval * 1.22
@@ -1112,7 +1112,7 @@ def _build_rebuilding(
                     "partner_name": p_meta.get("partner_name", f"Team {owner_rid}"),
                     "partner_arch": p_meta.get("partner_arch", ""),
                     "recv_pids":    [],
-                    "primary":      None,  # pick-only — no young player to display
+                    "primary":      None,  # pick-only - no young player to display
                 })
 
         # Option C: young player + pick from same owner
@@ -1146,7 +1146,7 @@ def _build_rebuilding(
                 pids, use_ppg, ppg_map, pos_map, roster_positions, values_by_id, league_type
             )
 
-        # ── Departure stats — computed once per vet, shared by all options ─
+        # ── Departure stats - computed once per vet, shared by all options ─
         dep_players   = [p for p in viewer_players if p != vet]
         dep_lineup    = _reb_lineup_score(dep_players)
         departure_wpd = _win_prob(dep_lineup, league_avg) - _win_prob(viewer_lineup_val, league_avg)
@@ -1204,7 +1204,7 @@ def _build_rebuilding(
                 display_rank = primary.get("pos_rank_label", "")
             else:
                 pk = opt["recv_assets"][0]
-                why = (f"Sell {vname} while value is high — receive {pk['name']} "
+                why = (f"Sell {vname} while value is high - receive {pk['name']} "
                        f"from {opt['partner_name']}.")
                 display_pid  = pk["player_id"]
                 display_name = pk["name"]
@@ -1712,7 +1712,7 @@ def get_archetype_suggestions(
 
             # Per-package net odds: build the exact post-trade roster (drop the
             # sent players, add the target) and re-run the SAME Monte Carlo
-            # playoff simulation — same schedule, same opponents, same seed —
+            # playoff simulation - same schedule, same opponents, same seed –
             # with only the viewer's lineup changed. This is the accurate path
             # and is consistent with the playoff-odds page. The analytical
             # formula is used only if the simulation is unavailable.
@@ -1731,7 +1731,7 @@ def get_archetype_suggestions(
                     net_pod_pkg = None
 
             if net_pod_pkg is None:
-                # Analytical fallback (no sim state) — still per-package
+                # Analytical fallback (no sim state) - still per-package
                 net_lval   = _lval(net_roster)
                 net_wp_pkg = _win_prob(net_lval, league_avg)
                 current_po_formula = _playoff_odds(current_wp, num_weeks, num_teams, playoff_spots)

@@ -1143,7 +1143,7 @@ def render_matchup_slide(
                     "</div>"
                 )
             if not_started:
-                # hasn't played yet — projection only, no zero actual
+                # hasn't played yet - projection only, no zero actual
                 return (
                     "<div class='num-stack' style='display:grid'>"
                     f"<span class='num mid {side} proj' style='opacity:0.55;'>{proj_val:.1f}</span>"

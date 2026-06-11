@@ -91,7 +91,7 @@ def build_trade_calculator_body(
     # Roster filter (logged-in only): restrict each side to that team's players.
     # Side A locks to the viewer's team; Side B is chosen here or auto-binds to the
     # first player added. The toggle lets the user fall back to free global search.
-    # Roster-filter toggle — sits inline with the other top controls.
+    # Roster-filter toggle - sits inline with the other top controls.
     restrict_toggle_block = '' if is_guest else """
                 <label class="otc-restrict-toggle" title="Limit each side's search to that team's roster">
                   <input type="checkbox" id="restrictRosterToggle" checked>
