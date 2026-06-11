@@ -7,8 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-06-11",
         "tag": "update",
-        "text": "We've moved to brfantasyfootball.com. Same app, new home. Update your bookmarks!",
-        "link": "/"
+        "text": "We've moved to brfantasyfootball.com. Same app, new home. Update your bookmarks!"
     },
     {
         "date": "2026-06-10",
