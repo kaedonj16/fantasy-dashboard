@@ -25709,6 +25709,8 @@ def page_trade_card(share_id: str):
         except Exception:
             pass
 
+    # In embed/modal mode the PI toggle lives in the scm-toolbar (via postMessage).
+    # On the standalone page it lives in the card header.
     _pi_hdr_btn = (
         '<button class="pi-hdr-btn" id="piHdrBtn"'
         ' onclick="var s=document.getElementById(\'piSection\'),'
@@ -25716,7 +25718,7 @@ def page_trade_card(share_id: str):
         's.style.display=open?\'none\':\'block\';'
         'this.classList.toggle(\'pi-hdr-btn-on\',!open);">'
         'Playoff Impact</button>'
-        if pi_html else ""
+        if pi_html and not is_embed else ""
     )
 
     card_html = f"""<!doctype html>
@@ -25869,7 +25871,12 @@ def page_trade_card(share_id: str):
       window.parent.postMessage({{ type: 'scCardHeight', height: document.body.scrollHeight }}, '*');
     }}
     if (window.parent !== window) {{
-      window.addEventListener('load', sendHeight);
+      window.addEventListener('load', function(){{
+        sendHeight();
+        if (document.getElementById('piSection')) {{
+          window.parent.postMessage({{ type: 'scHasPi' }}, '*');
+        }}
+      }});
       new MutationObserver(sendHeight).observe(document.body, {{ subtree: true, childList: true, attributes: true }});
     }}
   }})();

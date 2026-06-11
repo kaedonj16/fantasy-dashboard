@@ -690,7 +690,21 @@ function emptyState(container, message, iconClass) {
         frame.style.height = (e.data.height + 2) + 'px';
       }
       if (e.data.type === 'scHasPi') {
-        // PI toggle lives inside the card header — nothing to do in the modal
+        var tb = overlay.querySelector('.scm-toolbar');
+        if (tb && !overlay.querySelector('#scmPiBtn')) {
+          var piBtn = document.createElement('button');
+          piBtn.className = 'scm-btn scm-pi-btn';
+          piBtn.id = 'scmPiBtn';
+          piBtn.textContent = 'Playoff Impact';
+          piBtn.onclick = function() {
+            var on = piBtn.classList.toggle('scm-pi-btn-active');
+            if (frame && frame.contentWindow) {
+              frame.contentWindow.postMessage({type: 'scTogglePi', show: on}, '*');
+            }
+          };
+          var downloadBtn = overlay.querySelector('#scmDownloadBtn');
+          tb.insertBefore(piBtn, downloadBtn);
+        }
       }
     }
     window.addEventListener('message', _onMsg);
@@ -737,7 +751,7 @@ function emptyState(container, message, iconClass) {
         var cardEl = fd.querySelector('.share-card') || fd.querySelector('.card');
         if (!cardEl) throw new Error('card element not found');
         var canvas = await html2canvas(cardEl, {
-          useCORS: true, allowTaint: true, scale: 1.5, logging: false,
+          useCORS: true, allowTaint: true, scale: window.devicePixelRatio || 2, logging: false,
           width: cardEl.scrollWidth, height: cardEl.scrollHeight,
           windowWidth: fd.documentElement.scrollWidth,
           windowHeight: fd.documentElement.scrollHeight,
