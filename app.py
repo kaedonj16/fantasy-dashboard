@@ -7753,10 +7753,10 @@ def build_teams_body(ctx: dict) -> str:
             f"<span class='tc-pi-text'> &bull; <span class='tc-pi-num'>{team_pos_index[rid]:+.2f}</span></span></div></div>"
             "    <div style='display:flex;align-items:center;gap:6px;flex-shrink:0;'>"
             f"      {_grade_badge}"
-            + (f"      <button class='share-report-btn' title='Share team report card' "
+            + f"      <button class='share-report-btn' title='Share team report card' "
                f"data-roster='{rid}' data-platform='{platform}' data-season='{current_season}' data-league='{league_id}'>"
                f"<img src='/static/images/share-solid.png' class='share-report-icon' alt='Share'></button>"
-               if _is_viewer else "") +
+            +
             "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
             "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
             "          <path d='M3 5l4 4 4-4' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>"
@@ -25709,6 +25709,16 @@ def page_trade_card(share_id: str):
         except Exception:
             pass
 
+    _pi_hdr_btn = (
+        '<button class="pi-hdr-btn" id="piHdrBtn"'
+        ' onclick="var s=document.getElementById(\'piSection\'),'
+        'open=s.style.display!==\'none\';'
+        's.style.display=open?\'none\':\'block\';'
+        'this.classList.toggle(\'pi-hdr-btn-on\',!open);">'
+        'Playoff Impact</button>'
+        if pi_html else ""
+    )
+
     card_html = f"""<!doctype html>
 <html lang="en" id="tcRoot" data-theme="dark">
 <head>
@@ -25745,6 +25755,8 @@ def page_trade_card(share_id: str):
     .bar-indicator{{position:absolute;top:-3px;width:12px;height:28px;border-radius:999px;background:#38bdf8;transform:translateX(-50%);box-shadow:0 0 8px rgba(56,189,248,.5)}}
     .bar-labels{{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:10px;color:var(--tc-dimmer);font-weight:600}}
     .bar-fair-label{{font-size:10px;color:var(--tc-dim);font-weight:600}}
+    .pi-hdr-btn{{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid rgba(74,222,128,.4);background:transparent;color:#4ade80;cursor:pointer;transition:background .15s}}
+    .pi-hdr-btn-on{{background:rgba(74,222,128,.15)}}
     .pi-section{{padding:12px 16px 4px}}
     .pi-title{{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tc-dim);margin-bottom:8px}}
     .pi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}}
@@ -25779,7 +25791,10 @@ def page_trade_card(share_id: str):
           <img src="/static/BR_Logo_dark.png" id="tcLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
           BR Fantasy
         </div>
-        <span class="badge">Trade Analysis</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          {_pi_hdr_btn}
+          <span class="badge">Trade Analysis</span>
+        </div>
       </div>
 
       <div class="sides">
@@ -25854,12 +25869,7 @@ def page_trade_card(share_id: str):
       window.parent.postMessage({{ type: 'scCardHeight', height: document.body.scrollHeight }}, '*');
     }}
     if (window.parent !== window) {{
-      window.addEventListener('load', function(){{
-        sendHeight();
-        if (document.getElementById('piSection')) {{
-          window.parent.postMessage({{ type: 'scHasPi' }}, '*');
-        }}
-      }});
+      window.addEventListener('load', sendHeight);
       new MutationObserver(sendHeight).observe(document.body, {{ subtree: true, childList: true, attributes: true }});
     }}
   }})();

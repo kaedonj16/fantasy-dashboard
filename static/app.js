@@ -690,23 +690,7 @@ function emptyState(container, message, iconClass) {
         frame.style.height = (e.data.height + 2) + 'px';
       }
       if (e.data.type === 'scHasPi') {
-        var tb = overlay.querySelector('.scm-toolbar');
-        var existingPiBtn = overlay.querySelector('#scmPiBtn');
-        if (tb && !existingPiBtn) {
-          var piBtn = document.createElement('button');
-          piBtn.className = 'scm-btn scm-pi-btn';
-          piBtn.id = 'scmPiBtn';
-          piBtn.textContent = 'Playoff Impact';
-          piBtn.onclick = function() {
-            _piVisible = !_piVisible;
-            if (frame && frame.contentWindow) {
-              frame.contentWindow.postMessage({type: 'scTogglePi', show: _piVisible}, '*');
-            }
-            piBtn.classList.toggle('scm-pi-btn-active', _piVisible);
-          };
-          var downloadBtn = overlay.querySelector('#scmDownloadBtn');
-          tb.insertBefore(piBtn, downloadBtn);
-        }
+        // PI toggle lives inside the card header — nothing to do in the modal
       }
     }
     window.addEventListener('message', _onMsg);
@@ -1897,8 +1881,8 @@ window.initTradePage = function initTradePage(root = document) {
       roster_id: rosterId,
       platform,
       pi: (state._lastPiData && state._lastPiData.available) ? JSON.stringify(state._lastPiData) : '',
-      eff_a: state._lastEffA || 0,
-      eff_b: state._lastEffB || 0,
+      eff_a: state._lastEffA || Number(root.querySelector("#sideATotal")?.textContent?.replace(/,/g,'')) || 0,
+      eff_b: state._lastEffB || Number(root.querySelector("#sideBTotal")?.textContent?.replace(/,/g,'')) || 0,
     };
 
     function _flashSuccess() {
