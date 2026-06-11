@@ -22,7 +22,7 @@ trade_bp = Blueprint("trade", __name__)
 # Crawlable explanatory content shown beneath the public trade calculator. Gives
 # search engines (and AdSense reviewers) real text to index instead of a bare widget.
 _TRADE_CALCULATOR_SEO_CONTENT = """
-    <div style="border-top:1px solid var(--border);margin-top:8px;padding:22px 0 0;">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:14px;margin-top:18px;padding:22px 24px;">
 
       <!-- Section bridge header -->
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;">
