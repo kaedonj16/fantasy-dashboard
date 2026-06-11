@@ -17673,6 +17673,53 @@ button:disabled {
 }
 .pwa-btn-dismiss:hover { opacity: .8; }
 
+/* ── Session-expired restore banner ─────────────────────────────────────── */
+#session-expired-banner {
+  position: fixed;
+  top: 68px; /* below the nav */
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  z-index: 9995;
+  background: var(--card, #1e293b);
+  border: 1px solid rgba(251,191,36,.35);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.3);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity .25s ease, transform .25s ease;
+  white-space: nowrap;
+}
+#session-expired-banner.se-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.se-msg { color: var(--text-muted, #94a3b8); }
+.se-btn {
+  background: rgba(251,191,36,.15);
+  border: 1px solid rgba(251,191,36,.3);
+  color: #fbbf24;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.se-btn:hover { background: rgba(251,191,36,.25); }
+.se-close {
+  background: none;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
 /* ── Push notification opt-in banner ────────────────────────────────────── */
 #push-notif-banner {
   position: fixed;

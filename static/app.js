@@ -8,6 +8,72 @@
 // ============================================================
 
 
+// ── Auto-restore expired session ─────────────────────────────────────────────
+// If the server session expired but we still have saved_viewer in localStorage,
+// silently call /api/quick-set-viewer so the user stays logged in.
+(function () {
+  if (window._isSignedIn) return;
+  var saved;
+  try { saved = JSON.parse(localStorage.getItem('saved_viewer') || 'null'); } catch (_) {}
+  if (!saved || !saved.username || !saved.league_id) return;
+  // Guard against infinite reload loop in case the API keeps returning ok:true
+  // but the session still doesn't stick.
+  if (sessionStorage.getItem('_sessionRestoreAttempted')) return;
+  sessionStorage.setItem('_sessionRestoreAttempted', '1');
+
+  fetch('/api/quick-set-viewer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username:  saved.username,
+      roster_id: saved.roster_id  || '',
+      user_id:   saved.user_id    || '',
+      league_id: saved.league_id,
+      platform:  saved.platform   || 'sleeper',
+      season:    saved.season     || new Date().getFullYear(),
+      team_name: saved.team_name  || '',
+    }),
+  })
+  .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+  .then(function (d) {
+    sessionStorage.removeItem('_sessionRestoreAttempted');
+    if (d.ok) {
+      window._isSignedIn = true;
+      location.reload();
+    } else {
+      _showSessionBanner(saved.username);
+    }
+  })
+  .catch(function () {
+    sessionStorage.removeItem('_sessionRestoreAttempted');
+    _showSessionBanner(saved.username);
+  });
+
+  function _showSessionBanner(username) {
+    if (document.getElementById('session-expired-banner')) return;
+    var banner = document.createElement('div');
+    banner.id = 'session-expired-banner';
+    banner.innerHTML =
+      '<span class="se-msg">Session expired — </span>' +
+      '<button id="seReauthBtn" class="se-btn">Sign back in as <strong>' +
+        (username || 'you') + '</strong></button>' +
+      '<button id="seDismissBtn" class="se-close" aria-label="Dismiss">\xd7</button>';
+    document.body.appendChild(banner);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { banner.classList.add('se-visible'); });
+    });
+    document.getElementById('seReauthBtn').addEventListener('click', function () {
+      banner.remove();
+      sessionStorage.removeItem('_sessionRestoreAttempted');
+      location.reload();
+    });
+    document.getElementById('seDismissBtn').addEventListener('click', function () {
+      banner.remove();
+      localStorage.removeItem('saved_viewer');
+    });
+  }
+})();
+
 // ------------------------------------------------------------
 // Prevent scroll restoration on navigation (mobile fix)
 // ------------------------------------------------------------

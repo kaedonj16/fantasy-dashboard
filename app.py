@@ -9877,7 +9877,9 @@ def _build_career_graphs_ctx_live(
 
 @app.route("/players")
 @app.route("/<platform>/<int:season>/<league_id>/players")
-def page_players(platform: str = None, season: int = None, league_id: str = None):
+def page_players(platform: str = None, season: int = None, league_id: str = None,
+                 _title: str | None = None, _desc: str | None = None,
+                 _canonical: str | None = None):
     """Player Rankings page - searchable, filterable, sortable list of all players."""
     body_html = """
     <div class="card central">
@@ -11082,13 +11084,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         "redraft leagues. Compare players with consensus rankings, trend charts, and advanced "
         "metrics for Sleeper, ESPN, and Yahoo."
     )
+    _final_title = _title or "Fantasy Football Player Rankings & Trade Values | BR Fantasy"
+    _final_desc  = _desc  or _players_desc
     if platform:
-        return render_page("Fantasy Football Player Rankings & Trade Values | BR Fantasy",
-                           league_id, "players", body_html, platform, season,
-                           description=_players_desc)
+        return render_page(_final_title, league_id, "players", body_html, platform, season,
+                           description=_final_desc, canonical=_canonical)
 
-    return render_page("Fantasy Football Player Rankings & Trade Values | BR Fantasy",
-                       None, "players", body_html, description=_players_desc)
+    return render_page(_final_title, None, "players", body_html,
+                       description=_final_desc, canonical=_canonical)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/prospects")
@@ -25251,26 +25254,17 @@ def robots_txt():
 
 @app.route("/dynasty-trade-value-chart")
 def dynasty_trade_value_chart():
-    """Public dynasty trade value chart — high-SEO hub page."""
-    from dashboard_services.pages.dynasty_pages import build_dynasty_value_chart_body
-    try:
-        from dashboard_services.player_value_history import load_current_values_from_db
-        value_table = load_current_values_from_db() or get_model_value_table_cached() or []
-    except Exception:
-        value_table = get_model_value_table_cached() or []
-
+    """Public dynasty trade value chart — same UI as player rankings, with SEO-optimised metadata."""
     from datetime import datetime as _dt
     as_of = _dt.now().strftime("%B %Y")
-    body  = build_dynasty_value_chart_body(value_table, as_of_date=as_of)
     year  = _dt.now().year
-
-    return render_page(
-        f"Dynasty Trade Value Chart {year} | BR Fantasy",
-        None, "players", body,
-        description=(
-            f"Updated {as_of} dynasty fantasy football trade values for 1QB and Superflex leagues. "
-            f"Sortable chart with all positions — use these values in the free Trade Calculator."
+    return page_players(
+        _title=f"Dynasty Fantasy Football Trade Value Chart {year} | BR Fantasy",
+        _desc=(
+            f"Updated {as_of} — real dynasty trade values for 1QB and Superflex leagues. "
+            f"Sortable by position, age, and value. Use with the free Trade Calculator."
         ),
+        _canonical="/dynasty-trade-value-chart",
     )
 
 
