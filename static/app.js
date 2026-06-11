@@ -6121,6 +6121,19 @@ window.initPageRoot = function initPageRoot(root = document) {
   setupFunAwardsGrid();
 };
 
+function showDashboardLoadingOverlay(text, subtext) {
+  const overlay = document.getElementById("dashboardLoadingOverlay");
+  if (!overlay) return;
+  const textEl    = overlay.querySelector(".fullscreen-loading-text");
+  const subtextEl = overlay.querySelector(".fullscreen-loading-subtext");
+  const bar       = overlay.querySelector(".flo-progress-bar");
+  if (textEl && text)       textEl.textContent    = text;
+  if (subtextEl && subtext) subtextEl.textContent = subtext;
+  // Restart progress animation
+  if (bar) { bar.style.animation = "none"; bar.offsetWidth; bar.style.animation = ""; }
+  overlay.style.display = "flex";
+}
+
 bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
   // Force scroll to top
   window.scrollTo(0, 0);
@@ -6132,6 +6145,19 @@ bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
   requestAnimationFrame(() => {
     window.scrollTo(0, 0);
   });
+
+  // Keep saved_viewer enriched with roster_id/user_id so returning users
+  // can skip the league context fetch on "Continue as X"
+  if (typeof window._viewerRid !== "undefined" || typeof window._viewerUid !== "undefined") {
+    try {
+      const sv = JSON.parse(localStorage.getItem("saved_viewer") || "null");
+      if (sv?.league_id) {
+        if (window._viewerRid) sv.roster_id = window._viewerRid;
+        if (window._viewerUid) sv.user_id   = window._viewerUid;
+        localStorage.setItem("saved_viewer", JSON.stringify(sv));
+      }
+    } catch (_) {}
+  }
 });
 
 // ------------------------------------------------------------
@@ -6276,9 +6302,8 @@ if (!platformBtns.length) return;
       }
 
       // Show full-page loading overlay while the server builds the dashboard
-      const overlay = document.getElementById("dashboardLoadingOverlay");
+      showDashboardLoadingOverlay("Building your dashboard…", "This usually takes a few seconds");
       const submitBtn = leagueSelectFormEl.querySelector('button[type="submit"]');
-      if (overlay) overlay.style.display = "flex";
       if (submitBtn) {
         submitBtn.disabled = true;
         submitBtn.textContent = "Building Dashboard…";
@@ -6298,13 +6323,7 @@ if (!platformBtns.length) return;
     cta.innerHTML = `
       <div class="saved-viewer-info">
         <span class="saved-viewer-label">Welcome back!</span>
-        <form method="POST" action="/set-viewer" style="display:inline">
-          <input type="hidden" name="league_id" value="${saved.league_id}">
-          <input type="hidden" name="username" value="${saved.username}">
-          <input type="hidden" name="platform" value="${platform}">
-          <input type="hidden" name="season" value="${season}">
-          <button type="submit" class="saved-viewer-btn">Continue as <strong>${saved.username}</strong></button>
-        </form>
+        <button type="button" class="saved-viewer-btn" id="continueAsBtn">Continue as <strong>${saved.username}</strong></button>
       </div>
       <button type="button" class="saved-viewer-dismiss" aria-label="Dismiss">×</button>
     `;
@@ -6315,6 +6334,28 @@ if (!platformBtns.length) return;
     cta.querySelector(".saved-viewer-dismiss")?.addEventListener("click", () => {
       localStorage.removeItem("saved_viewer");
       cta.remove();
+    });
+
+    document.getElementById("continueAsBtn")?.addEventListener("click", async function() {
+      // Show loading overlay immediately — before any network request
+      showDashboardLoadingOverlay("Loading your dashboard…", "Picking up where you left off");
+      this.disabled = true;
+
+      try {
+        // Fast session set — no league context fetch on server side
+        await fetch("/api/quick-set-viewer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username:  saved.username,
+            roster_id: saved.roster_id || "",
+            user_id:   saved.user_id   || "",
+            team_name: saved.team_name || "",
+          }),
+        });
+      } catch (_) { /* session set is best-effort; navigate anyway */ }
+
+      window.location.href = dashboardUrl;
     });
   }
 

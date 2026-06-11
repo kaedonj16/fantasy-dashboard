@@ -3413,38 +3413,77 @@ thead th {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.97);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 99999;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px);
+  gap: 0;
+}
+
+.flo-logo {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  margin-bottom: 20px;
+  border-radius: 12px;
+  opacity: 0.92;
 }
 
 .fullscreen-loading-overlay .loading-spinner {
-  width: 48px;
-  height: 48px;
-  border-width: 4px;
-  margin: 0 0 16px 0;
+  width: 40px;
+  height: 40px;
+  border-width: 3px;
+  border-top-color: #38bdf8;
+  margin: 0 0 14px 0;
 }
 
 .fullscreen-loading-text {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--text-muted);
-  margin-top: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #1e293b);
+  margin-top: 0;
 }
 
 .fullscreen-loading-subtext {
   font-size: 13px;
-  color: var(--text-muted);
-  opacity: 0.7;
-  margin-top: 6px;
+  color: var(--text-muted, #64748b);
+  margin-top: 5px;
+}
+
+.flo-progress-track {
+  width: 160px;
+  height: 3px;
+  background: rgba(0,0,0,0.08);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 20px;
+}
+
+.flo-progress-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #38bdf8, #818cf8);
+  animation: floProgressAnim 8s cubic-bezier(0.1, 0.05, 0, 1) forwards;
+}
+
+@keyframes floProgressAnim {
+  0%   { width: 0%; }
+  30%  { width: 45%; }
+  60%  { width: 70%; }
+  85%  { width: 88%; }
+  100% { width: 95%; }
 }
 
 [data-theme="dark"] .fullscreen-loading-overlay {
-  background: rgba(15, 23, 42, 0.95);
+  background: rgba(15, 23, 42, 0.97);
+}
+
+[data-theme="dark"] .flo-progress-track {
+  background: rgba(255,255,255,0.1);
 }
 
 .otc-page-badge {

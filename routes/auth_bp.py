@@ -123,6 +123,35 @@ def set_viewer():
     return redirect(url_for("page_dashboard", platform=platform, season=season, league_id=league_id))
 
 
+# ── Quick-set viewer from localStorage (no league context fetch) ─────────────
+
+@auth_bp.route("/api/quick-set-viewer", methods=["POST"])
+def api_quick_set_viewer():
+    """Set viewer session variables directly from trusted localStorage data.
+    Skips get_league_ctx_from_cache entirely — used by the 'Continue as X'
+    returning-user flow where we already know the viewer is valid.
+    """
+    data = request.get_json(force=True) or {}
+    username  = str(data.get("username")  or "").strip()
+    roster_id = str(data.get("roster_id") or "").strip()
+    user_id   = str(data.get("user_id")   or "").strip()
+    team_name = str(data.get("team_name") or "").strip()
+
+    if not username:
+        return jsonify({"ok": False, "error": "username required"}), 400
+
+    session.permanent             = True
+    session["viewer_username"]    = username
+    if user_id:
+        session["viewer_user_id"] = user_id
+    if roster_id:
+        session["viewer_roster_id"] = roster_id
+    if team_name:
+        session["viewer_team_name"] = team_name
+
+    return jsonify({"ok": True})
+
+
 # ── Set viewer roster (AJAX) ──────────────────────────────────────────────────
 
 @auth_bp.route("/api/set-viewer-roster", methods=["POST"])

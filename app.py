@@ -724,9 +724,11 @@ FORM_BODY = """
 </div>
 
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
+  <img src="/static/BR_Logo.png" alt="BR Fantasy" class="flo-logo">
   <div class="loading-spinner"></div>
   <div class="fullscreen-loading-text">Building your dashboard…</div>
-  <div class="fullscreen-loading-subtext">This usually takes 10–20 seconds</div>
+  <div class="fullscreen-loading-subtext">This usually takes a few seconds</div>
+  <div class="flo-progress-track"><div class="flo-progress-bar" id="floProgressBar"></div></div>
 </div>
 """
 
@@ -777,7 +779,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js};</script>
       <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -1828,6 +1830,7 @@ def render_page(
 
     # Inject Ask My GM context for JS to pick up and add to the floating pill group
     viewer_roster_id = session.get("viewer_roster_id") or ""
+    viewer_user_id   = session.get("viewer_user_id") or ""
     ask_gm_widget = ""  # Ask My GM hidden for now
 
     import json as _json
@@ -1857,6 +1860,7 @@ def render_page(
         icons_v=_ICONS_V,
         ask_gm_widget=ask_gm_widget,
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
+        viewer_user_id_js=_json.dumps(str(viewer_user_id)),
     )
 
 
