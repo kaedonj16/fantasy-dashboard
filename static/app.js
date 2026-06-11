@@ -5019,8 +5019,18 @@ window.initTradePage = function initTradePage(root = document) {
         resultState.style.display = "block";
         // Write into resultState only - never clobber tradeAiBody directly
         // so that sibling state nodes (loading/empty) survive intact
+        const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
         if (data.analysis_html) {
           resultState.innerHTML = data.analysis_html;
+        } else if (!_isPremium) {
+          resultState.innerHTML = `
+            <div class="otc-ai-empty">
+              <div class="otc-ai-empty-title" style="display:flex;align-items:center;gap:6px;">
+                <i class="fa-solid fa-lock" style="font-size:15px;opacity:0.6;"></i> AI Analysis
+              </div>
+              <div class="otc-ai-empty-sub">Get front-office grades, win probability shifts, and counter-offer suggestions.</div>
+              <button onclick="showPaywall('trade-ai')" style="margin-top:10px;padding:8px 18px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">Upgrade to PRO</button>
+            </div>`;
         } else if (data.error && data.error.includes("No user context")) {
           resultState.innerHTML = `
             <div class="otc-ai-empty">
@@ -5921,7 +5931,10 @@ async function generateSeasonRecap() {
     alert("Please select a team first");
     return;
   }
-  
+
+  const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
+  if (!_isPremium) { showPaywall('history-recap'); return; }
+
   // Show loading, hide everything else
   if (loadingState) loadingState.style.display = "block";
   if (emptyState) emptyState.style.display = "none";
@@ -7122,6 +7135,9 @@ document.addEventListener('DOMContentLoaded', function() {
   const generateGmMemoBtn = document.getElementById('generateGmMemoBtn');
   if (generateGmMemoBtn) {
     generateGmMemoBtn.addEventListener('click', async function() {
+      const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
+      if (!_isPremium) { showPaywall('gm-memo'); return; }
+
       const leagueId = this.dataset.leagueId;
       const season = this.dataset.season;
       const platform = this.dataset.platform;
@@ -12620,7 +12636,11 @@ function setupFunAwardsGrid() {
     // Insert before discord pill so order is: GM · Discord · Refresh
     var discord = document.getElementById('discord-pill');
     group.insertBefore(pill, discord || group.firstChild);
-    pill.addEventListener('click', togglePanel);
+    pill.addEventListener('click', function() {
+      const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
+      if (!_isPremium) { showPaywall('ask-gm'); return; }
+      togglePanel();
+    });
   }
 
   // Build the panel once, append to body

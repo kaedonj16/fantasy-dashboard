@@ -606,7 +606,7 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Trade Calculator</span>
+            <span class="home-feature-row-title">Trade Calculator <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
             <span class="home-feature-row-desc">AI-powered deal grades, counter proposals, and real trade comparisons from thousands of logged transactions</span>
           </div>
         </div>
@@ -706,7 +706,7 @@ FORM_BODY = """
             <i class="fa-solid fa-trophy" style="font-size:16px;color:#eab308;" aria-hidden="true"></i>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">League History</span>
+            <span class="home-feature-row-title">League History <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
             <span class="home-feature-row-desc">AI season recaps, head-to-head rivalry records, historical draft grades, and complete year-by-year standings</span>
           </div>
         </div>
@@ -1458,7 +1458,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if draft_ended or not offseason_mode:
         nav_pills.append(nav_pill_dropdown("Weekly", [
             ("Matchups",           "page_weekly",           "weekly",   False),
-            ("Weekly Recap",       "page_recap",            "recap",    False),
+            ("Weekly Recap <span class='nav-pro-badge'>PRO</span>", "page_recap", "recap", False),
         ], ["weekly", "recap"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",       "page_standings",    "standings",    False),
