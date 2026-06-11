@@ -25827,6 +25827,23 @@ def page_trade_card(share_id: str):
     .asset-pos{{font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;flex-shrink:0}}
     .empty-side{{font-size:13px;color:var(--tc-dim);padding:8px 0}}
     @media(max-width:480px){{.side{{padding:12px}}.side-total{{font-size:18px}}}}
+    @media(max-width:400px){{
+      .card-header{{padding:10px 12px}}
+      .side{{padding:10px 8px}}
+      .side-title{{font-size:8px}}
+      .side-total{{font-size:16px;margin-bottom:8px}}
+      .asset-row{{gap:4px;padding:5px 0}}
+      .asset-name{{font-size:12px}}
+      .asset-val{{font-size:11px}}
+      .asset-pos{{font-size:8px;padding:2px 4px}}
+      .bar-wrap{{padding:0 10px 10px}}
+      .bar-labels{{font-size:9px}}
+      .verdict{{font-size:12px;padding:8px 12px 10px}}
+      .footer{{padding:10px 12px;gap:6px}}
+      .btn{{padding:7px 12px;font-size:11px}}
+      .pi-grid{{grid-template-columns:repeat(2,1fr)}}
+      .pi-cell{{padding:7px 5px}}
+    }}
   </style>
 </head>
 <body>
