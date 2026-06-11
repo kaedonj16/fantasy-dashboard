@@ -8,6 +8,72 @@
 // ============================================================
 
 
+// ── Auto-restore expired session ─────────────────────────────────────────────
+// If the server session expired but we still have saved_viewer in localStorage,
+// silently call /api/quick-set-viewer so the user stays logged in.
+(function () {
+  if (window._isSignedIn) return;
+  var saved;
+  try { saved = JSON.parse(localStorage.getItem('saved_viewer') || 'null'); } catch (_) {}
+  if (!saved || !saved.username || !saved.league_id) return;
+  // Guard against infinite reload loop in case the API keeps returning ok:true
+  // but the session still doesn't stick.
+  if (sessionStorage.getItem('_sessionRestoreAttempted')) return;
+  sessionStorage.setItem('_sessionRestoreAttempted', '1');
+
+  fetch('/api/quick-set-viewer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username:  saved.username,
+      roster_id: saved.roster_id  || '',
+      user_id:   saved.user_id    || '',
+      league_id: saved.league_id,
+      platform:  saved.platform   || 'sleeper',
+      season:    saved.season     || new Date().getFullYear(),
+      team_name: saved.team_name  || '',
+    }),
+  })
+  .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+  .then(function (d) {
+    sessionStorage.removeItem('_sessionRestoreAttempted');
+    if (d.ok) {
+      window._isSignedIn = true;
+      location.reload();
+    } else {
+      _showSessionBanner(saved.username);
+    }
+  })
+  .catch(function () {
+    sessionStorage.removeItem('_sessionRestoreAttempted');
+    _showSessionBanner(saved.username);
+  });
+
+  function _showSessionBanner(username) {
+    if (document.getElementById('session-expired-banner')) return;
+    var banner = document.createElement('div');
+    banner.id = 'session-expired-banner';
+    banner.innerHTML =
+      '<span class="se-msg">Session expired </span>' +
+      '<button id="seReauthBtn" class="se-btn">Sign back in as <strong>' +
+        (username || 'you') + '</strong></button>' +
+      '<button id="seDismissBtn" class="se-close" aria-label="Dismiss">\xd7</button>';
+    document.body.appendChild(banner);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { banner.classList.add('se-visible'); });
+    });
+    document.getElementById('seReauthBtn').addEventListener('click', function () {
+      banner.remove();
+      sessionStorage.removeItem('_sessionRestoreAttempted');
+      location.reload();
+    });
+    document.getElementById('seDismissBtn').addEventListener('click', function () {
+      banner.remove();
+      localStorage.removeItem('saved_viewer');
+    });
+  }
+})();
+
 // ------------------------------------------------------------
 // Prevent scroll restoration on navigation (mobile fix)
 // ------------------------------------------------------------
@@ -458,6 +524,106 @@ function emptyState(container, message, iconClass) {
     if (!b) return;
     b.classList.remove('pwa-banner-visible');
     b.addEventListener('transitionend', function () { b.remove(); }, { once: true });
+  }
+})();
+
+// ── Push notification opt-in ──────────────────────────────────────────────────
+(function () {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+  var NOTIF_KEY = 'push-notif-v1';
+
+  function urlBase64ToUint8Array(b64) {
+    var padding = '='.repeat((4 - b64.length % 4) % 4);
+    var base64  = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+    var raw     = atob(base64);
+    var out     = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  async function subscribePush() {
+    var reg      = await navigator.serviceWorker.ready;
+    var resp     = await fetch('/api/push/vapid-public-key');
+    if (!resp.ok) return false;
+    var { publicKey } = await resp.json();
+    var sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+    var s = sub.toJSON();
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: s.endpoint, keys: s.keys }),
+    });
+    return true;
+  }
+
+  function showNotifBanner() {
+    if (document.getElementById('push-notif-banner')) return;
+    var banner = document.createElement('div');
+    banner.id = 'push-notif-banner';
+    banner.innerHTML =
+      '<div class="pwa-banner-left">' +
+        '<span class="push-bell-icon">&#128276;</span>' +
+        '<div>' +
+          '<div class="pwa-banner-title">Dynasty alerts</div>' +
+          '<div class="pwa-banner-sub">Weekly risers, fallers &amp; trade tips</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pwa-banner-actions">' +
+        '<button id="push-allow-btn" class="pwa-btn pwa-btn-install">Enable</button>' +
+        '<button id="push-no-btn"    class="pwa-btn pwa-btn-dismiss">No thanks</button>' +
+      '</div>';
+    document.body.appendChild(banner);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { banner.classList.add('pwa-banner-visible'); });
+    });
+
+    document.getElementById('push-allow-btn').addEventListener('click', async function () {
+      hideBanner();
+      try {
+        var permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          await subscribePush();
+          if (typeof showToast === 'function') showToast('Notifications enabled!', 'success');
+          localStorage.setItem(NOTIF_KEY, 'subscribed');
+        } else {
+          localStorage.setItem(NOTIF_KEY, 'denied');
+        }
+      } catch (err) {
+        console.warn('[push]', err);
+      }
+    });
+
+    document.getElementById('push-no-btn').addEventListener('click', function () {
+      hideBanner();
+      localStorage.setItem(NOTIF_KEY, 'dismissed');
+    });
+  }
+
+  function hideBanner() {
+    var b = document.getElementById('push-notif-banner');
+    if (!b) return;
+    b.classList.remove('pwa-banner-visible');
+    b.addEventListener('transitionend', function () { b.remove(); }, { once: true });
+  }
+
+  var asked = localStorage.getItem(NOTIF_KEY);
+
+  // Show after 45 seconds if user hasn't responded yet and browser allows it
+  if (!asked && Notification.permission === 'default') {
+    setTimeout(showNotifBanner, 45000);
+  }
+
+  // Re-register subscription if it was lost (e.g., browser cleared it)
+  if (asked === 'subscribed' && Notification.permission === 'granted') {
+    navigator.serviceWorker.ready.then(function (reg) {
+      reg.pushManager.getSubscription().then(function (sub) {
+        if (!sub) subscribePush().catch(function () {});
+      });
+    }).catch(function () {});
   }
 })();
 
@@ -6830,11 +6996,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (!lastSeen || latestDate > lastSeen) {
         setChangelogDot(true);
-        // Show a toast once per session for new notifications
-        const sessionKey = "changelog_toast_shown_" + latestDate;
-        if (!sessionStorage.getItem(sessionKey)) {
-          sessionStorage.setItem(sessionKey, "1");
-          _showNotifToast(changelogData[0]);
+        // Only show the toast for signed-in users
+        if (isLoggedIn) {
+          const sessionKey = "changelog_toast_shown_" + latestDate;
+          if (!sessionStorage.getItem(sessionKey)) {
+            sessionStorage.setItem(sessionKey, "1");
+            _showNotifToast(changelogData[0]);
+          }
         }
       }
 

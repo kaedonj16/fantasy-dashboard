@@ -1348,13 +1348,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
-                ("Dynasty Value Chart", "/dynasty-trade-value-chart", "dynasty-chart"),
                 ("Risers &amp; Fallers", "/risers-fallers", "risers-fallers"),
                 ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "/metrics", "advanced-metrics"),
-                ("Breakouts <span class='nav-pro-badge'>PRO</span>",       "/breakouts", "breakouts"),
+                ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
                 ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
-            ], ["players", "prospects", "breakouts", "dynasty-chart", "risers-fallers"], "playersNavDropdown"),
+            ], ["players", "prospects", "breakouts", "risers-fallers"], "playersNavDropdown"),
         ]
 
         player_search_html = (
@@ -1476,7 +1475,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
-        ("Dynasty Value Chart", "dynasty_trade_value_chart", "dynasty-chart", False),
         ("Risers &amp; Fallers", "risers_fallers_page", "risers-fallers", False),
         ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
@@ -1484,7 +1482,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Waivers & Start/Sit <span class='nav-pro-badge'>PRO</span>", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
-    ], ["players", "prospects", "breakouts", "waivers", "schedule", "dynasty-chart", "risers-fallers"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts", "waivers", "schedule", "risers-fallers"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -1872,7 +1870,13 @@ def render_page(
         session["last_league_id"] = league_id
         session["last_platform"] = platform
         session["last_season"] = season
-    nav_html = build_nav(league_id, active, platform, season)
+    # For public pages (no league context), inherit the session's last league so
+    # logged-in users see their league nav rather than the guest nav.
+    _nav_lid      = league_id or session.get("last_league_id") or None
+    _nav_platform = platform  or session.get("last_platform")  or None
+    _nav_season_raw = session.get("last_season") if not season else None
+    _nav_season   = season or (int(_nav_season_raw) if _nav_season_raw else None)
+    nav_html = build_nav(_nav_lid, active, _nav_platform, _nav_season)
 
     meta_tags = _build_seo_meta_tags(
         description, canonical, noindex,
@@ -9871,7 +9875,9 @@ def _build_career_graphs_ctx_live(
 
 @app.route("/players")
 @app.route("/<platform>/<int:season>/<league_id>/players")
-def page_players(platform: str = None, season: int = None, league_id: str = None):
+def page_players(platform: str = None, season: int = None, league_id: str = None,
+                 _title: str | None = None, _desc: str | None = None,
+                 _canonical: str | None = None):
     """Player Rankings page - searchable, filterable, sortable list of all players."""
     body_html = """
     <div class="card central">
@@ -11076,13 +11082,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         "redraft leagues. Compare players with consensus rankings, trend charts, and advanced "
         "metrics for Sleeper, ESPN, and Yahoo."
     )
+    _final_title = _title or "Fantasy Football Player Rankings & Trade Values | BR Fantasy"
+    _final_desc  = _desc  or _players_desc
     if platform:
-        return render_page("Fantasy Football Player Rankings & Trade Values | BR Fantasy",
-                           league_id, "players", body_html, platform, season,
-                           description=_players_desc)
+        return render_page(_final_title, league_id, "players", body_html, platform, season,
+                           description=_final_desc, canonical=_canonical)
 
-    return render_page("Fantasy Football Player Rankings & Trade Values | BR Fantasy",
-                       None, "players", body_html, description=_players_desc)
+    return render_page(_final_title, None, "players", body_html,
+                       description=_final_desc, canonical=_canonical)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/prospects")
@@ -25245,26 +25252,17 @@ def robots_txt():
 
 @app.route("/dynasty-trade-value-chart")
 def dynasty_trade_value_chart():
-    """Public dynasty trade value chart — high-SEO hub page."""
-    from dashboard_services.pages.dynasty_pages import build_dynasty_value_chart_body
-    try:
-        from dashboard_services.player_value_history import load_current_values_from_db
-        value_table = load_current_values_from_db() or get_model_value_table_cached() or []
-    except Exception:
-        value_table = get_model_value_table_cached() or []
-
+    """Public dynasty trade value chart — same UI as player rankings, with SEO-optimised metadata."""
     from datetime import datetime as _dt
     as_of = _dt.now().strftime("%B %Y")
-    body  = build_dynasty_value_chart_body(value_table, as_of_date=as_of)
     year  = _dt.now().year
-
-    return render_page(
-        f"Dynasty Trade Value Chart {year} | BR Fantasy",
-        None, "players", body,
-        description=(
-            f"Updated {as_of} dynasty fantasy football trade values for 1QB and Superflex leagues. "
-            f"Sortable chart with all positions — use these values in the free Trade Calculator."
+    return page_players(
+        _title=f"Dynasty Fantasy Football Trade Value Chart {year} | BR Fantasy",
+        _desc=(
+            f"Updated {as_of} — real dynasty trade values for 1QB and Superflex leagues. "
+            f"Sortable by position, age, and value. Use with the free Trade Calculator."
         ),
+        _canonical="/dynasty-trade-value-chart",
     )
 
 
@@ -25416,6 +25414,201 @@ def shared_trade_page(share_id: str):
     qs = urlencode({k: v for k, v in p.items() if v})
     from flask import redirect as _redirect
     return _redirect(f"/trade?{qs}", 302)
+
+
+# ── Push notifications ─────────────────────────────────────────────────────────
+
+_PUSH_TABLE_INIT = False
+_VAPID_KEYS: dict | None = None
+
+
+def _init_push_table():
+    global _PUSH_TABLE_INIT
+    if _PUSH_TABLE_INIT:
+        return
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS push_subscriptions (
+                    id         SERIAL PRIMARY KEY,
+                    endpoint   TEXT UNIQUE NOT NULL,
+                    p256dh     TEXT NOT NULL,
+                    auth       TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+            conn.commit()
+        _PUSH_TABLE_INIT = True
+    except Exception as exc:
+        logger.warning("[push] table init failed: %s", exc)
+
+
+def _get_vapid_keys() -> dict | None:
+    global _VAPID_KEYS
+    if _VAPID_KEYS:
+        return _VAPID_KEYS
+    pub  = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+    priv = os.environ.get("VAPID_PRIVATE_KEY", "").replace("\\n", "\n").strip()
+    if pub and priv:
+        _VAPID_KEYS = {"public": pub, "private": priv}
+        return _VAPID_KEYS
+    # Generate ephemeral keys for this session; set env vars to persist
+    try:
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives import serialization
+        import base64 as _b64
+        priv_key = ec.generate_private_key(ec.SECP256R1(), default_backend())
+        pub_raw  = priv_key.public_key().public_bytes(
+            serialization.Encoding.X962,
+            serialization.PublicFormat.UncompressedPoint,
+        )
+        priv_pem = priv_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        ).decode()
+        pub_b64  = _b64.urlsafe_b64encode(pub_raw).rstrip(b"=").decode()
+        logger.info(
+            "[vapid] Generated ephemeral VAPID keys. Add to Render env vars to persist:\n"
+            "  VAPID_PUBLIC_KEY=%s\n  VAPID_PRIVATE_KEY=%s",
+            pub_b64,
+            priv_pem.replace("\n", "\\n"),
+        )
+        _VAPID_KEYS = {"public": pub_b64, "private": priv_pem}
+        return _VAPID_KEYS
+    except Exception as exc:
+        logger.warning("[vapid] key generation failed: %s", exc)
+        return None
+
+
+@app.route("/api/push/vapid-public-key")
+def api_push_vapid_public_key():
+    keys = _get_vapid_keys()
+    if not keys:
+        return jsonify({"error": "Push not configured"}), 503
+    return jsonify({"publicKey": keys["public"]})
+
+
+@app.route("/api/push/subscribe", methods=["POST"])
+@limiter.limit("30 per minute")
+def api_push_subscribe():
+    data     = request.get_json(force=True) or {}
+    endpoint = data.get("endpoint", "").strip()
+    p256dh   = (data.get("keys") or {}).get("p256dh", "").strip()
+    auth     = (data.get("keys") or {}).get("auth",   "").strip()
+    if not (endpoint and p256dh and auth):
+        return jsonify({"error": "Invalid subscription"}), 400
+    _init_push_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO push_subscriptions (endpoint, p256dh, auth)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (endpoint) DO UPDATE
+                    SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth
+                """,
+                (endpoint, p256dh, auth),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[push] subscribe error: %s", exc)
+        return jsonify({"error": "Could not save subscription"}), 500
+    return jsonify({"ok": True})
+
+
+@app.route("/api/push/unsubscribe", methods=["POST"])
+@limiter.limit("30 per minute")
+def api_push_unsubscribe():
+    data     = request.get_json(force=True) or {}
+    endpoint = data.get("endpoint", "").strip()
+    if not endpoint:
+        return jsonify({"error": "Missing endpoint"}), 400
+    _init_push_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                "DELETE FROM push_subscriptions WHERE endpoint = %s", (endpoint,)
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[push] unsubscribe error: %s", exc)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/push/broadcast", methods=["POST"])
+@limiter.limit("10 per minute")
+def api_push_broadcast():
+    """Send a push to all subscribers. Requires X-Admin-Secret header."""
+    secret = request.headers.get("X-Admin-Secret", "")
+    admin_secret = os.environ.get("ADMIN_SECRET", "")
+    if not admin_secret or secret != admin_secret:
+        return jsonify({"error": "Forbidden"}), 403
+    data  = request.get_json(force=True) or {}
+    title = data.get("title", "BR Fantasy Update")
+    body  = data.get("body",  "Your weekly dynasty risers and fallers are ready!")
+    url   = data.get("url",   "/risers-fallers")
+    tag   = data.get("tag",   "weekly-update")
+    return _push_broadcast(title=title, body=body, url=url, tag=tag)
+
+
+def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
+    import json as _json
+    keys = _get_vapid_keys()
+    if not keys:
+        return jsonify({"error": "Push not configured"}), 503
+    _init_push_table()
+    try:
+        from pywebpush import webpush, WebPushException
+        from dashboard_services.db import get_conn
+        rows = get_conn().execute(
+            "SELECT endpoint, p256dh, auth FROM push_subscriptions"
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("[push] broadcast query failed: %s", exc)
+        return jsonify({"error": "DB error"}), 500
+
+    payload       = _json.dumps({"title": title, "body": body, "url": url, "tag": tag})
+    sent = failed = 0
+    stale         = []
+
+    for row in rows:
+        ep, p256dh, auth = row[0], row[1], row[2]
+        try:
+            webpush(
+                subscription_info={"endpoint": ep, "keys": {"p256dh": p256dh, "auth": auth}},
+                data=payload,
+                vapid_private_key=keys["private"],
+                vapid_claims={"sub": "mailto:admin@brfantasy.com"},
+            )
+            sent += 1
+        except WebPushException as exc:
+            if exc.response and exc.response.status_code in (404, 410):
+                stale.append(ep)
+            else:
+                logger.warning("[push] send failed %s: %s", ep[:50], exc)
+            failed += 1
+        except Exception as exc:
+            logger.warning("[push] unexpected: %s", exc)
+            failed += 1
+
+    if stale:
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                for ep in stale:
+                    conn.execute(
+                        "DELETE FROM push_subscriptions WHERE endpoint = %s", (ep,)
+                    )
+                conn.commit()
+        except Exception:
+            pass
+
+    return jsonify({"ok": True, "sent": sent, "failed": failed})
 
 
 if __name__ == "__main__":
