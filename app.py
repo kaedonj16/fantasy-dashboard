@@ -25430,6 +25430,8 @@ def api_save_trade():
         "roster_id": str(data.get("roster_id") or "")[:16],
         "platform":  str(data.get("platform") or "")[:16],
         "pi":        pi_raw,
+        "eff_a":     float(data.get("eff_a") or 0),
+        "eff_b":     float(data.get("eff_b") or 0),
     })
     share_id = secrets.token_urlsafe(6)
     _init_shared_trades_table()
@@ -25605,9 +25607,16 @@ def page_trade_card(share_id: str):
         verdict = f"{t2} favored +{abs(diff):,} ({pct}%)"
         verdict_color = "#f97316"
 
-    bar_pct = round((total_a / (total_a + total_b)) * 100) if (total_a + total_b) > 0 else 50
-    fair_zone_width = round(min(100.0, (fair_band / baseline) * 100), 2) if baseline > 0 else 7
-    fair_zone_left = round(50.0 - fair_zone_width / 2, 2)
+    # Use depth-adjusted effective totals if saved, otherwise fall back to raw totals
+    eff_a = float(p.get("eff_a") or 0) or float(total_a)
+    eff_b = float(p.get("eff_b") or 0) or float(total_b)
+    eff_diff = eff_a - eff_b
+    max_side = max(abs(eff_a), abs(eff_b), 1.0)
+    normalized_diff = max(-1.0, min(1.0, eff_diff / max_side))
+    # leftPct: 50% = center (fair), <50 = Team 1 favored, >50 = Team 2 favored
+    indicator_left = round(((1.0 - normalized_diff) / 2.0) * 100.0, 2)
+    fair_zone_width = round(min(100.0, (fair_band / max_side) * 100.0), 2)
+    fair_zone_left = round(50.0 - fair_zone_width / 2.0, 2)
 
     def _asset_html(players, picks):
         rows = []
@@ -25712,10 +25721,11 @@ def page_trade_card(share_id: str):
     .side-title{{font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--tc-dim);text-transform:uppercase;margin-bottom:4px}}
     .side-total{{font-size:22px;font-weight:900;color:var(--tc-text2);margin-bottom:10px}}
     .bar-wrap{{padding:0 16px 14px}}
-    .bar-bg{{height:8px;background:var(--tc-bar);border-radius:4px;position:relative;overflow:visible}}
-    .bar-fill{{position:absolute;left:0;top:0;height:100%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:4px}}
-    .bar-fair-zone{{position:absolute;top:0;height:100%;background:rgba(74,222,128,.25);border:1px solid rgba(74,222,128,.45);border-radius:2px;pointer-events:none}}
-    .bar-labels{{display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:var(--tc-dimmer);font-weight:600}}
+    .bar-bg{{height:22px;background:var(--tc-bar);border-radius:999px;position:relative;overflow:hidden;border:1px solid var(--tc-border)}}
+    .bar-fair-zone{{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);background:rgba(56,189,248,.12);border-left:1px solid rgba(56,189,248,.25);border-right:1px solid rgba(56,189,248,.25);pointer-events:none}}
+    .bar-indicator{{position:absolute;top:-3px;width:12px;height:28px;border-radius:999px;background:#38bdf8;transform:translateX(-50%);box-shadow:0 0 8px rgba(56,189,248,.5)}}
+    .bar-labels{{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:10px;color:var(--tc-dimmer);font-weight:600}}
+    .bar-fair-label{{font-size:10px;color:var(--tc-dim);font-weight:600}}
     .pi-section{{padding:12px 16px 4px}}
     .pi-title{{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tc-dim);margin-bottom:8px}}
     .pi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}}
@@ -25771,11 +25781,13 @@ def page_trade_card(share_id: str):
       <div class="divider"></div>
       <div class="bar-wrap" style="padding-top:12px">
         <div class="bar-bg">
-          <div class="bar-fill" style="width:{bar_pct}%"></div>
-          <div class="bar-fair-zone" style="left:{fair_zone_left}%;width:{fair_zone_width}%"></div>
+          <div class="bar-fair-zone" style="width:{fair_zone_width}%"></div>
+          <div class="bar-indicator" style="left:{indicator_left}%"></div>
         </div>
         <div class="bar-labels">
-          <span>{t1} favored</span><span>{t2} favored</span>
+          <span>{t1} favored</span>
+          <span class="bar-fair-label">Fair range</span>
+          <span>{t2} favored</span>
         </div>
       </div>
       <div class="verdict" style="color:{verdict_color}">{verdict}</div>
@@ -25784,7 +25796,7 @@ def page_trade_card(share_id: str):
 
       <div class="footer">
         <button class="btn btn-outline" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')" style="{copy_link_style}">Copy link</button>
-        <a href="{trade_url}" class="btn btn-primary">Open in Calculator</a>
+        <a href="{trade_url}" class="btn btn-primary" target="_top">Open in Calculator</a>
       </div>
     </div>
     <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--tc-dimmer);{'display:none' if is_embed else ''}">
