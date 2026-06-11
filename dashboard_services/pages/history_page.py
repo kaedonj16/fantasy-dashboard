@@ -838,31 +838,59 @@ def _build_rivalry_card(
               }
               var streakName = streakSide === 'a' ? nA : nB;
 
-              var html = '<div class="rivalry-scoreline">'
-                + '<div class="rivalry-side"><div class="rivalry-name">' + nA + '</div><div class="rivalry-wins">' + d.wins_a + '</div></div>'
-                + '<div class="rivalry-dash">&ndash;</div>'
-                + '<div class="rivalry-side"><div class="rivalry-name">' + nB + '</div><div class="rivalry-wins">' + d.wins_b + '</div></div>'
-                + '</div>'
-                + (d.ties ? '<div class="rivalry-ties">' + d.ties + ' tie' + (d.ties > 1 ? 's' : '') + '</div>' : '');
+              var aLead = d.wins_a > d.wins_b, bLead = d.wins_b > d.wins_a;
+              var total = d.wins_a + d.wins_b + (d.ties || 0);
+              var barPct = total > 0 ? Math.round((d.wins_a / total) * 100) : 50;
 
-              html += '<div class="rivalry-chips">'
-                + '<span class="rivalry-chip">' + games.length + ' meetings</span>'
-                + '<span class="rivalry-chip">Total pts: ' + d.pts_a.toFixed(1) + ' &ndash; ' + d.pts_b.toFixed(1) + '</span>'
-                + '<span class="rivalry-chip">Avg margin: ' + avgMargin.toFixed(1) + '</span>'
-                + (streakLen > 1 ? '<span class="rivalry-chip rivalry-chip-streak">' + streakName + ' has won ' + streakLen + ' straight</span>' : '')
-                + '<span class="rivalry-chip">Biggest blowout: ' + bWinner + ' by ' + bMargin.toFixed(1) + ' (' + blowout.season + ' wk ' + blowout.week + ')</span>'
+              // Score banner
+              var html = '<div class="rivalry-banner">'
+                + '<div class="rivalry-side' + (aLead ? ' rivalry-side--leader' : '') + '">'
+                +   '<div class="rivalry-name">' + nA + '</div>'
+                +   '<div class="rivalry-wins' + (aLead ? ' rivalry-wins--lead' : '') + '">' + d.wins_a + '</div>'
+                + '</div>'
+                + '<div class="rivalry-divider">'
+                +   '<div class="rivalry-divider-label">vs</div>'
+                +   '<div class="rivalry-divider-dash">–</div>'
+                + '</div>'
+                + '<div class="rivalry-side' + (bLead ? ' rivalry-side--leader' : '') + '">'
+                +   '<div class="rivalry-name">' + nB + '</div>'
+                +   '<div class="rivalry-wins' + (bLead ? ' rivalry-wins--lead' : '') + '">' + d.wins_b + '</div>'
+                + '</div>'
                 + '</div>';
 
-              html += '<table class="rivalry-table"><thead><tr><th>Season</th><th>Week</th><th style="text-align:right">' + nA + '</th><th style="text-align:right">' + nB + '</th></tr></thead><tbody>';
+              if (d.ties) html += '<div class="rivalry-ties">' + d.ties + ' tie' + (d.ties > 1 ? 's' : '') + '</div>';
+
+              // Win-rate bar
+              html += '<div class="rivalry-bar-wrap">'
+                + '<span class="rivalry-bar-label">' + barPct + '%</span>'
+                + '<div class="rivalry-bar-track"><div class="rivalry-bar-fill" style="width:' + barPct + '%"></div></div>'
+                + '<span class="rivalry-bar-label rivalry-bar-label--right">' + (100 - barPct) + '%</span>'
+                + '</div>';
+
+              // Stat chips
+              html += '<div class="rivalry-chips">'
+                + '<span class="rivalry-chip">⚔️ ' + games.length + ' meetings</span>'
+                + '<span class="rivalry-chip">🏆 Total pts: ' + d.pts_a.toFixed(1) + ' – ' + d.pts_b.toFixed(1) + '</span>'
+                + '<span class="rivalry-chip">📊 Avg margin: ' + avgMargin.toFixed(1) + '</span>'
+                + (streakLen > 1 ? '<span class="rivalry-chip rivalry-chip-streak">🔥 ' + streakName + ' won ' + streakLen + ' straight</span>' : '')
+                + '<span class="rivalry-chip rivalry-chip-blowout">💥 ' + bWinner + ' by ' + bMargin.toFixed(1) + ' (' + blowout.season + ' wk ' + blowout.week + ')</span>'
+                + '</div>';
+
+              // Matchup history table
+              html += '<div class="rivalry-table-wrap"><table class="rivalry-table"><thead><tr>'
+                + '<th>Season</th><th>Week</th>'
+                + '<th style="text-align:right">' + nA + '</th>'
+                + '<th style="text-align:right">' + nB + '</th>'
+                + '</tr></thead><tbody>';
               var recent = games.slice(-12).reverse();
               recent.forEach(function(g) {
                 var aWin = g.a_pts > g.b_pts, bWin = g.b_pts > g.a_pts;
-                html += '<tr><td>' + g.season + '</td><td>' + g.week + '</td>'
+                html += '<tr><td style="color:var(--text-muted)">' + g.season + '</td><td style="color:var(--text-muted)">Wk ' + g.week + '</td>'
                   + '<td style="text-align:right" class="' + (aWin ? 'rivalry-w' : '') + '">' + g.a_pts.toFixed(1) + '</td>'
                   + '<td style="text-align:right" class="' + (bWin ? 'rivalry-w' : '') + '">' + g.b_pts.toFixed(1) + '</td></tr>';
               });
-              html += '</tbody></table>';
-              if (games.length > 12) html += '<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">Showing the 12 most recent of ' + games.length + ' meetings.</div>';
+              html += '</tbody></table></div>';
+              if (games.length > 12) html += '<div class="rivalry-table-footer">Showing the 12 most recent of ' + games.length + ' meetings</div>';
               result.innerHTML = html;
             })
             .catch(function() {
