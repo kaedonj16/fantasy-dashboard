@@ -184,6 +184,25 @@ def api_player_advanced_metrics(player_id: str):
         }), 500
 
 
+# ── /api/player-metric-ranks/<player_id> ──────────────────────────────────────
+
+@players_bp.route("/api/player-metric-ranks/<player_id>")
+def api_player_metric_ranks(player_id: str):
+    """Position-relative volume ranks for a player in a given season."""
+    try:
+        from data_building.advanced_metrics import get_player_metric_ranks
+        season = request.args.get("season")
+        try:
+            season = int(season) if season else None
+        except (ValueError, TypeError):
+            season = None
+        result = get_player_metric_ranks(str(player_id), season=season)
+        return jsonify(result)
+    except Exception:
+        logger.exception("[player-metric-ranks] Error for %s", player_id)
+        return jsonify({"ranks": {}}), 500
+
+
 # ── /api/player-value-history/<player_id> ─────────────────────────────────────
 
 @players_bp.route("/api/player-value-history/<player_id>")

@@ -1515,6 +1515,85 @@ def get_metric_leaderboard(
     return out
 
 
+def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Return position-relative volume ranks for one player in a given season.
+    Ranks each volume metric (total carries, targets, TDs, per-game rates, etc.)
+    using SQL window functions across all players at the same position.
+    Returns {position, season, ranks: {metric_key: rank}}.
+    Empty dict when the player has no data or the season has no volume records.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT position, season FROM player_advanced_metrics "
+            "WHERE player_id = %s AND season IS NOT NULL "
+            "ORDER BY as_of_date DESC LIMIT 1",
+            (player_id,)
+        ).fetchone()
+        if not row:
+            return {}
+        position = row["position"]
+        if season is None:
+            season = int(row["season"])
+
+        try:
+            result = conn.execute("""
+                WITH snapshot AS (
+                    SELECT DISTINCT ON (player_id)
+                        player_id,
+                        total_carries, total_targets, total_receptions,
+                        total_touches, total_rush_tds, total_rec_tds,
+                        total_pass_tds, total_tds, games,
+                        CASE WHEN games > 0 THEN total_carries::float / games    END AS carries_pg,
+                        CASE WHEN games > 0 THEN total_targets::float / games    END AS targets_pg,
+                        CASE WHEN games > 0 THEN total_receptions::float / games END AS recs_pg,
+                        CASE WHEN games > 0 THEN total_touches::float / games    END AS touches_pg,
+                        CASE WHEN games > 0 THEN total_rush_tds::float / games   END AS rush_tds_pg,
+                        CASE WHEN games > 0 THEN total_rec_tds::float / games    END AS rec_tds_pg,
+                        CASE WHEN games > 0 THEN total_pass_tds::float / games   END AS pass_tds_pg,
+                        CASE WHEN games > 0 THEN total_tds::float / games        END AS total_tds_pg
+                    FROM player_advanced_metrics
+                    WHERE season = %s AND position = %s
+                      AND games IS NOT NULL AND games > 0
+                    ORDER BY player_id, as_of_date DESC
+                ),
+                r AS (
+                    SELECT player_id,
+                        RANK() OVER (ORDER BY total_carries DESC NULLS LAST)    AS total_carries,
+                        RANK() OVER (ORDER BY total_targets DESC NULLS LAST)    AS total_targets,
+                        RANK() OVER (ORDER BY total_receptions DESC NULLS LAST) AS total_receptions,
+                        RANK() OVER (ORDER BY total_touches DESC NULLS LAST)    AS total_touches,
+                        RANK() OVER (ORDER BY total_rush_tds DESC NULLS LAST)   AS total_rush_tds,
+                        RANK() OVER (ORDER BY total_rec_tds DESC NULLS LAST)    AS total_rec_tds,
+                        RANK() OVER (ORDER BY total_pass_tds DESC NULLS LAST)   AS total_pass_tds,
+                        RANK() OVER (ORDER BY total_tds DESC NULLS LAST)        AS total_tds,
+                        RANK() OVER (ORDER BY carries_pg DESC NULLS LAST)       AS carries_per_game,
+                        RANK() OVER (ORDER BY targets_pg DESC NULLS LAST)       AS targets_per_game,
+                        RANK() OVER (ORDER BY recs_pg DESC NULLS LAST)          AS receptions_per_game,
+                        RANK() OVER (ORDER BY touches_pg DESC NULLS LAST)       AS touches_per_game,
+                        RANK() OVER (ORDER BY rush_tds_pg DESC NULLS LAST)      AS rush_tds_per_game,
+                        RANK() OVER (ORDER BY rec_tds_pg DESC NULLS LAST)       AS rec_tds_per_game,
+                        RANK() OVER (ORDER BY pass_tds_pg DESC NULLS LAST)      AS pass_tds_per_game,
+                        RANK() OVER (ORDER BY total_tds_pg DESC NULLS LAST)     AS total_tds_per_game
+                    FROM snapshot
+                )
+                SELECT * FROM r WHERE player_id = %s
+            """, (season, position, player_id)).fetchone()
+        except Exception:
+            return {"position": position, "season": season, "ranks": {}}
+
+        if not result:
+            return {"position": position, "season": season, "ranks": {}}
+
+        rank_dict = dict(result)
+        rank_dict.pop("player_id", None)
+        return {
+            "position": position,
+            "season": season,
+            "ranks": {k: int(v) for k, v in rank_dict.items() if v is not None},
+        }
+
+
 def get_top_role_players(position: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     """
     Get players with highest role scores (usage + efficiency).
