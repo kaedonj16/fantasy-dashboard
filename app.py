@@ -17499,7 +17499,9 @@ def api_advanced_metrics_leaderboard():
         if is_week_filtered:
             players = get_weekly_range_leaderboard(
                 metric, position=position, season=season,
-                week_start=week_start, week_end=week_end, min_vol=min_vol,
+                week_start=week_start, week_end=week_end,
+                # min_vol is a season-level threshold (e.g. 30 carries) and can't
+                # apply to a week range where max possible weeks is ~18; ignore it.
             )
         else:
             players = get_metric_leaderboard(metric, position=position, season=season, min_vol=min_vol)
