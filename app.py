@@ -7756,7 +7756,7 @@ def build_teams_body(ctx: dict) -> str:
             + (f"      <button class='share-report-btn' title='Share team report card' "
                f"data-roster='{rid}' data-platform='{platform}' data-season='{current_season}' data-league='{league_id}'>"
                f"<img src='/static/images/share-solid.png' class='share-report-icon' alt='Share'></button>"
-               if str(rid) == str(viewer_roster_id) else "") +
+               if _is_viewer else "") +
             "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
             "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
             "          <path d='M3 5l4 4 4-4' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>"
@@ -25705,14 +25705,6 @@ def page_trade_card(share_id: str):
       <div class="pi-section" id="piSection" style="display:none">
         <div class="pi-title">Playoff Impact · {t1}</div>
         <div class="pi-grid">{cells}</div>
-      </div>
-      <div class="pi-toggle-wrap">
-        <button class="pi-toggle-btn" id="piToggle" onclick="
-          var s=document.getElementById('piSection');
-          var open=s.style.display!=='none';
-          s.style.display=open?'none':'block';
-          this.textContent=open?'Show Impact for {t1} ▾':'Hide Playoff Impact ▴';
-        ">Show Impact for {t1} ▾</button>
       </div>"""
         except Exception:
             pass
@@ -25761,8 +25753,6 @@ def page_trade_card(share_id: str):
     .pi-val{{font-size:13px;font-weight:800}}
     .pi-pos{{color:#4ade80}}
     .pi-neg{{color:#f87171}}
-    .pi-toggle-wrap{{text-align:center;padding:6px 16px 10px}}
-    .pi-toggle-btn{{background:transparent;border:1px solid var(--tc-border);color:var(--tc-muted);font-size:11px;font-weight:600;padding:5px 14px;border-radius:20px;cursor:pointer}}
     .verdict{{text-align:center;padding:10px 16px 14px;font-size:13px;font-weight:700}}
     .divider{{border-top:1px solid var(--tc-border-sub)}}
     .footer{{padding:14px 18px;display:flex;gap:8px;justify-content:flex-end;background:var(--tc-hdr);border-top:1px solid var(--tc-border-sub)}}
@@ -25853,13 +25843,23 @@ def page_trade_card(share_id: str):
       }});
     }}
     window.addEventListener('message', function(e){{
-      if (e.data && e.data.type === 'scSetTheme') applyTheme(e.data.theme);
+      if (!e.data) return;
+      if (e.data.type === 'scSetTheme') applyTheme(e.data.theme);
+      if (e.data.type === 'scTogglePi') {{
+        var s = document.getElementById('piSection');
+        if (s) {{ s.style.display = e.data.show ? 'block' : 'none'; sendHeight(); }}
+      }}
     }});
     function sendHeight(){{
       window.parent.postMessage({{ type: 'scCardHeight', height: document.body.scrollHeight }}, '*');
     }}
     if (window.parent !== window) {{
-      window.addEventListener('load', sendHeight);
+      window.addEventListener('load', function(){{
+        sendHeight();
+        if (document.getElementById('piSection')) {{
+          window.parent.postMessage({{ type: 'scHasPi' }}, '*');
+        }}
+      }});
       new MutationObserver(sendHeight).observe(document.body, {{ subtree: true, childList: true, attributes: true }});
     }}
   }})();

@@ -19193,15 +19193,15 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   gap: 5px;
   padding: 5px 10px;
   border-radius: 6px;
-  border: 1px solid var(--border, #334155);
-  background: transparent;
+  border: 1px solid var(--grid, #334155);
+  background: var(--row, rgba(255,255,255,.06));
   color: var(--text-muted, #94a3b8);
   font-size: 11px;
   cursor: pointer;
   text-decoration: none;
   transition: background .15s, color .15s;
 }
-.share-report-btn:hover { background: var(--hover, #334155); color: var(--text, #f1f5f9); }
+.share-report-btn:hover { background: var(--border, #334155); color: var(--text); }
 
 /* ── Feature 1: Live Draft Board ─────────────────────────────────────────────*/
 .live-draft-bar {
@@ -19479,6 +19479,8 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .scm-btn:disabled { opacity: .45; cursor: not-allowed; }
 .scm-btn-primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
 .scm-btn-calc { background: transparent; border-color: rgba(99,102,241,.5); color: #818cf8; text-decoration: none; }
+.scm-pi-btn { background: transparent; border-color: rgba(74,222,128,.4); color: #4ade80; }
+.scm-pi-btn-active { background: rgba(74,222,128,.12); border-color: #4ade80; }
 .scm-theme-btn { font-size: 14px; padding: 5px 9px; }
 .scm-close-btn { font-size: 15px; padding: 5px 10px; background: transparent; border-color: transparent; }
 

@@ -683,10 +683,30 @@ function emptyState(container, message, iconClass) {
 
     var frame = document.getElementById('scmFrame');
 
+    var _piVisible = false;
     function _onMsg(e) {
       if (!e.data) return;
       if (e.data.type === 'scCardHeight' && frame) {
         frame.style.height = (e.data.height + 2) + 'px';
+      }
+      if (e.data.type === 'scHasPi') {
+        var tb = overlay.querySelector('.scm-toolbar');
+        var existingPiBtn = overlay.querySelector('#scmPiBtn');
+        if (tb && !existingPiBtn) {
+          var piBtn = document.createElement('button');
+          piBtn.className = 'scm-btn scm-pi-btn';
+          piBtn.id = 'scmPiBtn';
+          piBtn.textContent = 'Playoff Impact';
+          piBtn.onclick = function() {
+            _piVisible = !_piVisible;
+            if (frame && frame.contentWindow) {
+              frame.contentWindow.postMessage({type: 'scTogglePi', show: _piVisible}, '*');
+            }
+            piBtn.classList.toggle('scm-pi-btn-active', _piVisible);
+          };
+          var downloadBtn = overlay.querySelector('#scmDownloadBtn');
+          tb.insertBefore(piBtn, downloadBtn);
+        }
       }
     }
     window.addEventListener('message', _onMsg);
