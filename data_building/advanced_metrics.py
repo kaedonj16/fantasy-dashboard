@@ -1316,23 +1316,29 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
 }
 
 # Metrics that can be filtered to a week range using player_weekly_metrics.
-# Each value is the SQL aggregation expression over that table's columns.
-_WEEKLY_METRICS: Dict[str, str] = {
-    "snap_share":           "AVG(snap_pct)",
-    "target_share":         "AVG(target_share)",
-    "yards_per_target":     "SUM(rec_yards)::float / NULLIF(SUM(targets), 0)",
-    "yards_per_reception":  "SUM(rec_yards)::float / NULLIF(SUM(receptions), 0)",
-    "catch_rate":           "SUM(receptions)::float / NULLIF(SUM(targets), 0)",
-    "yards_per_carry":      "SUM(rush_yards)::float / NULLIF(SUM(carries), 0)",
-    "yards_per_touch":      "(SUM(rec_yards) + SUM(rush_yards))::float / NULLIF(SUM(touches), 0)",
-    "total_targets":        "SUM(targets)",
-    "targets_per_game":     "AVG(targets)",
-    "total_receptions":     "SUM(receptions)",
-    "receptions_per_game":  "AVG(receptions)",
-    "total_carries":        "SUM(carries)",
-    "carries_per_game":     "AVG(carries)",
-    "total_touches":        "SUM(touches)",
-    "touches_per_game":     "AVG(touches)",
+# sql:       aggregation expression; snap_pct / target_share divide by 100 because
+#            those columns are stored as 0-100 in weekly_metrics but the LEADERBOARD
+#            spec has pct_frac=True expecting a 0-1 fraction.
+# min_col:   SQL expression for the volume column used in the optional HAVING filter
+#            (None = no per-metric volume filter, just needs ≥1 week of data).
+# min_label: label shown in the Min filter control when week range is active.
+# min_opts:  options offered in that control; [] means the control is hidden.
+_WEEKLY_METRICS: Dict[str, Any] = {
+    "snap_share":          {"sql": "AVG(snap_pct) / 100.0",                                                "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "target_share":        {"sql": "AVG(target_share) / 100.0",                                            "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "yards_per_target":    {"sql": "SUM(rec_yards)::float / NULLIF(SUM(targets), 0)",                      "min_col": "SUM(targets)",    "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
+    "yards_per_reception": {"sql": "SUM(rec_yards)::float / NULLIF(SUM(receptions), 0)",                   "min_col": "SUM(receptions)", "min_label": "Min Recs",    "min_opts": [5, 10, 20]},
+    "catch_rate":          {"sql": "SUM(receptions)::float / NULLIF(SUM(targets), 0)",                     "min_col": "SUM(targets)",    "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
+    "yards_per_carry":     {"sql": "SUM(rush_yards)::float / NULLIF(SUM(carries), 0)",                     "min_col": "SUM(carries)",    "min_label": "Min Carries", "min_opts": [5, 10, 20, 40]},
+    "yards_per_touch":     {"sql": "(SUM(rec_yards) + SUM(rush_yards))::float / NULLIF(SUM(touches), 0)",  "min_col": "SUM(touches)",    "min_label": "Min Touches", "min_opts": [5, 10, 20, 40]},
+    "total_targets":       {"sql": "SUM(targets)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "targets_per_game":    {"sql": "AVG(targets)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "total_receptions":    {"sql": "SUM(receptions)",                                                      "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "receptions_per_game": {"sql": "AVG(receptions)",                                                      "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "total_carries":       {"sql": "SUM(carries)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "carries_per_game":    {"sql": "AVG(carries)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "total_touches":       {"sql": "SUM(touches)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "touches_per_game":    {"sql": "AVG(touches)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
 }
 
 
@@ -1348,11 +1354,14 @@ def get_weekly_range_leaderboard(
     """Players ranked by a weekly-aggregate metric over a week range.
 
     Queries player_weekly_metrics. Returns [{player_id, name, team, position, value, games, vol}].
-    games/vol here is weeks played in the range (not season games).
+    games/vol = weeks played in the range. min_vol filters on min_col (e.g. SUM(targets) >= min_vol).
     """
-    agg_sql = _WEEKLY_METRICS.get(metric)
-    if not agg_sql or metric not in LEADERBOARD_METRICS:
+    wspec = _WEEKLY_METRICS.get(metric)
+    if not wspec or metric not in LEADERBOARD_METRICS:
         return []
+
+    agg_sql  = wspec["sql"]
+    min_col  = wspec.get("min_col")   # SQL aggregate expr, or None
 
     pos = (position or "").upper().strip() or None
     where_parts: list = []
@@ -1372,26 +1381,35 @@ def get_weekly_range_leaderboard(
         params.append(pos)
 
     where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
-    min_weeks = max(1, int(min_vol)) if (min_vol and int(min_vol) > 0) else 1
-    query_params = tuple(params + [min_weeks, limit])
+
+    # Optional volume filter (e.g. min targets in the range for a rate metric).
+    use_vol = bool(min_col and min_vol and int(min_vol) > 0)
+    inner_select = (
+        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value, {min_col} AS _wvol"
+        if use_vol else
+        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value"
+    )
+    outer_where = "t.value IS NOT NULL"
+    if use_vol:
+        outer_where += " AND t._wvol >= %s"
+        params.append(int(min_vol))
+    params.append(limit)
 
     with get_conn() as conn:
         rows = conn.execute(
             f"""
             SELECT t.player_id, t.position, t.weeks_played, t.value
             FROM (
-                SELECT player_id, position,
-                       COUNT(*) AS weeks_played,
-                       {agg_sql} AS value
+                SELECT {inner_select}
                 FROM player_weekly_metrics
                 {where_clause}
                 GROUP BY player_id, position
             ) t
-            WHERE t.weeks_played >= %s AND t.value IS NOT NULL
+            WHERE {outer_where}
             ORDER BY t.value DESC
             LIMIT %s
             """,
-            query_params,
+            tuple(params),
         ).fetchall()
 
     try:

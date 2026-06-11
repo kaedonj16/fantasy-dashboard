@@ -21,6 +21,12 @@ def build_advanced_metrics_body(
     from data_building.advanced_metrics import get_available_seasons, _WEEKLY_METRICS
     available_seasons: list = get_available_seasons() if has_premium else []
     weekly_metric_keys: list = sorted(_WEEKLY_METRICS.keys())
+    # weeklyVol: per-metric min filter spec for when week-range mode is active
+    _weekly_vol_map: dict = {
+        k: {"label": v["min_label"], "opts": v["min_opts"]}
+        for k, v in _WEEKLY_METRICS.items()
+        if v.get("min_opts")
+    }
     # Group metrics into <optgroup>s by category (General / Passing / Rushing / Receiving).
     _CAT_ORDER = ["General", "Passing", "Rushing", "Receiving", "Volume"]
     groups: dict = {}
@@ -112,6 +118,7 @@ def build_advanced_metrics_body(
                 "desc": spec.get("desc", ""),
                 "minVol": _min_vol_cfg(spec),
                 "weeklyCapable": key in weekly_metric_keys,
+                "weeklyVol": _weekly_vol_map.get(key) or None,
             }
             for key, spec in metrics_spec.items()
         },
@@ -1281,20 +1288,40 @@ _AM_JS = r"""
   // Lowest threshold for a metric - the sensible default so the leaderboard
   // isn't dominated by tiny-sample players (e.g. 1-carry QBs at 198 yds/carry).
   function defaultVol(m) {
+    const isWeekly = state.weekRange && state.weekRange !== '';
+    if (isWeekly) return '';  // default "Any" for weekly mode
     const spec = cfg.metrics[m] && cfg.metrics[m].minVol;
     return (spec && spec.opts && spec.opts.length) ? String(spec.opts[0]) : '';
   }
-  // Volume filter: updates label, options, and visibility based on the metric's min_vol spec.
-  // The selected option reflects state.minVol (the source of truth).
+  // Volume filter: switches between season options and weekly-appropriate options
+  // depending on whether a week range is active.
   function updateVolCtrl() {
-    const spec = cfg.metrics[state.metric] && cfg.metrics[state.metric].minVol;
     if (!gamesCtrl || !minGamesSel) return;
-    if (!spec) { gamesCtrl.style.display = 'none'; return; }
-    if (volLabel) volLabel.textContent = spec.label;
-    const prev = state.minVol;
-    minGamesSel.innerHTML = '<option value="">Any</option>'
-      + (spec.opts || []).map(v => '<option value="' + v + '"' + (String(v) === prev ? ' selected' : '') + '>' + v + '+</option>').join('');
-    gamesCtrl.style.display = '';
+    const mspec = cfg.metrics[state.metric];
+    const isWeekly = state.weekRange && state.weekRange !== '';
+
+    if (isWeekly) {
+      const wv = mspec && mspec.weeklyVol;
+      if (!wv || !wv.opts || !wv.opts.length) {
+        gamesCtrl.style.display = 'none';
+        return;
+      }
+      if (volLabel) volLabel.textContent = wv.label;
+      const prev = state.minVol;
+      minGamesSel.innerHTML = '<option value="">Any</option>'
+        + wv.opts.map(v => '<option value="' + v + '"' + (String(v) === prev ? ' selected' : '') + '>' + v + '+</option>').join('');
+      minGamesSel.value = prev || '';
+      gamesCtrl.style.display = '';
+    } else {
+      const spec = mspec && mspec.minVol;
+      if (!spec) { gamesCtrl.style.display = 'none'; return; }
+      if (volLabel) volLabel.textContent = spec.label;
+      const prev = state.minVol;
+      minGamesSel.innerHTML = '<option value="">Any</option>'
+        + (spec.opts || []).map(v => '<option value="' + v + '"' + (String(v) === prev ? ' selected' : '') + '>' + v + '+</option>').join('');
+      minGamesSel.value = prev || '';
+      gamesCtrl.style.display = '';
+    }
   }
   function updatePosButtons() {
     const rel = new Set(relevantPositions(state.metric));
@@ -1882,6 +1909,10 @@ _AM_JS = r"""
       if (weekCustomCtrl) weekCustomCtrl.style.display = state.weekRange === 'custom' ? '' : 'none';
       if (weekStartEl) weekStartEl.value = '';
       if (weekEndEl)   weekEndEl.value   = '';
+      // Reset min filter to "Any" and rebuild the control with weekly-appropriate options.
+      state.minVol = '';
+      if (minGamesSel) minGamesSel.value = '';
+      updateVolCtrl();
       state.page = 0; fetchData();
     });
   }
