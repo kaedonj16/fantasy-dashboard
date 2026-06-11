@@ -274,6 +274,10 @@ def _canonical_host_redirect():
         return
     if request.method not in ("GET", "HEAD"):
         return
+    # Never redirect the health-check endpoint — Render probes it on the
+    # onrender.com host and treats a 301 as an unhealthy response.
+    if request.path == "/health":
+        return
     host = (request.host or "").split(":")[0].lower()
     if not host or host == PRIMARY_DOMAIN:
         return
