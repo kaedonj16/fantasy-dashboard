@@ -757,7 +757,7 @@ function emptyState(container, message, iconClass) {
         var cardEl = fd.querySelector('.share-card') || fd.querySelector('.card');
         if (!cardEl) throw new Error('card element not found');
         var canvas = await html2canvas(cardEl, {
-          useCORS: true, allowTaint: true, scale: window.devicePixelRatio || 2, logging: false,
+          useCORS: true, allowTaint: true, scale: Math.max(window.devicePixelRatio || 2, 3), logging: false,
           width: cardEl.scrollWidth, height: cardEl.scrollHeight,
           windowWidth: fd.documentElement.scrollWidth,
           windowHeight: fd.documentElement.scrollHeight,
