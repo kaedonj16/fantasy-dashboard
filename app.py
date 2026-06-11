@@ -25707,12 +25707,23 @@ def page_trade_card(share_id: str):
                 )
                 pi_html = f"""
       <div class="divider"></div>
-      <div class="pi-section" id="piSection" style="display:none">
+      <div class="pi-section" id="piSection" style="display:__PI_DISPLAY__">
         <div class="pi-title">Playoff Impact · {t1}</div>
         <div class="pi-grid">{cells}</div>
       </div>"""
         except Exception:
             pass
+
+    # Show PI by default for signed-in premium users
+    _pi_default = False
+    if pi_html:
+        _viewer_id = session.get("viewer_username")
+        if _viewer_id:
+            try:
+                _pi_default = has_premium_access(_viewer_id, p.get("league_id") or None, p.get("platform") or "sleeper")
+            except Exception:
+                pass
+    pi_html = pi_html.replace("__PI_DISPLAY__", "block" if _pi_default else "none")
 
     # In embed/modal mode the PI toggle lives in the scm-toolbar (via postMessage).
     # On the standalone page it lives in the card header.
@@ -25883,8 +25894,9 @@ def page_trade_card(share_id: str):
     if (window.parent !== window) {{
       window.addEventListener('load', function(){{
         sendHeight();
-        if (document.getElementById('piSection')) {{
-          window.parent.postMessage({{ type: 'scHasPi' }}, '*');
+        var _piEl = document.getElementById('piSection');
+        if (_piEl) {{
+          window.parent.postMessage({{ type: 'scHasPi', visible: _piEl.style.display !== 'none' }}, '*');
         }}
       }});
       new MutationObserver(sendHeight).observe(document.body, {{ subtree: true, childList: true, attributes: true }});

@@ -697,8 +697,13 @@ function emptyState(container, message, iconClass) {
           piBtn.id = 'scmPiBtn';
           piBtn.title = 'Toggle Playoff Impact';
           piBtn.textContent = 'PI';
+          if (e.data.visible) {
+            _piVisible = true;
+            piBtn.classList.add('scm-pi-btn-active');
+          }
           piBtn.onclick = function() {
             var on = piBtn.classList.toggle('scm-pi-btn-active');
+            _piVisible = on;
             if (frame && frame.contentWindow) {
               frame.contentWindow.postMessage({type: 'scTogglePi', show: on}, '*');
             }
