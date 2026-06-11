@@ -59,17 +59,22 @@
       { displayModeBar: false, responsive: true });
   }
 
-  function assetText(side, focusFirst) {
-    return side.map(function (a) {
-      var nm = a.name || "?";
-      return a.is_focus ? "<strong style='color:var(--text);'>" + escapeHtml(nm) + "</strong>" : escapeHtml(nm);
-    }).join(", ");
-  }
-
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  }
+
+  // Mirrors _renderTITrades() in the Trade Intelligence modal so trades look
+  // identical across the site (uses the shared .ti-trade-* classes).
+  function assetHtml(a) {
+    if (a.type === "pick") {
+      return "<div class='ti-trade-asset pick'>" + escapeHtml(a.name || "") + "</div>";
+    }
+    var posTag = a.position && a.position !== "?"
+      ? " <span style='font-size:11px;opacity:.6;'>" + escapeHtml(a.position) + "</span>" : "";
+    var cls = a.is_focus ? "focus" : "other";
+    return "<div class='ti-trade-asset " + cls + "'>" + escapeHtml(a.name || "") + posTag + "</div>";
   }
 
   function renderTrades() {
@@ -88,28 +93,64 @@
           box.innerHTML = "<div style='padding:6px 0;'>No logged trades for this player yet this season.</div>";
           return;
         }
-        var rows = trades.map(function (t) {
-          var fmt = (t.is_superflex ? "SF" : "1QB") + (t.num_teams ? " &middot; " + t.num_teams + "-team" : "");
-          return "" +
-            "<div class='pp-trade-row' style='padding:10px 0;border-bottom:1px solid var(--border);'>" +
-              "<div style='display:flex;justify-content:space-between;gap:10px;align-items:baseline;'>" +
-                "<div style='flex:1;min-width:0;'>" + assetText(t.side_a) + "</div>" +
-                "<div style='color:var(--text-muted);flex-shrink:0;'>for</div>" +
-                "<div style='flex:1;min-width:0;text-align:right;'>" + assetText(t.side_b) + "</div>" +
-              "</div>" +
-              "<div style='font-size:11px;color:var(--text-muted);margin-top:3px;'>" +
-                escapeHtml(t.date || "") + " &middot; " + fmt +
+        box.innerHTML = trades.map(function (t) {
+          var sideA = (t.side_a || []).map(assetHtml).join("");
+          var sideB = (t.side_b || []).map(assetHtml).join("");
+          var fmt = t.is_superflex ? "SF" : t.is_superflex === false ? "1QB" : "";
+          var teams = t.num_teams ? t.num_teams + "-team" : "";
+          var ctx = [teams, fmt].filter(Boolean).join(" ");
+          var meta = [t.date, ctx].filter(Boolean).join(" · ");
+          return "<div class='ti-trade-item'>" +
+              "<div class='ti-trade-date'>" + escapeHtml(meta) + "</div>" +
+              "<div class='ti-trade-sides'>" +
+                "<div><div class='ti-trade-side-label'>Side A</div>" + sideA + "</div>" +
+                "<div class='ti-trade-arrow'>⇄</div>" +
+                "<div><div class='ti-trade-side-label'>Side B</div>" + sideB + "</div>" +
               "</div>" +
             "</div>";
         }).join("");
-        box.innerHTML = rows;
       })
       .catch(function () {
         box.innerHTML = "<div style='padding:6px 0;'>Could not load recent trades.</div>";
       });
   }
 
-  function init() { renderChart(); renderTrades(); }
+  // "View X in your league" CTA: sign the returning user in (from saved_viewer),
+  // then land on their league players page with the modal auto-opening.
+  function wireLeagueCta() {
+    var btn = document.querySelector(".pp-league-modal-btn");
+    if (!btn) return;
+    btn.addEventListener("click", async function () {
+      var pid = btn.getAttribute("data-player-id");
+      var name = btn.getAttribute("data-player-name") || "";
+      var q = "player=" + encodeURIComponent(pid) + "&player_name=" + encodeURIComponent(name);
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem("saved_viewer") || "null"); } catch (_) {}
+
+      if (saved && saved.league_id && saved.platform && saved.season) {
+        btn.disabled = true;
+        try {
+          await fetch("/api/quick-set-viewer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username:  saved.username,
+              roster_id: saved.roster_id || "",
+              user_id:   saved.user_id || "",
+              team_name: saved.team_name || "",
+            }),
+          });
+        } catch (_) { /* best effort; navigate anyway */ }
+        window.location.href = "/" + saved.platform + "/" + saved.season + "/" +
+          saved.league_id + "/players?" + q;
+      } else {
+        // No saved league: open the modal on the guest players page.
+        window.location.href = "/players?" + q;
+      }
+    });
+  }
+
+  function init() { renderChart(); renderTrades(); wireLeagueCta(); }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
   } else {

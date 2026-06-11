@@ -14927,6 +14927,46 @@ tr.team-clickable {
   background: rgba(59, 130, 246, 0.2);
 }
 
+.player-modal-page-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.player-modal-page-btn:hover {
+  background: var(--hover-bg, rgba(0,0,0,.04));
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+/* Shared trade-row styling (matches the Trade Intelligence trade list). Defined
+   globally so the per-player page and any other surface render trades the same. */
+.ti-trade-item { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.ti-trade-item:last-child { border-bottom: none; }
+.ti-trade-date {
+  font-size: 11px; color: var(--text-muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px;
+}
+.ti-trade-sides {
+  display: grid; grid-template-columns: 1fr 28px 1fr; gap: 8px; align-items: start;
+}
+.ti-trade-side-label {
+  font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;
+}
+.ti-trade-asset { font-size: 13px; padding: 2px 0; line-height: 1.4; }
+.ti-trade-asset.focus { font-weight: 700; }
+.ti-trade-asset.other { color: var(--text-muted); }
+.ti-trade-asset.pick { color: var(--text-muted); font-style: italic; }
+.ti-trade-arrow { text-align: center; color: var(--text-muted); padding-top: 22px; font-size: 15px; }
+
 /* Widened modal in compare mode */
 .player-modal.compare-mode {
   max-width: 1000px;

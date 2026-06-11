@@ -112,6 +112,7 @@ def build_player_page_body(
 ) -> str:
     """Server-rendered body for a player's trade-value page."""
     esc_name = html.escape(name or "Player")
+    esc_attr_name = html.escape(name or "Player", quote=True)
     pos = (position or "").upper()
     team_u = (team or "").upper()
 
@@ -245,18 +246,20 @@ def build_player_page_body(
 
           <hr class="pm-section-divider">
           <div class="pm-section-header"><span class="pm-section-label">Recent Trades</span></div>
-          <div id="ppRecentTrades" data-player-id="{html.escape(str(player_id))}" data-season="{season}"
-               style="font-size:13px;color:var(--text-muted);padding:6px 0;">
-            <div style="display:flex;align-items:center;gap:8px;">
+          <div id="ppRecentTrades" data-player-id="{html.escape(str(player_id), quote=True)}" data-season="{season}"
+               style="font-size:13px;color:var(--text-muted);padding:2px 0;">
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 0;">
               <div class="loading-spinner" style="width:14px;height:14px;flex-shrink:0;"></div>Loading recent trades&hellip;
             </div>
           </div>
 
           <hr class="pm-section-divider">
           <div class="pp-cta" style="text-align:center;padding:8px 0 4px;">
-            <a href="/trade" class="otc-btn otc-btn-primary" style="text-decoration:none;display:inline-block;">
-              Value {esc_name} in your league &rarr;
-            </a>
+            <button type="button" class="otc-btn otc-btn-primary pp-league-modal-btn"
+                    data-player-id="{html.escape(str(player_id), quote=True)}" data-player-name="{esc_attr_name}"
+                    style="display:inline-block;">
+              View {esc_name} in your league &rarr;
+            </button>
           </div>
         </div>
       </div>

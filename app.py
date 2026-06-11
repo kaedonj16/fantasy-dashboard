@@ -777,6 +777,7 @@ BASE_HTML = """
     <meta charset="utf-8">
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
     <meta name="google-site-verification" content="zuH_tCWKG_L4hm4eRDFit3xfMi-ZPFXwK2s9eap20FA">
+    <meta name="google-site-verification" content="I_Fkx1dlwJvI96dzPkbM1TkUzT4Nw8DdCtSLvm7MlD4">
     <title>{title}</title>
     {meta_tags}
     {og_tags}
@@ -819,7 +820,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js}; window._isSignedIn = {signed_in_js};</script>
       <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -1954,6 +1955,7 @@ def render_page(
         ask_gm_widget=ask_gm_widget,
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
+        signed_in_js="true" if session.get("viewer_username") else "false",
     )
 
 
