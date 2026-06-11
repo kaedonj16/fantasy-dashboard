@@ -1,0 +1,360 @@
+"""
+Dynasty SEO hub pages: trade value chart, risers/fallers, rankings by position.
+All pages are public (no league context required).
+"""
+from __future__ import annotations
+import html
+from datetime import datetime
+
+_POS_COLOR = {
+    "QB": "#f59e0b", "RB": "#22c55e", "WR": "#3b82f6",
+    "TE": "#8b5cf6", "K": "#94a3b8", "DEF": "#64748b",
+}
+
+def _pc(pos: str) -> str:
+    return _POS_COLOR.get((pos or "").upper(), "#94a3b8")
+
+
+def _rank_arrow(change: int | None) -> str:
+    if not change:
+        return '<span class="dvt-change dvt-change-flat">&#8212;</span>'
+    if change > 0:
+        return f'<span class="dvt-change dvt-change-up">&#9650; {change}</span>'
+    return f'<span class="dvt-change dvt-change-down">&#9660; {abs(change)}</span>'
+
+
+# ── Dynasty Trade Value Chart ─────────────────────────────────────────────────
+
+def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | None = None) -> str:
+    """Full-page dynasty trade value chart table."""
+    from dashboard_services.pages.player_page import slugify
+
+    date_str = as_of_date or datetime.now().strftime("%B %Y")
+
+    rows = [
+        r for r in value_table
+        if (r.get("position") or "").upper() not in ("PICK", "K", "DEF")
+        and float(r.get("value") or 0) > 0
+    ]
+    rows.sort(key=lambda r: float(r.get("value") or 0), reverse=True)
+
+    positions = ["All", "QB", "RB", "WR", "TE"]
+    pos_btns = "".join(
+        f'<button type="button" class="dvt-pos-btn{"  dvt-pos-btn-active" if p == "All" else ""}" '
+        f'data-pos="{p}">{p}</button>'
+        for p in positions
+    )
+
+    table_rows = ""
+    for rank, row in enumerate(rows, 1):
+        name   = row.get("name") or "Unknown"
+        pos    = (row.get("position") or "").upper()
+        team   = row.get("team") or ""
+        age    = row.get("age")
+        val    = float(row.get("value") or 0)
+        sf_val = float(row.get("sf_value") or 0)
+        plabel = row.get("pos_rank_label") or ""
+        change = row.get("rank_change_7d")
+        slug   = slugify(name)
+
+        table_rows += (
+            f'<tr data-pos="{html.escape(pos)}">'
+            f'<td class="dvt-rank">{rank}</td>'
+            f'<td class="dvt-name-cell">'
+            f'<a class="dvt-player-link" href="/player/{slug}/trade-value">{html.escape(name)}</a>'
+            f'<span class="dvt-pos-badge" style="background:{_pc(pos)};">{html.escape(pos)}</span>'
+            f'<span class="dvt-team">{html.escape(team)}</span>'
+            f'</td>'
+            f'<td class="dvt-val">{val:.0f}</td>'
+            f'<td class="dvt-val dvt-sf">{sf_val:.0f}</td>'
+            f'<td class="dvt-pos-rank">{html.escape(plabel)}</td>'
+            f'<td class="dvt-age">{age or "&#8212;"}</td>'
+            f'<td>{_rank_arrow(change)}</td>'
+            f'</tr>'
+        )
+
+    return f"""
+<div class="dvt-page">
+  <div class="dvt-hero">
+    <h1 class="dvt-title">Dynasty Fantasy Football Trade Value Chart</h1>
+    <p class="dvt-subtitle">
+      Updated {html.escape(date_str)} &mdash; real dynasty trade values for 1QB and Superflex leagues.
+      Use these values in the <a href="/trade">Trade Calculator</a> to evaluate any deal.
+    </p>
+  </div>
+
+  <div class="dvt-controls">
+    <div class="dvt-pos-filter">{pos_btns}</div>
+    <input type="search" class="dvt-search" id="dvtSearch" placeholder="Search player...">
+  </div>
+
+  <div class="dvt-table-wrap">
+    <table class="dvt-table" id="dvtTable">
+      <thead>
+        <tr>
+          <th class="dvt-rank">#</th>
+          <th>Player</th>
+          <th class="dvt-val" title="1QB Dynasty Value">1QB</th>
+          <th class="dvt-val" title="Superflex Dynasty Value">SF</th>
+          <th class="dvt-pos-rank">Pos Rank</th>
+          <th class="dvt-age">Age</th>
+          <th title="7-Day Rank Change">7d</th>
+        </tr>
+      </thead>
+      <tbody id="dvtBody">
+        {table_rows}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="dvt-seo-content">
+    <h2>How to Use Dynasty Trade Values</h2>
+    <p>Dynasty fantasy football trade values represent what a player is worth in a trade
+    based on real transaction data and statistical modeling. Unlike redraft, dynasty values
+    factor in age, positional scarcity, and long-term production curves.</p>
+
+    <h2>1QB vs Superflex Dynasty Values</h2>
+    <p>In Superflex leagues, QBs are significantly more valuable because a second quarterback
+    can start. This inflates QB values by 20&ndash;40% compared to standard 1QB formats.
+    Use the SF column when evaluating trades in your Superflex league.</p>
+
+    <h2>How Often Do Values Update?</h2>
+    <p>BR Fantasy updates dynasty trade values regularly using a hybrid model that combines
+    real trade data from thousands of dynasty leagues, advanced analytics, and market
+    consensus. Values shift based on performance, injuries, and trade volume.</p>
+  </div>
+</div>
+
+<script>
+(function() {{
+  var search = document.getElementById("dvtSearch");
+  var body   = document.getElementById("dvtBody");
+  var rows   = Array.from(body ? body.querySelectorAll("tr") : []);
+  var activePos = "All";
+
+  function filter() {{
+    var q = (search ? search.value : "").toLowerCase().trim();
+    rows.forEach(function(r) {{
+      var pos  = r.dataset.pos || "";
+      var link = r.querySelector(".dvt-player-link");
+      var name = link ? link.textContent.toLowerCase() : "";
+      var posOk  = activePos === "All" || pos === activePos;
+      var nameOk = !q || name.indexOf(q) !== -1;
+      r.style.display = (posOk && nameOk) ? "" : "none";
+    }});
+  }}
+
+  if (search) search.addEventListener("input", filter);
+
+  document.querySelectorAll(".dvt-pos-btn").forEach(function(btn) {{
+    btn.addEventListener("click", function() {{
+      document.querySelectorAll(".dvt-pos-btn").forEach(function(b) {{
+        b.classList.remove("dvt-pos-btn-active");
+      }});
+      btn.classList.add("dvt-pos-btn-active");
+      activePos = btn.dataset.pos;
+      filter();
+    }});
+  }});
+}})();
+</script>
+"""
+
+
+# ── Risers & Fallers ──────────────────────────────────────────────────────────
+
+def build_risers_fallers_body(movers: dict, as_of_date: str | None = None) -> str:
+    """Weekly risers and fallers page."""
+    from dashboard_services.pages.player_page import slugify
+
+    date_str    = as_of_date or datetime.now().strftime("%B %d, %Y")
+    latest_date = movers.get("latest_date", "")
+    comp_date   = movers.get("comparison_date", "")
+    risers      = movers.get("risers") or []
+    fallers     = movers.get("fallers") or []
+
+    def _player_row(p: dict, direction: str) -> str:
+        name   = p.get("name") or "Unknown"
+        pos    = (p.get("position") or "").upper()
+        team   = p.get("team") or ""
+        val    = float(p.get("new_value") or p.get("value") or 0)
+        change = float(p.get("change") or p.get("delta") or 0)
+        slug   = slugify(name)
+        sign   = "+" if change >= 0 else ""
+        color  = "#22c55e" if direction == "riser" else "#ef4444"
+        return (
+            f'<div class="rf-row">'
+            f'<div class="rf-info">'
+            f'<a class="rf-name" href="/player/{slug}/trade-value">{html.escape(name)}</a>'
+            f'<span class="rf-pos-badge" style="background:{_pc(pos)};">{html.escape(pos)}</span>'
+            f'<span class="rf-team">{html.escape(team)}</span>'
+            f'</div>'
+            f'<div class="rf-val-wrap">'
+            f'<span class="rf-val">{val:.0f}</span>'
+            f'<span class="rf-delta" style="color:{color};">{sign}{change:.0f}</span>'
+            f'</div>'
+            f'</div>'
+        )
+
+    risers_html  = "".join(_player_row(p, "riser")  for p in risers)
+    fallers_html = "".join(_player_row(p, "faller") for p in fallers)
+
+    if not risers_html:
+        risers_html  = '<p class="rf-empty">No data available yet.</p>'
+    if not fallers_html:
+        fallers_html = '<p class="rf-empty">No data available yet.</p>'
+
+    range_note = (
+        f"Comparing {html.escape(str(comp_date))} to {html.escape(str(latest_date))}"
+        if comp_date and latest_date else html.escape(date_str)
+    )
+
+    return f"""
+<div class="rf-page">
+  <div class="rf-hero">
+    <h1 class="rf-title">Dynasty Fantasy Football Risers &amp; Fallers</h1>
+    <p class="rf-subtitle">
+      Biggest dynasty trade value movers this week &mdash; {range_note}.
+      Use the <a href="/trade">Trade Calculator</a> to act on these moves.
+    </p>
+  </div>
+
+  <div class="rf-grid">
+    <div class="rf-col">
+      <h2 class="rf-col-title">
+        <i class="fa-solid fa-arrow-trend-up" style="color:#22c55e;"></i> Top Risers
+      </h2>
+      <div class="rf-list">{risers_html}</div>
+    </div>
+    <div class="rf-col">
+      <h2 class="rf-col-title">
+        <i class="fa-solid fa-arrow-trend-down" style="color:#ef4444;"></i> Top Fallers
+      </h2>
+      <div class="rf-list">{fallers_html}</div>
+    </div>
+  </div>
+
+  <div class="rf-seo-content">
+    <h2>Why Do Dynasty Values Change?</h2>
+    <p>Dynasty trade values shift based on real transaction data from thousands of leagues,
+    injury reports, depth chart changes, and model updates. Big risers typically follow
+    breakout performances or positive depth chart news; big fallers often reflect injuries
+    or increased competition.</p>
+
+    <h2>How to Use Risers and Fallers</h2>
+    <p>Risers are buy candidates &mdash; their real market value is rising but roster holders
+    may not have adjusted their asking price yet. Fallers are sell candidates for the same
+    reason. Use the <a href="/trade">BR Fantasy Trade Calculator</a> to turn this intel
+    into winning trades in your dynasty league.</p>
+  </div>
+</div>
+"""
+
+
+# ── Rankings Hub ──────────────────────────────────────────────────────────────
+
+def build_rankings_hub_body(
+    value_table: list[dict],
+    position: str | None = None,
+    as_of_date: str | None = None,
+) -> str:
+    """Dynasty rankings hub page, optionally filtered to a single position."""
+    from dashboard_services.pages.player_page import slugify
+
+    date_str   = as_of_date or datetime.now().strftime("%B %Y")
+    pos_filter = (position or "").upper() if position else None
+
+    rows = [
+        r for r in value_table
+        if (r.get("position") or "").upper() not in ("PICK", "K", "DEF")
+        and float(r.get("value") or 0) > 0
+        and (not pos_filter or (r.get("position") or "").upper() == pos_filter)
+    ]
+    rows.sort(key=lambda r: float(r.get("value") or 0), reverse=True)
+
+    if pos_filter:
+        title    = f"Dynasty {pos_filter} Rankings {datetime.now().year}"
+        subtitle = (
+            f"Top dynasty {pos_filter} trade values updated {date_str}. "
+            f"Rankings based on real dynasty trade data and BR Fantasy model."
+        )
+    else:
+        title    = f"Dynasty Fantasy Football Rankings {datetime.now().year}"
+        subtitle = (
+            f"Overall dynasty player rankings updated {date_str}. "
+            f"Values from real dynasty leagues and BR Fantasy model analysis."
+        )
+
+    # Position nav
+    pos_nav_items = [
+        ("All",  "/rankings/dynasty"),
+        ("QB",   "/rankings/dynasty-qb"),
+        ("RB",   "/rankings/dynasty-rb"),
+        ("WR",   "/rankings/dynasty-wr"),
+        ("TE",   "/rankings/dynasty-te"),
+    ]
+    active_path = f"/rankings/dynasty-{pos_filter.lower()}" if pos_filter else "/rankings/dynasty"
+    nav_html = "".join(
+        f'<a class="rnk-nav-btn{" rnk-nav-btn-active" if path == active_path else ""}" href="{path}">{label}</a>'
+        for label, path in pos_nav_items
+    )
+
+    table_rows = ""
+    for rank, row in enumerate(rows, 1):
+        name   = row.get("name") or "Unknown"
+        pos    = (row.get("position") or "").upper()
+        team   = row.get("team") or ""
+        age    = row.get("age")
+        val    = float(row.get("value") or 0)
+        sf_val = float(row.get("sf_value") or 0)
+        change = row.get("rank_change_7d")
+        slug   = slugify(name)
+
+        pos_badge = (
+            "" if pos_filter
+            else f'<span class="rnk-pos-badge" style="background:{_pc(pos)};">{html.escape(pos)}</span>'
+        )
+
+        table_rows += (
+            f'<tr>'
+            f'<td class="rnk-rank">{rank}</td>'
+            f'<td class="rnk-name-cell">'
+            f'<a class="rnk-player-link" href="/player/{slug}/trade-value">{html.escape(name)}</a>'
+            f'{pos_badge}'
+            f'<span class="rnk-team">{html.escape(team)}</span>'
+            f'</td>'
+            f'<td class="rnk-val">{val:.0f}</td>'
+            f'<td class="rnk-val">{sf_val:.0f}</td>'
+            f'<td class="rnk-age">{age or "&#8212;"}</td>'
+            f'<td>{_rank_arrow(change)}</td>'
+            f'</tr>'
+        )
+
+    return f"""
+<div class="rnk-page">
+  <div class="rnk-hero">
+    <h1 class="rnk-title">{html.escape(title)}</h1>
+    <p class="rnk-subtitle">{html.escape(subtitle)}</p>
+  </div>
+
+  <div class="rnk-pos-nav">{nav_html}</div>
+
+  <div class="rnk-table-wrap">
+    <table class="rnk-table">
+      <thead>
+        <tr>
+          <th class="rnk-rank">#</th>
+          <th>Player</th>
+          <th class="rnk-val">1QB</th>
+          <th class="rnk-val">SF</th>
+          <th class="rnk-age">Age</th>
+          <th>7d</th>
+        </tr>
+      </thead>
+      <tbody>
+        {table_rows}
+      </tbody>
+    </table>
+  </div>
+</div>
+"""
