@@ -115,126 +115,164 @@
       });
   }
 
-  // "View X in your league" CTA: sign the returning user in (from saved_viewer),
-  // then land on their league players page with the modal auto-opening.
+  // "View X in your league" CTA -> multi-platform sign-in modal that opens the
+  // player modal in place (no navigation) with the chosen league's context.
   function wireLeagueCta() {
     var btn = document.querySelector(".pp-league-modal-btn");
     if (!btn) return;
-    btn.addEventListener("click", async function () {
-      var pid = btn.getAttribute("data-player-id");
-      var name = btn.getAttribute("data-player-name") || "";
-      var q = "player=" + encodeURIComponent(pid) + "&player_name=" + encodeURIComponent(name);
-      var saved = null;
-      try { saved = JSON.parse(localStorage.getItem("saved_viewer") || "null"); } catch (_) {}
-
-      if (saved && saved.league_id && saved.platform && saved.season) {
-        btn.disabled = true;
-        try {
-          await fetch("/api/quick-set-viewer", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username:  saved.username,
-              roster_id: saved.roster_id || "",
-              user_id:   saved.user_id || "",
-              team_name: saved.team_name || "",
-            }),
-          });
-        } catch (_) { /* best effort; navigate anyway */ }
-        window.location.href = "/" + saved.platform + "/" + saved.season + "/" +
-          saved.league_id + "/players?" + q;
-      } else {
-        // No saved league: open a sign-in modal (username -> pick league -> go).
-        openSignInModal(pid, name);
-      }
+    btn.addEventListener("click", function () {
+      openSignInModal(btn.getAttribute("data-player-id"), btn.getAttribute("data-player-name") || "");
     });
   }
 
-  // Sign-in modal: Sleeper username -> league picker -> set viewer and land on
-  // the league players page with this player's modal open.
   function openSignInModal(pid, name) {
     if (document.getElementById("ppSignin")) return;
     var season = window.__ppSeason || new Date().getFullYear();
+    var esc = escapeHtml;
+
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem("saved_viewer") || "null"); } catch (_) {}
+    var continueHtml = "";
+    if (saved && saved.league_id && saved.platform) {
+      continueHtml =
+        "<button class='otc-btn otc-btn-primary' id='ppContinue' style='width:100%;margin-bottom:10px;'>" +
+          "Continue as " + esc(saved.username || saved.team_name || "your team") +
+        "</button>" +
+        "<div class='pp-signin-or'>or sign in to a different league</div>";
+    }
+
     var overlay = document.createElement("div");
     overlay.id = "ppSignin";
     overlay.className = "pp-signin-overlay";
     overlay.innerHTML =
       "<div class='pp-signin-box' role='dialog' aria-label='Sign in'>" +
-        "<h3 class='pp-signin-title'>Sign in to your league</h3>" +
-        "<p class='pp-signin-sub'>Enter your Sleeper username to see " + escapeHtml(name) +
-          "'s value in your league.</p>" +
-        "<input class='pp-signin-input' id='ppSigninUser' type='text' placeholder='Sleeper username' autocomplete='username'>" +
-        "<div id='ppSigninLeagueWrap' style='display:none;'>" +
-          "<select class='pp-signin-select' id='ppSigninLeague'></select>" +
+        "<h3 class='pp-signin-title'>View " + esc(name) + " in your league</h3>" +
+        "<p class='pp-signin-sub'>Pick your platform to value " + esc(name) + " with your league's settings.</p>" +
+        continueHtml +
+        "<div class='pp-signin-platforms'>" +
+          "<button type='button' class='pp-plat-btn' data-platform='sleeper'>Sleeper</button>" +
+          "<button type='button' class='pp-plat-btn' data-platform='espn'>ESPN</button>" +
+          "<button type='button' class='pp-plat-btn' data-platform='yahoo'>Yahoo</button>" +
         "</div>" +
+        "<div id='ppStep'></div>" +
         "<div class='pp-signin-err' id='ppSigninErr'></div>" +
-        "<div class='pp-signin-actions'>" +
-          "<button class='otc-btn otc-btn-primary' id='ppSigninGo' style='flex:1;'>Find my leagues</button>" +
-          "<button class='otc-btn' id='ppSigninCancel'>Cancel</button>" +
-        "</div>" +
-        "<div class='pp-signin-foot'>Use ESPN or Yahoo? <a href='/?next=" +
-          encodeURIComponent("/players?player=" + pid + "&player_name=" + name) + "'>Sign in here</a></div>" +
+        "<div class='pp-signin-foot'><button type='button' class='pp-link-btn' id='ppSigninCancel'>Cancel</button></div>" +
       "</div>";
     document.body.appendChild(overlay);
+
     overlay.addEventListener("click", function (e) { if (e.target === overlay) overlay.remove(); });
     document.getElementById("ppSigninCancel").addEventListener("click", function () { overlay.remove(); });
 
-    var userEl = document.getElementById("ppSigninUser");
-    var wrap = document.getElementById("ppSigninLeagueWrap");
-    var sel = document.getElementById("ppSigninLeague");
-    var err = document.getElementById("ppSigninErr");
-    var go = document.getElementById("ppSigninGo");
-    var stage = "lookup";
-    userEl.focus();
+    var stepEl = document.getElementById("ppStep");
+    var errEl = document.getElementById("ppSigninErr");
 
-    async function doLookup() {
-      var u = (userEl.value || "").trim();
-      if (!u) { err.textContent = "Enter your username."; return; }
-      err.textContent = "";
-      go.disabled = true; go.textContent = "Loading…";
+    function finishSignIn(platform, leagueId, username, teamName) {
       try {
-        var res = await fetch("/api/sleeper-user-leagues?username=" + encodeURIComponent(u));
-        var data = await res.json();
-        if (!res.ok || !data.ok || !(data.leagues || []).length) {
-          throw new Error(data.error || "No leagues found for that username.");
-        }
-        sel.innerHTML = data.leagues.map(function (lg) {
-          return "<option value='" + escapeHtml(lg.league_id) + "'>" + escapeHtml(lg.label || lg.name || lg.league_id) + "</option>";
-        }).join("");
-        wrap.style.display = "block";
-        stage = "go";
-        go.textContent = "View " + name;
-      } catch (e2) {
-        err.textContent = e2.message || "Could not load leagues.";
-        go.textContent = "Find my leagues";
-      } finally {
-        go.disabled = false;
+        localStorage.setItem("saved_viewer", JSON.stringify({
+          username: username || "", team_name: teamName || "", platform: platform,
+          season: season, league_id: leagueId, ts: Date.now()
+        }));
+      } catch (_) {}
+      try {
+        fetch("/api/quick-set-viewer", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: username || teamName || "", team_name: teamName || "" }) });
+      } catch (_) {}
+      overlay.remove();
+      if (typeof openPlayerModal === "function") {
+        openPlayerModal(pid, name, { force: true, platform: platform, season: season, leagueId: leagueId });
       }
     }
 
-    function doGo() {
-      var u = (userEl.value || "").trim();
-      var lid = sel.value;
-      if (!u || !lid) { err.textContent = "Pick a league."; return; }
-      var next = "/sleeper/" + season + "/" + lid + "/players?player=" +
-        encodeURIComponent(pid) + "&player_name=" + encodeURIComponent(name);
-      var form = document.createElement("form");
-      form.method = "POST";
-      form.action = "/set-viewer";
-      form.innerHTML =
-        "<input type='hidden' name='platform' value='sleeper'>" +
-        "<input type='hidden' name='season' value='" + season + "'>" +
-        "<input type='hidden' name='league_id' value='" + escapeHtml(lid) + "'>" +
-        "<input type='hidden' name='username' value='" + escapeHtml(u) + "'>" +
-        "<input type='hidden' name='next' value='" + escapeHtml(next) + "'>";
-      document.body.appendChild(form);
-      form.submit();
+    if (document.getElementById("ppContinue")) {
+      document.getElementById("ppContinue").addEventListener("click", function () {
+        finishSignIn(saved.platform, saved.league_id, saved.username, saved.team_name);
+      });
     }
 
-    go.addEventListener("click", function () { stage === "lookup" ? doLookup() : doGo(); });
-    userEl.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") { e.preventDefault(); stage === "lookup" ? doLookup() : doGo(); }
+    Array.prototype.forEach.call(overlay.querySelectorAll(".pp-plat-btn"), function (b) {
+      b.addEventListener("click", function () {
+        Array.prototype.forEach.call(overlay.querySelectorAll(".pp-plat-btn"), function (x) { x.classList.remove("active"); });
+        b.classList.add("active");
+        errEl.textContent = "";
+        renderStep(b.getAttribute("data-platform"));
+      });
     });
+
+    function renderStep(platform) {
+      if (platform === "sleeper") {
+        stepEl.innerHTML =
+          "<input class='pp-signin-input' id='ppUser' type='text' placeholder='Sleeper username' autocomplete='username'>" +
+          "<div id='ppLeagueWrap' style='display:none;'><select class='pp-signin-select' id='ppLeague'></select></div>" +
+          "<button type='button' class='otc-btn otc-btn-primary' id='ppGo' style='width:100%;'>Find my leagues</button>";
+        var userEl = document.getElementById("ppUser");
+        var go = document.getElementById("ppGo");
+        var wrap = document.getElementById("ppLeagueWrap");
+        var sel = document.getElementById("ppLeague");
+        var st = "lookup";
+        userEl.focus();
+        async function lookup() {
+          var u = (userEl.value || "").trim();
+          if (!u) { errEl.textContent = "Enter your username."; return; }
+          errEl.textContent = ""; go.disabled = true; go.textContent = "Loading…";
+          try {
+            var res = await fetch("/api/sleeper-user-leagues?username=" + encodeURIComponent(u));
+            var data = await res.json();
+            if (!res.ok || !data.ok || !(data.leagues || []).length) throw new Error(data.error || "No leagues found for that username.");
+            sel.innerHTML = data.leagues.map(function (lg) {
+              return "<option value='" + esc(lg.league_id) + "'>" + esc(lg.label || lg.name || lg.league_id) + "</option>";
+            }).join("");
+            wrap.style.display = "block"; st = "go"; go.textContent = "View " + name;
+          } catch (e2) { errEl.textContent = e2.message || "Could not load leagues."; go.textContent = "Find my leagues"; }
+          finally { go.disabled = false; }
+        }
+        go.addEventListener("click", function () {
+          if (st === "lookup") lookup();
+          else finishSignIn("sleeper", sel.value, (userEl.value || "").trim(), "");
+        });
+        userEl.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); if (st === "lookup") lookup(); } });
+      } else if (platform === "espn") {
+        stepEl.innerHTML =
+          "<input class='pp-signin-input' id='ppLid' type='text' placeholder='ESPN League ID' inputmode='numeric'>" +
+          "<input class='pp-signin-input' id='ppTeam' type='text' placeholder='Your team name (optional)'>" +
+          "<button type='button' class='otc-btn otc-btn-primary' id='ppGo' style='width:100%;'>View " + esc(name) + "</button>";
+        var lidEl = document.getElementById("ppLid");
+        var teamEl = document.getElementById("ppTeam");
+        var go = document.getElementById("ppGo");
+        lidEl.focus();
+        go.addEventListener("click", async function () {
+          var lid = (lidEl.value || "").trim();
+          if (!/^\d+$/.test(lid)) { errEl.textContent = "Enter a valid ESPN League ID (numbers only)."; return; }
+          errEl.textContent = ""; go.disabled = true; go.textContent = "Loading…";
+          try {
+            var res = await fetch("/api/espn-validate-league?league_id=" + encodeURIComponent(lid));
+            var data = await res.json();
+            if (!res.ok || !data.ok) throw new Error(data.error || "Could not load that ESPN league.");
+            finishSignIn("espn", lid, (teamEl.value || "").trim(), (teamEl.value || "").trim());
+          } catch (e2) { errEl.textContent = e2.message || "Could not load league."; go.disabled = false; go.textContent = "View " + name; }
+        });
+      } else if (platform === "yahoo") {
+        stepEl.innerHTML =
+          "<input class='pp-signin-input' id='ppLid' type='text' placeholder='Yahoo League ID' inputmode='numeric'>" +
+          "<input class='pp-signin-input' id='ppTeam' type='text' placeholder='Your team name (optional)'>" +
+          "<button type='button' class='otc-btn otc-btn-primary' id='ppGo' style='width:100%;'>Connect Yahoo</button>" +
+          "<div class='pp-signin-note'>You'll be redirected to Yahoo to authorize, then returned here.</div>";
+        var lidEl = document.getElementById("ppLid");
+        var teamEl = document.getElementById("ppTeam");
+        lidEl.focus();
+        document.getElementById("ppGo").addEventListener("click", function () {
+          var lid = (lidEl.value || "").trim();
+          if (!/^\d+$/.test(lid)) { errEl.textContent = "Enter a valid Yahoo League ID."; return; }
+          var next = "/yahoo/" + season + "/" + lid + "/players?player=" +
+            encodeURIComponent(pid) + "&player_name=" + encodeURIComponent(name);
+          window.location.href = "/auth/yahoo?league_id=" + encodeURIComponent(lid) +
+            "&team_name=" + encodeURIComponent((teamEl.value || "").trim()) +
+            "&next=" + encodeURIComponent(next);
+        });
+      }
+    }
+
+    var sleeperBtn = overlay.querySelector(".pp-plat-btn[data-platform='sleeper']");
+    if (sleeperBtn) sleeperBtn.click();
   }
 
   function init() { renderChart(); renderTrades(); wireLeagueCta(); }

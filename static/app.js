@@ -7431,9 +7431,11 @@ function openPlayerModal(playerId, playerName, opts) {
   const pathParts = window.location.pathname.split('/').filter(p => p);
   const urlParams = new URLSearchParams(window.location.search);
   const _isLeaguePath = pathParts.length >= 3 && !isNaN(parseInt(pathParts[1]));
-  const platform = _isLeaguePath ? pathParts[0] : (urlParams.get('platform') || 'sleeper');
-  const season = _isLeaguePath ? pathParts[1] : (urlParams.get('season') || new Date().getFullYear());
-  const leagueId = _isLeaguePath ? pathParts[2] : (urlParams.get('from_league') || null);
+  // Explicit opts win (used by the player page's "view in your league" flow),
+  // then a league URL path, then query params.
+  const platform = opts.platform || (_isLeaguePath ? pathParts[0] : (urlParams.get('platform') || 'sleeper'));
+  const season = opts.season || (_isLeaguePath ? pathParts[1] : (urlParams.get('season') || new Date().getFullYear()));
+  const leagueId = opts.leagueId || (_isLeaguePath ? pathParts[2] : (urlParams.get('from_league') || null));
 
   // Use page-level league settings when available (set for logged-in users)
   const modalLt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';

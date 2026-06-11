@@ -15001,6 +15001,18 @@ tr.team-clickable {
 .pp-signin-actions { display: flex; gap: 8px; margin-top: 4px; }
 .pp-signin-foot { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 12px; }
 .pp-signin-foot a { color: var(--accent, #38bdf8); }
+.pp-signin-platforms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.pp-plat-btn {
+  padding: 8px 0; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--bg, #fff); color: var(--text-muted); font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.pp-plat-btn:hover { color: var(--text); }
+.pp-plat-btn.active { background: rgba(59,130,246,.1); border-color: #3b82f6; color: #3b82f6; }
+.pp-signin-or { text-align: center; font-size: 11px; color: var(--text-muted); margin-bottom: 12px; }
+.pp-signin-note { font-size: 11px; color: var(--text-muted); margin-top: 8px; line-height: 1.4; }
+.pp-link-btn { background: none; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer; padding: 0; }
+.pp-link-btn:hover { color: var(--text); text-decoration: underline; }
 
 @media (max-width: 600px) {
   .pp-similar { grid-template-columns: 1fr; }
