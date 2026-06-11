@@ -27,6 +27,7 @@ from flask import (
     make_response,
     Response,
     stream_with_context,
+    abort,
 )
 try:
     from flask_compress import Compress
@@ -11432,6 +11433,106 @@ def page_players_guest():
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
     return page_players(platform="sleeper", season=current_season, league_id=None)
+
+
+# ── Per-player trade-value pages (SEO landing pages) ──────────────────────────
+
+_PLAYER_SLUG_CACHE = None
+_PLAYER_SLUG_TS = 0.0
+_PLAYER_SLUG_TTL = 600  # 10 min
+
+
+def get_player_slug_index() -> dict:
+    """Cached slug -> player_id map built from the current value table."""
+    global _PLAYER_SLUG_CACHE, _PLAYER_SLUG_TS
+    now = time.time()
+    if _PLAYER_SLUG_CACHE is not None and now - _PLAYER_SLUG_TS < _PLAYER_SLUG_TTL:
+        return _PLAYER_SLUG_CACHE
+    from dashboard_services.pages.player_page import build_slug_index
+    _PLAYER_SLUG_CACHE = build_slug_index(get_model_value_table_cached() or [])
+    _PLAYER_SLUG_TS = now
+    return _PLAYER_SLUG_CACHE
+
+
+@app.route("/player/<slug>")
+@app.route("/player/<slug>/trade-value")
+def page_player_trade_value(slug: str):
+    from dashboard_services.pages.player_page import build_player_page_body, slugify
+    from utils.utils import load_relevant_index, load_players_index
+
+    slug_norm = slugify(slug)
+    idx = get_player_slug_index()
+    pid = idx.get(slug_norm)
+    if not pid:
+        abort(404)
+
+    # Canonical-slug redirect: if the requested slug isn't the normalized one,
+    # or it's the bare /player/<slug> form, send 301 to /player/<slug>/trade-value.
+    canonical_path = f"/player/{slug_norm}/trade-value"
+    if request.path != canonical_path:
+        return redirect(canonical_path, code=301)
+
+    nfl_state = get_nfl_state() or {}
+    season = int(nfl_state.get("season") or datetime.now().year)
+
+    players_index = load_relevant_index() or {}
+    meta = players_index.get(pid)
+    if not meta:
+        meta = (load_players_index() or {}).get(pid) or {}
+
+    table = get_model_value_table_cached() or []
+    pv = next((p for p in table if str(p.get("id")) == str(pid)), {})
+
+    def _ovr_rank(field: str):
+        ranked = sorted(
+            [x for x in table
+             if x.get("position") not in ("K", "DEF", "PICK") and float(x.get(field) or 0) > 0],
+            key=lambda x: float(x.get(field) or 0), reverse=True,
+        )
+        return next((i + 1 for i, p in enumerate(ranked) if str(p.get("id")) == str(pid)), None)
+
+    ovr_rank = _ovr_rank("value")
+    sf_ovr_rank = _ovr_rank("sf_value")
+
+    try:
+        history = get_player_value_history(pid, days=365, league_type="1qb", league_size=10)
+    except Exception:
+        history = []
+
+    name = meta.get("name") or pv.get("name") or "Player"
+    pos = str(meta.get("pos") or pv.get("position") or "").upper()
+    team = meta.get("team")
+    age = age_from_bday(meta.get("bDay")) or pv.get("age") or meta.get("age")
+
+    body = build_player_page_body(
+        player_id=pid, name=name, position=pos, team=team, age=age,
+        headshot=meta.get("espnHeadshot"),
+        value_1qb=pv.get("value"), sf_value=pv.get("sf_value"),
+        pos_rank_label=pv.get("pos_rank_label"), ovr_rank=ovr_rank,
+        sf_pos_rank_label=pv.get("sf_pos_rank_label"), sf_ovr_rank=sf_ovr_rank,
+        ppg=None, value_history=history, season=season,
+    )
+
+    _val = pv.get("value")
+    _pos_phrase = f"{pos} " if pos else ""
+    title = f"{name} Dynasty Trade Value {season} - {_pos_phrase}Rankings | BR Fantasy"
+    desc_val = f" Current value: {int(_val)}." if _val else ""
+    description = (
+        f"{name} {season} fantasy football trade value for dynasty and redraft leagues."
+        f"{desc_val} See {name}'s value history chart, positional rank, and recent real "
+        f"trades, then run the deal through the trade calculator."
+    )
+    _img = meta.get("espnHeadshot") or ""
+    og_tags = (
+        f"<meta property='og:title' content='{html.escape(title)}'>"
+        f"<meta property='og:description' content='{html.escape(description)}'>"
+        f"<meta property='og:type' content='profile'>"
+        + (f"<meta property='og:image' content='{html.escape(_img)}'>" if _img else "")
+        + "<meta name='twitter:card' content='summary'>"
+    )
+
+    return render_page(title, None, "players", body,
+                       description=description, og_tags=og_tags)
 
 
 
