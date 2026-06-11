@@ -656,7 +656,7 @@ function emptyState(container, message, iconClass) {
     });
   }
 
-  window.openShareCardModal = function (cardUrl, shareUrl) {
+  window.openShareCardModal = function (cardUrl, shareUrl, calcUrl) {
     var existing = document.getElementById('scm-overlay');
     if (existing) existing.remove();
 
@@ -664,6 +664,9 @@ function emptyState(container, message, iconClass) {
     overlay.id = 'scm-overlay';
     overlay.className = 'scm-overlay';
     var frameSrc = cardUrl + (cardUrl.includes('?') ? '&' : '?') + 'embed=1';
+    var calcBtnHtml = calcUrl
+      ? '<a class="scm-btn scm-btn-calc" id="scmCalcBtn" href="' + calcUrl + '" target="_blank" rel="noopener">Open in Calc</a>'
+      : '';
     overlay.innerHTML =
       '<div class="scm-dialog">' +
         '<div class="scm-toolbar">' +
@@ -671,6 +674,7 @@ function emptyState(container, message, iconClass) {
             (_scmTheme === 'dark' ? '&#9728;' : '&#9790;') +
           '</button>' +
           '<span class="scm-toolbar-spacer"></span>' +
+          calcBtnHtml +
           '<button class="scm-btn" id="scmDownloadBtn">Download</button>' +
           '<button class="scm-btn scm-btn-primary" id="scmShareBtn">Copy link</button>' +
           '<button class="scm-btn scm-close-btn" id="scmCloseBtn" aria-label="Close">&#x2715;</button>' +
@@ -733,7 +737,7 @@ function emptyState(container, message, iconClass) {
         var cardEl = fd.querySelector('.share-card') || fd.querySelector('.card');
         if (!cardEl) throw new Error('card element not found');
         var canvas = await html2canvas(cardEl, {
-          useCORS: true, allowTaint: true, scale: 2, logging: false,
+          useCORS: true, allowTaint: true, scale: 1.5, logging: false,
           width: cardEl.scrollWidth, height: cardEl.scrollHeight,
           windowWidth: fd.documentElement.scrollWidth,
           windowHeight: fd.documentElement.scrollHeight,
@@ -1860,12 +1864,23 @@ window.initTradePage = function initTradePage(root = document) {
     const t2 = (bSel && bSel.selectedOptions[0] && bSel.selectedOptions[0].text !== "Select opponent")
       ? bSel.selectedOptions[0].text.trim() : "";
 
+    // Include league context + playoff impact data if available
+    const leagueId = root.querySelector("#leagueIdInput")?.value || "";
+    const season   = root.querySelector("#seasonInput")?.value || "";
+    const rosterId = getCurrentRosterId() || "";
+    const platform = window.location.pathname.split("/").filter(Boolean)[0] || "";
+
     const tradeData = {
       a:  state.sideAPlayers.map(p => p.id).join(','),
       b:  state.sideBPlayers.map(p => p.id).join(','),
       ap: state.sideAPicks.map(p => p.id).join(','),
       bp: state.sideBPicks.map(p => p.id).join(','),
       t1, t2,
+      league_id: leagueId,
+      season,
+      roster_id: rosterId,
+      platform,
+      pi: (state._lastPiData && state._lastPiData.available) ? JSON.stringify(state._lastPiData) : '',
     };
 
     function _flashSuccess() {
@@ -1886,7 +1901,8 @@ window.initTradePage = function initTradePage(root = document) {
       .then(function (d) {
         if (d.share_id) {
           var cardUrl = window.location.origin + '/trade-card/' + d.share_id;
-          openShareCardModal(cardUrl, cardUrl);
+          var calcUrl = window.location.origin + '/t/' + d.share_id;
+          openShareCardModal(cardUrl, cardUrl, calcUrl);
           _flashSuccess();
         } else {
           navigator.clipboard.writeText(encodeTradeToURL())
@@ -3279,6 +3295,9 @@ window.initTradePage = function initTradePage(root = document) {
         body: JSON.stringify({ league_id: leagueId, platform, season, roster_id: rosterId, give_ids: giveIds, get_ids: getIds }),
       });
       const data = res.ok ? await res.json() : null;
+
+      // Stash for share-card inclusion
+      if (data && data.available) state._lastPiData = data;
 
       if (!data || !data.available) {
         body.innerHTML = _piMessage(
@@ -13379,6 +13398,7 @@ function setupFunAwardsGrid() {
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('.share-report-btn[data-roster]');
     if (!btn) return;
+    e.preventDefault();
     var rosterId = btn.dataset.roster;
     var platform = btn.dataset.platform || window._page_platform;
     var season   = btn.dataset.season   || window._page_season;

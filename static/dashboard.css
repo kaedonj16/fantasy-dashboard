@@ -19478,6 +19478,7 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .scm-btn:hover { opacity: .75; }
 .scm-btn:disabled { opacity: .45; cursor: not-allowed; }
 .scm-btn-primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+.scm-btn-calc { background: transparent; border-color: rgba(99,102,241,.5); color: #818cf8; text-decoration: none; }
 .scm-theme-btn { font-size: 14px; padding: 5px 9px; }
 .scm-close-btn { font-size: 15px; padding: 5px 10px; background: transparent; border-color: transparent; }
 

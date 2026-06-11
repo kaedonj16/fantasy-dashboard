@@ -7753,9 +7753,9 @@ def build_teams_body(ctx: dict) -> str:
             f"<span class='tc-pi-text'> &bull; <span class='tc-pi-num'>{team_pos_index[rid]:+.2f}</span></span></div></div>"
             "    <div style='display:flex;align-items:center;gap:6px;flex-shrink:0;'>"
             f"      {_grade_badge}"
-            + (f"      <a href='/{platform}/{current_season}/{league_id}/share-card/{rid}' target='_blank' "
-               f"class='share-report-btn' title='Share team report card'>"
-               f"<img src='/static/images/share-solid.png' class='share-report-icon' alt='Share'></a>"
+            + (f"      <button class='share-report-btn' title='Share team report card' "
+               f"data-roster='{rid}' data-platform='{platform}' data-season='{current_season}' data-league='{league_id}'>"
+               f"<img src='/static/images/share-solid.png' class='share-report-icon' alt='Share'></button>"
                if str(rid) == str(viewer_roster_id) else "") +
             "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
             "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
@@ -25417,13 +25417,19 @@ def api_save_trade():
     import secrets
     import json as _json
     data   = request.get_json(force=True) or {}
+    pi_raw = str(data.get("pi") or "")[:4096]
     params = _json.dumps({
-        "a":  data.get("a", ""),
-        "b":  data.get("b", ""),
-        "ap": data.get("ap", ""),
-        "bp": data.get("bp", ""),
-        "t1": str(data.get("t1") or "")[:40],
-        "t2": str(data.get("t2") or "")[:40],
+        "a":         data.get("a", ""),
+        "b":         data.get("b", ""),
+        "ap":        data.get("ap", ""),
+        "bp":        data.get("bp", ""),
+        "t1":        str(data.get("t1") or "")[:40],
+        "t2":        str(data.get("t2") or "")[:40],
+        "league_id": str(data.get("league_id") or "")[:64],
+        "season":    str(data.get("season") or "")[:8],
+        "roster_id": str(data.get("roster_id") or "")[:16],
+        "platform":  str(data.get("platform") or "")[:16],
+        "pi":        pi_raw,
     })
     share_id = secrets.token_urlsafe(6)
     _init_shared_trades_table()
@@ -25543,8 +25549,26 @@ def page_trade_card(share_id: str):
         return result
 
     def _resolve_picks(ids_str):
-        return [{"name": _fmt_pick(pid.strip()), "val": 0}
-                for pid in (ids_str or "").split(",") if pid.strip()]
+        pick_tbl: dict = {}
+        try:
+            from dashboard_services.picks import load_pick_value_table as _lpvt
+            pick_tbl = _lpvt() or {}
+        except Exception:
+            pass
+        result = []
+        for pid in (ids_str or "").split(","):
+            pid = pid.strip()
+            if not pid:
+                continue
+            val = float(pick_tbl.get(pid) or 0)
+            if not val:
+                # Try fallback: just year+round without slot
+                parts = pid.split("_")
+                if len(parts) >= 2:
+                    base_key = f"{parts[0]}_{parts[1]}_mid"
+                    val = float(pick_tbl.get(base_key) or 0)
+            result.append({"name": _fmt_pick(pid), "val": round(val)})
+        return result
 
     pos_colors = {"QB": "#6366f1", "RB": "#10b981", "WR": "#3b82f6", "TE": "#f59e0b"}
 
@@ -25553,14 +25577,23 @@ def page_trade_card(share_id: str):
     picks_a = _resolve_picks(p.get("ap", ""))
     picks_b = _resolve_picks(p.get("bp", ""))
 
-    total_a = sum(pl["val"] for pl in side_a)
-    total_b = sum(pl["val"] for pl in side_b)
+    total_a = sum(pl["val"] for pl in side_a) + sum(pk["val"] for pk in picks_a)
+    total_b = sum(pl["val"] for pl in side_b) + sum(pk["val"] for pk in picks_b)
     diff = total_a - total_b
 
     t1 = p.get("t1") or "Team 1"
     t2 = p.get("t2") or "Team 2"
 
-    if abs(diff) <= max(50, 0.03 * max(total_a, total_b, 1)):
+    baseline = max(total_a, total_b, 1.0)
+    if baseline >= 600:
+        _fair_pct = 0.05
+    elif baseline >= 300:
+        _fair_pct = 0.07
+    else:
+        _fair_pct = 0.10
+    fair_band = max(baseline * _fair_pct, 25.0)
+
+    if abs(diff) <= fair_band:
         verdict = "Fair Trade"
         verdict_color = "#4ade80"
     elif diff > 0:
@@ -25573,6 +25606,8 @@ def page_trade_card(share_id: str):
         verdict_color = "#f97316"
 
     bar_pct = round((total_a / (total_a + total_b)) * 100) if (total_a + total_b) > 0 else 50
+    fair_zone_width = round(min(100.0, (fair_band / baseline) * 100), 2) if baseline > 0 else 7
+    fair_zone_left = round(50.0 - fair_zone_width / 2, 2)
 
     def _asset_html(players, picks):
         rows = []
@@ -25589,10 +25624,12 @@ def page_trade_card(share_id: str):
                 f'</div>'
             )
         for pk in picks:
+            pk_val_str = f'{pk["val"]:,}' if pk.get("val") else ""
             rows.append(
                 f'<div class="asset-row">'
                 f'<span class="asset-pos" style="background:rgba(139,92,246,.2);color:#a78bfa">PICK</span>'
                 f'<span class="asset-name">{pk["name"]}</span>'
+                f'<span class="asset-val">{pk_val_str}</span>'
                 f'</div>'
             )
         if not rows:
@@ -25604,10 +25641,51 @@ def page_trade_card(share_id: str):
     total_a_str = f"{total_a:,}" if total_a else "0"
     total_b_str = f"{total_b:,}" if total_b else "0"
     is_embed = request.args.get('embed') == '1'
-    footer_style = 'display:none' if is_embed else ''
+    copy_link_style = 'display:none' if is_embed else ''
     body_pad = '0' if is_embed else '16px'
     share_url = request.url.split('?')[0]
     trade_url = f"{request.host_url}t/{share_id}"
+
+    # Playoff Impact section
+    pi_html = ""
+    pi_raw = p.get("pi", "")
+    if pi_raw:
+        try:
+            import json as _json2
+            pi = _json2.loads(pi_raw) if isinstance(pi_raw, str) else pi_raw
+            if pi and pi.get("available") and pi.get("delta"):
+                dlt = pi["delta"]
+                def _pi_sign(v):
+                    return (f'+{v:.1f}' if v > 0 else f'{v:.1f}') if v is not None else "—"
+                def _pi_pct(v):
+                    return (f'+{v:.1f}%' if v > 0 else f'{v:.1f}%') if v is not None else "—"
+                rows_pi = [
+                    ("Playoff Odds", _pi_pct(dlt.get("playoff_pct"))),
+                    ("Proj. Wins",   _pi_sign(dlt.get("avg_final_wins"))),
+                    ("PPG",          _pi_sign(dlt.get("avg_ppg"))),
+                    ("Top-3 Pick",   _pi_pct(dlt.get("top3_pick_pct"))),
+                ]
+                cells = "".join(
+                    f'<div class="pi-cell"><div class="pi-label">{lbl}</div>'
+                    f'<div class="pi-val {("pi-pos" if "+" in val else "pi-neg") if val != "—" else ""}">{val}</div></div>'
+                    for lbl, val in rows_pi
+                )
+                pi_html = f"""
+      <div class="divider"></div>
+      <div class="pi-section" id="piSection" style="display:none">
+        <div class="pi-title">Playoff Impact (your team)</div>
+        <div class="pi-grid">{cells}</div>
+      </div>
+      <div class="pi-toggle-wrap">
+        <button class="pi-toggle-btn" id="piToggle" onclick="
+          var s=document.getElementById('piSection');
+          var open=s.style.display!=='none';
+          s.style.display=open?'none':'block';
+          this.textContent=open?'Show Playoff Impact ▾':'Hide Playoff Impact ▴';
+        ">Show Playoff Impact ▾</button>
+      </div>"""
+        except Exception:
+            pass
 
     card_html = f"""<!doctype html>
 <html lang="en" id="tcRoot" data-theme="dark">
@@ -25634,9 +25712,20 @@ def page_trade_card(share_id: str):
     .side-title{{font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--tc-dim);text-transform:uppercase;margin-bottom:4px}}
     .side-total{{font-size:22px;font-weight:900;color:var(--tc-text2);margin-bottom:10px}}
     .bar-wrap{{padding:0 16px 14px}}
-    .bar-bg{{height:6px;background:var(--tc-bar);border-radius:3px;position:relative;overflow:hidden}}
-    .bar-fill{{position:absolute;left:0;top:0;height:100%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:3px}}
+    .bar-bg{{height:8px;background:var(--tc-bar);border-radius:4px;position:relative;overflow:visible}}
+    .bar-fill{{position:absolute;left:0;top:0;height:100%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:4px}}
+    .bar-fair-zone{{position:absolute;top:0;height:100%;background:rgba(74,222,128,.25);border:1px solid rgba(74,222,128,.45);border-radius:2px;pointer-events:none}}
     .bar-labels{{display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:var(--tc-dimmer);font-weight:600}}
+    .pi-section{{padding:12px 16px 4px}}
+    .pi-title{{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tc-dim);margin-bottom:8px}}
+    .pi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}}
+    .pi-cell{{background:var(--tc-bar);border-radius:8px;padding:8px 6px;text-align:center}}
+    .pi-label{{font-size:9px;color:var(--tc-muted);font-weight:600;margin-bottom:3px}}
+    .pi-val{{font-size:13px;font-weight:800}}
+    .pi-pos{{color:#4ade80}}
+    .pi-neg{{color:#f87171}}
+    .pi-toggle-wrap{{text-align:center;padding:6px 16px 10px}}
+    .pi-toggle-btn{{background:transparent;border:1px solid var(--tc-border);color:var(--tc-muted);font-size:11px;font-weight:600;padding:5px 14px;border-radius:20px;cursor:pointer}}
     .verdict{{text-align:center;padding:10px 16px 14px;font-size:13px;font-weight:700}}
     .divider{{border-top:1px solid var(--tc-border-sub)}}
     .footer{{padding:14px 18px;display:flex;gap:8px;justify-content:flex-end;background:var(--tc-hdr);border-top:1px solid var(--tc-border-sub)}}
@@ -25683,6 +25772,7 @@ def page_trade_card(share_id: str):
       <div class="bar-wrap" style="padding-top:12px">
         <div class="bar-bg">
           <div class="bar-fill" style="width:{bar_pct}%"></div>
+          <div class="bar-fair-zone" style="left:{fair_zone_left}%;width:{fair_zone_width}%"></div>
         </div>
         <div class="bar-labels">
           <span>{t1} favored</span><span>{t2} favored</span>
@@ -25690,8 +25780,10 @@ def page_trade_card(share_id: str):
       </div>
       <div class="verdict" style="color:{verdict_color}">{verdict}</div>
 
-      <div class="footer" style="{footer_style}">
-        <button class="btn btn-outline" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')">Copy link</button>
+      {pi_html}
+
+      <div class="footer">
+        <button class="btn btn-outline" onclick="navigator.clipboard.writeText('{share_url}').then(()=>this.textContent='Copied!')" style="{copy_link_style}">Copy link</button>
         <a href="{trade_url}" class="btn btn-primary">Open in Calculator</a>
       </div>
     </div>
