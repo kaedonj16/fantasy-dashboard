@@ -578,6 +578,13 @@ def build_advanced_metrics_body(
       }
       .am-sp-item:hover { background:var(--row,rgba(0,0,0,.04)); }
       .am-sp-item.am-sp-active { color:var(--accent,#2563eb); font-weight:600; }
+      .am-sp-weekly-badge {
+        margin-left:auto; flex-shrink:0;
+        font-size:9px; font-weight:800; letter-spacing:.04em;
+        padding:1px 4px; border-radius:4px;
+        background:rgba(16,185,129,.12); color:#10b981;
+        border:1px solid rgba(16,185,129,.3);
+      }
       .am-sp-check { width:14px; text-align:center; flex-shrink:0; font-size:12px; }
       /* Multi-stat stacked bar rows in table cell */
       .am-multi { vertical-align:middle; }
@@ -2006,15 +2013,20 @@ _AM_JS = r"""
     syncLabel();
 
     function buildPanel() {
+      const weeklySet = new Set(cfg.weeklyMetrics || []);
       let html = '';
       for (const og of metricSel.querySelectorAll('optgroup')) {
         html += '<div class="am-sp-group">';
         html += '<div class="am-sp-head">' + og.label + '</div>';
         for (const o of og.querySelectorAll('option')) {
           const isSel = o.value === metricSel.value;
+          const isWeekly = weeklySet.has(o.value);
+          const badge = isWeekly
+            ? '<span class="am-sp-weekly-badge" title="Supports week-range filtering">W</span>'
+            : '';
           html += '<div class="am-sp-item' + (isSel ? ' am-sp-active' : '') + '" data-val="' + o.value + '">'
             + '<span class="am-sp-check">' + (isSel ? '&#10003;' : '') + '</span>'
-            + o.textContent + '</div>';
+            + o.textContent + badge + '</div>';
         }
         html += '</div>';
       }
