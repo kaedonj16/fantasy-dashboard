@@ -703,6 +703,15 @@ _AM_JS = r"""
   const paywall   = document.getElementById('amPaywall');
   if (!metricSel || !tbody) return;
 
+  // ── Read URL params and pre-set controls so state inherits them ───────────
+  (function() {
+    const p = new URLSearchParams(window.location.search);
+    const m = p.get('metric');
+    if (m && Array.from(metricSel.options).some(o => o.value === m)) metricSel.value = m;
+    const s = p.get('season');
+    if (s && seasonSel && Array.from(seasonSel.options).some(o => o.value === s)) seasonSel.value = s;
+  })();
+
   // Hide season selector when only one season (or none) is available.
   if (seasonCtrl && (!cfg.seasons || cfg.seasons.length <= 1)) seasonCtrl.style.display = 'none';
 
@@ -714,8 +723,25 @@ _AM_JS = r"""
   function _loadPins() { try { return new Set(JSON.parse(localStorage.getItem('am_pins') || '[]')); } catch { return new Set(); } }
   function _savePins() { try { localStorage.setItem('am_pins', JSON.stringify([...state.pinnedIds])); } catch {} }
 
-  const state = { metric: metricSel.value, position: 'ALL', sortDir: 'desc', sortBy: metricSel.value, rows: [], search: '',
-                  season: seasonSel ? (seasonSel.value || '') : '', minVol: '', rosterOnly: false, page: 0,
+  const _initParams = new URLSearchParams(window.location.search);
+  function syncURL() {
+    const p = new URLSearchParams();
+    if (state.metric) p.set('metric', state.metric);
+    if (state.position && state.position !== 'ALL') p.set('pos', state.position);
+    if (state.season) p.set('season', state.season);
+    if (state.minVol) p.set('minvol', String(state.minVol));
+    if (state.team) p.set('team', state.team);
+    const qs = p.toString();
+    history.replaceState(null, '', qs ? '?' + qs : window.location.pathname);
+  }
+
+  const state = { metric: metricSel.value,
+                  position: _initParams.get('pos') || 'ALL',
+                  sortDir: 'desc', sortBy: metricSel.value, rows: [], search: '',
+                  season: seasonSel ? (seasonSel.value || '') : '',
+                  minVol: _initParams.get('minvol') || '',
+                  rosterOnly: false, page: 0,
+                  team: _initParams.get('team') || '',
                   fetching: false, volCol: 'games', team: '',
                   extraMetrics: [],     // up to 4 extra metric keys
                   extraData: {},        // key -> { byId:{player_id->value}, maxAbs }
@@ -1730,13 +1756,13 @@ _AM_JS = r"""
     state.minVol = defaultVol(state.metric);
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
     updateSortHeaders(); updateCompareBar(); updateFilterBar();
-    fetchData();
+    syncURL(); fetchData();
   });
   posWrap.addEventListener('click', e => {
     const b = e.target.closest('[data-pos]');
     if (!b || b.disabled) return;
     state.position = b.dataset.pos; state.page = 0;
-    updatePosButtons(); render();
+    updatePosButtons(); syncURL(); render();
   });
   searchEl.addEventListener('input', () => { state.search = searchEl.value.trim(); state.page = 0; render(); });
   sortBtn.addEventListener('click', () => {
@@ -1745,13 +1771,13 @@ _AM_JS = r"""
     updateSortBtn(); updateSortHeaders(); render();
   });
   if (seasonSel) {
-    seasonSel.addEventListener('change', () => { state.season = seasonSel.value || ''; state.page = 0; fetchData(); });
+    seasonSel.addEventListener('change', () => { state.season = seasonSel.value || ''; state.page = 0; syncURL(); fetchData(); });
   }
   if (teamSel) {
-    teamSel.addEventListener('change', () => { state.team = teamSel.value || ''; state.page = 0; render(); });
+    teamSel.addEventListener('change', () => { state.team = teamSel.value || ''; state.page = 0; syncURL(); render(); });
   }
   if (minGamesSel) {
-    minGamesSel.addEventListener('change', () => { state.minVol = minGamesSel.value || ''; state.page = 0; fetchData(); });
+    minGamesSel.addEventListener('change', () => { state.minVol = minGamesSel.value || ''; state.page = 0; syncURL(); fetchData(); });
   }
   if (rosterChk) {
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
@@ -1837,9 +1863,9 @@ _AM_JS = r"""
   if (_thGames)  _thGames.addEventListener('click', () => sortByCol('games'));
   if (_thMetric) _thMetric.addEventListener('click', () => sortByCol(state.metric));
 
-  state.minVol = defaultVol(state.metric);
+  state.minVol = _initParams.get('minvol') || defaultVol(state.metric);
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
-  updateSortHeaders(); updateCompareBar(); updateFilterBar(); fetchData(); loadOwnedRoster();
+  updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL(); fetchData(); loadOwnedRoster();
 
   // Info tooltip: position:fixed so it escapes the card's overflow:hidden container
   const _infoEl = document.getElementById('amMetricInfo');

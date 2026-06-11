@@ -26215,6 +26215,57 @@ def _notify_changelog_on_startup():
 _notify_changelog_on_startup()
 
 
+def _notify_top_movers_weekly():
+    """Send a weekly push with the top dynasty value movers (at most once per 7 days)."""
+    try:
+        from datetime import date as _date
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            conn.commit()
+            row = conn.execute(
+                "SELECT value FROM app_state WHERE key = 'top_movers_last_pushed'"
+            ).fetchone()
+            last = row[0] if row else None
+
+        if last:
+            if (_date.today() - _date.fromisoformat(last)).days < 7:
+                return
+
+        from data_building.player_value_history import get_top_movers
+        movers = get_top_movers(days=7, limit=3)
+        risers = movers.get("risers", [])
+        if not risers:
+            return
+
+        names = ", ".join(r.get("name") or r.get("player_id", "?") for r in risers[:3])
+        delta_str = ""
+        if risers[0].get("delta") is not None:
+            delta_str = f" (+{risers[0]['delta']:.0f})"
+        body = f"Top risers: {names}{delta_str}"
+
+        _push_broadcast(
+            title="BR Fantasy — Weekly Top Movers",
+            body=body,
+            url="/top-movers",
+            tag=f"top-movers-{_date.today().isoformat()}",
+        )
+
+        today = _date.today().isoformat()
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO app_state (key, value) VALUES ('top_movers_last_pushed', %s) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                (today,),
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[top-movers-push] failed: %s", exc)
+
+
+_notify_top_movers_weekly()
+
+
 if __name__ == "__main__":
     # Debug mode (Werkzeug interactive debugger) is opt-in via FLASK_DEBUG=1 and
     # never on in production. Production is served by gunicorn (see startup.py),
