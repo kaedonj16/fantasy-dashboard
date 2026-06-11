@@ -6996,11 +6996,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (!lastSeen || latestDate > lastSeen) {
         setChangelogDot(true);
-        // Show a toast once per session for new notifications
-        const sessionKey = "changelog_toast_shown_" + latestDate;
-        if (!sessionStorage.getItem(sessionKey)) {
-          sessionStorage.setItem(sessionKey, "1");
-          _showNotifToast(changelogData[0]);
+        // Only show the toast for signed-in users
+        if (isLoggedIn) {
+          const sessionKey = "changelog_toast_shown_" + latestDate;
+          if (!sessionStorage.getItem(sessionKey)) {
+            sessionStorage.setItem(sessionKey, "1");
+            _showNotifToast(changelogData[0]);
+          }
         }
       }
 

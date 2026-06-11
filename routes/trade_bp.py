@@ -22,60 +22,208 @@ trade_bp = Blueprint("trade", __name__)
 # Crawlable explanatory content shown beneath the public trade calculator. Gives
 # search engines (and AdSense reviewers) real text to index instead of a bare widget.
 _TRADE_CALCULATOR_SEO_CONTENT = """
-    <section class="card central seo-content" style="max-width:960px;margin:18px auto 0;">
-      <div class="card-body" style="padding:24px 26px;line-height:1.65;">
-        <h2 style="font-size:20px;margin:0 0 10px;">How the Fantasy Football Trade Calculator Works</h2>
-        <p style="color:var(--text-muted);margin:0 0 16px;">
-          Add players and draft picks to each side of a proposed deal and the calculator
-          returns an instant verdict on who wins the trade. Values aren't guesses - they're
-          calibrated from thousands of real fantasy football trades logged across Sleeper,
-          ESPN, and Yahoo dynasty and redraft leagues, then blended with expert consensus
-          rankings and advanced metrics. Because the model watches the actual market, values
-          shift as players are bought, sold, and hyped throughout the season.
-        </p>
+    <section class="card central" style="max-width:960px;margin:24px auto 0;overflow:hidden;">
 
-        <h2 style="font-size:20px;margin:22px 0 10px;">Dynasty vs. Redraft Trade Values</h2>
-        <p style="color:var(--text-muted);margin:0 0 16px;">
-          A player can be worth very different amounts depending on your league format. In
-          <strong>redraft</strong> leagues only this season matters, so proven veterans and
-          high-floor producers carry the most value. In <strong>dynasty</strong> leagues you
-          keep your roster year over year, so age, long-term upside, and rookie draft picks
-          weigh much more heavily. The calculator lets you switch between dynasty and redraft
-          values, and supports <strong>superflex</strong> scoring, where quarterbacks jump
-          dramatically in value because you can start two of them.
-        </p>
+      <!-- Section bridge header -->
+      <div style="padding:16px 24px;border-bottom:1px solid var(--border);background:var(--bg-alt,rgba(0,0,0,.03));display:flex;align-items:center;gap:10px;">
+        <i class="fa-solid fa-circle-info" style="color:var(--text-muted);font-size:14px;"></i>
+        <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);">About This Calculator</span>
+      </div>
 
-        <h2 style="font-size:20px;margin:22px 0 10px;">Tips for Evaluating a Trade</h2>
-        <ul style="color:var(--text-muted);margin:0 0 16px;padding-left:20px;">
-          <li>Don't trade purely by total value - roster construction matters. Two solid
-              starters often beat one star plus a bench piece if you need depth.</li>
-          <li>Account for positional scarcity. An elite tight end or superflex-eligible
-              quarterback is harder to replace than a mid-tier running back.</li>
-          <li>In dynasty, weigh your timeline: contenders should pay a premium for win-now
-              talent, while rebuilders should bank youth and picks.</li>
-          <li>Use real trade comparisons to sanity-check a deal - if similar trades have
-              happened before, you'll see how the market actually valued them.</li>
-        </ul>
+      <div style="padding:24px 26px;">
 
-        <h2 style="font-size:20px;margin:22px 0 10px;">Frequently Asked Questions</h2>
-        <p style="margin:0 0 6px;"><strong>Is the trade calculator free?</strong></p>
-        <p style="color:var(--text-muted);margin:0 0 14px;">
-          Yes. The trade calculator and player trade values are free to use - no account
-          required. Connecting your Sleeper, ESPN, or Yahoo league unlocks personalized
-          analysis tailored to your roster and scoring settings.
-        </p>
-        <p style="margin:0 0 6px;"><strong>How often are player values updated?</strong></p>
-        <p style="color:var(--text-muted);margin:0 0 14px;">
-          Values refresh daily based on the latest real trades, news, and expert rankings, so
-          they reflect the current market rather than a static preseason list.
-        </p>
-        <p style="margin:0 0 6px;"><strong>Does it support superflex and tight-end premium?</strong></p>
-        <p style="color:var(--text-muted);margin:0;">
-          Yes. Toggle superflex to value quarterbacks correctly for two-QB formats, and switch
-          between PPR, half-PPR, and standard scoring to match your league.
-        </p>
+        <!-- How it works: 3-step strip -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:28px;">
+          <div style="background:var(--bg-alt,rgba(0,0,0,.03));border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              <span style="width:28px;height:28px;border-radius:8px;background:#3b82f620;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i class="fa-solid fa-plus" style="color:#3b82f6;font-size:12px;"></i>
+              </span>
+              <span style="font-size:13px;font-weight:700;">1. Add Players</span>
+            </div>
+            <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.55;">
+              Search for players and picks on each side of the deal using your league's scoring format.
+            </p>
+          </div>
+          <div style="background:var(--bg-alt,rgba(0,0,0,.03));border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              <span style="width:28px;height:28px;border-radius:8px;background:#8b5cf620;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i class="fa-solid fa-scale-balanced" style="color:#8b5cf6;font-size:12px;"></i>
+              </span>
+              <span style="font-size:13px;font-weight:700;">2. Compare Values</span>
+            </div>
+            <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.55;">
+              Values are built from thousands of real trades across Sleeper, ESPN, and Yahoo leagues — not guesses.
+            </p>
+          </div>
+          <div style="background:var(--bg-alt,rgba(0,0,0,.03));border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              <span style="width:28px;height:28px;border-radius:8px;background:#10b98120;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i class="fa-solid fa-flag-checkered" style="color:#10b981;font-size:12px;"></i>
+              </span>
+              <span style="font-size:13px;font-weight:700;">3. Get a Verdict</span>
+            </div>
+            <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.55;">
+              The calculator shows which side wins and by how much, updated daily as the market shifts.
+            </p>
+          </div>
+        </div>
+
+        <!-- Dynasty vs Redraft: two-column -->
+        <div style="border-top:1px solid var(--border);padding-top:22px;margin-bottom:22px;">
+          <h2 style="font-size:15px;font-weight:700;margin:0 0 14px;display:flex;align-items:center;gap:8px;">
+            <i class="fa-solid fa-arrow-right-arrow-left" style="color:var(--text-muted);font-size:13px;"></i>
+            Dynasty vs. Redraft Trade Values
+          </h2>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#3b82f6;margin-bottom:6px;">Redraft</div>
+              <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
+                Only this season matters. Proven veterans and high-floor producers carry the most value.
+                Age is a strength, not a liability.
+              </p>
+            </div>
+            <div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#8b5cf6;margin-bottom:6px;">Dynasty</div>
+              <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
+                Rosters carry over year after year. Youth, long-term upside, and rookie picks
+                weigh much more heavily than near-term production.
+              </p>
+            </div>
+          </div>
+          <p style="font-size:12px;color:var(--text-muted);margin:10px 0 0;line-height:1.6;">
+            The calculator also supports <strong>superflex</strong> scoring, where quarterbacks jump
+            dramatically in value because you can start two of them.
+          </p>
+        </div>
+
+        <!-- Trade tips: 2x2 grid -->
+        <div style="border-top:1px solid var(--border);padding-top:22px;margin-bottom:22px;">
+          <h2 style="font-size:15px;font-weight:700;margin:0 0 14px;display:flex;align-items:center;gap:8px;">
+            <i class="fa-solid fa-lightbulb" style="color:var(--text-muted);font-size:13px;"></i>
+            Tips for Evaluating a Trade
+          </h2>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <div style="display:flex;gap:10px;align-items:flex-start;">
+              <span style="width:22px;height:22px;border-radius:6px;background:#f59e0b20;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
+                <i class="fa-solid fa-layer-group" style="color:#f59e0b;font-size:10px;"></i>
+              </span>
+              <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
+                Don't trade purely by total value — roster construction matters. Two solid
+                starters often beat one star plus a bench piece.
+              </p>
+            </div>
+            <div style="display:flex;gap:10px;align-items:flex-start;">
+              <span style="width:22px;height:22px;border-radius:6px;background:#ef444420;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
+                <i class="fa-solid fa-gem" style="color:#ef4444;font-size:10px;"></i>
+              </span>
+              <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
+                Account for positional scarcity. An elite tight end or superflex QB is harder
+                to replace than a mid-tier running back.
+              </p>
+            </div>
+            <div style="display:flex;gap:10px;align-items:flex-start;">
+              <span style="width:22px;height:22px;border-radius:6px;background:#3b82f620;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
+                <i class="fa-solid fa-clock-rotate-left" style="color:#3b82f6;font-size:10px;"></i>
+              </span>
+              <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
+                In dynasty, weigh your timeline. Contenders should pay a premium for win-now
+                talent; rebuilders should bank youth and picks.
+              </p>
+            </div>
+            <div style="display:flex;gap:10px;align-items:flex-start;">
+              <span style="width:22px;height:22px;border-radius:6px;background:#10b98120;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">
+                <i class="fa-solid fa-magnifying-glass-chart" style="color:#10b981;font-size:10px;"></i>
+              </span>
+              <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
+                Use real trade comparisons to sanity-check a deal — if similar trades have
+                happened before, you'll see how the market actually valued them.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- FAQ accordion -->
+        <div style="border-top:1px solid var(--border);padding-top:22px;">
+          <h2 style="font-size:15px;font-weight:700;margin:0 0 14px;display:flex;align-items:center;gap:8px;">
+            <i class="fa-solid fa-circle-question" style="color:var(--text-muted);font-size:13px;"></i>
+            Frequently Asked Questions
+          </h2>
+          <div class="tc-faq">
+            <details class="tc-faq-item">
+              <summary class="tc-faq-q">Is the trade calculator free?</summary>
+              <p class="tc-faq-a">
+                Yes. The trade calculator and player trade values are free to use — no account
+                required. Connecting your Sleeper, ESPN, or Yahoo league unlocks personalized
+                analysis tailored to your roster and scoring settings.
+              </p>
+            </details>
+            <details class="tc-faq-item">
+              <summary class="tc-faq-q">How often are player values updated?</summary>
+              <p class="tc-faq-a">
+                Values refresh daily based on the latest real trades, news, and expert rankings, so
+                they reflect the current market rather than a static preseason list.
+              </p>
+            </details>
+            <details class="tc-faq-item">
+              <summary class="tc-faq-q">Does it support superflex and tight-end premium?</summary>
+              <p class="tc-faq-a">
+                Yes. Toggle superflex to value quarterbacks correctly for two-QB formats, and switch
+                between PPR, half-PPR, and standard scoring to match your league settings.
+              </p>
+            </details>
+          </div>
+        </div>
+
       </div>
     </section>
+
+    <style>
+      .tc-faq { display: flex; flex-direction: column; gap: 2px; }
+      .tc-faq-item {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .tc-faq-q {
+        padding: 12px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        user-select: none;
+        background: var(--card);
+        transition: background .12s;
+      }
+      .tc-faq-q::-webkit-details-marker { display: none; }
+      .tc-faq-q::after {
+        content: '+';
+        font-size: 18px;
+        font-weight: 400;
+        color: var(--text-muted);
+        flex-shrink: 0;
+        line-height: 1;
+      }
+      details.tc-faq-item[open] .tc-faq-q::after { content: '\2212'; }
+      .tc-faq-q:hover { background: var(--bg-alt, rgba(0,0,0,.03)); }
+      .tc-faq-a {
+        font-size: 12px;
+        color: var(--text-muted);
+        line-height: 1.65;
+        margin: 0;
+        padding: 12px 16px 14px;
+        background: var(--card);
+        border-top: 1px solid var(--border);
+      }
+      @media (max-width: 560px) {
+        .tc-tips-grid { grid-template-columns: 1fr !important; }
+        .tc-format-grid { grid-template-columns: 1fr !important; }
+      }
+    </style>
 """
 
 
