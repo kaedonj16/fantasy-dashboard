@@ -7753,10 +7753,10 @@ def build_teams_body(ctx: dict) -> str:
             f"<span class='tc-pi-text'> &bull; <span class='tc-pi-num'>{team_pos_index[rid]:+.2f}</span></span></div></div>"
             "    <div style='display:flex;align-items:center;gap:6px;flex-shrink:0;'>"
             f"      {_grade_badge}"
-            + (f"      <button class='share-report-btn' title='Share team report card' "
+            + f"      <button class='share-report-btn' title='Share team report card' "
                f"data-roster='{rid}' data-platform='{platform}' data-season='{current_season}' data-league='{league_id}'>"
                f"<img src='/static/images/share-solid.png' class='share-report-icon' alt='Share'></button>"
-               if str(rid) == str(viewer_roster_id) else "") +
+            +
             "      <button class='team-card-toggle' aria-label='Expand card' aria-expanded='false'>"
             "        <svg width='14' height='14' viewBox='0 0 14 14' fill='none'>"
             "          <path d='M3 5l4 4 4-4' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>"
@@ -25437,12 +25437,18 @@ def api_save_trade():
     _init_shared_trades_table()
     try:
         from dashboard_services.db import get_conn
+        import random as _random
         with get_conn() as conn:
             conn.execute(
                 "INSERT INTO shared_trades (share_id, params) VALUES (%s, %s) "
                 "ON CONFLICT (share_id) DO NOTHING",
                 (share_id, params),
             )
+            # Probabilistic cleanup: prune shares older than 5 days (~10% of saves)
+            if _random.random() < 0.10:
+                conn.execute(
+                    "DELETE FROM shared_trades WHERE created_at < NOW() - INTERVAL '5 days'"
+                )
             conn.commit()
     except Exception as exc:
         logger.warning("[save-trade] DB error: %s", exc)
@@ -25480,7 +25486,9 @@ def shared_trade_page(share_id: str):
     except Exception:
         abort(404)
     from urllib.parse import urlencode
-    qs = urlencode({k: v for k, v in p.items() if v})
+    # Pass player/pick IDs, team names, and league context so the calc loads fully
+    _CALC_KEYS = {"a", "b", "ap", "bp", "t1", "t2", "league_id", "season", "platform", "roster_id"}
+    qs = urlencode({k: v for k, v in p.items() if k in _CALC_KEYS and v})
     from flask import redirect as _redirect
     return _redirect(f"/trade?{qs}", 302)
 
@@ -25495,16 +25503,28 @@ def page_trade_card(share_id: str):
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             row = conn.execute(
-                "SELECT params FROM shared_trades WHERE share_id = %s", (share_id,)
+                "SELECT params, created_at FROM shared_trades WHERE share_id = %s", (share_id,)
             ).fetchone()
     except Exception as _e:
         logger.warning("[trade-card] lookup error for %s: %s", share_id, _e)
     if not row:
         return "<h2 style='font-family:sans-serif;padding:40px'>Trade not found.</h2>", 404
     try:
-        p = _json.loads(row["params"] if hasattr(row, "__getitem__") else row[0])
+        _row = row if hasattr(row, "__getitem__") else {"params": row[0], "created_at": row[1]}
+        p = _json.loads(_row["params"])
+        _created_at = _row.get("created_at") if hasattr(_row, "get") else row[1]
     except Exception:
         abort(404)
+
+    # Format shared date
+    try:
+        from datetime import timezone as _tz
+        _dt = _created_at
+        if hasattr(_dt, "astimezone"):
+            _dt = _dt.astimezone(_tz.utc)
+        shared_date = _dt.strftime("%-m/%-d/%y") if _dt else ""
+    except Exception:
+        shared_date = ""
 
     from utils.utils import load_players_index
     players_index = load_players_index() or {}
@@ -25586,7 +25606,12 @@ def page_trade_card(share_id: str):
     t1 = p.get("t1") or "Team 1"
     t2 = p.get("t2") or "Team 2"
 
-    baseline = max(total_a, total_b, 1.0)
+    # Use depth-adjusted effective totals if saved, otherwise fall back to raw totals
+    eff_a = float(p.get("eff_a") or 0) or float(total_a)
+    eff_b = float(p.get("eff_b") or 0) or float(total_b)
+    eff_diff = eff_a - eff_b
+
+    baseline = max(eff_a, eff_b, 1.0)
     if baseline >= 600:
         _fair_pct = 0.05
     elif baseline >= 300:
@@ -25595,22 +25620,17 @@ def page_trade_card(share_id: str):
         _fair_pct = 0.10
     fair_band = max(baseline * _fair_pct, 25.0)
 
-    if abs(diff) <= fair_band:
+    if abs(eff_diff) <= fair_band:
         verdict = "Fair Trade"
         verdict_color = "#4ade80"
-    elif diff > 0:
-        pct = round(abs(diff) / max(total_b, 1) * 100)
-        verdict = f"{t1} favored +{abs(diff):,} ({pct}%)"
+    elif eff_diff > 0:
+        pct = round(abs(eff_diff) / max(eff_b, 1) * 100)
+        verdict = f"{t1} favored +{round(abs(eff_diff)):,} ({pct}%)"
         verdict_color = "#60a5fa"
     else:
-        pct = round(abs(diff) / max(total_a, 1) * 100)
-        verdict = f"{t2} favored +{abs(diff):,} ({pct}%)"
+        pct = round(abs(eff_diff) / max(eff_a, 1) * 100)
+        verdict = f"{t2} favored +{round(abs(eff_diff)):,} ({pct}%)"
         verdict_color = "#f97316"
-
-    # Use depth-adjusted effective totals if saved, otherwise fall back to raw totals
-    eff_a = float(p.get("eff_a") or 0) or float(total_a)
-    eff_b = float(p.get("eff_b") or 0) or float(total_b)
-    eff_diff = eff_a - eff_b
     max_side = max(abs(eff_a), abs(eff_b), 1.0)
     normalized_diff = max(-1.0, min(1.0, eff_diff / max_side))
     # leftPct: 50% = center (fair), <50 = Team 1 favored, >50 = Team 2 favored
@@ -25647,8 +25667,9 @@ def page_trade_card(share_id: str):
 
     side_a_html = _asset_html(side_a, picks_a)
     side_b_html = _asset_html(side_b, picks_b)
-    total_a_str = f"{total_a:,}" if total_a else "0"
-    total_b_str = f"{total_b:,}" if total_b else "0"
+    # Show depth-adjusted totals in headers when available (matches what the calc showed)
+    total_a_str = f"{round(eff_a):,}" if eff_a else (f"{total_a:,}" if total_a else "0")
+    total_b_str = f"{round(eff_b):,}" if eff_b else (f"{total_b:,}" if total_b else "0")
     is_embed = request.args.get('embed') == '1'
     copy_link_style = 'display:none' if is_embed else ''
     body_pad = '0' if is_embed else '16px'
@@ -25682,19 +25703,23 @@ def page_trade_card(share_id: str):
                 pi_html = f"""
       <div class="divider"></div>
       <div class="pi-section" id="piSection" style="display:none">
-        <div class="pi-title">Playoff Impact (your team)</div>
+        <div class="pi-title">Playoff Impact · {t1}</div>
         <div class="pi-grid">{cells}</div>
-      </div>
-      <div class="pi-toggle-wrap">
-        <button class="pi-toggle-btn" id="piToggle" onclick="
-          var s=document.getElementById('piSection');
-          var open=s.style.display!=='none';
-          s.style.display=open?'none':'block';
-          this.textContent=open?'Show Playoff Impact ▾':'Hide Playoff Impact ▴';
-        ">Show Playoff Impact ▾</button>
       </div>"""
         except Exception:
             pass
+
+    # In embed/modal mode the PI toggle lives in the scm-toolbar (via postMessage).
+    # On the standalone page it lives in the card header.
+    _pi_hdr_btn = (
+        '<button class="pi-hdr-btn" id="piHdrBtn"'
+        ' onclick="var s=document.getElementById(\'piSection\'),'
+        'open=s.style.display!==\'none\';'
+        's.style.display=open?\'none\':\'block\';'
+        'this.classList.toggle(\'pi-hdr-btn-on\',!open);">'
+        'Playoff Impact</button>'
+        if pi_html and not is_embed else ""
+    )
 
     card_html = f"""<!doctype html>
 <html lang="en" id="tcRoot" data-theme="dark">
@@ -25702,8 +25727,14 @@ def page_trade_card(share_id: str):
   <meta charset="utf-8">
   <title>Trade Card | BR Fantasy</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta property="og:title" content="BR Fantasy Trade Analysis">
-  <meta property="og:description" content="{t1} vs {t2} — {verdict}">
+  <meta property="og:title" content="{t1} vs {t2} | BR Fantasy Trade">
+  <meta property="og:description" content="{verdict}">
+  <meta property="og:image" content="{request.host_url.rstrip('/')}/static/BR_Logo_dark.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="{t1} vs {t2} | BR Fantasy Trade">
+  <meta name="twitter:description" content="{verdict}">
+  <meta name="twitter:image" content="{request.host_url.rstrip('/')}/static/BR_Logo_dark.png">
   <link rel="icon" href="/static/BR_Logo.png" type="image/png">
   <style>
     :root{{--tc-bg:#0b1120;--tc-card:#0f1d36;--tc-hdr:#0b1628;--tc-border:rgba(255,255,255,.1);--tc-border-sub:rgba(255,255,255,.07);--tc-text:#e2e8f0;--tc-text2:#f1f5f9;--tc-muted:#94a3b8;--tc-dim:#64748b;--tc-dimmer:#475569;--tc-bar:rgba(255,255,255,.08);}}
@@ -25726,6 +25757,8 @@ def page_trade_card(share_id: str):
     .bar-indicator{{position:absolute;top:-3px;width:12px;height:28px;border-radius:999px;background:#38bdf8;transform:translateX(-50%);box-shadow:0 0 8px rgba(56,189,248,.5)}}
     .bar-labels{{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:10px;color:var(--tc-dimmer);font-weight:600}}
     .bar-fair-label{{font-size:10px;color:var(--tc-dim);font-weight:600}}
+    .pi-hdr-btn{{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;border:1px solid rgba(74,222,128,.4);background:transparent;color:#4ade80;cursor:pointer;transition:background .15s}}
+    .pi-hdr-btn-on{{background:rgba(74,222,128,.15)}}
     .pi-section{{padding:12px 16px 4px}}
     .pi-title{{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tc-dim);margin-bottom:8px}}
     .pi-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}}
@@ -25734,8 +25767,6 @@ def page_trade_card(share_id: str):
     .pi-val{{font-size:13px;font-weight:800}}
     .pi-pos{{color:#4ade80}}
     .pi-neg{{color:#f87171}}
-    .pi-toggle-wrap{{text-align:center;padding:6px 16px 10px}}
-    .pi-toggle-btn{{background:transparent;border:1px solid var(--tc-border);color:var(--tc-muted);font-size:11px;font-weight:600;padding:5px 14px;border-radius:20px;cursor:pointer}}
     .verdict{{text-align:center;padding:10px 16px 14px;font-size:13px;font-weight:700}}
     .divider{{border-top:1px solid var(--tc-border-sub)}}
     .footer{{padding:14px 18px;display:flex;gap:8px;justify-content:flex-end;background:var(--tc-hdr);border-top:1px solid var(--tc-border-sub)}}
@@ -25762,7 +25793,10 @@ def page_trade_card(share_id: str):
           <img src="/static/BR_Logo_dark.png" id="tcLogo" alt="BR Fantasy" style="height:18px;opacity:.9">
           BR Fantasy
         </div>
-        <span class="badge">Trade Analysis</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          {_pi_hdr_btn}
+          <span class="badge">Trade Analysis</span>
+        </div>
       </div>
 
       <div class="sides">
@@ -25801,6 +25835,7 @@ def page_trade_card(share_id: str):
     </div>
     <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--tc-dimmer);{'display:none' if is_embed else ''}">
       <a href="/" style="color:var(--tc-dimmer);text-decoration:none">brfantasyfootball.com</a>
+      {f'<span style="margin:0 6px;opacity:.4">·</span><span>Shared {shared_date}</span>' if shared_date else ''}
     </div>
   </div>
   <script>
@@ -25825,13 +25860,23 @@ def page_trade_card(share_id: str):
       }});
     }}
     window.addEventListener('message', function(e){{
-      if (e.data && e.data.type === 'scSetTheme') applyTheme(e.data.theme);
+      if (!e.data) return;
+      if (e.data.type === 'scSetTheme') applyTheme(e.data.theme);
+      if (e.data.type === 'scTogglePi') {{
+        var s = document.getElementById('piSection');
+        if (s) {{ s.style.display = e.data.show ? 'block' : 'none'; sendHeight(); }}
+      }}
     }});
     function sendHeight(){{
       window.parent.postMessage({{ type: 'scCardHeight', height: document.body.scrollHeight }}, '*');
     }}
     if (window.parent !== window) {{
-      window.addEventListener('load', sendHeight);
+      window.addEventListener('load', function(){{
+        sendHeight();
+        if (document.getElementById('piSection')) {{
+          window.parent.postMessage({{ type: 'scHasPi' }}, '*');
+        }}
+      }});
       new MutationObserver(sendHeight).observe(document.body, {{ subtree: true, childList: true, attributes: true }});
     }}
   }})();
