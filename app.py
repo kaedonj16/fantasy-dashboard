@@ -262,6 +262,36 @@ def _add_cache_headers(response):
             response.headers["Cache-Control"] = "public, max-age=86400"
     return response
 
+
+@app.before_request
+def _canonical_host_redirect():
+    """301 non-canonical hosts (the onrender URL and www.) to PRIMARY_DOMAIN.
+
+    Dormant unless PRIMARY_DOMAIN is set. Only safe (GET/HEAD) requests are
+    redirected so POST webhooks (Stripe, etc.) are never broken.
+    """
+    if not PRIMARY_DOMAIN:
+        return
+    if request.method not in ("GET", "HEAD"):
+        return
+    host = (request.host or "").split(":")[0].lower()
+    if not host or host == PRIMARY_DOMAIN:
+        return
+    # Only canonicalize hosts we own: the Render URL and the www. variant.
+    if not (host.endswith(".onrender.com") or host == "www." + PRIMARY_DOMAIN):
+        return
+    qs = request.query_string.decode("utf-8", "ignore")
+    target = f"https://{PRIMARY_DOMAIN}{request.path}" + (f"?{qs}" if qs else "")
+    return redirect(target, code=301)
+
+
+# Canonical host for SEO. When set (e.g. "brfantasyfootball.com"), all traffic on
+# other hosts (the *.onrender.com URL, the www. variant) is 301-redirected here and
+# canonical tags point here. Left unset, the site behaves exactly as before.
+PRIMARY_DOMAIN = os.environ.get("PRIMARY_DOMAIN", "").strip().lower()
+if PRIMARY_DOMAIN.startswith("www."):
+    PRIMARY_DOMAIN = PRIMARY_DOMAIN[4:]
+
 _secret_key = os.environ.get('FLASK_SECRET_KEY', '')
 _is_production = os.environ.get('PYTHON_ENV', '').strip().lower() == 'production'
 if not _secret_key:
@@ -1836,7 +1866,10 @@ def _build_seo_meta_tags(
         canon = canonical
         if not canon:
             try:
-                canon = request.base_url
+                if PRIMARY_DOMAIN:
+                    canon = f"https://{PRIMARY_DOMAIN}{request.path}"
+                else:
+                    canon = request.base_url
             except Exception:
                 canon = ""
         if canon:
