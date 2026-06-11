@@ -260,7 +260,7 @@ for w in {_proj_weeks!r}:
 from dotenv import load_dotenv; load_dotenv()
 from datetime import datetime, date
 from dashboard_services.api import get_nfl_state
-from data_building.advanced_metrics import calculate_player_metrics, finalize_role_scores_v2, save_metrics_snapshot
+from data_building.advanced_metrics import calculate_player_metrics, finalize_role_scores_v2, save_metrics_snapshot, load_matchup_ease
 from utils.utils import load_usage_table
 
 nfl_state = get_nfl_state() or {{}}
@@ -278,14 +278,19 @@ else:
     else:
         metrics_list = []
         failed_count = 0
+        ease_map = load_matchup_ease(current_season)
         for player in usage_table:
             player_id = player.get("id")
             position = player.get("position")
             usage = player.get("usage", {{}})
+            team = player.get("team") or ""
             if not player_id or not position or not usage or usage.get("games", 0) == 0:
                 continue
             try:
-                metrics_list.append(calculate_player_metrics(player_id, usage, position))
+                m = calculate_player_metrics(player_id, usage, position)
+                m["nfl_team"] = team or None
+                m["schedule_ease"] = (ease_map.get(team) or {{}}).get(position) if team else None
+                metrics_list.append(m)
             except Exception:
                 failed_count += 1
         # Role score v2: percentile within position from team-relative shares
