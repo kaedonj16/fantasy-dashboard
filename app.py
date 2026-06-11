@@ -1348,13 +1348,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"),
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
-                ("Dynasty Value Chart", "/dynasty-trade-value-chart", "dynasty-chart"),
                 ("Risers &amp; Fallers", "/risers-fallers", "risers-fallers"),
                 ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "/metrics", "advanced-metrics"),
                 ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
                 ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
-            ], ["players", "prospects", "breakouts", "dynasty-chart", "risers-fallers"], "playersNavDropdown"),
+            ], ["players", "prospects", "breakouts", "risers-fallers"], "playersNavDropdown"),
         ]
 
         player_search_html = (
@@ -1476,7 +1475,6 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
-        ("Dynasty Value Chart", "dynasty_trade_value_chart", "dynasty-chart", False),
         ("Risers &amp; Fallers", "risers_fallers_page", "risers-fallers", False),
         ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
@@ -1484,7 +1482,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Waivers & Start/Sit <span class='nav-pro-badge'>PRO</span>", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
-    ], ["players", "prospects", "breakouts", "waivers", "schedule", "dynasty-chart", "risers-fallers"], "playersNavDropdown"))
+    ], ["players", "prospects", "breakouts", "waivers", "schedule", "risers-fallers"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),

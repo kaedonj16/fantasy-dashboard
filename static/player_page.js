@@ -115,14 +115,31 @@
       });
   }
 
-  // "View X in your league" CTA -> multi-platform sign-in modal that opens the
-  // player modal in place (no navigation) with the chosen league's context.
+  // "View X in your league" CTA → if already signed in, go straight to the
+  // league players page with the player pre-selected.  If not, open the sign-in
+  // modal first, then navigate after sign-in.
   function wireLeagueCta() {
     var btn = document.querySelector(".pp-league-modal-btn");
     if (!btn) return;
     btn.addEventListener("click", function () {
-      openSignInModal(btn.getAttribute("data-player-id"), btn.getAttribute("data-player-name") || "");
+      var pid  = btn.getAttribute("data-player-id");
+      var name = btn.getAttribute("data-player-name") || "";
+      if (window._isSignedIn) {
+        var saved = null;
+        try { saved = JSON.parse(localStorage.getItem("saved_viewer") || "null"); } catch (_) {}
+        if (saved && saved.league_id && saved.platform) {
+          _goToLeaguePlayer(saved.platform, saved.season || window.__ppSeason || new Date().getFullYear(),
+                            saved.league_id, pid);
+          return;
+        }
+      }
+      openSignInModal(pid, name);
     });
+  }
+
+  function _goToLeaguePlayer(platform, season, leagueId, pid) {
+    window.location.href = "/" + platform + "/" + season + "/" + leagueId +
+      "/players?player=" + encodeURIComponent(pid);
   }
 
   function openSignInModal(pid, name) {
@@ -198,12 +215,10 @@
         signingIn = false;
         return;
       }
-      // Genuinely signed in now: reflect it for the rest of this page too.
       window._isSignedIn = true;
       overlay.remove();
-      if (typeof openPlayerModal === "function") {
-        openPlayerModal(pid, name, { force: true, platform: platform, season: season, leagueId: leagueId });
-      }
+      // Navigate to the league players page with this player pre-selected.
+      _goToLeaguePlayer(platform, season, leagueId, pid);
     }
 
     if (document.getElementById("ppContinue")) {

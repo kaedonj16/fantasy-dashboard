@@ -54,7 +54,7 @@
     var banner = document.createElement('div');
     banner.id = 'session-expired-banner';
     banner.innerHTML =
-      '<span class="se-msg">Session expired — </span>' +
+      '<span class="se-msg">Session expired </span>' +
       '<button id="seReauthBtn" class="se-btn">Sign back in as <strong>' +
         (username || 'you') + '</strong></button>' +
       '<button id="seDismissBtn" class="se-close" aria-label="Dismiss">\xd7</button>';
