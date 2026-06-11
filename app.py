@@ -738,7 +738,9 @@ BASE_HTML = """
   <head>
     <meta charset="utf-8">
     <meta name="google-adsense-account" content="ca-pub-9164153092633845">
+    <meta name="google-site-verification" content="zuH_tCWKG_L4hm4eRDFit3xfMi-ZPFXwK2s9eap20FA">
     <title>{title}</title>
+    {meta_tags}
     {og_tags}
     <meta name="viewport" content="width=device-width, initial-scale=1">
     
@@ -1802,6 +1804,47 @@ def _discord_banner() -> str:
 </script>"""
 
 
+DEFAULT_META_DESCRIPTION = (
+    "BR Fantasy is a free fantasy football toolkit: a dynasty and redraft trade "
+    "calculator, daily-updated player trade values, real-trade market data, breakout "
+    "candidate rankings, and advanced metrics for Sleeper, ESPN, and Yahoo leagues."
+)
+
+
+def _build_seo_meta_tags(
+        description: str,
+        canonical: Optional[str],
+        noindex: Optional[bool],
+        is_league_scoped: bool,
+) -> str:
+    """Assemble <meta description>, robots, and canonical tags for the page head.
+
+    League-scoped (personalized) pages default to noindex,follow so the thousands
+    of per-league URL variants don't dilute the canonical public tool pages.
+    """
+    # Default: noindex personalized league pages unless a caller overrides.
+    do_noindex = noindex if noindex is not None else is_league_scoped
+
+    parts = []
+    desc = (description or DEFAULT_META_DESCRIPTION).strip()
+    parts.append(f"<meta name=\"description\" content=\"{html.escape(desc, quote=True)}\">")
+
+    if do_noindex:
+        parts.append("<meta name=\"robots\" content=\"noindex, follow\">")
+    else:
+        parts.append("<meta name=\"robots\" content=\"index, follow\">")
+        canon = canonical
+        if not canon:
+            try:
+                canon = request.base_url
+            except Exception:
+                canon = ""
+        if canon:
+            parts.append(f"<link rel=\"canonical\" href=\"{html.escape(canon, quote=True)}\">")
+
+    return "\n    ".join(parts)
+
+
 def render_page(
         title: str,
         league_id: Optional[str],
@@ -1811,6 +1854,9 @@ def render_page(
         season: Optional[int] = None,
         *args,
         og_tags: str = "",
+        description: str = "",
+        canonical: Optional[str] = None,
+        noindex: Optional[bool] = None,
         **kwargs,
 ) -> str:
     if league_id and platform and season:
@@ -1818,6 +1864,11 @@ def render_page(
         session["last_platform"] = platform
         session["last_season"] = season
     nav_html = build_nav(league_id, active, platform, season)
+
+    meta_tags = _build_seo_meta_tags(
+        description, canonical, noindex,
+        is_league_scoped=bool(league_id and platform and season),
+    )
 
     banner_html = _discord_banner()
     if session.get("viewer_username"):
@@ -1836,6 +1887,7 @@ def render_page(
     import json as _json
     return BASE_HTML.format(
         title=title,
+        meta_tags=meta_tags,
         og_tags=og_tags,
         nav=nav_html,
         recap_banner=banner_html,
@@ -11009,10 +11061,18 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       });
     </script>
     """
+    _players_desc = (
+        "Daily-updated fantasy football player rankings and trade values for dynasty and "
+        "redraft leagues. Compare players with consensus rankings, trend charts, and advanced "
+        "metrics for Sleeper, ESPN, and Yahoo."
+    )
     if platform:
-        return render_page("Player Rankings", league_id, "players", body_html, platform, season)
+        return render_page("Fantasy Football Player Rankings & Trade Values | BR Fantasy",
+                           league_id, "players", body_html, platform, season,
+                           description=_players_desc)
 
-    return render_page("Player Rankings", None, "players", body_html)
+    return render_page("Fantasy Football Player Rankings & Trade Values | BR Fantasy",
+                       None, "players", body_html, description=_players_desc)
 
 
 @app.route("/<platform>/<int:season>/<league_id>/prospects")
@@ -15326,7 +15386,15 @@ def index():
         next_url=next_url,
         recent_updates=generate_recent_updates_html(),
     )
-    return render_page("BR Fantasy Dashboard", None, "home", body_html)
+    return render_page(
+        "BR Fantasy — Free Fantasy Football Trade Calculator & Dynasty Tools",
+        None, "home", body_html,
+        description=(
+            "Free fantasy football tools for Sleeper, ESPN, and Yahoo: a dynasty and "
+            "redraft trade calculator, daily player trade values, real-trade market data, "
+            "power rankings, breakout candidates, and advanced metrics."
+        ),
+    )
 
 
 @app.route("/api/weekly-week")

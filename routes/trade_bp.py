@@ -19,6 +19,66 @@ logger = logging.getLogger(__name__)
 trade_bp = Blueprint("trade", __name__)
 
 
+# Crawlable explanatory content shown beneath the public trade calculator. Gives
+# search engines (and AdSense reviewers) real text to index instead of a bare widget.
+_TRADE_CALCULATOR_SEO_CONTENT = """
+    <section class="card central seo-content" style="max-width:960px;margin:18px auto 0;">
+      <div class="card-body" style="padding:24px 26px;line-height:1.65;">
+        <h2 style="font-size:20px;margin:0 0 10px;">How the Fantasy Football Trade Calculator Works</h2>
+        <p style="color:var(--text-muted);margin:0 0 16px;">
+          Add players and draft picks to each side of a proposed deal and the calculator
+          returns an instant verdict on who wins the trade. Values aren't guesses — they're
+          calibrated from thousands of real fantasy football trades logged across Sleeper,
+          ESPN, and Yahoo dynasty and redraft leagues, then blended with expert consensus
+          rankings and advanced metrics. Because the model watches the actual market, values
+          shift as players are bought, sold, and hyped throughout the season.
+        </p>
+
+        <h2 style="font-size:20px;margin:22px 0 10px;">Dynasty vs. Redraft Trade Values</h2>
+        <p style="color:var(--text-muted);margin:0 0 16px;">
+          A player can be worth very different amounts depending on your league format. In
+          <strong>redraft</strong> leagues only this season matters, so proven veterans and
+          high-floor producers carry the most value. In <strong>dynasty</strong> leagues you
+          keep your roster year over year, so age, long-term upside, and rookie draft picks
+          weigh much more heavily. The calculator lets you switch between dynasty and redraft
+          values, and supports <strong>superflex</strong> scoring, where quarterbacks jump
+          dramatically in value because you can start two of them.
+        </p>
+
+        <h2 style="font-size:20px;margin:22px 0 10px;">Tips for Evaluating a Trade</h2>
+        <ul style="color:var(--text-muted);margin:0 0 16px;padding-left:20px;">
+          <li>Don't trade purely by total value — roster construction matters. Two solid
+              starters often beat one star plus a bench piece if you need depth.</li>
+          <li>Account for positional scarcity. An elite tight end or superflex-eligible
+              quarterback is harder to replace than a mid-tier running back.</li>
+          <li>In dynasty, weigh your timeline: contenders should pay a premium for win-now
+              talent, while rebuilders should bank youth and picks.</li>
+          <li>Use real trade comparisons to sanity-check a deal — if similar trades have
+              happened before, you'll see how the market actually valued them.</li>
+        </ul>
+
+        <h2 style="font-size:20px;margin:22px 0 10px;">Frequently Asked Questions</h2>
+        <p style="margin:0 0 6px;"><strong>Is the trade calculator free?</strong></p>
+        <p style="color:var(--text-muted);margin:0 0 14px;">
+          Yes. The trade calculator and player trade values are free to use — no account
+          required. Connecting your Sleeper, ESPN, or Yahoo league unlocks personalized
+          analysis tailored to your roster and scoring settings.
+        </p>
+        <p style="margin:0 0 6px;"><strong>How often are player values updated?</strong></p>
+        <p style="color:var(--text-muted);margin:0 0 14px;">
+          Values refresh daily based on the latest real trades, news, and expert rankings, so
+          they reflect the current market rather than a static preseason list.
+        </p>
+        <p style="margin:0 0 6px;"><strong>Does it support superflex and tight-end premium?</strong></p>
+        <p style="color:var(--text-muted);margin:0;">
+          Yes. Toggle superflex to value quarterbacks correctly for two-QB formats, and switch
+          between PPR, half-PPR, and standard scoring to match your league.
+        </p>
+      </div>
+    </section>
+"""
+
+
 # ── Trade Calculator ───────────────────────────────────────────────────────────
 
 @trade_bp.route("/trade")
@@ -53,8 +113,18 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         current_season = int(state.get("season") or datetime.now().year)
         has_premium = has_premium_access(user_id, None, "sleeper")
         body = build_trade_calculator_body(None, current_season, has_premium=has_premium)
+        # Append crawlable explanatory content for the public (guest) calculator.
+        body += _TRADE_CALCULATOR_SEO_CONTENT
 
-    return render_page("BR Fantasy Trade Calculator", league_id, "trade", body, platform, season)
+    return render_page(
+        "Fantasy Football Trade Calculator — Dynasty & Redraft Trade Values | BR Fantasy",
+        league_id, "trade", body, platform, season,
+        description=(
+            "Free fantasy football trade calculator. Compare any trade with dynasty and "
+            "redraft player values built from thousands of real Sleeper, ESPN, and Yahoo "
+            "trades. Get instant verdicts, superflex values, and pick valuations."
+        ),
+    )
 
 
 # ── Trade Intelligence ─────────────────────────────────────────────────────────
@@ -825,7 +895,15 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     }})();
     </script>
     """
-    return render_page("Trade Intelligence", league_id, "trade-intel", body_html, platform, season)
+    return render_page(
+        "Fantasy Football Trade Values & Market Trends — Trade Intelligence | BR Fantasy",
+        league_id, "trade-intel", body_html, platform, season,
+        description=(
+            "Live fantasy football trade values and market trends from thousands of real "
+            "dynasty and redraft trades. Spot buy-low and sell-high players with daily-updated "
+            "values for Sleeper, ESPN, and Yahoo leagues."
+        ),
+    )
 
 
 @trade_bp.route("/trade-intel")
@@ -1282,7 +1360,15 @@ def page_trade_database(platform: str, season: int, league_id: str):
     }})();
     </script>
     """
-    return render_page("Trade Database", league_id, "trade-database", body_html, platform, season)
+    return render_page(
+        "Fantasy Football Trade Database — Search Real Dynasty Trades | BR Fantasy",
+        league_id, "trade-database", body_html, platform, season,
+        description=(
+            "Search thousands of real fantasy football trades to see how players and draft "
+            "picks are actually valued. Filter by player to study dynasty and redraft market "
+            "prices across Sleeper, ESPN, and Yahoo leagues."
+        ),
+    )
 
 
 @trade_bp.route("/trade-database")
