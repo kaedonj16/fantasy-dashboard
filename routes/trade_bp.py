@@ -64,18 +64,19 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     from app import render_page
     user_id = session.get("viewer_username")
     has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
-    try:
-        from app import get_league_ctx_from_cache
-        _ti_ctx = get_league_ctx_from_cache(platform, league_id, season)
-        _ti_rp = _ti_ctx.get("roster_positions") or []
-        _ti_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _ti_rp)
-        _ti_lt = "sf" if _ti_sf else "1qb"
-        _ti_sz = len(_ti_ctx.get("rosters") or []) or 10
-    except Exception:
-        logger.warning("trade_bp: failed to load league context for trade intel page", exc_info=True)
-        _ti_sf = False
-        _ti_lt = "1qb"
-        _ti_sz = 10
+    _ti_sf = False
+    _ti_lt = "1qb"
+    _ti_sz = 10
+    if league_id:
+        try:
+            from app import get_league_ctx_from_cache
+            _ti_ctx = get_league_ctx_from_cache(platform, league_id, season)
+            _ti_rp = _ti_ctx.get("roster_positions") or []
+            _ti_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _ti_rp)
+            _ti_lt = "sf" if _ti_sf else "1qb"
+            _ti_sz = len(_ti_ctx.get("rosters") or []) or 10
+        except Exception:
+            logger.warning("trade_bp: failed to load league context for trade intel page", exc_info=True)
     body_html = f"""
     <script>var _leagueType = '{_ti_lt}'; var _leagueSize = {_ti_sz};</script>
     <div class="card central" style="max-width:960px;">
@@ -447,6 +448,8 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     (function() {{
       const TI_SEASON = {season};
       const TI_HAS_PREMIUM = {str(has_premium).lower()};
+      const TI_PLATFORM = '{platform}';
+      const TI_LEAGUE_FORMAT = TI_PLATFORM === 'espn' ? 'redraft' : TI_PLATFORM === 'sleeper' ? 'dynasty' : 'all';
       let TI_LEAGUE_TYPE = '{_ti_lt}';
       const TI_LEAGUE_SIZE = {_ti_sz};
       let currentPage = 1;
@@ -550,10 +553,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         if (filteredPlayers.length === 0) {{ grid.style.display = 'none'; empty.style.display = ''; return; }}
         empty.style.display = 'none';
         grid.style.display = '';
-        const FREE_LIMIT = 5;
-        const displayPlayers = TI_HAS_PREMIUM ? filteredPlayers : filteredPlayers.slice(0, FREE_LIMIT);
-        const showPaywallCard = !TI_HAS_PREMIUM && filteredPlayers.length > FREE_LIMIT;
-        grid.innerHTML = displayPlayers.map(p => {{
+        grid.innerHTML = filteredPlayers.map(p => {{
           const name   = p.name || 'Unknown';
           const pos    = p.position || '?';
           const team   = p.team || '?';
@@ -598,13 +598,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
             <div class="ti-row"><span class="ti-row-label">Trades 7d/30d</span><span class="ti-row-val">${{cnt7}} / ${{cnt30}}</span></div>
             ${{momentumHtml ? `<div class="ti-momentum">${{momentumHtml}}</div>` : ''}}
           </div>`;
-        }}).join('') + (showPaywallCard ? `
-          <div class="ti-card" onclick="showPaywall('trade-history')" style="cursor:pointer;border:2px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:160px;background:var(--card);">
-            <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
-            <div style="font-weight:700;font-size:14px;">Unlock Full Access</div>
-            <div style="font-size:12px;color:var(--text-muted);text-align:center;">See all players &amp; trade history<br>with a premium subscription</div>
-            <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
-          </div>` : '');
+        }}).join('');
       }}
 
       const _tiTrades = {{ player: null, page: 1, leagueFilter: 'all', total: 0, totalPages: 1 }};
@@ -659,7 +653,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         _tiTrades.page = page;
         document.getElementById('tiTradesBody').innerHTML = '<div class="ti-trades-msg">Loading&hellip;</div>';
         document.getElementById('tiTradesPager').style.display = 'none';
-        const qs = new URLSearchParams({{ season: TI_SEASON, league_type: _tiTrades.leagueFilter, page, limit: 15 }});
+        const qs = new URLSearchParams({{ season: TI_SEASON, league_type: _tiTrades.leagueFilter, page, limit: 15, league_format: TI_LEAGUE_FORMAT }});
         fetch(`/api/trade-intel/player-trades/${{p.player_id}}?${{qs}}`)
           .then(r => {{ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }})
           .then(_renderTITrades)
@@ -673,7 +667,14 @@ def page_trade_intel(platform: str, season: int, league_id: str):
         const body = document.getElementById('tiTradesBody');
         _tiTrades.total = data.total || 0;
         _tiTrades.totalPages = data.total_pages || 1;
-        if (!data.trades || data.trades.length === 0) {{
+        let trades = data.trades || [];
+        if (TI_PLATFORM === 'espn') {{
+          trades = trades.filter(t =>
+            !(t.side_a || []).some(a => a.type === 'pick') &&
+            !(t.side_b || []).some(a => a.type === 'pick')
+          );
+        }}
+        if (trades.length === 0) {{
           body.innerHTML = '<div class="ti-trades-msg">No trades found for this filter.</div>';
           return;
         }}
@@ -683,7 +684,7 @@ def page_trade_intel(platform: str, season: int, league_id: str):
           const cls = a.is_focus ? 'focus' : 'other';
           return `<div class="ti-trade-asset ${{cls}}">${{a.name}}${{posTag}}</div>`;
         }}
-        body.innerHTML = data.trades.map(t => {{
+        body.innerHTML = trades.map(t => {{
           const sideA = (t.side_a || []).map(assetHtml).join('');
           const sideB = (t.side_b || []).map(assetHtml).join('');
           const fmt   = t.is_superflex ? 'SF' : t.is_superflex === false ? '1QB' : '';
@@ -1050,6 +1051,8 @@ def page_trade_database(platform: str, season: int, league_id: str):
     <script>
     (function() {{
       const TDB_SEASON = {season};
+      const TDB_PLATFORM = '{platform}';
+      const TDB_LEAGUE_FORMAT = TDB_PLATFORM === 'espn' ? 'redraft' : TDB_PLATFORM === 'sleeper' ? 'dynasty' : 'all';
       let currentPage = 1;
       let paginationData = null;
       let leagueType = 'all';
@@ -1179,7 +1182,7 @@ def page_trade_database(platform: str, season: int, league_id: str):
         listEl.style.display = 'none';
         document.getElementById('tdbLoading').style.display = '';
         document.getElementById('tdbPagination').style.display = 'none';
-        const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON }});
+        const params = new URLSearchParams({{ page: page - 1, limit: 20, league_type: leagueType, season: TDB_SEASON, league_format: TDB_LEAGUE_FORMAT }});
         if (selectedA.length) params.set('player_a', selectedA.map(p => p.id).join(','));
         if (selectedB.length) params.set('player_b', selectedB.map(p => p.id).join(','));
         fetch('/api/trade-database?' + params)

@@ -170,7 +170,37 @@ document.body.scrollTop = 0;
       isOpen = true;
       wrap.classList.add('is-open');
       trigger.setAttribute('aria-expanded', 'true');
+
+      // Reset flip so we can measure correctly
+      list.style.top    = '';
+      list.style.bottom = '';
+      list.style.maxHeight = '';
       list.style.display = 'block';
+
+      // Smart flip: position above if not enough room below
+      var rect    = trigger.getBoundingClientRect();
+      var vp      = window.innerHeight;
+      var spaceBelow = vp - rect.bottom - 8;
+      var spaceAbove = rect.top - 8;
+      var maxH    = 280;
+
+      if (spaceBelow >= Math.min(maxH, 120)) {
+        // Enough room below — standard position
+        list.style.top    = 'calc(100% + 4px)';
+        list.style.bottom = 'auto';
+        list.style.maxHeight = Math.min(maxH, spaceBelow) + 'px';
+      } else if (spaceAbove > spaceBelow) {
+        // More room above — flip upward
+        list.style.top    = 'auto';
+        list.style.bottom = 'calc(100% + 4px)';
+        list.style.maxHeight = Math.min(maxH, spaceAbove) + 'px';
+      } else {
+        // Default to below with available space
+        list.style.top    = 'calc(100% + 4px)';
+        list.style.bottom = 'auto';
+        list.style.maxHeight = Math.max(spaceBelow, 80) + 'px';
+      }
+
       requestAnimationFrame(function () { list.classList.add('is-visible'); });
       var opts = getEnabled();
       focIdx = opts.findIndex(function (el) { return el.dataset.value === sel.value; });
@@ -5019,8 +5049,18 @@ window.initTradePage = function initTradePage(root = document) {
         resultState.style.display = "block";
         // Write into resultState only - never clobber tradeAiBody directly
         // so that sibling state nodes (loading/empty) survive intact
+        const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
         if (data.analysis_html) {
           resultState.innerHTML = data.analysis_html;
+        } else if (!_isPremium) {
+          resultState.innerHTML = `
+            <div class="otc-ai-empty">
+              <div class="otc-ai-empty-title" style="display:flex;align-items:center;gap:6px;">
+                <i class="fa-solid fa-lock" style="font-size:15px;opacity:0.6;"></i> AI Analysis
+              </div>
+              <div class="otc-ai-empty-sub">Get front-office grades, win probability shifts, and counter-offer suggestions.</div>
+              <button onclick="showPaywall('trade-ai')" style="margin-top:10px;padding:8px 18px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">Upgrade to PRO</button>
+            </div>`;
         } else if (data.error && data.error.includes("No user context")) {
           resultState.innerHTML = `
             <div class="otc-ai-empty">
@@ -5921,7 +5961,10 @@ async function generateSeasonRecap() {
     alert("Please select a team first");
     return;
   }
-  
+
+  const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
+  if (!_isPremium) { showPaywall('history-recap'); return; }
+
   // Show loading, hide everything else
   if (loadingState) loadingState.style.display = "block";
   if (emptyState) emptyState.style.display = "none";
@@ -6108,6 +6151,19 @@ window.initPageRoot = function initPageRoot(root = document) {
   setupFunAwardsGrid();
 };
 
+function showDashboardLoadingOverlay(text, subtext) {
+  const overlay = document.getElementById("dashboardLoadingOverlay");
+  if (!overlay) return;
+  const textEl    = overlay.querySelector(".fullscreen-loading-text");
+  const subtextEl = overlay.querySelector(".fullscreen-loading-subtext");
+  const bar       = overlay.querySelector(".flo-progress-bar");
+  if (textEl && text)       textEl.textContent    = text;
+  if (subtextEl && subtext) subtextEl.textContent = subtext;
+  // Restart progress animation
+  if (bar) { bar.style.animation = "none"; bar.offsetWidth; bar.style.animation = ""; }
+  overlay.style.display = "flex";
+}
+
 bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
   // Force scroll to top
   window.scrollTo(0, 0);
@@ -6119,6 +6175,19 @@ bindOnce(document, "domContentLoadedInit", "DOMContentLoaded", () => {
   requestAnimationFrame(() => {
     window.scrollTo(0, 0);
   });
+
+  // Keep saved_viewer enriched with roster_id/user_id so returning users
+  // can skip the league context fetch on "Continue as X"
+  if (typeof window._viewerRid !== "undefined" || typeof window._viewerUid !== "undefined") {
+    try {
+      const sv = JSON.parse(localStorage.getItem("saved_viewer") || "null");
+      if (sv?.league_id) {
+        if (window._viewerRid) sv.roster_id = window._viewerRid;
+        if (window._viewerUid) sv.user_id   = window._viewerUid;
+        localStorage.setItem("saved_viewer", JSON.stringify(sv));
+      }
+    } catch (_) {}
+  }
 });
 
 // ------------------------------------------------------------
@@ -6185,6 +6254,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const platformBtns = document.querySelectorAll(".platform-btn");
   const sleeperFlow = document.getElementById("sleeperFlow");
   const espnFlow = document.getElementById("espnFlow");
+  const yahooFlow = document.getElementById("yahooFlow");
   const sleeperHint = document.getElementById("sleeperHint");
   const lookupBtn = document.getElementById("lookupBtn");
   const usernameInput = document.getElementById("username");
@@ -6199,7 +6269,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const espnSubmitBtn = document.getElementById("espnSubmitBtn");
   const espnErrorBox = document.getElementById("espnError");
 
-  if (!platformBtns.length) return;
+  const yahooLeagueIdInput = document.getElementById("yahooLeagueIdInput");
+  const yahooTeamName = document.getElementById("yahooTeamName");
+  const yahooConnectBtn = document.getElementById("yahooConnectBtn");
+  const yahooErrorBox = document.getElementById("yahooError");
+
+if (!platformBtns.length) return;
 
   let currentPlatform = "sleeper";
 
@@ -6216,15 +6291,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (generateWrap) generateWrap.style.display = "none";
     if (errorBox) errorBox.style.display = "none";
 
-    if (platform === "espn") {
-      if (sleeperFlow) sleeperFlow.style.display = "none";
-      if (espnFlow) espnFlow.style.display = "block";
-      if (sleeperHint) sleeperHint.style.display = "none";
-    } else {
-      if (sleeperFlow) sleeperFlow.style.display = "block";
-      if (espnFlow) espnFlow.style.display = "none";
-      if (sleeperHint) sleeperHint.style.display = "";
-    }
+    if (sleeperFlow) sleeperFlow.style.display = platform === "sleeper" ? "block" : "none";
+    if (espnFlow)    espnFlow.style.display    = platform === "espn"    ? "block" : "none";
+    if (yahooFlow)   yahooFlow.style.display   = platform === "yahoo"   ? "block" : "none";
+    if (sleeperHint) sleeperHint.style.display = platform === "sleeper" ? ""      : "none";
   }
 
   // Platform switching
@@ -6262,9 +6332,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       // Show full-page loading overlay while the server builds the dashboard
-      const overlay = document.getElementById("dashboardLoadingOverlay");
+      showDashboardLoadingOverlay("Building your dashboard…", "This usually takes a few seconds");
       const submitBtn = leagueSelectFormEl.querySelector('button[type="submit"]');
-      if (overlay) overlay.style.display = "flex";
       if (submitBtn) {
         submitBtn.disabled = true;
         submitBtn.textContent = "Building Dashboard…";
@@ -6284,13 +6353,7 @@ document.addEventListener("DOMContentLoaded", () => {
     cta.innerHTML = `
       <div class="saved-viewer-info">
         <span class="saved-viewer-label">Welcome back!</span>
-        <form method="POST" action="/set-viewer" style="display:inline">
-          <input type="hidden" name="league_id" value="${saved.league_id}">
-          <input type="hidden" name="username" value="${saved.username}">
-          <input type="hidden" name="platform" value="${platform}">
-          <input type="hidden" name="season" value="${season}">
-          <button type="submit" class="saved-viewer-btn">Continue as <strong>${saved.username}</strong></button>
-        </form>
+        <button type="button" class="saved-viewer-btn" id="continueAsBtn">Continue as <strong>${saved.username}</strong></button>
       </div>
       <button type="button" class="saved-viewer-dismiss" aria-label="Dismiss">×</button>
     `;
@@ -6301,6 +6364,28 @@ document.addEventListener("DOMContentLoaded", () => {
     cta.querySelector(".saved-viewer-dismiss")?.addEventListener("click", () => {
       localStorage.removeItem("saved_viewer");
       cta.remove();
+    });
+
+    document.getElementById("continueAsBtn")?.addEventListener("click", async function() {
+      // Show loading overlay immediately — before any network request
+      showDashboardLoadingOverlay("Loading your dashboard…", "Picking up where you left off");
+      this.disabled = true;
+
+      try {
+        // Fast session set — no league context fetch on server side
+        await fetch("/api/quick-set-viewer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username:  saved.username,
+            roster_id: saved.roster_id || "",
+            user_id:   saved.user_id   || "",
+            team_name: saved.team_name || "",
+          }),
+        });
+      } catch (_) { /* session set is best-effort; navigate anyway */ }
+
+      window.location.href = dashboardUrl;
     });
   }
 
@@ -6408,6 +6493,53 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         espnSubmitBtn.disabled = false;
         espnSubmitBtn.textContent = "Find My League";
+      }
+    });
+  }
+
+  if (yahooConnectBtn) {
+    yahooConnectBtn.addEventListener("click", async () => {
+      const leagueId = yahooLeagueIdInput?.value.trim();
+      if (!leagueId || !/^\d+$/.test(leagueId)) {
+        if (yahooErrorBox) {
+          yahooErrorBox.textContent = "Enter a valid Yahoo League ID (numbers only).";
+          yahooErrorBox.style.display = "block";
+        }
+        return;
+      }
+
+      if (yahooErrorBox) yahooErrorBox.style.display = "none";
+
+      try {
+        const res = await fetch(`/api/yahoo-validate-league?league_id=${encodeURIComponent(leagueId)}`);
+        const data = await res.json();
+
+        if (res.status === 401 && data.needs_oauth) {
+          const teamName = yahooTeamName?.value.trim() || "";
+          const params = new URLSearchParams({ league_id: leagueId, team_name: teamName });
+          window.location.href = `/auth/yahoo?${params}`;
+          return;
+        }
+
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || "Unable to load Yahoo league.");
+        }
+
+        if (leagueSelect) {
+          leagueSelect.innerHTML = `<option value="${leagueId}" selected>${data.league?.name || "Yahoo League"}</option>`;
+        }
+        if (formPlatform) formPlatform.value = "yahoo";
+
+        const teamName = yahooTeamName?.value.trim() || "";
+        const formUsername = document.getElementById("formUsername");
+        if (formUsername) formUsername.value = teamName;
+
+        document.getElementById("leagueSelectForm")?.submit();
+      } catch (err) {
+        if (yahooErrorBox) {
+          yahooErrorBox.textContent = err.message || "Unable to connect to Yahoo.";
+          yahooErrorBox.style.display = "block";
+        }
       }
     });
   }
@@ -6904,7 +7036,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Handle success
-        if (data.leagues && data.leagues.length > 0) {
+        if (data.leagues && data.leagues.length > 1) {
           leagueSwitcher.innerHTML = '';
           data.leagues.forEach(league => {
             const option = document.createElement('option');
@@ -6917,7 +7049,8 @@ document.addEventListener('DOMContentLoaded', function() {
             leagueSwitcher.appendChild(option);
           });
         } else {
-          leagueSwitcher.innerHTML = '<option value="">No leagues found</option>';
+          const wrapper = leagueSwitcher.closest('.league-switcher-wrapper');
+          if (wrapper) wrapper.style.display = 'none';
         }
       })
       .catch(err => {
@@ -7073,6 +7206,9 @@ document.addEventListener('DOMContentLoaded', function() {
   const generateGmMemoBtn = document.getElementById('generateGmMemoBtn');
   if (generateGmMemoBtn) {
     generateGmMemoBtn.addEventListener('click', async function() {
+      const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
+      if (!_isPremium) { showPaywall('gm-memo'); return; }
+
       const leagueId = this.dataset.leagueId;
       const season = this.dataset.season;
       const platform = this.dataset.platform;
@@ -12571,7 +12707,11 @@ function setupFunAwardsGrid() {
     // Insert before discord pill so order is: GM · Discord · Refresh
     var discord = document.getElementById('discord-pill');
     group.insertBefore(pill, discord || group.firstChild);
-    pill.addEventListener('click', togglePanel);
+    pill.addEventListener('click', function() {
+      const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
+      if (!_isPremium) { showPaywall('ask-gm'); return; }
+      togglePanel();
+    });
   }
 
   // Build the panel once, append to body

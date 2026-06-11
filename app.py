@@ -382,6 +382,13 @@ try:
 except Exception as e:
     logger.warning("[players-bp] skipped: %s", e)
 
+try:
+    from routes.yahoo_auth_bp import yahoo_auth_bp
+    app.register_blueprint(yahoo_auth_bp)
+    logger.info("[yahoo-auth-bp] registered")
+except Exception as e:
+    logger.warning("[yahoo-auth-bp] skipped: %s", e)
+
 
 
 def generate_recent_updates_html(limit=5):
@@ -491,6 +498,7 @@ FORM_BODY = """
           <div class="platform-selector">
             <button type="button" class="platform-btn active" data-platform="sleeper">Sleeper</button>
             <button type="button" class="platform-btn" data-platform="espn">ESPN</button>
+            <button type="button" class="platform-btn" data-platform="yahoo">Yahoo</button>
           </div>
         </div>
 
@@ -525,7 +533,26 @@ FORM_BODY = """
           </p>
         </div>
 
-        <form method="post" id="leagueSelectForm">
+        <!-- Yahoo Flow -->
+        <div id="yahooFlow" style="display:none;">
+          <div class="row">
+            <label for="yahooLeagueIdInput">Yahoo League ID</label>
+            <input type="text" id="yahooLeagueIdInput" placeholder="e.g. 123456" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="yahooTeamName">Your Team Name <span style="font-weight:400;font-size:0.85em;">(optional)</span></label>
+            <input type="text" id="yahooTeamName" placeholder="e.g. Dynasty Monsters">
+          </div>
+          <div class="row">
+            <button type="button" id="yahooConnectBtn">Connect Yahoo Account</button>
+          </div>
+          <div id="yahooError" class="error-message" style="display:none;"></div>
+          <p class="hint" style="margin-top:6px;">
+            You'll be redirected to Yahoo to authorize access, then returned here.
+          </p>
+        </div>
+
+<form method="post" id="leagueSelectForm">
           <input type="hidden" name="platform" id="formPlatform" value="sleeper">
           <input type="hidden" name="season" value="{{ viewed_season }}">
           <input type="hidden" name="username" id="formUsername" value="">
@@ -560,7 +587,7 @@ FORM_BODY = """
     <section class="home-feature-list-card">
       <div class="home-features-header">
         <span class="home-features-label">Platform Features</span>
-        <span class="home-features-count">10 tools</span>
+        <span class="home-features-count">12 tools</span>
       </div>
       <div class="home-feature-list">
 
@@ -569,7 +596,7 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#6366f1;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.46 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.44-3.14Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.44-3.14Z"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span></span>
+            <span class="home-feature-row-title">Trade Strategy <span class="home-feature-badge">New</span> <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
             <span class="home-feature-row-desc">Archetype-driven suggestions with Monte Carlo win probability. See exactly how each trade shifts your playoff odds</span>
           </div>
         </div>
@@ -579,8 +606,18 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Trade Calculator</span>
-            <span class="home-feature-row-desc">AI-powered deal grades, counter proposals, and real dynasty trade comparisons from thousands of logged transactions</span>
+            <span class="home-feature-row-title">Trade Calculator <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
+            <span class="home-feature-row-desc">AI-powered deal grades, counter proposals, and real trade comparisons from thousands of logged transactions</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(139,92,246,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#8b5cf6;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 12l4-4 4 4 4-6"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Trade Intelligence <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
+            <span class="home-feature-row-desc">Real market values from thousands of actual trades. Trending, buy-low, and sell-high signals updated daily</span>
           </div>
         </div>
 
@@ -589,8 +626,18 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#10b981;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Dynasty Rankings</span>
-            <span class="home-feature-row-desc">Calibrated dynasty values updated daily, blending consensus data with advanced metrics, archetypes, and trend charts</span>
+            <span class="home-feature-row-title">Player Rankings</span>
+            <span class="home-feature-row-desc">Calibrated dynasty and redraft values updated daily, blending consensus data with advanced metrics and trend charts</span>
+          </div>
+        </div>
+
+        <div class="home-feature-row">
+          <div class="home-feature-row-icon" style="background:rgba(20,184,166,.12);border-radius:8px;">
+            <svg style="width:18px;height:18px;color:#14b8a6;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6 8h.01M9 8h6M6 11h.01M9 11h9"/></svg>
+          </div>
+          <div class="home-feature-row-body">
+            <span class="home-feature-row-title">Advanced Metrics</span>
+            <span class="home-feature-row-desc">Air yards, target share, snap counts, red zone usage, and 20+ efficiency metrics with positional percentile rankings</span>
           </div>
         </div>
 
@@ -610,7 +657,7 @@ FORM_BODY = """
           </div>
           <div class="home-feature-row-body">
             <span class="home-feature-row-title">Playoff Odds</span>
-            <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week. Know your exact path to the playoffs and projected championship probability</span>
+            <span class="home-feature-row-desc">Live Monte Carlo simulations updated each week. Know your exact path to the playoffs and championship probability</span>
           </div>
         </div>
 
@@ -629,7 +676,7 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#f97316;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Breakout Tracker</span>
+            <span class="home-feature-row-title">Breakout Engine <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
             <span class="home-feature-row-desc">Spot value shifts before the market moves. Tracks target share, snap counts, and depth chart changes to surface opportunities</span>
           </div>
         </div>
@@ -639,7 +686,7 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#ec4899;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Waiver Wire</span>
+            <span class="home-feature-row-title">Waivers &amp; Start/Sit <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
             <span class="home-feature-row-desc">Personalized pickup rankings tailored to your roster's needs, scoring format, positional scarcity, and remaining schedule</span>
           </div>
         </div>
@@ -659,7 +706,7 @@ FORM_BODY = """
             <i class="fa-solid fa-trophy" style="font-size:16px;color:#eab308;" aria-hidden="true"></i>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">League History</span>
+            <span class="home-feature-row-title">League History <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
             <span class="home-feature-row-desc">AI season recaps, head-to-head rivalry records, historical draft grades, and complete year-by-year standings</span>
           </div>
         </div>
@@ -677,9 +724,11 @@ FORM_BODY = """
 </div>
 
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
+  <img src="/static/BR_Logo.png" alt="BR Fantasy" class="flo-logo">
   <div class="loading-spinner"></div>
   <div class="fullscreen-loading-text">Building your dashboard…</div>
-  <div class="fullscreen-loading-subtext">This usually takes 10–20 seconds</div>
+  <div class="fullscreen-loading-subtext">This usually takes a few seconds</div>
+  <div class="flo-progress-track"><div class="flo-progress-bar" id="floProgressBar"></div></div>
 </div>
 """
 
@@ -730,7 +779,7 @@ BASE_HTML = """
 
       {ad_top}
 
-      <script>window._viewerRid = {viewer_roster_id_js};</script>
+      <script>window._viewerRid = {viewer_roster_id_js}; window._viewerUid = {viewer_user_id_js};</script>
       <main id="page-root" role="main" class="overview-layout" data-cache-ts="{cache_ts}" data-premium="{user_premium}">
         {body}
       </main>
@@ -1398,18 +1447,20 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Navigation pills (no utilities)
     nav_pills = []
     nav_pills.append(nav_pill("Dashboard", "page_dashboard", "dashboard"))
+    _is_espn = (platform == "espn")
     nav_pills.append(nav_pill_dropdown("Trades", [
         ("Trade Calculator", "trade.page_trade",          "trade",          False),
         ("Suggestions <span class='nav-pro-badge'>PRO</span>", "trade.page_trade", "trade-suggestions", False, "?tab=suggestions"),
         ("Trade Database",   "trade.page_trade_database", "trade-database", False),
-        ("Trade Intel <span class='nav-pro-badge'>PRO</span>",      "trade.page_trade_intel",    "trade-intel",    False),
+        # Trade Intel uses Sleeper trade data — not applicable for ESPN
+        *([("Trade Intel <span class='nav-pro-badge'>PRO</span>", "trade.page_trade_intel", "trade-intel", False)] if not _is_espn else []),
     ], ["trade", "trade-database", "trade-intel"], "tradesNavDropdown"))
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
         nav_pills.append(nav_pill_dropdown("Weekly", [
             ("Matchups",           "page_weekly",           "weekly",   False),
-            ("Weekly Recap",       "page_recap",            "recap",    False),
+            ("Weekly Recap <span class='nav-pro-badge'>PRO</span>", "page_recap", "recap", False),
         ], ["weekly", "recap"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",       "page_standings",    "standings",    False),
@@ -1419,11 +1470,11 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     ], ["standings", "teams", "activity", "league_health"], "teamsNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Players", [
         ("Player Rankings",   "page_players",   "players",   False),
-        ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "page_advanced_metrics", "advanced-metrics", False),
+        ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
-        ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
+        ("Waivers & Start/Sit <span class='nav-pro-badge'>PRO</span>", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
     ], ["players", "prospects", "breakouts", "waivers", "schedule"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
@@ -1441,7 +1492,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Single switcher for settings dropdown (works on both desktop and mobile)
     league_switcher_html = ""
     viewer_username = session.get("viewer_username")
-    if viewer_username:
+    if viewer_username and platform != "espn":
         league_switcher_html = (
             f"<div class='league-switcher-wrapper'>"
             f"  <select id='leagueSwitcher' class='league-switcher' "
@@ -1542,17 +1593,20 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         "</div>"
     )
 
+    _is_espn = (platform == "espn")
+    _signin_sub  = "Enter your ESPN team name to restore personalized features." if _is_espn else "Enter your Sleeper username to restore personalized features."
+    _signin_ph   = "Your ESPN team name" if _is_espn else "Sleeper username"
     signin_modal = (
         f"<div id='signinModal' class='signin-modal-overlay'>"
         f"  <div class='signin-modal-box'>"
         f"    <h3 class='signin-modal-title'>Sign in to your team</h3>"
-        f"    <p class='signin-modal-sub'>Enter your Sleeper username to restore personalized features.</p>"
+        f"    <p class='signin-modal-sub'>{_signin_sub}</p>"
         f"    <form method='POST' action='/set-viewer'>"
         f"      <input type='hidden' name='platform' value='{platform}'>"
         f"      <input type='hidden' name='season' value='{season}'>"
         f"      <input type='hidden' name='league_id' value='{league_id}'>"
         f"      <input type='hidden' name='next' value='{request.path + ('?' + request.query_string.decode() if request.query_string else '')}'>"
-        f"      <input class='signin-modal-input' type='text' name='username' placeholder='Sleeper username' autocomplete='username' autofocus>"
+        f"      <input class='signin-modal-input' type='text' name='username' placeholder='{_signin_ph}' autocomplete='username' autofocus>"
         f"      <div class='signin-modal-actions'>"
         f"        <button class='signin-modal-submit' type='submit'>Sign In</button>"
         f"        <button class='signin-modal-cancel' type='button'"
@@ -1776,6 +1830,7 @@ def render_page(
 
     # Inject Ask My GM context for JS to pick up and add to the floating pill group
     viewer_roster_id = session.get("viewer_roster_id") or ""
+    viewer_user_id   = session.get("viewer_user_id") or ""
     ask_gm_widget = ""  # Ask My GM hidden for now
 
     import json as _json
@@ -1805,6 +1860,7 @@ def render_page(
         icons_v=_ICONS_V,
         ask_gm_widget=ask_gm_widget,
         viewer_roster_id_js=_json.dumps(str(viewer_roster_id)),
+        viewer_user_id_js=_json.dumps(str(viewer_user_id)),
     )
 
 
@@ -1822,6 +1878,11 @@ def validate_league_id(platform: str, league_id: str) -> tuple[bool, Optional[st
     if platform == "espn":
         if not league_id.isdigit():
             return False, "Invalid ESPN league ID. It should be a number."
+        return True, None
+
+    if platform == "yahoo":
+        if not league_id.isdigit():
+            return False, "Invalid Yahoo league ID. It should be a number."
         return True, None
 
     return False, f"Unsupported platform: {platform}"
@@ -2055,11 +2116,11 @@ def build_league_context(platform: str, league_id: str, season: int) -> dict:
         league_settings = (league or {}).get("settings") or {}
         total_rosters = int((league or {}).get("total_rosters") or 0)
     else:
-        scoring_settings = get_effective_scoring_settings()
+        scoring_settings     = get_effective_scoring_settings()
         raw_scoring_settings = {}
-        roster_positions = get_roster_positions()
-        league_settings = get_league_settings()
-        total_rosters = get_total_rosters()
+        roster_positions     = get_roster_positions()
+        league_settings      = get_league_settings()
+        total_rosters        = get_total_rosters()
 
     # Core computed tables
     if offseason_mode:
@@ -2599,6 +2660,15 @@ def history_ai_recap():
 
     if not all([league_id, season, roster_id]):
         return jsonify({"error": "Missing required parameters"}), 400
+
+    # AI recap is a PRO feature
+    _user_id = session.get("viewer_username")
+    _has_premium = has_premium_for_viewer(
+        _user_id, session.get("viewer_user_id"), league_id,
+        (request.args.get("platform") or "sleeper"), int(season)
+    )
+    if not _has_premium:
+        return jsonify({"error": "premium_required", "message": "AI recaps require a premium subscription"}), 403
 
     try:
         # Get the same context that the history page uses
@@ -4108,18 +4178,25 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             if int(pk.get("round") or 0) == 1
         )
         picks_label = f"{first_rd} 1st" if first_rd else f"{row['n_picks']} picks" if row["n_picks"] else "—"
+        picks_td = "" if platform == "espn" else f"<td class='num'>{picks_label}</td>"
         table_rows_html += (
             f"<tr>"
             f"<td class='num'>{i}</td>"
             f"<td class='team'>{img} {row['name']}</td>"
             f"<td class='num'>{row['total']:.0f}</td>"
             f"<td class='num'>{row['player_v']:.0f}</td>"
-            f"<td class='num'>{picks_label}</td>"
+            f"{picks_td}"
             f"<td class='num'>{row['value_pct']:.1f}%</td>"
             f"<td class='num'>{row['prod_pct']:.1f}%</td>"
             f"</tr>"
         )
 
+    draft_capital_th = "" if platform == "espn" else "<th>Draft Capital</th>"
+    standings_footer = (
+        "Roster value · players ranked by dynasty trade market value"
+        if platform == "espn"
+        else "Dynasty value · players + draft picks · no games played yet"
+    )
     table_html = f"""
         <div class="table-wrap">
           <table class="standings-table dynasty-table">
@@ -4129,7 +4206,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
                 <th>Team</th>
                 <th>Value</th>
                 <th>Players</th>
-                <th>Draft Capital</th>
+                {draft_capital_th}
                 <th>Val%</th>
                 <th>Proj%</th>
               </tr>
@@ -4137,7 +4214,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
             <tbody>{table_rows_html}</tbody>
           </table>
         </div>
-        <div class="footer">Dynasty value · players + draft picks · no games played yet</div>
+        <div class="footer">{standings_footer}</div>
     """
 
     return f"""
@@ -5469,9 +5546,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
     except Exception:
         logger.debug("weekly: scout body build failed", exc_info=True)
 
+    _scout_sign_in_hint = (
+        "your ESPN team name" if platform == "espn" else "your Sleeper username"
+    )
     _scout_unavail = (
         "<div style='padding:20px;text-align:center;color:var(--muted);font-size:0.9em;'>"
-        "Scout report unavailable — sign in with your Sleeper username to see your opponent's breakdown."
+        f"Scout report unavailable — sign in with {_scout_sign_in_hint} to see your opponent's breakdown."
         "</div>"
     )
     scout_panel_content = scout_tab_html if scout_tab_html else _scout_unavail
@@ -8627,7 +8707,36 @@ def page_standings(platform: str, season: int, league_id: str):
 
 @app.route("/<platform>/<int:season>/<league_id>/waivers")
 def page_waivers(platform: str, season: int, league_id: str):
+    user_id = session.get("viewer_username")
+    has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
     ctx = get_league_ctx_from_cache(platform, league_id, season)
+    if not has_premium:
+        teaser_html = """
+    <div class="card central">
+      <div class="card-header">
+        <h2>Waivers &amp; Start/Sit</h2>
+        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+          Personalized pickup rankings and start/sit advice tailored to your roster
+        </div>
+      </div>
+      <div class="card-body" style="text-align:center;padding:60px 24px;">
+        <div style="font-size:40px;margin-bottom:16px;opacity:.3;"><i class="fa-solid fa-rotate"></i></div>
+        <div style="font-weight:700;font-size:18px;margin-bottom:8px;">Premium Feature</div>
+        <div style="color:var(--text-muted);font-size:14px;margin-bottom:24px;">
+          Get personalized waiver wire recommendations based on your roster's needs,<br>
+          scoring format, positional scarcity, and remaining schedule.
+        </div>
+        <button onclick="showPaywall('waivers')"
+          style="padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;">
+          Unlock Waivers &amp; Start/Sit
+        </button>
+      </div>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() { showPaywall('waivers'); });
+    </script>
+    """
+        return render_page("BR Fantasy Waivers", league_id, "waivers", teaser_html, platform, season)
     body = build_waivers_body(platform, season, league_id, ctx)
     return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
 
@@ -15838,6 +15947,10 @@ def api_roster_grade():
     if not league_id or not viewer_roster_id:
         return jsonify({"error": "Missing required parameters"}), 400
 
+    _user_id = session.get("viewer_username")
+    if not has_premium_for_viewer(_user_id, session.get("viewer_user_id"), league_id, platform, season):
+        return jsonify({"error": "premium_required"}), 403
+
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         grade_data = get_roster_grade(ctx, viewer_roster_id)
@@ -16267,8 +16380,12 @@ def api_trade_eval():
     depth_warnings = {}
     viewer_roster_id = payload.get("viewer_roster_id")
     viewer_team_name = payload.get("viewer_team_name")
+    _user_id = session.get("viewer_username")
+    _has_premium = has_premium_for_viewer(
+        _user_id, session.get("viewer_user_id"), league_id, platform, season
+    ) if league_id else False
 
-    if league_id and viewer_roster_id:
+    if league_id and viewer_roster_id and _has_premium:
         try:
             from dashboard_services.ai.context_builders import calculate_roster_depth_warning, build_model_value_lookup, _ctx_is_sf
             ctx = get_league_ctx_from_cache(platform=platform, league_id=league_id, season=season)
@@ -20495,11 +20612,12 @@ def api_trade_database():
     ?q=<player name>  &page=<int>  &limit=<int>  &league_type=<all|1qb|sf>
     """
     try:
-        q           = (request.args.get("q") or "").strip().lower()
-        page        = max(0, int(request.args.get("page") or 0))
-        limit       = min(int(request.args.get("limit") or 20), 50)
-        league_type = (request.args.get("league_type") or "all").strip().lower()
-        season      = int(request.args.get("season") or datetime.now().year)
+        q             = (request.args.get("q") or "").strip().lower()
+        page          = max(0, int(request.args.get("page") or 0))
+        limit         = min(int(request.args.get("limit") or 20), 50)
+        league_type   = (request.args.get("league_type") or "all").strip().lower()
+        league_format = (request.args.get("league_format") or "all").strip().lower()
+        season        = int(request.args.get("season") or datetime.now().year)
 
         # ID-based filters (comma-separated player IDs)
         _pa_raw = (request.args.get("player_a") or "").strip()
@@ -20522,13 +20640,21 @@ def api_trade_database():
             if not match_ids:
                 return jsonify({"trades": [], "total": 0, "has_more": False})
 
-        # Build superflex filter as a parameterized condition (no f-string interpolation)
+        # Build superflex filter
         sf_param = None
         if league_type == "sf":
             sf_param = True
         elif league_type == "1qb":
             sf_param = False
         sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
+
+        # Build dynasty/redraft filter (league_type column: 2=dynasty, 1=redraft)
+        lf_param = None
+        if league_format == "dynasty":
+            lf_param = 2
+        elif league_format == "redraft":
+            lf_param = 1
+        lf_clause = "AND l.league_type = %s" if lf_param is not None else ""
 
         # Build player filter clauses.
         # Always require both sides present so COUNT and rendered cards agree.
@@ -20579,28 +20705,29 @@ def api_trade_database():
 
         filter_sql = (" AND " + " AND ".join(filter_clauses)) if filter_clauses else ""
         sf_p       = [sf_param] if sf_param is not None else []
+        lf_p       = [lf_param] if lf_param is not None else []
 
         with get_conn() as conn:
-            count_params = [season] + sf_p + filter_params
+            count_params = [season] + sf_p + lf_p + filter_params
             count_row = conn.execute(
                 f"""
                 SELECT COUNT(DISTINCT t.id) AS n
                 FROM trade_intel_trades t
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                WHERE t.season = %s {sf_clause}{filter_sql}
+                WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
                 """,
                 count_params,
             ).fetchone()
             total = int(count_row["n"]) if count_row else 0
 
-            row_params = [season] + sf_p + filter_params + [limit + 1, page * limit]
+            row_params = [season] + sf_p + lf_p + filter_params + [limit + 1, page * limit]
             trade_rows = conn.execute(
                 f"""
                 SELECT DISTINCT t.id, t.transaction_id, t.season, t.week, t.created_at,
                        l.scoring_type, l.is_superflex, l.num_teams
                 FROM trade_intel_trades t
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-                WHERE t.season = %s {sf_clause}{filter_sql}
+                WHERE t.season = %s {sf_clause}{lf_clause}{filter_sql}
                 ORDER BY t.created_at DESC NULLS LAST
                 LIMIT %s OFFSET %s
                 """,
@@ -20706,11 +20833,12 @@ def api_trade_intel_player_trades(player_id: str):
     Returns each trade with both sides and is_focus=True on the queried player.
     """
     try:
-        season      = int(request.args.get("season") or datetime.now().year)
-        league_type = (request.args.get("league_type") or "all").strip().lower()
-        page        = max(1, int(request.args.get("page") or 1))
-        limit       = min(int(request.args.get("limit") or 15), 50)
-        offset      = (page - 1) * limit
+        season        = int(request.args.get("season") or datetime.now().year)
+        league_type   = (request.args.get("league_type") or "all").strip().lower()
+        league_format = (request.args.get("league_format") or "all").strip().lower()
+        page          = max(1, int(request.args.get("page") or 1))
+        limit         = min(int(request.args.get("limit") or 15), 50)
+        offset        = (page - 1) * limit
 
         sf_param = None
         if league_type == "sf":
@@ -20719,13 +20847,22 @@ def api_trade_intel_player_trades(player_id: str):
             sf_param = False
         sf_clause = "AND l.is_superflex = %s" if sf_param is not None else ""
 
+        lf_param = None
+        if league_format == "dynasty":
+            lf_param = 2
+        elif league_format == "redraft":
+            lf_param = 1
+        lf_clause = "AND l.league_type = %s" if lf_param is not None else ""
+
         from dashboard_services.db import get_conn
         from utils.utils import load_players_index
 
         players_map = load_players_index() or {}
 
         with get_conn() as conn:
-            base = [player_id, season] + ([sf_param] if sf_param is not None else [])
+            base = ([player_id, season]
+                    + ([sf_param] if sf_param is not None else [])
+                    + ([lf_param] if lf_param is not None else []))
 
             count_row = conn.execute(
                 f"""
@@ -20734,7 +20871,7 @@ def api_trade_intel_player_trades(player_id: str):
                 JOIN trade_intel_assets a ON a.trade_id = t.id
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                 WHERE a.player_id = %s AND a.asset_type = 'player'
-                  AND t.season = %s {sf_clause}
+                  AND t.season = %s {sf_clause}{lf_clause}
                 """,
                 base,
             ).fetchone()
@@ -20749,7 +20886,7 @@ def api_trade_intel_player_trades(player_id: str):
                 JOIN trade_intel_assets a ON a.trade_id = t.id
                 LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
                 WHERE a.player_id = %s AND a.asset_type = 'player'
-                  AND t.season = %s {sf_clause}
+                  AND t.season = %s {sf_clause}{lf_clause}
                 ORDER BY t.created_at DESC NULLS LAST
                 LIMIT %s OFFSET %s
                 """,
@@ -24279,6 +24416,10 @@ def api_ask_gm():
     if not question or not league_id:
         return jsonify({"error": "Missing required parameters"}), 400
 
+    _user_id = session.get("viewer_username")
+    if not has_premium_for_viewer(_user_id, session.get("viewer_user_id"), league_id, platform, season):
+        return jsonify({"error": "premium_required"}), 403
+
     if not ai_enabled():
         return jsonify({"error": "AI unavailable"}), 503
 
@@ -24717,7 +24858,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         dynasty_rank_html = f'<span style="font-weight:700;font-size:15px;">#{dynasty_rank}</span><span style="font-size:11px;color:var(--text-muted);margin-left:1px;">/{n_teams}</span>'
 
         picks_html = ""
-        if _pick_labels:
+        if _pick_labels and platform != "espn":
             picks_html = (
                 '<div class="sc-section-title">Draft Capital</div>'
                 '<div class="sc-picks-row">'
@@ -24766,8 +24907,8 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
       </div>
       <div class="sc-stats-row">
         <div class="sc-stat"><span class="sc-stat-val" style="color:{_grade_color}">{grade_label}</span><span class="sc-stat-lbl">Grade</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{dynasty_rank_html}</span><span class="sc-stat-lbl">Dynasty Rank</span></div>
-        <div class="sc-stat"><span class="sc-stat-val">{_dv_fmt}</span><span class="sc-stat-lbl">Dynasty Value</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{dynasty_rank_html}</span><span class="sc-stat-lbl">{"Roster Rank" if platform == "espn" else "Dynasty Rank"}</span></div>
+        <div class="sc-stat"><span class="sc-stat-val">{_dv_fmt}</span><span class="sc-stat-lbl">{"Roster Value" if platform == "espn" else "Dynasty Value"}</span></div>
         <div class="sc-stat"><span class="sc-stat-val">{age_html}</span><span class="sc-stat-lbl">Avg Age</span></div>
       </div>
       <div class="sc-stats-row" style="border-top:1px solid rgba(255,255,255,.06);padding-top:10px;margin-top:0;">
