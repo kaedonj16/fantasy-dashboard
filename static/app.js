@@ -695,9 +695,15 @@ function emptyState(container, message, iconClass) {
           var piBtn = document.createElement('button');
           piBtn.className = 'scm-btn scm-pi-btn';
           piBtn.id = 'scmPiBtn';
-          piBtn.textContent = 'Playoff Impact';
+          piBtn.title = 'Toggle Playoff Impact';
+          piBtn.textContent = 'PI';
+          if (e.data.visible) {
+            _piVisible = true;
+            piBtn.classList.add('scm-pi-btn-active');
+          }
           piBtn.onclick = function() {
             var on = piBtn.classList.toggle('scm-pi-btn-active');
+            _piVisible = on;
             if (frame && frame.contentWindow) {
               frame.contentWindow.postMessage({type: 'scTogglePi', show: on}, '*');
             }

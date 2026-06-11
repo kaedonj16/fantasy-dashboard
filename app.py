@@ -25090,7 +25090,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   <link rel="stylesheet" href="/static/dashboard.css?v={_CSS_V}">
   <link rel="stylesheet" href="/static/font-awesome.css?v={_CSS_V}">
   <style>
-    body {{ background:var(--bg,#020617); min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:{'0' if is_embed else '16px'}; }}
+    body {{ background:var(--bg,#020617); {'min-height:100vh; justify-content:center;' if not is_embed else ''} display:flex; flex-direction:column; align-items:center; padding:{'0' if is_embed else '16px'}; }}
     .share-card-wrap {{ max-width:440px; width:100%; }}
     .sc-player-age {{ font-size:11px; color:var(--text-muted); margin-left:auto; margin-right:6px; }}
     .sc-picks-row {{ display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px 14px; }}
@@ -25172,8 +25172,13 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
       if (e.data && e.data.type === 'scSetTheme') applyTheme(e.data.theme);
     }});
     // Report height to parent (for iframe auto-sizing)
+    var _shTimer = null;
     function sendHeight() {{
-      window.parent.postMessage({{ type: 'scCardHeight', height: document.body.scrollHeight }}, '*');
+      clearTimeout(_shTimer);
+      _shTimer = setTimeout(function() {{
+        var el = document.querySelector('.share-card-wrap');
+        window.parent.postMessage({{ type: 'scCardHeight', height: el ? el.offsetHeight : document.body.scrollHeight }}, '*');
+      }}, 30);
     }}
     if (window.parent !== window) {{
       window.addEventListener('load', sendHeight);
@@ -25566,7 +25571,7 @@ def page_trade_card(share_id: str):
             result.append({
                 "name": meta.get("full_name") or meta.get("name") or pid,
                 "pos": pos,
-                "val": round(val),
+                "val": round(val, 1),
             })
         return result
 
@@ -25589,7 +25594,7 @@ def page_trade_card(share_id: str):
                 if len(parts) >= 2:
                     base_key = f"{parts[0]}_{parts[1]}_mid"
                     val = float(pick_tbl.get(base_key) or 0)
-            result.append({"name": _fmt_pick(pid), "val": round(val)})
+            result.append({"name": _fmt_pick(pid), "val": round(val, 1)})
         return result
 
     pos_colors = {"QB": "#6366f1", "RB": "#10b981", "WR": "#3b82f6", "TE": "#f59e0b"}
@@ -25625,11 +25630,11 @@ def page_trade_card(share_id: str):
         verdict_color = "#4ade80"
     elif eff_diff > 0:
         pct = round(abs(eff_diff) / max(eff_b, 1) * 100)
-        verdict = f"{t1} favored +{round(abs(eff_diff)):,} ({pct}%)"
+        verdict = f"{t1} favored +{abs(eff_diff):.1f} ({pct}%)"
         verdict_color = "#60a5fa"
     else:
         pct = round(abs(eff_diff) / max(eff_a, 1) * 100)
-        verdict = f"{t2} favored +{round(abs(eff_diff)):,} ({pct}%)"
+        verdict = f"{t2} favored +{abs(eff_diff):.1f} ({pct}%)"
         verdict_color = "#f97316"
     max_side = max(abs(eff_a), abs(eff_b), 1.0)
     normalized_diff = max(-1.0, min(1.0, eff_diff / max_side))
@@ -25644,7 +25649,7 @@ def page_trade_card(share_id: str):
             col = pos_colors.get(pl["pos"], "#64748b")
             pos_tag = (f'<span class="asset-pos" style="background:{col}22;color:{col}">{pl["pos"]}</span>'
                        if pl["pos"] else "")
-            val_str = f'{pl["val"]:,}' if pl["val"] else ""
+            val_str = f'{pl["val"]:,.1f}' if pl["val"] else ""
             rows.append(
                 f'<div class="asset-row">'
                 f'{pos_tag}'
@@ -25653,7 +25658,7 @@ def page_trade_card(share_id: str):
                 f'</div>'
             )
         for pk in picks:
-            pk_val_str = f'{pk["val"]:,}' if pk.get("val") else ""
+            pk_val_str = f'{pk["val"]:,.1f}' if pk.get("val") else ""
             rows.append(
                 f'<div class="asset-row">'
                 f'<span class="asset-pos" style="background:rgba(139,92,246,.2);color:#a78bfa">PICK</span>'
@@ -25668,8 +25673,8 @@ def page_trade_card(share_id: str):
     side_a_html = _asset_html(side_a, picks_a)
     side_b_html = _asset_html(side_b, picks_b)
     # Show depth-adjusted totals in headers when available (matches what the calc showed)
-    total_a_str = f"{round(eff_a):,}" if eff_a else (f"{total_a:,}" if total_a else "0")
-    total_b_str = f"{round(eff_b):,}" if eff_b else (f"{total_b:,}" if total_b else "0")
+    total_a_str = f"{eff_a:,.1f}" if eff_a else (f"{total_a:,.1f}" if total_a else "0")
+    total_b_str = f"{eff_b:,.1f}" if eff_b else (f"{total_b:,.1f}" if total_b else "0")
     is_embed = request.args.get('embed') == '1'
     copy_link_style = 'display:none' if is_embed else ''
     body_pad = '0' if is_embed else '16px'
@@ -25702,12 +25707,23 @@ def page_trade_card(share_id: str):
                 )
                 pi_html = f"""
       <div class="divider"></div>
-      <div class="pi-section" id="piSection" style="display:none">
+      <div class="pi-section" id="piSection" style="display:__PI_DISPLAY__">
         <div class="pi-title">Playoff Impact · {t1}</div>
         <div class="pi-grid">{cells}</div>
       </div>"""
         except Exception:
             pass
+
+    # Show PI by default for signed-in premium users
+    _pi_default = False
+    if pi_html:
+        _viewer_id = session.get("viewer_username")
+        if _viewer_id:
+            try:
+                _pi_default = has_premium_access(_viewer_id, p.get("league_id") or None, p.get("platform") or "sleeper")
+            except Exception:
+                pass
+    pi_html = pi_html.replace("__PI_DISPLAY__", "block" if _pi_default else "none")
 
     # In embed/modal mode the PI toggle lives in the scm-toolbar (via postMessage).
     # On the standalone page it lives in the card header.
@@ -25740,7 +25756,7 @@ def page_trade_card(share_id: str):
     :root{{--tc-bg:#0b1120;--tc-card:#0f1d36;--tc-hdr:#0b1628;--tc-border:rgba(255,255,255,.1);--tc-border-sub:rgba(255,255,255,.07);--tc-text:#e2e8f0;--tc-text2:#f1f5f9;--tc-muted:#94a3b8;--tc-dim:#64748b;--tc-dimmer:#475569;--tc-bar:rgba(255,255,255,.08);}}
     [data-theme="light"]{{--tc-bg:#f1f5f9;--tc-card:#ffffff;--tc-hdr:#f8fafc;--tc-border:rgba(0,0,0,.1);--tc-border-sub:rgba(0,0,0,.06);--tc-text:#1e293b;--tc-text2:#0f172a;--tc-muted:#475569;--tc-dim:#64748b;--tc-dimmer:#94a3b8;--tc-bar:rgba(0,0,0,.07);}}
     *{{box-sizing:border-box;margin:0;padding:0}}
-    body{{background:var(--tc-bg);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:{body_pad};font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;transition:background .2s}}
+    body{{background:var(--tc-bg);{'min-height:100vh;justify-content:center;' if not is_embed else ''}display:flex;flex-direction:column;align-items:center;padding:{body_pad};font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;transition:background .2s}}
     .wrap{{max-width:520px;width:100%;position:relative}}
     .card{{background:var(--tc-card);border:1px solid var(--tc-border);border-radius:20px;overflow:hidden;transition:background .2s,border-color .2s}}
     .card-header{{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--tc-border-sub);background:var(--tc-hdr)}}
@@ -25867,14 +25883,20 @@ def page_trade_card(share_id: str):
         if (s) {{ s.style.display = e.data.show ? 'block' : 'none'; sendHeight(); }}
       }}
     }});
+    var _shTimer = null;
     function sendHeight(){{
-      window.parent.postMessage({{ type: 'scCardHeight', height: document.body.scrollHeight }}, '*');
+      clearTimeout(_shTimer);
+      _shTimer = setTimeout(function(){{
+        var el = document.querySelector('.wrap');
+        window.parent.postMessage({{ type: 'scCardHeight', height: el ? el.offsetHeight : document.body.scrollHeight }}, '*');
+      }}, 30);
     }}
     if (window.parent !== window) {{
       window.addEventListener('load', function(){{
         sendHeight();
-        if (document.getElementById('piSection')) {{
-          window.parent.postMessage({{ type: 'scHasPi' }}, '*');
+        var _piEl = document.getElementById('piSection');
+        if (_piEl && {str(_pi_default).lower()}) {{
+          window.parent.postMessage({{ type: 'scHasPi', visible: _piEl.style.display !== 'none' }}, '*');
         }}
       }});
       new MutationObserver(sendHeight).observe(document.body, {{ subtree: true, childList: true, attributes: true }});
