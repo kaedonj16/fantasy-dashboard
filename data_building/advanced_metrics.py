@@ -1232,12 +1232,20 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "wide_rate":            {"label": "Wide Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from out wide."},
     "inline_rate":          {"label": "Inline Rate",         "category": "Receiving", "positions": ["TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of snaps a tight end lined up inline (attached to the formation)."},
     "pass_block_rate":      {"label": "Block Rate",          "category": "Receiving", "positions": ["TE", "RB"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of pass snaps spent blocking rather than running a route."},
+    "explosive_runs_pg":       {"label": "Explosive Runs/G",  "category": "Rushing", "positions": ["RB"], "min_vol": _V_GAMES, "desc": "Explosive runs (10+ yards) per game.", "computed_sql": "m.explosive_runs_10_plus::float / NULLIF(m.games, 0)", "computed_null": "m.explosive_runs_10_plus IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "avoided_tackles_pg":      {"label": "Avoided Tackles/G", "category": "Rushing", "positions": ["RB"], "min_vol": _V_GAMES, "desc": "Tackles avoided per game (PFF).", "computed_sql": "m.avoided_tackles::float / NULLIF(m.games, 0)", "computed_null": "m.avoided_tackles IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     # ── Volume counts — useful as combo-filter targets ────────────────────────
     "total_targets":      {"label": "Targets",      "category": "Volume", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total targets in the season."},
     "total_receptions":   {"label": "Receptions",   "category": "Volume", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total receptions in the season."},
     "total_routes":       {"label": "Routes",       "category": "Volume", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Estimated total routes run (= season receiving yards ÷ yprr). Requires both yprr and receptions data."},
     "total_carries":      {"label": "Carries",      "category": "Volume", "positions": ["RB", "QB"], "integer": True, "desc": "Total carries in the season."},
     "total_touches":      {"label": "Touches",      "category": "Volume", "positions": ["RB", "WR", "TE"], "integer": True, "desc": "Total carries plus receptions in the season."},
+    # ── Per-game volume rates ─────────────────────────────────────────────────
+    "carries_per_game":    {"label": "Carries/G",    "category": "Volume", "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Carries per game.", "computed_sql": "m.total_carries::float / NULLIF(m.games, 0)", "computed_null": "m.total_carries IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "targets_per_game":    {"label": "Targets/G",    "category": "Volume", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Targets per game.", "computed_sql": "m.total_targets::float / NULLIF(m.games, 0)", "computed_null": "m.total_targets IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "receptions_per_game": {"label": "Receptions/G", "category": "Volume", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Receptions per game.", "computed_sql": "m.total_receptions::float / NULLIF(m.games, 0)", "computed_null": "m.total_receptions IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "routes_per_game":     {"label": "Routes/G",     "category": "Volume", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Routes run per game.", "computed_sql": "m.total_routes::float / NULLIF(m.games, 0)", "computed_null": "m.total_routes IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "touches_per_game":    {"label": "Touches/G",    "category": "Volume", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Carries plus receptions per game.", "computed_sql": "m.total_touches::float / NULLIF(m.games, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
 }
 
 
@@ -1390,6 +1398,17 @@ def get_metric_leaderboard(
         else:
             specific_vol_col = ""
 
+        # Computed metrics (per-game rates) use SQL expressions instead of columns.
+        _spec = LEADERBOARD_METRICS[metric]
+        _computed_sql = _spec.get("computed_sql")
+        _computed_null = _spec.get("computed_null")
+        if _computed_sql:
+            metric_value_expr = f"{_computed_sql} AS value"
+            metric_where = _computed_null
+        else:
+            metric_value_expr = f"m.{metric} AS value"
+            metric_where = f"m.{metric} IS NOT NULL"
+
         # DISTINCT ON picks each player's most recent non-null snapshot for this
         # metric within the season. This prevents the old single-max-date approach
         # from dropping players whose computed metric (e.g. yards_per_carry) was
@@ -1399,9 +1418,9 @@ def get_metric_leaderboard(
                 FROM (
                     SELECT DISTINCT ON (m.player_id)
                         m.player_id, m.position, {games_col} {specific_vol_col}
-                        m.{metric} AS value
+                        {metric_value_expr}
                     FROM player_advanced_metrics m{vol_join}
-                    WHERE m.{metric} IS NOT NULL{gate}
+                    WHERE {metric_where}{gate}
                     ORDER BY m.player_id, m.as_of_date DESC
                 ) t
                 ORDER BY t.value DESC LIMIT %s""",

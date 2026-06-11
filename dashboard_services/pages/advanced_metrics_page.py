@@ -373,16 +373,15 @@ def build_advanced_metrics_body(
       .am-info { position:relative; display:inline-flex; margin-left:5px; color:var(--text-muted); cursor:help; vertical-align:middle; }
       .am-info i { font-size:11px; }
       .am-info-tip {
-        position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%);
+        position:fixed;
         width:240px; background:var(--text); color:var(--card); font-size:12px; font-weight:500;
         line-height:1.45; letter-spacing:normal; text-transform:none; padding:9px 11px; border-radius:8px;
-        box-shadow:0 6px 22px rgba(15,23,42,.22); opacity:0; visibility:hidden; transition:opacity .15s; z-index:50; pointer-events:none;
+        box-shadow:0 6px 22px rgba(15,23,42,.22); opacity:0; visibility:hidden; transition:opacity .15s; z-index:9999; pointer-events:none;
       }
       .am-info-tip::after {
         content:""; position:absolute; top:100%; left:50%; transform:translateX(-50%);
         border:6px solid transparent; border-top-color:var(--text);
       }
-      .am-info:hover .am-info-tip, .am-info:focus .am-info-tip { opacity:1; visibility:visible; }
       /* My roster toggle */
       .am-roster-toggle {
         display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:20px;
@@ -1827,4 +1826,22 @@ _AM_JS = r"""
   state.minVol = defaultVol(state.metric);
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
   updateSortHeaders(); updateCompareBar(); updateFilterBar(); fetchData(); loadOwnedRoster();
+
+  // Info tooltip: position:fixed so it escapes the card's overflow:hidden container
+  const _infoEl = document.getElementById('amMetricInfo');
+  if (_infoEl && metricTip) {
+    function _placeTip() {
+      var r = _infoEl.getBoundingClientRect();
+      var tw = 240;
+      var lft = r.left + r.width / 2 - tw / 2;
+      if (lft < 8) lft = 8;
+      if (lft + tw > window.innerWidth - 8) lft = window.innerWidth - tw - 8;
+      metricTip.style.left = lft + 'px';
+      metricTip.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+    }
+    _infoEl.addEventListener('mouseenter', function() { _placeTip(); metricTip.style.opacity = '1'; metricTip.style.visibility = 'visible'; });
+    _infoEl.addEventListener('mouseleave', function() { metricTip.style.opacity = '0'; metricTip.style.visibility = 'hidden'; });
+    _infoEl.addEventListener('focus', function() { _placeTip(); metricTip.style.opacity = '1'; metricTip.style.visibility = 'visible'; });
+    _infoEl.addEventListener('blur', function() { metricTip.style.opacity = '0'; metricTip.style.visibility = 'hidden'; });
+  }
 """
