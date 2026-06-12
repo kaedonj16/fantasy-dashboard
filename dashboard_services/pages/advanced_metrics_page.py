@@ -345,8 +345,8 @@ def build_advanced_metrics_body(
 
     style = """
     <style>
-      /* Widen the card on desktop so 5 metric columns fit comfortably */
-      .card.central:has(#amTable) { max-width:1180px; }
+      /* Widen the card on desktop so 7 metric columns fit comfortably */
+      .card.central:has(#amTable) { max-width:1400px; }
       .am-legend-btn {
         flex-shrink:0; display:flex; align-items:center; gap:6px;
         padding:5px 10px; border:1px solid var(--border); border-radius:8px;
@@ -820,14 +820,14 @@ _AM_JS = r"""
                   comboFilters: [],     // [{key, op, val}]
                   filterColKeys: new Set(), // keys auto-shown as compact cols when used in filters
                   pinnedIds: _loadPins() };
-  const MAX_COMPARE = 4;
+  const MAX_COMPARE = 6;
 
-  // Preset sets: clicking "Load X Set" clears current extras and loads these 4 metrics.
+  // Preset sets: clicking "Load X Set" clears current extras and loads these metrics.
   const _PRESETS = {
-    'General':   ['snap_share', 'opportunity_share', 'red_zone_usage', 'grades_offense', 'yards_per_touch'],
-    'Rushing':   ['yards_per_carry', 'elusive_rating', 'breakaway_percentage', 'explosive_runs_10_plus', 'pff_rushing_grade'],
-    'Receiving': ['yprr', 'yards_per_target', 'catch_rate', 'yards_after_catch_per_reception', 'avg_depth_of_target'],
-    'Passing':   ['pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate', 'nfl_passer_rating', 'pass_tds_per_game'],
+    'General':   ['snap_share', 'opportunity_share', 'grades_offense', 'red_zone_usage', 'role_score', 'yards_per_touch', 'total_tds_pg'],
+    'Rushing':   ['yards_per_carry', 'pff_rushing_grade', 'elusive_rating', 'breakaway_percentage', 'explosive_runs_10_plus', 'opportunity_share', 'yards_per_touch'],
+    'Receiving': ['yprr', 'yards_per_target', 'catch_rate', 'avg_depth_of_target', 'yards_after_catch_per_reception', 'target_share', 'air_yards_share'],
+    'Passing':   ['pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate', 'yards_per_attempt', 'nfl_passer_rating', 'int_rate', 'pressure_to_sack_rate'],
   };
   window.amLoadPreset = function(cat) {
     const keys = _PRESETS[cat];
