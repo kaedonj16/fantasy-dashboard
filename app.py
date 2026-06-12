@@ -26140,11 +26140,11 @@ def api_push_broadcast():
 def api_cron_notifications():
     """Cron hook for push notifications. Pass type='hourly' or type='daily'.
     Call hourly for lineup lock; call once at your preferred daytime hour for daily alerts."""
-    data   = request.get_json(force=True) or {}
-    secret = data.get("secret", "")
-    cron_secret = os.environ.get("CRON_SECRET", "")
-    if not cron_secret or secret != cron_secret:
+    secret       = request.headers.get("X-Admin-Secret", "")
+    admin_secret = os.environ.get("ADMIN_SECRET", "")
+    if not admin_secret or secret != admin_secret:
         return jsonify({"error": "Forbidden"}), 403
+    data = request.get_json(force=True) or {}
     kind = data.get("type", "hourly")
     try:
         from utils.push_notifications import run_hourly, run_all_daily
