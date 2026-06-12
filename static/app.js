@@ -9257,13 +9257,13 @@ function buildWeeklyTrendRows(weeks, position) {
     var deltaHtml = '';
     if (delta >= 0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + delta.toFixed(1) + '</span>';
     else if (delta <= -0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; ' + delta.toFixed(1) + '</span>';
-    var last = series[series.length - 1];
+    var lastWk = series[series.length - 1];
     return '<div class="pm-wt-row">'
       + '<div class="pm-wt-label">' + label + '</div>'
       + pmSparkline(series, color, SW)
       + '<div class="pm-wt-stats">'
-      + '<span class="pm-wt-last">' + last.toFixed(1) + (suffix || '') + '</span>'
-      + '<span class="pm-wt-avg">avg ' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
+      + '<span class="pm-wt-last">' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
+      + '<span class="pm-wt-avg">last ' + lastWk.toFixed(1) + (suffix || '') + '</span>'
       + deltaHtml
       + '</div></div>';
   }
@@ -9301,7 +9301,7 @@ function buildWeeklyTrendRows(weeks, position) {
     + '</div>'
     + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">Weeks '
     + weeks[0].week + '&ndash;' + weeks[weeks.length - 1].week
-    + ' &middot; arrow compares last 3 weeks to the season average</div>';
+    + ' &middot; arrow compares last 3 weeks to the period average</div>';
 }
 
 // Collapse/expand a section in the player compare view.
@@ -9387,9 +9387,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
 
   // Role Score (0–100)
   if (metrics.role_score != null) {
-    const _grade = getRoleGrade(metrics.role_score);
-    const _rs = _rankSub('role_score');
-    defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1), sub: [_grade, _rs].filter(Boolean).join(' · ') || null });
+    defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1), sub: getRoleGrade(metrics.role_score) });
   }
   // Snap Share (0–1 → %).  85 % = starter ceiling → full bar.
   if (metrics.snap_share != null && position !== "QB") {
