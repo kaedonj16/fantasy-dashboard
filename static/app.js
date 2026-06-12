@@ -9245,11 +9245,19 @@ function pmSparkline(series, color) {
   const REF = 100, h = 26;
   const max = Math.max.apply(null, series.concat([1]));
   const step = REF / (series.length - 1);
+  const toY = function(v) { return (h - 2 - (v / max) * (h - 6)).toFixed(1); };
   const pts = series.map(function(v, i) {
-    return (i * step).toFixed(1) + ',' + (h - 2 - (v / max) * (h - 6)).toFixed(1);
+    return (i * step).toFixed(1) + ',' + toY(v);
   }).join(' ');
+  const avg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
+  const avgY = toY(avg);
+  const lastX = ((series.length - 1) * step).toFixed(1);
+  const lastY = toY(series[series.length - 1]);
   return '<div class="pm-wt-spark"><svg width="100%" height="' + h + '" viewBox="0 0 ' + REF + ' ' + h + '" preserveAspectRatio="none" style="display:block;">'
-    + '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" points="' + pts + '"/></svg></div>';
+    + '<line x1="0" y1="' + avgY + '" x2="' + REF + '" y2="' + avgY + '" stroke="' + color + '" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>'
+    + '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" points="' + pts + '"/>'
+    + '<circle cx="' + lastX + '" cy="' + lastY + '" r="2.5" fill="' + color + '"/>'
+    + '</svg></div>';
 }
 
 // Shared renderer: sparkline rows for a player's weekly usage series.
