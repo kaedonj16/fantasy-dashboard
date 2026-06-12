@@ -1352,7 +1352,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             simple_dropdown("Players", [
                 ("Player Rankings", "/players",   "players"),
                 ("Top Movers", "/top-movers", "top-movers"),
-                ("Advanced Metrics <span class='nav-pro-badge'>PRO</span>", "/metrics", "advanced-metrics"),
+                ("Advanced Metrics", "/metrics", "advanced-metrics"),
                 ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
                 ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
@@ -11111,9 +11111,8 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
     from dashboard_services.pages.advanced_metrics_page import build_advanced_metrics_body
     from data_building.advanced_metrics import LEADERBOARD_METRICS
     user_id = session.get("viewer_username")
-    has_premium = has_premium_access(user_id, league_id, platform or "sleeper")
     body = build_advanced_metrics_body(
-        has_premium, LEADERBOARD_METRICS, league_id, season, platform
+        True, LEADERBOARD_METRICS, league_id, season, platform
     )
     return render_page("Advanced Metrics", league_id, "advanced-metrics", body, platform, season)
 
