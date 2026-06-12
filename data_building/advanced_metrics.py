@@ -1745,8 +1745,8 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         CASE WHEN MAX(games) > 0 THEN MAX(total_tds)::float / MAX(games)        END AS total_tds_pg
                     FROM player_advanced_metrics
                     WHERE season = %s AND position = %s
-                      AND games IS NOT NULL AND games > 0
                     GROUP BY player_id
+                    HAVING MAX(games) > 0
                 ),
                 r AS (
                     SELECT player_id,
