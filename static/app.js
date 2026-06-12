@@ -7326,7 +7326,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }).join("");
 
     const _notifLink = (window._pushEndpoint || localStorage.getItem('push-notif-v1') === 'subscribed')
-      ? `<button class="changelog-notif-settings-btn" onclick="closeDropdown();openNotifPrefs();" title="Manage push notifications">&#128276; Notification Settings</button>`
+      ? `<button class="changelog-notif-settings-btn" onclick="closeDropdown();openNotifPrefs();" title="Manage push notifications"><img src="/static/bell.png" style="width:13px;height:13px;opacity:.7;vertical-align:-1px;margin-right:6px;">Notification Settings</button>`
       : '';
     dropdown.innerHTML = `
       <div class="changelog-dropdown-header">
