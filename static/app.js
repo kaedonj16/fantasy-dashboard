@@ -591,7 +591,40 @@ function emptyState(container, message, iconClass) {
         if (sub) { endpoint = sub.endpoint; window._pushEndpoint = endpoint; }
       } catch (_) {}
     }
-    if (!endpoint) { if (typeof showToast === 'function') showToast('Enable notifications first.', 'info'); return; }
+    if (!endpoint) {
+      // Not subscribed yet — show a subscribe prompt in a modal
+      var overlay = document.createElement('div');
+      overlay.id = 'notifPrefsOverlay';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      var modal = document.createElement('div');
+      modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.2);text-align:center;';
+      modal.innerHTML = '<div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:8px;">'
+        + '<button onclick="document.getElementById(\'notifPrefsOverlay\').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted);">&times;</button>'
+        + '</div>'
+        + '<img src="/static/bell.png" style="width:28px;height:28px;opacity:.7;margin-bottom:10px;">'
+        + '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:6px;">Push Notifications</div>'
+        + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 16px;">Enable notifications to get alerts for trades, waiver pickups, and league updates.</p>'
+        + '<button id="notifEnableBtn" style="background:var(--accent,#3b82f6);color:#fff;border:none;border-radius:10px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer;width:100%;">Enable Notifications</button>';
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+      document.getElementById('notifEnableBtn').addEventListener('click', async function() {
+        overlay.remove();
+        var enableBtn = document.getElementById('notifEnableBtn2') || document.querySelector('.notif-subscribe-btn');
+        // Trigger the main subscribe flow
+        if (typeof subscribePush === 'function') {
+          try {
+            var permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+              await subscribePush();
+              localStorage.setItem('push-notif-v1', 'subscribed');
+              if (typeof showToast === 'function') showToast('Notifications enabled!', 'success');
+            }
+          } catch (_) {}
+        }
+      });
+      return;
+    }
 
     // Fetch current prefs
     var prefs = {};
@@ -7337,7 +7370,7 @@ document.addEventListener("DOMContentLoaded", () => {
       `;
     }).join("");
 
-    const _notifLink = (window._pushEndpoint || localStorage.getItem('push-notif-v1') === 'subscribed')
+    const _notifLink = ('serviceWorker' in navigator && 'PushManager' in window)
       ? `<button class="changelog-notif-settings-btn" onclick="closeDropdown();openNotifPrefs();" title="Manage push notifications"><img src="/static/bell.png" style="width:13px;height:13px;opacity:.7;vertical-align:-1px;margin-right:6px;">Notification Settings</button>`
       : '';
     dropdown.innerHTML = `
