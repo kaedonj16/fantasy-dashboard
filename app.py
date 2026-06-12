@@ -26138,15 +26138,20 @@ def api_push_broadcast():
 @app.route("/api/cron/notifications", methods=["POST"])
 @limiter.limit("60 per minute")
 def api_cron_notifications():
-    """Hourly cron hook for time-sensitive push checks (lineup lock, etc.)."""
+    """Cron hook for push notifications. Pass type='hourly' or type='daily'.
+    Call hourly for lineup lock; call once at your preferred daytime hour for daily alerts."""
     data   = request.get_json(force=True) or {}
     secret = data.get("secret", "")
     cron_secret = os.environ.get("CRON_SECRET", "")
     if not cron_secret or secret != cron_secret:
         return jsonify({"error": "Forbidden"}), 403
+    kind = data.get("type", "hourly")
     try:
-        from utils.push_notifications import run_hourly
-        run_hourly()
+        from utils.push_notifications import run_hourly, run_all_daily
+        if kind == "daily":
+            run_all_daily()
+        else:
+            run_hourly()
     except Exception as exc:
         logger.warning("[cron/notifications] failed: %s", exc)
     return jsonify({"ok": True})

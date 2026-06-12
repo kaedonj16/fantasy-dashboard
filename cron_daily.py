@@ -568,18 +568,6 @@ print(f"[cron] Calibrated history snapshot: {n} players")
     else:
         print("[cron] Cache flush skipped — APP_URL or CRON_SECRET not set")
 
-    # ------------------------------------------------------------------ #
-    # Step 12: Push notifications                                        #
-    # Runs after value history (step 3b) and breakout (step 5b) are     #
-    # up to date so drops and breakout candidate data are fresh.        #
-    # ------------------------------------------------------------------ #
-    _run_step("""
-from dotenv import load_dotenv; load_dotenv()
-from utils.push_notifications import run_all_daily
-run_all_daily()
-print("[cron] Push notifications dispatched")
-""", "push_notifications")
-
     print(f"[cron] Daily run completed - Season {season}, Week {week}")
 
 
