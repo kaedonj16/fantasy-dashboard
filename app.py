@@ -25731,7 +25731,10 @@ def page_trade_card(share_id: str):
     copy_link_style = 'display:none' if is_embed else ''
     body_pad = '0' if is_embed else '16px'
     share_url = request.url.split('?')[0]
-    trade_url = f"{request.host_url}t/{share_id}"
+    from urllib.parse import urlencode as _ue
+    _PLAY_KEYS = {"a", "b", "ap", "bp", "t1", "t2", "roster_id"}
+    _play_qs = _ue({k: v for k, v in p.items() if k in _PLAY_KEYS and v})
+    trade_url = f"{request.host_url}trade?{_play_qs}" if _play_qs else f"{request.host_url}trade"
 
     # Playoff Impact section
     pi_html = ""
