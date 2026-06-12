@@ -8220,14 +8220,14 @@ function openPlayerModal(playerId, playerName, opts) {
       const _metricsPos  = pos && pos !== 'PICK' ? pos : '';
       const _srch = '&search=' + encodeURIComponent(playerName || '');
       const _posSets = {
-        QB: { label: 'Passing',   metric: 'yards_per_attempt' },
-        RB: { label: 'Rushing',   metric: 'yards_per_carry'   },
-        WR: { label: 'Receiving', metric: 'yards_per_target'  },
-        TE: { label: 'Receiving', metric: 'yards_per_target'  },
+        QB: { label: 'Passing',   preset: 'Passing'   },
+        RB: { label: 'Rushing',   preset: 'Rushing'   },
+        WR: { label: 'Receiving', preset: 'Receiving' },
+        TE: { label: 'Receiving', preset: 'Receiving' },
       };
       const _posSet = _posSets[_metricsPos];
       const _setLink = _posSet
-        ? `<a href="${_metricsBase}?pos=${encodeURIComponent(_metricsPos)}&metric=${_posSet.metric}${_srch}" class="pm-section-link" title="Open ${_posSet.label} leaderboard">${_posSet.label} &rarr;</a>`
+        ? `<a href="${_metricsBase}?pos=${encodeURIComponent(_metricsPos)}&preset=${_posSet.preset}${_srch}" class="pm-section-link" title="Open ${_posSet.label} leaderboard">${_posSet.label} &rarr;</a>`
         : '';
       const metricsHTML = hasMetrics ? `
         <div id="advancedMetricsSection">
@@ -9220,9 +9220,9 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
 }
 
 // ── Player modal: weekly usage trends ────────────────────────────────────────
-function pmSparkline(series, color) {
+function pmSparkline(series, color, sparkW) {
   if (!series || series.length < 2) return '';
-  const w = 120, h = 26;
+  const w = sparkW || 120, h = 26;
   const max = Math.max.apply(null, series.concat([1]));
   const step = w / (series.length - 1);
   const pts = series.map(function(v, i) {
@@ -9238,8 +9238,8 @@ function buildWeeklyTrendRows(weeks, position) {
     return '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Not enough weekly data for this season.</div>';
   }
   var pos = (position || '').toUpperCase();
-  function rowFor(label, key, color, suffix) {
-    var series = weeks.map(function(w) { return Number(w[key] || 0); });
+  var SW = 72; // sparkline width in the 2-col grid
+  function _wt_row(label, series, color, suffix) {
     if (!series.some(function(v) { return v > 0; })) return '';
     var seasonAvg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
     var r3 = series.slice(-3);
@@ -9251,32 +9251,18 @@ function buildWeeklyTrendRows(weeks, position) {
     var last = series[series.length - 1];
     return '<div class="pm-wt-row">'
       + '<div class="pm-wt-label">' + label + '</div>'
-      + pmSparkline(series, color)
+      + pmSparkline(series, color, SW)
       + '<div class="pm-wt-stats">'
       + '<span class="pm-wt-last">' + last.toFixed(1) + (suffix || '') + '</span>'
       + '<span class="pm-wt-avg">avg ' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
       + deltaHtml
       + '</div></div>';
   }
+  function rowFor(label, key, color, suffix) {
+    return _wt_row(label, weeks.map(function(w) { return Number(w[key] || 0); }), color, suffix);
+  }
   function rowForComputed(label, fn, color, suffix) {
-    var series = weeks.map(fn);
-    if (!series.some(function(v) { return v > 0; })) return '';
-    var seasonAvg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
-    var r3 = series.slice(-3);
-    var recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
-    var delta = recentAvg - seasonAvg;
-    var deltaHtml = '';
-    if (delta >= 0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + delta.toFixed(1) + '</span>';
-    else if (delta <= -0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; ' + delta.toFixed(1) + '</span>';
-    var last = series[series.length - 1];
-    return '<div class="pm-wt-row">'
-      + '<div class="pm-wt-label">' + label + '</div>'
-      + pmSparkline(series, color)
-      + '<div class="pm-wt-stats">'
-      + '<span class="pm-wt-last">' + last.toFixed(1) + (suffix || '') + '</span>'
-      + '<span class="pm-wt-avg">avg ' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
-      + deltaHtml
-      + '</div></div>';
+    return _wt_row(label, weeks.map(fn), color, suffix);
   }
   var computedRows = '';
   if (pos === 'RB') {
@@ -9323,13 +9309,22 @@ function cmpToggleSection(wrapId, headerEl) {
   if (hint) hint.style.opacity = collapsed ? '' : '0.8';
 }
 
+function pmWtRender(wrap, position) {
+  var allWeeks = wrap._weeklyData || [];
+  var sel = document.getElementById('pmWtWkRange');
+  var n = sel ? parseInt(sel.value) || 0 : 0;
+  var weeks = n > 0 ? allWeeks.slice(-n) : allWeeks;
+  var el = document.getElementById('pmWtContent');
+  if (el) el.innerHTML = buildWeeklyTrendRows(weeks, position);
+}
+
 function pmToggleWeeklyTrends(playerId) {
-  const wrap = document.getElementById('pmWeeklyTrendsWrap');
-  const body = document.getElementById('pmWeeklyTrendsBody');
-  const btn = document.getElementById('pmWeeklyTrendsBtn');
+  var wrap = document.getElementById('pmWeeklyTrendsWrap');
+  var body = document.getElementById('pmWeeklyTrendsBody');
+  var btn  = document.getElementById('pmWeeklyTrendsBtn');
   if (!wrap || !body || !btn) return;
 
-  const open = body.style.display !== 'none';
+  var open = body.style.display !== 'none';
   if (open) {
     body.style.display = 'none';
     btn.innerHTML = 'Weekly trends &#9662;';
@@ -9341,12 +9336,26 @@ function pmToggleWeeklyTrends(playerId) {
   wrap.dataset.loaded = '1';
 
   body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading weekly data…</div>';
-  const seasonParam = wrap.dataset.season ? ('?season=' + wrap.dataset.season) : '';
-  const wrapPosition = wrap.dataset.position || '';
+  var seasonParam = wrap.dataset.season ? ('?season=' + wrap.dataset.season) : '';
+  var wrapPosition = wrap.dataset.position || '';
   fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      body.innerHTML = buildWeeklyTrendRows(d.weeks || [], wrapPosition);
+      wrap._weeklyData = d.weeks || [];
+      body.innerHTML =
+        '<div class="pm-wt-filter-bar">'
+        + '<span class="pm-wt-filter-label">Weeks</span>'
+        + '<select id="pmWtWkRange" class="pm-wt-wk-sel">'
+        + '<option value="">All</option>'
+        + '<option value="4">Last 4</option>'
+        + '<option value="8">Last 8</option>'
+        + '<option value="12">Last 12</option>'
+        + '</select>'
+        + '</div>'
+        + '<div id="pmWtContent"></div>';
+      pmWtRender(wrap, wrapPosition);
+      var sel = document.getElementById('pmWtWkRange');
+      if (sel) sel.addEventListener('change', function() { pmWtRender(wrap, wrapPosition); });
     })
     .catch(function() {
       body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Could not load weekly data.</div>';

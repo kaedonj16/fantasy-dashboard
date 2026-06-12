@@ -827,7 +827,7 @@ _AM_JS = r"""
     'General':   ['snap_share', 'opportunity_share', 'red_zone_usage', 'grades_offense', 'yards_per_touch'],
     'Rushing':   ['yards_per_carry', 'elusive_rating', 'breakaway_percentage', 'explosive_runs_10_plus', 'pff_rushing_grade'],
     'Receiving': ['yprr', 'yards_per_target', 'catch_rate', 'yards_after_catch_per_reception', 'avg_depth_of_target'],
-    'Passing':   ['pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate', 'nfl_passer_rating', 'pressure_to_sack_rate'],
+    'Passing':   ['pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate', 'nfl_passer_rating', 'pass_tds_per_game'],
   };
   window.amLoadPreset = function(cat) {
     const keys = _PRESETS[cat];
@@ -2019,6 +2019,8 @@ _AM_JS = r"""
   state.minVol = _initParams.get('minvol') || defaultVol(state.metric);
   const _searchInit = _initParams.get('search') || '';
   if (_searchInit && searchEl) { searchEl.value = _searchInit; state.search = _searchInit; }
+  const _presetInit = _initParams.get('preset') || '';
+  if (_presetInit && _PRESETS[_presetInit]) amLoadPreset(_presetInit);
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
   updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL(); fetchData(); loadOwnedRoster();
 
