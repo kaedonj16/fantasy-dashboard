@@ -26324,6 +26324,31 @@ def _notify_top_movers_weekly():
 _notify_top_movers_weekly()
 
 
+def _start_notification_scheduler():
+    """Background thread: fire all push notifications once per day at noon ET."""
+    import threading
+    import time as _time
+
+    def _run():
+        while True:
+            try:
+                from datetime import datetime
+                from zoneinfo import ZoneInfo
+                now = datetime.now(ZoneInfo("America/New_York"))
+                if now.hour == 12 and now.minute < 5:
+                    from utils.push_notifications import run_hourly, run_all_daily
+                    run_hourly()
+                    run_all_daily()
+            except Exception as exc:
+                logger.warning("[notify-scheduler] %s", exc)
+            _time.sleep(300)  # check every 5 minutes
+
+    threading.Thread(target=_run, daemon=True, name="notify-scheduler").start()
+
+
+_start_notification_scheduler()
+
+
 if __name__ == "__main__":
     # Debug mode (Werkzeug interactive debugger) is opt-in via FLASK_DEBUG=1 and
     # never on in production. Production is served by gunicorn (see startup.py),
