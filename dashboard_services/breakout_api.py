@@ -1039,12 +1039,26 @@ def _resolve_bo_season(requested: Optional[int]) -> Optional[int]:
 
 
 @breakout_bp.route('/candidates')
-@premium_required
 def candidates():
-    """Get all breakout candidates (top-N by score; pass limit=0 for all)."""
+    """Get breakout candidates. Non-premium users receive a 3-candidate preview."""
+    from flask import session
+    from dashboard_services.subscriptions import has_premium_for_viewer
     season = _resolve_bo_season(request.args.get('season', type=int))
     min_score = request.args.get('min_score', default=0.0, type=float)
     limit = request.args.get('limit', default=15, type=int)
+    league_id = request.args.get('league_id')
+    platform = request.args.get('platform', 'sleeper')
+    has_premium = has_premium_for_viewer(
+        session.get('viewer_username'), session.get('viewer_user_id'),
+        league_id, platform, None,
+    )
+    if not has_premium:
+        all_result = get_breakout_candidates(season, min_score, limit=None)
+        all_cands = all_result.get('candidates', [])
+        preview = dict(all_result)
+        preview['candidates'] = all_cands[:3]
+        preview['locked_count'] = max(0, len(all_cands) - 3)
+        return jsonify(preview)
     return jsonify(get_breakout_candidates(season, min_score, limit=limit or None))
 
 

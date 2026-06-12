@@ -646,7 +646,7 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#3b82f6;" viewBox="0 0 24 24" fill="currentColor"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Trade Calculator <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
+            <span class="home-feature-row-title">Trade Calculator</span>
             <span class="home-feature-row-desc">AI-powered deal grades, counter proposals, and real trade comparisons from thousands of logged transactions</span>
           </div>
         </div>
@@ -746,7 +746,7 @@ FORM_BODY = """
             <i class="fa-solid fa-trophy" style="font-size:16px;color:#eab308;" aria-hidden="true"></i>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">League History <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
+            <span class="home-feature-row-title">League History</span>
             <span class="home-feature-row-desc">AI season recaps, head-to-head rivalry records, historical draft grades, and complete year-by-year standings</span>
           </div>
         </div>
@@ -11112,36 +11112,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
     except Exception:
         bo_season = max(season, datetime.now().year)
 
-    if not has_premium:
-        # Show teaser and auto-open the paywall popup (also covers not-logged-in)
-        teaser_html = """
-    <div class="card central">
-      <div class="card-header">
-        <h2>Breakout Engine</h2>
-        <div style="font-size: 14px; color: var(--text-muted); margin-top: 4px;">
-          Players positioned for breakouts based on opportunity, efficiency, and roster changes
-        </div>
-      </div>
-      <div class="card-body" style="text-align:center;padding:60px 24px;">
-        <div style="font-size:40px;margin-bottom:16px;opacity:.3;"><i class="fa-solid fa-chart-line"></i></div>
-        <div style="font-weight:700;font-size:18px;margin-bottom:8px;">Premium Feature</div>
-        <div style="color:var(--text-muted);font-size:14px;margin-bottom:24px;">
-          See breakout scores, opportunity drivers, hit probability, and<br>
-          PPG projections for every candidate.
-        </div>
-        <button onclick="showPaywall('breakout-candidates')"
-          style="padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;">
-          Unlock Breakout Engine
-        </button>
-      </div>
-    </div>
-    <script>
-      // Pre-open paywall so user sees it immediately
-      document.addEventListener('DOMContentLoaded', function() { showPaywall('breakout-candidates'); });
-    </script>
-    """
-        return render_page("Breakout Engine", league_id, "breakouts", teaser_html, platform, season)
-
     body_html = f"""
     <div class="card central">
       <div class="card-header">
@@ -11180,6 +11150,7 @@ def page_breakouts(platform: str, season: int, league_id: str):
     <script>
       const BO_HAS_PREMIUM = {str(has_premium).lower()};
       let breakoutCandidates = [];
+      let lockedCount = 0;
       let currentFilter = 'ALL';
       let currentPage = 1;
       const PAGE_SIZE = 12;
@@ -11189,9 +11160,10 @@ def page_breakouts(platform: str, season: int, league_id: str):
         .then(res => res.json())
         .then(data => {{
           breakoutCandidates = (data && data.candidates) || [];
+          lockedCount = data.locked_count || 0;
           document.getElementById('breakoutsLoading').style.display = 'none';
 
-          if (breakoutCandidates.length === 0) {{
+          if (breakoutCandidates.length === 0 && lockedCount === 0) {{
             document.getElementById('breakoutsEmpty').style.display = 'block';
           }} else {{
             renderBreakouts();
@@ -11257,6 +11229,32 @@ def page_breakouts(platform: str, season: int, league_id: str):
           ? breakoutCandidates
           : breakoutCandidates.filter(c => c.position === currentFilter);
 
+        if (!BO_HAS_PREMIUM) {{
+          // Non-premium: API already returned only 3 preview candidates + lockedCount
+          const hasContent = filtered.length > 0 || lockedCount > 0;
+          if (!hasContent) {{
+            document.getElementById('breakoutsEmpty').style.display = 'block';
+            container.style.display = 'none';
+            return;
+          }}
+          document.getElementById('breakoutsEmpty').style.display = 'none';
+          container.style.display = 'block';
+          let html = '<div class="breakout-grid">';
+          filtered.forEach(candidate => {{ html += renderBreakoutCard(candidate); }});
+          if (lockedCount > 0) {{
+            html += `
+              <div class="breakout-card" onclick="showPaywall('breakout-candidates')" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;border:2px dashed var(--border);">
+                <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
+                <div style="font-weight:700;font-size:15px;">${{lockedCount}} more candidates locked</div>
+                <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to PRO to see all breakout<br>candidates with full details</div>
+                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
+              </div>`;
+          }}
+          html += '</div>';
+          container.innerHTML = html;
+          return;
+        }}
+
         if (filtered.length === 0) {{
           document.getElementById('breakoutsEmpty').style.display = 'block';
           container.style.display = 'none';
@@ -11265,26 +11263,6 @@ def page_breakouts(platform: str, season: int, league_id: str):
 
         document.getElementById('breakoutsEmpty').style.display = 'none';
         container.style.display = 'block';
-
-        const FREE_LIMIT = 3;
-        if (!BO_HAS_PREMIUM) {{
-          const visible = filtered.slice(0, FREE_LIMIT);
-          const locked = filtered.length > FREE_LIMIT;
-          let html = '<div class="breakout-grid">';
-          visible.forEach(candidate => {{ html += renderBreakoutCard(candidate); }});
-          if (locked) {{
-            html += `
-              <div class="breakout-card" onclick="showPaywall('breakout-candidates')" style="cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:180px;border:2px dashed var(--border);">
-                <i class="fa-solid fa-lock" style="font-size:22px;color:var(--text-muted);"></i>
-                <div style="font-weight:700;font-size:15px;">${{filtered.length - FREE_LIMIT}} more candidates locked</div>
-                <div style="font-size:12px;color:var(--text-muted);text-align:center;">Upgrade to see all breakout<br>candidates and full details</div>
-                <span style="font-size:11px;font-weight:700;padding:4px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;border-radius:12px;">Upgrade &rarr;</span>
-              </div>`;
-          }}
-          html += '</div>';
-          container.innerHTML = html;
-          return;
-        }}
 
         // Premium: paginate
         const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
