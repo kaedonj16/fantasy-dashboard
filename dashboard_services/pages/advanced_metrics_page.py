@@ -935,9 +935,12 @@ _AM_JS = r"""
     for (const [key, spec] of items) {
       const on = active.has(key);
       const isPrimary = key === state.metric;
+      const wBadge = spec.weeklyCapable
+        ? ' <span class="am-sp-weekly-badge" title="Supports week-range filtering">W</span>'
+        : '';
       html += '<div class="am-sp-item' + (on ? ' am-sp-active' : '') + '" onclick="amPickerClick(\'' + key + '\')">'
         + '<span class="am-sp-check">' + (on ? '&#10003;' : '') + '</span>'
-        + spec.label
+        + spec.label + wBadge
         + (isPrimary ? ' <span style="font-size:10px;opacity:.6">(primary)</span>' : '')
         + '</div>';
     }
@@ -1014,6 +1017,10 @@ _AM_JS = r"""
       if (s) p.set('season', String(s));
       const vol = defaultVol(key);
       if (vol) p.set('min_vol', vol);
+      // Apply the same week range as the primary metric so columns stay in sync.
+      const { ws, we } = resolveWeekRange();
+      if (ws) p.set('week_start', String(ws));
+      if (we) p.set('week_end',   String(we));
       return p;
     }
     const curSeason = state.season || (cfg.seasons && cfg.seasons[0] ? String(cfg.seasons[0]) : '');
