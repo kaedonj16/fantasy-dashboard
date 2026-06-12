@@ -6,14 +6,8 @@ Each entry represents a user-facing change.
 CHANGELOG = [
     {
         "date": "2026-06-13",
-        "tag": "feature",
-        "text": "Player Modal: Advanced Metrics tab now shows positional ranks for every efficiency stat — see exactly where a player stands among their position group for grades, yards per carry, target share, aDOT, and more. Ranks require a minimum of 4+ games, with additional volume thresholds per metric (20+ carries, 15+ targets, 50+ pass attempts).",
-        "link": "/players"
-    },
-    {
-        "date": "2026-06-13",
-        "tag": "feature",
-        "text": "Player Modal: Weekly Trends now correctly updates the displayed average when you switch the time filter. The main number reflects the selected window instead of always showing the most recent week.",
+        "tag": "new",
+        "text": "Player Modal: Advanced Metrics tab now shows positional ranks for every efficiency stat so you can see exactly where a player stands among their position group for grades, yards per carry, target share, aDOT, and more. Ranks require 4+ games with additional volume thresholds per metric (20+ carries, 15+ targets, 50+ pass attempts). Weekly Trends now correctly updates the displayed average when you switch the time filter so the main number always reflects the selected window.",
         "link": "/players"
     },
     {
