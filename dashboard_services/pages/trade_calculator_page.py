@@ -829,6 +829,19 @@ def build_trade_calculator_body(
           </div><!-- /#otcCalcTab -->
 
           <div id="otcSuggestionsTab" style="display:none;">
+            <!-- Upgrade CTA shown when user doesn't have PRO (hidden by JS when premium) -->
+            <div id="otcSuggPaywall" style="display:none;text-align:center;padding:56px 16px 40px;">
+              <i class="fa-solid fa-lock" style="font-size:28px;color:var(--text-muted);opacity:.5;"></i>
+              <div style="font-weight:700;font-size:17px;margin-top:14px;">Trade Suggestions is a PRO feature</div>
+              <div style="font-size:13px;color:var(--text-muted);margin:6px 0 20px;max-width:340px;margin-left:auto;margin-right:auto;">
+                Get personalized trade ideas based on your roster's needs, scoring format, and positional scarcity.
+              </div>
+              <button onclick="if(window.showPaywall)showPaywall('trade-suggestions')"
+                style="font-size:13px;font-weight:700;padding:10px 22px;border:none;border-radius:10px;
+                       background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;cursor:pointer;">
+                Upgrade to PRO &rarr;
+              </button>
+            </div>
             <!-- Sub-tab bar -->
             <div class="otc-sugg-subtab-bar">
               <div class="otc-sugg-subtab-toggle">

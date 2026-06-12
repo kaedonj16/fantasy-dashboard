@@ -228,4 +228,29 @@ def api_set_viewer_roster():
 @auth_bp.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("index"))
+    # Return a tiny page that strips sensitive fields from saved_viewer in
+    # localStorage (so auto-restore can't silently re-login) while keeping just
+    # the username so the "Continue as X" banner still shows on the home page.
+    return """<!doctype html><html><head><meta charset="utf-8">
+<title>Signing out…</title></head><body>
+<script>
+try {
+  var sv = JSON.parse(localStorage.getItem('saved_viewer') || 'null');
+  if (sv) {
+    // Keep only enough for "Continue as X" — strip everything that would
+    // allow auto-restore to silently re-authenticate.
+    localStorage.setItem('saved_viewer', JSON.stringify({
+      username:  sv.username  || '',
+      league_id: sv.league_id || '',
+      platform:  sv.platform  || 'sleeper',
+      season:    sv.season    || '',
+      team_name: sv.team_name || '',
+      // Intentionally omit: user_id, roster_id (prevent auto-restore auth)
+    }));
+  }
+  // Mark explicit logout so auto-restore skips this session.
+  sessionStorage.setItem('_explicitLogout', '1');
+} catch(_) {}
+window.location.replace('/');
+</script>
+</body></html>"""
