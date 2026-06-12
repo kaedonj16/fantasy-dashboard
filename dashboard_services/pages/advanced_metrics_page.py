@@ -159,7 +159,7 @@ def build_advanced_metrics_body(
         onclick="if(event.target===this)this.style.display='none'">
         <div class="am-legend-card" role="dialog" aria-label="Metric glossary">
           <div class="am-legend-head">
-            <span>Metric Glossary</span>
+            <span>Metric Glossary <span style="font-size:11px;font-weight:500;opacity:.55;margin-left:6px;">{count} metrics</span></span>
             <button type="button" class="am-legend-close" aria-label="Close"
               onclick="document.getElementById('amLegendModal').style.display='none'">&times;</button>
           </div>
@@ -346,7 +346,7 @@ def build_advanced_metrics_body(
 
       </div>
     </div>
-    """.replace("__METRIC_OPTIONS__", metric_options).replace("__SEASON_OPTIONS__", season_options).replace("__LEGEND__", legend_html)
+    """.replace("__METRIC_OPTIONS__", metric_options).replace("__SEASON_OPTIONS__", season_options).replace("__LEGEND__", legend_html).replace("{count}", str(sum(1 for s in metrics_spec.values() if not s.get("hidden"))))
 
     style = """
     <style>
