@@ -9385,9 +9385,11 @@ function buildWeeklyTrendRows(weeks, position) {
       + '<div class="pm-wt-label">' + label + '</div>'
       + pmSparkline(series, color)
       + '<div class="pm-wt-stats">'
+      + '<div class="pm-wt-stats-top">'
       + '<span class="pm-wt-last">' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
-      + '<span class="pm-wt-avg">last game: ' + lastWk.toFixed(1) + (suffix || '') + '</span>'
       + deltaHtml
+      + '</div>'
+      + '<span class="pm-wt-avg">last game: ' + lastWk.toFixed(1) + (suffix || '') + '</span>'
       + '</div></div>';
   }
   function rowFor(label, key, color, suffix) {
