@@ -7048,7 +7048,8 @@ select:focus {
 .pm-wt-tab { padding: 3px 10px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); border-radius: 20px; background: transparent; color: var(--text-muted); cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; }
 .pm-wt-tab:hover { background: var(--bg-alt); color: var(--text); }
 .pm-wt-tab.pm-wt-tab-active { background: var(--accent, #3b82f6); border-color: var(--accent, #3b82f6); color: #fff; }
-.pm-wt-grid { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; }
+.pm-wt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; padding-top: 8px; }
+@media (max-width: 600px) { .pm-wt-grid { grid-template-columns: 1fr; } }
 .pm-wt-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pm-wt-label { flex: 0 0 60px; font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-wt-spark { flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center; }
