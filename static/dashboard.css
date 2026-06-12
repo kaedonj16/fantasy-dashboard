@@ -3478,6 +3478,10 @@ thead th {
   100% { width: 95%; }
 }
 
+.flo-logo-dark { display: none; }
+[data-theme="dark"] .flo-logo-light { display: none; }
+[data-theme="dark"] .flo-logo-dark  { display: block; }
+
 [data-theme="dark"] .fullscreen-loading-overlay {
   background: rgba(15, 23, 42, 0.97);
 }
