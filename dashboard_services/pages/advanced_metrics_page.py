@@ -1834,7 +1834,7 @@ _AM_JS = r"""
   }
 
   function fetchData() {
-    if (!cfg.hasPremium) { paywall.style.display = ''; loading.style.display = 'none'; return; }
+    // paywall removed — advanced metrics is available to all users
     state.fetching = true;
     loading.style.display = ''; empty.style.display = 'none'; paywall.style.display = 'none'; tbody.innerHTML = '';
     if (avgNote) avgNote.style.display = 'none';
