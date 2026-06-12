@@ -43,13 +43,15 @@ def build_advanced_metrics_body(
             return len(_CAT_ORDER)
 
     _PRESET_CATS = [c for c in ["Rushing", "Receiving", "Passing", "General"] if c in groups]
-    preset_optgroup = '<optgroup label="&#9889; Quick Sets">' + "".join(
+    # Position sets stay in Quick Sets; category sets move into their own optgroup
+    preset_optgroup = '<optgroup label="Quick Sets">' + "".join(
         f'<option value="__preset__{p}">{p} Set</option>'
-        for p in ["QB", "RB", "WR", "TE"] + _PRESET_CATS
+        for p in ["QB", "RB", "WR", "TE"]
     ) + '</optgroup>'
     metric_options = preset_optgroup + "\n" + "\n".join(
-        '<optgroup label="{label}">{opts}</optgroup>'.format(
+        '<optgroup label="{label}">{cat_preset}{opts}</optgroup>'.format(
             label=cat,
+            cat_preset=f'<option value="__preset__{cat}">{cat} Set</option>' if cat in _PRESET_CATS else '',
             opts="".join(
                 f'<option value="{k}"{" selected" if k == "role_score" else ""}>{lbl}</option>'
                 for k, lbl in groups[cat]
@@ -214,10 +216,6 @@ def build_advanced_metrics_body(
               <option value="">All Teams</option>
             </select>
           </div>
-          <div class="am-ctrl am-ctrl-games am-mobile-filter" id="amGamesCtrl" style="display:none;">
-            <label class="am-ctrl-label" id="amVolLabel">Min</label>
-            <select id="amMinGames" class="am-select am-season-select"></select>
-          </div>
           <div class="am-ctrl am-mobile-filter" id="amSortCtrl">
             <label class="am-ctrl-label">Sort</label>
             <button id="amSortBtn" type="button" class="am-sort-btn">High &rarr; Low</button>
@@ -266,6 +264,10 @@ def build_advanced_metrics_body(
             <input type="number" id="amAgeMin" class="am-age-input" placeholder="Min" min="18" max="45">
             <span class="am-filter-sep">&#8211;</span>
             <input type="number" id="amAgeMax" class="am-age-input" placeholder="Max" min="18" max="45">
+          </div>
+          <div class="am-vol-ctrl" id="amGamesCtrl" style="display:none;">
+            <span class="am-filter-label" id="amVolLabel">Min</span>
+            <select id="amMinGames" class="am-select am-season-select" style="font-size:12px;padding:4px 8px;"></select>
           </div>
           <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
           <div id="amFilterForm" class="am-filter-form" style="display:none;">
@@ -516,8 +518,8 @@ def build_advanced_metrics_body(
         /* Metric takes full width; Search fills the row below it */
         .am-ctrl:first-child { flex:1 0 100%; }
         .am-ctrl-search { flex:1 0 100%; }
-        /* Season, Min Games, Sort share a row */
-        .am-ctrl-season, .am-ctrl-games { flex:1; }
+        /* Season and Sort share a row */
+        .am-ctrl-season { flex:1; }
         .am-select { min-width:0; width:100%; }
         /* Smaller position pills on narrow screens */
         .am-pos { padding:5px 10px; font-size:11px; }
@@ -692,6 +694,7 @@ def build_advanced_metrics_body(
       .am-filter-label { font-size:11px; font-weight:700; color:var(--text-muted); white-space:nowrap; }
       .am-filter-sep { font-size:12px; color:var(--text-muted); }
       .am-age-wrap { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+      .am-vol-ctrl { display:flex; align-items:center; gap:6px; flex-shrink:0; }
       .am-age-input {
         padding:5px 8px; border:1px solid var(--border); border-radius:8px;
         background:var(--card); color:var(--text); font-size:12px; width:58px;
@@ -1661,6 +1664,9 @@ _AM_JS = r"""
     const start = state.page * PAGE_SIZE;
     const pageRows = displayRows.slice(start, start + PAGE_SIZE);
 
+    // Re-rank based on filtered set so rank 1 = best player in current view.
+    const filteredRankMap = new Map(displayRows.map((r, i) => [String(r.player_id), i + 1]));
+
     const multiMode = state.extraMetrics.length > 0;
     const totalRanked = posRows.length;
     tbody.innerHTML = pageRows.map((r, i) => {
@@ -1668,7 +1674,7 @@ _AM_JS = r"""
       const col = posColor(r.position);
       const owned = ownedIds.has(String(r.player_id));
       const pinned = state.pinnedIds.has(String(r.player_id));
-      const rank = rankMap.get(String(r.player_id)) || '';
+      const rank = filteredRankMap.get(String(r.player_id)) || '';
       const volNum = r.vol != null ? r.vol : (r.games != null ? r.games : '–');
       const gamesCell = '<td class="am-games">' + volNum + '</td>';
       const ownedBadge = owned ? '<span class="am-owned-badge">YOURS</span>' : '';
@@ -1910,31 +1916,43 @@ _AM_JS = r"""
     const filterKey = document.getElementById('amFilterKey');
     if (!bar || !chips) return;
     if (filterKey) {
-      const opts = [
-        { value: 'primary', label: (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric },
-        { value: 'age', label: 'Age' },
-      ];
-      state.extraMetrics.forEach(function(key) {
-        opts.push({ value: key, label: (cfg.metrics[key] && cfg.metrics[key].label) || key });
-      });
-      // Add volume/context metrics relevant to the primary metric's positions.
-      // Covers: targets, receptions, carries, touches for the position group; also
-      // route_participation for WR/TE (the "routes" the user mentioned).
       const primaryPositions = new Set(relevantPositions(state.metric));
-      const added = new Set(opts.map(function(o) { return o.value; }));
-      const _contextKeys = Object.keys(cfg.metrics).concat(['route_participation']);
-      Object.entries(cfg.metrics).forEach(function([key, spec]) {
-        if (added.has(key)) return;
-        const cat = spec.category || '';
-        const isVol = cat === 'Volume';
-        const isRoute = key === 'route_participation';
-        if (!isVol && !isRoute) return;
+      const added = new Set(['age', 'primary']);
+
+      // Volume/context metrics in a natural order.
+      const _VOL_ORDER = [
+        'total_carries', 'total_touches', 'total_targets', 'total_receptions',
+        'total_routes', 'routes_per_game', 'route_participation',
+      ];
+      const volOpts = [];
+      _VOL_ORDER.forEach(function(key) {
+        const spec = cfg.metrics[key];
+        if (!spec) return;
         const mpos = new Set(spec.positions || []);
         const relevant = [...primaryPositions].some(function(p) { return mpos.has(p); });
         if (!relevant) return;
-        opts.push({ value: key, label: spec.label });
+        volOpts.push({ value: key, label: spec.label });
         added.add(key);
       });
+      // Catch any other Volume metrics not in the explicit order list.
+      Object.entries(cfg.metrics).forEach(function([key, spec]) {
+        if (added.has(key)) return;
+        if ((spec.category || '') !== 'Volume') return;
+        const mpos = new Set(spec.positions || []);
+        const relevant = [...primaryPositions].some(function(p) { return mpos.has(p); });
+        if (!relevant) return;
+        volOpts.push({ value: key, label: spec.label });
+        added.add(key);
+      });
+
+      // Order: Age → volume/context → primary metric → extra metrics
+      const opts = [{ value: 'age', label: 'Age' }];
+      volOpts.forEach(function(o) { opts.push(o); });
+      opts.push({ value: 'primary', label: (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric });
+      state.extraMetrics.forEach(function(key) {
+        opts.push({ value: key, label: (cfg.metrics[key] && cfg.metrics[key].label) || key });
+      });
+
       filterKey.innerHTML = opts.map(function(o) {
         return '<option value="' + o.value + '">' + o.label + '</option>';
       }).join('');
