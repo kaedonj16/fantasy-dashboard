@@ -9624,7 +9624,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
   }
 
   const rankNote = ranks && Object.keys(ranks).length
-    ? '<div class="am-rank-note" title="Position ranks include only players with 4+ games played">Ranked among players with 4+ games</div>'
+    ? '<div class="am-rank-note" title="Minimums: 4+ games · efficiency metrics also require 20+ carries (rush) · 15+ targets (receiving) · 50+ attempts (passing)">Ranked among qualified players</div>'
     : '';
   let html = rankNote + _grid(defs, true);
 
