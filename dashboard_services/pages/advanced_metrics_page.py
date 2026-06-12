@@ -2017,6 +2017,8 @@ _AM_JS = r"""
   if (_thMetric) _thMetric.addEventListener('click', () => sortByCol(state.metric));
 
   state.minVol = _initParams.get('minvol') || defaultVol(state.metric);
+  const _searchInit = _initParams.get('search') || '';
+  if (_searchInit && searchEl) { searchEl.value = _searchInit; state.search = _searchInit; }
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
   updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL(); fetchData(); loadOwnedRoster();
 

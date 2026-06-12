@@ -8214,10 +8214,21 @@ function openPlayerModal(playerId, playerName, opts) {
       }
 
       // ── Build Adv Metrics panel HTML ──────────────────────────────────────
+      const _metricsBase = leagueId
+        ? `/${platform}/${season}/${leagueId}/metrics`
+        : '/metrics';
+      const _metricsPos  = pos && pos !== 'PICK' ? pos : '';
+      const _posMetric   = { RB: 'yards_per_carry', WR: 'yards_per_target', TE: 'yards_per_target', QB: 'snap_share' };
+      const _metricsDefault = _posMetric[_metricsPos] || '';
+      const _metricsUrl  = _metricsBase
+        + '?pos=' + encodeURIComponent(_metricsPos)
+        + (_metricsDefault ? '&metric=' + _metricsDefault : '')
+        + '&search=' + encodeURIComponent(playerName || '');
       const metricsHTML = hasMetrics ? `
         <div id="advancedMetricsSection">
           <div class="pm-section-header">
             <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span></span>
+            <a href="${_metricsUrl}" class="pm-section-link" title="Open full leaderboard filtered to this player">Leaderboard &rarr;</a>
           </div>
           <div id="advMetricsPills"></div>
           <div id="advancedMetricsContent">
