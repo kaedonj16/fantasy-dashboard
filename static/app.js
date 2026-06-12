@@ -7325,11 +7325,15 @@ document.addEventListener("DOMContentLoaded", () => {
       `;
     }).join("");
 
+    const _notifLink = (window._pushEndpoint || localStorage.getItem('push-notif-v1') === 'subscribed')
+      ? `<button class="changelog-notif-settings-btn" onclick="closeDropdown();openNotifPrefs();" title="Manage push notifications">&#128276; Notification Settings</button>`
+      : '';
     dropdown.innerHTML = `
       <div class="changelog-dropdown-header">
         <span>Recent Updates</span>
         <button class="changelog-dropdown-close" aria-label="Close">&times;</button>
       </div>
+      ${_notifLink ? `<div class="changelog-notif-settings-row">${_notifLink}</div>` : ''}
       ${entries}
     `;
     dropdown.querySelector('.changelog-dropdown-close').addEventListener('click', function(e) {

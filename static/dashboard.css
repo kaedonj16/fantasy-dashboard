@@ -821,6 +821,9 @@ ul {
   flex-shrink: 0;
 }
 .changelog-dropdown-close:hover { color: var(--text); }
+.changelog-notif-settings-row { padding: 8px 12px; border-bottom: 0.5px solid var(--border); background: var(--bg-alt); }
+.changelog-notif-settings-btn { width: 100%; padding: 7px 10px; background: transparent; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; font-weight: 600; color: var(--text-muted); cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s; }
+.changelog-notif-settings-btn:hover { background: var(--row); color: var(--text); }
 
 .changelog-entry {
   padding: 12px 14px;
