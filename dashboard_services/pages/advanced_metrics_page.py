@@ -251,6 +251,7 @@ def build_advanced_metrics_body(
             <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Add Metric</button>
             <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
           </div>
+          <button id="amClearExtrasBtn" type="button" class="am-add-stat-btn am-clear-btn" style="display:none;" onclick="amClearExtras()">&#10005; Clear</button>
         </div>
 
         <!-- Filter bar: age + combo conditions -->
@@ -556,6 +557,8 @@ def build_advanced_metrics_body(
       }
       .am-add-stat-btn:hover { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
       .am-add-stat-btn:disabled { opacity:.35; cursor:not-allowed; }
+      .am-clear-btn { border-style:solid; }
+      .am-clear-btn:hover { border-color:#ef4444; color:#ef4444; }
       /* Stat picker dropdown */
       .am-stat-picker {
         position:absolute; top:calc(100% + 6px); right:0; z-index:200;
@@ -891,6 +894,8 @@ _AM_JS = r"""
       return '<span class="am-chip' + (primary ? ' am-chip-primary' : '') + '">' + lbl + x + '</span>';
     }).join('');
     if (addBtn) addBtn.disabled = state.extraMetrics.length >= MAX_COMPARE;
+    const clearBtn = document.getElementById('amClearExtrasBtn');
+    if (clearBtn) clearBtn.style.display = state.extraMetrics.length ? '' : 'none';
   }
 
   function buildStatPicker() {
@@ -952,6 +957,25 @@ _AM_JS = r"""
     if (state.filterColKeys) state.filterColKeys.delete(key);
     state.comboFilters = state.comboFilters.filter(f => f.key !== key);
     if (state.sortBy === key) {
+      state.sortBy = state.metric;
+      state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
+    }
+    updateCompareBar();
+    buildStatPicker();
+    syncExtraCols();
+    updateFilterBar();
+    render();
+  };
+
+  window.amClearExtras = function() {
+    state.extraMetrics.forEach(key => {
+      delete state.extraData[key];
+      delete state.extraPrevData[key];
+      if (state.filterColKeys) state.filterColKeys.delete(key);
+    });
+    state.extraMetrics = [];
+    state.comboFilters = state.comboFilters.filter(f => f.key === 'primary' || f.key === 'age');
+    if (state.sortBy !== state.metric) {
       state.sortBy = state.metric;
       state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
     }
