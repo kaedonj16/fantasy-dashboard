@@ -568,8 +568,85 @@ function emptyState(container, message, iconClass) {
         owner_id:  (window._viewerUid || null),
       }),
     });
+    window._pushEndpoint = s.endpoint;
     return true;
   }
+
+  var _NOTIF_TYPES = [
+    { key: 'lineup_lock',       label: 'Lineup Lock Reminders' },
+    { key: 'value_drops',       label: 'Value Drop Alerts' },
+    { key: 'waiver_candidates', label: 'Waiver Wire Updates' },
+    { key: 'rival_trades',      label: 'Rival Trade Alerts' },
+    { key: 'playoff_odds',      label: 'Playoff Odds Updates' },
+    { key: 'breakout_roster',   label: 'Breakout Player Alerts' },
+  ];
+
+  window.openNotifPrefs = async function() {
+    var endpoint = window._pushEndpoint;
+    if (!endpoint) {
+      // Try to get from active subscription
+      try {
+        var reg = await navigator.serviceWorker.ready;
+        var sub = await reg.pushManager.getSubscription();
+        if (sub) { endpoint = sub.endpoint; window._pushEndpoint = endpoint; }
+      } catch (_) {}
+    }
+    if (!endpoint) { if (typeof showToast === 'function') showToast('Enable notifications first.', 'info'); return; }
+
+    // Fetch current prefs
+    var prefs = {};
+    try {
+      var r = await fetch('/api/push/preferences?endpoint=' + encodeURIComponent(endpoint));
+      if (r.ok) prefs = (await r.json()).prefs || {};
+    } catch (_) {}
+
+    // Build modal
+    var overlay = document.createElement('div');
+    overlay.id = 'notifPrefsOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.2);';
+    var rows = _NOTIF_TYPES.map(function(t) {
+      var on = prefs[t.key] !== false;
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">'
+        + '<span style="font-size:13px;font-weight:600;color:var(--text);">' + t.label + '</span>'
+        + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
+        + '<input type="checkbox" data-key="' + t.key + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
+        + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
+        + '<span style="position:absolute;top:2px;left:' + (on ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
+        + '</label>'
+        + '</div>';
+    }).join('');
+    modal.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
+      + '<span style="font-size:15px;font-weight:800;color:var(--text);">Notification Settings</span>'
+      + '<button onclick="document.getElementById(\'notifPrefsOverlay\').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted);">&times;</button>'
+      + '</div>'
+      + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;">Choose which alerts you want to receive.</p>'
+      + rows;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+
+    // Wire up toggle interactions
+    modal.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+      cb.addEventListener('change', async function() {
+        var key = cb.dataset.key;
+        var on = cb.checked;
+        var track = cb.parentElement.querySelector('.np-track');
+        var thumb = cb.parentElement.querySelector('.np-thumb');
+        if (track) track.style.background = on ? 'var(--accent,#3b82f6)' : 'var(--border)';
+        if (thumb) thumb.style.left = on ? '18px' : '2px';
+        prefs[key] = on;
+        try {
+          await fetch('/api/push/preferences', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: endpoint, prefs: prefs }),
+          });
+        } catch (_) {}
+      });
+    });
+  };
 
   function showNotifBanner() {
     if (document.getElementById('push-notif-banner')) return;
@@ -598,7 +675,7 @@ function emptyState(container, message, iconClass) {
         var permission = await Notification.requestPermission();
         if (permission === 'granted') {
           await subscribePush();
-          if (typeof showToast === 'function') showToast('Notifications enabled!', 'success');
+          if (typeof showToast === 'function') showToast('Notifications enabled! <a href="#" onclick="openNotifPrefs();return false;" style="color:inherit;text-decoration:underline;margin-left:6px;">Customize →</a>', 'success');
           localStorage.setItem(NOTIF_KEY, 'subscribed');
         } else {
           localStorage.setItem(NOTIF_KEY, 'denied');
@@ -632,8 +709,9 @@ function emptyState(container, message, iconClass) {
   navigator.serviceWorker.ready.then(function (reg) {
     reg.pushManager.getSubscription().then(function (sub) {
       if (sub && Notification.permission === 'granted') {
-        // Already subscribed — sync localStorage and stay quiet
+        // Already subscribed — sync localStorage and store endpoint
         localStorage.setItem(NOTIF_KEY, 'subscribed');
+        window._pushEndpoint = sub.endpoint;
         return;
       }
       if (Notification.permission === 'granted' && !sub) {
@@ -9146,26 +9224,37 @@ function getRoleGrade(roleScore) {
   return 'Limited';
 }
 
+const _advMetricsCache = new Map();
+
 function loadAdvancedMetrics(playerId, leagueId, season) {
   const contentEl = document.getElementById('advancedMetricsContent');
   if (!contentEl) return;
 
   const isAuto = season === 'auto';
 
-  // Show spinner in the bars column only (values on the left stay intact)
-  contentEl.innerHTML = `
-    <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
-      <div class="loading-spinner" style="width:16px;height:16px;"></div>
-      <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
-    </div>
-  `;
-
   const leagueParam = leagueId ? `&league_id=${leagueId}` : '';
   const seasonParam = (season != null && season !== 'career' && season !== 'auto') ? `&season=${season}` : '';
   const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}`;
 
-  fetch(url)
+  const _cached = _advMetricsCache.get(url);
+  if (!_cached) {
+    contentEl.innerHTML = `
+      <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
+        <div class="loading-spinner" style="width:16px;height:16px;"></div>
+        <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
+      </div>
+    `;
+  }
+
+  (_cached ? Promise.resolve(_cached) : fetch(url)
     .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+    .then(data => {
+      if (!data.error && !data.premium_required) {
+        _advMetricsCache.set(url, data);
+        if (_advMetricsCache.size > 8) _advMetricsCache.delete(_advMetricsCache.keys().next().value);
+      }
+      return data;
+    }))
     .then(metricsData => {
       if (metricsData.error || metricsData.premium_required) {
         const section = document.getElementById('advancedMetricsSection');

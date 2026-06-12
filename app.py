@@ -25679,27 +25679,15 @@ def page_trade_card(share_id: str):
 
     if abs(eff_diff) <= fair_band:
         verdict = "Fair Trade"
-        verdict_winner = "Even Trade"
-        verdict_detail = ""
         verdict_color = "#4ade80"
-        verdict_chip_bg = "rgba(74,222,128,.15)"
-        verdict_chip_border = "rgba(74,222,128,.35)"
     elif eff_diff > 0:
         pct = round(abs(eff_diff) / max(eff_b, 1) * 100)
         verdict = f"{t1} favored +{abs(eff_diff):.1f} ({pct}%)"
-        verdict_winner = f"{t1} wins"
-        verdict_detail = f"+{abs(eff_diff):.0f} pts &middot; {pct}% advantage"
         verdict_color = "#60a5fa"
-        verdict_chip_bg = "rgba(96,165,250,.15)"
-        verdict_chip_border = "rgba(96,165,250,.35)"
     else:
         pct = round(abs(eff_diff) / max(eff_a, 1) * 100)
         verdict = f"{t2} favored +{abs(eff_diff):.1f} ({pct}%)"
-        verdict_winner = f"{t2} wins"
-        verdict_detail = f"+{abs(eff_diff):.0f} pts &middot; {pct}% advantage"
         verdict_color = "#f97316"
-        verdict_chip_bg = "rgba(249,115,22,.15)"
-        verdict_chip_border = "rgba(249,115,22,.35)"
     max_side = max(abs(eff_a), abs(eff_b), 1.0)
     normalized_diff = max(-1.0, min(1.0, eff_diff / max_side))
     # leftPct: 50% = center (fair), <50 = Team 1 favored, >50 = Team 2 favored
@@ -25853,9 +25841,7 @@ def page_trade_card(share_id: str):
     .pi-val{{font-size:13px;font-weight:800}}
     .pi-pos{{color:#4ade80}}
     .pi-neg{{color:#f87171}}
-    .verdict-wrap{{text-align:center;padding:14px 16px 16px}}
-    .verdict-chip{{display:inline-block;font-size:16px;font-weight:800;padding:6px 22px;border-radius:999px;letter-spacing:.01em}}
-    .verdict-detail{{margin-top:6px;font-size:12px;font-weight:600;color:var(--tc-muted)}}
+    .verdict{{text-align:center;padding:10px 16px 14px;font-size:13px;font-weight:700}}
     .divider{{border-top:1px solid var(--tc-border-sub)}}
     .footer{{padding:14px 18px;display:flex;gap:8px;justify-content:flex-end;background:var(--tc-hdr);border-top:1px solid var(--tc-border-sub)}}
     .btn{{font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;display:inline-block}}
@@ -25881,7 +25867,7 @@ def page_trade_card(share_id: str):
       .asset-pos{{font-size:8px;padding:2px 4px}}
       .bar-wrap{{padding:0 10px 10px}}
       .bar-labels{{font-size:9px}}
-      .verdict-chip{{font-size:14px;padding:5px 16px}}
+      .verdict{{font-size:12px;padding:8px 12px 10px}}
       .footer{{padding:10px 12px;gap:6px}}
       .btn{{padding:7px 12px;font-size:11px}}
       .pi-grid{{grid-template-columns:repeat(2,1fr)}}
@@ -25929,10 +25915,7 @@ def page_trade_card(share_id: str):
           <span>{t2} favored</span>
         </div>
       </div>
-      <div class="verdict-wrap">
-        <div class="verdict-chip" style="color:{verdict_color};background:{verdict_chip_bg};border:1px solid {verdict_chip_border};">{verdict_winner}</div>
-        {f'<div class="verdict-detail">{verdict_detail}</div>' if verdict_detail else ''}
-      </div>
+      <div class="verdict" style="color:{verdict_color}">{verdict}</div>
 
       {pi_html}
 
@@ -26025,8 +26008,8 @@ def _init_push_table():
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
-            # Migrate existing tables that predate the league/owner columns
-            for col, defn in [("league_id", "TEXT"), ("platform", "TEXT DEFAULT 'sleeper'"), ("owner_id", "TEXT")]:
+            # Migrate existing tables that predate the league/owner/prefs columns
+            for col, defn in [("league_id", "TEXT"), ("platform", "TEXT DEFAULT 'sleeper'"), ("owner_id", "TEXT"), ("prefs", "TEXT")]:
                 try:
                     conn.execute(f"ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS {col} {defn}")
                 except Exception:
@@ -26138,6 +26121,46 @@ def api_push_unsubscribe():
     except Exception as exc:
         logger.warning("[push] unsubscribe error: %s", exc)
     return jsonify({"ok": True})
+
+
+@app.route("/api/push/preferences", methods=["GET", "PUT"])
+@limiter.limit("60 per minute")
+def api_push_preferences():
+    import json as _json
+    _init_push_table()
+    if request.method == "GET":
+        endpoint = request.args.get("endpoint", "").strip()
+        if not endpoint:
+            return jsonify({"error": "Missing endpoint"}), 400
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                row = conn.execute(
+                    "SELECT prefs FROM push_subscriptions WHERE endpoint = %s", (endpoint,)
+                ).fetchone()
+            prefs_raw = (row[0] if row else None) or "{}"
+            return jsonify({"prefs": _json.loads(prefs_raw)})
+        except Exception as exc:
+            logger.warning("[push] preferences get error: %s", exc)
+            return jsonify({"prefs": {}})
+    else:  # PUT
+        data = request.get_json(force=True) or {}
+        endpoint = data.get("endpoint", "").strip()
+        prefs = data.get("prefs") or {}
+        if not endpoint:
+            return jsonify({"error": "Missing endpoint"}), 400
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE push_subscriptions SET prefs = %s WHERE endpoint = %s",
+                    (_json.dumps(prefs), endpoint),
+                )
+                conn.commit()
+        except Exception as exc:
+            logger.warning("[push] preferences put error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        return jsonify({"ok": True})
 
 
 @app.route("/api/push/broadcast", methods=["POST"])
