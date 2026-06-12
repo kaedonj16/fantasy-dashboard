@@ -5809,7 +5809,19 @@ window.initTradePage = function initTradePage(root = document) {
           // Prefer mid; only fall back to other buckets if mid isn't in the pool.
           if (bucket === "mid" || !midPick.has(k)) midPick.set(k, p);
         }
-        pool = kept.concat([...midPick.values()]);
+        // Add one entry per pick the team still has available for that round
+        // (cap - already selected), not just a single representative.
+        const roundEntries = [];
+        for (const [k, p] of midPick) {
+          const cap = ownedRoundCount(side, k);
+          if (!isFinite(cap)) { roundEntries.push(p); continue; }
+          const added = selectedPicks.filter(
+            x => !isSlottedPick(x.id) && pickRoundKey(String(x.id)) === k
+          ).length;
+          const remaining = Math.max(0, cap - added);
+          for (let i = 0; i < remaining; i++) roundEntries.push(p);
+        }
+        pool = kept.concat(roundEntries);
       }
 
       let matches;
@@ -9431,7 +9443,8 @@ function cmpToggleSection(wrapId, headerEl) {
 function pmWtRender(wrap, position) {
   var allWeeks = wrap._weeklyData || [];
   var activeTab = document.querySelector('.pm-wt-tab.pm-wt-tab-active');
-  var n = activeTab ? parseInt(activeTab.dataset.n) || 0 : 8;
+  var nStr = activeTab ? activeTab.dataset.n : '8';
+  var n = (nStr === '' || nStr === undefined) ? 0 : (parseInt(nStr) || 8);
   var weeks = n > 0 ? allWeeks.slice(-n) : allWeeks;
   var el = document.getElementById('pmWtContent');
   if (el) el.innerHTML = buildWeeklyTrendRows(weeks, position);
