@@ -726,7 +726,7 @@ FORM_BODY = """
             <svg style="width:18px;height:18px;color:#ec4899;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
           </div>
           <div class="home-feature-row-body">
-            <span class="home-feature-row-title">Waivers &amp; Start/Sit <span class="home-feature-badge home-feature-badge-pro">PRO</span></span>
+            <span class="home-feature-row-title">Waivers &amp; Start/Sit</span>
             <span class="home-feature-row-desc">Personalized pickup rankings tailored to your roster's needs, scoring format, positional scarcity, and remaining schedule</span>
           </div>
         </div>
@@ -1483,7 +1483,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
         ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
-        ("Waivers & Start/Sit <span class='nav-pro-badge'>PRO</span>", "page_waivers",  "waivers",   False),
+        ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
     ], ["players", "prospects", "breakouts", "waivers", "schedule", "top-movers"], "playersNavDropdown"))
     nav_pills.append(nav_pill_dropdown("Stats", [
@@ -8776,36 +8776,7 @@ def page_standings(platform: str, season: int, league_id: str):
 
 @app.route("/<platform>/<int:season>/<league_id>/waivers")
 def page_waivers(platform: str, season: int, league_id: str):
-    user_id = session.get("viewer_username")
-    has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
     ctx = get_league_ctx_from_cache(platform, league_id, season)
-    if not has_premium:
-        teaser_html = """
-    <div class="card central">
-      <div class="card-header">
-        <h2>Waivers &amp; Start/Sit</h2>
-        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
-          Personalized pickup rankings and start/sit advice tailored to your roster
-        </div>
-      </div>
-      <div class="card-body" style="text-align:center;padding:60px 24px;">
-        <div style="font-size:40px;margin-bottom:16px;opacity:.3;"><i class="fa-solid fa-rotate"></i></div>
-        <div style="font-weight:700;font-size:18px;margin-bottom:8px;">Premium Feature</div>
-        <div style="color:var(--text-muted);font-size:14px;margin-bottom:24px;">
-          Get personalized waiver wire recommendations based on your roster's needs,<br>
-          scoring format, positional scarcity, and remaining schedule.
-        </div>
-        <button onclick="showPaywall('waivers')"
-          style="padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;">
-          Unlock Waivers &amp; Start/Sit
-        </button>
-      </div>
-    </div>
-    <script>
-      document.addEventListener('DOMContentLoaded', function() { showPaywall('waivers'); });
-    </script>
-    """
-        return render_page("BR Fantasy Waivers", league_id, "waivers", teaser_html, platform, season)
     body = build_waivers_body(platform, season, league_id, ctx)
     return render_page("BR Fantasy Waivers", league_id, "waivers", body, platform, season)
 
@@ -16107,10 +16078,6 @@ def api_power_rankings():
     if not league_id:
         return jsonify({"error": "Missing league_id"}), 400
 
-    if not has_premium_for_viewer(session.get("viewer_username"), session.get("viewer_user_id"),
-                                  league_id, platform, season):
-        return jsonify({"paywall": True, "error": "Premium required"}), 403
-
     try:
         ctx = get_league_ctx_from_cache(platform, league_id, season)
         html_out = get_power_rankings_html(ctx)
@@ -17475,12 +17442,6 @@ def api_advanced_metrics_leaderboard():
         LEADERBOARD_METRICS, _WEEKLY_METRICS,
     )
 
-    user_id = session.get("viewer_username") or None
-    league_id = (request.args.get("league_id") or "").strip() or None
-    platform = (request.args.get("platform") or "sleeper").strip().lower()
-    if not has_premium_access(user_id, league_id, platform):
-        return jsonify({"paywall": True, "error": "Premium required"}), 403
-
     metric = (request.args.get("metric") or "role_score").strip()
     if metric not in LEADERBOARD_METRICS:
         return jsonify({"error": "unknown metric"}), 400
@@ -17527,11 +17488,6 @@ def api_advanced_metrics_leaderboard():
 def api_advanced_metrics_seasons():
     """Return available seasons in player_advanced_metrics, newest first."""
     from data_building.advanced_metrics import get_available_seasons
-    user_id = session.get("viewer_username") or None
-    league_id = (request.args.get("league_id") or "").strip() or None
-    platform = (request.args.get("platform") or "sleeper").strip().lower()
-    if not has_premium_access(user_id, league_id, platform):
-        return jsonify({"paywall": True, "error": "Premium required"}), 403
     return jsonify({"seasons": get_available_seasons()})
 
 
