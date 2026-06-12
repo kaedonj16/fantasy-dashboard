@@ -43,13 +43,15 @@ def build_advanced_metrics_body(
             return len(_CAT_ORDER)
 
     _PRESET_CATS = [c for c in ["Rushing", "Receiving", "Passing", "General"] if c in groups]
-    preset_optgroup = '<optgroup label="&#9889; Quick Sets">' + "".join(
+    # Position sets stay in Quick Sets; category sets move into their own optgroup
+    preset_optgroup = '<optgroup label="Quick Sets">' + "".join(
         f'<option value="__preset__{p}">{p} Set</option>'
-        for p in ["QB", "RB", "WR", "TE"] + _PRESET_CATS
+        for p in ["QB", "RB", "WR", "TE"]
     ) + '</optgroup>'
     metric_options = preset_optgroup + "\n" + "\n".join(
-        '<optgroup label="{label}">{opts}</optgroup>'.format(
+        '<optgroup label="{label}">{cat_preset}{opts}</optgroup>'.format(
             label=cat,
+            cat_preset=f'<option value="__preset__{cat}">{cat} Set</option>' if cat in _PRESET_CATS else '',
             opts="".join(
                 f'<option value="{k}"{" selected" if k == "role_score" else ""}>{lbl}</option>'
                 for k, lbl in groups[cat]
