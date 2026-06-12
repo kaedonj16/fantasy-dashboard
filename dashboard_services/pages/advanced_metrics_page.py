@@ -31,6 +31,8 @@ def build_advanced_metrics_body(
     _CAT_ORDER = ["General", "Passing", "Rushing", "Receiving", "Volume"]
     groups: dict = {}
     for key, spec in metrics_spec.items():
+        if spec.get("hidden"):
+            continue
         cat = spec.get("category", "Other")
         groups.setdefault(cat, []).append((key, spec["label"]))
 
@@ -122,6 +124,7 @@ def build_advanced_metrics_body(
                 "subcategory": spec.get("subcategory", ""),
             }
             for key, spec in metrics_spec.items()
+            if not spec.get("hidden")
         },
     })
 
