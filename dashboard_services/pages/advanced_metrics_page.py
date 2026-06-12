@@ -932,13 +932,17 @@ _AM_JS = r"""
       const cat = spec.category || 'Other';
       // Non-General same-category: always include
       if (cat === primaryCat && cat !== 'General') return true;
-      // General metrics: apply position + subcategory filter regardless of primary category
+      // General metrics: position overlap + subcategory affinity (subcategory only
+      // matters when primary is a specific category, not when it is itself General)
       if (cat === 'General') {
         if (spec.positions && !spec.positions.some(p => primaryPositions.has(p))) return false;
-        // Subcategory affinity only matters when the primary is a specific category.
-        // When primary is itself General, show all position-matched General items.
         if (spec.subcategory && primaryCat !== 'General' && spec.subcategory !== primaryCat) return false;
         return true;
+      }
+      // When primary is General, also include specific-category metrics whose
+      // positions overlap so users can compare across categories.
+      if (primaryCat === 'General') {
+        if (!spec.positions || spec.positions.some(p => primaryPositions.has(p))) return true;
       }
       return false;
     }
@@ -950,11 +954,17 @@ _AM_JS = r"""
       (groups[grp] = groups[grp] || []).push(entry);
     }
 
-    // Category display order: primary category first, then General
+    // Category display order: primary category first, then General, then others
+    const _CAT_ORDER = ['Passing', 'Rushing', 'Receiving', 'Volume', 'General'];
     const catOrder = [];
-    if (groups[primaryCat] && primaryCat !== 'General') catOrder.push(primaryCat);
+    if (primaryCat !== 'General' && groups[primaryCat]) catOrder.push(primaryCat);
     if (groups['General']) catOrder.push('General');
-    if (groups[primaryCat] && primaryCat === 'General' && !catOrder.includes('General')) catOrder.push('General');
+    // When primary is General, append the specific categories that have items
+    if (primaryCat === 'General') {
+      for (const c of _CAT_ORDER) {
+        if (c !== 'General' && groups[c]) catOrder.push(c);
+      }
+    }
 
     const _preset = _PRESETS[primaryCat];
     let html = '<div class="am-sp-search-wrap"><input type="text" id="amSpSearch" class="am-sp-search" placeholder="Search metrics…" oninput="amSpFilter(this.value)" autocomplete="off"></div>'
@@ -978,9 +988,11 @@ _AM_JS = r"""
       }
     }
 
-    const otherCats = ['Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
-    if (otherCats.length) {
-      html += '<div class="am-sp-cat-note">To compare ' + otherCats.join(' or ') + ' stats, switch the Primary Metric</div>';
+    if (primaryCat !== 'General') {
+      const otherCats = ['Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
+      if (otherCats.length) {
+        html += '<div class="am-sp-cat-note">To compare ' + otherCats.join(' or ') + ' stats, switch the Primary Metric</div>';
+      }
     }
     picker.innerHTML = html;
   }
