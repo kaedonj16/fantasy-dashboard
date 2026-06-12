@@ -216,10 +216,6 @@ def build_advanced_metrics_body(
               <option value="">All Teams</option>
             </select>
           </div>
-          <div class="am-ctrl am-ctrl-games am-mobile-filter" id="amGamesCtrl" style="display:none;">
-            <label class="am-ctrl-label" id="amVolLabel">Min</label>
-            <select id="amMinGames" class="am-select am-season-select"></select>
-          </div>
           <div class="am-ctrl am-mobile-filter" id="amSortCtrl">
             <label class="am-ctrl-label">Sort</label>
             <button id="amSortBtn" type="button" class="am-sort-btn">High &rarr; Low</button>
@@ -268,6 +264,10 @@ def build_advanced_metrics_body(
             <input type="number" id="amAgeMin" class="am-age-input" placeholder="Min" min="18" max="45">
             <span class="am-filter-sep">&#8211;</span>
             <input type="number" id="amAgeMax" class="am-age-input" placeholder="Max" min="18" max="45">
+          </div>
+          <div class="am-vol-ctrl" id="amGamesCtrl" style="display:none;">
+            <span class="am-filter-label" id="amVolLabel">Min</span>
+            <select id="amMinGames" class="am-select am-season-select" style="font-size:12px;padding:4px 8px;"></select>
           </div>
           <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
           <div id="amFilterForm" class="am-filter-form" style="display:none;">
@@ -518,8 +518,8 @@ def build_advanced_metrics_body(
         /* Metric takes full width; Search fills the row below it */
         .am-ctrl:first-child { flex:1 0 100%; }
         .am-ctrl-search { flex:1 0 100%; }
-        /* Season, Min Games, Sort share a row */
-        .am-ctrl-season, .am-ctrl-games { flex:1; }
+        /* Season and Sort share a row */
+        .am-ctrl-season { flex:1; }
         .am-select { min-width:0; width:100%; }
         /* Smaller position pills on narrow screens */
         .am-pos { padding:5px 10px; font-size:11px; }
@@ -694,6 +694,7 @@ def build_advanced_metrics_body(
       .am-filter-label { font-size:11px; font-weight:700; color:var(--text-muted); white-space:nowrap; }
       .am-filter-sep { font-size:12px; color:var(--text-muted); }
       .am-age-wrap { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+      .am-vol-ctrl { display:flex; align-items:center; gap:6px; flex-shrink:0; }
       .am-age-input {
         padding:5px 8px; border:1px solid var(--border); border-radius:8px;
         background:var(--card); color:var(--text); font-size:12px; width:58px;
@@ -1663,6 +1664,9 @@ _AM_JS = r"""
     const start = state.page * PAGE_SIZE;
     const pageRows = displayRows.slice(start, start + PAGE_SIZE);
 
+    // Re-rank based on filtered set so rank 1 = best player in current view.
+    const filteredRankMap = new Map(displayRows.map((r, i) => [String(r.player_id), i + 1]));
+
     const multiMode = state.extraMetrics.length > 0;
     const totalRanked = posRows.length;
     tbody.innerHTML = pageRows.map((r, i) => {
@@ -1670,7 +1674,7 @@ _AM_JS = r"""
       const col = posColor(r.position);
       const owned = ownedIds.has(String(r.player_id));
       const pinned = state.pinnedIds.has(String(r.player_id));
-      const rank = rankMap.get(String(r.player_id)) || '';
+      const rank = filteredRankMap.get(String(r.player_id)) || '';
       const volNum = r.vol != null ? r.vol : (r.games != null ? r.games : '–');
       const gamesCell = '<td class="am-games">' + volNum + '</td>';
       const ownedBadge = owned ? '<span class="am-owned-badge">YOURS</span>' : '';
