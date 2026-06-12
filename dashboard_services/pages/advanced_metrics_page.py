@@ -829,7 +829,7 @@ _AM_JS = r"""
   const _PRESETS = {
     'General':   ['snap_share', 'opportunity_share', 'grades_offense', 'red_zone_usage', 'role_score', 'yards_per_touch', 'total_tds_per_game'],
     'Rushing':   ['yards_per_carry', 'pff_rushing_grade', 'elusive_rating', 'breakaway_percentage', 'opportunity_share', 'carries_per_game', 'red_zone_usage'],
-    'Receiving': ['yards_per_target', 'yprr', 'avg_depth_of_target', 'target_share', 'targets_per_game', 'yards_after_catch_per_reception', 'air_yards_share'],
+    'Receiving': ['yards_per_target', 'yprr', 'target_share', 'yards_after_catch_per_reception', 'rz_targets_pg', 'target_quality_score', 'receptions_per_game'],
     'Passing':   ['yards_per_attempt', 'pff_passing_grade', 'adjusted_completion_rate', 'big_time_throw_rate', 'nfl_passer_rating', 'pass_tds_per_game', 'int_rate'],
   };
   window.amLoadPreset = function(cat) {
