@@ -44,8 +44,8 @@ def build_advanced_metrics_body(
 
     _PRESET_CATS = [c for c in ["Rushing", "Receiving", "Passing", "General"] if c in groups]
     preset_optgroup = '<optgroup label="&#9889; Quick Sets">' + "".join(
-        f'<option value="__preset__{cat}">{cat} Set</option>'
-        for cat in _PRESET_CATS
+        f'<option value="__preset__{p}">{p} Set</option>'
+        for p in ["RB", "WR"] + _PRESET_CATS
     ) + '</optgroup>'
     metric_options = preset_optgroup + "\n" + "\n".join(
         '<optgroup label="{label}">{opts}</optgroup>'.format(
@@ -834,11 +834,14 @@ _AM_JS = r"""
 
   // Preset sets: clicking "Load X Set" clears current extras and loads these metrics.
   const _PRESETS = {
+    'RB':        ['opportunity_share', 'yards_per_carry', 'yards_per_touch', 'target_share', 'red_zone_usage', 'total_tds_per_game'],
+    'WR':        ['target_share', 'yprr', 'air_yards_share', 'yards_per_target', 'route_participation', 'rec_tds_per_game'],
     'General':   ['snap_share', 'opportunity_share', 'grades_offense', 'red_zone_usage', 'role_score', 'yards_per_touch', 'total_tds_per_game'],
     'Rushing':   ['yards_per_carry', 'pff_rushing_grade', 'elusive_rating', 'breakaway_percentage', 'opportunity_share', 'carries_per_game', 'red_zone_usage'],
     'Receiving': ['yards_per_target', 'yprr', 'target_share', 'yards_after_catch_per_reception', 'rz_targets_pg', 'target_quality_score', 'receptions_per_game'],
     'Passing':   ['yards_per_attempt', 'pff_passing_grade', 'adjusted_completion_rate', 'big_time_throw_rate', 'nfl_passer_rating', 'pass_tds_per_game', 'int_rate'],
   };
+  const _PRESET_POS = { 'RB': 'RB', 'WR': 'WR' };
   window.amLoadPreset = function(cat) {
     const keys = _PRESETS[cat];
     if (!keys || !keys.length) return;
@@ -856,6 +859,8 @@ _AM_JS = r"""
     state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
     state.sortBy = state.metric;
     state.minVol = defaultVol(state.metric);
+    // Position presets auto-filter to their position
+    if (_PRESET_POS[cat]) state.position = _PRESET_POS[cat];
     const picker = document.getElementById('amStatPicker');
     if (picker) picker.style.display = 'none';
     updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
