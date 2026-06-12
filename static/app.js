@@ -11,11 +11,15 @@
 // ── Auto-restore expired session ─────────────────────────────────────────────
 // If the server session expired but we still have saved_viewer in localStorage,
 // silently call /api/quick-set-viewer so the user stays logged in.
+// Does NOT fire after an explicit logout (user_id stripped, _explicitLogout set).
 (function () {
   if (window._isSignedIn) return;
+  // Skip if the user explicitly logged out this session.
+  if (sessionStorage.getItem('_explicitLogout')) return;
   var saved;
   try { saved = JSON.parse(localStorage.getItem('saved_viewer') || 'null'); } catch (_) {}
-  if (!saved || !saved.username || !saved.league_id) return;
+  // Require user_id — logout strips it so this check prevents silent re-auth.
+  if (!saved || !saved.username || !saved.league_id || !saved.user_id) return;
   // Guard against infinite reload loop in case the API keeps returning ok:true
   // but the session still doesn't stick.
   if (sessionStorage.getItem('_sessionRestoreAttempted')) return;
