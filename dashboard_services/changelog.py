@@ -7,7 +7,7 @@ CHANGELOG = [
     {
         "date": "2026-06-13",
         "tag": "new",
-        "text": "Player Modal: Advanced Metrics tab now shows positional ranks for every efficiency stat so you can see exactly where a player stands among their position group for grades, yards per carry, target share, aDOT, and more. Ranks require 4+ games with additional volume thresholds per metric (20+ carries, 15+ targets, 50+ pass attempts). Weekly Trends now correctly updates the displayed average when you switch the time filter so the main number always reflects the selected window.",
+        "text": "Player Modal: Advanced Metrics tab now shows positional ranks for every efficiency stat with position-group minimums (4+ games, 20+ carries, 15+ targets, 50+ pass attempts). Weekly Trends is here: see a sparkline, rolling average, and trend arrow for key stats across the season with a time filter to zoom in on any stretch of weeks.",
         "link": "/players"
     },
     {
