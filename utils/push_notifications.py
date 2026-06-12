@@ -28,7 +28,8 @@ def _send_to_endpoints(endpoints, title, body, url="/", tag="update"):
     except ImportError:
         return 0
 
-    payload = _json.dumps({"title": title, "body": body, "url": url, "tag": tag})
+    payload = _json.dumps({"title": title, "body": body, "url": url, "tag": tag,
+                           "actions": [{"action": "view", "title": "View"}]})
     sent, stale = 0, []
     for ep, p256dh, auth in endpoints:
         try:
