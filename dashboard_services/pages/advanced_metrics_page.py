@@ -1562,7 +1562,7 @@ _AM_JS = r"""
 
 
     // Apply roster/search filters for display only (order already set by posRows sort).
-    // Pinned players float to the top regardless of sort; ranks still reflect sort order.
+    // Pinned players float to the top of the display; rank numbers reflect sort position.
     let displayRows = state.pinnedIds.size > 0
       ? [...posRows.filter(r => state.pinnedIds.has(String(r.player_id))),
          ...posRows.filter(r => !state.pinnedIds.has(String(r.player_id)))]
@@ -1664,8 +1664,14 @@ _AM_JS = r"""
     const start = state.page * PAGE_SIZE;
     const pageRows = displayRows.slice(start, start + PAGE_SIZE);
 
-    // Re-rank based on filtered set so rank 1 = best player in current view.
-    const filteredRankMap = new Map(displayRows.map((r, i) => [String(r.player_id), i + 1]));
+    // Rank by sort position in posRows (not display position) so pinned players
+    // show their true rank rather than 1, 2, 3... just because they float to top.
+    const _visibleIds = new Set(displayRows.map(r => String(r.player_id)));
+    const filteredRankMap = new Map(
+      posRows
+        .filter(r => _visibleIds.has(String(r.player_id)))
+        .map((r, i) => [String(r.player_id), i + 1])
+    );
 
     const multiMode = state.extraMetrics.length > 0;
     const totalRanked = posRows.length;
