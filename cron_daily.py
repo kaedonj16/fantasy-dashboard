@@ -386,6 +386,13 @@ n = record_model_value_snapshot(tbl)
 print(f"[cron] EMA snapshot wrote {n} rows (value + sf_value + size variants)")
 """, "record_model_value_snapshot")
 
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from utils.push_notifications import notify_value_drops
+notify_value_drops()
+print("[cron] Value drop notifications dispatched")
+""", "notify_value_drops")
+
     # ------------------------------------------------------------------ #
     # Step 4: Save player values to DB                                   #
     # ------------------------------------------------------------------ #
@@ -446,6 +453,13 @@ else:
     print(f"[cron] Breakout: {{result}}")
 """, "build_daily_breakout_scores")
 
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from utils.push_notifications import notify_breakout_roster
+notify_breakout_roster()
+print("[cron] Breakout roster notifications dispatched")
+""", "notify_breakout_roster")
+
     # ------------------------------------------------------------------ #
     # Step 6: Weekly rookie data (Sundays only, off/pre season)          #
     # ------------------------------------------------------------------ #
@@ -497,6 +511,13 @@ from data_building.trade_intel.analytics import run_analytics
 analytics_result = run_analytics(season={season!r})
 print(f"[cron] Trade intel analytics: {{analytics_result}}")
 """, "trade_intel_analytics")
+
+        _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from utils.push_notifications import notify_rival_trades
+notify_rival_trades()
+print("[cron] Rival trade notifications dispatched")
+""", "notify_rival_trades")
 
     # ------------------------------------------------------------------ #
     # Step 8: Draft ADP crawl                                            #

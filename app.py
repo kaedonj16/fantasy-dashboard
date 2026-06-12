@@ -26336,9 +26336,10 @@ def _start_notification_scheduler():
                 from zoneinfo import ZoneInfo
                 now = datetime.now(ZoneInfo("America/New_York"))
                 if now.hour == 12 and now.minute < 5:
-                    from utils.push_notifications import run_hourly, run_all_daily
+                    from utils.push_notifications import run_hourly, notify_waiver_candidates, notify_playoff_odds
                     run_hourly()
-                    run_all_daily()
+                    notify_waiver_candidates()
+                    notify_playoff_odds()
             except Exception as exc:
                 logger.warning("[notify-scheduler] %s", exc)
             _time.sleep(300)  # check every 5 minutes
