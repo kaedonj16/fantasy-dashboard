@@ -1916,31 +1916,43 @@ _AM_JS = r"""
     const filterKey = document.getElementById('amFilterKey');
     if (!bar || !chips) return;
     if (filterKey) {
-      const opts = [
-        { value: 'primary', label: (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric },
-        { value: 'age', label: 'Age' },
-      ];
-      state.extraMetrics.forEach(function(key) {
-        opts.push({ value: key, label: (cfg.metrics[key] && cfg.metrics[key].label) || key });
-      });
-      // Add volume/context metrics relevant to the primary metric's positions.
-      // Covers: targets, receptions, carries, touches for the position group; also
-      // route_participation for WR/TE (the "routes" the user mentioned).
       const primaryPositions = new Set(relevantPositions(state.metric));
-      const added = new Set(opts.map(function(o) { return o.value; }));
-      const _contextKeys = Object.keys(cfg.metrics).concat(['route_participation']);
-      Object.entries(cfg.metrics).forEach(function([key, spec]) {
-        if (added.has(key)) return;
-        const cat = spec.category || '';
-        const isVol = cat === 'Volume';
-        const isRoute = key === 'route_participation';
-        if (!isVol && !isRoute) return;
+      const added = new Set(['age', 'primary']);
+
+      // Volume/context metrics in a natural order.
+      const _VOL_ORDER = [
+        'total_carries', 'total_touches', 'total_targets', 'total_receptions',
+        'total_routes', 'routes_per_game', 'route_participation',
+      ];
+      const volOpts = [];
+      _VOL_ORDER.forEach(function(key) {
+        const spec = cfg.metrics[key];
+        if (!spec) return;
         const mpos = new Set(spec.positions || []);
         const relevant = [...primaryPositions].some(function(p) { return mpos.has(p); });
         if (!relevant) return;
-        opts.push({ value: key, label: spec.label });
+        volOpts.push({ value: key, label: spec.label });
         added.add(key);
       });
+      // Catch any other Volume metrics not in the explicit order list.
+      Object.entries(cfg.metrics).forEach(function([key, spec]) {
+        if (added.has(key)) return;
+        if ((spec.category || '') !== 'Volume') return;
+        const mpos = new Set(spec.positions || []);
+        const relevant = [...primaryPositions].some(function(p) { return mpos.has(p); });
+        if (!relevant) return;
+        volOpts.push({ value: key, label: spec.label });
+        added.add(key);
+      });
+
+      // Order: Age → volume/context → primary metric → extra metrics
+      const opts = [{ value: 'age', label: 'Age' }];
+      volOpts.forEach(function(o) { opts.push(o); });
+      opts.push({ value: 'primary', label: (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric });
+      state.extraMetrics.forEach(function(key) {
+        opts.push({ value: key, label: (cfg.metrics[key] && cfg.metrics[key].label) || key });
+      });
+
       filterKey.innerHTML = opts.map(function(o) {
         return '<option value="' + o.value + '">' + o.label + '</option>';
       }).join('');
