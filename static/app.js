@@ -9422,7 +9422,7 @@ function buildWeeklyTrendRows(weeks, position) {
       + '<span class="pm-wt-last">' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
       + deltaHtml
       + '</div>'
-      + '<span class="pm-wt-avg">last game: ' + lastWk.toFixed(1) + (suffix || '') + '</span>'
+      + '<span class="pm-wt-avg">LG: ' + lastWk.toFixed(1) + (suffix || '') + '</span>'
       + '</div></div>';
   }
   function rowFor(label, key, color, suffix) {
