@@ -119,6 +119,7 @@ def build_advanced_metrics_body(
                 "minVol": _min_vol_cfg(spec),
                 "weeklyCapable": key in weekly_metric_keys,
                 "weeklyVol": _weekly_vol_map.get(key) or None,
+                "subcategory": spec.get("subcategory", ""),
             }
             for key, spec in metrics_spec.items()
         },
@@ -866,6 +867,16 @@ _AM_JS = r"""
     picker.querySelectorAll('.am-sp-item').forEach(function(el) {
       el.style.display = (!term || el.textContent.toLowerCase().includes(term)) ? '' : 'none';
     });
+    // Hide category headers when all their items are filtered out
+    picker.querySelectorAll('.am-sp-cat-head').forEach(function(hdr) {
+      let sib = hdr.nextElementSibling;
+      let visible = false;
+      while (sib && !sib.classList.contains('am-sp-cat-head') && !sib.classList.contains('am-sp-cat-note')) {
+        if (sib.classList.contains('am-sp-item') && sib.style.display !== 'none') { visible = true; break; }
+        sib = sib.nextElementSibling;
+      }
+      hdr.style.display = visible ? '' : 'none';
+    });
   };
 
   const _PIN_SVG = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a5.922 5.922 0 0 1 1.013.16l3.134-3.133a2.772 2.772 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/></svg>';
@@ -916,38 +927,58 @@ _AM_JS = r"""
     const primaryCat = (cfg.metrics[state.metric] && cfg.metrics[state.metric].category) || 'Other';
     const active = new Set([state.metric, ...state.extraMetrics]);
     const primaryPositions = new Set((cfg.metrics[state.metric] && cfg.metrics[state.metric].positions) || []);
-    const items = Object.entries(cfg.metrics)
-      .filter(([, spec]) => {
-        const cat = spec.category || 'Other';
-        if (cat === primaryCat) return true;
-        if (cat === 'General') {
-          return !spec.positions || spec.positions.some(p => primaryPositions.has(p));
-        }
-        return false;
-      });
-    const otherCats = ['Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
+
+    function _allowed([, spec]) {
+      const cat = spec.category || 'Other';
+      // Non-General same-category: always include
+      if (cat === primaryCat && cat !== 'General') return true;
+      // General metrics: apply position + subcategory filter regardless of primary category
+      if (cat === 'General') {
+        if (spec.positions && !spec.positions.some(p => primaryPositions.has(p))) return false;
+        if (spec.subcategory && spec.subcategory !== primaryCat) return false;
+        return true;
+      }
+      return false;
+    }
+
+    // Group allowed metrics by their category
+    const groups = {};
+    for (const entry of Object.entries(cfg.metrics).filter(_allowed)) {
+      const grp = entry[1].category || 'Other';
+      (groups[grp] = groups[grp] || []).push(entry);
+    }
+
+    // Category display order: primary category first, then General
+    const catOrder = [];
+    if (groups[primaryCat] && primaryCat !== 'General') catOrder.push(primaryCat);
+    if (groups['General']) catOrder.push('General');
+    if (groups[primaryCat] && primaryCat === 'General' && !catOrder.includes('General')) catOrder.push('General');
+
     const _preset = _PRESETS[primaryCat];
     let html = '<div class="am-sp-search-wrap"><input type="text" id="amSpSearch" class="am-sp-search" placeholder="Search metrics…" oninput="amSpFilter(this.value)" autocomplete="off"></div>'
-      + (_preset
-      ? '<div class="am-sp-preset-wrap"><button type="button" class="am-sp-preset-btn" onclick="amLoadPreset(\'' + primaryCat + '\')">&#9889; Load ' + primaryCat + ' Set</button></div>'
-      : '')
-      + '<div class="am-sp-cat-head">' + primaryCat + '</div>';
-    for (const [key, spec] of items) {
-      const on = active.has(key);
-      const isPrimary = key === state.metric;
-      const wBadge = spec.weeklyCapable
-        ? ' <span class="am-sp-weekly-badge" title="Supports week-range filtering">W</span>'
-        : '';
-      html += '<div class="am-sp-item' + (on ? ' am-sp-active' : '') + '" onclick="amPickerClick(\'' + key + '\')">'
-        + '<span class="am-sp-check">' + (on ? '&#10003;' : '') + '</span>'
-        + spec.label + wBadge
-        + (isPrimary ? ' <span style="font-size:10px;opacity:.6">(primary)</span>' : '')
-        + '</div>';
+      + (_preset ? '<div class="am-sp-preset-wrap"><button type="button" class="am-sp-preset-btn" onclick="amLoadPreset(\'' + primaryCat + '\')">&#9889; Load ' + primaryCat + ' Set</button></div>' : '');
+
+    for (const grp of catOrder) {
+      const grpItems = groups[grp] || [];
+      if (!grpItems.length) continue;
+      html += '<div class="am-sp-cat-head">' + grp + '</div>';
+      for (const [key, spec] of grpItems) {
+        const on = active.has(key);
+        const isPrimary = key === state.metric;
+        const wBadge = spec.weeklyCapable
+          ? ' <span class="am-sp-weekly-badge" title="Supports week-range filtering">W</span>'
+          : '';
+        html += '<div class="am-sp-item' + (on ? ' am-sp-active' : '') + '" onclick="amPickerClick(\'' + key + '\')">'
+          + '<span class="am-sp-check">' + (on ? '&#10003;' : '') + '</span>'
+          + spec.label + wBadge
+          + (isPrimary ? ' <span style="font-size:10px;opacity:.6">(primary)</span>' : '')
+          + '</div>';
+      }
     }
+
+    const otherCats = ['Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
     if (otherCats.length) {
-      html += '<div class="am-sp-cat-note">To compare '
-        + otherCats.join(' or ')
-        + ' stats, switch the Primary Metric</div>';
+      html += '<div class="am-sp-cat-note">To compare ' + otherCats.join(' or ') + ' stats, switch the Primary Metric</div>';
     }
     picker.innerHTML = html;
   }
