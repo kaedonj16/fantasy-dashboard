@@ -58,46 +58,63 @@ def _send_to_endpoints(endpoints, title, body, url="/", tag="update"):
     return sent
 
 
-def _broadcast_all(title, body, url="/", tag="update"):
+def _filter_prefs(rows, notif_type):
+    """Strip rows where the user has explicitly disabled notif_type. Default is enabled."""
+    import json as _json
+    if not notif_type:
+        return [(r[0], r[1], r[2]) for r in rows]
+    result = []
+    for r in rows:
+        prefs_raw = r[3] if len(r) > 3 else None
+        try:
+            prefs = _json.loads(prefs_raw or "{}")
+        except Exception:
+            prefs = {}
+        if prefs.get(notif_type, True) is not False:
+            result.append((r[0], r[1], r[2]))
+    return result
+
+
+def _broadcast_all(title, body, url="/", tag="update", notif_type=None):
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
-            rows = conn.execute("SELECT endpoint, p256dh, auth FROM push_subscriptions").fetchall()
-        return _send_to_endpoints(rows, title, body, url, tag)
+            rows = conn.execute("SELECT endpoint, p256dh, auth, prefs FROM push_subscriptions").fetchall()
+        return _send_to_endpoints(_filter_prefs(rows, notif_type), title, body, url, tag)
     except Exception as exc:
         logger.warning("[push] broadcast_all failed: %s", exc)
         return 0
 
 
-def _broadcast_league(league_id, title, body, url="/", tag="update"):
+def _broadcast_league(league_id, title, body, url="/", tag="update", notif_type=None):
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             rows = conn.execute(
-                "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE league_id = %s",
+                "SELECT endpoint, p256dh, auth, prefs FROM push_subscriptions WHERE league_id = %s",
                 (str(league_id),)
             ).fetchall()
-        return _send_to_endpoints(rows, title, body, url, tag)
+        return _send_to_endpoints(_filter_prefs(rows, notif_type), title, body, url, tag)
     except Exception as exc:
         logger.warning("[push] broadcast_league %s failed: %s", league_id, exc)
         return 0
 
 
-def _broadcast_owner(league_id, owner_id, title, body, url="/", tag="update"):
+def _broadcast_owner(league_id, owner_id, title, body, url="/", tag="update", notif_type=None):
     """Send to a specific owner. Falls back to league broadcast if no owner match."""
     if not owner_id:
-        return _broadcast_league(league_id, title, body, url, tag)
+        return _broadcast_league(league_id, title, body, url, tag, notif_type)
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
             rows = conn.execute(
-                "SELECT endpoint, p256dh, auth FROM push_subscriptions "
+                "SELECT endpoint, p256dh, auth, prefs FROM push_subscriptions "
                 "WHERE league_id = %s AND owner_id = %s",
                 (str(league_id), str(owner_id))
             ).fetchall()
         if not rows:
             return 0
-        return _send_to_endpoints(rows, title, body, url, tag)
+        return _send_to_endpoints(_filter_prefs(rows, notif_type), title, body, url, tag)
     except Exception as exc:
         logger.warning("[push] broadcast_owner failed: %s", exc)
         return 0
@@ -166,6 +183,7 @@ def notify_lineup_lock():
             body=f"Week {week} kicks off soon. Make sure your starters are set.",
             url="/matchups",
             tag=f"lineup-lock-{season}-{week}",
+            notif_type="lineup_lock",
         )
         logger.info("[notify] lineup_lock week %s sent %d", week, sent)
 
@@ -226,6 +244,7 @@ def notify_value_drops():
                         body=f"{name} is losing dynasty value this week. Check your trade options.",
                         url="/trade",
                         tag=f"value-drop-{league_id}-{top['player_id']}",
+                        notif_type="value_drops",
                     )
                     for d in drops:
                         notified.add(f"{league_id}:{d['player_id']}")
@@ -290,6 +309,7 @@ def notify_waiver_candidates():
                     title="Waivers are open",
                     body=f"{name} ({pos}) is the top available player in your league this week.",
                     url="/players",
+                    notif_type="waiver_candidates",
                     tag=f"waiver-{league_id}-{week}",
                 )
                 notified_any = True
@@ -358,6 +378,7 @@ def notify_rival_trades():
                         body=f"{name} was just traded. Check the activity feed to see the full deal.",
                         url="/activity",
                         tag=f"trade-{league_id}-{txn_id}",
+                        notif_type="rival_trades",
                     )
                     new_txns.add(txn_id)
             except Exception as le:
@@ -431,6 +452,7 @@ def notify_playoff_odds():
                         body=f"Your playoff odds moved {direction} to {curr:.0f}% after week {week - 1}.",
                         url="/teams",
                         tag=f"playoff-{league_id}-{week}-{roster_id}",
+                        notif_type="playoff_odds",
                     )
             except Exception as le:
                 logger.warning("[notify] playoff_odds league %s: %s", league_id, le)
@@ -494,6 +516,7 @@ def notify_breakout_roster():
                         body=f"{name} ({pos}, {team}) is flagged as a breakout candidate.",
                         url="/breakouts",
                         tag=f"breakout-{league_id}-{top['player_id']}",
+                        notif_type="breakout_roster",
                     )
                     for c in my:
                         new_notified.add(f"{league_id}:{c['player_id']}")

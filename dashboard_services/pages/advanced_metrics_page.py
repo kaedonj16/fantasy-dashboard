@@ -712,6 +712,9 @@ def build_advanced_metrics_body(
       }
       .am-filter-cancel-btn:hover { background:var(--row,rgba(0,0,0,.04)); }
       /* Preset load button in stat picker */
+      .am-sp-search-wrap { padding:8px 10px 6px; border-bottom:1px solid var(--border); }
+      .am-sp-search { width:100%; padding:5px 8px; font-size:12px; border:1px solid var(--border); border-radius:6px; background:var(--bg-alt,#f1f5f9); color:var(--text); outline:none; box-sizing:border-box; }
+      .am-sp-search:focus { border-color:var(--accent,#2563eb); }
       .am-sp-preset-wrap { padding:6px 10px; border-bottom:1px solid var(--border); }
       .am-sp-preset-btn {
         width:100%; padding:7px 10px; border:1px solid var(--accent,#2563eb); border-radius:8px;
@@ -856,6 +859,15 @@ _AM_JS = r"""
     fetchData();
   };
 
+  window.amSpFilter = function(q) {
+    const picker = document.getElementById('amStatPicker');
+    if (!picker) return;
+    const term = q.trim().toLowerCase();
+    picker.querySelectorAll('.am-sp-item').forEach(function(el) {
+      el.style.display = (!term || el.textContent.toLowerCase().includes(term)) ? '' : 'none';
+    });
+  };
+
   const _PIN_SVG = '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a5.927 5.927 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182c-.195.195-1.219.902-1.414.707-.195-.195.512-1.22.707-1.414l3.182-3.182-2.828-2.829a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a5.922 5.922 0 0 1 1.013.16l3.134-3.133a2.772 2.772 0 0 1-.04-.461c0-.43.108-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/></svg>';
 
   function percentileBadge(rank, total) {
@@ -915,7 +927,8 @@ _AM_JS = r"""
       });
     const otherCats = ['Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
     const _preset = _PRESETS[primaryCat];
-    let html = (_preset
+    let html = '<div class="am-sp-search-wrap"><input type="text" id="amSpSearch" class="am-sp-search" placeholder="Search metrics…" oninput="amSpFilter(this.value)" autocomplete="off"></div>'
+      + (_preset
       ? '<div class="am-sp-preset-wrap"><button type="button" class="am-sp-preset-btn" onclick="amLoadPreset(\'' + primaryCat + '\')">&#9889; Load ' + primaryCat + ' Set</button></div>'
       : '')
       + '<div class="am-sp-cat-head">' + primaryCat + '</div>';
@@ -1180,7 +1193,12 @@ _AM_JS = r"""
     const btn = document.getElementById('amAddStatBtn');
     if (!picker) return;
     const open = picker.style.display !== 'none' && picker.style.display !== '';
-    if (open) { picker.style.display = 'none'; return; }
+    if (open) {
+      picker.style.display = 'none';
+      const srch = document.getElementById('amSpSearch');
+      if (srch) { srch.value = ''; amSpFilter(''); }
+      return;
+    }
     buildStatPicker();
     picker.style.position = 'fixed';
     picker.style.display = '';

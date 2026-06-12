@@ -26008,8 +26008,8 @@ def _init_push_table():
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
-            # Migrate existing tables that predate the league/owner columns
-            for col, defn in [("league_id", "TEXT"), ("platform", "TEXT DEFAULT 'sleeper'"), ("owner_id", "TEXT")]:
+            # Migrate existing tables that predate the league/owner/prefs columns
+            for col, defn in [("league_id", "TEXT"), ("platform", "TEXT DEFAULT 'sleeper'"), ("owner_id", "TEXT"), ("prefs", "TEXT")]:
                 try:
                     conn.execute(f"ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS {col} {defn}")
                 except Exception:
@@ -26121,6 +26121,46 @@ def api_push_unsubscribe():
     except Exception as exc:
         logger.warning("[push] unsubscribe error: %s", exc)
     return jsonify({"ok": True})
+
+
+@app.route("/api/push/preferences", methods=["GET", "PUT"])
+@limiter.limit("60 per minute")
+def api_push_preferences():
+    import json as _json
+    _init_push_table()
+    if request.method == "GET":
+        endpoint = request.args.get("endpoint", "").strip()
+        if not endpoint:
+            return jsonify({"error": "Missing endpoint"}), 400
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                row = conn.execute(
+                    "SELECT prefs FROM push_subscriptions WHERE endpoint = %s", (endpoint,)
+                ).fetchone()
+            prefs_raw = (row[0] if row else None) or "{}"
+            return jsonify({"prefs": _json.loads(prefs_raw)})
+        except Exception as exc:
+            logger.warning("[push] preferences get error: %s", exc)
+            return jsonify({"prefs": {}})
+    else:  # PUT
+        data = request.get_json(force=True) or {}
+        endpoint = data.get("endpoint", "").strip()
+        prefs = data.get("prefs") or {}
+        if not endpoint:
+            return jsonify({"error": "Missing endpoint"}), 400
+        try:
+            from dashboard_services.db import get_conn
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE push_subscriptions SET prefs = %s WHERE endpoint = %s",
+                    (_json.dumps(prefs), endpoint),
+                )
+                conn.commit()
+        except Exception as exc:
+            logger.warning("[push] preferences put error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        return jsonify({"ok": True})
 
 
 @app.route("/api/push/broadcast", methods=["POST"])

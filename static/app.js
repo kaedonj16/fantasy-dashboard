@@ -568,8 +568,85 @@ function emptyState(container, message, iconClass) {
         owner_id:  (window._viewerUid || null),
       }),
     });
+    window._pushEndpoint = s.endpoint;
     return true;
   }
+
+  var _NOTIF_TYPES = [
+    { key: 'lineup_lock',       label: 'Lineup Lock Reminders' },
+    { key: 'value_drops',       label: 'Value Drop Alerts' },
+    { key: 'waiver_candidates', label: 'Waiver Wire Updates' },
+    { key: 'rival_trades',      label: 'Rival Trade Alerts' },
+    { key: 'playoff_odds',      label: 'Playoff Odds Updates' },
+    { key: 'breakout_roster',   label: 'Breakout Player Alerts' },
+  ];
+
+  window.openNotifPrefs = async function() {
+    var endpoint = window._pushEndpoint;
+    if (!endpoint) {
+      // Try to get from active subscription
+      try {
+        var reg = await navigator.serviceWorker.ready;
+        var sub = await reg.pushManager.getSubscription();
+        if (sub) { endpoint = sub.endpoint; window._pushEndpoint = endpoint; }
+      } catch (_) {}
+    }
+    if (!endpoint) { if (typeof showToast === 'function') showToast('Enable notifications first.', 'info'); return; }
+
+    // Fetch current prefs
+    var prefs = {};
+    try {
+      var r = await fetch('/api/push/preferences?endpoint=' + encodeURIComponent(endpoint));
+      if (r.ok) prefs = (await r.json()).prefs || {};
+    } catch (_) {}
+
+    // Build modal
+    var overlay = document.createElement('div');
+    overlay.id = 'notifPrefsOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.2);';
+    var rows = _NOTIF_TYPES.map(function(t) {
+      var on = prefs[t.key] !== false;
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">'
+        + '<span style="font-size:13px;font-weight:600;color:var(--text);">' + t.label + '</span>'
+        + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
+        + '<input type="checkbox" data-key="' + t.key + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
+        + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
+        + '<span style="position:absolute;top:2px;left:' + (on ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
+        + '</label>'
+        + '</div>';
+    }).join('');
+    modal.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
+      + '<span style="font-size:15px;font-weight:800;color:var(--text);">Notification Settings</span>'
+      + '<button onclick="document.getElementById(\'notifPrefsOverlay\').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted);">&times;</button>'
+      + '</div>'
+      + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;">Choose which alerts you want to receive.</p>'
+      + rows;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+
+    // Wire up toggle interactions
+    modal.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
+      cb.addEventListener('change', async function() {
+        var key = cb.dataset.key;
+        var on = cb.checked;
+        var track = cb.parentElement.querySelector('.np-track');
+        var thumb = cb.parentElement.querySelector('.np-thumb');
+        if (track) track.style.background = on ? 'var(--accent,#3b82f6)' : 'var(--border)';
+        if (thumb) thumb.style.left = on ? '18px' : '2px';
+        prefs[key] = on;
+        try {
+          await fetch('/api/push/preferences', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: endpoint, prefs: prefs }),
+          });
+        } catch (_) {}
+      });
+    });
+  };
 
   function showNotifBanner() {
     if (document.getElementById('push-notif-banner')) return;
@@ -598,7 +675,7 @@ function emptyState(container, message, iconClass) {
         var permission = await Notification.requestPermission();
         if (permission === 'granted') {
           await subscribePush();
-          if (typeof showToast === 'function') showToast('Notifications enabled!', 'success');
+          if (typeof showToast === 'function') showToast('Notifications enabled! <a href="#" onclick="openNotifPrefs();return false;" style="color:inherit;text-decoration:underline;margin-left:6px;">Customize →</a>', 'success');
           localStorage.setItem(NOTIF_KEY, 'subscribed');
         } else {
           localStorage.setItem(NOTIF_KEY, 'denied');
@@ -632,8 +709,9 @@ function emptyState(container, message, iconClass) {
   navigator.serviceWorker.ready.then(function (reg) {
     reg.pushManager.getSubscription().then(function (sub) {
       if (sub && Notification.permission === 'granted') {
-        // Already subscribed — sync localStorage and stay quiet
+        // Already subscribed — sync localStorage and store endpoint
         localStorage.setItem(NOTIF_KEY, 'subscribed');
+        window._pushEndpoint = sub.endpoint;
         return;
       }
       if (Notification.permission === 'granted' && !sub) {
@@ -7247,11 +7325,15 @@ document.addEventListener("DOMContentLoaded", () => {
       `;
     }).join("");
 
+    const _notifLink = (window._pushEndpoint || localStorage.getItem('push-notif-v1') === 'subscribed')
+      ? `<button class="changelog-notif-settings-btn" onclick="closeDropdown();openNotifPrefs();" title="Manage push notifications"><img src="/static/bell.png" style="width:13px;height:13px;opacity:.7;vertical-align:-1px;margin-right:6px;">Notification Settings</button>`
+      : '';
     dropdown.innerHTML = `
       <div class="changelog-dropdown-header">
         <span>Recent Updates</span>
         <button class="changelog-dropdown-close" aria-label="Close">&times;</button>
       </div>
+      ${_notifLink ? `<div class="changelog-notif-settings-row">${_notifLink}</div>` : ''}
       ${entries}
     `;
     dropdown.querySelector('.changelog-dropdown-close').addEventListener('click', function(e) {
@@ -9146,26 +9228,37 @@ function getRoleGrade(roleScore) {
   return 'Limited';
 }
 
+const _advMetricsCache = new Map();
+
 function loadAdvancedMetrics(playerId, leagueId, season) {
   const contentEl = document.getElementById('advancedMetricsContent');
   if (!contentEl) return;
 
   const isAuto = season === 'auto';
 
-  // Show spinner in the bars column only (values on the left stay intact)
-  contentEl.innerHTML = `
-    <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
-      <div class="loading-spinner" style="width:16px;height:16px;"></div>
-      <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
-    </div>
-  `;
-
   const leagueParam = leagueId ? `&league_id=${leagueId}` : '';
   const seasonParam = (season != null && season !== 'career' && season !== 'auto') ? `&season=${season}` : '';
   const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}`;
 
-  fetch(url)
+  const _cached = _advMetricsCache.get(url);
+  if (!_cached) {
+    contentEl.innerHTML = `
+      <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
+        <div class="loading-spinner" style="width:16px;height:16px;"></div>
+        <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
+      </div>
+    `;
+  }
+
+  (_cached ? Promise.resolve(_cached) : fetch(url)
     .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
+    .then(data => {
+      if (!data.error && !data.premium_required) {
+        _advMetricsCache.set(url, data);
+        if (_advMetricsCache.size > 8) _advMetricsCache.delete(_advMetricsCache.keys().next().value);
+      }
+      return data;
+    }))
     .then(metricsData => {
       if (metricsData.error || metricsData.premium_required) {
         const section = document.getElementById('advancedMetricsSection');
@@ -9240,16 +9333,24 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
 }
 
 // ── Player modal: weekly usage trends ────────────────────────────────────────
-function pmSparkline(series, color, sparkW) {
-  if (!series || series.length < 2) return '';
-  const w = sparkW || 120, h = 26;
+function pmSparkline(series, color) {
+  if (!series || series.length < 2) return '<div class="pm-wt-spark"></div>';
+  const REF = 100, h = 26;
   const max = Math.max.apply(null, series.concat([1]));
-  const step = w / (series.length - 1);
+  const step = REF / (series.length - 1);
+  const toY = function(v) { return (h - 2 - (v / max) * (h - 6)).toFixed(1); };
   const pts = series.map(function(v, i) {
-    return (i * step).toFixed(1) + ',' + (h - 2 - (v / max) * (h - 6)).toFixed(1);
+    return (i * step).toFixed(1) + ',' + toY(v);
   }).join(' ');
-  return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block;">'
-    + '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" points="' + pts + '"/></svg>';
+  const avg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
+  const avgY = toY(avg);
+  const lastX = ((series.length - 1) * step).toFixed(1);
+  const lastY = toY(series[series.length - 1]);
+  return '<div class="pm-wt-spark"><svg width="100%" height="' + h + '" viewBox="0 0 ' + REF + ' ' + h + '" preserveAspectRatio="none" style="display:block;">'
+    + '<line x1="0" y1="' + avgY + '" x2="' + REF + '" y2="' + avgY + '" stroke="' + color + '" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>'
+    + '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" points="' + pts + '"/>'
+    + '<circle cx="' + lastX + '" cy="' + lastY + '" r="2.5" fill="' + color + '"/>'
+    + '</svg></div>';
 }
 
 // Shared renderer: sparkline rows for a player's weekly usage series.
@@ -9258,7 +9359,6 @@ function buildWeeklyTrendRows(weeks, position) {
     return '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Not enough weekly data for this season.</div>';
   }
   var pos = (position || '').toUpperCase();
-  var SW = 72; // sparkline width in the 2-col grid
   function _wt_row(label, series, color, suffix) {
     if (!series.some(function(v) { return v > 0; })) return '';
     var seasonAvg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
@@ -9271,10 +9371,10 @@ function buildWeeklyTrendRows(weeks, position) {
     var lastWk = series[series.length - 1];
     return '<div class="pm-wt-row">'
       + '<div class="pm-wt-label">' + label + '</div>'
-      + pmSparkline(series, color, SW)
+      + pmSparkline(series, color)
       + '<div class="pm-wt-stats">'
       + '<span class="pm-wt-last">' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
-      + '<span class="pm-wt-avg">last ' + lastWk.toFixed(1) + (suffix || '') + '</span>'
+      + '<span class="pm-wt-avg">last game: ' + lastWk.toFixed(1) + (suffix || '') + '</span>'
       + deltaHtml
       + '</div></div>';
   }
@@ -9310,9 +9410,8 @@ function buildWeeklyTrendRows(weeks, position) {
     + computedRows
     + rowFor('PPR Pts', 'ppr_pts', '#8b5cf6')
     + '</div>'
-    + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">Weeks '
-    + weeks[0].week + '&ndash;' + weeks[weeks.length - 1].week
-    + ' &middot; arrow compares last 3 weeks to the period average</div>';
+    + '<div class="pm-wt-footer">Wks ' + weeks[0].week + '&ndash;' + weeks[weeks.length - 1].week
+    + ' &middot; &#9650;&#9660; = 3-wk trend vs avg</div>';
 }
 
 // Collapse/expand a section in the player compare view.
@@ -9331,8 +9430,8 @@ function cmpToggleSection(wrapId, headerEl) {
 
 function pmWtRender(wrap, position) {
   var allWeeks = wrap._weeklyData || [];
-  var sel = document.getElementById('pmWtWkRange');
-  var n = sel ? parseInt(sel.value) || 0 : 0;
+  var activeTab = document.querySelector('.pm-wt-tab.pm-wt-tab-active');
+  var n = activeTab ? parseInt(activeTab.dataset.n) || 0 : 8;
   var weeks = n > 0 ? allWeeks.slice(-n) : allWeeks;
   var el = document.getElementById('pmWtContent');
   if (el) el.innerHTML = buildWeeklyTrendRows(weeks, position);
@@ -9364,18 +9463,23 @@ function pmToggleWeeklyTrends(playerId) {
       wrap._weeklyData = d.weeks || [];
       body.innerHTML =
         '<div class="pm-wt-filter-bar">'
-        + '<span class="pm-wt-filter-label">Weeks</span>'
-        + '<select id="pmWtWkRange" class="pm-wt-wk-sel">'
-        + '<option value="">All</option>'
-        + '<option value="4">Last 4</option>'
-        + '<option value="8">Last 8</option>'
-        + '<option value="12">Last 12</option>'
-        + '</select>'
+        + '<div class="pm-wt-tabs">'
+        + '<button class="pm-wt-tab" data-n="">All</button>'
+        + '<button class="pm-wt-tab" data-n="4">L4</button>'
+        + '<button class="pm-wt-tab pm-wt-tab-active" data-n="8">L8</button>'
+        + '<button class="pm-wt-tab" data-n="12">L12</button>'
+        + '</div>'
         + '</div>'
         + '<div id="pmWtContent"></div>';
+      var tabs = body.querySelectorAll('.pm-wt-tab');
+      tabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          tabs.forEach(function(t) { t.classList.remove('pm-wt-tab-active'); });
+          tab.classList.add('pm-wt-tab-active');
+          pmWtRender(wrap, wrapPosition);
+        });
+      });
       pmWtRender(wrap, wrapPosition);
-      var sel = document.getElementById('pmWtWkRange');
-      if (sel) sel.addEventListener('change', function() { pmWtRender(wrap, wrapPosition); });
     })
     .catch(function() {
       body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Could not load weekly data.</div>';
