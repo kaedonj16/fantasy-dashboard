@@ -1258,25 +1258,25 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "yards_per_attempt":    {"label": "Yards / Attempt",    "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing yards per attempt; core passing efficiency stat."},
     "completion_pct":       {"label": "Completion %",       "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts completed."},
     "adjusted_completion_rate": {"label": "Adj Completion %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion percent adjusted for drops, throwaways, spikes, and batted passes."},
-    "td_rate":              {"label": "Pass TD Rate",        "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that result in a touchdown."},
+    "td_rate":              {"label": "Pass TD Rate",        "category": "General", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that result in a touchdown."},
     "int_rate":             {"label": "INT Rate",            "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts intercepted. Lower is better."},
     "big_time_throw_rate":  {"label": "Big-Time Throw %",   "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "PFF rate of high-difficulty, high-value throws (deep and into tight windows)."},
     "pressure_to_sack_rate": {"label": "Pressure to Sack %","category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pressured dropbacks that turn into sacks. Lower is better."},
     "nfl_passer_rating":    {"label": "Passer Rating",       "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Standard NFL passer rating (0-158.3)."},
     "pff_passing_grade":    {"label": "PFF Pass Grade",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "PFF's passing grade (0-100)."},
-    "total_pass_tds":       {"label": "Pass TDs",            "category": "Passing", "positions": ["QB"], "integer": True, "desc": "Total passing touchdowns in the season."},
-    "pass_tds_per_game":    {"label": "Pass TDs/G",          "category": "Passing", "positions": ["QB"], "min_vol": _V_GAMES, "desc": "Passing touchdowns per game.", "computed_sql": "m.total_pass_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_pass_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_pass_tds":       {"label": "Pass TDs",            "category": "General", "positions": ["QB"], "integer": True, "desc": "Total passing touchdowns in the season."},
+    "pass_tds_per_game":    {"label": "Pass TDs/G",          "category": "General", "positions": ["QB"], "min_vol": _V_GAMES, "desc": "Passing touchdowns per game.", "computed_sql": "m.total_pass_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_pass_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     # ── Rushing ──────────────────────────────────────────────────────────────
     "yards_per_carry":      {"label": "Yards / Carry",       "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Rushing yards gained per carry."},
-    "rush_td_rate":         {"label": "Rush TD Rate",        "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_CARRIES, "desc": "Percent of carries that result in a touchdown."},
+    "rush_td_rate":         {"label": "Rush TD Rate",        "category": "General", "positions": ["RB", "QB"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_CARRIES, "desc": "Percent of carries that result in a touchdown."},
     "breakaway_percentage": {"label": "Breakaway %",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rushing yards that came on runs of 15+ yards; explosiveness."},
     "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
     "pff_rushing_grade":    {"label": "PFF Rush Grade",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF's rushing grade (0-100)."},
     "explosive_runs_10_plus": {"label": "Explosive Runs",   "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "integer": True, "desc": "Count of runs gaining 10 or more yards in the season (PFF). Raw explosive-play volume."},
     "avoided_tackles":      {"label": "Avoided Tackles",    "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss."},
     "rz_carries_pg":        {"label": "RZ Carries/G",        "category": "Rushing", "positions": ["QB", "RB"], "min_vol": _V_GAMES, "desc": "Red zone rushing attempts per game (inside opponent's 20-yard line)."},
-    "total_rush_tds":       {"label": "Rush TDs",            "category": "Rushing", "positions": ["RB", "QB"], "integer": True, "desc": "Total rushing touchdowns in the season."},
-    "rush_tds_per_game":    {"label": "Rush TDs/G",          "category": "Rushing", "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Rushing touchdowns per game.", "computed_sql": "m.total_rush_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_rush_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_rush_tds":       {"label": "Rush TDs",            "category": "General", "positions": ["RB", "QB"], "integer": True, "desc": "Total rushing touchdowns in the season."},
+    "rush_tds_per_game":    {"label": "Rush TDs/G",          "category": "General", "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Rushing touchdowns per game.", "computed_sql": "m.total_rush_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_rush_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "explosive_runs_pg":    {"label": "Explosive Runs/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Explosive runs (10+ yards) per carry.", "computed_sql": "m.explosive_runs_10_plus::float / NULLIF(v.vol, 0)", "computed_null": "m.explosive_runs_10_plus IS NOT NULL"},
     "avoided_tackles_pg":   {"label": "Avoided Tackles/Carry", "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided per carry (PFF).", "computed_sql": "m.avoided_tackles::float / NULLIF(v.vol, 0)", "computed_null": "m.avoided_tackles IS NOT NULL"},
     # ── Receiving ────────────────────────────────────────────────────────────
@@ -1298,41 +1298,47 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "wide_rate":            {"label": "Wide Rate",           "category": "Receiving", "positions": ["WR", "TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of routes run from out wide."},
     "inline_rate":          {"label": "Inline Rate",         "category": "Receiving", "positions": ["TE"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of snaps a tight end lined up inline (attached to the formation)."},
     "pass_block_rate":      {"label": "Block Rate",          "category": "Receiving", "positions": ["TE", "RB"], "efficiency": True, "pct": True, "min_vol": _V_GAMES, "desc": "Percent of pass snaps spent blocking rather than running a route."},
-    "total_rec_tds":        {"label": "Rec TDs",             "category": "Receiving", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Total receiving touchdowns in the season."},
-    "rec_tds_per_game":     {"label": "Rec TDs/G",           "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Receiving touchdowns per game.", "computed_sql": "m.total_rec_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_rec_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_rec_tds":        {"label": "Rec TDs",             "category": "General", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Total receiving touchdowns in the season."},
+    "rec_tds_per_game":     {"label": "Rec TDs/G",           "category": "General", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Receiving touchdowns per game.", "computed_sql": "m.total_rec_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_rec_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     # ── Volume counts with paired per-game rates ─────────────────────────────
     "total_carries":      {"label": "Carries",      "category": "Volume", "positions": ["RB", "QB"], "integer": True, "desc": "Total carries in the season."},
-    "carries_per_game":   {"label": "Carries/G",    "category": "Volume", "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Carries per game.", "computed_sql": "m.total_carries::float / NULLIF(m.games, 0)", "computed_null": "m.total_carries IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "total_targets":      {"label": "Targets",      "category": "Volume", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total targets in the season."},
-    "targets_per_game":   {"label": "Targets/G",    "category": "Volume", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Targets per game.", "computed_sql": "m.total_targets::float / NULLIF(m.games, 0)", "computed_null": "m.total_targets IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "total_receptions":   {"label": "Receptions",   "category": "Volume", "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total receptions in the season."},
-    "receptions_per_game": {"label": "Receptions/G", "category": "Volume", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Receptions per game.", "computed_sql": "m.total_receptions::float / NULLIF(m.games, 0)", "computed_null": "m.total_receptions IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "carries_per_game":   {"label": "Carries/G",    "category": "Rushing",   "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Carries per game.", "computed_sql": "m.total_carries::float / NULLIF(m.games, 0)", "computed_null": "m.total_carries IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_targets":      {"label": "Targets",      "category": "Volume",    "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total targets in the season."},
+    "targets_per_game":   {"label": "Targets/G",    "category": "Receiving", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Targets per game.", "computed_sql": "m.total_targets::float / NULLIF(m.games, 0)", "computed_null": "m.total_targets IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_receptions":   {"label": "Receptions",   "category": "Volume",    "positions": ["WR", "RB", "TE"], "integer": True, "desc": "Total receptions in the season."},
+    "receptions_per_game": {"label": "Receptions/G", "category": "Receiving", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Receptions per game.", "computed_sql": "m.total_receptions::float / NULLIF(m.games, 0)", "computed_null": "m.total_receptions IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "total_routes":       {"label": "Routes",       "category": "Volume", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Estimated total routes run (= season receiving yards ÷ yprr). Requires both yprr and receptions data."},
     "routes_per_game":    {"label": "Routes/G",     "category": "Volume", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Routes run per game.", "computed_sql": "m.total_routes::float / NULLIF(v.vol, 0)", "computed_null": "m.total_routes IS NOT NULL"},
-    "total_touches":      {"label": "Touches",      "category": "Volume", "positions": ["RB", "WR", "TE"], "integer": True, "desc": "Total carries plus receptions in the season."},
-    "touches_per_game":   {"label": "Touches/G",    "category": "Volume", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Carries plus receptions per game.", "computed_sql": "m.total_touches::float / NULLIF(m.games, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
-    "total_tds":          {"label": "Total TDs",    "category": "Volume", "positions": ["QB", "RB", "WR", "TE"], "integer": True, "desc": "Total touchdowns (rush + receiving + passing) in the season."},
-    "total_tds_per_game": {"label": "Total TDs/G",  "category": "Volume", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Total touchdowns per game.", "computed_sql": "m.total_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_touches":      {"label": "Touches",      "category": "General", "positions": ["RB", "WR", "TE"], "integer": True, "desc": "Total carries plus receptions in the season."},
+    "touches_per_game":   {"label": "Touches/G",    "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Carries plus receptions per game.", "computed_sql": "m.total_touches::float / NULLIF(m.games, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_tds":          {"label": "Total TDs",    "category": "General", "positions": ["QB", "RB", "WR", "TE"], "integer": True, "desc": "Total touchdowns (rush + receiving + passing) in the season."},
+    "total_tds_per_game": {"label": "Total TDs/G",  "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Total touchdowns per game.", "computed_sql": "m.total_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
 }
 
 # Metrics that can be filtered to a week range using player_weekly_metrics.
-# Each value is the SQL aggregation expression over that table's columns.
-_WEEKLY_METRICS: Dict[str, str] = {
-    "snap_share":           "AVG(snap_pct)",
-    "target_share":         "AVG(target_share)",
-    "yards_per_target":     "SUM(rec_yards)::float / NULLIF(SUM(targets), 0)",
-    "yards_per_reception":  "SUM(rec_yards)::float / NULLIF(SUM(receptions), 0)",
-    "catch_rate":           "SUM(receptions)::float / NULLIF(SUM(targets), 0)",
-    "yards_per_carry":      "SUM(rush_yards)::float / NULLIF(SUM(carries), 0)",
-    "yards_per_touch":      "(SUM(rec_yards) + SUM(rush_yards))::float / NULLIF(SUM(touches), 0)",
-    "total_targets":        "SUM(targets)",
-    "targets_per_game":     "AVG(targets)",
-    "total_receptions":     "SUM(receptions)",
-    "receptions_per_game":  "AVG(receptions)",
-    "total_carries":        "SUM(carries)",
-    "carries_per_game":     "AVG(carries)",
-    "total_touches":        "SUM(touches)",
-    "touches_per_game":     "AVG(touches)",
+# sql:       aggregation expression; snap_pct / target_share divide by 100 because
+#            those columns are stored as 0-100 in weekly_metrics but the LEADERBOARD
+#            spec has pct_frac=True expecting a 0-1 fraction.
+# min_col:   SQL expression for the volume column used in the optional HAVING filter
+#            (None = no per-metric volume filter, just needs ≥1 week of data).
+# min_label: label shown in the Min filter control when week range is active.
+# min_opts:  options offered in that control; [] means the control is hidden.
+_WEEKLY_METRICS: Dict[str, Any] = {
+    "snap_share":          {"sql": "AVG(snap_pct) / 100.0",                                                "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "target_share":        {"sql": "AVG(target_share) / 100.0",                                            "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "yards_per_target":    {"sql": "SUM(rec_yards)::float / NULLIF(SUM(targets), 0)",                      "min_col": "SUM(targets)",    "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
+    "yards_per_reception": {"sql": "SUM(rec_yards)::float / NULLIF(SUM(receptions), 0)",                   "min_col": "SUM(receptions)", "min_label": "Min Recs",    "min_opts": [5, 10, 20]},
+    "catch_rate":          {"sql": "SUM(receptions)::float / NULLIF(SUM(targets), 0)",                     "min_col": "SUM(targets)",    "min_label": "Min Targets", "min_opts": [5, 10, 20, 40]},
+    "yards_per_carry":     {"sql": "SUM(rush_yards)::float / NULLIF(SUM(carries), 0)",                     "min_col": "SUM(carries)",    "min_label": "Min Carries", "min_opts": [5, 10, 20, 40]},
+    "yards_per_touch":     {"sql": "(SUM(rec_yards) + SUM(rush_yards))::float / NULLIF(SUM(touches), 0)",  "min_col": "SUM(touches)",    "min_label": "Min Touches", "min_opts": [5, 10, 20, 40]},
+    "total_targets":       {"sql": "SUM(targets)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "targets_per_game":    {"sql": "AVG(targets)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "total_receptions":    {"sql": "SUM(receptions)",                                                      "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "receptions_per_game": {"sql": "AVG(receptions)",                                                      "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "total_carries":       {"sql": "SUM(carries)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "carries_per_game":    {"sql": "AVG(carries)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "total_touches":       {"sql": "SUM(touches)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
+    "touches_per_game":    {"sql": "AVG(touches)",                                                         "min_col": None,              "min_label": "Min Weeks", "min_opts": []},
 }
 
 
@@ -1348,11 +1354,14 @@ def get_weekly_range_leaderboard(
     """Players ranked by a weekly-aggregate metric over a week range.
 
     Queries player_weekly_metrics. Returns [{player_id, name, team, position, value, games, vol}].
-    games/vol here is weeks played in the range (not season games).
+    games/vol = weeks played in the range. min_vol filters on min_col (e.g. SUM(targets) >= min_vol).
     """
-    agg_sql = _WEEKLY_METRICS.get(metric)
-    if not agg_sql or metric not in LEADERBOARD_METRICS:
+    wspec = _WEEKLY_METRICS.get(metric)
+    if not wspec or metric not in LEADERBOARD_METRICS:
         return []
+
+    agg_sql  = wspec["sql"]
+    min_col  = wspec.get("min_col")   # SQL aggregate expr, or None
 
     pos = (position or "").upper().strip() or None
     where_parts: list = []
@@ -1372,26 +1381,35 @@ def get_weekly_range_leaderboard(
         params.append(pos)
 
     where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
-    min_weeks = max(1, int(min_vol)) if (min_vol and int(min_vol) > 0) else 1
-    query_params = tuple(params + [min_weeks, limit])
+
+    # Optional volume filter (e.g. min targets in the range for a rate metric).
+    use_vol = bool(min_col and min_vol and int(min_vol) > 0)
+    inner_select = (
+        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value, {min_col} AS _wvol"
+        if use_vol else
+        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value"
+    )
+    outer_where = "t.value IS NOT NULL"
+    if use_vol:
+        outer_where += " AND t._wvol >= %s"
+        params.append(int(min_vol))
+    params.append(limit)
 
     with get_conn() as conn:
         rows = conn.execute(
             f"""
             SELECT t.player_id, t.position, t.weeks_played, t.value
             FROM (
-                SELECT player_id, position,
-                       COUNT(*) AS weeks_played,
-                       {agg_sql} AS value
+                SELECT {inner_select}
                 FROM player_weekly_metrics
                 {where_clause}
                 GROUP BY player_id, position
             ) t
-            WHERE t.weeks_played >= %s AND t.value IS NOT NULL
+            WHERE {outer_where}
             ORDER BY t.value DESC
             LIMIT %s
             """,
-            query_params,
+            tuple(params),
         ).fetchall()
 
     try:
@@ -1673,42 +1691,183 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
         try:
             result = conn.execute("""
                 WITH snapshot AS (
-                    SELECT DISTINCT ON (player_id)
-                        player_id,
-                        total_carries, total_targets, total_receptions,
-                        total_touches, total_rush_tds, total_rec_tds,
-                        total_pass_tds, total_tds, games,
-                        CASE WHEN games > 0 THEN total_carries::float / games    END AS carries_pg,
-                        CASE WHEN games > 0 THEN total_targets::float / games    END AS targets_pg,
-                        CASE WHEN games > 0 THEN total_receptions::float / games END AS recs_pg,
-                        CASE WHEN games > 0 THEN total_touches::float / games    END AS touches_pg,
-                        CASE WHEN games > 0 THEN total_rush_tds::float / games   END AS rush_tds_pg,
-                        CASE WHEN games > 0 THEN total_rec_tds::float / games    END AS rec_tds_pg,
-                        CASE WHEN games > 0 THEN total_pass_tds::float / games   END AS pass_tds_pg,
-                        CASE WHEN games > 0 THEN total_tds::float / games        END AS total_tds_pg
+                    SELECT player_id,
+                        MAX(total_carries) AS total_carries,
+                        MAX(total_targets) AS total_targets,
+                        MAX(total_receptions) AS total_receptions,
+                        MAX(total_touches) AS total_touches,
+                        MAX(total_rush_tds) AS total_rush_tds,
+                        MAX(total_rec_tds) AS total_rec_tds,
+                        MAX(total_pass_tds) AS total_pass_tds,
+                        MAX(total_tds) AS total_tds,
+                        MAX(total_pass_att) AS total_pass_att,
+                        MAX(games) AS games,
+                        MAX(role_score) AS role_score,
+                        MAX(snap_share) AS snap_share,
+                        MAX(grades_offense) AS grades_offense,
+                        MAX(pff_passing_grade) AS pff_passing_grade,
+                        MAX(big_time_throw_rate) AS big_time_throw_rate,
+                        MAX(adjusted_completion_rate) AS adjusted_completion_rate,
+                        MAX(nfl_passer_rating) AS nfl_passer_rating,
+                        MAX(yards_per_attempt) AS yards_per_attempt,
+                        MAX(completion_pct) AS completion_pct,
+                        MAX(td_rate) AS td_rate,
+                        MIN(int_rate) AS int_rate,
+                        MIN(pressure_to_sack_rate) AS pressure_to_sack_rate,
+                        MAX(pff_rushing_grade) AS pff_rushing_grade,
+                        MAX(yards_per_carry) AS yards_per_carry,
+                        MAX(yards_per_touch) AS yards_per_touch,
+                        MAX(rush_td_rate) AS rush_td_rate,
+                        MAX(elusive_rating) AS elusive_rating,
+                        MAX(breakaway_percentage) AS breakaway_percentage,
+                        MAX(explosive_runs_10_plus) AS explosive_runs_10_plus,
+                        MAX(opportunity_share) AS opportunity_share,
+                        MAX(catch_rate) AS catch_rate,
+                        MAX(avoided_tackles) AS avoided_tackles,
+                        MAX(yprr) AS yprr,
+                        MAX(yards_per_target) AS yards_per_target,
+                        MAX(yards_per_reception) AS yards_per_reception,
+                        MAX(yards_after_catch_per_reception) AS yards_after_catch_per_reception,
+                        MAX(avg_depth_of_target) AS avg_depth_of_target,
+                        MAX(target_share) AS target_share,
+                        MAX(air_yards_per_game) AS air_yards_per_game,
+                        MAX(air_yards_share) AS air_yards_share,
+                        MAX(target_quality_score) AS target_quality_score,
+                        MAX(contested_catch_rate) AS contested_catch_rate,
+                        MIN(drop_rate) AS drop_rate,
+                        MAX(red_zone_usage) AS red_zone_usage,
+                        CASE WHEN MAX(games) > 0 THEN MAX(total_carries)::float / MAX(games)    END AS carries_pg,
+                        CASE WHEN MAX(games) > 0 THEN MAX(total_targets)::float / MAX(games)    END AS targets_pg,
+                        CASE WHEN MAX(games) > 0 THEN MAX(total_receptions)::float / MAX(games) END AS recs_pg,
+                        CASE WHEN MAX(games) > 0 THEN MAX(total_touches)::float / MAX(games)    END AS touches_pg,
+                        CASE WHEN MAX(games) > 0 THEN MAX(total_rush_tds)::float / MAX(games)   END AS rush_tds_pg,
+                        CASE WHEN MAX(games) > 0 THEN MAX(total_rec_tds)::float / MAX(games)    END AS rec_tds_pg,
+                        CASE WHEN MAX(games) > 0 THEN MAX(total_pass_tds)::float / MAX(games)   END AS pass_tds_pg,
+                        CASE WHEN MAX(games) > 0 THEN MAX(total_tds)::float / MAX(games)        END AS total_tds_pg
                     FROM player_advanced_metrics
                     WHERE season = %s AND position = %s
-                      AND games IS NOT NULL AND games > 0
-                    ORDER BY player_id, as_of_date DESC
+                    GROUP BY player_id
+                    HAVING COALESCE(
+                        MAX(games),
+                        CASE WHEN COALESCE(MAX(total_carries),0)+COALESCE(MAX(total_targets),0) > 0
+                             THEN 1 END
+                    ) >= 4
                 ),
                 r AS (
                     SELECT player_id,
-                        RANK() OVER (ORDER BY total_carries DESC NULLS LAST)    AS total_carries,
-                        RANK() OVER (ORDER BY total_targets DESC NULLS LAST)    AS total_targets,
-                        RANK() OVER (ORDER BY total_receptions DESC NULLS LAST) AS total_receptions,
-                        RANK() OVER (ORDER BY total_touches DESC NULLS LAST)    AS total_touches,
-                        RANK() OVER (ORDER BY total_rush_tds DESC NULLS LAST)   AS total_rush_tds,
-                        RANK() OVER (ORDER BY total_rec_tds DESC NULLS LAST)    AS total_rec_tds,
-                        RANK() OVER (ORDER BY total_pass_tds DESC NULLS LAST)   AS total_pass_tds,
-                        RANK() OVER (ORDER BY total_tds DESC NULLS LAST)        AS total_tds,
-                        RANK() OVER (ORDER BY carries_pg DESC NULLS LAST)       AS carries_per_game,
-                        RANK() OVER (ORDER BY targets_pg DESC NULLS LAST)       AS targets_per_game,
-                        RANK() OVER (ORDER BY recs_pg DESC NULLS LAST)          AS receptions_per_game,
-                        RANK() OVER (ORDER BY touches_pg DESC NULLS LAST)       AS touches_per_game,
-                        RANK() OVER (ORDER BY rush_tds_pg DESC NULLS LAST)      AS rush_tds_per_game,
-                        RANK() OVER (ORDER BY rec_tds_pg DESC NULLS LAST)       AS rec_tds_per_game,
-                        RANK() OVER (ORDER BY pass_tds_pg DESC NULLS LAST)      AS pass_tds_per_game,
-                        RANK() OVER (ORDER BY total_tds_pg DESC NULLS LAST)     AS total_tds_per_game
+                        -- Volume totals: no extra minimum beyond 4+ games
+                        CASE WHEN total_carries    IS NOT NULL THEN RANK() OVER (PARTITION BY (total_carries    IS NULL) ORDER BY total_carries    DESC) ELSE NULL END AS total_carries,
+                        CASE WHEN total_targets    IS NOT NULL THEN RANK() OVER (PARTITION BY (total_targets    IS NULL) ORDER BY total_targets    DESC) ELSE NULL END AS total_targets,
+                        CASE WHEN total_receptions IS NOT NULL THEN RANK() OVER (PARTITION BY (total_receptions IS NULL) ORDER BY total_receptions DESC) ELSE NULL END AS total_receptions,
+                        CASE WHEN total_touches    IS NOT NULL THEN RANK() OVER (PARTITION BY (total_touches    IS NULL) ORDER BY total_touches    DESC) ELSE NULL END AS total_touches,
+                        CASE WHEN total_rush_tds   IS NOT NULL THEN RANK() OVER (PARTITION BY (total_rush_tds   IS NULL) ORDER BY total_rush_tds   DESC) ELSE NULL END AS total_rush_tds,
+                        CASE WHEN total_rec_tds    IS NOT NULL THEN RANK() OVER (PARTITION BY (total_rec_tds    IS NULL) ORDER BY total_rec_tds    DESC) ELSE NULL END AS total_rec_tds,
+                        CASE WHEN total_pass_tds   IS NOT NULL THEN RANK() OVER (PARTITION BY (total_pass_tds   IS NULL) ORDER BY total_pass_tds   DESC) ELSE NULL END AS total_pass_tds,
+                        CASE WHEN total_tds        IS NOT NULL THEN RANK() OVER (PARTITION BY (total_tds        IS NULL) ORDER BY total_tds        DESC) ELSE NULL END AS total_tds,
+                        CASE WHEN carries_pg       IS NOT NULL THEN RANK() OVER (PARTITION BY (carries_pg       IS NULL) ORDER BY carries_pg       DESC) ELSE NULL END AS carries_per_game,
+                        CASE WHEN targets_pg       IS NOT NULL THEN RANK() OVER (PARTITION BY (targets_pg       IS NULL) ORDER BY targets_pg       DESC) ELSE NULL END AS targets_per_game,
+                        CASE WHEN recs_pg          IS NOT NULL THEN RANK() OVER (PARTITION BY (recs_pg          IS NULL) ORDER BY recs_pg          DESC) ELSE NULL END AS receptions_per_game,
+                        CASE WHEN touches_pg       IS NOT NULL THEN RANK() OVER (PARTITION BY (touches_pg       IS NULL) ORDER BY touches_pg       DESC) ELSE NULL END AS touches_per_game,
+                        CASE WHEN rush_tds_pg      IS NOT NULL THEN RANK() OVER (PARTITION BY (rush_tds_pg      IS NULL) ORDER BY rush_tds_pg      DESC) ELSE NULL END AS rush_tds_per_game,
+                        CASE WHEN rec_tds_pg       IS NOT NULL THEN RANK() OVER (PARTITION BY (rec_tds_pg       IS NULL) ORDER BY rec_tds_pg       DESC) ELSE NULL END AS rec_tds_per_game,
+                        CASE WHEN pass_tds_pg      IS NOT NULL THEN RANK() OVER (PARTITION BY (pass_tds_pg      IS NULL) ORDER BY pass_tds_pg      DESC) ELSE NULL END AS pass_tds_per_game,
+                        CASE WHEN total_tds_pg     IS NOT NULL THEN RANK() OVER (PARTITION BY (total_tds_pg     IS NULL) ORDER BY total_tds_pg     DESC) ELSE NULL END AS total_tds_per_game,
+                        CASE WHEN role_score       IS NOT NULL THEN RANK() OVER (PARTITION BY (role_score       IS NULL) ORDER BY role_score       DESC) ELSE NULL END AS role_score,
+                        CASE WHEN snap_share       IS NOT NULL THEN RANK() OVER (PARTITION BY (snap_share       IS NULL) ORDER BY snap_share       DESC) ELSE NULL END AS snap_share,
+                        CASE WHEN grades_offense   IS NOT NULL THEN RANK() OVER (PARTITION BY (grades_offense   IS NULL) ORDER BY grades_offense   DESC) ELSE NULL END AS grades_offense,
+                        CASE WHEN opportunity_share IS NOT NULL THEN RANK() OVER (PARTITION BY (opportunity_share IS NULL) ORDER BY opportunity_share DESC) ELSE NULL END AS opportunity_share,
+                        CASE WHEN red_zone_usage   IS NOT NULL THEN RANK() OVER (PARTITION BY (red_zone_usage   IS NULL) ORDER BY red_zone_usage   DESC) ELSE NULL END AS red_zone_usage,
+                        -- QB passing metrics: require 50+ pass attempts
+                        CASE WHEN pff_passing_grade IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (pff_passing_grade IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY pff_passing_grade DESC)
+                             ELSE NULL END AS pff_passing_grade,
+                        CASE WHEN big_time_throw_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (big_time_throw_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY big_time_throw_rate DESC)
+                             ELSE NULL END AS big_time_throw_rate,
+                        CASE WHEN adjusted_completion_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (adjusted_completion_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY adjusted_completion_rate DESC)
+                             ELSE NULL END AS adjusted_completion_rate,
+                        CASE WHEN nfl_passer_rating IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (nfl_passer_rating IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY nfl_passer_rating DESC)
+                             ELSE NULL END AS nfl_passer_rating,
+                        CASE WHEN yards_per_attempt IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (yards_per_attempt IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY yards_per_attempt DESC)
+                             ELSE NULL END AS yards_per_attempt,
+                        CASE WHEN completion_pct IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (completion_pct IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY completion_pct DESC)
+                             ELSE NULL END AS completion_pct,
+                        CASE WHEN td_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (td_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY td_rate DESC)
+                             ELSE NULL END AS td_rate,
+                        CASE WHEN int_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (int_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY int_rate ASC)
+                             ELSE NULL END AS int_rate,
+                        CASE WHEN pressure_to_sack_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (pressure_to_sack_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY pressure_to_sack_rate ASC)
+                             ELSE NULL END AS pressure_to_sack_rate,
+                        -- RB rushing metrics: require 20+ carries
+                        CASE WHEN pff_rushing_grade IS NOT NULL AND COALESCE(total_carries,0) >= 20
+                             THEN RANK() OVER (PARTITION BY (pff_rushing_grade IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY pff_rushing_grade DESC)
+                             ELSE NULL END AS pff_rushing_grade,
+                        CASE WHEN yards_per_carry IS NOT NULL AND COALESCE(total_carries,0) >= 20
+                             THEN RANK() OVER (PARTITION BY (yards_per_carry IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY yards_per_carry DESC)
+                             ELSE NULL END AS yards_per_carry,
+                        CASE WHEN rush_td_rate IS NOT NULL AND COALESCE(total_carries,0) >= 20
+                             THEN RANK() OVER (PARTITION BY (rush_td_rate IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY rush_td_rate DESC)
+                             ELSE NULL END AS rush_td_rate,
+                        CASE WHEN elusive_rating IS NOT NULL AND COALESCE(total_carries,0) >= 20
+                             THEN RANK() OVER (PARTITION BY (elusive_rating IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY elusive_rating DESC)
+                             ELSE NULL END AS elusive_rating,
+                        CASE WHEN breakaway_percentage IS NOT NULL AND COALESCE(total_carries,0) >= 20
+                             THEN RANK() OVER (PARTITION BY (breakaway_percentage IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY breakaway_percentage DESC)
+                             ELSE NULL END AS breakaway_percentage,
+                        CASE WHEN explosive_runs_10_plus IS NOT NULL AND COALESCE(total_carries,0) >= 20
+                             THEN RANK() OVER (PARTITION BY (explosive_runs_10_plus IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY explosive_runs_10_plus DESC)
+                             ELSE NULL END AS explosive_runs_10_plus,
+                        CASE WHEN avoided_tackles IS NOT NULL AND COALESCE(total_carries,0) >= 20
+                             THEN RANK() OVER (PARTITION BY (avoided_tackles IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY avoided_tackles DESC)
+                             ELSE NULL END AS avoided_tackles,
+                        -- Touch-based metric: require 20+ touches
+                        CASE WHEN yards_per_touch IS NOT NULL AND COALESCE(total_touches,0) >= 20
+                             THEN RANK() OVER (PARTITION BY (yards_per_touch IS NULL OR COALESCE(total_touches,0) < 20) ORDER BY yards_per_touch DESC)
+                             ELSE NULL END AS yards_per_touch,
+                        -- Receiving/route metrics: require 15+ targets
+                        CASE WHEN catch_rate IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (catch_rate IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY catch_rate DESC)
+                             ELSE NULL END AS catch_rate,
+                        CASE WHEN yprr IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (yprr IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY yprr DESC)
+                             ELSE NULL END AS yprr,
+                        CASE WHEN yards_per_target IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (yards_per_target IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY yards_per_target DESC)
+                             ELSE NULL END AS yards_per_target,
+                        CASE WHEN yards_per_reception IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (yards_per_reception IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY yards_per_reception DESC)
+                             ELSE NULL END AS yards_per_reception,
+                        CASE WHEN yards_after_catch_per_reception IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (yards_after_catch_per_reception IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY yards_after_catch_per_reception DESC)
+                             ELSE NULL END AS yards_after_catch_per_reception,
+                        CASE WHEN avg_depth_of_target IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (avg_depth_of_target IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY avg_depth_of_target DESC)
+                             ELSE NULL END AS avg_depth_of_target,
+                        CASE WHEN target_share IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (target_share IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY target_share DESC)
+                             ELSE NULL END AS target_share,
+                        CASE WHEN air_yards_per_game IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (air_yards_per_game IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY air_yards_per_game DESC)
+                             ELSE NULL END AS air_yards_per_game,
+                        CASE WHEN air_yards_share IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (air_yards_share IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY air_yards_share DESC)
+                             ELSE NULL END AS air_yards_share,
+                        CASE WHEN target_quality_score IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (target_quality_score IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY target_quality_score DESC)
+                             ELSE NULL END AS target_quality_score,
+                        CASE WHEN contested_catch_rate IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (contested_catch_rate IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY contested_catch_rate DESC)
+                             ELSE NULL END AS contested_catch_rate,
+                        CASE WHEN drop_rate IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (drop_rate IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY drop_rate ASC)
+                             ELSE NULL END AS drop_rate
                     FROM snapshot
                 )
                 SELECT * FROM r WHERE player_id = %s

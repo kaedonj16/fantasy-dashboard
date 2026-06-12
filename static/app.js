@@ -552,10 +552,21 @@ function emptyState(container, message, iconClass) {
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     });
     var s = sub.toJSON();
+    // Extract league context from URL path: /{platform}/{season}/{league_id}/...
+    var _parts    = window.location.pathname.split('/').filter(Boolean);
+    var _platform = (_parts[0] || 'sleeper').toLowerCase();
+    var _league   = _parts.length >= 3 ? _parts[2] : '';
+    if (!['sleeper', 'espn'].includes(_platform)) { _platform = 'sleeper'; _league = ''; }
     await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: s.endpoint, keys: s.keys }),
+      body: JSON.stringify({
+        endpoint:  s.endpoint,
+        keys:      s.keys,
+        league_id: _league   || null,
+        platform:  _platform || 'sleeper',
+        owner_id:  (window._viewerUid || null),
+      }),
     });
     return true;
   }
@@ -8214,10 +8225,26 @@ function openPlayerModal(playerId, playerName, opts) {
       }
 
       // ── Build Adv Metrics panel HTML ──────────────────────────────────────
+      const _metricsBase = leagueId
+        ? `/${platform}/${season}/${leagueId}/metrics`
+        : '/metrics';
+      const _metricsPos  = pos && pos !== 'PICK' ? pos : '';
+      const _srch = '&search=' + encodeURIComponent(playerName || '');
+      const _posSets = {
+        QB: { label: 'Passing',   preset: 'Passing'   },
+        RB: { label: 'Rushing',   preset: 'Rushing'   },
+        WR: { label: 'Receiving', preset: 'Receiving' },
+        TE: { label: 'Receiving', preset: 'Receiving' },
+      };
+      const _posSet = _posSets[_metricsPos];
+      const _setLink = _posSet
+        ? `<a href="${_metricsBase}?pos=${encodeURIComponent(_metricsPos)}&preset=${_posSet.preset}${_srch}" class="pm-section-link" title="Open ${_posSet.label} leaderboard">View in Adv Metrics &rarr;</a>`
+        : '';
       const metricsHTML = hasMetrics ? `
         <div id="advancedMetricsSection">
           <div class="pm-section-header">
             <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span></span>
+            ${_setLink}
           </div>
           <div id="advMetricsPills"></div>
           <div id="advancedMetricsContent">
@@ -8226,7 +8253,7 @@ function openPlayerModal(playerId, playerName, opts) {
               <span style="font-size:13px;color:var(--text-muted);">Loading...</span>
             </div>
           </div>
-          <div id="pmWeeklyTrendsWrap">
+          <div id="pmWeeklyTrendsWrap" data-position="${pos || ''}">
             <button type="button" id="pmWeeklyTrendsBtn" class="pm-weekly-toggle"
               onclick="pmToggleWeeklyTrends('${playerId}')">Weekly trends &#9662;</button>
             <div id="pmWeeklyTrendsBody" style="display:none;"></div>
@@ -8552,7 +8579,7 @@ function pmSwitchTab(tab) {
     const path = window.location.pathname;
     const match = path.match(/\/(sleeper|espn)\/(\d+)\/([^\/]+)/);
     const leagueIdForMetrics = match ? match[3] : null;
-    loadAdvancedMetrics(playerId, leagueIdForMetrics, null);
+    loadAdvancedMetrics(playerId, leagueIdForMetrics, 'auto');
   }
 
   // ── Lazy-load Breakout tab ───────────────────────────────────────────────
@@ -9123,6 +9150,8 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
   const contentEl = document.getElementById('advancedMetricsContent');
   if (!contentEl) return;
 
+  const isAuto = season === 'auto';
+
   // Show spinner in the bars column only (values on the left stay intact)
   contentEl.innerHTML = `
     <div style="padding:12px 0;display:flex;align-items:center;gap:10px;">
@@ -9132,7 +9161,7 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
   `;
 
   const leagueParam = leagueId ? `&league_id=${leagueId}` : '';
-  const seasonParam = season != null ? `&season=${season}` : '';
+  const seasonParam = (season != null && season !== 'career' && season !== 'auto') ? `&season=${season}` : '';
   const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}`;
 
   fetch(url)
@@ -9145,6 +9174,13 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
       }
 
       const availableSeasons = metricsData.available_seasons || [];
+
+      // Auto mode: redirect to most recent season without rendering career view
+      if (isAuto && availableSeasons.length > 0) {
+        loadAdvancedMetrics(playerId, leagueId, availableSeasons[0]);
+        return;
+      }
+
       const activeSeason = metricsData.season;
       const isCareer = season === 'career' || activeSeason == null;
 
@@ -9204,9 +9240,9 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
 }
 
 // ── Player modal: weekly usage trends ────────────────────────────────────────
-function pmSparkline(series, color) {
+function pmSparkline(series, color, sparkW) {
   if (!series || series.length < 2) return '';
-  const w = 120, h = 26;
+  const w = sparkW || 120, h = 26;
   const max = Math.max.apply(null, series.concat([1]));
   const step = w / (series.length - 1);
   const pts = series.map(function(v, i) {
@@ -9217,39 +9253,66 @@ function pmSparkline(series, color) {
 }
 
 // Shared renderer: sparkline rows for a player's weekly usage series.
-function buildWeeklyTrendRows(weeks) {
+function buildWeeklyTrendRows(weeks, position) {
   if (!weeks || weeks.length < 2) {
     return '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Not enough weekly data for this season.</div>';
   }
-  function rowFor(label, key, color, suffix) {
-    const series = weeks.map(function(w) { return Number(w[key] || 0); });
+  var pos = (position || '').toUpperCase();
+  var SW = 72; // sparkline width in the 2-col grid
+  function _wt_row(label, series, color, suffix) {
     if (!series.some(function(v) { return v > 0; })) return '';
-    const seasonAvg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
-    const r3 = series.slice(-3);
-    const recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
-    const delta = recentAvg - seasonAvg;
-    let deltaHtml = '';
+    var seasonAvg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
+    var r3 = series.slice(-3);
+    var recentAvg = r3.reduce(function(s, v) { return s + v; }, 0) / r3.length;
+    var delta = recentAvg - seasonAvg;
+    var deltaHtml = '';
     if (delta >= 0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + delta.toFixed(1) + '</span>';
     else if (delta <= -0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; ' + delta.toFixed(1) + '</span>';
-    const last = series[series.length - 1];
+    var lastWk = series[series.length - 1];
     return '<div class="pm-wt-row">'
       + '<div class="pm-wt-label">' + label + '</div>'
-      + pmSparkline(series, color)
+      + pmSparkline(series, color, SW)
       + '<div class="pm-wt-stats">'
-      + '<span class="pm-wt-last">' + last.toFixed(1) + (suffix || '') + '</span>'
-      + '<span class="pm-wt-avg">avg ' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
+      + '<span class="pm-wt-last">' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
+      + '<span class="pm-wt-avg">last ' + lastWk.toFixed(1) + (suffix || '') + '</span>'
       + deltaHtml
       + '</div></div>';
+  }
+  function rowFor(label, key, color, suffix) {
+    return _wt_row(label, weeks.map(function(w) { return Number(w[key] || 0); }), color, suffix);
+  }
+  function rowForComputed(label, fn, color, suffix) {
+    return _wt_row(label, weeks.map(fn), color, suffix);
+  }
+  var computedRows = '';
+  if (pos === 'RB') {
+    computedRows += rowForComputed('Yds/Carry', function(w) {
+      var c = Number(w.carries || 0); return c > 0 ? Number(w.rush_yards || 0) / c : 0;
+    }, '#f97316');
+    computedRows += rowForComputed('Yds/Touch', function(w) {
+      var t = Number(w.touches || 0); return t > 0 ? (Number(w.rush_yards || 0) + Number(w.rec_yards || 0)) / t : 0;
+    }, '#ec4899');
+    computedRows += rowForComputed('Catch %', function(w) {
+      var tgt = Number(w.targets || 0); return tgt > 0 ? Number(w.receptions || 0) / tgt * 100 : 0;
+    }, '#14b8a6', '%');
+  } else if (pos === 'WR' || pos === 'TE') {
+    computedRows += rowForComputed('Yds/Target', function(w) {
+      var t = Number(w.targets || 0); return t > 0 ? Number(w.rec_yards || 0) / t : 0;
+    }, '#f97316');
+    computedRows += rowForComputed('Catch %', function(w) {
+      var tgt = Number(w.targets || 0); return tgt > 0 ? Number(w.receptions || 0) / tgt * 100 : 0;
+    }, '#14b8a6', '%');
   }
   return '<div class="pm-wt-grid">'
     + rowFor('Snap %', 'snap_pct', '#3b82f6', '%')
     + rowFor('Targets', 'targets', '#f59e0b')
     + rowFor('Touches', 'touches', '#22c55e')
+    + computedRows
     + rowFor('PPR Pts', 'ppr_pts', '#8b5cf6')
     + '</div>'
     + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">Weeks '
     + weeks[0].week + '&ndash;' + weeks[weeks.length - 1].week
-    + ' &middot; arrow compares last 3 weeks to the season average</div>';
+    + ' &middot; arrow compares last 3 weeks to the period average</div>';
 }
 
 // Collapse/expand a section in the player compare view.
@@ -9266,13 +9329,22 @@ function cmpToggleSection(wrapId, headerEl) {
   if (hint) hint.style.opacity = collapsed ? '' : '0.8';
 }
 
+function pmWtRender(wrap, position) {
+  var allWeeks = wrap._weeklyData || [];
+  var sel = document.getElementById('pmWtWkRange');
+  var n = sel ? parseInt(sel.value) || 0 : 0;
+  var weeks = n > 0 ? allWeeks.slice(-n) : allWeeks;
+  var el = document.getElementById('pmWtContent');
+  if (el) el.innerHTML = buildWeeklyTrendRows(weeks, position);
+}
+
 function pmToggleWeeklyTrends(playerId) {
-  const wrap = document.getElementById('pmWeeklyTrendsWrap');
-  const body = document.getElementById('pmWeeklyTrendsBody');
-  const btn = document.getElementById('pmWeeklyTrendsBtn');
+  var wrap = document.getElementById('pmWeeklyTrendsWrap');
+  var body = document.getElementById('pmWeeklyTrendsBody');
+  var btn  = document.getElementById('pmWeeklyTrendsBtn');
   if (!wrap || !body || !btn) return;
 
-  const open = body.style.display !== 'none';
+  var open = body.style.display !== 'none';
   if (open) {
     body.style.display = 'none';
     btn.innerHTML = 'Weekly trends &#9662;';
@@ -9284,11 +9356,26 @@ function pmToggleWeeklyTrends(playerId) {
   wrap.dataset.loaded = '1';
 
   body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Loading weekly data…</div>';
-  const seasonParam = wrap.dataset.season ? ('?season=' + wrap.dataset.season) : '';
+  var seasonParam = wrap.dataset.season ? ('?season=' + wrap.dataset.season) : '';
+  var wrapPosition = wrap.dataset.position || '';
   fetch('/api/player-weekly-metrics/' + encodeURIComponent(playerId) + seasonParam)
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      body.innerHTML = buildWeeklyTrendRows(d.weeks || []);
+      wrap._weeklyData = d.weeks || [];
+      body.innerHTML =
+        '<div class="pm-wt-filter-bar">'
+        + '<span class="pm-wt-filter-label">Weeks</span>'
+        + '<select id="pmWtWkRange" class="pm-wt-wk-sel">'
+        + '<option value="">All</option>'
+        + '<option value="4">Last 4</option>'
+        + '<option value="8">Last 8</option>'
+        + '<option value="12">Last 12</option>'
+        + '</select>'
+        + '</div>'
+        + '<div id="pmWtContent"></div>';
+      pmWtRender(wrap, wrapPosition);
+      var sel = document.getElementById('pmWtWkRange');
+      if (sel) sel.addEventListener('change', function() { pmWtRender(wrap, wrapPosition); });
     })
     .catch(function() {
       body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Could not load weekly data.</div>';
@@ -9302,6 +9389,12 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
   const position = _posNorm[(metricsData.position || '').toUpperCase()] || metricsData.position;
 
   const defs = [];
+  const g = metrics.games || 0;
+  function _rankSub(key) {
+    if (!ranks || !ranks[key]) return null;
+    return `(#${ranks[key]})`;
+  }
+  function _pg(total) { return (g > 0 && total != null) ? total / g : null; }
 
   // Role Score (0–100)
   if (metrics.role_score != null) {
@@ -9311,38 +9404,33 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
   if (metrics.snap_share != null && position !== "QB") {
     const pct = metrics.snap_share * 100;
     const snapLabel = (position === 'WR' || position === 'TE') ? 'Route Partic' : 'Snap Share';
-    defs.push({ label: snapLabel, fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
+    defs.push({ label: snapLabel, fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('snap_share') });
   }
 
   if (position === 'QB') {
     if (metrics.pff_passing_grade != null) {
       const v = metrics.pff_passing_grade;
-      defs.push({ label: 'PFF Pass Grade', fill: v, display: v.toFixed(1) });
+      defs.push({ label: 'PFF Pass Grade', fill: v, display: v.toFixed(1), sub: _rankSub('pff_passing_grade') });
     }
     if (metrics.big_time_throw_rate != null) {
       const v = metrics.big_time_throw_rate;
-      // BTT rate stored as % value (e.g. 6.5); 15 % = elite ceiling
-      defs.push({ label: 'BTT Rate', fill: Math.min(v / 15 * 100, 100), display: v.toFixed(1) + '%' });
+      defs.push({ label: 'BTT Rate', fill: Math.min(v / 15 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('big_time_throw_rate') });
     }
     if (metrics.adjusted_completion_rate != null) {
       const v = metrics.adjusted_completion_rate;
-      // ACR stored as 0-100 %; meaningful range 55-90
-      defs.push({ label: 'Adj Comp %', fill: Math.min(Math.max(v - 55, 0) / 35 * 100, 100), display: v.toFixed(1) + '%' });
+      defs.push({ label: 'Adj Comp %', fill: Math.min(Math.max(v - 55, 0) / 35 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('adjusted_completion_rate') });
     }
     if (metrics.nfl_passer_rating != null) {
       const v = metrics.nfl_passer_rating;
-      // Meaningful range 60-130; 60 = poor, 100 = average, 130 = elite
-      defs.push({ label: 'Passer Rating', fill: Math.min(Math.max(v - 60, 0) / 70 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Passer Rating', fill: Math.min(Math.max(v - 60, 0) / 70 * 100, 100), display: v.toFixed(1), sub: _rankSub('nfl_passer_rating') });
     }
     if (metrics.yards_per_attempt != null) {
       const v = metrics.yards_per_attempt;
-      // 4 = poor, 10 = elite
-      defs.push({ label: 'Yds/Attempt', fill: Math.min(Math.max(v - 4, 0) / 6 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Yds/Attempt', fill: Math.min(Math.max(v - 4, 0) / 6 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_attempt') });
     }
     if (metrics.completion_pct != null) {
       const pct = metrics.completion_pct;
-      // Meaningful range 50-85
-      defs.push({ label: 'Completion %', fill: Math.min(Math.max(pct - 50, 0) / 35 * 100, 100), display: pct.toFixed(1) + '%' });
+      defs.push({ label: 'Completion %', fill: Math.min(Math.max(pct - 50, 0) / 35 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('completion_pct') });
     }
     if (metrics.td_rate != null && metrics.int_rate != null && metrics.int_rate > 0) {
       const ratio = metrics.td_rate / metrics.int_rate;
@@ -9350,138 +9438,122 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
     }
     if (metrics.pressure_to_sack_rate != null) {
       const v = metrics.pressure_to_sack_rate;
-      // Lower is better: elite QBs sack <20% of pressures
       const fill = Math.max(0, 100 - v);
-      defs.push({ label: 'Pressure→Sack%', fill, display: v.toFixed(1) + '%', forceColor: v <= 20 ? '#10b981' : v <= 35 ? '#3b82f6' : '#ef4444' });
+      defs.push({ label: 'Pressure→Sack%', fill, display: v.toFixed(1) + '%', forceColor: v <= 20 ? '#10b981' : v <= 35 ? '#3b82f6' : '#ef4444', sub: _rankSub('pressure_to_sack_rate') });
     }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
-      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_carry') });
     }
     if (metrics.rush_td_rate != null) {
       const v = metrics.rush_td_rate;
-      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 800, 100), display: (v * 100).toFixed(1) + '%' });
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 800, 100), display: (v * 100).toFixed(1) + '%', sub: _rankSub('rush_td_rate') });
     }
   } else if (position === 'RB') {
     if (metrics.pff_rushing_grade != null) {
       const v = metrics.pff_rushing_grade;
-      defs.push({ label: 'PFF Rush Grade', fill: v, display: v.toFixed(1) });
+      defs.push({ label: 'PFF Rush Grade', fill: v, display: v.toFixed(1), sub: _rankSub('pff_rushing_grade') });
     }
     if (metrics.breakaway_percentage != null) {
       const v = metrics.breakaway_percentage;
-      defs.push({ label: 'Breakaway %', fill: Math.min(v * 2.5, 100), display: v.toFixed(1) + '%' });
+      defs.push({ label: 'Breakaway %', fill: Math.min(v * 2.5, 100), display: v.toFixed(1) + '%', sub: _rankSub('breakaway_percentage') });
     }
     if (metrics.explosive_runs_10_plus != null) {
       const v = metrics.explosive_runs_10_plus;
-      defs.push({ label: 'Explosive Runs', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(0) });
+      defs.push({ label: 'Explosive Runs', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(0), sub: _rankSub('explosive_runs_10_plus') });
     }
     if (metrics.elusive_rating != null) {
       const v = metrics.elusive_rating;
-      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 200 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 200 * 100, 100), display: v.toFixed(1), sub: _rankSub('elusive_rating') });
     }
     if (metrics.avoided_tackles != null && metrics.avoided_tackles > 0) {
       const v = metrics.avoided_tackles;
-      defs.push({ label: 'Avoided Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0) });
+      defs.push({ label: 'Avoided Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0), sub: _rankSub('avoided_tackles') });
     }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
-      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_carry') });
     }
     if (metrics.yards_per_touch != null) {
       const v = metrics.yards_per_touch;
-      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_touch') });
     }
     if (metrics.rush_td_rate != null) {
       const v = metrics.rush_td_rate;
-      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%' });
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%', sub: _rankSub('rush_td_rate') });
     }
     if (metrics.opportunity_share != null) {
       const oppShare = metrics.opportunity_share;
       const fillPercent = Math.min(oppShare * 4, 100);
       const color = oppShare >= 25 ? '#10b981' : oppShare >= 15 ? '#3b82f6' : oppShare >= 10 ? '#f59e0b' : '#6b7280';
-      defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color });
+      defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color, sub: _rankSub('opportunity_share') });
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
-      // RBs typically 80-95 %; 95 = elite ceiling
-      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 95 * 100, 100), display: pct.toFixed(1) + '%' });
+      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 95 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('catch_rate') });
     }
     if (metrics.grades_offense != null) {
       const v = metrics.grades_offense;
-      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1) });
+      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1), sub: _rankSub('grades_offense') });
     }
   } else if (position === 'WR' || position === 'TE') {
     if (metrics.grades_offense != null) {
       const v = metrics.grades_offense;
-      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1) });
+      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1), sub: _rankSub('grades_offense') });
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
-      // WR/TE realistic range 40-85 %; 85 = elite ceiling
-      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%' });
+      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('catch_rate') });
     }
     if (metrics.yprr != null) {
       const v = metrics.yprr;
-      // 1.0 = average, 2.0 = good, 3.0 = elite; scale to 3.0
-      defs.push({ label: 'Yds/Route Run', fill: Math.min(v / 3.0 * 100, 100), display: v.toFixed(2) });
+      defs.push({ label: 'Yds/Route Run', fill: Math.min(v / 3.0 * 100, 100), display: v.toFixed(2), sub: _rankSub('yprr') });
     }
     if (metrics.drop_rate != null) {
       const v = metrics.drop_rate;
-      // Lower is better; flip color: green = low drop rate
       const fill = Math.max(0, 100 - v * 5);
-      defs.push({ label: 'Drop Rate', fill, display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 10 ? '#f59e0b' : '#ef4444' });
+      defs.push({ label: 'Drop Rate', fill, display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 10 ? '#f59e0b' : '#ef4444', sub: _rankSub('drop_rate') });
     }
     if (metrics.yards_per_target != null) {
       const v = metrics.yards_per_target;
-      // 2 = poor, 12 = elite deep threat
-      defs.push({ label: 'Yds/Target', fill: Math.min(Math.max(v - 2, 0) / 10 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Yds/Target', fill: Math.min(Math.max(v - 2, 0) / 10 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_target') });
     }
     if (metrics.yards_per_reception != null) {
       const v = metrics.yards_per_reception;
-      // 4 = short routes, 18 = elite deep
-      defs.push({ label: 'Yds/Reception', fill: Math.min(Math.max(v - 4, 0) / 14 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Yds/Reception', fill: Math.min(Math.max(v - 4, 0) / 14 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_reception') });
     }
     if (metrics.yards_after_catch_per_reception != null) {
       const v = metrics.yards_after_catch_per_reception;
-      // 0-10 realistic; 10 = elite YAC receiver
-      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_after_catch_per_reception') });
     }
     if (metrics.yards_after_catch != null) {
       const v = metrics.yards_after_catch;
-      // Season total; 600 = elite volume
       defs.push({ label: 'YAC (season)', fill: Math.min(v / 600 * 100, 100), display: Math.round(v).toString() });
     }
     if (metrics.avg_depth_of_target != null) {
       const v = metrics.avg_depth_of_target;
-      // 0-20 yards; 20 = deep specialist ceiling
-      defs.push({ label: 'aDOT', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'aDOT', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), sub: _rankSub('avg_depth_of_target') });
     }
     if (metrics.contested_catch_rate != null) {
       const v = metrics.contested_catch_rate;
-      // 65 % = elite contested catcher ceiling
-      defs.push({ label: 'Contested Catch %', fill: Math.min(v / 65 * 100, 100), display: v.toFixed(1) + '%' });
+      defs.push({ label: 'Contested Catch %', fill: Math.min(v / 65 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('contested_catch_rate') });
     }
     if (metrics.target_share != null) {
       const pct = metrics.target_share;
-      // 28 % target share = elite
-      defs.push({ label: 'Target Share', fill: Math.min(pct / 28 * 100, 100), display: pct.toFixed(1) + '%' });
+      defs.push({ label: 'Target Share', fill: Math.min(pct / 28 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('target_share') });
     }
     if (metrics.air_yards_per_game != null) {
       const v = metrics.air_yards_per_game;
-      // 80+ air yards/game = elite target hog
-      defs.push({ label: 'Air Yds/Game', fill: Math.min(v / 110 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Air Yds/Game', fill: Math.min(v / 110 * 100, 100), display: v.toFixed(1), sub: _rankSub('air_yards_per_game') });
     }
     if (metrics.air_yards_share != null) {
       const pct = metrics.air_yards_share;
-      // 25%+ air yards share = featured receiver
-      defs.push({ label: 'Air Yards Share', fill: Math.min(pct / 35 * 100, 100), display: pct.toFixed(1) + '%' });
+      defs.push({ label: 'Air Yards Share', fill: Math.min(pct / 35 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('air_yards_share') });
     }
     if (metrics.target_quality_score != null) {
       const v = metrics.target_quality_score;
-      // PFF target quality; 20 = elite
-      defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1) });
+      defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), sub: _rankSub('target_quality_score') });
     }
-    // Alignment rates (slot / wide / inline)
     if (metrics.slot_rate != null) {
       const v = metrics.slot_rate;
       defs.push({ label: 'Slot Rate', fill: Math.min(v, 100), display: v.toFixed(1) + '%' });
@@ -9506,12 +9578,12 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
 
   if (metrics.target_quality_score != null && position === 'RB') {
     const v = metrics.target_quality_score;
-    defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1) });
+    defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), sub: _rankSub('target_quality_score') });
   }
 
   if (metrics.red_zone_usage != null && position !== 'QB') {
     const v = metrics.red_zone_usage;
-    defs.push({ label: 'RZ Usage/G', fill: Math.min(v / 3 * 100, 100), display: v.toFixed(1) });
+    defs.push({ label: 'RZ Usage/G', fill: Math.min(v / 3 * 100, 100), display: v.toFixed(1), sub: _rankSub('red_zone_usage') });
   }
 
   if (metrics.usage_trend != null) {
@@ -9562,17 +9634,13 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
     return `<div class="adv-metrics-grid">${rows}</div>`;
   }
 
-  let html = _grid(defs, false);
+  const rankNote = ranks && Object.keys(ranks).length
+    ? '<div class="am-rank-note" title="Minimums: 4+ games · efficiency metrics also require 20+ carries (rush) · 15+ targets (receiving) · 50+ attempts (passing)">Ranked among qualified players</div>'
+    : '';
+  let html = rankNote + _grid(defs, true);
 
   // ── Volume section ──────────────────────────────────────────────────────────
   const volDefs = [];
-  const g = metrics.games || 0;
-
-  function _rankSub(key) {
-    if (!ranks || !ranks[key]) return null;
-    return `(#${ranks[key]})`;
-  }
-  function _pg(total) { return (g > 0 && total != null) ? total / g : null; }
 
   if (position === 'RB') {
     const cpg = _pg(metrics.total_carries);

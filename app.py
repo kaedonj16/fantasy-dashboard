@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import html
 import json
@@ -762,7 +764,8 @@ FORM_BODY = """
 </div>
 
 <div class="fullscreen-loading-overlay" id="dashboardLoadingOverlay" style="display:none;">
-  <img src="/static/BR_Logo.png" alt="BR Fantasy" class="flo-logo">
+  <img src="/static/BR_Logo.png"      alt="BR Fantasy" class="flo-logo flo-logo-light">
+  <img src="/static/BR_Logo_dark.png" alt="BR Fantasy" class="flo-logo flo-logo-dark">
   <div class="loading-spinner"></div>
   <div class="fullscreen-loading-text">Building your dashboard…</div>
   <div class="fullscreen-loading-subtext">This usually takes a few seconds</div>
@@ -17499,9 +17502,7 @@ def api_advanced_metrics_leaderboard():
         if is_week_filtered:
             players = get_weekly_range_leaderboard(
                 metric, position=position, season=season,
-                week_start=week_start, week_end=week_end,
-                # min_vol is a season-level threshold (e.g. 30 carries) and can't
-                # apply to a week range where max possible weeks is ~18; ignore it.
+                week_start=week_start, week_end=week_end, min_vol=min_vol,
             )
         else:
             players = get_metric_leaderboard(metric, position=position, season=season, min_vol=min_vol)
@@ -25998,9 +25999,18 @@ def _init_push_table():
                     endpoint   TEXT UNIQUE NOT NULL,
                     p256dh     TEXT NOT NULL,
                     auth       TEXT NOT NULL,
+                    league_id  TEXT,
+                    platform   TEXT DEFAULT 'sleeper',
+                    owner_id   TEXT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
+            # Migrate existing tables that predate the league/owner columns
+            for col, defn in [("league_id", "TEXT"), ("platform", "TEXT DEFAULT 'sleeper'"), ("owner_id", "TEXT")]:
+                try:
+                    conn.execute(f"ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS {col} {defn}")
+                except Exception:
+                    pass
             conn.commit()
         _PUSH_TABLE_INIT = True
     except Exception as exc:
@@ -26057,10 +26067,13 @@ def api_push_vapid_public_key():
 @app.route("/api/push/subscribe", methods=["POST"])
 @limiter.limit("30 per minute")
 def api_push_subscribe():
-    data     = request.get_json(force=True) or {}
-    endpoint = data.get("endpoint", "").strip()
-    p256dh   = (data.get("keys") or {}).get("p256dh", "").strip()
-    auth     = (data.get("keys") or {}).get("auth",   "").strip()
+    data      = request.get_json(force=True) or {}
+    endpoint  = data.get("endpoint", "").strip()
+    p256dh    = (data.get("keys") or {}).get("p256dh", "").strip()
+    auth      = (data.get("keys") or {}).get("auth",   "").strip()
+    league_id = (data.get("league_id") or "").strip() or None
+    platform  = (data.get("platform")  or "sleeper").strip()
+    owner_id  = (data.get("owner_id")  or "").strip() or None
     if not (endpoint and p256dh and auth):
         return jsonify({"error": "Invalid subscription"}), 400
     _init_push_table()
@@ -26069,12 +26082,16 @@ def api_push_subscribe():
         with get_conn() as conn:
             conn.execute(
                 """
-                INSERT INTO push_subscriptions (endpoint, p256dh, auth)
-                VALUES (%s, %s, %s)
+                INSERT INTO push_subscriptions (endpoint, p256dh, auth, league_id, platform, owner_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (endpoint) DO UPDATE
-                    SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth
+                    SET p256dh    = EXCLUDED.p256dh,
+                        auth      = EXCLUDED.auth,
+                        league_id = COALESCE(EXCLUDED.league_id, push_subscriptions.league_id),
+                        platform  = COALESCE(EXCLUDED.platform,  push_subscriptions.platform),
+                        owner_id  = COALESCE(EXCLUDED.owner_id,  push_subscriptions.owner_id)
                 """,
-                (endpoint, p256dh, auth),
+                (endpoint, p256dh, auth, league_id, platform, owner_id),
             )
             conn.commit()
     except Exception as exc:
@@ -26117,6 +26134,28 @@ def api_push_broadcast():
     url   = data.get("url",   "/top-movers")
     tag   = data.get("tag",   "weekly-update")
     return _push_broadcast(title=title, body=body, url=url, tag=tag)
+
+
+@app.route("/api/cron/notifications", methods=["POST"])
+@limiter.limit("60 per minute")
+def api_cron_notifications():
+    """Cron hook for push notifications. Pass type='hourly' or type='daily'.
+    Call hourly for lineup lock; call once at your preferred daytime hour for daily alerts."""
+    secret       = request.headers.get("X-Admin-Secret", "")
+    admin_secret = os.environ.get("ADMIN_SECRET", "")
+    if not admin_secret or secret != admin_secret:
+        return jsonify({"error": "Forbidden"}), 403
+    data = request.get_json(force=True) or {}
+    kind = data.get("type", "hourly")
+    try:
+        from utils.push_notifications import run_hourly, run_all_daily
+        if kind == "daily":
+            run_all_daily()
+        else:
+            run_hourly()
+    except Exception as exc:
+        logger.warning("[cron/notifications] failed: %s", exc)
+    return jsonify({"ok": True})
 
 
 def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
@@ -26284,6 +26323,32 @@ def _notify_top_movers_weekly():
 
 
 _notify_top_movers_weekly()
+
+
+def _start_notification_scheduler():
+    """Background thread: fire all push notifications once per day at noon ET."""
+    import threading
+    import time as _time
+
+    def _run():
+        while True:
+            try:
+                from datetime import datetime
+                from zoneinfo import ZoneInfo
+                now = datetime.now(ZoneInfo("America/New_York"))
+                if now.hour == 12 and now.minute < 5:
+                    from utils.push_notifications import run_hourly, notify_waiver_candidates, notify_playoff_odds
+                    run_hourly()
+                    notify_waiver_candidates()
+                    notify_playoff_odds()
+            except Exception as exc:
+                logger.warning("[notify-scheduler] %s", exc)
+            _time.sleep(300)  # check every 5 minutes
+
+    threading.Thread(target=_run, daemon=True, name="notify-scheduler").start()
+
+
+_start_notification_scheduler()
 
 
 if __name__ == "__main__":

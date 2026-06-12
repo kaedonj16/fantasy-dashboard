@@ -21,6 +21,12 @@ def build_advanced_metrics_body(
     from data_building.advanced_metrics import get_available_seasons, _WEEKLY_METRICS
     available_seasons: list = get_available_seasons() if has_premium else []
     weekly_metric_keys: list = sorted(_WEEKLY_METRICS.keys())
+    # weeklyVol: per-metric min filter spec for when week-range mode is active
+    _weekly_vol_map: dict = {
+        k: {"label": v["min_label"], "opts": v["min_opts"]}
+        for k, v in _WEEKLY_METRICS.items()
+        if v.get("min_opts")
+    }
     # Group metrics into <optgroup>s by category (General / Passing / Rushing / Receiving).
     _CAT_ORDER = ["General", "Passing", "Rushing", "Receiving", "Volume"]
     groups: dict = {}
@@ -112,6 +118,7 @@ def build_advanced_metrics_body(
                 "desc": spec.get("desc", ""),
                 "minVol": _min_vol_cfg(spec),
                 "weeklyCapable": key in weekly_metric_keys,
+                "weeklyVol": _weekly_vol_map.get(key) or None,
             }
             for key, spec in metrics_spec.items()
         },
@@ -244,6 +251,7 @@ def build_advanced_metrics_body(
             <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Add Metric</button>
             <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
           </div>
+          <button id="amClearExtrasBtn" type="button" class="am-add-stat-btn am-clear-btn" style="display:none;" onclick="amClearExtras()">&#10005; Clear</button>
         </div>
 
         <!-- Filter bar: age + combo conditions -->
@@ -338,8 +346,8 @@ def build_advanced_metrics_body(
 
     style = """
     <style>
-      /* Widen the card on desktop so 5 metric columns fit comfortably */
-      .card.central:has(#amTable) { max-width:1180px; }
+      /* Widen the card on desktop so 7 metric columns fit comfortably */
+      .card.central:has(#amTable) { max-width:1400px; }
       .am-legend-btn {
         flex-shrink:0; display:flex; align-items:center; gap:6px;
         padding:5px 10px; border:1px solid var(--border); border-radius:8px;
@@ -549,6 +557,8 @@ def build_advanced_metrics_body(
       }
       .am-add-stat-btn:hover { border-color:var(--accent,#2563eb); color:var(--accent,#2563eb); }
       .am-add-stat-btn:disabled { opacity:.35; cursor:not-allowed; }
+      .am-clear-btn { border-style:solid; }
+      .am-clear-btn:hover { border-color:#ef4444; color:#ef4444; }
       /* Stat picker dropdown */
       .am-stat-picker {
         position:absolute; top:calc(100% + 6px); right:0; z-index:200;
@@ -620,7 +630,7 @@ def build_advanced_metrics_body(
       }
       @media (max-width:600px) { .am-skel-bar { display:none; } }
       /* Percentile badge */
-      .am-val-wrap { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; min-width:54px; }
+      .am-val-wrap { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; width:78px; }
       .am-pct-badge { font-size:9px; font-weight:700; letter-spacing:.02em; line-height:1.3; white-space:nowrap; opacity:.85; }
       @media (max-width:600px) { .am-pct-badge { display:none; } }
       /* Weekly usage trend column */
@@ -813,14 +823,14 @@ _AM_JS = r"""
                   comboFilters: [],     // [{key, op, val}]
                   filterColKeys: new Set(), // keys auto-shown as compact cols when used in filters
                   pinnedIds: _loadPins() };
-  const MAX_COMPARE = 4;
+  const MAX_COMPARE = 6;
 
-  // Preset sets: clicking "Load X Set" clears current extras and loads these 4 metrics.
+  // Preset sets: clicking "Load X Set" clears current extras and loads these metrics.
   const _PRESETS = {
-    'General':   ['snap_share', 'opportunity_share', 'red_zone_usage', 'grades_offense', 'yards_per_touch'],
-    'Rushing':   ['yards_per_carry', 'elusive_rating', 'breakaway_percentage', 'explosive_runs_10_plus', 'pff_rushing_grade'],
-    'Receiving': ['yprr', 'yards_per_target', 'catch_rate', 'yards_after_catch_per_reception', 'avg_depth_of_target'],
-    'Passing':   ['pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate', 'nfl_passer_rating', 'pressure_to_sack_rate'],
+    'General':   ['snap_share', 'opportunity_share', 'grades_offense', 'red_zone_usage', 'role_score', 'yards_per_touch', 'total_tds_per_game'],
+    'Rushing':   ['yards_per_carry', 'pff_rushing_grade', 'elusive_rating', 'breakaway_percentage', 'opportunity_share', 'carries_per_game', 'red_zone_usage'],
+    'Receiving': ['yards_per_target', 'yprr', 'target_share', 'yards_after_catch_per_reception', 'rz_targets_pg', 'target_quality_score', 'receptions_per_game'],
+    'Passing':   ['yards_per_attempt', 'pff_passing_grade', 'adjusted_completion_rate', 'big_time_throw_rate', 'nfl_passer_rating', 'pass_tds_per_game', 'int_rate'],
   };
   window.amLoadPreset = function(cat) {
     const keys = _PRESETS[cat];
@@ -884,6 +894,8 @@ _AM_JS = r"""
       return '<span class="am-chip' + (primary ? ' am-chip-primary' : '') + '">' + lbl + x + '</span>';
     }).join('');
     if (addBtn) addBtn.disabled = state.extraMetrics.length >= MAX_COMPARE;
+    const clearBtn = document.getElementById('amClearExtrasBtn');
+    if (clearBtn) clearBtn.style.display = state.extraMetrics.length ? '' : 'none';
   }
 
   function buildStatPicker() {
@@ -891,9 +903,17 @@ _AM_JS = r"""
     if (!picker) return;
     const primaryCat = (cfg.metrics[state.metric] && cfg.metrics[state.metric].category) || 'Other';
     const active = new Set([state.metric, ...state.extraMetrics]);
+    const primaryPositions = new Set((cfg.metrics[state.metric] && cfg.metrics[state.metric].positions) || []);
     const items = Object.entries(cfg.metrics)
-      .filter(([, spec]) => (spec.category || 'Other') === primaryCat);
-    const otherCats = ['General', 'Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
+      .filter(([, spec]) => {
+        const cat = spec.category || 'Other';
+        if (cat === primaryCat) return true;
+        if (cat === 'General') {
+          return !spec.positions || spec.positions.some(p => primaryPositions.has(p));
+        }
+        return false;
+      });
+    const otherCats = ['Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
     const _preset = _PRESETS[primaryCat];
     let html = (_preset
       ? '<div class="am-sp-preset-wrap"><button type="button" class="am-sp-preset-btn" onclick="amLoadPreset(\'' + primaryCat + '\')">&#9889; Load ' + primaryCat + ' Set</button></div>'
@@ -945,6 +965,25 @@ _AM_JS = r"""
     if (state.filterColKeys) state.filterColKeys.delete(key);
     state.comboFilters = state.comboFilters.filter(f => f.key !== key);
     if (state.sortBy === key) {
+      state.sortBy = state.metric;
+      state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
+    }
+    updateCompareBar();
+    buildStatPicker();
+    syncExtraCols();
+    updateFilterBar();
+    render();
+  };
+
+  window.amClearExtras = function() {
+    state.extraMetrics.forEach(key => {
+      delete state.extraData[key];
+      delete state.extraPrevData[key];
+      if (state.filterColKeys) state.filterColKeys.delete(key);
+    });
+    state.extraMetrics = [];
+    state.comboFilters = state.comboFilters.filter(f => f.key === 'primary' || f.key === 'age');
+    if (state.sortBy !== state.metric) {
       state.sortBy = state.metric;
       state.sortDir = (cfg.metrics[state.metric] && cfg.metrics[state.metric].lowerBetter) ? 'asc' : 'desc';
     }
@@ -1281,20 +1320,40 @@ _AM_JS = r"""
   // Lowest threshold for a metric - the sensible default so the leaderboard
   // isn't dominated by tiny-sample players (e.g. 1-carry QBs at 198 yds/carry).
   function defaultVol(m) {
+    const isWeekly = state.weekRange && state.weekRange !== '';
+    if (isWeekly) return '';  // default "Any" for weekly mode
     const spec = cfg.metrics[m] && cfg.metrics[m].minVol;
     return (spec && spec.opts && spec.opts.length) ? String(spec.opts[0]) : '';
   }
-  // Volume filter: updates label, options, and visibility based on the metric's min_vol spec.
-  // The selected option reflects state.minVol (the source of truth).
+  // Volume filter: switches between season options and weekly-appropriate options
+  // depending on whether a week range is active.
   function updateVolCtrl() {
-    const spec = cfg.metrics[state.metric] && cfg.metrics[state.metric].minVol;
     if (!gamesCtrl || !minGamesSel) return;
-    if (!spec) { gamesCtrl.style.display = 'none'; return; }
-    if (volLabel) volLabel.textContent = spec.label;
-    const prev = state.minVol;
-    minGamesSel.innerHTML = '<option value="">Any</option>'
-      + (spec.opts || []).map(v => '<option value="' + v + '"' + (String(v) === prev ? ' selected' : '') + '>' + v + '+</option>').join('');
-    gamesCtrl.style.display = '';
+    const mspec = cfg.metrics[state.metric];
+    const isWeekly = state.weekRange && state.weekRange !== '';
+
+    if (isWeekly) {
+      const wv = mspec && mspec.weeklyVol;
+      if (!wv || !wv.opts || !wv.opts.length) {
+        gamesCtrl.style.display = 'none';
+        return;
+      }
+      if (volLabel) volLabel.textContent = wv.label;
+      const prev = state.minVol;
+      minGamesSel.innerHTML = '<option value="">Any</option>'
+        + wv.opts.map(v => '<option value="' + v + '"' + (String(v) === prev ? ' selected' : '') + '>' + v + '+</option>').join('');
+      minGamesSel.value = prev || '';
+      gamesCtrl.style.display = '';
+    } else {
+      const spec = mspec && mspec.minVol;
+      if (!spec) { gamesCtrl.style.display = 'none'; return; }
+      if (volLabel) volLabel.textContent = spec.label;
+      const prev = state.minVol;
+      minGamesSel.innerHTML = '<option value="">Any</option>'
+        + (spec.opts || []).map(v => '<option value="' + v + '"' + (String(v) === prev ? ' selected' : '') + '>' + v + '+</option>').join('');
+      minGamesSel.value = prev || '';
+      gamesCtrl.style.display = '';
+    }
   }
   function updatePosButtons() {
     const rel = new Set(relevantPositions(state.metric));
@@ -1649,10 +1708,18 @@ _AM_JS = r"""
   function updateVolHeader() {
     const th = document.querySelector('#amTable thead th.am-games');
     if (th) {
-      const lbl = VOL_LABELS[state.volCol] || 'G';
+      let lbl, title;
+      if (state.weekRange) {
+        const wkMap = { last4: 'W4', last8: 'W8', last12: 'W12', custom: 'Wks' };
+        lbl = wkMap[state.weekRange] || 'Wks';
+        title = 'Weeks played in selected range';
+      } else {
+        lbl = VOL_LABELS[state.volCol] || 'G';
+        title = { games: 'Games played', total_pass_att: 'Pass attempts', total_carries: 'Carries',
+                  total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
+      }
       th.textContent = lbl;
-      th.title = { games: 'Games played', total_pass_att: 'Pass attempts', total_carries: 'Carries',
-                   total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
+      th.title = title;
     }
     const mh = document.getElementById('amMetricHeader');
     if (mh) mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '–';
@@ -1882,6 +1949,11 @@ _AM_JS = r"""
       if (weekCustomCtrl) weekCustomCtrl.style.display = state.weekRange === 'custom' ? '' : 'none';
       if (weekStartEl) weekStartEl.value = '';
       if (weekEndEl)   weekEndEl.value   = '';
+      // Reset min filter to "Any" and rebuild the control with weekly-appropriate options.
+      state.minVol = '';
+      if (minGamesSel) minGamesSel.value = '';
+      updateVolCtrl();
+      updateVolHeader();
       state.page = 0; fetchData();
     });
   }
@@ -1977,6 +2049,10 @@ _AM_JS = r"""
   if (_thMetric) _thMetric.addEventListener('click', () => sortByCol(state.metric));
 
   state.minVol = _initParams.get('minvol') || defaultVol(state.metric);
+  const _searchInit = _initParams.get('search') || '';
+  if (_searchInit && searchEl) { searchEl.value = _searchInit; state.search = _searchInit; }
+  const _presetInit = _initParams.get('preset') || '';
+  if (_presetInit && _PRESETS[_presetInit]) amLoadPreset(_presetInit);
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
   updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL(); fetchData(); loadOwnedRoster();
 
@@ -2008,7 +2084,11 @@ _AM_JS = r"""
 
     function syncLabel() {
       const opt = metricSel.options[metricSel.selectedIndex];
-      label.textContent = opt ? opt.textContent : '';
+      const txt = opt ? opt.textContent : '';
+      const isWeekly = opt && new Set(cfg.weeklyMetrics || []).has(opt.value);
+      label.innerHTML = txt + (isWeekly
+        ? ' <span class="am-sp-weekly-badge" title="Supports week-range filtering">W</span>'
+        : '');
     }
     syncLabel();
 

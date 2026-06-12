@@ -108,6 +108,7 @@ self.addEventListener('push', event => {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+  // Fires for both body taps and action button taps — same destination either way
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(wcs => {
       for (var i = 0; i < wcs.length; i++) {

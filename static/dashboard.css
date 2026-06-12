@@ -3478,6 +3478,10 @@ thead th {
   100% { width: 95%; }
 }
 
+.flo-logo-dark { display: none; }
+[data-theme="dark"] .flo-logo-light { display: none; }
+[data-theme="dark"] .flo-logo-dark  { display: block; }
+
 [data-theme="dark"] .fullscreen-loading-overlay {
   background: rgba(15, 23, 42, 0.97);
 }
@@ -7039,13 +7043,17 @@ select:focus {
   transition: background 0.12s;
 }
 .pm-weekly-toggle:hover { background: var(--row, #f8fafc); color: var(--text); }
-.pm-wt-grid { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; }
-.pm-wt-row { display: flex; align-items: center; gap: 12px; }
-.pm-wt-label { flex: 0 0 64px; font-size: 11px; font-weight: 700; color: var(--text-muted); }
-.pm-wt-stats { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.pm-wt-last { font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
-.pm-wt-avg { font-size: 10px; color: var(--text-muted); }
-.pm-wt-delta { font-size: 10px; font-weight: 700; }
+.pm-wt-filter-bar { display: flex; align-items: center; gap: 8px; padding: 8px 0 4px; }
+.pm-wt-filter-label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.pm-wt-wk-sel { font-size: 11px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-alt); color: var(--text); cursor: pointer; }
+.pm-wt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; padding-top: 8px; }
+.pm-wt-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pm-wt-label { flex: 0 0 58px; font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-wt-stats { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; min-width: 0; }
+.pm-wt-last { font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pm-wt-avg { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+.pm-wt-delta { font-size: 10px; font-weight: 700; white-space: nowrap; }
+@media (max-width: 600px) { .pm-wt-grid { grid-template-columns: 1fr; } }
 
 /* ── Rivalry Tracker ─────────────────────────────────────────────────────── */
 .rivalry-card { margin-top: 20px; }
@@ -13767,6 +13775,16 @@ img, svg, canvas {
   justify-content: space-between;
   margin-bottom: 12px;
 }
+.pm-section-link {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent, #3b82f6);
+  text-decoration: none;
+  opacity: .75;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.pm-section-link:hover { opacity: 1; text-decoration: underline; }
 .pm-section-label {
   font-size: 11px;
   font-weight: 700;
@@ -13813,8 +13831,14 @@ img, svg, canvas {
   flex-direction: column;
   gap: 15px;
 }
-.am-section-header {
+.am-rank-note {
   font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  cursor: default;
+}
+.am-section-header {
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .07em;

@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-06-13",
+        "tag": "new",
+        "text": "Player Modal: Advanced Metrics tab now shows positional ranks for every efficiency stat with position-group minimums (4+ games, 20+ carries, 15+ targets, 50+ pass attempts). Weekly Trends is here: see a sparkline, rolling average, and trend arrow for key stats across the season with a time filter to zoom in on any stretch of weeks.",
+        "link": "/players"
+    },
+    {
         "date": "2026-06-11",
         "tag": "update",
         "text": "We've moved to brfantasyfootball.com. Same app, new home. Update your bookmarks!"
