@@ -7056,7 +7056,7 @@ select:focus {
 .pm-wt-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pm-wt-label { flex: 0 0 60px; font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-wt-spark { flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center; }
-.pm-wt-stats { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; gap: 1px; }
+.pm-wt-stats { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; width: 88px; gap: 1px; }
 .pm-wt-stats-top { display: flex; align-items: baseline; gap: 4px; }
 .pm-wt-last { font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pm-wt-avg { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
