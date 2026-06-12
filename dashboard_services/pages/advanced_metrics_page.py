@@ -904,8 +904,8 @@ _AM_JS = r"""
     const primaryCat = (cfg.metrics[state.metric] && cfg.metrics[state.metric].category) || 'Other';
     const active = new Set([state.metric, ...state.extraMetrics]);
     const items = Object.entries(cfg.metrics)
-      .filter(([, spec]) => (spec.category || 'Other') === primaryCat);
-    const otherCats = ['General', 'Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
+      .filter(([, spec]) => (spec.category || 'Other') === primaryCat || spec.category === 'General');
+    const otherCats = ['Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
     const _preset = _PRESETS[primaryCat];
     let html = (_preset
       ? '<div class="am-sp-preset-wrap"><button type="button" class="am-sp-preset-btn" onclick="amLoadPreset(\'' + primaryCat + '\')">&#9889; Load ' + primaryCat + ' Set</button></div>'
