@@ -289,6 +289,37 @@ def page_trade_intel(platform: str, season: int, league_id: str):
     from app import render_page
     user_id = session.get("viewer_username")
     has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform, season)
+
+    if not has_premium:
+        teaser_html = """
+    <div class="card central">
+      <div class="card-header">
+        <h2>Trade Intelligence</h2>
+        <div style="font-size:14px;color:var(--text-muted);margin-top:4px;">
+          Actionable insights from thousands of real dynasty trades
+        </div>
+      </div>
+      <div class="card-body" style="text-align:center;padding:60px 24px;">
+        <div style="font-size:40px;margin-bottom:16px;opacity:.3;"><i class="fa-solid fa-chart-line"></i></div>
+        <div style="font-weight:700;font-size:18px;margin-bottom:8px;">Premium Feature</div>
+        <div style="color:var(--text-muted);font-size:14px;margin-bottom:24px;">
+          Trending players, buy-low targets, sell-high candidates, and real<br>
+          trade data from thousands of dynasty transactions.
+        </div>
+        <button onclick="if(window.showPaywall)showPaywall('trade-history')"
+          style="padding:12px 28px;border-radius:9px;border:none;background:linear-gradient(135deg,#667eea,#764ba2);color:white;font-size:15px;font-weight:700;cursor:pointer;">
+          Unlock Trade Intelligence
+        </button>
+      </div>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        if (window.showPaywall) showPaywall('trade-history');
+      });
+    </script>
+    """
+        return render_page("Trade Intelligence", league_id, "trade-intel", teaser_html, platform, season)
+
     _ti_sf = False
     _ti_lt = "1qb"
     _ti_sz = 10
