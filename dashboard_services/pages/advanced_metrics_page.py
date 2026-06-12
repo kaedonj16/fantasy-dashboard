@@ -903,8 +903,16 @@ _AM_JS = r"""
     if (!picker) return;
     const primaryCat = (cfg.metrics[state.metric] && cfg.metrics[state.metric].category) || 'Other';
     const active = new Set([state.metric, ...state.extraMetrics]);
+    const primaryPositions = new Set((cfg.metrics[state.metric] && cfg.metrics[state.metric].positions) || []);
     const items = Object.entries(cfg.metrics)
-      .filter(([, spec]) => (spec.category || 'Other') === primaryCat || spec.category === 'General');
+      .filter(([, spec]) => {
+        const cat = spec.category || 'Other';
+        if (cat === primaryCat) return true;
+        if (cat === 'General') {
+          return !spec.positions || spec.positions.some(p => primaryPositions.has(p));
+        }
+        return false;
+      });
     const otherCats = ['Passing', 'Rushing', 'Receiving', 'Volume'].filter(c => c !== primaryCat);
     const _preset = _PRESETS[primaryCat];
     let html = (_preset
