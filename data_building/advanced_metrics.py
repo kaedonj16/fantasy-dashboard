@@ -1750,7 +1750,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         MAX(games),
                         CASE WHEN COALESCE(MAX(total_carries),0)+COALESCE(MAX(total_targets),0) > 0
                              THEN 1 END
-                    ) > 0
+                    ) >= 4
                 ),
                 r AS (
                     SELECT player_id,

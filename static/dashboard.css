@@ -13827,6 +13827,12 @@ img, svg, canvas {
   flex-direction: column;
   gap: 15px;
 }
+.am-rank-note {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  cursor: default;
+}
 .am-section-header {
   font-size: 10px;
   font-weight: 700;

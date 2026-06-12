@@ -9623,7 +9623,10 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
     return `<div class="adv-metrics-grid">${rows}</div>`;
   }
 
-  let html = _grid(defs, true);
+  const rankNote = ranks && Object.keys(ranks).length
+    ? '<div class="am-rank-note" title="Position ranks include only players with 4+ games played">Ranked among players with 4+ games</div>'
+    : '';
+  let html = rankNote + _grid(defs, true);
 
   // ── Volume section ──────────────────────────────────────────────────────────
   const volDefs = [];
