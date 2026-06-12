@@ -9240,16 +9240,16 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
 }
 
 // ── Player modal: weekly usage trends ────────────────────────────────────────
-function pmSparkline(series, color, sparkW) {
-  if (!series || series.length < 2) return '';
-  const w = sparkW || 120, h = 26;
+function pmSparkline(series, color) {
+  if (!series || series.length < 2) return '<div class="pm-wt-spark"></div>';
+  const REF = 100, h = 26;
   const max = Math.max.apply(null, series.concat([1]));
-  const step = w / (series.length - 1);
+  const step = REF / (series.length - 1);
   const pts = series.map(function(v, i) {
     return (i * step).toFixed(1) + ',' + (h - 2 - (v / max) * (h - 6)).toFixed(1);
   }).join(' ');
-  return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" style="display:block;">'
-    + '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" points="' + pts + '"/></svg>';
+  return '<div class="pm-wt-spark"><svg width="100%" height="' + h + '" viewBox="0 0 ' + REF + ' ' + h + '" preserveAspectRatio="none" style="display:block;">'
+    + '<polyline fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" points="' + pts + '"/></svg></div>';
 }
 
 // Shared renderer: sparkline rows for a player's weekly usage series.
@@ -9258,7 +9258,6 @@ function buildWeeklyTrendRows(weeks, position) {
     return '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Not enough weekly data for this season.</div>';
   }
   var pos = (position || '').toUpperCase();
-  var SW = 72; // sparkline width in the 2-col grid
   function _wt_row(label, series, color, suffix) {
     if (!series.some(function(v) { return v > 0; })) return '';
     var seasonAvg = series.reduce(function(s, v) { return s + v; }, 0) / series.length;
@@ -9268,13 +9267,11 @@ function buildWeeklyTrendRows(weeks, position) {
     var deltaHtml = '';
     if (delta >= 0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + delta.toFixed(1) + '</span>';
     else if (delta <= -0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; ' + delta.toFixed(1) + '</span>';
-    var lastWk = series[series.length - 1];
     return '<div class="pm-wt-row">'
       + '<div class="pm-wt-label">' + label + '</div>'
-      + pmSparkline(series, color, SW)
+      + pmSparkline(series, color)
       + '<div class="pm-wt-stats">'
       + '<span class="pm-wt-last">' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
-      + '<span class="pm-wt-avg">last ' + lastWk.toFixed(1) + (suffix || '') + '</span>'
       + deltaHtml
       + '</div></div>';
   }
@@ -9310,9 +9307,8 @@ function buildWeeklyTrendRows(weeks, position) {
     + computedRows
     + rowFor('PPR Pts', 'ppr_pts', '#8b5cf6')
     + '</div>'
-    + '<div style="font-size:10px;color:var(--text-muted);margin-top:6px;">Weeks '
-    + weeks[0].week + '&ndash;' + weeks[weeks.length - 1].week
-    + ' &middot; arrow compares last 3 weeks to the period average</div>';
+    + '<div class="pm-wt-footer">Wks ' + weeks[0].week + '&ndash;' + weeks[weeks.length - 1].week
+    + ' &middot; &#9650;&#9660; = 3-wk trend vs avg</div>';
 }
 
 // Collapse/expand a section in the player compare view.
@@ -9331,8 +9327,8 @@ function cmpToggleSection(wrapId, headerEl) {
 
 function pmWtRender(wrap, position) {
   var allWeeks = wrap._weeklyData || [];
-  var sel = document.getElementById('pmWtWkRange');
-  var n = sel ? parseInt(sel.value) || 0 : 0;
+  var activeTab = document.querySelector('.pm-wt-tab.pm-wt-tab-active');
+  var n = activeTab ? parseInt(activeTab.dataset.n) || 0 : 8;
   var weeks = n > 0 ? allWeeks.slice(-n) : allWeeks;
   var el = document.getElementById('pmWtContent');
   if (el) el.innerHTML = buildWeeklyTrendRows(weeks, position);
@@ -9364,18 +9360,23 @@ function pmToggleWeeklyTrends(playerId) {
       wrap._weeklyData = d.weeks || [];
       body.innerHTML =
         '<div class="pm-wt-filter-bar">'
-        + '<span class="pm-wt-filter-label">Weeks</span>'
-        + '<select id="pmWtWkRange" class="pm-wt-wk-sel">'
-        + '<option value="">All</option>'
-        + '<option value="4">Last 4</option>'
-        + '<option value="8">Last 8</option>'
-        + '<option value="12">Last 12</option>'
-        + '</select>'
+        + '<div class="pm-wt-tabs">'
+        + '<button class="pm-wt-tab" data-n="">All</button>'
+        + '<button class="pm-wt-tab" data-n="4">L4</button>'
+        + '<button class="pm-wt-tab pm-wt-tab-active" data-n="8">L8</button>'
+        + '<button class="pm-wt-tab" data-n="12">L12</button>'
+        + '</div>'
         + '</div>'
         + '<div id="pmWtContent"></div>';
+      var tabs = body.querySelectorAll('.pm-wt-tab');
+      tabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          tabs.forEach(function(t) { t.classList.remove('pm-wt-tab-active'); });
+          tab.classList.add('pm-wt-tab-active');
+          pmWtRender(wrap, wrapPosition);
+        });
+      });
       pmWtRender(wrap, wrapPosition);
-      var sel = document.getElementById('pmWtWkRange');
-      if (sel) sel.addEventListener('change', function() { pmWtRender(wrap, wrapPosition); });
     })
     .catch(function() {
       body.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Could not load weekly data.</div>';

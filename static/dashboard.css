@@ -7043,17 +7043,19 @@ select:focus {
   transition: background 0.12s;
 }
 .pm-weekly-toggle:hover { background: var(--row, #f8fafc); color: var(--text); }
-.pm-wt-filter-bar { display: flex; align-items: center; gap: 8px; padding: 8px 0 4px; }
-.pm-wt-filter-label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
-.pm-wt-wk-sel { font-size: 11px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-alt); color: var(--text); cursor: pointer; }
-.pm-wt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; padding-top: 8px; }
+.pm-wt-filter-bar { display: flex; align-items: center; padding: 8px 0 4px; }
+.pm-wt-tabs { display: flex; gap: 4px; }
+.pm-wt-tab { padding: 3px 10px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); border-radius: 20px; background: transparent; color: var(--text-muted); cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+.pm-wt-tab:hover { background: var(--bg-alt); color: var(--text); }
+.pm-wt-tab.pm-wt-tab-active { background: var(--accent, #3b82f6); border-color: var(--accent, #3b82f6); color: #fff; }
+.pm-wt-grid { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; }
 .pm-wt-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.pm-wt-label { flex: 0 0 58px; font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pm-wt-stats { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; min-width: 0; }
+.pm-wt-label { flex: 0 0 60px; font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-wt-spark { flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center; }
+.pm-wt-stats { display: flex; align-items: baseline; gap: 4px; flex-shrink: 0; }
 .pm-wt-last { font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pm-wt-avg { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
 .pm-wt-delta { font-size: 10px; font-weight: 700; white-space: nowrap; }
-@media (max-width: 600px) { .pm-wt-grid { grid-template-columns: 1fr; } }
+.pm-wt-footer { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
 
 /* ── Rivalry Tracker ─────────────────────────────────────────────────────── */
 .rivalry-card { margin-top: 20px; }
