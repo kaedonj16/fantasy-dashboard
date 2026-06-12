@@ -7382,7 +7382,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }).join("");
 
     const _notifLink = ('serviceWorker' in navigator && 'PushManager' in window)
-      ? `<button class="changelog-notif-settings-btn" onclick="closeDropdown();openNotifPrefs();" title="Manage push notifications"><img src="/static/bell.png" style="width:13px;height:13px;opacity:.7;vertical-align:-1px;margin-right:6px;">Notification Settings</button>`
+      ? `<button class="changelog-notif-settings-btn" title="Manage push notifications"><img src="/static/bell.png" style="width:13px;height:13px;opacity:.7;vertical-align:-1px;margin-right:6px;">Notification Settings</button>`
       : '';
     dropdown.innerHTML = `
       <div class="changelog-dropdown-header">
@@ -7396,6 +7396,13 @@ document.addEventListener("DOMContentLoaded", () => {
       e.stopPropagation();
       closeDropdown();
     });
+    if (_notifLink) {
+      const _notifBtn = dropdown.querySelector('.changelog-notif-settings-btn');
+      if (_notifBtn) _notifBtn.addEventListener('click', function() {
+        closeDropdown();
+        if (window.openNotifPrefs) window.openNotifPrefs();
+      });
+    }
   }
 
   // Format date (e.g., "2026-03-26" -> "Mar 26")
