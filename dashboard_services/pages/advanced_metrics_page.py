@@ -935,7 +935,9 @@ _AM_JS = r"""
       // General metrics: apply position + subcategory filter regardless of primary category
       if (cat === 'General') {
         if (spec.positions && !spec.positions.some(p => primaryPositions.has(p))) return false;
-        if (spec.subcategory && spec.subcategory !== primaryCat) return false;
+        // Subcategory affinity only matters when the primary is a specific category.
+        // When primary is itself General, show all position-matched General items.
+        if (spec.subcategory && primaryCat !== 'General' && spec.subcategory !== primaryCat) return false;
         return true;
       }
       return false;
