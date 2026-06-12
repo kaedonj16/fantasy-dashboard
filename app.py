@@ -1901,7 +1901,7 @@ def render_page(
     ask_gm_widget = ""  # Ask My GM hidden for now
 
     import json as _json
-    return BASE_HTML.format(
+    html = BASE_HTML.format(
         title=title,
         meta_tags=meta_tags,
         og_tags=og_tags,
@@ -1931,6 +1931,10 @@ def render_page(
         viewer_user_id_js=_json.dumps(str(viewer_user_id)),
         signed_in_js="true" if session.get("viewer_username") else "false",
     )
+    resp = make_response(html)
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 
 def validate_league_id(platform: str, league_id: str) -> tuple[bool, Optional[str]]:
