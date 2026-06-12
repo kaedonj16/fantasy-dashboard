@@ -627,7 +627,7 @@ def build_advanced_metrics_body(
       }
       @media (max-width:600px) { .am-skel-bar { display:none; } }
       /* Percentile badge */
-      .am-val-wrap { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; min-width:54px; }
+      .am-val-wrap { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; width:78px; }
       .am-pct-badge { font-size:9px; font-weight:700; letter-spacing:.02em; line-height:1.3; white-space:nowrap; opacity:.85; }
       @media (max-width:600px) { .am-pct-badge { display:none; } }
       /* Weekly usage trend column */
