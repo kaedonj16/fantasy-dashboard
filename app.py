@@ -25998,9 +25998,18 @@ def _init_push_table():
                     endpoint   TEXT UNIQUE NOT NULL,
                     p256dh     TEXT NOT NULL,
                     auth       TEXT NOT NULL,
+                    league_id  TEXT,
+                    platform   TEXT DEFAULT 'sleeper',
+                    owner_id   TEXT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
+            # Migrate existing tables that predate the league/owner columns
+            for col, defn in [("league_id", "TEXT"), ("platform", "TEXT DEFAULT 'sleeper'"), ("owner_id", "TEXT")]:
+                try:
+                    conn.execute(f"ALTER TABLE push_subscriptions ADD COLUMN IF NOT EXISTS {col} {defn}")
+                except Exception:
+                    pass
             conn.commit()
         _PUSH_TABLE_INIT = True
     except Exception as exc:
@@ -26057,10 +26066,13 @@ def api_push_vapid_public_key():
 @app.route("/api/push/subscribe", methods=["POST"])
 @limiter.limit("30 per minute")
 def api_push_subscribe():
-    data     = request.get_json(force=True) or {}
-    endpoint = data.get("endpoint", "").strip()
-    p256dh   = (data.get("keys") or {}).get("p256dh", "").strip()
-    auth     = (data.get("keys") or {}).get("auth",   "").strip()
+    data      = request.get_json(force=True) or {}
+    endpoint  = data.get("endpoint", "").strip()
+    p256dh    = (data.get("keys") or {}).get("p256dh", "").strip()
+    auth      = (data.get("keys") or {}).get("auth",   "").strip()
+    league_id = (data.get("league_id") or "").strip() or None
+    platform  = (data.get("platform")  or "sleeper").strip()
+    owner_id  = (data.get("owner_id")  or "").strip() or None
     if not (endpoint and p256dh and auth):
         return jsonify({"error": "Invalid subscription"}), 400
     _init_push_table()
@@ -26069,12 +26081,16 @@ def api_push_subscribe():
         with get_conn() as conn:
             conn.execute(
                 """
-                INSERT INTO push_subscriptions (endpoint, p256dh, auth)
-                VALUES (%s, %s, %s)
+                INSERT INTO push_subscriptions (endpoint, p256dh, auth, league_id, platform, owner_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (endpoint) DO UPDATE
-                    SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth
+                    SET p256dh    = EXCLUDED.p256dh,
+                        auth      = EXCLUDED.auth,
+                        league_id = COALESCE(EXCLUDED.league_id, push_subscriptions.league_id),
+                        platform  = COALESCE(EXCLUDED.platform,  push_subscriptions.platform),
+                        owner_id  = COALESCE(EXCLUDED.owner_id,  push_subscriptions.owner_id)
                 """,
-                (endpoint, p256dh, auth),
+                (endpoint, p256dh, auth, league_id, platform, owner_id),
             )
             conn.commit()
     except Exception as exc:
@@ -26117,6 +26133,23 @@ def api_push_broadcast():
     url   = data.get("url",   "/top-movers")
     tag   = data.get("tag",   "weekly-update")
     return _push_broadcast(title=title, body=body, url=url, tag=tag)
+
+
+@app.route("/api/cron/notifications", methods=["POST"])
+@limiter.limit("60 per minute")
+def api_cron_notifications():
+    """Hourly cron hook for time-sensitive push checks (lineup lock, etc.)."""
+    data   = request.get_json(force=True) or {}
+    secret = data.get("secret", "")
+    cron_secret = os.environ.get("CRON_SECRET", "")
+    if not cron_secret or secret != cron_secret:
+        return jsonify({"error": "Forbidden"}), 403
+    try:
+        from utils.push_notifications import run_hourly
+        run_hourly()
+    except Exception as exc:
+        logger.warning("[cron/notifications] failed: %s", exc)
+    return jsonify({"ok": True})
 
 
 def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):

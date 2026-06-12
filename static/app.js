@@ -552,10 +552,21 @@ function emptyState(container, message, iconClass) {
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     });
     var s = sub.toJSON();
+    // Extract league context from URL path: /{platform}/{season}/{league_id}/...
+    var _parts    = window.location.pathname.split('/').filter(Boolean);
+    var _platform = (_parts[0] || 'sleeper').toLowerCase();
+    var _league   = _parts.length >= 3 ? _parts[2] : '';
+    if (!['sleeper', 'espn'].includes(_platform)) { _platform = 'sleeper'; _league = ''; }
     await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: s.endpoint, keys: s.keys }),
+      body: JSON.stringify({
+        endpoint:  s.endpoint,
+        keys:      s.keys,
+        league_id: _league   || null,
+        platform:  _platform || 'sleeper',
+        owner_id:  (window._viewerUid || null),
+      }),
     });
     return true;
   }
