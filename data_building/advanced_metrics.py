@@ -1746,7 +1746,11 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                     FROM player_advanced_metrics
                     WHERE season = %s AND position = %s
                     GROUP BY player_id
-                    HAVING MAX(games) > 0
+                    HAVING COALESCE(
+                        MAX(games),
+                        CASE WHEN COALESCE(MAX(total_carries),0)+COALESCE(MAX(total_targets),0) > 0
+                             THEN 1 END
+                    ) > 0
                 ),
                 r AS (
                     SELECT player_id,
