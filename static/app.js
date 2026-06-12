@@ -3879,12 +3879,19 @@ window.initTradePage = function initTradePage(root = document) {
     }
 
     function switchTab(name) {
-      if (name === "suggestions") {
-        const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
-        if (!hasPremium) {
-          if (typeof showPaywall === "function") showPaywall("trade-suggestions");
-          return;
-        }
+      const hasPremium = (root.querySelector("#otcHasPremium")?.value || "false") === "true";
+      if (name === "suggestions" && !hasPremium) {
+        // Switch to the tab so the upgrade CTA is visible, then show the modal on top.
+        tabs.forEach(t => t.classList.toggle("is-active", t.dataset.tab === name));
+        calcTab.style.display = "none";
+        suggTab.style.display = "";
+        const banner = root.querySelector("#otcSuggPaywall");
+        if (banner) banner.style.display = "";
+        if (typeof showPaywall === "function") showPaywall("trade-suggestions");
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", "suggestions");
+        history.replaceState(null, "", url);
+        return;
       }
       tabs.forEach(t => t.classList.toggle("is-active", t.dataset.tab === name));
       calcTab.style.display  = name === "calculator"   ? "" : "none";
