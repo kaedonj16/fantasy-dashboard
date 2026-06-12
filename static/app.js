@@ -8219,22 +8219,21 @@ function openPlayerModal(playerId, playerName, opts) {
         : '/metrics';
       const _metricsPos  = pos && pos !== 'PICK' ? pos : '';
       const _srch = '&search=' + encodeURIComponent(playerName || '');
-      const _mUrl = (metric) => _metricsBase + '?pos=' + encodeURIComponent(_metricsPos) + '&metric=' + metric + _srch;
       const _posSets = {
-        QB: [{ label: 'Passing',   metric: 'yards_per_attempt' }],
-        RB: [{ label: 'Rushing',   metric: 'yards_per_carry'   },
-             { label: 'Receiving', metric: 'yards_per_target'  }],
-        WR: [{ label: 'Receiving', metric: 'yards_per_target'  }],
-        TE: [{ label: 'Receiving', metric: 'yards_per_target'  }],
+        QB: { label: 'Passing',   metric: 'yards_per_attempt' },
+        RB: { label: 'Rushing',   metric: 'yards_per_carry'   },
+        WR: { label: 'Receiving', metric: 'yards_per_target'  },
+        TE: { label: 'Receiving', metric: 'yards_per_target'  },
       };
-      const _setLinks = (_posSets[_metricsPos] || [])
-        .map(s => `<a href="${_mUrl(s.metric)}" class="pm-section-link" title="Open ${s.label} leaderboard">${s.label} &rarr;</a>`)
-        .join('');
+      const _posSet = _posSets[_metricsPos];
+      const _setLink = _posSet
+        ? `<a href="${_metricsBase}?pos=${encodeURIComponent(_metricsPos)}&metric=${_posSet.metric}${_srch}" class="pm-section-link" title="Open ${_posSet.label} leaderboard">${_posSet.label} &rarr;</a>`
+        : '';
       const metricsHTML = hasMetrics ? `
         <div id="advancedMetricsSection">
           <div class="pm-section-header">
             <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span></span>
-            <div style="display:flex;gap:10px;">${_setLinks}</div>
+            ${_setLink}
           </div>
           <div id="advMetricsPills"></div>
           <div id="advancedMetricsContent">
