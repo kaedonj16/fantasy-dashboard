@@ -1703,7 +1703,19 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         CASE WHEN games > 0 THEN total_rush_tds::float / games   END AS rush_tds_pg,
                         CASE WHEN games > 0 THEN total_rec_tds::float / games    END AS rec_tds_pg,
                         CASE WHEN games > 0 THEN total_pass_tds::float / games   END AS pass_tds_pg,
-                        CASE WHEN games > 0 THEN total_tds::float / games        END AS total_tds_pg
+                        CASE WHEN games > 0 THEN total_tds::float / games        END AS total_tds_pg,
+                        role_score, snap_share, grades_offense,
+                        pff_passing_grade, big_time_throw_rate, adjusted_completion_rate,
+                        nfl_passer_rating, yards_per_attempt, completion_pct, td_rate, int_rate,
+                        pressure_to_sack_rate,
+                        pff_rushing_grade, yards_per_carry, yards_per_touch, rush_td_rate,
+                        elusive_rating, breakaway_percentage, explosive_runs_10_plus,
+                        opportunity_share, catch_rate, avoided_tackles,
+                        yprr, yards_per_target, yards_per_reception,
+                        yards_after_catch_per_reception, avg_depth_of_target,
+                        target_share, air_yards_per_game, air_yards_share,
+                        target_quality_score, contested_catch_rate, drop_rate,
+                        red_zone_usage
                     FROM player_advanced_metrics
                     WHERE season = %s AND position = %s
                       AND games IS NOT NULL AND games > 0
@@ -1726,7 +1738,41 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         RANK() OVER (ORDER BY rush_tds_pg DESC NULLS LAST)      AS rush_tds_per_game,
                         RANK() OVER (ORDER BY rec_tds_pg DESC NULLS LAST)       AS rec_tds_per_game,
                         RANK() OVER (ORDER BY pass_tds_pg DESC NULLS LAST)      AS pass_tds_per_game,
-                        RANK() OVER (ORDER BY total_tds_pg DESC NULLS LAST)     AS total_tds_per_game
+                        RANK() OVER (ORDER BY total_tds_pg DESC NULLS LAST)     AS total_tds_per_game,
+                        RANK() OVER (ORDER BY role_score DESC NULLS LAST)                    AS role_score,
+                        RANK() OVER (ORDER BY snap_share DESC NULLS LAST)                    AS snap_share,
+                        RANK() OVER (ORDER BY grades_offense DESC NULLS LAST)                AS grades_offense,
+                        RANK() OVER (ORDER BY pff_passing_grade DESC NULLS LAST)             AS pff_passing_grade,
+                        RANK() OVER (ORDER BY big_time_throw_rate DESC NULLS LAST)           AS big_time_throw_rate,
+                        RANK() OVER (ORDER BY adjusted_completion_rate DESC NULLS LAST)      AS adjusted_completion_rate,
+                        RANK() OVER (ORDER BY nfl_passer_rating DESC NULLS LAST)             AS nfl_passer_rating,
+                        RANK() OVER (ORDER BY yards_per_attempt DESC NULLS LAST)             AS yards_per_attempt,
+                        RANK() OVER (ORDER BY completion_pct DESC NULLS LAST)                AS completion_pct,
+                        RANK() OVER (ORDER BY td_rate DESC NULLS LAST)                       AS td_rate,
+                        RANK() OVER (ORDER BY int_rate ASC NULLS LAST)                       AS int_rate,
+                        RANK() OVER (ORDER BY pressure_to_sack_rate ASC NULLS LAST)          AS pressure_to_sack_rate,
+                        RANK() OVER (ORDER BY pff_rushing_grade DESC NULLS LAST)             AS pff_rushing_grade,
+                        RANK() OVER (ORDER BY yards_per_carry DESC NULLS LAST)               AS yards_per_carry,
+                        RANK() OVER (ORDER BY yards_per_touch DESC NULLS LAST)               AS yards_per_touch,
+                        RANK() OVER (ORDER BY rush_td_rate DESC NULLS LAST)                  AS rush_td_rate,
+                        RANK() OVER (ORDER BY elusive_rating DESC NULLS LAST)                AS elusive_rating,
+                        RANK() OVER (ORDER BY breakaway_percentage DESC NULLS LAST)          AS breakaway_percentage,
+                        RANK() OVER (ORDER BY explosive_runs_10_plus DESC NULLS LAST)        AS explosive_runs_10_plus,
+                        RANK() OVER (ORDER BY opportunity_share DESC NULLS LAST)             AS opportunity_share,
+                        RANK() OVER (ORDER BY catch_rate DESC NULLS LAST)                    AS catch_rate,
+                        RANK() OVER (ORDER BY avoided_tackles DESC NULLS LAST)               AS avoided_tackles,
+                        RANK() OVER (ORDER BY yprr DESC NULLS LAST)                          AS yprr,
+                        RANK() OVER (ORDER BY yards_per_target DESC NULLS LAST)              AS yards_per_target,
+                        RANK() OVER (ORDER BY yards_per_reception DESC NULLS LAST)           AS yards_per_reception,
+                        RANK() OVER (ORDER BY yards_after_catch_per_reception DESC NULLS LAST) AS yards_after_catch_per_reception,
+                        RANK() OVER (ORDER BY avg_depth_of_target DESC NULLS LAST)           AS avg_depth_of_target,
+                        RANK() OVER (ORDER BY target_share DESC NULLS LAST)                  AS target_share,
+                        RANK() OVER (ORDER BY air_yards_per_game DESC NULLS LAST)            AS air_yards_per_game,
+                        RANK() OVER (ORDER BY air_yards_share DESC NULLS LAST)               AS air_yards_share,
+                        RANK() OVER (ORDER BY target_quality_score DESC NULLS LAST)          AS target_quality_score,
+                        RANK() OVER (ORDER BY contested_catch_rate DESC NULLS LAST)          AS contested_catch_rate,
+                        RANK() OVER (ORDER BY drop_rate ASC NULLS LAST)                      AS drop_rate,
+                        RANK() OVER (ORDER BY red_zone_usage DESC NULLS LAST)                AS red_zone_usage
                     FROM snapshot
                 )
                 SELECT * FROM r WHERE player_id = %s
