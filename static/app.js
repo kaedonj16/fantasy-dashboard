@@ -8227,7 +8227,7 @@ function openPlayerModal(playerId, playerName, opts) {
       };
       const _posSet = _posSets[_metricsPos];
       const _setLink = _posSet
-        ? `<a href="${_metricsBase}?pos=${encodeURIComponent(_metricsPos)}&preset=${_posSet.preset}${_srch}" class="pm-section-link" title="Open ${_posSet.label} leaderboard">${_posSet.label} &rarr;</a>`
+        ? `<a href="${_metricsBase}?pos=${encodeURIComponent(_metricsPos)}&preset=${_posSet.preset}${_srch}" class="pm-section-link" title="Open ${_posSet.label} leaderboard">View in Adv Metrics &rarr;</a>`
         : '';
       const metricsHTML = hasMetrics ? `
         <div id="advancedMetricsSection">
