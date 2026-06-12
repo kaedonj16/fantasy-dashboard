@@ -7055,6 +7055,7 @@ select:focus {
 .pm-wt-spark { flex: 1; min-width: 0; overflow: hidden; display: flex; align-items: center; }
 .pm-wt-stats { display: flex; align-items: baseline; gap: 4px; flex-shrink: 0; }
 .pm-wt-last { font-size: 12px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pm-wt-avg { font-size: 10px; color: var(--text-muted); white-space: nowrap; }
 .pm-wt-delta { font-size: 10px; font-weight: 700; white-space: nowrap; }
 .pm-wt-footer { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
 

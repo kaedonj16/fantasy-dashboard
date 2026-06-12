@@ -9267,11 +9267,13 @@ function buildWeeklyTrendRows(weeks, position) {
     var deltaHtml = '';
     if (delta >= 0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#10b981">&#9650; +' + delta.toFixed(1) + '</span>';
     else if (delta <= -0.5) deltaHtml = '<span class="pm-wt-delta" style="color:#ef4444">&#9660; ' + delta.toFixed(1) + '</span>';
+    var lastWk = series[series.length - 1];
     return '<div class="pm-wt-row">'
       + '<div class="pm-wt-label">' + label + '</div>'
       + pmSparkline(series, color)
       + '<div class="pm-wt-stats">'
       + '<span class="pm-wt-last">' + seasonAvg.toFixed(1) + (suffix || '') + '</span>'
+      + '<span class="pm-wt-avg">last game ' + lastWk.toFixed(1) + (suffix || '') + '</span>'
       + deltaHtml
       + '</div></div>';
   }
