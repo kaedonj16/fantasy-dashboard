@@ -183,8 +183,11 @@ def send(rows, title, body, url, tag, priv_key):
                 stale += 1
             else:
                 print(f"  FAIL [{status}]: {ep[:70]}...")
+                # status '?' = no HTTP response -> local signing/encryption error.
+                # The real cause is in the exception message, not the response body.
+                print(f"         {type(e).__name__}: {e}")
                 if body:
-                    print(f"         {body}")
+                    print(f"         resp: {body}")
                 failed += 1
         except Exception as e:
             print(f"  FAIL [exc]: {ep[:70]}...")
