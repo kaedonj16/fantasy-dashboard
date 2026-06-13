@@ -614,7 +614,7 @@ function emptyState(container, message, iconClass) {
       // Not subscribed yet — show a subscribe prompt in a modal
       var overlay = document.createElement('div');
       overlay.id = 'notifPrefsOverlay';
-      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
       var modal = document.createElement('div');
       modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.2);text-align:center;';
       modal.innerHTML = '<div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:8px;">'
@@ -684,9 +684,9 @@ function emptyState(container, message, iconClass) {
     // Build modal
     var overlay = document.createElement('div');
     overlay.id = 'notifPrefsOverlay';
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 24px;';
     var modal = document.createElement('div');
-    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);';
+    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;max-height:calc(100vh - 96px);overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);';
     var rows = _NOTIF_TYPES.map(function(t) {
       return _toggleHtml('data-key', t.key, t.label, prefs[t.key] !== false);
     }).join('');
