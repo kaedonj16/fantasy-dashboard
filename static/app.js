@@ -14413,9 +14413,26 @@ function setupFunAwardsGrid() {
     return true;
   }
 
+  function _heroLabel() {
+    if (!_heroMid) return '';
+    if (_scope === 'league') {
+      var groups = {};
+      (_state.matchups || []).forEach(function(m) {
+        var mid = String(m.matchup_id);
+        (groups[mid] = groups[mid] || []).push(m);
+      });
+      var pair = groups[_heroMid] || [];
+      if (pair.length >= 2) return (_ownerName(pair[0].roster_id) || 'Team') + ' vs ' + (_ownerName(pair[1].roster_id) || 'Team');
+      return 'Matchup ' + _heroMid;
+    }
+    var m = (_state.matchups || []).find(function(x) { return String(x.roster_id) === _heroMid; });
+    return (m && m.league_name) || 'Selected League';
+  }
+
   function _renderFilterChips() {
     var activeCount = ['team','nfl','pos','stat'].filter(function(k) { return _filters[k] !== 'all'; }).length;
     var chips = '';
+    if (_heroMid) chips += '<span class="rz-active-chip rz-hero-chip" data-clear-hero="1">&#9654; ' + _heroLabel() + ' ×</span>';
     if (_filters.team !== 'all') chips += '<span class="rz-active-chip" data-clear="team">' + _filters.team + ' ×</span>';
     if (_filters.nfl  !== 'all') chips += '<span class="rz-active-chip" data-clear="nfl">'  + _filters.nfl  + ' ×</span>';
     if (_filters.pos  !== 'all') chips += '<span class="rz-active-chip" data-clear="pos">'  + _filters.pos  + ' ×</span>';
@@ -14845,11 +14862,20 @@ function setupFunAwardsGrid() {
     var toAdd = list.filter(function(ev) { return !inDom.has(_eid(ev)); });
 
     if (toAdd.length) {
-      // Insert newest-first: reverse so oldest of batch appended first, ends up below newest
+      var isInitialLoad = _shownFeedIds.size === 0;
+
+      // FLIP: snapshot existing positions so we can animate them sliding down
+      var existingEls = [], existingTops = [];
+      if (!isInitialLoad && toAdd.length <= 4) {
+        existingEls = Array.from(container.querySelectorAll('[data-eid]')).slice(0, 12);
+        existingTops = existingEls.map(function(n) { return n.getBoundingClientRect().top; });
+      }
+
+      // Insert newest-first (no reverse) so newest lands at the top of the DOM
       var newCount = toAdd.filter(function(ev) { return !_shownFeedIds.has(_eid(ev)); }).length;
       var newIdx = 0;
       var frag = document.createDocumentFragment();
-      toAdd.slice().reverse().forEach(function(ev) {
+      toAdd.forEach(function(ev) {
         var id = _eid(ev);
         var isNew = !_shownFeedIds.has(id);
         var wrap = document.createElement('div');
@@ -14857,14 +14883,32 @@ function setupFunAwardsGrid() {
         var node = wrap.firstChild;
         node.dataset.eid = id;
         if (isNew && newCount > 1) {
-          // Stagger: newest (last in reversed loop) gets delay 0, older get bigger delay
-          node.style.animationDelay = ((newCount - 1 - newIdx) * 90) + 'ms';
-          newIdx++;
+          node.style.animationDelay = (newIdx * 70) + 'ms'; // top-to-bottom cascade
         }
+        if (isNew) newIdx++;
         frag.appendChild(node);
         _shownFeedIds.add(id);
       });
       container.insertBefore(frag, container.firstChild);
+
+      // FLIP: animate existing items sliding down to their new positions
+      if (existingEls.length) {
+        requestAnimationFrame(function() {
+          existingEls.forEach(function(n, i) {
+            if (!n.parentNode) return;
+            var dy = n.getBoundingClientRect().top - existingTops[i];
+            if (Math.abs(dy) > 0.5) {
+              n.style.transition = 'none';
+              n.style.transform = 'translateY(' + (-dy) + 'px)';
+              requestAnimationFrame(function() {
+                n.style.transition = 'transform .28s cubic-bezier(.22,.68,0,1.15)';
+                n.style.transform = '';
+                setTimeout(function() { if (n.style) n.style.transition = ''; }, 320);
+              });
+            }
+          });
+        });
+      }
     }
 
     // Also re-render events already in DOM if filter state changed their matching (handled by list filter above)
@@ -14905,7 +14949,7 @@ function setupFunAwardsGrid() {
 
     var live = _anyLive();
     var liveChip = live ? '<span class="rz-live-chip"><span class="rz-nav-dot"></span>LIVE</span>' : '';
-    var demoBar  = _isDemo ? '<div class="rz-demo-banner">Demo Mode · Simulated game data</div>' : '';
+    var demoBar  = _isDemo ? '<div class="rz-demo-banner"><span>Demo Mode · Simulated game data</span><button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button></div>' : '';
     var showFilters = (_activeTab === 'plays' || _activeTab === 'top');
 
     var mine = _myMatchups();
@@ -14994,6 +15038,11 @@ function setupFunAwardsGrid() {
         _render();
       });
     });
+    root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
+      el.addEventListener('click', function() { _heroMid = null; _render(); });
+    });
+    var exitDemo = root.querySelector('#rz-demo-exit');
+    if (exitDemo) exitDemo.addEventListener('click', function() { window.location.href = window.location.pathname; });
     root.querySelectorAll('[data-heromid]').forEach(function(el) {
       el.addEventListener('click', function() {
         var mid = el.dataset.heromid;
@@ -15087,7 +15136,7 @@ function setupFunAwardsGrid() {
       _detectChanges(newData);
       _state = newData;
       _seedPrevStats(newData);
-      _countdown = _anyLive() ? 15 : 60;
+      _countdown = _isDemo ? 8 : _anyLive() ? 15 : 60;
       _render();
     } catch (_) {}
   }
@@ -15097,7 +15146,7 @@ function setupFunAwardsGrid() {
     var el = document.getElementById('rz-timer');
     if (el) el.textContent = _countdown + 's';
     if (_countdown <= 0) {
-      _countdown = _anyLive() ? 15 : 60;
+      _countdown = _isDemo ? 8 : _anyLive() ? 15 : 60;
       _refresh();
     }
   }
