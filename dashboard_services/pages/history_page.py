@@ -963,20 +963,20 @@ def build_history_body(
     return f"""
     <div class="history-page">
       <!-- Hidden inputs for JavaScript -->
-      <input type="hidden" id="leagueIdInput" value="{base_league_id}">
-      <input type="hidden" id="seasonInput" value="{base_season}">
-      <input type="hidden" id="platformInput" value="{base_platform}">
-      <input type="hidden" id="historySeasonInput" value="{selected_history_season}">
-      <input type="hidden" id="resolvedLeagueIdInput" value="{resolved_history_league_id}">
+      <input type="hidden" id="leagueIdInput" value="{_esc(str(base_league_id))}">
+      <input type="hidden" id="seasonInput" value="{_esc(str(base_season))}">
+      <input type="hidden" id="platformInput" value="{_esc(str(base_platform))}">
+      <input type="hidden" id="historySeasonInput" value="{_esc(str(selected_history_season))}">
+      <input type="hidden" id="resolvedLeagueIdInput" value="{_esc(str(resolved_history_league_id))}">
       {tour_input}
 
       <div class="history-header">
         <div>
           <div class="history-kicker">League History</div>
           <h1 class="history-title">
-            <span class="history-title-accent">{league_name}</span> • {selected_history_season}
+            <span class="history-title-accent">{_esc(league_name)}</span> • {selected_history_season}
           </h1>
-          <p class="history-subtitle">{recap_line}</p>
+          <p class="history-subtitle">{_esc(recap_line)}</p>
         </div>
 
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:12px;">
