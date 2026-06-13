@@ -14394,7 +14394,7 @@ function setupFunAwardsGrid() {
     }
     var panel = '';
     if (_filterOpen) {
-      function fpRow(label, key, opts) {
+      var fpRow = function(label, key, opts) {
         var btns = opts.map(function(o) {
           var val = Array.isArray(o) ? o[0] : o, lbl = Array.isArray(o) ? o[1] : o;
           return '<button class="rz-fp-opt' + (_filters[key] === val ? ' active' : '') + '" data-fk="' + key + '" data-fv="' + val + '">' + lbl + '</button>';
