@@ -26148,9 +26148,10 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
     try:
         from pywebpush import webpush, WebPushException
         from dashboard_services.db import get_conn
-        rows = get_conn().execute(
-            "SELECT endpoint, p256dh, auth FROM push_subscriptions"
-        ).fetchall()
+        with get_conn() as _pconn:
+            rows = _pconn.execute(
+                "SELECT endpoint, p256dh, auth FROM push_subscriptions"
+            ).fetchall()
     except Exception as exc:
         logger.warning("[push] broadcast query failed: %s", exc)
         return jsonify({"error": "DB error"}), 500

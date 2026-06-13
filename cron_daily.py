@@ -1,5 +1,4 @@
 from datetime import date, datetime
-import gc
 import os
 import subprocess
 import sys

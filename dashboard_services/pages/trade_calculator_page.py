@@ -1,4 +1,5 @@
 import logging
+from html import escape as _esc
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -155,9 +156,9 @@ def build_trade_calculator_body(
     <script>var _leagueType = {league_type_js}; var _leagueSize = {num_teams_val};</script>
     <div class="otc-layout">
       <main class="otc-main">
-        <input type="hidden" id="leagueIdInput" value="{league_val}">
-        <input type="hidden" id="seasonInput" value="{season_val}">
-        <input type="hidden" id="viewerRosterIdInput" value="{viewer_roster_val}">
+        <input type="hidden" id="leagueIdInput" value="{_esc(str(league_val))}">
+        <input type="hidden" id="seasonInput" value="{_esc(str(season_val))}">
+        <input type="hidden" id="viewerRosterIdInput" value="{_esc(str(viewer_roster_val))}">
         <input type="hidden" id="viewerSideInput" value="a">
         <input type="hidden" id="isGuestMode" value="{is_guest_str}">
         <input type="hidden" id="otcHasPremium" value="{has_premium_str}">

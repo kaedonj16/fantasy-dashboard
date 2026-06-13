@@ -13,7 +13,11 @@ from datetime import datetime, timezone
 from functools import wraps
 from typing import Optional, Dict, Any
 
+import logging
+
 from dashboard_services.db import get_conn
+
+logger = logging.getLogger(__name__)
 
 
 def premium_required(fn):
@@ -102,7 +106,7 @@ def has_premium_access(user_id: Optional[str], league_id: Optional[str], platfor
                 return False
 
     except Exception as e:
-        print(f"[subscriptions] Error checking premium access: {e}")
+        logger.error("[subscriptions] Error checking premium access: %s", e)
         # Fail closed: on any error, deny premium rather than grant it.
         return False
 
@@ -254,7 +258,7 @@ def get_subscription_info(user_id: Optional[str], league_id: Optional[str], plat
         return result
 
     except Exception as e:
-        print(f"[subscriptions] Error getting subscription info: {e}")
+        logger.error("[subscriptions] Error getting subscription info: %s", e)
         return result
 
 
@@ -290,7 +294,7 @@ def create_league_subscription(
                 ))
         return True
     except Exception as e:
-        print(f"[subscriptions] Error creating league subscription: {e}")
+        logger.error("[subscriptions] Error creating league subscription: %s", e)
         return False
 
 
@@ -322,7 +326,7 @@ def create_user_subscription(
                 ))
         return True
     except Exception as e:
-        print(f"[subscriptions] Error creating user subscription: {e}")
+        logger.error("[subscriptions] Error creating user subscription: %s", e)
         return False
 
 
@@ -340,5 +344,5 @@ def cancel_subscription(subscription_id: str, subscription_type: str = "league")
                 """, (subscription_id,))
         return True
     except Exception as e:
-        print(f"[subscriptions] Error canceling subscription: {e}")
+        logger.error("[subscriptions] Error canceling subscription: %s", e)
         return False
