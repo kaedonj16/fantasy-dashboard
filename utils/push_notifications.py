@@ -234,13 +234,18 @@ def notify_lineup_lock():
             if _app_state_get(conn, "lineup_lock_week") == f"{season}-{week}":
                 return
 
-        sent = _broadcast_all(
-            title="Lineups lock soon",
-            body=f"Week {week} kicks off in about an hour. Make sure your starters are set.",
-            url="/weekly",
-            tag=f"lineup-lock-{season}-{week}",
-            notif_type="lineup_lock",
-        )
+        # Send per league so each subscriber gets a link into their own league's
+        # weekly hub (everyone subscribes while signed in to a league).
+        sent = 0
+        for league_id, platform in _get_subscribed_leagues():
+            sent += _broadcast_league(
+                league_id,
+                title="Lineups lock soon",
+                body=f"Week {week} kicks off in about an hour. Make sure your starters are set.",
+                url=f"/{platform}/{season}/{league_id}/weekly",
+                tag=f"lineup-lock-{season}-{week}",
+                notif_type="lineup_lock",
+            )
         logger.info("[notify] lineup_lock week %s sent %d", week, sent)
 
         with get_conn() as conn:
@@ -298,7 +303,7 @@ def notify_value_drops():
                         league_id, owner_id,
                         title="Dynasty value dropping",
                         body=f"{name} is losing dynasty value this week. Check your trade options.",
-                        url="/trade",
+                        url=f"/{platform}/{season}/{league_id}/trade",
                         tag=f"value-drop-{league_id}-{top['player_id']}",
                         notif_type="value_drops",
                     )
@@ -364,7 +369,7 @@ def notify_waiver_candidates():
                     league_id,
                     title="Waivers are open",
                     body=f"{name} ({pos}) is the top available player in your league this week.",
-                    url="/players",
+                    url=f"/{platform}/{season}/{league_id}/players",
                     notif_type="waiver_candidates",
                     tag=f"waiver-{league_id}-{week}",
                 )
@@ -570,7 +575,7 @@ def notify_breakout_roster():
                         league_id, owner_id,
                         title="Breakout candidate on your roster",
                         body=f"{name} ({pos}, {team}) is flagged as a breakout candidate.",
-                        url="/breakouts",
+                        url=f"/{platform}/{season}/{league_id}/breakouts",
                         tag=f"breakout-{league_id}-{top['player_id']}",
                         notif_type="breakout_roster",
                     )

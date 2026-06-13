@@ -9545,19 +9545,6 @@ def api_start_sit_options():
     })
 
 
-@app.route("/weekly")
-def page_weekly_redirect():
-    """Top-level convenience route (used by the lineup-lock push notification).
-    Redirect to the viewer's league weekly hub, or home if no league in session."""
-    from flask import redirect as _redir
-    _lid = session.get("last_league_id") or session.get("viewer_league_id")
-    _plt = session.get("last_platform") or session.get("viewer_platform") or "sleeper"
-    _ssn = session.get("last_season") or session.get("viewer_season")
-    if _lid and _ssn:
-        return _redir(f"/{_plt}/{_ssn}/{_lid}/weekly", 302)
-    return _redir("/", 302)
-
-
 @app.route("/<platform>/<int:season>/<league_id>/weekly")
 def page_weekly(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
