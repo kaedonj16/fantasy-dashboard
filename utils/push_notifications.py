@@ -86,17 +86,26 @@ def _send_to_endpoints(endpoints, title, body, url="/", tag="update"):
             )
             sent += 1
         except WebPushException as exc:
-            if exc.response and exc.response.status_code in (404, 410):
+            status = exc.response.status_code if exc.response else None
+            if status is None:
+                import re as _re
+                m = _re.search(r'\b([45]\d\d)\b', str(exc))
+                status = int(m.group(1)) if m else 0
+            if status in (404, 410):
                 stale.append(ep)
-        except Exception:
-            pass
+            else:
+                logger.debug("[push] send failed %s: %s", ep[:60], exc)
+        except Exception as exc:
+            logger.debug("[push] send error %s: %s", ep[:60], exc)
 
     if stale:
         try:
             from dashboard_services.db import get_conn
             with get_conn() as conn:
-                for ep in stale:
-                    conn.execute("DELETE FROM push_subscriptions WHERE endpoint = %s", (ep,))
+                conn.execute(
+                    "DELETE FROM push_subscriptions WHERE endpoint = ANY(%s)",
+                    (stale,)
+                )
                 conn.commit()
         except Exception:
             pass
@@ -216,20 +225,27 @@ def notify_lineup_lock():
         kickoff = datetime.fromtimestamp(min(epochs) / 1000, tz=timezone.utc)
         now     = datetime.now(tz=timezone.utc)
         mins    = (kickoff - now).total_seconds() / 60
-        if not (55 <= mins <= 65):
+        # 60-min-wide window so an hourly check always lands inside it; the
+        # once-per-week dedup below guarantees we still only send a single push.
+        if not (40 <= mins <= 100):
             return
 
         with get_conn() as conn:
             if _app_state_get(conn, "lineup_lock_week") == f"{season}-{week}":
                 return
 
-        sent = _broadcast_all(
-            title="Lineups lock in 1 hour",
-            body=f"Week {week} kicks off soon. Make sure your starters are set.",
-            url="/matchups",
-            tag=f"lineup-lock-{season}-{week}",
-            notif_type="lineup_lock",
-        )
+        # Send per league so each subscriber gets a link into their own league's
+        # weekly hub (everyone subscribes while signed in to a league).
+        sent = 0
+        for league_id, platform in _get_subscribed_leagues():
+            sent += _broadcast_league(
+                league_id,
+                title="Lineups lock soon",
+                body=f"Week {week} kicks off in about an hour. Make sure your starters are set.",
+                url=f"/{platform}/{season}/{league_id}/weekly",
+                tag=f"lineup-lock-{season}-{week}",
+                notif_type="lineup_lock",
+            )
         logger.info("[notify] lineup_lock week %s sent %d", week, sent)
 
         with get_conn() as conn:
@@ -287,7 +303,7 @@ def notify_value_drops():
                         league_id, owner_id,
                         title="Dynasty value dropping",
                         body=f"{name} is losing dynasty value this week. Check your trade options.",
-                        url="/trade",
+                        url=f"/{platform}/{season}/{league_id}/trade",
                         tag=f"value-drop-{league_id}-{top['player_id']}",
                         notif_type="value_drops",
                     )
@@ -353,7 +369,7 @@ def notify_waiver_candidates():
                     league_id,
                     title="Waivers are open",
                     body=f"{name} ({pos}) is the top available player in your league this week.",
-                    url="/players",
+                    url=f"/{platform}/{season}/{league_id}/players",
                     notif_type="waiver_candidates",
                     tag=f"waiver-{league_id}-{week}",
                 )
@@ -421,7 +437,7 @@ def notify_rival_trades():
                         league_id,
                         title="Trade alert in your league",
                         body=f"{name} was just traded. Check the activity feed to see the full deal.",
-                        url="/activity",
+                        url=f"/{platform}/{season}/{league_id}/activity",
                         tag=f"trade-{league_id}-{txn_id}",
                         notif_type="rival_trades",
                     )
@@ -495,7 +511,7 @@ def notify_playoff_odds():
                         league_id, owner_id,
                         title="Playoff picture update",
                         body=f"Your playoff odds moved {direction} to {curr:.0f}% after week {week - 1}.",
-                        url="/teams",
+                        url=f"/{platform}/{season}/{league_id}/teams",
                         tag=f"playoff-{league_id}-{week}-{roster_id}",
                         notif_type="playoff_odds",
                     )
@@ -559,7 +575,7 @@ def notify_breakout_roster():
                         league_id, owner_id,
                         title="Breakout candidate on your roster",
                         body=f"{name} ({pos}, {team}) is flagged as a breakout candidate.",
-                        url="/breakouts",
+                        url=f"/{platform}/{season}/{league_id}/breakouts",
                         tag=f"breakout-{league_id}-{top['player_id']}",
                         notif_type="breakout_roster",
                     )

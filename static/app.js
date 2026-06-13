@@ -18,52 +18,41 @@
   if (window._isSignedIn) return;
   // Skip if the user explicitly logged out this session.
   if (sessionStorage.getItem('_explicitLogout')) return;
-  // Skip in PWA standalone mode — cold launches should show the guest home page
-  // with the "Continue as X" banner rather than silently re-authenticating.
-  if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return;
   var saved;
   try { saved = JSON.parse(localStorage.getItem('saved_viewer') || 'null'); } catch (_) {}
-  // Require user_id — logout strips it so this check prevents silent re-auth.
+  // Require user_id — logout strips it, which suppresses the re-auth offer.
   if (!saved || !saved.username || !saved.league_id || !saved.user_id) return;
-  // Guard against infinite reload loop in case the API keeps returning ok:true
-  // but the session still doesn't stick.
-  if (sessionStorage.getItem('_sessionRestoreAttempted')) return;
-  sessionStorage.setItem('_sessionRestoreAttempted', '1');
+  // Never silently re-authenticate (browser or PWA). Re-auth is always an
+  // explicit user action: the home page already shows a "Continue as X" CTA, so
+  // on every other page we surface a "Sign back in as X" banner instead.
+  if (window.location.pathname === '/') return;
+  _showSessionBanner(saved.username);
 
-  fetch('/api/quick-set-viewer', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username:  saved.username,
-      roster_id: saved.roster_id  || '',
-      user_id:   saved.user_id    || '',
-      league_id: saved.league_id,
-      platform:  saved.platform   || 'sleeper',
-      season:    saved.season     || new Date().getFullYear(),
-      team_name: saved.team_name  || '',
-    }),
-  })
-  .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-  .then(function (d) {
-    sessionStorage.removeItem('_sessionRestoreAttempted');
-    if (d.ok) {
-      window._isSignedIn = true;
-      location.reload();
-    } else {
-      _showSessionBanner(saved.username);
-    }
-  })
-  .catch(function () {
-    sessionStorage.removeItem('_sessionRestoreAttempted');
-    _showSessionBanner(saved.username);
-  });
+  function _reauth() {
+    fetch('/api/quick-set-viewer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username:  saved.username,
+        roster_id: saved.roster_id  || '',
+        user_id:   saved.user_id    || '',
+        league_id: saved.league_id,
+        platform:  saved.platform   || 'sleeper',
+        season:    saved.season     || new Date().getFullYear(),
+        team_name: saved.team_name  || '',
+      }),
+    })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (d) { if (d.ok) { window._isSignedIn = true; location.reload(); } })
+    .catch(function () {});
+  }
 
   function _showSessionBanner(username) {
     if (document.getElementById('session-expired-banner')) return;
     var banner = document.createElement('div');
     banner.id = 'session-expired-banner';
     banner.innerHTML =
-      '<span class="se-msg">Session expired </span>' +
+      '<span class="se-msg">You’re signed out </span>' +
       '<button id="seReauthBtn" class="se-btn">Sign back in as <strong>' +
         (username || 'you') + '</strong></button>' +
       '<button id="seDismissBtn" class="se-close" aria-label="Dismiss">\xd7</button>';
@@ -72,9 +61,7 @@
       requestAnimationFrame(function () { banner.classList.add('se-visible'); });
     });
     document.getElementById('seReauthBtn').addEventListener('click', function () {
-      banner.remove();
-      sessionStorage.removeItem('_sessionRestoreAttempted');
-      location.reload();
+      _reauth();
     });
     document.getElementById('seDismissBtn').addEventListener('click', function () {
       banner.remove();
@@ -551,6 +538,46 @@ function emptyState(container, message, iconClass) {
     return out;
   }
 
+  // Gather every league_id the signed-in user belongs to (default: subscribe to
+  // all of them). Falls back to just the current-page league if lookup fails.
+  async function _collectUserLeagueIds(currentLeague) {
+    var ids = [];
+    try {
+      var r = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
+      if (r.ok) {
+        var j = await r.json();
+        if (j && j.ok && Array.isArray(j.leagues)) {
+          ids = j.leagues.map(function (l) { return String(l.league_id || ''); }).filter(Boolean);
+        }
+      }
+    } catch (_) {}
+    if (currentLeague && ids.indexOf(currentLeague) === -1) ids.push(currentLeague);
+    return ids;
+  }
+
+  // Register a subscription for the device across every league the user is in.
+  async function _registerPushSub(sub) {
+    var s = sub.toJSON();
+    // Extract league context from URL path: /{platform}/{season}/{league_id}/...
+    var _parts    = window.location.pathname.split('/').filter(Boolean);
+    var _platform = (_parts[0] || 'sleeper').toLowerCase();
+    var _league   = _parts.length >= 3 ? _parts[2] : '';
+    if (!['sleeper', 'espn'].includes(_platform)) { _platform = 'sleeper'; _league = ''; }
+    var leagueIds = await _collectUserLeagueIds(_league);
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint:   s.endpoint,
+        keys:       s.keys,
+        league_ids: leagueIds,
+        platform:   _platform || 'sleeper',
+        owner_id:   (window._viewerUid || null),
+      }),
+    });
+    window._pushEndpoint = s.endpoint;
+  }
+
   async function subscribePush() {
     var reg      = await navigator.serviceWorker.ready;
     var resp     = await fetch('/api/push/vapid-public-key');
@@ -560,24 +587,7 @@ function emptyState(container, message, iconClass) {
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(publicKey),
     });
-    var s = sub.toJSON();
-    // Extract league context from URL path: /{platform}/{season}/{league_id}/...
-    var _parts    = window.location.pathname.split('/').filter(Boolean);
-    var _platform = (_parts[0] || 'sleeper').toLowerCase();
-    var _league   = _parts.length >= 3 ? _parts[2] : '';
-    if (!['sleeper', 'espn'].includes(_platform)) { _platform = 'sleeper'; _league = ''; }
-    await fetch('/api/push/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        endpoint:  s.endpoint,
-        keys:      s.keys,
-        league_id: _league   || null,
-        platform:  _platform || 'sleeper',
-        owner_id:  (window._viewerUid || null),
-      }),
-    });
-    window._pushEndpoint = s.endpoint;
+    await _registerPushSub(sub);
     return true;
   }
 
@@ -642,29 +652,60 @@ function emptyState(container, message, iconClass) {
       if (r.ok) prefs = (await r.json()).prefs || {};
     } catch (_) {}
 
+    // Fetch the user's leagues + which are enabled for this device, plus the
+    // subscription keys (needed to re-register a league toggled back on).
+    var leagues = [], enabledLeagues = [], subKeys = null;
+    try {
+      var lr = await fetch('/api/sleeper-user-leagues', { cache: 'no-store' });
+      if (lr.ok) { var lj = await lr.json(); if (lj && lj.ok && Array.isArray(lj.leagues)) leagues = lj.leagues; }
+    } catch (_) {}
+    try {
+      var er = await fetch('/api/push/leagues?endpoint=' + encodeURIComponent(endpoint));
+      if (er.ok) enabledLeagues = (await er.json()).league_ids || [];
+    } catch (_) {}
+    try {
+      var _reg = await navigator.serviceWorker.ready;
+      var _sub = await _reg.pushManager.getSubscription();
+      if (_sub) subKeys = _sub.toJSON().keys;
+    } catch (_) {}
+
+    function _toggleHtml(attr, val, label, on) {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">'
+        + '<span style="font-size:13px;font-weight:600;color:var(--text);">' + label + '</span>'
+        + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
+        + '<input type="checkbox" ' + attr + '="' + val + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
+        + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
+        + '<span style="position:absolute;top:2px;left:' + (on ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
+        + '</label>'
+        + '</div>';
+    }
+    function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+
     // Build modal
     var overlay = document.createElement('div');
     overlay.id = 'notifPrefsOverlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
     var modal = document.createElement('div');
-    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.2);';
+    modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);';
     var rows = _NOTIF_TYPES.map(function(t) {
-      var on = prefs[t.key] !== false;
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">'
-        + '<span style="font-size:13px;font-weight:600;color:var(--text);">' + t.label + '</span>'
-        + '<label style="position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;">'
-        + '<input type="checkbox" data-key="' + t.key + '"' + (on ? ' checked' : '') + ' style="opacity:0;width:0;height:0;">'
-        + '<span style="position:absolute;inset:0;background:' + (on ? 'var(--accent,#3b82f6)' : 'var(--border)') + ';border-radius:20px;cursor:pointer;transition:background .15s;" class="np-track"></span>'
-        + '<span style="position:absolute;top:2px;left:' + (on ? '18px' : '2px') + ';width:16px;height:16px;background:#fff;border-radius:50%;transition:left .15s;pointer-events:none;" class="np-thumb"></span>'
-        + '</label>'
-        + '</div>';
+      return _toggleHtml('data-key', t.key, t.label, prefs[t.key] !== false);
     }).join('');
+    // Per-league toggles (only when the user has more than one league)
+    var leagueRows = '';
+    if (leagues.length > 1) {
+      leagueRows = '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:16px 0 2px;">Leagues</div>'
+        + leagues.map(function(lg) {
+            var lid = String(lg.league_id || '');
+            return _toggleHtml('data-league', lid, _esc(lg.name || 'League'), enabledLeagues.indexOf(lid) !== -1);
+          }).join('');
+    }
     modal.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">'
       + '<span style="font-size:15px;font-weight:800;color:var(--text);">Notification Settings</span>'
       + '<button onclick="document.getElementById(\'notifPrefsOverlay\').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted);">&times;</button>'
       + '</div>'
       + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;">Choose which alerts you want to receive.</p>'
-      + rows;
+      + rows
+      + leagueRows;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
@@ -672,19 +713,39 @@ function emptyState(container, message, iconClass) {
     // Wire up toggle interactions
     modal.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
       cb.addEventListener('change', async function() {
-        var key = cb.dataset.key;
         var on = cb.checked;
         var track = cb.parentElement.querySelector('.np-track');
         var thumb = cb.parentElement.querySelector('.np-thumb');
         if (track) track.style.background = on ? 'var(--accent,#3b82f6)' : 'var(--border)';
         if (thumb) thumb.style.left = on ? '18px' : '2px';
-        prefs[key] = on;
         try {
-          await fetch('/api/push/preferences', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ endpoint: endpoint, prefs: prefs }),
-          });
+          if (cb.dataset.league !== undefined) {
+            // League toggle: add (subscribe) or remove (unsubscribe) this league row
+            if (on) {
+              await fetch('/api/push/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  endpoint: endpoint, keys: subKeys, league_id: cb.dataset.league,
+                  platform: 'sleeper', owner_id: (window._viewerUid || null),
+                }),
+              });
+            } else {
+              await fetch('/api/push/unsubscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ endpoint: endpoint, league_id: cb.dataset.league }),
+              });
+            }
+          } else {
+            // Notification-type toggle (device-level)
+            prefs[cb.dataset.key] = on;
+            await fetch('/api/push/preferences', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ endpoint: endpoint, prefs: prefs }),
+            });
+          }
         } catch (_) {}
       });
     });
@@ -754,6 +815,10 @@ function emptyState(container, message, iconClass) {
         // Already subscribed — sync localStorage and store endpoint
         localStorage.setItem(NOTIF_KEY, 'subscribed');
         window._pushEndpoint = sub.endpoint;
+        // Backfill league rows for subs created before multi-league support (or
+        // while logged out). Registers the device across all the user's leagues;
+        // the subscribe upsert is idempotent so existing rows are untouched.
+        _registerPushSub(sub).catch(function () {});
         return;
       }
       if (Notification.permission === 'granted' && !sub) {
