@@ -14992,7 +14992,7 @@ function setupFunAwardsGrid() {
     }
 
     // Event log: all plays for this player, oldest-first
-    var playerEvs = _feed.filter(function(ev) { return ev.pid === pid; }).slice().reverse();
+    var playerEvs = _feed.filter(function(ev) { return ev.pid === pid; });
     var logHtml = '<div class="rz-pm-log-title">Game Log' + (playerEvs.length ? ' <span style="font-size:10px;font-weight:600;opacity:.55;">(' + playerEvs.length + ')</span>' : '') + '</div>';
     if (playerEvs.length) {
       logHtml += '<div class="rz-pm-log">'
