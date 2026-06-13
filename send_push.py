@@ -134,14 +134,14 @@ def get_subscribers(conn, username=None, league=None):
 # ── Send ──────────────────────────────────────────────────────────────────────
 
 def _make_vapid(pem):
-    """Build Vapid object directly from PEM, bypassing from_string()->from_der() bug."""
-    from cryptography.hazmat.primitives.serialization import (
-        load_pem_private_key, Encoding, PrivateFormat, NoEncryption,
-    )
+    """Build a Vapid object from a PEM string, bypassing broken from_string/from_der."""
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
     from py_vapid import Vapid
     loaded = load_pem_private_key(pem.encode(), password=None)
-    der = loaded.private_bytes(Encoding.DER, PrivateFormat.TraditionalOpenSSL, NoEncryption())
-    return Vapid.from_der(der)
+    v = Vapid()
+    v._private_key = loaded
+    v._public_key = loaded.public_key()
+    return v
 
 
 def send(rows, title, body, url, tag, priv_key):
