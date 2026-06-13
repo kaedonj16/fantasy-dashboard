@@ -9545,6 +9545,19 @@ def api_start_sit_options():
     })
 
 
+@app.route("/weekly")
+def page_weekly_redirect():
+    """Top-level convenience route (used by the lineup-lock push notification).
+    Redirect to the viewer's league weekly hub, or home if no league in session."""
+    from flask import redirect as _redir
+    _lid = session.get("last_league_id") or session.get("viewer_league_id")
+    _plt = session.get("last_platform") or session.get("viewer_platform") or "sleeper"
+    _ssn = session.get("last_season") or session.get("viewer_season")
+    if _lid and _ssn:
+        return _redir(f"/{_plt}/{_ssn}/{_lid}/weekly", 302)
+    return _redir("/", 302)
+
+
 @app.route("/<platform>/<int:season>/<league_id>/weekly")
 def page_weekly(platform: str, season: int, league_id: str):
     ctx = get_league_ctx_from_cache(platform, league_id, season)
@@ -26314,24 +26327,30 @@ _notify_top_movers_weekly()
 
 
 def _start_notification_scheduler():
-    """Background thread: fire all push notifications once per day at noon ET."""
+    """Background thread: run the time-sensitive hourly notification check.
+
+    Only lineup_lock lives here — it must be evaluated near kickoff, which the
+    once-a-day Render cron can't do. The daily batch (value drops, waivers,
+    playoff odds, rival trades, breakout roster) runs from cron_daily.py instead,
+    which is reliable even when this free-plan web service is asleep.
+    """
     import threading
     import time as _time
 
     def _run():
+        last_hour = None
         while True:
             try:
-                from datetime import datetime
-                from zoneinfo import ZoneInfo
-                now = datetime.now(ZoneInfo("America/New_York"))
-                if now.hour == 12 and now.minute < 5:
-                    from utils.push_notifications import run_hourly, notify_waiver_candidates, notify_playoff_odds
-                    run_hourly()
-                    notify_waiver_candidates()
-                    notify_playoff_odds()
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc)
+                hour_key = now.strftime("%Y-%m-%d-%H")
+                if hour_key != last_hour:
+                    last_hour = hour_key
+                    from utils.push_notifications import run_hourly
+                    run_hourly()  # lineup_lock self-gates to the pre-kickoff window
             except Exception as exc:
                 logger.warning("[notify-scheduler] %s", exc)
-            _time.sleep(300)  # check every 5 minutes
+            _time.sleep(300)  # poll every 5 min; fire once per wall-clock hour
 
     threading.Thread(target=_run, daemon=True, name="notify-scheduler").start()
 

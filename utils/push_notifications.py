@@ -225,7 +225,9 @@ def notify_lineup_lock():
         kickoff = datetime.fromtimestamp(min(epochs) / 1000, tz=timezone.utc)
         now     = datetime.now(tz=timezone.utc)
         mins    = (kickoff - now).total_seconds() / 60
-        if not (55 <= mins <= 65):
+        # 60-min-wide window so an hourly check always lands inside it; the
+        # once-per-week dedup below guarantees we still only send a single push.
+        if not (40 <= mins <= 100):
             return
 
         with get_conn() as conn:
@@ -233,9 +235,9 @@ def notify_lineup_lock():
                 return
 
         sent = _broadcast_all(
-            title="Lineups lock in 1 hour",
-            body=f"Week {week} kicks off soon. Make sure your starters are set.",
-            url="/matchups",
+            title="Lineups lock soon",
+            body=f"Week {week} kicks off in about an hour. Make sure your starters are set.",
+            url="/weekly",
             tag=f"lineup-lock-{season}-{week}",
             notif_type="lineup_lock",
         )
@@ -430,7 +432,7 @@ def notify_rival_trades():
                         league_id,
                         title="Trade alert in your league",
                         body=f"{name} was just traded. Check the activity feed to see the full deal.",
-                        url="/activity",
+                        url=f"/{platform}/{season}/{league_id}/activity",
                         tag=f"trade-{league_id}-{txn_id}",
                         notif_type="rival_trades",
                     )
@@ -504,7 +506,7 @@ def notify_playoff_odds():
                         league_id, owner_id,
                         title="Playoff picture update",
                         body=f"Your playoff odds moved {direction} to {curr:.0f}% after week {week - 1}.",
-                        url="/teams",
+                        url=f"/{platform}/{season}/{league_id}/teams",
                         tag=f"playoff-{league_id}-{week}-{roster_id}",
                         notif_type="playoff_odds",
                     )

@@ -392,6 +392,14 @@ notify_value_drops()
 print("[cron] Value drop notifications dispatched")
 """, "notify_value_drops")
 
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from utils.push_notifications import notify_waiver_candidates, notify_playoff_odds
+notify_waiver_candidates()
+notify_playoff_odds()
+print("[cron] Waiver + playoff-odds notifications dispatched")
+""", "notify_waiver_playoff")
+
     # ------------------------------------------------------------------ #
     # Step 4: Save player values to DB                                   #
     # ------------------------------------------------------------------ #
