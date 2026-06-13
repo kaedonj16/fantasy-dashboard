@@ -132,11 +132,28 @@ def get_subscribers(conn, username=None, league=None):
 
 # ── Send ──────────────────────────────────────────────────────────────────────
 
+def _make_vapid(pem):
+    """Build Vapid object directly from PEM, bypassing from_string()->from_der() bug."""
+    from cryptography.hazmat.primitives.serialization import (
+        load_pem_private_key, Encoding, PrivateFormat, NoEncryption,
+    )
+    from py_vapid import Vapid
+    loaded = load_pem_private_key(pem.encode(), password=None)
+    der = loaded.private_bytes(Encoding.DER, PrivateFormat.TraditionalOpenSSL, NoEncryption())
+    return Vapid.from_der(der)
+
+
 def send(rows, title, body, url, tag, priv_key):
     try:
         from pywebpush import webpush, WebPushException
     except ImportError:
         sys.exit("ERROR: pywebpush not installed. Run: pip install pywebpush")
+
+    try:
+        vapid_obj = _make_vapid(priv_key)
+        print(f"  [vapid] Key loaded OK via from_der()")
+    except Exception as e:
+        sys.exit(f"ERROR: Could not build Vapid object: {e}")
 
     payload = json.dumps({
         "title": title,
@@ -153,7 +170,7 @@ def send(rows, title, body, url, tag, priv_key):
             webpush(
                 subscription_info={"endpoint": ep, "keys": {"p256dh": p256dh, "auth": auth}},
                 data=payload,
-                vapid_private_key=priv_key,
+                vapid_private_key=vapid_obj,
                 vapid_claims={"sub": "mailto:admin@brfantasy.com"},
             )
             sent += 1
