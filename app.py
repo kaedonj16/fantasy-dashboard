@@ -1468,8 +1468,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if draft_ended or not offseason_mode:
         nav_pills.append(nav_pill_dropdown("Weekly", [
             ("Matchups",           "page_weekly",           "weekly",   False),
-            ("Weekly Recap <span class='nav-pro-badge'>PRO</span>", "page_recap", "recap", False),
+            ("Weekly Recap", "page_recap", "recap", False),
         ], ["weekly", "recap"], "weeklyNavDropdown"))
+    if session.get("viewer_username") in _RZ_ALLOWED_USERS:
+        _rz_cls  = "nav-pill nav-pill-redzone active" if active == "redzone" else "nav-pill nav-pill-redzone"
+        _rz_href = url_for("page_redzone", platform=platform, season=season, league_id=league_id)
+        nav_pills.append(f"<a class='{_rz_cls}' href='{_rz_href}'><span class='rz-nav-dot'></span>Redzone</a>")
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",       "page_standings",    "standings",    False),
         ("Teams",           "page_teams",        "teams",        False),
@@ -2733,15 +2737,6 @@ def history_ai_recap():
 
     if not all([league_id, season, roster_id]):
         return jsonify({"error": "Missing required parameters"}), 400
-
-    # AI recap is a PRO feature
-    _user_id = session.get("viewer_username")
-    _has_premium = has_premium_for_viewer(
-        _user_id, session.get("viewer_user_id"), league_id,
-        (request.args.get("platform") or "sleeper"), int(season)
-    )
-    if not _has_premium:
-        return jsonify({"error": "premium_required", "message": "AI recaps require a premium subscription"}), 403
 
     try:
         # Get the same context that the history page uses
@@ -9566,6 +9561,727 @@ def page_weekly(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Weekly Hub", league_id, "weekly", body, platform, season)
 
 
+# ─── BR Redzone ────────────────────────────────────────────────────────────────
+
+_RZ_BOX_CACHE: dict = {}   # game_id -> (ts, boxscore)
+_RZ_BOX_TTL = 15.0
+
+
+def _redzone_boxscore(game_id: str) -> dict:
+    """Fetch a Tank01 boxscore with a short shared TTL cache (bounds API calls)."""
+    if not game_id:
+        return {}
+    now = time.time()
+    hit = _RZ_BOX_CACHE.get(game_id)
+    if hit and (now - hit[0]) < _RZ_BOX_TTL:
+        return hit[1]
+    try:
+        from dashboard_services.api import fetch_tank_boxscore
+        box = fetch_tank_boxscore(game_id) or {}
+    except Exception:
+        box = {}
+    _RZ_BOX_CACHE[game_id] = (now, box)
+    return box
+
+
+_RZ_PROJ_CACHE: dict = {}
+_RZ_PROJ_TTL = 900.0  # 15 min
+
+
+def _rz_get_projections(season: int, week: int) -> dict:
+    """Return {pid: projected_pts_ppr} for the week, cached 15 min."""
+    key = f"{season}:{week}"
+    entry = _RZ_PROJ_CACHE.get(key)
+    if entry and time.time() - entry["ts"] < _RZ_PROJ_TTL:
+        return entry["data"]
+    data: dict = {}
+    try:
+        from utils.utils import fetch_week_from_sleeper
+        raw = fetch_week_from_sleeper(season, week) or {}
+        for pid, v in raw.items():
+            if isinstance(v, dict):
+                data[str(pid)] = float(v.get("ppr") or v.get("half_ppr") or 0)
+    except Exception:
+        pass
+    _RZ_PROJ_CACHE[key] = {"ts": time.time(), "data": data}
+    return data
+
+
+def _rz_num(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _rz_stat_line_from_ps(ps: dict) -> dict:
+    """Map a Tank01 playerStats entry to our canonical stat_line (QB/RB/WR/TE/K)."""
+    passing   = ps.get("Passing")   or {}
+    rushing   = ps.get("Rushing")   or {}
+    receiving = ps.get("Receiving") or {}
+    kicking   = ps.get("Kicking")   or {}
+    return {
+        "pass_yds": _rz_num(passing.get("passYds")),
+        "pass_td":  _rz_num(passing.get("passTD")),
+        "int":      _rz_num(passing.get("int")),
+        "carries":  _rz_num(rushing.get("carries")),
+        "rush_yds": _rz_num(rushing.get("rushYds")),
+        "rush_td":  _rz_num(rushing.get("rushTD")),
+        "rec":      _rz_num(receiving.get("receptions")),
+        "rec_yds":  _rz_num(receiving.get("recYds")),
+        "rec_td":   _rz_num(receiving.get("recTD")),
+        "targets":  _rz_num(receiving.get("targets")),
+        # Kicker fields
+        "fgm":      _rz_num(kicking.get("fgm") or kicking.get("fgMade")),
+        "fg_long":  _rz_num(kicking.get("fgLng") or kicking.get("fg_long") or kicking.get("fgLong")),
+        "xpm":      _rz_num(kicking.get("xpm") or kicking.get("xpMade")),
+    }
+
+
+def _rz_def_stat_line(team_side: dict) -> dict:
+    """Build DEF stat_line from Tank01 teamStats[home/away] entry."""
+    defense = team_side.get("Defense") or team_side.get("defense") or {}
+    return {
+        "sacks":   _rz_num(defense.get("sacks") or defense.get("totalSacks")),
+        "def_int": _rz_num(defense.get("int") or defense.get("interceptions")),
+        "fum_rec": _rz_num(defense.get("fumblesRecovered") or defense.get("fumRec")),
+        "def_td":  _rz_num(defense.get("touchdowns") or defense.get("totalTD") or defense.get("defTD")),
+    }
+
+
+# ── Demo mode ──────────────────────────────────────────────────────────────────
+# Time-parameterised sample data so the live play feed can be exercised any time
+# (e.g. off-season). Stat lines accumulate as a function of the simulated game
+# clock `t`; polling advances `t`, the client diffs stat lines between polls and
+# renders the individual plays (targets / catches / carries / TDs) that occurred.
+
+_RZ_DEMO_START = 150     # sim seconds the page-load snapshot is built at
+_RZ_DEMO_GAME  = 600     # sim seconds = "full game"
+_RZ_DEMO_SCORING = {
+    "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
+    "rush_yd": 0.1, "rush_td": 6.0,
+    "rec": 0.5, "rec_yd": 0.1, "rec_td": 6.0,
+}
+
+
+def _rz_demo_rng(seed: int):
+    s = seed & 0x7FFFFFFF or 1
+    def nxt():
+        nonlocal s
+        s = (s * 1103515245 + 12345) & 0x7FFFFFFF
+        return s / 0x7FFFFFFF
+    return nxt
+
+
+def _rz_demo_script(pid: str, pos: str) -> list:
+    """Deterministic per-player list of plays across the simulated game."""
+    r = _rz_demo_rng(sum(ord(c) for c in pid) * 2654435761)
+    plays, tt = [], 18 + int(r() * 40)
+    while tt < _RZ_DEMO_GAME:
+        roll = r()
+        if pos == "QB":
+            if roll < 0.76:
+                plays.append({"t": tt, "kind": "pass", "yds": 4 + int(r() * 28),
+                              "td": 1 if r() < 0.11 else 0})
+            elif roll < 0.90:
+                plays.append({"t": tt, "kind": "rush", "yds": 1 + int(r() * 12),
+                              "td": 1 if r() < 0.08 else 0})
+            else:
+                plays.append({"t": tt, "kind": "int"})
+            tt += 32 + int(r() * 40)
+        elif pos == "RB":
+            if roll < 0.66:
+                plays.append({"t": tt, "kind": "rush", "yds": int(r() * 14),
+                              "td": 1 if r() < 0.07 else 0})
+            elif roll < 0.86:
+                plays.append({"t": tt, "kind": "rec", "yds": 2 + int(r() * 11),
+                              "td": 1 if r() < 0.05 else 0})
+            else:
+                plays.append({"t": tt, "kind": "target"})
+            tt += 46 + int(r() * 54)
+        else:  # WR / TE
+            if roll < 0.50:
+                plays.append({"t": tt, "kind": "rec", "yds": 3 + int(r() * 22),
+                              "td": 1 if r() < 0.09 else 0})
+            else:
+                plays.append({"t": tt, "kind": "target"})
+            tt += 50 + int(r() * 70)
+    return plays
+
+
+def _rz_demo_fold(plays: list, t: float) -> dict:
+    L = {"pass_yds": 0.0, "pass_td": 0.0, "int": 0.0, "carries": 0.0,
+         "rush_yds": 0.0, "rush_td": 0.0, "rec": 0.0, "rec_yds": 0.0,
+         "rec_td": 0.0, "targets": 0.0}
+    for p in plays:
+        if p["t"] > t:
+            break
+        k = p["kind"]
+        if k == "rush":
+            L["carries"] += 1; L["rush_yds"] += p["yds"]; L["rush_td"] += p.get("td", 0)
+        elif k == "rec":
+            L["rec"] += 1; L["targets"] += 1; L["rec_yds"] += p["yds"]; L["rec_td"] += p.get("td", 0)
+        elif k == "target":
+            L["targets"] += 1
+        elif k == "pass":
+            L["pass_yds"] += p["yds"]; L["pass_td"] += p.get("td", 0)
+        elif k == "int":
+            L["int"] += 1
+    return L
+
+
+def _rz_demo_pts(L: dict) -> float:
+    s = _RZ_DEMO_SCORING
+    return round(
+        L["pass_yds"] * s["pass_yd"] + L["pass_td"] * s["pass_td"] + L["int"] * s["pass_int"]
+        + L["rush_yds"] * s["rush_yd"] + L["rush_td"] * s["rush_td"]
+        + L["rec"] * s["rec"] + L["rec_yds"] * s["rec_yd"] + L["rec_td"] * s["rec_td"],
+        2,
+    )
+
+
+# Flat points for K / DEF (no play-by-play scripting)
+_RZ_DEMO_KDEF = {
+    "d_em": 12.0, "d_sfd": 6.8, "d_jt": 9.0, "d_dad": 3.0,
+    "d_kcd": 7.0, "d_bufd": 4.0,
+}
+
+
+def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
+    """Time-parameterised live-game sample data for the Redzone demo.
+
+    scope="league": one league, all four teams.
+    scope="user":   the viewer's team across three different leagues.
+    """
+    t = max(0.0, min(float(t), _RZ_DEMO_GAME))
+    _g = lambda away, apts, home, hpts, code: {
+        "game_status": "In Progress" if code == "1" else "Final",
+        "game_code": code, "home": home, "away": away,
+        "home_pts": str(hpts), "away_pts": str(apts),
+    }
+    GAMES = {
+        "BAL_HOU": _g("BAL", 21, "HOU", 14, "1"),
+        "TEN_IND": _g("TEN", 28, "IND", 17, "2"),
+        "DET_CHI": _g("DET", 24, "CHI",  7, "1"),
+        "DAL_NYG": _g("DAL", 35, "NYG", 10, "2"),
+        "JAX_MIA": _g("JAX", 10, "MIA", 17, "1"),
+        "KC_LV":   _g("KC",  21, "LV",   3, "1"),
+        "CIN_PIT": _g("CIN", 24, "PIT", 13, "2"),
+        "SF_ARI":  _g("SF",  31, "ARI",  6, "2"),
+        "ATL_NO":  _g("ATL", 17, "NO",  10, "1"),
+        "LAR_SEA": _g("LAR", 21, "SEA", 14, "1"),
+        "PHI_WAS": _g("PHI", 17, "WAS", 10, "1"),
+    }
+    def pi(name, pos, team, gk):
+        return {"name": name, "pos": pos, "team": team,
+                "game_id": "demo_" + gk, **GAMES.get(gk, {})}
+    PLAYERS = {
+        "d_lj":  pi("L. Jackson",   "QB",  "BAL", "BAL_HOU"),
+        "d_dh":  pi("D. Henry",     "RB",  "TEN", "TEN_IND"),
+        "d_jg":  pi("J. Gibbs",     "RB",  "DET", "DET_CHI"),
+        "d_cdl": pi("CeeDee Lamb",  "WR",  "DAL", "DAL_NYG"),
+        "d_mn":  pi("M. Nabers",    "WR",  "NYG", "DAL_NYG"),
+        "d_tk":  pi("T. Kelce",     "TE",  "KC",  "KC_LV"),
+        "d_bt":  pi("B. Thomas",    "WR",  "JAX", "JAX_MIA"),
+        "d_em":  pi("E. McPherson", "K",   "CIN", "CIN_PIT"),
+        "d_sfd": pi("SF Defense",   "DEF", "SF",  "SF_ARI"),
+        "d_tp":  pi("T. Pollard",   "RB",  "TEN", "TEN_IND"),
+        "d_jb":  pi("J. Burrow",    "QB",  "CIN", "CIN_PIT"),
+        "d_br":  pi("B. Robinson",  "RB",  "ATL", "ATL_NO"),
+        "d_rs":  pi("R. Stevenson", "RB",  "TEN", "TEN_IND"),
+        "d_jj":  pi("J. Jefferson", "WR",  "LAR", "LAR_SEA"),
+        "d_da":  pi("D. Adams",     "WR",  "LV",  "KC_LV"),
+        "d_sl":  pi("S. LaPorta",   "TE",  "DET", "DET_CHI"),
+        "d_pn":  pi("P. Nacua",     "WR",  "LAR", "LAR_SEA"),
+        "d_jt":  pi("J. Tucker",    "K",   "BAL", "BAL_HOU"),
+        "d_dad": pi("DAL Defense",  "DEF", "DAL", "DAL_NYG"),
+        "d_gp":  pi("G. Pickens",   "WR",  "PIT", "CIN_PIT"),
+        "d_jh":  pi("J. Hurts",     "QB",  "PHI", "PHI_WAS"),
+        "d_av":  pi("A. Jones",     "RB",  "LAR", "LAR_SEA"),
+        "d_th":  pi("T. Hill",      "WR",  "MIA", "JAX_MIA"),
+        "d_jc":  pi("J. Chase",     "WR",  "CIN", "CIN_PIT"),
+        "d_ma":  pi("M. Andrews",   "TE",  "BAL", "BAL_HOU"),
+        "d_kcd": pi("KC Defense",   "DEF", "KC",  "KC_LV"),
+        "d_gs":  pi("G. Smith",     "QB",  "SEA", "LAR_SEA"),
+        "d_dm":  pi("D. Montgomery","RB",  "DET", "DET_CHI"),
+        "d_sd":  pi("S. Diggs",     "WR",  "TEN", "TEN_IND"),
+        "d_dw":  pi("D. Waller",    "TE",  "NYG", "DAL_NYG"),
+        "d_bufd":pi("BUF Defense",  "DEF", "PHI", "PHI_WAS"),
+        "d_me":  pi("M. Evans",     "WR",  "JAX", "JAX_MIA"),
+    }
+
+    # Demo DEF and K stat lines (time-scaled from flat totals)
+    _DEMO_DEF_SCRIPT = {
+        "d_sfd":  [{"t": 80,  "k": "sack"}, {"t": 160, "k": "def_int"}, {"t": 320, "k": "def_td"}, {"t": 500, "k": "sack"}],
+        "d_dad":  [{"t": 100, "k": "sack"}, {"t": 250, "k": "fum_rec"}, {"t": 440, "k": "sack"}],
+        "d_kcd":  [{"t": 60,  "k": "sack"}, {"t": 200, "k": "def_int"}, {"t": 380, "k": "sack"}],
+        "d_bufd": [{"t": 90,  "k": "sack"}, {"t": 300, "k": "def_int"}, {"t": 450, "k": "def_td"}],
+    }
+    _DEMO_K_SCRIPT = {
+        "d_em": [{"t": 110, "k": "fgm", "dist": 38}, {"t": 240, "k": "xpm"}, {"t": 390, "k": "fgm", "dist": 51}, {"t": 520, "k": "xpm"}],
+        "d_jt": [{"t": 130, "k": "fgm", "dist": 45}, {"t": 270, "k": "xpm"}, {"t": 410, "k": "fgm", "dist": 33}],
+    }
+
+    def _demo_def_line(pid, t_eff):
+        script = _DEMO_DEF_SCRIPT.get(pid, [])
+        L = {"sacks": 0, "def_int": 0, "fum_rec": 0, "def_td": 0}
+        for p in script:
+            if p["t"] <= t_eff:
+                L[p["k"]] = L.get(p["k"], 0) + 1
+        return L
+
+    def _demo_k_line(pid, t_eff):
+        script = _DEMO_K_SCRIPT.get(pid, [])
+        L = {"fgm": 0, "fg_long": 0, "xpm": 0}
+        for p in script:
+            if p["t"] <= t_eff:
+                if p["k"] == "fgm":
+                    L["fgm"] += 1
+                    if p.get("dist", 0) > L["fg_long"]:
+                        L["fg_long"] = p["dist"]
+                elif p["k"] == "xpm":
+                    L["xpm"] += 1
+        return L
+
+    pts = {}
+    for pid, info in PLAYERS.items():
+        pos  = info["pos"]
+        code = info.get("game_code", "")
+        t_eff = _RZ_DEMO_GAME if code == "2" else t
+        if pos == "DEF":
+            line = _demo_def_line(pid, t_eff)
+            info["stat_line"] = line
+            pts[pid] = _RZ_DEMO_KDEF.get(pid, 0.0)
+        elif pos == "K":
+            line = _demo_k_line(pid, t_eff)
+            info["stat_line"] = line
+            pts[pid] = _RZ_DEMO_KDEF.get(pid, 0.0)
+        else:
+            line = _rz_demo_fold(_rz_demo_script(pid, pos), t_eff)
+            info["stat_line"] = line
+            pts[pid] = _rz_demo_pts(line)
+
+    def mk(rid, mid, starters, bench, league_name=None):
+        players = starters + bench
+        pp = {p: pts.get(p, 0.0) for p in players}
+        m = {"roster_id": rid, "matchup_id": mid,
+             "points": round(sum(pts.get(p, 0.0) for p in starters), 2),
+             "projected_pts": round(sum(pts.get(p, 0.0) for p in starters) + 15.0, 2),
+             "starters": starters, "players": players, "players_points": pp}
+        if league_name:
+            m["league_name"] = league_name
+        return m
+
+    base = {
+        "week": 14, "season": 2024, "platform": "sleeper", "league_id": "demo",
+        "player_info": PLAYERS,
+        "scoring": dict(_RZ_DEMO_SCORING),
+        "updated_at": time.time(),
+        "is_demo": True,
+        "demo_t": t,
+    }
+
+    if scope == "user":
+        # Viewer ("My Squad") across three leagues, each vs a different opponent.
+        LG = [
+            ("Dynasty Warriors", "u1",
+             ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"], ["d_tp"],
+             "u2", "TD Tyrones",
+             ["d_jb","d_br","d_rs","d_jj","d_da","d_sl","d_pn","d_jt","d_dad"], ["d_gp"]),
+            ("The Gauntlet", "u1",
+             ["d_jh","d_av","d_jj","d_th","d_ma","d_sl","d_jc","d_em","d_kcd"], ["d_gp"],
+             "u5", "Audibles",
+             ["d_gs","d_dm","d_cdl","d_pn","d_dw","d_tk","d_me","d_jt","d_sfd"], ["d_tp"]),
+            ("Money League", "u1",
+             ["d_lj","d_br","d_dm","d_da","d_jc","d_ma","d_th","d_jt","d_dad"], [],
+             "u6", "Last Place Larry",
+             ["d_jb","d_av","d_jg","d_mn","d_pn","d_sl","d_bt","d_em","d_kcd"], []),
+        ]
+        matchups, rosters, users, leagues = [], [], [], []
+        viewer_rids = []
+        seen_users = {}
+        for li, (lname, vown, vst, vbn, oown, onm, ost, obn) in enumerate(LG):
+            ns = f"{li}:"
+            vr, opr = ns + "1", ns + "2"
+            mid = ns + "1"
+            matchups.append(mk(vr,  mid, vst, vbn, lname))
+            matchups.append(mk(opr, mid, ost, obn, lname))
+            rosters.append({"roster_id": vr,  "owner_id": vown, "starters": vst, "players": vst + vbn})
+            rosters.append({"roster_id": opr, "owner_id": oown, "starters": ost, "players": ost + obn})
+            seen_users.setdefault(vown, "My Squad")
+            seen_users[oown] = onm
+            viewer_rids.append(vr)
+            leagues.append({"league_id": f"demo{li}", "name": lname})
+        users = [{"user_id": uid, "display_name": nm} for uid, nm in seen_users.items()]
+        base.update({
+            "scope": "user",
+            "matchups": matchups,
+            "rosters": rosters,
+            "users": users,
+            "leagues": leagues,
+            "viewer_roster_id": viewer_rids[0],
+            "viewer_roster_ids": viewer_rids,
+        })
+        return base
+
+    # league scope (single league, four teams)
+    r1 = ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"]
+    r2 = ["d_jb","d_br","d_rs","d_jj","d_da","d_sl","d_pn","d_jt","d_dad"]
+    r3 = ["d_jh","d_av","d_th","d_jc","d_ma","d_kcd","d_gs","d_dm","d_sd"]
+    r4 = ["d_dw","d_me","d_bufd","d_sd","d_dm","d_gs","d_th","d_av","d_jh"]
+    base.update({
+        "scope": "league",
+        "matchups": [
+            mk(1, 1, r1, ["d_tp"]),
+            mk(2, 1, r2, ["d_gp"]),
+            mk(3, 2, r3, []),
+            mk(4, 2, r4, []),
+        ],
+        "rosters": [
+            {"roster_id": 1, "owner_id": "u1", "starters": r1, "players": r1 + ["d_tp"]},
+            {"roster_id": 2, "owner_id": "u2", "starters": r2, "players": r2 + ["d_gp"]},
+            {"roster_id": 3, "owner_id": "u3", "starters": r3, "players": r3},
+            {"roster_id": 4, "owner_id": "u4", "starters": r4, "players": r4},
+        ],
+        "users": [
+            {"user_id": "u1", "display_name": "My Squad"},
+            {"user_id": "u2", "display_name": "TD Tyrones"},
+            {"user_id": "u3", "display_name": "Gridiron Gurus"},
+            {"user_id": "u4", "display_name": "Bench Warmers"},
+        ],
+        "leagues": [{"league_id": "demo", "name": "Dynasty Warriors"}],
+        "viewer_roster_id": "1",
+        "viewer_roster_ids": ["1"],
+    })
+    return base
+
+
+def _redzone_collect(platform, league_id, season, week):
+    """Build the raw per-league Redzone pieces (no top-level wrapper)."""
+    from dashboard_services.api import (
+        get_nfl_scores_for_date, build_team_game_lookup,
+        get_nfl_players, get_effective_scoring_settings,
+    )
+    from dashboard_services.platform_api import (
+        get_matchups as _pm, get_rosters as _pr, get_users as _pu,
+    )
+    matchups = _pm(platform, league_id, week, season) or []
+    rosters  = _pr(platform, league_id, season) or []
+    users    = _pu(platform, league_id, season) or []
+
+    nfl_players  = get_nfl_players() if platform == "sleeper" else {}
+    today_str    = date.today().strftime("%Y%m%d")
+    scores_body  = get_nfl_scores_for_date(today_str) or {}
+    team_game    = build_team_game_lookup(scores_body)
+    try:
+        scoring = get_effective_scoring_settings() or {}
+    except Exception:
+        scoring = {}
+
+    all_pids = set()
+    for m in matchups:
+        all_pids.update(m.get("players") or [])
+        all_pids.update(m.get("starters") or [])
+    all_pids.discard("0")
+
+    player_info = {}
+    for pid in all_pids:
+        p  = nfl_players.get(pid, {})
+        tm = p.get("team") or ""
+        gd = team_game.get(tm, {}) if tm else {}
+        player_info[pid] = {
+            "name":        p.get("full_name") or p.get("last_name") or pid,
+            "pos":         p.get("position") or "?",
+            "team":        tm,
+            "game_id":     gd.get("gameID") or "",
+            "game_status": gd.get("gameStatus") or "",
+            "game_code":   str(gd.get("gameStatusCode") or ""),
+            "home":        gd.get("home") or "",
+            "away":        gd.get("away") or "",
+            "home_pts":    str(gd.get("homePts") or gd.get("homeScore") or ""),
+            "away_pts":    str(gd.get("awayPts") or gd.get("awayScore") or ""),
+        }
+
+    # Attach per-player stat lines from Tank01 boxscores (Sleeper only).
+    if platform == "sleeper":
+        games_to_pids: dict = {}
+        for pid, info in player_info.items():
+            gid  = info.get("game_id")
+            code = info.get("game_code")
+            if gid and code in ("1", "2"):
+                games_to_pids.setdefault(gid, []).append(pid)
+        for gid, pids in games_to_pids.items():
+            box = _redzone_boxscore(gid)
+            pstats = box.get("playerStats") or {}
+            tstats = box.get("teamStats") or {}
+            if isinstance(pstats, dict) and pstats:
+                name_map = {}
+                for _, ps in pstats.items():
+                    ln = (ps.get("longName") or "").lower()
+                    if ln:
+                        name_map[ln] = ps
+                for pid in pids:
+                    pi = player_info[pid]
+                    pos = pi.get("pos", "")
+                    if pos == "DEF":
+                        # Match team defense to boxscore teamStats
+                        team = pi.get("team", "")
+                        home = pi.get("home", "")
+                        away = pi.get("away", "")
+                        side = "home" if team == home else ("away" if team == away else None)
+                        if side and isinstance(tstats.get(side), dict):
+                            pi["stat_line"] = _rz_def_stat_line(tstats[side])
+                    else:
+                        full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
+                        ps = name_map.get(full)
+                        if ps:
+                            pi["stat_line"] = _rz_stat_line_from_ps(ps)
+
+    # Projected points per matchup (PPR, cached 15 min)
+    proj_pts: dict = {}
+    try:
+        proj_pts = _rz_get_projections(season, week)
+    except Exception:
+        pass
+
+    matchups_out = []
+    for m in matchups:
+        proj_total = float(m.get("points") or 0)
+        for pid in (m.get("starters") or []):
+            if pid == "0":
+                continue
+            code = (player_info.get(pid) or {}).get("game_code", "0")
+            if code not in ("1", "2"):  # not live/final → add remaining projection
+                proj_total += float(proj_pts.get(str(pid), 0))
+        matchups_out.append({**m, "projected_pts": round(proj_total, 2)})
+
+    return {
+        "matchups": matchups_out,
+        "rosters": [
+            {"roster_id": r.get("roster_id"), "owner_id": r.get("owner_id"),
+             "starters": r.get("starters") or [], "players": r.get("players") or []}
+            for r in rosters
+        ],
+        "users": [
+            {"user_id": u.get("user_id"),
+             "display_name": u.get("display_name") or u.get("username") or "Team"}
+            for u in users
+        ],
+        "player_info": player_info,
+        "scoring": scoring,
+    }
+
+
+def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
+    """Return live Redzone payload. scope='league' (all teams in this league)
+    or scope='user' (the viewer's team across all their leagues)."""
+    from dashboard_services.api import get_nfl_state
+    state  = get_nfl_state() or {}
+    season = int(season or state.get("season") or date.today().year)
+    week   = int(week or state.get("week") or 1)
+
+    if scope == "user":
+        try:
+            return _redzone_fetch_user(platform, league_id, season, week)
+        except Exception as _e:
+            logger.warning("[redzone] user-scope fetch failed: %s", _e)
+            # fall through to league scope
+
+    d = _redzone_collect(platform, league_id, season, week)
+    vrid = str(session.get("viewer_roster_id") or "")
+    d.update({
+        "week": week, "season": season, "platform": platform, "league_id": league_id,
+        "scope": "league",
+        "leagues": [{"league_id": league_id, "name": ""}],
+        "viewer_roster_id": vrid,
+        "viewer_roster_ids": [vrid] if vrid else [],
+        "updated_at": time.time(),
+    })
+    return d
+
+
+def _redzone_fetch_user(platform, league_id, season, week):
+    """Aggregate the viewer's matchup across every league they belong to (Sleeper)."""
+    from dashboard_services.api import get_sleeper_user_leagues
+    viewer_uid = str(session.get("viewer_user_id") or "")
+    if platform != "sleeper" or not viewer_uid:
+        raise ValueError("user scope requires a signed-in Sleeper viewer")
+
+    leagues_raw = get_sleeper_user_leagues(viewer_uid, season) or []
+    leagues_raw = leagues_raw[:12]
+
+    matchups, rosters, users, leagues = [], [], [], []
+    player_info: dict = {}
+    scoring: dict = {}
+    viewer_rids = []
+    seen_users = set()
+
+    for li, lg in enumerate(leagues_raw):
+        lid   = str(lg.get("league_id") or "")
+        lname = lg.get("name") or f"League {li + 1}"
+        if not lid:
+            continue
+        try:
+            d = _redzone_collect(platform, lid, season, week)
+        except Exception:
+            continue
+        if not scoring:
+            scoring = d.get("scoring") or {}
+        vr = next((r for r in d["rosters"] if str(r.get("owner_id")) == viewer_uid), None)
+        if not vr:
+            continue
+        vrid = str(vr.get("roster_id"))
+        vmid = next((str(m.get("matchup_id")) for m in d["matchups"]
+                     if str(m.get("roster_id")) == vrid), None)
+        if vmid is not None:
+            pair = [m for m in d["matchups"] if str(m.get("matchup_id")) == vmid]
+        else:
+            pair = [m for m in d["matchups"] if str(m.get("roster_id")) == vrid]
+        if not pair:
+            continue
+        ns = f"{li}:"
+        pair_rids = {str(m.get("roster_id")) for m in pair}
+        for m in pair:
+            m2 = dict(m)
+            m2["roster_id"]    = ns + str(m.get("roster_id"))
+            m2["matchup_id"]   = ns + str(m.get("matchup_id"))
+            m2["league_name"]  = lname
+            m2["league_id"]    = lid
+            matchups.append(m2)
+        for r in d["rosters"]:
+            if str(r.get("roster_id")) in pair_rids:
+                r2 = dict(r)
+                r2["roster_id"] = ns + str(r.get("roster_id"))
+                rosters.append(r2)
+        for u in d["users"]:
+            uid = u.get("user_id")
+            if uid not in seen_users:
+                seen_users.add(uid)
+                users.append(u)
+        player_info.update(d["player_info"])
+        viewer_rids.append(ns + vrid)
+        leagues.append({"league_id": lid, "name": lname})
+
+    return {
+        "week": week, "season": season, "platform": platform, "league_id": league_id,
+        "scope": "user",
+        "matchups": matchups,
+        "rosters": rosters,
+        "users": users,
+        "leagues": leagues,
+        "player_info": player_info,
+        "scoring": scoring,
+        "viewer_roster_id": viewer_rids[0] if viewer_rids else "",
+        "viewer_roster_ids": viewer_rids,
+        "updated_at": time.time(),
+    }
+
+
+_RZ_ALLOWED_USERS = {"hoodiekj1"}
+
+@app.route("/<platform>/<int:season>/<league_id>/redzone")
+def page_redzone(platform: str, season: int, league_id: str):
+    if session.get("viewer_username") not in _RZ_ALLOWED_USERS:
+        return "BR Redzone is not available for your account.", 403
+    scope = "user" if request.args.get("scope") == "user" else "league"
+    if request.args.get("demo") == "1":
+        data = _redzone_demo_data(scope=scope)
+    else:
+        try:
+            data = _redzone_fetch(platform, league_id, season, scope=scope)
+        except Exception as _e:
+            logger.warning("[redzone] initial fetch failed: %s", _e)
+            data = {"matchups": [], "rosters": [], "users": [], "player_info": {},
+                    "week": 1, "season": season, "viewer_roster_id": "", "scoring": {},
+                    "platform": platform, "league_id": league_id, "updated_at": time.time()}
+
+    body = (
+        '<div id="rz-root" class="rz-page"><div class="rz-boot-spinner">Loading...</div></div>'
+        f'<script>window.__rz__={json.dumps(data)};</script>'
+    )
+    return render_page("BR Redzone", league_id, "redzone", body, platform, season)
+
+
+@app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
+def api_redzone_data(platform: str, season: int, league_id: str):
+    if session.get("viewer_username") not in _RZ_ALLOWED_USERS:
+        return jsonify({"error": "forbidden"}), 403
+    scope = "user" if request.args.get("scope") == "user" else "league"
+    if request.args.get("demo") == "1":
+        try:
+            _t = float(request.args.get("t", _RZ_DEMO_START))
+        except (TypeError, ValueError):
+            _t = _RZ_DEMO_START
+        return jsonify(_redzone_demo_data(_t, scope=scope))
+    week = request.args.get("week")
+    try:
+        return jsonify(_redzone_fetch(platform, league_id, season, week=week, scope=scope))
+    except Exception as _e:
+        logger.warning("[redzone] api fetch failed: %s", _e)
+        return jsonify({"error": str(_e)}), 500
+
+
+@app.route("/api/<platform>/<int:season>/<league_id>/redzone-player")
+def api_redzone_player(platform: str, season: int, league_id: str):
+    """Return Tank01 boxscore stats for a single player, tagged with fantasy pts."""
+    if session.get("viewer_username") not in _RZ_ALLOWED_USERS:
+        return jsonify({"error": "forbidden"}), 403
+    from dashboard_services.api import (
+        get_nfl_players, fetch_tank_boxscore, get_effective_scoring_settings,
+    )
+    pid     = request.args.get("pid", "")
+    game_id = request.args.get("game_id", "")
+    if not pid:
+        return jsonify({}), 400
+
+    try:
+        nfl_players = get_nfl_players() if platform == "sleeper" else {}
+        player      = nfl_players.get(pid, {})
+        pos         = (player.get("position") or "").upper()
+
+        stats = {}
+        if game_id:
+            box = fetch_tank_boxscore(game_id) or {}
+            player_stats = box.get("playerStats") or {}
+            if isinstance(player_stats, dict):
+                for _, ps in player_stats.items():
+                    if (ps.get("longName") or "").lower() == (player.get("full_name") or "").lower():
+                        stats = ps
+                        break
+
+        scoring = get_effective_scoring_settings() or {}
+
+        def _pts(stat_key, score_key, multiplier=1):
+            val = float(stats.get(stat_key) or 0) * multiplier
+            rate = float(scoring.get(score_key) or 0)
+            return round(val * rate, 2) if rate else 0
+
+        breakdown = {}
+        if pos == "QB":
+            passing = stats.get("Passing") or {}
+            rushing = stats.get("Rushing") or {}
+            breakdown = {
+                "pass_yds": float(passing.get("passYds") or 0),
+                "pass_tds":  float(passing.get("passTD") or 0),
+                "ints":      float(passing.get("int") or 0),
+                "rush_yds": float(rushing.get("rushYds") or 0),
+                "rush_tds":  float(rushing.get("rushTD") or 0),
+            }
+        elif pos in ("RB", "WR", "TE"):
+            rushing  = stats.get("Rushing") or {}
+            receiving = stats.get("Receiving") or {}
+            breakdown = {
+                "rush_yds":  float(rushing.get("rushYds") or 0),
+                "rush_tds":  float(rushing.get("rushTD") or 0),
+                "receptions": float(receiving.get("receptions") or 0),
+                "rec_yds":   float(receiving.get("recYds") or 0),
+                "rec_tds":   float(receiving.get("recTD") or 0),
+            }
+
+        return jsonify({"pos": pos, "scoring": scoring, "breakdown": breakdown})
+    except Exception as _e:
+        logger.warning("[redzone] player fetch %s: %s", pid, _e)
+        return jsonify({}), 500
 
 
 @app.route("/<platform>/<int:season>/<league_id>/activity")
@@ -26339,57 +27055,6 @@ def _notify_changelog_on_startup():
 # Run once at import time (gunicorn workers each run this, but the DB dedup prevents
 # duplicate sends — only the first worker to run wins the upsert race).
 _notify_changelog_on_startup()
-
-
-def _notify_top_movers_weekly():
-    """Send a weekly push with the top dynasty value movers (at most once per 7 days)."""
-    try:
-        from datetime import date as _date
-        from dashboard_services.db import get_conn
-        with get_conn() as conn:
-            conn.execute("CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-            conn.commit()
-            row = conn.execute(
-                "SELECT value FROM app_state WHERE key = 'top_movers_last_pushed'"
-            ).fetchone()
-            last = row[0] if row else None
-
-        if last:
-            if (_date.today() - _date.fromisoformat(last)).days < 7:
-                return
-
-        from data_building.player_value_history import get_top_movers
-        movers = get_top_movers(days=7, limit=3)
-        risers = movers.get("risers", [])
-        if not risers:
-            return
-
-        names = ", ".join(r.get("name") or r.get("player_id", "?") for r in risers[:3])
-        delta_str = ""
-        if risers[0].get("delta") is not None:
-            delta_str = f" (+{risers[0]['delta']:.0f})"
-        body = f"Top risers: {names}{delta_str}"
-
-        _push_broadcast(
-            title="BR Fantasy — Weekly Top Movers",
-            body=body,
-            url="/top-movers",
-            tag=f"top-movers-{_date.today().isoformat()}",
-        )
-
-        today = _date.today().isoformat()
-        with get_conn() as conn:
-            conn.execute(
-                "INSERT INTO app_state (key, value) VALUES ('top_movers_last_pushed', %s) "
-                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
-                (today,),
-            )
-            conn.commit()
-    except Exception as exc:
-        logger.warning("[top-movers-push] failed: %s", exc)
-
-
-_notify_top_movers_weekly()
 
 
 def _start_notification_scheduler():
