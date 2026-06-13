@@ -15473,6 +15473,21 @@ def index():
     # Reject open redirects - only allow local paths
     if not (next_url.startswith("/") and not next_url.startswith("//")):
         next_url = ""
+
+    # Signed-in users skip the guest landing page entirely — otherwise they'd see
+    # the logged-out "Get started" onboarding underneath their logged-in nav.
+    # Send them to ?next= if provided, else their last league dashboard.
+    if session.get("viewer_username"):
+        if next_url:
+            return redirect(next_url)
+        _lid = session.get("last_league_id")
+        _plt = session.get("last_platform")
+        _ssn = session.get("last_season")
+        if _lid and _plt and _ssn:
+            return redirect(url_for(
+                "page_dashboard", platform=_plt, season=int(_ssn), league_id=_lid,
+            ))
+
     body_html = render_template_string(
         FORM_BODY,
         username="",

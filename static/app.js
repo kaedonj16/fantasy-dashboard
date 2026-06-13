@@ -18,52 +18,41 @@
   if (window._isSignedIn) return;
   // Skip if the user explicitly logged out this session.
   if (sessionStorage.getItem('_explicitLogout')) return;
-  // Skip in PWA standalone mode — cold launches should show the guest home page
-  // with the "Continue as X" banner rather than silently re-authenticating.
-  if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return;
   var saved;
   try { saved = JSON.parse(localStorage.getItem('saved_viewer') || 'null'); } catch (_) {}
-  // Require user_id — logout strips it so this check prevents silent re-auth.
+  // Require user_id — logout strips it, which suppresses the re-auth offer.
   if (!saved || !saved.username || !saved.league_id || !saved.user_id) return;
-  // Guard against infinite reload loop in case the API keeps returning ok:true
-  // but the session still doesn't stick.
-  if (sessionStorage.getItem('_sessionRestoreAttempted')) return;
-  sessionStorage.setItem('_sessionRestoreAttempted', '1');
+  // Never silently re-authenticate (browser or PWA). Re-auth is always an
+  // explicit user action: the home page already shows a "Continue as X" CTA, so
+  // on every other page we surface a "Sign back in as X" banner instead.
+  if (window.location.pathname === '/') return;
+  _showSessionBanner(saved.username);
 
-  fetch('/api/quick-set-viewer', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      username:  saved.username,
-      roster_id: saved.roster_id  || '',
-      user_id:   saved.user_id    || '',
-      league_id: saved.league_id,
-      platform:  saved.platform   || 'sleeper',
-      season:    saved.season     || new Date().getFullYear(),
-      team_name: saved.team_name  || '',
-    }),
-  })
-  .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-  .then(function (d) {
-    sessionStorage.removeItem('_sessionRestoreAttempted');
-    if (d.ok) {
-      window._isSignedIn = true;
-      location.reload();
-    } else {
-      _showSessionBanner(saved.username);
-    }
-  })
-  .catch(function () {
-    sessionStorage.removeItem('_sessionRestoreAttempted');
-    _showSessionBanner(saved.username);
-  });
+  function _reauth() {
+    fetch('/api/quick-set-viewer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username:  saved.username,
+        roster_id: saved.roster_id  || '',
+        user_id:   saved.user_id    || '',
+        league_id: saved.league_id,
+        platform:  saved.platform   || 'sleeper',
+        season:    saved.season     || new Date().getFullYear(),
+        team_name: saved.team_name  || '',
+      }),
+    })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (d) { if (d.ok) { window._isSignedIn = true; location.reload(); } })
+    .catch(function () {});
+  }
 
   function _showSessionBanner(username) {
     if (document.getElementById('session-expired-banner')) return;
     var banner = document.createElement('div');
     banner.id = 'session-expired-banner';
     banner.innerHTML =
-      '<span class="se-msg">Session expired </span>' +
+      '<span class="se-msg">You’re signed out </span>' +
       '<button id="seReauthBtn" class="se-btn">Sign back in as <strong>' +
         (username || 'you') + '</strong></button>' +
       '<button id="seDismissBtn" class="se-close" aria-label="Dismiss">\xd7</button>';
@@ -72,9 +61,7 @@
       requestAnimationFrame(function () { banner.classList.add('se-visible'); });
     });
     document.getElementById('seReauthBtn').addEventListener('click', function () {
-      banner.remove();
-      sessionStorage.removeItem('_sessionRestoreAttempted');
-      location.reload();
+      _reauth();
     });
     document.getElementById('seDismissBtn').addEventListener('click', function () {
       banner.remove();
