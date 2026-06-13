@@ -133,7 +133,12 @@ def _broadcast_all(title, body, url="/", tag="update", notif_type=None):
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
-            rows = conn.execute("SELECT endpoint, p256dh, auth, prefs FROM push_subscriptions").fetchall()
+            # DISTINCT ON (endpoint): a device may have several league rows, but a
+            # global broadcast should reach each device only once.
+            rows = conn.execute(
+                "SELECT DISTINCT ON (endpoint) endpoint, p256dh, auth, prefs "
+                "FROM push_subscriptions ORDER BY endpoint"
+            ).fetchall()
         return _send_to_endpoints(_filter_prefs(rows, notif_type), title, body, url, tag)
     except Exception as exc:
         logger.warning("[push] broadcast_all failed: %s", exc)
@@ -593,6 +598,54 @@ def notify_breakout_roster():
         logger.warning("[notify] breakout_roster failed: %s", exc)
 
 
+# ── Notification 7: Weekly top dynasty movers (broadcast) ─────────────────────
+
+def notify_top_movers():
+    """Broadcast the week's top dynasty value risers to all devices, once / 7 days.
+
+    Unlike the league-scoped notifications this is a global announcement, but it
+    still respects the per-device 'top_movers' preference toggle.
+    """
+    try:
+        from datetime import date as _date
+        from dashboard_services.db import get_conn
+
+        with get_conn() as conn:
+            last = _app_state_get(conn, "top_movers_last_pushed")
+        if last:
+            try:
+                if (_date.today() - _date.fromisoformat(last)).days < 7:
+                    return
+            except Exception:
+                pass
+
+        from data_building.player_value_history import get_top_movers
+        movers = get_top_movers(days=7, limit=3)
+        risers = movers.get("risers", [])
+        if not risers:
+            return
+
+        names = ", ".join(r.get("name") or r.get("player_id", "?") for r in risers[:3])
+        delta_str = ""
+        if risers[0].get("delta") is not None:
+            delta_str = f" (+{risers[0]['delta']:.0f})"
+
+        sent = _broadcast_all(
+            title="Weekly Top Movers",
+            body=f"Top dynasty risers: {names}{delta_str}",
+            url="/top-movers",
+            tag=f"top-movers-{_date.today().isoformat()}",
+            notif_type="top_movers",
+        )
+        logger.info("[notify] top_movers sent %d", sent)
+
+        with get_conn() as conn:
+            _app_state_set(conn, "top_movers_last_pushed", _date.today().isoformat())
+            conn.commit()
+    except Exception as exc:
+        logger.warning("[notify] top_movers failed: %s", exc)
+
+
 # ── Batch runners ──────────────────────────────────────────────────────────────
 
 def run_all_daily():
@@ -602,6 +655,7 @@ def run_all_daily():
     notify_rival_trades()
     notify_playoff_odds()
     notify_breakout_roster()
+    notify_top_movers()
 
 
 def run_hourly():

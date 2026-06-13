@@ -598,6 +598,7 @@ function emptyState(container, message, iconClass) {
     { key: 'rival_trades',      label: 'Rival Trade Alerts' },
     { key: 'playoff_odds',      label: 'Playoff Odds Updates' },
     { key: 'breakout_roster',   label: 'Breakout Player Alerts' },
+    { key: 'top_movers',        label: 'Weekly Top Movers' },
   ];
 
   window.openNotifPrefs = async function() {

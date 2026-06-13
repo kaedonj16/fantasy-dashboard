@@ -400,6 +400,13 @@ notify_playoff_odds()
 print("[cron] Waiver + playoff-odds notifications dispatched")
 """, "notify_waiver_playoff")
 
+    _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from utils.push_notifications import notify_top_movers
+notify_top_movers()
+print("[cron] Weekly top-movers notification dispatched (throttled to 7 days)")
+""", "notify_top_movers")
+
     # ------------------------------------------------------------------ #
     # Step 4: Save player values to DB                                   #
     # ------------------------------------------------------------------ #
