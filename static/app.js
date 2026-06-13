@@ -14323,7 +14323,7 @@ function setupFunAwardsGrid() {
       + '<div class="rz-player-info"><div class="rz-player-name">' + _name(pid) + '</div>'
       + '<div class="rz-player-meta">' + dot + meta + '</div></div>'
       + '<div class="rz-player-pts' + (isLive ? ' live-pts' : '') + '" data-pid="' + pid + '">'
-      + (pts != null ? _fmt(pts) : '—') + '</div></div>'
+      + (pts != null ? _fmt(pts) : '0') + '</div></div>'
     );
   }
   function _rosterCard(matchup) {
@@ -14331,7 +14331,7 @@ function setupFunAwardsGrid() {
     var pp = matchup.players_points || {}, starters = matchup.starters || [];
     var bench = (matchup.players || []).filter(function(pid) { return pid !== '0' && !starters.includes(pid); });
     var rows = starters.map(function(pid) {
-      if (pid === '0') return '<div class="rz-player-row"><span class="rz-pos-badge rz-pos-" style="opacity:.25">—</span><div class="rz-player-info"><div class="rz-player-name" style="color:var(--rz-muted)">Empty slot</div></div><div class="rz-player-pts">—</div></div>';
+      if (pid === '0') return '<div class="rz-player-row"><span class="rz-pos-badge rz-pos-" style="opacity:.25"></span><div class="rz-player-info"><div class="rz-player-name" style="color:var(--rz-muted)">Empty slot</div></div><div class="rz-player-pts">0</div></div>';
       return _playerRowHtml(pid, pp[pid], false);
     }).join('');
     var benchRows = bench.slice(0, 6).map(function(pid) { return _playerRowHtml(pid, pp[pid], true); }).join('');
@@ -14519,7 +14519,7 @@ function setupFunAwardsGrid() {
       if (!container.querySelector('.rz-feed-empty')) {
         container.innerHTML = '<div class="rz-feed-empty">'
           + (anyFilter ? 'No plays match these filters yet.'
-          : 'Plays appear here as games unfold — targets, catches, carries and touchdowns with live fantasy points.')
+          : 'Plays appear here as games unfold: targets, catches, carries and touchdowns with live fantasy points.')
           + '</div>';
       }
       return;
@@ -14590,7 +14590,7 @@ function setupFunAwardsGrid() {
 
     var live = _anyLive();
     var liveChip = live ? '<span class="rz-live-chip"><span class="rz-nav-dot"></span>LIVE</span>' : '';
-    var demoBar  = _isDemo ? '<div class="rz-demo-banner">Demo Mode — Simulated game data</div>' : '';
+    var demoBar  = _isDemo ? '<div class="rz-demo-banner">Demo Mode · Simulated game data</div>' : '';
     var showFilters = (_activeTab === 'plays' || _activeTab === 'top');
 
     var mine = _myMatchups();
@@ -14661,7 +14661,7 @@ function setupFunAwardsGrid() {
     var p = (_state.player_info || {})[pid] || {};
     var pp = {};
     (_state.matchups || []).forEach(function(m) { if (m.players_points && m.players_points[pid] != null) pp = m.players_points; });
-    var fantasyPts = pp[pid] != null ? _fmt(pp[pid]) : '—';
+    var fantasyPts = pp[pid] != null ? _fmt(pp[pid]) : '0';
     var scoring = _state.scoring || {};
     var breakdown = null, sl = _statLine(pid);
     if (sl) {
