@@ -14817,22 +14817,24 @@ function setupFunAwardsGrid() {
   function _eid(ev) { return ev.pid + ':' + (ev.ts || ev.desc); }
 
   function _eventHtml(ev, animate) {
-    var tag = ev.mine ? '<span class="rz-event-tag mine">' + (_scope === 'user' && ev.league ? ev.league : 'MY TEAM') + '</span>'
-            : ev.opp  ? '<span class="rz-event-tag opp">OPP</span>'
-            : (_scope === 'user' && ev.league ? '<span class="rz-event-tag opp">' + ev.league + '</span>' : '');
-    var sub = (ev.pos || '') + (ev.nflTeam ? ' · ' + ev.nflTeam : '') + (ev.line ? '  ·  ' + ev.line : '');
+    var tagLabel = ev.mine ? (_scope === 'user' && ev.league ? ev.league : 'MY TEAM')
+                 : ev.opp  ? 'OPP'
+                 : (_scope === 'user' && ev.league ? ev.league : '');
+    var tagCls = ev.mine ? 'mine' : 'opp';
+    var tag = tagLabel ? '<span class="rz-event-tag ' + tagCls + '">' + tagLabel + '</span>' : '';
     var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
     var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
     var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
+    var sub2 = (ev.nflTeam || '') + (ev.line ? '  ·  ' + ev.line : '');
     return (
-      '<div class="rz-event ' + ev.kind + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
+      '<div class="rz-event ' + ev.kind + (ev.mine ? ' is-mine' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
       + '<div class="rz-event-avatar rz-av-' + posKey + '" data-init="' + initials + '">'
       + '<img class="rz-headshot" src="https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg" alt="" onerror="this.parentNode.classList.add(\'img-err\')">'
       + '</div>'
       + '<div class="rz-event-body">'
-      + '<div class="rz-event-main">' + ev.name + ' ' + tag + '</div>'
+      + '<div class="rz-event-main"><span class="rz-event-name">' + ev.name + '</span>' + tag + '</div>'
       + '<div class="rz-event-desc">' + ev.desc + '</div>'
-      + '<div class="rz-event-sub">' + sub + '</div>'
+      + (sub2 ? '<div class="rz-event-sub">' + sub2 + '</div>' : '')
       + '</div>'
       + '<div class="rz-event-delta ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">' + ptStr + '</div>'
       + '</div>'
@@ -14948,6 +14950,19 @@ function setupFunAwardsGrid() {
     for (var i = _PAGE_SIZE; i < items.length; i++) items[i].remove();
 
     _renderPagination(totalPages);
+
+    // Live feed header
+    var hdr = document.getElementById('rz-feed-hdr');
+    if (hdr) {
+      var totalEvts = list.length;
+      var liveNow = _anyLive();
+      hdr.innerHTML = totalEvts
+        ? (liveNow
+          ? '<span class="rz-fh-dot"></span><span class="rz-fh-text">Live · <b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + '</span>'
+          : '<span class="rz-fh-text"><b>' + totalEvts + '</b> ' + (totalEvts === 1 ? 'play' : 'plays') + ' · Final</span>')
+        : '';
+    }
+
     container.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
       el.onclick = function() { _showStatModal(el.dataset.pid); };
@@ -15086,7 +15101,7 @@ function setupFunAwardsGrid() {
 
     var minePanel = _scope === 'user' ? _renderMyTeams() : _rosterCard(myMatchup);
     var panels =
-        '<div class="rz-panel' + (_activeTab === 'plays'  ? ' active' : '') + '" id="rz-panel-plays"><div id="rz-feed-list"></div><div id="rz-feed-pagination"></div></div>'
+        '<div class="rz-panel' + (_activeTab === 'plays'  ? ' active' : '') + '" id="rz-panel-plays"><div class="rz-feed-hdr" id="rz-feed-hdr"></div><div id="rz-feed-list"></div><div id="rz-feed-pagination"></div></div>'
       + '<div class="rz-panel' + (_activeTab === 'mine'   ? ' active' : '') + '" id="rz-panel-mine">'   + minePanel              + '</div>'
       + (_scope === 'user' ? '' :
         '<div class="rz-panel' + (_activeTab === 'opp'    ? ' active' : '') + '" id="rz-panel-opp">'    + _rosterCard(oppMatchup) + '</div>')
