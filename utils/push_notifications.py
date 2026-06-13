@@ -702,7 +702,7 @@ def notify_matchup_preview():
         from dashboard_services.platform_api import get_matchups, get_rosters, get_users
         from dashboard_services.db import get_conn
 
-        if _date.today().weekday() != 0:
+        if _date.today().weekday() != 1:
             return
 
         state  = get_nfl_state() or {}
