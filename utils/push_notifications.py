@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 # ── Core helpers ───────────────────────────────────────────────────────────────
 
 def _normalize_vapid_private_key(priv):
-    """Accept raw base64url or PEM; always return PEM for pywebpush 2.x."""
+    """Accept raw base64url or any PEM variant; always return TraditionalOpenSSL EC PEM."""
     import base64
     try:
         from cryptography.hazmat.primitives.serialization import (
@@ -22,8 +22,8 @@ def _normalize_vapid_private_key(priv):
 
     if "BEGIN" in priv:
         try:
-            load_pem_private_key(priv.encode(), password=None)
-            return priv
+            loaded = load_pem_private_key(priv.encode(), password=None)
+            return loaded.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
         except Exception:
             pass
 
@@ -36,6 +36,17 @@ def _normalize_vapid_private_key(priv):
         pass
 
     return priv
+
+
+def _make_vapid(pem):
+    """Build a Vapid object from a PEM string, bypassing Vapid.from_string()->from_der() bug."""
+    from cryptography.hazmat.primitives.serialization import (
+        load_pem_private_key, Encoding, PrivateFormat, NoEncryption,
+    )
+    from py_vapid import Vapid
+    loaded = load_pem_private_key(pem.encode(), password=None)
+    der = loaded.private_bytes(Encoding.DER, PrivateFormat.TraditionalOpenSSL, NoEncryption())
+    return Vapid.from_der(der)
 
 
 def _get_vapid_keys():
@@ -59,13 +70,18 @@ def _send_to_endpoints(endpoints, title, body, url="/", tag="update"):
 
     payload = _json.dumps({"title": title, "body": body, "url": url, "tag": tag,
                            "actions": [{"action": "view", "title": "View"}]})
+    try:
+        vapid_obj = _make_vapid(keys["private"])
+    except Exception as e:
+        logger.warning("[push] Could not build Vapid object: %s", e)
+        return 0
     sent, stale = 0, []
     for ep, p256dh, auth in endpoints:
         try:
             webpush(
                 subscription_info={"endpoint": ep, "keys": {"p256dh": p256dh, "auth": auth}},
                 data=payload,
-                vapid_private_key=keys["private"],
+                vapid_private_key=vapid_obj,
                 vapid_claims={"sub": "mailto:admin@brfantasy.com"},
             )
             sent += 1

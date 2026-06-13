@@ -26156,6 +26156,12 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
         return jsonify({"error": "DB error"}), 500
 
     payload       = _json.dumps({"title": title, "body": body, "url": url, "tag": tag})
+    try:
+        from utils.push_notifications import _make_vapid
+        vapid_obj = _make_vapid(keys["private"])
+    except Exception as exc:
+        logger.warning("[push] Could not build Vapid object: %s", exc)
+        return jsonify({"error": "VAPID key error"}), 500
     sent = failed = 0
     stale         = []
 
@@ -26165,7 +26171,7 @@ def _push_broadcast(title: str, body: str, url: str = "/", tag: str = "update"):
             webpush(
                 subscription_info={"endpoint": ep, "keys": {"p256dh": p256dh, "auth": auth}},
                 data=payload,
-                vapid_private_key=keys["private"],
+                vapid_private_key=vapid_obj,
                 vapid_claims={"sub": "mailto:admin@brfantasy.com"},
             )
             sent += 1
