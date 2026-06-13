@@ -1470,6 +1470,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ("Matchups",           "page_weekly",           "weekly",   False),
             ("Weekly Recap", "page_recap", "recap", False),
         ], ["weekly", "recap"], "weeklyNavDropdown"))
+        _rz_cls  = "nav-pill nav-pill-redzone active" if active == "redzone" else "nav-pill nav-pill-redzone"
+        _rz_href = url_for("page_redzone", platform=platform, season=season, league_id=league_id)
+        nav_pills.append(f"<a class='{_rz_cls}' href='{_rz_href}'><span class='rz-nav-dot'></span>Redzone</a>")
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",       "page_standings",    "standings",    False),
         ("Teams",           "page_teams",        "teams",        False),
@@ -9557,6 +9560,167 @@ def page_weekly(platform: str, season: int, league_id: str):
     return render_page("BR Fantasy Weekly Hub", league_id, "weekly", body, platform, season)
 
 
+# ─── BR Redzone ────────────────────────────────────────────────────────────────
+
+def _redzone_fetch(platform, league_id, season, week=None):
+    """Return live Redzone payload as a serialisable dict."""
+    from dashboard_services.api import (
+        get_nfl_state, get_nfl_scores_for_date, build_team_game_lookup,
+        get_nfl_players, get_effective_scoring_settings,
+    )
+    from dashboard_services.platform_api import (
+        get_matchups as _pm, get_rosters as _pr, get_users as _pu,
+    )
+    state  = get_nfl_state() or {}
+    season = int(season or state.get("season") or date.today().year)
+    week   = int(week or state.get("week") or 1)
+
+    matchups = _pm(platform, league_id, week, season) or []
+    rosters  = _pr(platform, league_id, season) or []
+    users    = _pu(platform, league_id, season) or []
+
+    nfl_players  = get_nfl_players() if platform == "sleeper" else {}
+    today_str    = date.today().strftime("%Y%m%d")
+    scores_body  = get_nfl_scores_for_date(today_str) or {}
+    team_game    = build_team_game_lookup(scores_body)
+    try:
+        scoring = get_effective_scoring_settings() or {}
+    except Exception:
+        scoring = {}
+
+    all_pids = set()
+    for m in matchups:
+        all_pids.update(m.get("players") or [])
+        all_pids.update(m.get("starters") or [])
+    all_pids.discard("0")
+
+    player_info = {}
+    for pid in all_pids:
+        p  = nfl_players.get(pid, {})
+        tm = p.get("team") or ""
+        gd = team_game.get(tm, {}) if tm else {}
+        player_info[pid] = {
+            "name":        p.get("full_name") or p.get("last_name") or pid,
+            "pos":         p.get("position") or "?",
+            "team":        tm,
+            "game_id":     gd.get("gameID") or "",
+            "game_status": gd.get("gameStatus") or "",
+            "game_code":   str(gd.get("gameStatusCode") or ""),
+            "home":        gd.get("home") or "",
+            "away":        gd.get("away") or "",
+            "home_pts":    str(gd.get("homePts") or gd.get("homeScore") or ""),
+            "away_pts":    str(gd.get("awayPts") or gd.get("awayScore") or ""),
+        }
+
+    return {
+        "week":             week,
+        "season":           season,
+        "platform":         platform,
+        "league_id":        league_id,
+        "matchups":         matchups,
+        "rosters":          [
+            {"roster_id": r.get("roster_id"), "owner_id": r.get("owner_id"),
+             "starters": r.get("starters") or [], "players": r.get("players") or []}
+            for r in rosters
+        ],
+        "users":            [
+            {"user_id": u.get("user_id"),
+             "display_name": u.get("display_name") or u.get("username") or "Team"}
+            for u in users
+        ],
+        "player_info":      player_info,
+        "scoring":          scoring,
+        "viewer_roster_id": session.get("viewer_roster_id") or "",
+        "updated_at":       time.time(),
+    }
+
+
+@app.route("/<platform>/<int:season>/<league_id>/redzone")
+def page_redzone(platform: str, season: int, league_id: str):
+    try:
+        data = _redzone_fetch(platform, league_id, season)
+    except Exception as _e:
+        logger.warning("[redzone] initial fetch failed: %s", _e)
+        data = {"matchups": [], "rosters": [], "users": [], "player_info": {},
+                "week": 1, "season": season, "viewer_roster_id": "", "scoring": {},
+                "platform": platform, "league_id": league_id, "updated_at": time.time()}
+
+    body = (
+        '<div id="rz-root" class="rz-page"><div class="rz-boot-spinner">Loading...</div></div>'
+        f'<script>window.__rz__={json.dumps(data)};</script>'
+    )
+    return render_page("BR Redzone", league_id, "redzone", body, platform, season)
+
+
+@app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
+def api_redzone_data(platform: str, season: int, league_id: str):
+    week = request.args.get("week")
+    try:
+        return jsonify(_redzone_fetch(platform, league_id, season, week=week))
+    except Exception as _e:
+        logger.warning("[redzone] api fetch failed: %s", _e)
+        return jsonify({"error": str(_e)}), 500
+
+
+@app.route("/api/<platform>/<int:season>/<league_id>/redzone-player")
+def api_redzone_player(platform: str, season: int, league_id: str):
+    """Return Tank01 boxscore stats for a single player, tagged with fantasy pts."""
+    from dashboard_services.api import (
+        get_nfl_players, fetch_tank_boxscore, get_effective_scoring_settings,
+    )
+    pid     = request.args.get("pid", "")
+    game_id = request.args.get("game_id", "")
+    if not pid:
+        return jsonify({}), 400
+
+    try:
+        nfl_players = get_nfl_players() if platform == "sleeper" else {}
+        player      = nfl_players.get(pid, {})
+        pos         = (player.get("position") or "").upper()
+
+        stats = {}
+        if game_id:
+            box = fetch_tank_boxscore(game_id) or {}
+            player_stats = box.get("playerStats") or {}
+            if isinstance(player_stats, dict):
+                for _, ps in player_stats.items():
+                    if (ps.get("longName") or "").lower() == (player.get("full_name") or "").lower():
+                        stats = ps
+                        break
+
+        scoring = get_effective_scoring_settings() or {}
+
+        def _pts(stat_key, score_key, multiplier=1):
+            val = float(stats.get(stat_key) or 0) * multiplier
+            rate = float(scoring.get(score_key) or 0)
+            return round(val * rate, 2) if rate else 0
+
+        breakdown = {}
+        if pos == "QB":
+            passing = stats.get("Passing") or {}
+            rushing = stats.get("Rushing") or {}
+            breakdown = {
+                "pass_yds": float(passing.get("passYds") or 0),
+                "pass_tds":  float(passing.get("passTD") or 0),
+                "ints":      float(passing.get("int") or 0),
+                "rush_yds": float(rushing.get("rushYds") or 0),
+                "rush_tds":  float(rushing.get("rushTD") or 0),
+            }
+        elif pos in ("RB", "WR", "TE"):
+            rushing  = stats.get("Rushing") or {}
+            receiving = stats.get("Receiving") or {}
+            breakdown = {
+                "rush_yds":  float(rushing.get("rushYds") or 0),
+                "rush_tds":  float(rushing.get("rushTD") or 0),
+                "receptions": float(receiving.get("receptions") or 0),
+                "rec_yds":   float(receiving.get("recYds") or 0),
+                "rec_tds":   float(receiving.get("recTD") or 0),
+            }
+
+        return jsonify({"pos": pos, "scoring": scoring, "breakdown": breakdown})
+    except Exception as _e:
+        logger.warning("[redzone] player fetch %s: %s", pid, _e)
+        return jsonify({}), 500
 
 
 @app.route("/<platform>/<int:season>/<league_id>/activity")
