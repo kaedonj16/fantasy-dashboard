@@ -20059,3 +20059,105 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   .rz-player-pts { font-size: 16px; }
   .rz-mc-score { font-size: 18px; }
 }
+
+/* ── Redzone: scope toggle, filters, leagues summary ────────────────────────── */
+.rz-scope-toggle {
+  display: flex;
+  gap: 4px;
+  margin: 12px 14px 0;
+  background: var(--rz-surface);
+  border: 1px solid var(--rz-border);
+  border-radius: 10px;
+  padding: 3px;
+}
+.rz-scope-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--rz-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.rz-scope-btn.active {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+.rz-scope-btn:hover:not(.active) { color: var(--rz-text); }
+
+.rz-filter-bar {
+  display: flex;
+  gap: 6px;
+  margin: 10px 14px 2px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.rz-filter-bar::-webkit-scrollbar { display: none; }
+.rz-filter {
+  flex: 1 0 auto;
+  min-width: 0;
+  background: var(--rz-card);
+  border: 1px solid var(--rz-border);
+  color: var(--rz-text);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  padding-right: 22px;
+}
+.rz-filter:focus { outline: none; border-color: var(--rz-red); }
+
+/* Leagues summary (My Leagues scope) */
+.rz-lg-list { display: flex; flex-direction: column; gap: 8px; }
+.rz-lg-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--rz-border);
+  border-radius: 10px;
+  padding: 9px 12px;
+}
+.rz-lg-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--rz-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rz-lg-name span { display: block; font-size: 10px; font-weight: 500; color: var(--rz-muted); margin-top: 1px; }
+.rz-lg-score { font-size: 17px; font-weight: 900; min-width: 44px; text-align: center; color: var(--rz-text); }
+.rz-lg-score.win { color: var(--rz-green); }
+.rz-lg-score.lose, .rz-lg-score.opp { color: var(--rz-text); }
+.rz-lg-sep { font-size: 11px; color: var(--rz-muted); }
+.rz-lg-pill { font-size: 10px; font-weight: 900; padding: 2px 8px; border-radius: 8px; }
+.rz-lg-pill.win  { background: rgba(34,197,94,.15);  color: #4ade80; }
+.rz-lg-pill.lose { background: rgba(239,68,68,.14);   color: #f87171; }
+
+/* Scoreboard league label */
+.rz-mc-header { justify-content: space-between; }
+.rz-mc-league {
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--rz-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 65%;
+}

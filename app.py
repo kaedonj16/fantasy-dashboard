@@ -9707,8 +9707,12 @@ _RZ_DEMO_KDEF = {
 }
 
 
-def _redzone_demo_data(t: float = _RZ_DEMO_START):
-    """Time-parameterised live-game sample data for the Redzone demo."""
+def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
+    """Time-parameterised live-game sample data for the Redzone demo.
+
+    scope="league": one league, all four teams.
+    scope="user":   the viewer's team across three different leagues.
+    """
     t = max(0.0, min(float(t), _RZ_DEMO_GAME))
     _g = lambda away, apts, home, hpts, code: {
         "game_status": "In Progress" if code == "1" else "Final",
@@ -9778,19 +9782,75 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START):
         info["stat_line"] = line
         pts[pid] = _rz_demo_pts(line)
 
+    def mk(rid, mid, starters, bench, league_name=None):
+        players = starters + bench
+        pp = {p: pts.get(p, 0.0) for p in players}
+        m = {"roster_id": rid, "matchup_id": mid,
+             "points": round(sum(pts.get(p, 0.0) for p in starters), 2),
+             "starters": starters, "players": players, "players_points": pp}
+        if league_name:
+            m["league_name"] = league_name
+        return m
+
+    base = {
+        "week": 14, "season": 2024, "platform": "sleeper", "league_id": "demo",
+        "player_info": PLAYERS,
+        "scoring": dict(_RZ_DEMO_SCORING),
+        "updated_at": time.time(),
+        "is_demo": True,
+        "demo_t": t,
+    }
+
+    if scope == "user":
+        # Viewer ("My Squad") across three leagues, each vs a different opponent.
+        LG = [
+            ("Dynasty Warriors", "u1",
+             ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"], ["d_tp"],
+             "u2", "TD Tyrones",
+             ["d_jb","d_br","d_rs","d_jj","d_da","d_sl","d_pn","d_jt","d_dad"], ["d_gp"]),
+            ("The Gauntlet", "u1",
+             ["d_jh","d_av","d_jj","d_th","d_ma","d_sl","d_jc","d_em","d_kcd"], ["d_gp"],
+             "u5", "Audibles",
+             ["d_gs","d_dm","d_cdl","d_pn","d_dw","d_tk","d_me","d_jt","d_sfd"], ["d_tp"]),
+            ("Money League", "u1",
+             ["d_lj","d_br","d_dm","d_da","d_jc","d_ma","d_th","d_jt","d_dad"], [],
+             "u6", "Last Place Larry",
+             ["d_jb","d_av","d_jg","d_mn","d_pn","d_sl","d_bt","d_em","d_kcd"], []),
+        ]
+        matchups, rosters, users, leagues = [], [], [], []
+        viewer_rids = []
+        seen_users = {}
+        for li, (lname, vown, vst, vbn, oown, onm, ost, obn) in enumerate(LG):
+            ns = f"{li}:"
+            vr, opr = ns + "1", ns + "2"
+            mid = ns + "1"
+            matchups.append(mk(vr,  mid, vst, vbn, lname))
+            matchups.append(mk(opr, mid, ost, obn, lname))
+            rosters.append({"roster_id": vr,  "owner_id": vown, "starters": vst, "players": vst + vbn})
+            rosters.append({"roster_id": opr, "owner_id": oown, "starters": ost, "players": ost + obn})
+            seen_users.setdefault(vown, "My Squad")
+            seen_users[oown] = onm
+            viewer_rids.append(vr)
+            leagues.append({"league_id": f"demo{li}", "name": lname})
+        users = [{"user_id": uid, "display_name": nm} for uid, nm in seen_users.items()]
+        base.update({
+            "scope": "user",
+            "matchups": matchups,
+            "rosters": rosters,
+            "users": users,
+            "leagues": leagues,
+            "viewer_roster_id": viewer_rids[0],
+            "viewer_roster_ids": viewer_rids,
+        })
+        return base
+
+    # league scope (single league, four teams)
     r1 = ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"]
     r2 = ["d_jb","d_br","d_rs","d_jj","d_da","d_sl","d_pn","d_jt","d_dad"]
     r3 = ["d_jh","d_av","d_th","d_jc","d_ma","d_kcd","d_gs","d_dm","d_sd"]
     r4 = ["d_dw","d_me","d_bufd","d_sd","d_dm","d_gs","d_th","d_av","d_jh"]
-    def mk(rid, mid, starters, bench):
-        players = starters + bench
-        pp = {p: pts.get(p, 0.0) for p in players}
-        return {"roster_id": rid, "matchup_id": mid,
-                "points": round(sum(pts.get(p, 0.0) for p in starters), 2),
-                "starters": starters, "players": players, "players_points": pp}
-
-    return {
-        "week": 14, "season": 2024, "platform": "sleeper", "league_id": "demo",
+    base.update({
+        "scope": "league",
         "matchups": [
             mk(1, 1, r1, ["d_tp"]),
             mk(2, 1, r2, ["d_gp"]),
@@ -9809,28 +9869,22 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START):
             {"user_id": "u3", "display_name": "Gridiron Gurus"},
             {"user_id": "u4", "display_name": "Bench Warmers"},
         ],
-        "player_info": PLAYERS,
-        "scoring": dict(_RZ_DEMO_SCORING),
+        "leagues": [{"league_id": "demo", "name": "Dynasty Warriors"}],
         "viewer_roster_id": "1",
-        "updated_at": time.time(),
-        "is_demo": True,
-        "demo_t": t,
-    }
+        "viewer_roster_ids": ["1"],
+    })
+    return base
 
 
-def _redzone_fetch(platform, league_id, season, week=None):
-    """Return live Redzone payload as a serialisable dict."""
+def _redzone_collect(platform, league_id, season, week):
+    """Build the raw per-league Redzone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
-        get_nfl_state, get_nfl_scores_for_date, build_team_game_lookup,
+        get_nfl_scores_for_date, build_team_game_lookup,
         get_nfl_players, get_effective_scoring_settings,
     )
     from dashboard_services.platform_api import (
         get_matchups as _pm, get_rosters as _pr, get_users as _pu,
     )
-    state  = get_nfl_state() or {}
-    season = int(season or state.get("season") or date.today().year)
-    week   = int(week or state.get("week") or 1)
-
     matchups = _pm(platform, league_id, week, season) or []
     rosters  = _pr(platform, league_id, season) or []
     users    = _pu(platform, league_id, season) or []
@@ -9868,9 +9922,7 @@ def _redzone_fetch(platform, league_id, season, week=None):
             "away_pts":    str(gd.get("awayPts") or gd.get("awayScore") or ""),
         }
 
-    # Attach per-player stat lines from Tank01 boxscores (Sleeper only) so the
-    # client can build a live play feed by diffing counters between polls and
-    # render contextual stat breakdowns. Boxscores are TTL-cached.
+    # Attach per-player stat lines from Tank01 boxscores (Sleeper only).
     if platform == "sleeper":
         games_to_pids: dict = {}
         for pid, info in player_info.items():
@@ -9895,35 +9947,135 @@ def _redzone_fetch(platform, league_id, season, week=None):
                     player_info[pid]["stat_line"] = _rz_stat_line_from_ps(ps)
 
     return {
-        "week":             week,
-        "season":           season,
-        "platform":         platform,
-        "league_id":        league_id,
-        "matchups":         matchups,
-        "rosters":          [
+        "matchups": matchups,
+        "rosters": [
             {"roster_id": r.get("roster_id"), "owner_id": r.get("owner_id"),
              "starters": r.get("starters") or [], "players": r.get("players") or []}
             for r in rosters
         ],
-        "users":            [
+        "users": [
             {"user_id": u.get("user_id"),
              "display_name": u.get("display_name") or u.get("username") or "Team"}
             for u in users
         ],
-        "player_info":      player_info,
-        "scoring":          scoring,
-        "viewer_roster_id": session.get("viewer_roster_id") or "",
-        "updated_at":       time.time(),
+        "player_info": player_info,
+        "scoring": scoring,
+    }
+
+
+def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
+    """Return live Redzone payload. scope='league' (all teams in this league)
+    or scope='user' (the viewer's team across all their leagues)."""
+    from dashboard_services.api import get_nfl_state
+    state  = get_nfl_state() or {}
+    season = int(season or state.get("season") or date.today().year)
+    week   = int(week or state.get("week") or 1)
+
+    if scope == "user":
+        try:
+            return _redzone_fetch_user(platform, league_id, season, week)
+        except Exception as _e:
+            logger.warning("[redzone] user-scope fetch failed: %s", _e)
+            # fall through to league scope
+
+    d = _redzone_collect(platform, league_id, season, week)
+    vrid = str(session.get("viewer_roster_id") or "")
+    d.update({
+        "week": week, "season": season, "platform": platform, "league_id": league_id,
+        "scope": "league",
+        "leagues": [{"league_id": league_id, "name": ""}],
+        "viewer_roster_id": vrid,
+        "viewer_roster_ids": [vrid] if vrid else [],
+        "updated_at": time.time(),
+    })
+    return d
+
+
+def _redzone_fetch_user(platform, league_id, season, week):
+    """Aggregate the viewer's matchup across every league they belong to (Sleeper)."""
+    from dashboard_services.api import get_sleeper_user_leagues
+    viewer_uid = str(session.get("viewer_user_id") or "")
+    if platform != "sleeper" or not viewer_uid:
+        raise ValueError("user scope requires a signed-in Sleeper viewer")
+
+    leagues_raw = get_sleeper_user_leagues(viewer_uid, season) or []
+    leagues_raw = leagues_raw[:12]
+
+    matchups, rosters, users, leagues = [], [], [], []
+    player_info: dict = {}
+    scoring: dict = {}
+    viewer_rids = []
+    seen_users = set()
+
+    for li, lg in enumerate(leagues_raw):
+        lid   = str(lg.get("league_id") or "")
+        lname = lg.get("name") or f"League {li + 1}"
+        if not lid:
+            continue
+        try:
+            d = _redzone_collect(platform, lid, season, week)
+        except Exception:
+            continue
+        if not scoring:
+            scoring = d.get("scoring") or {}
+        vr = next((r for r in d["rosters"] if str(r.get("owner_id")) == viewer_uid), None)
+        if not vr:
+            continue
+        vrid = str(vr.get("roster_id"))
+        vmid = next((str(m.get("matchup_id")) for m in d["matchups"]
+                     if str(m.get("roster_id")) == vrid), None)
+        if vmid is not None:
+            pair = [m for m in d["matchups"] if str(m.get("matchup_id")) == vmid]
+        else:
+            pair = [m for m in d["matchups"] if str(m.get("roster_id")) == vrid]
+        if not pair:
+            continue
+        ns = f"{li}:"
+        pair_rids = {str(m.get("roster_id")) for m in pair}
+        for m in pair:
+            m2 = dict(m)
+            m2["roster_id"]    = ns + str(m.get("roster_id"))
+            m2["matchup_id"]   = ns + str(m.get("matchup_id"))
+            m2["league_name"]  = lname
+            m2["league_id"]    = lid
+            matchups.append(m2)
+        for r in d["rosters"]:
+            if str(r.get("roster_id")) in pair_rids:
+                r2 = dict(r)
+                r2["roster_id"] = ns + str(r.get("roster_id"))
+                rosters.append(r2)
+        for u in d["users"]:
+            uid = u.get("user_id")
+            if uid not in seen_users:
+                seen_users.add(uid)
+                users.append(u)
+        player_info.update(d["player_info"])
+        viewer_rids.append(ns + vrid)
+        leagues.append({"league_id": lid, "name": lname})
+
+    return {
+        "week": week, "season": season, "platform": platform, "league_id": league_id,
+        "scope": "user",
+        "matchups": matchups,
+        "rosters": rosters,
+        "users": users,
+        "leagues": leagues,
+        "player_info": player_info,
+        "scoring": scoring,
+        "viewer_roster_id": viewer_rids[0] if viewer_rids else "",
+        "viewer_roster_ids": viewer_rids,
+        "updated_at": time.time(),
     }
 
 
 @app.route("/<platform>/<int:season>/<league_id>/redzone")
 def page_redzone(platform: str, season: int, league_id: str):
+    scope = "user" if request.args.get("scope") == "user" else "league"
     if request.args.get("demo") == "1":
-        data = _redzone_demo_data()
+        data = _redzone_demo_data(scope=scope)
     else:
         try:
-            data = _redzone_fetch(platform, league_id, season)
+            data = _redzone_fetch(platform, league_id, season, scope=scope)
         except Exception as _e:
             logger.warning("[redzone] initial fetch failed: %s", _e)
             data = {"matchups": [], "rosters": [], "users": [], "player_info": {},
@@ -9939,15 +10091,16 @@ def page_redzone(platform: str, season: int, league_id: str):
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
 def api_redzone_data(platform: str, season: int, league_id: str):
+    scope = "user" if request.args.get("scope") == "user" else "league"
     if request.args.get("demo") == "1":
         try:
             _t = float(request.args.get("t", _RZ_DEMO_START))
         except (TypeError, ValueError):
             _t = _RZ_DEMO_START
-        return jsonify(_redzone_demo_data(_t))
+        return jsonify(_redzone_demo_data(_t, scope=scope))
     week = request.args.get("week")
     try:
-        return jsonify(_redzone_fetch(platform, league_id, season, week=week))
+        return jsonify(_redzone_fetch(platform, league_id, season, week=week, scope=scope))
     except Exception as _e:
         logger.warning("[redzone] api fetch failed: %s", _e)
         return jsonify({"error": str(_e)}), 500
