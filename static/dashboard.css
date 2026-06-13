@@ -19962,6 +19962,72 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   opacity: .5;
 }
 
+/* Main content card (tabs + panels) */
+.rz-main-card {
+  background: var(--rz-card);
+  border: 1px solid var(--rz-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin: 12px 14px 0;
+  overflow: hidden;
+  /* Contain the slide animation */
+  position: relative;
+}
+/* Tab bar inside main card: flush, no extra background */
+.rz-main-card .rz-tab-bar {
+  margin: 0;
+  border-radius: 0;
+  border: none;
+  border-bottom: 1px solid var(--rz-border);
+  background: transparent;
+  box-shadow: none;
+  padding: 6px 8px;
+}
+.rz-main-card .rz-tab-btn {
+  border-radius: 8px;
+}
+.rz-main-card .rz-tab-btn.active {
+  background: var(--rz-surface);
+  box-shadow: none;
+}
+/* Panels inside main card: remove outer margin, use internal padding */
+.rz-main-card .rz-panel {
+  margin: 0;
+  padding: 0;
+}
+.rz-main-card .rz-panel.active { display: block; }
+/* Feed list inside main card */
+.rz-main-card #rz-feed-list { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+/* Roster card inside main card */
+.rz-main-card .rz-roster-card { margin: 10px 14px; box-shadow: none; }
+/* Scoreboard inside main card */
+.rz-main-card .rz-matchup-card { margin: 10px 14px; }
+.rz-main-card .rz-matchup-card:last-child { margin-bottom: 14px; }
+/* Top performers inside main card */
+.rz-main-card .rz-top-row { margin: 0; border-radius: 0; border: none; border-bottom: 1px solid var(--rz-border); box-shadow: none; }
+.rz-main-card .rz-top-row:last-child { border-bottom: none; }
+/* Filter chips inside main card */
+.rz-main-card .rz-chip-bar { border-bottom: 1px solid var(--rz-border); padding: 8px 14px; }
+.rz-main-card .rz-filter-panel { margin: 0; border-radius: 0; border: none; border-bottom: 1px solid var(--rz-border); box-shadow: none; }
+/* Empty state inside main card */
+.rz-main-card .rz-feed-empty { padding: 40px 20px; }
+
+/* Slide animations for hero card selection */
+@keyframes rz-slide-from-right {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes rz-slide-from-left {
+  from { opacity: 0; transform: translateX(-28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.rz-main-card.rz-slide-from-right {
+  animation: rz-slide-from-right .24s cubic-bezier(.22,.68,0,1.15) both;
+}
+.rz-main-card.rz-slide-from-left {
+  animation: rz-slide-from-left .24s cubic-bezier(.22,.68,0,1.15) both;
+}
+
 /* Close game accent */
 .rz-hero.rz-close-game { border-color: rgba(245,158,11,.5); box-shadow: 0 0 0 1px rgba(245,158,11,.25), var(--shadow-sm); }
 .rz-close-label { color: var(--rz-amber); font-size: 10px; font-weight: 800; letter-spacing: .04em; }

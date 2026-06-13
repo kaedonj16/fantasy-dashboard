@@ -14026,6 +14026,7 @@ function setupFunAwardsGrid() {
   var _filters  = { team: 'all', nfl: 'all', pos: 'all', stat: 'all' };
   var _filterOpen = false;
   var _heroMid    = null;  // selected matchup card key (mid or roster_id); null = league-wide
+  var _slideDir   = 'none'; // 'from-right' | 'from-left' | 'none'
 
   function _myRidSet(data) {
     var ids = (data.viewer_roster_ids && data.viewer_roster_ids.length)
@@ -14935,12 +14936,25 @@ function setupFunAwardsGrid() {
       + '<div class="rz-content">'
       + _renderScopeToggle()
       + summary
+      + '<div class="rz-main-card">'
       + tabBar
       + (showFilters ? _renderFilterChips() : '')
       + panels
+      + '</div>'
       + '</div>';
 
     _syncFeed();
+
+    // Slide animation when hero card selection changes
+    if (_slideDir !== 'none') {
+      var mc = root.querySelector('.rz-main-card');
+      if (mc) {
+        mc.classList.add('rz-slide-' + _slideDir);
+        var _sd = _slideDir;
+        setTimeout(function() { if (mc) mc.classList.remove('rz-slide-' + _sd); }, 300);
+      }
+      _slideDir = 'none';
+    }
 
     root.querySelectorAll('.rz-scope-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -14983,7 +14997,22 @@ function setupFunAwardsGrid() {
     root.querySelectorAll('[data-heromid]').forEach(function(el) {
       el.addEventListener('click', function() {
         var mid = el.dataset.heromid;
-        _heroMid = _heroMid === mid ? null : mid;
+        var prevMid = _heroMid;
+        // Determine slide direction from DOM card order
+        var order = [];
+        root.querySelectorAll('[data-heromid]').forEach(function(c) { order.push(c.dataset.heromid); });
+        var oldIdx = order.indexOf(prevMid || '');
+        var newIdx = order.indexOf(mid);
+        if (prevMid === null) {
+          _slideDir = 'from-right';
+        } else if (prevMid === mid) {
+          _slideDir = 'from-left';   // deselecting
+        } else if (oldIdx >= 0 && newIdx >= 0) {
+          _slideDir = newIdx > oldIdx ? 'from-right' : 'from-left';
+        } else {
+          _slideDir = 'from-right';
+        }
+        _heroMid = prevMid === mid ? null : mid;
         _render();
       });
     });
