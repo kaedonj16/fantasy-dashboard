@@ -14128,8 +14128,6 @@ function setupFunAwardsGrid() {
       Object.keys(pp).forEach(function(pid) { _prevPts[pid] = pp[pid]; });
     });
   }
-  _seedPrevStats(_state);
-
   // ── Play detection ─────────────────────────────────────────────────────────────
   function _rosterTags(data) {
     var myRosters = new Set(_myRids), oppRosters = new Set();
@@ -14737,6 +14735,12 @@ function setupFunAwardsGrid() {
   document.addEventListener('click', function(e) {
     if (e.target && e.target.id === 'rz-timer') { _countdown = 1; }
   });
+
+  // Populate feed with everything that has happened so far in the game.
+  // _prevStats starts empty so diffing from zero generates one event per
+  // player showing their cumulative stats; then seed baseline for future diffs.
+  _detectChanges(_state);
+  _seedPrevStats(_state);
 
   _render();
   if (_isDemo) setTimeout(_refresh, 1500);
