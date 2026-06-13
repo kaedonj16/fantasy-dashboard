@@ -8555,10 +8555,23 @@ function openPlayerModal(playerId, playerName, opts) {
         <div class="pm-panel" id="pm-panel-prospect">${prospectPanelHTML}</div>
         <div class="pm-panel" id="pm-panel-breakout">${breakoutHTML}</div>
         <div class="pm-panel" id="pm-panel-trades">${tradesHTML}</div>
+        <div class="pm-panel" id="pm-panel-live"></div>
       `;
 
       // ── Show tab bar and configure it ─────────────────────────────────────
       const pmTabBar = document.getElementById('pmTabBar');
+
+      // Inject Live tab button if Redzone context is active
+      if (window.__rzGetPlayerLive) {
+        const _existLive = pmTabBar ? pmTabBar.querySelector('.pm-tab[data-tab="live"]') : null;
+        if (_existLive) _existLive.remove();
+        const _liveBtn = document.createElement('button');
+        _liveBtn.className = 'pm-tab pm-tab-live';
+        _liveBtn.dataset.tab = 'live';
+        _liveBtn.onclick = function() { pmSwitchTab('live'); };
+        _liveBtn.innerHTML = '<span class="pm-live-dot"></span>Live';
+        if (pmTabBar) pmTabBar.insertBefore(_liveBtn, pmTabBar.firstChild);
+      }
       pmTabBar.style.display = '';
       pmTabBar.dataset.pmPlayerId = playerId;
       pmTabBar.dataset.pmSeason = season;
@@ -8882,6 +8895,11 @@ function pmSwitchTab(tab) {
           panel.innerHTML = '<div class="player-modal-loading" style="padding:32px 0;"><div style="color:var(--text-muted);font-size:13px;">Breakout analysis not available.</div></div>';
         }
       });
+  }
+
+  // ── Live tab (Redzone context) ───────────────────────────────────────────
+  if (tab === 'live' && panel && window.__rzGetPlayerLive) {
+    panel.innerHTML = window.__rzGetPlayerLive(playerId);
   }
 
   // ── Lazy-load Stats tab ──────────────────────────────────────────────────
@@ -14029,11 +14047,15 @@ function setupFunAwardsGrid() {
   var _heroMid    = null;
   var _slideDir   = 'none';
   var _feedPage   = 0;
-  var _prevMatchupPts = {};  // roster_id → points snapshot for score flash
+  var _prevMatchupPts = {};
   var _flashRids  = new Set();
   var _lastPollFailed = false;
   var _hadInteraction = false;
   var _notifDismissed = !!(localStorage && localStorage.getItem('rz-notif-dismissed'));
+  var _notifHistory = (function() {
+    try { return JSON.parse(localStorage.getItem('rz-notif-history') || '[]'); } catch (_) { return []; }
+  }());
+  var _historyOpen = false;
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
 
@@ -14387,9 +14409,14 @@ function setupFunAwardsGrid() {
     allEvents.forEach(function(ev) { _feed.unshift(ev); });
     if (_feed.length > 200) _feed = _feed.slice(0, 200);
 
-    // Push notification + audio chime for my TDs
+    // Push notification + audio chime for my TDs + log to history
     var myTDs = allEvents.filter(function(ev) { return ev.kind === 'td' && ev.mine; });
     if (myTDs.length) {
+      myTDs.forEach(function(ev) {
+        _notifHistory.unshift({ ts: Date.now(), name: ev.name, desc: ev.desc, pts: ev.pts, kind: ev.kind });
+      });
+      if (_notifHistory.length > 50) _notifHistory = _notifHistory.slice(0, 50);
+      try { localStorage.setItem('rz-notif-history', JSON.stringify(_notifHistory)); } catch (_) {}
       _playTDBeep();
       try {
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
@@ -14516,10 +14543,15 @@ function setupFunAwardsGrid() {
     var myTeamBtn = _myRids.size
       ? '<button class="rz-myteam-btn' + (_myTeamOnly ? ' active' : '') + '" id="rz-myteam-btn">My Team</button>'
       : '';
+    var histCount = _notifHistory.length;
+    var histBtn = histCount > 0
+      ? '<button class="rz-hist-btn" id="rz-hist-btn">🔔 <span class="rz-hist-count">' + histCount + '</span></button>'
+      : '';
     return '<div class="rz-chip-bar">'
       + myTeamBtn
       + '<button class="rz-filter-toggle' + (_filterOpen ? ' open' : '') + '" id="rz-filter-btn">'
       + (activeCount ? '⊞ Filter (' + activeCount + ')' : '⊞ Filter') + '</button>'
+      + histBtn
       + chips
       + '</div>'
       + panel;
@@ -14908,6 +14940,79 @@ function setupFunAwardsGrid() {
 
   var _PAGE_SIZE = 20;
 
+  // Expose live data to the global player modal (injected as "Live" tab)
+  window.__rzGetPlayerLive = function(pid) {
+    if (!pid || pid === '0') return '<div style="padding:20px;text-align:center;color:var(--text-muted);">No data.</div>';
+    var p   = (_state.player_info || {})[pid] || {};
+    var gs  = _gameStatus(pid);
+    var sl  = _statLine(pid);
+    var pp  = {};
+    (_state.matchups || []).forEach(function(m) {
+      if (m.players_points && m.players_points[pid] != null) pp = m.players_points;
+    });
+    var fantasyPts = pp[pid] != null ? _fmt(pp[pid]) : null;
+    var inj = p.injury_status || '';
+    var injBadge = inj ? '<span class="rz-pm-inj">' + inj + '</span>' : '';
+
+    var clockStr = [p.game_quarter, p.game_clock].filter(Boolean).join(' · ');
+    var statusCls = gs.type === 'live' ? 'live' : gs.type === 'final' ? 'final' : 'pre';
+    var gameHdr = (gs.label || _gameLine(pid))
+      ? '<div class="rz-pm-game-hdr">'
+        + (gs.label ? '<span class="rz-pm-status ' + statusCls + '">' + gs.label + (clockStr ? ' · ' + clockStr : '') + '</span>' : '')
+        + (_gameLine(pid) ? '<span class="rz-pm-game-line">' + _gameLine(pid) + '</span>' : '')
+        + injBadge
+        + '</div>'
+      : '';
+
+    // Stat breakdown
+    var scoring = _state.scoring || {};
+    var statBlock = '';
+    if (sl) {
+      var bd = _calcBreakdown(p.pos, {
+        pass_yds: sl.pass_yds, pass_tds: sl.pass_td, ints: sl.int,
+        rush_yds: sl.rush_yds, rush_tds: sl.rush_td,
+        receptions: sl.rec, rec_yds: sl.rec_yds, rec_tds: sl.rec_td
+      }, scoring);
+      if (bd.rows.length) {
+        statBlock = '<div class="rz-pm-stats">'
+          + bd.rows.map(function(r) {
+            return '<div class="rz-pm-srow"><span class="rz-pm-slabel">' + r.label + '</span>'
+              + '<span class="rz-pm-sval">' + r.val + '</span>'
+              + '<span class="rz-pm-spts">+' + r.pts + '</span></div>';
+          }).join('')
+          + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + bd.total + ' pts</span></div>'
+          + '</div>';
+      }
+    }
+    if (!statBlock) {
+      statBlock = '<div class="rz-pm-stats rz-pm-no-stats">'
+        + (fantasyPts !== null ? '<div class="rz-pm-pts-big">' + fantasyPts + ' pts</div>' : '')
+        + '<div style="color:var(--text-muted);font-size:12px;">Stat breakdown appears once the game is underway.</div>'
+        + '</div>';
+    }
+
+    // Event log: all plays for this player, oldest-first
+    var playerEvs = _feed.filter(function(ev) { return ev.pid === pid; }).slice().reverse();
+    var logHtml = '<div class="rz-pm-log-title">Game Log' + (playerEvs.length ? ' <span style="font-size:10px;font-weight:600;opacity:.55;">(' + playerEvs.length + ')</span>' : '') + '</div>';
+    if (playerEvs.length) {
+      logHtml += '<div class="rz-pm-log">'
+        + playerEvs.map(function(ev) {
+          var clock = [ev.gameQuarter, ev.gameClock].filter(Boolean).join(' ');
+          var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
+          return '<div class="rz-pm-log-row ' + ev.kind + '">'
+            + (clock ? '<span class="rz-pm-lclock">' + clock + '</span>' : '')
+            + '<span class="rz-pm-ldesc">' + ev.desc + '</span>'
+            + '<span class="rz-pm-lpts ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">' + ptStr + '</span>'
+            + '</div>';
+        }).join('')
+        + '</div>';
+    } else {
+      logHtml += '<div style="font-size:12px;color:var(--text-muted);padding:10px 16px 6px;">No plays recorded yet.</div>';
+    }
+
+    return '<div class="rz-pm-live">' + gameHdr + statBlock + logHtml + '</div>';
+  };
+
   function _pregameScheduleHtml() {
     var info = _state.player_info || {};
     var myPids = new Set();
@@ -15001,7 +15106,7 @@ function setupFunAwardsGrid() {
       container.appendChild(frag2);
       _renderPagination(totalPages);
       container.querySelectorAll('[data-pid]').forEach(function(el) {
-        el.onclick = function() { _showStatModal(el.dataset.pid); };
+        el.onclick = function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
       });
       return;
     }
@@ -15100,7 +15205,7 @@ function setupFunAwardsGrid() {
 
     container.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
-      el.onclick = function() { _showStatModal(el.dataset.pid); };
+      el.onclick = function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
     });
   }
 
@@ -15219,6 +15324,30 @@ function setupFunAwardsGrid() {
       : [{ key: 'plays', label: 'Plays' }, { key: 'mine', label: 'My Team' }, { key: 'opp', label: 'Opp' }, { key: 'top', label: 'Top' }];
   }
 
+  function _historyPanelHtml() {
+    if (!_notifHistory.length) return '';
+    var rows = _notifHistory.map(function(h) {
+      var d = new Date(h.ts);
+      var timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      var ptsStr = h.pts > 0 ? '+' + _fmt(h.pts) + ' pts' : '';
+      var kindCls = h.kind === 'td' ? ' td' : h.kind === 'score' ? ' score' : '';
+      return '<div class="rz-hist-row' + kindCls + '">'
+        + '<span class="rz-hist-time">' + timeStr + '</span>'
+        + '<span class="rz-hist-desc">' + h.name + ' – ' + h.desc + '</span>'
+        + (ptsStr ? '<span class="rz-hist-pts">' + ptsStr + '</span>' : '')
+        + '</div>';
+    }).join('');
+    return '<div class="rz-hist-overlay" id="rz-hist-overlay">'
+      + '<div class="rz-hist-panel">'
+      + '<div class="rz-hist-hdr"><span>TD Alert History</span>'
+      + '<button class="rz-hist-clear" id="rz-hist-clear">Clear</button>'
+      + '<button class="rz-hist-close" id="rz-hist-close">✕</button>'
+      + '</div>'
+      + '<div class="rz-hist-body">' + rows + '</div>'
+      + '</div>'
+      + '</div>';
+  }
+
   // ── Full render ───────────────────────────────────────────────────────────────
   function _render() {
     var TABS = _tabsFor();
@@ -15267,7 +15396,8 @@ function setupFunAwardsGrid() {
       + (showFilters ? _renderFilterChips() : '')
       + panels
       + '</div>'
-      + '</div>';
+      + '</div>'
+      + (_historyOpen ? _historyPanelHtml() : '');
 
     _syncFeed();
 
@@ -15356,62 +15486,34 @@ function setupFunAwardsGrid() {
       try { localStorage && localStorage.setItem('rz-notif-dismissed', '1'); } catch (_) {}
       _render();
     });
+
+    var histBtn = root.querySelector('#rz-hist-btn');
+    if (histBtn) histBtn.addEventListener('click', function() {
+      _historyOpen = true;
+      _render();
+    });
+    var histClose = document.getElementById('rz-hist-close');
+    if (histClose) histClose.addEventListener('click', function() {
+      _historyOpen = false;
+      _render();
+    });
+    var histOverlay = document.getElementById('rz-hist-overlay');
+    if (histOverlay) histOverlay.addEventListener('click', function(e) {
+      if (e.target === histOverlay) { _historyOpen = false; _render(); }
+    });
+    var histClear = document.getElementById('rz-hist-clear');
+    if (histClear) histClear.addEventListener('click', function() {
+      _notifHistory = [];
+      try { localStorage && localStorage.removeItem('rz-notif-history'); } catch (_) {}
+      _historyOpen = false;
+      _render();
+    });
+
     _wireHeroCards();
     root.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
-      el.addEventListener('click', function() { _showStatModal(el.dataset.pid); });
+      el.addEventListener('click', function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); });
     });
-  }
-
-  // ── Stat modal ────────────────────────────────────────────────────────────────
-  async function _showStatModal(pid) {
-    if (!pid || pid === '0') return;
-    var p = (_state.player_info || {})[pid] || {};
-    var pp = {};
-    (_state.matchups || []).forEach(function(m) { if (m.players_points && m.players_points[pid] != null) pp = m.players_points; });
-    var fantasyPts = pp[pid] != null ? _fmt(pp[pid]) : '0';
-    var scoring = _state.scoring || {};
-    var breakdown = null, sl = _statLine(pid);
-    if (sl) {
-      breakdown = _calcBreakdown(p.pos, {
-        pass_yds: sl.pass_yds, pass_tds: sl.pass_td, ints: sl.int,
-        rush_yds: sl.rush_yds, rush_tds: sl.rush_td,
-        receptions: sl.rec, rec_yds: sl.rec_yds, rec_tds: sl.rec_td
-      }, scoring);
-    } else {
-      var gameId = p.game_id || '', cacheKey = pid + ':' + gameId, bd = null;
-      if (gameId && !_isDemo) {
-        if (!_playerCache[cacheKey]) {
-          try {
-            var parts = window.location.pathname.split('/');
-            var apiBase = '/' + parts[1] + '/' + parts[2] + '/' + parts[3];
-            var resp = await fetch(apiBase + '/redzone-player?pid=' + pid + '&game_id=' + encodeURIComponent(gameId));
-            if (resp.ok) { bd = await resp.json(); _playerCache[cacheKey] = bd; }
-          } catch (_) {}
-        } else { bd = _playerCache[cacheKey]; }
-        if (bd && bd.breakdown && Object.values(bd.breakdown).some(function(v) { return v > 0; }))
-          breakdown = _calcBreakdown(bd.pos || p.pos, bd.breakdown, bd.scoring || scoring);
-      }
-    }
-    var statRows = '';
-    if (breakdown && breakdown.rows.length) {
-      statRows = breakdown.rows.map(function(r) {
-        return '<div class="rz-stat-row"><span class="rz-stat-label">' + r.label + '</span><span class="rz-stat-val">' + r.val + '</span><span class="rz-stat-pts">+' + r.pts + '</span></div>';
-      }).join('');
-      statRows += '<div class="rz-stat-total-row"><span class="rz-stat-total-label">Fantasy Total</span><span class="rz-stat-total-pts">' + breakdown.total + '</span></div>';
-    } else {
-      statRows = '<div class="rz-stat-row"><span class="rz-stat-label">Fantasy pts</span><span class="rz-stat-val"></span><span class="rz-stat-pts">' + fantasyPts + '</span></div>'
-        + '<div style="font-size:11px;color:var(--rz-muted);margin-top:10px;text-align:center;">Stat breakdown appears once the game is underway.</div>';
-    }
-    var gs = _gameStatus(pid);
-    var overlay = document.createElement('div');
-    overlay.className = 'rz-stat-modal-overlay';
-    overlay.innerHTML = '<div class="rz-stat-modal"><div class="rz-stat-modal-handle"></div>'
-      + '<div class="rz-stat-modal-title">' + (p.name || pid) + '</div>'
-      + '<div class="rz-stat-modal-sub">' + (p.pos || '') + '  •  ' + (p.team || '') + '  •  ' + (gs.label || 'Upcoming') + '</div>'
-      + statRows + '</div>';
-    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
-    document.body.appendChild(overlay);
   }
 
   // ── Polling ───────────────────────────────────────────────────────────────────
