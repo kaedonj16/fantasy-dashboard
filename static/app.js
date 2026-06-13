@@ -15279,11 +15279,29 @@ function setupFunAwardsGrid() {
     } catch (_) {}
   }
 
+  function _isGameDay() {
+    if (_isDemo) return true;
+    // NFL games are on Thu(4), Sat(6), Sun(0), Mon(1)
+    var day = new Date().getDay();
+    if (day === 4 || day === 6 || day === 0 || day === 1) return true;
+    // Also check whether any game in the current data is live or recently started
+    var games = _state.games || _state.game_scores || {};
+    return Object.values(games).some(function(g) {
+      return (g.game_status || g.status || '').toLowerCase().indexOf('progress') !== -1;
+    });
+  }
+
   function _tick() {
     _countdown--;
     var el = document.getElementById('rz-timer');
     if (el) el.textContent = _countdown + 's';
     if (_countdown <= 0) {
+      if (!_isGameDay()) {
+        // Non-game day: show idle state, don't poll
+        _countdown = 3600;
+        if (el) el.textContent = '—';
+        return;
+      }
       _countdown = _isDemo ? 3 : _anyLive() ? 15 : 60;
       _refresh();
     }
