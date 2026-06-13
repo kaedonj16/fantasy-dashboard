@@ -592,18 +592,21 @@ function emptyState(container, message, iconClass) {
   }
 
   var _NOTIF_TYPES = [
+    { category: 'Your Team' },
     { key: 'lineup_lock',       label: 'Lineup Lock Reminders' },
-    { key: 'recap_ready',       label: 'Weekly Recap Available' },
-    { key: 'matchup_preview',   label: 'Matchup Preview' },
-    { key: 'close_game',        label: 'Close Game Alerts' },
     { key: 'injury',            label: 'Starter Injury Alerts' },
-    { key: 'transaction',       label: 'Big Drop Alerts' },
+    { key: 'close_game',        label: 'Close Game Alerts' },
+    { key: 'matchup_preview',   label: 'Matchup Preview' },
+    { key: 'recap_ready',       label: 'Weekly Recap Available' },
     { key: 'standings_update',  label: 'Standings Updates' },
-    { key: 'value_drops',       label: 'Value Drop Alerts' },
-    { key: 'waiver_candidates', label: 'Waiver Wire Updates' },
+    { category: 'League Activity' },
     { key: 'rival_trades',      label: 'Rival Trade Alerts' },
-    { key: 'playoff_odds',      label: 'Playoff Odds Updates' },
+    { key: 'transaction',       label: 'Big Drop Alerts' },
+    { key: 'waiver_candidates', label: 'Waiver Wire Updates' },
+    { category: 'Dynasty' },
+    { key: 'value_drops',       label: 'Value Drop Alerts' },
     { key: 'breakout_roster',   label: 'Breakout Player Alerts' },
+    { key: 'playoff_odds',      label: 'Playoff Odds Updates' },
     { key: 'top_movers',        label: 'Weekly Top Movers' },
   ];
 
@@ -695,6 +698,9 @@ function emptyState(container, message, iconClass) {
     var modal = document.createElement('div');
     modal.style.cssText = 'background:var(--card,#fff);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;max-width:340px;max-height:calc(100vh - 96px);overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);';
     var rows = _NOTIF_TYPES.map(function(t) {
+      if (t.category) {
+        return '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:14px 0 2px;">' + t.category + '</div>';
+      }
       return _toggleHtml('data-key', t.key, t.label, prefs[t.key] !== false);
     }).join('');
     // Per-league toggles (only when the user has more than one league)
