@@ -14017,7 +14017,7 @@ function setupFunAwardsGrid() {
   var _shownFeedIds = new Set();
   var _prevStats = {};
   var _prevPts   = {};
-  var _countdown = 30;
+  var _countdown = 15;
   var _timer     = null;
   var _playerCache = {};
   var _isDemo   = !!_state.is_demo;
@@ -14647,7 +14647,7 @@ function setupFunAwardsGrid() {
     var sub = (ev.pos || '') + (ev.nflTeam ? ' • ' + ev.nflTeam : '') + (ev.line ? '  ·  ' + ev.line : '');
     var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
     return (
-      '<div class="rz-event' + (ev.kind === 'td' ? ' td' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
+      '<div class="rz-event ' + ev.kind + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
       + '<div class="rz-event-icon ' + ev.kind + '">' + (_FEED_ICON[ev.kind] || '🏈') + '</div>'
       + '<div class="rz-event-body">'
       + '<div class="rz-event-main">' + ev.name + ' ' + tag + '</div>'
@@ -14688,7 +14688,9 @@ function setupFunAwardsGrid() {
     var toAdd = list.filter(function(ev) { return !inDom.has(_eid(ev)); });
 
     if (toAdd.length) {
-      // Insert in reverse order so that after inserting at [0] repeatedly, newest ends up first
+      // Insert newest-first: reverse so oldest of batch appended first, ends up below newest
+      var newCount = toAdd.filter(function(ev) { return !_shownFeedIds.has(_eid(ev)); }).length;
+      var newIdx = 0;
       var frag = document.createDocumentFragment();
       toAdd.slice().reverse().forEach(function(ev) {
         var id = _eid(ev);
@@ -14697,6 +14699,11 @@ function setupFunAwardsGrid() {
         wrap.innerHTML = _eventHtml(ev, isNew);
         var node = wrap.firstChild;
         node.dataset.eid = id;
+        if (isNew && newCount > 1) {
+          // Stagger: newest (last in reversed loop) gets delay 0, older get bigger delay
+          node.style.animationDelay = ((newCount - 1 - newIdx) * 90) + 'ms';
+          newIdx++;
+        }
         frag.appendChild(node);
         _shownFeedIds.add(id);
       });
