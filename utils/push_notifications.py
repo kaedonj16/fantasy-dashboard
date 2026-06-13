@@ -39,14 +39,14 @@ def _normalize_vapid_private_key(priv):
 
 
 def _make_vapid(pem):
-    """Build a Vapid object from a PEM string, bypassing Vapid.from_string()->from_der() bug."""
-    from cryptography.hazmat.primitives.serialization import (
-        load_pem_private_key, Encoding, PrivateFormat, NoEncryption,
-    )
+    """Build a Vapid object from a PEM string, bypassing broken from_string/from_der."""
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
     from py_vapid import Vapid
     loaded = load_pem_private_key(pem.encode(), password=None)
-    der = loaded.private_bytes(Encoding.DER, PrivateFormat.TraditionalOpenSSL, NoEncryption())
-    return Vapid.from_der(der)
+    v = Vapid()
+    v._private_key = loaded
+    v._public_key = loaded.public_key()
+    return v
 
 
 def _get_vapid_keys():
