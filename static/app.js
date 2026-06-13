@@ -14014,6 +14014,7 @@ function setupFunAwardsGrid() {
 
   var _state    = window.__rz__ || {};
   var _feed     = [];
+  var _shownFeedIds = new Set();
   var _prevStats = {};
   var _prevPts   = {};
   var _countdown = 30;
@@ -14486,33 +14487,83 @@ function setupFunAwardsGrid() {
     }).join('');
   }
 
-  function _renderFeed() {
+  var _FEED_ICON = { td: '🏈', gain: '🟢', neg: '⚠️', target: '🎯' };
+
+  function _eid(ev) { return ev.pid + ':' + (ev.ts || ev.desc); }
+
+  function _eventHtml(ev, animate) {
+    var tag = ev.mine ? '<span class="rz-event-tag mine">' + (_scope === 'user' && ev.league ? ev.league : 'YOUR TEAM') + '</span>'
+            : ev.opp  ? '<span class="rz-event-tag opp">OPP</span>'
+            : (_scope === 'user' && ev.league ? '<span class="rz-event-tag opp">' + ev.league + '</span>' : '');
+    var sub = (ev.pos || '') + (ev.nflTeam ? ' • ' + ev.nflTeam : '') + (ev.line ? '  ·  ' + ev.line : '');
+    var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
+    return (
+      '<div class="rz-event' + (ev.kind === 'td' ? ' td' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
+      + '<div class="rz-event-icon ' + ev.kind + '">' + (_FEED_ICON[ev.kind] || '🏈') + '</div>'
+      + '<div class="rz-event-body">'
+      + '<div class="rz-event-main">' + ev.name + ' ' + tag + '</div>'
+      + '<div class="rz-event-desc">' + ev.desc + '</div>'
+      + '<div class="rz-event-sub">' + sub + '</div>'
+      + '</div>'
+      + '<div class="rz-event-delta ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">' + ptStr + '</div>'
+      + '</div>'
+    );
+  }
+
+  function _syncFeed() {
+    var container = document.getElementById('rz-feed-list');
+    if (!container) return;
+
     var list = _feed.filter(_eventMatches);
+    var anyFilter = _filters.team !== 'all' || _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all';
+
     if (!list.length) {
-      var anyFilter = _filters.team !== 'all' || _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all';
-      return '<div class="rz-feed-empty">' + (anyFilter
-        ? 'No plays match these filters yet.'
-        : 'Plays appear here as games unfold — targets, catches, carries and touchdowns with live fantasy points.') + '</div>';
+      if (!container.querySelector('.rz-feed-empty')) {
+        container.innerHTML = '<div class="rz-feed-empty">'
+          + (anyFilter ? 'No plays match these filters yet.'
+          : 'Plays appear here as games unfold — targets, catches, carries and touchdowns with live fantasy points.')
+          + '</div>';
+      }
+      return;
     }
-    var ICON = { td: '🏈', gain: '🟢', neg: '⚠️', target: '🎯' };
-    return list.slice(0, 60).map(function(ev) {
-      var tag = ev.mine ? '<span class="rz-event-tag mine">' + (_scope === 'user' && ev.league ? ev.league : 'YOUR TEAM') + '</span>'
-              : ev.opp  ? '<span class="rz-event-tag opp">OPP</span>'
-              : (_scope === 'user' && ev.league ? '<span class="rz-event-tag opp">' + ev.league + '</span>' : '');
-      var sub = (ev.pos || '') + (ev.nflTeam ? ' • ' + ev.nflTeam : '') + (ev.line ? '  ·  ' + ev.line : '');
-      var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
-      return (
-        '<div class="rz-event' + (ev.kind === 'td' ? ' td' : '') + '" data-pid="' + ev.pid + '">'
-        + '<div class="rz-event-icon ' + ev.kind + '">' + (ICON[ev.kind] || '🏈') + '</div>'
-        + '<div class="rz-event-body">'
-        + '<div class="rz-event-main">' + ev.name + ' ' + tag + '</div>'
-        + '<div class="rz-event-desc">' + ev.desc + '</div>'
-        + '<div class="rz-event-sub">' + sub + '</div>'
-        + '</div>'
-        + '<div class="rz-event-delta ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">' + ptStr + '</div>'
-        + '</div>'
-      );
-    }).join('');
+
+    // Clear empty-state placeholder if present
+    var empty = container.querySelector('.rz-feed-empty');
+    if (empty) empty.remove();
+
+    // Build set of event IDs already in the DOM
+    var inDom = new Set();
+    container.querySelectorAll('[data-eid]').forEach(function(el) { inDom.add(el.dataset.eid); });
+
+    // Find events not yet in the DOM (newest-first list, but we only prepend truly new ones)
+    var toAdd = list.filter(function(ev) { return !inDom.has(_eid(ev)); });
+
+    if (toAdd.length) {
+      // Insert in reverse order so that after inserting at [0] repeatedly, newest ends up first
+      var frag = document.createDocumentFragment();
+      toAdd.slice().reverse().forEach(function(ev) {
+        var id = _eid(ev);
+        var isNew = !_shownFeedIds.has(id);
+        var wrap = document.createElement('div');
+        wrap.innerHTML = _eventHtml(ev, isNew);
+        var node = wrap.firstChild;
+        node.dataset.eid = id;
+        frag.appendChild(node);
+        _shownFeedIds.add(id);
+      });
+      container.insertBefore(frag, container.firstChild);
+    }
+
+    // Also re-render events already in DOM if filter state changed their matching (handled by list filter above)
+    // Prune items beyond limit
+    var items = container.querySelectorAll('[data-eid]');
+    for (var i = 60; i < items.length; i++) items[i].remove();
+
+    // Wire click handlers for stat modal
+    container.querySelectorAll('[data-pid]').forEach(function(el) {
+      if (el.classList.contains('rz-player-pts')) return;
+      el.onclick = function() { _showStatModal(el.dataset.pid); };
+    });
   }
 
   function _renderScopeToggle() {
@@ -14555,7 +14606,7 @@ function setupFunAwardsGrid() {
 
     var minePanel = _scope === 'user' ? _renderMyTeams() : _rosterCard(myMatchup);
     var panels =
-        '<div class="rz-panel' + (_activeTab === 'plays'  ? ' active' : '') + '" id="rz-panel-plays">'  + _renderFeed()          + '</div>'
+        '<div class="rz-panel' + (_activeTab === 'plays'  ? ' active' : '') + '" id="rz-panel-plays"><div id="rz-feed-list"></div></div>'
       + '<div class="rz-panel' + (_activeTab === 'mine'   ? ' active' : '') + '" id="rz-panel-mine">'   + minePanel              + '</div>'
       + (_scope === 'user' ? '' :
         '<div class="rz-panel' + (_activeTab === 'opp'    ? ' active' : '') + '" id="rz-panel-opp">'    + _rosterCard(oppMatchup) + '</div>')
@@ -14574,12 +14625,15 @@ function setupFunAwardsGrid() {
       + (showFilters ? _renderFilterBar() : '')
       + panels;
 
+    _syncFeed();
+
     root.querySelectorAll('.rz-scope-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         if (btn.dataset.scope === _scope) return;
         _scope = btn.dataset.scope;
         _filters = { team: 'all', nfl: 'all', pos: 'all', stat: 'all' };
         _feed = [];
+        _shownFeedIds = new Set();
         _countdown = 1;  // trigger an immediate refresh with the new scope
         _render();
         _refresh();

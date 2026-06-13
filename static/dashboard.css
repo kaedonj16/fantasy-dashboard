@@ -19996,10 +19996,13 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   animation: rz-event-in .35s ease;
 }
 .rz-event:hover { background: rgba(255,255,255,.04); }
+.rz-event.rz-event-old { animation: none; }
 @keyframes rz-event-in {
-  0%   { opacity: 0; transform: translateY(-6px); }
+  0%   { opacity: 0; transform: translateY(-14px); }
+  60%  { transform: translateY(3px); }
   100% { opacity: 1; transform: translateY(0); }
 }
+#rz-feed-list { display: flex; flex-direction: column; }
 .rz-event.td {
   border-color: rgba(245,158,11,.4);
   background: linear-gradient(90deg, rgba(245,158,11,.10), var(--rz-card) 60%);
