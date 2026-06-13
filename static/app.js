@@ -14027,6 +14027,7 @@ function setupFunAwardsGrid() {
   var _filterOpen = false;
   var _heroMid    = null;  // selected matchup card key (mid or roster_id); null = league-wide
   var _slideDir   = 'none'; // 'from-right' | 'from-left' | 'none'
+  var _feedPage   = 0;      // current plays feed page (0 = newest/live)
 
   function _myRidSet(data) {
     var ids = (data.viewer_roster_ids && data.viewer_roster_ids.length)
@@ -14822,7 +14823,7 @@ function setupFunAwardsGrid() {
     var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
     return (
       '<div class="rz-event ' + ev.kind + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
-      + '<div class="rz-event-icon ' + ev.kind + '">' + (_FEED_ICON[ev.kind] || '🏈') + '</div>'
+      + '<div class="rz-event-avatar"><img class="rz-headshot" src="https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg" alt="" onerror="this.style.display=\'none\'"></div>'
       + '<div class="rz-event-body">'
       + '<div class="rz-event-main">' + ev.name + ' ' + tag + '</div>'
       + '<div class="rz-event-desc">' + ev.desc + '</div>'
@@ -14833,20 +14834,23 @@ function setupFunAwardsGrid() {
     );
   }
 
+  var _PAGE_SIZE = 20;
+
   function _syncFeed() {
     var container = document.getElementById('rz-feed-list');
     if (!container) return;
 
     var list = _feed.filter(_eventMatches);
-    var anyFilter = _filters.team !== 'all' || _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all';
+    var anyFilter = _filters.team !== 'all' || _filters.nfl !== 'all' || _filters.pos !== 'all' || _filters.stat !== 'all' || !!_heroMid;
+    var totalPages = Math.max(1, Math.ceil(list.length / _PAGE_SIZE));
+    if (_feedPage >= totalPages) _feedPage = totalPages - 1;
 
     if (!list.length) {
-      if (!container.querySelector('.rz-feed-empty')) {
-        container.innerHTML = '<div class="rz-feed-empty">'
-          + (anyFilter ? 'No plays match these filters yet.'
-          : 'Plays appear here as games unfold: targets, catches, carries and touchdowns with live fantasy points.')
-          + '</div>';
-      }
+      container.innerHTML = '<div class="rz-feed-empty">'
+        + (anyFilter ? 'No plays match these filters yet.'
+        : 'Plays appear here as games unfold: targets, catches, carries and touchdowns with live fantasy points.')
+        + '</div>';
+      _renderPagination(totalPages);
       return;
     }
 
@@ -14854,24 +14858,48 @@ function setupFunAwardsGrid() {
     var empty = container.querySelector('.rz-feed-empty');
     if (empty) empty.remove();
 
-    // Build set of event IDs already in the DOM
+    if (_feedPage > 0) {
+      // Static page: full rebuild from slice
+      var pageItems = list.slice(_feedPage * _PAGE_SIZE, (_feedPage + 1) * _PAGE_SIZE);
+      var frag2 = document.createDocumentFragment();
+      pageItems.forEach(function(ev) {
+        var wrap = document.createElement('div');
+        wrap.innerHTML = _eventHtml(ev, false);
+        var node = wrap.firstChild;
+        node.dataset.eid = _eid(ev);
+        frag2.appendChild(node);
+      });
+      container.innerHTML = '';
+      container.appendChild(frag2);
+      _renderPagination(totalPages);
+      container.querySelectorAll('[data-pid]').forEach(function(el) {
+        el.onclick = function() { _showStatModal(el.dataset.pid); };
+      });
+      return;
+    }
+
+    // Page 0: live DOM-patching + FLIP
+    var page0Items = list.slice(0, _PAGE_SIZE);
+    var page0Eids = new Set(page0Items.map(function(ev) { return _eid(ev); }));
+
+    // Remove events that have fallen off page 0
+    container.querySelectorAll('[data-eid]').forEach(function(el) {
+      if (!page0Eids.has(el.dataset.eid)) el.remove();
+    });
+
     var inDom = new Set();
     container.querySelectorAll('[data-eid]').forEach(function(el) { inDom.add(el.dataset.eid); });
-
-    // Find events not yet in the DOM (newest-first list, but we only prepend truly new ones)
-    var toAdd = list.filter(function(ev) { return !inDom.has(_eid(ev)); });
+    var toAdd = page0Items.filter(function(ev) { return !inDom.has(_eid(ev)); });
 
     if (toAdd.length) {
       var isInitialLoad = _shownFeedIds.size === 0;
 
-      // FLIP: snapshot existing positions so we can animate them sliding down
       var existingEls = [], existingTops = [];
       if (!isInitialLoad && toAdd.length <= 4) {
         existingEls = Array.from(container.querySelectorAll('[data-eid]')).slice(0, 12);
         existingTops = existingEls.map(function(n) { return n.getBoundingClientRect().top; });
       }
 
-      // Insert newest-first (no reverse) so newest lands at the top of the DOM
       var newCount = toAdd.filter(function(ev) { return !_shownFeedIds.has(_eid(ev)); }).length;
       var newIdx = 0;
       var frag = document.createDocumentFragment();
@@ -14883,7 +14911,7 @@ function setupFunAwardsGrid() {
         var node = wrap.firstChild;
         node.dataset.eid = id;
         if (isNew && newCount > 1) {
-          node.style.animationDelay = (newIdx * 70) + 'ms'; // top-to-bottom cascade
+          node.style.animationDelay = (newIdx * 70) + 'ms';
         }
         if (isNew) newIdx++;
         frag.appendChild(node);
@@ -14891,7 +14919,6 @@ function setupFunAwardsGrid() {
       });
       container.insertBefore(frag, container.firstChild);
 
-      // FLIP: animate existing items sliding down to their new positions
       if (existingEls.length) {
         requestAnimationFrame(function() {
           existingEls.forEach(function(n, i) {
@@ -14911,15 +14938,55 @@ function setupFunAwardsGrid() {
       }
     }
 
-    // Also re-render events already in DOM if filter state changed their matching (handled by list filter above)
-    // Prune items beyond limit
+    // Prune to page size
     var items = container.querySelectorAll('[data-eid]');
-    for (var i = 60; i < items.length; i++) items[i].remove();
+    for (var i = _PAGE_SIZE; i < items.length; i++) items[i].remove();
 
-    // Wire click handlers for stat modal
+    _renderPagination(totalPages);
     container.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
       el.onclick = function() { _showStatModal(el.dataset.pid); };
+    });
+  }
+
+  function _renderPagination(totalPages) {
+    var el = document.getElementById('rz-feed-pagination');
+    if (!el) return;
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    var prevDis = _feedPage <= 0;
+    var nextDis  = _feedPage >= totalPages - 1;
+    el.innerHTML =
+      '<button class="rz-page-btn' + (prevDis ? ' disabled' : '') + '" id="rz-page-prev"' + (prevDis ? ' disabled' : '') + '>← Prev</button>'
+      + '<span class="rz-page-info">' + (_feedPage + 1) + ' / ' + totalPages + '</span>'
+      + '<button class="rz-page-btn' + (nextDis ? ' disabled' : '') + '" id="rz-page-next"' + (nextDis ? ' disabled' : '') + '>Next →</button>';
+    var prevBtn = el.querySelector('#rz-page-prev');
+    var nextBtn = el.querySelector('#rz-page-next');
+    if (prevBtn && !prevDis) prevBtn.addEventListener('click', function() { _feedPage--; _syncFeed(); });
+    if (nextBtn && !nextDis) nextBtn.addEventListener('click', function() { _feedPage++; _syncFeed(); });
+  }
+
+  function _wireHeroCards() {
+    root.querySelectorAll('[data-heromid]').forEach(function(el) {
+      el.addEventListener('click', function() {
+        var mid = el.dataset.heromid;
+        var prevMid = _heroMid;
+        var order = [];
+        root.querySelectorAll('[data-heromid]').forEach(function(c) { order.push(c.dataset.heromid); });
+        var oldIdx = order.indexOf(prevMid || '');
+        var newIdx = order.indexOf(mid);
+        if (prevMid === null) {
+          _slideDir = 'from-right';
+        } else if (prevMid === mid) {
+          _slideDir = 'from-left';
+        } else if (oldIdx >= 0 && newIdx >= 0) {
+          _slideDir = newIdx > oldIdx ? 'from-right' : 'from-left';
+        } else {
+          _slideDir = 'from-right';
+        }
+        _heroMid = prevMid === mid ? null : mid;
+        _feedPage = 0;
+        _render();
+      });
     });
   }
 
@@ -14935,6 +15002,57 @@ function setupFunAwardsGrid() {
   }
 
   var _activeTab = 'plays';
+
+  function _partialUpdate() {
+    // Update timer text
+    var timerEl = document.getElementById('rz-timer');
+    if (timerEl) { timerEl.textContent = _countdown + 's'; timerEl.classList.remove('rz-timer-refreshing'); }
+
+    // Update live chip in header
+    var liveChipEl = root.querySelector('.rz-live-chip');
+    var headerRight = root.querySelector('.rz-header-right');
+    if (headerRight) {
+      var live = _anyLive();
+      var liveChipHtml = live ? '<span class="rz-live-chip"><span class="rz-nav-dot"></span>LIVE</span>' : '';
+      var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
+      headerRight.innerHTML = demoLink + liveChipHtml + '<button class="rz-refresh-timer" id="rz-timer">' + _countdown + 's</button>';
+    }
+
+    // Replace hero cards in-place and re-wire
+    var heroWrap = root.querySelector('.rz-hero-cards, .rz-no-matchup');
+    if (heroWrap) {
+      var tempDiv = document.createElement('div');
+      tempDiv.innerHTML = _renderHeroCards();
+      var newHero = tempDiv.firstChild;
+      if (newHero) heroWrap.parentNode.replaceChild(newHero, heroWrap);
+    }
+    _wireHeroCards();
+
+    // Update filter chips (hero chip may change)
+    var showFilters = (_activeTab === 'plays' || _activeTab === 'top');
+    var chipBar = root.querySelector('.rz-chip-bar');
+    if (chipBar && showFilters) {
+      var tempDiv2 = document.createElement('div');
+      tempDiv2.innerHTML = _renderFilterChips();
+      var newChips = tempDiv2.firstChild;
+      if (newChips) chipBar.parentNode.replaceChild(newChips, chipBar);
+      // Re-wire chip clear handlers
+      root.querySelectorAll('[data-clear]').forEach(function(btn) {
+        btn.addEventListener('click', function() { _filters[btn.dataset.clear] = 'all'; _feedPage = 0; _render(); });
+      });
+      root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
+        el.addEventListener('click', function() { _heroMid = null; _feedPage = 0; _render(); });
+      });
+      root.querySelectorAll('[data-fk]').forEach(function(btn) {
+        btn.addEventListener('click', function() { _filters[btn.dataset.fk] = btn.dataset.fv; _filterOpen = false; _feedPage = 0; _render(); });
+      });
+      var filterBtn = root.querySelector('#rz-filter-btn');
+      if (filterBtn) filterBtn.addEventListener('click', function() { _filterOpen = !_filterOpen; _render(); });
+    }
+
+    // Sync feed (live-patches page 0)
+    _syncFeed();
+  }
 
   function _tabsFor() {
     return _scope === 'user'
@@ -14963,7 +15081,7 @@ function setupFunAwardsGrid() {
 
     var minePanel = _scope === 'user' ? _renderMyTeams() : _rosterCard(myMatchup);
     var panels =
-        '<div class="rz-panel' + (_activeTab === 'plays'  ? ' active' : '') + '" id="rz-panel-plays"><div id="rz-feed-list"></div></div>'
+        '<div class="rz-panel' + (_activeTab === 'plays'  ? ' active' : '') + '" id="rz-panel-plays"><div id="rz-feed-list"></div><div id="rz-feed-pagination"></div></div>'
       + '<div class="rz-panel' + (_activeTab === 'mine'   ? ' active' : '') + '" id="rz-panel-mine">'   + minePanel              + '</div>'
       + (_scope === 'user' ? '' :
         '<div class="rz-panel' + (_activeTab === 'opp'    ? ' active' : '') + '" id="rz-panel-opp">'    + _rosterCard(oppMatchup) + '</div>')
@@ -15009,7 +15127,8 @@ function setupFunAwardsGrid() {
         _shownFeedIds = new Set();
         _filterOpen = false;
         _heroMid = null;
-        _countdown = 1;  // trigger an immediate refresh with the new scope
+        _feedPage = 0;
+        _countdown = 1;
         _render();
         _refresh();
       });
@@ -15029,42 +15148,23 @@ function setupFunAwardsGrid() {
       btn.addEventListener('click', function() {
         _filters[btn.dataset.fk] = btn.dataset.fv;
         _filterOpen = false;
+        _feedPage = 0;
         _render();
       });
     });
     root.querySelectorAll('[data-clear]').forEach(function(chip) {
       chip.addEventListener('click', function() {
         _filters[chip.dataset.clear] = 'all';
+        _feedPage = 0;
         _render();
       });
     });
     root.querySelectorAll('[data-clear-hero]').forEach(function(el) {
-      el.addEventListener('click', function() { _heroMid = null; _render(); });
+      el.addEventListener('click', function() { _heroMid = null; _feedPage = 0; _render(); });
     });
     var exitDemo = root.querySelector('#rz-demo-exit');
     if (exitDemo) exitDemo.addEventListener('click', function() { window.location.href = window.location.pathname; });
-    root.querySelectorAll('[data-heromid]').forEach(function(el) {
-      el.addEventListener('click', function() {
-        var mid = el.dataset.heromid;
-        var prevMid = _heroMid;
-        // Determine slide direction from DOM card order
-        var order = [];
-        root.querySelectorAll('[data-heromid]').forEach(function(c) { order.push(c.dataset.heromid); });
-        var oldIdx = order.indexOf(prevMid || '');
-        var newIdx = order.indexOf(mid);
-        if (prevMid === null) {
-          _slideDir = 'from-right';
-        } else if (prevMid === mid) {
-          _slideDir = 'from-left';   // deselecting
-        } else if (oldIdx >= 0 && newIdx >= 0) {
-          _slideDir = newIdx > oldIdx ? 'from-right' : 'from-left';
-        } else {
-          _slideDir = 'from-right';
-        }
-        _heroMid = prevMid === mid ? null : mid;
-        _render();
-      });
-    });
+    _wireHeroCards();
     root.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
       el.addEventListener('click', function() { _showStatModal(el.dataset.pid); });
@@ -15128,7 +15228,7 @@ function setupFunAwardsGrid() {
       var parts = window.location.pathname.split('/');
       var apiBase = '/' + parts[1] + '/' + parts[2] + '/' + parts[3];
       var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + _scope;
-      if (_isDemo) { _demoT += 30; url += '&demo=1&t=' + _demoT; }
+      if (_isDemo) { _demoT += 15; url += '&demo=1&t=' + _demoT; }
       var resp = await fetch(url);
       if (!resp.ok) return;
       var newData = await resp.json();
@@ -15136,8 +15236,8 @@ function setupFunAwardsGrid() {
       _detectChanges(newData);
       _state = newData;
       _seedPrevStats(newData);
-      _countdown = _isDemo ? 8 : _anyLive() ? 15 : 60;
-      _render();
+      _countdown = _isDemo ? 3 : _anyLive() ? 15 : 60;
+      _partialUpdate();
     } catch (_) {}
   }
 
@@ -15146,7 +15246,7 @@ function setupFunAwardsGrid() {
     var el = document.getElementById('rz-timer');
     if (el) el.textContent = _countdown + 's';
     if (_countdown <= 0) {
-      _countdown = _isDemo ? 8 : _anyLive() ? 15 : 60;
+      _countdown = _isDemo ? 3 : _anyLive() ? 15 : 60;
       _refresh();
     }
   }
