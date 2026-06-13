@@ -593,6 +593,12 @@ function emptyState(container, message, iconClass) {
 
   var _NOTIF_TYPES = [
     { key: 'lineup_lock',       label: 'Lineup Lock Reminders' },
+    { key: 'recap_ready',       label: 'Weekly Recap Available' },
+    { key: 'matchup_preview',   label: 'Matchup Preview' },
+    { key: 'close_game',        label: 'Close Game Alerts' },
+    { key: 'injury',            label: 'Starter Injury Alerts' },
+    { key: 'transaction',       label: 'Big Drop Alerts' },
+    { key: 'standings_update',  label: 'Standings Updates' },
     { key: 'value_drops',       label: 'Value Drop Alerts' },
     { key: 'waiver_candidates', label: 'Waiver Wire Updates' },
     { key: 'rival_trades',      label: 'Rival Trade Alerts' },
