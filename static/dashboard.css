@@ -19601,6 +19601,16 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   padding: 0 0 80px;
   font-family: inherit;
   color: var(--rz-text);
+  /* Break out of overview-layout's 10px margin to go edge-to-edge */
+  margin-left: -10px;
+  margin-right: -10px;
+  width: calc(100% + 20px);
+}
+
+/* Content container: max-width centering for comfortable desktop reading */
+.rz-content {
+  max-width: 720px;
+  margin: 0 auto;
 }
 :root[data-theme="dark"] .rz-page {
   --rz-red:      #f04545;
@@ -19699,6 +19709,27 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   white-space: nowrap;
 }
 .rz-refresh-timer:hover { border-color: var(--rz-red); color: var(--rz-red); }
+.rz-refresh-timer.rz-timer-refreshing {
+  color: var(--rz-red);
+  border-color: var(--rz-red);
+  opacity: .7;
+}
+
+/* Demo link button in header */
+.rz-demo-btn {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--rz-muted);
+  text-decoration: none;
+  padding: 4px 10px;
+  border: 1px solid var(--rz-border);
+  border-radius: 8px;
+  background: var(--rz-surface);
+  transition: all .15s;
+  letter-spacing: .03em;
+}
+.rz-demo-btn:hover { border-color: var(--rz-red); color: var(--rz-red); }
+.rz-demo-link { color: var(--rz-red); font-weight: 700; text-decoration: none; }
 
 /* Scope toggle */
 .rz-scope-toggle {
@@ -19827,6 +19858,108 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   text-align: center;
   color: var(--rz-muted);
   font-size: 13px;
+}
+
+/* Hero matchup card strip — replaces single hero card in new design */
+.rz-hero-cards {
+  display: flex;
+  gap: 10px;
+  padding: 14px 14px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.rz-hero-cards::-webkit-scrollbar { display: none; }
+
+.rz-mc-hero {
+  flex: 0 0 auto;
+  min-width: 130px;
+  max-width: 200px;
+  width: 42vw;
+  background: var(--rz-card);
+  border: 2px solid var(--rz-border);
+  border-radius: var(--radius);
+  padding: 10px 11px 12px;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+  user-select: none;
+}
+.rz-mc-hero.viewer-matchup { border-color: rgba(22,163,74,.35); }
+.rz-mc-hero.selected { border-color: var(--rz-red) !important; box-shadow: 0 0 0 2px var(--rz-red-soft); }
+.rz-mc-hero:hover:not(.selected) { border-color: var(--rz-muted); }
+
+.rz-mch-league {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--rz-muted);
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rz-mch-matchup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.rz-mch-side { flex: 1; min-width: 0; }
+.rz-mch-side.right { text-align: right; }
+.rz-mch-owner {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--rz-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 3px;
+}
+.rz-mch-owner.viewer { color: var(--rz-green); font-weight: 800; }
+.rz-mch-score {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--rz-muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.rz-mch-score.lead { color: var(--rz-text); }
+.rz-mch-vs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 3px;
+  flex-shrink: 0;
+}
+.rz-mch-live {
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--rz-red);
+  background: var(--rz-red-soft);
+  border: 1px solid rgba(220,38,38,.25);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+.rz-mch-final {
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--rz-muted);
+  background: var(--rz-surface);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+.rz-mch-pre {
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--rz-muted);
+  opacity: .5;
 }
 
 /* Close game accent */
@@ -20096,6 +20229,7 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 }
 .rz-mc-status.live  { background: var(--rz-red-soft); color: var(--rz-red); border: 1px solid rgba(220,38,38,.3); }
 .rz-mc-status.final { background: var(--rz-surface); color: var(--rz-muted); border: 1px solid var(--rz-border); }
+.rz-mc-status.pre   { display: none; }
 .rz-mc-row { display: flex; align-items: center; gap: 8px; }
 .rz-mc-name {
   flex: 1;
