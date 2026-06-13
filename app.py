@@ -9562,8 +9562,154 @@ def page_weekly(platform: str, season: int, league_id: str):
 
 # ─── BR Redzone ────────────────────────────────────────────────────────────────
 
-def _redzone_demo_data():
-    """Hardcoded live-game test data for the Redzone demo mode."""
+_RZ_BOX_CACHE: dict = {}   # game_id -> (ts, boxscore)
+_RZ_BOX_TTL = 15.0
+
+
+def _redzone_boxscore(game_id: str) -> dict:
+    """Fetch a Tank01 boxscore with a short shared TTL cache (bounds API calls)."""
+    if not game_id:
+        return {}
+    now = time.time()
+    hit = _RZ_BOX_CACHE.get(game_id)
+    if hit and (now - hit[0]) < _RZ_BOX_TTL:
+        return hit[1]
+    try:
+        from dashboard_services.api import fetch_tank_boxscore
+        box = fetch_tank_boxscore(game_id) or {}
+    except Exception:
+        box = {}
+    _RZ_BOX_CACHE[game_id] = (now, box)
+    return box
+
+
+def _rz_num(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _rz_stat_line_from_ps(ps: dict) -> dict:
+    """Map a Tank01 playerStats entry to our canonical stat_line."""
+    passing   = ps.get("Passing")   or {}
+    rushing   = ps.get("Rushing")   or {}
+    receiving = ps.get("Receiving") or {}
+    return {
+        "pass_yds": _rz_num(passing.get("passYds")),
+        "pass_td":  _rz_num(passing.get("passTD")),
+        "int":      _rz_num(passing.get("int")),
+        "carries":  _rz_num(rushing.get("carries")),
+        "rush_yds": _rz_num(rushing.get("rushYds")),
+        "rush_td":  _rz_num(rushing.get("rushTD")),
+        "rec":      _rz_num(receiving.get("receptions")),
+        "rec_yds":  _rz_num(receiving.get("recYds")),
+        "rec_td":   _rz_num(receiving.get("recTD")),
+        "targets":  _rz_num(receiving.get("targets")),
+    }
+
+
+# ── Demo mode ──────────────────────────────────────────────────────────────────
+# Time-parameterised sample data so the live play feed can be exercised any time
+# (e.g. off-season). Stat lines accumulate as a function of the simulated game
+# clock `t`; polling advances `t`, the client diffs stat lines between polls and
+# renders the individual plays (targets / catches / carries / TDs) that occurred.
+
+_RZ_DEMO_START = 150     # sim seconds the page-load snapshot is built at
+_RZ_DEMO_GAME  = 600     # sim seconds = "full game"
+_RZ_DEMO_SCORING = {
+    "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
+    "rush_yd": 0.1, "rush_td": 6.0,
+    "rec": 0.5, "rec_yd": 0.1, "rec_td": 6.0,
+}
+
+
+def _rz_demo_rng(seed: int):
+    s = seed & 0x7FFFFFFF or 1
+    def nxt():
+        nonlocal s
+        s = (s * 1103515245 + 12345) & 0x7FFFFFFF
+        return s / 0x7FFFFFFF
+    return nxt
+
+
+def _rz_demo_script(pid: str, pos: str) -> list:
+    """Deterministic per-player list of plays across the simulated game."""
+    r = _rz_demo_rng(sum(ord(c) for c in pid) * 2654435761)
+    plays, tt = [], 18 + int(r() * 40)
+    while tt < _RZ_DEMO_GAME:
+        roll = r()
+        if pos == "QB":
+            if roll < 0.76:
+                plays.append({"t": tt, "kind": "pass", "yds": 4 + int(r() * 28),
+                              "td": 1 if r() < 0.11 else 0})
+            elif roll < 0.90:
+                plays.append({"t": tt, "kind": "rush", "yds": 1 + int(r() * 12),
+                              "td": 1 if r() < 0.08 else 0})
+            else:
+                plays.append({"t": tt, "kind": "int"})
+            tt += 32 + int(r() * 40)
+        elif pos == "RB":
+            if roll < 0.66:
+                plays.append({"t": tt, "kind": "rush", "yds": int(r() * 14),
+                              "td": 1 if r() < 0.07 else 0})
+            elif roll < 0.86:
+                plays.append({"t": tt, "kind": "rec", "yds": 2 + int(r() * 11),
+                              "td": 1 if r() < 0.05 else 0})
+            else:
+                plays.append({"t": tt, "kind": "target"})
+            tt += 46 + int(r() * 54)
+        else:  # WR / TE
+            if roll < 0.50:
+                plays.append({"t": tt, "kind": "rec", "yds": 3 + int(r() * 22),
+                              "td": 1 if r() < 0.09 else 0})
+            else:
+                plays.append({"t": tt, "kind": "target"})
+            tt += 50 + int(r() * 70)
+    return plays
+
+
+def _rz_demo_fold(plays: list, t: float) -> dict:
+    L = {"pass_yds": 0.0, "pass_td": 0.0, "int": 0.0, "carries": 0.0,
+         "rush_yds": 0.0, "rush_td": 0.0, "rec": 0.0, "rec_yds": 0.0,
+         "rec_td": 0.0, "targets": 0.0}
+    for p in plays:
+        if p["t"] > t:
+            break
+        k = p["kind"]
+        if k == "rush":
+            L["carries"] += 1; L["rush_yds"] += p["yds"]; L["rush_td"] += p.get("td", 0)
+        elif k == "rec":
+            L["rec"] += 1; L["targets"] += 1; L["rec_yds"] += p["yds"]; L["rec_td"] += p.get("td", 0)
+        elif k == "target":
+            L["targets"] += 1
+        elif k == "pass":
+            L["pass_yds"] += p["yds"]; L["pass_td"] += p.get("td", 0)
+        elif k == "int":
+            L["int"] += 1
+    return L
+
+
+def _rz_demo_pts(L: dict) -> float:
+    s = _RZ_DEMO_SCORING
+    return round(
+        L["pass_yds"] * s["pass_yd"] + L["pass_td"] * s["pass_td"] + L["int"] * s["pass_int"]
+        + L["rush_yds"] * s["rush_yd"] + L["rush_td"] * s["rush_td"]
+        + L["rec"] * s["rec"] + L["rec_yds"] * s["rec_yd"] + L["rec_td"] * s["rec_td"],
+        2,
+    )
+
+
+# Flat points for K / DEF (no play-by-play scripting)
+_RZ_DEMO_KDEF = {
+    "d_em": 12.0, "d_sfd": 6.8, "d_jt": 9.0, "d_dad": 3.0,
+    "d_kcd": 7.0, "d_bufd": 4.0,
+}
+
+
+def _redzone_demo_data(t: float = _RZ_DEMO_START):
+    """Time-parameterised live-game sample data for the Redzone demo."""
+    t = max(0.0, min(float(t), _RZ_DEMO_GAME))
     _g = lambda away, apts, home, hpts, code: {
         "game_status": "In Progress" if code == "1" else "Final",
         "game_code": code, "home": home, "away": away,
@@ -9583,11 +9729,9 @@ def _redzone_demo_data():
         "PHI_WAS": _g("PHI", 17, "WAS", 10, "1"),
     }
     def pi(name, pos, team, gk):
-        g = GAMES.get(gk, {})
         return {"name": name, "pos": pos, "team": team,
-                "game_id": "demo_" + gk, **g}
+                "game_id": "demo_" + gk, **GAMES.get(gk, {})}
     PLAYERS = {
-        # My starters
         "d_lj":  pi("L. Jackson",   "QB",  "BAL", "BAL_HOU"),
         "d_dh":  pi("D. Henry",     "RB",  "TEN", "TEN_IND"),
         "d_jg":  pi("J. Gibbs",     "RB",  "DET", "DET_CHI"),
@@ -9597,8 +9741,7 @@ def _redzone_demo_data():
         "d_bt":  pi("B. Thomas",    "WR",  "JAX", "JAX_MIA"),
         "d_em":  pi("E. McPherson", "K",   "CIN", "CIN_PIT"),
         "d_sfd": pi("SF Defense",   "DEF", "SF",  "SF_ARI"),
-        "d_tp":  pi("T. Pollard",   "RB",  "TEN", "TEN_IND"),  # bench
-        # Opponent starters
+        "d_tp":  pi("T. Pollard",   "RB",  "TEN", "TEN_IND"),
         "d_jb":  pi("J. Burrow",    "QB",  "CIN", "CIN_PIT"),
         "d_br":  pi("B. Robinson",  "RB",  "ATL", "ATL_NO"),
         "d_rs":  pi("R. Stevenson", "RB",  "TEN", "TEN_IND"),
@@ -9608,8 +9751,7 @@ def _redzone_demo_data():
         "d_pn":  pi("P. Nacua",     "WR",  "LAR", "LAR_SEA"),
         "d_jt":  pi("J. Tucker",    "K",   "BAL", "BAL_HOU"),
         "d_dad": pi("DAL Defense",  "DEF", "DAL", "DAL_NYG"),
-        "d_gp":  pi("G. Pickens",   "WR",  "PIT", "CIN_PIT"),  # bench
-        # Other matchups
+        "d_gp":  pi("G. Pickens",   "WR",  "PIT", "CIN_PIT"),
         "d_jh":  pi("J. Hurts",     "QB",  "PHI", "PHI_WAS"),
         "d_av":  pi("A. Jones",     "RB",  "LAR", "LAR_SEA"),
         "d_th":  pi("T. Hill",      "WR",  "MIA", "JAX_MIA"),
@@ -9623,31 +9765,43 @@ def _redzone_demo_data():
         "d_bufd":pi("BUF Defense",  "DEF", "PHI", "PHI_WAS"),
         "d_me":  pi("M. Evans",     "WR",  "JAX", "JAX_MIA"),
     }
-    r1_start = ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"]
-    r2_start = ["d_jb","d_br","d_rs","d_jj","d_da","d_sl","d_pn","d_jt","d_dad"]
-    r3_start = ["d_jh","d_av","d_th","d_jc","d_ma","d_kcd","d_gs","d_dm","d_sd"]
-    r4_start = ["d_dw","d_me","d_bufd","d_sd","d_dm","d_gs","d_th","d_av","d_jh"]
-    p1 = {"d_lj":28.4,"d_dh":22.1,"d_jg":11.6,"d_cdl":24.3,"d_mn":9.8,"d_tk":18.2,"d_bt":14.6,"d_em":12.0,"d_sfd":6.8,"d_tp":8.2}
-    p2 = {"d_jb":19.8,"d_br":14.3,"d_rs":7.1,"d_jj":22.6,"d_da":8.4,"d_sl":11.2,"d_pn":9.6,"d_jt":9.0,"d_dad":3.0,"d_gp":6.2}
-    p3 = {"d_jh":24.1,"d_av":13.2,"d_th":19.4,"d_jc":18.8,"d_ma":9.6,"d_kcd":7.0,"d_gs":15.2,"d_dm":11.8,"d_sd":8.4}
-    p4 = {"d_dw":6.2,"d_me":11.4,"d_bufd":4.0,"d_sd":8.4,"d_dm":11.8,"d_gs":15.2,"d_th":19.4,"d_av":13.2,"d_jh":24.1}
+
+    pts = {}
+    for pid, info in PLAYERS.items():
+        pos  = info["pos"]
+        code = info.get("game_code", "")
+        if pos in ("K", "DEF"):
+            pts[pid] = _RZ_DEMO_KDEF.get(pid, 0.0)
+            continue
+        t_eff = _RZ_DEMO_GAME if code == "2" else t
+        line  = _rz_demo_fold(_rz_demo_script(pid, pos), t_eff)
+        info["stat_line"] = line
+        pts[pid] = _rz_demo_pts(line)
+
+    r1 = ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"]
+    r2 = ["d_jb","d_br","d_rs","d_jj","d_da","d_sl","d_pn","d_jt","d_dad"]
+    r3 = ["d_jh","d_av","d_th","d_jc","d_ma","d_kcd","d_gs","d_dm","d_sd"]
+    r4 = ["d_dw","d_me","d_bufd","d_sd","d_dm","d_gs","d_th","d_av","d_jh"]
+    def mk(rid, mid, starters, bench):
+        players = starters + bench
+        pp = {p: pts.get(p, 0.0) for p in players}
+        return {"roster_id": rid, "matchup_id": mid,
+                "points": round(sum(pts.get(p, 0.0) for p in starters), 2),
+                "starters": starters, "players": players, "players_points": pp}
+
     return {
         "week": 14, "season": 2024, "platform": "sleeper", "league_id": "demo",
         "matchups": [
-            {"roster_id": 1, "matchup_id": 1, "points": sum(p1[k] for k in r1_start),
-             "starters": r1_start, "players": r1_start + ["d_tp"], "players_points": p1},
-            {"roster_id": 2, "matchup_id": 1, "points": sum(p2[k] for k in r2_start),
-             "starters": r2_start, "players": r2_start + ["d_gp"], "players_points": p2},
-            {"roster_id": 3, "matchup_id": 2, "points": sum(p3[k] for k in r3_start),
-             "starters": r3_start, "players": r3_start, "players_points": p3},
-            {"roster_id": 4, "matchup_id": 2, "points": sum(p4[k] for k in r4_start),
-             "starters": r4_start, "players": r4_start, "players_points": p4},
+            mk(1, 1, r1, ["d_tp"]),
+            mk(2, 1, r2, ["d_gp"]),
+            mk(3, 2, r3, []),
+            mk(4, 2, r4, []),
         ],
         "rosters": [
-            {"roster_id": 1, "owner_id": "u1", "starters": r1_start, "players": r1_start + ["d_tp"]},
-            {"roster_id": 2, "owner_id": "u2", "starters": r2_start, "players": r2_start + ["d_gp"]},
-            {"roster_id": 3, "owner_id": "u3", "starters": r3_start, "players": r3_start},
-            {"roster_id": 4, "owner_id": "u4", "starters": r4_start, "players": r4_start},
+            {"roster_id": 1, "owner_id": "u1", "starters": r1, "players": r1 + ["d_tp"]},
+            {"roster_id": 2, "owner_id": "u2", "starters": r2, "players": r2 + ["d_gp"]},
+            {"roster_id": 3, "owner_id": "u3", "starters": r3, "players": r3},
+            {"roster_id": 4, "owner_id": "u4", "starters": r4, "players": r4},
         ],
         "users": [
             {"user_id": "u1", "display_name": "My Squad"},
@@ -9656,11 +9810,11 @@ def _redzone_demo_data():
             {"user_id": "u4", "display_name": "Bench Warmers"},
         ],
         "player_info": PLAYERS,
-        "scoring": {"pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
-                    "rush_yd": 0.1, "rush_td": 6.0, "rec": 0.5, "rec_yd": 0.1, "rec_td": 6.0},
+        "scoring": dict(_RZ_DEMO_SCORING),
         "viewer_roster_id": "1",
         "updated_at": time.time(),
         "is_demo": True,
+        "demo_t": t,
     }
 
 
@@ -9714,6 +9868,32 @@ def _redzone_fetch(platform, league_id, season, week=None):
             "away_pts":    str(gd.get("awayPts") or gd.get("awayScore") or ""),
         }
 
+    # Attach per-player stat lines from Tank01 boxscores (Sleeper only) so the
+    # client can build a live play feed by diffing counters between polls and
+    # render contextual stat breakdowns. Boxscores are TTL-cached.
+    if platform == "sleeper":
+        games_to_pids: dict = {}
+        for pid, info in player_info.items():
+            gid  = info.get("game_id")
+            code = info.get("game_code")
+            if gid and code in ("1", "2"):
+                games_to_pids.setdefault(gid, []).append(pid)
+        for gid, pids in games_to_pids.items():
+            box = _redzone_boxscore(gid)
+            pstats = box.get("playerStats") or {}
+            if not isinstance(pstats, dict) or not pstats:
+                continue
+            name_map = {}
+            for _, ps in pstats.items():
+                ln = (ps.get("longName") or "").lower()
+                if ln:
+                    name_map[ln] = ps
+            for pid in pids:
+                full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
+                ps = name_map.get(full)
+                if ps:
+                    player_info[pid]["stat_line"] = _rz_stat_line_from_ps(ps)
+
     return {
         "week":             week,
         "season":           season,
@@ -9760,7 +9940,11 @@ def page_redzone(platform: str, season: int, league_id: str):
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
 def api_redzone_data(platform: str, season: int, league_id: str):
     if request.args.get("demo") == "1":
-        return jsonify(_redzone_demo_data())
+        try:
+            _t = float(request.args.get("t", _RZ_DEMO_START))
+        except (TypeError, ValueError):
+            _t = _RZ_DEMO_START
+        return jsonify(_redzone_demo_data(_t))
     week = request.args.get("week")
     try:
         return jsonify(_redzone_fetch(platform, league_id, season, week=week))
