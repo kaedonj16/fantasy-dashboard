@@ -19,14 +19,35 @@ import sys
 # ── Args ──────────────────────────────────────────────────────────────────────
 
 parser = argparse.ArgumentParser(description="Send a push notification")
-parser.add_argument("title", help="Notification title")
-parser.add_argument("body",  help="Notification body text")
-parser.add_argument("--url",      default="/",     help="URL to open on tap (default: /)")
-parser.add_argument("--tag",      default="admin",  help="Notification tag (dedupes on device)")
-parser.add_argument("--username", default=None,     help="Send only to this Sleeper username (owner_id)")
-parser.add_argument("--league",   default=None,     help="Send only to subscribers in this league_id")
-parser.add_argument("--dry-run",  action="store_true", help="Print subscriber count without sending")
+parser.add_argument("title", nargs="?", help="Notification title")
+parser.add_argument("body",  nargs="?", help="Notification body text")
+parser.add_argument("--url",           default="/",    help="URL to open on tap (default: /)")
+parser.add_argument("--tag",           default="admin", help="Notification tag (dedupes on device)")
+parser.add_argument("--username",      default=None,   help="Send only to this owner_id/username")
+parser.add_argument("--league",        default=None,   help="Send only to subscribers in this league_id")
+parser.add_argument("--dry-run",       action="store_true", help="Print subscriber count without sending")
+parser.add_argument("--generate-keys", action="store_true", help="Generate fresh VAPID keys and print them")
 args = parser.parse_args()
+
+# ── Generate keys mode ────────────────────────────────────────────────────────
+
+if args.generate_keys:
+    from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key
+    from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, PublicFormat, NoEncryption
+    import base64
+    priv_key = generate_private_key(SECP256R1())
+    pub_raw  = priv_key.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint)
+    pub_b64  = base64.urlsafe_b64encode(pub_raw).rstrip(b"=").decode()
+    priv_pem = priv_key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
+    print("\nNew VAPID keys — set these in your Render environment variables:\n")
+    print(f"VAPID_PUBLIC_KEY={pub_b64}")
+    print(f"VAPID_PRIVATE_KEY={priv_pem.replace(chr(10), r'\\n')}")
+    print("\nIMPORTANT: After updating Render env vars, redeploy the app so the")
+    print("service worker picks up the new public key from /api/push/vapid-public-key.")
+    sys.exit(0)
+
+if not args.title or not args.body:
+    parser.error("title and body are required (unless using --generate-keys)")
 
 # ── DB connection ─────────────────────────────────────────────────────────────
 
@@ -54,35 +75,40 @@ def get_vapid_keys():
 
 
 def _normalize_vapid_private_key(priv):
-    """Accept raw base64url or PEM; always return PEM for pywebpush."""
+    """Accept raw base64url or any PEM variant; always return TraditionalOpenSSL EC PEM."""
     from cryptography.hazmat.primitives.serialization import (
         load_pem_private_key, Encoding, PrivateFormat, NoEncryption,
     )
     from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, derive_private_key
     import base64
 
-    # Already looks like PEM?
+    # If it looks like PEM, load it and re-serialize to force TraditionalOpenSSL
+    # (-----BEGIN EC PRIVATE KEY-----). This handles PKCS#8 (BEGIN PRIVATE KEY)
+    # and explicit-parameter keys that py_vapid can't parse directly.
     if "BEGIN" in priv:
         try:
-            load_pem_private_key(priv.encode(), password=None)
-            return priv  # valid PEM, use as-is
+            loaded = load_pem_private_key(priv.encode(), password=None)
+            pem = loaded.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
+            print(f"  [key] Loaded PEM and re-serialized to TraditionalOpenSSL EC PEM")
+            return pem
         except Exception as e:
-            print(f"  [key] PEM parse failed: {e}")
-            # Fall through to try base64
+            print(f"  [key] PEM load failed: {e}")
 
-    # Try as raw URL-safe base64 private key (32 bytes → 43 base64url chars)
+    # Try as raw URL-safe base64 private key scalar (32 bytes)
     try:
         raw = base64.urlsafe_b64decode(priv + "==")
         if len(raw) == 32:
             key = derive_private_key(int.from_bytes(raw, "big"), SECP256R1())
             pem = key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
-            print("  [key] Converted raw base64url key to PEM")
+            print("  [key] Converted raw base64url key to EC PEM")
             return pem
+        else:
+            print(f"  [key] base64url decoded to {len(raw)} bytes (expected 32)")
     except Exception as e:
         print(f"  [key] base64url parse failed: {e}")
 
-    # Last resort: return as-is and let pywebpush produce its own error
-    print(f"  [key] WARNING: could not normalize key (len={len(priv)}, starts={priv[:20]!r})")
+    print(f"  [key] WARNING: could not normalize key (len={len(priv)}, starts={priv[:30]!r})")
+    print("  [key] HINT: run with --generate-keys to create fresh VAPID keys")
     return priv
 
 # ── Fetch subscribers ─────────────────────────────────────────────────────────
