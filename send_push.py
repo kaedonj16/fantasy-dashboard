@@ -177,14 +177,17 @@ def send(rows, title, body, url, tag, priv_key):
             sent += 1
         except WebPushException as e:
             resp = e.response
-            status = resp.status_code if resp else "?"
+            status = resp.status_code if resp else None
             body = resp.text[:200] if resp else ""
-            if resp and resp.status_code in (404, 410):
+            # Some pywebpush versions leave e.response=None; parse from the message.
+            if status is None:
+                import re as _re
+                m = _re.search(r'\b([45]\d\d)\b', str(e))
+                status = int(m.group(1)) if m else 0
+            if status in (404, 410):
                 stale += 1
             else:
                 print(f"  FAIL [{status}]: {ep[:70]}...")
-                # status '?' = no HTTP response -> local signing/encryption error.
-                # The real cause is in the exception message, not the response body.
                 print(f"         {type(e).__name__}: {e}")
                 if body:
                     print(f"         resp: {body}")

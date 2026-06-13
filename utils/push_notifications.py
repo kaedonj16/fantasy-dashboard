@@ -86,17 +86,26 @@ def _send_to_endpoints(endpoints, title, body, url="/", tag="update"):
             )
             sent += 1
         except WebPushException as exc:
-            if exc.response and exc.response.status_code in (404, 410):
+            status = exc.response.status_code if exc.response else None
+            if status is None:
+                import re as _re
+                m = _re.search(r'\b([45]\d\d)\b', str(exc))
+                status = int(m.group(1)) if m else 0
+            if status in (404, 410):
                 stale.append(ep)
-        except Exception:
-            pass
+            else:
+                logger.debug("[push] send failed %s: %s", ep[:60], exc)
+        except Exception as exc:
+            logger.debug("[push] send error %s: %s", ep[:60], exc)
 
     if stale:
         try:
             from dashboard_services.db import get_conn
             with get_conn() as conn:
-                for ep in stale:
-                    conn.execute("DELETE FROM push_subscriptions WHERE endpoint = %s", (ep,))
+                conn.execute(
+                    "DELETE FROM push_subscriptions WHERE endpoint = ANY(%s)",
+                    (stale,)
+                )
                 conn.commit()
         except Exception:
             pass
