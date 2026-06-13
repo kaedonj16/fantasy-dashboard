@@ -229,7 +229,6 @@ def main():
     sent, failed, stale = send(rows, args.title, args.body, args.url, args.tag, priv_key)
     print(f"  Sent   : {sent}")
     if failed: print(f"  Failed : {failed}")
-    if stale:  print(f"  Stale  : {stale} (expired subscriptions, safe to ignore)")
     print("Done.")
 
 if __name__ == "__main__":
