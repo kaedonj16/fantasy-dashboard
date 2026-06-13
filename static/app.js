@@ -15127,6 +15127,13 @@ function setupFunAwardsGrid() {
 
     _syncFeed();
 
+    // Sync sticky header top to actual nav height (prevents overlap on scroll)
+    var topNav = document.querySelector('.top-nav');
+    if (topNav) {
+      var navH = Math.ceil(topNav.getBoundingClientRect().height);
+      if (navH > 0) document.documentElement.style.setProperty('--rz-nav-h', navH + 'px');
+    }
+
     // Slide animation when hero card selection changes
     if (_slideDir !== 'none') {
       var mc = root.querySelector('.rz-main-card');

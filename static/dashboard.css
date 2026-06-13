@@ -19655,15 +19655,15 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   align-items: center;
   justify-content: space-between;
   position: sticky;
-  top: 56px;
-  z-index: 100;
+  top: var(--rz-nav-h, 62px);
+  z-index: 99;
 }
-.rz-header::before {
+.rz-header::after {
   content: '';
   position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--rz-red), #f87171);
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--rz-red), rgba(248,113,113,.4));
 }
 .rz-brand { display: flex; align-items: center; gap: 9px; }
 .rz-brand-dot {
