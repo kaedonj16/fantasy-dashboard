@@ -46,3 +46,6 @@ data/fc_rookie_adp_*.json
 data/fantasy.db
 data/dynasty_dashboard.db
 .claude/
+node_modules/
+package-lock.json
+package.json
