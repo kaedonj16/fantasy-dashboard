@@ -14520,6 +14520,42 @@ function setupFunAwardsGrid() {
     );
   }
 
+  function _renderLeagueOthers() {
+    // Every OTHER matchup in this league (viewer's own is shown as the hero).
+    var groups = {};
+    (_state.matchups || []).forEach(function(m) {
+      var mid = String(m.matchup_id);
+      (groups[mid] = groups[mid] || []).push(m);
+    });
+    var mine = _myMatchups();
+    var myMid = mine[0] ? String(mine[0].matchup_id) : null;
+    var rows = '';
+    Object.keys(groups).sort().forEach(function(mid) {
+      if (mid === myMid) return;
+      var pair = groups[mid], a = pair[0], b = pair[1];
+      if (!b) return;
+      var ptsA = parseFloat(a.points || 0), ptsB = parseFloat(b.points || 0), aLead = ptsA >= ptsB;
+      var anyLive = false;
+      [a, b].forEach(function(m) { (m.starters || []).forEach(function(pid) { if (_gameStatus(pid).type === 'live') anyLive = true; }); });
+      var isClose = anyLive && Math.abs(ptsA - ptsB) < 5;
+      rows += (
+        '<div class="rz-lb-row' + (isClose ? ' close' : '') + '">'
+        + '<div class="rz-lb-team' + (aLead ? ' lead' : '') + '">'
+        +   '<span class="rz-lb-name">' + (_ownerName(a.roster_id) || 'Team') + '</span>'
+        +   '<span class="rz-lb-score">' + _fmt(ptsA) + '</span>'
+        + '</div>'
+        + '<div class="rz-lb-mid">' + (anyLive ? '<span class="rz-lb-live">LIVE</span>' : '<span class="rz-lb-final">FINAL</span>') + '</div>'
+        + '<div class="rz-lb-team right' + (!aLead ? ' lead' : '') + '">'
+        +   '<span class="rz-lb-score">' + _fmt(ptsB) + '</span>'
+        +   '<span class="rz-lb-name">' + (_ownerName(b.roster_id) || 'Team') + '</span>'
+        + '</div>'
+        + '</div>'
+      );
+    });
+    if (!rows) return '';
+    return '<div class="rz-league-board"><div class="rz-lb-title">Around the League</div>' + rows + '</div>';
+  }
+
   function _renderLeaguesSummary() {
     var mine = _myMatchups();
     if (!mine.length) return '<div class="rz-no-matchup">No leagues found for your account.</div>';
@@ -14754,7 +14790,7 @@ function setupFunAwardsGrid() {
     var mine = _myMatchups();
     var myMatchup = mine[0], oppMatchup = myMatchup ? _oppOf(myMatchup) : null;
 
-    var summary = _scope === 'user' ? _renderLeaguesSummary() : _renderHero();
+    var summary = _scope === 'user' ? _renderLeaguesSummary() : (_renderHero() + _renderLeagueOthers());
 
     var tabBar = '<div class="rz-tab-bar' + (TABS.length === 5 ? ' rz-tab-bar-5' : '') + '">' + TABS.map(function(t) {
       return '<button class="rz-tab-btn' + (_activeTab === t.key ? ' active' : '') + '" data-tab="' + t.key + '">' + t.label + '</button>';
