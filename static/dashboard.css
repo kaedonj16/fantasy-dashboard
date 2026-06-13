@@ -20164,3 +20164,53 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   text-overflow: ellipsis;
   max-width: 65%;
 }
+
+/* Close game */
+.rz-hero.rz-close-game { border: 1px solid rgba(251,191,36,.45); box-shadow: 0 0 18px rgba(251,191,36,.12); }
+.rz-close-label { color: #fbbf24; font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+.rz-close-pip { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: rgba(251,191,36,.25); color: #fbbf24; font-size: 10px; font-weight: 900; flex-shrink: 0; }
+.rz-matchup-card.rz-close-card { border-color: rgba(251,191,36,.35); }
+.rz-close-row { background: rgba(251,191,36,.04); border-radius: 8px; }
+/* Projection */
+.rz-proj-score { font-size: 10px; color: var(--rz-muted); margin-top: 1px; }
+.rz-players-left { font-size: 10px; color: var(--rz-muted); }
+.rz-mc-proj { font-size: 10px; color: var(--rz-muted); text-align: center; }
+.rz-mc-left { font-size: 10px; color: var(--rz-muted); }
+.rz-mc-pts-col { display: flex; flex-direction: column; align-items: center; }
+/* Filter chips */
+.rz-chip-bar { display: flex; align-items: center; gap: 6px; padding: 8px 14px 4px; flex-wrap: wrap; }
+.rz-filter-toggle { background: var(--rz-card); border: 1px solid var(--rz-border); color: var(--rz-muted); border-radius: 20px; padding: 4px 12px; font-size: 12px; cursor: pointer; font-weight: 600; transition: all .15s; }
+.rz-filter-toggle.open, .rz-filter-toggle:hover { border-color: var(--rz-red); color: var(--rz-red); }
+.rz-active-chip { display: inline-flex; align-items: center; background: rgba(220,38,38,.15); border: 1px solid rgba(220,38,38,.3); color: #fca5a5; border-radius: 20px; padding: 3px 9px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.rz-active-chip:hover { background: rgba(220,38,38,.25); }
+.rz-filter-panel { margin: 0 14px 6px; background: var(--rz-card); border: 1px solid var(--rz-border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.rz-fp-row { display: flex; align-items: flex-start; gap: 8px; }
+.rz-fp-label { font-size: 10px; font-weight: 700; color: var(--rz-muted); letter-spacing: .06em; text-transform: uppercase; min-width: 34px; padding-top: 4px; }
+.rz-fp-opts { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+.rz-fp-opt { background: transparent; border: 1px solid var(--rz-border); color: var(--rz-muted); border-radius: 14px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
+.rz-fp-opt.active { background: rgba(220,38,38,.18); border-color: rgba(220,38,38,.5); color: #fca5a5; font-weight: 700; }
+.rz-fp-opt:hover:not(.active) { border-color: var(--rz-text); color: var(--rz-text); }
+
+/* ── BR Redzone: close game, projections, players left, filter chips ────── */
+.rz-hero.rz-close-game { border: 1px solid rgba(251,191,36,.45); box-shadow: 0 0 18px rgba(251,191,36,.12); }
+.rz-close-label { color: #fbbf24; font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+.rz-close-pip { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: rgba(251,191,36,.25); color: #fbbf24; font-size: 10px; font-weight: 900; flex-shrink: 0; }
+.rz-matchup-card.rz-close-card { border-color: rgba(251,191,36,.35); }
+.rz-close-row { background: rgba(251,191,36,.04); border-radius: 8px; }
+.rz-proj-score { font-size: 10px; color: var(--rz-muted); margin-top: 1px; }
+.rz-players-left { font-size: 10px; color: var(--rz-muted); }
+.rz-mc-proj { font-size: 10px; color: var(--rz-muted); text-align: center; }
+.rz-mc-left { font-size: 10px; color: var(--rz-muted); }
+.rz-mc-pts-col { display: flex; flex-direction: column; align-items: center; }
+.rz-chip-bar { display: flex; align-items: center; gap: 6px; padding: 8px 14px 4px; flex-wrap: wrap; }
+.rz-filter-toggle { background: var(--rz-card); border: 1px solid var(--rz-border); color: var(--rz-muted); border-radius: 20px; padding: 4px 12px; font-size: 12px; cursor: pointer; font-weight: 600; transition: all .15s; }
+.rz-filter-toggle.open, .rz-filter-toggle:hover { border-color: var(--rz-red); color: var(--rz-red); }
+.rz-active-chip { display: inline-flex; align-items: center; background: rgba(220,38,38,.15); border: 1px solid rgba(220,38,38,.3); color: #fca5a5; border-radius: 20px; padding: 3px 9px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.rz-active-chip:hover { background: rgba(220,38,38,.25); }
+.rz-filter-panel { margin: 0 14px 6px; background: var(--rz-card); border: 1px solid var(--rz-border); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.rz-fp-row { display: flex; align-items: flex-start; gap: 8px; }
+.rz-fp-label { font-size: 10px; font-weight: 700; color: var(--rz-muted); letter-spacing: .06em; text-transform: uppercase; min-width: 34px; padding-top: 4px; flex-shrink: 0; }
+.rz-fp-opts { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+.rz-fp-opt { background: transparent; border: 1px solid var(--rz-border); color: var(--rz-muted); border-radius: 14px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
+.rz-fp-opt.active { background: rgba(220,38,38,.18); border-color: rgba(220,38,38,.5); color: #fca5a5; font-weight: 700; }
+.rz-fp-opt:hover:not(.active) { border-color: var(--rz-text); color: var(--rz-text); }

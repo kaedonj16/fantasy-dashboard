@@ -14024,6 +14024,7 @@ function setupFunAwardsGrid() {
   var _demoT    = parseFloat(_state.demo_t || 150);
   var _scope    = _state.scope || 'league';
   var _filters  = { team: 'all', nfl: 'all', pos: 'all', stat: 'all' };
+  var _filterOpen = false;
 
   function _myRidSet(data) {
     var ids = (data.viewer_roster_ids && data.viewer_roster_ids.length)
@@ -14148,26 +14149,47 @@ function setupFunAwardsGrid() {
     return { my: myRosters, opp: oppRosters, pidToRoster: pidToRoster };
   }
 
-  function _describe(d) {
+  function _describe(d, pos) {
+    // DEF: only sacks / INT / fumbles / defensive TDs
+    if (pos === 'DEF') {
+      var segs = [];
+      var st = [];
+      if (d.sacks   > 0) { segs.push(d.sacks   === 1 ? '1 sack'   : d.sacks   + ' sacks');   st.push('sack'); }
+      if (d.def_int > 0) { segs.push(d.def_int  === 1 ? '1 INT'    : d.def_int  + ' INTs');   st.push('int'); }
+      if (d.fum_rec > 0) { segs.push(d.fum_rec  === 1 ? '1 fumble' : d.fum_rec  + ' fumbles'); st.push('fumble'); }
+      if (d.def_td  > 0) { segs.push(d.def_td   === 1 ? '1 DEF TD' : d.def_td   + ' DEF TDs'); st.push('td'); }
+      if (!segs.length) return null;
+      return { desc: segs.join(' · '), kind: d.def_td > 0 ? 'td' : 'gain', stats: st };
+    }
+
+    // K: FG or PAT
+    if (pos === 'K') {
+      if (d.fgm > 0) {
+        var dist = Math.round(d.fg_long || 0);
+        return { desc: (dist > 0 ? dist + ' yd FG' : 'FG'), kind: 'gain', stats: ['kick'] };
+      }
+      if (d.xpm > 0) return { desc: 'PAT', kind: 'gain', stats: ['kick'] };
+      return null;
+    }
+
+    // QB / RB / WR / TE
     var ry = Math.round(d.rec_yds), uy = Math.round(d.rush_yds), py = Math.round(d.pass_yds);
     var tdc = d.rec_td + d.rush_td + d.pass_td;
     var stats = [];
-    if (d.rec   >= 1) stats.push('reception');
-    if (d.carries >= 1) stats.push('carry');
-    if (d.pass_yds > 0 || d.pass_td > 0) stats.push('pass');
-    if (tdc > 0) stats.push('td');
-    if (d.int > 0) stats.push('int');
-    if (d.targets > 0 && d.rec < 1) stats.push('target');
+    if (d.rec      >= 1) stats.push('reception');
+    if (d.carries  >= 1) stats.push('carry');
+    if (d.pass_yds  > 0 || d.pass_td > 0) stats.push('pass');
+    if (tdc         > 0) stats.push('td');
+    if (d.int       > 0) stats.push('int');
+    if (d.targets   > 0 && d.rec < 1) stats.push('target');
 
     var kind = tdc > 0 ? 'td' : (d.int > 0 ? 'neg'
              : ((d.rec >= 1 || d.carries >= 1 || d.pass_yds > 0) ? 'gain' : 'target'));
 
-    // Clean single-action phrasing
     if (tdc === 1 && d.rec_td === 1 && d.rec === 1 && d.carries < 1) return { desc: ry + ' yd TD catch', kind: kind, stats: stats };
     if (tdc === 1 && d.rush_td === 1 && d.carries === 1 && d.rec < 1) return { desc: uy + ' yd TD run', kind: kind, stats: stats };
     if (tdc === 1 && d.pass_td === 1 && d.rec < 1 && d.carries < 1) return { desc: py + ' yd TD pass', kind: kind, stats: stats };
 
-    // Compound description
     var segs = [];
     if (d.rec >= 1)     segs.push(d.rec === 1 ? ('1 catch ' + ry + ' yds') : (d.rec + ' catches ' + ry + ' yds'));
     if (d.carries >= 1) segs.push(d.carries === 1 ? (uy + ' yd carry') : (d.carries + ' carries ' + uy + ' yds'));
@@ -14179,45 +14201,104 @@ function setupFunAwardsGrid() {
     return { desc: (segs.join(', ') || 'Active') + tail, kind: kind, stats: stats };
   }
 
-  function _playFromDiff(pid, oldL, newL, tags, scoring) {
-    var d = {
-      pass_yds: newL.pass_yds - (oldL.pass_yds || 0),
-      pass_td:  newL.pass_td  - (oldL.pass_td  || 0),
-      int:      newL.int      - (oldL.int      || 0),
-      carries:  newL.carries  - (oldL.carries  || 0),
-      rush_yds: newL.rush_yds - (oldL.rush_yds || 0),
-      rush_td:  newL.rush_td  - (oldL.rush_td  || 0),
-      rec:      newL.rec      - (oldL.rec      || 0),
-      rec_yds:  newL.rec_yds  - (oldL.rec_yds  || 0),
-      rec_td:   newL.rec_td   - (oldL.rec_td   || 0),
-      targets:  newL.targets  - (oldL.targets  || 0)
-    };
-    var changed = ['pass_yds','pass_td','int','carries','rush_yds','rush_td','rec','rec_yds','rec_td','targets']
-      .some(function(k) { return d[k] > 0.001; });
-    if (!changed) return null;
-
-    var info = _describe(d);
-    var rid  = tags.pidToRoster[pid] || '';
-    var earned = parseFloat((_lineToPts(newL, scoring) - _lineToPts(oldL, scoring)).toFixed(2));
-    return {
-      pid: pid, name: _name(pid), pos: _pos(pid), nflTeam: _team(pid),
+  function _playsFromDiff(pid, oldL, newL, tags, scoring) {
+    var pos = _pos(pid);
+    var rid = tags.pidToRoster[pid] || '';
+    var base = {
+      pid: pid, name: _name(pid), pos: pos, nflTeam: _team(pid),
       rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
-      desc: info.desc, kind: info.kind, stats: info.stats, pts: earned,
       mine: tags.my.has(rid), opp: tags.opp.has(rid),
       line: _gameLine(pid), ts: Date.now()
     };
+    function mkEv(d, oldLine, newLine) {
+      var info = _describe(d, pos);
+      if (!info) return null;
+      var earned = parseFloat((_lineToPts(newLine, scoring) - _lineToPts(oldLine, scoring)).toFixed(2));
+      return Object.assign({}, base, { desc: info.desc, kind: info.kind, stats: info.stats, pts: earned, ts: Date.now() + Math.random() });
+    }
+
+    // DEF
+    if (pos === 'DEF') {
+      var d = {
+        sacks:   (newL.sacks  ||0) - (oldL.sacks  ||0),
+        def_int: (newL.def_int||0) - (oldL.def_int||0),
+        fum_rec: (newL.fum_rec||0) - (oldL.fum_rec||0),
+        def_td:  (newL.def_td ||0) - (oldL.def_td ||0)
+      };
+      if (d.sacks < 0.001 && d.def_int < 0.001 && d.fum_rec < 0.001 && d.def_td < 0.001) return [];
+      var ev = mkEv(d, oldL, newL);
+      return ev ? [ev] : [];
+    }
+
+    // K
+    if (pos === 'K') {
+      var d = {
+        fgm:     (newL.fgm    ||0) - (oldL.fgm    ||0),
+        fg_long: newL.fg_long ||0,
+        xpm:     (newL.xpm    ||0) - (oldL.xpm    ||0)
+      };
+      if (d.fgm < 0.001 && d.xpm < 0.001) return [];
+      var ev = mkEv(d, oldL, newL);
+      return ev ? [ev] : [];
+    }
+
+    // Offensive: split into separate receiving, rushing, passing events
+    var results = [];
+    var Z = { pass_yds:0, pass_td:0, int:0, carries:0, rush_yds:0, rush_td:0, rec:0, rec_yds:0, rec_td:0, targets:0 };
+
+    // Receiving / target
+    var recD = Object.assign({}, Z, {
+      rec:     (newL.rec    ||0) - (oldL.rec    ||0),
+      rec_yds: (newL.rec_yds||0) - (oldL.rec_yds||0),
+      rec_td:  (newL.rec_td ||0) - (oldL.rec_td ||0),
+      targets: (newL.targets||0) - (oldL.targets||0)
+    });
+    if (recD.rec > 0.001 || recD.targets > 0.001) {
+      var oldRec = Object.assign({}, Z, { rec: oldL.rec||0, rec_yds: oldL.rec_yds||0, rec_td: oldL.rec_td||0, targets: oldL.targets||0 });
+      var newRec = Object.assign({}, Z, { rec: newL.rec||0, rec_yds: newL.rec_yds||0, rec_td: newL.rec_td||0, targets: newL.targets||0 });
+      var ev = mkEv(recD, oldRec, newRec);
+      if (ev) results.push(ev);
+    }
+
+    // Rushing
+    var rushD = Object.assign({}, Z, {
+      carries:  (newL.carries ||0) - (oldL.carries ||0),
+      rush_yds: (newL.rush_yds||0) - (oldL.rush_yds||0),
+      rush_td:  (newL.rush_td ||0) - (oldL.rush_td ||0)
+    });
+    if (rushD.carries > 0.001) {
+      var oldRush = Object.assign({}, Z, { carries: oldL.carries||0, rush_yds: oldL.rush_yds||0, rush_td: oldL.rush_td||0 });
+      var newRush = Object.assign({}, Z, { carries: newL.carries||0, rush_yds: newL.rush_yds||0, rush_td: newL.rush_td||0 });
+      var ev = mkEv(rushD, oldRush, newRush);
+      if (ev) results.push(ev);
+    }
+
+    // Passing
+    var passD = Object.assign({}, Z, {
+      pass_yds: (newL.pass_yds||0) - (oldL.pass_yds||0),
+      pass_td:  (newL.pass_td ||0) - (oldL.pass_td ||0),
+      int:      (newL.int     ||0) - (oldL.int     ||0)
+    });
+    if (passD.pass_yds > 0.001 || passD.pass_td > 0.001 || passD.int > 0.001) {
+      var oldPass = Object.assign({}, Z, { pass_yds: oldL.pass_yds||0, pass_td: oldL.pass_td||0, int: oldL.int||0 });
+      var newPass = Object.assign({}, Z, { pass_yds: newL.pass_yds||0, pass_td: newL.pass_td||0, int: newL.int||0 });
+      var ev = mkEv(passD, oldPass, newPass);
+      if (ev) results.push(ev);
+    }
+
+    return results;
   }
 
   function _detectChanges(newData) {
     var tags = _rosterTags(newData);
     var scoring = newData.scoring || {};
-    var events = [], handled = {};
+    var allEvents = [], handled = {};
     Object.keys(newData.player_info || {}).forEach(function(pid) {
       var newL = newData.player_info[pid].stat_line;
       if (!newL) return;
       handled[pid] = true;
-      var ev = _playFromDiff(pid, _prevStats[pid] || {}, newL, tags, scoring);
-      if (ev) events.push(ev);
+      var evs = _playsFromDiff(pid, _prevStats[pid] || {}, newL, tags, scoring);
+      evs.forEach(function(ev) { allEvents.push(ev); });
     });
     (newData.matchups || []).forEach(function(m) {
       var pp = m.players_points || {};
@@ -14227,7 +14308,7 @@ function setupFunAwardsGrid() {
         if (delta <= 0.05) return;
         var rid = tags.pidToRoster[pid] || String(m.roster_id);
         var info = newData.player_info[pid] || {};
-        events.push({
+        allEvents.push({
           pid: pid, name: info.name || pid, pos: info.pos || '', nflTeam: info.team || '',
           rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
           desc: 'Scored ' + delta.toFixed(1) + ' pts', kind: 'gain', stats: ['pts'], pts: delta,
@@ -14235,9 +14316,23 @@ function setupFunAwardsGrid() {
         });
       });
     });
-    events.sort(function(a, b) { return (b.kind === 'td') - (a.kind === 'td'); });
-    events.forEach(function(ev) { _feed.unshift(ev); });
-    if (_feed.length > 120) _feed = _feed.slice(0, 120);
+    // TDs first, then chronological
+    allEvents.sort(function(a, b) { return (b.kind === 'td') - (a.kind === 'td'); });
+    allEvents.forEach(function(ev) { _feed.unshift(ev); });
+    if (_feed.length > 200) _feed = _feed.slice(0, 200);
+
+    // Push notification for my TDs
+    var myTDs = allEvents.filter(function(ev) { return ev.kind === 'td' && ev.mine; });
+    if (myTDs.length && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(function(sw) {
+        myTDs.forEach(function(ev) {
+          sw.showNotification('TD: ' + ev.name, {
+            body: ev.desc + (ev.pts > 0 ? '  +' + _fmt(ev.pts) + ' pts' : ''),
+            icon: '/static/BR_Logo.png', tag: 'rz-td-' + ev.pid
+          });
+        });
+      }).catch(function() {});
+    }
   }
 
   // ── Filters ────────────────────────────────────────────────────────────────────
@@ -14287,25 +14382,42 @@ function setupFunAwardsGrid() {
     return true;
   }
 
-  function _renderFilterBar() {
-    function sel(key, label, opts) {
-      var o = '<option value="all">' + label + ': All</option>';
-      opts.forEach(function(it) {
-        var val = Array.isArray(it) ? it[0] : it;
-        var txt = Array.isArray(it) ? it[1] : it;
-        o += '<option value="' + val + '"' + (_filters[key] === val ? ' selected' : '') + '>' + txt + '</option>';
-      });
-      return '<select class="rz-filter" data-filter="' + key + '">' + o + '</select>';
+  function _renderFilterChips() {
+    var activeCount = ['team','nfl','pos','stat'].filter(function(k) { return _filters[k] !== 'all'; }).length;
+    var chips = '';
+    if (_filters.team !== 'all') chips += '<span class="rz-active-chip" data-clear="team">' + _filters.team + ' ×</span>';
+    if (_filters.nfl  !== 'all') chips += '<span class="rz-active-chip" data-clear="nfl">'  + _filters.nfl  + ' ×</span>';
+    if (_filters.pos  !== 'all') chips += '<span class="rz-active-chip" data-clear="pos">'  + _filters.pos  + ' ×</span>';
+    if (_filters.stat !== 'all') {
+      var sl = _STAT_LIST.find(function(x) { return x[0] === _filters.stat; });
+      chips += '<span class="rz-active-chip" data-clear="stat">' + (sl ? sl[1] : _filters.stat) + ' ×</span>';
     }
-    var teamLabel = _scope === 'user' ? 'League' : 'Team';
-    return (
-      '<div class="rz-filter-bar">'
-      + sel('team', teamLabel, _teamOptions())
-      + sel('nfl',  'NFL',  _nflOptions())
-      + sel('pos',  'Pos',  _POS_LIST)
-      + sel('stat', 'Play', _STAT_LIST)
+    var panel = '';
+    if (_filterOpen) {
+      function fpRow(label, key, opts) {
+        var btns = opts.map(function(o) {
+          var val = Array.isArray(o) ? o[0] : o, lbl = Array.isArray(o) ? o[1] : o;
+          return '<button class="rz-fp-opt' + (_filters[key] === val ? ' active' : '') + '" data-fk="' + key + '" data-fv="' + val + '">' + lbl + '</button>';
+        }).join('');
+        return '<div class="rz-fp-row"><span class="rz-fp-label">' + label + '</span><div class="rz-fp-opts">' + btns + '</div></div>';
+      }
+      var tOpts = [['all','All']].concat(_teamOptions().map(function(t) { return [t, t.length > 12 ? t.slice(0,11) + '…' : t]; }));
+      var nOpts = [['all','All']].concat(_nflOptions().map(function(t) { return [t, t]; }));
+      var pOpts = [['all','All']].concat(_POS_LIST.map(function(p) { return [p, p]; }));
+      var sOpts = [['all','All']].concat(_STAT_LIST);
+      panel = '<div class="rz-filter-panel">'
+        + fpRow('Team', 'team', tOpts)
+        + fpRow('NFL',  'nfl',  nOpts)
+        + fpRow('Pos',  'pos',  pOpts)
+        + fpRow('Type', 'stat', sOpts)
+        + '</div>';
+    }
+    return '<div class="rz-chip-bar">'
+      + '<button class="rz-filter-toggle' + (_filterOpen ? ' open' : '') + '" id="rz-filter-btn">'
+      + (activeCount ? '⊞ Filter (' + activeCount + ')' : '⊞ Filter') + '</button>'
+      + chips
       + '</div>'
-    );
+      + panel;
   }
 
   // ── Render helpers ────────────────────────────────────────────────────────────
@@ -14347,6 +14459,15 @@ function setupFunAwardsGrid() {
     return (_state.matchups || []).find(function(m) { return String(m.matchup_id) === mid && !_isMyRid(m.roster_id); });
   }
 
+  function _playersLeft(matchup) {
+    if (!matchup) return 0;
+    return (matchup.starters || []).filter(function(pid) {
+      if (pid === '0') return false;
+      var code = ((_state.player_info || {})[pid] || {}).game_code || '0';
+      return code !== '2'; // not final
+    }).length;
+  }
+
   function _renderHero() {
     var mine = _myMatchups();
     if (!mine.length) {
@@ -14355,6 +14476,8 @@ function setupFunAwardsGrid() {
     }
     var myMatchup = mine[0], oppMatchup = _oppOf(myMatchup);
     var myPts = parseFloat(myMatchup.points || 0), oppPts = parseFloat(oppMatchup ? oppMatchup.points || 0 : 0);
+    var myProj = myMatchup.projected_pts != null ? parseFloat(myMatchup.projected_pts) : null;
+    var oppProj = oppMatchup && oppMatchup.projected_pts != null ? parseFloat(oppMatchup.projected_pts) : null;
     var total = myPts + oppPts, winning = myPts >= oppPts, diff = Math.abs(myPts - oppPts).toFixed(1);
     var myName = _ownerName(myMatchup.roster_id) || 'My Team';
     var oppName = oppMatchup ? (_ownerName(oppMatchup.roster_id) || 'Opponent') : 'Opponent';
@@ -14364,18 +14487,30 @@ function setupFunAwardsGrid() {
       if (!m) return;
       (m.starters || []).forEach(function(pid) { if (_gameStatus(pid).type === 'live') liveCnt++; });
     });
+    var myLeft = _playersLeft(myMatchup), oppLeft = _playersLeft(oppMatchup);
+    var isClose = liveCnt > 0 && parseFloat(diff) < 5;
     var meta = [];
     if (winning && diff > 0) meta.push('<span class="accent win">+' + diff + ' lead</span>');
     else if (!winning && diff > 0) meta.push('<span class="accent lose">Trailing ' + diff + '</span>');
     else meta.push('<span class="accent">Tied</span>');
     if (liveCnt > 0) meta.push(liveCnt + ' live');
     return (
-      '<div class="rz-hero">'
-      + '<div class="rz-hero-label">Your Matchup  •  Week ' + (_state.week || '') + '</div>'
+      '<div class="rz-hero' + (isClose ? ' rz-close-game' : '') + '">'
+      + '<div class="rz-hero-label">Your Matchup  •  Week ' + (_state.week || '') + (isClose ? '  •  <span class="rz-close-label">Close game</span>' : '') + '</div>'
       + '<div class="rz-hero-scores">'
-      + '<div class="rz-hero-side left' + (!winning ? ' losing' : '') + '"><div class="rz-hero-tname">' + myName + '</div><div class="rz-hero-pts">' + _fmt(myPts) + '</div></div>'
+      + '<div class="rz-hero-side left' + (!winning ? ' losing' : '') + '">'
+      +   '<div class="rz-hero-tname">' + myName + '</div>'
+      +   '<div class="rz-hero-pts">' + _fmt(myPts) + '</div>'
+      +   (myProj != null ? '<div class="rz-proj-score">Proj ' + _fmt(myProj) + '</div>' : '')
+      +   (myLeft > 0 ? '<div class="rz-players-left">' + myLeft + ' left</div>' : '')
+      + '</div>'
       + '<div class="rz-hero-vs">vs</div>'
-      + '<div class="rz-hero-side right"><div class="rz-hero-tname" style="text-align:right">' + oppName + '</div><div class="rz-hero-pts" style="text-align:right">' + _fmt(oppPts) + '</div></div>'
+      + '<div class="rz-hero-side right">'
+      +   '<div class="rz-hero-tname" style="text-align:right">' + oppName + '</div>'
+      +   '<div class="rz-hero-pts" style="text-align:right">' + _fmt(oppPts) + '</div>'
+      +   (oppProj != null ? '<div class="rz-proj-score" style="text-align:right">Proj ' + _fmt(oppProj) + '</div>' : '')
+      +   (oppLeft > 0 ? '<div class="rz-players-left" style="text-align:right">' + oppLeft + ' left</div>' : '')
+      + '</div>'
       + '</div>'
       + '<div class="rz-adv-wrap"><div class="rz-adv-bar"><div class="rz-adv-fill ' + (winning ? 'winning' : 'losing') + '" style="width:' + fillPct + '%"></div></div></div>'
       + '<div class="rz-hero-meta">' + meta.join('  •  ') + '</div>'
@@ -14391,14 +14526,18 @@ function setupFunAwardsGrid() {
       var opp = _oppOf(m);
       var myPts = parseFloat(m.points || 0), oppPts = parseFloat(opp ? opp.points || 0 : 0);
       var win = myPts >= oppPts;
+      var diff = Math.abs(myPts - oppPts);
+      var isClose = diff < 5;
       if (win) winning++;
       var oppName = opp ? (_ownerName(opp.roster_id) || 'Opponent') : 'Opponent';
+      var myLeft = _playersLeft(m), oppLeft = _playersLeft(opp);
       return (
-        '<div class="rz-lg-row">'
-        + '<div class="rz-lg-name">' + (m.league_name || 'League') + '<span>vs ' + oppName + '</span></div>'
+        '<div class="rz-lg-row' + (isClose ? ' rz-close-row' : '') + '">'
+        + '<div class="rz-lg-name">' + (m.league_name || 'League') + '<span>vs ' + oppName + (myLeft > 0 ? ' · ' + myLeft + ' left' : '') + '</span></div>'
         + '<div class="rz-lg-score ' + (win ? 'win' : 'lose') + '">' + _fmt(myPts) + '</div>'
         + '<div class="rz-lg-sep">-</div>'
         + '<div class="rz-lg-score opp">' + _fmt(oppPts) + '</div>'
+        + (isClose ? '<span class="rz-close-pip" title="Close game">!</span>' : '')
         + '<span class="rz-lg-pill ' + (win ? 'win' : 'lose') + '">' + (win ? 'W' : 'L') + '</span>'
         + '</div>'
       );
@@ -14430,19 +14569,29 @@ function setupFunAwardsGrid() {
       var pair = groups[mid], a = pair[0], b = pair[1];
       if (!b) return;
       var ptsA = parseFloat(a.points || 0), ptsB = parseFloat(b.points || 0), aLead = ptsA >= ptsB;
+      var projA = a.projected_pts != null ? parseFloat(a.projected_pts) : null;
+      var projB = b.projected_pts != null ? parseFloat(b.projected_pts) : null;
       var anyLive = false;
       [a, b].forEach(function(m) { (m.starters || []).forEach(function(pid) { if (_gameStatus(pid).type === 'live') anyLive = true; }); });
+      var isClose = anyLive && Math.abs(ptsA - ptsB) < 5;
       var cls = anyLive ? 'live' : 'final';
       var vA = _isMyRid(a.roster_id), vB = _isMyRid(b.roster_id);
       var lgHdr = a.league_name ? '<span class="rz-mc-league">' + a.league_name + '</span>' : '';
-      html += '<div class="rz-matchup-card">'
-        + '<div class="rz-mc-header">' + lgHdr + '<span class="rz-mc-status ' + cls + '">' + (anyLive ? 'LIVE' : 'FINAL') + '</span></div>'
+      var leftA = _playersLeft(a), leftB = _playersLeft(b);
+      html += '<div class="rz-matchup-card' + (isClose ? ' rz-close-card' : '') + '">'
+        + '<div class="rz-mc-header">' + lgHdr + '<span class="rz-mc-status ' + cls + '">' + (anyLive ? 'LIVE' : 'FINAL') + '</span>' + (isClose ? '<span class="rz-close-label">Close</span>' : '') + '</div>'
         + '<div class="rz-mc-row">'
-        + '<div class="rz-mc-name' + (vA ? ' viewer' : '') + '">' + (_ownerName(a.roster_id) || 'Team') + '</div>'
-        + '<div class="rz-mc-score' + (aLead ? ' leader' : '') + '">' + _fmt(ptsA) + '</div>'
+        + '<div class="rz-mc-name' + (vA ? ' viewer' : '') + '">' + (_ownerName(a.roster_id) || 'Team') + (leftA > 0 ? '<span class="rz-mc-left"> ' + leftA + ' left</span>' : '') + '</div>'
+        + '<div class="rz-mc-pts-col">'
+        +   '<div class="rz-mc-score' + (aLead ? ' leader' : '') + '">' + _fmt(ptsA) + '</div>'
+        +   (projA != null ? '<div class="rz-mc-proj">Proj ' + _fmt(projA) + '</div>' : '')
+        + '</div>'
         + '<div class="rz-mc-sep">-</div>'
-        + '<div class="rz-mc-score' + (!aLead ? ' leader' : '') + '">' + _fmt(ptsB) + '</div>'
-        + '<div class="rz-mc-name' + (vB ? ' viewer' : '') + '" style="text-align:right">' + (_ownerName(b.roster_id) || 'Team') + '</div>'
+        + '<div class="rz-mc-pts-col">'
+        +   '<div class="rz-mc-score' + (!aLead ? ' leader' : '') + '">' + _fmt(ptsB) + '</div>'
+        +   (projB != null ? '<div class="rz-mc-proj">Proj ' + _fmt(projB) + '</div>' : '')
+        + '</div>'
+        + '<div class="rz-mc-name' + (vB ? ' viewer' : '') + '" style="text-align:right">' + (_ownerName(b.roster_id) || 'Team') + (leftB > 0 ? '<span class="rz-mc-left"> ' + leftB + ' left</span>' : '') + '</div>'
         + '</div></div>';
     });
     return html || '<div class="rz-feed-empty">No matchup data yet.</div>';
@@ -14620,7 +14769,7 @@ function setupFunAwardsGrid() {
       + _renderScopeToggle()
       + summary
       + tabBar
-      + (showFilters ? _renderFilterBar() : '')
+      + (showFilters ? _renderFilterChips() : '')
       + panels;
 
     _syncFeed();
@@ -14632,6 +14781,7 @@ function setupFunAwardsGrid() {
         _filters = { team: 'all', nfl: 'all', pos: 'all', stat: 'all' };
         _feed = [];
         _shownFeedIds = new Set();
+        _filterOpen = false;
         _countdown = 1;  // trigger an immediate refresh with the new scope
         _render();
         _refresh();
@@ -14643,9 +14793,21 @@ function setupFunAwardsGrid() {
         _render();
       });
     });
-    root.querySelectorAll('.rz-filter').forEach(function(s) {
-      s.addEventListener('change', function() {
-        _filters[s.dataset.filter] = s.value;
+    var filterBtn = root.querySelector('#rz-filter-btn');
+    if (filterBtn) filterBtn.addEventListener('click', function() {
+      _filterOpen = !_filterOpen;
+      _render();
+    });
+    root.querySelectorAll('[data-fk]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        _filters[btn.dataset.fk] = btn.dataset.fv;
+        _filterOpen = false;
+        _render();
+      });
+    });
+    root.querySelectorAll('[data-clear]').forEach(function(chip) {
+      chip.addEventListener('click', function() {
+        _filters[chip.dataset.clear] = 'all';
         _render();
       });
     });
@@ -14720,7 +14882,7 @@ function setupFunAwardsGrid() {
       _detectChanges(newData);
       _state = newData;
       _seedPrevStats(newData);
-      _countdown = 30;
+      _countdown = _anyLive() ? 15 : 60;
       _render();
     } catch (_) {}
   }
@@ -14729,7 +14891,10 @@ function setupFunAwardsGrid() {
     _countdown--;
     var el = document.getElementById('rz-timer');
     if (el) el.textContent = _countdown + 's';
-    if (_countdown <= 0) { _countdown = 30; _refresh(); }
+    if (_countdown <= 0) {
+      _countdown = _anyLive() ? 15 : 60;
+      _refresh();
+    }
   }
 
   document.addEventListener('click', function(e) {

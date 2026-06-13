@@ -9583,6 +9583,29 @@ def _redzone_boxscore(game_id: str) -> dict:
     return box
 
 
+_RZ_PROJ_CACHE: dict = {}
+_RZ_PROJ_TTL = 900.0  # 15 min
+
+
+def _rz_get_projections(season: int, week: int) -> dict:
+    """Return {pid: projected_pts_ppr} for the week, cached 15 min."""
+    key = f"{season}:{week}"
+    entry = _RZ_PROJ_CACHE.get(key)
+    if entry and time.time() - entry["ts"] < _RZ_PROJ_TTL:
+        return entry["data"]
+    data: dict = {}
+    try:
+        from utils.utils import fetch_week_from_sleeper
+        raw = fetch_week_from_sleeper(season, week) or {}
+        for pid, v in raw.items():
+            if isinstance(v, dict):
+                data[str(pid)] = float(v.get("ppr") or v.get("half_ppr") or 0)
+    except Exception:
+        pass
+    _RZ_PROJ_CACHE[key] = {"ts": time.time(), "data": data}
+    return data
+
+
 def _rz_num(v) -> float:
     try:
         return float(v)
@@ -9591,10 +9614,11 @@ def _rz_num(v) -> float:
 
 
 def _rz_stat_line_from_ps(ps: dict) -> dict:
-    """Map a Tank01 playerStats entry to our canonical stat_line."""
+    """Map a Tank01 playerStats entry to our canonical stat_line (QB/RB/WR/TE/K)."""
     passing   = ps.get("Passing")   or {}
     rushing   = ps.get("Rushing")   or {}
     receiving = ps.get("Receiving") or {}
+    kicking   = ps.get("Kicking")   or {}
     return {
         "pass_yds": _rz_num(passing.get("passYds")),
         "pass_td":  _rz_num(passing.get("passTD")),
@@ -9606,6 +9630,21 @@ def _rz_stat_line_from_ps(ps: dict) -> dict:
         "rec_yds":  _rz_num(receiving.get("recYds")),
         "rec_td":   _rz_num(receiving.get("recTD")),
         "targets":  _rz_num(receiving.get("targets")),
+        # Kicker fields
+        "fgm":      _rz_num(kicking.get("fgm") or kicking.get("fgMade")),
+        "fg_long":  _rz_num(kicking.get("fgLng") or kicking.get("fg_long") or kicking.get("fgLong")),
+        "xpm":      _rz_num(kicking.get("xpm") or kicking.get("xpMade")),
+    }
+
+
+def _rz_def_stat_line(team_side: dict) -> dict:
+    """Build DEF stat_line from Tank01 teamStats[home/away] entry."""
+    defense = team_side.get("Defense") or team_side.get("defense") or {}
+    return {
+        "sacks":   _rz_num(defense.get("sacks") or defense.get("totalSacks")),
+        "def_int": _rz_num(defense.get("int") or defense.get("interceptions")),
+        "fum_rec": _rz_num(defense.get("fumblesRecovered") or defense.get("fumRec")),
+        "def_td":  _rz_num(defense.get("touchdowns") or defense.get("totalTD") or defense.get("defTD")),
     }
 
 
@@ -9770,23 +9809,63 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "d_me":  pi("M. Evans",     "WR",  "JAX", "JAX_MIA"),
     }
 
+    # Demo DEF and K stat lines (time-scaled from flat totals)
+    _DEMO_DEF_SCRIPT = {
+        "d_sfd":  [{"t": 80,  "k": "sack"}, {"t": 160, "k": "def_int"}, {"t": 320, "k": "def_td"}, {"t": 500, "k": "sack"}],
+        "d_dad":  [{"t": 100, "k": "sack"}, {"t": 250, "k": "fum_rec"}, {"t": 440, "k": "sack"}],
+        "d_kcd":  [{"t": 60,  "k": "sack"}, {"t": 200, "k": "def_int"}, {"t": 380, "k": "sack"}],
+        "d_bufd": [{"t": 90,  "k": "sack"}, {"t": 300, "k": "def_int"}, {"t": 450, "k": "def_td"}],
+    }
+    _DEMO_K_SCRIPT = {
+        "d_em": [{"t": 110, "k": "fgm", "dist": 38}, {"t": 240, "k": "xpm"}, {"t": 390, "k": "fgm", "dist": 51}, {"t": 520, "k": "xpm"}],
+        "d_jt": [{"t": 130, "k": "fgm", "dist": 45}, {"t": 270, "k": "xpm"}, {"t": 410, "k": "fgm", "dist": 33}],
+    }
+
+    def _demo_def_line(pid, t_eff):
+        script = _DEMO_DEF_SCRIPT.get(pid, [])
+        L = {"sacks": 0, "def_int": 0, "fum_rec": 0, "def_td": 0}
+        for p in script:
+            if p["t"] <= t_eff:
+                L[p["k"]] = L.get(p["k"], 0) + 1
+        return L
+
+    def _demo_k_line(pid, t_eff):
+        script = _DEMO_K_SCRIPT.get(pid, [])
+        L = {"fgm": 0, "fg_long": 0, "xpm": 0}
+        for p in script:
+            if p["t"] <= t_eff:
+                if p["k"] == "fgm":
+                    L["fgm"] += 1
+                    if p.get("dist", 0) > L["fg_long"]:
+                        L["fg_long"] = p["dist"]
+                elif p["k"] == "xpm":
+                    L["xpm"] += 1
+        return L
+
     pts = {}
     for pid, info in PLAYERS.items():
         pos  = info["pos"]
         code = info.get("game_code", "")
-        if pos in ("K", "DEF"):
-            pts[pid] = _RZ_DEMO_KDEF.get(pid, 0.0)
-            continue
         t_eff = _RZ_DEMO_GAME if code == "2" else t
-        line  = _rz_demo_fold(_rz_demo_script(pid, pos), t_eff)
-        info["stat_line"] = line
-        pts[pid] = _rz_demo_pts(line)
+        if pos == "DEF":
+            line = _demo_def_line(pid, t_eff)
+            info["stat_line"] = line
+            pts[pid] = _RZ_DEMO_KDEF.get(pid, 0.0)
+        elif pos == "K":
+            line = _demo_k_line(pid, t_eff)
+            info["stat_line"] = line
+            pts[pid] = _RZ_DEMO_KDEF.get(pid, 0.0)
+        else:
+            line = _rz_demo_fold(_rz_demo_script(pid, pos), t_eff)
+            info["stat_line"] = line
+            pts[pid] = _rz_demo_pts(line)
 
     def mk(rid, mid, starters, bench, league_name=None):
         players = starters + bench
         pp = {p: pts.get(p, 0.0) for p in players}
         m = {"roster_id": rid, "matchup_id": mid,
              "points": round(sum(pts.get(p, 0.0) for p in starters), 2),
+             "projected_pts": round(sum(pts.get(p, 0.0) for p in starters) + 15.0, 2),
              "starters": starters, "players": players, "players_points": pp}
         if league_name:
             m["league_name"] = league_name
@@ -9933,21 +10012,50 @@ def _redzone_collect(platform, league_id, season, week):
         for gid, pids in games_to_pids.items():
             box = _redzone_boxscore(gid)
             pstats = box.get("playerStats") or {}
-            if not isinstance(pstats, dict) or not pstats:
+            tstats = box.get("teamStats") or {}
+            if isinstance(pstats, dict) and pstats:
+                name_map = {}
+                for _, ps in pstats.items():
+                    ln = (ps.get("longName") or "").lower()
+                    if ln:
+                        name_map[ln] = ps
+                for pid in pids:
+                    pi = player_info[pid]
+                    pos = pi.get("pos", "")
+                    if pos == "DEF":
+                        # Match team defense to boxscore teamStats
+                        team = pi.get("team", "")
+                        home = pi.get("home", "")
+                        away = pi.get("away", "")
+                        side = "home" if team == home else ("away" if team == away else None)
+                        if side and isinstance(tstats.get(side), dict):
+                            pi["stat_line"] = _rz_def_stat_line(tstats[side])
+                    else:
+                        full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
+                        ps = name_map.get(full)
+                        if ps:
+                            pi["stat_line"] = _rz_stat_line_from_ps(ps)
+
+    # Projected points per matchup (PPR, cached 15 min)
+    proj_pts: dict = {}
+    try:
+        proj_pts = _rz_get_projections(season, week)
+    except Exception:
+        pass
+
+    matchups_out = []
+    for m in matchups:
+        proj_total = float(m.get("points") or 0)
+        for pid in (m.get("starters") or []):
+            if pid == "0":
                 continue
-            name_map = {}
-            for _, ps in pstats.items():
-                ln = (ps.get("longName") or "").lower()
-                if ln:
-                    name_map[ln] = ps
-            for pid in pids:
-                full = (nfl_players.get(pid, {}).get("full_name") or "").lower()
-                ps = name_map.get(full)
-                if ps:
-                    player_info[pid]["stat_line"] = _rz_stat_line_from_ps(ps)
+            code = (player_info.get(pid) or {}).get("game_code", "0")
+            if code not in ("1", "2"):  # not live/final → add remaining projection
+                proj_total += float(proj_pts.get(str(pid), 0))
+        matchups_out.append({**m, "projected_pts": round(proj_total, 2)})
 
     return {
-        "matchups": matchups,
+        "matchups": matchups_out,
         "rosters": [
             {"roster_id": r.get("roster_id"), "owner_id": r.get("owner_id"),
              "starters": r.get("starters") or [], "players": r.get("players") or []}
