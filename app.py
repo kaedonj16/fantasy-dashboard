@@ -1470,9 +1470,9 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ("Matchups",           "page_weekly",           "weekly",   False),
             ("Weekly Recap", "page_recap", "recap", False),
         ], ["weekly", "recap"], "weeklyNavDropdown"))
-        _rz_cls  = "nav-pill nav-pill-redzone active" if active == "redzone" else "nav-pill nav-pill-redzone"
-        _rz_href = url_for("page_redzone", platform=platform, season=season, league_id=league_id)
-        nav_pills.append(f"<a class='{_rz_cls}' href='{_rz_href}'><span class='rz-nav-dot'></span>Redzone</a>")
+    _rz_cls  = "nav-pill nav-pill-redzone active" if active == "redzone" else "nav-pill nav-pill-redzone"
+    _rz_href = url_for("page_redzone", platform=platform, season=season, league_id=league_id)
+    nav_pills.append(f"<a class='{_rz_cls}' href='{_rz_href}'><span class='rz-nav-dot'></span>Redzone</a>")
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",       "page_standings",    "standings",    False),
         ("Teams",           "page_teams",        "teams",        False),
@@ -9562,6 +9562,108 @@ def page_weekly(platform: str, season: int, league_id: str):
 
 # ─── BR Redzone ────────────────────────────────────────────────────────────────
 
+def _redzone_demo_data():
+    """Hardcoded live-game test data for the Redzone demo mode."""
+    _g = lambda away, apts, home, hpts, code: {
+        "game_status": "In Progress" if code == "1" else "Final",
+        "game_code": code, "home": home, "away": away,
+        "home_pts": str(hpts), "away_pts": str(apts),
+    }
+    GAMES = {
+        "BAL_HOU": _g("BAL", 21, "HOU", 14, "1"),
+        "TEN_IND": _g("TEN", 28, "IND", 17, "2"),
+        "DET_CHI": _g("DET", 24, "CHI",  7, "1"),
+        "DAL_NYG": _g("DAL", 35, "NYG", 10, "2"),
+        "JAX_MIA": _g("JAX", 10, "MIA", 17, "1"),
+        "KC_LV":   _g("KC",  21, "LV",   3, "1"),
+        "CIN_PIT": _g("CIN", 24, "PIT", 13, "2"),
+        "SF_ARI":  _g("SF",  31, "ARI",  6, "2"),
+        "ATL_NO":  _g("ATL", 17, "NO",  10, "1"),
+        "LAR_SEA": _g("LAR", 21, "SEA", 14, "1"),
+        "PHI_WAS": _g("PHI", 17, "WAS", 10, "1"),
+    }
+    def pi(name, pos, team, gk):
+        g = GAMES.get(gk, {})
+        return {"name": name, "pos": pos, "team": team,
+                "game_id": "demo_" + gk, **g}
+    PLAYERS = {
+        # My starters
+        "d_lj":  pi("L. Jackson",   "QB",  "BAL", "BAL_HOU"),
+        "d_dh":  pi("D. Henry",     "RB",  "TEN", "TEN_IND"),
+        "d_jg":  pi("J. Gibbs",     "RB",  "DET", "DET_CHI"),
+        "d_cdl": pi("CeeDee Lamb",  "WR",  "DAL", "DAL_NYG"),
+        "d_mn":  pi("M. Nabers",    "WR",  "NYG", "DAL_NYG"),
+        "d_tk":  pi("T. Kelce",     "TE",  "KC",  "KC_LV"),
+        "d_bt":  pi("B. Thomas",    "WR",  "JAX", "JAX_MIA"),
+        "d_em":  pi("E. McPherson", "K",   "CIN", "CIN_PIT"),
+        "d_sfd": pi("SF Defense",   "DEF", "SF",  "SF_ARI"),
+        "d_tp":  pi("T. Pollard",   "RB",  "TEN", "TEN_IND"),  # bench
+        # Opponent starters
+        "d_jb":  pi("J. Burrow",    "QB",  "CIN", "CIN_PIT"),
+        "d_br":  pi("B. Robinson",  "RB",  "ATL", "ATL_NO"),
+        "d_rs":  pi("R. Stevenson", "RB",  "TEN", "TEN_IND"),
+        "d_jj":  pi("J. Jefferson", "WR",  "LAR", "LAR_SEA"),
+        "d_da":  pi("D. Adams",     "WR",  "LV",  "KC_LV"),
+        "d_sl":  pi("S. LaPorta",   "TE",  "DET", "DET_CHI"),
+        "d_pn":  pi("P. Nacua",     "WR",  "LAR", "LAR_SEA"),
+        "d_jt":  pi("J. Tucker",    "K",   "BAL", "BAL_HOU"),
+        "d_dad": pi("DAL Defense",  "DEF", "DAL", "DAL_NYG"),
+        "d_gp":  pi("G. Pickens",   "WR",  "PIT", "CIN_PIT"),  # bench
+        # Other matchups
+        "d_jh":  pi("J. Hurts",     "QB",  "PHI", "PHI_WAS"),
+        "d_av":  pi("A. Jones",     "RB",  "LAR", "LAR_SEA"),
+        "d_th":  pi("T. Hill",      "WR",  "MIA", "JAX_MIA"),
+        "d_jc":  pi("J. Chase",     "WR",  "CIN", "CIN_PIT"),
+        "d_ma":  pi("M. Andrews",   "TE",  "BAL", "BAL_HOU"),
+        "d_kcd": pi("KC Defense",   "DEF", "KC",  "KC_LV"),
+        "d_gs":  pi("G. Smith",     "QB",  "SEA", "LAR_SEA"),
+        "d_dm":  pi("D. Montgomery","RB",  "DET", "DET_CHI"),
+        "d_sd":  pi("S. Diggs",     "WR",  "TEN", "TEN_IND"),
+        "d_dw":  pi("D. Waller",    "TE",  "NYG", "DAL_NYG"),
+        "d_bufd":pi("BUF Defense",  "DEF", "PHI", "PHI_WAS"),
+        "d_me":  pi("M. Evans",     "WR",  "JAX", "JAX_MIA"),
+    }
+    r1_start = ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"]
+    r2_start = ["d_jb","d_br","d_rs","d_jj","d_da","d_sl","d_pn","d_jt","d_dad"]
+    r3_start = ["d_jh","d_av","d_th","d_jc","d_ma","d_kcd","d_gs","d_dm","d_sd"]
+    r4_start = ["d_dw","d_me","d_bufd","d_sd","d_dm","d_gs","d_th","d_av","d_jh"]
+    p1 = {"d_lj":28.4,"d_dh":22.1,"d_jg":11.6,"d_cdl":24.3,"d_mn":9.8,"d_tk":18.2,"d_bt":14.6,"d_em":12.0,"d_sfd":6.8,"d_tp":8.2}
+    p2 = {"d_jb":19.8,"d_br":14.3,"d_rs":7.1,"d_jj":22.6,"d_da":8.4,"d_sl":11.2,"d_pn":9.6,"d_jt":9.0,"d_dad":3.0,"d_gp":6.2}
+    p3 = {"d_jh":24.1,"d_av":13.2,"d_th":19.4,"d_jc":18.8,"d_ma":9.6,"d_kcd":7.0,"d_gs":15.2,"d_dm":11.8,"d_sd":8.4}
+    p4 = {"d_dw":6.2,"d_me":11.4,"d_bufd":4.0,"d_sd":8.4,"d_dm":11.8,"d_gs":15.2,"d_th":19.4,"d_av":13.2,"d_jh":24.1}
+    return {
+        "week": 14, "season": 2024, "platform": "sleeper", "league_id": "demo",
+        "matchups": [
+            {"roster_id": 1, "matchup_id": 1, "points": sum(p1[k] for k in r1_start),
+             "starters": r1_start, "players": r1_start + ["d_tp"], "players_points": p1},
+            {"roster_id": 2, "matchup_id": 1, "points": sum(p2[k] for k in r2_start),
+             "starters": r2_start, "players": r2_start + ["d_gp"], "players_points": p2},
+            {"roster_id": 3, "matchup_id": 2, "points": sum(p3[k] for k in r3_start),
+             "starters": r3_start, "players": r3_start, "players_points": p3},
+            {"roster_id": 4, "matchup_id": 2, "points": sum(p4[k] for k in r4_start),
+             "starters": r4_start, "players": r4_start, "players_points": p4},
+        ],
+        "rosters": [
+            {"roster_id": 1, "owner_id": "u1", "starters": r1_start, "players": r1_start + ["d_tp"]},
+            {"roster_id": 2, "owner_id": "u2", "starters": r2_start, "players": r2_start + ["d_gp"]},
+            {"roster_id": 3, "owner_id": "u3", "starters": r3_start, "players": r3_start},
+            {"roster_id": 4, "owner_id": "u4", "starters": r4_start, "players": r4_start},
+        ],
+        "users": [
+            {"user_id": "u1", "display_name": "My Squad"},
+            {"user_id": "u2", "display_name": "TD Tyrones"},
+            {"user_id": "u3", "display_name": "Gridiron Gurus"},
+            {"user_id": "u4", "display_name": "Bench Warmers"},
+        ],
+        "player_info": PLAYERS,
+        "scoring": {"pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0,
+                    "rush_yd": 0.1, "rush_td": 6.0, "rec": 0.5, "rec_yd": 0.1, "rec_td": 6.0},
+        "viewer_roster_id": "1",
+        "updated_at": time.time(),
+        "is_demo": True,
+    }
+
+
 def _redzone_fetch(platform, league_id, season, week=None):
     """Return live Redzone payload as a serialisable dict."""
     from dashboard_services.api import (
@@ -9637,13 +9739,16 @@ def _redzone_fetch(platform, league_id, season, week=None):
 
 @app.route("/<platform>/<int:season>/<league_id>/redzone")
 def page_redzone(platform: str, season: int, league_id: str):
-    try:
-        data = _redzone_fetch(platform, league_id, season)
-    except Exception as _e:
-        logger.warning("[redzone] initial fetch failed: %s", _e)
-        data = {"matchups": [], "rosters": [], "users": [], "player_info": {},
-                "week": 1, "season": season, "viewer_roster_id": "", "scoring": {},
-                "platform": platform, "league_id": league_id, "updated_at": time.time()}
+    if request.args.get("demo") == "1":
+        data = _redzone_demo_data()
+    else:
+        try:
+            data = _redzone_fetch(platform, league_id, season)
+        except Exception as _e:
+            logger.warning("[redzone] initial fetch failed: %s", _e)
+            data = {"matchups": [], "rosters": [], "users": [], "player_info": {},
+                    "week": 1, "season": season, "viewer_roster_id": "", "scoring": {},
+                    "platform": platform, "league_id": league_id, "updated_at": time.time()}
 
     body = (
         '<div id="rz-root" class="rz-page"><div class="rz-boot-spinner">Loading...</div></div>'
@@ -9654,6 +9759,8 @@ def page_redzone(platform: str, season: int, league_id: str):
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
 def api_redzone_data(platform: str, season: int, league_id: str):
+    if request.args.get("demo") == "1":
+        return jsonify(_redzone_demo_data())
     week = request.args.get("week")
     try:
         return jsonify(_redzone_fetch(platform, league_id, season, week=week))
