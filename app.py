@@ -5657,6 +5657,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
           </div>
         </div>
 
+        <div id="weekly-rz-cta" class="weekly-rz-cta" style="display:none">
+          <span class="weekly-rz-cta-dot"></span>
+          <span class="weekly-rz-cta-text">NFL games are live right now — track your players in real time.</span>
+          <a href="./redzone" class="weekly-rz-cta-link">Watch on Redzone →</a>
+        </div>
+
         <div class="standings-main two-col-standings">
           <div class="standings-col">
             <div class="card-tabs" id="weeklyLeftTabs">
@@ -5808,6 +5814,65 @@ def build_weekly_hub_body(ctx: dict) -> str:
         if (mySeq === requestSeq) hideLoading();
       }});
   }});
+}})();
+
+// ── Weekly: game-day auto-refresh ──────────────────────────────────────────────
+(function() {{
+  var sel = document.getElementById('hubWeek');
+  if (!sel) return;
+
+  function isGameDay() {{
+    var day = new Date().getDay(); // Sun=0,Mon=1,Thu=4,Sat=6
+    return day === 0 || day === 1 || day === 4 || day === 6;
+  }}
+
+  // Show/hide Redzone CTA banner
+  var cta = document.getElementById('weekly-rz-cta');
+  if (cta && isGameDay()) cta.style.display = '';
+
+  // Live badge next to "Weekly Hub" h2
+  if (isGameDay()) {{
+    var h2 = document.querySelector('.card-header-row h2');
+    if (h2 && !h2.querySelector('.weekly-live-badge')) {{
+      var badge = document.createElement('span');
+      badge.className = 'weekly-live-badge';
+      badge.textContent = 'LIVE';
+      h2.appendChild(badge);
+    }}
+  }}
+
+  // Auto-refresh current week every 60 s on game days only
+  if (!isGameDay()) return;
+  var _autoRefreshSeq = 0;
+  setInterval(function() {{
+    var w = String(sel.value || '');
+    if (!w) return;
+    var mySeq = ++_autoRefreshSeq;
+    var url = '/api/weekly-week?platform=' + encodeURIComponent({platform_js}) +
+      '&season=' + encodeURIComponent({season_js}) +
+      '&league_id=' + encodeURIComponent({league_js}) +
+      '&week=' + encodeURIComponent(w);
+    fetch(url).then(function(res) {{
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }}).then(function(data) {{
+      if (!data || !data.ok || mySeq !== _autoRefreshSeq) return; // stale or error
+      var mainContainer = document.querySelector('.week-main-panels');
+      var sideContainer = document.querySelector('.week-side-panels');
+      var matchupsContainer = document.getElementById('weeklyMatchupsContainer');
+      if (mainContainer && typeof data.top_html === 'string') {{
+        mainContainer.innerHTML = '<div class="week-main-panel active" data-week="' + w + '">' + data.top_html + '</div>';
+      }}
+      if (sideContainer && typeof data.highlights_html === 'string') {{
+        sideContainer.innerHTML = '<div class="week-side-panel active" data-week="' + w + '">' + data.highlights_html + '</div>';
+      }}
+      if (matchupsContainer && typeof data.matchups_html === 'string') {{
+        matchupsContainer.innerHTML = data.matchups_html;
+        if (typeof window.resetMatchupCarousels === 'function') window.resetMatchupCarousels(matchupsContainer);
+        if (typeof window.initPageRoot === 'function') window.initPageRoot(matchupsContainer);
+      }}
+    }}).catch(function() {{}});
+  }}, 60000);
 }})();
 
 // Activate a weekly left-tab by name and switch its panel

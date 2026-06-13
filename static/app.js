@@ -14024,7 +14024,8 @@ function setupFunAwardsGrid() {
   var _demoT    = parseFloat(_state.demo_t || 150);
   var _scope    = _state.scope || 'league';
   var _filters  = { team: 'all', nfl: 'all', pos: 'all', stat: 'all' };
-  var _filterOpen = false;
+  var _filterOpen  = false;
+  var _myTeamOnly  = false;  // quick "My Team" toggle above feed
   var _heroMid    = null;  // selected matchup card key (mid or roster_id); null = league-wide
   var _slideDir   = 'none'; // 'from-right' | 'from-left' | 'none'
   var _feedPage   = 0;      // current plays feed page (0 = newest/live)
@@ -14397,6 +14398,7 @@ function setupFunAwardsGrid() {
     return (_scope === 'user' ? ev.league : ev.owner) === _filters.team;
   }
   function _eventMatches(ev) {
+    if (_myTeamOnly && !ev.mine) return false;
     if (!_passTeam(ev)) return false;
     if (_filters.nfl !== 'all' && ev.nflTeam !== _filters.nfl) return false;
     if (_filters.pos !== 'all' && ev.pos !== _filters.pos) return false;
@@ -14462,7 +14464,11 @@ function setupFunAwardsGrid() {
         + fpRow('Type', 'stat', sOpts)
         + '</div>';
     }
+    var myTeamBtn = _myRids.size
+      ? '<button class="rz-myteam-btn' + (_myTeamOnly ? ' active' : '') + '" id="rz-myteam-btn">My Team</button>'
+      : '';
     return '<div class="rz-chip-bar">'
+      + myTeamBtn
       + '<button class="rz-filter-toggle' + (_filterOpen ? ' open' : '') + '" id="rz-filter-btn">'
       + (activeCount ? '⊞ Filter (' + activeCount + ')' : '⊞ Filter') + '</button>'
       + chips
@@ -14843,6 +14849,61 @@ function setupFunAwardsGrid() {
 
   var _PAGE_SIZE = 20;
 
+  function _pregameScheduleHtml() {
+    var info = _state.player_info || {};
+    var myPids = new Set();
+    _myMatchups().forEach(function(m) {
+      (m.players || []).forEach(function(pid) { myPids.add(pid); });
+    });
+
+    // Group scheduled/live players by game_id
+    var gameMap = {};
+    Object.keys(info).forEach(function(pid) {
+      var p = info[pid];
+      var gid = p.game_id || '';
+      if (!gid || !p.home || !p.away) return;
+      var code = String(p.game_code || '0');
+      if (code === '2') return; // skip final games
+      if (!gameMap[gid]) gameMap[gid] = { home: p.home, away: p.away, status: p.game_status || '', code: code, mine: [], other: [] };
+      if (myPids.has(pid)) gameMap[gid].mine.push(p.name || pid);
+      else gameMap[gid].other.push(pid);
+    });
+
+    var gameIds = Object.keys(gameMap);
+    if (!gameIds.length) {
+      return '<div class="rz-pregame-empty-hint">Plays appear here as games unfold — targets, catches, carries and touchdowns with live fantasy points.</div>';
+    }
+
+    // Sort: games with my players first
+    gameIds.sort(function(a, b) {
+      return (gameMap[b].mine.length > 0 ? 1 : 0) - (gameMap[a].mine.length > 0 ? 1 : 0);
+    });
+
+    var hasMyGames = gameIds.some(function(gid) { return gameMap[gid].mine.length > 0; });
+    var html = '<div class="rz-pregame-wrap">'
+      + '<div class="rz-pregame-label">' + (gameIds.some(function(g) { return gameMap[g].code === '1'; }) ? 'Games in Progress' : 'Upcoming Games') + '</div>';
+
+    gameIds.forEach(function(gid) {
+      var g = gameMap[gid];
+      var statusText = g.code === '1' ? 'LIVE · ' + (g.status || '') : (g.status || 'Upcoming');
+      var playerChip = '';
+      if (g.mine.length) {
+        var names = g.mine.slice(0, 3).join(', ') + (g.mine.length > 3 ? ' +' + (g.mine.length - 3) : '');
+        playerChip = '<div class="rz-pregame-players"><strong>My Players</strong>' + names + '</div>';
+      }
+      html += '<div class="rz-pregame-game">'
+        + '<div class="rz-pregame-teams">'
+        +   g.away + ' @ ' + g.home
+        +   '<div class="rz-pregame-time">' + statusText + '</div>'
+        + '</div>'
+        + playerChip
+        + '</div>';
+    });
+
+    html += '</div>';
+    return html;
+  }
+
   function _syncFeed() {
     var container = document.getElementById('rz-feed-list');
     if (!container) return;
@@ -14853,10 +14914,11 @@ function setupFunAwardsGrid() {
     if (_feedPage >= totalPages) _feedPage = totalPages - 1;
 
     if (!list.length) {
-      container.innerHTML = '<div class="rz-feed-empty">'
-        + (anyFilter ? 'No plays match these filters yet.'
-        : 'Plays appear here as games unfold: targets, catches, carries and touchdowns with live fantasy points.')
-        + '</div>';
+      if (anyFilter || _myTeamOnly) {
+        container.innerHTML = '<div class="rz-feed-empty">No plays match these filters yet.</div>';
+      } else {
+        container.innerHTML = _pregameScheduleHtml();
+      }
       _renderPagination(totalPages);
       return;
     }
@@ -14920,7 +14982,10 @@ function setupFunAwardsGrid() {
         if (isNew && newCount > 1) {
           node.style.animationDelay = (newIdx * 70) + 'ms';
         }
-        if (isNew) newIdx++;
+        if (isNew) {
+          newIdx++;
+          if (ev.kind === 'td') node.classList.add('rz-td-new');
+        }
         frag.appendChild(node);
         _shownFeedIds.add(id);
       });
@@ -15057,6 +15122,10 @@ function setupFunAwardsGrid() {
       var newChips = tempDiv2.firstChild;
       if (newChips) chipBar.parentNode.replaceChild(newChips, chipBar);
       // Re-wire chip clear handlers
+      var myTeamToggle2 = root.querySelector('#rz-myteam-btn');
+      if (myTeamToggle2) {
+        myTeamToggle2.addEventListener('click', function() { _myTeamOnly = !_myTeamOnly; _feedPage = 0; _render(); });
+      }
       root.querySelectorAll('[data-clear]').forEach(function(btn) {
         btn.addEventListener('click', function() { _filters[btn.dataset.clear] = 'all'; _feedPage = 0; _render(); });
       });
@@ -15144,6 +15213,15 @@ function setupFunAwardsGrid() {
       _slideDir = 'none';
     }
 
+    var myTeamToggle = root.querySelector('#rz-myteam-btn');
+    if (myTeamToggle) {
+      myTeamToggle.addEventListener('click', function() {
+        _myTeamOnly = !_myTeamOnly;
+        _feedPage = 0;
+        _render();
+      });
+    }
+
     root.querySelectorAll('.rz-scope-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         if (btn.dataset.scope === _scope) return;
@@ -15152,6 +15230,7 @@ function setupFunAwardsGrid() {
         _feed = [];
         _shownFeedIds = new Set();
         _filterOpen = false;
+        _myTeamOnly = false;
         _heroMid = null;
         _feedPage = 0;
         _countdown = 1;

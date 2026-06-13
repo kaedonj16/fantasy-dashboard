@@ -20540,3 +20540,79 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   .rz-player-pts { font-size: 16px; }
   .rz-mc-score { font-size: 18px; }
 }
+
+/* ── TD celebration flash ─────────────── */
+@keyframes rz-td-flash {
+  0%   { box-shadow: 0 0 0 0 rgba(245,158,11,.7), 0 0 20px rgba(245,158,11,.3); }
+  35%  { box-shadow: 0 0 0 8px rgba(245,158,11,.05), 0 0 32px rgba(245,158,11,.15); }
+  100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
+}
+.rz-td-new {
+  animation: rz-event-in .36s cubic-bezier(.22,.68,0,1.2) both,
+             rz-td-flash 1.6s .1s ease forwards;
+}
+
+/* ── My Team quick toggle ─────────────── */
+.rz-myteam-btn {
+  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--rz-border);
+  background: transparent; color: var(--rz-muted);
+  cursor: pointer; transition: all .15s; white-space: nowrap;
+}
+.rz-myteam-btn.active {
+  background: rgba(22,163,74,.12);
+  border-color: rgba(22,163,74,.45);
+  color: #16a34a;
+}
+.rz-myteam-btn:hover:not(.active) { border-color: var(--rz-text); color: var(--rz-text); }
+
+/* ── Pre-game schedule empty state ───── */
+.rz-pregame-wrap { padding: 8px 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.rz-pregame-label { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--rz-muted); padding: 4px 2px 2px; }
+.rz-pregame-game {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 10px;
+  background: var(--rz-card); border: 1px solid var(--rz-border);
+}
+.rz-pregame-teams {
+  flex: 1; min-width: 0;
+  font-size: 13px; font-weight: 700; color: var(--rz-text);
+}
+.rz-pregame-time { font-size: 11px; color: var(--rz-muted); margin-top: 2px; }
+.rz-pregame-players { font-size: 11px; color: var(--rz-muted); flex-shrink: 0; text-align: right; max-width: 130px; line-height: 1.4; }
+.rz-pregame-players strong { color: var(--rz-green); display: block; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.rz-pregame-empty-hint { font-size: 12px; color: var(--rz-muted); text-align: center; padding: 16px 20px; }
+
+/* ── Weekly: Redzone CTA banner ──────── */
+.weekly-rz-cta {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; margin-bottom: 12px;
+  background: rgba(220,38,38,.07); border: 1px solid rgba(220,38,38,.2);
+  border-radius: var(--radius); font-size: 13px;
+}
+.weekly-rz-cta-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--rz-red, #dc2626);
+  animation: rz-pulse 1.8s ease-in-out infinite; flex-shrink: 0;
+}
+.weekly-rz-cta-text { flex: 1; color: var(--text); }
+.weekly-rz-cta-link {
+  font-size: 12px; font-weight: 700; color: var(--rz-red, #dc2626);
+  text-decoration: none; white-space: nowrap; padding: 4px 10px;
+  border: 1px solid rgba(220,38,38,.3); border-radius: 999px;
+  transition: background .15s;
+}
+.weekly-rz-cta-link:hover { background: rgba(220,38,38,.1); }
+
+/* ── Weekly live-refresh indicator ───── */
+.weekly-live-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 800; letter-spacing: .06em;
+  color: var(--rz-red, #dc2626); vertical-align: middle;
+  margin-left: 8px;
+}
+.weekly-live-badge::before {
+  content: '';
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; animation: rz-pulse 1.8s ease-in-out infinite;
+}
