@@ -1468,7 +1468,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     if draft_ended or not offseason_mode:
         nav_pills.append(nav_pill_dropdown("Weekly", [
             ("Matchups",           "page_weekly",           "weekly",   False),
-            ("Weekly Recap <span class='nav-pro-badge'>PRO</span>", "page_recap", "recap", False),
+            ("Weekly Recap", "page_recap", "recap", False),
         ], ["weekly", "recap"], "weeklyNavDropdown"))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",       "page_standings",    "standings",    False),
@@ -2733,15 +2733,6 @@ def history_ai_recap():
 
     if not all([league_id, season, roster_id]):
         return jsonify({"error": "Missing required parameters"}), 400
-
-    # AI recap is a PRO feature
-    _user_id = session.get("viewer_username")
-    _has_premium = has_premium_for_viewer(
-        _user_id, session.get("viewer_user_id"), league_id,
-        (request.args.get("platform") or "sleeper"), int(season)
-    )
-    if not _has_premium:
-        return jsonify({"error": "premium_required", "message": "AI recaps require a premium subscription"}), 403
 
     try:
         # Get the same context that the history page uses

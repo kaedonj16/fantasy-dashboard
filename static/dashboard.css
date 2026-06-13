@@ -895,7 +895,10 @@ ul {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  min-width: 220px;
+  /* Fixed width so a long league name in the switcher can't stretch the panel;
+     capped to the viewport so it never overflows the screen on mobile. */
+  width: 264px;
+  max-width: calc(100vw - 24px);
   background: var(--card);
   border: 0.5px solid var(--border);
   border-radius: 10px;
@@ -989,6 +992,17 @@ html[data-theme="dark"] img[src*="xmark-solid.png"] {
   display: block;
   position: relative;
   z-index: 201;
+}
+
+/* Keep the league switcher control within the panel width so the selected
+   league name truncates (ellipsis) instead of widening the settings dropdown. */
+.settings-dropdown .league-switcher-wrapper,
+.settings-dropdown .csd-wrap,
+.settings-dropdown .csd-trigger {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 /* Constrain the CSD list to the panel width so it doesn't overflow horizontally */

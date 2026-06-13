@@ -6563,9 +6563,6 @@ async function generateSeasonRecap() {
     return;
   }
 
-  const _isPremium = document.getElementById('page-root')?.dataset.premium === 'true';
-  if (!_isPremium) { showPaywall('history-recap'); return; }
-
   // Show loading, hide everything else
   if (loadingState) loadingState.style.display = "block";
   if (emptyState) emptyState.style.display = "none";
