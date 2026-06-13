@@ -96,13 +96,19 @@ def send(rows, title, body, url, tag, priv_key):
             )
             sent += 1
         except WebPushException as e:
-            if e.response and e.response.status_code in (404, 410):
+            resp = e.response
+            status = resp.status_code if resp else "?"
+            body = resp.text[:200] if resp else ""
+            if resp and resp.status_code in (404, 410):
                 stale += 1
             else:
-                print(f"  WARN: {ep[:60]}... → {e}")
+                print(f"  FAIL [{status}]: {ep[:70]}...")
+                if body:
+                    print(f"         {body}")
                 failed += 1
         except Exception as e:
-            print(f"  WARN: {ep[:60]}... → {e}")
+            print(f"  FAIL [exc]: {ep[:70]}...")
+            print(f"         {type(e).__name__}: {e}")
             failed += 1
 
     return sent, failed, stale
@@ -110,7 +116,9 @@ def send(rows, title, body, url, tag, priv_key):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    _, priv_key = get_vapid_keys()
+    pub_key, priv_key = get_vapid_keys()
+    print(f"\nVAPID pub  : {pub_key[:30]}...")
+    print(f"VAPID priv : {priv_key[:40].strip()!r}...")
 
     conn = get_db()
     rows = get_subscribers(conn, username=args.username, league=args.league)
