@@ -9,11 +9,40 @@ logger = logging.getLogger(__name__)
 
 # ── Core helpers ───────────────────────────────────────────────────────────────
 
+def _normalize_vapid_private_key(priv):
+    """Accept raw base64url or PEM; always return PEM for pywebpush 2.x."""
+    import base64
+    try:
+        from cryptography.hazmat.primitives.serialization import (
+            load_pem_private_key, Encoding, PrivateFormat, NoEncryption,
+        )
+        from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, derive_private_key
+    except ImportError:
+        return priv
+
+    if "BEGIN" in priv:
+        try:
+            load_pem_private_key(priv.encode(), password=None)
+            return priv
+        except Exception:
+            pass
+
+    try:
+        raw = base64.urlsafe_b64decode(priv + "==")
+        if len(raw) == 32:
+            key = derive_private_key(int.from_bytes(raw, "big"), SECP256R1())
+            return key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
+    except Exception:
+        pass
+
+    return priv
+
+
 def _get_vapid_keys():
     pub  = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
     priv = os.environ.get("VAPID_PRIVATE_KEY", "").replace("\\n", "\n").strip()
     if pub and priv:
-        return {"public": pub, "private": priv}
+        return {"public": pub, "private": _normalize_vapid_private_key(priv)}
     return None
 
 

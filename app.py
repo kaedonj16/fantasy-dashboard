@@ -25964,7 +25964,8 @@ def _get_vapid_keys() -> dict | None:
     pub  = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
     priv = os.environ.get("VAPID_PRIVATE_KEY", "").replace("\\n", "\n").strip()
     if pub and priv:
-        _VAPID_KEYS = {"public": pub, "private": priv}
+        from utils.push_notifications import _normalize_vapid_private_key
+        _VAPID_KEYS = {"public": pub, "private": _normalize_vapid_private_key(priv)}
         return _VAPID_KEYS
     # Generate ephemeral keys for this session; set env vars to persist
     try:

@@ -47,7 +47,43 @@ def get_vapid_keys():
     priv = os.environ.get("VAPID_PRIVATE_KEY", "").replace("\\n", "\n").strip()
     if not pub or not priv:
         sys.exit("ERROR: VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY env vars must be set.")
+    # Normalize the private key to PEM — pywebpush 2.x needs proper PEM format.
+    # The env var may be a raw URL-safe base64 key or a PEM key.
+    priv = _normalize_vapid_private_key(priv)
     return pub, priv
+
+
+def _normalize_vapid_private_key(priv):
+    """Accept raw base64url or PEM; always return PEM for pywebpush."""
+    from cryptography.hazmat.primitives.serialization import (
+        load_pem_private_key, Encoding, PrivateFormat, NoEncryption,
+    )
+    from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, derive_private_key
+    import base64
+
+    # Already looks like PEM?
+    if "BEGIN" in priv:
+        try:
+            load_pem_private_key(priv.encode(), password=None)
+            return priv  # valid PEM, use as-is
+        except Exception as e:
+            print(f"  [key] PEM parse failed: {e}")
+            # Fall through to try base64
+
+    # Try as raw URL-safe base64 private key (32 bytes → 43 base64url chars)
+    try:
+        raw = base64.urlsafe_b64decode(priv + "==")
+        if len(raw) == 32:
+            key = derive_private_key(int.from_bytes(raw, "big"), SECP256R1())
+            pem = key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
+            print("  [key] Converted raw base64url key to PEM")
+            return pem
+    except Exception as e:
+        print(f"  [key] base64url parse failed: {e}")
+
+    # Last resort: return as-is and let pywebpush produce its own error
+    print(f"  [key] WARNING: could not normalize key (len={len(priv)}, starts={priv[:20]!r})")
+    return priv
 
 # ── Fetch subscribers ─────────────────────────────────────────────────────────
 
