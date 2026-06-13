@@ -716,12 +716,47 @@ function emptyState(container, message, iconClass) {
       + '<span style="font-size:15px;font-weight:800;color:var(--text);">Notification Settings</span>'
       + '<button onclick="document.getElementById(\'notifPrefsOverlay\').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-muted);">&times;</button>'
       + '</div>'
-      + '<p style="font-size:12px;color:var(--text-muted);margin:0 0 12px;">Choose which alerts you want to receive.</p>'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;">'
+      + '<p style="font-size:12px;color:var(--text-muted);margin:0;">Choose which alerts you want to receive.</p>'
+      + '<button id="np-toggle-all" style="background:none;border:none;font-size:11px;font-weight:700;color:var(--accent,#3b82f6);cursor:pointer;padding:0;white-space:nowrap;margin-left:8px;"></button>'
+      + '</div>'
       + rows
       + leagueRows;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+
+    // Toggle-all button
+    var toggleAllBtn = modal.querySelector('#np-toggle-all');
+    function _updateToggleAllLabel() {
+      var typeCbs = Array.from(modal.querySelectorAll('input[data-key]'));
+      var allOn = typeCbs.every(function(c) { return c.checked; });
+      if (toggleAllBtn) toggleAllBtn.textContent = allOn ? 'Disable all' : 'Enable all';
+    }
+    _updateToggleAllLabel();
+    if (toggleAllBtn) {
+      toggleAllBtn.addEventListener('click', async function() {
+        var typeCbs = Array.from(modal.querySelectorAll('input[data-key]'));
+        var allOn = typeCbs.every(function(c) { return c.checked; });
+        var next = !allOn;
+        typeCbs.forEach(function(c) {
+          c.checked = next;
+          var track = c.parentElement.querySelector('.np-track');
+          var thumb = c.parentElement.querySelector('.np-thumb');
+          if (track) track.style.background = next ? 'var(--accent,#3b82f6)' : 'var(--border)';
+          if (thumb) thumb.style.left = next ? '18px' : '2px';
+          prefs[c.dataset.key] = next;
+        });
+        _updateToggleAllLabel();
+        try {
+          await fetch('/api/push/preferences', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ endpoint: endpoint, prefs: prefs }),
+          });
+        } catch (_) {}
+      });
+    }
 
     // Wire up toggle interactions
     modal.querySelectorAll('input[type=checkbox]').forEach(function(cb) {
@@ -753,6 +788,7 @@ function emptyState(container, message, iconClass) {
           } else {
             // Notification-type toggle (device-level)
             prefs[cb.dataset.key] = on;
+            _updateToggleAllLabel();
             await fetch('/api/push/preferences', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
