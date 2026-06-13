@@ -14355,10 +14355,11 @@ function setupFunAwardsGrid() {
       if (myTDs.length && navigator.serviceWorker && navigator.serviceWorker.ready) {
         navigator.serviceWorker.ready.then(function(sw) {
           myTDs.forEach(function(ev) {
-            sw.showNotification('TD: ' + ev.name, {
+            var p = sw.showNotification('TD: ' + ev.name, {
               body: ev.desc + (ev.pts > 0 ? '  +' + _fmt(ev.pts) + ' pts' : ''),
               icon: '/static/BR_Logo.png', tag: 'rz-td-' + ev.pid
             });
+            if (p && p.catch) p.catch(function() {});
           });
         }).catch(function() {});
       }
@@ -14816,14 +14817,18 @@ function setupFunAwardsGrid() {
   function _eid(ev) { return ev.pid + ':' + (ev.ts || ev.desc); }
 
   function _eventHtml(ev, animate) {
-    var tag = ev.mine ? '<span class="rz-event-tag mine">' + (_scope === 'user' && ev.league ? ev.league : 'YOUR TEAM') + '</span>'
+    var tag = ev.mine ? '<span class="rz-event-tag mine">' + (_scope === 'user' && ev.league ? ev.league : 'MY TEAM') + '</span>'
             : ev.opp  ? '<span class="rz-event-tag opp">OPP</span>'
             : (_scope === 'user' && ev.league ? '<span class="rz-event-tag opp">' + ev.league + '</span>' : '');
-    var sub = (ev.pos || '') + (ev.nflTeam ? ' • ' + ev.nflTeam : '') + (ev.line ? '  ·  ' + ev.line : '');
+    var sub = (ev.pos || '') + (ev.nflTeam ? ' · ' + ev.nflTeam : '') + (ev.line ? '  ·  ' + ev.line : '');
     var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
+    var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
+    var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
     return (
       '<div class="rz-event ' + ev.kind + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
-      + '<div class="rz-event-avatar"><img class="rz-headshot" src="https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg" alt="" onerror="this.style.display=\'none\'"></div>'
+      + '<div class="rz-event-avatar rz-av-' + posKey + '" data-init="' + initials + '">'
+      + '<img class="rz-headshot" src="https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg" alt="" onerror="this.parentNode.classList.add(\'img-err\')">'
+      + '</div>'
       + '<div class="rz-event-body">'
       + '<div class="rz-event-main">' + ev.name + ' ' + tag + '</div>'
       + '<div class="rz-event-desc">' + ev.desc + '</div>'
@@ -15067,7 +15072,7 @@ function setupFunAwardsGrid() {
 
     var live = _anyLive();
     var liveChip = live ? '<span class="rz-live-chip"><span class="rz-nav-dot"></span>LIVE</span>' : '';
-    var demoBar  = _isDemo ? '<div class="rz-demo-banner"><span>Demo Mode · Simulated game data</span><button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button></div>' : '';
+    var demoPill = _isDemo ? '<span class="rz-demo-pill">DEMO</span>' : '';
     var showFilters = (_activeTab === 'plays' || _activeTab === 'top');
 
     var mine = _myMatchups();
@@ -15089,11 +15094,11 @@ function setupFunAwardsGrid() {
       + '<div class="rz-panel' + (_activeTab === 'top'    ? ' active' : '') + '" id="rz-panel-top">'    + _renderTopPerformers()  + '</div>';
 
     var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
+    var exitBtn  = _isDemo ? '<button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button>' : '';
     root.innerHTML =
-      demoBar
-      + '<div class="rz-header">'
-      + '<div class="rz-brand"><div class="rz-brand-dot"></div><span class="rz-brand-name">BR Redzone</span><span class="rz-brand-week">Wk ' + (_state.week || '') + '</span></div>'
-      + '<div class="rz-header-right">' + demoLink + liveChip + '<button class="rz-refresh-timer" id="rz-timer">' + _countdown + 's</button></div>'
+      '<div class="rz-header">'
+      + '<div class="rz-brand"><div class="rz-brand-dot"></div><span class="rz-brand-name">BR Redzone</span><span class="rz-brand-week">Wk ' + (_state.week || '') + '</span>' + demoPill + '</div>'
+      + '<div class="rz-header-right">' + demoLink + exitBtn + liveChip + '<button class="rz-refresh-timer" id="rz-timer">' + _countdown + 's</button></div>'
       + '</div>'
       + '<div class="rz-content">'
       + _renderScopeToggle()
@@ -15226,7 +15231,7 @@ function setupFunAwardsGrid() {
   async function _refresh() {
     try {
       var parts = window.location.pathname.split('/');
-      var apiBase = '/' + parts[1] + '/' + parts[2] + '/' + parts[3];
+      var apiBase = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3];
       var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + _scope;
       if (_isDemo) { _demoT += 15; url += '&demo=1&t=' + _demoT; }
       var resp = await fetch(url);
@@ -15237,7 +15242,18 @@ function setupFunAwardsGrid() {
       _state = newData;
       _seedPrevStats(newData);
       _countdown = _isDemo ? 3 : _anyLive() ? 15 : 60;
-      _partialUpdate();
+
+      // Preserve feed DOM so incoming events animate in rather than flashing
+      var savedFeedHtml = null;
+      var oldFeedEl = root.querySelector('#rz-feed-list');
+      if (oldFeedEl && oldFeedEl.children.length > 0) savedFeedHtml = oldFeedEl.innerHTML;
+
+      _render();
+
+      if (savedFeedHtml !== null) {
+        var newFeedEl = root.querySelector('#rz-feed-list');
+        if (newFeedEl) { newFeedEl.innerHTML = savedFeedHtml; _syncFeed(); }
+      }
     } catch (_) {}
   }
 
