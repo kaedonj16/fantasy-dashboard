@@ -1415,10 +1415,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
         return f"<a class='{cls}'{aria} href='{href}'>{label}</a>"
 
-    def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
+    def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown", btn_extra_cls: str = "") -> str:
         """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix)."""
         is_active = active in active_keys
         btn_cls = "nav-pill active" if is_active else "nav-pill"
+        if btn_extra_cls:
+            btn_cls += " " + btn_extra_cls
         item_html = ""
         for item_tuple in items:
             item_label, endpoint, item_key = item_tuple[0], item_tuple[1], item_tuple[2]
@@ -1466,14 +1468,24 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
-        nav_pills.append(nav_pill_dropdown("Weekly", [
-            ("Matchups",           "page_weekly",           "weekly",   False),
-            ("Weekly Recap", "page_recap", "recap", False),
-        ], ["weekly", "recap"], "weeklyNavDropdown"))
-    if session.get("viewer_username") in _RZ_ALLOWED_USERS:
-        _rz_cls  = "nav-pill nav-pill-redzone active" if active == "redzone" else "nav-pill nav-pill-redzone"
-        _rz_href = url_for("page_redzone", platform=platform, season=season, league_id=league_id)
-        nav_pills.append(f"<a class='{_rz_cls}' href='{_rz_href}'><span class='rz-nav-dot'></span>Redzone</a>")
+        _weekly_items = [
+            ("Matchups",     "page_weekly", "weekly", False),
+            ("Weekly Recap", "page_recap",  "recap",  False),
+        ]
+        # Redzone lives inside the Weekly dropdown; the Weekly button pulses red on NFL game days.
+        _rz_pulse = ""
+        if session.get("viewer_username") in _RZ_ALLOWED_USERS:
+            _weekly_items.append((
+                "<span class='rz-nav-dot'></span>Redzone",
+                "page_redzone", "redzone", False,
+            ))
+            # NFL game days: Mon=0, Thu=3, Sat=5, Sun=6 (Python weekday())
+            if datetime.now().weekday() in (0, 3, 5, 6):
+                _rz_pulse = "nav-pill-redzone-live"
+        nav_pills.append(nav_pill_dropdown(
+            "Weekly", _weekly_items, ["weekly", "recap", "redzone"],
+            "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
+        ))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",       "page_standings",    "standings",    False),
         ("Teams",           "page_teams",        "teams",        False),

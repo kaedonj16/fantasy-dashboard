@@ -19579,6 +19579,39 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   50%      { opacity: .5; transform: scale(.7); }
 }
 
+/* Redzone item inside the Weekly dropdown: red dot on light menu bg */
+.nav-pill-dropdown-item .rz-nav-dot {
+  background: #dc2626;
+  margin-right: 6px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Weekly button pulses red on NFL game days (live games available) */
+.nav-pill.nav-pill-redzone-live {
+  position: relative;
+  animation: nav-redzone-glow 2s ease-in-out infinite;
+}
+.nav-pill.nav-pill-redzone-live::after {
+  content: '';
+  position: absolute;
+  top: 6px; right: 7px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #dc2626;
+  box-shadow: 0 0 0 0 rgba(220,38,38,.6);
+  animation: nav-redzone-dot 1.6s ease-out infinite;
+}
+@keyframes nav-redzone-glow {
+  0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
+  50%      { box-shadow: 0 0 0 2px rgba(220,38,38,.35); }
+}
+@keyframes nav-redzone-dot {
+  0%   { box-shadow: 0 0 0 0 rgba(220,38,38,.55); }
+  70%  { box-shadow: 0 0 0 6px rgba(220,38,38,0); }
+  100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
+}
+
 
 /* ── BR Redzone page ────────────────────────────────────────────────────────── */
 /* Built on the site's design tokens so it reads as part of the app. Red is the
@@ -20406,13 +20439,13 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 }
 /* ── Avatar ──────────────────────────── */
 .rz-event-avatar {
-  width: 36px; height: 36px; border-radius: 50%;
+  width: 38px; height: 38px; border-radius: 9px;
   overflow: hidden; flex-shrink: 0;
   background: var(--rz-surface);
   position: relative;
-  box-shadow: 0 0 0 2px var(--rz-border);
+  box-shadow: inset 0 0 0 1px var(--rz-border);
 }
-.rz-event.is-mine .rz-event-avatar { box-shadow: 0 0 0 2px rgba(22,163,74,.45); }
+.rz-event.is-mine .rz-event-avatar { box-shadow: inset 0 0 0 1.5px rgba(22,163,74,.5); }
 .rz-headshot { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
 /* Initials fallback when headshot fails */
 .rz-event-avatar.img-err .rz-headshot { opacity: 0; position: absolute; }

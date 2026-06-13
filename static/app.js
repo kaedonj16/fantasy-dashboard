@@ -15076,8 +15076,8 @@ function setupFunAwardsGrid() {
 
   function _tabsFor() {
     return _scope === 'user'
-      ? [{ key: 'plays', label: 'Plays' }, { key: 'mine', label: 'My Teams' }, { key: 'league', label: 'Scoreboard' }, { key: 'top', label: 'Top' }]
-      : [{ key: 'plays', label: 'Plays' }, { key: 'mine', label: 'My Team' }, { key: 'opp', label: 'Opp' }, { key: 'league', label: 'League' }, { key: 'top', label: 'Top' }];
+      ? [{ key: 'plays', label: 'Plays' }, { key: 'mine', label: 'My Teams' }, { key: 'top', label: 'Top' }]
+      : [{ key: 'plays', label: 'Plays' }, { key: 'mine', label: 'My Team' }, { key: 'opp', label: 'Opp' }, { key: 'top', label: 'Top' }];
   }
 
   // ── Full render ───────────────────────────────────────────────────────────────
@@ -15095,7 +15095,7 @@ function setupFunAwardsGrid() {
 
     var summary = _renderHeroCards();
 
-    var tabBar = '<div class="rz-tab-bar' + (TABS.length === 5 ? ' rz-tab-bar-5' : '') + '">' + TABS.map(function(t) {
+    var tabBar = '<div class="rz-tab-bar">' + TABS.map(function(t) {
       return '<button class="rz-tab-btn' + (_activeTab === t.key ? ' active' : '') + '" data-tab="' + t.key + '">' + t.label + '</button>';
     }).join('') + '</div>';
 
@@ -15105,7 +15105,6 @@ function setupFunAwardsGrid() {
       + '<div class="rz-panel' + (_activeTab === 'mine'   ? ' active' : '') + '" id="rz-panel-mine">'   + minePanel              + '</div>'
       + (_scope === 'user' ? '' :
         '<div class="rz-panel' + (_activeTab === 'opp'    ? ' active' : '') + '" id="rz-panel-opp">'    + _rosterCard(oppMatchup) + '</div>')
-      + '<div class="rz-panel' + (_activeTab === 'league' ? ' active' : '') + '" id="rz-panel-league">' + _renderScoreboard()     + '</div>'
       + '<div class="rz-panel' + (_activeTab === 'top'    ? ' active' : '') + '" id="rz-panel-top">'    + _renderTopPerformers()  + '</div>';
 
     var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
