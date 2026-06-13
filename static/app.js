@@ -14323,16 +14323,18 @@ function setupFunAwardsGrid() {
 
     // Push notification for my TDs
     var myTDs = allEvents.filter(function(ev) { return ev.kind === 'td' && ev.mine; });
-    if (myTDs.length && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then(function(sw) {
-        myTDs.forEach(function(ev) {
-          sw.showNotification('TD: ' + ev.name, {
-            body: ev.desc + (ev.pts > 0 ? '  +' + _fmt(ev.pts) + ' pts' : ''),
-            icon: '/static/BR_Logo.png', tag: 'rz-td-' + ev.pid
+    try {
+      if (myTDs.length && navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(function(sw) {
+          myTDs.forEach(function(ev) {
+            sw.showNotification('TD: ' + ev.name, {
+              body: ev.desc + (ev.pts > 0 ? '  +' + _fmt(ev.pts) + ' pts' : ''),
+              icon: '/static/BR_Logo.png', tag: 'rz-td-' + ev.pid
+            });
           });
-        });
-      }).catch(function() {});
-    }
+        }).catch(function() {});
+      }
+    } catch (_) {}
   }
 
   // ── Filters ────────────────────────────────────────────────────────────────────
@@ -14873,7 +14875,7 @@ function setupFunAwardsGrid() {
     try {
       var parts = window.location.pathname.split('/');
       var apiBase = '/' + parts[1] + '/' + parts[2] + '/' + parts[3];
-      var url = apiBase + '/redzone-data?t=' + Date.now() + '&scope=' + _scope;
+      var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + _scope;
       if (_isDemo) { _demoT += 30; url += '&demo=1&t=' + _demoT; }
       var resp = await fetch(url);
       if (!resp.ok) return;
@@ -14908,6 +14910,6 @@ function setupFunAwardsGrid() {
   _seedPrevStats(_state);
 
   _render();
-  if (_isDemo) setTimeout(_refresh, 1500);
+  if (_isDemo) setTimeout(_refresh, 300);
   _timer = setInterval(_tick, 1000);
 })();
