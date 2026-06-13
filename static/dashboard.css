@@ -20616,3 +20616,73 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   display: inline-block; width: 6px; height: 6px; border-radius: 50%;
   background: currentColor; animation: rz-pulse 1.8s ease-in-out infinite;
 }
+
+/* ── Score flash on hero card ──────────── */
+@keyframes rz-score-flash {
+  0%   { color: var(--rz-green); transform: scale(1.12); }
+  60%  { color: var(--rz-green); transform: scale(1.04); }
+  100% { color: inherit; transform: scale(1); }
+}
+.rz-score-flash { animation: rz-score-flash .7s ease forwards; }
+
+/* ── Notification CTA strip ───────────── */
+.rz-notif-cta {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 14px; background: rgba(220,38,38,.06);
+  border-bottom: 1px solid rgba(220,38,38,.15);
+  font-size: 12px; font-weight: 600; color: var(--rz-text);
+}
+.rz-notif-cta-icon { font-size: 14px; flex-shrink: 0; }
+.rz-notif-cta span:last-of-type { flex: 1; }
+.rz-notif-cta-btn {
+  font-size: 11px; font-weight: 700; padding: 4px 10px;
+  background: var(--rz-red); color: #fff; border: none;
+  border-radius: 999px; cursor: pointer; white-space: nowrap;
+  transition: opacity .15s;
+}
+.rz-notif-cta-btn:hover { opacity: .85; }
+.rz-notif-cta-x {
+  background: none; border: none; cursor: pointer;
+  font-size: 13px; color: var(--rz-muted); padding: 0 4px;
+  line-height: 1; transition: color .12s;
+}
+.rz-notif-cta-x:hover { color: var(--rz-text); }
+
+/* ── Stale badge ──────────────────────── */
+.rz-stale-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  color: #d97706; background: rgba(245,158,11,.12);
+  border: 1px solid rgba(245,158,11,.3);
+  padding: 2px 8px; border-radius: 999px;
+}
+
+/* ── Game-clock tooltip on event cards ── */
+.rz-event[data-tip] { position: relative; }
+.rz-event[data-tip]::before {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 5px); left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b; color: #e2e8f0;
+  font-size: 10px; font-weight: 600; padding: 3px 8px;
+  border-radius: 5px; white-space: nowrap;
+  pointer-events: none; opacity: 0;
+  transition: opacity .15s; z-index: 10;
+}
+.rz-event[data-tip]:hover::before { opacity: 1; }
+
+/* ── Injury status dot ────────────────── */
+.rz-inj-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  margin-left: 5px; vertical-align: middle; flex-shrink: 0;
+}
+.rz-inj-dot.questionable { background: #f59e0b; }
+.rz-inj-dot.doubtful     { background: #ef4444; opacity: .7; }
+.rz-inj-dot.out          { background: #ef4444; }
+
+/* ── H2H record in matchup slide ─────── */
+.m-h2h {
+  font-size: 11px; color: var(--text-muted); text-align: center;
+  padding: 4px 0 2px; letter-spacing: .02em;
+}
+.m-h2h b { color: var(--text); }

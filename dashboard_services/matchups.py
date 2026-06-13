@@ -1208,6 +1208,16 @@ def render_matchup_slide(
     r_score, r_live = _score_html(m['right'], proj)
     proj_class = " has-proj" if (l_live or r_live) else ""
 
+    h2h = m.get("h2h") or {}
+    h2h_l = h2h.get("left_wins", 0)
+    h2h_r = h2h.get("right_wins", 0)
+    h2h_html = ""
+    if h2h_l + h2h_r > 0:
+        h2h_html = (
+            f"<div class='m-h2h'>H2H this season: "
+            f"<b>{h2h_l}</b>–<b>{h2h_r}</b></div>"
+        )
+
     return f"""
     <div class="m-slide">
       <div class="m-head">
@@ -1220,6 +1230,7 @@ def render_matchup_slide(
           </div>
           {_team_col(m['right'], 'right')}
         </div>
+        {h2h_html}
       </div>
       {win_bar_html}
       <div class="m-body">

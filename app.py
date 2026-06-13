@@ -5542,6 +5542,35 @@ def build_weekly_hub_body(ctx: dict) -> str:
         matchups_by_week.get(default_week, []) or [],
         key=lambda m: 0 if _hub_vid and _hub_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
     )
+
+    # Pre-compute head-to-head records for each current-week matchup
+    def _h2h_record(rid_a: str, rid_b: str) -> tuple[int, int]:
+        """Return (a_wins, b_wins) across all completed weeks this season."""
+        a_wins = b_wins = 0
+        for wk, wk_matchups in matchups_by_week.items():
+            if int(wk) >= default_week:
+                continue  # only count past weeks
+            for wm in wk_matchups:
+                la = str((wm.get("left") or {}).get("roster_id", ""))
+                ra = str((wm.get("right") or {}).get("roster_id", ""))
+                if set([la, ra]) == set([rid_a, rid_b]):
+                    lp = (wm.get("left") or {}).get("pts_total") or 0
+                    rp = (wm.get("right") or {}).get("pts_total") or 0
+                    if lp == 0 and rp == 0:
+                        continue
+                    if (la == rid_a and lp > rp) or (ra == rid_a and rp > lp):
+                        a_wins += 1
+                    else:
+                        b_wins += 1
+        return a_wins, b_wins
+
+    for _m in default_matchups:
+        _la = str((_m.get("left") or {}).get("roster_id", ""))
+        _ra = str((_m.get("right") or {}).get("roster_id", ""))
+        if _la and _ra:
+            _aw, _bw = _h2h_record(_la, _ra)
+            _m["h2h"] = {"left_wins": _aw, "right_wins": _bw}
+
     _fpts_against_weekly = _compute_fpts_against(season)
     slides = [
         render_matchup_slide(
@@ -9849,17 +9878,19 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "LAR_SEA": _g("LAR", 21, "SEA", 14, "1"),
         "PHI_WAS": _g("PHI", 17, "WAS", 10, "1"),
     }
-    def pi(name, pos, team, gk):
+    def pi(name, pos, team, gk, inj="", clock="", qtr=""):
         return {"name": name, "pos": pos, "team": team,
-                "game_id": "demo_" + gk, **GAMES.get(gk, {})}
+                "game_id": "demo_" + gk, **GAMES.get(gk, {}),
+                "injury_status": inj, "game_clock": clock, "game_quarter": qtr,
+                "stat_line": None}
     PLAYERS = {
-        "d_lj":  pi("L. Jackson",   "QB",  "BAL", "BAL_HOU"),
-        "d_dh":  pi("D. Henry",     "RB",  "TEN", "TEN_IND"),
+        "d_lj":  pi("L. Jackson",   "QB",  "BAL", "BAL_HOU", clock="4:32", qtr="Q3"),
+        "d_dh":  pi("D. Henry",     "RB",  "TEN", "TEN_IND", inj="Q"),
         "d_jg":  pi("J. Gibbs",     "RB",  "DET", "DET_CHI"),
         "d_cdl": pi("CeeDee Lamb",  "WR",  "DAL", "DAL_NYG"),
-        "d_mn":  pi("M. Nabers",    "WR",  "NYG", "DAL_NYG"),
-        "d_tk":  pi("T. Kelce",     "TE",  "KC",  "KC_LV"),
-        "d_bt":  pi("B. Thomas",    "WR",  "JAX", "JAX_MIA"),
+        "d_mn":  pi("M. Nabers",    "WR",  "NYG", "DAL_NYG", inj="Q"),
+        "d_tk":  pi("T. Kelce",     "TE",  "KC",  "KC_LV",   clock="4:32", qtr="Q3"),
+        "d_bt":  pi("B. Thomas",    "WR",  "JAX", "JAX_MIA", inj="D"),
         "d_em":  pi("E. McPherson", "K",   "CIN", "CIN_PIT"),
         "d_sfd": pi("SF Defense",   "DEF", "SF",  "SF_ARI"),
         "d_tp":  pi("T. Pollard",   "RB",  "TEN", "TEN_IND"),
@@ -10066,17 +10097,23 @@ def _redzone_collect(platform, league_id, season, week):
         p  = nfl_players.get(pid, {})
         tm = p.get("team") or ""
         gd = team_game.get(tm, {}) if tm else {}
+        raw_inj = str(p.get("injury_status") or p.get("status") or "").strip()
+        inj = "" if raw_inj.lower() in ("", "active", "act") else raw_inj
+        ls  = gd.get("lineScore") or {}
         player_info[pid] = {
-            "name":        p.get("full_name") or p.get("last_name") or pid,
-            "pos":         p.get("position") or "?",
-            "team":        tm,
-            "game_id":     gd.get("gameID") or "",
-            "game_status": gd.get("gameStatus") or "",
-            "game_code":   str(gd.get("gameStatusCode") or ""),
-            "home":        gd.get("home") or "",
-            "away":        gd.get("away") or "",
-            "home_pts":    str(gd.get("homePts") or gd.get("homeScore") or ""),
-            "away_pts":    str(gd.get("awayPts") or gd.get("awayScore") or ""),
+            "name":          p.get("full_name") or p.get("last_name") or pid,
+            "pos":           p.get("position") or "?",
+            "team":          tm,
+            "game_id":       gd.get("gameID") or "",
+            "game_status":   gd.get("gameStatus") or "",
+            "game_code":     str(gd.get("gameStatusCode") or ""),
+            "game_clock":    gd.get("gameClock") or "",
+            "game_quarter":  ls.get("period") or "",
+            "home":          gd.get("home") or "",
+            "away":          gd.get("away") or "",
+            "home_pts":      str(gd.get("homePts") or gd.get("homeScore") or ""),
+            "away_pts":      str(gd.get("awayPts") or gd.get("awayScore") or ""),
+            "injury_status": inj,
         }
 
     # Attach per-player stat lines from Tank01 boxscores (Sleeper only).
@@ -16381,6 +16418,29 @@ def api_weekly_week():
     )
     status_by_pid = (statuses.get(week) or {}).get("statuses", {}) or {}
     _fpts_against_api = _compute_fpts_against(season)
+
+    # Attach H2H records for this week's matchups
+    for _m in matchups:
+        _la = str((_m.get("left") or {}).get("roster_id", ""))
+        _ra = str((_m.get("right") or {}).get("roster_id", ""))
+        if _la and _ra:
+            _aw = _bw = 0
+            for _wk, _wms in matchups_by_week.items():
+                if int(_wk) >= week:
+                    continue
+                for _wm in _wms:
+                    _wla = str((_wm.get("left") or {}).get("roster_id", ""))
+                    _wra = str((_wm.get("right") or {}).get("roster_id", ""))
+                    if {_wla, _wra} == {_la, _ra}:
+                        _lp = (_wm.get("left") or {}).get("pts_total") or 0
+                        _rp = (_wm.get("right") or {}).get("pts_total") or 0
+                        if _lp == 0 and _rp == 0:
+                            continue
+                        if (_wla == _la and _lp > _rp) or (_wra == _la and _rp > _lp):
+                            _aw += 1
+                        else:
+                            _bw += 1
+            _m["h2h"] = {"left_wins": _aw, "right_wins": _bw}
 
     slides = [
         render_matchup_slide(

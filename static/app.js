@@ -14025,10 +14025,44 @@ function setupFunAwardsGrid() {
   var _scope    = _state.scope || 'league';
   var _filters  = { team: 'all', nfl: 'all', pos: 'all', stat: 'all' };
   var _filterOpen  = false;
-  var _myTeamOnly  = false;  // quick "My Team" toggle above feed
-  var _heroMid    = null;  // selected matchup card key (mid or roster_id); null = league-wide
-  var _slideDir   = 'none'; // 'from-right' | 'from-left' | 'none'
-  var _feedPage   = 0;      // current plays feed page (0 = newest/live)
+  var _myTeamOnly  = false;
+  var _heroMid    = null;
+  var _slideDir   = 'none';
+  var _feedPage   = 0;
+  var _prevMatchupPts = {};  // roster_id → points snapshot for score flash
+  var _flashRids  = new Set();
+  var _lastPollFailed = false;
+  var _hadInteraction = false;
+  var _notifDismissed = !!(localStorage && localStorage.getItem('rz-notif-dismissed'));
+
+  document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
+
+  function _playTDBeep() {
+    if (!_hadInteraction) return;
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.18, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.35);
+      // second note
+      setTimeout(function() {
+        try {
+          var o2 = ctx.createOscillator(), g2 = ctx.createGain();
+          o2.connect(g2); g2.connect(ctx.destination);
+          o2.frequency.value = 1100; o2.type = 'sine';
+          g2.gain.setValueAtTime(0.12, ctx.currentTime);
+          g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+          o2.start(ctx.currentTime); o2.stop(ctx.currentTime + 0.25);
+        } catch (_) {}
+      }, 160);
+    } catch (_) {}
+  }
 
   function _myRidSet(data) {
     var ids = (data.viewer_roster_ids && data.viewer_roster_ids.length)
@@ -14233,11 +14267,14 @@ function setupFunAwardsGrid() {
   function _playsFromDiff(pid, oldL, newL, tags, scoring) {
     var pos = _pos(pid);
     var rid = tags.pidToRoster[pid] || '';
+    var _pi = (_state.player_info || {})[pid] || {};
     var base = {
       pid: pid, name: _name(pid), pos: pos, nflTeam: _team(pid),
       rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
       mine: tags.my.has(rid), opp: tags.opp.has(rid),
-      line: _gameLine(pid), ts: Date.now()
+      line: _gameLine(pid), ts: Date.now(),
+      gameQuarter: _pi.game_quarter || '',
+      gameClock:   _pi.game_clock   || '',
     };
     function mkEv(d, oldLine, newLine) {
       var info = _describe(d, pos);
@@ -14350,21 +14387,33 @@ function setupFunAwardsGrid() {
     allEvents.forEach(function(ev) { _feed.unshift(ev); });
     if (_feed.length > 200) _feed = _feed.slice(0, 200);
 
-    // Push notification for my TDs
+    // Push notification + audio chime for my TDs
     var myTDs = allEvents.filter(function(ev) { return ev.kind === 'td' && ev.mine; });
-    try {
-      if (myTDs.length && navigator.serviceWorker && navigator.serviceWorker.ready) {
-        navigator.serviceWorker.ready.then(function(sw) {
-          myTDs.forEach(function(ev) {
-            var p = sw.showNotification('TD: ' + ev.name, {
-              body: ev.desc + (ev.pts > 0 ? '  +' + _fmt(ev.pts) + ' pts' : ''),
-              icon: '/static/BR_Logo.png', tag: 'rz-td-' + ev.pid
+    if (myTDs.length) {
+      _playTDBeep();
+      try {
+        if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+          navigator.serviceWorker.ready.then(function(sw) {
+            myTDs.forEach(function(ev) {
+              var p = sw.showNotification('TD: ' + ev.name, {
+                body: ev.desc + (ev.pts > 0 ? '  +' + _fmt(ev.pts) + ' pts' : ''),
+                icon: '/static/BR_Logo.png', tag: 'rz-td-' + ev.pid
+              });
+              if (p && p.catch) p.catch(function() {});
             });
-            if (p && p.catch) p.catch(function() {});
-          });
-        }).catch(function() {});
-      }
-    } catch (_) {}
+          }).catch(function() {});
+        }
+      } catch (_) {}
+    }
+
+    // Track which rosters had point changes (for score flash)
+    (newData.matchups || []).forEach(function(m) {
+      var rid = String(m.roster_id);
+      var newPts = parseFloat(m.points || 0);
+      var oldPts = _prevMatchupPts[rid];
+      if (oldPts !== undefined && Math.abs(newPts - oldPts) > 0.01) _flashRids.add(rid);
+      _prevMatchupPts[rid] = newPts;
+    });
   }
 
   // ── Filters ────────────────────────────────────────────────────────────────────
@@ -14481,6 +14530,13 @@ function setupFunAwardsGrid() {
     var safe = (pos || '').replace(/[^A-Z_]/g, '');
     return '<span class="rz-pos-badge rz-pos-' + safe + '">' + (pos || '?') + '</span>';
   }
+  function _injuryDot(pid) {
+    var inj = ((_state.player_info || {})[pid] || {}).injury_status || '';
+    if (!inj) return '';
+    var cls = inj === 'O' || inj === 'IR' ? 'out' : inj === 'D' ? 'doubtful' : 'questionable';
+    return '<span class="rz-inj-dot ' + cls + '" title="' + inj + '"></span>';
+  }
+
   function _playerRowHtml(pid, pts, isBench) {
     var gs = _gameStatus(pid), line = _gameLine(pid), isLive = gs.type === 'live';
     var dot = isLive ? '<span class="rz-live-dot-sm"></span>' : '';
@@ -14488,7 +14544,7 @@ function setupFunAwardsGrid() {
     return (
       '<div class="rz-player-row' + (isBench ? ' bench-row' : '') + '" data-pid="' + pid + '">'
       + _posHtml(_pos(pid))
-      + '<div class="rz-player-info"><div class="rz-player-name">' + _name(pid) + '</div>'
+      + '<div class="rz-player-info"><div class="rz-player-name">' + _name(pid) + _injuryDot(pid) + '</div>'
       + '<div class="rz-player-meta">' + dot + meta + '</div></div>'
       + '<div class="rz-player-pts' + (isLive ? ' live-pts' : '') + '" data-pid="' + pid + '">'
       + (pts != null ? _fmt(pts) : '0') + '</div></div>'
@@ -14638,12 +14694,12 @@ function setupFunAwardsGrid() {
           + '<div class="rz-mch-matchup">'
           +   '<div class="rz-mch-side">'
           +     '<div class="rz-mch-owner viewer">Me</div>'
-          +     '<div class="rz-mch-score' + (win ? ' lead' : '') + '">' + _fmt(myPts) + '</div>'
+          +     '<div class="rz-mch-score' + (win ? ' lead' : '') + '" data-score-rid="' + String(m.roster_id) + '">' + _fmt(myPts) + '</div>'
           +   '</div>'
           +   '<div class="rz-mch-vs">' + badge + '</div>'
           +   '<div class="rz-mch-side right">'
           +     '<div class="rz-mch-owner">' + oppName + '</div>'
-          +     '<div class="rz-mch-score' + (!win ? ' lead' : '') + '">' + _fmt(oppPts) + '</div>'
+          +     '<div class="rz-mch-score' + (!win ? ' lead' : '') + '" data-score-rid="' + (opp ? String(opp.roster_id) : '') + '">' + _fmt(oppPts) + '</div>'
           +   '</div>'
           + '</div>'
           + '</div>';
@@ -14688,12 +14744,12 @@ function setupFunAwardsGrid() {
         + '<div class="rz-mch-matchup">'
         +   '<div class="rz-mch-side">'
         +     '<div class="rz-mch-owner' + (vA ? ' viewer' : '') + '">' + nameA + '</div>'
-        +     '<div class="rz-mch-score' + (aLead ? ' lead' : '') + '">' + _fmt(ptsA) + '</div>'
+        +     '<div class="rz-mch-score' + (aLead ? ' lead' : '') + '" data-score-rid="' + String(a.roster_id) + '">' + _fmt(ptsA) + '</div>'
         +   '</div>'
         +   '<div class="rz-mch-vs">' + badge + '</div>'
         +   '<div class="rz-mch-side right">'
         +     '<div class="rz-mch-owner' + (vB ? ' viewer' : '') + '">' + nameB + '</div>'
-        +     '<div class="rz-mch-score' + (!aLead ? ' lead' : '') + '">' + _fmt(ptsB) + '</div>'
+        +     '<div class="rz-mch-score' + (!aLead ? ' lead' : '') + '" data-score-rid="' + String(b.roster_id) + '">' + _fmt(ptsB) + '</div>'
         +   '</div>'
         + '</div>'
         + '</div>';
@@ -14832,8 +14888,11 @@ function setupFunAwardsGrid() {
     var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
     var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
     var sub2 = (ev.nflTeam || '') + (ev.line ? '  ·  ' + ev.line : '');
+    var clockParts = [ev.gameQuarter, ev.gameClock].filter(Boolean);
+    var tipText = clockParts.length ? clockParts.join(' · ') : '';
+    var tipAttr = tipText ? ' data-tip="' + tipText + '"' : '';
     return (
-      '<div class="rz-event ' + ev.kind + (ev.mine ? ' is-mine' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
+      '<div class="rz-event ' + ev.kind + (ev.mine ? ' is-mine' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '"' + tipAttr + '>'
       + '<div class="rz-event-avatar rz-av-' + posKey + '" data-init="' + initials + '">'
       + '<img class="rz-headshot" src="https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg" alt="" onerror="this.parentNode.classList.add(\'img-err\')">'
       + '</div>'
@@ -14990,6 +15049,17 @@ function setupFunAwardsGrid() {
         _shownFeedIds.add(id);
       });
       container.insertBefore(frag, container.firstChild);
+
+      // Auto-scroll to top if user was already near top (don't interrupt mid-scroll)
+      if (!isInitialLoad && toAdd.length > 0) {
+        var feedTop = container.getBoundingClientRect().top;
+        if (feedTop > -80) {
+          var first = container.firstChild;
+          if (first && first.scrollIntoView) {
+            first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+      }
 
       if (existingEls.length) {
         requestAnimationFrame(function() {
@@ -15178,10 +15248,16 @@ function setupFunAwardsGrid() {
 
     var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
     var exitBtn  = _isDemo ? '<button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button>' : '';
+    var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">⚠ Stale</span>' : '';
+    var timerLabel = _lastPollFailed ? '?' : _countdown + 's';
+    var notifCta = (!_notifDismissed && 'Notification' in window && Notification.permission === 'default')
+      ? '<div class="rz-notif-cta" id="rz-notif-cta"><span class="rz-notif-cta-icon">🔔</span><span>Enable TD alerts</span><button class="rz-notif-cta-btn" id="rz-notif-enable">Enable</button><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
+      : '';
     root.innerHTML =
-      '<div class="rz-header">'
+      notifCta
+      + '<div class="rz-header">'
       + '<div class="rz-brand"><div class="rz-brand-dot"></div><span class="rz-brand-name">BR Redzone</span><span class="rz-brand-week">Wk ' + (_state.week || '') + '</span>' + demoPill + '</div>'
-      + '<div class="rz-header-right">' + demoLink + exitBtn + liveChip + '<button class="rz-refresh-timer" id="rz-timer">' + _countdown + 's</button></div>'
+      + '<div class="rz-header-right">' + demoLink + exitBtn + staleChip + liveChip + '<button class="rz-refresh-timer" id="rz-timer">' + timerLabel + '</button></div>'
       + '</div>'
       + '<div class="rz-content">'
       + _renderScopeToggle()
@@ -15269,6 +15345,17 @@ function setupFunAwardsGrid() {
     });
     var exitDemo = root.querySelector('#rz-demo-exit');
     if (exitDemo) exitDemo.addEventListener('click', function() { window.location.href = window.location.pathname; });
+
+    var notifEnable = root.querySelector('#rz-notif-enable');
+    if (notifEnable) notifEnable.addEventListener('click', function() {
+      Notification.requestPermission().then(function() { _notifDismissed = true; _render(); });
+    });
+    var notifDismiss = root.querySelector('#rz-notif-dismiss');
+    if (notifDismiss) notifDismiss.addEventListener('click', function() {
+      _notifDismissed = true;
+      try { localStorage && localStorage.setItem('rz-notif-dismissed', '1'); } catch (_) {}
+      _render();
+    });
     _wireHeroCards();
     root.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
@@ -15335,15 +15422,15 @@ function setupFunAwardsGrid() {
       var url = apiBase + '/redzone-data?_cb=' + Date.now() + '&scope=' + _scope;
       if (_isDemo) { _demoT += 15; url += '&demo=1&t=' + _demoT; }
       var resp = await fetch(url);
-      if (!resp.ok) return;
+      if (!resp.ok) { _lastPollFailed = true; return; }
       var newData = await resp.json();
+      _lastPollFailed = false;
       _myRids = _myRidSet(newData);
       _detectChanges(newData);
       _state = newData;
       _seedPrevStats(newData);
       _countdown = _isDemo ? 3 : _anyLive() ? 15 : 60;
 
-      // Preserve feed DOM so incoming events animate in rather than flashing
       var savedFeedHtml = null;
       var oldFeedEl = root.querySelector('#rz-feed-list');
       if (oldFeedEl && oldFeedEl.children.length > 0) savedFeedHtml = oldFeedEl.innerHTML;
@@ -15354,7 +15441,19 @@ function setupFunAwardsGrid() {
         var newFeedEl = root.querySelector('#rz-feed-list');
         if (newFeedEl) { newFeedEl.innerHTML = savedFeedHtml; _syncFeed(); }
       }
-    } catch (_) {}
+
+      // Flash scores that changed
+      if (_flashRids.size) {
+        root.querySelectorAll('[data-score-rid]').forEach(function(el) {
+          if (_flashRids.has(el.dataset.scoreRid)) {
+            el.classList.remove('rz-score-flash');
+            void el.offsetWidth; // reflow to restart animation
+            el.classList.add('rz-score-flash');
+          }
+        });
+        _flashRids.clear();
+      }
+    } catch (_) { _lastPollFailed = true; }
   }
 
   function _isGameDay() {
@@ -15393,9 +15492,11 @@ function setupFunAwardsGrid() {
     }
   });
 
-  // Populate feed with everything that has happened so far in the game.
-  // _prevStats starts empty so diffing from zero generates one event per
-  // player showing their cumulative stats; then seed baseline for future diffs.
+  // Seed initial matchup points so first refresh doesn't trigger flash
+  (_state.matchups || []).forEach(function(m) {
+    _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0);
+  });
+
   _detectChanges(_state);
   _seedPrevStats(_state);
 
