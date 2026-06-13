@@ -25952,6 +25952,22 @@ def _init_push_table():
                 except Exception:
                     pass
             conn.commit()
+            # Multi-league support: a device (endpoint) can subscribe to several
+            # leagues — one row per (endpoint, league_id). Replace the old
+            # endpoint-unique constraint with a composite unique index. All
+            # league_ids are normalized to '' (never NULL) so the index is exact.
+            try:
+                conn.execute("UPDATE push_subscriptions SET league_id = '' WHERE league_id IS NULL")
+                conn.execute("""
+                    DELETE FROM push_subscriptions a USING push_subscriptions b
+                    WHERE a.id < b.id AND a.endpoint = b.endpoint
+                      AND COALESCE(a.league_id, '') = COALESCE(b.league_id, '')
+                """)
+                conn.execute("ALTER TABLE push_subscriptions DROP CONSTRAINT IF EXISTS push_subscriptions_endpoint_key")
+                conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS push_sub_endpoint_league_idx ON push_subscriptions (endpoint, league_id)")
+                conn.commit()
+            except Exception as _mig_exc:
+                logger.warning("[push] composite-key migration skipped: %s", _mig_exc)
         _PUSH_TABLE_INIT = True
     except Exception as exc:
         logger.warning("[push] table init failed: %s", exc)
@@ -26012,27 +26028,43 @@ def api_push_subscribe():
     endpoint  = data.get("endpoint", "").strip()
     p256dh    = (data.get("keys") or {}).get("p256dh", "").strip()
     auth      = (data.get("keys") or {}).get("auth",   "").strip()
-    league_id = (data.get("league_id") or "").strip() or None
     platform  = (data.get("platform")  or "sleeper").strip()
     owner_id  = (data.get("owner_id")  or "").strip() or None
+    # Accept either a single league_id or a league_ids[] array (register the
+    # device for every league at once — the default-to-all subscribe path).
+    raw_leagues = data.get("league_ids")
+    if not isinstance(raw_leagues, list) or not raw_leagues:
+        raw_leagues = [data.get("league_id")]
+    leagues = list(dict.fromkeys((str(l).strip() if l else "") for l in raw_leagues))
     if not (endpoint and p256dh and auth):
         return jsonify({"error": "Invalid subscription"}), 400
     _init_push_table()
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
+            for lid in leagues:
+                conn.execute(
+                    """
+                    INSERT INTO push_subscriptions (endpoint, p256dh, auth, league_id, platform, owner_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (endpoint, league_id) DO UPDATE
+                        SET p256dh    = EXCLUDED.p256dh,
+                            auth      = EXCLUDED.auth,
+                            platform  = COALESCE(EXCLUDED.platform,  push_subscriptions.platform),
+                            owner_id  = COALESCE(EXCLUDED.owner_id,  push_subscriptions.owner_id)
+                    """,
+                    (endpoint, p256dh, auth, lid, platform, owner_id),
+                )
+            # Keep notification-type prefs consistent across all of this device's
+            # league rows (prefs are a device-level choice, not per-league).
             conn.execute(
                 """
-                INSERT INTO push_subscriptions (endpoint, p256dh, auth, league_id, platform, owner_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (endpoint) DO UPDATE
-                    SET p256dh    = EXCLUDED.p256dh,
-                        auth      = EXCLUDED.auth,
-                        league_id = COALESCE(EXCLUDED.league_id, push_subscriptions.league_id),
-                        platform  = COALESCE(EXCLUDED.platform,  push_subscriptions.platform),
-                        owner_id  = COALESCE(EXCLUDED.owner_id,  push_subscriptions.owner_id)
+                UPDATE push_subscriptions SET prefs = (
+                    SELECT prefs FROM push_subscriptions p2
+                    WHERE p2.endpoint = %s AND p2.prefs IS NOT NULL LIMIT 1
+                ) WHERE endpoint = %s AND prefs IS NULL
                 """,
-                (endpoint, p256dh, auth, league_id, platform, owner_id),
+                (endpoint, endpoint),
             )
             conn.commit()
     except Exception as exc:
@@ -26046,19 +26078,51 @@ def api_push_subscribe():
 def api_push_unsubscribe():
     data     = request.get_json(force=True) or {}
     endpoint = data.get("endpoint", "").strip()
+    # When a league_id is supplied, only that league is toggled off for this
+    # device; otherwise the whole device is unsubscribed (all leagues).
+    league_id = (data.get("league_id") or "").strip()
     if not endpoint:
         return jsonify({"error": "Missing endpoint"}), 400
     _init_push_table()
     try:
         from dashboard_services.db import get_conn
         with get_conn() as conn:
-            conn.execute(
-                "DELETE FROM push_subscriptions WHERE endpoint = %s", (endpoint,)
-            )
+            if league_id:
+                conn.execute(
+                    "DELETE FROM push_subscriptions WHERE endpoint = %s AND league_id = %s",
+                    (endpoint, league_id),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM push_subscriptions WHERE endpoint = %s", (endpoint,)
+                )
             conn.commit()
     except Exception as exc:
         logger.warning("[push] unsubscribe error: %s", exc)
     return jsonify({"ok": True})
+
+
+@app.route("/api/push/leagues")
+@limiter.limit("60 per minute")
+def api_push_leagues():
+    """Return the league_ids this device (endpoint) is currently subscribed to,
+    so the notification settings modal can show per-league toggle state."""
+    endpoint = request.args.get("endpoint", "").strip()
+    if not endpoint:
+        return jsonify({"league_ids": []})
+    _init_push_table()
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT league_id FROM push_subscriptions "
+                "WHERE endpoint = %s AND COALESCE(league_id, '') <> ''",
+                (endpoint,),
+            ).fetchall()
+        return jsonify({"league_ids": [r[0] for r in rows]})
+    except Exception as exc:
+        logger.warning("[push] leagues get error: %s", exc)
+        return jsonify({"league_ids": []})
 
 
 @app.route("/api/push/preferences", methods=["GET", "PUT"])
