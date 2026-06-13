@@ -12,10 +12,15 @@
 // If the server session expired but we still have saved_viewer in localStorage,
 // silently call /api/quick-set-viewer so the user stays logged in.
 // Does NOT fire after an explicit logout (user_id stripped, _explicitLogout set).
+// Does NOT fire in PWA standalone mode (added to home screen) — the "Continue as X"
+// banner on the home page handles re-auth with explicit user action there.
 (function () {
   if (window._isSignedIn) return;
   // Skip if the user explicitly logged out this session.
   if (sessionStorage.getItem('_explicitLogout')) return;
+  // Skip in PWA standalone mode — cold launches should show the guest home page
+  // with the "Continue as X" banner rather than silently re-authenticating.
+  if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return;
   var saved;
   try { saved = JSON.parse(localStorage.getItem('saved_viewer') || 'null'); } catch (_) {}
   // Require user_id — logout strips it so this check prevents silent re-auth.
