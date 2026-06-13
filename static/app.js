@@ -754,6 +754,29 @@ function emptyState(container, message, iconClass) {
         // Already subscribed — sync localStorage and store endpoint
         localStorage.setItem(NOTIF_KEY, 'subscribed');
         window._pushEndpoint = sub.endpoint;
+        // Backfill owner_id/league_id for subscriptions first created while
+        // logged out (they only get broadcast-to-all pushes until this runs).
+        // The subscribe upsert COALESCEs, so this only fills missing fields.
+        try {
+          var _s = sub.toJSON();
+          var _p = window.location.pathname.split('/').filter(Boolean);
+          var _plat = (_p[0] || 'sleeper').toLowerCase();
+          var _lg = _p.length >= 3 ? _p[2] : '';
+          if (!['sleeper', 'espn'].includes(_plat)) { _plat = 'sleeper'; _lg = ''; }
+          if (window._viewerUid || _lg) {
+            fetch('/api/push/subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                endpoint:  _s.endpoint,
+                keys:      _s.keys,
+                league_id: _lg || null,
+                platform:  _plat || 'sleeper',
+                owner_id:  (window._viewerUid || null),
+              }),
+            }).catch(function () {});
+          }
+        } catch (_) {}
         return;
       }
       if (Notification.permission === 'granted' && !sub) {
