@@ -66,11 +66,13 @@ def _list_snapshots(conn) -> list:
 
 
 def _snapshot(conn, d) -> dict:
+    """Non-pick players only — picks aren't subject to the 1QB scale."""
     rows = conn.execute(
         f"""
         SELECT player_id, {", ".join(_HIST_COLS)}
         FROM player_value_history
         WHERE source = 'model' AND as_of_date = %s
+          AND (position IS NULL OR position NOT ILIKE 'PICK%%')
         """,
         (d,),
     ).fetchall()
@@ -82,7 +84,7 @@ def _snapshot(conn, d) -> dict:
 
 
 def _live_values(conn) -> dict:
-    """Current displayed values per player (COALESCE matches the modal)."""
+    """Current displayed values per player (COALESCE matches the modal), picks excluded."""
     rows = conn.execute(
         """
         SELECT player_id,
@@ -92,6 +94,7 @@ def _live_values(conn) -> dict:
                sf_value_8, sf_value_12, sf_value_14
         FROM player_values
         WHERE value_1qb IS NOT NULL AND value_1qb > 0
+          AND (position IS NULL OR position NOT IN ('PICK'))
         """
     ).fetchall()
     out = {}
