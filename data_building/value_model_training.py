@@ -1155,14 +1155,12 @@ def rewrite_value_table_with_model() -> Path:
         _save_state(_BASKET_STATE_KEY, _smoothed_basket)
         _save_state(_HEADROOM_STATE_KEY, _smoothed_headroom)
 
-        # Anchor ≈ where the #1 sits (basket × headroom), but built from smoothed
-        # quantities so it barely moves day to day. Scale targets 999.9 at the
-        # anchor; no hard ceiling so a hot #1 can float slightly above 999.9
-        # when they're genuinely ahead of the smoothed level (sparkline moves
-        # instead of flatlining). The smoothing itself acts as the soft cap —
-        # a sudden jump can only shift the anchor a fraction per day.
-        _anchor    = _smoothed_basket * _smoothed_headroom
-        _1qb_scale = 999.9 / _anchor if _anchor > 0 else 1.0
+        # Anchor the BASKET MEAN (mean of top-N non-QBs) to 999.9 instead of
+        # pinning the single #1. This lets the #1 float above 999.9 proportional
+        # to how far ahead of the basket they are — their sparkline moves — while
+        # the rest of the board no longer compresses whenever the anchor shifts.
+        # No hard ceiling: the smoothed basket provides a soft cap naturally.
+        _1qb_scale = 999.9 / _smoothed_basket if _smoothed_basket > 0 else 1.0
         _persist_scale(_1qb_scale)  # kept for back-compat / the reset script
         for _a in cleaned_assets:
             if str(_a.get("position") or "").upper() not in _SKILL_POS:

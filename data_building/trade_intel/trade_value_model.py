@@ -52,6 +52,7 @@ LAMBDA_REG         = 20.0  # regularization strength (higher = stronger pull tow
 MAX_VALUE          = 999.9
 MAX_LIFT           = 1.25  # player values capped at 125% of prior; picks float freely
 TOP_N_AT_MAX       = 1     # only the #1 player lands at MAX_VALUE; all others separate naturally
+_WLS_BASKET_N      = 5     # normalize so the mean of the top N players = MAX_VALUE
 TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
@@ -734,18 +735,17 @@ def run_trade_value_model(
     v_1qb_pos[n_pl:] = np.clip(v_1qb[n_pl:], 0.0, None)
     v_sf_pos[n_pl:]  = np.clip(v_sf[n_pl:],  0.0, None)
 
-    # Normalize so TOP_N_AT_MAX players land at MAX_VALUE. No upper clip so a
-    # genuinely dominant player can float slightly above MAX_VALUE — their
-    # sparkline shows real movement instead of flatlining. Values can't blow
-    # up because the model prior (also uncapped) is already bounded by the
-    # smoothed basket anchor; the MAX_LIFT clamp above keeps the WLS solution
-    # within 125% of that prior.
+    # Normalize so the basket mean of the top _WLS_BASKET_N players = MAX_VALUE.
+    # This lets the #1 player float above MAX_VALUE proportional to how far
+    # ahead of the basket they are — matching the model training anchor — while
+    # still keeping everyone else on the same scale. No upper clip.
     def _normalize(vec: np.ndarray) -> np.ndarray:
-        player_vec   = vec[:n_pl]
-        sorted_desc  = np.sort(player_vec)[::-1]
-        idx          = min(TOP_N_AT_MAX - 1, len(sorted_desc) - 1)
-        ceiling      = sorted_desc[idx] if sorted_desc[idx] > 0 else (player_vec.max() or MAX_VALUE)
-        return np.clip(vec / ceiling * MAX_VALUE, 0.0, None)
+        player_vec  = vec[:n_pl]
+        sorted_desc = np.sort(player_vec)[::-1]
+        top_n       = sorted_desc[:_WLS_BASKET_N]
+        basket      = top_n[top_n > 0].mean() if (top_n > 0).any() else 0.0
+        anchor      = basket if basket > 0 else (player_vec.max() or MAX_VALUE)
+        return np.clip(vec / anchor * MAX_VALUE, 0.0, None)
 
     v_1qb_norm = _normalize(v_1qb_pos)
     v_sf_norm  = _normalize(v_sf_pos)
