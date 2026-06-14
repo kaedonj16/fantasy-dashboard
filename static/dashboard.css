@@ -20676,21 +20676,6 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   padding: 2px 8px; border-radius: 999px;
 }
 
-/* ── Game-clock tooltip on event cards ── */
-.rz-event[data-tip] { position: relative; }
-.rz-event[data-tip]::before {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 5px); left: 50%;
-  transform: translateX(-50%);
-  background: #1e293b; color: #e2e8f0;
-  font-size: 10px; font-weight: 600; padding: 3px 8px;
-  border-radius: 5px; white-space: nowrap;
-  pointer-events: none; opacity: 0;
-  transition: opacity .15s; z-index: 10;
-}
-.rz-event[data-tip]:hover::before { opacity: 1; }
-
 /* ── Injury status dot ────────────────── */
 .rz-inj-dot {
   display: inline-block; width: 7px; height: 7px; border-radius: 50%;
@@ -20903,10 +20888,6 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 :root[data-theme="dark"] .rz-stale-badge {
   background: rgba(245,158,11,.15);
   border-color: rgba(245,158,11,.35);
-}
-:root[data-theme="dark"] .rz-event[data-tip]::before {
-  background: #0f172a;
-  color: #cbd5e1;
 }
 :root[data-theme="dark"] .rz-hist-btn {
   background: rgba(234,179,8,.12);
