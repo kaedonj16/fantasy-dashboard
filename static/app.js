@@ -14030,7 +14030,13 @@ function setupFunAwardsGrid() {
 window._rzBuildLiveHtml = function(pid, state, feed) {
   if (!pid || pid === '0') return '<div style="padding:20px;text-align:center;color:var(--text-muted);">No data.</div>';
   var info = (state.player_info || {})[pid] || {};
-  var sc   = state.scoring || {};
+  // Use this player's league scoring (user scope may span leagues with
+  // different settings); fall back to the single top-level scoring.
+  var sc   = (function() {
+    var sbl = state.scoring_by_league;
+    if (sbl) { var lid = (state.pid_league || {})[pid]; if (lid && sbl[lid]) return sbl[lid]; }
+    return state.scoring || {};
+  })();
   var fmt  = function(n) { return parseFloat(n == null ? 0 : n).toFixed(1); };
 
   var code = String(info.game_code || '');
@@ -14615,13 +14621,19 @@ window._rzSyncTabLive = function(panel) {
 
   function _detectChanges(newData) {
     var tags = _rosterTags(newData);
-    var scoring = newData.scoring || {};
+    // Resolve scoring per player by league (user scope spans multiple leagues);
+    // fall back to the single top-level scoring.
+    var _sbl = newData.scoring_by_league, _pidLg = newData.pid_league || {};
+    var _scFor = function(pid) {
+      if (_sbl) { var lid = _pidLg[pid]; if (lid && _sbl[lid]) return _sbl[lid]; }
+      return newData.scoring || {};
+    };
     var allEvents = [], handled = {};
     Object.keys(newData.player_info || {}).forEach(function(pid) {
       var newL = newData.player_info[pid].stat_line;
       if (!newL) return;
       handled[pid] = true;
-      var evs = _playsFromDiff(pid, _prevStats[pid] || {}, newL, tags, scoring);
+      var evs = _playsFromDiff(pid, _prevStats[pid] || {}, newL, tags, _scFor(pid));
       evs.forEach(function(ev) { allEvents.push(ev); });
     });
     (newData.matchups || []).forEach(function(m) {
@@ -15126,7 +15138,7 @@ window._rzSyncTabLive = function(panel) {
           + '</div>'
           + '</div>';
       }).join('');
-      return '<div class="rz-hero-cards">' + _deltaHtml + cards + '</div>';
+      return '<div class="rz-hero-cards">' + _deltaHtml + '<div class="rz-hero-cards-row">' + cards + '</div></div>';
     }
 
     // This League mode: one card per matchup, viewer's first
@@ -15176,7 +15188,7 @@ window._rzSyncTabLive = function(panel) {
         + '</div>'
         + '</div>';
     }).filter(Boolean).join('');
-    return '<div class="rz-hero-cards">' + _deltaHtml + cards2 + '</div>';
+    return '<div class="rz-hero-cards">' + _deltaHtml + '<div class="rz-hero-cards-row">' + cards2 + '</div></div>';
   }
 
   function _renderLeaguesSummary() {

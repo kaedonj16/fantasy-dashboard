@@ -10123,7 +10123,7 @@ def _redzone_collect(platform, league_id, season, week):
     """Build the raw per-league Redzone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
         get_nfl_scores_for_date, build_team_game_lookup,
-        get_nfl_players, get_effective_scoring_settings,
+        get_nfl_players, get_effective_scoring_settings, get_league,
     )
     from dashboard_services.platform_api import (
         get_matchups as _pm, get_rosters as _pr, get_users as _pu,
@@ -10137,6 +10137,12 @@ def _redzone_collect(platform, league_id, season, week):
     scores_body  = get_nfl_scores_for_date(today_str) or {}
     team_game    = build_team_game_lookup(scores_body)
     try:
+        # Load this league's scoring into the request-scoped state so the live
+        # point math (feed deltas, stat breakdowns) uses the league's real
+        # settings rather than falling back to generic defaults. get_league
+        # populates scoring_settings via set_league_globals (Sleeper).
+        if platform == "sleeper":
+            get_league(league_id)
         scoring = get_effective_scoring_settings() or {}
     except Exception:
         scoring = {}
@@ -10283,6 +10289,8 @@ def _redzone_fetch_user(platform, league_id, season, week):
     matchups, rosters, users, leagues = [], [], [], []
     player_info: dict = {}
     scoring: dict = {}
+    scoring_by_league: dict = {}   # league_id -> that league's scoring settings
+    pid_league: dict = {}          # pid -> league_id (so each player scores by its league)
     viewer_rids = []
     seen_users = set()
 
@@ -10297,6 +10305,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
             continue
         if not scoring:
             scoring = d.get("scoring") or {}
+        scoring_by_league[lid] = d.get("scoring") or {}
         vr = next((r for r in d["rosters"] if str(r.get("owner_id")) == viewer_uid), None)
         if not vr:
             continue
@@ -10318,6 +10327,8 @@ def _redzone_fetch_user(platform, league_id, season, week):
             m2["league_name"]  = lname
             m2["league_id"]    = lid
             matchups.append(m2)
+            for _pid in (m.get("players") or []):
+                pid_league[str(_pid)] = lid
         for r in d["rosters"]:
             if str(r.get("roster_id")) in pair_rids:
                 r2 = dict(r)
@@ -10341,6 +10352,8 @@ def _redzone_fetch_user(platform, league_id, season, week):
         "leagues": leagues,
         "player_info": player_info,
         "scoring": scoring,
+        "scoring_by_league": scoring_by_league,
+        "pid_league": pid_league,
         "viewer_roster_id": viewer_rids[0] if viewer_rids else "",
         "viewer_roster_ids": viewer_rids,
         "updated_at": time.time(),

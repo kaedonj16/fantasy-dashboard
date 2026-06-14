@@ -19906,7 +19906,8 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 }
 
 /* Hero matchup card strip — replaces single hero card in new design */
-.rz-hero-cards {
+.rz-hero-cards { display: block; }
+.rz-hero-cards-row {
   display: flex;
   gap: 10px;
   padding: 14px 14px 4px;
@@ -19914,7 +19915,7 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-.rz-hero-cards::-webkit-scrollbar { display: none; }
+.rz-hero-cards-row::-webkit-scrollbar { display: none; }
 
 .rz-mc-hero {
   flex: 0 0 auto;
@@ -20408,8 +20409,8 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .rz-pl-pts { font-size: 15px; font-weight: 900; color: var(--rz-text); font-variant-numeric: tabular-nums; margin-top: 2px; }
 
 /* Score delta on hero card */
-.rz-delta-strip { display: flex; justify-content: center; margin: 0 0 8px; }
-.rz-delta { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.rz-delta-strip { display: flex; justify-content: center; padding: 12px 14px 0; }
+.rz-delta { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 999px; line-height: 1.5; }
 .rz-delta.pos { color: #16a34a; background: rgba(22,163,74,.12); }
 .rz-delta.neg { color: #dc2626; background: rgba(220,38,38,.12); }
 
