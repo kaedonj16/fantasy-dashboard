@@ -19640,6 +19640,11 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   width: calc(100% + 20px);
 }
 
+/* Redzone is a full-bleed live page: drop the top ad banner and zero the
+   layout's top margin so the sticky header sits flush beneath the nav. */
+#app-scale:has(.page-shell[data-page="redzone"]) .ad-top-banner { display: none; }
+#app-scale:has(.page-shell[data-page="redzone"]) #page-root { margin-top: 0; padding-top: 0; }
+
 /* Content container: max-width centering for comfortable desktop reading */
 .rz-content {
   max-width: 720px;
@@ -20921,3 +20926,34 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 }
 :root[data-theme="dark"] .rz-psb-spread { background: rgba(255,255,255,.06); }
 :root[data-theme="dark"] .rz-plays-scorebar { border-top-color: rgba(255,255,255,.08); }
+
+/* ── On-deck strip (games kicking off soon) ── */
+.rz-ondeck-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 10px; padding: 8px 12px;
+  background: var(--rz-card);
+  border: 1px solid var(--rz-border);
+  border-radius: 12px;
+}
+.rz-ondeck-label {
+  font-size: 10px; font-weight: 800; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--rz-muted);
+  flex-shrink: 0; padding-right: 4px;
+}
+.rz-ondeck-item {
+  display: flex; align-items: center; gap: 7px;
+  padding: 4px 9px; border-radius: 999px;
+  background: rgba(59,130,246,.08); font-size: 11px;
+}
+.rz-ondeck-clock {
+  font-weight: 800; color: #3b82f6; flex-shrink: 0;
+}
+.rz-ondeck-game { font-weight: 700; color: var(--rz-text); }
+.rz-ondeck-players { color: var(--rz-muted); }
+:root[data-theme="dark"] .rz-ondeck-item { background: rgba(59,130,246,.14); }
+
+/* ── Blowout / system feed event ──────── */
+.rz-event.neg .rz-event-avatar[data-init="BL"],
+.rz-event .rz-event-avatar[data-init="BL"] {
+  background: rgba(245,158,11,.18); color: #d97706;
+}

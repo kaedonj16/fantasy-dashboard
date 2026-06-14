@@ -14058,6 +14058,8 @@ function setupFunAwardsGrid() {
   var _historyOpen = false;
   var _unreadCount = 0;
   var _milestonesSeen = {};
+  var _blowoutSeen = {};
+  var _prevInjury = {};
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
 
@@ -14154,6 +14156,15 @@ function setupFunAwardsGrid() {
     if (a === '' && h === '') return p.away + ' @ ' + p.home;
     return p.away + ' ' + (a || '0') + ' @ ' + p.home + ' ' + (h || '0');
   }
+  function _quarterNum(q) {
+    var m = String(q || '').match(/(\d)/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+  var _INJ_RANK = { '': 0, 'Q': 1, 'D': 2, 'O': 3, 'IR': 3 };
+  function _injLabel(code) {
+    return code === 'O' ? 'Out' : code === 'IR' ? 'IR' : code === 'D' ? 'Doubtful'
+         : code === 'Q' ? 'Questionable' : code ? code : 'Active';
+  }
   function _rosterOf(rid) {
     var s = String(rid);
     return (_state.rosters || []).find(function(r) { return String(r.roster_id) === s; });
@@ -14236,6 +14247,12 @@ function setupFunAwardsGrid() {
         if (val >= ms.thr) seen[ms.key] = true;
       });
       _milestonesSeen[pid] = seen;
+    });
+  }
+
+  function _seedInjuries(data) {
+    Object.keys(data.player_info || {}).forEach(function(pid) {
+      _prevInjury[pid] = (data.player_info[pid] || {}).injury_status || '';
     });
   }
 
@@ -14459,6 +14476,8 @@ function setupFunAwardsGrid() {
       } catch (_) {}
     }
 
+    var _specialCount = 0;
+
     // Stat milestones: fire a feed event when a player crosses a threshold for first time
     var _MS_DEFS = [
       { key: 'rush_yds_100', field: 'rush_yds', thr: 100, desc: '100 rush yds' },
@@ -14480,6 +14499,7 @@ function setupFunAwardsGrid() {
         var val = ms.field === '__tds' ? tds : (sl[ms.field] || 0);
         if (val < ms.thr) return;
         seen[ms.key] = true;
+        _specialCount++;
         _feed.unshift({
           pid: pid, name: _name(pid), pos: _pos(pid), nflTeam: _team(pid),
           rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
@@ -14493,8 +14513,66 @@ function setupFunAwardsGrid() {
       _milestonesSeen[pid] = seen;
     });
 
+    // Injury-status changes: fire a feed event when a rostered player's status worsens mid-game
+    Object.keys(newData.player_info || {}).forEach(function(pid) {
+      var info = newData.player_info[pid] || {};
+      var now = info.injury_status || '';
+      var was = _prevInjury[pid];
+      _prevInjury[pid] = now;
+      if (was === undefined || now === was) return;
+      if ((_INJ_RANK[now] || 0) <= (_INJ_RANK[was] || 0)) return; // only surface worsening
+      var rid = tags.pidToRoster[pid] || '';
+      // Only for players in a viewable matchup (mine or opp), to keep the feed relevant
+      if (!tags.my.has(rid) && !tags.opp.has(rid)) return;
+      _specialCount++;
+      _feed.unshift({
+        pid: pid, name: _name(pid), pos: _pos(pid), nflTeam: _team(pid),
+        rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
+        mine: tags.my.has(rid), opp: tags.opp.has(rid),
+        desc: 'Injury: now ' + _injLabel(now), kind: 'neg', stats: ['injury'],
+        pts: 0, ts: Date.now() + Math.random(),
+        line: '', gameQuarter: info.game_quarter || '', gameClock: info.game_clock || ''
+      });
+    });
+
+    // Blowout warnings: one-time alert when an NFL game is 21+ apart in Q3/Q4
+    var _games = {};
+    Object.keys(newData.player_info || {}).forEach(function(pid) {
+      var info = newData.player_info[pid] || {};
+      var gid = info.game_id || '';
+      if (!gid || String(info.game_code || '') !== '1') return; // live games only
+      if (_games[gid]) {
+        if (_quarterNum(info.game_quarter) > _games[gid].qn) _games[gid].qn = _quarterNum(info.game_quarter);
+        return;
+      }
+      _games[gid] = {
+        home: info.home, away: info.away,
+        hp: parseFloat(info.home_pts || 0), ap: parseFloat(info.away_pts || 0),
+        qn: _quarterNum(info.game_quarter), qLabel: info.game_quarter || '', clock: info.game_clock || ''
+      };
+    });
+    Object.keys(_games).forEach(function(gid) {
+      if (_blowoutSeen[gid]) return;
+      var g = _games[gid];
+      var spread = Math.abs(g.hp - g.ap);
+      if (g.qn < 3 || spread < 21) return;
+      _blowoutSeen[gid] = true;
+      _specialCount++;
+      var leader = g.hp >= g.ap ? g.home : g.away;
+      var trailer = g.hp >= g.ap ? g.away : g.home;
+      _feed.unshift({
+        pid: '0', name: 'Blowout Alert', pos: '', nflTeam: leader,
+        rosterId: '', owner: '', league: '',
+        mine: false, opp: false,
+        desc: leader + ' leading ' + trailer + ' by ' + spread + ' — watch for reduced volume',
+        kind: 'neg', stats: ['blowout'], pts: 0, ts: Date.now() + Math.random(),
+        line: g.away + ' ' + g.ap + ' @ ' + g.home + ' ' + g.hp,
+        gameQuarter: g.qLabel, gameClock: g.clock
+      });
+    });
+
     // Increment unread count when user isn't on Plays tab
-    if (_activeTab !== 'plays' && allEvents.length) _unreadCount += allEvents.length;
+    if (_activeTab !== 'plays' && (allEvents.length + _specialCount)) _unreadCount += (allEvents.length + _specialCount);
 
     // Track which rosters had point changes (for score flash)
     (newData.matchups || []).forEach(function(m) {
@@ -15076,6 +15154,42 @@ function setupFunAwardsGrid() {
     return '<div class="rz-pm-live">' + gameHdr + statBlock + logHtml + '</div>';
   };
 
+  // "On deck": games kicking off within the next 90 min that include my players.
+  function _onDeckHtml() {
+    var info = _state.player_info || {};
+    var myPids = new Set();
+    _myMatchups().forEach(function(m) {
+      (m.starters || []).forEach(function(pid) { myPids.add(pid); });
+    });
+    if (!myPids.size) return '';
+    var now = Date.now() / 1000;
+    var WINDOW = 90 * 60;
+    var games = {};
+    Object.keys(info).forEach(function(pid) {
+      if (!myPids.has(pid)) return;
+      var p = info[pid];
+      if (String(p.game_code || '0') !== '0') return;        // upcoming only
+      var ep = parseFloat(p.game_time_epoch || 0);
+      if (!ep || ep < now || ep - now > WINDOW) return;       // within next 90 min
+      var gid = p.game_id || (p.away + '@' + p.home);
+      if (!games[gid]) games[gid] = { away: p.away, home: p.home, ep: ep, names: [] };
+      games[gid].names.push((p.name || pid));
+    });
+    var gids = Object.keys(games).sort(function(a, b) { return games[a].ep - games[b].ep; });
+    if (!gids.length) return '';
+    var rows = gids.map(function(gid) {
+      var g = games[gid];
+      var mins = Math.max(1, Math.round((g.ep - now) / 60));
+      var nameStr = g.names.slice(0, 3).join(', ') + (g.names.length > 3 ? ' +' + (g.names.length - 3) : '');
+      return '<div class="rz-ondeck-item">'
+        + '<span class="rz-ondeck-clock">▶ ' + mins + 'm</span>'
+        + '<span class="rz-ondeck-game">' + g.away + ' @ ' + g.home + '</span>'
+        + '<span class="rz-ondeck-players">' + nameStr + '</span>'
+        + '</div>';
+    }).join('');
+    return '<div class="rz-ondeck-bar"><span class="rz-ondeck-label">On deck</span>' + rows + '</div>';
+  }
+
   function _pregameScheduleHtml() {
     var info = _state.player_info || {};
     var myPids = new Set();
@@ -15169,6 +15283,7 @@ function setupFunAwardsGrid() {
       container.appendChild(frag2);
       _renderPagination(totalPages);
       container.querySelectorAll('[data-pid]').forEach(function(el) {
+        if (!el.dataset.pid || el.dataset.pid === '0') return;
         el.onclick = function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
       });
       return;
@@ -15268,6 +15383,7 @@ function setupFunAwardsGrid() {
 
     container.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
+      if (!el.dataset.pid || el.dataset.pid === '0') return;
       el.onclick = function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
     });
   }
@@ -15473,6 +15589,7 @@ function setupFunAwardsGrid() {
       + '<div class="rz-content">'
       + _renderScopeToggle()
       + summary
+      + _onDeckHtml()
       + '<div class="rz-main-card">'
       + tabBar
       + (showFilters ? _renderFilterChips() : '')
@@ -15595,6 +15712,7 @@ function setupFunAwardsGrid() {
     _wireHeroCards();
     root.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
+      if (!el.dataset.pid || el.dataset.pid === '0') return;
       el.addEventListener('click', function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); });
     });
   }
@@ -15690,9 +15808,10 @@ function setupFunAwardsGrid() {
     _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0);
   });
 
-  _seedPrevStats(_state);
-  _seedMilestones(_state);
-  _detectChanges(_state);
+  _seedMilestones(_state);   // pre-mark already-crossed milestones (no retroactive events)
+  _seedInjuries(_state);     // snapshot injuries so only changes fire later
+  _detectChanges(_state);    // populate initial feed from empty _prevStats
+  _seedPrevStats(_state);    // snapshot stat lines for the next poll diff
 
   _render();
   if (_isDemo) setTimeout(_refresh, 300);

@@ -9744,6 +9744,14 @@ def _rz_stat_line_from_ps(ps: dict) -> dict:
     }
 
 
+def _rz_safe_epoch(v) -> float:
+    """Coerce a Tank01 epoch (string/float) to a float seconds value, or 0."""
+    try:
+        return float(v) if v not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _rz_def_stat_line(team_side: dict) -> dict:
     """Build DEF stat_line from Tank01 teamStats[home/away] entry."""
     defense = team_side.get("Defense") or team_side.get("defense") or {}
@@ -9860,10 +9868,12 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
     scope="user":   the viewer's team across three different leagues.
     """
     t = max(0.0, min(float(t), _RZ_DEMO_GAME))
-    _g = lambda away, apts, home, hpts, code: {
-        "game_status": "In Progress" if code == "1" else "Final",
+    _now = time.time()
+    _g = lambda away, apts, home, hpts, code, gtime=0.0: {
+        "game_status": "In Progress" if code == "1" else ("Final" if code == "2" else "Upcoming"),
         "game_code": code, "home": home, "away": away,
         "home_pts": str(hpts), "away_pts": str(apts),
+        "game_time_epoch": gtime,
     }
     GAMES = {
         "BAL_HOU": _g("BAL", 21, "HOU", 14, "1"),
@@ -9871,12 +9881,14 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "DET_CHI": _g("DET", 24, "CHI",  7, "1"),
         "DAL_NYG": _g("DAL", 35, "NYG", 10, "2"),
         "JAX_MIA": _g("JAX", 10, "MIA", 17, "1"),
-        "KC_LV":   _g("KC",  21, "LV",   3, "1"),
+        "KC_LV":   _g("KC",  31, "LV",   3, "1"),
         "CIN_PIT": _g("CIN", 24, "PIT", 13, "2"),
         "SF_ARI":  _g("SF",  31, "ARI",  6, "2"),
         "ATL_NO":  _g("ATL", 17, "NO",  10, "1"),
         "LAR_SEA": _g("LAR", 21, "SEA", 14, "1"),
         "PHI_WAS": _g("PHI", 17, "WAS", 10, "1"),
+        # Upcoming game (kicks off ~40 min out) to showcase the "on deck" strip
+        "BUF_NYJ": _g("BUF",  0, "NYJ",  0, "0", gtime=_now + 40 * 60),
     }
     def pi(name, pos, team, gk, inj="", clock="", qtr=""):
         return {"name": name, "pos": pos, "team": team,
@@ -9916,7 +9928,15 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "d_dw":  pi("D. Waller",    "TE",  "NYG", "DAL_NYG"),
         "d_bufd":pi("BUF Defense",  "DEF", "PHI", "PHI_WAS"),
         "d_me":  pi("M. Evans",     "WR",  "JAX", "JAX_MIA"),
+        "d_ja":  pi("J. Allen",     "QB",  "BUF", "BUF_NYJ"),  # upcoming game (on-deck demo)
     }
+
+    # Demo injury-status flips over the simulated clock so the live injury
+    # feed events (Q→Out etc.) are exercisable in the demo.
+    if t >= 300:
+        PLAYERS["d_dh"]["injury_status"] = "O"   # D. Henry: Q → Out
+    if t >= 450 and "d_jg" in PLAYERS:
+        PLAYERS["d_jg"]["injury_status"] = "Q"   # J. Gibbs: healthy → Q
 
     # Demo DEF and K stat lines (time-scaled from flat totals)
     _DEMO_DEF_SCRIPT = {
@@ -9955,6 +9975,10 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
     for pid, info in PLAYERS.items():
         pos  = info["pos"]
         code = info.get("game_code", "")
+        if code == "0":          # upcoming game: no stats / points yet
+            info["stat_line"] = None
+            pts[pid] = 0.0
+            continue
         t_eff = _RZ_DEMO_GAME if code == "2" else t
         if pos == "DEF":
             line = _demo_def_line(pid, t_eff)
@@ -9993,7 +10017,7 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         # Viewer ("My Squad") across three leagues, each vs a different opponent.
         LG = [
             ("Dynasty Warriors", "u1",
-             ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"], ["d_tp"],
+             ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"], ["d_tp","d_ja"],
              "u2", "TD Tyrones",
              ["d_jb","d_br","d_rs","d_jj","d_da","d_sl","d_pn","d_jt","d_dad"], ["d_gp"]),
             ("The Gauntlet", "u1",
@@ -10034,19 +10058,20 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
 
     # league scope (single league, four teams)
     r1 = ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"]
+    r1b = ["d_tp","d_ja"]
     r2 = ["d_jb","d_br","d_rs","d_jj","d_da","d_sl","d_pn","d_jt","d_dad"]
     r3 = ["d_jh","d_av","d_th","d_jc","d_ma","d_kcd","d_gs","d_dm","d_sd"]
     r4 = ["d_dw","d_me","d_bufd","d_sd","d_dm","d_gs","d_th","d_av","d_jh"]
     base.update({
         "scope": "league",
         "matchups": [
-            mk(1, 1, r1, ["d_tp"]),
+            mk(1, 1, r1, r1b),
             mk(2, 1, r2, ["d_gp"]),
             mk(3, 2, r3, []),
             mk(4, 2, r4, []),
         ],
         "rosters": [
-            {"roster_id": 1, "owner_id": "u1", "starters": r1, "players": r1 + ["d_tp"]},
+            {"roster_id": 1, "owner_id": "u1", "starters": r1, "players": r1 + r1b},
             {"roster_id": 2, "owner_id": "u2", "starters": r2, "players": r2 + ["d_gp"]},
             {"roster_id": 3, "owner_id": "u3", "starters": r3, "players": r3},
             {"roster_id": 4, "owner_id": "u4", "starters": r4, "players": r4},
@@ -10113,6 +10138,7 @@ def _redzone_collect(platform, league_id, season, week):
             "away":          gd.get("away") or "",
             "home_pts":      str(gd.get("homePts") or gd.get("homeScore") or ""),
             "away_pts":      str(gd.get("awayPts") or gd.get("awayScore") or ""),
+            "game_time_epoch": _rz_safe_epoch(gd.get("gameTime_epoch") or gd.get("gameTimeEpoch")),
             "injury_status": inj,
         }
 
