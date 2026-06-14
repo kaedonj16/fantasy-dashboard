@@ -1155,18 +1155,19 @@ def rewrite_value_table_with_model() -> Path:
         _save_state(_BASKET_STATE_KEY, _smoothed_basket)
         _save_state(_HEADROOM_STATE_KEY, _smoothed_headroom)
 
-        # Anchor ≈ where the #1 sits (basket × headroom), but built from smoothed
-        # quantities so it barely moves day to day. Scale pins that anchor to
-        # 999.9; individual values are still capped, so a hot #1 rides the ceiling.
-        _anchor    = _smoothed_basket * _smoothed_headroom
-        _1qb_scale = 999.9 / _anchor if _anchor > 0 else 1.0
+        # Anchor the BASKET MEAN (mean of top-N non-QBs) to 999.9 instead of
+        # pinning the single #1. This lets the #1 float above 999.9 proportional
+        # to how far ahead of the basket they are — their sparkline moves — while
+        # the rest of the board no longer compresses whenever the anchor shifts.
+        # No hard ceiling: the smoothed basket provides a soft cap naturally.
+        _1qb_scale = 999.9 / _smoothed_basket if _smoothed_basket > 0 else 1.0
         _persist_scale(_1qb_scale)  # kept for back-compat / the reset script
         for _a in cleaned_assets:
             if str(_a.get("position") or "").upper() not in _SKILL_POS:
                 continue
             for _k in _1qb_keys:
                 if _a.get(_k) is not None:
-                    _a[_k] = round(min(float(_a[_k]) * _1qb_scale, 999.9), 1)
+                    _a[_k] = round(float(_a[_k]) * _1qb_scale, 1)
 
     pos_to_indices: dict[str, list[int]] = {}
 
