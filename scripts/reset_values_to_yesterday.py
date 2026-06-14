@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
 """
-Reset player_values table back to yesterday's level using the DB snapshots.
+Reset player_values table back to a historical snapshot from player_value_history.
 
-The 1QB normalization scale reset during today's deploys, compressing every
-non-anchor player's value by ~4%.  Yesterday's values are stored in
-player_value_history; this script copies them into player_values (the live,
-shared-across-all-instances table) so the website immediately shows
-yesterday's numbers on every instance.
-
-It seeds pipeline_state so the next daily build holds the restored level.
+Compares live player_values (what the website shows) against a chosen snapshot
+date and restores values for players whose live value is lower than historical.
 
 Usage:
-    python scripts/reset_values_to_yesterday.py            # dry run
-    python scripts/reset_values_to_yesterday.py --commit   # apply
+    python scripts/reset_values_to_yesterday.py            # list snapshots + dry run vs most recent
+    python scripts/reset_values_to_yesterday.py --date 2026-06-12   # target a specific date
+    python scripts/reset_values_to_yesterday.py --date 2026-06-12 --commit   # apply
 """
 import argparse
 import os
@@ -29,17 +25,19 @@ _ALL_VALUE_COLS  = ["value", "sf_value", "value_8", "value_12", "value_14",
 _RATIO_BAND      = (0.80, 1.25)  # filter genuine per-player outliers
 
 
-def _latest_snapshot(conn) -> tuple:
-    row = conn.execute(
+def _list_snapshots(conn) -> list:
+    """Return [(as_of_date, player_count)] ordered newest first."""
+    rows = conn.execute(
         """
-        SELECT DISTINCT as_of_date
+        SELECT as_of_date, COUNT(DISTINCT player_id) AS n
         FROM player_value_history
         WHERE source = 'model'
+        GROUP BY as_of_date
         ORDER BY as_of_date DESC
-        LIMIT 1
+        LIMIT 14
         """
-    ).fetchone()
-    return row["as_of_date"] if row else None
+    ).fetchall()
+    return [(r["as_of_date"], r["n"]) for r in rows]
 
 
 def _snapshot(conn, d) -> dict:
@@ -110,89 +108,106 @@ def _write_scale(conn, scale: float) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--date", help="Snapshot date to restore to (YYYY-MM-DD). "
+                                   "Defaults to the most recent snapshot.")
     ap.add_argument("--commit", action="store_true",
                     help="Apply changes (default is a dry run)")
     args = ap.parse_args()
 
     with get_conn() as conn:
-        yday = _latest_snapshot(conn)
-        if yday is None:
-            print("ERROR: no snapshots found in player_value_history.", file=sys.stderr)
-            return 1
+        snapshots  = _list_snapshots(conn)
+        cur_pv     = _current_player_values(conn)
+        cur_scale  = _persisted_scale(conn)
 
-        yday_snap = _snapshot(conn, yday)
-        cur_pv    = _current_player_values(conn)
-        cur_scale = _persisted_scale(conn)
+    if not snapshots:
+        print("ERROR: no snapshots found in player_value_history.", file=sys.stderr)
+        return 1
 
-    print(f"Restoring to:        {yday}  ({len(yday_snap)} players in history)")
-    print(f"Current player_values: {len(cur_pv)} players with value_1qb > 0")
+    print("Available snapshots (newest first):")
+    for d, n in snapshots:
+        print(f"  {d}  ({n} players)")
+    print()
+
+    target_date = args.date or str(snapshots[0][0])
+
+    # Validate date
+    valid_dates = {str(d) for d, _ in snapshots}
+    if target_date not in valid_dates:
+        print(f"ERROR: no snapshot for {target_date}. Choose a date from the list above.", file=sys.stderr)
+        return 1
+
+    with get_conn() as conn:
+        target_snap = _snapshot(conn, target_date)
+
+    print(f"Target snapshot:     {target_date}  ({len(target_snap)} players)")
+    print(f"Current player_values: {len(cur_pv)} players")
     print(f"Persisted scale now: {cur_scale or 'MISSING'}")
 
-    # Measure the drop: compare live player_values against yesterday's history for
-    # both 1QB and SF values. Detects the real gap shown on the website.
+    # Compare live player_values against the target snapshot for 1QB and SF.
     ratios_1qb, ratios_sf = [], []
-    for pid, yd in yday_snap.items():
+    for pid, td in target_snap.items():
         cur = cur_pv.get(pid)
         if not cur:
             continue
-        if cur["v1qb"] > 0 and yd["value"] > 0:
-            r = yd["value"] / cur["v1qb"]
+        if cur["v1qb"] > 0 and td["value"] > 0:
+            r = td["value"] / cur["v1qb"]
             if _RATIO_BAND[0] <= r <= _RATIO_BAND[1]:
                 ratios_1qb.append(r)
-        if cur["vsf"] > 0 and yd["sf_value"] > 0:
-            r = yd["sf_value"] / cur["vsf"]
+        if cur["vsf"] > 0 and td["sf_value"] > 0:
+            r = td["sf_value"] / cur["vsf"]
             if _RATIO_BAND[0] <= r <= _RATIO_BAND[1]:
                 ratios_sf.append(r)
 
-    if len(ratios_1qb) < 25 and len(ratios_sf) < 25:
-        print(f"ERROR: only {len(ratios_1qb)} 1QB / {len(ratios_sf)} SF comparable players — can't infer scale factor.", file=sys.stderr)
+    if len(ratios_1qb) < 10 and len(ratios_sf) < 10:
+        print(f"ERROR: only {len(ratios_1qb)} 1QB / {len(ratios_sf)} SF comparable players — "
+              "try a different --date.", file=sys.stderr)
         return 1
 
     ratio_1qb = statistics.median(ratios_1qb) if ratios_1qb else 1.0
     ratio_sf  = statistics.median(ratios_sf)  if ratios_sf  else 1.0
     print(f"Comparable players:  {len(ratios_1qb)} (1QB)  {len(ratios_sf)} (SF)")
-    print(f"Median ratio 1QB (history/live): {ratio_1qb:.4f}  ({(ratio_1qb-1)*100:+.2f}%)")
-    print(f"Median ratio SF  (history/live): {ratio_sf:.4f}  ({(ratio_sf-1)*100:+.2f}%)")
+    print(f"Median ratio 1QB (target/live): {ratio_1qb:.4f}  ({(ratio_1qb-1)*100:+.2f}%)")
+    print(f"Median ratio SF  (target/live): {ratio_sf:.4f}  ({(ratio_sf-1)*100:+.2f}%)")
 
     if abs(ratio_1qb - 1.0) < 0.005 and abs(ratio_sf - 1.0) < 0.005:
-        print("Live player_values are within 0.5% of yesterday's history — nothing to restore.")
+        print("Live player_values are within 0.5% of the target snapshot — nothing to restore.")
         return 0
 
-    # Use 1QB ratio as the primary scale signal (SF scale is independent)
-    ratio = ratio_1qb if abs(ratio_1qb - 1.0) >= 0.005 else ratio_sf
-
-    # Preview top players: live value vs what we'll restore
+    # Preview top players
     sorted_players = sorted(
-        [(pid, yday_snap[pid]["value"]) for pid in yday_snap if yday_snap[pid]["value"] > 0],
+        [(pid, target_snap[pid]["value"]) for pid in target_snap if target_snap[pid]["value"] > 0],
         key=lambda x: x[1], reverse=True
     )[:8]
-    print(f"\n  Top players  (live 1QB / SF -> restoring to yesterday history)")
+    print(f"\n  Top players  (live 1QB/SF  ->  target 1QB/SF)")
     for pid, _ in sorted_players:
-        cur = cur_pv.get(pid, {})
-        yv   = yday_snap[pid]["value"]
-        yvsf = yday_snap[pid]["sf_value"]
-        print(f"    pid={pid:8}  live={cur.get('v1qb',0):6.1f}/{cur.get('vsf',0):6.1f}  yesterday={yv:6.1f}/{yvsf:6.1f}")
+        cur  = cur_pv.get(pid, {})
+        tv   = target_snap[pid]["value"]
+        tvsf = target_snap[pid]["sf_value"]
+        print(f"    pid={pid:8}  live={cur.get('v1qb',0):6.1f}/{cur.get('vsf',0):6.1f}"
+              f"  target={tv:6.1f}/{tvsf:6.1f}")
 
-    # Derive the scale to seed: yesterday's scale ≈ today's scale * ratio
+    # Use 1QB ratio as primary scale signal; fall back to SF if 1QB didn't change
+    ratio = ratio_1qb if abs(ratio_1qb - 1.0) >= 0.005 else ratio_sf
     new_scale = (cur_scale * ratio) if cur_scale else 0.0
 
     if not args.commit:
         print("\nDRY RUN — re-run with --commit to apply.")
+        if not args.date:
+            print(f"TIP: if {target_date} is already a post-drop snapshot, pass --date with an")
+            print("     earlier date from the list above (e.g. the one with the most players).")
         if not cur_scale:
-            print("NOTE: pipeline_state has no scale yet. Values will still be restored")
-            print("immediately, but the next build may re-drop. Run again after the next")
-            print("daily build to lock in the corrected scale.")
+            print("NOTE: pipeline_state has no scale yet — values will still be restored but")
+            print("      the next build may re-drop. Run again after the next daily build.")
         else:
             print(f"Will seed pipeline_state scale: {new_scale:.6f}")
         return 0
 
     # --- APPLY ---
     with get_conn() as conn:
-        # 1. Update player_values table (live headline source, shared across instances)
         n_pv = 0
-        for pid, yd in yday_snap.items():
-            v1qb = yd["value"]
-            vsf  = yd["sf_value"] or v1qb
+        for pid, td in target_snap.items():
+            v1qb = td["value"]
+            vsf  = td["sf_value"] or v1qb
             if v1qb <= 0:
                 continue
             conn.execute(
@@ -213,22 +228,20 @@ def main() -> int:
                 WHERE player_id = %s
                 """,
                 (v1qb, vsf,
-                 yd["value_8"] or v1qb, yd["value_12"] or v1qb, yd["value_14"] or v1qb,
-                 yd["sf_value_8"] or vsf, yd["sf_value_12"] or vsf, yd["sf_value_14"] or vsf,
+                 td["value_8"] or v1qb, td["value_12"] or v1qb, td["value_14"] or v1qb,
+                 td["sf_value_8"] or vsf, td["sf_value_12"] or vsf, td["sf_value_14"] or vsf,
                  pid),
             )
             n_pv += 1
-        print(f"Updated {n_pv} rows in player_values (live headline source).")
+        print(f"Updated {n_pv} rows in player_values.")
 
-        # 2. Seed the persisted scale so next build holds restored level
         if new_scale:
             _write_scale(conn, new_scale)
             print(f"Seeded pipeline_state.{_SCALE_STATE_KEY} = {new_scale:.6f}")
         else:
             print("Skipping scale seed (no persisted scale to base it on).")
-            print("Run again after the next daily build to lock the scale.")
 
-    print("\nDone. The website should show yesterday's values immediately (no restart needed).")
+    print("\nDone. The website should show restored values immediately.")
     return 0
 
 
