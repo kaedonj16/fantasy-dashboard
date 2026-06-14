@@ -1474,16 +1474,18 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ]
         # Redzone lives inside the Weekly dropdown. On NFL game days the Weekly
         # button glows and the Redzone item itself pulses with a live dot.
+        # Only available during the active season (not offseason).
         _rz_pulse = ""
-        # NFL game days: Mon=0, Thu=3, Sat=5, Sun=6 (Python weekday())
-        _rz_live = datetime.now().weekday() in (0, 3, 5, 6)
-        _rz_label = (
-            "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
-            if _rz_live else "Redzone"
-        )
-        _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
-        if _rz_live:
-            _rz_pulse = "nav-pill-redzone-live"
+        if not offseason_mode:
+            # NFL game days: Mon=0, Thu=3, Sat=5, Sun=6 (Python weekday())
+            _rz_live = datetime.now().weekday() in (0, 3, 5, 6)
+            _rz_label = (
+                "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
+                if _rz_live else "Redzone"
+            )
+            _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
+            if _rz_live:
+                _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items, ["weekly", "recap", "redzone"],
             "weeklyNavDropdown", btn_extra_cls=_rz_pulse,

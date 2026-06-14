@@ -15539,15 +15539,18 @@ window._rzSyncTabLive = function(panel) {
 
     if (toAdd.length) {
       var isInitialLoad = _shownFeedIds.size === 0;
+      var newCount = toAdd.filter(function(ev) { return !_shownFeedIds.has(_eid(ev)); }).length;
+      // Sequential stagger: insert new plays one at a time during live polling
+      var liveStagger = !isInitialLoad && newCount > 1;
 
       var existingEls = [], existingTops = [];
-      if (!isInitialLoad && toAdd.length <= 4) {
+      if (!isInitialLoad && !liveStagger && toAdd.length <= 4) {
         existingEls = Array.from(container.querySelectorAll('[data-eid]')).slice(0, 12);
         existingTops = existingEls.map(function(n) { return n.getBoundingClientRect().top; });
       }
 
-      var newCount = toAdd.filter(function(ev) { return !_shownFeedIds.has(_eid(ev)); }).length;
       var newIdx = 0;
+      var insertDelay = 0;
       var frag = document.createDocumentFragment();
       toAdd.forEach(function(ev) {
         var id = _eid(ev);
@@ -15556,20 +15559,38 @@ window._rzSyncTabLive = function(panel) {
         wrap.innerHTML = _eventHtml(ev, isNew);
         var node = wrap.firstChild;
         node.dataset.eid = id;
-        if (isNew && newCount > 1) {
-          node.style.animationDelay = (newIdx * 180) + 'ms';
-        }
-        if (isNew) {
-          newIdx++;
-          if (ev.kind === 'td') node.classList.add('rz-td-new');
-        }
-        frag.appendChild(node);
         _shownFeedIds.add(id);
+
+        if (isNew && liveStagger) {
+          // Insert each new play into the DOM individually, one at a time
+          (function(n, e, delay) {
+            setTimeout(function() {
+              if (e.kind === 'td') n.classList.add('rz-td-new');
+              container.insertBefore(n, container.firstChild);
+              n.querySelectorAll('[data-pid]').forEach(function(el) {
+                if (!el.dataset.pid || el.dataset.pid === '0') return;
+                el.onclick = function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); };
+              });
+            }, delay);
+          })(node, ev, insertDelay);
+          insertDelay += 420;
+          newIdx++;
+        } else {
+          if (isNew && newCount > 1) {
+            // Initial load: quick cascade so the list doesn't appear all at once
+            node.style.animationDelay = (newIdx * 60) + 'ms';
+          }
+          if (isNew) {
+            newIdx++;
+            if (ev.kind === 'td') node.classList.add('rz-td-new');
+          }
+          frag.appendChild(node);
+        }
       });
       container.insertBefore(frag, container.firstChild);
 
       // Auto-scroll to top if user was already near top (don't interrupt mid-scroll)
-      if (!isInitialLoad && toAdd.length > 0) {
+      if (!isInitialLoad && !liveStagger) {
         var feedTop = container.getBoundingClientRect().top;
         if (feedTop > -80) {
           var first = container.firstChild;
