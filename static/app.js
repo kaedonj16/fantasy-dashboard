@@ -14686,7 +14686,7 @@ function setupFunAwardsGrid() {
       : '';
     var histCount = _notifHistory.length;
     var histBtn = histCount > 0
-      ? '<button class="rz-hist-btn" id="rz-hist-btn">🔔 <span class="rz-hist-count">' + histCount + '</span></button>'
+      ? '<button class="rz-hist-btn" id="rz-hist-btn">Alerts <span class="rz-hist-count">' + histCount + '</span></button>'
       : '';
     return '<div class="rz-chip-bar">'
       + myTeamBtn
@@ -15578,7 +15578,7 @@ function setupFunAwardsGrid() {
     var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">⚠ Stale</span>' : '';
     var timerLabel = _lastPollFailed ? '?' : _countdown + 's';
     var notifCta = (!_notifDismissed && 'Notification' in window && Notification.permission === 'default')
-      ? '<div class="rz-notif-cta" id="rz-notif-cta"><span class="rz-notif-cta-icon">🔔</span><span>Enable TD alerts</span><button class="rz-notif-cta-btn" id="rz-notif-enable">Enable</button><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
+      ? '<div class="rz-notif-cta" id="rz-notif-cta"><span>Enable TD alerts</span><button class="rz-notif-cta-btn" id="rz-notif-enable">Enable</button><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
       : '';
     root.innerHTML =
       notifCta
