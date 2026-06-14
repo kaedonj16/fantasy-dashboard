@@ -8561,8 +8561,8 @@ function openPlayerModal(playerId, playerName, opts) {
       // ── Show tab bar and configure it ─────────────────────────────────────
       const pmTabBar = document.getElementById('pmTabBar');
 
-      // Inject Live tab button if Redzone context is active
-      if (window.__rzGetPlayerLive) {
+      // Inject Live tab button if Redzone context is active on this page
+      if (window.__rzGetPlayerLive && document.getElementById('rz-root')) {
         const _existLive = pmTabBar ? pmTabBar.querySelector('.pm-tab[data-tab="live"]') : null;
         if (_existLive) _existLive.remove();
         const _liveBtn = document.createElement('button');
@@ -15782,7 +15782,7 @@ function setupFunAwardsGrid() {
       _detectChanges(newData);
       _state = newData;
       _seedPrevStats(newData);
-      _countdown = _isDemo ? 3 : _anyLive() ? 15 : 60;
+      _countdown = _pollInterval();
 
       var savedFeedHtml = null;
       var oldFeedEl = root.querySelector('#rz-feed-list');
@@ -15822,11 +15822,36 @@ function setupFunAwardsGrid() {
     // NFL games are on Thu(4), Sat(6), Sun(0), Mon(1)
     var day = new Date().getDay();
     if (day === 4 || day === 6 || day === 0 || day === 1) return true;
-    // Also check whether any game in the current data is live or recently started
-    var games = _state.games || _state.game_scores || {};
-    return Object.values(games).some(function(g) {
-      return (g.game_status || g.status || '').toLowerCase().indexOf('progress') !== -1;
+    // Also consider the schedule data: if any player has an upcoming game today
+    var now = Date.now() / 1000;
+    var todayEnd = now - (now % 86400) + 86400; // midnight tonight UTC
+    return Object.values(_state.player_info || {}).some(function(p) {
+      var ep = parseFloat(p.game_time_epoch || 0);
+      return ep > 0 && ep < todayEnd;
     });
+  }
+
+  function _nextGameEpoch() {
+    var now = Date.now() / 1000;
+    var earliest = Infinity;
+    Object.values(_state.player_info || {}).forEach(function(p) {
+      if (String(p.game_code || '0') !== '0') return;
+      var ep = parseFloat(p.game_time_epoch || 0);
+      if (ep > now && ep < earliest) earliest = ep;
+    });
+    return earliest === Infinity ? null : earliest;
+  }
+
+  function _pollInterval() {
+    if (_isDemo) return 3;
+    if (_anyLive()) return 15;
+    var next = _nextGameEpoch();
+    if (next) {
+      var minsUntil = (next - Date.now() / 1000) / 60;
+      if (minsUntil < 30) return 60;   // game kicking off soon
+      if (minsUntil < 120) return 180; // within 2 hours → poll every 3 min
+    }
+    return 300; // no live games, nothing imminent → poll every 5 min
   }
 
   function _tick() {
@@ -15840,7 +15865,7 @@ function setupFunAwardsGrid() {
         if (el) el.textContent = '—';
         return;
       }
-      _countdown = _isDemo ? 3 : _anyLive() ? 15 : 60;
+      _countdown = _pollInterval();
       _refresh();
     }
   }
