@@ -20411,7 +20411,8 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .rz-pl-pts { font-size: 15px; font-weight: 900; color: var(--rz-text); font-variant-numeric: tabular-nums; margin-top: 2px; }
 
 /* Score delta on hero card */
-.rz-delta { font-size: 11px; font-weight: 700; padding: 1px 5px; border-radius: 4px; }
+.rz-delta-strip { display: flex; justify-content: center; margin: 0 0 8px; }
+.rz-delta { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
 .rz-delta.pos { color: #16a34a; background: rgba(22,163,74,.12); }
 .rz-delta.neg { color: #dc2626; background: rgba(220,38,38,.12); }
 
@@ -20496,6 +20497,11 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .rz-event-desc { font-size: 12px; color: var(--rz-text); opacity: .75; margin-top: 2px; }
 .rz-event.td .rz-event-desc { color: #d97706; font-weight: 700; opacity: 1; }
 .rz-event-sub  { font-size: 10.5px; color: var(--rz-muted); margin-top: 1px; }
+.rz-event-clock {
+  display: inline-block; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--rz-text); background: var(--rz-border);
+  padding: 0 5px; border-radius: 4px; font-size: 10px;
+}
 .rz-event-tag {
   font-size: 8px; font-weight: 900; letter-spacing: .06em;
   padding: 2px 6px; border-radius: 999px; flex-shrink: 0; white-space: nowrap;

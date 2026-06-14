@@ -1476,7 +1476,7 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         _rz_pulse = ""
         if session.get("viewer_username") in _RZ_ALLOWED_USERS:
             _weekly_items.append((
-                "<span class='rz-nav-dot'></span>Redzone",
+                "Redzone",
                 "page_redzone", "redzone", False,
             ))
             # NFL game days: Mon=0, Thu=3, Sat=5, Sun=6 (Python weekday())
@@ -10013,6 +10013,33 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "demo_t": t,
     }
 
+    # Map the demo's internal keys (d_lj …) to real Sleeper player IDs so
+    # headshots load and the player modal can pull real player data. DEF uses
+    # the team abbreviation as its Sleeper ID (that's how Sleeper IDs defenses).
+    _RZ_DEMO_PID = {
+        "d_lj": "4881",  "d_dh": "3198",  "d_jg": "9221",  "d_cdl": "6786",
+        "d_mn": "11632", "d_tk": "1466",  "d_bt": "11631", "d_em": "7839",
+        "d_sfd": "SF",   "d_tp": "5967",  "d_jb": "6770",  "d_br": "9509",
+        "d_rs": "7611",  "d_jj": "6794",  "d_da": "2133",  "d_sl": "10859",
+        "d_pn": "9493",  "d_jt": "1264",  "d_dad": "DAL",  "d_gp": "8137",
+        "d_jh": "6904",  "d_av": "4199",  "d_th": "3321",  "d_jc": "7564",
+        "d_ma": "5012",  "d_kcd": "KC",   "d_gs": "1373",  "d_dm": "5892",
+        "d_sd": "2449",  "d_dw": "2505",  "d_bufd": "BUF", "d_me": "2216",
+        "d_ja": "4984",
+    }
+
+    def _apply_real_ids(d):
+        M = _RZ_DEMO_PID
+        d["player_info"] = {M.get(k, k): v for k, v in (d.get("player_info") or {}).items()}
+        for m in d.get("matchups", []):
+            m["starters"] = [M.get(p, p) for p in m.get("starters", [])]
+            m["players"]  = [M.get(p, p) for p in m.get("players", [])]
+            m["players_points"] = {M.get(k, k): v for k, v in (m.get("players_points") or {}).items()}
+        for r in d.get("rosters", []):
+            r["starters"] = [M.get(p, p) for p in r.get("starters", [])]
+            r["players"]  = [M.get(p, p) for p in r.get("players", [])]
+        return d
+
     if scope == "user":
         # Viewer ("My Squad") across three leagues, each vs a different opponent.
         LG = [
@@ -10054,7 +10081,7 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
             "viewer_roster_id": viewer_rids[0],
             "viewer_roster_ids": viewer_rids,
         })
-        return base
+        return _apply_real_ids(base)
 
     # league scope (single league, four teams)
     r1 = ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"]
@@ -10086,7 +10113,7 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "viewer_roster_id": "1",
         "viewer_roster_ids": ["1"],
     })
-    return base
+    return _apply_real_ids(base)
 
 
 def _redzone_collect(platform, league_id, season, week):

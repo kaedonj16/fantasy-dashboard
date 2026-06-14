@@ -8570,7 +8570,7 @@ function openPlayerModal(playerId, playerName, opts) {
         _liveBtn.dataset.tab = 'live';
         _liveBtn.onclick = function() { pmSwitchTab('live'); };
         _liveBtn.innerHTML = '<span class="pm-live-dot"></span>Redzone';
-        if (pmTabBar) pmTabBar.insertBefore(_liveBtn, pmTabBar.firstChild);
+        if (pmTabBar) pmTabBar.appendChild(_liveBtn);
       }
       pmTabBar.style.display = '';
       pmTabBar.dataset.pmPlayerId = playerId;
@@ -14292,7 +14292,8 @@ window._rzSyncTabLive = function(panel) {
     return parseFloat(n).toFixed(1);
   }
   function _fmtTimer(n) {
-    return n >= 60 ? Math.round(n / 60) + 'm' : n + 's';
+    n = Math.max(0, Math.round(n));
+    return n >= 120 ? Math.round(n / 60) + 'm' : n + 's';
   }
   function _name(pid) { return ((_state.player_info || {})[pid] || {}).name || pid; }
   function _pos(pid)  { return ((_state.player_info || {})[pid] || {}).pos  || ''; }
@@ -14782,7 +14783,6 @@ window._rzSyncTabLive = function(panel) {
     if (_activeTab !== 'plays' && (allEvents.length + _specialCount)) _unreadCount += (allEvents.length + _specialCount);
 
     // Track which rosters had point changes (for score flash) + capture score delta
-    var _myRidArr = Array.from(_myRids);
     _scoreDelta = { me: 0, opp: 0 };
     var _myMidSet = new Set();
     (newData.matchups || []).forEach(function(m) {
@@ -14997,12 +14997,6 @@ window._rzSyncTabLive = function(panel) {
     else if (!winning && diff > 0) meta.push('<span class="accent lose">Trailing ' + diff + '</span>');
     else meta.push('<span class="accent">Tied</span>');
     if (liveCnt > 0) meta.push(liveCnt + ' live');
-    var _dMe = _scoreDelta.me, _dOpp = _scoreDelta.opp;
-    if (_dMe > 0.05 || _dOpp > 0.05) {
-      var _gain = _dMe - _dOpp;
-      var _gainStr = (_gain >= 0 ? '+' : '') + _gain.toFixed(1);
-      meta.push('<span class="rz-delta ' + (_gain >= 0 ? 'pos' : 'neg') + '">' + _gainStr + ' this update</span>');
-    }
     return (
       '<div class="rz-hero' + (isClose ? ' rz-close-game' : '') + '">'
       + '<div class="rz-hero-label">Your Matchup  •  Week ' + (_state.week || '') + (isClose ? '  •  <span class="rz-close-label">Close game</span>' : '') + '</div>'
@@ -15064,6 +15058,18 @@ window._rzSyncTabLive = function(panel) {
   }
 
   function _renderHeroCards() {
+    // Score delta badge ("+N this update"): reflects the change from the most
+    // recent poll. _detectChanges recomputes (and resets) _scoreDelta every
+    // poll, so the badge updates each cycle and clears when nothing changed —
+    // we only read it here (don't consume) so it survives per-second partial
+    // re-renders between polls.
+    var _dMe = _scoreDelta.me, _dOpp = _scoreDelta.opp;
+    var _deltaHtml = '';
+    if (_dMe > 0.05 || _dOpp > 0.05) {
+      var _gain = _dMe - _dOpp;
+      var _gainStr = (_gain >= 0 ? '+' : '') + _gain.toFixed(1);
+      _deltaHtml = '<div class="rz-delta-strip"><span class="rz-delta ' + (_gain >= 0 ? 'pos' : 'neg') + '">' + _gainStr + ' this update</span></div>';
+    }
     if (_scope === 'user') {
       var mine = _myMatchups();
       if (!mine.length) {
@@ -15101,7 +15107,7 @@ window._rzSyncTabLive = function(panel) {
           + '</div>'
           + '</div>';
       }).join('');
-      return '<div class="rz-hero-cards">' + cards + '</div>';
+      return '<div class="rz-hero-cards">' + _deltaHtml + cards + '</div>';
     }
 
     // This League mode: one card per matchup, viewer's first
@@ -15151,7 +15157,7 @@ window._rzSyncTabLive = function(panel) {
         + '</div>'
         + '</div>';
     }).filter(Boolean).join('');
-    return '<div class="rz-hero-cards">' + cards2 + '</div>';
+    return '<div class="rz-hero-cards">' + _deltaHtml + cards2 + '</div>';
   }
 
   function _renderLeaguesSummary() {
@@ -15273,12 +15279,17 @@ window._rzSyncTabLive = function(panel) {
         if (!pidMap[pid] || pts > pidMap[pid].pts) pidMap[pid] = { pts: pts, roster_id: m.roster_id };
       });
     });
-    var sorted = Object.keys(pidMap)
-      .filter(function(pid) { return pidMap[pid].pts > 0 && _topMatches(pid, pidMap[pid].roster_id); })
-      .sort(function(a, b) { return pidMap[b].pts - pidMap[a].pts; })
+    // Filtered map (respects active team/pos/owner filters) — used for both
+    // the leaderboard list and the position leaders strip so they stay consistent.
+    var filteredMap = {};
+    Object.keys(pidMap).forEach(function(pid) {
+      if (pidMap[pid].pts > 0 && _topMatches(pid, pidMap[pid].roster_id)) filteredMap[pid] = pidMap[pid];
+    });
+    var sorted = Object.keys(filteredMap)
+      .sort(function(a, b) { return filteredMap[b].pts - filteredMap[a].pts; })
       .slice(0, 25);
-    if (!sorted.length) return _renderPosLeaders(pidMap, myStarters) + '<div class="rz-feed-empty">No players match these filters yet.</div>';
-    return _renderPosLeaders(pidMap, myStarters) + sorted.map(function(pid, i) {
+    if (!sorted.length) return _renderPosLeaders(filteredMap, myStarters) + '<div class="rz-feed-empty">No players match these filters yet.</div>';
+    return _renderPosLeaders(filteredMap, myStarters) + sorted.map(function(pid, i) {
       var d = pidMap[pid], rank = i + 1;
       var rc = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
       var mine = myStarters.has(pid) || _isMyRid(d.roster_id);
@@ -15311,19 +15322,22 @@ window._rzSyncTabLive = function(panel) {
     var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
     var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
     var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
-    var sub2 = (ev.nflTeam || '') + (ev.line ? '  ·  ' + ev.line : '');
-    var clockParts = [ev.gameQuarter, ev.gameClock].filter(Boolean);
-    var tipText = clockParts.length ? clockParts.join(' · ') : '';
-    var tipAttr = tipText ? ' data-tip="' + tipText + '"' : '';
+    var subBits = [ev.nflTeam, ev.line].filter(Boolean);
+    var subInner = subBits.join('  ·  ');
+    var clockStr = [ev.gameQuarter, ev.gameClock].filter(Boolean).join(' ');
+    var clockHtml = clockStr ? '<span class="rz-event-clock">' + clockStr + '</span>' : '';
+    var subRow = (subInner || clockHtml)
+      ? '<div class="rz-event-sub">' + subInner + (subInner && clockHtml ? '  ·  ' : '') + clockHtml + '</div>'
+      : '';
     return (
-      '<div class="rz-event ' + ev.kind + (ev.mine ? ' is-mine' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '"' + tipAttr + '>'
+      '<div class="rz-event ' + ev.kind + (ev.mine ? ' is-mine' : '') + (animate ? '' : ' rz-event-old') + '" data-pid="' + ev.pid + '">'
       + '<div class="rz-event-avatar rz-av-' + posKey + '" data-init="' + initials + '">'
       + '<img class="rz-headshot" src="https://sleepercdn.com/content/nfl/players/thumb/' + ev.pid + '.jpg" alt="" onerror="this.parentNode.classList.add(\'img-err\')">'
       + '</div>'
       + '<div class="rz-event-body">'
       + '<div class="rz-event-main"><span class="rz-event-name">' + ev.name + '</span>' + tag + '</div>'
       + '<div class="rz-event-desc">' + ev.desc + '</div>'
-      + (sub2 ? '<div class="rz-event-sub">' + sub2 + '</div>' : '')
+      + subRow
       + '</div>'
       + '<div class="rz-event-delta ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">' + ptStr + '</div>'
       + '</div>'
