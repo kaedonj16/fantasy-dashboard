@@ -14076,12 +14076,11 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
       addRow('INTs',     sl.int     ||0, 'pass_int');
       addRow('Rush Yds', sl.rush_yds||0, 'rush_yd');
       addRow('Rush TDs', sl.rush_td ||0, 'rush_td');
-    } else if (pos !== 'DEF' && pos !== 'K') {
-      addRow('Rush Yds', sl.rush_yds||0, 'rush_yd');
-      addRow('Rush TDs', sl.rush_td ||0, 'rush_td');
-      addRow('Rec',      sl.rec     ||0, 'rec');
-      addRow('Rec Yds',  sl.rec_yds ||0, 'rec_yd');
-      addRow('Rec TDs',  sl.rec_td  ||0, 'rec_td');
+    } else if (pos === 'DEF') {
+      // DEF scoring varies per league; show raw stats, use players_points for total
+      var defStats = [['Sacks', sl.sacks||0], ['INTs', sl.def_int||0],
+                      ['Fum Rec', sl.fum_rec||0], ['DEF TDs', sl.def_td||0]];
+      defStats.forEach(function(r) { if (r[1] > 0) rows.push({ label: r[0], val: r[1], pts: null }); });
     } else if (pos === 'K') {
       addRow('FGM', sl.fgm||0, 'fgm');
       addRow('XPM', sl.xpm||0, 'xpm');
@@ -14092,9 +14091,10 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
         + rows.map(function(r) {
           return '<div class="rz-pm-srow"><span class="rz-pm-slabel">' + r.label + '</span>'
             + '<span class="rz-pm-sval">' + r.val + '</span>'
-            + '<span class="rz-pm-spts">+' + r.pts + '</span></div>';
+            + (r.pts !== null ? '<span class="rz-pm-spts">+' + r.pts + '</span>' : '<span class="rz-pm-spts"></span>')
+            + '</div>';
         }).join('')
-        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + total + ' pts</span></div>'
+        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + (total > 0 ? total : (fantasyPts !== null ? fantasyPts : '—')) + ' pts</span></div>'
         + '</div>';
     }
   }
@@ -14147,7 +14147,9 @@ window._rzSyncTabLive = function(panel) {
     var STALE = 30000;
     var refresh = function() {
       var panel = document.getElementById('pm-panel-live');
-      if (panel && panel.classList.contains('pm-panel-active')) {
+      var pmBar = document.getElementById('pmTabBar');
+      // Guard: only update if this player's modal is still the active one
+      if (panel && panel.classList.contains('pm-panel-active') && pmBar && pmBar.dataset.pmPlayerId === pid) {
         panel.innerHTML = window._rzBuildLiveHtml(pid, _cache, []);
         window._rzSyncTabLive(panel);
       }
@@ -14158,7 +14160,7 @@ window._rzSyncTabLive = function(panel) {
     if (!_fetching) {
       _fetching = true;
       var parts = window.location.pathname.split('/');
-      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone-data?_cb=' + Date.now();
+      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone-data?scope=league&_cb=' + Date.now();
       fetch(url)
         .then(function(r) { return r.ok ? r.json() : null; })
         .then(function(data) {
@@ -15906,6 +15908,7 @@ window._rzSyncTabLive = function(panel) {
 
   function _isGameDay() {
     if (_isDemo) return true;
+    if (_anyLive()) return true; // already in progress — always poll regardless of day/time
     // NFL games are on Thu(4), Sat(6), Sun(0), Mon(1)
     var day = new Date().getDay();
     if (day === 4 || day === 6 || day === 0 || day === 1) return true;
