@@ -15322,8 +15322,8 @@ window._rzSyncTabLive = function(panel) {
     var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
     var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
     var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
-    var subBits = [ev.nflTeam, ev.line].filter(Boolean);
-    var subInner = subBits.join('  ·  ');
+    // Just the player's team (the game score line is redundant — it repeats the team).
+    var subInner = ev.nflTeam || '';
     var clockStr = [ev.gameQuarter, ev.gameClock].filter(Boolean).join(' ');
     var clockHtml = clockStr ? '<span class="rz-event-clock">' + clockStr + '</span>' : '';
     var subRow = (subInner || clockHtml)
