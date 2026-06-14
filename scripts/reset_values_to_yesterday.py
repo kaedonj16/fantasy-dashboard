@@ -31,9 +31,12 @@ Usage:
 
 import argparse
 import json
+import os
 import statistics
 import sys
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.paths import DATA_DIR
 from dashboard_services.db import get_conn
