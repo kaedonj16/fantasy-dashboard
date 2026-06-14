@@ -20952,8 +20952,34 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .rz-ondeck-players { color: var(--rz-muted); }
 :root[data-theme="dark"] .rz-ondeck-item { background: rgba(59,130,246,.14); }
 
-/* ── Blowout / system feed event ──────── */
+/* ── System feed events (blowout, lead change) ──────── */
 .rz-event.neg .rz-event-avatar[data-init="BL"],
 .rz-event .rz-event-avatar[data-init="BL"] {
   background: rgba(245,158,11,.18); color: #d97706;
+}
+.rz-event.gain .rz-event-avatar[data-init="LC"] {
+  background: rgba(59,130,246,.15); color: #3b82f6;
+}
+
+/* ── Position group totals strip (My Team tab) ──────── */
+.rz-pos-totals {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 8px 12px 4px; margin: 0 0 4px;
+}
+.rz-pt-item {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 8px 3px 4px;
+  background: var(--rz-card);
+  border: 1px solid var(--rz-border);
+  border-radius: 999px;
+  font-size: 11px;
+}
+.rz-pt-val {
+  font-weight: 700;
+  color: var(--rz-text);
+  font-size: 11px;
+  letter-spacing: -.01em;
+}
+:root[data-theme="dark"] .rz-pt-item {
+  background: rgba(255,255,255,.04);
 }

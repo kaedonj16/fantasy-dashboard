@@ -14060,6 +14060,7 @@ function setupFunAwardsGrid() {
   var _milestonesSeen = {};
   var _blowoutSeen = {};
   var _prevInjury = {};
+  var _prevLeader = {}; // matchup_id → leading roster_id (for lead-change events)
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
 
@@ -14253,6 +14254,22 @@ function setupFunAwardsGrid() {
   function _seedInjuries(data) {
     Object.keys(data.player_info || {}).forEach(function(pid) {
       _prevInjury[pid] = (data.player_info[pid] || {}).injury_status || '';
+    });
+  }
+
+  function _seedLeaders(data) {
+    var groups = {};
+    (data.matchups || []).forEach(function(m) {
+      var mid = String(m.matchup_id);
+      (groups[mid] = groups[mid] || []).push(m);
+    });
+    Object.keys(groups).forEach(function(mid) {
+      var pair = groups[mid];
+      if (pair.length < 2) return;
+      var a = pair[0], b = pair[1];
+      var ptsA = parseFloat(a.points || 0), ptsB = parseFloat(b.points || 0);
+      _prevLeader[mid] = (ptsA <= 0 && ptsB <= 0) ? null
+        : (ptsA >= ptsB ? String(a.roster_id) : String(b.roster_id));
     });
   }
 
@@ -14571,6 +14588,39 @@ function setupFunAwardsGrid() {
       });
     });
 
+    // Lead change alerts: fire once when the leading side flips in a matchup
+    var _lcGroups = {};
+    (newData.matchups || []).forEach(function(m) {
+      var mid = String(m.matchup_id);
+      (_lcGroups[mid] = _lcGroups[mid] || []).push(m);
+    });
+    Object.keys(_lcGroups).forEach(function(mid) {
+      var pair = _lcGroups[mid];
+      if (pair.length < 2) return;
+      var a = pair[0], b = pair[1];
+      var ptsA = parseFloat(a.points || 0), ptsB = parseFloat(b.points || 0);
+      if (ptsA <= 0 && ptsB <= 0) return;
+      var newLdr = ptsA >= ptsB ? String(a.roster_id) : String(b.roster_id);
+      var prevLdr = _prevLeader[mid];
+      _prevLeader[mid] = newLdr;
+      if (prevLdr === undefined || prevLdr === null || prevLdr === newLdr) return;
+      // Leader has flipped
+      var isMyMid = _isMyRid(a.roster_id) || _isMyRid(b.roster_id);
+      _specialCount++;
+      var trailRid = newLdr === String(a.roster_id) ? String(b.roster_id) : String(a.roster_id);
+      var leadPts = Math.max(ptsA, ptsB), trailPts = Math.min(ptsA, ptsB);
+      _feed.unshift({
+        pid: '0', name: 'Lead Change', pos: '', nflTeam: '',
+        rosterId: newLdr, owner: _ownerName(newLdr) || 'Team',
+        league: _leagueOfRid(newLdr),
+        mine: isMyMid && _isMyRid(newLdr), opp: isMyMid && _isMyRid(trailRid),
+        desc: (_ownerName(newLdr) || 'Team') + ' takes the lead (' + _fmt(leadPts) + ' – ' + _fmt(trailPts) + ')',
+        kind: 'gain', stats: ['lead_change'],
+        pts: 0, ts: Date.now() + Math.random(),
+        line: '', gameQuarter: '', gameClock: ''
+      });
+    });
+
     // Increment unread count when user isn't on Plays tab
     if (_activeTab !== 'plays' && (allEvents.length + _specialCount)) _unreadCount += (allEvents.length + _specialCount);
 
@@ -14608,7 +14658,7 @@ function setupFunAwardsGrid() {
   }
   var _POS_LIST  = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
   var _STAT_LIST = [['td','TD'], ['reception','Reception'], ['carry','Carry'],
-                    ['pass','Pass'], ['target','Target'], ['int','INT'], ['milestone','Milestone']];
+                    ['pass','Pass'], ['target','Target'], ['int','INT'], ['milestone','Milestone'], ['lead_change','Lead']];
 
   function _passTeam(ev) {
     if (_filters.team === 'all') return true;
@@ -14779,6 +14829,13 @@ function setupFunAwardsGrid() {
     else if (!winning && diff > 0) meta.push('<span class="accent lose">Trailing ' + diff + '</span>');
     else meta.push('<span class="accent">Tied</span>');
     if (liveCnt > 0) meta.push(liveCnt + ' live');
+    if (myProj != null && oppProj != null) {
+      var _totalProj = myProj + oppProj;
+      if (_totalProj > 0) {
+        var _winPct = Math.round(Math.min(Math.max(myProj / _totalProj * 100, 5), 95));
+        meta.push('Win% <b>' + _winPct + '%</b>');
+      }
+    }
     return (
       '<div class="rz-hero' + (isClose ? ' rz-close-game' : '') + '">'
       + '<div class="rz-hero-label">Your Matchup  •  Week ' + (_state.week || '') + (isClose ? '  •  <span class="rz-close-label">Close game</span>' : '') + '</div>'
@@ -14962,11 +15019,36 @@ function setupFunAwardsGrid() {
     );
   }
 
+  function _posGroupStripHtml(matchup) {
+    if (!matchup) return '';
+    var pp = matchup.players_points || {};
+    var starters = (matchup.starters || []).filter(function(p) { return p !== '0'; });
+    var groups = {}, ORDER = ['QB','RB','WR','TE','K','DEF'], hasAny = false;
+    starters.forEach(function(pid) {
+      var pos = _pos(pid);
+      if (!ORDER.includes(pos)) return;
+      var pts = parseFloat(pp[pid] || 0);
+      groups[pos] = (groups[pos] || 0) + pts;
+      if (pts > 0) hasAny = true;
+    });
+    if (!hasAny) return '';
+    var items = ORDER.filter(function(p) { return groups[p] != null; }).map(function(p) {
+      return '<span class="rz-pt-item">'
+        + '<span class="rz-pos-badge rz-pos-' + p + '">' + p + '</span>'
+        + '<span class="rz-pt-val">' + _fmt(groups[p]) + '</span>'
+        + '</span>';
+    }).join('');
+    if (!items) return '';
+    return '<div class="rz-pos-totals">' + items + '</div>';
+  }
+
   function _renderMyTeams() {
     var mine = _myMatchups();
     if (!mine.length) return '<div class="rz-feed-empty">No teams found.</div>';
     return mine.map(function(m) {
-      return '<div class="rz-section-label" style="opacity:1;color:var(--rz-text);font-size:11px;">' + (m.league_name || 'League') + '</div>' + _rosterCard(m);
+      return '<div class="rz-section-label" style="opacity:1;color:var(--rz-text);font-size:11px;">' + (m.league_name || 'League') + '</div>'
+        + _posGroupStripHtml(m)
+        + _rosterCard(m);
     }).join('');
   }
 
@@ -15548,7 +15630,7 @@ function setupFunAwardsGrid() {
       return '<button class="rz-tab-btn' + (_activeTab === t.key ? ' active' : '') + '" data-tab="' + t.key + '">' + t.label + badge + '</button>';
     }).join('') + '</div>';
 
-    var minePanel = _scope === 'user' ? _renderMyTeams() : _rosterCard(myMatchup);
+    var minePanel = _scope === 'user' ? _renderMyTeams() : (_posGroupStripHtml(myMatchup) + _rosterCard(myMatchup));
 
     // Pinned score bar for the Plays tab
     var playsScoreBar = '';
@@ -15810,6 +15892,7 @@ function setupFunAwardsGrid() {
 
   _seedMilestones(_state);   // pre-mark already-crossed milestones (no retroactive events)
   _seedInjuries(_state);     // snapshot injuries so only changes fire later
+  _seedLeaders(_state);      // snapshot leading rosters so lead-change events don't fire on load
   _detectChanges(_state);    // populate initial feed from empty _prevStats
   _seedPrevStats(_state);    // snapshot stat lines for the next poll diff
 
