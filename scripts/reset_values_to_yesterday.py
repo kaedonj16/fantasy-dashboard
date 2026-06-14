@@ -62,11 +62,16 @@ def _snapshot(conn, d) -> dict:
 
 
 def _current_player_values(conn) -> dict:
-    """Return {player_id: value_1qb} from the live player_values table."""
+    """Return {player_id: displayed_value} using the same COALESCE the modal uses."""
     rows = conn.execute(
-        "SELECT player_id, value_1qb FROM player_values WHERE value_1qb IS NOT NULL AND value_1qb > 0"
+        """
+        SELECT player_id,
+               COALESCE(calibrated_value_1qb, value_1qb) AS v
+        FROM player_values
+        WHERE value_1qb IS NOT NULL AND value_1qb > 0
+        """
     ).fetchall()
-    return {str(r["player_id"]): float(r["value_1qb"]) for r in rows}
+    return {str(r["player_id"]): float(r["v"]) for r in rows}
 
 
 def _persisted_scale(conn) -> float:
