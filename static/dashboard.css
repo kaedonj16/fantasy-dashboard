@@ -19592,24 +19592,9 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   position: relative;
   animation: nav-redzone-glow 2s ease-in-out infinite;
 }
-.nav-pill.nav-pill-redzone-live::after {
-  content: '';
-  position: absolute;
-  top: 6px; right: 7px;
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: #dc2626;
-  box-shadow: 0 0 0 0 rgba(220,38,38,.6);
-  animation: nav-redzone-dot 1.6s ease-out infinite;
-}
 @keyframes nav-redzone-glow {
   0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
   50%      { box-shadow: 0 0 0 2px rgba(220,38,38,.35); }
-}
-@keyframes nav-redzone-dot {
-  0%   { box-shadow: 0 0 0 0 rgba(220,38,38,.55); }
-  70%  { box-shadow: 0 0 0 6px rgba(220,38,38,0); }
-  100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); }
 }
 
 
