@@ -20487,6 +20487,7 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   color: var(--rz-text); background: var(--rz-border);
   padding: 0 5px; border-radius: 4px; font-size: 10px;
 }
+.rz-event-myteam { font-weight: 800; color: var(--rz-text); }
 .rz-event-tag {
   font-size: 8px; font-weight: 900; letter-spacing: .06em;
   padding: 2px 6px; border-radius: 999px; flex-shrink: 0; white-space: nowrap;

@@ -15322,9 +15322,14 @@ window._rzSyncTabLive = function(panel) {
     var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
     var posKey = (ev.pos || 'x').toLowerCase().replace(/[^a-z]/g, '');
     var initials = (ev.name || '?').trim().split(/\s+/).map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
-    // Game score line (already includes both teams) — no separate team prefix
-    // so the player's team isn't repeated (was "TEN  ·  TEN 41 @ LAR 62").
+    // Game score line (already includes both teams) — bold the player's own
+    // team within it instead of a separate, duplicated team prefix.
     var subInner = ev.line || ev.nflTeam || '';
+    if (ev.line && ev.nflTeam) {
+      var _tm = String(ev.nflTeam).replace(/[^A-Za-z0-9]/g, '');
+      if (_tm) subInner = ev.line.replace(new RegExp('\\b' + _tm + '\\b'),
+        '<strong class="rz-event-myteam">' + ev.nflTeam + '</strong>');
+    }
     var clockStr = [ev.gameQuarter, ev.gameClock].filter(Boolean).join(' ');
     var clockHtml = clockStr ? '<span class="rz-event-clock">' + clockStr + '</span>' : '';
     var subRow = (subInner || clockHtml)
