@@ -1475,16 +1475,15 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         # Redzone lives inside the Weekly dropdown. On NFL game days the Weekly
         # button glows and the Redzone item itself pulses with a live dot.
         _rz_pulse = ""
-        if session.get("viewer_username") in _RZ_ALLOWED_USERS:
-            # NFL game days: Mon=0, Thu=3, Sat=5, Sun=6 (Python weekday())
-            _rz_live = datetime.now().weekday() in (0, 3, 5, 6)
-            _rz_label = (
-                "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
-                if _rz_live else "Redzone"
-            )
-            _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
-            if _rz_live:
-                _rz_pulse = "nav-pill-redzone-live"
+        # NFL game days: Mon=0, Thu=3, Sat=5, Sun=6 (Python weekday())
+        _rz_live = datetime.now().weekday() in (0, 3, 5, 6)
+        _rz_label = (
+            "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
+            if _rz_live else "Redzone"
+        )
+        _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
+        if _rz_live:
+            _rz_pulse = "nav-pill-redzone-live"
         nav_pills.append(nav_pill_dropdown(
             "Weekly", _weekly_items, ["weekly", "recap", "redzone"],
             "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
@@ -10366,12 +10365,8 @@ def _redzone_fetch_user(platform, league_id, season, week):
     }
 
 
-_RZ_ALLOWED_USERS = {"hoodiekj1"}
-
 @app.route("/<platform>/<int:season>/<league_id>/redzone")
 def page_redzone(platform: str, season: int, league_id: str):
-    if session.get("viewer_username") not in _RZ_ALLOWED_USERS:
-        return "BR Redzone is not available for your account.", 403
     scope = "user" if request.args.get("scope") == "user" else "league"
     if request.args.get("demo") == "1":
         data = _redzone_demo_data(scope=scope)
@@ -10393,8 +10388,6 @@ def page_redzone(platform: str, season: int, league_id: str):
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
 def api_redzone_data(platform: str, season: int, league_id: str):
-    if session.get("viewer_username") not in _RZ_ALLOWED_USERS:
-        return jsonify({"error": "forbidden"}), 403
     scope = "user" if request.args.get("scope") == "user" else "league"
     if request.args.get("demo") == "1":
         try:
@@ -10413,8 +10406,6 @@ def api_redzone_data(platform: str, season: int, league_id: str):
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-player")
 def api_redzone_player(platform: str, season: int, league_id: str):
     """Return Tank01 boxscore stats for a single player, tagged with fantasy pts."""
-    if session.get("viewer_username") not in _RZ_ALLOWED_USERS:
-        return jsonify({"error": "forbidden"}), 403
     from dashboard_services.api import (
         get_nfl_players, fetch_tank_boxscore, get_effective_scoring_settings,
     )
