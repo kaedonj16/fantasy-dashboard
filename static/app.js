@@ -14056,6 +14056,8 @@ function setupFunAwardsGrid() {
     try { return JSON.parse(localStorage.getItem('rz-notif-history') || '[]'); } catch (_) { return []; }
   }());
   var _historyOpen = false;
+  var _unreadCount = 0;
+  var _milestonesSeen = {};
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
 
@@ -14214,6 +14216,29 @@ function setupFunAwardsGrid() {
       Object.keys(pp).forEach(function(pid) { _prevPts[pid] = pp[pid]; });
     });
   }
+  function _seedMilestones(data) {
+    var _MS_THRS = [
+      { key: 'rush_yds_100', field: 'rush_yds', thr: 100 },
+      { key: 'rush_yds_150', field: 'rush_yds', thr: 150 },
+      { key: 'pass_yds_300', field: 'pass_yds', thr: 300 },
+      { key: 'pass_yds_400', field: 'pass_yds', thr: 400 },
+      { key: 'rec_yds_100', field: 'rec_yds', thr: 100 },
+      { key: 'td_2', field: '__tds', thr: 2 },
+      { key: 'td_3', field: '__tds', thr: 3 },
+    ];
+    Object.keys(data.player_info || {}).forEach(function(pid) {
+      var sl = (data.player_info[pid] || {}).stat_line;
+      if (!sl) return;
+      var seen = _milestonesSeen[pid] || {};
+      var tds = (sl.rush_td||0) + (sl.rec_td||0) + (sl.pass_td||0);
+      _MS_THRS.forEach(function(ms) {
+        var val = ms.field === '__tds' ? tds : (sl[ms.field] || 0);
+        if (val >= ms.thr) seen[ms.key] = true;
+      });
+      _milestonesSeen[pid] = seen;
+    });
+  }
+
   // ── Play detection ─────────────────────────────────────────────────────────────
   function _rosterTags(data) {
     var myRosters = new Set(_myRids), oppRosters = new Set();
@@ -14418,6 +14443,7 @@ function setupFunAwardsGrid() {
       if (_notifHistory.length > 50) _notifHistory = _notifHistory.slice(0, 50);
       try { localStorage.setItem('rz-notif-history', JSON.stringify(_notifHistory)); } catch (_) {}
       _playTDBeep();
+      try { if (navigator.vibrate) navigator.vibrate([100, 50, 200]); } catch (_) {}
       try {
         if (navigator.serviceWorker && navigator.serviceWorker.ready) {
           navigator.serviceWorker.ready.then(function(sw) {
@@ -14432,6 +14458,43 @@ function setupFunAwardsGrid() {
         }
       } catch (_) {}
     }
+
+    // Stat milestones: fire a feed event when a player crosses a threshold for first time
+    var _MS_DEFS = [
+      { key: 'rush_yds_100', field: 'rush_yds', thr: 100, desc: '100 rush yds' },
+      { key: 'rush_yds_150', field: 'rush_yds', thr: 150, desc: '150 rush yds' },
+      { key: 'pass_yds_300', field: 'pass_yds', thr: 300, desc: '300 pass yds' },
+      { key: 'pass_yds_400', field: 'pass_yds', thr: 400, desc: '400 pass yds' },
+      { key: 'rec_yds_100', field: 'rec_yds',  thr: 100, desc: '100 rec yds' },
+      { key: 'td_2',        field: '__tds',     thr: 2,   desc: '2 TDs' },
+      { key: 'td_3',        field: '__tds',     thr: 3,   desc: '3 TDs' },
+    ];
+    Object.keys(newData.player_info || {}).forEach(function(pid) {
+      var sl = (newData.player_info[pid] || {}).stat_line;
+      if (!sl) return;
+      var seen = _milestonesSeen[pid] || {};
+      var tds = (sl.rush_td||0) + (sl.rec_td||0) + (sl.pass_td||0);
+      var rid = tags.pidToRoster[pid] || '';
+      _MS_DEFS.forEach(function(ms) {
+        if (seen[ms.key]) return;
+        var val = ms.field === '__tds' ? tds : (sl[ms.field] || 0);
+        if (val < ms.thr) return;
+        seen[ms.key] = true;
+        _feed.unshift({
+          pid: pid, name: _name(pid), pos: _pos(pid), nflTeam: _team(pid),
+          rosterId: rid, owner: _ownerName(rid), league: _leagueOfRid(rid),
+          mine: tags.my.has(rid), opp: tags.opp.has(rid),
+          desc: ms.desc + '!', kind: 'milestone', stats: ['milestone'],
+          pts: 0, ts: Date.now() + Math.random(),
+          line: '', gameQuarter: (newData.player_info[pid] || {}).game_quarter || '',
+          gameClock: (newData.player_info[pid] || {}).game_clock || ''
+        });
+      });
+      _milestonesSeen[pid] = seen;
+    });
+
+    // Increment unread count when user isn't on Plays tab
+    if (_activeTab !== 'plays' && allEvents.length) _unreadCount += allEvents.length;
 
     // Track which rosters had point changes (for score flash)
     (newData.matchups || []).forEach(function(m) {
@@ -14467,7 +14530,7 @@ function setupFunAwardsGrid() {
   }
   var _POS_LIST  = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF'];
   var _STAT_LIST = [['td','TD'], ['reception','Reception'], ['carry','Carry'],
-                    ['pass','Pass'], ['target','Target'], ['int','INT']];
+                    ['pass','Pass'], ['target','Target'], ['int','INT'], ['milestone','Milestone']];
 
   function _passTeam(ev) {
     if (_filters.team === 'all') return true;
@@ -14906,7 +14969,7 @@ function setupFunAwardsGrid() {
     }).join('');
   }
 
-  var _FEED_ICON = { td: '🏈', gain: '🟢', neg: '⚠️', target: '🎯' };
+  var _FEED_ICON = { td: '🏈', gain: '🟢', neg: '⚠️', target: '🎯', milestone: '⭐' };
 
   function _eid(ev) { return ev.pid + ':' + (ev.ts || ev.desc); }
 
@@ -15364,12 +15427,31 @@ function setupFunAwardsGrid() {
     var summary = _renderHeroCards();
 
     var tabBar = '<div class="rz-tab-bar">' + TABS.map(function(t) {
-      return '<button class="rz-tab-btn' + (_activeTab === t.key ? ' active' : '') + '" data-tab="' + t.key + '">' + t.label + '</button>';
+      var badge = (t.key === 'plays' && _unreadCount > 0 && _activeTab !== 'plays')
+        ? '<span class="rz-tab-badge">' + (_unreadCount > 99 ? '99+' : _unreadCount) + '</span>' : '';
+      return '<button class="rz-tab-btn' + (_activeTab === t.key ? ' active' : '') + '" data-tab="' + t.key + '">' + t.label + badge + '</button>';
     }).join('') + '</div>';
 
     var minePanel = _scope === 'user' ? _renderMyTeams() : _rosterCard(myMatchup);
+
+    // Pinned score bar for the Plays tab
+    var playsScoreBar = '';
+    if (myMatchup) {
+      var _mm = myMatchup, _om = oppMatchup;
+      var _myP = parseFloat(_mm.points || 0), _opP = parseFloat(_om ? _om.points || 0 : 0);
+      var _win = _myP >= _opP, _diff = Math.abs(_myP - _opP).toFixed(1);
+      var _liveBar = _anyLive();
+      var _oppName = _om ? (_ownerName(_om.roster_id) || 'Opp') : 'Opp';
+      playsScoreBar = '<div class="rz-plays-scorebar">'
+        + '<span class="rz-psb-me' + (_win ? ' lead' : '') + '">Me  ' + _fmt(_myP) + '</span>'
+        + '<span class="rz-psb-sep">' + (_liveBar ? '<span class="rz-psb-live-dot"></span>' : '') + 'vs</span>'
+        + '<span class="rz-psb-opp' + (!_win ? ' lead' : '') + '">' + _oppName + '  ' + _fmt(_opP) + '</span>'
+        + (_liveBar ? '<span class="rz-psb-spread">' + (_win ? '+' : '-') + _diff + '</span>' : '')
+        + '</div>';
+    }
+
     var panels =
-        '<div class="rz-panel' + (_activeTab === 'plays'  ? ' active' : '') + '" id="rz-panel-plays"><div class="rz-feed-hdr" id="rz-feed-hdr"></div><div id="rz-feed-list"></div><div id="rz-feed-pagination"></div></div>'
+        '<div class="rz-panel' + (_activeTab === 'plays'  ? ' active' : '') + '" id="rz-panel-plays"><div class="rz-feed-hdr" id="rz-feed-hdr"></div><div id="rz-feed-list"></div><div id="rz-feed-pagination"></div>' + playsScoreBar + '</div>'
       + '<div class="rz-panel' + (_activeTab === 'mine'   ? ' active' : '') + '" id="rz-panel-mine">'   + minePanel              + '</div>'
       + (_scope === 'user' ? '' :
         '<div class="rz-panel' + (_activeTab === 'opp'    ? ' active' : '') + '" id="rz-panel-opp">'    + _rosterCard(oppMatchup) + '</div>')
@@ -15447,6 +15529,7 @@ function setupFunAwardsGrid() {
     root.querySelectorAll('.rz-tab-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
         _activeTab = btn.dataset.tab;
+        if (_activeTab === 'plays') _unreadCount = 0;
         _render();
       });
     });
@@ -15544,6 +15627,14 @@ function setupFunAwardsGrid() {
         if (newFeedEl) { newFeedEl.innerHTML = savedFeedHtml; _syncFeed(); }
       }
 
+      // Auto-refresh Live tab in player modal if it's currently visible
+      var livePanelEl = document.getElementById('pm-panel-live');
+      if (livePanelEl && livePanelEl.classList.contains('pm-panel-active') && window.__rzGetPlayerLive) {
+        var pmBar = document.getElementById('pmTabBar');
+        var pmPid = pmBar ? pmBar.dataset.pmPlayerId : null;
+        if (pmPid) livePanelEl.innerHTML = window.__rzGetPlayerLive(pmPid);
+      }
+
       // Flash scores that changed
       if (_flashRids.size) {
         root.querySelectorAll('[data-score-rid]').forEach(function(el) {
@@ -15599,8 +15690,9 @@ function setupFunAwardsGrid() {
     _prevMatchupPts[String(m.roster_id)] = parseFloat(m.points || 0);
   });
 
-  _detectChanges(_state);
   _seedPrevStats(_state);
+  _seedMilestones(_state);
+  _detectChanges(_state);
 
   _render();
   if (_isDemo) setTimeout(_refresh, 300);

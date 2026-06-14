@@ -20871,3 +20871,53 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   background: rgba(234,179,8,.12);
   border-color: rgba(234,179,8,.35);
 }
+
+/* ── Unread play badge on Plays tab ── */
+.rz-tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  background: var(--rz-red); color: #fff;
+  border-radius: 999px; font-size: 9px; font-weight: 800;
+  margin-left: 5px; vertical-align: middle;
+  position: relative; top: -1px; line-height: 1;
+}
+
+/* ── Milestone feed event ────────────── */
+.rz-event.milestone {
+  background: linear-gradient(135deg, rgba(234,179,8,.07) 0%, transparent 100%);
+  border-left: 3px solid #eab308;
+}
+:root[data-theme="dark"] .rz-event.milestone {
+  background: linear-gradient(135deg, rgba(234,179,8,.1) 0%, transparent 100%);
+}
+
+/* ── Pinned score bar on Plays tab ─── */
+.rz-plays-scorebar {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 9px 16px 10px;
+  border-top: 1px solid var(--rz-border);
+  font-size: 12px; font-weight: 700;
+  background: var(--rz-card);
+  position: sticky; bottom: 0; z-index: 5;
+}
+.rz-psb-me, .rz-psb-opp {
+  color: var(--rz-muted); transition: color .2s;
+}
+.rz-psb-me.lead, .rz-psb-opp.lead { color: var(--rz-text); }
+.rz-psb-sep {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 600;
+  color: var(--rz-muted); letter-spacing: .06em; text-transform: uppercase;
+}
+.rz-psb-live-dot {
+  display: inline-block; width: 6px; height: 6px;
+  background: #22c55e; border-radius: 50%;
+  animation: rz-pulse 1.6s ease-in-out infinite;
+}
+.rz-psb-spread {
+  font-size: 10px; font-weight: 700;
+  color: var(--rz-muted); padding: 1px 6px;
+  background: rgba(0,0,0,.04); border-radius: 999px;
+}
+:root[data-theme="dark"] .rz-psb-spread { background: rgba(255,255,255,.06); }
+:root[data-theme="dark"] .rz-plays-scorebar { border-top-color: rgba(255,255,255,.08); }
