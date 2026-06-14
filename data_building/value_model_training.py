@@ -42,6 +42,21 @@ _SCALE_STATE_KEY = "value_scale_1qb"
 # today; it takes ~2 weeks to fully propagate — preventing overnight team-value swings.
 _SCALE_EMA_ALPHA = 0.15
 
+# --- 1QB ceiling anchor (basket) -------------------------------------------
+# The 1QB scale pins the top non-QB to 999.9. Anchoring to a SINGLE player (the
+# max) means that player's day-to-day drift drags every other player inversely:
+# when the anchor ticks up, the scale shrinks and the whole board declines even
+# though nothing about those players changed. To break that, the anchor is a
+# basket — the mean of the top N non-QBs — so one player moving shifts it ~N×
+# less. A separate slowly-moving "headroom" ratio (top-1 / basket) keeps the #1
+# sitting at ~999.9 without letting the #1 re-introduce single-player sensitivity.
+_ANCHOR_BASKET_N        = 5
+_BASKET_STATE_KEY       = "value_basket_1qb"      # smoothed basket mean
+_HEADROOM_STATE_KEY     = "value_headroom_1qb"    # smoothed top1/basket ratio
+_BASKET_EMA_ALPHA       = 0.15   # basket tracks genuine tier drift over ~2 weeks
+_HEADROOM_EMA_ALPHA     = 0.04   # headroom is near-fixed: a #1 pulling away just
+                                 # rides the 999.9 cap rather than compressing all
+
 
 def _load_persisted_scale() -> float:
     """Return the last smoothed 1QB normalization scale.
@@ -106,6 +121,57 @@ def _persist_scale(scale: float) -> None:
     try:
         _SCALE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         _SCALE_CACHE_PATH.write_text(json.dumps({"scale": rounded}))
+    except Exception:
+        pass
+
+
+def _load_state(key: str) -> float:
+    """Read a single durable float from pipeline_state. Returns 0.0 if absent."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pipeline_state (
+                    key TEXT PRIMARY KEY,
+                    value DOUBLE PRECISION,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            row = conn.execute(
+                "SELECT value FROM pipeline_state WHERE key = %s", (key,)
+            ).fetchone()
+        if row and row.get("value"):
+            return float(row["value"])
+    except Exception:
+        pass
+    return 0.0
+
+
+def _save_state(key: str, value: float) -> None:
+    """Write a single durable float to pipeline_state (best-effort)."""
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pipeline_state (
+                    key TEXT PRIMARY KEY,
+                    value DOUBLE PRECISION,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO pipeline_state (key, value, updated_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (key) DO UPDATE
+                    SET value = excluded.value, updated_at = NOW()
+                """,
+                (key, round(float(value), 6)),
+            )
     except Exception:
         pass
 
@@ -1059,21 +1125,42 @@ def rewrite_value_table_with_model() -> Path:
     _SKILL_POS   = {"QB", "RB", "WR", "TE"}
     _NON_QB_POS  = {"RB", "WR", "TE"}
     _1qb_keys    = ["value", "value_8", "value_12", "value_14"]
-    _max_non_qb  = max(
+    _non_qb_vals = sorted(
         (float(a.get("value") or 0) for a in cleaned_assets
          if str(a.get("position") or "").upper() in _NON_QB_POS),
-        default=0.0,
+        reverse=True,
     )
+    _max_non_qb = _non_qb_vals[0] if _non_qb_vals else 0.0
     if 0 < _max_non_qb < 999.9:
-        _raw_scale = 999.9 / _max_non_qb
-        # Load previous smoothed scale (durable, DB-backed) and blend with today's
-        # raw scale. When no prior scale exists we use the raw scale unsmoothed.
-        _prev_scale = _load_persisted_scale()
-        _1qb_scale = (
-            _SCALE_EMA_ALPHA * _raw_scale + (1.0 - _SCALE_EMA_ALPHA) * _prev_scale
-            if _prev_scale > 0 else _raw_scale
+        # Basket anchor: the mean of the top N non-QBs is the ceiling estimate.
+        # One player drifting moves this ~N× less than it moves the single max,
+        # so the rest of the board no longer slides when the top player ticks up.
+        _topN   = _non_qb_vals[:_ANCHOR_BASKET_N]
+        _basket = sum(_topN) / len(_topN)
+        _raw_headroom = _max_non_qb / _basket if _basket > 0 else 1.0
+
+        # Smooth the basket (tracks genuine tier drift over ~2 weeks) and the
+        # headroom ratio (near-fixed, so a single #1 pulling away rides the cap
+        # instead of compressing everyone). Both persist durably in Postgres.
+        _prev_basket   = _load_state(_BASKET_STATE_KEY)
+        _prev_headroom = _load_state(_HEADROOM_STATE_KEY)
+        _smoothed_basket = (
+            _BASKET_EMA_ALPHA * _basket + (1.0 - _BASKET_EMA_ALPHA) * _prev_basket
+            if _prev_basket > 0 else _basket
         )
-        _persist_scale(_1qb_scale)
+        _smoothed_headroom = (
+            _HEADROOM_EMA_ALPHA * _raw_headroom + (1.0 - _HEADROOM_EMA_ALPHA) * _prev_headroom
+            if _prev_headroom > 0 else _raw_headroom
+        )
+        _save_state(_BASKET_STATE_KEY, _smoothed_basket)
+        _save_state(_HEADROOM_STATE_KEY, _smoothed_headroom)
+
+        # Anchor ≈ where the #1 sits (basket × headroom), but built from smoothed
+        # quantities so it barely moves day to day. Scale pins that anchor to
+        # 999.9; individual values are still capped, so a hot #1 rides the ceiling.
+        _anchor    = _smoothed_basket * _smoothed_headroom
+        _1qb_scale = 999.9 / _anchor if _anchor > 0 else 1.0
+        _persist_scale(_1qb_scale)  # kept for back-compat / the reset script
         for _a in cleaned_assets:
             if str(_a.get("position") or "").upper() not in _SKILL_POS:
                 continue
