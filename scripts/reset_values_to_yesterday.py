@@ -1,32 +1,20 @@
 #!/usr/bin/env python3
 """
-Restore player_values after a uniform normalization-scale drop.
+Restore player_values to a previous day's exact values from player_value_history.
 
-Today's deploy(s) re-anchored the 1QB/SF normalization scale, compressing the
-headline value of every player by a single uniform factor (~3-4%).  The drop is
-multiplicative and column-specific (it hit `value`/`value_12` but, for some
-players, not `value_8`/`value_14`), and it affects EVERY live player — including
-ones that aren't in a given day's player_value_history snapshot.
-
-So instead of copying a snapshot (which would only touch the players present
-that day), this script:
-
-  1. Picks a healthy pre-drop snapshot date from player_value_history.
-  2. For each value column, measures the median ratio (snapshot / live) across
-     the players present in BOTH — this is the scale factor for that column.
-     Columns that didn't drop come out at ~1.0 (a no-op).
-  3. Multiplies EVERY live player_values row by its column's ratio (capped at
-     999.9), nulling stale calibration. This restores the full pool, not just
-     the snapshot subset, and leaves untouched columns untouched.
+A deploy re-anchored the normalization scale and dropped the headline value of
+every player. Rather than estimate a scale factor, this copies each player's
+exact values from a chosen snapshot date straight into player_values (the live,
+shared-across-instances table the website reads). JSN's 880.8 simply becomes the
+911.4 stored for June 13.
 
 Usage:
     python scripts/reset_values_to_yesterday.py                       # list snapshots + dry run
-    python scripts/reset_values_to_yesterday.py --date 2026-06-13     # pick the pre-drop date
+    python scripts/reset_values_to_yesterday.py --date 2026-06-13     # preview the copy
     python scripts/reset_values_to_yesterday.py --date 2026-06-13 --commit
 """
 import argparse
 import os
-import statistics
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -34,21 +22,19 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dashboard_services.db import get_conn
 
 _SCALE_STATE_KEY = "value_scale_1qb"
-_RATIO_BAND      = (0.80, 1.25)  # ignore genuine per-player moves when measuring scale
 
-# (history column, player_values base column).  Order matters for display.
+# (history column, player_values column). Only copied when the snapshot value > 0.
 _COL_PAIRS = [
     ("value",       "value_1qb"),
+    ("sf_value",    "value_sf"),
     ("value_8",     "value_8"),
     ("value_12",    "value_12"),
     ("value_14",    "value_14"),
-    ("sf_value",    "value_sf"),
     ("sf_value_8",  "sf_value_8"),
     ("sf_value_12", "sf_value_12"),
     ("sf_value_14", "sf_value_14"),
 ]
 _HIST_COLS = [h for h, _ in _COL_PAIRS]
-_PV_COLS   = [p for _, p in _COL_PAIRS]
 
 
 def _list_snapshots(conn) -> list:
@@ -66,13 +52,11 @@ def _list_snapshots(conn) -> list:
 
 
 def _snapshot(conn, d) -> dict:
-    """Non-pick players only — picks aren't subject to the 1QB scale."""
     rows = conn.execute(
         f"""
         SELECT player_id, {", ".join(_HIST_COLS)}
         FROM player_value_history
         WHERE source = 'model' AND as_of_date = %s
-          AND (position IS NULL OR position NOT ILIKE 'PICK%%')
         """,
         (d,),
     ).fetchall()
@@ -83,49 +67,28 @@ def _snapshot(conn, d) -> dict:
     return out
 
 
-def _live_values(conn) -> dict:
-    """Current displayed values per player (COALESCE matches the modal), picks excluded."""
+def _live_1qb(conn) -> dict:
+    """Current displayed 1QB value per player (COALESCE matches the modal)."""
     rows = conn.execute(
         """
-        SELECT player_id,
-               COALESCE(calibrated_value_1qb, value_1qb)           AS value_1qb,
-               COALESCE(calibrated_value_sf,  value_sf, value_1qb) AS value_sf,
-               value_8, value_12, value_14,
-               sf_value_8, sf_value_12, sf_value_14
+        SELECT player_id, COALESCE(calibrated_value_1qb, value_1qb) AS v
         FROM player_values
-        WHERE value_1qb IS NOT NULL AND value_1qb > 0
-          AND (position IS NULL OR position NOT IN ('PICK'))
+        WHERE value_1qb IS NOT NULL
         """
     ).fetchall()
-    out = {}
-    for r in rows:
-        pid = str(r["player_id"])
-        out[pid] = {c: (float(r[c]) if r[c] is not None else 0.0) for c in _PV_COLS}
-    return out
-
-
-def _persisted_scale(conn) -> float:
-    try:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS pipeline_state (
-                key TEXT PRIMARY KEY,
-                value DOUBLE PRECISION,
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            )
-            """
-        )
-        row = conn.execute(
-            "SELECT value FROM pipeline_state WHERE key = %s", (_SCALE_STATE_KEY,)
-        ).fetchone()
-        if row and row.get("value"):
-            return float(row["value"])
-    except Exception:
-        pass
-    return 0.0
+    return {str(r["player_id"]): float(r["v"]) for r in rows}
 
 
 def _write_scale(conn, scale: float) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pipeline_state (
+            key TEXT PRIMARY KEY,
+            value DOUBLE PRECISION,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
     conn.execute(
         """
         INSERT INTO pipeline_state (key, value, updated_at)
@@ -137,34 +100,15 @@ def _write_scale(conn, scale: float) -> None:
     )
 
 
-def _column_ratios(target_snap: dict, live: dict) -> dict:
-    """Median (snapshot / live) per column, over players present in both."""
-    ratios = {}
-    for hist_col, pv_col in _COL_PAIRS:
-        samples = []
-        for pid, td in target_snap.items():
-            lv = live.get(pid)
-            if not lv:
-                continue
-            t, l = td.get(hist_col, 0.0), lv.get(pv_col, 0.0)
-            if t > 0 and l > 0:
-                r = t / l
-                if _RATIO_BAND[0] <= r <= _RATIO_BAND[1]:
-                    samples.append(r)
-        ratios[pv_col] = (statistics.median(samples), len(samples)) if samples else (1.0, 0)
-    return ratios
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--date", help="Pre-drop snapshot date (YYYY-MM-DD). Defaults to most recent.")
+    ap.add_argument("--date", help="Snapshot date to restore from (YYYY-MM-DD). Defaults to most recent.")
     ap.add_argument("--commit", action="store_true", help="Apply (default is a dry run).")
     args = ap.parse_args()
 
     with get_conn() as conn:
         snapshots = _list_snapshots(conn)
-        live      = _live_values(conn)
-        cur_scale = _persisted_scale(conn)
+        live_1qb  = _live_1qb(conn)
 
     if not snapshots:
         print("ERROR: no snapshots in player_value_history.", file=sys.stderr)
@@ -183,62 +127,43 @@ def main() -> int:
     with get_conn() as conn:
         target_snap = _snapshot(conn, target_date)
 
-    print(f"Target snapshot:     {target_date}  ({len(target_snap)} players)")
-    print(f"Live player_values:  {len(live)} players")
-    print(f"Persisted scale now: {cur_scale or 'MISSING'}\n")
+    print(f"Restoring from:      {target_date}  ({len(target_snap)} players)")
+    print(f"Live player_values:  {len(live_1qb)} players")
 
-    ratios = _column_ratios(target_snap, live)
-    print("Per-column scale factor (snapshot / live):")
-    any_drop = False
-    for _, pv_col in _COL_PAIRS:
-        r, n = ratios[pv_col]
-        flag = "  <- restore" if abs(r - 1.0) >= 0.005 else ""
-        if abs(r - 1.0) >= 0.005:
-            any_drop = True
-        print(f"  {pv_col:14} x{r:.4f}  ({(r-1)*100:+.2f}%, n={n}){flag}")
+    # How many players will actually change, and by how much
+    changed = []
+    for pid, td in target_snap.items():
+        tv = td["value"]
+        lv = live_1qb.get(pid)
+        if tv > 0 and lv is not None and abs(tv - lv) >= 0.1:
+            changed.append((pid, lv, tv))
+    changed.sort(key=lambda x: x[2], reverse=True)
 
-    if not any_drop:
-        print("\nAll columns within 0.5% — nothing to restore.")
+    print(f"Players whose 1QB value will change: {len(changed)}\n")
+    print("  Top changes  (live 1QB -> restored 1QB)")
+    for pid, lv, tv in changed[:12]:
+        print(f"    pid={pid:8}  {lv:6.1f}  ->  {tv:6.1f}   ({tv-lv:+.1f})")
+
+    if not changed:
+        print("\nNothing to change — live values already match the snapshot.")
         return 0
-
-    # Preview a few well-known players
-    sample = sorted(
-        [(pid, live[pid]["value_1qb"]) for pid in live],
-        key=lambda x: x[1], reverse=True
-    )[:8]
-    print(f"\n  Top players  (live 1QB -> restored 1QB)")
-    for pid, lv1qb in sample:
-        new1qb = min(lv1qb * ratios["value_1qb"][0], 999.9)
-        print(f"    pid={pid:8}  live={lv1qb:6.1f}  ->  {new1qb:6.1f}")
-
-    new_scale = (cur_scale * ratios["value_1qb"][0]) if cur_scale else 0.0
 
     if not args.commit:
         print("\nDRY RUN — re-run with --commit to apply.")
-        if not args.date:
-            print(f"TIP: {target_date} is the latest snapshot; if its ratios are ~0% it is")
-            print("     already post-drop. Pass --date with an earlier pre-drop date above.")
-        if not cur_scale:
-            print("NOTE: pipeline_state has no scale yet — values restore now but the next")
-            print("      build may re-drop. Re-run after the next daily build to lock it in.")
-        else:
-            print(f"Will seed pipeline_state scale: {new_scale:.6f}")
+        print("NOTE: pipeline_state scale is not touched here; after the next daily build")
+        print("      runs you may need to re-check that values hold.")
         return 0
 
-    # --- APPLY: multiply every live row by its column ratio ---
+    # --- APPLY: copy each snapshot value straight into player_values ---
     with get_conn() as conn:
         n_pv = 0
-        for pid, lv in live.items():
+        for pid, td in target_snap.items():
             sets, params = [], []
-            for _, pv_col in _COL_PAIRS:
-                r, _n = ratios[pv_col]
-                if abs(r - 1.0) < 0.005:
-                    continue  # column didn't drop; leave it alone
-                cur_v = lv.get(pv_col, 0.0)
-                if cur_v <= 0:
-                    continue
-                sets.append(f"{pv_col} = %s")
-                params.append(round(min(cur_v * r, 999.9), 1))
+            for hist_col, pv_col in _COL_PAIRS:
+                v = td.get(hist_col, 0.0)
+                if v > 0:
+                    sets.append(f"{pv_col} = %s")
+                    params.append(round(v, 1))
             if not sets:
                 continue
             sets += [
@@ -248,21 +173,14 @@ def main() -> int:
                 "calibration_weight   = NULL",
             ]
             params.append(pid)
-            conn.execute(
+            cur = conn.execute(
                 f"UPDATE player_values SET {', '.join(sets)} WHERE player_id = %s",
                 tuple(params),
             )
             n_pv += 1
         print(f"Updated {n_pv} rows in player_values.")
 
-        if new_scale:
-            _write_scale(conn, new_scale)
-            print(f"Seeded pipeline_state.{_SCALE_STATE_KEY} = {new_scale:.6f}")
-        else:
-            print("Skipping scale seed (no persisted scale to base it on).")
-            print("Re-run after the next daily build to lock the scale.")
-
-    print("\nDone. The website should show restored values immediately.")
+    print("\nDone. The website should show the restored values immediately.")
     return 0
 
 
