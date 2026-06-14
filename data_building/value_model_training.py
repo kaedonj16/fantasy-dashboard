@@ -28,11 +28,86 @@ FANTASYCALC_VALUES_PATH    = DATA_DIR / "fantasycalc_api_values.csv"
 ENGINE_VALUES_PATH         = DATA_DIR / "engine_values.csv"
 
 # Cache file that persists the smoothed 1QB normalization scale across runs.
+# NOTE: Render's web/cron services run on an ephemeral filesystem (no persistent
+# disk in render.yaml), so this file is wiped on every deploy/restart and the
+# two services never share it. The scale is therefore persisted in Postgres
+# (pipeline_state table) as the durable source of truth; the file is kept only
+# as a local-dev / DB-unavailable fallback. Losing the smoothed scale forces a
+# fall back to the raw scale, which makes the whole player pool jump in value
+# whenever the top non-QB anchor drifts — the bug this persistence prevents.
 _SCALE_CACHE_PATH = DATA_DIR.parent / "cache" / "value_scale_1qb.json"
+_SCALE_STATE_KEY = "value_scale_1qb"
 # Weight given to TODAY's raw scale when blending with yesterday's smoothed scale.
 # 0.15 means a true 10% shift in the top player's value only moves the scale ~1.5%
 # today; it takes ~2 weeks to fully propagate — preventing overnight team-value swings.
 _SCALE_EMA_ALPHA = 0.15
+
+
+def _load_persisted_scale() -> float:
+    """Return the last smoothed 1QB normalization scale.
+
+    Prefers the durable Postgres store (survives deploys and is shared by the
+    web + cron services); falls back to the ephemeral file cache only when the
+    DB is unavailable (local dev / outage). Returns 0.0 when no prior scale
+    exists, which signals the caller to use today's raw scale unsmoothed.
+    """
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pipeline_state (
+                    key TEXT PRIMARY KEY,
+                    value DOUBLE PRECISION,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            row = conn.execute(
+                "SELECT value FROM pipeline_state WHERE key = %s",
+                (_SCALE_STATE_KEY,),
+            ).fetchone()
+        if row and row.get("value"):
+            return float(row["value"])
+    except Exception:
+        pass
+    try:
+        return float(json.loads(_SCALE_CACHE_PATH.read_text()).get("scale", 0) or 0)
+    except Exception:
+        return 0.0
+
+
+def _persist_scale(scale: float) -> None:
+    """Persist the smoothed scale durably to Postgres and to the file fallback."""
+    rounded = round(float(scale), 6)
+    try:
+        from dashboard_services.db import get_conn
+        with get_conn() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pipeline_state (
+                    key TEXT PRIMARY KEY,
+                    value DOUBLE PRECISION,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO pipeline_state (key, value, updated_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (key) DO UPDATE
+                    SET value = excluded.value, updated_at = NOW()
+                """,
+                (_SCALE_STATE_KEY, rounded),
+            )
+    except Exception:
+        pass
+    try:
+        _SCALE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _SCALE_CACHE_PATH.write_text(json.dumps({"scale": rounded}))
+    except Exception:
+        pass
 
 FANTASYCALC_URL = (
     "https://api.fantasycalc.com/values/current"
@@ -991,20 +1066,14 @@ def rewrite_value_table_with_model() -> Path:
     )
     if 0 < _max_non_qb < 999.9:
         _raw_scale = 999.9 / _max_non_qb
-        # Load previous smoothed scale and blend with today's raw scale.
-        try:
-            _prev_scale = float(json.loads(_SCALE_CACHE_PATH.read_text()).get("scale", 0) or 0)
-        except Exception:
-            _prev_scale = 0.0
+        # Load previous smoothed scale (durable, DB-backed) and blend with today's
+        # raw scale. When no prior scale exists we use the raw scale unsmoothed.
+        _prev_scale = _load_persisted_scale()
         _1qb_scale = (
             _SCALE_EMA_ALPHA * _raw_scale + (1.0 - _SCALE_EMA_ALPHA) * _prev_scale
             if _prev_scale > 0 else _raw_scale
         )
-        try:
-            _SCALE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            _SCALE_CACHE_PATH.write_text(json.dumps({"scale": round(_1qb_scale, 6)}))
-        except Exception:
-            pass
+        _persist_scale(_1qb_scale)
         for _a in cleaned_assets:
             if str(_a.get("position") or "").upper() not in _SKILL_POS:
                 continue
