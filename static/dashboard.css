@@ -20764,11 +20764,12 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 /* ── Player modal Redzone tab ───────────── */
 .pm-tab-live { position: relative; }
 .pm-live-dot {
-  display: inline-block; width: 6px; height: 6px;
+  display: none; width: 6px; height: 6px;
   background: #dc2626; border-radius: 50%; margin-right: 5px;
   vertical-align: middle; position: relative; top: -1px;
 }
 .pm-tab[data-tab="live"].pm-rz-is-live .pm-live-dot {
+  display: inline-block;
   animation: rz-pulse 1.4s ease-in-out infinite;
 }
 .pm-tab[data-tab="live"].pm-rz-is-live {
