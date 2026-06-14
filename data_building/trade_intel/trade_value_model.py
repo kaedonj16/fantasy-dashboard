@@ -734,18 +734,13 @@ def run_trade_value_model(
     v_1qb_pos[n_pl:] = np.clip(v_1qb[n_pl:], 0.0, None)
     v_sf_pos[n_pl:]  = np.clip(v_sf[n_pl:],  0.0, None)
 
-    # Normalize so TOP_N_AT_MAX players land at MAX_VALUE. No upper clip so a
-    # genuinely dominant player can float slightly above MAX_VALUE — their
-    # sparkline shows real movement instead of flatlining. Values can't blow
-    # up because the model prior (also uncapped) is already bounded by the
-    # smoothed basket anchor; the MAX_LIFT clamp above keeps the WLS solution
-    # within 125% of that prior.
+    # Normalize so TOP_N_AT_MAX players land at MAX_VALUE
     def _normalize(vec: np.ndarray) -> np.ndarray:
         player_vec   = vec[:n_pl]
         sorted_desc  = np.sort(player_vec)[::-1]
         idx          = min(TOP_N_AT_MAX - 1, len(sorted_desc) - 1)
         ceiling      = sorted_desc[idx] if sorted_desc[idx] > 0 else (player_vec.max() or MAX_VALUE)
-        return np.clip(vec / ceiling * MAX_VALUE, 0.0, None)
+        return np.clip(vec / ceiling * MAX_VALUE, 0.0, MAX_VALUE)
 
     v_1qb_norm = _normalize(v_1qb_pos)
     v_sf_norm  = _normalize(v_sf_pos)
