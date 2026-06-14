@@ -14214,6 +14214,7 @@ window._rzSyncTabLive = function(panel) {
   var _blowoutSeen = {};
   var _prevInjury = {};
   var _prevLeader = {}; // matchup_id → leading roster_id (for lead-change events)
+  var _scoreDelta = { me: 0, opp: 0 }; // pts gained since last poll (for hero card)
 
   document.addEventListener('click', function() { _hadInteraction = true; }, { once: true });
 
@@ -14289,6 +14290,9 @@ window._rzSyncTabLive = function(panel) {
   function _fmt(n) {
     if (n == null || n === '') return '0.0';
     return parseFloat(n).toFixed(1);
+  }
+  function _fmtTimer(n) {
+    return n >= 60 ? Math.round(n / 60) + 'm' : n + 's';
   }
   function _name(pid) { return ((_state.player_info || {})[pid] || {}).name || pid; }
   function _pos(pid)  { return ((_state.player_info || {})[pid] || {}).pos  || ''; }
@@ -14777,12 +14781,23 @@ window._rzSyncTabLive = function(panel) {
     // Increment unread count when user isn't on Plays tab
     if (_activeTab !== 'plays' && (allEvents.length + _specialCount)) _unreadCount += (allEvents.length + _specialCount);
 
-    // Track which rosters had point changes (for score flash)
+    // Track which rosters had point changes (for score flash) + capture score delta
+    var _myRidArr = Array.from(_myRids);
+    _scoreDelta = { me: 0, opp: 0 };
+    var _myMidSet = new Set();
+    (newData.matchups || []).forEach(function(m) {
+      if (_isMyRid(m.roster_id)) _myMidSet.add(String(m.matchup_id));
+    });
     (newData.matchups || []).forEach(function(m) {
       var rid = String(m.roster_id);
       var newPts = parseFloat(m.points || 0);
       var oldPts = _prevMatchupPts[rid];
       if (oldPts !== undefined && Math.abs(newPts - oldPts) > 0.01) _flashRids.add(rid);
+      if (oldPts !== undefined && _myMidSet.has(String(m.matchup_id))) {
+        var delta = parseFloat((newPts - oldPts).toFixed(1));
+        if (_isMyRid(rid)) _scoreDelta.me += delta;
+        else _scoreDelta.opp += delta;
+      }
       _prevMatchupPts[rid] = newPts;
     });
   }
@@ -14982,6 +14997,12 @@ window._rzSyncTabLive = function(panel) {
     else if (!winning && diff > 0) meta.push('<span class="accent lose">Trailing ' + diff + '</span>');
     else meta.push('<span class="accent">Tied</span>');
     if (liveCnt > 0) meta.push(liveCnt + ' live');
+    var _dMe = _scoreDelta.me, _dOpp = _scoreDelta.opp;
+    if (_dMe > 0.05 || _dOpp > 0.05) {
+      var _gain = _dMe - _dOpp;
+      var _gainStr = (_gain >= 0 ? '+' : '') + _gain.toFixed(1);
+      meta.push('<span class="rz-delta ' + (_gain >= 0 ? 'pos' : 'neg') + '">' + _gainStr + ' this update</span>');
+    }
     return (
       '<div class="rz-hero' + (isClose ? ' rz-close-game' : '') + '">'
       + '<div class="rz-hero-label">Your Matchup  •  Week ' + (_state.week || '') + (isClose ? '  •  <span class="rz-close-label">Close game</span>' : '') + '</div>'
@@ -15213,6 +15234,33 @@ window._rzSyncTabLive = function(panel) {
     return html || '<div class="rz-feed-empty">No matchup data yet.</div>';
   }
 
+  function _renderPosLeaders(pidMap, myStarters) {
+    var positions = ['QB', 'RB', 'WR', 'TE'];
+    var leaders = {};
+    Object.keys(pidMap).forEach(function(pid) {
+      var p = (_state.player_info || {})[pid] || {};
+      var pos = p.pos || '';
+      if (positions.indexOf(pos) === -1) return;
+      var pts = pidMap[pid].pts;
+      if (pts <= 0) return;
+      if (!leaders[pos] || pts > leaders[pos].pts) leaders[pos] = { pid: pid, pts: pts, roster_id: pidMap[pid].roster_id };
+    });
+    var tiles = positions.map(function(pos) {
+      var ldr = leaders[pos];
+      if (!ldr) return '<div class="rz-pl-tile rz-pl-empty"><div class="rz-pl-pos">' + pos + '</div><div class="rz-pl-name">—</div><div class="rz-pl-pts">—</div></div>';
+      var p = (_state.player_info || {})[ldr.pid] || {};
+      var mine = myStarters.has(ldr.pid) || _isMyRid(ldr.roster_id);
+      return (
+        '<div class="rz-pl-tile' + (mine ? ' mine' : '') + '" data-pid="' + ldr.pid + '">'
+        + '<div class="rz-pl-pos">' + pos + '</div>'
+        + '<div class="rz-pl-name">' + (p.name || ldr.pid).split(' ').pop() + '</div>'
+        + '<div class="rz-pl-pts">' + _fmt(ldr.pts) + '</div>'
+        + '</div>'
+      );
+    }).join('');
+    return '<div class="rz-pos-leaders">' + tiles + '</div>';
+  }
+
   function _renderTopPerformers() {
     var myStarters = new Set();
     _myMatchups().forEach(function(m) { (m.starters || []).forEach(function(p) { myStarters.add(p); }); });
@@ -15229,8 +15277,8 @@ window._rzSyncTabLive = function(panel) {
       .filter(function(pid) { return pidMap[pid].pts > 0 && _topMatches(pid, pidMap[pid].roster_id); })
       .sort(function(a, b) { return pidMap[b].pts - pidMap[a].pts; })
       .slice(0, 25);
-    if (!sorted.length) return '<div class="rz-feed-empty">No players match these filters yet.</div>';
-    return sorted.map(function(pid, i) {
+    if (!sorted.length) return _renderPosLeaders(pidMap, myStarters) + '<div class="rz-feed-empty">No players match these filters yet.</div>';
+    return _renderPosLeaders(pidMap, myStarters) + sorted.map(function(pid, i) {
       var d = pidMap[pid], rank = i + 1;
       var rc = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
       var mine = myStarters.has(pid) || _isMyRid(d.roster_id);
@@ -15581,7 +15629,7 @@ window._rzSyncTabLive = function(panel) {
   function _partialUpdate() {
     // Update timer text
     var timerEl = document.getElementById('rz-timer');
-    if (timerEl) { timerEl.textContent = _countdown + 's'; timerEl.classList.remove('rz-timer-refreshing'); }
+    if (timerEl) { timerEl.textContent = _fmtTimer(_countdown); timerEl.classList.remove('rz-timer-refreshing'); }
 
     // Update live chip in header
     var liveChipEl = root.querySelector('.rz-live-chip');
@@ -15590,7 +15638,7 @@ window._rzSyncTabLive = function(panel) {
       var live = _anyLive();
       var liveChipHtml = live ? '<span class="rz-live-chip"><span class="rz-nav-dot"></span>LIVE</span>' : '';
       var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
-      headerRight.innerHTML = demoLink + liveChipHtml + '<button class="rz-refresh-timer" id="rz-timer">' + _countdown + 's</button>';
+      headerRight.innerHTML = demoLink + liveChipHtml + '<button class="rz-refresh-timer" id="rz-timer">' + _fmtTimer(_countdown) + '</button>';
     }
 
     // Replace hero cards in-place and re-wire
@@ -15712,7 +15760,7 @@ window._rzSyncTabLive = function(panel) {
     var demoLink = !_isDemo ? '<a href="?demo=1" class="rz-demo-btn">Demo</a>' : '';
     var exitBtn  = _isDemo ? '<button class="rz-demo-exit" id="rz-demo-exit">Exit Demo</button>' : '';
     var staleChip = _lastPollFailed ? '<span class="rz-stale-badge">⚠ Stale</span>' : '';
-    var timerLabel = _lastPollFailed ? '?' : _countdown + 's';
+    var timerLabel = _lastPollFailed ? '?' : _fmtTimer(_countdown);
     var notifCta = (!_notifDismissed && 'Notification' in window && Notification.permission === 'default')
       ? '<div class="rz-notif-cta" id="rz-notif-cta"><span>Enable TD alerts</span><button class="rz-notif-cta-btn" id="rz-notif-enable">Enable</button><button class="rz-notif-cta-x" id="rz-notif-dismiss">✕</button></div>'
       : '';
@@ -15947,7 +15995,7 @@ window._rzSyncTabLive = function(panel) {
   function _tick() {
     _countdown--;
     var el = document.getElementById('rz-timer');
-    if (el) el.textContent = _countdown + 's';
+    if (el) el.textContent = _fmtTimer(_countdown);
     if (_countdown <= 0) {
       if (!_isGameDay()) {
         // Non-game day: show idle state, don't poll
