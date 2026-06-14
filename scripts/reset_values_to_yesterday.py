@@ -1,58 +1,38 @@
 #!/usr/bin/env python3
 """
-Reset displayed player values back to yesterday's level.
+Reset player_values table back to yesterday's level using the DB snapshots.
 
-Today's daily build re-anchored the 1QB normalization scale (top non-QB ->
-999.9) without the smoothed scale, which compressed every non-anchor player's
-1QB value down by a single uniform factor. Yesterday's values are still stored
-in the player_value_history table, so this script:
+The 1QB normalization scale reset during today's deploys, compressing every
+non-anchor player's value by ~4%.  Yesterday's values are stored in
+player_value_history; this script copies them into player_values (the live,
+shared-across-all-instances table) so the website immediately shows
+yesterday's numbers on every instance.
 
-  1. Reads yesterday's snapshot and today's currently-served values
-     (data/model_values.json) and measures the uniform 1QB drop as a median
-     ratio (robust to genuine per-player moves).
-  2. Multiplies the served 1QB values back up by that ratio (capped at 999.9),
-     restoring the headline numbers to yesterday's level immediately.
-  3. Seeds pipeline_state.value_scale_1qb to yesterday's scale so the NEXT
-     daily build keeps them there instead of re-dropping. (Requires a build to
-     have run since the scale-persistence fix deployed, so pipeline_state holds
-     today's scale; if it doesn't, the JSON restore still happens and a warning
-     is printed.)
-
-Only the 1QB value columns (value, value_8/12/14) are touched — the SF scale is
-independent and was not affected by the bug.
-
-IMPORTANT: run this on the WEB service shell, where the served
-data/model_values.json lives (the cron service has its own copy).
+It also overwrites today's player_value_history row with yesterday's values so
+the sparkline doesn't show the artificial drop, and seeds pipeline_state so
+the next daily build holds the restored level.
 
 Usage:
-    python scripts/reset_values_to_yesterday.py            # dry run, prints plan
-    python scripts/reset_values_to_yesterday.py --commit   # apply the changes
+    python scripts/reset_values_to_yesterday.py            # dry run
+    python scripts/reset_values_to_yesterday.py --commit   # apply
 """
-
 import argparse
-import json
 import os
 import statistics
 import sys
-from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.paths import DATA_DIR
 from dashboard_services.db import get_conn
 
 _SCALE_STATE_KEY = "value_scale_1qb"
-_ONE_QB_KEYS = ["value", "value_8", "value_12", "value_14"]
-# Only ratios within this band count toward the uniform-drop median, so a player
-# who genuinely cratered/spiked doesn't skew the measured scale factor.
-_RATIO_BAND = (0.90, 1.25)
+_ALL_VALUE_COLS  = ["value", "sf_value", "value_8", "value_12", "value_14",
+                    "sf_value_8", "sf_value_12", "sf_value_14"]
+_1QB_COLS        = ["value", "value_8", "value_12", "value_14"]
+_RATIO_BAND      = (0.80, 1.25)  # filter genuine per-player outliers
 
 
-def _model_values_path() -> Path:
-    return DATA_DIR / "model_values.json"
-
-
-def _latest_two_dates(conn) -> tuple:
+def _two_snapshots(conn) -> tuple:
     rows = conn.execute(
         """
         SELECT DISTINCT as_of_date
@@ -65,26 +45,41 @@ def _latest_two_dates(conn) -> tuple:
     dates = [r["as_of_date"] for r in rows]
     if len(dates) < 2:
         return (dates[0] if dates else None, None)
-    return (dates[0], dates[1])
+    return dates[0], dates[1]   # today, yesterday
 
 
-def _yesterday_values(conn, yday) -> dict:
+def _snapshot(conn, d) -> dict:
+    """Return {player_id: {col: float}} for a given snapshot date."""
     rows = conn.execute(
         """
-        SELECT player_id, value
+        SELECT player_id, value, sf_value,
+               value_8, value_12, value_14,
+               sf_value_8, sf_value_12, sf_value_14
         FROM player_value_history
         WHERE source = 'model' AND as_of_date = %s
         """,
-        (yday,),
+        (d,),
     ).fetchall()
-    return {str(r["player_id"]): float(r["value"]) for r in rows if r["value"] is not None}
+    out = {}
+    for r in rows:
+        pid = str(r["player_id"])
+        out[pid] = {c: (float(r[c]) if r[c] is not None else 0.0) for c in _ALL_VALUE_COLS}
+    return out
 
 
-def _read_persisted_scale(conn) -> float:
+def _persisted_scale(conn) -> float:
     try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pipeline_state (
+                key TEXT PRIMARY KEY,
+                value DOUBLE PRECISION,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
         row = conn.execute(
-            "SELECT value FROM pipeline_state WHERE key = %s",
-            (_SCALE_STATE_KEY,),
+            "SELECT value FROM pipeline_state WHERE key = %s", (_SCALE_STATE_KEY,)
         ).fetchone()
         if row and row.get("value"):
             return float(row["value"])
@@ -93,16 +88,7 @@ def _read_persisted_scale(conn) -> float:
     return 0.0
 
 
-def _write_persisted_scale(conn, scale: float) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS pipeline_state (
-            key TEXT PRIMARY KEY,
-            value DOUBLE PRECISION,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-        """
-    )
+def _write_scale(conn, scale: float) -> None:
     conn.execute(
         """
         INSERT INTO pipeline_state (key, value, updated_at)
@@ -120,92 +106,138 @@ def main() -> int:
                     help="Apply changes (default is a dry run)")
     args = ap.parse_args()
 
-    json_path = _model_values_path()
-    if not json_path.exists():
-        print(f"ERROR: {json_path} not found — run on the web service shell.", file=sys.stderr)
-        return 1
-
-    assets = json.loads(json_path.read_text(encoding="utf-8"))
-    json_vals = {
-        str(a.get("id")): float(a.get("value") or 0)
-        for a in assets
-        if a.get("id") and (a.get("value") or 0) > 0
-    }
-
     with get_conn() as conn:
-        today, yday = _latest_two_dates(conn)
+        today, yday = _two_snapshots(conn)
         if yday is None:
-            print("ERROR: need at least two daily snapshots in player_value_history.", file=sys.stderr)
+            print("ERROR: need at least two snapshots in player_value_history.", file=sys.stderr)
             return 1
-        yvals = _yesterday_values(conn, yday)
-        today_scale = _read_persisted_scale(conn)
 
-    print(f"Today's snapshot date:     {today}")
-    print(f"Restoring to (yesterday):  {yday}")
-    print(f"Players in yesterday snap: {len(yvals)}")
-    print(f"Players in served JSON:    {len(json_vals)}")
-    print(f"Persisted scale (today):   {today_scale or 'MISSING'}")
+        today_snap = _snapshot(conn, today)
+        yday_snap  = _snapshot(conn, yday)
+        cur_scale  = _persisted_scale(conn)
 
+    print(f"Today's snapshot:    {today}  ({len(today_snap)} players)")
+    print(f"Restoring to:        {yday}  ({len(yday_snap)} players)")
+    print(f"Persisted scale now: {cur_scale or 'MISSING'}")
+
+    # Measure the uniform 1QB drop from the DB snapshots (today vs yesterday)
     ratios = []
-    for pid, yv in yvals.items():
-        jv = json_vals.get(pid)
-        if not jv or jv <= 0:
+    for pid, yd in yday_snap.items():
+        td = today_snap.get(pid)
+        if not td or td["value"] <= 0 or yd["value"] <= 0:
             continue
-        r = yv / jv
+        r = yd["value"] / td["value"]
         if _RATIO_BAND[0] <= r <= _RATIO_BAND[1]:
             ratios.append(r)
 
     if len(ratios) < 25:
-        print(f"ERROR: only {len(ratios)} comparable players in band — refusing "
-              f"to infer a scale factor from too little data.", file=sys.stderr)
+        print(f"ERROR: only {len(ratios)} comparable players — can't infer scale factor.", file=sys.stderr)
         return 1
 
     ratio = statistics.median(ratios)
-    pct = (ratio - 1.0) * 100.0
-    print(f"Comparable players in band: {len(ratios)}")
-    print(f"Median restore ratio:       {ratio:.4f}  ({pct:+.2f}% to 1QB values)")
+    print(f"Comparable players:  {len(ratios)}")
+    print(f"Median ratio (yday/today): {ratio:.4f}  ({(ratio-1)*100:+.2f}%)")
 
-    if abs(pct) < 0.25:
-        print("Drop is under 0.25% — nothing meaningful to restore. Exiting.")
+    if abs(ratio - 1.0) < 0.005:
+        print("Today's and yesterday's values are within 0.5% — nothing to restore.")
         return 0
 
-    # Preview a few well-known anchors
-    preview = sorted(assets, key=lambda a: float(a.get("value") or 0), reverse=True)[:8]
-    print("\n  Sample (1QB value):  now -> restored")
-    for a in preview:
-        old = float(a.get("value") or 0)
-        new = round(min(old * ratio, 999.9), 1)
-        print(f"    {str(a.get('name'))[:22]:22}  {old:6.1f} -> {new:6.1f}")
+    # Preview top players: yday DB value vs today DB value vs what we'll restore
+    sorted_players = sorted(
+        [(pid, yday_snap[pid]["value"]) for pid in yday_snap if yday_snap[pid]["value"] > 0],
+        key=lambda x: x[1], reverse=True
+    )[:8]
+    print(f"\n  Top players  (today DB -> restoring to yesterday DB)")
+    for pid, _ in sorted_players:
+        tv = today_snap.get(pid, {}).get("value", 0)
+        yv = yday_snap[pid]["value"]
+        print(f"    pid={pid:8}  today={tv:6.1f}  yesterday={yv:6.1f}")
 
-    new_scale = (today_scale * ratio) if today_scale else 0.0
+    # Derive the scale to seed: yesterday's scale ≈ today's scale * ratio
+    new_scale = (cur_scale * ratio) if cur_scale else 0.0
 
     if not args.commit:
         print("\nDRY RUN — re-run with --commit to apply.")
-        if not today_scale:
-            print("WARNING: pipeline_state has no scale yet (the persistence fix "
-                  "build hasn't run). The JSON restore will apply, but the scale "
-                  "won't be re-seeded, so the next build may re-drop values. "
-                  "Deploy the fix, let one build run, then re-run this.")
+        if not cur_scale:
+            print("NOTE: pipeline_state has no scale yet. The --commit restore will")
+            print("still fix player_values and today's history rows immediately, but")
+            print("the next build will re-drop unless you run --commit again after")
+            print("the next daily build has run (which will populate pipeline_state).")
+        else:
+            print(f"Will seed pipeline_state scale: {new_scale:.6f}")
         return 0
 
-    # Apply: scale up the 1QB value columns in the served JSON.
-    for a in assets:
-        for k in _ONE_QB_KEYS:
-            v = a.get(k)
-            if v is not None and float(v) > 0:
-                a[k] = round(min(float(v) * ratio, 999.9), 1)
-    json_path.write_text(json.dumps(assets, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\nRewrote {json_path} ({len(assets)} assets) at the restored scale.")
+    # --- APPLY ---
+    with get_conn() as conn:
+        # 1. Overwrite today's player_value_history rows with yesterday's values
+        n_hist = 0
+        for pid, yd in yday_snap.items():
+            conn.execute(
+                """
+                INSERT INTO player_value_history
+                    (as_of_date, player_id, value, sf_value,
+                     value_8, value_12, value_14,
+                     sf_value_8, sf_value_12, sf_value_14, source)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'model')
+                ON CONFLICT (as_of_date, player_id, source) DO UPDATE SET
+                    value        = excluded.value,
+                    sf_value     = excluded.sf_value,
+                    value_8      = excluded.value_8,
+                    value_12     = excluded.value_12,
+                    value_14     = excluded.value_14,
+                    sf_value_8   = excluded.sf_value_8,
+                    sf_value_12  = excluded.sf_value_12,
+                    sf_value_14  = excluded.sf_value_14
+                """,
+                (today, pid,
+                 yd["value"], yd["sf_value"],
+                 yd["value_8"], yd["value_12"], yd["value_14"],
+                 yd["sf_value_8"], yd["sf_value_12"], yd["sf_value_14"]),
+            )
+            n_hist += 1
+        print(f"Overwrote {n_hist} player_value_history rows for {today}.")
 
-    if new_scale:
-        with get_conn() as conn:
-            _write_persisted_scale(conn, new_scale)
-        print(f"Seeded pipeline_state.{_SCALE_STATE_KEY} = {new_scale:.6f} "
-              f"(yesterday's scale) so future builds hold this level.")
-    else:
-        print("WARNING: no persisted scale to base the re-seed on — JSON restored, "
-              "but run again after the next build to lock the scale.")
+        # 2. Update player_values table (live headline source, shared across instances)
+        n_pv = 0
+        for pid, yd in yday_snap.items():
+            v1qb = yd["value"]
+            vsf  = yd["sf_value"] or v1qb
+            if v1qb <= 0:
+                continue
+            conn.execute(
+                """
+                UPDATE player_values SET
+                    value_1qb            = %s,
+                    value_sf             = %s,
+                    value_8              = %s,
+                    value_12             = %s,
+                    value_14             = %s,
+                    sf_value_8           = %s,
+                    sf_value_12          = %s,
+                    sf_value_14          = %s,
+                    calibrated_value_1qb = NULL,
+                    calibrated_value_sf  = NULL,
+                    calibration_source   = NULL,
+                    calibration_weight   = NULL
+                WHERE player_id = %s
+                """,
+                (v1qb, vsf,
+                 yd["value_8"] or v1qb, yd["value_12"] or v1qb, yd["value_14"] or v1qb,
+                 yd["sf_value_8"] or vsf, yd["sf_value_12"] or vsf, yd["sf_value_14"] or vsf,
+                 pid),
+            )
+            n_pv += 1
+        print(f"Updated {n_pv} rows in player_values (live headline source).")
 
+        # 3. Seed the persisted scale so next build holds restored level
+        if new_scale:
+            _write_scale(conn, new_scale)
+            print(f"Seeded pipeline_state.{_SCALE_STATE_KEY} = {new_scale:.6f}")
+        else:
+            print("Skipping scale seed (no persisted scale to base it on).")
+            print("Run again after the next daily build to lock the scale.")
+
+    print("\nDone. The website should show yesterday's values immediately (no restart needed).")
     return 0
 
 
