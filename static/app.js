@@ -8569,7 +8569,7 @@ function openPlayerModal(playerId, playerName, opts) {
         _liveBtn.className = 'pm-tab pm-tab-live';
         _liveBtn.dataset.tab = 'live';
         _liveBtn.onclick = function() { pmSwitchTab('live'); };
-        _liveBtn.innerHTML = '<span class="pm-live-dot"></span>Live';
+        _liveBtn.innerHTML = '<span class="pm-live-dot"></span>Redzone';
         if (pmTabBar) pmTabBar.insertBefore(_liveBtn, pmTabBar.firstChild);
       }
       pmTabBar.style.display = '';
@@ -8900,6 +8900,7 @@ function pmSwitchTab(tab) {
   // ── Live tab (Redzone context) ───────────────────────────────────────────
   if (tab === 'live' && panel && window.__rzGetPlayerLive) {
     panel.innerHTML = window.__rzGetPlayerLive(playerId);
+    if (window._rzSyncTabLive) window._rzSyncTabLive(panel);
   }
 
   // ── Lazy-load Stats tab ──────────────────────────────────────────────────
@@ -14123,7 +14124,19 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
   } else {
     logHtml += '<div style="font-size:12px;color:var(--text-muted);padding:10px 16px 6px;">No plays recorded yet.</div>';
   }
-  return '<div class="rz-pm-live">' + gameHdr + statBlock + logHtml + '</div>';
+  var parts = window.location.pathname.split('/');
+  var hasCtx = parts[1] && parts[2] && parts[3];
+  var rzLink = (!document.getElementById('rz-root') && hasCtx)
+    ? '<div class="rz-pm-rzlink-row"><a href="/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone" class="rz-pm-rzlink">Open Redzone →</a></div>'
+    : '';
+  return '<div class="rz-pm-live" data-gs="' + gsType + '">' + rzLink + gameHdr + statBlock + logHtml + '</div>';
+};
+
+window._rzSyncTabLive = function(panel) {
+  var inner = panel && panel.querySelector('[data-gs]');
+  var isLive = inner && inner.dataset.gs === 'live';
+  var btn = document.querySelector('.pm-tab[data-tab="live"]');
+  if (btn) btn.classList.toggle('pm-rz-is-live', !!isLive);
 };
 
 // Default stub for non-Redzone pages: one-shot fetch, 30 s cache.
@@ -14136,6 +14149,7 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
       var panel = document.getElementById('pm-panel-live');
       if (panel && panel.classList.contains('pm-panel-active')) {
         panel.innerHTML = window._rzBuildLiveHtml(pid, _cache, []);
+        window._rzSyncTabLive(panel);
       }
     };
     if (_cache && Date.now() - _cacheTs < STALE) {
@@ -15870,7 +15884,10 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
       if (livePanelEl && livePanelEl.classList.contains('pm-panel-active') && window.__rzGetPlayerLive) {
         var pmBar = document.getElementById('pmTabBar');
         var pmPid = pmBar ? pmBar.dataset.pmPlayerId : null;
-        if (pmPid) livePanelEl.innerHTML = window.__rzGetPlayerLive(pmPid);
+        if (pmPid) {
+          livePanelEl.innerHTML = window.__rzGetPlayerLive(pmPid);
+          window._rzSyncTabLive(livePanelEl);
+        }
       }
 
       // Flash scores that changed
