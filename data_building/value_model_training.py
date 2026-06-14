@@ -1156,11 +1156,8 @@ def rewrite_value_table_with_model() -> Path:
         _save_state(_HEADROOM_STATE_KEY, _smoothed_headroom)
 
         # Anchor ≈ where the #1 sits (basket × headroom), but built from smoothed
-        # quantities so it barely moves day to day. Scale targets 999.9 at the
-        # anchor; no hard ceiling so a hot #1 can float slightly above 999.9
-        # when they're genuinely ahead of the smoothed level (sparkline moves
-        # instead of flatlining). The smoothing itself acts as the soft cap —
-        # a sudden jump can only shift the anchor a fraction per day.
+        # quantities so it barely moves day to day. Scale pins that anchor to
+        # 999.9; individual values are still capped, so a hot #1 rides the ceiling.
         _anchor    = _smoothed_basket * _smoothed_headroom
         _1qb_scale = 999.9 / _anchor if _anchor > 0 else 1.0
         _persist_scale(_1qb_scale)  # kept for back-compat / the reset script
@@ -1169,7 +1166,7 @@ def rewrite_value_table_with_model() -> Path:
                 continue
             for _k in _1qb_keys:
                 if _a.get(_k) is not None:
-                    _a[_k] = round(float(_a[_k]) * _1qb_scale, 1)
+                    _a[_k] = round(min(float(_a[_k]) * _1qb_scale, 999.9), 1)
 
     pos_to_indices: dict[str, list[int]] = {}
 
