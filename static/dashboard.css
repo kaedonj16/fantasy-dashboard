@@ -11181,8 +11181,8 @@ img, svg, canvas {
 
   .changelog-dropdown {
     position: fixed;
-    top: auto;
-    bottom: 16px;
+    top: 70px;
+    bottom: auto;
     left: 50%;
     right: auto;
     transform: translateX(-50%);
