@@ -1415,10 +1415,12 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         href = url_for(endpoint, platform=platform, season=season, league_id=league_id)
         return f"<a class='{cls}'{aria} href='{href}'>{label}</a>"
 
-    def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown") -> str:
+    def nav_pill_dropdown(label: str, items: list, active_keys: list, dropdown_id: str = "playersNavDropdown", btn_extra_cls: str = "") -> str:
         """Build a dropdown nav pill. items = list of (label, endpoint_or_none, key, disabled, href_suffix)."""
         is_active = active in active_keys
         btn_cls = "nav-pill active" if is_active else "nav-pill"
+        if btn_extra_cls:
+            btn_cls += " " + btn_extra_cls
         item_html = ""
         for item_tuple in items:
             item_label, endpoint, item_key = item_tuple[0], item_tuple[1], item_tuple[2]
@@ -1466,14 +1468,26 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     # Weekly dropdown is available as soon as the draft is done
     draft_ended = has_draft_ended(league_id, platform, season)
     if draft_ended or not offseason_mode:
-        nav_pills.append(nav_pill_dropdown("Weekly", [
-            ("Matchups",           "page_weekly",           "weekly",   False),
-            ("Weekly Recap", "page_recap", "recap", False),
-        ], ["weekly", "recap"], "weeklyNavDropdown"))
-    if session.get("viewer_username") in _RZ_ALLOWED_USERS:
-        _rz_cls  = "nav-pill nav-pill-redzone active" if active == "redzone" else "nav-pill nav-pill-redzone"
-        _rz_href = url_for("page_redzone", platform=platform, season=season, league_id=league_id)
-        nav_pills.append(f"<a class='{_rz_cls}' href='{_rz_href}'><span class='rz-nav-dot'></span>Redzone</a>")
+        _weekly_items = [
+            ("Matchups",     "page_weekly", "weekly", False),
+            ("Weekly Recap", "page_recap",  "recap",  False),
+        ]
+        # Redzone lives inside the Weekly dropdown. On NFL game days the Weekly
+        # button glows and the Redzone item itself pulses with a live dot.
+        _rz_pulse = ""
+        # NFL game days: Mon=0, Thu=3, Sat=5, Sun=6 (Python weekday())
+        _rz_live = datetime.now().weekday() in (0, 3, 5, 6)
+        _rz_label = (
+            "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
+            if _rz_live else "Redzone"
+        )
+        _weekly_items.append((_rz_label, "page_redzone", "redzone", False))
+        if _rz_live:
+            _rz_pulse = "nav-pill-redzone-live"
+        nav_pills.append(nav_pill_dropdown(
+            "Weekly", _weekly_items, ["weekly", "recap", "redzone"],
+            "weeklyNavDropdown", btn_extra_cls=_rz_pulse,
+        ))
     nav_pills.append(nav_pill_dropdown("League", [
         ("Standings",       "page_standings",    "standings",    False),
         ("Teams",           "page_teams",        "teams",        False),
@@ -5530,6 +5544,35 @@ def build_weekly_hub_body(ctx: dict) -> str:
         matchups_by_week.get(default_week, []) or [],
         key=lambda m: 0 if _hub_vid and _hub_vid in (str((m.get("left") or {}).get("roster_id", "")), str((m.get("right") or {}).get("roster_id", ""))) else 1,
     )
+
+    # Pre-compute head-to-head records for each current-week matchup
+    def _h2h_record(rid_a: str, rid_b: str) -> tuple[int, int]:
+        """Return (a_wins, b_wins) across all completed weeks this season."""
+        a_wins = b_wins = 0
+        for wk, wk_matchups in matchups_by_week.items():
+            if int(wk) >= default_week:
+                continue  # only count past weeks
+            for wm in wk_matchups:
+                la = str((wm.get("left") or {}).get("roster_id", ""))
+                ra = str((wm.get("right") or {}).get("roster_id", ""))
+                if set([la, ra]) == set([rid_a, rid_b]):
+                    lp = (wm.get("left") or {}).get("pts_total") or 0
+                    rp = (wm.get("right") or {}).get("pts_total") or 0
+                    if lp == 0 and rp == 0:
+                        continue
+                    if (la == rid_a and lp > rp) or (ra == rid_a and rp > lp):
+                        a_wins += 1
+                    else:
+                        b_wins += 1
+        return a_wins, b_wins
+
+    for _m in default_matchups:
+        _la = str((_m.get("left") or {}).get("roster_id", ""))
+        _ra = str((_m.get("right") or {}).get("roster_id", ""))
+        if _la and _ra:
+            _aw, _bw = _h2h_record(_la, _ra)
+            _m["h2h"] = {"left_wins": _aw, "right_wins": _bw}
+
     _fpts_against_weekly = _compute_fpts_against(season)
     slides = [
         render_matchup_slide(
@@ -5643,6 +5686,12 @@ def build_weekly_hub_body(ctx: dict) -> str:
               </select>
             </div>
           </div>
+        </div>
+
+        <div id="weekly-rz-cta" class="weekly-rz-cta" style="display:none">
+          <span class="weekly-rz-cta-dot"></span>
+          <span class="weekly-rz-cta-text">NFL games are live right now — track your players in real time.</span>
+          <a href="./redzone" class="weekly-rz-cta-link">Watch on Redzone →</a>
         </div>
 
         <div class="standings-main two-col-standings">
@@ -5796,6 +5845,65 @@ def build_weekly_hub_body(ctx: dict) -> str:
         if (mySeq === requestSeq) hideLoading();
       }});
   }});
+}})();
+
+// ── Weekly: game-day auto-refresh ──────────────────────────────────────────────
+(function() {{
+  var sel = document.getElementById('hubWeek');
+  if (!sel) return;
+
+  function isGameDay() {{
+    var day = new Date().getDay(); // Sun=0,Mon=1,Thu=4,Sat=6
+    return day === 0 || day === 1 || day === 4 || day === 6;
+  }}
+
+  // Show/hide Redzone CTA banner
+  var cta = document.getElementById('weekly-rz-cta');
+  if (cta && isGameDay()) cta.style.display = '';
+
+  // Live badge next to "Weekly Hub" h2
+  if (isGameDay()) {{
+    var h2 = document.querySelector('.card-header-row h2');
+    if (h2 && !h2.querySelector('.weekly-live-badge')) {{
+      var badge = document.createElement('span');
+      badge.className = 'weekly-live-badge';
+      badge.textContent = 'LIVE';
+      h2.appendChild(badge);
+    }}
+  }}
+
+  // Auto-refresh current week every 60 s on game days only
+  if (!isGameDay()) return;
+  var _autoRefreshSeq = 0;
+  setInterval(function() {{
+    var w = String(sel.value || '');
+    if (!w) return;
+    var mySeq = ++_autoRefreshSeq;
+    var url = '/api/weekly-week?platform=' + encodeURIComponent({platform_js}) +
+      '&season=' + encodeURIComponent({season_js}) +
+      '&league_id=' + encodeURIComponent({league_js}) +
+      '&week=' + encodeURIComponent(w);
+    fetch(url).then(function(res) {{
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }}).then(function(data) {{
+      if (!data || !data.ok || mySeq !== _autoRefreshSeq) return; // stale or error
+      var mainContainer = document.querySelector('.week-main-panels');
+      var sideContainer = document.querySelector('.week-side-panels');
+      var matchupsContainer = document.getElementById('weeklyMatchupsContainer');
+      if (mainContainer && typeof data.top_html === 'string') {{
+        mainContainer.innerHTML = '<div class="week-main-panel active" data-week="' + w + '">' + data.top_html + '</div>';
+      }}
+      if (sideContainer && typeof data.highlights_html === 'string') {{
+        sideContainer.innerHTML = '<div class="week-side-panel active" data-week="' + w + '">' + data.highlights_html + '</div>';
+      }}
+      if (matchupsContainer && typeof data.matchups_html === 'string') {{
+        matchupsContainer.innerHTML = data.matchups_html;
+        if (typeof window.resetMatchupCarousels === 'function') window.resetMatchupCarousels(matchupsContainer);
+        if (typeof window.initPageRoot === 'function') window.initPageRoot(matchupsContainer);
+      }}
+    }}).catch(function() {{}});
+  }}, 60000);
 }})();
 
 // Activate a weekly left-tab by name and switch its panel
@@ -9638,6 +9746,14 @@ def _rz_stat_line_from_ps(ps: dict) -> dict:
     }
 
 
+def _rz_safe_epoch(v) -> float:
+    """Coerce a Tank01 epoch (string/float) to a float seconds value, or 0."""
+    try:
+        return float(v) if v not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _rz_def_stat_line(team_side: dict) -> dict:
     """Build DEF stat_line from Tank01 teamStats[home/away] entry."""
     defense = team_side.get("Defense") or team_side.get("defense") or {}
@@ -9754,35 +9870,47 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
     scope="user":   the viewer's team across three different leagues.
     """
     t = max(0.0, min(float(t), _RZ_DEMO_GAME))
-    _g = lambda away, apts, home, hpts, code: {
-        "game_status": "In Progress" if code == "1" else "Final",
+    _now = time.time()
+    _g = lambda away, apts, home, hpts, code, gtime=0.0, clock="", qtr="": {
+        "game_status": "In Progress" if code == "1" else ("Final" if code == "2" else "Upcoming"),
         "game_code": code, "home": home, "away": away,
         "home_pts": str(hpts), "away_pts": str(apts),
+        "game_time_epoch": gtime,
+        "game_clock": clock, "game_quarter": qtr,
     }
     GAMES = {
-        "BAL_HOU": _g("BAL", 21, "HOU", 14, "1"),
+        "BAL_HOU": _g("BAL", 21, "HOU", 14, "1", clock="4:32", qtr="Q3"),
         "TEN_IND": _g("TEN", 28, "IND", 17, "2"),
-        "DET_CHI": _g("DET", 24, "CHI",  7, "1"),
+        "DET_CHI": _g("DET", 24, "CHI",  7, "1", clock="2:14", qtr="Q4"),
         "DAL_NYG": _g("DAL", 35, "NYG", 10, "2"),
-        "JAX_MIA": _g("JAX", 10, "MIA", 17, "1"),
-        "KC_LV":   _g("KC",  21, "LV",   3, "1"),
+        "JAX_MIA": _g("JAX", 10, "MIA", 17, "1", clock="7:45", qtr="Q2"),
+        "KC_LV":   _g("KC",  31, "LV",   3, "1", clock="4:32", qtr="Q3"),
         "CIN_PIT": _g("CIN", 24, "PIT", 13, "2"),
         "SF_ARI":  _g("SF",  31, "ARI",  6, "2"),
-        "ATL_NO":  _g("ATL", 17, "NO",  10, "1"),
-        "LAR_SEA": _g("LAR", 21, "SEA", 14, "1"),
-        "PHI_WAS": _g("PHI", 17, "WAS", 10, "1"),
+        "ATL_NO":  _g("ATL", 17, "NO",  10, "1", clock="5:51", qtr="Q2"),
+        "LAR_SEA": _g("LAR", 21, "SEA", 14, "1", clock="11:22", qtr="Q3"),
+        "PHI_WAS": _g("PHI", 17, "WAS", 10, "1", clock="8:05", qtr="Q1"),
+        # Upcoming game (kicks off ~40 min out) to showcase the "on deck" strip
+        "BUF_NYJ": _g("BUF",  0, "NYJ",  0, "0", gtime=_now + 40 * 60),
     }
-    def pi(name, pos, team, gk):
-        return {"name": name, "pos": pos, "team": team,
-                "game_id": "demo_" + gk, **GAMES.get(gk, {})}
+    def pi(name, pos, team, gk, inj="", clock="", qtr=""):
+        game = GAMES.get(gk, {})
+        d = {"name": name, "pos": pos, "team": team,
+             "game_id": "demo_" + gk, **game,
+             "injury_status": inj, "stat_line": None}
+        if clock:
+            d["game_clock"] = clock
+        if qtr:
+            d["game_quarter"] = qtr
+        return d
     PLAYERS = {
         "d_lj":  pi("L. Jackson",   "QB",  "BAL", "BAL_HOU"),
-        "d_dh":  pi("D. Henry",     "RB",  "TEN", "TEN_IND"),
+        "d_dh":  pi("D. Henry",     "RB",  "TEN", "TEN_IND", inj="Q"),
         "d_jg":  pi("J. Gibbs",     "RB",  "DET", "DET_CHI"),
         "d_cdl": pi("CeeDee Lamb",  "WR",  "DAL", "DAL_NYG"),
-        "d_mn":  pi("M. Nabers",    "WR",  "NYG", "DAL_NYG"),
+        "d_mn":  pi("M. Nabers",    "WR",  "NYG", "DAL_NYG", inj="Q"),
         "d_tk":  pi("T. Kelce",     "TE",  "KC",  "KC_LV"),
-        "d_bt":  pi("B. Thomas",    "WR",  "JAX", "JAX_MIA"),
+        "d_bt":  pi("B. Thomas",    "WR",  "JAX", "JAX_MIA", inj="D"),
         "d_em":  pi("E. McPherson", "K",   "CIN", "CIN_PIT"),
         "d_sfd": pi("SF Defense",   "DEF", "SF",  "SF_ARI"),
         "d_tp":  pi("T. Pollard",   "RB",  "TEN", "TEN_IND"),
@@ -9808,7 +9936,15 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "d_dw":  pi("D. Waller",    "TE",  "NYG", "DAL_NYG"),
         "d_bufd":pi("BUF Defense",  "DEF", "PHI", "PHI_WAS"),
         "d_me":  pi("M. Evans",     "WR",  "JAX", "JAX_MIA"),
+        "d_ja":  pi("J. Allen",     "QB",  "BUF", "BUF_NYJ"),  # upcoming game (on-deck demo)
     }
+
+    # Demo injury-status flips over the simulated clock so the live injury
+    # feed events (Q→Out etc.) are exercisable in the demo.
+    if t >= 300:
+        PLAYERS["d_dh"]["injury_status"] = "O"   # D. Henry: Q → Out
+    if t >= 450 and "d_jg" in PLAYERS:
+        PLAYERS["d_jg"]["injury_status"] = "Q"   # J. Gibbs: healthy → Q
 
     # Demo DEF and K stat lines (time-scaled from flat totals)
     _DEMO_DEF_SCRIPT = {
@@ -9847,6 +9983,10 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
     for pid, info in PLAYERS.items():
         pos  = info["pos"]
         code = info.get("game_code", "")
+        if code == "0":          # upcoming game: no stats / points yet
+            info["stat_line"] = None
+            pts[pid] = 0.0
+            continue
         t_eff = _RZ_DEMO_GAME if code == "2" else t
         if pos == "DEF":
             line = _demo_def_line(pid, t_eff)
@@ -9881,11 +10021,38 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "demo_t": t,
     }
 
+    # Map the demo's internal keys (d_lj …) to real Sleeper player IDs so
+    # headshots load and the player modal can pull real player data. DEF uses
+    # the team abbreviation as its Sleeper ID (that's how Sleeper IDs defenses).
+    _RZ_DEMO_PID = {
+        "d_lj": "4881",  "d_dh": "3198",  "d_jg": "9221",  "d_cdl": "6786",
+        "d_mn": "11632", "d_tk": "1466",  "d_bt": "11631", "d_em": "7839",
+        "d_sfd": "SF",   "d_tp": "5967",  "d_jb": "6770",  "d_br": "9509",
+        "d_rs": "7611",  "d_jj": "6794",  "d_da": "2133",  "d_sl": "10859",
+        "d_pn": "9493",  "d_jt": "1264",  "d_dad": "DAL",  "d_gp": "8137",
+        "d_jh": "6904",  "d_av": "4199",  "d_th": "3321",  "d_jc": "7564",
+        "d_ma": "5012",  "d_kcd": "KC",   "d_gs": "1373",  "d_dm": "5892",
+        "d_sd": "2449",  "d_dw": "2505",  "d_bufd": "BUF", "d_me": "2216",
+        "d_ja": "4984",
+    }
+
+    def _apply_real_ids(d):
+        M = _RZ_DEMO_PID
+        d["player_info"] = {M.get(k, k): v for k, v in (d.get("player_info") or {}).items()}
+        for m in d.get("matchups", []):
+            m["starters"] = [M.get(p, p) for p in m.get("starters", [])]
+            m["players"]  = [M.get(p, p) for p in m.get("players", [])]
+            m["players_points"] = {M.get(k, k): v for k, v in (m.get("players_points") or {}).items()}
+        for r in d.get("rosters", []):
+            r["starters"] = [M.get(p, p) for p in r.get("starters", [])]
+            r["players"]  = [M.get(p, p) for p in r.get("players", [])]
+        return d
+
     if scope == "user":
         # Viewer ("My Squad") across three leagues, each vs a different opponent.
         LG = [
             ("Dynasty Warriors", "u1",
-             ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"], ["d_tp"],
+             ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"], ["d_tp","d_ja"],
              "u2", "TD Tyrones",
              ["d_jb","d_br","d_rs","d_jj","d_da","d_sl","d_pn","d_jt","d_dad"], ["d_gp"]),
             ("The Gauntlet", "u1",
@@ -9922,23 +10089,24 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
             "viewer_roster_id": viewer_rids[0],
             "viewer_roster_ids": viewer_rids,
         })
-        return base
+        return _apply_real_ids(base)
 
     # league scope (single league, four teams)
     r1 = ["d_lj","d_dh","d_jg","d_cdl","d_mn","d_tk","d_bt","d_em","d_sfd"]
+    r1b = ["d_tp","d_ja"]
     r2 = ["d_jb","d_br","d_rs","d_jj","d_da","d_sl","d_pn","d_jt","d_dad"]
     r3 = ["d_jh","d_av","d_th","d_jc","d_ma","d_kcd","d_gs","d_dm","d_sd"]
     r4 = ["d_dw","d_me","d_bufd","d_sd","d_dm","d_gs","d_th","d_av","d_jh"]
     base.update({
         "scope": "league",
         "matchups": [
-            mk(1, 1, r1, ["d_tp"]),
+            mk(1, 1, r1, r1b),
             mk(2, 1, r2, ["d_gp"]),
             mk(3, 2, r3, []),
             mk(4, 2, r4, []),
         ],
         "rosters": [
-            {"roster_id": 1, "owner_id": "u1", "starters": r1, "players": r1 + ["d_tp"]},
+            {"roster_id": 1, "owner_id": "u1", "starters": r1, "players": r1 + r1b},
             {"roster_id": 2, "owner_id": "u2", "starters": r2, "players": r2 + ["d_gp"]},
             {"roster_id": 3, "owner_id": "u3", "starters": r3, "players": r3},
             {"roster_id": 4, "owner_id": "u4", "starters": r4, "players": r4},
@@ -9953,14 +10121,14 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
         "viewer_roster_id": "1",
         "viewer_roster_ids": ["1"],
     })
-    return base
+    return _apply_real_ids(base)
 
 
 def _redzone_collect(platform, league_id, season, week):
     """Build the raw per-league Redzone pieces (no top-level wrapper)."""
     from dashboard_services.api import (
         get_nfl_scores_for_date, build_team_game_lookup,
-        get_nfl_players, get_effective_scoring_settings,
+        get_nfl_players, get_effective_scoring_settings, get_league,
     )
     from dashboard_services.platform_api import (
         get_matchups as _pm, get_rosters as _pr, get_users as _pu,
@@ -9974,6 +10142,12 @@ def _redzone_collect(platform, league_id, season, week):
     scores_body  = get_nfl_scores_for_date(today_str) or {}
     team_game    = build_team_game_lookup(scores_body)
     try:
+        # Load this league's scoring into the request-scoped state so the live
+        # point math (feed deltas, stat breakdowns) uses the league's real
+        # settings rather than falling back to generic defaults. get_league
+        # populates scoring_settings via set_league_globals (Sleeper).
+        if platform == "sleeper":
+            get_league(league_id)
         scoring = get_effective_scoring_settings() or {}
     except Exception:
         scoring = {}
@@ -9989,17 +10163,24 @@ def _redzone_collect(platform, league_id, season, week):
         p  = nfl_players.get(pid, {})
         tm = p.get("team") or ""
         gd = team_game.get(tm, {}) if tm else {}
+        raw_inj = str(p.get("injury_status") or p.get("status") or "").strip()
+        inj = "" if raw_inj.lower() in ("", "active", "act") else raw_inj
+        ls  = gd.get("lineScore") or {}
         player_info[pid] = {
-            "name":        p.get("full_name") or p.get("last_name") or pid,
-            "pos":         p.get("position") or "?",
-            "team":        tm,
-            "game_id":     gd.get("gameID") or "",
-            "game_status": gd.get("gameStatus") or "",
-            "game_code":   str(gd.get("gameStatusCode") or ""),
-            "home":        gd.get("home") or "",
-            "away":        gd.get("away") or "",
-            "home_pts":    str(gd.get("homePts") or gd.get("homeScore") or ""),
-            "away_pts":    str(gd.get("awayPts") or gd.get("awayScore") or ""),
+            "name":          p.get("full_name") or p.get("last_name") or pid,
+            "pos":           p.get("position") or "?",
+            "team":          tm,
+            "game_id":       gd.get("gameID") or "",
+            "game_status":   gd.get("gameStatus") or "",
+            "game_code":     str(gd.get("gameStatusCode") or ""),
+            "game_clock":    gd.get("gameClock") or "",
+            "game_quarter":  ls.get("period") or "",
+            "home":          gd.get("home") or "",
+            "away":          gd.get("away") or "",
+            "home_pts":      str(gd.get("homePts") or gd.get("homeScore") or ""),
+            "away_pts":      str(gd.get("awayPts") or gd.get("awayScore") or ""),
+            "game_time_epoch": _rz_safe_epoch(gd.get("gameTime_epoch") or gd.get("gameTimeEpoch")),
+            "injury_status": inj,
         }
 
     # Attach per-player stat lines from Tank01 boxscores (Sleeper only).
@@ -10113,6 +10294,8 @@ def _redzone_fetch_user(platform, league_id, season, week):
     matchups, rosters, users, leagues = [], [], [], []
     player_info: dict = {}
     scoring: dict = {}
+    scoring_by_league: dict = {}   # league_id -> that league's scoring settings
+    pid_league: dict = {}          # pid -> league_id (so each player scores by its league)
     viewer_rids = []
     seen_users = set()
 
@@ -10127,6 +10310,7 @@ def _redzone_fetch_user(platform, league_id, season, week):
             continue
         if not scoring:
             scoring = d.get("scoring") or {}
+        scoring_by_league[lid] = d.get("scoring") or {}
         vr = next((r for r in d["rosters"] if str(r.get("owner_id")) == viewer_uid), None)
         if not vr:
             continue
@@ -10148,6 +10332,8 @@ def _redzone_fetch_user(platform, league_id, season, week):
             m2["league_name"]  = lname
             m2["league_id"]    = lid
             matchups.append(m2)
+            for _pid in (m.get("players") or []):
+                pid_league[str(_pid)] = lid
         for r in d["rosters"]:
             if str(r.get("roster_id")) in pair_rids:
                 r2 = dict(r)
@@ -10171,18 +10357,16 @@ def _redzone_fetch_user(platform, league_id, season, week):
         "leagues": leagues,
         "player_info": player_info,
         "scoring": scoring,
+        "scoring_by_league": scoring_by_league,
+        "pid_league": pid_league,
         "viewer_roster_id": viewer_rids[0] if viewer_rids else "",
         "viewer_roster_ids": viewer_rids,
         "updated_at": time.time(),
     }
 
 
-_RZ_ALLOWED_USERS = {"hoodiekj1"}
-
 @app.route("/<platform>/<int:season>/<league_id>/redzone")
 def page_redzone(platform: str, season: int, league_id: str):
-    if session.get("viewer_username") not in _RZ_ALLOWED_USERS:
-        return "BR Redzone is not available for your account.", 403
     scope = "user" if request.args.get("scope") == "user" else "league"
     if request.args.get("demo") == "1":
         data = _redzone_demo_data(scope=scope)
@@ -10204,8 +10388,6 @@ def page_redzone(platform: str, season: int, league_id: str):
 
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-data")
 def api_redzone_data(platform: str, season: int, league_id: str):
-    if session.get("viewer_username") not in _RZ_ALLOWED_USERS:
-        return jsonify({"error": "forbidden"}), 403
     scope = "user" if request.args.get("scope") == "user" else "league"
     if request.args.get("demo") == "1":
         try:
@@ -10224,8 +10406,6 @@ def api_redzone_data(platform: str, season: int, league_id: str):
 @app.route("/api/<platform>/<int:season>/<league_id>/redzone-player")
 def api_redzone_player(platform: str, season: int, league_id: str):
     """Return Tank01 boxscore stats for a single player, tagged with fantasy pts."""
-    if session.get("viewer_username") not in _RZ_ALLOWED_USERS:
-        return jsonify({"error": "forbidden"}), 403
     from dashboard_services.api import (
         get_nfl_players, fetch_tank_boxscore, get_effective_scoring_settings,
     )
@@ -16304,6 +16484,29 @@ def api_weekly_week():
     )
     status_by_pid = (statuses.get(week) or {}).get("statuses", {}) or {}
     _fpts_against_api = _compute_fpts_against(season)
+
+    # Attach H2H records for this week's matchups
+    for _m in matchups:
+        _la = str((_m.get("left") or {}).get("roster_id", ""))
+        _ra = str((_m.get("right") or {}).get("roster_id", ""))
+        if _la and _ra:
+            _aw = _bw = 0
+            for _wk, _wms in matchups_by_week.items():
+                if int(_wk) >= week:
+                    continue
+                for _wm in _wms:
+                    _wla = str((_wm.get("left") or {}).get("roster_id", ""))
+                    _wra = str((_wm.get("right") or {}).get("roster_id", ""))
+                    if {_wla, _wra} == {_la, _ra}:
+                        _lp = (_wm.get("left") or {}).get("pts_total") or 0
+                        _rp = (_wm.get("right") or {}).get("pts_total") or 0
+                        if _lp == 0 and _rp == 0:
+                            continue
+                        if (_wla == _la and _lp > _rp) or (_wra == _la and _rp > _lp):
+                            _aw += 1
+                        else:
+                            _bw += 1
+            _m["h2h"] = {"left_wins": _aw, "right_wins": _bw}
 
     slides = [
         render_matchup_slide(
