@@ -14829,13 +14829,6 @@ function setupFunAwardsGrid() {
     else if (!winning && diff > 0) meta.push('<span class="accent lose">Trailing ' + diff + '</span>');
     else meta.push('<span class="accent">Tied</span>');
     if (liveCnt > 0) meta.push(liveCnt + ' live');
-    if (myProj != null && oppProj != null) {
-      var _totalProj = myProj + oppProj;
-      if (_totalProj > 0) {
-        var _winPct = Math.round(Math.min(Math.max(myProj / _totalProj * 100, 5), 95));
-        meta.push('Win% <b>' + _winPct + '%</b>');
-      }
-    }
     return (
       '<div class="rz-hero' + (isClose ? ' rz-close-game' : '') + '">'
       + '<div class="rz-hero-label">Your Matchup  •  Week ' + (_state.week || '') + (isClose ? '  •  <span class="rz-close-label">Close game</span>' : '') + '</div>'
@@ -15019,36 +15012,11 @@ function setupFunAwardsGrid() {
     );
   }
 
-  function _posGroupStripHtml(matchup) {
-    if (!matchup) return '';
-    var pp = matchup.players_points || {};
-    var starters = (matchup.starters || []).filter(function(p) { return p !== '0'; });
-    var groups = {}, ORDER = ['QB','RB','WR','TE','K','DEF'], hasAny = false;
-    starters.forEach(function(pid) {
-      var pos = _pos(pid);
-      if (!ORDER.includes(pos)) return;
-      var pts = parseFloat(pp[pid] || 0);
-      groups[pos] = (groups[pos] || 0) + pts;
-      if (pts > 0) hasAny = true;
-    });
-    if (!hasAny) return '';
-    var items = ORDER.filter(function(p) { return groups[p] != null; }).map(function(p) {
-      return '<span class="rz-pt-item">'
-        + '<span class="rz-pos-badge rz-pos-' + p + '">' + p + '</span>'
-        + '<span class="rz-pt-val">' + _fmt(groups[p]) + '</span>'
-        + '</span>';
-    }).join('');
-    if (!items) return '';
-    return '<div class="rz-pos-totals">' + items + '</div>';
-  }
-
   function _renderMyTeams() {
     var mine = _myMatchups();
     if (!mine.length) return '<div class="rz-feed-empty">No teams found.</div>';
     return mine.map(function(m) {
-      return '<div class="rz-section-label" style="opacity:1;color:var(--rz-text);font-size:11px;">' + (m.league_name || 'League') + '</div>'
-        + _posGroupStripHtml(m)
-        + _rosterCard(m);
+      return '<div class="rz-section-label" style="opacity:1;color:var(--rz-text);font-size:11px;">' + (m.league_name || 'League') + '</div>' + _rosterCard(m);
     }).join('');
   }
 
@@ -15630,7 +15598,7 @@ function setupFunAwardsGrid() {
       return '<button class="rz-tab-btn' + (_activeTab === t.key ? ' active' : '') + '" data-tab="' + t.key + '">' + t.label + badge + '</button>';
     }).join('') + '</div>';
 
-    var minePanel = _scope === 'user' ? _renderMyTeams() : (_posGroupStripHtml(myMatchup) + _rosterCard(myMatchup));
+    var minePanel = _scope === 'user' ? _renderMyTeams() : _rosterCard(myMatchup);
 
     // Pinned score bar for the Plays tab
     var playsScoreBar = '';
