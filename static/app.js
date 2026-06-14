@@ -14049,6 +14049,9 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
     var ap = info.away_pts, hp = info.home_pts;
     gameLine = (ap === '' && hp === '') ? info.away + ' @ ' + info.home
              : info.away + ' ' + (ap||'0') + ' @ ' + info.home + ' ' + (hp||'0');
+    // Bold the player's own team within the score line (matches the feed)
+    var _gtm = String(info.team || '').replace(/[^A-Za-z0-9]/g, '');
+    if (_gtm) gameLine = gameLine.replace(new RegExp('\\b' + _gtm + '\\b'), '<strong>' + info.team + '</strong>');
   }
   var clockStr = [info.game_quarter, info.game_clock].filter(Boolean).join(' · ');
   var inj = info.injury_status || '';
@@ -14084,6 +14087,22 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
     } else if (pos === 'K') {
       addRow('FGM', sl.fgm||0, 'fgm');
       addRow('XPM', sl.xpm||0, 'xpm');
+    } else {
+      // RB / WR / TE — carries & targets shown as context (no points)
+      [['Carries', sl.carries||0, null], ['Rush Yds', sl.rush_yds||0, 'rush_yd'],
+       ['Rush TDs', sl.rush_td||0, 'rush_td'], ['Targets', sl.targets||0, null],
+       ['Rec', sl.rec||0, 'rec'], ['Rec Yds', sl.rec_yds||0, 'rec_yd'],
+       ['Rec TDs', sl.rec_td||0, 'rec_td']].forEach(function(r) {
+        var val = r[1];
+        if (!val) return;
+        if (r[2]) {
+          var pts = parseFloat((val * parseFloat(sc[r[2]] || 0)).toFixed(2));
+          total += pts;
+          rows.push({ label: r[0], val: val, pts: pts });
+        } else {
+          rows.push({ label: r[0], val: val, pts: null });
+        }
+      });
     }
     total = parseFloat(total.toFixed(2));
     if (rows.length) {
@@ -14091,7 +14110,7 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
         + rows.map(function(r) {
           return '<div class="rz-pm-srow"><span class="rz-pm-slabel">' + r.label + '</span>'
             + '<span class="rz-pm-sval">' + r.val + '</span>'
-            + (r.pts !== null ? '<span class="rz-pm-spts">+' + r.pts + '</span>' : '<span class="rz-pm-spts"></span>')
+            + (r.pts !== null ? '<span class="rz-pm-spts ' + (r.pts >= 0 ? 'pos' : 'neg') + '">' + (r.pts >= 0 ? '+' : '') + r.pts + '</span>' : '<span class="rz-pm-spts"></span>')
             + '</div>';
         }).join('')
         + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + (total > 0 ? total : (fantasyPts !== null ? fantasyPts : '—')) + ' pts</span></div>'
@@ -15916,6 +15935,9 @@ window._rzSyncTabLive = function(panel) {
     _wireHeroCards();
     root.querySelectorAll('[data-pid]').forEach(function(el) {
       if (el.classList.contains('rz-player-pts')) return;
+      // Feed events are wired by _syncFeed (el.onclick) — skip them here so a
+      // click doesn't fire openPlayerModal twice (two stacked modals).
+      if (el.classList.contains('rz-event')) return;
       if (!el.dataset.pid || el.dataset.pid === '0') return;
       el.addEventListener('click', function() { openPlayerModal(el.dataset.pid, _name(el.dataset.pid), { tab: 'live' }); });
     });
@@ -16001,7 +16023,7 @@ window._rzSyncTabLive = function(panel) {
   }
 
   function _pollInterval() {
-    if (_isDemo) return 3;
+    if (_isDemo) return 15;
     if (_anyLive()) return 15;
     var next = _nextGameEpoch();
     if (next) {

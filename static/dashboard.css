@@ -20839,6 +20839,7 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .rz-pm-slabel { flex: 1; color: var(--rz-text); }
 .rz-pm-sval   { color: var(--rz-muted); min-width: 36px; text-align: right; font-weight: 600; }
 .rz-pm-spts   { color: #22c55e; font-weight: 700; min-width: 36px; text-align: right; font-size: 11px; }
+.rz-pm-spts.neg { color: #ef4444; }
 .rz-pm-stotal {
   display: flex; justify-content: space-between; align-items: center;
   padding: 8px 12px; font-size: 12px; font-weight: 700;
