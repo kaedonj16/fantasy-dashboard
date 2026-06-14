@@ -15557,7 +15557,7 @@ window._rzSyncTabLive = function(panel) {
         var node = wrap.firstChild;
         node.dataset.eid = id;
         if (isNew && newCount > 1) {
-          node.style.animationDelay = (newIdx * 70) + 'ms';
+          node.style.animationDelay = (newIdx * 180) + 'ms';
         }
         if (isNew) {
           newIdx++;

@@ -9872,39 +9872,45 @@ def _redzone_demo_data(t: float = _RZ_DEMO_START, scope: str = "league"):
     """
     t = max(0.0, min(float(t), _RZ_DEMO_GAME))
     _now = time.time()
-    _g = lambda away, apts, home, hpts, code, gtime=0.0: {
+    _g = lambda away, apts, home, hpts, code, gtime=0.0, clock="", qtr="": {
         "game_status": "In Progress" if code == "1" else ("Final" if code == "2" else "Upcoming"),
         "game_code": code, "home": home, "away": away,
         "home_pts": str(hpts), "away_pts": str(apts),
         "game_time_epoch": gtime,
+        "game_clock": clock, "game_quarter": qtr,
     }
     GAMES = {
-        "BAL_HOU": _g("BAL", 21, "HOU", 14, "1"),
+        "BAL_HOU": _g("BAL", 21, "HOU", 14, "1", clock="4:32", qtr="Q3"),
         "TEN_IND": _g("TEN", 28, "IND", 17, "2"),
-        "DET_CHI": _g("DET", 24, "CHI",  7, "1"),
+        "DET_CHI": _g("DET", 24, "CHI",  7, "1", clock="2:14", qtr="Q4"),
         "DAL_NYG": _g("DAL", 35, "NYG", 10, "2"),
-        "JAX_MIA": _g("JAX", 10, "MIA", 17, "1"),
-        "KC_LV":   _g("KC",  31, "LV",   3, "1"),
+        "JAX_MIA": _g("JAX", 10, "MIA", 17, "1", clock="7:45", qtr="Q2"),
+        "KC_LV":   _g("KC",  31, "LV",   3, "1", clock="4:32", qtr="Q3"),
         "CIN_PIT": _g("CIN", 24, "PIT", 13, "2"),
         "SF_ARI":  _g("SF",  31, "ARI",  6, "2"),
-        "ATL_NO":  _g("ATL", 17, "NO",  10, "1"),
-        "LAR_SEA": _g("LAR", 21, "SEA", 14, "1"),
-        "PHI_WAS": _g("PHI", 17, "WAS", 10, "1"),
+        "ATL_NO":  _g("ATL", 17, "NO",  10, "1", clock="5:51", qtr="Q2"),
+        "LAR_SEA": _g("LAR", 21, "SEA", 14, "1", clock="11:22", qtr="Q3"),
+        "PHI_WAS": _g("PHI", 17, "WAS", 10, "1", clock="8:05", qtr="Q1"),
         # Upcoming game (kicks off ~40 min out) to showcase the "on deck" strip
         "BUF_NYJ": _g("BUF",  0, "NYJ",  0, "0", gtime=_now + 40 * 60),
     }
     def pi(name, pos, team, gk, inj="", clock="", qtr=""):
-        return {"name": name, "pos": pos, "team": team,
-                "game_id": "demo_" + gk, **GAMES.get(gk, {}),
-                "injury_status": inj, "game_clock": clock, "game_quarter": qtr,
-                "stat_line": None}
+        game = GAMES.get(gk, {})
+        d = {"name": name, "pos": pos, "team": team,
+             "game_id": "demo_" + gk, **game,
+             "injury_status": inj, "stat_line": None}
+        if clock:
+            d["game_clock"] = clock
+        if qtr:
+            d["game_quarter"] = qtr
+        return d
     PLAYERS = {
-        "d_lj":  pi("L. Jackson",   "QB",  "BAL", "BAL_HOU", clock="4:32", qtr="Q3"),
+        "d_lj":  pi("L. Jackson",   "QB",  "BAL", "BAL_HOU"),
         "d_dh":  pi("D. Henry",     "RB",  "TEN", "TEN_IND", inj="Q"),
         "d_jg":  pi("J. Gibbs",     "RB",  "DET", "DET_CHI"),
         "d_cdl": pi("CeeDee Lamb",  "WR",  "DAL", "DAL_NYG"),
         "d_mn":  pi("M. Nabers",    "WR",  "NYG", "DAL_NYG", inj="Q"),
-        "d_tk":  pi("T. Kelce",     "TE",  "KC",  "KC_LV",   clock="4:32", qtr="Q3"),
+        "d_tk":  pi("T. Kelce",     "TE",  "KC",  "KC_LV"),
         "d_bt":  pi("B. Thomas",    "WR",  "JAX", "JAX_MIA", inj="D"),
         "d_em":  pi("E. McPherson", "K",   "CIN", "CIN_PIT"),
         "d_sfd": pi("SF Defense",   "DEF", "SF",  "SF_ARI"),
