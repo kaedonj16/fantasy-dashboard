@@ -16,6 +16,7 @@ Usage:
 import argparse
 import os
 import sys
+from datetime import date as _date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -179,6 +180,38 @@ def main() -> int:
             )
             n_pv += 1
         print(f"Updated {n_pv} rows in player_values.")
+
+        # Overwrite today's player_value_history rows with the restored values
+        # so the sparkline doesn't show the artificial drop.
+        today = str(_date.today())
+        n_hist = 0
+        for pid, td in target_snap.items():
+            if td.get("value", 0) <= 0:
+                continue
+            conn.execute(
+                """
+                INSERT INTO player_value_history
+                    (as_of_date, player_id, value, sf_value,
+                     value_8, value_12, value_14,
+                     sf_value_8, sf_value_12, sf_value_14, source)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'model')
+                ON CONFLICT (as_of_date, player_id, source) DO UPDATE SET
+                    value        = excluded.value,
+                    sf_value     = excluded.sf_value,
+                    value_8      = excluded.value_8,
+                    value_12     = excluded.value_12,
+                    value_14     = excluded.value_14,
+                    sf_value_8   = excluded.sf_value_8,
+                    sf_value_12  = excluded.sf_value_12,
+                    sf_value_14  = excluded.sf_value_14
+                """,
+                (today, pid,
+                 td["value"], td["sf_value"],
+                 td["value_8"], td["value_12"], td["value_14"],
+                 td["sf_value_8"], td["sf_value_12"], td["sf_value_14"]),
+            )
+            n_hist += 1
+        print(f"Overwrote {n_hist} player_value_history rows for {today} (fixes sparkline).")
 
     print("\nDone. The website should show the restored values immediately.")
     return 0
