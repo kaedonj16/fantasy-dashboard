@@ -8561,8 +8561,8 @@ function openPlayerModal(playerId, playerName, opts) {
       // ── Show tab bar and configure it ─────────────────────────────────────
       const pmTabBar = document.getElementById('pmTabBar');
 
-      // Inject Live tab button if Redzone context is active on this page
-      if (window.__rzGetPlayerLive && document.getElementById('rz-root')) {
+      // Inject Live tab button (always available; stub fetches on non-Redzone pages)
+      if (window.__rzGetPlayerLive) {
         const _existLive = pmTabBar ? pmTabBar.querySelector('.pm-tab[data-tab="live"]') : null;
         if (_existLive) _existLive.remove();
         const _liveBtn = document.createElement('button');
@@ -14025,6 +14025,143 @@ function setupFunAwardsGrid() {
 
 
 
+// ── Redzone live player HTML (shared between Redzone page and player modal) ───
+window._rzBuildLiveHtml = function(pid, state, feed) {
+  if (!pid || pid === '0') return '<div style="padding:20px;text-align:center;color:var(--text-muted);">No data.</div>';
+  var info = (state.player_info || {})[pid] || {};
+  var sc   = state.scoring || {};
+  var fmt  = function(n) { return parseFloat(n == null ? 0 : n).toFixed(1); };
+
+  var code = String(info.game_code || '');
+  var st   = (info.game_status || '').toLowerCase();
+  var gsType  = (code === '2' || st.indexOf('final') !== -1)    ? 'final'
+              : (code === '1' || st.indexOf('progress') !== -1) ? 'live' : 'pre';
+  var gsLabel = gsType === 'final' ? 'FINAL' : gsType === 'live' ? 'LIVE' : '';
+
+  var fantasyPts = null;
+  (state.matchups || []).forEach(function(m) {
+    if (m.players_points && m.players_points[pid] != null) fantasyPts = fmt(m.players_points[pid]);
+  });
+
+  var gameLine = '';
+  if (info.home && info.away) {
+    var ap = info.away_pts, hp = info.home_pts;
+    gameLine = (ap === '' && hp === '') ? info.away + ' @ ' + info.home
+             : info.away + ' ' + (ap||'0') + ' @ ' + info.home + ' ' + (hp||'0');
+  }
+  var clockStr = [info.game_quarter, info.game_clock].filter(Boolean).join(' · ');
+  var inj = info.injury_status || '';
+  var injBadge = inj ? '<span class="rz-pm-inj">' + inj + '</span>' : '';
+  var gameHdr = (gsLabel || gameLine)
+    ? '<div class="rz-pm-game-hdr">'
+      + (gsLabel ? '<span class="rz-pm-status ' + gsType + '">' + gsLabel + (clockStr ? ' · ' + clockStr : '') + '</span>' : '')
+      + (gameLine ? '<span class="rz-pm-game-line">' + gameLine + '</span>' : '')
+      + injBadge + '</div>'
+    : '';
+
+  var sl = info.stat_line, statBlock = '';
+  if (sl) {
+    var pos = info.pos || '', rows = [], total = 0;
+    var addRow = function(label, val, key) {
+      var rate = parseFloat(sc[key] || 0);
+      if (!val || !rate) return;
+      var pts = parseFloat((val * rate).toFixed(2));
+      total += pts;
+      rows.push({ label: label, val: val, pts: pts });
+    };
+    if (pos === 'QB') {
+      addRow('Pass Yds', sl.pass_yds||0, 'pass_yd');
+      addRow('Pass TDs', sl.pass_td ||0, 'pass_td');
+      addRow('INTs',     sl.int     ||0, 'pass_int');
+      addRow('Rush Yds', sl.rush_yds||0, 'rush_yd');
+      addRow('Rush TDs', sl.rush_td ||0, 'rush_td');
+    } else if (pos !== 'DEF' && pos !== 'K') {
+      addRow('Rush Yds', sl.rush_yds||0, 'rush_yd');
+      addRow('Rush TDs', sl.rush_td ||0, 'rush_td');
+      addRow('Rec',      sl.rec     ||0, 'rec');
+      addRow('Rec Yds',  sl.rec_yds ||0, 'rec_yd');
+      addRow('Rec TDs',  sl.rec_td  ||0, 'rec_td');
+    } else if (pos === 'K') {
+      addRow('FGM', sl.fgm||0, 'fgm');
+      addRow('XPM', sl.xpm||0, 'xpm');
+    }
+    total = parseFloat(total.toFixed(2));
+    if (rows.length) {
+      statBlock = '<div class="rz-pm-stats">'
+        + rows.map(function(r) {
+          return '<div class="rz-pm-srow"><span class="rz-pm-slabel">' + r.label + '</span>'
+            + '<span class="rz-pm-sval">' + r.val + '</span>'
+            + '<span class="rz-pm-spts">+' + r.pts + '</span></div>';
+        }).join('')
+        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + total + ' pts</span></div>'
+        + '</div>';
+    }
+  }
+  if (!statBlock) {
+    statBlock = '<div class="rz-pm-stats rz-pm-no-stats">'
+      + (fantasyPts !== null ? '<div class="rz-pm-pts-big">' + fantasyPts + ' pts</div>' : '')
+      + '<div style="color:var(--text-muted);font-size:12px;">Stat breakdown appears once the game is underway.</div>'
+      + '</div>';
+  }
+
+  var playerEvs = (feed || []).filter(function(ev) { return ev.pid === pid; });
+  var logHtml = '<div class="rz-pm-log-title">Game Log'
+    + (playerEvs.length ? ' <span style="font-size:10px;font-weight:600;opacity:.55;">(' + playerEvs.length + ')</span>' : '')
+    + '</div>';
+  if (playerEvs.length) {
+    logHtml += '<div class="rz-pm-log">'
+      + playerEvs.map(function(ev) {
+        var clock = [ev.gameQuarter, ev.gameClock].filter(Boolean).join(' ');
+        var ptStr = ev.pts > 0 ? '+' + fmt(ev.pts) : fmt(ev.pts);
+        return '<div class="rz-pm-log-row ' + ev.kind + '">'
+          + (clock ? '<span class="rz-pm-lclock">' + clock + '</span>' : '')
+          + '<span class="rz-pm-ldesc">' + ev.desc + '</span>'
+          + '<span class="rz-pm-lpts ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">' + ptStr + '</span>'
+          + '</div>';
+      }).join('')
+      + '</div>';
+  } else {
+    logHtml += '<div style="font-size:12px;color:var(--text-muted);padding:10px 16px 6px;">No plays recorded yet.</div>';
+  }
+  return '<div class="rz-pm-live">' + gameHdr + statBlock + logHtml + '</div>';
+};
+
+// Default stub for non-Redzone pages: one-shot fetch, 30 s cache.
+// Overridden by the Redzone IIFE when #rz-root is present.
+(function() {
+  var _cache = null, _cacheTs = 0, _fetching = false, _pending = [];
+  window.__rzGetPlayerLive = function(pid) {
+    var STALE = 30000;
+    var refresh = function() {
+      var panel = document.getElementById('pm-panel-live');
+      if (panel && panel.classList.contains('pm-panel-active')) {
+        panel.innerHTML = window._rzBuildLiveHtml(pid, _cache, []);
+      }
+    };
+    if (_cache && Date.now() - _cacheTs < STALE) {
+      return window._rzBuildLiveHtml(pid, _cache, []);
+    }
+    if (!_fetching) {
+      _fetching = true;
+      var parts = window.location.pathname.split('/');
+      var url = '/api/' + parts[1] + '/' + parts[2] + '/' + parts[3] + '/redzone-data?_cb=' + Date.now();
+      fetch(url)
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) {
+          _fetching = false;
+          if (data) { _cache = data; _cacheTs = Date.now(); }
+          _pending.forEach(function(fn) { fn(); });
+          _pending = [];
+        })
+        .catch(function() { _fetching = false; _pending = []; });
+    }
+    _pending.push(refresh);
+    return _cache
+      ? window._rzBuildLiveHtml(pid, _cache, [])
+      : '<div class="rz-pm-live" style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px;">Loading…</div>';
+  };
+}());
+
 // ── BR Redzone ────────────────────────────────────────────────────────────────
 (function () {
   var root = document.getElementById('rz-root');
@@ -15132,76 +15269,9 @@ function setupFunAwardsGrid() {
   var _PAGE_SIZE = 20;
 
   // Expose live data to the global player modal (injected as "Live" tab)
+  // Override the global stub with the live Redzone state + event feed
   window.__rzGetPlayerLive = function(pid) {
-    if (!pid || pid === '0') return '<div style="padding:20px;text-align:center;color:var(--text-muted);">No data.</div>';
-    var p   = (_state.player_info || {})[pid] || {};
-    var gs  = _gameStatus(pid);
-    var sl  = _statLine(pid);
-    var pp  = {};
-    (_state.matchups || []).forEach(function(m) {
-      if (m.players_points && m.players_points[pid] != null) pp = m.players_points;
-    });
-    var fantasyPts = pp[pid] != null ? _fmt(pp[pid]) : null;
-    var inj = p.injury_status || '';
-    var injBadge = inj ? '<span class="rz-pm-inj">' + inj + '</span>' : '';
-
-    var clockStr = [p.game_quarter, p.game_clock].filter(Boolean).join(' · ');
-    var statusCls = gs.type === 'live' ? 'live' : gs.type === 'final' ? 'final' : 'pre';
-    var gameHdr = (gs.label || _gameLine(pid))
-      ? '<div class="rz-pm-game-hdr">'
-        + (gs.label ? '<span class="rz-pm-status ' + statusCls + '">' + gs.label + (clockStr ? ' · ' + clockStr : '') + '</span>' : '')
-        + (_gameLine(pid) ? '<span class="rz-pm-game-line">' + _gameLine(pid) + '</span>' : '')
-        + injBadge
-        + '</div>'
-      : '';
-
-    // Stat breakdown
-    var scoring = _state.scoring || {};
-    var statBlock = '';
-    if (sl) {
-      var bd = _calcBreakdown(p.pos, {
-        pass_yds: sl.pass_yds, pass_tds: sl.pass_td, ints: sl.int,
-        rush_yds: sl.rush_yds, rush_tds: sl.rush_td,
-        receptions: sl.rec, rec_yds: sl.rec_yds, rec_tds: sl.rec_td
-      }, scoring);
-      if (bd.rows.length) {
-        statBlock = '<div class="rz-pm-stats">'
-          + bd.rows.map(function(r) {
-            return '<div class="rz-pm-srow"><span class="rz-pm-slabel">' + r.label + '</span>'
-              + '<span class="rz-pm-sval">' + r.val + '</span>'
-              + '<span class="rz-pm-spts">+' + r.pts + '</span></div>';
-          }).join('')
-          + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + bd.total + ' pts</span></div>'
-          + '</div>';
-      }
-    }
-    if (!statBlock) {
-      statBlock = '<div class="rz-pm-stats rz-pm-no-stats">'
-        + (fantasyPts !== null ? '<div class="rz-pm-pts-big">' + fantasyPts + ' pts</div>' : '')
-        + '<div style="color:var(--text-muted);font-size:12px;">Stat breakdown appears once the game is underway.</div>'
-        + '</div>';
-    }
-
-    // Event log: all plays for this player, oldest-first
-    var playerEvs = _feed.filter(function(ev) { return ev.pid === pid; });
-    var logHtml = '<div class="rz-pm-log-title">Game Log' + (playerEvs.length ? ' <span style="font-size:10px;font-weight:600;opacity:.55;">(' + playerEvs.length + ')</span>' : '') + '</div>';
-    if (playerEvs.length) {
-      logHtml += '<div class="rz-pm-log">'
-        + playerEvs.map(function(ev) {
-          var clock = [ev.gameQuarter, ev.gameClock].filter(Boolean).join(' ');
-          var ptStr = ev.pts > 0 ? '+' + _fmt(ev.pts) : _fmt(ev.pts);
-          return '<div class="rz-pm-log-row ' + ev.kind + '">'
-            + (clock ? '<span class="rz-pm-lclock">' + clock + '</span>' : '')
-            + '<span class="rz-pm-ldesc">' + ev.desc + '</span>'
-            + '<span class="rz-pm-lpts ' + (ev.pts >= 0 ? 'pos' : 'neg') + '">' + ptStr + '</span>'
-            + '</div>';
-        }).join('')
-        + '</div>';
-    } else {
-      logHtml += '<div style="font-size:12px;color:var(--text-muted);padding:10px 16px 6px;">No plays recorded yet.</div>';
-    }
-
-    return '<div class="rz-pm-live">' + gameHdr + statBlock + logHtml + '</div>';
+    return window._rzBuildLiveHtml(pid, _state, _feed);
   };
 
   // "On deck": games kicking off within the next 90 min that include my players.
