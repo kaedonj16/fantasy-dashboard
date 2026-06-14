@@ -62,16 +62,17 @@ def _snapshot(conn, d) -> dict:
 
 
 def _current_player_values(conn) -> dict:
-    """Return {player_id: displayed_value} using the same COALESCE the modal uses."""
+    """Return {player_id: {v1qb, vsf}} using the same COALESCEs the modal uses."""
     rows = conn.execute(
         """
         SELECT player_id,
-               COALESCE(calibrated_value_1qb, value_1qb) AS v
+               COALESCE(calibrated_value_1qb, value_1qb)           AS v1qb,
+               COALESCE(calibrated_value_sf,  value_sf, value_1qb) AS vsf
         FROM player_values
         WHERE value_1qb IS NOT NULL AND value_1qb > 0
         """
     ).fetchall()
-    return {str(r["player_id"]): float(r["v"]) for r in rows}
+    return {str(r["player_id"]): {"v1qb": float(r["v1qb"]), "vsf": float(r["vsf"])} for r in rows}
 
 
 def _persisted_scale(conn) -> float:
@@ -127,40 +128,50 @@ def main() -> int:
     print(f"Current player_values: {len(cur_pv)} players with value_1qb > 0")
     print(f"Persisted scale now: {cur_scale or 'MISSING'}")
 
-    # Measure the drop: compare live player_values against yesterday's history.
-    # This detects the real gap shown on the website, not a history-vs-history
-    # comparison (which would be 0% if history was written correctly this morning).
-    ratios = []
+    # Measure the drop: compare live player_values against yesterday's history for
+    # both 1QB and SF values. Detects the real gap shown on the website.
+    ratios_1qb, ratios_sf = [], []
     for pid, yd in yday_snap.items():
-        cur_v = cur_pv.get(pid)
-        if not cur_v or cur_v <= 0 or yd["value"] <= 0:
+        cur = cur_pv.get(pid)
+        if not cur:
             continue
-        r = yd["value"] / cur_v
-        if _RATIO_BAND[0] <= r <= _RATIO_BAND[1]:
-            ratios.append(r)
+        if cur["v1qb"] > 0 and yd["value"] > 0:
+            r = yd["value"] / cur["v1qb"]
+            if _RATIO_BAND[0] <= r <= _RATIO_BAND[1]:
+                ratios_1qb.append(r)
+        if cur["vsf"] > 0 and yd["sf_value"] > 0:
+            r = yd["sf_value"] / cur["vsf"]
+            if _RATIO_BAND[0] <= r <= _RATIO_BAND[1]:
+                ratios_sf.append(r)
 
-    if len(ratios) < 25:
-        print(f"ERROR: only {len(ratios)} comparable players — can't infer scale factor.", file=sys.stderr)
+    if len(ratios_1qb) < 25 and len(ratios_sf) < 25:
+        print(f"ERROR: only {len(ratios_1qb)} 1QB / {len(ratios_sf)} SF comparable players — can't infer scale factor.", file=sys.stderr)
         return 1
 
-    ratio = statistics.median(ratios)
-    print(f"Comparable players:  {len(ratios)}")
-    print(f"Median ratio (history/live): {ratio:.4f}  ({(ratio-1)*100:+.2f}%)")
+    ratio_1qb = statistics.median(ratios_1qb) if ratios_1qb else 1.0
+    ratio_sf  = statistics.median(ratios_sf)  if ratios_sf  else 1.0
+    print(f"Comparable players:  {len(ratios_1qb)} (1QB)  {len(ratios_sf)} (SF)")
+    print(f"Median ratio 1QB (history/live): {ratio_1qb:.4f}  ({(ratio_1qb-1)*100:+.2f}%)")
+    print(f"Median ratio SF  (history/live): {ratio_sf:.4f}  ({(ratio_sf-1)*100:+.2f}%)")
 
-    if abs(ratio - 1.0) < 0.005:
+    if abs(ratio_1qb - 1.0) < 0.005 and abs(ratio_sf - 1.0) < 0.005:
         print("Live player_values are within 0.5% of yesterday's history — nothing to restore.")
         return 0
+
+    # Use 1QB ratio as the primary scale signal (SF scale is independent)
+    ratio = ratio_1qb if abs(ratio_1qb - 1.0) >= 0.005 else ratio_sf
 
     # Preview top players: live value vs what we'll restore
     sorted_players = sorted(
         [(pid, yday_snap[pid]["value"]) for pid in yday_snap if yday_snap[pid]["value"] > 0],
         key=lambda x: x[1], reverse=True
     )[:8]
-    print(f"\n  Top players  (live player_values -> restoring to yesterday history)")
+    print(f"\n  Top players  (live 1QB / SF -> restoring to yesterday history)")
     for pid, _ in sorted_players:
-        cv = cur_pv.get(pid, 0)
-        yv = yday_snap[pid]["value"]
-        print(f"    pid={pid:8}  live={cv:6.1f}  yesterday={yv:6.1f}")
+        cur = cur_pv.get(pid, {})
+        yv   = yday_snap[pid]["value"]
+        yvsf = yday_snap[pid]["sf_value"]
+        print(f"    pid={pid:8}  live={cur.get('v1qb',0):6.1f}/{cur.get('vsf',0):6.1f}  yesterday={yv:6.1f}/{yvsf:6.1f}")
 
     # Derive the scale to seed: yesterday's scale ≈ today's scale * ratio
     new_scale = (cur_scale * ratio) if cur_scale else 0.0
