@@ -19587,6 +19587,18 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   vertical-align: middle;
 }
 
+/* Live Redzone dropdown item (NFL game days): pulses red with a live dot */
+.nav-pill-dropdown-item .rz-nav-live {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 700;
+  animation: rz-nav-live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes rz-nav-live-pulse {
+  0%, 100% { color: #dc2626; }
+  50%      { color: #f87171; }
+}
+
 /* Weekly button pulses red on NFL game days (live games available) */
 .nav-pill.nav-pill-redzone-live {
   position: relative;
