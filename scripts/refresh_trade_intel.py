@@ -25,6 +25,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
+import sys
+
+# Running `python scripts/refresh_trade_intel.py` puts scripts/ on sys.path, not
+# the project root, so `import data_building` fails with ModuleNotFoundError. Add
+# the repo root (parent of scripts/) explicitly so the package imports resolve.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger(__name__)
