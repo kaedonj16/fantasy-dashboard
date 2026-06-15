@@ -15316,8 +15316,34 @@ tr.team-clickable {
   min-width: 0;
 }
 .compare-season-col-right { align-items: flex-end; }
-.compare-season-col-right .compare-season-pills { justify-content: flex-end; }
+.compare-season-col-right .compare-season-pills,
+.compare-season-col-right .compare-range-pills,
+.compare-season-col-right .compare-range-custom { justify-content: flex-end; }
 .compare-season-col .compare-season-label { white-space: nowrap; }
+.compare-range-pills {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.compare-range-custom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.compare-wk-input {
+  width: 44px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 12px;
+  text-align: center;
+}
 .compare-season-selector {
   display: flex;
   align-items: center;

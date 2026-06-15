@@ -11267,65 +11267,139 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       </div>
     `;
   }).join("");
-}// Player names for the compare season-selector labels (set by openComparisonView).
+}// ── Compare state: each side has a player, a season, and an optional week range
 var _comparePlayerNames = {};
+var _cmpSides = {
+  1: { pid: null, position: '', season: null, range: 'full', wkStart: null, wkEnd: null, seasons: [] },
+  2: { pid: null, position: '', season: null, range: 'full', wkStart: null, wkEnd: null, seasons: [] }
+};
+var _cmpWeeklyCache = {};  // `${pid}_${season}` -> weeks[]
 
-// Build one player's season selector. Each player picks its OWN season
-// independently; clicking keeps the other player's season unchanged so you can
-// compare, e.g., player A's 2023 against player B's 2025.
-function _cmpSeasonSelector(p1, p2, seasons, activeSeason, otherSeason, which) {
-  if (!seasons || !seasons.length) return '';
-  const _esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const name = _comparePlayerNames[which === 1 ? p1 : p2] || ('Player ' + which);
-  const sorted = seasons.slice().sort((a, b) => b - a);
-  const isCareer = activeSeason === null;
-  const otherLit = (otherSeason === null || otherSeason === undefined) ? 'null' : otherSeason;
-  const call = (seasonLit) => which === 1
-    ? `loadCompareMetrics('${p1}','${p2}',${seasonLit},${otherLit})`
-    : `loadCompareMetrics('${p1}','${p2}',${otherLit},${seasonLit})`;
-  const sideCls = which === 2 ? ' compare-season-col-right' : '';
-  return `
-    <div class="compare-season-col${sideCls}">
-      <div class="compare-season-label">${_esc(name)}</div>
-      <div class="compare-season-pills">
-        <button class="adv-season-pill ${isCareer ? 'active' : ''}" onclick="${call('null')}">Career</button>
-        ${sorted.map(s => `
-          <button class="adv-season-pill ${(!isCareer && activeSeason === s) ? 'active' : ''}" onclick="${call(s)}">${s}</button>
-        `).join('')}
-      </div>
-    </div>`;
+function _cmpEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+
+// Aggregate a player's weekly rows over [wkStart,wkEnd] into the weekly-capable
+// advanced-metric keys (the only metrics that can be sliced by week; PFF grades,
+// role score, etc. are season-level and intentionally omitted in range mode).
+function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
+  const sel = (weeks || []).filter(w => { const wk = Number(w.week); return wk >= wkStart && wk <= wkEnd; });
+  if (!sel.length) return {};
+  let snap = 0, snapN = 0, tgt = 0, rec = 0, car = 0, tch = 0, recYds = 0, rushYds = 0;
+  sel.forEach(w => {
+    const sp = parseFloat(w.snap_pct); if (!isNaN(sp)) { snap += sp; snapN++; }
+    tgt += Number(w.targets || 0); rec += Number(w.receptions || 0);
+    car += Number(w.carries || 0); tch += Number(w.touches || 0);
+    recYds += Number(w.rec_yards || 0); rushYds += Number(w.rush_yards || 0);
+  });
+  const div = (a, b) => b > 0 ? a / b : null;
+  const m = {
+    snap_share: snapN ? (snap / snapN) / 100 : null,
+    yards_per_target: div(recYds, tgt),
+    yards_per_reception: div(recYds, rec),
+    catch_rate: div(rec, tgt),
+    yards_per_carry: div(rushYds, car),
+    yards_per_touch: div(recYds + rushYds, tch),
+    total_targets: tgt, total_receptions: rec, total_carries: car, total_touches: tch,
+  };
+  Object.keys(m).forEach(k => { if (m[k] == null) delete m[k]; });
+  return m;
 }
 
-function loadCompareMetrics(playerId1, playerId2, season1, season2) {
-  // Back-compat: a single season argument applies to both players.
-  if (typeof season2 === 'undefined') season2 = season1;
-  const metricsUrl = (pid, season) =>
-    season === null
-      ? `/api/player-advanced-metrics/${pid}?season=career`
-      : `/api/player-advanced-metrics/${pid}?season=${season}`;
+// Resolve [start,end] weeks for a side's range against the season's max week.
+function _cmpRangeBounds(side, weeks) {
+  const maxWk = (weeks && weeks.length) ? Math.max(...weeks.map(w => Number(w.week) || 0)) : 18;
+  if (side.range === 'custom') {
+    const a = Number(side.wkStart) || 1, b = Number(side.wkEnd) || maxWk;
+    return [Math.min(a, b), Math.max(a, b)];
+  }
+  if (side.range === 'first') return [1, Math.ceil(maxWk / 2)];
+  if (side.range === 'second') return [Math.ceil(maxWk / 2) + 1, maxWk];
+  if (side.range === 'last4') return [Math.max(1, maxWk - 3), maxWk];
+  return [1, maxWk];
+}
 
-  Promise.all([
-    fetch(metricsUrl(playerId1, season1)).then(r => r.json()).catch(() => ({})),
-    fetch(metricsUrl(playerId2, season2)).then(r => r.json()).catch(() => ({})),
-  ]).then(([data1, data2]) => {
-    const metricsDiv = document.getElementById('compareMetricsContent');
-    if (!metricsDiv) return;
-    const m1 = data1.metrics || {};
-    const m2 = data2.metrics || {};
+// Fetch one side's metrics for display (season-level, or week-range aggregate).
+async function _cmpFetchSide(side) {
+  const seasonParam = side.season === null ? 'career' : side.season;
+  let advData = {};
+  try { advData = await fetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}`).then(r => r.json()); } catch (_) {}
+  side.seasons = advData.available_seasons || side.seasons || [];
+  if (side.position === '' && advData.position) side.position = advData.position;
 
-    // Per-player season selectors (each shows that player's own seasons).
-    const sel1 = _cmpSeasonSelector(playerId1, playerId2, data1.available_seasons || [], season1, season2, 1);
-    const sel2 = _cmpSeasonSelector(playerId1, playerId2, data2.available_seasons || [], season2, season1, 2);
+  if (side.season === null || side.range === 'full') {
+    return { metrics: advData.metrics || {} };
+  }
+  const cacheKey = side.pid + '_' + side.season;
+  let weeks = _cmpWeeklyCache[cacheKey];
+  if (!weeks) {
+    try { weeks = (await fetch(`/api/player-weekly-metrics/${side.pid}?season=${side.season}`).then(r => r.json())).weeks || []; }
+    catch (_) { weeks = []; }
+    _cmpWeeklyCache[cacheKey] = weeks;
+  }
+  const [a, b] = _cmpRangeBounds(side, weeks);
+  return { metrics: _cmpAggregateWeeks(weeks, a, b) };
+}
 
-    const rows = renderCompareMetricRows(m1, m2, data1, data2);
-    metricsDiv.innerHTML = `
-      <div class="compare-season-selectors">${sel1}${sel2}</div>
-      ${rows}
-    `;
+// Render one side's selector: season pills + (for a specific season) week-range.
+function _cmpSideSelector(which) {
+  const side = _cmpSides[which];
+  const name = _comparePlayerNames[side.pid] || ('Player ' + which);
+  const seasons = (side.seasons || []).slice().sort((a, b) => b - a);
+  const isCareer = side.season === null;
+  const sideCls = which === 2 ? ' compare-season-col-right' : '';
+  const seasonPills = '<button class="adv-season-pill ' + (isCareer ? 'active' : '') + '" onclick="cmpSetSeason(' + which + ',null)">Career</button>'
+    + seasons.map(s => '<button class="adv-season-pill ' + ((!isCareer && side.season === s) ? 'active' : '') + '" onclick="cmpSetSeason(' + which + ',' + s + ')">' + s + '</button>').join('');
+  let rangeHtml = '';
+  if (!isCareer) {
+    const r = side.range || 'full';
+    const rb = (val, lbl) => '<button class="adv-season-pill ' + (r === val ? 'active' : '') + '" onclick="cmpSetRange(' + which + ',\'' + val + '\')">' + lbl + '</button>';
+    rangeHtml = '<div class="compare-range-pills">' + rb('full', 'Full') + rb('first', '1st Half') + rb('second', '2nd Half') + rb('last4', 'L4') + rb('custom', 'Custom') + '</div>';
+    if (r === 'custom') {
+      rangeHtml += '<div class="compare-range-custom">Wk '
+        + '<input type="number" min="1" max="22" class="compare-wk-input" value="' + (side.wkStart || 1) + '" onchange="cmpSetCustom(' + which + ',this.value,null)">&ndash;'
+        + '<input type="number" min="1" max="22" class="compare-wk-input" value="' + (side.wkEnd || 18) + '" onchange="cmpSetCustom(' + which + ',null,this.value)"></div>';
+    }
+  }
+  return '<div class="compare-season-col' + sideCls + '"><div class="compare-season-label">' + _cmpEsc(name) + '</div>'
+    + '<div class="compare-season-pills">' + seasonPills + '</div>' + rangeHtml + '</div>';
+}
+
+function cmpSetSeason(which, season) {
+  _cmpSides[which].season = (season === null || season === 'null') ? null : Number(season);
+  _cmpSides[which].range = 'full';   // week ranges are season-specific
+  cmpRenderMetrics();
+}
+function cmpSetRange(which, range) {
+  _cmpSides[which].range = range;
+  if (range === 'custom') {
+    if (!_cmpSides[which].wkStart) _cmpSides[which].wkStart = 1;
+    if (!_cmpSides[which].wkEnd) _cmpSides[which].wkEnd = 18;
+  }
+  cmpRenderMetrics();
+}
+function cmpSetCustom(which, start, end) {
+  if (start !== null) _cmpSides[which].wkStart = Number(start) || 1;
+  if (end !== null) _cmpSides[which].wkEnd = Number(end) || 18;
+  _cmpSides[which].range = 'custom';
+  cmpRenderMetrics();
+}
+
+function cmpRenderMetrics() {
+  const metricsDiv = document.getElementById('compareMetricsContent');
+  if (!metricsDiv) return;
+  Promise.all([_cmpFetchSide(_cmpSides[1]), _cmpFetchSide(_cmpSides[2])]).then(([r1, r2]) => {
+    const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position });
+    metricsDiv.innerHTML = '<div class="compare-season-selectors">' + _cmpSideSelector(1) + _cmpSideSelector(2) + '</div>' + rows;
   }).catch(() => {
-    const metricsDiv = document.getElementById('compareMetricsContent');
-    if (metricsDiv) metricsDiv.innerHTML = '<div style="padding:12px 0;color:var(--text-muted);font-size:13px;">Could not load advanced metrics.</div>';
+    metricsDiv.innerHTML = '<div style="padding:12px 0;color:var(--text-muted);font-size:13px;">Could not load advanced metrics.</div>';
   });
+}
+
+// Back-compat entry: set per-side seasons (full range) and render.
+function loadCompareMetrics(playerId1, playerId2, season1, season2) {
+  if (typeof season2 === 'undefined') season2 = season1;
+  _cmpSides[1].pid = String(playerId1); _cmpSides[1].season = (season1 === undefined ? null : season1); _cmpSides[1].range = 'full';
+  _cmpSides[2].pid = String(playerId2); _cmpSides[2].season = (season2 === undefined ? null : season2); _cmpSides[2].range = 'full';
+  cmpRenderMetrics();
 }
 
 function openComparisonView(p1, p2) {
@@ -11449,6 +11523,8 @@ function openComparisonView(p1, p2) {
   // Remember names so each player's season selector can be labeled.
   _comparePlayerNames[p1.player_id] = p1.name || p1.full_name || 'Player 1';
   _comparePlayerNames[p2.player_id] = p2.name || p2.full_name || 'Player 2';
+  _cmpSides[1].position = (p1.position || '').toUpperCase();
+  _cmpSides[2].position = (p2.position || '').toUpperCase();
 
   // Fetch NFL state to determine if it's offseason, then load metrics with
   // independent per-player season selection (defaults to the same season).
