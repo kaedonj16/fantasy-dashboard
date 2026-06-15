@@ -16873,6 +16873,17 @@ def api_run_daily_cron():
                 if _mv.exists():
                     _mv.unlink()
                     logger.info("[run-daily-cron] Deleted %s to force full rebuild", _mv)
+                # Reset basket/headroom pipeline state so the model uses the raw
+                # basket on this run.  Without this, a contaminated DB state
+                # (basket ≈ 999.9 from old max-anchor runs) keeps _1qb_scale ≈ 1.0
+                # for weeks, leaving all top players stuck at 999.9.
+                try:
+                    from data_building.value_model_training import reset_basket_state
+                    reset_basket_state()
+                except Exception as _rbs_err:
+                    logger.warning("[run-daily-cron] reset_basket_state failed (non-fatal): %s", _rbs_err)
+                # Set env var so cron_daily.main() also bypasses freshness guards
+                os.environ["CRON_FORCE_REBUILD"] = "1"
             from cron_daily import main as _cron_main
             logger.info("[run-daily-cron] Starting (force=%s)", force_rebuild)
             _cron_main()
@@ -16929,10 +16940,23 @@ def api_debug_values():
             if _mv_path.exists() else "missing"
         )
         _cache_age = round(_time.time() - _MODEL_VALUE_CACHE_TS) if _MODEL_VALUE_CACHE_TS else None
+        _basket_state = None
+        _headroom_state = None
+        try:
+            from data_building.value_model_training import _load_state, _BASKET_STATE_KEY, _HEADROOM_STATE_KEY
+            _basket_state = _load_state(_BASKET_STATE_KEY)
+            _headroom_state = _load_state(_HEADROOM_STATE_KEY)
+        except Exception:
+            pass
         return jsonify({
             "model_values_json_mtime": _mv_mtime,
             "in_memory_cache_age_seconds": _cache_age,
             "in_memory_cache_size": len(_MODEL_VALUE_CACHE) if _MODEL_VALUE_CACHE else 0,
+            "pipeline_state": {
+                "basket_1qb": _basket_state,
+                "headroom_1qb": _headroom_state,
+                "note": "basket near 999.9 means _1qb_scale≈1.0 → top players capped at 999.9; reset via POST /api/run-daily-cron with force:true",
+            },
             "top_players": [
                 {
                     "player_id":              str(r["player_id"]),

@@ -175,6 +175,20 @@ def _save_state(key: str, value: float) -> None:
     except Exception:
         pass
 
+def reset_basket_state() -> None:
+    """Reset basket/headroom pipeline state to 0 so the next model run uses the raw basket.
+
+    Call this before build_daily_model_values() when historical DB state is
+    contaminated (e.g. from old max-anchor runs that stored basket ≈ 999.9).
+    After the reset, _load_state returns 0.0, which makes the basket-smoothing
+    code skip EMA blending and use only the current run's raw basket — giving
+    an immediate correct _1qb_scale instead of waiting weeks for EMA decay.
+    """
+    _save_state(_BASKET_STATE_KEY, 0.0)
+    _save_state(_HEADROOM_STATE_KEY, 0.0)
+    print("[value_model] Basket/headroom pipeline state reset to 0 — next run uses raw basket")
+
+
 FANTASYCALC_URL = (
     "https://api.fantasycalc.com/values/current"
     "?isDynasty=true&numQbs=1&numTeams=10&ppr=1"
