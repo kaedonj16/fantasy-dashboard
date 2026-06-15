@@ -87,8 +87,27 @@ services:
       - key: PYTHON_ENV
         value: production
 
+  - type: cron
+    name: league-discovery
+    runtime: python
+    # Daily at 6am — BFS-expands the league pool via Sleeper API (no Playwright needed).
+    # Runs before the 8am daily-job so freshly discovered leagues are available sooner.
+    schedule: 0 6 * * *
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/discover_leagues.py --target 2000
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: brfantasy-db
+          property: connectionString
+      - key: PYTHON_ENV
+        value: production
+
 databases:
   - name: brfantasy-db
     databaseName: brfantasy
     user: brfantasy_user
-    plan: basic-1gb
+    plan: standard
