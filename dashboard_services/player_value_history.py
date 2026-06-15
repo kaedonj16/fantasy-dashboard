@@ -209,7 +209,7 @@ def get_player_value_history(
     out: list[dict] = []
     prev_val: Optional[float] = None
     for r in rows:
-        val = min(float(r["value"]), 999.9)  # cap at scale max; filters corrupted snapshots
+        val = float(r["value"])
         if val <= 0:
             continue
         delta = None if prev_val is None else round(val - prev_val, 1)
