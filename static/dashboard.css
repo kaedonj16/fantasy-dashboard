@@ -21029,3 +21029,18 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 .rz-event.gain .rz-event-avatar[data-init="LC"] {
   background: rgba(59,130,246,.15); color: #3b82f6;
 }
+
+/* ── Global reduced-motion safeguard ──────────────────────────────────────────
+   Honors the OS "reduce motion" setting across all animated UI (fire/ice
+   pulses, spinners, transitions, smooth scrolling). Near-instant (0.01ms)
+   rather than 0s so animationend/transitionend listeners still fire. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

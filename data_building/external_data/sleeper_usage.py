@@ -6,7 +6,7 @@ import gc
 import json
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Dict, Iterable
+from typing import Dict, Iterable, List
 
 from dashboard_services.service import age_from_bday
 from data_building.external_data.nfl_target_share import fetch_league_target_share

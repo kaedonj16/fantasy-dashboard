@@ -11,7 +11,10 @@ from bs4 import BeautifulSoup
 from collections import defaultdict, Counter
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional, Any, Callable, List, Iterable
+from typing import Dict, Optional, Any, Callable, List, Iterable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 from dashboard_services.api import (
     get_nfl_games_for_week_raw,

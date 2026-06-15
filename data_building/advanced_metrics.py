@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import json as _json
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn

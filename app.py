@@ -784,6 +784,7 @@ BASE_HTML = """
     <title>{title}</title>
     {meta_tags}
     {og_tags}
+    {json_ld}
     <meta name="viewport" content="width=device-width, initial-scale=1">
     
     <!-- Google AdSense -->
@@ -1875,6 +1876,77 @@ def _build_seo_meta_tags(
     return "\n    ".join(parts)
 
 
+def _site_origin() -> str:
+    """Absolute origin (https://host) for building canonical/social URLs."""
+    try:
+        if PRIMARY_DOMAIN:
+            return f"https://{PRIMARY_DOMAIN}"
+        return request.host_url.rstrip("/")
+    except Exception:
+        return ""
+
+
+def _default_social_tags(title: str, description: str) -> str:
+    """Baseline Open Graph + Twitter Card tags for pages that don't supply
+    their own. Gives every public page a proper link preview when shared."""
+    origin = _site_origin()
+    desc = (description or DEFAULT_META_DESCRIPTION).strip()
+    image = f"{origin}/static/BR_Logo.png" if origin else "/static/BR_Logo.png"
+    t = html.escape(title, quote=True)
+    d = html.escape(desc, quote=True)
+    img = html.escape(image, quote=True)
+    url = ""
+    try:
+        url = html.escape(f"{origin}{request.path}" if origin else request.url, quote=True)
+    except Exception:
+        url = img
+    return (
+        f"<meta property=\"og:site_name\" content=\"BR Fantasy\">"
+        f"<meta property=\"og:type\" content=\"website\">"
+        f"<meta property=\"og:title\" content=\"{t}\">"
+        f"<meta property=\"og:description\" content=\"{d}\">"
+        f"<meta property=\"og:url\" content=\"{url}\">"
+        f"<meta property=\"og:image\" content=\"{img}\">"
+        f"<meta name=\"twitter:card\" content=\"summary\">"
+        f"<meta name=\"twitter:title\" content=\"{t}\">"
+        f"<meta name=\"twitter:description\" content=\"{d}\">"
+        f"<meta name=\"twitter:image\" content=\"{img}\">"
+    )
+
+
+def _site_json_ld() -> str:
+    """Site-wide JSON-LD structured data (Organization + WebSite with search
+    action) for richer search-engine understanding and sitelinks search box."""
+    import json as _json
+    origin = _site_origin()
+    base = origin or ""
+    data = [
+        {
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            "name": "BR Fantasy",
+            "url": base or "/",
+            "logo": f"{base}/static/BR_Logo.png",
+        },
+        {
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            "name": "BR Fantasy",
+            "url": base or "/",
+            "potentialAction": {
+                "@type": "SearchAction",
+                "target": f"{base}/players?q={{search_term_string}}",
+                "query-input": "required name=search_term_string",
+            },
+        },
+    ]
+    return (
+        "<script type=\"application/ld+json\">"
+        + _json.dumps(data, separators=(",", ":"))
+        + "</script>"
+    )
+
+
 def render_page(
         title: str,
         league_id: Optional[str],
@@ -1906,6 +1978,12 @@ def render_page(
         is_league_scoped=bool(league_id and platform and season),
     )
 
+    # Pages may pass their own richer og_tags; otherwise emit sensible defaults
+    # so every shared link gets a preview card.
+    if not og_tags:
+        og_tags = _default_social_tags(title, description)
+    json_ld = _site_json_ld()
+
     banner_html = _discord_banner()
     if session.get("viewer_username"):
         banner_html += _recap_ready_banner(league_id or "", platform or "", season or 0)
@@ -1925,6 +2003,7 @@ def render_page(
         title=title,
         meta_tags=meta_tags,
         og_tags=og_tags,
+        json_ld=json_ld,
         nav=nav_html,
         recap_banner=banner_html,
         body=wrapped_body,
@@ -3397,7 +3476,7 @@ def render_standings(team_stats, length) -> str:
         avatar = row.get("avatar", "")
 
         img = (
-            f"<img class='avatar sm' src='{avatar}' "
+            f"<img class='avatar sm' src='{avatar}' alt='' "
             "onerror=\"this.style.display='none'\">"
             if avatar else ""
         )
@@ -3707,7 +3786,7 @@ def render_power_and_playoffs(
         streak_frame_cls = streak_class(row)  # assumes you already have this helper
         avatar_url = row.get("avatar")
         avatar_html = (
-            f"<img class='avatar' src='{avatar_url}' "
+            f"<img class='avatar' src='{avatar_url}' alt='' "
             "onerror=\"this.style.display='none'\">"
             if avatar_url else ""
         )
@@ -3798,7 +3877,7 @@ def render_power_and_playoffs(
 
         avatar_url = row.get("avatar")
         img = (
-            f"<img class='avatar sm' src='{avatar_url}' "
+            f"<img class='avatar sm' src='{avatar_url}' alt='' "
             "onerror=\"this.style.display='none'\">"
             if avatar_url else ""
         )
@@ -4022,7 +4101,7 @@ def render_team_stats(team_stats, df_weekly) -> str:
     for _, r in stats_tbl[cols].iterrows():
         avatar = r.get("avatar", "")
         img = (
-            f"<img class='avatar sm' src='{avatar}' "
+            f"<img class='avatar sm' src='{avatar}' alt='' "
             "onerror=\"this.style.display='none'\">"
             if avatar else ""
         )
@@ -4256,7 +4335,7 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     for i, row in enumerate(team_rows, 1):
         av = row["avatar"]
         img = (
-            f"<img class='avatar sm' src='{av}' onerror=\"this.style.display='none'\">"
+            f"<img class='avatar sm' src='{av}' alt='' onerror=\"this.style.display='none'\">"
             if av else ""
         )
         first_rd = sum(
@@ -6668,7 +6747,7 @@ def build_activity_body(ctx: dict) -> str:
 
                 avatar = tm.get("avatar") or ""
                 img = (
-                    f"<img class='avatar' src='{avatar}' "
+                    f"<img class='avatar' src='{avatar}' alt='' "
                     "onerror=\"this.style.display='none'\">"
                     if avatar else ""
                 )
@@ -6806,7 +6885,7 @@ def build_activity_body(ctx: dict) -> str:
 
             avatar = d.get("avatar") or ""
             img = (
-                f"<img class='avatar' src='{avatar}' "
+                f"<img class='avatar' src='{avatar}' alt='' "
                 "onerror=\"this.style.display='none'\">"
                 if avatar else ""
             )
@@ -7676,7 +7755,7 @@ def build_teams_body(ctx: dict) -> str:
         name = meta["name"]
         avatar = meta.get("avatar") or ""
         img_html = (
-            f"<img class='avatar' src='{avatar}' onerror=\"this.style.display='none'\">"
+            f"<img class='avatar' src='{avatar}' alt='' onerror=\"this.style.display='none'\">"
             if avatar else ""
         )
 
@@ -14860,7 +14939,7 @@ def _build_lineup_analysis_html(
     def _ava_small(owner_name: str, rid: str = "", size: int = 30) -> str:
         ava = owner_avatar.get(owner_name, "")
         if ava:
-            return f"<img src='{ava}' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+            return f"<img src='{ava}' alt='' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
         initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
         return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
                 f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;'>{initials}</div>")
@@ -15204,7 +15283,7 @@ def build_recap_body(ctx: dict, selected_week: Optional[int] = None) -> str:
     def ava_img(owner_name, rid="", size=32):
         ava = owner_avatar.get(owner_name, "")
         if ava:
-            return f"<img src='{ava}' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
+            return f"<img src='{ava}' alt='' style='width:{size}px;height:{size}px;border-radius:50%;object-fit:cover;flex-shrink:0;' onerror=\"this.style.display='none'\">"
         initials = "".join(w[0].upper() for w in (team_by_rid.get(rid) or owner_name or "?").split()[:2])
         return (f"<div style='width:{size}px;height:{size}px;border-radius:50%;background:var(--accent);color:#fff;"
                 f"display:flex;align-items:center;justify-content:center;font-weight:700;font-size:{max(10, size//3)}px;"
@@ -16872,6 +16951,7 @@ def api_run_daily_cron():
     force = bool(body.get("force", False))
 
     def _run_cron(force_rebuild: bool):
+        from utils.paths import DATA_DIR
         try:
             if force_rebuild:
                 # Remove model_values.json so freshness guards are all bypassed
@@ -16940,6 +17020,7 @@ def api_debug_values():
             ).fetchall()
         from pathlib import Path as _Path
         import time as _time
+        from utils.paths import DATA_DIR
         _mv_path = DATA_DIR / "model_values.json"
         _mv_mtime = (
             datetime.fromtimestamp(_mv_path.stat().st_mtime).isoformat()
@@ -23109,7 +23190,7 @@ def api_trade_intel_player_packages(player_id: str):
                     # DB values for picks can be stale and cause wrong grade/accept rate
                     try:
                         from dashboard_services.picks import load_pick_value_table as _lpvt
-                        pick_val_lookup = dict(_lpvt(league_teams=num_teams) or {})
+                        pick_val_lookup = dict(_lpvt(league_teams=len(rosters) or 12) or {})
                     except Exception:
                         pick_val_lookup = {}
                     # Backfill slot/bucket pick values straight from model_values.json.
@@ -24789,7 +24870,6 @@ def api_trade_ideas_for_target():
                                 "sf_value":         round(info.get("sf_value", info["value"]), 1),
                                 "pos_rank_label":   info["pos_rank_label"],
                                 "sf_pos_rank_label": info["pos_rank_label"],
-                                "profile":          _player_profile(info),
                             })
 
         _enrich_pkg_assets(packages)
