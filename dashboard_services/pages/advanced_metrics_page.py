@@ -656,17 +656,11 @@ def build_advanced_metrics_body(
       .am-cmp-table th { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); }
       .am-cmp-player-head { font-size:13px !important; text-transform:none !important; letter-spacing:0 !important; color:var(--text) !important; font-weight:800 !important; }
       .am-cmp-player-meta { font-size:11px; font-weight:600; color:var(--text-muted); margin-left:5px; }
-      .am-cmp-season-sel { display:inline-block; margin-top:6px; font-size:11px; font-weight:700;
-        padding:4px 24px 4px 10px; border:1px solid var(--border); border-radius:999px;
-        background-color:var(--card-bg); color:var(--text); cursor:pointer; line-height:1.3;
-        -webkit-appearance:none; -moz-appearance:none; appearance:none;
-        background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
-        background-repeat:no-repeat; background-position:right 8px center;
-        transition:border-color .12s, background-color .12s, box-shadow .12s; }
-      .am-cmp-season-sel:hover { border-color:var(--accent); background-color:var(--accent-soft); }
-      .am-cmp-season-sel:focus { outline:none; border-color:var(--accent);
-        box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+      /* Sizing feeds the custom dropdown (CSD copies font-weight/radius/padding/
+         min-width from the original select onto its .csd-trigger). */
+      .am-cmp-season-sel { font-weight:600; border-radius:8px; padding:4px 10px; min-width:96px; font-size:12px; }
       .am-cmp-player-head { vertical-align:top; }
+      .am-cmp-player-head .csd-wrap { margin-top:6px; }
       .am-cmp-metric { font-weight:600; color:var(--text); white-space:nowrap; }
       .am-cmp-val { font-weight:700; font-variant-numeric:tabular-nums; }
       .am-cmp-best { color:#10b981; }
@@ -1301,6 +1295,7 @@ _AM_JS = r"""
     html += '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;">'
       + 'Pick a season per player to compare across years. Showing the primary metric plus any added metrics; ranks reflect the page season.</div>';
     body.innerHTML = html;
+    if (window.initCustomSelects) window.initCustomSelects(body);
     modal.style.display = 'flex';
   };
 
