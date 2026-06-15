@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v4';
+const CACHE_NAME = 'br-fantasy-v5';
 
 const PRECACHE_URLS = [
   '/static/dashboard.css',

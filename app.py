@@ -5737,9 +5737,24 @@ def build_weekly_hub_body(ctx: dict) -> str:
     platform_js = json.dumps(platform)
     season_js = json.dumps(season)
     league_js = json.dumps(league_id)
-    # Live/Redzone elements only apply during the active season (mirrors the
-    # Redzone page/nav gating, which hides Redzone in the offseason).
-    in_season_js = json.dumps(not offseason_mode)
+    # Live/Redzone elements (LIVE badge, Redzone CTA, auto-refresh) only apply
+    # when an actual game is scheduled for today. Check the current week's
+    # schedule file for a game dated today, gated to the active season (mirrors
+    # the Redzone page/nav, which is hidden in the offseason). Past seasons
+    # never match today's date, so they resolve to no live UI automatically.
+    games_today = False
+    try:
+        if not offseason_mode and current_week:
+            _today_yyyymmdd = datetime.now().strftime("%Y%m%d")
+            _wk_sched = load_week_schedule(int(season), int(current_week)) or []
+            games_today = any(
+                str(g.get("gameDate")) == _today_yyyymmdd
+                for g in _wk_sched if isinstance(g, dict)
+            )
+    except Exception as _e_sched:
+        logger.info(f"[weekly] games-today check failed: {_e_sched}")
+        games_today = False
+    games_today_js = json.dumps(bool(games_today))
 
     scout_tab_html = ""
     try:
@@ -5942,14 +5957,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
   var sel = document.getElementById('hubWeek');
   if (!sel) return;
 
-  var IN_SEASON = {in_season_js};
-
-  function isGameDay() {{
-    var day = new Date().getDay(); // Sun=0,Mon=1,Thu=4,Sat=6
-    return day === 0 || day === 1 || day === 4 || day === 6;
-  }}
-  // Live/Redzone only during the active season AND on NFL game days.
-  function liveActive() {{ return IN_SEASON && isGameDay(); }}
+  // Live only when the current week's schedule actually has a game dated today
+  // (computed server-side from the schedule file), not merely a typical NFL day.
+  function liveActive() {{ return {games_today_js}; }}
 
   // Show/hide Redzone CTA banner
   var cta = document.getElementById('weekly-rz-cta');
@@ -5966,7 +5976,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     }}
   }}
 
-  // Auto-refresh current week every 60 s on game days only (in-season)
+  // Auto-refresh the week every 60 s only when a game is happening today
   if (!liveActive()) return;
   var _autoRefreshSeq = 0;
   setInterval(function() {{
