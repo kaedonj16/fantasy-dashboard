@@ -72,12 +72,13 @@ services:
   - type: cron
     name: trade-recrawl
     runtime: python
-    # Every 6 hours. Re-crawls already-known leagues so new trades in the
-    # existing pool are picked up continuously, not just once at discovery.
+    # Every 6 hours. Grows the league pool (discovery) AND re-crawls known
+    # leagues for fresh trades, so the pool both expands and stays current
+    # instead of only crawling new leagues once at discovery time.
     schedule: 0 */6 * * *
     plan: starter
     buildCommand: pip install -r requirements.txt && python -m playwright install chromium
-    startCommand: python scripts/recrawl_existing_trades.py --analytics
+    startCommand: python scripts/refresh_trade_intel.py --discover-target 500 --batch-size 2000 --workers 4 --crawl-mode both --recrawl-days 2 --analytics
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
