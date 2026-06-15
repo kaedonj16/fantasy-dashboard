@@ -197,10 +197,6 @@ def path_dynastyprocess_values() -> str:
     return os.path.join(DATA_DIR, "dynastyprocess_values.csv")
 
 
-def path_ktc_values() -> str:
-    return os.path.join(DATA_DIR, "ktc_rankings.csv")
-
-
 # ------------------------------------------------
 # JSON / table IO
 # ------------------------------------------------
