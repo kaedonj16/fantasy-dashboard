@@ -10,6 +10,11 @@ import os
 from datetime import date
 from typing import List, Dict, Any
 
+# Defensive upper bound when persisting values. The model anchors the top-N basket
+# mean to 999.9 and lets elite players float above it (~1068), so the clamp must sit
+# well above 999.9 — it exists only to reject corrupt output, not to cap the top.
+_VALUE_CEILING = 9999.0
+
 
 def _safe_int(v):
     """Convert a value to int, returning None for NaN/None/invalid."""
@@ -56,14 +61,15 @@ def save_daily_values_to_db(value_table: List[Dict[str, Any]], snapshot_date: da
     saved_count = 0
 
     # Values arrive already normalized by the model (value_model_training anchors the
-    # top non-QB to 999.9 and caps everything at 999.9), and model_values.json — the
-    # source the UI reads — uses those same numbers. Don't re-derive a per-day scale
-    # here: doing so re-anchors to a different population (top *overall* instead of top
-    # non-QB), which both diverges from the JSON the UI serves and corrupts the daily
-    # trend history this table exists for (a moving leaguewide max would silently
-    # rescale every player). Just clamp defensively to the column's [0, 999.9] range.
+    # top-N non-QB basket mean to 999.9, letting the very top players float above it).
+    # model_values.json — the source the UI reads — uses those same numbers. Don't
+    # re-derive a per-day scale here: doing so re-anchors to a different population
+    # (top *overall* instead of top non-QB), which both diverges from the JSON the UI
+    # serves and corrupts the daily trend history this table exists for (a moving
+    # leaguewide max would silently rescale every player). Just clamp defensively at a
+    # high ceiling — only to catch corrupt output, NOT to cap the top players at 999.9.
     def _clamp(v):
-        return round(min(max(float(v), 0.0), 999.9), 2) if v is not None else None
+        return round(min(max(float(v), 0.0), _VALUE_CEILING), 2) if v is not None else None
 
     try:
         with get_conn() as conn:
