@@ -13875,6 +13875,40 @@ img, svg, canvas {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
+  cursor: pointer;
+}
+.pm-comp-label[data-def]:active {
+  opacity: 0.7;
+}
+
+/* ⓘ icon inline with section header */
+.adv-info-icon {
+  cursor: pointer;
+  font-size: 11px;
+  opacity: 0.5;
+  margin-left: 4px;
+  user-select: none;
+  vertical-align: middle;
+  display: inline-block;
+}
+.adv-info-icon:hover { opacity: 0.8; }
+
+/* Tap-to-show metric definition tooltip (works on desktop + mobile) */
+.adv-def-tip {
+  position: fixed;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  z-index: 9999;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+  display: none;
+  pointer-events: none;
+  white-space: normal;
+  word-break: break-word;
 }
 .pm-comp-bar-wrap {
   height: 6px;
@@ -15354,6 +15388,10 @@ tr.team-clickable {
   font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
+  cursor: pointer;
+}
+.compare-metric-label[data-def]:active {
+  opacity: 0.7;
 }
 .compare-bar-left {
   height: 7px;

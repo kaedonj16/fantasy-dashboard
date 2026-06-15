@@ -22,12 +22,17 @@ from utils.utils import (
 from utils.coerce import safe_float as _safe_float
 
 
-def build_daily_data(season: int, week: int):
+def build_daily_data(season: int, week: int, force: bool = False):
     """
     Build usage table and vendor values.
 
     NOTE: This does NOT build model values - that should be done AFTER
     advanced metrics are calculated (see build_daily_model_values).
+
+    force=True bypasses the same-day vendor-CSV freshness guard. The daily cron
+    runs on an ephemeral container that checks out the repo fresh, so the
+    committed vendor CSVs get a "today" mtime even though their data is stale —
+    the guard would otherwise skip the scrape and keep serving old vendor values.
     """
     from data_building.external_data.external_values_scraper import (
         scrape_all_vendor_values,
@@ -54,9 +59,11 @@ def build_daily_data(season: int, week: int):
             if not _p.exists() or _date.fromtimestamp(_p.stat().st_mtime) != _date.today():
                 return False
         return True
-    if _csvs_fresh_today():
+    if not force and _csvs_fresh_today():
         print("[build_daily_data] Vendor CSVs already fresh today, skipping scrape")
     else:
+        if force:
+            print("[build_daily_data] force=True — scraping vendor values regardless of CSV mtime")
         scrape_all_vendor_values()
 
     # Only fetch weeks 1 through current week (or max 18)

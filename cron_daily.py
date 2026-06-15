@@ -200,6 +200,16 @@ def main():
     season_type = str(state.get("season_type", "")).lower().strip()
     today_weekday = date.today().weekday()  # 6 = Sunday
 
+    # On Render the cron runs in an ephemeral container that checks out the repo
+    # fresh, so committed build artifacts (model_values.json, vendor CSVs) get a
+    # "today" mtime even though their data is stale (e.g. the old max-anchored
+    # model_values.json). The mtime freshness guards then false-positive and skip
+    # the rebuild, leaving the stale values to be synced over the good ones.
+    # force_rebuild bypasses those guards so the daily cron always regenerates.
+    force_rebuild = os.environ.get("CRON_FORCE_REBUILD", "").strip().lower() not in ("", "0", "false", "no")
+    if force_rebuild:
+        print("[cron] CRON_FORCE_REBUILD set — vendor scrape + model rebuild will not be skipped")
+
     print(f"[cron] Daily run starting - Season {season}, Week {week}")
 
     n_cleaned = cleanup_dated_files()
@@ -209,13 +219,13 @@ def main():
     # ------------------------------------------------------------------ #
     # Step 1: Vendor data + usage table                                   #
     # ------------------------------------------------------------------ #
-    if _vendor_values_fresh() and _usage_table_fresh():
+    if not force_rebuild and _vendor_values_fresh() and _usage_table_fresh():
         print("[cron] Vendor + usage data already fresh today, skipping")
     else:
         _run_step(f"""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.build_daily_value_table import build_daily_data
-build_daily_data({season!r}, {week!r})
+build_daily_data({season!r}, {week!r}, force={force_rebuild!r})
 """, "build_daily_data")
 
     # ------------------------------------------------------------------ #
@@ -360,7 +370,7 @@ print(f"[cron] Matchup ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out
     # ------------------------------------------------------------------ #
     # Step 5: Model values                                                #
     # ------------------------------------------------------------------ #
-    if _model_values_fresh():
+    if not force_rebuild and _model_values_fresh():
         print("[cron] Model values already built today, skipping")
     else:
         _run_step("""
