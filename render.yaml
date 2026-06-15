@@ -46,6 +46,13 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
+      # The cron container checks out the repo fresh each run, giving committed
+      # build artifacts (model_values.json, vendor CSVs) a "today" mtime. That
+      # fools the mtime freshness guards into skipping the rebuild and syncing
+      # stale values. Force a full rebuild every cron run so the basket-anchored
+      # model values (top players above 999.9) are regenerated and persisted.
+      - key: CRON_FORCE_REBUILD
+        value: "1"
       - key: DATABASE_URL
         fromDatabase:
           name: brfantasy-db
