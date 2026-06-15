@@ -656,8 +656,17 @@ def build_advanced_metrics_body(
       .am-cmp-table th { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); }
       .am-cmp-player-head { font-size:13px !important; text-transform:none !important; letter-spacing:0 !important; color:var(--text) !important; font-weight:800 !important; }
       .am-cmp-player-meta { font-size:11px; font-weight:600; color:var(--text-muted); margin-left:5px; }
-      .am-cmp-season-sel { display:block; margin-top:5px; font-size:11px; font-weight:600; padding:3px 6px;
-        border:1px solid var(--border); border-radius:6px; background:var(--card-bg); color:var(--text); cursor:pointer; }
+      .am-cmp-season-sel { display:inline-block; margin-top:6px; font-size:11px; font-weight:700;
+        padding:4px 24px 4px 10px; border:1px solid var(--border); border-radius:999px;
+        background-color:var(--card-bg); color:var(--text); cursor:pointer; line-height:1.3;
+        -webkit-appearance:none; -moz-appearance:none; appearance:none;
+        background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+        background-repeat:no-repeat; background-position:right 8px center;
+        transition:border-color .12s, background-color .12s, box-shadow .12s; }
+      .am-cmp-season-sel:hover { border-color:var(--accent); background-color:var(--accent-soft); }
+      .am-cmp-season-sel:focus { outline:none; border-color:var(--accent);
+        box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+      .am-cmp-player-head { vertical-align:top; }
       .am-cmp-metric { font-weight:600; color:var(--text); white-space:nowrap; }
       .am-cmp-val { font-weight:700; font-variant-numeric:tabular-nums; }
       .am-cmp-best { color:#10b981; }
