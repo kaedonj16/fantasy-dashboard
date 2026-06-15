@@ -1251,6 +1251,27 @@ def get_default_history_season(available_seasons: List[int], current_season: int
     return available[0]
 
 
+def _games_scheduled_today(season, week) -> bool:
+    """True if the given week's schedule has any game dated today (local time).
+
+    Drives the LIVE/Redzone affordances (weekly LIVE badge, Redzone nav dot,
+    Redzone page polling) off the real schedule rather than a day-of-week guess.
+    Past seasons never match today's date, so they resolve to False.
+    """
+    try:
+        if not season or not week:
+            return False
+        today = datetime.now().strftime("%Y%m%d")
+        sched = load_week_schedule(int(season), int(week)) or []
+        return any(
+            str(g.get("gameDate")) == today
+            for g in sched if isinstance(g, dict)
+        )
+    except Exception as _e:
+        logger.info(f"[games-today] check failed (s{season} w{week}): {_e}")
+        return False
+
+
 def build_nav(league_id: Optional[str], active: str, platform: str, season: int) -> str:
     """
     active (league pages): 'dashboard','standings','power','weekly','teams','activity','injuries','trade','graphs'
@@ -1473,13 +1494,14 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
             ("Matchups",     "page_weekly", "weekly", False),
             ("Weekly Recap", "page_recap",  "recap",  False),
         ]
-        # Redzone lives inside the Weekly dropdown. On NFL game days the Weekly
-        # button glows and the Redzone item itself pulses with a live dot.
-        # Only available during the active season (not offseason).
+        # Redzone lives inside the Weekly dropdown. When a game is actually
+        # scheduled for today the Weekly button glows and the Redzone item
+        # pulses with a live dot. Only available during the active season.
         _rz_pulse = ""
         if not offseason_mode:
-            # NFL game days: Mon=0, Thu=3, Sat=5, Sun=6 (Python weekday())
-            _rz_live = datetime.now().weekday() in (0, 3, 5, 6)
+            # Live when the current NFL week's schedule has a game dated today.
+            _rz_week = nfl_state.get("week") or nfl_state.get("display_week")
+            _rz_live = _games_scheduled_today(nfl_state.get("season") or season, _rz_week)
             _rz_label = (
                 "<span class='rz-nav-live'><span class='rz-nav-dot'></span>Redzone</span>"
                 if _rz_live else "Redzone"
@@ -5742,18 +5764,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
     # schedule file for a game dated today, gated to the active season (mirrors
     # the Redzone page/nav, which is hidden in the offseason). Past seasons
     # never match today's date, so they resolve to no live UI automatically.
-    games_today = False
-    try:
-        if not offseason_mode and current_week:
-            _today_yyyymmdd = datetime.now().strftime("%Y%m%d")
-            _wk_sched = load_week_schedule(int(season), int(current_week)) or []
-            games_today = any(
-                str(g.get("gameDate")) == _today_yyyymmdd
-                for g in _wk_sched if isinstance(g, dict)
-            )
-    except Exception as _e_sched:
-        logger.info(f"[weekly] games-today check failed: {_e_sched}")
-        games_today = False
+    games_today = (not offseason_mode) and _games_scheduled_today(season, current_week)
     games_today_js = json.dumps(bool(games_today))
 
     scout_tab_html = ""
@@ -10364,10 +10375,14 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
     state  = get_nfl_state() or {}
     season = int(season or state.get("season") or date.today().year)
     week   = int(week or state.get("week") or 1)
+    # Whether a game is actually scheduled today (drives client live polling).
+    gt = _games_scheduled_today(season, week)
 
     if scope == "user":
         try:
-            return _redzone_fetch_user(platform, league_id, season, week)
+            d = _redzone_fetch_user(platform, league_id, season, week)
+            d["games_today"] = gt
+            return d
         except Exception as _e:
             logger.warning("[redzone] user-scope fetch failed: %s", _e)
             # fall through to league scope
@@ -10380,6 +10395,7 @@ def _redzone_fetch(platform, league_id, season, week=None, scope="league"):
         "leagues": [{"league_id": league_id, "name": ""}],
         "viewer_roster_id": vrid,
         "viewer_roster_ids": [vrid] if vrid else [],
+        "games_today": gt,
         "updated_at": time.time(),
     })
     return d

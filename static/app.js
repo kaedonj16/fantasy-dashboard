@@ -16302,10 +16302,9 @@ window._rzSyncTabLive = function(panel) {
   function _isGameDay() {
     if (_isDemo) return true;
     if (_anyLive()) return true; // already in progress — always poll regardless of day/time
-    // NFL games are on Thu(4), Sat(6), Sun(0), Mon(1)
-    var day = new Date().getDay();
-    if (day === 4 || day === 6 || day === 0 || day === 1) return true;
-    // Also consider the schedule data: if any player has an upcoming game today
+    // Server checks the week's schedule file for a game dated today.
+    if (_state.games_today) return true;
+    // Fallback: any player has a kickoff later today
     var now = Date.now() / 1000;
     var todayEnd = now - (now % 86400) + 86400; // midnight tonight UTC
     return Object.values(_state.player_info || {}).some(function(p) {
