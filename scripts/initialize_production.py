@@ -50,8 +50,12 @@ def main():
         print("STEP 2: DAILY DATA PROCESSES")
         print("=" * 60)
 
-        from cron_daily import build_daily_data
-        build_daily_data()
+        from data_building.build_daily_value_table import build_daily_data
+        from dashboard_services.api import get_nfl_state
+        _state = get_nfl_state() or {}
+        _season = int(_state.get("season") or 2026)
+        _week   = int(_state.get("week")   or 1)
+        build_daily_data(_season, _week)
         print("✅ Daily data processes completed")
 
         # Step 6: Verify initialization
@@ -118,7 +122,7 @@ def main():
         print(f"\n❌ INITIALIZATION FAILED: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+        raise
 
 
 if __name__ == "__main__":
