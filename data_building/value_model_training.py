@@ -701,51 +701,6 @@ def rewrite_value_table_with_model() -> Path:
     else:
         print("[DEBUG] vendor_values section SKIPPED due to missing conditions")
 
-    # Blend KTC rankings into 1QB vendor values (25% weight) when available.
-    # KTC uses player names rather than Sleeper IDs so we match by normalised name.
-    # Wrapped in broad try/except so a KTC format change never breaks the pipeline.
-    try:
-        from data_building.external_data.external_values_scraper import load_ktc_values
-        from utils.utils import load_players_index as _load_pi
-        ktc_rows = load_ktc_values()
-        if ktc_rows:
-            ktc_raw_vals = [
-                float(r["ktc_value_1qb"])
-                for r in ktc_rows
-                if r.get("ktc_value_1qb") and float(r["ktc_value_1qb"]) > 0
-            ]
-            if ktc_raw_vals:
-                ktc_max = max(ktc_raw_vals)
-                ktc_min = min(ktc_raw_vals)
-                ktc_range = max(ktc_max - ktc_min, 1.0)
-                # Build normalised name → value lookup
-                ktc_name_map: dict[str, float] = {}
-                for r in ktc_rows:
-                    raw_name = (r.get("name") or "").strip().lower()
-                    raw_val = r.get("ktc_value_1qb")
-                    if raw_name and raw_val and float(raw_val) > 0:
-                        ktc_name_map[raw_name] = (
-                            (float(raw_val) - ktc_min) / ktc_range * 999.9
-                        )
-                # Blend: if we have both FC and KTC use 50/50; if only KTC use it solo
-                for pid_str, meta in (_load_pi() or {}).items():
-                    pid = str(pid_str)
-                    pname = (meta.get("name") or "").strip().lower()
-                    ktc_val = ktc_name_map.get(pname)
-                    if not ktc_val:
-                        continue
-                    if pid in vendor_values:
-                        vendor_values[pid] = vendor_values[pid] * 0.50 + ktc_val * 0.50
-                    else:
-                        vendor_values[pid] = ktc_val
-                print(f"[DEBUG] KTC blend applied: {len(ktc_name_map)} players from KTC")
-            else:
-                print("[DEBUG] KTC rows present but no valid ktc_value_1qb entries")
-        else:
-            print("[DEBUG] KTC CSV not found - skipping KTC blend")
-    except Exception as _ktc_err:
-        print(f"[DEBUG] KTC blend skipped: {_ktc_err}")
-
     # Load FC SF (numQbs=2) values — gives QBs their proper SF market premium.
     # Min-max normalized to 0-999.9 (same scale as the 1QB FC values).
     fc_sf_by_sid: dict[str, float] = {}
@@ -932,7 +887,7 @@ def rewrite_value_table_with_model() -> Path:
         # Players in the engine table with 0 production should have that zero count against them.
         eng_val = float(engine_1qb_map[pid]) if pid in engine_1qb_map else None
 
-        # Fixed weights: 40% vendor (FC+KTC blend), 40% engine, 20% DP.
+        # Fixed weights: 40% vendor (FantasyCalc), 40% engine, 20% DP.
         # DP and FC are dropped (renormalized) when missing - they may simply not cover a player.
         # Engine is dropped only when the player has NO engine record (pure prospect with no NFL data).
         # If a player IS in the engine table with 0 production, that zero is included in the blend
