@@ -11276,9 +11276,10 @@ function _cmpSeasonSelector(p1, p2, seasons, activeSeason, otherSeason, which) {
   const call = (seasonLit) => which === 1
     ? `loadCompareMetrics('${p1}','${p2}',${seasonLit},${otherLit})`
     : `loadCompareMetrics('${p1}','${p2}',${otherLit},${seasonLit})`;
+  const sideCls = which === 2 ? ' compare-season-col-right' : '';
   return `
-    <div class="compare-season-selector">
-      <div class="compare-season-label">${_esc(name)}:</div>
+    <div class="compare-season-col${sideCls}">
+      <div class="compare-season-label">${_esc(name)}</div>
       <div class="compare-season-pills">
         <button class="adv-season-pill ${isCareer ? 'active' : ''}" onclick="${call('null')}">Career</button>
         ${sorted.map(s => `

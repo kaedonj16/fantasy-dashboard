@@ -15302,20 +15302,28 @@ tr.team-clickable {
 /* ── Season selector ────────────────────────────────────────────── */
 .compare-season-selectors {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
   margin-bottom: 14px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border);
 }
+.compare-season-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.compare-season-col-right { align-items: flex-end; }
+.compare-season-col-right .compare-season-pills { justify-content: flex-end; }
+.compare-season-col .compare-season-label { white-space: nowrap; }
 .compare-season-selector {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 14px;
 }
-.compare-season-selectors .compare-season-selector { margin-bottom: 0; }
-.compare-season-selectors .compare-season-label { min-width: 90px; }
 .compare-season-label {
   font-size: 12px;
   font-weight: 600;
