@@ -15300,12 +15300,22 @@ tr.team-clickable {
 
 
 /* ── Season selector ────────────────────────────────────────────── */
+.compare-season-selectors {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
 .compare-season-selector {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 14px;
 }
+.compare-season-selectors .compare-season-selector { margin-bottom: 0; }
+.compare-season-selectors .compare-season-label { min-width: 90px; }
 .compare-season-label {
   font-size: 12px;
   font-weight: 600;

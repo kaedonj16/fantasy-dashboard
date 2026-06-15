@@ -656,6 +656,8 @@ def build_advanced_metrics_body(
       .am-cmp-table th { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); }
       .am-cmp-player-head { font-size:13px !important; text-transform:none !important; letter-spacing:0 !important; color:var(--text) !important; font-weight:800 !important; }
       .am-cmp-player-meta { font-size:11px; font-weight:600; color:var(--text-muted); margin-left:5px; }
+      .am-cmp-season-sel { display:block; margin-top:5px; font-size:11px; font-weight:600; padding:3px 6px;
+        border:1px solid var(--border); border-radius:6px; background:var(--card-bg); color:var(--text); cursor:pointer; }
       .am-cmp-metric { font-weight:600; color:var(--text); white-space:nowrap; }
       .am-cmp-val { font-weight:700; font-variant-numeric:tabular-nums; }
       .am-cmp-best { color:#10b981; }
@@ -832,6 +834,7 @@ _AM_JS = r"""
                   ageMin: '', ageMax: '',
                   comboFilters: [],     // [{key, op, val}]
                   filterColKeys: new Set(), // keys auto-shown as compact cols when used in filters
+                  cmpSeasons: {},       // player_id -> season override in the Compare modal
                   pinnedIds: _loadPins() };
   const MAX_COMPARE = 6;
 
@@ -1201,19 +1204,62 @@ _AM_JS = r"""
     entries.forEach(([id], i) => { ranks[id] = i + 1; });
     return ranks;
   }
-  window.amShowCompare = function() {
+  // Change a single player's season in the Compare modal and re-render.
+  window.amSetCmpSeason = function(pid, season) {
+    state.cmpSeasons[String(pid)] = season;
+    window.amShowCompare();
+  };
+
+  window.amShowCompare = async function() {
     const modal = document.getElementById('amCompareModal');
     const body = document.getElementById('amCompareBody');
     if (!modal || !body) return;
     const players = pinnedRows();
     if (players.length < 2) return;
     const metricsList = [state.metric, ...state.extraMetrics];
+    const pageSeason = String(state.season || '');
+    const seasonsList = (cfg.seasons || []).slice();
+    const seasonFor = (p) => String(state.cmpSeasons[String(p.player_id)] || pageSeason);
+
+    modal.style.display = 'flex';
+    body.innerHTML = '<div style="padding:18px;color:var(--text-muted);font-size:13px;">Loading…</div>';
+
+    // Each pinned player's metrics for its own selected season. When a player's
+    // season matches the loaded leaderboard we reuse its in-memory values (and
+    // keep its rank badge); otherwise we fetch that season's metrics on demand.
+    const perPlayer = await Promise.all(players.map(async (p) => {
+      const s = seasonFor(p);
+      if (s === pageSeason) return { source: 'page', metrics: null };
+      try {
+        const r = await fetch('/api/player-advanced-metrics/' + encodeURIComponent(p.player_id) + '?season=' + encodeURIComponent(s));
+        const d = r.ok ? await r.json() : {};
+        return { source: 'fetch', metrics: d.metrics || {} };
+      } catch (_) { return { source: 'fetch', metrics: {} }; }
+    }));
+
+    const valueFor = (p, i, key) => {
+      if (perPlayer[i].source === 'fetch') {
+        const v = perPlayer[i].metrics[key];
+        return (v !== undefined && v !== null) ? Number(v) : null;
+      }
+      if (key === state.metric) return Number(p.value);
+      const ed = state.extraData[key];
+      const v = ed ? ed.byId[String(p.player_id)] : undefined;
+      return (v !== undefined && v !== null) ? Number(v) : null;
+    };
 
     let html = '<table class="am-cmp-table"><thead><tr><th>Metric</th>';
-    players.forEach(p => {
+    players.forEach((p) => {
+      const s = seasonFor(p);
+      const opts = seasonsList.map(yr =>
+        '<option value="' + yr + '"' + (String(yr) === s ? ' selected' : '') + '>' + yr + '</option>'
+      ).join('');
       html += '<th class="am-cmp-player-head">' + (p.name || '')
         + '<span class="am-cmp-player-meta" style="color:' + posColor(p.position) + '">' + (p.position || '') + '</span>'
-        + '<span class="am-cmp-player-meta">' + (p.team || '') + '</span></th>';
+        + (seasonsList.length
+            ? '<select class="am-cmp-season-sel" onchange="amSetCmpSeason(\'' + p.player_id + '\', this.value)">' + opts + '</select>'
+            : '<span class="am-cmp-player-meta">' + (p.team || '') + '</span>')
+        + '</th>';
     });
     html += '</tr></thead><tbody>';
 
@@ -1221,12 +1267,7 @@ _AM_JS = r"""
       const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
       const lower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
       const ranks = _metricRanks(key);
-      const vals = players.map(p => {
-        if (key === state.metric) return Number(p.value);
-        const ed = state.extraData[key];
-        const v = ed ? ed.byId[String(p.player_id)] : undefined;
-        return v !== undefined && v !== null ? Number(v) : null;
-      });
+      const vals = players.map((p, i) => valueFor(p, i, key));
       const present = vals.filter(v => v != null);
       const best = present.length
         ? (lower ? Math.min(...present) : Math.max(...present))
@@ -1238,7 +1279,8 @@ _AM_JS = r"""
         const v = vals[i];
         if (v == null) { html += '<td><span style="opacity:.4">–</span></td>'; return; }
         const isBest = best != null && v === best && present.length > 1;
-        const rk = ranks ? ranks[String(p.player_id)] : null;
+        // Rank only applies to the loaded leaderboard season.
+        const rk = (perPlayer[i].source === 'page' && ranks) ? ranks[String(p.player_id)] : null;
         const w = Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
         html += '<td><span class="am-cmp-val' + (isBest ? ' am-cmp-best' : '') + '">' + fmtVal(v, key) + '</span>'
           + (rk ? '<span class="am-cmp-rank">#' + rk + '</span>' : '')
@@ -1248,7 +1290,7 @@ _AM_JS = r"""
     });
     html += '</tbody></table>';
     html += '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;">'
-      + 'Showing the primary metric plus any added metrics. Add more with + Add Metric, or unpin players from the table.</div>';
+      + 'Pick a season per player to compare across years. Showing the primary metric plus any added metrics; ranks reflect the page season.</div>';
     body.innerHTML = html;
     modal.style.display = 'flex';
   };

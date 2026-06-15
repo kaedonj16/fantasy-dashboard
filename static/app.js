@@ -11260,59 +11260,59 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       </div>
     `;
   }).join("");
-}function loadCompareMetrics(playerId1, playerId2, season) {
-  const metricsUrl = (pid, season) => {
-    if (season === null) {
-      return `/api/player-advanced-metrics/${pid}?season=career`;
-    }
-    return `/api/player-advanced-metrics/${pid}?season=${season}`;
-  };
+}// Player names for the compare season-selector labels (set by openComparisonView).
+var _comparePlayerNames = {};
+
+// Build one player's season selector. Each player picks its OWN season
+// independently; clicking keeps the other player's season unchanged so you can
+// compare, e.g., player A's 2023 against player B's 2025.
+function _cmpSeasonSelector(p1, p2, seasons, activeSeason, otherSeason, which) {
+  if (!seasons || !seasons.length) return '';
+  const name = _comparePlayerNames[which === 1 ? p1 : p2] || ('Player ' + which);
+  const sorted = seasons.slice().sort((a, b) => b - a);
+  const isCareer = activeSeason === null;
+  const otherLit = (otherSeason === null || otherSeason === undefined) ? 'null' : otherSeason;
+  const call = (seasonLit) => which === 1
+    ? `loadCompareMetrics('${p1}','${p2}',${seasonLit},${otherLit})`
+    : `loadCompareMetrics('${p1}','${p2}',${otherLit},${seasonLit})`;
+  return `
+    <div class="compare-season-selector">
+      <div class="compare-season-label">${esc(name)}:</div>
+      <div class="compare-season-pills">
+        <button class="adv-season-pill ${isCareer ? 'active' : ''}" onclick="${call('null')}">Career</button>
+        ${sorted.map(s => `
+          <button class="adv-season-pill ${(!isCareer && activeSeason === s) ? 'active' : ''}" onclick="${call(s)}">${s}</button>
+        `).join('')}
+      </div>
+    </div>`;
+}
+
+function loadCompareMetrics(playerId1, playerId2, season1, season2) {
+  // Back-compat: a single season argument applies to both players.
+  if (typeof season2 === 'undefined') season2 = season1;
+  const metricsUrl = (pid, season) =>
+    season === null
+      ? `/api/player-advanced-metrics/${pid}?season=career`
+      : `/api/player-advanced-metrics/${pid}?season=${season}`;
 
   Promise.all([
-    fetch(metricsUrl(playerId1, season)).then(r => r.json()).catch(() => ({})),
-    fetch(metricsUrl(playerId2, season)).then(r => r.json()).catch(() => ({})),
+    fetch(metricsUrl(playerId1, season1)).then(r => r.json()).catch(() => ({})),
+    fetch(metricsUrl(playerId2, season2)).then(r => r.json()).catch(() => ({})),
   ]).then(([data1, data2]) => {
     const metricsDiv = document.getElementById('compareMetricsContent');
-    if (metricsDiv) {
-      // Extract metrics from the nested structure returned by API
-      const m1 = data1.metrics || {};
-      const m2 = data2.metrics || {};
-      
-      // Get available seasons from both players - only show years both have data for
-      const seasons1 = data1.available_seasons || [];
-      const seasons2 = data2.available_seasons || [];
-      const set2 = new Set(seasons2);
-      const allSeasons = seasons1.filter(s => set2.has(s)).sort((a, b) => b - a);
-      
-      // Rebuild season selector with updated active state
-      let seasonSelectorHTML = '';
-      if (allSeasons.length >= 1) {
-        const isCareer = season === null;
-        seasonSelectorHTML = `
-          <div class="compare-season-selector">
-            <div class="compare-season-label">Season:</div>
-            <div class="compare-season-pills">
-              <button class="adv-season-pill ${isCareer ? 'active' : ''}"
-                      onclick="loadCompareMetrics('${playerId1}', '${playerId2}', null)">
-                Career
-              </button>
-              ${allSeasons.map(s => `
-                <button class="adv-season-pill ${(!isCareer && season === s) ? 'active' : ''}"
-                        onclick="loadCompareMetrics('${playerId1}', '${playerId2}', ${s})">
-                  ${s}
-                </button>
-              `).join('')}
-            </div>
-          </div>
-        `;
-      }
-      
-      const rows = renderCompareMetricRows(m1, m2, data1, data2);
-      metricsDiv.innerHTML = `
-        ${seasonSelectorHTML}
-        ${rows}
-      `;
-    }
+    if (!metricsDiv) return;
+    const m1 = data1.metrics || {};
+    const m2 = data2.metrics || {};
+
+    // Per-player season selectors (each shows that player's own seasons).
+    const sel1 = _cmpSeasonSelector(playerId1, playerId2, data1.available_seasons || [], season1, season2, 1);
+    const sel2 = _cmpSeasonSelector(playerId1, playerId2, data2.available_seasons || [], season2, season1, 2);
+
+    const rows = renderCompareMetricRows(m1, m2, data1, data2);
+    metricsDiv.innerHTML = `
+      <div class="compare-season-selectors">${sel1}${sel2}</div>
+      ${rows}
+    `;
   });
 }
 
@@ -11434,69 +11434,19 @@ function openComparisonView(p1, p2) {
     setTimeout(() => openPlayerModal(p2.player_id, p2.name), 220);
   });
 
-  // Fetch NFL state to determine if it's offseason
+  // Remember names so each player's season selector can be labeled.
+  _comparePlayerNames[p1.player_id] = p1.name || p1.full_name || 'Player 1';
+  _comparePlayerNames[p2.player_id] = p2.name || p2.full_name || 'Player 2';
+
+  // Fetch NFL state to determine if it's offseason, then load metrics with
+  // independent per-player season selection (defaults to the same season).
   fetch('/api/nfl-state').then(r => r.json()).catch(() => ({}))
     .then(nflState => {
       const isOffseason = (nflState.season_type || '').toLowerCase() === 'off';
       const currentSeason = nflState.season || new Date().getFullYear();
-      
       // During offseason, default to career metrics (no season parameter)
       const defaultSeason = isOffseason ? null : currentSeason;
-      
-      // Fetch advanced metrics for both players in parallel
-      const metricsUrl = (pid, season) => {
-        if (season === null) {
-          return `/api/player-advanced-metrics/${pid}?season=career`;
-        }
-        return `/api/player-advanced-metrics/${pid}?season=${season}`;
-      };
-
-      Promise.all([
-        fetch(metricsUrl(p1.player_id, defaultSeason)).then(r => r.json()).catch(() => ({})),
-        fetch(metricsUrl(p2.player_id, defaultSeason)).then(r => r.json()).catch(() => ({})),
-      ]).then(([data1, data2]) => {
-        const metricsDiv = document.getElementById('compareMetricsContent');
-        if (metricsDiv) {
-          // Extract metrics from the nested structure returned by API
-          const m1 = data1.metrics || {};
-          const m2 = data2.metrics || {};
-          
-          // Get available seasons from both players - intersection only
-          const seasons1 = data1.available_seasons || [];
-          const seasons2 = data2.available_seasons || [];
-          const _set2 = new Set(seasons2);
-          const allSeasons = seasons1.filter(s => _set2.has(s)).sort((a, b) => b - a);
-          const isCareerActive = defaultSeason === null;
-
-          // Build season selector if any shared seasons are available
-          let seasonSelectorHTML = '';
-          if (allSeasons.length >= 1) {
-            seasonSelectorHTML = `
-              <div class="compare-season-selector">
-                <div class="compare-season-label">Season:</div>
-                <div class="compare-season-pills">
-                  <button class="adv-season-pill ${isCareerActive ? 'active' : ''}"
-                          onclick="loadCompareMetrics('${p1.player_id}', '${p2.player_id}', null)">
-                    Career
-                  </button>
-                  ${allSeasons.map(s => `
-                    <button class="adv-season-pill ${(!isCareerActive && defaultSeason === s) ? 'active' : ''}"
-                            onclick="loadCompareMetrics('${p1.player_id}', '${p2.player_id}', ${s})">
-                      ${s}
-                    </button>
-                  `).join('')}
-                </div>
-              </div>
-            `;
-          }
-          
-          const rows = renderCompareMetricRows(m1, m2, p1, p2);
-          metricsDiv.innerHTML = `
-            ${seasonSelectorHTML}
-            ${rows}
-          `;
-        }
-      });
+      loadCompareMetrics(p1.player_id, p2.player_id, defaultSeason, defaultSeason);
     });
 
   // Render value history chart with two lines
