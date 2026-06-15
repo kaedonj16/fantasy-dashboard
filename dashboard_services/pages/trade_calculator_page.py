@@ -170,6 +170,35 @@ def build_trade_calculator_body(
                 </select>
               </div>"""
 
+    # Roster filter lives inside the settings dropdown (when not a guest)
+    restrict_field = (
+        f"""<div class="otc-settings-field">{restrict_toggle_block}</div>"""
+        if restrict_toggle_block else ""
+    )
+
+    # Settings dropdown groups the less-frequently-changed controls so the toolbar
+    # only surfaces Scoring Type (Dynasty/Redraft) and Scoring Format inline.
+    settings_dropdown_block = f"""
+              <div class="otc-settings-menu" id="otcSettingsMenu">
+                <button type="button" class="otc-settings-toggle-btn" id="otcSettingsBtn"
+                        aria-haspopup="true" aria-expanded="false">Settings</button>
+                <div class="otc-settings-dropdown" id="otcSettingsDropdown" style="display:none;">
+                  <div class="otc-settings-field">
+                    <span class="otc-settings-field-label">League Size</span>
+                    {league_size_block}
+                  </div>
+                  <div class="otc-settings-field">
+                    <span class="otc-settings-field-label">League Format</span>
+                    {league_type_block}
+                  </div>
+                  <div class="otc-settings-field">
+                    <span class="otc-settings-field-label">TE Premium</span>
+                    {te_premium_block}
+                  </div>
+                  {restrict_field}
+                </div>
+              </div>"""
+
     league_type_js = repr("sf" if is_superflex else "1qb")
     return f"""
     <script>var _leagueType = {league_type_js}; var _leagueSize = {num_teams_val};</script>
@@ -220,11 +249,8 @@ def build_trade_calculator_body(
                   </label>
                 </div>
                 {scoring_type_block}
-                {league_size_block}
                 {scoring_format_block}
-                {league_type_block}
-                {te_premium_block}
-                {restrict_toggle_block}
+                {settings_dropdown_block}
               </div>
             </div>
           </div>

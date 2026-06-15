@@ -2841,9 +2841,11 @@ window.initTradePage = function initTradePage(root = document) {
 
     const overallRankMap = buildOverallRankMap(allPlayers);
 
+    const _redraft = getScoringType() === "redraft";
     const items = allPlayers
       .filter(p => {
         const pos = String(p.position || "").toUpperCase();
+        if (_redraft && pos === "PICK") return false;  // no redraft value for picks
         if (activePosFilter === "ALL") return true;
         if (activePosFilter === "ROOKIE") return !!p.is_rookie;
         if (activePosFilter === "PICK") return pos === "PICK";
@@ -5961,6 +5963,7 @@ window.initTradePage = function initTradePage(root = document) {
       };
 
       let pool = allPlayers
+        .filter(p => !(getScoringType() === "redraft" && p.position === "PICK"))
         .filter(p => p.position === "PICK"
           ? pickAllowed(p)
           : (!allowedIds || allowedIds.has(String(p.id))))
@@ -6126,11 +6129,25 @@ window.initTradePage = function initTradePage(root = document) {
     if (sizeCtrl) sizeCtrl.disabled = getScoringType() === "redraft";
   }
 
+  // Picks have no redraft value: hide the Picks filter, drop the filter if
+  // active, and clear any picks already staged on either side.
+  function syncPicksForScoringType() {
+    const redraft = getScoringType() === "redraft";
+    const pickChip = root.querySelector('.pos-filter[data-pos="PICK"]');
+    if (pickChip) pickChip.style.display = redraft ? "none" : "";
+    if (redraft) {
+      if (activePosFilter === "PICK") setPosFilter("ALL");
+      state.sideAPicks.length = 0;
+      state.sideBPicks.length = 0;
+    }
+  }
+
   function bindScoringTypeControls() {
     const sel = root.querySelector("#scoringTypeSelect");
     if (sel) {
       bindOnce(sel, "tradeScoringTypeChange", "change", () => {
         syncScoringTypeUi();
+        syncPicksForScoringType();
         renderChips("A");
         renderChips("B");
         recomputeTrade();
@@ -6139,6 +6156,27 @@ window.initTradePage = function initTradePage(root = document) {
       });
     }
     syncScoringTypeUi();
+    syncPicksForScoringType();
+  }
+
+  // Toolbar settings dropdown (league size / format / TE premium / roster filter)
+  function bindTradeSettingsDropdown() {
+    const btn = root.querySelector("#otcSettingsBtn");
+    const menu = root.querySelector("#otcSettingsMenu");
+    const panel = root.querySelector("#otcSettingsDropdown");
+    if (!btn || !panel) return;
+    bindOnce(btn, "otcSettingsToggle", "click", (e) => {
+      e.stopPropagation();
+      const willOpen = panel.style.display === "none";
+      panel.style.display = willOpen ? "block" : "none";
+      btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    });
+    bindOnce(document, "otcSettingsOutside", "click", (e) => {
+      if (menu && !menu.contains(e.target)) {
+        panel.style.display = "none";
+        btn.setAttribute("aria-expanded", "false");
+      }
+    });
   }
 
   function bindTePremiumControls() {
@@ -6592,6 +6630,7 @@ window.initTradePage = function initTradePage(root = document) {
     bindScoringFormatControls();
     bindScoringTypeControls();
     bindTePremiumControls();
+    bindTradeSettingsDropdown();
     bindViewerSideControls();
     bindAnalyzeTrade();
     bindTeamSelector();

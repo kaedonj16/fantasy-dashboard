@@ -21044,3 +21044,52 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Trade calculator settings dropdown ───────────────────────────────────────
+   Groups league size / format / TE-premium / roster-filter behind a button so
+   the toolbar only shows Scoring Type + Scoring Format inline. */
+.otc-settings-menu { position: relative; display: inline-flex; }
+.otc-settings-toggle-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.12s;
+}
+.otc-settings-toggle-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.otc-settings-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  padding: 14px;
+  min-width: 220px;
+  z-index: 1000;
+}
+.otc-settings-field { margin-bottom: 14px; }
+.otc-settings-field:last-child { margin-bottom: 0; }
+.otc-settings-field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+/* Neutralize the inline-toolbar dividers/margins when nested in the dropdown */
+.otc-settings-dropdown .otc-ctrl-group { margin: 0; padding: 0; border: none; }
+.otc-settings-dropdown .otc-ctrl-select { width: 100% !important; }
