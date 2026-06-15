@@ -11268,6 +11268,7 @@ var _comparePlayerNames = {};
 // compare, e.g., player A's 2023 against player B's 2025.
 function _cmpSeasonSelector(p1, p2, seasons, activeSeason, otherSeason, which) {
   if (!seasons || !seasons.length) return '';
+  const _esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   const name = _comparePlayerNames[which === 1 ? p1 : p2] || ('Player ' + which);
   const sorted = seasons.slice().sort((a, b) => b - a);
   const isCareer = activeSeason === null;
@@ -11277,7 +11278,7 @@ function _cmpSeasonSelector(p1, p2, seasons, activeSeason, otherSeason, which) {
     : `loadCompareMetrics('${p1}','${p2}',${otherLit},${seasonLit})`;
   return `
     <div class="compare-season-selector">
-      <div class="compare-season-label">${esc(name)}:</div>
+      <div class="compare-season-label">${_esc(name)}:</div>
       <div class="compare-season-pills">
         <button class="adv-season-pill ${isCareer ? 'active' : ''}" onclick="${call('null')}">Career</button>
         ${sorted.map(s => `
@@ -11313,6 +11314,9 @@ function loadCompareMetrics(playerId1, playerId2, season1, season2) {
       <div class="compare-season-selectors">${sel1}${sel2}</div>
       ${rows}
     `;
+  }).catch(() => {
+    const metricsDiv = document.getElementById('compareMetricsContent');
+    if (metricsDiv) metricsDiv.innerHTML = '<div style="padding:12px 0;color:var(--text-muted);font-size:13px;">Could not load advanced metrics.</div>';
   });
 }
 
