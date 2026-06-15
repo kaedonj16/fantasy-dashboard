@@ -10828,6 +10828,9 @@ function openCompareSearch(player1Data) {
             placeholder="Search for a player to compare..."
             autocomplete="off"
           />
+          <button type="button" id="compareSelfBtn" class="compare-self-btn">
+            &#8644; Compare ${esc(player1Data.name)}'s own seasons
+          </button>
           <div id="compareSearchResults" class="compare-search-results"></div>
         </div>
       </div>
@@ -10836,6 +10839,10 @@ function openCompareSearch(player1Data) {
 
   const input = document.getElementById('comparePlayerInput');
   const resultsBox = document.getElementById('compareSearchResults');
+  // Compare the player against a different season of himself.
+  document.getElementById('compareSelfBtn')?.addEventListener('click', () => {
+    openComparisonView(player1Data, Object.assign({}, player1Data));
+  });
   input.focus();
 
   function renderResults(players) {
