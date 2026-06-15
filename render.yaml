@@ -91,4 +91,4 @@ databases:
   - name: brfantasy-db
     databaseName: brfantasy
     user: brfantasy_user
-    plan: basic
+    plan: basic-1gb
