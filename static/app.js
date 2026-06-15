@@ -8505,6 +8505,7 @@ function openPlayerModal(playerId, playerName, opts) {
         <div id="advancedMetricsSection">
           <div class="pm-section-header">
             <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span></span>
+            <span title="Hover each metric label to see its definition" style="cursor:default;font-size:11px;opacity:0.45;margin-left:3px;user-select:none;" aria-label="Hover each metric to see its definition">ⓘ</span>
             ${_setLink}
           </div>
           <div id="advMetricsPills"></div>
@@ -9687,6 +9688,119 @@ function pmToggleWeeklyTrends(playerId) {
     });
 }
 
+const _ADV_METRIC_DESCS = {
+  // keyed by metric key — used by renderCompareMetricRows
+  role_score: "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position.",
+  snap_share: "Percent of the team's offensive snaps the player was on the field for.",
+  opportunity_share: "Share of the team's targets plus carries that went to this player.",
+  red_zone_usage: "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity.",
+  grades_offense: "PFF's overall offensive grade (0-100) from play-by-play charting.",
+  yards_per_touch: "Yards gained per combined carry and reception.",
+  yards_per_attempt: "Passing yards per attempt; core passing efficiency stat.",
+  completion_pct: "Percent of pass attempts completed.",
+  adjusted_completion_rate: "Completion percent adjusted for drops, throwaways, spikes, and batted passes.",
+  td_rate: "Percent of pass attempts that result in a touchdown.",
+  int_rate: "Percent of pass attempts intercepted. Lower is better.",
+  big_time_throw_rate: "PFF rate of high-difficulty, high-value throws (deep and into tight windows).",
+  pressure_to_sack_rate: "Percent of pressured dropbacks that turn into sacks. Lower is better.",
+  nfl_passer_rating: "Standard NFL passer rating (0-158.3).",
+  pff_passing_grade: "PFF's passing grade (0-100).",
+  total_pass_tds: "Total passing touchdowns in the season.",
+  pass_tds_per_game: "Passing touchdowns per game.",
+  yards_per_carry: "Rushing yards gained per carry.",
+  rush_td_rate: "Percent of carries that result in a touchdown.",
+  breakaway_percentage: "Percent of rushing yards that came on runs of 15+ yards; explosiveness.",
+  elusive_rating: "PFF metric for yards created after contact and missed tackles forced, independent of blocking.",
+  pff_rushing_grade: "PFF's rushing grade (0-100).",
+  explosive_runs_10_plus: "Count of runs gaining 10 or more yards in the season (PFF). Raw explosive-play volume.",
+  avoided_tackles: "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss.",
+  total_rush_tds: "Total rushing touchdowns in the season.",
+  route_participation: "Percent of the team's pass-play snaps on which the WR/TE ran a route.",
+  target_share: "Percent of the team's total targets directed at this player.",
+  air_yards_per_game: "Receiving air yards per game; a measure of downfield target volume.",
+  air_yards_share: "Share of the team's total passing air yards directed at this player; combines target share with depth of target.",
+  yards_per_target: "Receiving yards earned per time targeted; measures efficiency on volume.",
+  yards_per_reception: "Average yards gained per catch; higher means a more downfield/explosive role.",
+  catch_rate: "Percent of targets caught.",
+  target_quality_score: "Composite of how valuable a player's targets are (depth, location, situation).",
+  avg_depth_of_target: "Average depth of target: how far downfield (in yards) the player is thrown to.",
+  contested_catch_rate: "Percent of contested (tightly covered) targets the player came down with.",
+  yards_after_catch_per_reception: "Average yards gained after the catch per reception.",
+  yards_after_catch: "Total yards gained after the catch in the season.",
+  drop_rate: "Percent of catchable targets dropped. Lower is better.",
+  yprr: "Receiving yards earned per route run (from PFF). Elite WRs are typically 2.0+.",
+  slot_rate: "Percent of routes run from the slot.",
+  wide_rate: "Percent of routes run from out wide.",
+  inline_rate: "Percent of snaps a tight end lined up inline (attached to the formation).",
+  pass_block_rate: "Percent of pass snaps spent blocking rather than running a route.",
+  grades_pass_block: "PFF's pass blocking grade (0-100).",
+  total_rec_tds: "Total receiving touchdowns in the season.",
+  total_carries: "Total carries in the season.",
+  carries_per_game: "Carries per game.",
+  total_targets: "Total targets in the season.",
+  targets_per_game: "Targets per game.",
+  total_receptions: "Total receptions in the season.",
+  receptions_per_game: "Receptions per game.",
+  total_touches: "Total carries plus receptions in the season.",
+  touches_per_game: "Carries plus receptions per game.",
+  total_tds: "Total touchdowns (rush + receiving + passing) in the season.",
+  // keyed by display label — used by buildAdvancedMetricsHTML _cells()
+  'Role Score': "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position.",
+  'Snap Share': "Percent of the team's offensive snaps the player was on the field for.",
+  'Route Partic': "Percent of the team's pass-play snaps on which the WR/TE ran a route. High route participation means a consistent full-time route runner.",
+  'Opp Share': "Share of the team's targets plus carries that went to this player.",
+  'RZ Usage/G': "Targets and carries inside the opponent's 20-yard line per game; a proxy for scoring opportunity.",
+  'PFF Off Grade': "PFF's overall offensive grade (0-100) from play-by-play charting.",
+  'Yds/Touch': "Yards gained per combined carry and reception.",
+  'PFF Pass Grade': "PFF's passing grade (0-100).",
+  'BTT Rate': "PFF rate of high-difficulty, high-value throws (deep and into tight windows).",
+  'Adj Comp %': "Completion percent adjusted for drops, throwaways, spikes, and batted passes.",
+  'Passer Rating': "Standard NFL passer rating (0-158.3).",
+  'Yds/Attempt': "Passing yards per attempt; core passing efficiency stat.",
+  'Completion %': "Percent of pass attempts completed.",
+  'TD/INT Ratio': "Touchdowns thrown per interception; combines pass TD rate and INT rate into a single efficiency ratio.",
+  'Pressure→Sack%': "Percent of pressured dropbacks that turn into sacks. Lower is better.",
+  'Yds/Carry': "Rushing yards gained per carry.",
+  'Rush TD Rate': "Percent of carries that result in a touchdown.",
+  'PFF Rush Grade': "PFF's rushing grade (0-100).",
+  'Breakaway %': "Percent of rushing yards that came on runs of 15+ yards; explosiveness.",
+  'Explosive Runs': "Count of runs gaining 10 or more yards in the season (PFF). Raw explosive-play volume.",
+  'Elusive Rating': "PFF metric for yards created after contact and missed tackles forced, independent of blocking.",
+  'Avoided Tackles': "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss.",
+  'Catch Rate': "Percent of targets caught.",
+  'Yds/Route Run': "Receiving yards earned per route run (from PFF). Elite WRs are typically 2.0+.",
+  'Drop Rate': "Percent of catchable targets dropped. Lower is better.",
+  'Yds/Target': "Receiving yards earned per time targeted; measures efficiency on volume.",
+  'Yds/Reception': "Average yards gained per catch; higher means a more downfield/explosive role.",
+  'YAC/Rec': "Average yards gained after the catch per reception.",
+  'YAC (season)': "Total yards gained after the catch in the season.",
+  'aDOT': "Average depth of target: how far downfield (in yards) the player is thrown to.",
+  'Contested Catch %': "Percent of contested (tightly covered) targets the player came down with.",
+  'Target Share': "Percent of the team's total targets directed at this player.",
+  'Air Yds/Game': "Receiving air yards per game; a measure of downfield target volume.",
+  'Air Yards Share': "Share of the team's total passing air yards directed at this player; combines target share with depth of target.",
+  'Target Quality': "Composite of how valuable a player's targets are (depth, location, situation).",
+  'Slot Rate': "Percent of routes run from the slot.",
+  'Wide Rate': "Percent of routes run from out wide.",
+  'Inline Rate': "Percent of snaps a tight end lined up inline (attached to the formation).",
+  'Block Rate': "Percent of pass snaps spent blocking rather than running a route.",
+  'PFF Block Grade': "PFF's pass blocking grade (0-100).",
+  'Usage Trend': "Recent usage trend: positive means the player's usage has risen vs. their season average.",
+  'Eff Trend': "Recent efficiency trend: positive means the player has been more efficient recently vs. their season average.",
+  'Carries/G': "Carries per game.",
+  'Carries': "Total carries in the season.",
+  'Targets/G': "Targets per game.",
+  'Targets': "Total targets in the season.",
+  'Touches/G': "Carries plus receptions per game.",
+  'Rush TDs': "Total rushing touchdowns in the season.",
+  'Rec TDs': "Total receiving touchdowns in the season.",
+  'Total TDs': "Total touchdowns (rush + receiving + passing) in the season.",
+  'Receptions/G': "Receptions per game.",
+  'Receptions': "Total receptions in the season.",
+  'Pass TDs': "Total passing touchdowns in the season.",
+  'Pass TDs/G': "Passing touchdowns per game.",
+};
+
 function buildAdvancedMetricsHTML(metricsData, ranks) {
   const metrics = metricsData.metrics || {};
   // Normalize PFF position codes to canonical fantasy positions
@@ -9921,7 +10035,9 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
     const color = m.forceColor || (fill >= 60 ? '#10b981' : fill >= 35 ? '#3b82f6' : '#f59e0b');
     const subCls = isRank ? ' rank-badge' : '';
     const subLine = m.sub ? `<div class="pm-comp-sub${subCls}">${m.sub}</div>` : '';
-    return `<span class="pm-comp-label">${m.label}</span>` +
+    const _desc = _ADV_METRIC_DESCS[m.label] || '';
+    const _titleAttr = _desc ? ` title="${_desc.replace(/"/g, '&quot;')}"` : '';
+    return `<span class="pm-comp-label"${_titleAttr}>${m.label}</span>` +
       `<div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>` +
       `<div class="pm-comp-val" style="color:${color};">${m.display}${subLine}</div>`;
   }
@@ -10982,7 +11098,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
         <div class="compare-bar-left">
           <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
         </div>
-        <div class="compare-metric-label">${allLabelMap[key]}</div>
+        <div class="compare-metric-label"${_ADV_METRIC_DESCS[key] ? ` title="${_ADV_METRIC_DESCS[key].replace(/"/g, '&quot;')}"` : ''}>${allLabelMap[key]}</div>
         <div class="compare-bar-right">
           <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2)};"></div>
         </div>
@@ -11081,6 +11197,7 @@ function openComparisonView(p1, p2) {
            onclick="cmpToggleSection('compareMetricsWrap', this)">
         <span class="pm-collapse-chevron">&#9662;</span>
         <span class="pm-section-label">Advanced Metrics Comparison</span>
+        <span title="Hover each metric label to see its definition" style="cursor:default;font-size:11px;opacity:0.45;margin-left:3px;user-select:none;" aria-label="Hover each metric to see its definition">ⓘ</span>
         <span class="pm-collapse-hint">click to collapse</span>
       </div>
       <div id="compareMetricsWrap">

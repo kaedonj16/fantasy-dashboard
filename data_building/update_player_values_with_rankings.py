@@ -293,13 +293,14 @@ def save_to_player_value_history(players: List[Dict[str, Any]]) -> int:
     snapshot_date = date.today()
     saved_count = 0
 
-    # Values are already model-normalized (top non-QB = 999.9, all capped at 999.9).
-    # Re-deriving a per-day scale here would re-anchor to a different population and,
-    # worse for a *history* table, silently rescale every player whenever the daily
-    # leaguewide max moves — manufacturing day-over-day "changes" out of a flat value.
-    # Preserve the model's numbers; clamp defensively to [0, 999.9].
+    # Values are already model-normalized (top-N basket mean = 999.9; elite players
+    # float above it). Re-deriving a per-day scale here would re-anchor to a different
+    # population and, worse for a *history* table, silently rescale every player
+    # whenever the daily leaguewide max moves — manufacturing day-over-day "changes"
+    # out of a flat value. Preserve the model's numbers; clamp defensively at a high
+    # ceiling only (NOT 999.9, which would re-flatten the top players' sparklines).
     def _clamp(v):
-        return round(min(max(float(v or 0), 0.0), 999.9), 2)
+        return round(min(max(float(v or 0), 0.0), 9999.0), 2)
 
     try:
         with get_conn() as conn:

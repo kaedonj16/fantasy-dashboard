@@ -209,7 +209,7 @@ def get_player_value_history(
     out: list[dict] = []
     prev_val: Optional[float] = None
     for r in rows:
-        val = min(float(r["value"]), 999.9)  # cap at scale max; filters corrupted snapshots
+        val = float(r["value"])
         if val <= 0:
             continue
         delta = None if prev_val is None else round(val - prev_val, 1)
@@ -346,8 +346,8 @@ def load_current_values_from_db() -> list[dict]:
                     """
                     SELECT
                         player_id  AS id,
-                        GREATEST(calibrated_value_1qb, value_1qb)            AS value,
-                        GREATEST(calibrated_value_sf,  value_sf, value_1qb)  AS sf_value,
+                        GREATEST(calibrated_value_1qb, value_1qb)                    AS value,
+                        COALESCE(GREATEST(calibrated_value_sf, value_sf), value_1qb) AS sf_value,
                         value_1qb  AS model_value,
                         value_sf   AS model_sf_value,
                         GREATEST(calibrated_value_8,      value_8)      AS value_8,
