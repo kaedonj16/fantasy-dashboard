@@ -346,8 +346,8 @@ def load_current_values_from_db() -> list[dict]:
                     """
                     SELECT
                         player_id  AS id,
-                        GREATEST(calibrated_value_1qb, value_1qb)            AS value,
-                        GREATEST(calibrated_value_sf,  value_sf, value_1qb)  AS sf_value,
+                        GREATEST(calibrated_value_1qb, value_1qb)                    AS value,
+                        COALESCE(GREATEST(calibrated_value_sf, value_sf), value_1qb) AS sf_value,
                         value_1qb  AS model_value,
                         value_sf   AS model_sf_value,
                         GREATEST(calibrated_value_8,      value_8)      AS value_8,
