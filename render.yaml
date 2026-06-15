@@ -117,4 +117,3 @@ databases:
   - name: brfantasy-db
     databaseName: brfantasy
     user: brfantasy_user
-    plan: standard
