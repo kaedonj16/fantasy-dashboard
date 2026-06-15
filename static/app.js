@@ -2905,6 +2905,16 @@ window.initTradePage = function initTradePage(root = document) {
     return sel?.value || "ppr";
   }
 
+  function getScoringType() {
+    const sel = root.querySelector("#scoringTypeSelect");
+    return sel?.value || "dynasty";
+  }
+
+  function getTePremium() {
+    const sel = root.querySelector("#tePremiumSelect");
+    return Number(sel?.value || 0) || 0;
+  }
+
   // Position multipliers matching the server-side _SCORING_MULTS table
   const SCORING_MULTS = {
     ppr:  { QB: 1.00, RB: 1.00, WR: 1.00, TE: 1.00 },
@@ -2916,12 +2926,21 @@ window.initTradePage = function initTradePage(root = document) {
     const leagueType = getLeagueType();
     const size = getLeagueSize();
     const fmt = getScoringFormat();
+    const scoringType = getScoringType();
+    const tePremium = getTePremium();
     const mults = SCORING_MULTS[fmt] || SCORING_MULTS.ppr;
     const pos = (player.position || "").toUpperCase();
-    const mult = mults[pos] ?? 1.0;
+    let mult = mults[pos] ?? 1.0;
+    // TE premium scales tight-end values (~+20% at full 1.0 pt/reception).
+    if (tePremium && pos === "TE") mult *= (1 + tePremium * 0.20);
 
     let base;
-    if (leagueType === "sf") {
+    if (scoringType === "redraft") {
+      // Redraft values are league-size agnostic (1QB vs SF only).
+      base = Number(leagueType === "sf"
+        ? (player.redraft_value_sf ?? player.redraft_value_1qb ?? 0)
+        : (player.redraft_value_1qb ?? 0));
+    } else if (leagueType === "sf") {
       const key = size === 10 ? "sf_value" : `sf_value_${size}`;
       base = Number(player[key] ?? player.sf_value ?? player.value ?? 0);
     } else {
@@ -3300,6 +3319,8 @@ window.initTradePage = function initTradePage(root = document) {
       league_type: getLeagueType(),
       league_size: getLeagueSize(),
       scoring_format: getScoringFormat(),
+      scoring_type: getScoringType(),
+      te_premium: getTePremium(),
       side_a_players: sideAIds,
       side_b_players: sideBIds,
       side_a_picks: sideAPickIds,
@@ -5645,7 +5666,10 @@ window.initTradePage = function initTradePage(root = document) {
       league_id: root.querySelector("#leagueIdInput")?.value || "",
       season: root.querySelector("#seasonInput")?.value || "",
       league_type: getLeagueType(),
+      league_size: getLeagueSize(),
       scoring_format: getScoringFormat(),
+      scoring_type: getScoringType(),
+      te_premium: getTePremium(),
       viewer_side: viewerSide,
       side_a_players: sideAIds,
       side_b_players: sideBIds,
@@ -6096,6 +6120,40 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  // League size doesn't affect redraft values, so grey it out in redraft mode.
+  function syncScoringTypeUi() {
+    const sizeCtrl = root.querySelector("#leagueSizeSelect");
+    if (sizeCtrl) sizeCtrl.disabled = getScoringType() === "redraft";
+  }
+
+  function bindScoringTypeControls() {
+    const sel = root.querySelector("#scoringTypeSelect");
+    if (sel) {
+      bindOnce(sel, "tradeScoringTypeChange", "change", () => {
+        syncScoringTypeUi();
+        renderChips("A");
+        renderChips("B");
+        recomputeTrade();
+        renderAllPlayersList();
+        if (isTargetsTabActive()) loadTradeTargets();
+      });
+    }
+    syncScoringTypeUi();
+  }
+
+  function bindTePremiumControls() {
+    const sel = root.querySelector("#tePremiumSelect");
+    if (sel) {
+      bindOnce(sel, "tradeTePremiumChange", "change", () => {
+        renderChips("A");
+        renderChips("B");
+        recomputeTrade();
+        renderAllPlayersList();
+        if (isTargetsTabActive()) loadTradeTargets();
+      });
+    }
+  }
+
   function bindViewerSideControls() {
     root.querySelectorAll('input[name="viewerSide"]').forEach(el => {
       bindOnce(el, "tradeViewerSideChange", "change", () => {
@@ -6532,6 +6590,8 @@ window.initTradePage = function initTradePage(root = document) {
     bindLeagueTypeControls();
     bindLeagueSizeControls();
     bindScoringFormatControls();
+    bindScoringTypeControls();
+    bindTePremiumControls();
     bindViewerSideControls();
     bindAnalyzeTrade();
     bindTeamSelector();

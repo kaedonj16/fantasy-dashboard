@@ -10898,7 +10898,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                   <span class="settings-section-label">Scoring Type</span>
                   <div class="settings-toggle-group">
                     <button class="settings-toggle active" data-value="dynasty" onclick="prSetScoringType('dynasty')">Dynasty</button>
-                    <button class="settings-toggle" data-value="redraft" disabled title="Coming soon">Redraft </button>
+                    <button class="settings-toggle" data-value="redraft" onclick="prSetScoringType('redraft')">Redraft</button>
                   </div>
                 </div>
                 <div class="settings-section">
@@ -10917,6 +10917,14 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                     <button class="settings-toggle" data-value="14" onclick="prSetSize(14)">14</button>
                   </div>
                 </div>
+                <div class="settings-section" id="prTepSection">
+                  <span class="settings-section-label">TE Premium</span>
+                  <div class="settings-toggle-group">
+                    <button class="settings-toggle active" data-value="0" onclick="prSetTePremium(0)">Off</button>
+                    <button class="settings-toggle" data-value="0.5" onclick="prSetTePremium(0.5)">+0.5</button>
+                    <button class="settings-toggle" data-value="1" onclick="prSetTePremium(1)">+1.0</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -10927,6 +10935,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               <span class="active-setting-tag">10-Team</span>
               <span class="active-setting-tag">1QB</span>
               <span class="active-setting-tag">Dynasty</span>
+              <span class="active-setting-tag" id="prTepTag" style="display:none;">TE+</span>
             </div>
             <!-- Sort dropdown -->
             <div class="filter-sort">
@@ -11307,6 +11316,13 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       var prLeagueType   = '1qb';
       var prLeagueSize   = 10;
       var prScoringType  = 'dynasty';  // 'dynasty' | 'redraft'
+      var prTePremium    = 0;          // TE premium pts/reception: 0 | 0.5 | 1
+      // Convert TE-premium points/reception into a value multiplier for TEs.
+      // ~+20% at full (1.0) PPR-TE premium, scaled linearly.
+      function prTeBoost(pos) {
+        if (!prTePremium || pos !== 'TE') return 1;
+        return 1 + prTePremium * 0.20;
+      }
       var prPosFilters = new Set();   // empty = All
       var prSearchQuery = '';
       var prLoaded = false;
@@ -11384,18 +11400,17 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       }
 
       function prGetValue(p) {
+        let base;
         if (prScoringType === 'redraft') {
-          const base = Number(prLeagueType === 'sf'
+          base = Number(prLeagueType === 'sf'
             ? (p.redraft_value_sf ?? p.redraft_value_1qb ?? 0)
             : (p.redraft_value_1qb ?? 0));
-          return Math.round(base * 10) / 10;
-        }
-        let base;
-        if (prLeagueType === 'sf') {
+        } else if (prLeagueType === 'sf') {
           base = Number(p[prValueKey(true)] ?? p.sf_value ?? p.value ?? 0);
         } else {
           base = Number(p[prValueKey(false)] ?? p.value ?? 0);
         }
+        base *= prTeBoost(p.position);
         return Math.round(base * 10) / 10;
       }
 
@@ -11459,6 +11474,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         if (tags[0]) tags[0].textContent = prLeagueSize + '-Team';
         if (tags[1]) tags[1].textContent = prLeagueType.toUpperCase();
         if (tags[2]) tags[2].textContent = prScoringType === 'redraft' ? 'Redraft' : 'Dynasty';
+        const tepTag = document.getElementById('prTepTag');
+        if (tepTag) {
+          tepTag.style.display = prTePremium ? '' : 'none';
+          tepTag.textContent = 'TE+' + prTePremium;
+        }
       }
 
       function prSetScoringType(type) {
@@ -11496,6 +11516,20 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           }
         });
 
+        updateSettingsIndicator();
+        prPage = 1;
+        prRender();
+      }
+
+      function prSetTePremium(pts) {
+        prTePremium = Number(pts) || 0;
+        // Highlight the active TE-premium button
+        const sec = document.getElementById('prTepSection');
+        if (sec) {
+          sec.querySelectorAll('.settings-toggle[data-value]').forEach(btn => {
+            btn.classList.toggle('active', Number(btn.getAttribute('data-value')) === prTePremium);
+          });
+        }
         updateSettingsIndicator();
         prPage = 1;
         prRender();
@@ -17388,6 +17422,11 @@ def api_trade_eval():
     league_type = str(payload.get("league_type") or "1qb").strip().lower()
     league_size = int(payload.get("league_size") or 10)
     scoring_format = str(payload.get("scoring_format") or "ppr").strip().lower()
+    scoring_type = str(payload.get("scoring_type") or "dynasty").strip().lower()
+    try:
+        te_premium = float(payload.get("te_premium") or 0)
+    except Exception:
+        te_premium = 0.0
     viewer_side = (payload.get("viewer_side") or "a").strip().lower()
 
     # Position-based multipliers for non-PPR formats.
@@ -17473,8 +17512,13 @@ def api_trade_eval():
                 })
                 continue
 
-            # Use size/type-specific value, falling back to 10-team then base value
-            if league_type == "sf":
+            # Use size/type-specific value, falling back to 10-team then base value.
+            # Redraft values are league-size agnostic (1QB vs SF only).
+            if scoring_type == "redraft":
+                val = float(
+                    player.get("redraft_value_sf") or player.get("redraft_value_1qb") or 0.0
+                ) if league_type == "sf" else float(player.get("redraft_value_1qb") or 0.0)
+            elif league_type == "sf":
                 size_key = "sf_value" if league_size == 10 else f"sf_value_{league_size}"
                 val = float(player.get(size_key) or player.get("sf_value") or player.get("value") or 0.0)
             else:
@@ -17484,8 +17528,11 @@ def api_trade_eval():
             name = player.get("name")
             pos = player.get("position")
 
-            # Apply scoring format multiplier
-            val = round(val * scoring_mults.get((pos or "").upper(), 1.0), 1)
+            # Apply scoring format multiplier, plus TE-premium boost for tight ends.
+            _mult = scoring_mults.get((pos or "").upper(), 1.0)
+            if te_premium and (pos or "").upper() == "TE":
+                _mult *= (1 + te_premium * 0.20)
+            val = round(val * _mult, 1)
             team = player.get("team")
             age = player.get("age")
 
@@ -18125,6 +18172,25 @@ def api_league_players():
                     _p["rank_change_7d"] = _rk_map[_pid]
         except Exception:
             pass
+
+    # Attach redraft values from the DB so the rankings/trade tools can offer a
+    # Dynasty↔Redraft toggle (model_values.json only carries dynasty values).
+    try:
+        from dashboard_services.db import get_conn as _gc
+        with _gc() as _rc:
+            _rd_rows = _rc.execute(
+                "SELECT player_id, redraft_value_1qb, redraft_value_sf "
+                "FROM player_values "
+                "WHERE redraft_value_1qb IS NOT NULL OR redraft_value_sf IS NOT NULL"
+            ).fetchall()
+        _rd_map = {str(r["player_id"]): r for r in _rd_rows}
+        for _p in model_value_table:
+            _r = _rd_map.get(str(_p.get("id") or ""))
+            if _r:
+                _p["redraft_value_1qb"] = _r["redraft_value_1qb"]
+                _p["redraft_value_sf"] = _r["redraft_value_sf"]
+    except Exception as _e_rd:
+        logger.info(f"[api/league-players] redraft values skipped: {_e_rd}")
 
     try:
         from data_building.rookie_pipeline.pipeline import (

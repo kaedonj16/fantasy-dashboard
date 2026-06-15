@@ -151,6 +151,25 @@ def build_trade_calculator_body(
                 </select>
               </div>"""
 
+    # Scoring type dropdown: Dynasty (default) vs Redraft
+    scoring_type_block = """
+              <div class="otc-ctrl-group otc-toggle-divider" id="scoringTypeControl">
+                <select class="otc-ctrl-select" id="scoringTypeSelect" name="scoringType">
+                  <option value="dynasty" selected>Dynasty</option>
+                  <option value="redraft">Redraft</option>
+                </select>
+              </div>"""
+
+    # TE premium dropdown: scales tight-end values when leagues award bonus TE points
+    te_premium_block = """
+              <div class="otc-ctrl-group" id="tePremiumControl">
+                <select class="otc-ctrl-select" id="tePremiumSelect" name="tePremium" style="width: 78px;">
+                  <option value="0" selected>TE Std</option>
+                  <option value="0.5">TE +0.5</option>
+                  <option value="1">TE +1.0</option>
+                </select>
+              </div>"""
+
     league_type_js = repr("sf" if is_superflex else "1qb")
     return f"""
     <script>var _leagueType = {league_type_js}; var _leagueSize = {num_teams_val};</script>
@@ -200,9 +219,11 @@ def build_trade_calculator_body(
                     <span>Team 2</span>
                   </label>
                 </div>
+                {scoring_type_block}
                 {league_size_block}
                 {scoring_format_block}
                 {league_type_block}
+                {te_premium_block}
                 {restrict_toggle_block}
               </div>
             </div>
