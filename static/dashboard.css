@@ -21050,8 +21050,11 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
    the toolbar only shows Scoring Type + Scoring Format inline. */
 .otc-settings-menu { position: relative; display: inline-flex; }
 .otc-settings-toggle-btn {
-  padding: 7px 14px;
-  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border-radius: 9px;
   border: 1px solid var(--border);
   background: var(--card-bg);
   color: var(--text);
@@ -21059,37 +21062,70 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.12s;
+  transition: background .12s, border-color .12s, color .12s, box-shadow .12s;
 }
-.otc-settings-toggle-btn:hover {
+.otc-settings-toggle-btn:hover,
+.otc-settings-toggle-btn[aria-expanded="true"] {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
 }
+.otc-settings-gear { transition: transform .25s ease; flex-shrink: 0; }
+.otc-settings-toggle-btn:hover .otc-settings-gear,
+.otc-settings-toggle-btn[aria-expanded="true"] .otc-settings-gear { transform: rotate(45deg); }
+
 .otc-settings-dropdown {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 8px);
   right: 0;
-  margin-top: 8px;
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-  padding: 14px;
-  min-width: 220px;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.18);
+  padding: 6px;
+  min-width: 248px;
   z-index: 1000;
+  animation: otcSettingsIn .14s ease;
+  transform-origin: top right;
 }
-.otc-settings-field { margin-bottom: 14px; }
-.otc-settings-field:last-child { margin-bottom: 0; }
+@keyframes otcSettingsIn {
+  from { opacity: 0; transform: translateY(-6px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.otc-settings-dropdown-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-subtle, var(--text-muted));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 8px 10px 6px;
+}
+.otc-settings-field { padding: 8px 10px; }
 .otc-settings-field-label {
   display: block;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 6px;
+  margin-bottom: 7px;
 }
-/* Neutralize the inline-toolbar dividers/margins when nested in the dropdown */
-.otc-settings-dropdown .otc-ctrl-group { margin: 0; padding: 0; border: none; }
+.otc-settings-field-divider {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 12px;
+}
+/* Controls stretch to fill the dropdown for a clean, aligned column */
+.otc-settings-dropdown .otc-ctrl-group { margin: 0; padding: 0; border: none; width: 100%; }
 .otc-settings-dropdown .otc-ctrl-select { width: 100% !important; }
+/* League-format 1QB/SF row sits centered with its labels */
+.otc-settings-dropdown #leagueTypeControl { justify-content: flex-start; gap: 10px; }
+/* Roster-filter checkbox row */
+.otc-settings-dropdown .otc-restrict-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  margin: 0;
+}

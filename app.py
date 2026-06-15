@@ -5737,6 +5737,9 @@ def build_weekly_hub_body(ctx: dict) -> str:
     platform_js = json.dumps(platform)
     season_js = json.dumps(season)
     league_js = json.dumps(league_id)
+    # Live/Redzone elements only apply during the active season (mirrors the
+    # Redzone page/nav gating, which hides Redzone in the offseason).
+    in_season_js = json.dumps(not offseason_mode)
 
     scout_tab_html = ""
     try:
@@ -5939,17 +5942,21 @@ def build_weekly_hub_body(ctx: dict) -> str:
   var sel = document.getElementById('hubWeek');
   if (!sel) return;
 
+  var IN_SEASON = {in_season_js};
+
   function isGameDay() {{
     var day = new Date().getDay(); // Sun=0,Mon=1,Thu=4,Sat=6
     return day === 0 || day === 1 || day === 4 || day === 6;
   }}
+  // Live/Redzone only during the active season AND on NFL game days.
+  function liveActive() {{ return IN_SEASON && isGameDay(); }}
 
   // Show/hide Redzone CTA banner
   var cta = document.getElementById('weekly-rz-cta');
-  if (cta && isGameDay()) cta.style.display = '';
+  if (cta && liveActive()) cta.style.display = '';
 
   // Live badge next to "Weekly Hub" h2
-  if (isGameDay()) {{
+  if (liveActive()) {{
     var h2 = document.querySelector('.card-header-row h2');
     if (h2 && !h2.querySelector('.weekly-live-badge')) {{
       var badge = document.createElement('span');
@@ -5959,8 +5966,8 @@ def build_weekly_hub_body(ctx: dict) -> str:
     }}
   }}
 
-  // Auto-refresh current week every 60 s on game days only
-  if (!isGameDay()) return;
+  // Auto-refresh current week every 60 s on game days only (in-season)
+  if (!liveActive()) return;
   var _autoRefreshSeq = 0;
   setInterval(function() {{
     var w = String(sel.value || '');

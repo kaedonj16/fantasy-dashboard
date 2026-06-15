@@ -170,9 +170,10 @@ def build_trade_calculator_body(
                 </select>
               </div>"""
 
-    # Roster filter lives inside the settings dropdown (when not a guest)
+    # Roster filter lives inside the settings dropdown (when not a guest),
+    # separated from the value controls by a divider.
     restrict_field = (
-        f"""<div class="otc-settings-field">{restrict_toggle_block}</div>"""
+        f"""<div class="otc-settings-field otc-settings-field-divider">{restrict_toggle_block}</div>"""
         if restrict_toggle_block else ""
     )
 
@@ -181,8 +182,12 @@ def build_trade_calculator_body(
     settings_dropdown_block = f"""
               <div class="otc-settings-menu" id="otcSettingsMenu">
                 <button type="button" class="otc-settings-toggle-btn" id="otcSettingsBtn"
-                        aria-haspopup="true" aria-expanded="false">Settings</button>
+                        aria-haspopup="true" aria-expanded="false">
+                  <svg class="otc-settings-gear" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                  <span>Settings</span>
+                </button>
                 <div class="otc-settings-dropdown" id="otcSettingsDropdown" style="display:none;">
+                  <div class="otc-settings-dropdown-header">League Settings</div>
                   <div class="otc-settings-field">
                     <span class="otc-settings-field-label">League Size</span>
                     {league_size_block}
