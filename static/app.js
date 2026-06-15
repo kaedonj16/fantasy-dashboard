@@ -8504,8 +8504,7 @@ function openPlayerModal(playerId, playerName, opts) {
       const metricsHTML = hasMetrics ? `
         <div id="advancedMetricsSection">
           <div class="pm-section-header">
-            <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span></span>
-            <span title="Hover each metric label to see its definition" style="cursor:default;font-size:11px;opacity:0.45;margin-left:3px;user-select:none;" aria-label="Hover each metric to see its definition">ⓘ</span>
+            <span class="pm-section-label">Advanced Metrics <span id="advMetricsSeasonLabel" style="font-size:12px;opacity:.6;"></span><span class="adv-info-icon" onclick="advShowInfoTip(event)" aria-label="About metric tooltips">ⓘ</span></span>
             ${_setLink}
           </div>
           <div id="advMetricsPills"></div>
@@ -9616,6 +9615,62 @@ function buildWeeklyTrendRows(weeks, position) {
 }
 
 // Collapse/expand a section in the player compare view.
+// ── Advanced Metrics: tap-to-show definition tooltip (mobile-friendly) ──────
+function _advGetTip() {
+  let tip = document.getElementById('adv-metric-def-tip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'adv-metric-def-tip';
+    tip.className = 'adv-def-tip';
+    document.body.appendChild(tip);
+    document.addEventListener('click', function(e) {
+      if (!tip.contains(e.target)) tip.style.display = 'none';
+    }, true);
+  }
+  return tip;
+}
+
+function _advPositionTip(tip, anchorEl) {
+  const rect = anchorEl.getBoundingClientRect();
+  const tw = 240;
+  let left = rect.left + rect.width / 2 - tw / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+  const top = rect.bottom + 6;
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+  tip.style.maxWidth = tw + 'px';
+}
+
+function advShowMetricDef(e) {
+  e.stopPropagation();
+  const el = e.currentTarget;
+  const def = el.dataset.def;
+  if (!def) return;
+  const tip = _advGetTip();
+  // Toggle off if same metric tapped again
+  if (tip.style.display !== 'none' && tip.dataset.src === el.dataset.def) {
+    tip.style.display = 'none';
+    return;
+  }
+  tip.textContent = def;
+  tip.dataset.src = def;
+  tip.style.display = 'block';
+  _advPositionTip(tip, el);
+}
+
+function advShowInfoTip(e) {
+  e.stopPropagation();
+  const tip = _advGetTip();
+  if (tip.style.display !== 'none' && tip.dataset.src === '__info__') {
+    tip.style.display = 'none';
+    return;
+  }
+  tip.textContent = 'Tap any metric name to see its definition.';
+  tip.dataset.src = '__info__';
+  tip.style.display = 'block';
+  _advPositionTip(tip, e.currentTarget);
+}
+
 function cmpToggleSection(wrapId, headerEl) {
   const wrap = document.getElementById(wrapId);
   if (!wrap) return;
@@ -10036,8 +10091,8 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
     const subCls = isRank ? ' rank-badge' : '';
     const subLine = m.sub ? `<div class="pm-comp-sub${subCls}">${m.sub}</div>` : '';
     const _desc = _ADV_METRIC_DESCS[m.label] || '';
-    const _titleAttr = _desc ? ` title="${_desc.replace(/"/g, '&quot;')}"` : '';
-    return `<span class="pm-comp-label"${_titleAttr}>${m.label}</span>` +
+    const _defAttr = _desc ? ` title="${_desc.replace(/"/g, '&quot;')}" data-def="${_desc.replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)"` : '';
+    return `<span class="pm-comp-label"${_defAttr}>${m.label}</span>` +
       `<div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>` +
       `<div class="pm-comp-val" style="color:${color};">${m.display}${subLine}</div>`;
   }
@@ -11098,7 +11153,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
         <div class="compare-bar-left">
           <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
         </div>
-        <div class="compare-metric-label"${_ADV_METRIC_DESCS[key] ? ` title="${_ADV_METRIC_DESCS[key].replace(/"/g, '&quot;')}"` : ''}>${allLabelMap[key]}</div>
+        <div class="compare-metric-label"${_ADV_METRIC_DESCS[key] ? ` title="${_ADV_METRIC_DESCS[key].replace(/"/g, '&quot;')}" data-def="${_ADV_METRIC_DESCS[key].replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)"` : ''}>${allLabelMap[key]}</div>
         <div class="compare-bar-right">
           <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2)};"></div>
         </div>
@@ -11196,8 +11251,7 @@ function openComparisonView(p1, p2) {
       <div class="pm-section-header pm-section-collapsible" title="Click to collapse or expand"
            onclick="cmpToggleSection('compareMetricsWrap', this)">
         <span class="pm-collapse-chevron">&#9662;</span>
-        <span class="pm-section-label">Advanced Metrics Comparison</span>
-        <span title="Hover each metric label to see its definition" style="cursor:default;font-size:11px;opacity:0.45;margin-left:3px;user-select:none;" aria-label="Hover each metric to see its definition">ⓘ</span>
+        <span class="pm-section-label">Advanced Metrics Comparison<span class="adv-info-icon" onclick="advShowInfoTip(event);event.stopPropagation();" aria-label="About metric tooltips">ⓘ</span></span>
         <span class="pm-collapse-hint">click to collapse</span>
       </div>
       <div id="compareMetricsWrap">
