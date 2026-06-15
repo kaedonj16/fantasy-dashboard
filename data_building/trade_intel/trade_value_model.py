@@ -52,6 +52,8 @@ LAMBDA_REG         = 20.0  # regularization strength (higher = stronger pull tow
 MAX_VALUE          = 999.9
 MAX_LIFT           = 1.25  # player values capped at 125% of prior; picks float freely
 TOP_N_AT_MAX       = 1     # only the #1 player lands at MAX_VALUE; all others separate naturally
+REDRAFT_ANCHOR_N   = 5     # redraft: anchor the top-N basket MEAN to MAX_VALUE so the
+                           # very top players float above it (mirrors the dynasty scale)
 TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
@@ -739,6 +741,14 @@ def run_trade_value_model(
     def _normalize(vec: np.ndarray) -> np.ndarray:
         player_vec   = vec[:n_pl]
         sorted_desc  = np.sort(player_vec)[::-1]
+        if league_type == 1:
+            # Redraft: anchor the top-N basket MEAN to MAX_VALUE and DON'T clip
+            # the top, so elite players float above 999.9 just like the dynasty
+            # scale (whose model value floats above the calibrated ceiling).
+            k       = min(REDRAFT_ANCHOR_N, len(sorted_desc))
+            basket  = sorted_desc[:k]
+            anchor  = float(basket.mean()) if k > 0 and basket.mean() > 0 else (float(player_vec.max()) or MAX_VALUE)
+            return np.clip(vec / anchor * MAX_VALUE, 0.0, None)
         idx          = min(TOP_N_AT_MAX - 1, len(sorted_desc) - 1)
         ceiling      = sorted_desc[idx] if sorted_desc[idx] > 0 else (player_vec.max() or MAX_VALUE)
         return np.clip(vec / ceiling * MAX_VALUE, 0.0, MAX_VALUE)
