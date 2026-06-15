@@ -4054,7 +4054,9 @@ def _build_offseason_standings_body(ctx: dict) -> str:
     roster_map        = ctx["roster_map"]
     rosters           = ctx["rosters"]
     users             = ctx.get("users") or []
-    model_value_table = ctx.get("model_value_table") or []
+    # Read the live cached model table directly (same source as the player modal)
+    # so standings/team values don't lag behind after a value rebuild.
+    model_value_table = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
     picks_by_roster   = ctx.get("picks_by_roster") or {}
     platform          = ctx["platform"]
     season            = ctx["season"]
@@ -4577,7 +4579,11 @@ def build_offseason_dashboard_body(ctx: dict) -> str:
     picks_by_roster = ctx.get("picks_by_roster", {})
     players_index = ctx["players_index"]
     players_map = ctx["players_map"]
-    model_value_table = ctx.get("model_value_table") or []
+    # Read the live cached model table directly (the same source the player modal
+    # uses) instead of ctx["model_value_table"], which gets pinned into the
+    # longer-lived league-context cache and goes stale — making the waiver list
+    # and roster values disagree with the modal after a value rebuild.
+    model_value_table = list(get_model_value_table_cached() or []) or (ctx.get("model_value_table") or [])
 
     viewer = ctx.get("viewer") or {}
     viewer_roster_id = viewer.get("viewer_roster_id")
