@@ -1131,7 +1131,10 @@ def rewrite_value_table_with_model() -> Path:
         reverse=True,
     )
     _max_non_qb = _non_qb_vals[0] if _non_qb_vals else 0.0
-    if 0 < _max_non_qb < 999.9:
+    # Run whenever there are non-QBs. The old `< 999.9` guard skipped the basket
+    # scaling entirely once the top player hit the 999.9 base cap (lines ~1016),
+    # which pinned the #1 to a flat 999.9 and never let them float above it.
+    if _max_non_qb > 0:
         # Basket anchor: the mean of the top N non-QBs is the ceiling estimate.
         # One player drifting moves this ~N× less than it moves the single max,
         # so the rest of the board no longer slides when the top player ticks up.
