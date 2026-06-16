@@ -45,15 +45,19 @@ import numpy as np
 from dashboard_services.db import get_conn
 from dashboard_services.picks import load_pick_value_table
 from data_building.trade_intel._helpers import _decay_weight
+from data_building.value_model_training import _load_state, _save_state
 
 logger = logging.getLogger(__name__)
 
 LAMBDA_REG         = 20.0  # regularization strength (higher = stronger pull toward model prior when trade data is thin)
 MAX_VALUE          = 999.9
 MAX_LIFT           = 1.25  # player values capped at 125% of prior; picks float freely
-TOP_N_AT_MAX       = 1     # only the #1 player lands at MAX_VALUE; all others separate naturally
-REDRAFT_ANCHOR_N   = 5     # redraft: anchor the top-N basket MEAN to MAX_VALUE so the
-                           # very top players float above it (mirrors the dynasty scale)
+ANCHOR_BASKET_N    = 5     # anchor the top-N basket MEAN (not a single #1) to MAX_VALUE so
+                           # one player's day-to-day WLS solve can't drag the whole board
+ANCHOR_EMA_ALPHA   = 0.15  # smooth the basket across runs - an unsmoothed single-day anchor
+                           # is what caused board-wide value swings (see issue: values
+                           # dropping for untraded players whenever the #1 player's solved
+                           # value moved, since everyone is divided by that one number)
 TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
@@ -736,25 +740,33 @@ def run_trade_value_model(
     v_1qb_pos[n_pl:] = np.clip(v_1qb[n_pl:], 0.0, None)
     v_sf_pos[n_pl:]  = np.clip(v_sf[n_pl:],  0.0, None)
 
-    # Normalize so the #1 player = MAX_VALUE. Players with trade lift can exceed
-    # MAX_VALUE relative to each other, but the absolute scale is set by the top player.
-    def _normalize(vec: np.ndarray) -> np.ndarray:
-        player_vec   = vec[:n_pl]
-        sorted_desc  = np.sort(player_vec)[::-1]
-        if league_type == 1:
-            # Redraft: anchor the top-N basket MEAN to MAX_VALUE and DON'T clip
-            # the top, so elite players float above 999.9 just like the dynasty
-            # scale (whose model value floats above the calibrated ceiling).
-            k       = min(REDRAFT_ANCHOR_N, len(sorted_desc))
-            basket  = sorted_desc[:k]
-            anchor  = float(basket.mean()) if k > 0 and basket.mean() > 0 else (float(player_vec.max()) or MAX_VALUE)
-            return np.clip(vec / anchor * MAX_VALUE, 0.0, None)
-        idx          = min(TOP_N_AT_MAX - 1, len(sorted_desc) - 1)
-        ceiling      = sorted_desc[idx] if sorted_desc[idx] > 0 else (player_vec.max() or MAX_VALUE)
-        return np.clip(vec / ceiling * MAX_VALUE, 0.0, MAX_VALUE)
+    # Normalize by anchoring the top-N basket MEAN to MAX_VALUE (not a single #1
+    # player) and smoothing that basket across runs via EMA, persisted per
+    # (mode, league_size, segment). A single unsmoothed anchor means one
+    # player's day-to-day WLS solve (e.g. a fresh hot trade) divides through
+    # every other player's calibrated value, including players with zero
+    # trade data of their own - this is what caused board-wide value swings.
+    # No upper clip: top players float above MAX_VALUE proportionally, same
+    # as the raw model's basket-anchored scale.
+    def _normalize(vec: np.ndarray, state_key: str) -> np.ndarray:
+        player_vec  = vec[:n_pl]
+        sorted_desc = np.sort(player_vec)[::-1]
+        k = min(ANCHOR_BASKET_N, len(sorted_desc))
+        if k == 0:
+            return np.clip(vec, 0.0, None)
+        basket = sorted_desc[:k]
+        raw_basket = float(basket.mean()) if basket.mean() > 0 else (float(player_vec.max()) or MAX_VALUE)
+        prev_basket = _load_state(state_key)
+        smoothed_basket = (
+            ANCHOR_EMA_ALPHA * raw_basket + (1.0 - ANCHOR_EMA_ALPHA) * prev_basket
+            if prev_basket > 0 else raw_basket
+        )
+        _save_state(state_key, smoothed_basket)
+        anchor = smoothed_basket if smoothed_basket > 0 else MAX_VALUE
+        return np.clip(vec / anchor * MAX_VALUE, 0.0, None)
 
-    v_1qb_norm = _normalize(v_1qb_pos)
-    v_sf_norm  = _normalize(v_sf_pos)
+    v_1qb_norm = _normalize(v_1qb_pos, f"wls_basket_{mode}_{league_size}_1qb")
+    v_sf_norm  = _normalize(v_sf_pos,  f"wls_basket_{mode}_{league_size}_sf")
 
     # For non-QB players: derive the SF calibrated value by applying the WLS
     # 1QB calibration factor to the model's SF prior.  The model already
