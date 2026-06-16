@@ -432,8 +432,6 @@ def build_nflverse_weekly_metrics_for_season(
                 if not pid:
                     continue
                 row = _row(pid, r.get("week"))
-                if row == {}:
-                    continue
                 for src, dst in (
                     ("avg_separation", "ngs_avg_separation"),
                     ("avg_cushion", "ngs_avg_cushion"),
@@ -464,8 +462,6 @@ def build_nflverse_weekly_metrics_for_season(
                 if not pid:
                     continue
                 row = _row(pid, r.get("week"))
-                if row == {}:
-                    continue
                 ryoe = _f(r.get("rush_yards_over_expected"))
                 if ryoe is not None:
                     row["ngs_rush_yards_over_expected"] = round(ryoe, 2)
@@ -508,8 +504,6 @@ def build_nflverse_weekly_metrics_for_season(
             if not pid:
                 continue
             cols = _row(pid, week)
-            if cols == {}:
-                continue
             dropbacks = float(g["qb_dropback"].sum()) if "qb_dropback" in g else float(len(g))
             att = float(g["pass_attempt"].fillna(0).sum())
             cols["w_dropbacks"] = dropbacks
@@ -551,8 +545,6 @@ def build_nflverse_weekly_metrics_for_season(
             if not pid:
                 continue
             cols = _row(pid, week)
-            if cols == {}:
-                continue
             cols["w_carries"] = float(g["rush_attempt"].fillna(0).sum()) or float(len(g))
             re_ = _f(g["epa"].sum())
             if re_ is not None:
@@ -570,8 +562,6 @@ def build_nflverse_weekly_metrics_for_season(
             if not pid:
                 continue
             cols = _row(pid, week)
-            if cols == {}:
-                continue
             cols["w_targets"] = float(len(g))
             receptions = float(g["complete_pass"].fillna(0).sum())
             cols["w_receptions"] = receptions
@@ -603,8 +593,6 @@ def build_nflverse_weekly_metrics_for_season(
                     if not pid:
                         continue
                     cols = _row(pid, week)
-                    if cols == {}:
-                        continue
                     catchable = float(g["is_catchable_ball"].fillna(0).sum())
                     drops = float(g["is_drop"].fillna(0).sum())
                     contested = float(g["is_contested_ball"].fillna(0).sum())
@@ -621,8 +609,6 @@ def build_nflverse_weekly_metrics_for_season(
                     if not pid:
                         continue
                     cols = _row(pid, week)
-                    if cols == {}:
-                        continue
                     att = float(g["pass_attempt"].fillna(0).sum())
                     throwaways = float(g["is_throw_away"].fillna(0).sum())
                     denom = att - throwaways
