@@ -11295,6 +11295,18 @@ function _cmpEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').r
 // Aggregate a player's weekly rows over [wkStart,wkEnd] into the weekly-capable
 // advanced-metric keys (the only metrics that can be sliced by week; PFF grades,
 // role score, etc. are season-level and intentionally omitted in range mode).
+//
+// Formula parity with the server leaderboard (data_building/advanced_metrics.py):
+//   - Rate metrics (yards_per_target/reception/carry/touch, catch_rate) use the
+//     same "sum the weekly totals, then divide" shape as calculate_receiving/
+//     rushing_metrics (rec_yards/targets, receptions/targets, etc.).
+//   - snap_share is the per-week mean of snap_pct/100, matching the intent of
+//     the leaderboard's avg_off_snap_pct.
+// Caveat: the weekly series (player_weekly_metrics, sourced from Sleeper) and the
+// season leaderboard (player_advanced_metrics, sourced from PFF/usage) come from
+// DIFFERENT pipelines, so a "Full" week-range will be close to — but not exactly
+// equal to — the leaderboard season value. That's why "Full" mode shows the
+// authoritative leaderboard numbers and only true sub-season splits use this.
 function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
   const sel = (weeks || []).filter(w => { const wk = Number(w.week); return wk >= wkStart && wk <= wkEnd; });
   if (!sel.length) return {};
@@ -11344,9 +11356,13 @@ async function _cmpFetchSide(side) {
   side.seasons = advData.available_seasons || side.seasons || [];
   if (side.position === '' && advData.position) side.position = advData.position;
 
+  // Full season or career: the leaderboard values are authoritative (they come
+  // from the season-level metrics pipeline). Clear any stale range metadata.
   if (side.season === null || side.range === 'full') {
-    return { metrics: advData.metrics || {} };
+    side.rangeMeta = null;
+    return { metrics: advData.metrics || {}, ref: null };
   }
+  // Week-range mode: aggregate the per-week series for the selected weeks.
   const cacheKey = side.pid + '_' + side.season;
   let weeks = _cmpWeeklyCache[cacheKey];
   if (!weeks) {
@@ -11355,7 +11371,12 @@ async function _cmpFetchSide(side) {
     _cmpWeeklyCache[cacheKey] = weeks;
   }
   const [a, b] = _cmpRangeBounds(side, weeks);
-  return { metrics: _cmpAggregateWeeks(weeks, a, b) };
+  const maxWk = weeks.length ? Math.max(...weeks.map(w => Number(w.week) || 0)) : 18;
+  const sel = weeks.filter(w => { const wk = Number(w.week); return wk >= a && wk <= b; });
+  side.rangeMeta = { lo: a, hi: b, games: sel.length, maxWk: maxWk };
+  // Reference = the full-season aggregate from the SAME weekly source, so the
+  // range-vs-season delta is apples-to-apples (not mixed with the leaderboard).
+  return { metrics: _cmpAggregateWeeks(weeks, a, b), ref: _cmpAggregateWeeks(weeks, 1, maxWk) };
 }
 
 // Render one side's selector: season pills + (for a specific season) week-range.
@@ -11370,16 +11391,43 @@ function _cmpSideSelector(which) {
   let rangeHtml = '';
   if (!isCareer) {
     const r = side.range || 'full';
+    const meta = side.rangeMeta;
+    const maxWk = (meta && meta.maxWk) ? meta.maxWk : 18;
     const rb = (val, lbl) => '<button class="adv-season-pill ' + (r === val ? 'active' : '') + '" onclick="cmpSetRange(' + which + ',\'' + val + '\')">' + lbl + '</button>';
     rangeHtml = '<div class="compare-range-pills">' + rb('full', 'Full') + rb('first', '1st Half') + rb('second', '2nd Half') + rb('last4', 'L4') + rb('custom', 'Custom') + '</div>';
     if (r === 'custom') {
       rangeHtml += '<div class="compare-range-custom">Wk '
-        + '<input type="number" min="1" max="22" class="compare-wk-input" value="' + (side.wkStart || 1) + '" onchange="cmpSetCustom(' + which + ',this.value,null)">&ndash;'
-        + '<input type="number" min="1" max="22" class="compare-wk-input" value="' + (side.wkEnd || 18) + '" onchange="cmpSetCustom(' + which + ',null,this.value)"></div>';
+        + '<input type="number" min="1" max="' + maxWk + '" class="compare-wk-input" value="' + (side.wkStart || 1) + '" onchange="cmpSetCustom(' + which + ',this.value,null)">&ndash;'
+        + '<input type="number" min="1" max="' + maxWk + '" class="compare-wk-input" value="' + (side.wkEnd || maxWk) + '" onchange="cmpSetCustom(' + which + ',null,this.value)"></div>';
+    }
+    // #1: show the resolved week range + game count so the aggregated numbers
+    // have context; #3: explain (in a tap tooltip) that season-level grades
+    // aren't week-sliced.
+    if (r !== 'full' && meta) {
+      const gradesIcon = '<span class="compare-range-info" onclick="cmpShowSeasonGradesTip(event)" aria-label="Why some metrics are missing">ⓘ</span>';
+      if (meta.games > 0) {
+        rangeHtml += '<div class="compare-range-note">Wks ' + meta.lo + '&ndash;' + meta.hi
+          + ' &middot; ' + meta.games + ' game' + (meta.games === 1 ? '' : 's') + gradesIcon + '</div>';
+      } else {
+        rangeHtml += '<div class="compare-range-note compare-range-note-warn">No games in Wks ' + meta.lo + '&ndash;' + meta.hi + gradesIcon + '</div>';
+      }
     }
   }
   return '<div class="compare-season-col' + sideCls + '"><div class="compare-season-label">' + _cmpEsc(name) + '</div>'
     + '<div class="compare-season-pills">' + seasonPills + '</div>' + rangeHtml + '</div>';
+}
+
+// #3: tap tooltip explaining that PFF grades / role score and other
+// season-level metrics aren't shown for week ranges.
+function cmpShowSeasonGradesTip(e) {
+  e.stopPropagation();
+  const tip = _advGetTip();
+  const msg = 'PFF grades, role score, and other season-level metrics aren’t shown for week ranges — they’re only published per full season. Week-range numbers are aggregated from the weekly usage data and may differ slightly from the season leaderboard.';
+  if (tip.style.display !== 'none' && tip.dataset.src === '__cmpgrades__') { tip.style.display = 'none'; return; }
+  tip.textContent = msg;
+  tip.dataset.src = '__cmpgrades__';
+  tip.style.display = 'block';
+  _advPositionTip(tip, e.currentTarget);
 }
 
 function cmpSetSeason(which, season) {
@@ -11396,9 +11444,16 @@ function cmpSetRange(which, range) {
   cmpRenderMetrics();
 }
 function cmpSetCustom(which, start, end) {
-  if (start !== null) _cmpSides[which].wkStart = Number(start) || 1;
-  if (end !== null) _cmpSides[which].wkEnd = Number(end) || 18;
-  _cmpSides[which].range = 'custom';
+  const side = _cmpSides[which];
+  // #4: clamp inputs to weeks the player actually has data for, and keep
+  // start <= end so we never produce an empty or backwards range silently.
+  const weeks = _cmpWeeklyCache[side.pid + '_' + side.season] || [];
+  const maxWk = weeks.length ? Math.max(...weeks.map(w => Number(w.week) || 0)) : 18;
+  const clamp = v => Math.min(maxWk, Math.max(1, Math.round(Number(v) || 1)));
+  if (start !== null) side.wkStart = clamp(start);
+  if (end !== null) side.wkEnd = clamp(end);
+  if (side.wkStart > side.wkEnd) { const t = side.wkStart; side.wkStart = side.wkEnd; side.wkEnd = t; }
+  side.range = 'custom';
   cmpRenderMetrics();
 }
 
@@ -11416,10 +11471,37 @@ function cmpRenderMetrics() {
     if (token !== _cmpRenderToken) return;  // a newer click superseded this render
     const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position });
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + rows + '</div>';
+    // #6: keep the weekly-trends section in sync with each side's season/range.
+    cmpRenderWeekly(1);
+    cmpRenderWeekly(2);
   }).catch(() => {
     if (token !== _cmpRenderToken) return;
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows"><div style="padding:12px 0;color:var(--text-muted);font-size:13px;">Could not load advanced metrics.</div></div>';
   });
+}
+
+// #6: render one side's weekly usage trends for its selected season, sliced to
+// the chosen week range so the trends match the split shown above.
+async function cmpRenderWeekly(which) {
+  const el = document.getElementById('compareWeekly' + which);
+  if (!el) return;
+  const side = _cmpSides[which];
+  // Career has no single weekly series; fall back to the most recent season.
+  const season = side.season || (side.seasons || []).slice().sort((a, b) => b - a)[0];
+  if (!season) { el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Pick a season to see weekly trends.</div>'; return; }
+  const cacheKey = side.pid + '_' + season;
+  let weeks = _cmpWeeklyCache[cacheKey];
+  if (!weeks) {
+    try { weeks = (await fetch(`/api/player-weekly-metrics/${side.pid}?season=${season}`).then(r => r.json())).weeks || []; }
+    catch (_) { weeks = []; }
+    _cmpWeeklyCache[cacheKey] = weeks;
+  }
+  let shown = weeks;
+  if (side.season && side.range && side.range !== 'full') {
+    const [a, b] = _cmpRangeBounds(side, weeks);
+    shown = weeks.filter(w => { const wk = Number(w.week); return wk >= a && wk <= b; });
+  }
+  el.innerHTML = buildWeeklyTrendRows(shown, side.position);
 }
 
 // Back-compat entry: set per-side seasons (full range) and render.
@@ -11523,20 +11605,8 @@ function openComparisonView(p1, p2) {
   if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year, true, p1.position);
   if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year, true, p2.position);
 
-  // Weekly usage trends, side by side (endpoint defaults to the current
-  // season, falling back to the prior one during the offseason)
-  [[p1.player_id, 'compareWeekly1'], [p2.player_id, 'compareWeekly2']].forEach(function(pair) {
-    fetch('/api/player-weekly-metrics/' + encodeURIComponent(pair[0]))
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        const el = document.getElementById(pair[1]);
-        if (el) el.innerHTML = buildWeeklyTrendRows(d.weeks || []);
-      })
-      .catch(function() {
-        const el = document.getElementById(pair[1]);
-        if (el) el.innerHTML = '<div style="padding:10px 0;color:var(--text-muted);font-size:12px;">Could not load weekly data.</div>';
-      });
-  });
+  // Weekly usage trends are rendered by cmpRenderWeekly() (driven from
+  // cmpRenderMetrics) so they track each side's selected season + week range.
 
   document.getElementById('compareBackBtn')?.addEventListener('click', () => {
     closePlayerModal();

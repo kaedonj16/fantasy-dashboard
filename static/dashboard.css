@@ -13903,7 +13903,9 @@ img, svg, canvas {
   padding: 8px 12px;
   font-size: 12px;
   line-height: 1.45;
-  z-index: 9999;
+  /* Must sit above the player/compare modal overlay (z-index 10000) or the
+     metric-definition tooltip renders behind it and appears not to work. */
+  z-index: 100001;
   box-shadow: 0 4px 20px rgba(0,0,0,0.18);
   display: none;
   pointer-events: none;
@@ -15477,6 +15479,27 @@ tr.team-clickable {
   content: "\25C2 "; /* ◂ points toward this side's bar */
   font-size: 10px;
 }
+/* Week-range context label (#1) + season-grades info icon (#3) */
+.compare-range-note {
+  margin-top: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.compare-season-col-right .compare-range-note { justify-content: flex-end; }
+.compare-range-note-warn { color: #f59e0b; }
+.compare-range-info {
+  cursor: pointer;
+  opacity: 0.75;
+  font-size: 11px;
+}
+.compare-range-info:active { opacity: 0.5; }
+/* Hide the single-player "Player Page" link while in the compare view —
+   it would point at only one of the two players. */
+.player-modal.compare-mode .player-modal-page-btn { display: none !important; }
 
 /* ── Game logs side-by-side ─────────────────────────────────────── */
 .compare-gamelogs-section {
