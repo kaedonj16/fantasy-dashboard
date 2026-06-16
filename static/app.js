@@ -8675,6 +8675,7 @@ function openPlayerModal(playerId, playerName, opts) {
       pmTabBar.dataset.pmPlayerId = playerId;
       pmTabBar.dataset.pmSeason = season;
       pmTabBar.dataset.pmPlayerName = data.name || playerName || '';
+      pmTabBar.dataset.pmPosition = data.position || '';
 
       // Show/hide conditional tabs
       const tabMetrics = document.getElementById('pmTabMetrics');
@@ -9022,7 +9023,7 @@ function pmSwitchTab(tab) {
           panel.innerHTML = '<div class="player-modal-loading" style="padding:40px 0;"><div style="color:var(--text-muted);font-size:13px;">No game log data available.</div></div>';
           return;
         }
-        panel.innerHTML = _buildStatsHTML(logsByYear);
+        panel.innerHTML = _buildStatsHTML(logsByYear, false, (pmTabBar && pmTabBar.dataset.pmPosition) || '');
       })
       .catch(() => {
         if (panel.isConnected) {
@@ -9326,7 +9327,7 @@ function _buildStatsHTML(game_logs_by_year, skipHeader, positionHint) {
     if (_anyRush) statCols = statCols.concat(_RUSH);
     if (_anyRec)  statCols = statCols.concat(_REC);
     if (!statCols.length) {
-      const P = (positionHint || position || '').toUpperCase();
+      const P = (positionHint || '').toUpperCase();
       statCols = P === 'QB' ? _PASS.concat(_RUSH)
                : P === 'RB' ? _RUSH.concat(_REC)
                : _REC;
