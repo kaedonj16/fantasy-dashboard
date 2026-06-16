@@ -8,10 +8,13 @@ Backfill historical NFL data across all three layers of the dashboard:
                     (provides opponent + date on each game log)
   3. Adv metrics -> player_advanced_metrics DB table                  (usage + snaps +
                     target share + air yards)
-  4. PFF metrics -> player_advanced_metrics DB table                  (PFF grades, YPRR,
-                    aDOT, YAC, elusive rating, BTT%, etc.)
+  4. NGS + FTN   -> player_advanced_metrics DB table                  (NGS separation/
+                    cushion/YAC-over-exp + FTN drop_rate/contested_catch_rate;
+                    redistributable, public-safe)
+  5. PFF metrics -> player_advanced_metrics DB table                  (PFF grades, YPRR,
+                    elusive rating, BTT%, etc.)
 
-It simply orchestrates the existing per-season builders so all four layers
+It simply orchestrates the existing per-season builders so all the layers
 line up for the same set of seasons.
 
 Data-source floors (why you can't go arbitrarily far back):
@@ -111,6 +114,18 @@ def backfill_metrics(season: int, players_index: dict) -> int:
         return 0
 
 
+def backfill_nflverse(season: int) -> None:
+    """Upsert redistributable NGS + FTN receiving metrics for the season."""
+    from scripts.sync_nflverse_metrics import main as nflverse_main
+    print(f"  [nflverse] Syncing NGS + FTN metrics...")
+    try:
+        nflverse_main(["--season", str(season)])
+    except SystemExit:
+        pass
+    except Exception as e:
+        print(f"  [nflverse] failed: {e}")
+
+
 def backfill_pff(season: int) -> None:
     """Download (if PFF_COOKIE set) and upsert PFF advanced metrics for the season."""
     from scripts.sync_pff_advanced_metrics import main as pff_main
@@ -137,6 +152,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--no-logs", action="store_true", help="Skip game logs.")
     p.add_argument("--no-schedules", action="store_true", help="Skip schedules.")
     p.add_argument("--no-metrics", action="store_true", help="Skip advanced metrics.")
+    p.add_argument("--no-nflverse", action="store_true",
+                   help="Skip NGS + FTN (nflverse) metrics.")
     p.add_argument("--no-pff", action="store_true", help="Skip PFF metrics.")
     return p.parse_args(argv)
 
@@ -157,11 +174,12 @@ def main() -> None:
     do_logs = not args.no_logs
     do_schedules = not args.no_schedules and not args.logs_only
     do_metrics = not args.no_metrics and not args.logs_only
+    do_nflverse = not args.no_nflverse and not args.logs_only
     do_pff = not args.no_pff and not args.logs_only
 
     print(f"Backfilling seasons: {seasons}")
     print(f"Layers: logs={do_logs} schedules={do_schedules} "
-          f"metrics={do_metrics} pff={do_pff}")
+          f"metrics={do_metrics} nflverse={do_nflverse} pff={do_pff}")
     print("=" * 60)
 
     if do_pff and not os.getenv("PFF_COOKIE"):
@@ -188,6 +206,8 @@ def main() -> None:
             backfill_schedules(season)
         if do_metrics:
             totals["metrics"] += backfill_metrics(season, players_index)
+        if do_nflverse:
+            backfill_nflverse(season)
         if do_pff:
             backfill_pff(season)
 

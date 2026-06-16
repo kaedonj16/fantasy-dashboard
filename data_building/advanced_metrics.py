@@ -273,6 +273,20 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS schedule_ease NUMERIC;
     """)
 
+    # NGS (Next Gen Stats, via nflverse) tracking metrics for receivers.
+    # These come from a redistributable open source, unlike the PFF columns.
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS ngs_avg_separation             NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_avg_cushion                NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_avg_intended_air_yards     NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_pct_share_intended_air_yards NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_avg_yac                    NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_avg_expected_yac           NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_avg_yac_above_expectation  NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_catch_pct                  NUMERIC;
+    """)
+
 
 def _extract_metric_value(metrics: Dict, metric_name: str):
     """Safely pull the scalar value from a metric payload dict."""
@@ -1127,6 +1141,9 @@ def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
         'elusive_rating', 'pff_rushing_grade', 'pff_passing_grade',
         'big_time_throw_rate', 'adjusted_completion_rate', 'pressure_to_sack_rate',
         'nfl_passer_rating', 'yprr',
+        'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_intended_air_yards',
+        'ngs_pct_share_intended_air_yards', 'ngs_avg_yac', 'ngs_avg_expected_yac',
+        'ngs_avg_yac_above_expectation', 'ngs_catch_pct',
     ]
 
     with get_conn() as conn:

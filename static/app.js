@@ -9883,6 +9883,9 @@ const _ADV_METRIC_DESCS = {
   yards_after_catch: "Total yards gained after the catch in the season.",
   drop_rate: "Percent of catchable targets dropped. Lower is better.",
   yprr: "Receiving yards earned per route run (from PFF). Elite WRs are typically 2.0+.",
+  ngs_avg_separation: "Average yards of separation from the nearest defender at the moment of catch/incompletion (NFL Next Gen Stats).",
+  ngs_avg_cushion: "Average yards of cushion the defender gives at the snap (NFL Next Gen Stats).",
+  ngs_avg_yac_above_expectation: "Yards after catch above what was expected given the catch situation (NFL Next Gen Stats).",
   slot_rate: "Percent of routes run from the slot.",
   wide_rate: "Percent of routes run from out wide.",
   inline_rate: "Percent of snaps a tight end lined up inline (attached to the formation).",
@@ -10110,6 +10113,18 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
     if (metrics.contested_catch_rate != null) {
       const v = metrics.contested_catch_rate;
       defs.push({ label: 'Contested Catch %', fill: Math.min(v / 65 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('contested_catch_rate') });
+    }
+    if (metrics.ngs_avg_separation != null) {
+      const v = metrics.ngs_avg_separation;
+      defs.push({ label: 'Separation', fill: Math.min(v / 5 * 100, 100), display: v.toFixed(1), sub: _rankSub('ngs_avg_separation') });
+    }
+    if (metrics.ngs_avg_cushion != null) {
+      const v = metrics.ngs_avg_cushion;
+      defs.push({ label: 'Cushion', fill: Math.min(v / 9 * 100, 100), display: v.toFixed(1), sub: _rankSub('ngs_avg_cushion') });
+    }
+    if (metrics.ngs_avg_yac_above_expectation != null) {
+      const v = metrics.ngs_avg_yac_above_expectation;
+      defs.push({ label: 'YAC Over Expected', fill: Math.min(Math.max(v + 2, 0) / 4 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('ngs_avg_yac_above_expectation') });
     }
     if (metrics.target_share != null) {
       const pct = metrics.target_share;
@@ -11061,6 +11076,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
     'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
     'wide_rate', 'inline_rate', 'grades_offense', 'pass_block_rate', 'grades_pass_block',
+    'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation',
     'total_targets', 'total_receptions', 'total_rec_tds', 'total_tds',
   ];
 
@@ -11083,7 +11099,10 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     slot_rate: 'Slot Rate',
     wide_rate: 'Wide Rate',
     inline_rate: 'Inline Rate',
-    
+    ngs_avg_separation: 'Separation',
+    ngs_avg_cushion: 'Cushion',
+    ngs_avg_yac_above_expectation: 'YAC Over Exp',
+
     // Rushing metrics
     yards_per_carry: 'Yards/Carry',
     yards_per_touch: 'Yards/Touch',
@@ -11183,6 +11202,9 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       'yards_per_target': 12, 'yards_per_reception': 16, 'yards_per_carry': 7,
       'yards_per_touch': 8, 'yards_per_attempt': 10, 'avg_depth_of_target': 20,
       'yards_after_catch': 600, 'yards_after_catch_per_reception': 10,
+
+      // NGS tracking metrics (yards)
+      'ngs_avg_separation': 5, 'ngs_avg_cushion': 9, 'ngs_avg_yac_above_expectation': 4,
 
       // PFF grades (0-100)
       'pff_passing_grade': 100, 'pff_rushing_grade': 100,
