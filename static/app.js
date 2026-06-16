@@ -9938,8 +9938,28 @@ function _advPositionTip(tip, anchorEl) {
   tip.style.maxWidth = tw + 'px';
 }
 
+function advEnterMetricDef(e) {
+  if (window.matchMedia('(pointer: coarse)').matches) return;
+  const el = e.currentTarget;
+  const def = el.dataset.def;
+  if (!def) return;
+  const tip = _advGetTip();
+  clearTimeout(tip._hoverTid);
+  tip.textContent = def;
+  tip.dataset.src = def;
+  tip.style.display = 'block';
+  _advPositionTip(tip, el);
+}
+
+function advLeaveMetricDef(e) {
+  if (window.matchMedia('(pointer: coarse)').matches) return;
+  const tip = _advGetTip();
+  tip._hoverTid = setTimeout(function() { tip.style.display = 'none'; }, 120);
+}
+
 function advShowMetricDef(e) {
   e.stopPropagation();
+  if (!window.matchMedia('(pointer: coarse)').matches) return; // desktop uses hover
   const el = e.currentTarget;
   const def = el.dataset.def;
   if (!def) return;
@@ -10509,7 +10529,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg) {
     const subCls = isRank ? ' rank-badge' : '';
     const subLine = m.sub ? `<div class="pm-comp-sub${subCls}">${m.sub}</div>` : '';
     const _desc = m.desc || _ADV_METRIC_DESCS[m.label] || '';
-    const _defAttr = _desc ? ` title="${_desc.replace(/"/g, '&quot;')}" data-def="${_desc.replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)"` : '';
+    const _defAttr = _desc ? ` title="${_desc.replace(/"/g, '&quot;')}" data-def="${_desc.replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : '';
     return `<span class="pm-comp-label"${_defAttr}>${m.label}</span>` +
       `<div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>` +
       `<div class="pm-comp-val" style="color:${color};">${m.display}${subLine}</div>`;
@@ -11602,7 +11622,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg) {
         <div class="compare-bar-left">
           <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
         </div>
-        <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` title="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)"` : ''}>${_label(key)}</div>
+        <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` title="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${_label(key)}</div>
         <div class="compare-bar-right">
           <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2)};"></div>
         </div>
