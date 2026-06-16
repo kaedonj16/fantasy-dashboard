@@ -45,6 +45,7 @@ PFF_SHARED_COLUMNS = [
     "drop_rate", "contested_catch_rate", "avg_depth_of_target",
     "breakaway_percentage", "explosive_runs_10_plus",
     "yards_after_catch", "yards_after_catch_per_reception",
+    "nfl_passer_rating", "adjusted_completion_rate",
 ]
 
 

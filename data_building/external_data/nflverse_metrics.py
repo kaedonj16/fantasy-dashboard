@@ -133,6 +133,47 @@ def build_ngs_receiving_for_season(season: int) -> Dict[str, Dict[str, float]]:
     return out
 
 
+def build_ngs_rushing_for_season(season: int) -> Dict[str, Dict[str, float]]:
+    """Return {sleeper_id: {...}} of NGS rushing metrics (RYOE, efficiency).
+
+    A free 'creation' metric for backs — the closest open equivalent to PFF's
+    elusive rating (yards generated beyond what blocking/situation expected).
+    """
+    if season < NGS_FLOOR:
+        return {}
+
+    try:
+        import nfl_data_py as nfl
+        df = nfl.import_ngs_data(stat_type="rushing", years=[season])
+    except Exception as e:
+        print(f"[nflverse_metrics] NGS rushing unavailable for {season} ({e})")
+        return {}
+
+    if df is None or df.empty:
+        return {}
+
+    df = df[(df["season_type"] == "REG") & (df["week"] == 0)]
+    crosswalk = _gsis_to_sleeper()
+
+    out: Dict[str, Dict[str, float]] = {}
+    for _, r in df.iterrows():
+        pid = crosswalk.get(str(r.get("player_gsis_id") or "").strip())
+        if not pid:
+            continue
+        row: Dict[str, float] = {}
+        for src, dst in (
+            ("rush_yards_over_expected", "ngs_rush_yards_over_expected"),
+            ("rush_yards_over_expected_per_att", "ngs_rush_yards_over_expected_per_att"),
+            ("efficiency", "ngs_rush_efficiency"),
+        ):
+            val = _f(r.get(src))
+            if val is not None:
+                row[dst] = round(val, 2)
+        if row:
+            out[pid] = row
+    return out
+
+
 def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
     """Return {sleeper_id: {drop_rate, contested_catch_rate}} from FTN charting.
 
@@ -151,7 +192,8 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
             [season],
             columns=[
                 "game_id", "play_id", "season_type",
-                "receiver_player_id", "complete_pass", "pass_attempt",
+                "receiver_player_id", "passer_player_id",
+                "complete_pass", "pass_attempt",
             ],
             downcast=True,
         )
@@ -173,30 +215,25 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
         print(f"[nflverse_metrics] FTN/pbp merge failed for {season} ({e})")
         return {}
 
-    merged = merged[merged["season_type"] == "REG"]
-    merged = merged[merged["receiver_player_id"].notna()]
-
+    reg = merged[merged["season_type"] == "REG"]
     crosswalk = _gsis_to_sleeper()
+    out: Dict[str, Dict[str, float]] = {}
 
-    # Aggregate per targeted receiver (gsis id).
+    # --- Per targeted receiver: drop rate + contested catch rate ---
+    recs = reg[reg["receiver_player_id"].notna()]
     agg: Dict[str, Dict[str, float]] = {}
-    for _, r in merged.iterrows():
+    for _, r in recs.iterrows():
         gsis = str(r.get("receiver_player_id") or "").strip()
         if not gsis:
             continue
         bucket = agg.setdefault(gsis, {"catchable": 0.0, "drops": 0.0,
                                        "contested": 0.0, "contested_caught": 0.0})
-        catchable = _f(r.get("is_catchable_ball")) or 0.0
-        drop = _f(r.get("is_drop")) or 0.0
+        bucket["catchable"] += _f(r.get("is_catchable_ball")) or 0.0
+        bucket["drops"] += _f(r.get("is_drop")) or 0.0
         contested = _f(r.get("is_contested_ball")) or 0.0
-        complete = _f(r.get("complete_pass")) or 0.0
-        bucket["catchable"] += catchable
-        bucket["drops"] += drop
         bucket["contested"] += contested
-        if contested and complete:
+        if contested and (_f(r.get("complete_pass")) or 0.0):
             bucket["contested_caught"] += 1.0
-
-    out: Dict[str, Dict[str, float]] = {}
     for gsis, b in agg.items():
         pid = crosswalk.get(gsis)
         if not pid:
@@ -208,7 +245,30 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
             row["contested_catch_rate"] = round(
                 b["contested_caught"] / b["contested"] * 100.0, 1)
         if row:
-            out[pid] = row
+            out.setdefault(pid, {}).update(row)
+
+    # --- Per passer: adjusted completion rate ---
+    # (completions + drops) / (attempts - throwaways): PFF-style accuracy.
+    passers = reg[reg["passer_player_id"].notna()]
+    pagg: Dict[str, Dict[str, float]] = {}
+    for _, r in passers.iterrows():
+        gsis = str(r.get("passer_player_id") or "").strip()
+        if not gsis:
+            continue
+        b = pagg.setdefault(gsis, {"att": 0.0, "cmp": 0.0, "drops": 0.0, "throwaways": 0.0})
+        b["att"] += _f(r.get("pass_attempt")) or 0.0
+        b["cmp"] += _f(r.get("complete_pass")) or 0.0
+        b["drops"] += _f(r.get("is_drop")) or 0.0
+        b["throwaways"] += _f(r.get("is_throw_away")) or 0.0
+    for gsis, b in pagg.items():
+        pid = crosswalk.get(gsis)
+        if not pid:
+            continue
+        denom = b["att"] - b["throwaways"]
+        if denom > 0:
+            adj = (b["cmp"] + b["drops"]) / denom * 100.0
+            out.setdefault(pid, {})["adjusted_completion_rate"] = round(adj, 1)
+
     return out
 
 
@@ -231,6 +291,7 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
                 "sack", "qb_scramble", "rush_attempt", "pass_attempt",
                 "qb_dropback", "rushing_yards",
                 "complete_pass", "yards_after_catch",
+                "passing_yards", "pass_touchdown", "interception",
                 "passer_player_id", "rusher_player_id", "receiver_player_id",
             ],
             downcast=True,
@@ -271,6 +332,22 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
         sr = _f(g["success"].mean())
         if sr is not None:
             cols["success_rate"] = round(sr * 100, 1)
+        # Standard NFL passer rating from box score (free, all seasons).
+        att = float(g["pass_attempt"].fillna(0).sum())
+        if att >= 1:
+            cmp_ = float(g["complete_pass"].fillna(0).sum())
+            yds = float(g["passing_yards"].fillna(0).sum())
+            td = float(g["pass_touchdown"].fillna(0).sum())
+            ints = float(g["interception"].fillna(0).sum())
+
+            def _clamp(x):
+                return min(max(x, 0.0), 2.375)
+
+            a = _clamp((cmp_ / att - 0.3) * 5)
+            b = _clamp((yds / att - 3) * 0.25)
+            c = _clamp((td / att) * 20)
+            d = _clamp(2.375 - (ints / att) * 25)
+            cols["nfl_passer_rating"] = round((a + b + c + d) / 6 * 100, 1)
         _emit(gsis, cols)
 
     # --- Rushing ---
@@ -310,6 +387,7 @@ def build_nflverse_metrics_for_season(season: int) -> Dict[str, Dict[str, float]
     """Merge NGS + FTN + pbp-derived metrics into one {sleeper_id: {columns}} map."""
     combined: Dict[str, Dict[str, float]] = {}
     for part in (build_ngs_receiving_for_season(season),
+                 build_ngs_rushing_for_season(season),
                  build_ftn_charting_for_season(season),
                  build_pbp_metrics_for_season(season)):
         for pid, cols in part.items():

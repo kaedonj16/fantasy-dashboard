@@ -9891,6 +9891,7 @@ const _ADV_METRIC_DESCS = {
   rushing_epa: "Total Expected Points Added on the player's rushing attempts over the season.",
   receiving_epa: "Total Expected Points Added on the player's targets over the season.",
   cpoe: "Completion Percentage Over Expected — accuracy adjusted for throw difficulty.",
+  ngs_rush_yards_over_expected_per_att: "Rush Yards Over Expected per attempt — yards created beyond what blocking/situation expected (NFL Next Gen Stats).",
   sack_rate: "Percent of dropbacks that ended in a sack. Lower is better.",
   scramble_rate: "Percent of dropbacks where the QB scrambled.",
   success_rate: "Percent of plays with positive EPA (a 'successful' play).",
@@ -10069,6 +10070,10 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
     if (metrics.rushing_epa != null) {
       const v = metrics.rushing_epa;
       defs.push({ label: 'Rushing EPA', fill: Math.min(Math.max(v + 20, 0) / 60 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('rushing_epa') });
+    }
+    if (metrics.ngs_rush_yards_over_expected_per_att != null) {
+      const v = metrics.ngs_rush_yards_over_expected_per_att;
+      defs.push({ label: 'RYOE/Att', fill: Math.min(Math.max(v + 1, 0) / 2.5 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), sub: _rankSub('ngs_rush_yards_over_expected_per_att') });
     }
     if (metrics.elusive_rating != null) {
       const v = metrics.elusive_rating;
@@ -11104,7 +11109,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     'opportunity_share', 'red_zone_usage', 'role_score', 'explosive_runs_10_plus',
     'breakaway_percentage', 'elusive_rating', 'pff_rushing_grade', 'grades_offense',
     'avoided_tackles', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
-    'rushing_epa', 'receiving_epa', 'epa_per_play',
+    'rushing_epa', 'ngs_rush_yards_over_expected_per_att', 'receiving_epa', 'epa_per_play',
     'total_carries', 'total_touches', 'total_targets', 'total_rush_tds', 'total_rec_tds', 'total_tds',
   ];
 
@@ -11144,6 +11149,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     passing_epa: 'Passing EPA',
     rushing_epa: 'Rushing EPA',
     receiving_epa: 'Receiving EPA',
+    ngs_rush_yards_over_expected_per_att: 'RYOE/Att',
     cpoe: 'CPOE',
     sack_rate: 'Sack Rate',
     scramble_rate: 'Scramble Rate',
@@ -11255,6 +11261,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       // EPA family (pbp-derived)
       'epa_per_play': 0.3, 'passing_epa': 150, 'rushing_epa': 40, 'receiving_epa': 60,
       'cpoe': 10, 'success_rate': 55, 'sack_rate': 10, 'scramble_rate': 12,
+      'ngs_rush_yards_over_expected_per_att': 1.5,
 
       // PFF grades (0-100)
       'pff_passing_grade': 100, 'pff_rushing_grade': 100,

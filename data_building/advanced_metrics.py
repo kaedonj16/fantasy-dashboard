@@ -30,9 +30,9 @@ from dashboard_services.db import get_conn
 PREMIUM_METRICS = frozenset({
     "yprr", "total_routes",
     "grades_offense", "grades_pass_block", "pff_rushing_grade", "pff_passing_grade",
-    "elusive_rating", "big_time_throw_rate", "adjusted_completion_rate",
+    "elusive_rating", "big_time_throw_rate",
     "pressure_to_sack_rate", "slot_rate", "wide_rate", "inline_rate",
-    "pass_block_rate", "avoided_tackles", "nfl_passer_rating",
+    "pass_block_rate", "avoided_tackles",
     # Snap-share proxy, not true routes data — hide until real routes are sourced.
     "route_participation",
 })
@@ -329,7 +329,10 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS cpoe           NUMERIC,
             ADD COLUMN IF NOT EXISTS sack_rate      NUMERIC,
             ADD COLUMN IF NOT EXISTS scramble_rate  NUMERIC,
-            ADD COLUMN IF NOT EXISTS success_rate   NUMERIC;
+            ADD COLUMN IF NOT EXISTS success_rate   NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_rush_yards_over_expected         NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_rush_yards_over_expected_per_att NUMERIC,
+            ADD COLUMN IF NOT EXISTS ngs_rush_efficiency                  NUMERIC;
     """)
 
 
@@ -1190,7 +1193,10 @@ def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
         'ngs_pct_share_intended_air_yards', 'ngs_avg_yac', 'ngs_avg_expected_yac',
         'ngs_avg_yac_above_expectation', 'ngs_catch_pct',
         'epa_per_play', 'passing_epa', 'rushing_epa', 'receiving_epa',
-        'cpoe', 'sack_rate', 'scramble_rate', 'success_rate',
+        'cpoe', 'sack_rate', 'scramble_rate', 'success_rate', 'nfl_passer_rating',
+        'adjusted_completion_rate',
+        'ngs_rush_yards_over_expected', 'ngs_rush_yards_over_expected_per_att',
+        'ngs_rush_efficiency',
     ]
 
     with get_conn() as conn:
@@ -1347,6 +1353,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "pff_rushing_grade":    {"label": "PFF Rush Grade",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF's rushing grade (0-100)."},
     "explosive_runs_10_plus": {"label": "Explosive Runs",   "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "integer": True, "desc": "Count of runs gaining 10 or more yards in the season (nflverse). Raw explosive-play volume."},
     "rushing_epa":          {"label": "Rushing EPA",         "category": "Rushing", "positions": ["RB", "QB"], "min_vol": _V_CARRIES, "desc": "Total Expected Points Added on rushing attempts over the season (nflverse)."},
+    "ngs_rush_yards_over_expected_per_att": {"label": "RYOE / Att", "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Rush Yards Over Expected per attempt — yards created beyond what blocking/situation expected (NFL Next Gen Stats). A free creation metric, similar in spirit to elusive rating."},
     "avoided_tackles":      {"label": "Avoided Tackles",    "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss."},
     "rz_carries_pg":        {"label": "RZ Carries/G",        "category": "Rushing", "positions": ["QB", "RB"], "min_vol": _V_GAMES, "desc": "Red zone rushing attempts per game (inside opponent's 20-yard line)."},
     "total_rush_tds":       {"label": "Rush TDs",            "category": "General", "subcategory": "Rushing",   "positions": ["RB", "QB"], "integer": True, "desc": "Total rushing touchdowns in the season."},
