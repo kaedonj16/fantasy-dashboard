@@ -18625,6 +18625,25 @@ def api_advanced_metrics_leaderboard():
     })
 
 
+@app.route("/api/advanced-metrics/weekly-bulk")
+def api_advanced_metrics_weekly_bulk():
+    """All _WEEKLY_METRICS aggregated per player for a week range, in one response."""
+    from data_building.advanced_metrics import get_all_weekly_metrics_bulk
+    season_str    = (request.args.get("season")     or "").strip()
+    wstart_str    = (request.args.get("week_start") or "").strip()
+    wend_str      = (request.args.get("week_end")   or "").strip()
+    position      = (request.args.get("position")   or "").strip().upper() or None
+    season        = int(season_str)  if season_str.isdigit()  else None
+    week_start    = int(wstart_str)  if wstart_str.isdigit()  else None
+    week_end      = int(wend_str)    if wend_str.isdigit()    else None
+    try:
+        data = get_all_weekly_metrics_bulk(season, week_start, week_end, position)
+        return jsonify(data)
+    except Exception as e:
+        logger.exception(f"[api/advanced-metrics/weekly-bulk] {e}")
+        return jsonify({"byId": {}, "keys": []}), 200
+
+
 @app.route("/api/advanced-metrics/seasons")
 def api_advanced_metrics_seasons():
     """Return available seasons in player_advanced_metrics, newest first."""

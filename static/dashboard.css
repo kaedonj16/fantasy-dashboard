@@ -21362,3 +21362,66 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   cursor: pointer;
   margin: 0;
 }
+
+/* ── Weekly bulk mode leaderboard columns ──────────────────────────────── */
+.am-cat-divider-hdr {
+  background: rgba(59,130,246,.08);
+  color: var(--accent, #3b82f6);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 4px 6px;
+  width: 8px;
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  border-left: 2px solid rgba(59,130,246,.18);
+  vertical-align: middle;
+}
+.am-bulk-header {
+  min-width: 70px !important;
+  width: 70px;
+  font-size: 11px;
+  padding: 4px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.am-bulk-val {
+  font-size: 12px;
+  padding: 4px 8px;
+  text-align: right;
+  white-space: nowrap;
+  min-width: 60px;
+  width: 70px;
+  color: var(--text);
+}
+.am-bulk-sort-col {
+  color: var(--accent, #3b82f6);
+  font-weight: 600;
+}
+/* Category header row in leaderboard compare modal */
+.am-cmp-cat-row td {
+  background: rgba(59,130,246,.08);
+  color: var(--accent, #3b82f6);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 6px 12px 4px;
+}
+/* Category section headers in player modal metrics */
+.am-metrics-cat-head {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 8px 0 3px;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,.08));
+  margin-bottom: 4px;
+  grid-column: 1 / -1;
+}
+

@@ -10531,7 +10531,48 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg) {
   const rankNote = ranks && Object.keys(ranks).length
     ? '<div class="am-rank-note" title="Minimums: 4+ games · efficiency metrics also require 20+ carries (rush) · 15+ targets (receiving) · 50+ attempts (passing)">Ranked among qualified players</div>'
     : '';
-  let html = rankNote + _grid(defs, true);
+
+  // Annotate defs with keys from cfg by matching labels
+  if (cfg) {
+    const _labelToKey = {};
+    for (const [k, spec] of Object.entries(cfg)) {
+      if (spec.label) _labelToKey[spec.label] = k;
+    }
+    for (const def of defs) {
+      if (!def.key && def.label && _labelToKey[def.label]) {
+        def.key = _labelToKey[def.label];
+      }
+    }
+  }
+
+  let html = rankNote;
+  if (cfg && Object.keys(cfg).length) {
+    // Group defs by category using cfg (best-effort — unlabeled defs go to 'Other')
+    const _CAT_ORDER = ['General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
+    const _catGroups = {};
+    const _uncategorized = [];
+    for (const def of defs) {
+      const key = def.key;
+      const spec = key && cfg[key];
+      const cat = (spec && spec.category) || null;
+      if (cat) { (_catGroups[cat] = _catGroups[cat] || []).push(def); }
+      else { _uncategorized.push(def); }
+    }
+    const orderedCats = _CAT_ORDER.filter(c => _catGroups[c]);
+    for (const [c] of Object.entries(_catGroups)) { if (!_CAT_ORDER.includes(c)) orderedCats.push(c); }
+    if (_uncategorized.length) orderedCats.push('__other__');
+    if (_catGroups['__other__']) _catGroups['__other__'] = _uncategorized;
+    else if (_uncategorized.length) _catGroups['__other__'] = _uncategorized;
+    for (const cat of orderedCats) {
+      const group = _catGroups[cat] || [];
+      if (!group.length) continue;
+      const catLabel = cat === '__other__' ? '' : cat;
+      if (catLabel) html += '<div class="am-metrics-cat-head">' + catLabel + '</div>';
+      html += _grid(group, true);
+    }
+  } else {
+    html += _grid(defs, true);
+  }
 
   // ── Volume section ──────────────────────────────────────────────────────────
   const volDefs = [];

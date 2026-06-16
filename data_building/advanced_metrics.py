@@ -1402,6 +1402,8 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "touches_per_game":   {"label": "Touches/G",    "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Carries plus receptions per game.", "computed_sql": "m.total_touches::float / NULLIF(m.games, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "total_tds":          {"label": "Total TDs",    "category": "General", "positions": ["QB", "RB", "WR", "TE"], "integer": True, "desc": "Total touchdowns (rush + receiving + passing) in the season."},
     "total_tds_per_game": {"label": "Total TDs/G",  "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Total touchdowns per game.", "computed_sql": "m.total_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "ppr_pts":          {"label": "PPR Points",  "category": "General", "positions": ["QB", "RB", "WR", "TE"], "desc": "Total PPR fantasy points for the period (0.5 PPR scoring)."},
+    "ppr_pts_per_game": {"label": "PPR Pts/G",   "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "PPR fantasy points per game."},
 }
 
 # Metrics that can be filtered to a week range using player_weekly_metrics.
@@ -1434,6 +1436,8 @@ _WEEKLY_METRICS: Dict[str, Any] = {
     "touches_per_game":    {"sql": "AVG(touches)",                                                                                                           "min_col": None,              "min_label": "Min Weeks",   "min_opts": []},
     "fpts_per_carry":      {"sql": "(SUM(rush_yards) * 0.1 + SUM(rush_tds) * 6)::float / NULLIF(SUM(carries), 0)",                                          "min_col": "SUM(carries)",    "min_label": "Min Carries", "min_opts": [5, 10, 20, 40]},
     "fpts_per_reception":  {"sql": "(SUM(receptions) + SUM(rec_yards) * 0.1 + SUM(rec_tds) * 6)::float / NULLIF(SUM(receptions), 0)",                       "min_col": "SUM(receptions)", "min_label": "Min Recs",    "min_opts": [3, 5, 10, 20]},
+    "ppr_pts":          {"sql": "SUM(ppr_pts)",  "min_col": None, "min_label": "Min Weeks", "min_opts": []},
+    "ppr_pts_per_game": {"sql": "AVG(ppr_pts)",  "min_col": None, "min_label": "Min Weeks", "min_opts": []},
 }
 
 
@@ -1943,6 +1947,82 @@ def get_adv_weekly_range_leaderboard(
             "weeks": weeks,
         })
     return out
+
+
+def get_all_weekly_metrics_bulk(
+    season: Optional[int] = None,
+    week_start: Optional[int] = None,
+    week_end: Optional[int] = None,
+    position: Optional[str] = None,
+) -> Dict[str, Any]:
+    """All _WEEKLY_METRICS aggregated per player for a week range, in one query.
+
+    Returns {
+        "byId": { player_id: { metric_key: value | None, ..., "weeks": N,
+                               "position": str, "name": str, "team": str } },
+        "keys": [ordered list of metric keys],
+    }
+    """
+    where_parts: list = []
+    params: list = []
+    if season:
+        where_parts.append("season = %s"); params.append(season)
+    if week_start:
+        where_parts.append("week >= %s"); params.append(week_start)
+    if week_end:
+        where_parts.append("week <= %s"); params.append(week_end)
+    pos = (position or "").upper().strip() or None
+    if pos:
+        where_parts.append("position = %s"); params.append(pos)
+    where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+    valid_keys: list = []
+    agg_selects: list = []
+    for key, wspec in _WEEKLY_METRICS.items():
+        if key not in LEADERBOARD_METRICS:
+            continue
+        agg_selects.append(f"({wspec['sql']}) AS {key}")
+        valid_keys.append(key)
+
+    if not agg_selects:
+        return {"byId": {}, "keys": []}
+
+    agg_sql = ", ".join(agg_selects)
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT player_id, position, COUNT(*) AS weeks_played, {agg_sql}
+            FROM player_weekly_metrics
+            {where_clause}
+            GROUP BY player_id, position
+            HAVING COUNT(*) >= 1
+            """,
+            tuple(params),
+        ).fetchall()
+
+    try:
+        from utils.utils import load_players_index
+        idx = load_players_index() or {}
+    except Exception:
+        idx = {}
+
+    by_id: Dict[str, Any] = {}
+    for row in rows:
+        pid = str(row["player_id"])
+        meta = idx.get(pid) or {}
+        d: Dict[str, Any] = {
+            "position": row["position"],
+            "name": meta.get("name") or "Unknown",
+            "team": meta.get("team") or "",
+            "weeks": int(row["weeks_played"]) if row["weeks_played"] is not None else 0,
+        }
+        for key in valid_keys:
+            v = row[key]
+            d[key] = float(v) if v is not None else None
+        by_id[pid] = d
+
+    return {"byId": by_id, "keys": valid_keys}
 
 
 def get_available_seasons() -> List[int]:
