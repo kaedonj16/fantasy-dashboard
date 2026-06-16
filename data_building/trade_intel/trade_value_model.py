@@ -766,6 +766,10 @@ def run_trade_value_model(
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)
     del AtWA_1qb, AtWb_1qb; gc.collect()
     v_sf  = _solve(AtWA_sf,  AtWb_sf,  prior_sf,  lambda_reg)
+    # Per-player SF "backing" = diagonal of AᵀWA (total decayed weight of SF
+    # trades the player appears in). Used to blend the SF solve vs the derived SF
+    # value for skill players. Captured before the matrix is freed.
+    sf_backing = np.diag(AtWA_sf)[:n_pl].copy()
     del AtWA_sf, AtWb_sf; gc.collect()
 
     # Players: floor at prior, cap at MAX_LIFT × prior
@@ -820,15 +824,24 @@ def run_trade_value_model(
     # This lets skill positions show slightly different SF vs 1QB values
     # (matching the model's ~2-5% discount) rather than being forced equal
     # by a min() cap.  QBs keep their WLS-calibrated SF value untouched.
+    # SF_BLEND_K = SF trade weight at which the SF solve gets 50% of the blend.
+    # Tied to lambda_reg so it tracks the same "data vs prior" scale the solve uses.
+    SF_BLEND_K = max(lambda_reg, 1.0)
     for i, pid in enumerate(player_ids):
         pos = player_prior[pid].get("position", "")
-        if pos != "QB":
-            p1 = player_prior[pid]["value_1qb"]
-            ps = player_prior[pid]["value_sf"]
-            if p1 > 0 and ps > 0:
-                v_sf_norm[i] = v_1qb_norm[i] * (ps / p1)
-            else:
-                v_sf_norm[i] = v_1qb_norm[i]  # fallback: equal to 1QB
+        if pos == "QB":
+            continue  # QBs keep their WLS SF-solved value untouched
+        p1 = player_prior[pid]["value_1qb"]
+        ps = player_prior[pid]["value_sf"]
+        derived = v_1qb_norm[i] * (ps / p1) if (p1 > 0 and ps > 0) else v_1qb_norm[i]
+        # Blend the SF trade solve with the derived value by SF data confidence:
+        # rich SF trade history -> trust the SF solve; thin -> lean on derived.
+        backing = float(sf_backing[i]) if i < len(sf_backing) else 0.0
+        if backing > 0:
+            w = backing / (backing + SF_BLEND_K)
+            v_sf_norm[i] = w * float(v_sf_norm[i]) + (1.0 - w) * derived
+        else:
+            v_sf_norm[i] = derived
 
     # --- Player output ---
     out_rows = []
