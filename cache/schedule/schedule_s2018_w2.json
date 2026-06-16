@@ -1,0 +1,162 @@
+[
+  {
+    "gameID": "2018_02_BAL_CIN",
+    "seasonType": "Regular Season",
+    "away": "BAL",
+    "home": "CIN",
+    "gameDate": "20180913",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030690.0"
+  },
+  {
+    "gameID": "2018_02_CAR_ATL",
+    "seasonType": "Regular Season",
+    "away": "CAR",
+    "home": "ATL",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030691.0"
+  },
+  {
+    "gameID": "2018_02_LAC_BUF",
+    "seasonType": "Regular Season",
+    "away": "LAC",
+    "home": "BUF",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030704.0"
+  },
+  {
+    "gameID": "2018_02_MIN_GB",
+    "seasonType": "Regular Season",
+    "away": "MIN",
+    "home": "GB",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030705.0"
+  },
+  {
+    "gameID": "2018_02_CLE_NO",
+    "seasonType": "Regular Season",
+    "away": "CLE",
+    "home": "NO",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030708.0"
+  },
+  {
+    "gameID": "2018_02_MIA_NYJ",
+    "seasonType": "Regular Season",
+    "away": "MIA",
+    "home": "NYJ",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030700.0"
+  },
+  {
+    "gameID": "2018_02_KC_PIT",
+    "seasonType": "Regular Season",
+    "away": "KC",
+    "home": "PIT",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030698.0"
+  },
+  {
+    "gameID": "2018_02_PHI_TB",
+    "seasonType": "Regular Season",
+    "away": "PHI",
+    "home": "TB",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030696.0"
+  },
+  {
+    "gameID": "2018_02_HOU_TEN",
+    "seasonType": "Regular Season",
+    "away": "HOU",
+    "home": "TEN",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030694.0"
+  },
+  {
+    "gameID": "2018_02_IND_WAS",
+    "seasonType": "Regular Season",
+    "away": "IND",
+    "home": "WAS",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030693.0"
+  },
+  {
+    "gameID": "2018_02_ARI_LA",
+    "seasonType": "Regular Season",
+    "away": "ARI",
+    "home": "LA",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030732.0"
+  },
+  {
+    "gameID": "2018_02_DET_SF",
+    "seasonType": "Regular Season",
+    "away": "DET",
+    "home": "SF",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030730.0"
+  },
+  {
+    "gameID": "2018_02_OAK_DEN",
+    "seasonType": "Regular Season",
+    "away": "LV",
+    "home": "DEN",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030736.0"
+  },
+  {
+    "gameID": "2018_02_NE_JAX",
+    "seasonType": "Regular Season",
+    "away": "NE",
+    "home": "JAX",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030733.0"
+  },
+  {
+    "gameID": "2018_02_NYG_DAL",
+    "seasonType": "Regular Season",
+    "away": "NYG",
+    "home": "DAL",
+    "gameDate": "20180916",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030738.0"
+  },
+  {
+    "gameID": "2018_02_SEA_CHI",
+    "seasonType": "Regular Season",
+    "away": "SEA",
+    "home": "CHI",
+    "gameDate": "20180917",
+    "gameWeek": "Week 2",
+    "season": "2018",
+    "espnID": "401030739.0"
+  }
+]

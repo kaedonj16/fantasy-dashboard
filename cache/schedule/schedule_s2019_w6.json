@@ -1,0 +1,142 @@
+[
+  {
+    "gameID": "2019_06_NYG_NE",
+    "seasonType": "Regular Season",
+    "away": "NYG",
+    "home": "NE",
+    "gameDate": "20191010",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401127917.0"
+  },
+  {
+    "gameID": "2019_06_CAR_TB",
+    "seasonType": "Regular Season",
+    "away": "CAR",
+    "home": "TB",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128096.0"
+  },
+  {
+    "gameID": "2019_06_CIN_BAL",
+    "seasonType": "Regular Season",
+    "away": "CIN",
+    "home": "BAL",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128105.0"
+  },
+  {
+    "gameID": "2019_06_SEA_CLE",
+    "seasonType": "Regular Season",
+    "away": "SEA",
+    "home": "CLE",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128111.0"
+  },
+  {
+    "gameID": "2019_06_NO_JAX",
+    "seasonType": "Regular Season",
+    "away": "NO",
+    "home": "JAX",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128116.0"
+  },
+  {
+    "gameID": "2019_06_HOU_KC",
+    "seasonType": "Regular Season",
+    "away": "HOU",
+    "home": "KC",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128119.0"
+  },
+  {
+    "gameID": "2019_06_WAS_MIA",
+    "seasonType": "Regular Season",
+    "away": "WAS",
+    "home": "MIA",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128121.0"
+  },
+  {
+    "gameID": "2019_06_PHI_MIN",
+    "seasonType": "Regular Season",
+    "away": "PHI",
+    "home": "MIN",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128123.0"
+  },
+  {
+    "gameID": "2019_06_ATL_ARI",
+    "seasonType": "Regular Season",
+    "away": "ATL",
+    "home": "ARI",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128126.0"
+  },
+  {
+    "gameID": "2019_06_SF_LA",
+    "seasonType": "Regular Season",
+    "away": "SF",
+    "home": "LA",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128128.0"
+  },
+  {
+    "gameID": "2019_06_TEN_DEN",
+    "seasonType": "Regular Season",
+    "away": "TEN",
+    "home": "DEN",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128129.0"
+  },
+  {
+    "gameID": "2019_06_DAL_NYJ",
+    "seasonType": "Regular Season",
+    "away": "DAL",
+    "home": "NYJ",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128130.0"
+  },
+  {
+    "gameID": "2019_06_PIT_LAC",
+    "seasonType": "Regular Season",
+    "away": "PIT",
+    "home": "LAC",
+    "gameDate": "20191013",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128131.0"
+  },
+  {
+    "gameID": "2019_06_DET_GB",
+    "seasonType": "Regular Season",
+    "away": "DET",
+    "home": "GB",
+    "gameDate": "20191014",
+    "gameWeek": "Week 6",
+    "season": "2019",
+    "espnID": "401128132.0"
+  }
+]

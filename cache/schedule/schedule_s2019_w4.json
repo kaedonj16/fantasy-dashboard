@@ -1,0 +1,152 @@
+[
+  {
+    "gameID": "2019_04_PHI_GB",
+    "seasonType": "Regular Season",
+    "away": "PHI",
+    "home": "GB",
+    "gameDate": "20190926",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401127863.0"
+  },
+  {
+    "gameID": "2019_04_TEN_ATL",
+    "seasonType": "Regular Season",
+    "away": "TEN",
+    "home": "ATL",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128016.0"
+  },
+  {
+    "gameID": "2019_04_CLE_BAL",
+    "seasonType": "Regular Season",
+    "away": "CLE",
+    "home": "BAL",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128018.0"
+  },
+  {
+    "gameID": "2019_04_NE_BUF",
+    "seasonType": "Regular Season",
+    "away": "NE",
+    "home": "BUF",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401127866.0"
+  },
+  {
+    "gameID": "2019_04_KC_DET",
+    "seasonType": "Regular Season",
+    "away": "KC",
+    "home": "DET",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128023.0"
+  },
+  {
+    "gameID": "2019_04_CAR_HOU",
+    "seasonType": "Regular Season",
+    "away": "CAR",
+    "home": "HOU",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128026.0"
+  },
+  {
+    "gameID": "2019_04_OAK_IND",
+    "seasonType": "Regular Season",
+    "away": "LV",
+    "home": "IND",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128030.0"
+  },
+  {
+    "gameID": "2019_04_LAC_MIA",
+    "seasonType": "Regular Season",
+    "away": "LAC",
+    "home": "MIA",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128055.0"
+  },
+  {
+    "gameID": "2019_04_WAS_NYG",
+    "seasonType": "Regular Season",
+    "away": "WAS",
+    "home": "NYG",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128059.0"
+  },
+  {
+    "gameID": "2019_04_SEA_ARI",
+    "seasonType": "Regular Season",
+    "away": "SEA",
+    "home": "ARI",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128064.0"
+  },
+  {
+    "gameID": "2019_04_TB_LA",
+    "seasonType": "Regular Season",
+    "away": "TB",
+    "home": "LA",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128069.0"
+  },
+  {
+    "gameID": "2019_04_MIN_CHI",
+    "seasonType": "Regular Season",
+    "away": "MIN",
+    "home": "CHI",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128093.0"
+  },
+  {
+    "gameID": "2019_04_JAX_DEN",
+    "seasonType": "Regular Season",
+    "away": "JAX",
+    "home": "DEN",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128097.0"
+  },
+  {
+    "gameID": "2019_04_DAL_NO",
+    "seasonType": "Regular Season",
+    "away": "DAL",
+    "home": "NO",
+    "gameDate": "20190929",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128102.0"
+  },
+  {
+    "gameID": "2019_04_CIN_PIT",
+    "seasonType": "Regular Season",
+    "away": "CIN",
+    "home": "PIT",
+    "gameDate": "20190930",
+    "gameWeek": "Week 4",
+    "season": "2019",
+    "espnID": "401128109.0"
+  }
+]

@@ -1,0 +1,162 @@
+[
+  {
+    "gameID": "2017_04_CHI_GB",
+    "seasonType": "Regular Season",
+    "away": "CHI",
+    "home": "GB",
+    "gameDate": "20170928",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951678.0"
+  },
+  {
+    "gameID": "2017_04_BUF_ATL",
+    "seasonType": "Regular Season",
+    "away": "BUF",
+    "home": "ATL",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951685.0"
+  },
+  {
+    "gameID": "2017_04_PIT_BAL",
+    "seasonType": "Regular Season",
+    "away": "PIT",
+    "home": "BAL",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951708.0"
+  },
+  {
+    "gameID": "2017_04_CIN_CLE",
+    "seasonType": "Regular Season",
+    "away": "CIN",
+    "home": "CLE",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951712.0"
+  },
+  {
+    "gameID": "2017_04_LA_DAL",
+    "seasonType": "Regular Season",
+    "away": "LA",
+    "home": "DAL",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951716.0"
+  },
+  {
+    "gameID": "2017_04_TEN_HOU",
+    "seasonType": "Regular Season",
+    "away": "TEN",
+    "home": "HOU",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951720.0"
+  },
+  {
+    "gameID": "2017_04_DET_MIN",
+    "seasonType": "Regular Season",
+    "away": "DET",
+    "home": "MIN",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951724.0"
+  },
+  {
+    "gameID": "2017_04_CAR_NE",
+    "seasonType": "Regular Season",
+    "away": "CAR",
+    "home": "NE",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951727.0"
+  },
+  {
+    "gameID": "2017_04_JAX_NYJ",
+    "seasonType": "Regular Season",
+    "away": "JAX",
+    "home": "NYJ",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951730.0"
+  },
+  {
+    "gameID": "2017_04_SF_ARI",
+    "seasonType": "Regular Season",
+    "away": "SF",
+    "home": "ARI",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951735.0"
+  },
+  {
+    "gameID": "2017_04_PHI_LAC",
+    "seasonType": "Regular Season",
+    "away": "PHI",
+    "home": "LAC",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951738.0"
+  },
+  {
+    "gameID": "2017_04_NYG_TB",
+    "seasonType": "Regular Season",
+    "away": "NYG",
+    "home": "TB",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951742.0"
+  },
+  {
+    "gameID": "2017_04_OAK_DEN",
+    "seasonType": "Regular Season",
+    "away": "LV",
+    "home": "DEN",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951744.0"
+  },
+  {
+    "gameID": "2017_04_IND_SEA",
+    "seasonType": "Regular Season",
+    "away": "IND",
+    "home": "SEA",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951747.0"
+  },
+  {
+    "gameID": "2017_04_NO_MIA",
+    "seasonType": "Regular Season",
+    "away": "NO",
+    "home": "MIA",
+    "gameDate": "20171001",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400950241.0"
+  },
+  {
+    "gameID": "2017_04_WAS_KC",
+    "seasonType": "Regular Season",
+    "away": "WAS",
+    "home": "KC",
+    "gameDate": "20171002",
+    "gameWeek": "Week 4",
+    "season": "2017",
+    "espnID": "400951752.0"
+  }
+]

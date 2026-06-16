@@ -1,0 +1,142 @@
+[
+  {
+    "gameID": "2019_11_PIT_CLE",
+    "seasonType": "Regular Season",
+    "away": "PIT",
+    "home": "CLE",
+    "gameDate": "20191114",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128044.0"
+  },
+  {
+    "gameID": "2019_11_HOU_BAL",
+    "seasonType": "Regular Season",
+    "away": "HOU",
+    "home": "BAL",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128047.0"
+  },
+  {
+    "gameID": "2019_11_ATL_CAR",
+    "seasonType": "Regular Season",
+    "away": "ATL",
+    "home": "CAR",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128049.0"
+  },
+  {
+    "gameID": "2019_11_DAL_DET",
+    "seasonType": "Regular Season",
+    "away": "DAL",
+    "home": "DET",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128052.0"
+  },
+  {
+    "gameID": "2019_11_JAX_IND",
+    "seasonType": "Regular Season",
+    "away": "JAX",
+    "home": "IND",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128075.0"
+  },
+  {
+    "gameID": "2019_11_BUF_MIA",
+    "seasonType": "Regular Season",
+    "away": "BUF",
+    "home": "MIA",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128077.0"
+  },
+  {
+    "gameID": "2019_11_DEN_MIN",
+    "seasonType": "Regular Season",
+    "away": "DEN",
+    "home": "MIN",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128081.0"
+  },
+  {
+    "gameID": "2019_11_NO_TB",
+    "seasonType": "Regular Season",
+    "away": "NO",
+    "home": "TB",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128084.0"
+  },
+  {
+    "gameID": "2019_11_NYJ_WAS",
+    "seasonType": "Regular Season",
+    "away": "NYJ",
+    "home": "WAS",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128086.0"
+  },
+  {
+    "gameID": "2019_11_ARI_SF",
+    "seasonType": "Regular Season",
+    "away": "ARI",
+    "home": "SF",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128089.0"
+  },
+  {
+    "gameID": "2019_11_CIN_OAK",
+    "seasonType": "Regular Season",
+    "away": "CIN",
+    "home": "LV",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128092.0"
+  },
+  {
+    "gameID": "2019_11_NE_PHI",
+    "seasonType": "Regular Season",
+    "away": "NE",
+    "home": "PHI",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401127897.0"
+  },
+  {
+    "gameID": "2019_11_CHI_LA",
+    "seasonType": "Regular Season",
+    "away": "CHI",
+    "home": "LA",
+    "gameDate": "20191117",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128133.0"
+  },
+  {
+    "gameID": "2019_11_KC_LAC",
+    "seasonType": "Regular Season",
+    "away": "KC",
+    "home": "LAC",
+    "gameDate": "20191118",
+    "gameWeek": "Week 11",
+    "season": "2019",
+    "espnID": "401128134.0"
+  }
+]

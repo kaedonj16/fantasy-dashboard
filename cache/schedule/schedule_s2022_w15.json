@@ -1,0 +1,162 @@
+[
+  {
+    "gameID": "2022_15_SF_SEA",
+    "seasonType": "Regular Season",
+    "away": "SF",
+    "home": "SEA",
+    "gameDate": "20221215",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437901.0"
+  },
+  {
+    "gameID": "2022_15_IND_MIN",
+    "seasonType": "Regular Season",
+    "away": "IND",
+    "home": "MIN",
+    "gameDate": "20221217",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437904.0"
+  },
+  {
+    "gameID": "2022_15_BAL_CLE",
+    "seasonType": "Regular Season",
+    "away": "BAL",
+    "home": "CLE",
+    "gameDate": "20221217",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437903.0"
+  },
+  {
+    "gameID": "2022_15_MIA_BUF",
+    "seasonType": "Regular Season",
+    "away": "MIA",
+    "home": "BUF",
+    "gameDate": "20221217",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437902.0"
+  },
+  {
+    "gameID": "2022_15_PIT_CAR",
+    "seasonType": "Regular Season",
+    "away": "PIT",
+    "home": "CAR",
+    "gameDate": "20221218",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437907.0"
+  },
+  {
+    "gameID": "2022_15_PHI_CHI",
+    "seasonType": "Regular Season",
+    "away": "PHI",
+    "home": "CHI",
+    "gameDate": "20221218",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437908.0"
+  },
+  {
+    "gameID": "2022_15_KC_HOU",
+    "seasonType": "Regular Season",
+    "away": "KC",
+    "home": "HOU",
+    "gameDate": "20221218",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437909.0"
+  },
+  {
+    "gameID": "2022_15_DAL_JAX",
+    "seasonType": "Regular Season",
+    "away": "DAL",
+    "home": "JAX",
+    "gameDate": "20221218",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437910.0"
+  },
+  {
+    "gameID": "2022_15_ATL_NO",
+    "seasonType": "Regular Season",
+    "away": "ATL",
+    "home": "NO",
+    "gameDate": "20221218",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437905.0"
+  },
+  {
+    "gameID": "2022_15_DET_NYJ",
+    "seasonType": "Regular Season",
+    "away": "DET",
+    "home": "NYJ",
+    "gameDate": "20221218",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437911.0"
+  },
+  {
+    "gameID": "2022_15_ARI_DEN",
+    "seasonType": "Regular Season",
+    "away": "ARI",
+    "home": "DEN",
+    "gameDate": "20221218",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437912.0"
+  },
+  {
+    "gameID": "2022_15_NE_LV",
+    "seasonType": "Regular Season",
+    "away": "NE",
+    "home": "LV",
+    "gameDate": "20221218",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437915.0"
+  },
+  {
+    "gameID": "2022_15_TEN_LAC",
+    "seasonType": "Regular Season",
+    "away": "TEN",
+    "home": "LAC",
+    "gameDate": "20221218",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437913.0"
+  },
+  {
+    "gameID": "2022_15_CIN_TB",
+    "seasonType": "Regular Season",
+    "away": "CIN",
+    "home": "TB",
+    "gameDate": "20221218",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437914.0"
+  },
+  {
+    "gameID": "2022_15_NYG_WAS",
+    "seasonType": "Regular Season",
+    "away": "NYG",
+    "home": "WAS",
+    "gameDate": "20221218",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437906.0"
+  },
+  {
+    "gameID": "2022_15_LA_GB",
+    "seasonType": "Regular Season",
+    "away": "LA",
+    "home": "GB",
+    "gameDate": "20221219",
+    "gameWeek": "Week 15",
+    "season": "2022",
+    "espnID": "401437916.0"
+  }
+]

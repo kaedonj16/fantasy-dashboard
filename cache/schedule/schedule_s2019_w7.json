@@ -1,0 +1,142 @@
+[
+  {
+    "gameID": "2019_07_KC_DEN",
+    "seasonType": "Regular Season",
+    "away": "KC",
+    "home": "DEN",
+    "gameDate": "20191017",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127902.0"
+  },
+  {
+    "gameID": "2019_07_LA_ATL",
+    "seasonType": "Regular Season",
+    "away": "LA",
+    "home": "ATL",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127940.0"
+  },
+  {
+    "gameID": "2019_07_MIA_BUF",
+    "seasonType": "Regular Season",
+    "away": "MIA",
+    "home": "BUF",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127942.0"
+  },
+  {
+    "gameID": "2019_07_JAX_CIN",
+    "seasonType": "Regular Season",
+    "away": "JAX",
+    "home": "CIN",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127945.0"
+  },
+  {
+    "gameID": "2019_07_MIN_DET",
+    "seasonType": "Regular Season",
+    "away": "MIN",
+    "home": "DET",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127947.0"
+  },
+  {
+    "gameID": "2019_07_OAK_GB",
+    "seasonType": "Regular Season",
+    "away": "LV",
+    "home": "GB",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127949.0"
+  },
+  {
+    "gameID": "2019_07_HOU_IND",
+    "seasonType": "Regular Season",
+    "away": "HOU",
+    "home": "IND",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127951.0"
+  },
+  {
+    "gameID": "2019_07_ARI_NYG",
+    "seasonType": "Regular Season",
+    "away": "ARI",
+    "home": "NYG",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127974.0"
+  },
+  {
+    "gameID": "2019_07_SF_WAS",
+    "seasonType": "Regular Season",
+    "away": "SF",
+    "home": "WAS",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127977.0"
+  },
+  {
+    "gameID": "2019_07_LAC_TEN",
+    "seasonType": "Regular Season",
+    "away": "LAC",
+    "home": "TEN",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127979.0"
+  },
+  {
+    "gameID": "2019_07_NO_CHI",
+    "seasonType": "Regular Season",
+    "away": "NO",
+    "home": "CHI",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127982.0"
+  },
+  {
+    "gameID": "2019_07_BAL_SEA",
+    "seasonType": "Regular Season",
+    "away": "BAL",
+    "home": "SEA",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127985.0"
+  },
+  {
+    "gameID": "2019_07_PHI_DAL",
+    "seasonType": "Regular Season",
+    "away": "PHI",
+    "home": "DAL",
+    "gameDate": "20191020",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127987.0"
+  },
+  {
+    "gameID": "2019_07_NE_NYJ",
+    "seasonType": "Regular Season",
+    "away": "NE",
+    "home": "NYJ",
+    "gameDate": "20191021",
+    "gameWeek": "Week 7",
+    "season": "2019",
+    "espnID": "401127894.0"
+  }
+]

@@ -1,0 +1,162 @@
+[
+  {
+    "gameID": "2020_16_MIN_NO",
+    "seasonType": "Regular Season",
+    "away": "MIN",
+    "home": "NO",
+    "gameDate": "20201225",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220324.0"
+  },
+  {
+    "gameID": "2020_16_TB_DET",
+    "seasonType": "Regular Season",
+    "away": "TB",
+    "home": "DET",
+    "gameDate": "20201226",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220286.0"
+  },
+  {
+    "gameID": "2020_16_SF_ARI",
+    "seasonType": "Regular Season",
+    "away": "SF",
+    "home": "ARI",
+    "gameDate": "20201226",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220337.0"
+  },
+  {
+    "gameID": "2020_16_MIA_LV",
+    "seasonType": "Regular Season",
+    "away": "MIA",
+    "home": "LV",
+    "gameDate": "20201226",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220230.0"
+  },
+  {
+    "gameID": "2020_16_NYG_BAL",
+    "seasonType": "Regular Season",
+    "away": "NYG",
+    "home": "BAL",
+    "gameDate": "20201227",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220152.0"
+  },
+  {
+    "gameID": "2020_16_CIN_HOU",
+    "seasonType": "Regular Season",
+    "away": "CIN",
+    "home": "HOU",
+    "gameDate": "20201227",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220182.0"
+  },
+  {
+    "gameID": "2020_16_CHI_JAX",
+    "seasonType": "Regular Season",
+    "away": "CHI",
+    "home": "JAX",
+    "gameDate": "20201227",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220199.0"
+  },
+  {
+    "gameID": "2020_16_ATL_KC",
+    "seasonType": "Regular Season",
+    "away": "ATL",
+    "home": "KC",
+    "gameDate": "20201227",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220223.0"
+  },
+  {
+    "gameID": "2020_16_CLE_NYJ",
+    "seasonType": "Regular Season",
+    "away": "CLE",
+    "home": "NYJ",
+    "gameDate": "20201227",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220145.0"
+  },
+  {
+    "gameID": "2020_16_IND_PIT",
+    "seasonType": "Regular Season",
+    "away": "IND",
+    "home": "PIT",
+    "gameDate": "20201227",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220174.0"
+  },
+  {
+    "gameID": "2020_16_DEN_LAC",
+    "seasonType": "Regular Season",
+    "away": "DEN",
+    "home": "LAC",
+    "gameDate": "20201227",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220234.0"
+  },
+  {
+    "gameID": "2020_16_CAR_WAS",
+    "seasonType": "Regular Season",
+    "away": "CAR",
+    "home": "WAS",
+    "gameDate": "20201227",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220273.0"
+  },
+  {
+    "gameID": "2020_16_PHI_DAL",
+    "seasonType": "Regular Season",
+    "away": "PHI",
+    "home": "DAL",
+    "gameDate": "20201227",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220243.0"
+  },
+  {
+    "gameID": "2020_16_LA_SEA",
+    "seasonType": "Regular Season",
+    "away": "LA",
+    "home": "SEA",
+    "gameDate": "20201227",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220362.0"
+  },
+  {
+    "gameID": "2020_16_TEN_GB",
+    "seasonType": "Regular Season",
+    "away": "TEN",
+    "home": "GB",
+    "gameDate": "20201227",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220296.0"
+  },
+  {
+    "gameID": "2020_16_BUF_NE",
+    "seasonType": "Regular Season",
+    "away": "BUF",
+    "home": "NE",
+    "gameDate": "20201228",
+    "gameWeek": "Week 16",
+    "season": "2020",
+    "espnID": "401220130.0"
+  }
+]

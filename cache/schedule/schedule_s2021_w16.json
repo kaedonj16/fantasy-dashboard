@@ -1,0 +1,162 @@
+[
+  {
+    "gameID": "2021_16_SF_TEN",
+    "seasonType": "Regular Season",
+    "away": "SF",
+    "home": "TEN",
+    "gameDate": "20211223",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326553.0"
+  },
+  {
+    "gameID": "2021_16_CLE_GB",
+    "seasonType": "Regular Season",
+    "away": "CLE",
+    "home": "GB",
+    "gameDate": "20211225",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326554.0"
+  },
+  {
+    "gameID": "2021_16_IND_ARI",
+    "seasonType": "Regular Season",
+    "away": "IND",
+    "home": "ARI",
+    "gameDate": "20211225",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326555.0"
+  },
+  {
+    "gameID": "2021_16_DET_ATL",
+    "seasonType": "Regular Season",
+    "away": "DET",
+    "home": "ATL",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326556.0"
+  },
+  {
+    "gameID": "2021_16_TB_CAR",
+    "seasonType": "Regular Season",
+    "away": "TB",
+    "home": "CAR",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326557.0"
+  },
+  {
+    "gameID": "2021_16_BAL_CIN",
+    "seasonType": "Regular Season",
+    "away": "BAL",
+    "home": "CIN",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326558.0"
+  },
+  {
+    "gameID": "2021_16_LAC_HOU",
+    "seasonType": "Regular Season",
+    "away": "LAC",
+    "home": "HOU",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326559.0"
+  },
+  {
+    "gameID": "2021_16_LA_MIN",
+    "seasonType": "Regular Season",
+    "away": "LA",
+    "home": "MIN",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326560.0"
+  },
+  {
+    "gameID": "2021_16_BUF_NE",
+    "seasonType": "Regular Season",
+    "away": "BUF",
+    "home": "NE",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326561.0"
+  },
+  {
+    "gameID": "2021_16_JAX_NYJ",
+    "seasonType": "Regular Season",
+    "away": "JAX",
+    "home": "NYJ",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326562.0"
+  },
+  {
+    "gameID": "2021_16_NYG_PHI",
+    "seasonType": "Regular Season",
+    "away": "NYG",
+    "home": "PHI",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326563.0"
+  },
+  {
+    "gameID": "2021_16_CHI_SEA",
+    "seasonType": "Regular Season",
+    "away": "CHI",
+    "home": "SEA",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326564.0"
+  },
+  {
+    "gameID": "2021_16_PIT_KC",
+    "seasonType": "Regular Season",
+    "away": "PIT",
+    "home": "KC",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326565.0"
+  },
+  {
+    "gameID": "2021_16_DEN_LV",
+    "seasonType": "Regular Season",
+    "away": "DEN",
+    "home": "LV",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326566.0"
+  },
+  {
+    "gameID": "2021_16_WAS_DAL",
+    "seasonType": "Regular Season",
+    "away": "WAS",
+    "home": "DAL",
+    "gameDate": "20211226",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326567.0"
+  },
+  {
+    "gameID": "2021_16_MIA_NO",
+    "seasonType": "Regular Season",
+    "away": "MIA",
+    "home": "NO",
+    "gameDate": "20211227",
+    "gameWeek": "Week 16",
+    "season": "2021",
+    "espnID": "401326568.0"
+  }
+]

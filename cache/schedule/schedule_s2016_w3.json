@@ -1,0 +1,162 @@
+[
+  {
+    "gameID": "2016_03_HOU_NE",
+    "seasonType": "Regular Season",
+    "away": "HOU",
+    "home": "NE",
+    "gameDate": "20160922",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874551.0"
+  },
+  {
+    "gameID": "2016_03_ARI_BUF",
+    "seasonType": "Regular Season",
+    "away": "ARI",
+    "home": "BUF",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874558.0"
+  },
+  {
+    "gameID": "2016_03_MIN_CAR",
+    "seasonType": "Regular Season",
+    "away": "MIN",
+    "home": "CAR",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874615.0"
+  },
+  {
+    "gameID": "2016_03_DEN_CIN",
+    "seasonType": "Regular Season",
+    "away": "DEN",
+    "home": "CIN",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874613.0"
+  },
+  {
+    "gameID": "2016_03_DET_GB",
+    "seasonType": "Regular Season",
+    "away": "DET",
+    "home": "GB",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874610.0"
+  },
+  {
+    "gameID": "2016_03_BAL_JAX",
+    "seasonType": "Regular Season",
+    "away": "BAL",
+    "home": "JAX",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874567.0"
+  },
+  {
+    "gameID": "2016_03_CLE_MIA",
+    "seasonType": "Regular Season",
+    "away": "CLE",
+    "home": "MIA",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874565.0"
+  },
+  {
+    "gameID": "2016_03_WAS_NYG",
+    "seasonType": "Regular Season",
+    "away": "WAS",
+    "home": "NYG",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874682.0"
+  },
+  {
+    "gameID": "2016_03_OAK_TEN",
+    "seasonType": "Regular Season",
+    "away": "LV",
+    "home": "TEN",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874562.0"
+  },
+  {
+    "gameID": "2016_03_SF_SEA",
+    "seasonType": "Regular Season",
+    "away": "SF",
+    "home": "SEA",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874620.0"
+  },
+  {
+    "gameID": "2016_03_LA_TB",
+    "seasonType": "Regular Season",
+    "away": "LA",
+    "home": "TB",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874618.0"
+  },
+  {
+    "gameID": "2016_03_SD_IND",
+    "seasonType": "Regular Season",
+    "away": "LAC",
+    "home": "IND",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874624.0"
+  },
+  {
+    "gameID": "2016_03_NYJ_KC",
+    "seasonType": "Regular Season",
+    "away": "NYJ",
+    "home": "KC",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874623.0"
+  },
+  {
+    "gameID": "2016_03_PIT_PHI",
+    "seasonType": "Regular Season",
+    "away": "PIT",
+    "home": "PHI",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874628.0"
+  },
+  {
+    "gameID": "2016_03_CHI_DAL",
+    "seasonType": "Regular Season",
+    "away": "CHI",
+    "home": "DAL",
+    "gameDate": "20160925",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874650.0"
+  },
+  {
+    "gameID": "2016_03_ATL_NO",
+    "seasonType": "Regular Season",
+    "away": "ATL",
+    "home": "NO",
+    "gameDate": "20160926",
+    "gameWeek": "Week 3",
+    "season": "2016",
+    "espnID": "400874653.0"
+  }
+]

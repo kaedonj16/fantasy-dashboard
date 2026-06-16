@@ -1,0 +1,142 @@
+[
+  {
+    "gameID": "2022_06_WAS_CHI",
+    "seasonType": "Regular Season",
+    "away": "WAS",
+    "home": "CHI",
+    "gameDate": "20221013",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437777.0"
+  },
+  {
+    "gameID": "2022_06_SF_ATL",
+    "seasonType": "Regular Season",
+    "away": "SF",
+    "home": "ATL",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437778.0"
+  },
+  {
+    "gameID": "2022_06_NE_CLE",
+    "seasonType": "Regular Season",
+    "away": "NE",
+    "home": "CLE",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437779.0"
+  },
+  {
+    "gameID": "2022_06_NYJ_GB",
+    "seasonType": "Regular Season",
+    "away": "NYJ",
+    "home": "GB",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437780.0"
+  },
+  {
+    "gameID": "2022_06_JAX_IND",
+    "seasonType": "Regular Season",
+    "away": "JAX",
+    "home": "IND",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437781.0"
+  },
+  {
+    "gameID": "2022_06_MIN_MIA",
+    "seasonType": "Regular Season",
+    "away": "MIN",
+    "home": "MIA",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437782.0"
+  },
+  {
+    "gameID": "2022_06_CIN_NO",
+    "seasonType": "Regular Season",
+    "away": "CIN",
+    "home": "NO",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437783.0"
+  },
+  {
+    "gameID": "2022_06_BAL_NYG",
+    "seasonType": "Regular Season",
+    "away": "BAL",
+    "home": "NYG",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437784.0"
+  },
+  {
+    "gameID": "2022_06_TB_PIT",
+    "seasonType": "Regular Season",
+    "away": "TB",
+    "home": "PIT",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437785.0"
+  },
+  {
+    "gameID": "2022_06_CAR_LA",
+    "seasonType": "Regular Season",
+    "away": "CAR",
+    "home": "LA",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437786.0"
+  },
+  {
+    "gameID": "2022_06_ARI_SEA",
+    "seasonType": "Regular Season",
+    "away": "ARI",
+    "home": "SEA",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437787.0"
+  },
+  {
+    "gameID": "2022_06_BUF_KC",
+    "seasonType": "Regular Season",
+    "away": "BUF",
+    "home": "KC",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437788.0"
+  },
+  {
+    "gameID": "2022_06_DAL_PHI",
+    "seasonType": "Regular Season",
+    "away": "DAL",
+    "home": "PHI",
+    "gameDate": "20221016",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437789.0"
+  },
+  {
+    "gameID": "2022_06_DEN_LAC",
+    "seasonType": "Regular Season",
+    "away": "DEN",
+    "home": "LAC",
+    "gameDate": "20221017",
+    "gameWeek": "Week 6",
+    "season": "2022",
+    "espnID": "401437790.0"
+  }
+]

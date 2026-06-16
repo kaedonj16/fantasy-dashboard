@@ -1,0 +1,142 @@
+[
+  {
+    "gameID": "2020_07_NYG_PHI",
+    "seasonType": "Regular Season",
+    "away": "NYG",
+    "home": "PHI",
+    "gameDate": "20201022",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220259.0"
+  },
+  {
+    "gameID": "2020_07_DET_ATL",
+    "seasonType": "Regular Season",
+    "away": "DET",
+    "home": "ATL",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220310.0"
+  },
+  {
+    "gameID": "2020_07_CLE_CIN",
+    "seasonType": "Regular Season",
+    "away": "CLE",
+    "home": "CIN",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220155.0"
+  },
+  {
+    "gameID": "2020_07_GB_HOU",
+    "seasonType": "Regular Season",
+    "away": "GB",
+    "home": "HOU",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220183.0"
+  },
+  {
+    "gameID": "2020_07_CAR_NO",
+    "seasonType": "Regular Season",
+    "away": "CAR",
+    "home": "NO",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220322.0"
+  },
+  {
+    "gameID": "2020_07_BUF_NYJ",
+    "seasonType": "Regular Season",
+    "away": "BUF",
+    "home": "NYJ",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220138.0"
+  },
+  {
+    "gameID": "2020_07_PIT_TEN",
+    "seasonType": "Regular Season",
+    "away": "PIT",
+    "home": "TEN",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401249063.0"
+  },
+  {
+    "gameID": "2020_07_DAL_WAS",
+    "seasonType": "Regular Season",
+    "away": "DAL",
+    "home": "WAS",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220266.0"
+  },
+  {
+    "gameID": "2020_07_TB_LV",
+    "seasonType": "Regular Season",
+    "away": "TB",
+    "home": "LV",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220232.0"
+  },
+  {
+    "gameID": "2020_07_KC_DEN",
+    "seasonType": "Regular Season",
+    "away": "KC",
+    "home": "DEN",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220210.0"
+  },
+  {
+    "gameID": "2020_07_JAX_LAC",
+    "seasonType": "Regular Season",
+    "away": "JAX",
+    "home": "LAC",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220241.0"
+  },
+  {
+    "gameID": "2020_07_SF_NE",
+    "seasonType": "Regular Season",
+    "away": "SF",
+    "home": "NE",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220136.0"
+  },
+  {
+    "gameID": "2020_07_SEA_ARI",
+    "seasonType": "Regular Season",
+    "away": "SEA",
+    "home": "ARI",
+    "gameDate": "20201025",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220338.0"
+  },
+  {
+    "gameID": "2020_07_CHI_LA",
+    "seasonType": "Regular Season",
+    "away": "CHI",
+    "home": "LA",
+    "gameDate": "20201026",
+    "gameWeek": "Week 7",
+    "season": "2020",
+    "espnID": "401220351.0"
+  }
+]

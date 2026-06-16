@@ -1,0 +1,132 @@
+[
+  {
+    "gameID": "2021_07_DEN_CLE",
+    "seasonType": "Regular Season",
+    "away": "DEN",
+    "home": "CLE",
+    "gameDate": "20211021",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326423.0"
+  },
+  {
+    "gameID": "2021_07_CIN_BAL",
+    "seasonType": "Regular Season",
+    "away": "CIN",
+    "home": "BAL",
+    "gameDate": "20211024",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326424.0"
+  },
+  {
+    "gameID": "2021_07_WAS_GB",
+    "seasonType": "Regular Season",
+    "away": "WAS",
+    "home": "GB",
+    "gameDate": "20211024",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326425.0"
+  },
+  {
+    "gameID": "2021_07_ATL_MIA",
+    "seasonType": "Regular Season",
+    "away": "ATL",
+    "home": "MIA",
+    "gameDate": "20211024",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326426.0"
+  },
+  {
+    "gameID": "2021_07_NYJ_NE",
+    "seasonType": "Regular Season",
+    "away": "NYJ",
+    "home": "NE",
+    "gameDate": "20211024",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326427.0"
+  },
+  {
+    "gameID": "2021_07_CAR_NYG",
+    "seasonType": "Regular Season",
+    "away": "CAR",
+    "home": "NYG",
+    "gameDate": "20211024",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326428.0"
+  },
+  {
+    "gameID": "2021_07_KC_TEN",
+    "seasonType": "Regular Season",
+    "away": "KC",
+    "home": "TEN",
+    "gameDate": "20211024",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326429.0"
+  },
+  {
+    "gameID": "2021_07_DET_LA",
+    "seasonType": "Regular Season",
+    "away": "DET",
+    "home": "LA",
+    "gameDate": "20211024",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326430.0"
+  },
+  {
+    "gameID": "2021_07_PHI_LV",
+    "seasonType": "Regular Season",
+    "away": "PHI",
+    "home": "LV",
+    "gameDate": "20211024",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326431.0"
+  },
+  {
+    "gameID": "2021_07_HOU_ARI",
+    "seasonType": "Regular Season",
+    "away": "HOU",
+    "home": "ARI",
+    "gameDate": "20211024",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326432.0"
+  },
+  {
+    "gameID": "2021_07_CHI_TB",
+    "seasonType": "Regular Season",
+    "away": "CHI",
+    "home": "TB",
+    "gameDate": "20211024",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326433.0"
+  },
+  {
+    "gameID": "2021_07_IND_SF",
+    "seasonType": "Regular Season",
+    "away": "IND",
+    "home": "SF",
+    "gameDate": "20211024",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326434.0"
+  },
+  {
+    "gameID": "2021_07_NO_SEA",
+    "seasonType": "Regular Season",
+    "away": "NO",
+    "home": "SEA",
+    "gameDate": "20211025",
+    "gameWeek": "Week 7",
+    "season": "2021",
+    "espnID": "401326435.0"
+  }
+]

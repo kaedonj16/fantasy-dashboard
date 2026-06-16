@@ -1,0 +1,162 @@
+[
+  {
+    "gameID": "2019_16_HOU_TB",
+    "seasonType": "Regular Season",
+    "away": "HOU",
+    "home": "TB",
+    "gameDate": "20191221",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127901.0"
+  },
+  {
+    "gameID": "2019_16_BUF_NE",
+    "seasonType": "Regular Season",
+    "away": "BUF",
+    "home": "NE",
+    "gameDate": "20191221",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127898.0"
+  },
+  {
+    "gameID": "2019_16_LA_SF",
+    "seasonType": "Regular Season",
+    "away": "LA",
+    "home": "SF",
+    "gameDate": "20191221",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127900.0"
+  },
+  {
+    "gameID": "2019_16_JAX_ATL",
+    "seasonType": "Regular Season",
+    "away": "JAX",
+    "home": "ATL",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127903.0"
+  },
+  {
+    "gameID": "2019_16_BAL_CLE",
+    "seasonType": "Regular Season",
+    "away": "BAL",
+    "home": "CLE",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127904.0"
+  },
+  {
+    "gameID": "2019_16_CAR_IND",
+    "seasonType": "Regular Season",
+    "away": "CAR",
+    "home": "IND",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127906.0"
+  },
+  {
+    "gameID": "2019_16_CIN_MIA",
+    "seasonType": "Regular Season",
+    "away": "CIN",
+    "home": "MIA",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127910.0"
+  },
+  {
+    "gameID": "2019_16_PIT_NYJ",
+    "seasonType": "Regular Season",
+    "away": "PIT",
+    "home": "NYJ",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127933.0"
+  },
+  {
+    "gameID": "2019_16_NO_TEN",
+    "seasonType": "Regular Season",
+    "away": "NO",
+    "home": "TEN",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127935.0"
+  },
+  {
+    "gameID": "2019_16_NYG_WAS",
+    "seasonType": "Regular Season",
+    "away": "NYG",
+    "home": "WAS",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127937.0"
+  },
+  {
+    "gameID": "2019_16_DET_DEN",
+    "seasonType": "Regular Season",
+    "away": "DET",
+    "home": "DEN",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127893.0"
+  },
+  {
+    "gameID": "2019_16_OAK_LAC",
+    "seasonType": "Regular Season",
+    "away": "LV",
+    "home": "LAC",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127896.0"
+  },
+  {
+    "gameID": "2019_16_DAL_PHI",
+    "seasonType": "Regular Season",
+    "away": "DAL",
+    "home": "PHI",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127938.0"
+  },
+  {
+    "gameID": "2019_16_ARI_SEA",
+    "seasonType": "Regular Season",
+    "away": "ARI",
+    "home": "SEA",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127941.0"
+  },
+  {
+    "gameID": "2019_16_KC_CHI",
+    "seasonType": "Regular Season",
+    "away": "KC",
+    "home": "CHI",
+    "gameDate": "20191222",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127943.0"
+  },
+  {
+    "gameID": "2019_16_GB_MIN",
+    "seasonType": "Regular Season",
+    "away": "GB",
+    "home": "MIN",
+    "gameDate": "20191223",
+    "gameWeek": "Week 16",
+    "season": "2019",
+    "espnID": "401127946.0"
+  }
+]

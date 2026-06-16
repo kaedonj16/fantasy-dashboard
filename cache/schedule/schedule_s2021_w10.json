@@ -1,0 +1,142 @@
+[
+  {
+    "gameID": "2021_10_BAL_MIA",
+    "seasonType": "Regular Season",
+    "away": "BAL",
+    "home": "MIA",
+    "gameDate": "20211111",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326465.0"
+  },
+  {
+    "gameID": "2021_10_ATL_DAL",
+    "seasonType": "Regular Season",
+    "away": "ATL",
+    "home": "DAL",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326466.0"
+  },
+  {
+    "gameID": "2021_10_JAX_IND",
+    "seasonType": "Regular Season",
+    "away": "JAX",
+    "home": "IND",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326467.0"
+  },
+  {
+    "gameID": "2021_10_CLE_NE",
+    "seasonType": "Regular Season",
+    "away": "CLE",
+    "home": "NE",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326468.0"
+  },
+  {
+    "gameID": "2021_10_BUF_NYJ",
+    "seasonType": "Regular Season",
+    "away": "BUF",
+    "home": "NYJ",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326469.0"
+  },
+  {
+    "gameID": "2021_10_DET_PIT",
+    "seasonType": "Regular Season",
+    "away": "DET",
+    "home": "PIT",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326470.0"
+  },
+  {
+    "gameID": "2021_10_NO_TEN",
+    "seasonType": "Regular Season",
+    "away": "NO",
+    "home": "TEN",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326471.0"
+  },
+  {
+    "gameID": "2021_10_TB_WAS",
+    "seasonType": "Regular Season",
+    "away": "TB",
+    "home": "WAS",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326472.0"
+  },
+  {
+    "gameID": "2021_10_CAR_ARI",
+    "seasonType": "Regular Season",
+    "away": "CAR",
+    "home": "ARI",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326473.0"
+  },
+  {
+    "gameID": "2021_10_MIN_LAC",
+    "seasonType": "Regular Season",
+    "away": "MIN",
+    "home": "LAC",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326474.0"
+  },
+  {
+    "gameID": "2021_10_PHI_DEN",
+    "seasonType": "Regular Season",
+    "away": "PHI",
+    "home": "DEN",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326475.0"
+  },
+  {
+    "gameID": "2021_10_SEA_GB",
+    "seasonType": "Regular Season",
+    "away": "SEA",
+    "home": "GB",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326476.0"
+  },
+  {
+    "gameID": "2021_10_KC_LV",
+    "seasonType": "Regular Season",
+    "away": "KC",
+    "home": "LV",
+    "gameDate": "20211114",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326477.0"
+  },
+  {
+    "gameID": "2021_10_LA_SF",
+    "seasonType": "Regular Season",
+    "away": "LA",
+    "home": "SF",
+    "gameDate": "20211115",
+    "gameWeek": "Week 10",
+    "season": "2021",
+    "espnID": "401326478.0"
+  }
+]
