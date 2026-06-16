@@ -18,7 +18,11 @@ def build_advanced_metrics_body(
     season: Optional[int] = None,
     platform: Optional[str] = None,
 ) -> str:
-    from data_building.advanced_metrics import get_available_seasons, _WEEKLY_METRICS
+    from data_building.advanced_metrics import (
+        get_available_seasons, _WEEKLY_METRICS,
+        PREMIUM_METRICS, premium_metrics_exposed,
+    )
+    _hide_premium = not premium_metrics_exposed()
     available_seasons: list = get_available_seasons() if has_premium else []
     weekly_metric_keys: list = sorted(_WEEKLY_METRICS.keys())
     # weeklyVol: per-metric min filter spec for when week-range mode is active
@@ -33,6 +37,8 @@ def build_advanced_metrics_body(
     for key, spec in metrics_spec.items():
         if spec.get("hidden"):
             continue
+        if _hide_premium and key in PREMIUM_METRICS:
+            continue  # don't offer premium (PFF) metrics on the public site
         cat = spec.get("category", "Other")
         groups.setdefault(cat, []).append((key, spec["label"]))
 
@@ -127,6 +133,7 @@ def build_advanced_metrics_body(
             }
             for key, spec in metrics_spec.items()
             if not spec.get("hidden")
+            and not (_hide_premium and key in PREMIUM_METRICS)
         },
     })
 

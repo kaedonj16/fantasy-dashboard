@@ -21,6 +21,37 @@ if TYPE_CHECKING:
 from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn
 
+# Columns sourced from PFF (premium, license-restricted). These must not be
+# served on the public site. They stay in the DB for private/local use, but the
+# public API strips them unless EXPOSE_PREMIUM_METRICS is truthy. Columns we now
+# populate from free/redistributable data (drop_rate, contested_catch_rate,
+# avg_depth_of_target, breakaway_percentage, explosive_runs_10_plus) are NOT
+# listed here — those are public-safe.
+PREMIUM_METRICS = frozenset({
+    "yprr", "total_routes",
+    "grades_offense", "grades_pass_block", "pff_rushing_grade", "pff_passing_grade",
+    "elusive_rating", "big_time_throw_rate", "adjusted_completion_rate",
+    "pressure_to_sack_rate", "slot_rate", "wide_rate", "inline_rate",
+    "pass_block_rate", "avoided_tackles",
+    "yards_after_catch", "yards_after_catch_per_reception",
+})
+
+
+def premium_metrics_exposed() -> bool:
+    """True when premium (PFF) columns may be returned to clients."""
+    return os.getenv("EXPOSE_PREMIUM_METRICS", "").strip().lower() in ("1", "true", "yes")
+
+
+def strip_premium_metrics(metrics: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Remove premium (PFF) columns from a metrics dict for public responses.
+
+    No-op when EXPOSE_PREMIUM_METRICS is set (private/local use).
+    """
+    if not metrics or premium_metrics_exposed():
+        return metrics
+    return {k: v for k, v in metrics.items() if k not in PREMIUM_METRICS}
+
+
 # Map PFF/non-standard position codes to the canonical fantasy set
 # (QB / RB / WR / TE).  Anything not in this map is returned as-is.
 _POS_NORM: Dict[str, str] = {
@@ -285,6 +316,19 @@ def _add_rookie_eval_columns(conn) -> None:
             ADD COLUMN IF NOT EXISTS ngs_avg_expected_yac           NUMERIC,
             ADD COLUMN IF NOT EXISTS ngs_avg_yac_above_expectation  NUMERIC,
             ADD COLUMN IF NOT EXISTS ngs_catch_pct                  NUMERIC;
+    """)
+
+    # EPA-family metrics derived from open nflverse play-by-play (public-safe).
+    conn.execute("""
+        ALTER TABLE player_advanced_metrics
+            ADD COLUMN IF NOT EXISTS epa_per_play   NUMERIC,
+            ADD COLUMN IF NOT EXISTS passing_epa    NUMERIC,
+            ADD COLUMN IF NOT EXISTS rushing_epa    NUMERIC,
+            ADD COLUMN IF NOT EXISTS receiving_epa  NUMERIC,
+            ADD COLUMN IF NOT EXISTS cpoe           NUMERIC,
+            ADD COLUMN IF NOT EXISTS sack_rate      NUMERIC,
+            ADD COLUMN IF NOT EXISTS scramble_rate  NUMERIC,
+            ADD COLUMN IF NOT EXISTS success_rate   NUMERIC;
     """)
 
 
@@ -1144,6 +1188,8 @@ def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
         'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_intended_air_yards',
         'ngs_pct_share_intended_air_yards', 'ngs_avg_yac', 'ngs_avg_expected_yac',
         'ngs_avg_yac_above_expectation', 'ngs_catch_pct',
+        'epa_per_play', 'passing_epa', 'rushing_epa', 'receiving_epa',
+        'cpoe', 'sack_rate', 'scramble_rate', 'success_rate',
     ]
 
     with get_conn() as conn:

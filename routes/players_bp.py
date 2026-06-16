@@ -82,6 +82,7 @@ def api_player_advanced_metrics(player_id: str):
             get_player_metrics_by_season,
             get_player_career_metrics,
             get_available_seasons_for_player,
+            strip_premium_metrics,
             _normalize_position,
         )
 
@@ -167,6 +168,12 @@ def api_player_advanced_metrics(player_id: str):
         elif quality is not None:
             metrics_payload["player_evaluation_score"] = round(float(quality), 1)
 
+        # Strip PFF (premium) columns from the public response. The blended
+        # evaluation score above already consumed the grades it needed; the raw
+        # premium columns themselves are not redistributable, so they only ship
+        # when EXPOSE_PREMIUM_METRICS is set (private/local use).
+        metrics_payload = strip_premium_metrics(metrics_payload)
+
         return jsonify({
             "player_id": str(player_id),
             "position": _normalize_position(metrics.get("position")),
@@ -190,13 +197,16 @@ def api_player_advanced_metrics(player_id: str):
 def api_player_metric_ranks(player_id: str):
     """Position-relative volume ranks for a player in a given season."""
     try:
-        from data_building.advanced_metrics import get_player_metric_ranks
+        from data_building.advanced_metrics import get_player_metric_ranks, strip_premium_metrics
         season = request.args.get("season")
         try:
             season = int(season) if season else None
         except (ValueError, TypeError):
             season = None
         result = get_player_metric_ranks(str(player_id), season=season)
+        # Don't leak ranks for premium (PFF) metrics on the public site.
+        if isinstance(result, dict) and isinstance(result.get("ranks"), dict):
+            result["ranks"] = strip_premium_metrics(result["ranks"])
         return jsonify(result)
     except Exception:
         logger.exception("[player-metric-ranks] Error for %s", player_id)

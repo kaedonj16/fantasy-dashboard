@@ -212,11 +212,97 @@ def build_ftn_charting_for_season(season: int) -> Dict[str, Dict[str, float]]:
     return out
 
 
+def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
+    """Return {sleeper_id: {...}} of EPA-family + breakaway/explosive metrics.
+
+    All derived from open nflverse play-by-play, so fully public-safe:
+      QB:      passing_epa, epa_per_play, cpoe, sack_rate, scramble_rate, success_rate
+      Rusher:  rushing_epa, breakaway_percentage, explosive_runs_10_plus
+      Receiver: receiving_epa
+    Rates are stored as percentages to match the existing column conventions.
+    """
+    try:
+        import nfl_data_py as nfl
+        pbp = nfl.import_pbp_data(
+            [season],
+            columns=[
+                "game_id", "play_id", "season_type", "play_type",
+                "epa", "qb_epa", "cpoe", "success",
+                "sack", "qb_scramble", "rush_attempt", "pass_attempt",
+                "qb_dropback", "rushing_yards",
+                "passer_player_id", "rusher_player_id", "receiver_player_id",
+            ],
+            downcast=True,
+        )
+    except Exception as e:
+        print(f"[nflverse_metrics] pbp unavailable for {season} ({e})")
+        return {}
+
+    if pbp is None or pbp.empty:
+        return {}
+
+    pbp = pbp[pbp["season_type"] == "REG"]
+    crosswalk = _gsis_to_sleeper()
+    out: Dict[str, Dict[str, float]] = {}
+
+    def _emit(gsis, cols):
+        pid = crosswalk.get(str(gsis).strip())
+        if pid and cols:
+            out.setdefault(pid, {}).update(cols)
+
+    # --- Passing (QB) ---
+    passes = pbp[pbp["passer_player_id"].notna()]
+    for gsis, g in passes.groupby("passer_player_id"):
+        dropbacks = float(g["qb_dropback"].sum()) if "qb_dropback" in g else float(len(g))
+        cols: Dict[str, float] = {}
+        pe = _f(g["epa"].sum())
+        if pe is not None:
+            cols["passing_epa"] = round(pe, 1)
+        qbepa = _f(g["qb_epa"].mean())
+        if qbepa is not None:
+            cols["epa_per_play"] = round(qbepa, 3)
+        cpoe = _f(g["cpoe"].mean())
+        if cpoe is not None:
+            cols["cpoe"] = round(cpoe, 1)
+        if dropbacks > 0:
+            cols["sack_rate"] = round(float(g["sack"].sum()) / dropbacks * 100, 1)
+            cols["scramble_rate"] = round(float(g["qb_scramble"].sum()) / dropbacks * 100, 1)
+        sr = _f(g["success"].mean())
+        if sr is not None:
+            cols["success_rate"] = round(sr * 100, 1)
+        _emit(gsis, cols)
+
+    # --- Rushing ---
+    rushes = pbp[pbp["rusher_player_id"].notna()]
+    for gsis, g in rushes.groupby("rusher_player_id"):
+        cols = {}
+        re_ = _f(g["epa"].sum())
+        if re_ is not None:
+            cols["rushing_epa"] = round(re_, 1)
+        ry = g["rushing_yards"].fillna(0)
+        total_ry = float(ry.sum())
+        if total_ry > 0:
+            breakaway = float(ry[ry >= 15].sum())
+            cols["breakaway_percentage"] = round(breakaway / total_ry * 100, 1)
+        cols["explosive_runs_10_plus"] = int((ry >= 10).sum())
+        _emit(gsis, cols)
+
+    # --- Receiving ---
+    recs = pbp[pbp["receiver_player_id"].notna()]
+    for gsis, g in recs.groupby("receiver_player_id"):
+        rce = _f(g["epa"].sum())
+        if rce is not None:
+            _emit(gsis, {"receiving_epa": round(rce, 1)})
+
+    return out
+
+
 def build_nflverse_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
-    """Merge NGS + FTN derived metrics into one {sleeper_id: {columns}} map."""
+    """Merge NGS + FTN + pbp-derived metrics into one {sleeper_id: {columns}} map."""
     combined: Dict[str, Dict[str, float]] = {}
     for part in (build_ngs_receiving_for_season(season),
-                 build_ftn_charting_for_season(season)):
+                 build_ftn_charting_for_season(season),
+                 build_pbp_metrics_for_season(season)):
         for pid, cols in part.items():
             combined.setdefault(pid, {}).update(cols)
     return combined

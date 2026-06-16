@@ -9886,6 +9886,14 @@ const _ADV_METRIC_DESCS = {
   ngs_avg_separation: "Average yards of separation from the nearest defender at the moment of catch/incompletion (NFL Next Gen Stats).",
   ngs_avg_cushion: "Average yards of cushion the defender gives at the snap (NFL Next Gen Stats).",
   ngs_avg_yac_above_expectation: "Yards after catch above what was expected given the catch situation (NFL Next Gen Stats).",
+  epa_per_play: "Expected Points Added per play — the average value of each play the player was involved in.",
+  passing_epa: "Total Expected Points Added on the player's pass attempts over the season.",
+  rushing_epa: "Total Expected Points Added on the player's rushing attempts over the season.",
+  receiving_epa: "Total Expected Points Added on the player's targets over the season.",
+  cpoe: "Completion Percentage Over Expected — accuracy adjusted for throw difficulty.",
+  sack_rate: "Percent of dropbacks that ended in a sack. Lower is better.",
+  scramble_rate: "Percent of dropbacks where the QB scrambled.",
+  success_rate: "Percent of plays with positive EPA (a 'successful' play).",
   slot_rate: "Percent of routes run from the slot.",
   wide_rate: "Percent of routes run from out wide.",
   inline_rate: "Percent of snaps a tight end lined up inline (attached to the formation).",
@@ -10012,6 +10020,26 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
       const ratio = metrics.td_rate / metrics.int_rate;
       defs.push({ label: 'TD/INT Ratio', fill: Math.min(ratio * 20, 100), display: ratio.toFixed(2) });
     }
+    if (metrics.passing_epa != null) {
+      const v = metrics.passing_epa;
+      defs.push({ label: 'Passing EPA', fill: Math.min(Math.max(v + 50, 0) / 200 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('passing_epa') });
+    }
+    if (metrics.epa_per_play != null) {
+      const v = metrics.epa_per_play;
+      defs.push({ label: 'EPA/Play', fill: Math.min(Math.max(v + 0.2, 0) / 0.5 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), sub: _rankSub('epa_per_play') });
+    }
+    if (metrics.cpoe != null) {
+      const v = metrics.cpoe;
+      defs.push({ label: 'CPOE', fill: Math.min(Math.max(v + 5, 0) / 15 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1) + '%', sub: _rankSub('cpoe') });
+    }
+    if (metrics.success_rate != null) {
+      const v = metrics.success_rate;
+      defs.push({ label: 'Success Rate', fill: Math.min(v / 55 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('success_rate') });
+    }
+    if (metrics.sack_rate != null) {
+      const v = metrics.sack_rate;
+      defs.push({ label: 'Sack Rate', fill: Math.max(0, 100 - v * 8), display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 8 ? '#f59e0b' : '#ef4444', sub: _rankSub('sack_rate') });
+    }
     if (metrics.pressure_to_sack_rate != null) {
       const v = metrics.pressure_to_sack_rate;
       const fill = Math.max(0, 100 - v);
@@ -10037,6 +10065,10 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
     if (metrics.explosive_runs_10_plus != null) {
       const v = metrics.explosive_runs_10_plus;
       defs.push({ label: 'Explosive Runs', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(0), sub: _rankSub('explosive_runs_10_plus') });
+    }
+    if (metrics.rushing_epa != null) {
+      const v = metrics.rushing_epa;
+      defs.push({ label: 'Rushing EPA', fill: Math.min(Math.max(v + 20, 0) / 60 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('rushing_epa') });
     }
     if (metrics.elusive_rating != null) {
       const v = metrics.elusive_rating;
@@ -10141,6 +10173,10 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
     if (metrics.target_quality_score != null) {
       const v = metrics.target_quality_score;
       defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), sub: _rankSub('target_quality_score') });
+    }
+    if (metrics.receiving_epa != null) {
+      const v = metrics.receiving_epa;
+      defs.push({ label: 'Receiving EPA', fill: Math.min(Math.max(v + 20, 0) / 80 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('receiving_epa') });
     }
     if (metrics.slot_rate != null) {
       const v = metrics.slot_rate;
@@ -11057,6 +11093,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
   // Position-aware metric groups
   const qbMetrics = [
     'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
+    'epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'scramble_rate',
     'pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate',
     'pressure_to_sack_rate', 'snap_share', 'role_score',
     'total_pass_tds', 'total_rush_tds', 'total_tds',
@@ -11067,6 +11104,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     'opportunity_share', 'red_zone_usage', 'role_score', 'explosive_runs_10_plus',
     'breakaway_percentage', 'elusive_rating', 'pff_rushing_grade', 'grades_offense',
     'avoided_tackles', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
+    'rushing_epa', 'receiving_epa', 'epa_per_play',
     'total_carries', 'total_touches', 'total_targets', 'total_rush_tds', 'total_rec_tds', 'total_tds',
   ];
 
@@ -11076,7 +11114,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
     'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
     'wide_rate', 'inline_rate', 'grades_offense', 'pass_block_rate', 'grades_pass_block',
-    'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation',
+    'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation', 'receiving_epa',
     'total_targets', 'total_receptions', 'total_rec_tds', 'total_tds',
   ];
 
@@ -11102,6 +11140,14 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     ngs_avg_separation: 'Separation',
     ngs_avg_cushion: 'Cushion',
     ngs_avg_yac_above_expectation: 'YAC Over Exp',
+    epa_per_play: 'EPA/Play',
+    passing_epa: 'Passing EPA',
+    rushing_epa: 'Rushing EPA',
+    receiving_epa: 'Receiving EPA',
+    cpoe: 'CPOE',
+    sack_rate: 'Sack Rate',
+    scramble_rate: 'Scramble Rate',
+    success_rate: 'Success Rate',
 
     // Rushing metrics
     yards_per_carry: 'Yards/Carry',
@@ -11206,6 +11252,10 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       // NGS tracking metrics (yards)
       'ngs_avg_separation': 5, 'ngs_avg_cushion': 9, 'ngs_avg_yac_above_expectation': 4,
 
+      // EPA family (pbp-derived)
+      'epa_per_play': 0.3, 'passing_epa': 150, 'rushing_epa': 40, 'receiving_epa': 60,
+      'cpoe': 10, 'success_rate': 55, 'sack_rate': 10, 'scramble_rate': 12,
+
       // PFF grades (0-100)
       'pff_passing_grade': 100, 'pff_rushing_grade': 100,
       'grades_offense': 100, 'grades_pass_block': 100,
@@ -11231,7 +11281,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       if (raw == null) return '#374151';
       
       // Inverse metrics where lower is better (INT rate, drop rate)
-      const inverseMetrics = ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate'];
+      const inverseMetrics = ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate'];
       const isInverse = inverseMetrics.includes(key);
       
       if (isInverse) {
@@ -11278,7 +11328,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     // Decide who "wins" this metric so we can mark the better value. For most
     // metrics higher is better; for the inverse ones lower is better. Ties and
     // missing values get no winner.
-    const inverseMetrics = ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate'];
+    const inverseMetrics = ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate'];
     let win1 = false, win2 = false;
     if (v1 != null && v2 != null && v1 !== v2) {
       const p1Better = inverseMetrics.includes(key) ? (v1 < v2) : (v1 > v2);

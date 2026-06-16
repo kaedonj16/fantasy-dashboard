@@ -18568,11 +18568,15 @@ def api_advanced_metrics_leaderboard():
     from data_building.advanced_metrics import (
         get_metric_leaderboard, get_weekly_range_leaderboard,
         LEADERBOARD_METRICS, _WEEKLY_METRICS,
+        PREMIUM_METRICS, premium_metrics_exposed,
     )
 
     metric = (request.args.get("metric") or "role_score").strip()
     if metric not in LEADERBOARD_METRICS:
         return jsonify({"error": "unknown metric"}), 400
+    # Premium (PFF) metrics are not displayable publicly.
+    if metric in PREMIUM_METRICS and not premium_metrics_exposed():
+        return jsonify({"error": "metric not available"}), 403
     position = (request.args.get("position") or "").strip().upper() or None
     season_str = (request.args.get("season") or "").strip()
     season = int(season_str) if season_str.isdigit() else None

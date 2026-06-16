@@ -12,7 +12,8 @@ Backfill historical NFL data across all three layers of the dashboard:
                     cushion/YAC-over-exp + FTN drop_rate/contested_catch_rate;
                     redistributable, public-safe)
   5. PFF metrics -> player_advanced_metrics DB table                  (PFF grades, YPRR,
-                    elusive rating, BTT%, etc.)
+                    elusive rating, BTT%, etc. — OFF by default; --with-pff to
+                    enable. License-restricted, not displayed publicly.)
 
 It simply orchestrates the existing per-season builders so all the layers
 line up for the same set of seasons.
@@ -44,7 +45,10 @@ Usage:
 
     # Only certain layers
     python scripts/backfill_history.py 2018 2019 --logs-only
-    python scripts/backfill_history.py 2018 2019 --no-metrics --no-pff
+    python scripts/backfill_history.py 2018 2019 --no-metrics
+
+    # Include the license-restricted PFF layer (private use only)
+    python scripts/backfill_history.py 2018 2019 --with-pff
 """
 
 import argparse
@@ -154,7 +158,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--no-metrics", action="store_true", help="Skip advanced metrics.")
     p.add_argument("--no-nflverse", action="store_true",
                    help="Skip NGS + FTN (nflverse) metrics.")
-    p.add_argument("--no-pff", action="store_true", help="Skip PFF metrics.")
+    p.add_argument("--with-pff", action="store_true",
+                   help="Also import PFF (premium) metrics. Off by default: PFF "
+                        "data is license-restricted and not displayed publicly.")
     return p.parse_args(argv)
 
 
@@ -175,7 +181,7 @@ def main() -> None:
     do_schedules = not args.no_schedules and not args.logs_only
     do_metrics = not args.no_metrics and not args.logs_only
     do_nflverse = not args.no_nflverse and not args.logs_only
-    do_pff = not args.no_pff and not args.logs_only
+    do_pff = args.with_pff and not args.logs_only
 
     print(f"Backfilling seasons: {seasons}")
     print(f"Layers: logs={do_logs} schedules={do_schedules} "
