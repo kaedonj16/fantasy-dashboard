@@ -194,16 +194,16 @@ def record_calibrated_history_snapshot() -> int:
                     player_id,
                     position,
                     team,
-                    GREATEST(calibrated_value_1qb, value_1qb)                    AS value,
-                    COALESCE(GREATEST(calibrated_value_sf,  value_sf), value_1qb) AS value_sf,
-                    GREATEST(calibrated_value_8,   value_8,  value_1qb)          AS value_8,
-                    GREATEST(calibrated_value_12,  value_12, value_1qb)          AS value_12,
-                    GREATEST(calibrated_value_14,  value_14, value_1qb)          AS value_14,
-                    COALESCE(GREATEST(calibrated_sf_value_8,  sf_value_8),  value_sf) AS sf_value_8,
-                    COALESCE(GREATEST(calibrated_sf_value_12, sf_value_12), value_sf) AS sf_value_12,
-                    COALESCE(GREATEST(calibrated_sf_value_14, sf_value_14), value_sf) AS sf_value_14
+                    COALESCE(calibrated_value_1qb, value_1qb)                    AS value,
+                    COALESCE(calibrated_value_sf,  value_sf, value_1qb)          AS value_sf,
+                    COALESCE(calibrated_value_8,   GREATEST(value_8,  value_1qb)) AS value_8,
+                    COALESCE(calibrated_value_12,  GREATEST(value_12, value_1qb)) AS value_12,
+                    COALESCE(calibrated_value_14,  GREATEST(value_14, value_1qb)) AS value_14,
+                    COALESCE(calibrated_sf_value_8,  sf_value_8,  value_sf) AS sf_value_8,
+                    COALESCE(calibrated_sf_value_12, sf_value_12, value_sf) AS sf_value_12,
+                    COALESCE(calibrated_sf_value_14, sf_value_14, value_sf) AS sf_value_14
                 FROM player_values
-                WHERE GREATEST(calibrated_value_1qb, value_1qb) > 0
+                WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
                 """
             ).fetchall()
         except Exception:
@@ -214,8 +214,8 @@ def record_calibrated_history_snapshot() -> int:
                     player_id,
                     position,
                     team,
-                    GREATEST(calibrated_value_1qb, value_1qb)                    AS value,
-                    COALESCE(GREATEST(calibrated_value_sf, value_sf), value_1qb) AS value_sf,
+                    COALESCE(calibrated_value_1qb, value_1qb)                    AS value,
+                    COALESCE(calibrated_value_sf, value_sf, value_1qb)           AS value_sf,
                     GREATEST(value_8,  value_1qb)               AS value_8,
                     GREATEST(value_12, value_1qb)               AS value_12,
                     GREATEST(value_14, value_1qb)               AS value_14,
@@ -223,7 +223,7 @@ def record_calibrated_history_snapshot() -> int:
                     COALESCE(GREATEST(sf_value_12, value_sf), value_1qb)  AS sf_value_12,
                     COALESCE(GREATEST(sf_value_14, value_sf), value_1qb)  AS sf_value_14
                 FROM player_values
-                WHERE GREATEST(calibrated_value_1qb, value_1qb) > 0
+                WHERE COALESCE(calibrated_value_1qb, value_1qb) > 0
                 """
             ).fetchall()
 

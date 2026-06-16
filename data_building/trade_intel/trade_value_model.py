@@ -60,9 +60,10 @@ ANCHOR_EMA_ALPHA   = 0.15  # smooth the basket across runs - an unsmoothed singl
                            # value moved, since everyone is divided by that one number)
 TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
 DAILY_MOVE_CAP     = 0.15  # max fractional day-over-day change in a calibrated value.
-                           # The displayed value is GREATEST(calibrated, raw) and raw is
-                           # already EMA-smoothed, so capping the calibrated track's daily
-                           # move bounds how far a player's shown value can swing per run.
+                           # The displayed value is COALESCE(calibrated, raw) - i.e. the
+                           # calibrated track is what shows whenever it exists - so capping
+                           # the calibrated daily move directly bounds how far a player's
+                           # shown value can swing per run.
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
