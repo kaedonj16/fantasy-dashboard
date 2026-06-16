@@ -1601,6 +1601,28 @@ def get_player_weekly_advanced_metrics(
     return out
 
 
+def get_player_weekly_adv_series(player_id: str, season: int) -> List[Dict[str, Any]]:
+    """Per-week advanced-metric rows (values + volume weights) for one player.
+
+    Used by the Compare tool to aggregate the new metrics over a week range the
+    same way it aggregates usage stats. Includes the weight columns so the client
+    can volume-weight rate metrics.
+    """
+    init_weekly_advanced_metrics_db()
+    col_list = ", ".join(WEEKLY_ADV_METRIC_COLS + WEEKLY_ADV_WEIGHT_COLS)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT week, {col_list} FROM player_weekly_advanced_metrics "
+            "WHERE player_id = %s AND season = %s ORDER BY week",
+            (str(player_id), int(season)),
+        ).fetchall()
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        d = dict(r)
+        out.append({k: (float(v) if v is not None else None) for k, v in d.items()})
+    return out
+
+
 def get_available_metric_weeks(player_id: str, season: int) -> List[int]:
     """Weeks (ascending) that have any advanced-metric data for the player/season."""
     init_weekly_advanced_metrics_db()
@@ -1632,6 +1654,27 @@ _ADV_WEEKLY_WEIGHTED_METRICS = {
     "yards_after_catch_per_reception": "w_receptions", "ngs_avg_yac": "w_receptions",
     "ngs_avg_expected_yac": "w_receptions", "ngs_avg_yac_above_expectation": "w_receptions",
 }
+
+
+# All metrics that support week-range filtering via the weekly advanced table.
+ADV_WEEKLY_METRIC_KEYS = frozenset(_ADV_WEEKLY_TOTAL_METRICS) | frozenset(
+    _ADV_WEEKLY_WEIGHTED_METRICS.keys())
+
+# Volume-filter spec shown when week-range mode is active for an adv-weekly metric.
+# Keyed by the weight column the metric aggregates on.
+_ADV_WEEKLY_VOL_BY_WEIGHT = {
+    "w_dropbacks":  {"label": "Min Dropbacks", "opts": [20, 50, 100, 200]},
+    "w_pass_att":   {"label": "Min Pass Att",  "opts": [20, 50, 100, 200]},
+    "w_carries":    {"label": "Min Carries",   "opts": [5, 10, 20, 40]},
+    "w_targets":    {"label": "Min Targets",   "opts": [5, 10, 20, 40]},
+    "w_receptions": {"label": "Min Recs",      "opts": [3, 5, 10, 20]},
+}
+
+
+def adv_weekly_vol_spec(metric: str) -> Optional[Dict[str, Any]]:
+    """Min-volume filter spec for a week-range adv metric, or None for totals."""
+    w = _ADV_WEEKLY_WEIGHTED_METRICS.get(metric)
+    return _ADV_WEEKLY_VOL_BY_WEIGHT.get(w) if w else None
 
 
 def _adv_weekly_agg_sql(metric: str):

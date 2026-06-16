@@ -18567,6 +18567,7 @@ def api_advanced_metrics_leaderboard():
     """
     from data_building.advanced_metrics import (
         get_metric_leaderboard, get_weekly_range_leaderboard,
+        get_adv_weekly_range_leaderboard, adv_weekly_metric_supported,
         LEADERBOARD_METRICS, _WEEKLY_METRICS,
         PREMIUM_METRICS, premium_metrics_exposed,
     )
@@ -18587,11 +18588,19 @@ def api_advanced_metrics_leaderboard():
     week_start = int(week_start_str) if week_start_str.isdigit() else None
     week_end   = int(week_end_str)   if week_end_str.isdigit()   else None
 
-    weekly_capable   = metric in _WEEKLY_METRICS
+    # A metric is week-filterable if it has a usage-table aggregation
+    # (_WEEKLY_METRICS) or an NGS/FTN/EPA weekly aggregation.
+    adv_weekly       = adv_weekly_metric_supported(metric)
+    weekly_capable   = (metric in _WEEKLY_METRICS) or adv_weekly
     is_week_filtered = bool(week_start or week_end) and weekly_capable
 
     try:
-        if is_week_filtered:
+        if is_week_filtered and adv_weekly and metric not in _WEEKLY_METRICS:
+            players = get_adv_weekly_range_leaderboard(
+                metric, position=position, season=season,
+                week_start=week_start, week_end=week_end, min_vol=min_vol,
+            )
+        elif is_week_filtered:
             players = get_weekly_range_leaderboard(
                 metric, position=position, season=season,
                 week_start=week_start, week_end=week_end, min_vol=min_vol,

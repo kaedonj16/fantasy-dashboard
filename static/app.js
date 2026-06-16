@@ -9527,7 +9527,7 @@ function getRoleGrade(roleScore) {
 
 const _advMetricsCache = new Map();
 
-function loadAdvancedMetrics(playerId, leagueId, season) {
+function loadAdvancedMetrics(playerId, leagueId, season, week) {
   const contentEl = document.getElementById('advancedMetricsContent');
   if (!contentEl) return;
 
@@ -9535,7 +9535,8 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
 
   const leagueParam = leagueId ? `&league_id=${leagueId}` : '';
   const seasonParam = (season != null && season !== 'career' && season !== 'auto') ? `&season=${season}` : '';
-  const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}`;
+  const weekParam = (week != null && season != null && season !== 'career' && season !== 'auto') ? `&week=${week}` : '';
+  const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}${weekParam}`;
 
   const _cached = _advMetricsCache.get(url);
   if (!_cached) {
@@ -9576,7 +9577,13 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
 
       // Update year label in section header
       const seasonLabelEl = document.getElementById('advMetricsSeasonLabel');
-      if (seasonLabelEl) seasonLabelEl.textContent = isCareer ? 'Career' : (activeSeason || '');
+      if (seasonLabelEl) {
+        const _wk = metricsData.week != null ? ` · W${metricsData.week}` : '';
+        seasonLabelEl.textContent = isCareer ? 'Career' : ((activeSeason || '') + _wk);
+      }
+
+      const activeWeek = metricsData.week != null ? Number(metricsData.week) : null;
+      const availableWeeks = metricsData.available_weeks || [];
 
       // Season pills above the layout - always show when there's at least 1 season
       const pillsEl = document.getElementById('advMetricsPills');
@@ -9589,14 +9596,27 @@ function loadAdvancedMetrics(playerId, leagueId, season) {
           pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, ${yr})">${yr}</button>`;
         });
         pillsHTML += '</div>';
+        // Week pills: a "Season" reset plus one pill per week that has data.
+        // Only the free NGS/FTN/EPA metrics are available per week, so picking a
+        // week shows that subset for the active season.
+        if (!isCareer && activeSeason && availableWeeks.length) {
+          pillsHTML += '<div class="adv-metrics-season-pills adv-metrics-week-pills">';
+          pillsHTML += `<button class="adv-season-pill${activeWeek == null ? ' active' : ''}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, ${activeSeason})">Season</button>`;
+          availableWeeks.forEach(wk => {
+            const activeClass = (activeWeek === Number(wk)) ? ' active' : '';
+            pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, ${activeSeason}, ${wk})">W${wk}</button>`;
+          });
+          pillsHTML += '</div>';
+        }
         pillsEl.innerHTML = pillsHTML;
       }
 
       // Populate just the bars column (initial render without ranks)
       contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null);
 
-      // Fetch position ranks in background and re-render with rank badges
-      if (!isCareer && activeSeason) {
+      // Fetch position ranks in background and re-render with rank badges.
+      // Ranks are season-relative, so they don't apply to a single-week view.
+      if (!isCareer && activeSeason && activeWeek == null) {
         fetch(`/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`)
           .then(r => r.ok ? r.json() : null)
           .then(ranksData => {
@@ -11405,6 +11425,41 @@ function _cmpAggregateWeeks(weeks, wkStart, wkEnd) {
     yards_per_touch: div(recYds + rushYds, tch),
     total_targets: tgt, total_receptions: rec, total_carries: car, total_touches: tch,
   };
+
+  // New NGS/FTN/EPA metrics: totals summed, rates volume-weighted — parity with
+  // the server-side weekly aggregation in advanced_metrics.py so a week range
+  // matches the leaderboard's range numbers.
+  const ADV_TOTALS = ['passing_epa', 'rushing_epa', 'receiving_epa',
+    'yards_after_catch', 'explosive_runs_10_plus', 'ngs_rush_yards_over_expected'];
+  const ADV_WEIGHTED = {
+    epa_per_play: 'w_dropbacks', cpoe: 'w_dropbacks', success_rate: 'w_dropbacks',
+    sack_rate: 'w_dropbacks', scramble_rate: 'w_dropbacks', nfl_passer_rating: 'w_dropbacks',
+    adjusted_completion_rate: 'w_pass_att',
+    ngs_rush_yards_over_expected_per_att: 'w_carries', ngs_rush_efficiency: 'w_carries',
+    breakaway_percentage: 'w_carries',
+    ngs_avg_separation: 'w_targets', ngs_avg_cushion: 'w_targets',
+    ngs_avg_intended_air_yards: 'w_targets', avg_depth_of_target: 'w_targets',
+    ngs_catch_pct: 'w_targets', drop_rate: 'w_targets', contested_catch_rate: 'w_targets',
+    yards_after_catch_per_reception: 'w_receptions', ngs_avg_yac: 'w_receptions',
+    ngs_avg_expected_yac: 'w_receptions', ngs_avg_yac_above_expectation: 'w_receptions',
+  };
+  ADV_TOTALS.forEach(k => {
+    let s = 0, any = false;
+    sel.forEach(w => { const v = w[k]; if (v != null && !isNaN(v)) { s += Number(v); any = true; } });
+    if (any) m[k] = s;
+  });
+  Object.keys(ADV_WEIGHTED).forEach(k => {
+    const wc = ADV_WEIGHTED[k];
+    let num = 0, den = 0;
+    sel.forEach(w => {
+      const v = w[k], wt = w[wc];
+      if (v != null && !isNaN(v) && wt != null && !isNaN(wt) && wt > 0) {
+        num += Number(v) * Number(wt); den += Number(wt);
+      }
+    });
+    if (den > 0) m[k] = num / den;
+  });
+
   Object.keys(m).forEach(k => { if (m[k] == null) delete m[k]; });
   return m;
 }

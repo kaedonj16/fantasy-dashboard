@@ -20,17 +20,25 @@ def build_advanced_metrics_body(
 ) -> str:
     from data_building.advanced_metrics import (
         get_available_seasons, _WEEKLY_METRICS,
+        ADV_WEEKLY_METRIC_KEYS, adv_weekly_vol_spec,
         PREMIUM_METRICS, premium_metrics_exposed,
     )
     _hide_premium = not premium_metrics_exposed()
     available_seasons: list = get_available_seasons() if has_premium else []
-    weekly_metric_keys: list = sorted(_WEEKLY_METRICS.keys())
+    # Week-filterable metrics: usage-derived (_WEEKLY_METRICS) plus the
+    # NGS/FTN/EPA metrics that have a per-week store (ADV_WEEKLY_METRIC_KEYS).
+    weekly_metric_keys: list = sorted(
+        set(_WEEKLY_METRICS.keys()) | set(ADV_WEEKLY_METRIC_KEYS))
     # weeklyVol: per-metric min filter spec for when week-range mode is active
     _weekly_vol_map: dict = {
         k: {"label": v["min_label"], "opts": v["min_opts"]}
         for k, v in _WEEKLY_METRICS.items()
         if v.get("min_opts")
     }
+    for _k in ADV_WEEKLY_METRIC_KEYS:
+        _vs = adv_weekly_vol_spec(_k)
+        if _vs:
+            _weekly_vol_map[_k] = _vs
     # Group metrics into <optgroup>s by category (General / Passing / Rushing / Receiving).
     _CAT_ORDER = ["General", "Passing", "Rushing", "Receiving", "Volume"]
     groups: dict = {}
@@ -907,6 +915,39 @@ _AM_JS = r"""
     out.total_receptions = rec; out.receptions_per_game = div(rec, n);
     out.total_carries = car;    out.carries_per_game = div(car, n);
     out.total_touches = tch;    out.touches_per_game = div(tch, n);
+
+    // NGS/FTN/EPA metrics: totals summed, rates volume-weighted — parity with
+    // the server's get_adv_weekly_range_leaderboard so ranges match the board.
+    const ADV_TOTALS = ['passing_epa', 'rushing_epa', 'receiving_epa',
+      'yards_after_catch', 'explosive_runs_10_plus', 'ngs_rush_yards_over_expected'];
+    const ADV_WEIGHTED = {
+      epa_per_play: 'w_dropbacks', cpoe: 'w_dropbacks', success_rate: 'w_dropbacks',
+      sack_rate: 'w_dropbacks', scramble_rate: 'w_dropbacks', nfl_passer_rating: 'w_dropbacks',
+      adjusted_completion_rate: 'w_pass_att',
+      ngs_rush_yards_over_expected_per_att: 'w_carries', ngs_rush_efficiency: 'w_carries',
+      breakaway_percentage: 'w_carries',
+      ngs_avg_separation: 'w_targets', ngs_avg_cushion: 'w_targets',
+      ngs_avg_intended_air_yards: 'w_targets', avg_depth_of_target: 'w_targets',
+      ngs_catch_pct: 'w_targets', drop_rate: 'w_targets', contested_catch_rate: 'w_targets',
+      yards_after_catch_per_reception: 'w_receptions', ngs_avg_yac: 'w_receptions',
+      ngs_avg_expected_yac: 'w_receptions', ngs_avg_yac_above_expectation: 'w_receptions',
+    };
+    ADV_TOTALS.forEach(k => {
+      let s = 0, any = false;
+      sel.forEach(w => { const v = w[k]; if (v != null && !isNaN(v)) { s += Number(v); any = true; } });
+      if (any) out[k] = s;
+    });
+    Object.keys(ADV_WEIGHTED).forEach(k => {
+      const wc = ADV_WEIGHTED[k];
+      let num = 0, den = 0;
+      sel.forEach(w => {
+        const v = w[k], wt = w[wc];
+        if (v != null && !isNaN(v) && wt != null && !isNaN(wt) && wt > 0) {
+          num += Number(v) * Number(wt); den += Number(wt);
+        }
+      });
+      if (den > 0) out[k] = num / den;
+    });
     return out;
   }
 

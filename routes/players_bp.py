@@ -47,6 +47,26 @@ def api_player_weekly_metrics(player_id: str):
     except Exception as exc:
         logger.warning("[player-weekly-metrics] %s failed: %s", player_id, exc)
         weeks = []
+    # Merge in the per-week advanced metrics (NGS/FTN/EPA) so the Compare tool
+    # can slice them by week range like usage stats. Keyed/merged by week number.
+    try:
+        from data_building.advanced_metrics import get_player_weekly_adv_series
+        adv = get_player_weekly_adv_series(player_id, season)
+        if adv:
+            by_week = {int(w["week"]): w for w in weeks if w.get("week") is not None}
+            for ar in adv:
+                wk = int(ar.get("week"))
+                tgt = by_week.get(wk)
+                if tgt is None:
+                    tgt = {"week": wk}
+                    weeks.append(tgt)
+                    by_week[wk] = tgt
+                for k, v in ar.items():
+                    if k != "week":
+                        tgt[k] = v
+            weeks.sort(key=lambda w: int(w.get("week") or 0))
+    except Exception as exc:
+        logger.warning("[player-weekly-metrics] adv merge %s failed: %s", player_id, exc)
     return jsonify({"player_id": str(player_id), "season": season, "weeks": weeks})
 
 
@@ -82,6 +102,8 @@ def api_player_advanced_metrics(player_id: str):
             get_player_metrics_by_season,
             get_player_career_metrics,
             get_available_seasons_for_player,
+            get_player_weekly_advanced_metrics,
+            get_available_metric_weeks,
             strip_premium_metrics,
             _normalize_position,
         )
@@ -94,6 +116,10 @@ def api_player_advanced_metrics(player_id: str):
         # Parse requested season from query param
         requested_season = request.args.get("season")
         is_career_request = requested_season == "career" or requested_season is None
+
+        # Optional week filter (single game week within the resolved season).
+        week_str = request.args.get("week")
+        requested_week = int(week_str) if (week_str and week_str.isdigit()) else None
 
         if requested_season and requested_season != "career":
             try:
@@ -135,6 +161,28 @@ def api_player_advanced_metrics(player_id: str):
             # Fallback to latest
             metrics = get_player_metrics(str(player_id))
             target_season = None
+
+        # Weeks that have per-week advanced metrics for the resolved season
+        # (powers the modal's week picker). Only meaningful for a real season.
+        available_weeks = []
+        if not is_career_request and target_season:
+            try:
+                available_weeks = get_available_metric_weeks(str(player_id), int(target_season))
+            except Exception:
+                available_weeks = []
+
+        # If a specific week is requested, swap in that week's values. The weekly
+        # store only holds the new free metrics, so season-only tiles (PFF grades,
+        # role score, usage) are intentionally absent in week view.
+        active_week = None
+        if requested_week and not is_career_request and target_season:
+            wk_metrics = get_player_weekly_advanced_metrics(
+                str(player_id), int(target_season), int(requested_week))
+            if wk_metrics:
+                wk_metrics.setdefault("season", target_season)
+                wk_metrics.setdefault("as_of_date", None)
+                metrics = wk_metrics
+                active_week = int(requested_week)
 
         if not metrics:
             return jsonify({
@@ -178,7 +226,9 @@ def api_player_advanced_metrics(player_id: str):
             "player_id": str(player_id),
             "position": _normalize_position(metrics.get("position")),
             "season": season_val,
+            "week": active_week,
             "available_seasons": available_seasons,
+            "available_weeks": available_weeks,
             "metrics": metrics_payload,
             "as_of_date": as_of_date,
         })
