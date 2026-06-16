@@ -661,6 +661,17 @@ def build_advanced_metrics_body(
       .am-cmp-season-sel { font-weight:600; border-radius:8px; padding:4px 10px; min-width:96px; font-size:12px; }
       .am-cmp-player-head { vertical-align:top; }
       .am-cmp-player-head .csd-wrap { margin-top:6px; }
+      /* Per-player week-range controls in the Compare modal */
+      .am-cmp-range { display:flex; flex-wrap:wrap; gap:3px; margin-top:6px; }
+      .am-cmp-range-pill { background:var(--bg-alt); border:1px solid var(--border); color:var(--text-muted);
+        border-radius:14px; padding:2px 8px; font-size:11px; font-weight:600; cursor:pointer; transition:all .12s; white-space:nowrap; }
+      .am-cmp-range-pill:hover { color:var(--text); border-color:#3b82f6; }
+      .am-cmp-range-pill.active { background:#3b82f6; border-color:#3b82f6; color:#fff; }
+      .am-cmp-wk { display:flex; align-items:center; gap:3px; margin-top:5px; font-size:11px; color:var(--text-muted); }
+      .am-cmp-wk-input { width:42px; padding:2px 5px; border:1px solid var(--border); border-radius:6px;
+        background:var(--card-bg, var(--card)); color:var(--text); font-size:11px; text-align:center; }
+      .am-cmp-wknote { margin-top:5px; font-size:10px; font-weight:600; color:var(--text-muted); }
+      .am-cmp-wknote-warn { color:#f59e0b; }
       .am-cmp-metric { font-weight:600; color:var(--text); white-space:nowrap; }
       .am-cmp-val { font-weight:700; font-variant-numeric:tabular-nums; }
       .am-cmp-best { color:#10b981; }
@@ -838,8 +849,59 @@ _AM_JS = r"""
                   comboFilters: [],     // [{key, op, val}]
                   filterColKeys: new Set(), // keys auto-shown as compact cols when used in filters
                   cmpSeasons: {},       // player_id -> season override in the Compare modal
+                  cmpRanges: {},        // player_id -> week-range key ('' | 'first' | 'second' | 'last4' | 'custom')
+                  cmpWk: {},            // player_id -> { start, end } for custom ranges
                   pinnedIds: _loadPins() };
   const MAX_COMPARE = 6;
+  const _amCmpWeekly = {};  // `${pid}_${season}` -> weekly series (Compare modal week ranges)
+
+  // Resolve a week-range key into [lo, hi] against the season's last played week.
+  function _amCmpBounds(range, wk, maxWk) {
+    maxWk = maxWk || 18;
+    if (range === 'custom') {
+      const a = Math.min(maxWk, Math.max(1, Math.round(Number(wk && wk.start) || 1)));
+      const b = Math.min(maxWk, Math.max(1, Math.round(Number(wk && wk.end) || maxWk)));
+      return [Math.min(a, b), Math.max(a, b)];
+    }
+    if (range === 'first')  return [1, Math.ceil(maxWk / 2)];
+    if (range === 'second') return [Math.ceil(maxWk / 2) + 1, maxWk];
+    if (range === 'last4')  return [Math.max(1, maxWk - 3), maxWk];
+    return [1, maxWk];
+  }
+
+  // Aggregate weekly rows over [lo,hi] into the week-sliceable metric keys, using
+  // the SAME formulas as the server's _WEEKLY_METRICS (advanced_metrics.py) so a
+  // range here matches the week-range leaderboard exactly. Metrics that need data
+  // the weekly endpoint doesn't carry (TDs → fpts_*, PFF grades, role score) are
+  // omitted and render as "–" in range mode.
+  function _amCmpAgg(weeks, lo, hi) {
+    const sel = (weeks || []).filter(w => { const wk = Number(w.week); return wk >= lo && wk <= hi; });
+    const out = { _games: sel.length };
+    if (!sel.length) return out;
+    let snap = 0, snapN = 0, ts = 0, tsN = 0;
+    let tgt = 0, rec = 0, car = 0, tch = 0, recYds = 0, rushYds = 0;
+    sel.forEach(w => {
+      const sp = parseFloat(w.snap_pct); if (!isNaN(sp)) { snap += sp; snapN++; }
+      const tsv = parseFloat(w.target_share); if (!isNaN(tsv)) { ts += tsv; tsN++; }
+      tgt += Number(w.targets || 0); rec += Number(w.receptions || 0);
+      car += Number(w.carries || 0); tch += Number(w.touches || 0);
+      recYds += Number(w.rec_yards || 0); rushYds += Number(w.rush_yards || 0);
+    });
+    const n = sel.length;
+    const div = (a, b) => b > 0 ? a / b : null;
+    out.snap_share = snapN ? (snap / snapN) / 100 : null;       // AVG(snap_pct)/100
+    out.target_share = tsN ? (ts / tsN) / 100 : null;           // AVG(target_share)/100
+    out.yards_per_target = div(recYds, tgt);
+    out.yards_per_reception = div(recYds, rec);
+    out.catch_rate = div(rec, tgt);
+    out.yards_per_carry = div(rushYds, car);
+    out.yards_per_touch = div(recYds + rushYds, tch);
+    out.total_targets = tgt;    out.targets_per_game = div(tgt, n);
+    out.total_receptions = rec; out.receptions_per_game = div(rec, n);
+    out.total_carries = car;    out.carries_per_game = div(car, n);
+    out.total_touches = tch;    out.touches_per_game = div(tch, n);
+    return out;
+  }
 
   // Preset sets: clicking "Load X Set" clears current extras and loads these metrics.
   const _PRESETS = {
@@ -1210,8 +1272,57 @@ _AM_JS = r"""
   // Change a single player's season in the Compare modal and re-render.
   window.amSetCmpSeason = function(pid, season) {
     state.cmpSeasons[String(pid)] = season;
+    state.cmpRanges[String(pid)] = '';  // week ranges are season-specific
     window.amShowCompare();
   };
+  // Change a single player's week range in the Compare modal.
+  window.amSetCmpRange = function(pid, range) {
+    state.cmpRanges[String(pid)] = range;
+    if (range === 'custom') {
+      const cur = state.cmpWk[String(pid)] || {};
+      if (!cur.start) cur.start = 1;
+      if (!cur.end) cur.end = 18;
+      state.cmpWk[String(pid)] = cur;
+    }
+    window.amShowCompare();
+  };
+  // Edit a custom week bound, clamped to the player's played weeks (start<=end).
+  window.amSetCmpWeeks = function(pid, which, val) {
+    pid = String(pid);
+    const cur = state.cmpWk[pid] || { start: 1, end: 18 };
+    const season = String(state.cmpSeasons[pid] || state.season || (cfg.seasons && cfg.seasons[0]) || '');
+    const weeks = _amCmpWeekly[pid + '_' + season] || [];
+    const maxWk = weeks.length ? Math.max(...weeks.map(w => Number(w.week) || 0)) : 18;
+    const clamp = v => Math.min(maxWk, Math.max(1, Math.round(Number(v) || 1)));
+    if (which === 'start') cur.start = clamp(val);
+    if (which === 'end') cur.end = clamp(val);
+    if (cur.start > cur.end) { const t = cur.start; cur.start = cur.end; cur.end = t; }
+    state.cmpWk[pid] = cur;
+    state.cmpRanges[pid] = 'custom';
+    window.amShowCompare();
+  };
+  // Per-player week-range pills + custom inputs + games label for the modal header.
+  function cmpRangeControls(p, meta) {
+    const pid = String(p.player_id);
+    const r = state.cmpRanges[pid] || '';
+    const pill = (val, lbl) => '<button class="am-cmp-range-pill' + (r === val ? ' active' : '')
+      + '" onclick="amSetCmpRange(\'' + pid + '\',\'' + val + '\')">' + lbl + '</button>';
+    let h = '<div class="am-cmp-range">' + pill('', 'Full') + pill('first', '1st') + pill('second', '2nd')
+      + pill('last4', 'L4') + pill('custom', 'Cust') + '</div>';
+    if (r === 'custom') {
+      const wk = state.cmpWk[pid] || { start: 1, end: 18 };
+      const mx = (meta && meta.maxWk) ? meta.maxWk : 18;
+      h += '<div class="am-cmp-wk">Wk '
+        + '<input type="number" min="1" max="' + mx + '" class="am-cmp-wk-input" value="' + (wk.start || 1) + '" onchange="amSetCmpWeeks(\'' + pid + '\',\'start\',this.value)">&ndash;'
+        + '<input type="number" min="1" max="' + mx + '" class="am-cmp-wk-input" value="' + (wk.end || mx) + '" onchange="amSetCmpWeeks(\'' + pid + '\',\'end\',this.value)"></div>';
+    }
+    if (r && meta) {
+      h += meta.games > 0
+        ? '<div class="am-cmp-wknote">Wks ' + meta.lo + '&ndash;' + meta.hi + ' &middot; ' + meta.games + 'g</div>'
+        : '<div class="am-cmp-wknote am-cmp-wknote-warn">No games in range</div>';
+    }
+    return h;
+  }
 
   window.amShowCompare = async function() {
     const modal = document.getElementById('amCompareModal');
@@ -1220,29 +1331,53 @@ _AM_JS = r"""
     const players = pinnedRows();
     if (players.length < 2) return;
     const metricsList = [state.metric, ...state.extraMetrics];
-    const pageSeason = String(state.season || '');
+    const pageSeason = String(state.season || (cfg.seasons && cfg.seasons[0]) || '');
     const seasonsList = (cfg.seasons || []).slice();
     const seasonFor = (p) => String(state.cmpSeasons[String(p.player_id)] || pageSeason);
+    const rangeFor = (p) => state.cmpRanges[String(p.player_id)] || '';
 
     modal.style.display = 'flex';
     body.innerHTML = '<div style="padding:18px;color:var(--text-muted);font-size:13px;">Loading…</div>';
 
-    // Each pinned player's metrics for its own selected season. When a player's
-    // season matches the loaded leaderboard we reuse its in-memory values (and
-    // keep its rank badge); otherwise we fetch that season's metrics on demand.
+    // Resolve each pinned player's data source:
+    //   • 'range' – client-side weekly aggregate for a selected week range
+    //   • 'page'  – reuse the loaded leaderboard's in-memory values (keeps rank)
+    //   • 'fetch' – pull that season's season-level metrics on demand
+    const rangeMeta = {};  // pid -> { lo, hi, games, maxWk }
     const perPlayer = await Promise.all(players.map(async (p) => {
+      const pid = String(p.player_id);
       const s = seasonFor(p);
-      if (s === pageSeason) return { source: 'page', metrics: null };
+      const range = rangeFor(p);
+      if (range) {
+        const ck = pid + '_' + s;
+        let weeks = _amCmpWeekly[ck];
+        if (!weeks) {
+          try { weeks = (await fetch('/api/player-weekly-metrics/' + encodeURIComponent(pid) + '?season=' + encodeURIComponent(s)).then(r => r.json())).weeks || []; }
+          catch (_) { weeks = []; }
+          _amCmpWeekly[ck] = weeks;
+        }
+        const maxWk = weeks.length ? Math.max(...weeks.map(w => Number(w.week) || 0)) : 18;
+        const [lo, hi] = _amCmpBounds(range, state.cmpWk[pid], maxWk);
+        const agg = _amCmpAgg(weeks, lo, hi);
+        rangeMeta[pid] = { lo: lo, hi: hi, games: agg._games || 0, maxWk: maxWk };
+        return { mode: 'range', agg: agg };
+      }
+      if (s === pageSeason) return { mode: 'page' };
       try {
-        const r = await fetch('/api/player-advanced-metrics/' + encodeURIComponent(p.player_id) + '?season=' + encodeURIComponent(s));
+        const r = await fetch('/api/player-advanced-metrics/' + encodeURIComponent(pid) + '?season=' + encodeURIComponent(s));
         const d = r.ok ? await r.json() : {};
-        return { source: 'fetch', metrics: d.metrics || {} };
-      } catch (_) { return { source: 'fetch', metrics: {} }; }
+        return { mode: 'fetch', metrics: d.metrics || {} };
+      } catch (_) { return { mode: 'fetch', metrics: {} }; }
     }));
 
     const valueFor = (p, i, key) => {
-      if (perPlayer[i].source === 'fetch') {
-        const v = perPlayer[i].metrics[key];
+      const pp = perPlayer[i];
+      if (pp.mode === 'range') {
+        const v = pp.agg[key];
+        return (v !== undefined && v !== null) ? Number(v) : null;
+      }
+      if (pp.mode === 'fetch') {
+        const v = pp.metrics[key];
         return (v !== undefined && v !== null) ? Number(v) : null;
       }
       if (key === state.metric) return Number(p.value);
@@ -1251,8 +1386,11 @@ _AM_JS = r"""
       return (v !== undefined && v !== null) ? Number(v) : null;
     };
 
+    const anyRange = players.some(p => rangeFor(p));
+
     let html = '<table class="am-cmp-table"><thead><tr><th>Metric</th>';
     players.forEach((p) => {
+      const pid = String(p.player_id);
       const s = seasonFor(p);
       const opts = seasonsList.map(yr =>
         '<option value="' + yr + '"' + (String(yr) === s ? ' selected' : '') + '>' + yr + '</option>'
@@ -1260,7 +1398,7 @@ _AM_JS = r"""
       html += '<th class="am-cmp-player-head">' + (p.name || '')
         + '<span class="am-cmp-player-meta" style="color:' + posColor(p.position) + '">' + (p.position || '') + '</span>'
         + (seasonsList.length
-            ? '<select class="am-cmp-season-sel" onchange="amSetCmpSeason(\'' + p.player_id + '\', this.value)">' + opts + '</select>'
+            ? '<select class="am-cmp-season-sel" onchange="amSetCmpSeason(\'' + pid + '\', this.value)">' + opts + '</select>' + cmpRangeControls(p, rangeMeta[pid])
             : '<span class="am-cmp-player-meta">' + (p.team || '') + '</span>')
         + '</th>';
     });
@@ -1282,8 +1420,8 @@ _AM_JS = r"""
         const v = vals[i];
         if (v == null) { html += '<td><span style="opacity:.4">–</span></td>'; return; }
         const isBest = best != null && v === best && present.length > 1;
-        // Rank only applies to the loaded leaderboard season.
-        const rk = (perPlayer[i].source === 'page' && ranks) ? ranks[String(p.player_id)] : null;
+        // Rank only applies to a full page-season column (not fetched seasons or ranges).
+        const rk = (perPlayer[i].mode === 'page' && ranks) ? ranks[String(p.player_id)] : null;
         const w = Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
         html += '<td><span class="am-cmp-val' + (isBest ? ' am-cmp-best' : '') + '">' + fmtVal(v, key) + '</span>'
           + (rk ? '<span class="am-cmp-rank">#' + rk + '</span>' : '')
@@ -1293,7 +1431,10 @@ _AM_JS = r"""
     });
     html += '</tbody></table>';
     html += '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;">'
-      + 'Pick a season per player to compare across years. Showing the primary metric plus any added metrics; ranks reflect the page season.</div>';
+      + (anyRange
+          ? 'Week ranges are aggregated from weekly usage data (matching the week-range leaderboard); season-level metrics like PFF grades and role score show “–” for a range, and ranks apply only to full page-season columns.'
+          : 'Pick a season or week range per player to compare across splits. Showing the primary metric plus any added metrics; ranks reflect the page season.')
+      + '</div>';
     body.innerHTML = html;
     if (window.initCustomSelects) window.initCustomSelects(body);
     modal.style.display = 'flex';
