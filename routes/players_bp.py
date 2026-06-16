@@ -102,7 +102,7 @@ def api_player_advanced_metrics(player_id: str):
             get_player_metrics_by_season,
             get_player_career_metrics,
             get_available_seasons_for_player,
-            get_player_weekly_advanced_metrics,
+            get_player_weekly_adv_range,
             get_available_metric_weeks,
             strip_premium_metrics,
             _normalize_position,
@@ -117,9 +117,18 @@ def api_player_advanced_metrics(player_id: str):
         requested_season = request.args.get("season")
         is_career_request = requested_season == "career" or requested_season is None
 
-        # Optional week filter (single game week within the resolved season).
-        week_str = request.args.get("week")
-        requested_week = int(week_str) if (week_str and week_str.isdigit()) else None
+        # Optional week filter: a single week (week=) or an inclusive range
+        # (week_start=/week_end=). A single week is treated as start == end.
+        _ws = request.args.get("week_start")
+        _we = request.args.get("week_end")
+        _wk = request.args.get("week")
+        week_lo = week_hi = None
+        if _ws and _ws.isdigit() and _we and _we.isdigit():
+            week_lo, week_hi = int(_ws), int(_we)
+            if week_lo > week_hi:
+                week_lo, week_hi = week_hi, week_lo
+        elif _wk and _wk.isdigit():
+            week_lo = week_hi = int(_wk)
 
         if requested_season and requested_season != "career":
             try:
@@ -171,18 +180,18 @@ def api_player_advanced_metrics(player_id: str):
             except Exception:
                 available_weeks = []
 
-        # If a specific week is requested, swap in that week's values. The weekly
-        # store only holds the new free metrics, so season-only tiles (PFF grades,
-        # role score, usage) are intentionally absent in week view.
-        active_week = None
-        if requested_week and not is_career_request and target_season:
-            wk_metrics = get_player_weekly_advanced_metrics(
-                str(player_id), int(target_season), int(requested_week))
+        # If a week (or week range) is requested, swap in the aggregated values.
+        # The weekly store only holds the new free metrics, so season-only tiles
+        # (PFF grades, role score, usage) are intentionally absent in week view.
+        active_week_start = active_week_end = None
+        if week_lo is not None and not is_career_request and target_season:
+            wk_metrics = get_player_weekly_adv_range(
+                str(player_id), int(target_season), int(week_lo), int(week_hi))
             if wk_metrics:
                 wk_metrics.setdefault("season", target_season)
                 wk_metrics.setdefault("as_of_date", None)
                 metrics = wk_metrics
-                active_week = int(requested_week)
+                active_week_start, active_week_end = int(week_lo), int(week_hi)
 
         if not metrics:
             return jsonify({
@@ -226,7 +235,8 @@ def api_player_advanced_metrics(player_id: str):
             "player_id": str(player_id),
             "position": _normalize_position(metrics.get("position")),
             "season": season_val,
-            "week": active_week,
+            "week_start": active_week_start,
+            "week_end": active_week_end,
             "available_seasons": available_seasons,
             "available_weeks": available_weeks,
             "metrics": metrics_payload,

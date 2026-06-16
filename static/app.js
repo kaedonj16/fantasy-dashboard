@@ -9527,15 +9527,90 @@ function getRoleGrade(roleScore) {
 
 const _advMetricsCache = new Map();
 
-function loadAdvancedMetrics(playerId, leagueId, season, week) {
+// Build the week-range slider: a "Season" reset plus a dual-handle range whose
+// two thumbs select the first/last week being viewed. `ws`/`we` are the active
+// range (null when showing the full season).
+function _advWeekSliderHTML(playerId, leagueId, season, weeks, ws, we) {
+  const min = Number(weeks[0]);
+  const max = Number(weeks[weeks.length - 1]);
+  const lo = ws != null ? ws : min;
+  const hi = we != null ? we : max;
+  const active = ws != null;
+  const span = (max > min) ? (max - min) : 1;
+  const pct = v => ((v - min) / span) * 100;
+  const label = !active ? 'Full Season' : (lo === hi ? ('Week ' + lo) : ('Weeks ' + lo + '–' + hi));
+  const lidAttr = leagueId ? String(leagueId) : '';
+  // Single-week seasons (only one week of data) can't be ranged; show one pill.
+  if (max === min) {
+    return '<div class="adv-metrics-season-pills adv-week-pills">'
+      + `<button class="adv-season-pill${active ? '' : ' active'}" onclick="loadAdvancedMetrics('${playerId}', ${leagueId ? `'${leagueId}'` : 'null'}, ${season})">Season</button>`
+      + `<button class="adv-season-pill${active ? ' active' : ''}" onclick="loadAdvancedMetrics('${playerId}', ${leagueId ? `'${leagueId}'` : 'null'}, ${season}, ${min}, ${max})">W${min}</button>`
+      + '</div>';
+  }
+  return `
+    <div class="adv-week-picker${active ? ' is-active' : ''}" id="advWeekPicker"
+         data-pid="${playerId}" data-lid="${lidAttr}" data-season="${season}"
+         data-min="${min}" data-max="${max}">
+      <button class="adv-week-reset${active ? '' : ' active'}"
+              onclick="loadAdvancedMetrics('${playerId}', ${leagueId ? `'${leagueId}'` : 'null'}, ${season})">Season</button>
+      <div class="adv-week-slider">
+        <div class="adv-week-rail"></div>
+        <div class="adv-week-range" id="advWeekRange" style="left:${pct(lo)}%;right:${100 - pct(hi)}%"></div>
+        <input type="range" class="adv-week-thumb adv-week-lo" id="advWeekLo" min="${min}" max="${max}" step="1" value="${lo}" aria-label="First week">
+        <input type="range" class="adv-week-thumb adv-week-hi" id="advWeekHi" min="${min}" max="${max}" step="1" value="${hi}" aria-label="Last week">
+      </div>
+      <div class="adv-week-readout" id="advWeekReadout">${label}</div>
+    </div>`;
+}
+
+// Wire the dual-handle slider: live paint while dragging, reload on release.
+function _advWeekSliderSetup() {
+  const picker = document.getElementById('advWeekPicker');
+  if (!picker) return;
+  const loEl = document.getElementById('advWeekLo');
+  const hiEl = document.getElementById('advWeekHi');
+  const rangeEl = document.getElementById('advWeekRange');
+  const readoutEl = document.getElementById('advWeekReadout');
+  if (!loEl || !hiEl) return;
+  const min = Number(picker.dataset.min), max = Number(picker.dataset.max);
+  const pid = picker.dataset.pid;
+  const lid = picker.dataset.lid || null;
+  const season = Number(picker.dataset.season);
+  const span = (max > min) ? (max - min) : 1;
+  const pct = v => ((v - min) / span) * 100;
+  function vals() {
+    let a = Number(loEl.value), b = Number(hiEl.value);
+    if (a > b) {
+      if (document.activeElement === loEl) { b = a; hiEl.value = String(b); }
+      else { a = b; loEl.value = String(a); }
+    }
+    return [a, b];
+  }
+  function paint() {
+    const [a, b] = vals();
+    rangeEl.style.left = pct(a) + '%';
+    rangeEl.style.right = (100 - pct(b)) + '%';
+    readoutEl.textContent = (a === b) ? ('Week ' + a) : ('Weeks ' + a + '–' + b);
+    picker.classList.add('is-active');
+  }
+  function commit() { const [a, b] = vals(); loadAdvancedMetrics(pid, lid, season, a, b); }
+  loEl.addEventListener('input', paint);
+  hiEl.addEventListener('input', paint);
+  loEl.addEventListener('change', commit);
+  hiEl.addEventListener('change', commit);
+}
+
+function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
   const contentEl = document.getElementById('advancedMetricsContent');
   if (!contentEl) return;
 
   const isAuto = season === 'auto';
+  const realSeason = (season != null && season !== 'career' && season !== 'auto');
 
   const leagueParam = leagueId ? `&league_id=${leagueId}` : '';
-  const seasonParam = (season != null && season !== 'career' && season !== 'auto') ? `&season=${season}` : '';
-  const weekParam = (week != null && season != null && season !== 'career' && season !== 'auto') ? `&week=${week}` : '';
+  const seasonParam = realSeason ? `&season=${season}` : '';
+  const weekParam = (realSeason && weekStart != null && weekEnd != null)
+    ? `&week_start=${weekStart}&week_end=${weekEnd}` : '';
   const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}${weekParam}`;
 
   const _cached = _advMetricsCache.get(url);
@@ -9578,12 +9653,19 @@ function loadAdvancedMetrics(playerId, leagueId, season, week) {
       // Update year label in section header
       const seasonLabelEl = document.getElementById('advMetricsSeasonLabel');
       if (seasonLabelEl) {
-        const _wk = metricsData.week != null ? ` · W${metricsData.week}` : '';
+        let _wk = '';
+        if (metricsData.week_start != null) {
+          _wk = (metricsData.week_start === metricsData.week_end)
+            ? ` · W${metricsData.week_start}`
+            : ` · W${metricsData.week_start}–W${metricsData.week_end}`;
+        }
         seasonLabelEl.textContent = isCareer ? 'Career' : ((activeSeason || '') + _wk);
       }
 
-      const activeWeek = metricsData.week != null ? Number(metricsData.week) : null;
-      const availableWeeks = metricsData.available_weeks || [];
+      const activeWS = metricsData.week_start != null ? Number(metricsData.week_start) : null;
+      const activeWE = metricsData.week_end != null ? Number(metricsData.week_end) : null;
+      const weekActive = activeWS != null;
+      const availableWeeks = (metricsData.available_weeks || []).map(Number);
 
       // Season pills above the layout - always show when there's at least 1 season
       const pillsEl = document.getElementById('advMetricsPills');
@@ -9596,27 +9678,22 @@ function loadAdvancedMetrics(playerId, leagueId, season, week) {
           pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, ${yr})">${yr}</button>`;
         });
         pillsHTML += '</div>';
-        // Week pills: a "Season" reset plus one pill per week that has data.
-        // Only the free NGS/FTN/EPA metrics are available per week, so picking a
-        // week shows that subset for the active season.
+        // Week range slider: drag the two handles to pick which weeks to view.
+        // Only the free NGS/FTN/EPA metrics exist per week, so a week range shows
+        // that subset (totals summed, rates volume-weighted) for the active season.
         if (!isCareer && activeSeason && availableWeeks.length) {
-          pillsHTML += '<div class="adv-metrics-season-pills adv-metrics-week-pills">';
-          pillsHTML += `<button class="adv-season-pill${activeWeek == null ? ' active' : ''}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, ${activeSeason})">Season</button>`;
-          availableWeeks.forEach(wk => {
-            const activeClass = (activeWeek === Number(wk)) ? ' active' : '';
-            pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, ${activeSeason}, ${wk})">W${wk}</button>`;
-          });
-          pillsHTML += '</div>';
+          pillsHTML += _advWeekSliderHTML(playerId, leagueId, activeSeason, availableWeeks, activeWS, activeWE);
         }
         pillsEl.innerHTML = pillsHTML;
+        _advWeekSliderSetup();
       }
 
       // Populate just the bars column (initial render without ranks)
       contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null);
 
       // Fetch position ranks in background and re-render with rank badges.
-      // Ranks are season-relative, so they don't apply to a single-week view.
-      if (!isCareer && activeSeason && activeWeek == null) {
+      // Ranks are season-relative, so they don't apply to a week-range view.
+      if (!isCareer && activeSeason && !weekActive) {
         fetch(`/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`)
           .then(r => r.ok ? r.json() : null)
           .then(ranksData => {

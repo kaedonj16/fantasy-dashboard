@@ -1623,6 +1623,49 @@ def get_player_weekly_adv_series(player_id: str, season: int) -> List[Dict[str, 
     return out
 
 
+def get_player_weekly_adv_range(
+    player_id: str, season: int, week_start: int, week_end: int
+) -> Dict[str, Any]:
+    """Aggregate one player's advanced metrics over an inclusive week range.
+
+    Totals sum across the range; rates are volume-weighted (same formulas as the
+    week-range leaderboard), so a single-week range (start == end) returns that
+    week's values exactly. Returns {} when the player has no rows in the range.
+    """
+    init_weekly_advanced_metrics_db()
+    lo, hi = (week_start, week_end) if week_start <= week_end else (week_end, week_start)
+    col_list = ", ".join(WEEKLY_ADV_METRIC_COLS + WEEKLY_ADV_WEIGHT_COLS)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT position, week, {col_list} FROM player_weekly_advanced_metrics "
+            "WHERE player_id = %s AND season = %s AND week BETWEEN %s AND %s ORDER BY week",
+            (str(player_id), int(season), int(lo), int(hi)),
+        ).fetchall()
+    if not rows:
+        return {}
+    rows = [dict(r) for r in rows]
+    out: Dict[str, Any] = {}
+    for m in WEEKLY_ADV_METRIC_COLS:
+        if m in _ADV_WEEKLY_TOTAL_METRICS:
+            vals = [float(r[m]) for r in rows if r.get(m) is not None]
+            if vals:
+                out[m] = float(sum(vals))
+        else:
+            w = _ADV_WEEKLY_WEIGHTED_METRICS.get(m)
+            if not w:
+                continue
+            num = den = 0.0
+            for r in rows:
+                v, wt = r.get(m), r.get(w)
+                if v is not None and wt is not None and float(wt) > 0:
+                    num += float(v) * float(wt)
+                    den += float(wt)
+            if den > 0:
+                out[m] = num / den
+    out["position"] = rows[-1].get("position")
+    return out
+
+
 def get_available_metric_weeks(player_id: str, season: int) -> List[int]:
     """Weeks (ascending) that have any advanced-metric data for the player/season."""
     init_weekly_advanced_metrics_db()

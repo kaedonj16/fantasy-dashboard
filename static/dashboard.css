@@ -13722,6 +13722,103 @@ img, svg, canvas {
   color: #fff;
 }
 
+/* ── Advanced metrics week-range slider ─────────────────────────────────── */
+.adv-week-picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.adv-week-reset {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-color, #e5e7eb);
+  background: transparent;
+  color: var(--text-muted, #6b7280);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  line-height: 1.5;
+}
+.adv-week-reset:hover { border-color: #3b82f6; color: #3b82f6; }
+.adv-week-reset.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+
+.adv-week-slider {
+  position: relative;
+  flex: 1 1 180px;
+  min-width: 160px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+}
+.adv-week-rail {
+  position: absolute;
+  left: 0; right: 0;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-color, #e5e7eb);
+}
+.adv-week-range {
+  position: absolute;
+  height: 5px;
+  border-radius: 3px;
+  background: #3b82f6;
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+.adv-week-picker.is-active .adv-week-range { opacity: 1; }
+
+/* Two overlaid range inputs share the track; only their thumbs are clickable. */
+.adv-week-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  left: 0; right: 0;
+  width: 100%;
+  margin: 0;
+  height: 26px;
+  background: transparent;
+  pointer-events: none;
+}
+.adv-week-thumb:focus { outline: none; }
+.adv-week-thumb::-webkit-slider-runnable-track { background: transparent; border: none; }
+.adv-week-thumb::-moz-range-track { background: transparent; border: none; }
+.adv-week-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #3b82f6;
+  cursor: grab;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.1s;
+}
+.adv-week-thumb::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.15); }
+.adv-week-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #3b82f6;
+  cursor: grab;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.adv-week-readout {
+  flex: 0 0 auto;
+  min-width: 92px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-color, #111827);
+}
+
 /* ============================================
    Player + Breakout Modals – Shared Design System
    Hero Row, Info Row, Section Divider, Metric Bars
