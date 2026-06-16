@@ -338,6 +338,7 @@ def build_advanced_metrics_body(
               <th class="am-rank">#</th>
               <th class="am-player">Player</th>
               <th class="am-games" title="Games played">G</th>
+              <th class="am-weeks" style="display:none" title="Weeks in range">Wks</th>
               <th class="am-barcell" id="amMetricHeader">–</th>
             </tr>
           </thead>
@@ -470,8 +471,8 @@ def build_advanced_metrics_body(
       .am-table th.am-sort-asc::after { content:' ↑'; }
       .am-table td { padding:9px 10px; border-bottom:1px solid var(--border); font-size:14px; }
       /* Column dividers */
-      .am-games, .am-barcell,
-      .am-table th.am-games, .am-table th.am-barcell {
+      .am-games, .am-weeks, .am-barcell,
+      .am-table th.am-games, .am-table th.am-weeks, .am-table th.am-barcell {
         border-left:1px solid var(--border);
       }
       .am-row:hover { background:var(--bg-alt, rgba(0,0,0,.03)); }
@@ -484,6 +485,7 @@ def build_advanced_metrics_body(
       }
       .am-rank { width:52px; color:var(--text-muted); font-size:12px; }
       .am-games { width:40px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
+      .am-weeks { width:36px; text-align:center; color:var(--text-muted); font-size:12px; white-space:nowrap; }
       .am-player { width:220px; max-width:220px; }
       .am-barcell { width:auto; min-width:120px; }
       .am-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
@@ -511,7 +513,8 @@ def build_advanced_metrics_body(
       .am-trend-legend { display:inline-flex; align-items:center; gap:3px; padding-left:8px; margin-left:2px; border-left:1px solid var(--border); }
       .am-trend-legend .am-trend-up, .am-trend-legend .am-trend-down { font-size:11px; }
       @media (max-width:600px){
-        .am-games, .am-table th.am-games { display:none; }
+        .am-games, .am-table th.am-games,
+        .am-weeks, .am-table th.am-weeks { display:none !important; }
         .am-metric-bar { display:none; }
         .am-metric-cell { gap:0; }
         .am-val { min-width:38px; font-size:12px; text-align:center; }
@@ -1905,6 +1908,7 @@ _AM_JS = r"""
       const rank = filteredRankMap.get(String(r.player_id)) || '';
       const volNum = r.vol != null ? r.vol : (r.games != null ? r.games : '–');
       const gamesCell = '<td class="am-games">' + volNum + '</td>';
+      const weeksCell = '<td class="am-weeks" style="display:' + (!!(state.weekRange && state.weekRange !== '') ? '' : 'none') + '">' + (r.weeks != null ? r.weeks : '–') + '</td>';
       const ownedBadge = owned ? '<span class="am-owned-badge">YOURS</span>' : '';
       const pinBtn = '<button class="am-pin-btn' + (pinned ? ' am-pin-active' : '') + '" '
         + 'onclick="event.stopPropagation();amTogglePin(\'' + r.player_id + '\')" '
@@ -1996,6 +2000,7 @@ _AM_JS = r"""
         + rankCell
         + playerCell
         + gamesCell
+        + weeksCell
         + filterColCells
         + metricCell
         + (state.showTrends ? trendCellHtml(r.player_id, col) : '')
@@ -2022,19 +2027,16 @@ _AM_JS = r"""
   function updateVolHeader() {
     const th = document.querySelector('#amTable thead th.am-games');
     if (th) {
-      let lbl, title;
-      if (state.weekRange) {
-        const wkMap = { last4: 'W4', last8: 'W8', last12: 'W12', custom: 'Wks' };
-        lbl = wkMap[state.weekRange] || 'Wks';
-        title = 'Weeks played in selected range';
-      } else {
-        lbl = VOL_LABELS[state.volCol] || 'G';
-        title = { games: 'Games played', total_pass_att: 'Pass attempts', total_carries: 'Carries',
-                  total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
-      }
+      const lbl = VOL_LABELS[state.volCol] || 'G';
+      const title = { games: 'Games played', total_pass_att: 'Pass attempts', total_carries: 'Carries',
+                total_touches: 'Touches', total_targets: 'Targets', total_receptions: 'Receptions' }[state.volCol] || lbl;
       th.textContent = lbl;
       th.title = title;
     }
+    // Show the Wks column only when a week range is active.
+    const isWeekly = !!(state.weekRange && state.weekRange !== '');
+    const thWks = document.querySelector('#amTable thead th.am-weeks');
+    if (thWks) thWks.style.display = isWeekly ? '' : 'none';
     const mh = document.getElementById('amMetricHeader');
     if (mh) mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '–';
     syncExtraCols();

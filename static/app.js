@@ -9741,11 +9741,15 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
         if (!isCareer && activeSeason) {
           const wkMin = availableWeeks.length ? Math.min(...availableWeeks) : 1;
           const wkMax = availableWeeks.length ? Math.max(...availableWeeks) : 18;
-          const isFullRange = (activeWS == null);
+          // Use server-echoed range when available; fall back to the requested
+          // range so the bar doesn't snap to full-range when weekly data is absent.
+          const barWS = activeWS != null ? activeWS : (weekStart != null ? weekStart : null);
+          const barWE = activeWE != null ? activeWE : (weekEnd != null ? weekEnd : null);
+          const isFullRange = (barWS == null);
           const lidExpr2 = leagueId ? ("'" + String(leagueId) + "'") : 'null';
           pillsHTML += '<div class="adv-week-bar-row">'
             + '<button class="adv-week-full-btn' + (isFullRange ? ' active' : '') + '" onclick="loadAdvancedMetrics(\'' + playerId + '\',' + lidExpr2 + ',' + activeSeason + ')">Season</button>'
-            + _wkBarBuild('advWkBar', wkMin, wkMax, activeWS, activeWE)
+            + _wkBarBuild('advWkBar', wkMin, wkMax, barWS, barWE)
             + '</div>';
         }
         pillsEl.innerHTML = pillsHTML;

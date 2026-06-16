@@ -1469,15 +1469,17 @@ def get_weekly_range_leaderboard(
 
     where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
-    # Optional volume filter (e.g. min targets in the range for a rate metric).
-    use_vol = bool(min_col and min_vol and int(min_vol) > 0)
+    # Always select the vol column when available so it can be displayed alongside
+    # the weeks count; apply the min-vol filter separately.
+    has_min = bool(min_col)
+    use_vol_filter = has_min and bool(min_vol and int(min_vol) > 0)
     inner_select = (
         f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value, {min_col} AS _wvol"
-        if use_vol else
+        if has_min else
         f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value"
     )
     outer_where = "t.value IS NOT NULL"
-    if use_vol:
+    if use_vol_filter:
         outer_where += " AND t._wvol >= %s"
         params.append(int(min_vol))
     params.append(limit)
@@ -1485,7 +1487,7 @@ def get_weekly_range_leaderboard(
     with get_conn() as conn:
         rows = conn.execute(
             f"""
-            SELECT t.player_id, t.position, t.weeks_played, t.value
+            SELECT t.player_id, t.position, t.weeks_played, t.value{', t._wvol' if has_min else ''}
             FROM (
                 SELECT {inner_select}
                 FROM player_weekly_metrics
@@ -1510,6 +1512,7 @@ def get_weekly_range_leaderboard(
         pid = str(r["player_id"])
         meta = idx.get(pid) or {}
         weeks = int(r["weeks_played"]) if r["weeks_played"] is not None else None
+        vol_val = int(r["_wvol"]) if has_min and r["_wvol"] is not None else None
         out.append({
             "player_id": pid,
             "name": meta.get("name") or "Unknown",
@@ -1517,7 +1520,8 @@ def get_weekly_range_leaderboard(
             "position": r["position"],
             "value": float(r["value"]) if r["value"] is not None else None,
             "games": weeks,
-            "vol": weeks,
+            "vol": vol_val if vol_val is not None else weeks,
+            "weeks": weeks,
         })
     return out
 
@@ -1772,14 +1776,15 @@ def get_adv_weekly_range_leaderboard(
         where_parts.append("position = %s"); params.append(pos)
     where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
-    use_vol = bool(min_col and min_vol and int(min_vol) > 0)
+    has_min = bool(min_col)
+    use_vol_filter = has_min and bool(min_vol and int(min_vol) > 0)
     inner_select = (
         f"player_id, position, COUNT(*) AS weeks_played, {value_sql} AS value, {min_col} AS _wvol"
-        if use_vol else
+        if has_min else
         f"player_id, position, COUNT(*) AS weeks_played, {value_sql} AS value"
     )
     outer_where = "t.value IS NOT NULL"
-    if use_vol:
+    if use_vol_filter:
         outer_where += " AND t._wvol >= %s"
         params.append(int(min_vol))
     order = "ASC" if lower_better else "DESC"
@@ -1789,7 +1794,7 @@ def get_adv_weekly_range_leaderboard(
     with get_conn() as conn:
         rows = conn.execute(
             f"""
-            SELECT t.player_id, t.position, t.weeks_played, t.value
+            SELECT t.player_id, t.position, t.weeks_played, t.value{', t._wvol' if has_min else ''}
             FROM (
                 SELECT {inner_select}
                 FROM player_weekly_advanced_metrics
@@ -1814,6 +1819,7 @@ def get_adv_weekly_range_leaderboard(
         pid = str(r["player_id"])
         meta = idx.get(pid) or {}
         weeks = int(r["weeks_played"]) if r["weeks_played"] is not None else None
+        vol_val = int(r["_wvol"]) if has_min and r["_wvol"] is not None else None
         out.append({
             "player_id": pid,
             "name": meta.get("name") or "Unknown",
@@ -1821,7 +1827,8 @@ def get_adv_weekly_range_leaderboard(
             "position": r["position"],
             "value": float(r["value"]) if r["value"] is not None else None,
             "games": weeks,
-            "vol": weeks,
+            "vol": vol_val if vol_val is not None else weeks,
+            "weeks": weeks,
         })
     return out
 
