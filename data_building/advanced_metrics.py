@@ -32,7 +32,7 @@ PREMIUM_METRICS = frozenset({
     "grades_offense", "grades_pass_block", "pff_rushing_grade", "pff_passing_grade",
     "elusive_rating", "big_time_throw_rate", "adjusted_completion_rate",
     "pressure_to_sack_rate", "slot_rate", "wide_rate", "inline_rate",
-    "pass_block_rate", "avoided_tackles",
+    "pass_block_rate", "avoided_tackles", "nfl_passer_rating",
     "yards_after_catch", "yards_after_catch_per_reception",
 })
 
