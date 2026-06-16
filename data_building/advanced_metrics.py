@@ -1193,8 +1193,7 @@ def get_player_career_metrics(player_id: str) -> Optional[Dict[str, Any]]:
         'ngs_pct_share_intended_air_yards', 'ngs_avg_yac', 'ngs_avg_expected_yac',
         'ngs_avg_yac_above_expectation', 'ngs_catch_pct',
         'epa_per_play', 'passing_epa', 'rushing_epa', 'receiving_epa',
-        'cpoe', 'sack_rate', 'scramble_rate', 'success_rate', 'nfl_passer_rating',
-        'adjusted_completion_rate',
+        'cpoe', 'sack_rate', 'scramble_rate', 'success_rate',
         'ngs_rush_yards_over_expected', 'ngs_rush_yards_over_expected_per_att',
         'ngs_rush_efficiency',
     ]
@@ -1802,6 +1801,11 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         MAX(td_rate) AS td_rate,
                         MIN(int_rate) AS int_rate,
                         MIN(pressure_to_sack_rate) AS pressure_to_sack_rate,
+                        MAX(passing_epa) AS passing_epa,
+                        MAX(epa_per_play) AS epa_per_play,
+                        MAX(cpoe) AS cpoe,
+                        MAX(success_rate) AS success_rate,
+                        MIN(sack_rate) AS sack_rate,
                         MAX(pff_rushing_grade) AS pff_rushing_grade,
                         MAX(yards_per_carry) AS yards_per_carry,
                         MAX(yards_per_touch) AS yards_per_touch,
@@ -1809,6 +1813,8 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         MAX(elusive_rating) AS elusive_rating,
                         MAX(breakaway_percentage) AS breakaway_percentage,
                         MAX(explosive_runs_10_plus) AS explosive_runs_10_plus,
+                        MAX(rushing_epa) AS rushing_epa,
+                        MAX(ngs_rush_yards_over_expected_per_att) AS ngs_rush_yards_over_expected_per_att,
                         MAX(opportunity_share) AS opportunity_share,
                         MAX(catch_rate) AS catch_rate,
                         MAX(avoided_tackles) AS avoided_tackles,
@@ -1824,6 +1830,10 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         MAX(contested_catch_rate) AS contested_catch_rate,
                         MIN(drop_rate) AS drop_rate,
                         MAX(red_zone_usage) AS red_zone_usage,
+                        MAX(receiving_epa) AS receiving_epa,
+                        MAX(ngs_avg_separation) AS ngs_avg_separation,
+                        MAX(ngs_avg_cushion) AS ngs_avg_cushion,
+                        MAX(ngs_avg_yac_above_expectation) AS ngs_avg_yac_above_expectation,
                         CASE WHEN MAX(games) > 0 THEN MAX(total_carries)::float / MAX(games)    END AS carries_pg,
                         CASE WHEN MAX(games) > 0 THEN MAX(total_targets)::float / MAX(games)    END AS targets_pg,
                         CASE WHEN MAX(games) > 0 THEN MAX(total_receptions)::float / MAX(games) END AS recs_pg,
@@ -1893,6 +1903,21 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         CASE WHEN pressure_to_sack_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
                              THEN RANK() OVER (PARTITION BY (pressure_to_sack_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY pressure_to_sack_rate ASC)
                              ELSE NULL END AS pressure_to_sack_rate,
+                        CASE WHEN passing_epa IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (passing_epa IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY passing_epa DESC)
+                             ELSE NULL END AS passing_epa,
+                        CASE WHEN epa_per_play IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (epa_per_play IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY epa_per_play DESC)
+                             ELSE NULL END AS epa_per_play,
+                        CASE WHEN cpoe IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (cpoe IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY cpoe DESC)
+                             ELSE NULL END AS cpoe,
+                        CASE WHEN success_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (success_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY success_rate DESC)
+                             ELSE NULL END AS success_rate,
+                        CASE WHEN sack_rate IS NOT NULL AND COALESCE(total_pass_att,0) >= 50
+                             THEN RANK() OVER (PARTITION BY (sack_rate IS NULL OR COALESCE(total_pass_att,0) < 50) ORDER BY sack_rate ASC)
+                             ELSE NULL END AS sack_rate,
                         -- RB rushing metrics: require 20+ carries
                         CASE WHEN pff_rushing_grade IS NOT NULL AND COALESCE(total_carries,0) >= 20
                              THEN RANK() OVER (PARTITION BY (pff_rushing_grade IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY pff_rushing_grade DESC)
@@ -1915,6 +1940,12 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                         CASE WHEN avoided_tackles IS NOT NULL AND COALESCE(total_carries,0) >= 20
                              THEN RANK() OVER (PARTITION BY (avoided_tackles IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY avoided_tackles DESC)
                              ELSE NULL END AS avoided_tackles,
+                        CASE WHEN rushing_epa IS NOT NULL AND COALESCE(total_carries,0) >= 20
+                             THEN RANK() OVER (PARTITION BY (rushing_epa IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY rushing_epa DESC)
+                             ELSE NULL END AS rushing_epa,
+                        CASE WHEN ngs_rush_yards_over_expected_per_att IS NOT NULL AND COALESCE(total_carries,0) >= 20
+                             THEN RANK() OVER (PARTITION BY (ngs_rush_yards_over_expected_per_att IS NULL OR COALESCE(total_carries,0) < 20) ORDER BY ngs_rush_yards_over_expected_per_att DESC)
+                             ELSE NULL END AS ngs_rush_yards_over_expected_per_att,
                         -- Touch-based metric: require 20+ touches
                         CASE WHEN yards_per_touch IS NOT NULL AND COALESCE(total_touches,0) >= 20
                              THEN RANK() OVER (PARTITION BY (yards_per_touch IS NULL OR COALESCE(total_touches,0) < 20) ORDER BY yards_per_touch DESC)
@@ -1955,7 +1986,19 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                              ELSE NULL END AS contested_catch_rate,
                         CASE WHEN drop_rate IS NOT NULL AND COALESCE(total_targets,0) >= 15
                              THEN RANK() OVER (PARTITION BY (drop_rate IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY drop_rate ASC)
-                             ELSE NULL END AS drop_rate
+                             ELSE NULL END AS drop_rate,
+                        CASE WHEN receiving_epa IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (receiving_epa IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY receiving_epa DESC)
+                             ELSE NULL END AS receiving_epa,
+                        CASE WHEN ngs_avg_separation IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (ngs_avg_separation IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY ngs_avg_separation DESC)
+                             ELSE NULL END AS ngs_avg_separation,
+                        CASE WHEN ngs_avg_cushion IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (ngs_avg_cushion IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY ngs_avg_cushion DESC)
+                             ELSE NULL END AS ngs_avg_cushion,
+                        CASE WHEN ngs_avg_yac_above_expectation IS NOT NULL AND COALESCE(total_targets,0) >= 15
+                             THEN RANK() OVER (PARTITION BY (ngs_avg_yac_above_expectation IS NULL OR COALESCE(total_targets,0) < 15) ORDER BY ngs_avg_yac_above_expectation DESC)
+                             ELSE NULL END AS ngs_avg_yac_above_expectation
                     FROM snapshot
                 )
                 SELECT * FROM r WHERE player_id = %s
