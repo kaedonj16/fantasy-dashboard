@@ -34,6 +34,8 @@ PREMIUM_METRICS = frozenset({
     "pressure_to_sack_rate", "slot_rate", "wide_rate", "inline_rate",
     "pass_block_rate", "avoided_tackles", "nfl_passer_rating",
     "yards_after_catch", "yards_after_catch_per_reception",
+    # Snap-share proxy, not true routes data — hide until real routes are sourced.
+    "route_participation",
 })
 
 
