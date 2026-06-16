@@ -587,7 +587,10 @@ def build_nflverse_weekly_metrics_for_season(
         if season >= FTN_FLOOR:
             try:
                 ftn = nfl.import_ftn_data([season])
-                merged = ftn.merge(
+                # FTN has its own 'week' column; drop it before merging so we
+                # use pbp's week without pandas creating week_x / week_y suffixes.
+                ftn_trimmed = ftn.drop(columns=["week"], errors="ignore")
+                merged = ftn_trimmed.merge(
                     pbp[["game_id", "play_id", "week", "receiver_player_id",
                          "passer_player_id", "complete_pass", "pass_attempt"]],
                     left_on=["nflverse_game_id", "nflverse_play_id"],
