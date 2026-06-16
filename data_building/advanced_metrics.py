@@ -1635,6 +1635,93 @@ def get_player_weekly_adv_series(player_id: str, season: int) -> List[Dict[str, 
     return out
 
 
+def _get_player_weekly_usage_range(
+    player_id: str, season: int, week_start: int, week_end: int
+) -> Dict[str, Any]:
+    """Aggregate one player's usage-derived metrics over a week range.
+
+    Pulls from player_weekly_metrics (snap/targets/receptions/yards/etc.) and
+    derives the same usage metrics shown in the season view (snap_share,
+    target_share, yards_per_target, catch_rate, volume totals + per-game), so
+    the week-filtered modal shows usage alongside the nflverse advanced metrics.
+    Returns {} when the player has no usage rows in the range.
+    """
+    lo, hi = (week_start, week_end) if week_start <= week_end else (week_end, week_start)
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT position, snap_pct, targets, receptions, rec_yards, "
+                "carries, rush_yards, touches, target_share, ppr_pts "
+                "FROM player_weekly_metrics "
+                "WHERE player_id = %s AND season = %s AND week BETWEEN %s AND %s",
+                (str(player_id), int(season), int(lo), int(hi)),
+            ).fetchall()
+    except Exception:
+        return {}
+    if not rows:
+        return {}
+    rows = [dict(r) for r in rows]
+    n = len(rows)
+
+    def _sum(key):
+        return float(sum(float(r[key]) for r in rows if r.get(key) is not None))
+
+    def _avg(key):
+        vals = [float(r[key]) for r in rows if r.get(key) is not None]
+        return (sum(vals) / len(vals)) if vals else None
+
+    targets = _sum("targets")
+    receptions = _sum("receptions")
+    rec_yards = _sum("rec_yards")
+    carries = _sum("carries")
+    rush_yards = _sum("rush_yards")
+    touches = _sum("touches")
+
+    out: Dict[str, Any] = {}
+
+    # Rates (match season-view column names).
+    snap = _avg("snap_pct")
+    if snap is not None:
+        out["snap_share"] = snap / 100.0  # season view expects 0-1 fraction
+    tshare = _avg("target_share")
+    if tshare is not None:
+        out["target_share"] = tshare      # already 0-100 like season view
+    if targets > 0:
+        out["yards_per_target"] = rec_yards / targets
+        out["catch_rate"] = receptions / targets
+    if receptions > 0:
+        out["yards_per_reception"] = rec_yards / receptions
+    if carries > 0:
+        out["yards_per_carry"] = rush_yards / carries
+    if touches > 0:
+        out["yards_per_touch"] = (rec_yards + rush_yards) / touches
+
+    # Volume totals + per-game.
+    if targets:
+        out["total_targets"] = int(targets)
+        out["targets_per_game"] = targets / n
+    if receptions:
+        out["total_receptions"] = int(receptions)
+        out["receptions_per_game"] = receptions / n
+    if rec_yards:
+        out["total_rec_yards"] = int(rec_yards)
+        out["rec_yards_per_game"] = rec_yards / n
+    if carries:
+        out["total_carries"] = int(carries)
+        out["carries_per_game"] = carries / n
+    if rush_yards:
+        out["total_rush_yards"] = int(rush_yards)
+        out["rush_yards_per_game"] = rush_yards / n
+    if touches:
+        out["total_touches"] = int(touches)
+        out["touches_per_game"] = touches / n
+
+    pos = next((r.get("position") for r in rows if r.get("position")), None)
+    if pos:
+        out["position"] = pos
+    return out
+
+
 def get_player_weekly_adv_range(
     player_id: str, season: int, week_start: int, week_end: int
 ) -> Dict[str, Any]:
@@ -1642,7 +1729,9 @@ def get_player_weekly_adv_range(
 
     Totals sum across the range; rates are volume-weighted (same formulas as the
     week-range leaderboard), so a single-week range (start == end) returns that
-    week's values exactly. Returns {} when the player has no rows in the range.
+    week's values exactly. Merges in usage-derived metrics from
+    player_weekly_metrics so the week view shows the same breadth of metrics as
+    the season view. Returns {} when the player has no rows in the range.
     """
     init_weekly_advanced_metrics_db()
     lo, hi = (week_start, week_end) if week_start <= week_end else (week_end, week_start)
@@ -1653,41 +1742,56 @@ def get_player_weekly_adv_range(
             "WHERE player_id = %s AND season = %s AND week BETWEEN %s AND %s ORDER BY week",
             (str(player_id), int(season), int(lo), int(hi)),
         ).fetchall()
-    if not rows:
-        return {}
-    rows = [dict(r) for r in rows]
     out: Dict[str, Any] = {}
-    for m in WEEKLY_ADV_METRIC_COLS:
-        if m in _ADV_WEEKLY_TOTAL_METRICS:
-            vals = [float(r[m]) for r in rows if r.get(m) is not None]
-            if vals:
-                out[m] = float(sum(vals))
-        else:
-            w = _ADV_WEEKLY_WEIGHTED_METRICS.get(m)
-            if not w:
-                continue
-            num = den = 0.0
-            for r in rows:
-                v, wt = r.get(m), r.get(w)
-                if v is not None and wt is not None and float(wt) > 0:
-                    num += float(v) * float(wt)
-                    den += float(wt)
-            if den > 0:
-                out[m] = num / den
-    out["position"] = rows[-1].get("position")
+    if rows:
+        rows = [dict(r) for r in rows]
+        for m in WEEKLY_ADV_METRIC_COLS:
+            if m in _ADV_WEEKLY_TOTAL_METRICS:
+                vals = [float(r[m]) for r in rows if r.get(m) is not None]
+                if vals:
+                    out[m] = float(sum(vals))
+            else:
+                w = _ADV_WEEKLY_WEIGHTED_METRICS.get(m)
+                if not w:
+                    continue
+                num = den = 0.0
+                for r in rows:
+                    v, wt = r.get(m), r.get(w)
+                    if v is not None and wt is not None and float(wt) > 0:
+                        num += float(v) * float(wt)
+                        den += float(wt)
+                if den > 0:
+                    out[m] = num / den
+        out["position"] = rows[-1].get("position")
+
+    # Merge in usage-derived metrics (snap/target share, volume, efficiency).
+    usage = _get_player_weekly_usage_range(player_id, season, lo, hi)
+    for k, v in usage.items():
+        out.setdefault(k, v)
     return out
 
 
 def get_available_metric_weeks(player_id: str, season: int) -> List[int]:
-    """Weeks (ascending) that have any advanced-metric data for the player/season."""
+    """Weeks (ascending) with any weekly metric data (advanced or usage)."""
     init_weekly_advanced_metrics_db()
+    weeks: set = set()
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT DISTINCT week FROM player_weekly_advanced_metrics "
-            "WHERE player_id = %s AND season = %s ORDER BY week",
+            "WHERE player_id = %s AND season = %s",
             (str(player_id), int(season)),
         ).fetchall()
-    return [int(r["week"]) for r in rows]
+        weeks.update(int(r["week"]) for r in rows)
+        try:
+            rows2 = conn.execute(
+                "SELECT DISTINCT week FROM player_weekly_metrics "
+                "WHERE player_id = %s AND season = %s",
+                (str(player_id), int(season)),
+            ).fetchall()
+            weeks.update(int(r["week"]) for r in rows2)
+        except Exception:
+            pass
+    return sorted(weeks)
 
 
 # Per-metric aggregation spec for week-range leaderboards over the weekly table.

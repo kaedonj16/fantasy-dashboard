@@ -13766,15 +13766,15 @@ img, svg, canvas {
 }
 .wk-bar-track {
   position: relative;
-  height: 34px;
-  border-radius: 7px;
+  height: 30px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 .wk-bar-bg {
   position: absolute;
   inset: 0;
   background: var(--wk-bar-bg);
-  border-radius: 7px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 .wk-bar-ticks {
@@ -13802,7 +13802,7 @@ img, svg, canvas {
   top: 2px;
   bottom: 2px;
   border: 2px solid #3b82f6;
-  border-radius: 5px;
+  border-radius: calc(var(--radius) - 3px);
   background: var(--wk-bar-sel-fill);
   display: flex;
   align-items: center;
@@ -13810,32 +13810,41 @@ img, svg, canvas {
   box-sizing: border-box;
   cursor: grab;
   z-index: 1;
-  min-width: 12px;
+  min-width: 22px;
 }
 .wk-bar-sel:active { cursor: grabbing; }
+/* Side handles: a solid rounded grip pill with two vertical grab lines. */
 .wk-bar-grip {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  width: 14px;
-  height: 100%;
+  gap: 2px;
+  width: 16px;
+  height: calc(100% + 4px);
+  margin: -2px 0;
   flex-shrink: 0;
   cursor: ew-resize;
+  background: #3b82f6;
+  border-radius: 6px;
 }
+.wk-bar-grip-l { margin-left: -2px; }
+.wk-bar-grip-r { margin-right: -2px; }
 .wk-bar-grip span {
   display: block;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--wk-bar-grip-dot);
+  width: 2px;
+  height: 11px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.9);
 }
+.wk-bar-grip span:nth-child(3) { display: none; }
+/* Player modal: keep the week bar from stretching the full modal width. */
+.adv-week-bar-row .wk-bar { max-width: 520px; }
 .cmp-week-bar-wrap {
   margin-top: 6px;
   width: 100%;
 }
-.cmp-week-bar-wrap .wk-bar { flex: unset; display: block; }
+.cmp-week-bar-wrap .wk-bar { flex: unset; display: block; width: 100%; }
 .am-ctrl-weekbar { flex: 2 1 220px; min-width: 0; }
 .am-ctrl-weekbar .wk-bar { flex: unset; display: block; }
 
@@ -15434,6 +15443,7 @@ tr.team-clickable {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+  flex: 1 1 0;
 }
 .compare-season-col-right { align-items: flex-end; }
 .compare-season-col-right .compare-season-pills { justify-content: flex-end; }
