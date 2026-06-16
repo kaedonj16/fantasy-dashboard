@@ -9801,6 +9801,11 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
             pmWtRender(wtWrap, wtWrap.dataset.position || '');
           }
         }
+        // Auto-open on first load (body still hidden after DOM insertion).
+        const wtBodyEl = document.getElementById('pmWeeklyTrendsBody');
+        if (wtBodyEl && wtBodyEl.style.display === 'none') {
+          pmToggleWeeklyTrends(playerId);
+        }
       }
     })
     .catch(err => {
@@ -9865,7 +9870,12 @@ function buildWeeklyTrendRows(weeks, position) {
     return _wt_row(label, weeks.map(fn), color, suffix);
   }
   var computedRows = '';
+  var volumeRows = '';
   if (pos === 'RB') {
+    volumeRows += rowFor('Carries', 'carries', '#f97316');
+    volumeRows += rowFor('Rush Yds', 'rush_yards', '#fb923c');
+    volumeRows += rowFor('Receptions', 'receptions', '#10b981');
+    volumeRows += rowFor('Rec Yds', 'rec_yards', '#34d399');
     computedRows += rowForComputed('Yds/Carry', function(w) {
       var c = Number(w.carries || 0); return c > 0 ? Number(w.rush_yards || 0) / c : 0;
     }, '#f97316');
@@ -9876,9 +9886,15 @@ function buildWeeklyTrendRows(weeks, position) {
       var tgt = Number(w.targets || 0); return tgt > 0 ? Number(w.receptions || 0) / tgt * 100 : 0;
     }, '#14b8a6', '%');
   } else if (pos === 'WR' || pos === 'TE') {
+    volumeRows += rowFor('Receptions', 'receptions', '#10b981');
+    volumeRows += rowFor('Rec Yds', 'rec_yards', '#34d399');
+    volumeRows += rowFor('Rush Yds', 'rush_yards', '#fb923c');
     computedRows += rowForComputed('Yds/Target', function(w) {
       var t = Number(w.targets || 0); return t > 0 ? Number(w.rec_yards || 0) / t : 0;
     }, '#f97316');
+    computedRows += rowForComputed('Yds/Rec', function(w) {
+      var r = Number(w.receptions || 0); return r > 0 ? Number(w.rec_yards || 0) / r : 0;
+    }, '#fb923c');
     computedRows += rowForComputed('Catch %', function(w) {
       var tgt = Number(w.targets || 0); return tgt > 0 ? Number(w.receptions || 0) / tgt * 100 : 0;
     }, '#14b8a6', '%');
@@ -9887,6 +9903,7 @@ function buildWeeklyTrendRows(weeks, position) {
     + rowFor('Snap %', 'snap_pct', '#3b82f6', '%')
     + rowFor('Targets', 'targets', '#f59e0b')
     + rowFor('Touches', 'touches', '#22c55e')
+    + volumeRows
     + computedRows
     + rowFor('PPR Pts', 'ppr_pts', '#8b5cf6')
     + '</div>'
