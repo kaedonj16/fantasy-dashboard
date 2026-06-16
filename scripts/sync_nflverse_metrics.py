@@ -10,6 +10,12 @@ rows for a season, so these merge with the computed and PFF snapshots.
 Unlike the PFF sync, this needs no cookie/CSV — the data comes from the open
 nflverse releases via nfl_data_py.
 
+By default it also PURGES the PFF-sourced values from the overlapping shared
+columns (drop_rate, contested_catch_rate, avg_depth_of_target,
+breakaway_percentage, explosive_runs_10_plus) on the PFF snapshot row, so the
+free values fully replace them. Pass --keep-pff-shared to leave PFF values in
+place. PFF-exclusive columns (yprr, grades, etc.) are never touched.
+
 Usage:
     python -m scripts.sync_nflverse_metrics                 # most recent 3 seasons
     python -m scripts.sync_nflverse_metrics --season 2024
@@ -30,6 +36,38 @@ from data_building.external_data.nflverse_metrics import build_nflverse_metrics_
 from utils.utils import load_players_index
 
 
+# Columns that PFF used to populate but we now source from free nflverse data.
+# After writing the free values, we clear these on the PFF snapshot row so no
+# PFF-sourced value can surface for them. PFF-EXCLUSIVE columns (yprr, grades,
+# etc.) are intentionally NOT listed here — they stay on the PFF row for private
+# use and are gated from public display separately.
+PFF_SHARED_COLUMNS = [
+    "drop_rate", "contested_catch_rate", "avg_depth_of_target",
+    "breakaway_percentage", "explosive_runs_10_plus",
+]
+
+
+def purge_pff_shared_values(conn, season: int) -> int:
+    """NULL the PFF-sourced shared columns on the PFF snapshot row for a season.
+
+    The PFF importer writes its snapshot on {season+1}-02-15. We clear only the
+    overlapping columns there, leaving PFF-exclusive columns intact. Returns the
+    number of rows touched.
+    """
+    pff_as_of = date(season + 1, 2, 15).isoformat()
+    set_clause = ", ".join(f"{c} = NULL" for c in PFF_SHARED_COLUMNS)
+    cur = conn.execute(
+        f"""
+        UPDATE player_advanced_metrics
+           SET {set_clause}
+         WHERE season = %s AND as_of_date = %s
+        """,
+        (season, pff_as_of),
+    )
+    # psycopg exposes affected rows via rowcount.
+    return cur.rowcount if cur and cur.rowcount and cur.rowcount > 0 else 0
+
+
 def resolve_seasons(explicit: Optional[str], last_n: int) -> List[int]:
     if explicit:
         seasons = []
@@ -43,11 +81,20 @@ def resolve_seasons(explicit: Optional[str], last_n: int) -> List[int]:
     return list(range(anchor - last_n + 1, anchor + 1))
 
 
-def upsert_season(season: int, players_index: dict) -> int:
-    """Build and upsert NGS + FTN metrics for one season. Returns rows written."""
+def upsert_season(season: int, players_index: dict, purge_pff: bool = True) -> int:
+    """Build and upsert NGS + FTN metrics for one season. Returns rows written.
+
+    When purge_pff is True (default), clears the PFF-sourced values from the
+    overlapping shared columns so the free nflverse values fully replace them.
+    """
     by_pid = build_nflverse_metrics_for_season(season)
     if not by_pid:
         print(f"  No nflverse metrics resolved for {season}")
+        if purge_pff:
+            with get_conn() as conn:
+                purged = purge_pff_shared_values(conn, season)
+            if purged:
+                print(f"  Purged PFF shared values on {purged} row(s) for {season}")
         return 0
 
     # Distinct snapshot date per season; later than the computed (01-10) and PFF
@@ -80,6 +127,11 @@ def upsert_season(season: int, players_index: dict) -> int:
             )
             count += 1
 
+        if purge_pff:
+            purged = purge_pff_shared_values(conn, season)
+            if purged:
+                print(f"  Purged PFF shared values on {purged} row(s) for {season}")
+
     print(f"  Upserted {count} players for {season} (date={as_of_date})")
     return count
 
@@ -91,6 +143,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     parser.add_argument("--seasons", type=str, help="Comma-separated seasons")
     parser.add_argument("--last-n", type=int, default=3,
                         help="When season(s) omitted, sync the most recent N (default 3)")
+    parser.add_argument("--keep-pff-shared", action="store_true",
+                        help="Do NOT clear PFF values from the overlapping shared "
+                             "columns (drop_rate, contested_catch_rate, aDOT, "
+                             "breakaway%%, explosive runs). Default clears them.")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     init_advanced_metrics_db()
@@ -104,7 +160,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     for season in seasons:
         print(f"=== Season {season} ===")
         try:
-            total += upsert_season(season, players_index)
+            total += upsert_season(season, players_index,
+                                   purge_pff=not args.keep_pff_shared)
         except Exception as e:
             import traceback
             print(f"  [error] {season} failed: {e}")
