@@ -2149,13 +2149,24 @@ _AM_JS = r"""
       const primaryPositions = new Set(relevantPositions(state.metric));
       const added = new Set(['age', 'primary']);
 
-      // Volume/context metrics in a natural order.
-      const _VOL_ORDER = [
-        'total_carries', 'total_touches', 'total_targets', 'total_receptions',
+      // Position-aware ordered filter keys: volume counts → per-game rates → usage rates.
+      const _FILTER_ORDER = [
+        // Rushing
+        'total_carries', 'carries_per_game', 'total_rush_yards', 'rush_yards_per_game',
+        // Receiving
+        'total_targets', 'targets_per_game',
+        'total_receptions', 'receptions_per_game',
+        'total_rec_yards', 'rec_yards_per_game',
+        // Combined
+        'total_touches', 'touches_per_game',
+        // Routes / usage rates
         'total_routes', 'routes_per_game', 'route_participation',
+        'snap_share', 'target_share', 'air_yards_share',
+        // Red zone
+        'rz_targets_pg', 'rz_carries_pg', 'red_zone_usage',
       ];
       const volOpts = [];
-      _VOL_ORDER.forEach(function(key) {
+      _FILTER_ORDER.forEach(function(key) {
         const spec = cfg.metrics[key];
         if (!spec) return;
         const mpos = new Set(spec.positions || []);
@@ -2164,7 +2175,7 @@ _AM_JS = r"""
         volOpts.push({ value: key, label: spec.label });
         added.add(key);
       });
-      // Catch any other Volume metrics not in the explicit order list.
+      // Catch any remaining Volume-category metrics not in the explicit list.
       Object.entries(cfg.metrics).forEach(function([key, spec]) {
         if (added.has(key)) return;
         if ((spec.category || '') !== 'Volume') return;
@@ -2175,11 +2186,12 @@ _AM_JS = r"""
         added.add(key);
       });
 
-      // Order: Age → volume/context → primary metric → extra metrics
+      // Order: Age → volume/rates → primary metric → extra metrics
       const opts = [{ value: 'age', label: 'Age' }];
       volOpts.forEach(function(o) { opts.push(o); });
       opts.push({ value: 'primary', label: (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || state.metric });
       state.extraMetrics.forEach(function(key) {
+        if (added.has(key)) return;
         opts.push({ value: key, label: (cfg.metrics[key] && cfg.metrics[key].label) || key });
       });
 
