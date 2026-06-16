@@ -841,8 +841,6 @@ _AM_JS = r"""
                   team: _initParams.get('team') || '',
                   fetching: false, volCol: 'games', team: '',
                   weekRange: '',       // '', 'last4', 'last8', 'last12', 'custom'
-                  weeklyBulk:    false,    // true when bulk mode is active
-                  weeklyBulkKeys: [],      // metric keys auto-added by bulk fetch
                   weekStart: null,     // resolved numeric week start
                   weekEnd: null,       // resolved numeric week end
                   extraMetrics: [],     // up to 4 extra metric keys
@@ -895,17 +893,24 @@ _AM_JS = r"""
     });
     const n = sel.length;
     const div = (a, b) => b > 0 ? a / b : null;
-    out.snap_share = snapN ? (snap / snapN) / 100 : null;       // AVG(snap_pct)/100
-    out.target_share = tsN ? (ts / tsN) / 100 : null;           // AVG(target_share)/100
+    let pprPts = 0;
+    sel.forEach(w => { pprPts += Number(w.ppr_pts || 0); });
+    out.snap_share = snapN ? (snap / snapN) / 100 : null;
+    out.target_share = tsN ? (ts / tsN) / 100 : null;
     out.yards_per_target = div(recYds, tgt);
     out.yards_per_reception = div(recYds, rec);
     out.catch_rate = div(rec, tgt);
     out.yards_per_carry = div(rushYds, car);
     out.yards_per_touch = div(recYds + rushYds, tch);
-    out.total_targets = tgt;    out.targets_per_game = div(tgt, n);
-    out.total_receptions = rec; out.receptions_per_game = div(rec, n);
-    out.total_carries = car;    out.carries_per_game = div(car, n);
-    out.total_touches = tch;    out.touches_per_game = div(tch, n);
+    out.total_targets = tgt;       out.targets_per_game = div(tgt, n);
+    out.total_receptions = rec;    out.receptions_per_game = div(rec, n);
+    out.total_rec_yards = recYds;  out.rec_yards_per_game = div(recYds, n);
+    out.total_carries = car;       out.carries_per_game = div(car, n);
+    out.total_rush_yards = rushYds; out.rush_yards_per_game = div(rushYds, n);
+    out.total_touches = tch;       out.touches_per_game = div(tch, n);
+    out.ppr_pts = pprPts;          out.ppr_pts_per_game = div(pprPts, n);
+    out.fpts_per_reception = rec > 0 ? (rec + recYds * 0.1 + (sel.reduce((s,w) => s + Number(w.rec_tds||0),0)) * 6) / rec : null;
+    out.fpts_per_carry = car > 0 ? (rushYds * 0.1 + (sel.reduce((s,w) => s + Number(w.rush_tds||0),0)) * 6) / car : null;
 
     // NGS/FTN/EPA metrics: totals summed, rates volume-weighted — parity with
     // the server's get_adv_weekly_range_leaderboard so ranges match the board.
@@ -1192,68 +1197,6 @@ _AM_JS = r"""
     return ordered;
   }
 
-  function _clearWeeklyBulk() {
-    if (!state.weeklyBulk) return;
-    for (const k of state.weeklyBulkKeys) {
-      state.extraMetrics = state.extraMetrics.filter(x => x !== k);
-      delete state.extraData[k];
-      delete state.extraPrevData[k];
-    }
-    state.weeklyBulkKeys = [];
-    state.weeklyBulk = false;
-  }
-
-  function fetchWeeklyBulk() {
-    const { ws, we } = resolveWeekRange();
-    if (!ws) { _clearWeeklyBulk(); syncExtraCols(); render(); return; }
-    const p = new URLSearchParams();
-    if (state.season) p.set('season', state.season);
-    p.set('week_start', String(ws));
-    p.set('week_end', String(we));
-    const pos = state.position && state.position !== 'ALL' ? state.position : null;
-    if (pos) p.set('position', pos);
-
-    fetch('/api/advanced-metrics/weekly-bulk?' + p)
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(d) {
-        if (!d) { _clearWeeklyBulk(); syncExtraCols(); render(); return; }
-        // Clear previous bulk keys first
-        _clearWeeklyBulk();
-        const byId = d.byId || {};
-        const rawKeys = d.keys || [];
-
-        // Position-filter keys against cfg
-        const newKeys = [];
-        for (const key of rawKeys) {
-          if (key === state.metric) continue;  // primary metric stays as main col
-          const spec = cfg.metrics[key];
-          if (!spec) continue;
-          if (spec.positions && spec.positions.length && pos) {
-            if (!spec.positions.includes(pos)) continue;
-          }
-          // Build per-metric byId map for extraData format
-          const metricById = {};
-          let maxAbs = 0;
-          for (const [pid, pdata] of Object.entries(byId)) {
-            const v = pdata[key];
-            if (v != null) { metricById[pid] = v; maxAbs = Math.max(maxAbs, Math.abs(v)); }
-          }
-          state.extraData[key] = { byId: metricById, maxAbs: maxAbs || 1 };
-          newKeys.push(key);
-        }
-
-        const ordered = _orderByCategory(newKeys);
-        // Merge into extraMetrics: keep any user-added extras, prepend bulk keys
-        const existingUser = state.extraMetrics.filter(k => !state.weeklyBulkKeys.includes(k));
-        state.extraMetrics = [...ordered, ...existingUser.filter(k => !ordered.includes(k))];
-        state.weeklyBulkKeys = ordered;
-        state.weeklyBulk = true;
-        syncExtraCols();
-        render();
-      })
-      .catch(function() { _clearWeeklyBulk(); syncExtraCols(); render(); });
-  }
-
   function fetchExtraData(key) {
     function _buildExtraParams(s) {
       const p = new URLSearchParams({ metric: key, platform: cfg.platform });
@@ -1448,7 +1391,7 @@ _AM_JS = r"""
     if (!modal || !body) return;
     const players = pinnedRows();
     if (players.length < 2) return;
-    const metricsList = [state.metric, ...state.extraMetrics];
+    let metricsList = [state.metric, ...state.extraMetrics];
     const pageSeason = String(state.season || (cfg.seasons && cfg.seasons[0]) || '');
     const seasonsList = (cfg.seasons || []).slice();
     const seasonFor = (p) => String(state.cmpSeasons[String(p.player_id)] || pageSeason);
@@ -1506,6 +1449,24 @@ _AM_JS = r"""
 
     const anyRange = players.some(p => rangeFor(p));
 
+    // When any player has a week range, expand to show all weekly metrics
+    // applicable to the players' positions, grouped by category.
+    if (anyRange) {
+      const allPos = new Set(players.map(p => (p.position || '').toUpperCase()).filter(Boolean));
+      const weeklyKeys = [];
+      for (const [key, spec] of Object.entries(cfg.metrics)) {
+        if (!spec.weeklyCapable) continue;
+        if (spec.positions && spec.positions.length) {
+          if (!spec.positions.some(p => allPos.has(p))) continue;
+        }
+        weeklyKeys.push(key);
+      }
+      const ordered = _orderByCategory(weeklyKeys);
+      const seen = new Set([state.metric]);
+      metricsList = [state.metric];
+      for (const k of ordered) { if (!seen.has(k)) { metricsList.push(k); seen.add(k); } }
+    }
+
     let html = '<table class="am-cmp-table"><thead><tr><th>Metric</th>';
     players.forEach((p) => {
       const pid = String(p.player_id);
@@ -1522,7 +1483,6 @@ _AM_JS = r"""
     });
     html += '</tr></thead><tbody>';
 
-    const _isBulkCmp = state.weeklyBulk && (state.weekRange && state.weekRange !== '');
     let _lastCmpCat = null;
     metricsList.forEach(key => {
       const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
@@ -1535,7 +1495,7 @@ _AM_JS = r"""
         : null;
       const barMax = present.length ? Math.max(...present.map(v => Math.abs(v))) || 1 : 1;
 
-      if (_isBulkCmp) {
+      if (anyRange) {
         const spec = cfg.metrics[key];
         const cat = (spec && spec.category) || '';
         if (cat && cat !== _lastCmpCat) {
@@ -1698,24 +1658,11 @@ _AM_JS = r"""
   function syncExtraCols() {
     const thead = document.querySelector('#amTable thead tr');
     if (!thead) return;
-    thead.querySelectorAll('.am-extra-header, .am-cat-divider-hdr').forEach(function(el) { el.remove(); });
-    const isWeeklyBulk = state.weeklyBulk && (state.weekRange && state.weekRange !== '');
-    let lastCat = null;
+    thead.querySelectorAll('.am-extra-header').forEach(function(el) { el.remove(); });
     state.extraMetrics.forEach(function(key) {
-      if (isWeeklyBulk) {
-        const spec = cfg.metrics[key];
-        const cat = (spec && spec.category) || '';
-        if (cat && cat !== lastCat) {
-          const divTh = document.createElement('th');
-          divTh.className = 'am-cat-divider-hdr';
-          divTh.textContent = cat;
-          thead.appendChild(divTh);
-          lastCat = cat;
-        }
-      }
       const th = document.createElement('th');
       th.id = 'amExtraHeader_' + key;
-      th.className = 'am-barcell am-extra-header' + (isWeeklyBulk ? ' am-bulk-header' : '');
+      th.className = 'am-barcell am-extra-header';
       th.textContent = (cfg.metrics[key] && cfg.metrics[key].label) || key;
       th.addEventListener('click', function() { sortByCol(key); });
       thead.appendChild(th);
@@ -2063,42 +2010,31 @@ _AM_JS = r"""
           + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pct + '%;background:' + col + '"></div>' + avgMark2 + '</div></div>'
           + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(r.value, state.metric) + '</span></div>' + badge + '</div>'
           + '</div></td>';
-        const _isWeeklyBulk = state.weeklyBulk && (state.weekRange && state.weekRange !== '');
         state.extraMetrics.forEach(function(key) {
           const ed = state.extraData[key];
           if (!ed) {
-            if (_isWeeklyBulk) {
-              metricCell += '<td class="am-bulk-val"><span style="opacity:.35">–</span></td>';
-            } else {
-              metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
-                + '<div class="am-metric-bar"><div class="am-skel-bar"></div></div>'
-                + '<div class="am-val-wrap"><span class="am-val" style="opacity:.25">–</span></div>'
-                + '</div></td>';
-            }
+            metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
+              + '<div class="am-metric-bar"><div class="am-skel-bar"></div></div>'
+              + '<div class="am-val-wrap"><span class="am-val" style="opacity:.25">–</span></div>'
+              + '</div></td>';
             return;
           }
           const val = ed.byId[String(r.player_id)] !== undefined ? ed.byId[String(r.player_id)] : null;
+          const pctBar = val != null ? Math.min(100, Math.max(2, Math.round(Math.abs(Number(val)) / extraMaxMap[key] * 100))) : 2;
           const disp = val != null ? fmtVal(val, key) : '–';
-          if (_isWeeklyBulk) {
-            const isSortCol = state.sortBy === key;
-            metricCell += '<td class="am-bulk-val' + (isSortCol ? ' am-bulk-sort-col' : '') + '">'
-              + (val != null ? disp : '<span style="opacity:.35">–</span>') + '</td>';
-          } else {
-            const pctBar = val != null ? Math.min(100, Math.max(2, Math.round(Math.abs(Number(val)) / extraMaxMap[key] * 100))) : 2;
-            const avgVE = extraAvgMap[key];
-            const avgMarkE = (avgVE != null)
-              ? '<div class="am-bar-avg" style="left:' + Math.max(0, Math.min(100, Math.round(Math.abs(avgVE) / extraMaxMap[key] * 100))) + '%" '
-                + 'title="Average: ' + fmtVal(avgVE, key) + '"></div>'
-              : '';
-            const rkE = extraRankMap[key] ? extraRankMap[key][String(r.player_id)] : null;
-            const badgeE = (rkE && extraRankTotal[key]) ? percentileBadge(rkE, extraRankTotal[key]) : '';
-            const prevE = state.extraPrevData[key] ? state.extraPrevData[key][String(r.player_id)] : undefined;
-            const trendE = (val != null && prevE !== undefined) ? trendArrow(val, prevE, key) : '';
-            metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
-              + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div>' + avgMarkE + '</div></div>'
-              + '<div class="am-val-wrap"><div class="am-val-row">' + trendE + '<span class="am-val">' + disp + '</span></div>' + badgeE + '</div>'
-              + '</div></td>';
-          }
+          const avgVE = extraAvgMap[key];
+          const avgMarkE = (avgVE != null)
+            ? '<div class="am-bar-avg" style="left:' + Math.max(0, Math.min(100, Math.round(Math.abs(avgVE) / extraMaxMap[key] * 100))) + '%" '
+              + 'title="Average: ' + fmtVal(avgVE, key) + '"></div>'
+            : '';
+          const rkE = extraRankMap[key] ? extraRankMap[key][String(r.player_id)] : null;
+          const badgeE = (rkE && extraRankTotal[key]) ? percentileBadge(rkE, extraRankTotal[key]) : '';
+          const prevE = state.extraPrevData[key] ? state.extraPrevData[key][String(r.player_id)] : undefined;
+          const trendE = (val != null && prevE !== undefined) ? trendArrow(val, prevE, key) : '';
+          metricCell += '<td class="am-barcell"><div class="am-metric-cell">'
+            + '<div class="am-metric-bar"><div class="am-bar-track"><div class="am-bar-fill" style="width:' + pctBar + '%;background:' + col + '"></div>' + avgMarkE + '</div></div>'
+            + '<div class="am-val-wrap"><div class="am-val-row">' + trendE + '<span class="am-val">' + disp + '</span></div>' + badgeE + '</div>'
+            + '</div></td>';
         });
       }
 
@@ -2229,18 +2165,9 @@ _AM_JS = r"""
         // Re-fetch all extra metrics and filter col metrics (season / filter may have changed).
         state.extraData = {};
         state.extraPrevData = {};
-        state.weeklyBulkKeys = [];
-        state.weeklyBulk = false;
-        const _isWR = !!(ws || we);
-        if (_isWR) {
-          // In weekly mode, fetch all applicable metrics in one bulk call.
-          // Manual extras that aren't bulk keys still get individual fetches.
-          fetchWeeklyBulk();
-        } else {
-          state.extraMetrics.forEach(k => fetchExtraData(k));
-          if (state.filterColKeys) [...state.filterColKeys].forEach(k => fetchExtraData(k));
-          render();
-        }
+        state.extraMetrics.forEach(k => fetchExtraData(k));
+        if (state.filterColKeys) [...state.filterColKeys].forEach(k => fetchExtraData(k));
+        render();
       })
       .catch(() => { state.fetching = false; loading.style.display = 'none'; empty.style.display = ''; });
   }
@@ -2383,12 +2310,7 @@ _AM_JS = r"""
     const b = e.target.closest('[data-pos]');
     if (!b || b.disabled) return;
     state.position = b.dataset.pos; state.page = 0;
-    updatePosButtons(); syncURL();
-    if (state.weeklyBulk || (state.weekRange && state.weekRange !== '')) {
-      fetchWeeklyBulk();
-    } else {
-      render();
-    }
+    updatePosButtons(); syncURL(); render();
   });
   searchEl.addEventListener('input', () => { state.search = searchEl.value.trim(); state.page = 0; render(); });
   sortBtn.addEventListener('click', () => {
