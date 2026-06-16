@@ -9528,6 +9528,17 @@ function getRoleGrade(roleScore) {
 
 const _advMetricsCache = new Map();
 
+// ── Advanced-metrics config cache ────────────────────────────────────────────
+// Fetches LEADERBOARD_METRICS in frontend format once; cached for the session.
+let _advMetricsCfg = null;
+function _ensureAdvMetricsCfg() {
+  if (_advMetricsCfg) return Promise.resolve(_advMetricsCfg);
+  return fetch('/api/advanced-metrics/config')
+    .then(function(r) { return r.ok ? r.json() : {}; })
+    .then(function(d) { _advMetricsCfg = d.metrics || {}; return _advMetricsCfg; })
+    .catch(function() { return {}; });
+}
+
 // ── Shared week-bar range selector (Custom Slider 3 style) ──────────────────
 // Dark track bar with labeled week ticks, a bordered selection window, and
 // grip handles on each side. Used in the player modal, compare modal, and
@@ -9743,21 +9754,24 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
         }
       }
 
-      // Populate just the bars column (initial render without ranks)
-      contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null);
+      // Populate bars — fetch metric config (for full parity with leaderboard) and
+      // optionally ranks in parallel, then re-render once with both.
+      _ensureAdvMetricsCfg().then(function(cfg) {
+        contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg);
 
-      // Fetch position ranks in background and re-render with rank badges.
-      // Ranks are season-relative, so they don't apply to a week-range view.
-      if (!isCareer && activeSeason && !weekActive) {
-        fetch(`/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`)
-          .then(r => r.ok ? r.json() : null)
-          .then(ranksData => {
-            if (ranksData && ranksData.ranks && Object.keys(ranksData.ranks).length) {
-              contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranksData.ranks);
-            }
-          })
-          .catch(() => {});
-      }
+        // Fetch position ranks in background and re-render with rank badges.
+        // Ranks are season-relative, so they don't apply to a week-range view.
+        if (!isCareer && activeSeason && !weekActive) {
+          fetch(`/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(ranksData => {
+              if (ranksData && ranksData.ranks && Object.keys(ranksData.ranks).length) {
+                contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranksData.ranks, cfg);
+              }
+            })
+            .catch(() => {});
+        }
+      });
 
       // Reset the weekly-trends panel when the season pill changes so it
       // refetches for the newly selected season.
@@ -10119,7 +10133,7 @@ const _ADV_METRIC_DESCS = {
   'Pass TDs/G': "Passing touchdowns per game.",
 };
 
-function buildAdvancedMetricsHTML(metricsData, ranks) {
+function buildAdvancedMetricsHTML(metricsData, ranks, cfg) {
   const metrics = metricsData.metrics || {};
   // Normalize PFF position codes to canonical fantasy positions
   const _posNorm = { HB: 'RB', FB: 'RB', SE: 'WR', FL: 'WR' };
@@ -10389,6 +10403,52 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
     });
   }
 
+  // Append any remaining cfg metrics not already covered above
+  if (cfg && Object.keys(cfg).length) {
+    const _shownLabels = new Set(defs.map(d => d.label));
+    const _shownKeys = new Set([
+      'role_score','snap_share','route_participation','opportunity_share',
+      'red_zone_usage','grades_offense','yards_per_touch',
+      'pff_passing_grade','big_time_throw_rate','adjusted_completion_rate',
+      'nfl_passer_rating','yards_per_attempt','completion_pct',
+      'td_rate','int_rate','passing_epa','epa_per_play','cpoe',
+      'success_rate','sack_rate','pressure_to_sack_rate','scramble_rate',
+      'yards_per_carry','rush_td_rate',
+      'pff_rushing_grade','breakaway_percentage','explosive_runs_10_plus',
+      'rushing_epa','ngs_rush_yards_over_expected_per_att','elusive_rating',
+      'avoided_tackles','catch_rate',
+      'yprr','drop_rate','yards_per_target','yards_per_reception',
+      'yards_after_catch_per_reception','yards_after_catch',
+      'avg_depth_of_target','contested_catch_rate',
+      'ngs_avg_separation','ngs_avg_cushion','ngs_avg_yac_above_expectation',
+      'target_share','air_yards_per_game','air_yards_share',
+      'target_quality_score','receiving_epa','slot_rate','wide_rate',
+      'inline_rate','pass_block_rate','grades_pass_block',
+      'total_carries','total_targets','total_touches','total_tds',
+      'total_rush_tds','total_rec_tds','total_receptions','total_pass_tds',
+      'usage_trend','efficiency_trend','games',
+    ]);
+    for (const [key, spec] of Object.entries(cfg)) {
+      if (_shownKeys.has(key)) continue;
+      const val = metrics[key];
+      if (val == null) continue;
+      if (spec.positions && spec.positions.length && position) {
+        if (!spec.positions.includes(position)) continue;
+      }
+      let fill, displayStr;
+      if (spec.pct_frac) { fill = Math.min(val * 100, 100); displayStr = (val * 100).toFixed(1) + '%'; }
+      else if (spec.pct) { fill = Math.min(Math.abs(val), 100); displayStr = val.toFixed(1) + '%'; }
+      else if (spec.integer) { fill = Math.min(Math.abs(val), 100); displayStr = Math.round(val).toString(); }
+      else {
+        const abs = Math.abs(val);
+        fill = abs < 1 ? abs * 100 : Math.min(abs * 5, 100);
+        if (spec.lower_better) fill = Math.max(0, 100 - fill);
+        displayStr = val.toFixed(abs >= 10 ? 1 : 2);
+      }
+      defs.push({ label: spec.label || key, key, fill, display: displayStr, sub: _rankSub(key), desc: spec.desc || '' });
+    }
+  }
+
   if (defs.length === 0) return '';
 
   function _cells(m, isRank) {
@@ -10397,7 +10457,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks) {
     const color = m.forceColor || (fill >= 60 ? '#10b981' : fill >= 35 ? '#3b82f6' : '#f59e0b');
     const subCls = isRank ? ' rank-badge' : '';
     const subLine = m.sub ? `<div class="pm-comp-sub${subCls}">${m.sub}</div>` : '';
-    const _desc = _ADV_METRIC_DESCS[m.label] || '';
+    const _desc = m.desc || _ADV_METRIC_DESCS[m.label] || '';
     const _defAttr = _desc ? ` title="${_desc.replace(/"/g, '&quot;')}" data-def="${_desc.replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)"` : '';
     return `<span class="pm-comp-label"${_defAttr}>${m.label}</span>` +
       `<div class="pm-comp-bar-wrap"><div class="pm-comp-bar" style="width:${fill.toFixed(1)}%;background:${color};"></div></div>` +
@@ -11243,146 +11303,100 @@ function _buildComparePlayerHeader(p) {
   `;
 }
 
-function renderCompareMetricRows(m1, m2, p1, p2) {
+function renderCompareMetricRows(m1, m2, p1, p2, cfg) {
   // Build a map of metrics present in both players
   const allKeys = new Set([...Object.keys(m1 || {}), ...Object.keys(m2 || {})]);
-  
-  // Position-aware metric groups
-  // Free metrics only — gated PFF metrics are stripped by the API and would
-  // render blank, so they're not listed here.
-  const qbMetrics = [
-    'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
-    'epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'scramble_rate',
-    'adjusted_completion_rate', 'snap_share', 'role_score',
-    'total_pass_tds', 'total_rush_tds', 'total_tds',
-  ];
-
-  const rbMetrics = [
-    'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share',
-    'opportunity_share', 'red_zone_usage', 'role_score', 'explosive_runs_10_plus',
-    'breakaway_percentage', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
-    'rushing_epa', 'ngs_rush_yards_over_expected_per_att', 'receiving_epa', 'epa_per_play',
-    'total_carries', 'total_touches', 'total_targets', 'total_rush_tds', 'total_rec_tds', 'total_tds',
-  ];
-
-  const wrTeMetrics = [
-    'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
-    'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
-    'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
-    'contested_catch_rate', 'drop_rate',
-    'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation', 'receiving_epa',
-    'total_targets', 'total_receptions', 'total_rec_tds', 'total_tds',
-  ];
-
-  const olMetrics = [
-    'snap_share',
-  ];
-  
-  const allLabelMap = {
-    // Receiving metrics
-    yards_per_target: 'Yards/Target',
-    catch_rate: 'Catch Rate',
-    yprr: 'Yds/Route Run',
-    yards_per_reception: 'Yards/Rec',
-    target_quality_score: 'Target Quality',
-    yards_after_catch: 'YAC',
-    yards_after_catch_per_reception: 'YAC/Rec',
-    avg_depth_of_target: 'aDOT',
-    contested_catch_rate: 'Contested Catch %',
-    drop_rate: 'Drop Rate',
-    slot_rate: 'Slot Rate',
-    wide_rate: 'Wide Rate',
-    inline_rate: 'Inline Rate',
-    ngs_avg_separation: 'Separation',
-    ngs_avg_cushion: 'Cushion',
-    ngs_avg_yac_above_expectation: 'YAC Over Exp',
-    epa_per_play: 'EPA/Play',
-    passing_epa: 'Passing EPA',
-    rushing_epa: 'Rushing EPA',
-    receiving_epa: 'Receiving EPA',
-    ngs_rush_yards_over_expected_per_att: 'RYOE/Att',
-    cpoe: 'CPOE',
-    sack_rate: 'Sack Rate',
-    scramble_rate: 'Scramble Rate',
-    success_rate: 'Success Rate',
-
-    // Rushing metrics
-    yards_per_carry: 'Yards/Carry',
-    yards_per_touch: 'Yards/Touch',
-    rush_td_rate: 'Rush TD Rate',
-    explosive_runs_10_plus: '10+ Yd Runs',
-    breakaway_percentage: 'Breakaway %',
-    elusive_rating: 'Elusive Rating',
-    pff_rushing_grade: 'PFF Rush Grade',
-    
-    // Passing metrics
-    completion_pct: 'Completion %',
-    yards_per_attempt: 'Yards/Attempt',
-    td_rate: 'TD Rate',
-    int_rate: 'INT Rate',
-    nfl_passer_rating: 'Passer Rating',
-    pff_passing_grade: 'PFF Pass Grade',
-    big_time_throw_rate: 'BTT Rate',
-    adjusted_completion_rate: 'Adj Comp %',
-    pressure_to_sack_rate: 'P2S Rate',
-    
-    // Usage/Role metrics
-    snap_share: 'Snap Share',
-    opportunity_share: 'Opportunity Share',
-    red_zone_usage: 'Red Zone Usage',
-    role_score: 'Role Score',
-
-    // PFF grades (shared)
-    grades_offense: 'PFF Off Grade',
-    grades_pass_block: 'PFF Block Grade',
-    avoided_tackles: 'Avoided Tackles',
-    pass_block_rate: 'Block Rate',
-
-    // Volume
-    total_carries: 'Carries',
-    total_targets: 'Targets',
-    total_receptions: 'Receptions',
-    total_touches: 'Touches',
-    total_rush_tds: 'Rush TDs',
-    total_rec_tds: 'Rec TDs',
-    total_pass_tds: 'Pass TDs',
-    total_tds: 'Total TDs',
-  };
-  
-  // Determine relevant metrics based on positions
-  let relevantMetrics = [];
   const pos1 = (p1?.position || '').toUpperCase();
   const pos2 = (p2?.position || '').toUpperCase();
-  
-  if (pos1 === 'QB' || pos2 === 'QB') {
-    relevantMetrics.push(...qbMetrics);
+  const positions = [pos1, pos2].filter(Boolean);
+
+  // Build display key list from cfg when available — same metrics as leaderboard
+  let displayKeys = [];
+  const cfgLabelMap = {};
+
+  if (cfg && Object.keys(cfg).length) {
+    for (const [key, spec] of Object.entries(cfg)) {
+      if (m1?.[key] == null && m2?.[key] == null) continue;
+      // Position filter: show if no position restriction OR player matches
+      if (spec.positions && spec.positions.length) {
+        const matchesAny = positions.some(p => spec.positions.includes(p));
+        if (!matchesAny) continue;
+      }
+      cfgLabelMap[key] = spec.label || key;
+      displayKeys.push(key);
+    }
+    // Fall back to hardcoded list if cfg returned nothing useful for these positions
+    if (!displayKeys.length) {
+      displayKeys = Array.from(allKeys);
+    }
+  } else {
+    // No cfg — use hardcoded position-aware lists
+    const qbMetrics = [
+      'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
+      'epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'scramble_rate',
+      'adjusted_completion_rate', 'snap_share', 'role_score',
+      'total_pass_tds', 'total_rush_tds', 'total_tds',
+    ];
+    const rbMetrics = [
+      'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share',
+      'opportunity_share', 'red_zone_usage', 'role_score', 'explosive_runs_10_plus',
+      'breakaway_percentage', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
+      'rushing_epa', 'ngs_rush_yards_over_expected_per_att', 'receiving_epa', 'epa_per_play',
+      'total_carries', 'total_touches', 'total_targets', 'total_rush_tds', 'total_rec_tds', 'total_tds',
+    ];
+    const wrTeMetrics = [
+      'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
+      'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
+      'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
+      'contested_catch_rate', 'drop_rate',
+      'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation', 'receiving_epa',
+      'total_targets', 'total_receptions', 'total_rec_tds', 'total_tds',
+    ];
+    let rel = [];
+    if (pos1 === 'QB' || pos2 === 'QB') rel.push(...qbMetrics);
+    if (pos1 === 'RB' || pos2 === 'RB') rel.push(...rbMetrics);
+    if ((pos1 === 'WR' || pos1 === 'TE') || (pos2 === 'WR' || pos2 === 'TE')) rel.push(...wrTeMetrics);
+    if (!rel.length) rel = ['snap_share', 'role_score', 'epa_per_play'];
+    displayKeys = rel.filter(k => allKeys.has(k) && (m1?.[k] != null || m2?.[k] != null));
   }
-  if (pos1 === 'RB' || pos2 === 'RB') {
-    relevantMetrics.push(...rbMetrics);
-  }
-  if ((pos1 === 'WR' || pos1 === 'TE') || (pos2 === 'WR' || pos2 === 'TE')) {
-    relevantMetrics.push(...wrTeMetrics);
-  }
-  if ((pos1 === 'OT' || pos1 === 'OG' || pos1 === 'C') || (pos2 === 'OT' || pos2 === 'OG' || pos2 === 'C')) {
-    relevantMetrics.push(...olMetrics);
-  }
-  
-  // Add universal metrics if no position-specific ones found
-  if (relevantMetrics.length === 0) {
-    relevantMetrics = ['snap_share', 'role_score', 'epa_per_play'];
-  }
-  
-  // Filter to only include relevant metrics that exist in the data
-  const displayKeys = relevantMetrics.filter(k => 
-    allLabelMap[k] && allKeys.has(k) && (m1?.[k] != null || m2?.[k] != null)
-  );
+
+  // Fallback label map for keys missing from cfg
+  const fallbackLabels = {
+    yards_per_target:'Yards/Target', catch_rate:'Catch Rate', yprr:'Yds/Route Run',
+    yards_per_reception:'Yards/Rec', target_quality_score:'Target Quality',
+    yards_after_catch:'YAC', yards_after_catch_per_reception:'YAC/Rec',
+    avg_depth_of_target:'aDOT', contested_catch_rate:'Contested Catch %',
+    drop_rate:'Drop Rate', slot_rate:'Slot Rate', wide_rate:'Wide Rate',
+    inline_rate:'Inline Rate', ngs_avg_separation:'Separation',
+    ngs_avg_cushion:'Cushion', ngs_avg_yac_above_expectation:'YAC Over Exp',
+    epa_per_play:'EPA/Play', passing_epa:'Passing EPA', rushing_epa:'Rushing EPA',
+    receiving_epa:'Receiving EPA', ngs_rush_yards_over_expected_per_att:'RYOE/Att',
+    cpoe:'CPOE', sack_rate:'Sack Rate', scramble_rate:'Scramble Rate',
+    success_rate:'Success Rate', yards_per_carry:'Yards/Carry',
+    yards_per_touch:'Yards/Touch', rush_td_rate:'Rush TD Rate',
+    explosive_runs_10_plus:'10+ Yd Runs', breakaway_percentage:'Breakaway %',
+    elusive_rating:'Elusive Rating', completion_pct:'Completion %',
+    yards_per_attempt:'Yards/Attempt', td_rate:'TD Rate', int_rate:'INT Rate',
+    nfl_passer_rating:'Passer Rating', adjusted_completion_rate:'Adj Comp %',
+    snap_share:'Snap Share', opportunity_share:'Opportunity Share',
+    red_zone_usage:'Red Zone Usage', role_score:'Role Score',
+    grades_offense:'PFF Off Grade', grades_pass_block:'PFF Block Grade',
+    avoided_tackles:'Avoided Tackles', pass_block_rate:'Block Rate',
+    total_carries:'Carries', total_targets:'Targets', total_receptions:'Receptions',
+    total_touches:'Touches', total_rush_tds:'Rush TDs', total_rec_tds:'Rec TDs',
+    total_pass_tds:'Pass TDs', total_tds:'Total TDs',
+  };
+
+  const _label = key => cfgLabelMap[key] || fallbackLabels[key] || key;
+
   if (!displayKeys.length) return '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">No shared metrics available</div>';
 
   // Determine max per metric for bar scaling using metric-specific ranges
   return displayKeys.map(key => {
     const v1 = m1?.[key] ?? null;
     const v2 = m2?.[key] ?? null;
-    
+    const spec = cfg?.[key] || null;
+
     // Metric-specific scaling ranges - upper end of realistic elite values
     const metricRanges = {
       // Decimal-stored rates (0-1)
@@ -11435,17 +11449,14 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
     const pct1 = v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0;
     const pct2 = v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0;
 
+    const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate'].includes(key);
+
     function barColor(pct, raw) {
       if (raw == null) return '#374151';
-      
-      // Inverse metrics where lower is better (INT rate, drop rate)
-      const inverseMetrics = ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate'];
-      const isInverse = inverseMetrics.includes(key);
-      
       if (isInverse) {
-        if (pct <= 25) return '#10b981';  // low value = excellent
-        if (pct <= 55) return '#3b82f6';  // moderate = acceptable
-        return '#ef4444';                 // high value = bad
+        if (pct <= 25) return '#10b981';
+        if (pct <= 55) return '#3b82f6';
+        return '#ef4444';
       } else {
         if (pct >= 60) return '#10b981';
         if (pct >= 35) return '#3b82f6';
@@ -11455,45 +11466,42 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
 
     const fmt = v => {
       if (v == null) return '–';
-
-      // 0-1 decimal metrics that need ×100 to display as %
+      if (spec) {
+        if (spec.integer) return Math.round(v).toString();
+        if (spec.pct_frac) return (v * 100).toFixed(1) + '%';
+        if (spec.pct)      return v.toFixed(1) + '%';
+        const abs = Math.abs(v);
+        return v.toFixed(abs >= 10 ? 1 : 2);
+      }
+      // Fallback formatting when no cfg spec
       const decimalPctMetrics = ['catch_rate', 'snap_share', 'rush_td_rate', 'td_rate', 'int_rate'];
-      // Raw-% metrics (already 0-100) that just need a % suffix
       const rawPctMetrics = [
         'completion_pct', 'adjusted_completion_rate', 'big_time_throw_rate',
         'pressure_to_sack_rate', 'drop_rate', 'contested_catch_rate',
         'slot_rate', 'wide_rate', 'inline_rate', 'pass_block_rate',
         'breakaway_percentage', 'opportunity_share',
       ];
-      // Count metrics that should always show as integers
       const intMetrics = ['yards_after_catch', 'explosive_runs_10_plus', 'avoided_tackles',
         'total_carries', 'total_targets', 'total_receptions', 'total_touches',
         'total_rush_tds', 'total_rec_tds', 'total_pass_tds', 'total_tds'];
-
-      if (decimalPctMetrics.includes(key)) {
-        return (v * 100).toFixed(1) + '%';
-      }
-      if (rawPctMetrics.includes(key)) {
-        return v.toFixed(1) + '%';
-      }
-      if (intMetrics.includes(key)) {
-        return Math.round(v).toString();
-      }
+      if (decimalPctMetrics.includes(key)) return (v * 100).toFixed(1) + '%';
+      if (rawPctMetrics.includes(key))     return v.toFixed(1) + '%';
+      if (intMetrics.includes(key))        return Math.round(v).toString();
       if (v < 0.1 && v > 0) return v.toFixed(3);
       return Number.isInteger(v) ? v : v.toFixed(1);
     };
 
-    // Decide who "wins" this metric so we can mark the better value. For most
-    // metrics higher is better; for the inverse ones lower is better. Ties and
-    // missing values get no winner.
-    const inverseMetrics = ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate'];
+    // Decide who "wins" this metric so we can mark the better value.
     let win1 = false, win2 = false;
     if (v1 != null && v2 != null && v1 !== v2) {
-      const p1Better = inverseMetrics.includes(key) ? (v1 < v2) : (v1 > v2);
+      const p1Better = isInverse ? (v1 < v2) : (v1 > v2);
       win1 = p1Better;
       win2 = !p1Better;
     }
     const winCls1 = win1 ? ' compare-metric-win' : '';
+    // Skip rows where neither player has this value
+    if (v1 == null && v2 == null) return '';
+
     const winCls2 = win2 ? ' compare-metric-win' : '';
 
     return `
@@ -11502,7 +11510,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
         <div class="compare-bar-left">
           <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
         </div>
-        <div class="compare-metric-label"${_ADV_METRIC_DESCS[key] ? ` title="${_ADV_METRIC_DESCS[key].replace(/"/g, '&quot;')}" data-def="${_ADV_METRIC_DESCS[key].replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)"` : ''}>${allLabelMap[key]}</div>
+        <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` title="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)"` : ''}>${_label(key)}</div>
         <div class="compare-bar-right">
           <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2)};"></div>
         </div>
@@ -11744,9 +11752,9 @@ function cmpRenderMetrics() {
   metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + spinner + '</div>';
   _cmpInitWkBars();
   const token = ++_cmpRenderToken;
-  Promise.all([_cmpFetchSide(_cmpSides[1]), _cmpFetchSide(_cmpSides[2])]).then(([r1, r2]) => {
+  Promise.all([_cmpFetchSide(_cmpSides[1]), _cmpFetchSide(_cmpSides[2]), _ensureAdvMetricsCfg()]).then(([r1, r2, cfg]) => {
     if (token !== _cmpRenderToken) return;  // a newer click superseded this render
-    const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position });
+    const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position }, cfg);
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + rows + '</div>';
     _cmpInitWkBars();
     // #6: keep the weekly-trends section in sync with each side's season/range.

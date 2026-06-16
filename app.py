@@ -18632,6 +18632,39 @@ def api_advanced_metrics_seasons():
     return jsonify({"seasons": get_available_seasons()})
 
 
+@app.route("/api/advanced-metrics/config")
+def api_advanced_metrics_config():
+    """Return a lightweight version of LEADERBOARD_METRICS for frontend rendering.
+
+    Strips large internal-only keys (min_vol, computed_sql, computed_null, etc.)
+    and returns only what the frontend needs: label, category, positions,
+    lower_better, pct, pct_frac, efficiency, integer, weeklyCapable.
+    Cached with a long TTL since the config only changes with deploys.
+    """
+    from data_building.advanced_metrics import LEADERBOARD_METRICS, ADV_WEEKLY_METRIC_KEYS
+    from data_building.advanced_metrics import _WEEKLY_METRICS  # noqa: F401 — weekly_capable check
+    weekly_keys = {*_WEEKLY_METRICS.keys(), *ADV_WEEKLY_METRIC_KEYS}
+    out = {}
+    for key, spec in LEADERBOARD_METRICS.items():
+        if spec.get("hidden"):
+            continue
+        out[key] = {
+            "label":       spec.get("label", key),
+            "category":    spec.get("category", ""),
+            "positions":   spec.get("positions", []),
+            "lower_better": bool(spec.get("lower_better")),
+            "pct":         bool(spec.get("pct")),
+            "pct_frac":    bool(spec.get("pct_frac")),
+            "efficiency":  bool(spec.get("efficiency")),
+            "integer":     bool(spec.get("integer")),
+            "weeklyCapable": key in weekly_keys,
+            "desc":        spec.get("desc", ""),
+        }
+    resp = jsonify({"metrics": out})
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
 @app.route("/api/value-movers")
 def api_value_movers():
     try:
