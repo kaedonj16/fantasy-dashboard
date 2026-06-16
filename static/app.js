@@ -11253,9 +11253,22 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
       return Number.isInteger(v) ? v : v.toFixed(1);
     };
 
+    // Decide who "wins" this metric so we can mark the better value. For most
+    // metrics higher is better; for the inverse ones lower is better. Ties and
+    // missing values get no winner.
+    const inverseMetrics = ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate'];
+    let win1 = false, win2 = false;
+    if (v1 != null && v2 != null && v1 !== v2) {
+      const p1Better = inverseMetrics.includes(key) ? (v1 < v2) : (v1 > v2);
+      win1 = p1Better;
+      win2 = !p1Better;
+    }
+    const winCls1 = win1 ? ' compare-metric-win' : '';
+    const winCls2 = win2 ? ' compare-metric-win' : '';
+
     return `
       <div class="compare-metric-row">
-        <div class="compare-metric-p1-val">${fmt(v1)}</div>
+        <div class="compare-metric-p1-val${winCls1}">${fmt(v1)}</div>
         <div class="compare-bar-left">
           <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
         </div>
@@ -11263,7 +11276,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
         <div class="compare-bar-right">
           <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2)};"></div>
         </div>
-        <div class="compare-metric-p2-val">${fmt(v2)}</div>
+        <div class="compare-metric-p2-val${winCls2}">${fmt(v2)}</div>
       </div>
     `;
   }).join("");
@@ -11274,6 +11287,8 @@ var _cmpSides = {
   2: { pid: null, position: '', season: null, range: 'full', wkStart: null, wkEnd: null, seasons: [] }
 };
 var _cmpWeeklyCache = {};  // `${pid}_${season}` -> weeks[]
+var _cmpAdvCache = {};     // `${pid}_${seasonParam}` -> advanced-metrics payload
+var _cmpRenderToken = 0;   // guards against out-of-order responses from rapid clicks
 
 function _cmpEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
 
@@ -11320,8 +11335,12 @@ function _cmpRangeBounds(side, weeks) {
 // Fetch one side's metrics for display (season-level, or week-range aggregate).
 async function _cmpFetchSide(side) {
   const seasonParam = side.season === null ? 'career' : side.season;
-  let advData = {};
-  try { advData = await fetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}`).then(r => r.json()); } catch (_) {}
+  const advKey = side.pid + '_' + seasonParam;
+  let advData = _cmpAdvCache[advKey];
+  if (!advData) {
+    try { advData = await fetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}`).then(r => r.json()); } catch (_) { advData = {}; }
+    _cmpAdvCache[advKey] = advData;
+  }
   side.seasons = advData.available_seasons || side.seasons || [];
   if (side.position === '' && advData.position) side.position = advData.position;
 
@@ -11386,11 +11405,20 @@ function cmpSetCustom(which, start, end) {
 function cmpRenderMetrics() {
   const metricsDiv = document.getElementById('compareMetricsContent');
   if (!metricsDiv) return;
+  // Render the selectors synchronously so the season/week-range pill the user
+  // just tapped highlights instantly, and show a spinner where the rows go so
+  // it's clear something is loading (the fetch can take a moment).
+  const selectors = () => '<div class="compare-season-selectors">' + _cmpSideSelector(1) + _cmpSideSelector(2) + '</div>';
+  const spinner = '<div class="compare-metrics-loading"><div class="loading-spinner" style="width:16px;height:16px;margin:0;flex-shrink:0;"></div><span>Loading metrics…</span></div>';
+  metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + spinner + '</div>';
+  const token = ++_cmpRenderToken;
   Promise.all([_cmpFetchSide(_cmpSides[1]), _cmpFetchSide(_cmpSides[2])]).then(([r1, r2]) => {
+    if (token !== _cmpRenderToken) return;  // a newer click superseded this render
     const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position });
-    metricsDiv.innerHTML = '<div class="compare-season-selectors">' + _cmpSideSelector(1) + _cmpSideSelector(2) + '</div>' + rows;
+    metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + rows + '</div>';
   }).catch(() => {
-    metricsDiv.innerHTML = '<div style="padding:12px 0;color:var(--text-muted);font-size:13px;">Could not load advanced metrics.</div>';
+    if (token !== _cmpRenderToken) return;
+    metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows"><div style="padding:12px 0;color:var(--text-muted);font-size:13px;">Could not load advanced metrics.</div></div>';
   });
 }
 

@@ -15456,6 +15456,27 @@ tr.team-clickable {
   border-radius: 4px;
   transition: width 0.35s ease;
 }
+.compare-metrics-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 2px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+/* "Who has more" winner marker on the better value of each metric row */
+.compare-metric-win {
+  color: #10b981 !important;
+  font-weight: 800;
+}
+.compare-metric-p1-val.compare-metric-win::after {
+  content: " \25B8"; /* ▸ points toward this side's bar */
+  font-size: 10px;
+}
+.compare-metric-p2-val.compare-metric-win::before {
+  content: "\25C2 "; /* ◂ points toward this side's bar */
+  font-size: 10px;
+}
 
 /* ── Game logs side-by-side ─────────────────────────────────────── */
 .compare-gamelogs-section {
