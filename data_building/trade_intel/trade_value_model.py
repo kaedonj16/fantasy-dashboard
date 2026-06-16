@@ -59,6 +59,10 @@ ANCHOR_EMA_ALPHA   = 0.15  # smooth the basket across runs - an unsmoothed singl
                            # dropping for untraded players whenever the #1 player's solved
                            # value moved, since everyone is divided by that one number)
 TRADES_LOOKBACK_DAYS = 120 # only load trades from the last N days; >60d = weight 0.08
+DAILY_MOVE_CAP     = 0.15  # max fractional day-over-day change in a calibrated value.
+                           # The displayed value is GREATEST(calibrated, raw) and raw is
+                           # already EMA-smoothed, so capping the calibrated track's daily
+                           # move bounds how far a player's shown value can swing per run.
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
@@ -530,17 +534,52 @@ def _solve(
 # DB / file writes
 # ---------------------------------------------------------------------------
 
+def _clamp_to_prev(new_val, prev_val):
+    """Bound a new calibrated value to ±DAILY_MOVE_CAP of its previous value.
+
+    Returns new_val unchanged when there is no usable history (first run / new
+    player), so values can still establish freely but can't swing day to day.
+    """
+    if new_val is None:
+        return new_val
+    if prev_val is None or prev_val <= 0:
+        return new_val
+    lo = prev_val * (1.0 - DAILY_MOVE_CAP)
+    hi = prev_val * (1.0 + DAILY_MOVE_CAP)
+    return round(min(max(float(new_val), lo), hi), 2)
+
+
+def _prev_values(conn, col_1qb: str, col_sf: str, pids: list[str]) -> dict:
+    """Map player_id -> (prev_1qb, prev_sf) for the target calibrated columns."""
+    if not pids:
+        return {}
+    rows = conn.execute(
+        f"SELECT player_id, {col_1qb} AS v1, {col_sf} AS vsf "
+        "FROM player_values WHERE player_id = ANY(%s)",
+        (list(pids),),
+    ).fetchall()
+    out: dict = {}
+    for r in rows:
+        out[str(r["player_id"])] = (
+            float(r["v1"]) if r["v1"] is not None else None,
+            float(r["vsf"]) if r["vsf"] is not None else None,
+        )
+    return out
+
+
 def _write_calibrated(rows: list[dict], league_size: int = 10) -> int:
     """Write WLS dynasty results to size-specific calibrated columns."""
     if not rows:
         return 0
     col_1qb, col_sf = _col_names(2, league_size)
     with get_conn() as conn:
+        prev = _prev_values(conn, col_1qb, col_sf, [r["player_id"] for r in rows])
         for r in rows:
+            p1, psf = prev.get(str(r["player_id"]), (None, None))
             params: dict = {
                 "player_id": r["player_id"],
-                "v1":  r["calibrated_value_1qb"],
-                "vsf": r["calibrated_value_sf"],
+                "v1":  _clamp_to_prev(r["calibrated_value_1qb"], p1),
+                "vsf": _clamp_to_prev(r["calibrated_value_sf"], psf),
             }
             extra = ""
             if league_size == 10:
@@ -566,7 +605,9 @@ def _write_redraft_values(rows: list[dict], league_size: int = 10) -> int:
         return 0
     col_1qb, col_sf = _col_names(1, league_size)
     with get_conn() as conn:
+        prev = _prev_values(conn, col_1qb, col_sf, [r["player_id"] for r in rows])
         for r in rows:
+            p1, psf = prev.get(str(r["player_id"]), (None, None))
             conn.execute(
                 f"""
                 UPDATE player_values SET
@@ -576,8 +617,8 @@ def _write_redraft_values(rows: list[dict], league_size: int = 10) -> int:
                 """,
                 {
                     "player_id": r["player_id"],
-                    "v1":  r["redraft_value_1qb"],
-                    "vsf": r["redraft_value_sf"],
+                    "v1":  _clamp_to_prev(r["redraft_value_1qb"], p1),
+                    "vsf": _clamp_to_prev(r["redraft_value_sf"], psf),
                 },
             )
     return len(rows)
