@@ -911,15 +911,16 @@ _AM_JS = r"""
   }
 
   // Preset sets: clicking "Load X Set" clears current extras and loads these metrics.
+  // All free/redistributable (NGS + EPA + computed); no gated PFF metrics.
   const _PRESETS = {
-    'QB':        ['yards_per_attempt', 'td_rate', 'pff_passing_grade', 'pass_tds_per_game', 'rush_tds_per_game', 'rz_carries_pg'],
-    'RB':        ['opportunity_share', 'yards_per_carry', 'yards_per_touch', 'target_share', 'red_zone_usage', 'total_tds_per_game'],
-    'WR':        ['target_share', 'yprr', 'air_yards_share', 'yards_per_target', 'route_participation', 'rec_tds_per_game'],
-    'TE':        ['target_share', 'yprr', 'yards_per_target', 'rz_targets_pg', 'inline_rate', 'rec_tds_per_game'],
-    'General':   ['snap_share', 'opportunity_share', 'grades_offense', 'red_zone_usage', 'role_score', 'yards_per_touch', 'total_tds_per_game'],
-    'Rushing':   ['yards_per_carry', 'pff_rushing_grade', 'elusive_rating', 'breakaway_percentage', 'opportunity_share', 'carries_per_game', 'red_zone_usage'],
-    'Receiving': ['yards_per_target', 'yprr', 'target_share', 'yards_after_catch_per_reception', 'rz_targets_pg', 'target_quality_score', 'receptions_per_game'],
-    'Passing':   ['yards_per_attempt', 'pff_passing_grade', 'adjusted_completion_rate', 'big_time_throw_rate', 'nfl_passer_rating', 'pass_tds_per_game', 'int_rate'],
+    'QB':        ['epa_per_play', 'yards_per_attempt', 'cpoe', 'success_rate', 'td_rate', 'int_rate', 'pass_tds_per_game'],
+    'RB':        ['opportunity_share', 'yards_per_carry', 'rushing_epa', 'breakaway_percentage', 'yards_per_touch', 'red_zone_usage', 'total_tds_per_game'],
+    'WR':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_avg_separation', 'air_yards_share', 'rec_tds_per_game'],
+    'TE':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_avg_yac_above_expectation', 'rz_targets_pg', 'rec_tds_per_game'],
+    'General':   ['snap_share', 'opportunity_share', 'role_score', 'red_zone_usage', 'yards_per_touch', 'total_tds_per_game'],
+    'Rushing':   ['yards_per_carry', 'rushing_epa', 'breakaway_percentage', 'explosive_runs_10_plus', 'opportunity_share', 'carries_per_game', 'red_zone_usage'],
+    'Receiving': ['yards_per_target', 'receiving_epa', 'target_share', 'ngs_avg_separation', 'contested_catch_rate', 'rz_targets_pg', 'receptions_per_game'],
+    'Passing':   ['epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'yards_per_attempt', 'int_rate'],
   };
   const _PRESET_POS = { 'QB': 'QB', 'RB': 'RB', 'WR': 'WR', 'TE': 'TE' };
   window.amLoadPreset = function(cat) {
