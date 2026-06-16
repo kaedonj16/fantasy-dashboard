@@ -329,13 +329,11 @@ else:
 
     # ------------------------------------------------------------------ #
     # Step 4-nflverse: Free advanced metrics (NGS / FTN / pbp EPA)        #
-    # Pulls the redistributable nflverse metrics and upserts a per-season #
-    # snapshot, then purges the overlapping PFF-sourced columns so the    #
-    # free values fully replace them. Only the current (in-progress)      #
-    # season changes week to week, so we sync just that one each day;     #
-    # historical seasons are frozen and handled by a one-time manual      #
-    # backfill (scripts.sync_nflverse_metrics --seasons ...). Offseason   #
-    # falls back to the prior completed season, like the air-yards step.  #
+    # Season-aggregate metrics run daily (fast upsert).                   #
+    # Per-week rows run Tuesdays only — all games are finished by then     #
+    # and the data doesn't change until the next week's games complete.   #
+    # Historical seasons are handled by a one-time manual backfill:       #
+    #   scripts.sync_nflverse_metrics --seasons ...                       #
     # ------------------------------------------------------------------ #
     _run_step("""
 from dotenv import load_dotenv; load_dotenv()
@@ -357,10 +355,31 @@ init_advanced_metrics_db()
 players_index = load_players_index() or {}
 n = upsert_season(target_season, players_index, purge_pff=True)
 print(f"[cron] nflverse (NGS/FTN/EPA) season metrics: {n} rows for season {target_season}")
-# Per-week rows so the new metrics are week-filterable like usage stats.
+""", "sync_nflverse_season_metrics")
+
+    # Per-week rows: Tuesdays only (weekday=1) — data is stable after MNF.
+    if today_weekday == 1:
+        _run_step("""
+from dotenv import load_dotenv; load_dotenv()
+from datetime import datetime
+from dashboard_services.api import get_nfl_state
+from data_building.advanced_metrics import init_advanced_metrics_db
+from scripts.sync_nflverse_metrics import upsert_weekly_season
+from utils.utils import load_players_index
+
+nfl_state = get_nfl_state() or {}
+season_type = str(nfl_state.get("season_type", "")).lower().strip()
+is_offseason = season_type == "off"
+current_season = int(nfl_state.get("season") or datetime.now().year)
+target_season = current_season - 1 if is_offseason else current_season
+
+init_advanced_metrics_db()
+players_index = load_players_index() or {}
 wn = upsert_weekly_season(target_season, players_index)
 print(f"[cron] nflverse weekly metrics: {wn} player-weeks for season {target_season}")
-""", "sync_nflverse_metrics")
+""", "sync_nflverse_weekly_metrics")
+    else:
+        print(f"[cron] nflverse weekly metrics skipped - runs Tuesdays only (weekday={today_weekday})")
 
     # ------------------------------------------------------------------ #
     # Step 4a: Weekly usage metrics (snap/target share per week)          #
