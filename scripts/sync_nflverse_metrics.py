@@ -31,8 +31,17 @@ from typing import Iterable, List, Optional
 
 from dashboard_services.api import get_nfl_state
 from dashboard_services.db import get_conn
-from data_building.advanced_metrics import init_advanced_metrics_db, _normalize_position
-from data_building.external_data.nflverse_metrics import build_nflverse_metrics_for_season
+from data_building.advanced_metrics import (
+    init_advanced_metrics_db,
+    init_weekly_advanced_metrics_db,
+    _normalize_position,
+    WEEKLY_ADV_METRIC_COLS,
+    WEEKLY_ADV_WEIGHT_COLS,
+)
+from data_building.external_data.nflverse_metrics import (
+    build_nflverse_metrics_for_season,
+    build_nflverse_weekly_metrics_for_season,
+)
 from utils.utils import load_players_index
 
 
@@ -138,6 +147,49 @@ def upsert_season(season: int, players_index: dict, purge_pff: bool = True) -> i
     return count
 
 
+def upsert_weekly_season(season: int, players_index: dict) -> int:
+    """Build and upsert per-week advanced metrics for one season.
+
+    Writes to player_weekly_advanced_metrics so the new free metrics can be
+    filtered by week (leaderboard ranges, compare ranges, single-week modal).
+    Returns the number of (player, week) rows written.
+    """
+    by_pw = build_nflverse_weekly_metrics_for_season(season)
+    if not by_pw:
+        print(f"  No weekly nflverse metrics resolved for {season}")
+        return 0
+
+    all_cols = WEEKLY_ADV_METRIC_COLS + WEEKLY_ADV_WEIGHT_COLS
+    init_weekly_advanced_metrics_db()
+    count = 0
+    with get_conn() as conn:
+        for (pid, week), cols in by_pw.items():
+            if not cols:
+                continue
+            meta = players_index.get(pid) or players_index.get(str(pid)) or {}
+            pos = _normalize_position((meta.get("pos") or meta.get("position") or "").upper()) or None
+            present = [c for c in all_cols if c in cols]
+            db_cols = ["player_id", "season", "week", "position"] + present
+            vals = [pid, int(season), int(week), pos] + [cols[c] for c in present]
+            placeholders = ", ".join(["%s"] * len(db_cols))
+            set_clause = ", ".join(
+                f"{c}=EXCLUDED.{c}" for c in ["position", *present]
+            )
+            conn.execute(
+                f"""
+                INSERT INTO player_weekly_advanced_metrics ({', '.join(db_cols)})
+                VALUES ({placeholders})
+                ON CONFLICT (player_id, season, week)
+                DO UPDATE SET {set_clause}
+                """,
+                vals,
+            )
+            count += 1
+
+    print(f"  Upserted {count} player-weeks for {season}")
+    return count
+
+
 def main(argv: Optional[Iterable[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Sync NGS + FTN receiving metrics into player_advanced_metrics")
@@ -149,6 +201,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                         help="Do NOT clear PFF values from the overlapping shared "
                              "columns (drop_rate, contested_catch_rate, aDOT, "
                              "breakaway%%, explosive runs). Default clears them.")
+    parser.add_argument("--no-weekly", action="store_true",
+                        help="Skip the per-week advanced metrics sync "
+                             "(player_weekly_advanced_metrics). Default builds it.")
+    parser.add_argument("--weekly-only", action="store_true",
+                        help="Only sync the per-week advanced metrics; skip the "
+                             "season-aggregate upsert.")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     init_advanced_metrics_db()
@@ -156,20 +214,29 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     seasons_arg = str(args.season) if args.season is not None else args.seasons
     seasons = resolve_seasons(seasons_arg, args.last_n)
-    print(f"Syncing nflverse (NGS + FTN) metrics for: {seasons}")
+    print(f"Syncing nflverse (NGS + FTN + EPA) metrics for: {seasons}")
 
     total = 0
+    weekly_total = 0
     for season in seasons:
         print(f"=== Season {season} ===")
-        try:
-            total += upsert_season(season, players_index,
-                                   purge_pff=not args.keep_pff_shared)
-        except Exception as e:
-            import traceback
-            print(f"  [error] {season} failed: {e}")
-            traceback.print_exc()
+        if not args.weekly_only:
+            try:
+                total += upsert_season(season, players_index,
+                                       purge_pff=not args.keep_pff_shared)
+            except Exception as e:
+                import traceback
+                print(f"  [error] season {season} failed: {e}")
+                traceback.print_exc()
+        if not args.no_weekly:
+            try:
+                weekly_total += upsert_weekly_season(season, players_index)
+            except Exception as e:
+                import traceback
+                print(f"  [error] weekly {season} failed: {e}")
+                traceback.print_exc()
 
-    print(f"Done. Total player rows upserted: {total}")
+    print(f"Done. Season rows: {total}; player-week rows: {weekly_total}")
     return 0
 
 

@@ -1522,6 +1522,224 @@ def get_weekly_range_leaderboard(
     return out
 
 
+# ── Weekly advanced metrics (NGS / FTN / pbp EPA, per game week) ──────────────
+# These let the new free metrics be filtered by week the same way yards/touch is,
+# by storing each metric's per-week value plus the volume weights needed to
+# re-aggregate the rate metrics over any week range.
+
+# Metric value columns stored per (player, season, week). Names match the season
+# table so the same UI rendering / LEADERBOARD_METRICS specs apply unchanged.
+WEEKLY_ADV_METRIC_COLS: List[str] = [
+    "passing_epa", "epa_per_play", "cpoe", "success_rate", "sack_rate",
+    "scramble_rate", "nfl_passer_rating", "adjusted_completion_rate",
+    "rushing_epa", "breakaway_percentage", "explosive_runs_10_plus",
+    "ngs_rush_yards_over_expected", "ngs_rush_yards_over_expected_per_att",
+    "ngs_rush_efficiency",
+    "receiving_epa", "yards_after_catch", "yards_after_catch_per_reception",
+    "ngs_avg_separation", "ngs_avg_cushion", "ngs_avg_intended_air_yards",
+    "avg_depth_of_target", "ngs_avg_yac", "ngs_avg_expected_yac",
+    "ngs_avg_yac_above_expectation", "ngs_catch_pct", "drop_rate",
+    "contested_catch_rate",
+]
+# Volume weight columns used to weight rate metrics across a week range.
+WEEKLY_ADV_WEIGHT_COLS: List[str] = [
+    "w_dropbacks", "w_pass_att", "w_carries", "w_targets", "w_receptions",
+]
+
+_weekly_adv_ready = False
+
+
+def init_weekly_advanced_metrics_db() -> None:
+    """Create player_weekly_advanced_metrics (idempotent)."""
+    global _weekly_adv_ready
+    if _weekly_adv_ready:
+        return
+    cols_ddl = ",\n                ".join(
+        f"{c} NUMERIC" for c in WEEKLY_ADV_METRIC_COLS + WEEKLY_ADV_WEIGHT_COLS
+    )
+    with get_conn() as conn:
+        conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS player_weekly_advanced_metrics (
+                player_id TEXT    NOT NULL,
+                season    INTEGER NOT NULL,
+                week      INTEGER NOT NULL,
+                position  TEXT,
+                {cols_ddl},
+                PRIMARY KEY (player_id, season, week)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pwam_season_week "
+            "ON player_weekly_advanced_metrics (season, week)"
+        )
+    _weekly_adv_ready = True
+
+
+def get_player_weekly_advanced_metrics(
+    player_id: str, season: int, week: int
+) -> Dict[str, Any]:
+    """Return the stored advanced-metric values for one player/season/week.
+
+    Weight columns are excluded; only the displayable metric values are returned.
+    """
+    init_weekly_advanced_metrics_db()
+    col_list = ", ".join(WEEKLY_ADV_METRIC_COLS)
+    with get_conn() as conn:
+        row = conn.execute(
+            f"SELECT position, {col_list} FROM player_weekly_advanced_metrics "
+            "WHERE player_id = %s AND season = %s AND week = %s",
+            (str(player_id), int(season), int(week)),
+        ).fetchone()
+    if not row:
+        return {}
+    d = dict(row)
+    out = {k: (float(v) if v is not None else None) for k, v in d.items() if k != "position"}
+    out = {k: v for k, v in out.items() if v is not None}
+    out["position"] = d.get("position")
+    return out
+
+
+def get_available_metric_weeks(player_id: str, season: int) -> List[int]:
+    """Weeks (ascending) that have any advanced-metric data for the player/season."""
+    init_weekly_advanced_metrics_db()
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT week FROM player_weekly_advanced_metrics "
+            "WHERE player_id = %s AND season = %s ORDER BY week",
+            (str(player_id), int(season)),
+        ).fetchall()
+    return [int(r["week"]) for r in rows]
+
+
+# Per-metric aggregation spec for week-range leaderboards over the weekly table.
+# Totals sum across the range; rates are volume-weighted averages so a range
+# value matches summing the underlying plays (same intent as yards/touch).
+_ADV_WEEKLY_TOTAL_METRICS = {
+    "passing_epa", "rushing_epa", "receiving_epa", "yards_after_catch",
+    "explosive_runs_10_plus", "ngs_rush_yards_over_expected",
+}
+_ADV_WEEKLY_WEIGHTED_METRICS = {
+    "epa_per_play": "w_dropbacks", "cpoe": "w_dropbacks", "success_rate": "w_dropbacks",
+    "sack_rate": "w_dropbacks", "scramble_rate": "w_dropbacks", "nfl_passer_rating": "w_dropbacks",
+    "adjusted_completion_rate": "w_pass_att",
+    "ngs_rush_yards_over_expected_per_att": "w_carries", "ngs_rush_efficiency": "w_carries",
+    "breakaway_percentage": "w_carries",
+    "ngs_avg_separation": "w_targets", "ngs_avg_cushion": "w_targets",
+    "ngs_avg_intended_air_yards": "w_targets", "avg_depth_of_target": "w_targets",
+    "ngs_catch_pct": "w_targets", "drop_rate": "w_targets", "contested_catch_rate": "w_targets",
+    "yards_after_catch_per_reception": "w_receptions", "ngs_avg_yac": "w_receptions",
+    "ngs_avg_expected_yac": "w_receptions", "ngs_avg_yac_above_expectation": "w_receptions",
+}
+
+
+def _adv_weekly_agg_sql(metric: str):
+    """Return (value_sql, min_col_sql) for aggregating a weekly metric, or None."""
+    if metric in _ADV_WEEKLY_TOTAL_METRICS:
+        return f"SUM({metric})", None
+    w = _ADV_WEEKLY_WEIGHTED_METRICS.get(metric)
+    if not w:
+        return None
+    value_sql = (
+        f"SUM({metric} * {w})::float / "
+        f"NULLIF(SUM(CASE WHEN {metric} IS NOT NULL THEN {w} END), 0)"
+    )
+    return value_sql, f"SUM({w})"
+
+
+def adv_weekly_metric_supported(metric: str) -> bool:
+    return metric in _ADV_WEEKLY_TOTAL_METRICS or metric in _ADV_WEEKLY_WEIGHTED_METRICS
+
+
+def get_adv_weekly_range_leaderboard(
+    metric: str,
+    position: Optional[str] = None,
+    season: Optional[int] = None,
+    week_start: Optional[int] = None,
+    week_end: Optional[int] = None,
+    min_vol: Optional[int] = None,
+    limit: int = 500,
+) -> List[Dict[str, Any]]:
+    """Players ranked by a weekly advanced metric over a week range.
+
+    Queries player_weekly_advanced_metrics. Mirrors get_weekly_range_leaderboard
+    but for the NGS/FTN/EPA metrics. Returns
+    [{player_id, name, team, position, value, games, vol}].
+    """
+    agg = _adv_weekly_agg_sql(metric)
+    if not agg or metric not in LEADERBOARD_METRICS:
+        return []
+    value_sql, min_col = agg
+    lower_better = bool(LEADERBOARD_METRICS[metric].get("lower_better"))
+
+    pos = (position or "").upper().strip() or None
+    where_parts: list = []
+    params: list = []
+    if season:
+        where_parts.append("season = %s"); params.append(int(season))
+    if week_start:
+        where_parts.append("week >= %s"); params.append(int(week_start))
+    if week_end:
+        where_parts.append("week <= %s"); params.append(int(week_end))
+    if pos:
+        where_parts.append("position = %s"); params.append(pos)
+    where_clause = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+    use_vol = bool(min_col and min_vol and int(min_vol) > 0)
+    inner_select = (
+        f"player_id, position, COUNT(*) AS weeks_played, {value_sql} AS value, {min_col} AS _wvol"
+        if use_vol else
+        f"player_id, position, COUNT(*) AS weeks_played, {value_sql} AS value"
+    )
+    outer_where = "t.value IS NOT NULL"
+    if use_vol:
+        outer_where += " AND t._wvol >= %s"
+        params.append(int(min_vol))
+    order = "ASC" if lower_better else "DESC"
+    params.append(int(limit))
+
+    init_weekly_advanced_metrics_db()
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT t.player_id, t.position, t.weeks_played, t.value
+            FROM (
+                SELECT {inner_select}
+                FROM player_weekly_advanced_metrics
+                {where_clause}
+                GROUP BY player_id, position
+            ) t
+            WHERE {outer_where}
+            ORDER BY t.value {order}
+            LIMIT %s
+            """,
+            tuple(params),
+        ).fetchall()
+
+    try:
+        from utils.utils import load_players_index
+        idx = load_players_index() or {}
+    except Exception:
+        idx = {}
+
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        pid = str(r["player_id"])
+        meta = idx.get(pid) or {}
+        weeks = int(r["weeks_played"]) if r["weeks_played"] is not None else None
+        out.append({
+            "player_id": pid,
+            "name": meta.get("name") or "Unknown",
+            "team": meta.get("team") or "",
+            "position": r["position"],
+            "value": float(r["value"]) if r["value"] is not None else None,
+            "games": weeks,
+            "vol": weeks,
+        })
+    return out
+
+
 def get_available_seasons() -> List[int]:
     """Return distinct seasons that have real player data, newest first.
 

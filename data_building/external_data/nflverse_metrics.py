@@ -22,7 +22,7 @@ underlying data) is unavailable, mirroring pfr_snap_counts.py.
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 # NGS / FTN player-tracking data only exists from these seasons on.
 NGS_FLOOR = 2016
@@ -393,3 +393,244 @@ def build_nflverse_metrics_for_season(season: int) -> Dict[str, Dict[str, float]
         for pid, cols in part.items():
             combined.setdefault(pid, {}).update(cols)
     return combined
+
+
+# Per-week metric values plus the volume weights needed to re-aggregate the
+# rate metrics over an arbitrary week range (same "store the components, derive
+# over the range" shape the usage weekly metrics use for yards/touch etc.).
+# Totals (sum over a range): passing_epa, rushing_epa, receiving_epa,
+# yards_after_catch, explosive_runs_10_plus, ngs_rush_yards_over_expected.
+# Everything else is a rate averaged over the range, weighted by the matching
+# volume column (w_dropbacks / w_carries / w_targets / w_receptions).
+def build_nflverse_weekly_metrics_for_season(
+    season: int,
+) -> Dict[Tuple[str, int], Dict[str, float]]:
+    """Return {(sleeper_id, week): {metric cols + weight cols}} per game week.
+
+    Mirrors build_nflverse_metrics_for_season but at week granularity so the
+    advanced metrics can be filtered by week. NGS publishes native per-week rows
+    (week > 0); play-by-play and FTN are play-level and grouped by (player, week).
+    """
+    crosswalk = _gsis_to_sleeper()
+    out: Dict[Tuple[str, int], Dict[str, float]] = {}
+
+    def _row(pid: str, week) -> Dict[str, float]:
+        try:
+            wk = int(week)
+        except (TypeError, ValueError):
+            return {}
+        return out.setdefault((pid, wk), {})
+
+    # ---------- NGS receiving (native weekly rows) ----------
+    if season >= NGS_FLOOR:
+        try:
+            import nfl_data_py as nfl
+            df = nfl.import_ngs_data(stat_type="receiving", years=[season])
+            df = df[(df["season_type"] == "REG") & (df["week"] > 0)]
+            for _, r in df.iterrows():
+                pid = crosswalk.get(str(r.get("player_gsis_id") or "").strip())
+                if not pid:
+                    continue
+                row = _row(pid, r.get("week"))
+                if row == {}:
+                    continue
+                for src, dst in (
+                    ("avg_separation", "ngs_avg_separation"),
+                    ("avg_cushion", "ngs_avg_cushion"),
+                    ("avg_intended_air_yards", "ngs_avg_intended_air_yards"),
+                    ("percent_share_of_intended_air_yards", "ngs_pct_share_intended_air_yards"),
+                    ("avg_yac", "ngs_avg_yac"),
+                    ("avg_expected_yac", "ngs_avg_expected_yac"),
+                    ("avg_yac_above_expectation", "ngs_avg_yac_above_expectation"),
+                    ("catch_percentage", "ngs_catch_pct"),
+                ):
+                    val = _f(r.get(src))
+                    if val is not None:
+                        row[dst] = round(val, 2)
+                iay = _f(r.get("avg_intended_air_yards"))
+                if iay is not None:
+                    row["avg_depth_of_target"] = round(iay, 2)
+        except Exception as e:
+            print(f"[nflverse_metrics] weekly NGS receiving unavailable for {season} ({e})")
+
+    # ---------- NGS rushing (native weekly rows) ----------
+    if season >= NGS_FLOOR:
+        try:
+            import nfl_data_py as nfl
+            df = nfl.import_ngs_data(stat_type="rushing", years=[season])
+            df = df[(df["season_type"] == "REG") & (df["week"] > 0)]
+            for _, r in df.iterrows():
+                pid = crosswalk.get(str(r.get("player_gsis_id") or "").strip())
+                if not pid:
+                    continue
+                row = _row(pid, r.get("week"))
+                if row == {}:
+                    continue
+                ryoe = _f(r.get("rush_yards_over_expected"))
+                if ryoe is not None:
+                    row["ngs_rush_yards_over_expected"] = round(ryoe, 2)
+                rpa = _f(r.get("rush_yards_over_expected_per_att"))
+                if rpa is not None:
+                    row["ngs_rush_yards_over_expected_per_att"] = round(rpa, 2)
+                eff = _f(r.get("efficiency"))
+                if eff is not None:
+                    row["ngs_rush_efficiency"] = round(eff, 2)
+        except Exception as e:
+            print(f"[nflverse_metrics] weekly NGS rushing unavailable for {season} ({e})")
+
+    # ---------- play-by-play (EPA family) + FTN charting ----------
+    try:
+        import nfl_data_py as nfl
+        pbp = nfl.import_pbp_data(
+            [season],
+            columns=[
+                "game_id", "play_id", "week", "season_type", "play_type",
+                "epa", "qb_epa", "cpoe", "success",
+                "sack", "qb_scramble", "rush_attempt", "pass_attempt",
+                "qb_dropback", "rushing_yards",
+                "complete_pass", "yards_after_catch",
+                "passing_yards", "pass_touchdown", "interception",
+                "passer_player_id", "rusher_player_id", "receiver_player_id",
+            ],
+            downcast=True,
+        )
+    except Exception as e:
+        print(f"[nflverse_metrics] weekly pbp unavailable for {season} ({e})")
+        pbp = None
+
+    if pbp is not None and not pbp.empty:
+        pbp = pbp[pbp["season_type"] == "REG"]
+
+        # --- Passing (QB) per player+week ---
+        for (gsis, week), g in pbp[pbp["passer_player_id"].notna()].groupby(
+                ["passer_player_id", "week"]):
+            pid = crosswalk.get(str(gsis).strip())
+            if not pid:
+                continue
+            cols = _row(pid, week)
+            if cols == {}:
+                continue
+            dropbacks = float(g["qb_dropback"].sum()) if "qb_dropback" in g else float(len(g))
+            att = float(g["pass_attempt"].fillna(0).sum())
+            cols["w_dropbacks"] = dropbacks
+            cols["w_pass_att"] = att
+            pe = _f(g["epa"].sum())
+            if pe is not None:
+                cols["passing_epa"] = round(pe, 1)
+            qbepa = _f(g["qb_epa"].mean())
+            if qbepa is not None:
+                cols["epa_per_play"] = round(qbepa, 3)
+            cpoe = _f(g["cpoe"].mean())
+            if cpoe is not None:
+                cols["cpoe"] = round(cpoe, 1)
+            if dropbacks > 0:
+                cols["sack_rate"] = round(float(g["sack"].sum()) / dropbacks * 100, 1)
+                cols["scramble_rate"] = round(float(g["qb_scramble"].sum()) / dropbacks * 100, 1)
+            sr = _f(g["success"].mean())
+            if sr is not None:
+                cols["success_rate"] = round(sr * 100, 1)
+            if att >= 1:
+                cmp_ = float(g["complete_pass"].fillna(0).sum())
+                yds = float(g["passing_yards"].fillna(0).sum())
+                td = float(g["pass_touchdown"].fillna(0).sum())
+                ints = float(g["interception"].fillna(0).sum())
+
+                def _clamp(x):
+                    return min(max(x, 0.0), 2.375)
+
+                a = _clamp((cmp_ / att - 0.3) * 5)
+                b = _clamp((yds / att - 3) * 0.25)
+                c = _clamp((td / att) * 20)
+                d = _clamp(2.375 - (ints / att) * 25)
+                cols["nfl_passer_rating"] = round((a + b + c + d) / 6 * 100, 1)
+
+        # --- Rushing per player+week ---
+        for (gsis, week), g in pbp[pbp["rusher_player_id"].notna()].groupby(
+                ["rusher_player_id", "week"]):
+            pid = crosswalk.get(str(gsis).strip())
+            if not pid:
+                continue
+            cols = _row(pid, week)
+            if cols == {}:
+                continue
+            cols["w_carries"] = float(g["rush_attempt"].fillna(0).sum()) or float(len(g))
+            re_ = _f(g["epa"].sum())
+            if re_ is not None:
+                cols["rushing_epa"] = round(re_, 1)
+            ry = g["rushing_yards"].fillna(0)
+            total_ry = float(ry.sum())
+            if total_ry > 0:
+                cols["breakaway_percentage"] = round(float(ry[ry >= 15].sum()) / total_ry * 100, 1)
+            cols["explosive_runs_10_plus"] = int((ry >= 10).sum())
+
+        # --- Receiving per player+week ---
+        for (gsis, week), g in pbp[pbp["receiver_player_id"].notna()].groupby(
+                ["receiver_player_id", "week"]):
+            pid = crosswalk.get(str(gsis).strip())
+            if not pid:
+                continue
+            cols = _row(pid, week)
+            if cols == {}:
+                continue
+            cols["w_targets"] = float(len(g))
+            receptions = float(g["complete_pass"].fillna(0).sum())
+            cols["w_receptions"] = receptions
+            rce = _f(g["epa"].sum())
+            if rce is not None:
+                cols["receiving_epa"] = round(rce, 1)
+            total_yac = float(g["yards_after_catch"].fillna(0).sum())
+            if receptions > 0:
+                cols["yards_after_catch"] = round(total_yac, 0)
+                cols["yards_after_catch_per_reception"] = round(total_yac / receptions, 1)
+
+        # --- FTN charting (drop / contested / adjusted completion) per player+week ---
+        if season >= FTN_FLOOR:
+            try:
+                ftn = nfl.import_ftn_data([season])
+                merged = ftn.merge(
+                    pbp[["game_id", "play_id", "week", "receiver_player_id",
+                         "passer_player_id", "complete_pass", "pass_attempt"]],
+                    left_on=["nflverse_game_id", "nflverse_play_id"],
+                    right_on=["game_id", "play_id"],
+                    how="inner",
+                )
+                for (gsis, week), g in merged[merged["receiver_player_id"].notna()].groupby(
+                        ["receiver_player_id", "week"]):
+                    pid = crosswalk.get(str(gsis).strip())
+                    if not pid:
+                        continue
+                    cols = _row(pid, week)
+                    if cols == {}:
+                        continue
+                    catchable = float(g["is_catchable_ball"].fillna(0).sum())
+                    drops = float(g["is_drop"].fillna(0).sum())
+                    contested = float(g["is_contested_ball"].fillna(0).sum())
+                    contested_caught = float(
+                        ((g["is_contested_ball"].fillna(0) > 0) &
+                         (g["complete_pass"].fillna(0) > 0)).sum())
+                    if catchable > 0:
+                        cols["drop_rate"] = round(drops / catchable * 100, 1)
+                    if contested > 0:
+                        cols["contested_catch_rate"] = round(contested_caught / contested * 100, 1)
+                for (gsis, week), g in merged[merged["passer_player_id"].notna()].groupby(
+                        ["passer_player_id", "week"]):
+                    pid = crosswalk.get(str(gsis).strip())
+                    if not pid:
+                        continue
+                    cols = _row(pid, week)
+                    if cols == {}:
+                        continue
+                    att = float(g["pass_attempt"].fillna(0).sum())
+                    throwaways = float(g["is_throw_away"].fillna(0).sum())
+                    denom = att - throwaways
+                    if denom > 0:
+                        cmp_ = float(g["complete_pass"].fillna(0).sum())
+                        drops = float(g["is_drop"].fillna(0).sum())
+                        cols["adjusted_completion_rate"] = round((cmp_ + drops) / denom * 100, 1)
+            except Exception as e:
+                print(f"[nflverse_metrics] weekly FTN unavailable for {season} ({e})")
+
+    # Drop any (pid, week) buckets that ended up with only weight columns and no
+    # actual metric value (e.g. a player who only appears as a rusher weight).
+    _weight_only = {"w_dropbacks", "w_pass_att", "w_carries", "w_targets", "w_receptions"}
+    return {k: v for k, v in out.items() if v and (set(v.keys()) - _weight_only)}

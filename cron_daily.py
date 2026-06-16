@@ -342,7 +342,7 @@ from dotenv import load_dotenv; load_dotenv()
 from datetime import datetime
 from dashboard_services.api import get_nfl_state
 from data_building.advanced_metrics import init_advanced_metrics_db
-from scripts.sync_nflverse_metrics import upsert_season
+from scripts.sync_nflverse_metrics import upsert_season, upsert_weekly_season
 from utils.utils import load_players_index
 
 nfl_state = get_nfl_state() or {}
@@ -356,7 +356,10 @@ target_season = current_season - 1 if is_offseason else current_season
 init_advanced_metrics_db()
 players_index = load_players_index() or {}
 n = upsert_season(target_season, players_index, purge_pff=True)
-print(f"[cron] nflverse (NGS/FTN/EPA) metrics: {n} rows for season {target_season}")
+print(f"[cron] nflverse (NGS/FTN/EPA) season metrics: {n} rows for season {target_season}")
+# Per-week rows so the new metrics are week-filterable like usage stats.
+wn = upsert_weekly_season(target_season, players_index)
+print(f"[cron] nflverse weekly metrics: {wn} player-weeks for season {target_season}")
 """, "sync_nflverse_metrics")
 
     # ------------------------------------------------------------------ #
