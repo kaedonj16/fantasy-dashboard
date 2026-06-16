@@ -9722,9 +9722,11 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
         });
         pillsHTML += '</div>';
         // Week-bar: filter which weeks are shown (Custom Slider 3 style).
-        if (!isCareer && activeSeason && availableWeeks.length > 1) {
-          const wkMin = Number(availableWeeks[0]);
-          const wkMax = Number(availableWeeks[availableWeeks.length - 1]);
+        // Always show for a specific season; use availableWeeks bounds if synced,
+        // else fall back to W1–W18.
+        if (!isCareer && activeSeason) {
+          const wkMin = availableWeeks.length ? Math.min(...availableWeeks) : 1;
+          const wkMax = availableWeeks.length ? Math.max(...availableWeeks) : 18;
           const isFullRange = (activeWS == null);
           const lidExpr2 = leagueId ? ("'" + String(leagueId) + "'") : 'null';
           pillsHTML += '<div class="adv-week-bar-row">'
@@ -9733,7 +9735,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
             + '</div>';
         }
         pillsEl.innerHTML = pillsHTML;
-        if (!isCareer && activeSeason && availableWeeks.length > 1) {
+        if (!isCareer && activeSeason) {
           const _wkPid = playerId, _wkLid = leagueId, _wkSeas = activeSeason;
           _wkBarInit('advWkBar', function(ws, we) {
             loadAdvancedMetrics(_wkPid, _wkLid, _wkSeas, ws, we);

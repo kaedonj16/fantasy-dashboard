@@ -2263,22 +2263,27 @@ _AM_JS = r"""
   if (minGamesSel) {
     minGamesSel.addEventListener('change', () => { state.minVol = minGamesSel.value || ''; state.page = 0; syncURL(); fetchData(); });
   }
-  // Week-bar range selector (Custom Slider 3 style).
+  // Week-bar range selector: deferred via 'load' so app.js defines _wkBarBuild
+  // before we call it (the inline script runs before the <script src="app.js"> tag).
   const amMaxWk     = cfg.currentWeek || 18;
   const amWkBarHost = document.getElementById('amWkBarHost');
-  if (amWkBarHost && typeof _wkBarBuild === 'function') {
-    amWkBarHost.innerHTML = _wkBarBuild('amWkBar', 1, amMaxWk, 1, amMaxWk);
-    _wkBarInit('amWkBar', function(ws, we) {
-      const isFull = (ws <= 1 && we >= amMaxWk);
-      state.weekRange = isFull ? '' : 'custom';
-      state.weekStart = isFull ? null : ws;
-      state.weekEnd   = isFull ? null : we;
-      state.minVol    = '';
-      if (minGamesSel) minGamesSel.value = '';
-      updateVolCtrl();
-      updateVolHeader();
-      state.page = 0; fetchData();
-    });
+  if (amWkBarHost) {
+    function _amInitWkBar() {
+      if (typeof _wkBarBuild !== 'function') return;
+      amWkBarHost.innerHTML = _wkBarBuild('amWkBar', 1, amMaxWk, 1, amMaxWk);
+      _wkBarInit('amWkBar', function(ws, we) {
+        const isFull = (ws <= 1 && we >= amMaxWk);
+        state.weekRange = isFull ? '' : 'custom';
+        state.weekStart = isFull ? null : ws;
+        state.weekEnd   = isFull ? null : we;
+        state.minVol    = '';
+        if (minGamesSel) minGamesSel.value = '';
+        updateVolCtrl();
+        updateVolHeader();
+        state.page = 0; fetchData();
+      });
+    }
+    window.addEventListener('load', _amInitWkBar);
   }
   if (rosterChk) {
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
