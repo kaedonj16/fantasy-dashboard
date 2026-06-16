@@ -11096,35 +11096,34 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
   const allKeys = new Set([...Object.keys(m1 || {}), ...Object.keys(m2 || {})]);
   
   // Position-aware metric groups
+  // Free metrics only — gated PFF metrics are stripped by the API and would
+  // render blank, so they're not listed here.
   const qbMetrics = [
     'completion_pct', 'yards_per_attempt', 'td_rate', 'int_rate', 'nfl_passer_rating',
     'epa_per_play', 'passing_epa', 'cpoe', 'success_rate', 'sack_rate', 'scramble_rate',
-    'pff_passing_grade', 'big_time_throw_rate', 'adjusted_completion_rate',
-    'pressure_to_sack_rate', 'snap_share', 'role_score',
+    'adjusted_completion_rate', 'snap_share', 'role_score',
     'total_pass_tds', 'total_rush_tds', 'total_tds',
   ];
 
   const rbMetrics = [
     'yards_per_carry', 'yards_per_touch', 'rush_td_rate', 'snap_share',
     'opportunity_share', 'red_zone_usage', 'role_score', 'explosive_runs_10_plus',
-    'breakaway_percentage', 'elusive_rating', 'pff_rushing_grade', 'grades_offense',
-    'avoided_tackles', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
+    'breakaway_percentage', 'catch_rate', 'yards_after_catch', 'yards_after_catch_per_reception',
     'rushing_epa', 'ngs_rush_yards_over_expected_per_att', 'receiving_epa', 'epa_per_play',
     'total_carries', 'total_touches', 'total_targets', 'total_rush_tds', 'total_rec_tds', 'total_tds',
   ];
 
   const wrTeMetrics = [
-    'yards_per_target', 'catch_rate', 'yprr', 'yards_per_reception', 'target_quality_score',
+    'yards_per_target', 'catch_rate', 'yards_per_reception', 'target_quality_score',
     'snap_share', 'opportunity_share', 'red_zone_usage', 'role_score',
     'yards_after_catch', 'yards_after_catch_per_reception', 'avg_depth_of_target',
-    'contested_catch_rate', 'avoided_tackles', 'drop_rate', 'slot_rate',
-    'wide_rate', 'inline_rate', 'grades_offense', 'pass_block_rate', 'grades_pass_block',
+    'contested_catch_rate', 'drop_rate',
     'ngs_avg_separation', 'ngs_avg_cushion', 'ngs_avg_yac_above_expectation', 'receiving_epa',
     'total_targets', 'total_receptions', 'total_rec_tds', 'total_tds',
   ];
 
   const olMetrics = [
-    'snap_share', 'pass_block_rate', 'grades_offense', 'grades_pass_block'
+    'snap_share',
   ];
   
   const allLabelMap = {
@@ -11218,7 +11217,7 @@ function renderCompareMetricRows(m1, m2, p1, p2) {
   
   // Add universal metrics if no position-specific ones found
   if (relevantMetrics.length === 0) {
-    relevantMetrics = ['snap_share', 'role_score', 'grades_offense'];
+    relevantMetrics = ['snap_share', 'role_score', 'epa_per_play'];
   }
   
   // Filter to only include relevant metrics that exist in the data
