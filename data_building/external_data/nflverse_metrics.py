@@ -230,6 +230,7 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
                 "epa", "qb_epa", "cpoe", "success",
                 "sack", "qb_scramble", "rush_attempt", "pass_attempt",
                 "qb_dropback", "rushing_yards",
+                "complete_pass", "yards_after_catch",
                 "passer_player_id", "rusher_player_id", "receiver_player_id",
             ],
             downcast=True,
@@ -290,9 +291,17 @@ def build_pbp_metrics_for_season(season: int) -> Dict[str, Dict[str, float]]:
     # --- Receiving ---
     recs = pbp[pbp["receiver_player_id"].notna()]
     for gsis, g in recs.groupby("receiver_player_id"):
+        cols = {}
         rce = _f(g["epa"].sum())
         if rce is not None:
-            _emit(gsis, {"receiving_epa": round(rce, 1)})
+            cols["receiving_epa"] = round(rce, 1)
+        # Yards after catch (yards_after_catch is populated on completions).
+        receptions = float(g["complete_pass"].fillna(0).sum())
+        total_yac = float(g["yards_after_catch"].fillna(0).sum())
+        if receptions > 0:
+            cols["yards_after_catch"] = round(total_yac, 0)
+            cols["yards_after_catch_per_reception"] = round(total_yac / receptions, 1)
+        _emit(gsis, cols)
 
     return out
 
