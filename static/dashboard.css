@@ -13722,15 +13722,14 @@ img, svg, canvas {
   color: #fff;
 }
 
-/* ── Advanced metrics week-range slider ─────────────────────────────────── */
-.adv-week-picker {
+/* ── Shared week-bar range selector (Custom Slider 3 style) ─────────────── */
+.adv-week-bar-row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   margin-bottom: 12px;
-  flex-wrap: wrap;
 }
-.adv-week-reset {
+.adv-week-full-btn {
   flex: 0 0 auto;
   padding: 4px 12px;
   border-radius: 20px;
@@ -13741,83 +13740,91 @@ img, svg, canvas {
   background: transparent;
   color: var(--text-muted, #6b7280);
   transition: border-color 0.15s, color 0.15s, background 0.15s;
+  white-space: nowrap;
   line-height: 1.5;
 }
-.adv-week-reset:hover { border-color: #3b82f6; color: #3b82f6; }
-.adv-week-reset.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+.adv-week-full-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+.adv-week-full-btn.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
 
-.adv-week-slider {
+.wk-bar {
+  flex: 1;
+  min-width: 0;
+  user-select: none;
+  touch-action: none;
+}
+.wk-bar-track {
   position: relative;
-  flex: 1 1 180px;
-  min-width: 160px;
-  height: 26px;
+  height: 34px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.wk-bar-bg {
+  position: absolute;
+  inset: 0;
+  background: #14151c;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.wk-bar-ticks {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+}
+.wk-tick {
+  flex: 1;
   display: flex;
   align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.22);
+  letter-spacing: -0.2px;
+  transition: color 0.07s;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.adv-week-rail {
+.wk-tick.wk-tick-in { color: rgba(255, 255, 255, 0.88); }
+.wk-bar-sel {
   position: absolute;
-  left: 0; right: 0;
-  height: 5px;
-  border-radius: 3px;
-  background: var(--border-color, #e5e7eb);
+  top: 2px;
+  bottom: 2px;
+  border: 2px solid #3b82f6;
+  border-radius: 5px;
+  background: rgba(59, 130, 246, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  cursor: grab;
+  z-index: 1;
+  min-width: 12px;
 }
-.adv-week-range {
-  position: absolute;
-  height: 5px;
-  border-radius: 3px;
-  background: #3b82f6;
-  opacity: 0.45;
-  transition: opacity 0.15s;
+.wk-bar-sel:active { cursor: grabbing; }
+.wk-bar-grip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 14px;
+  height: 100%;
+  flex-shrink: 0;
+  cursor: ew-resize;
 }
-.adv-week-picker.is-active .adv-week-range { opacity: 1; }
-
-/* Two overlaid range inputs share the track; only their thumbs are clickable. */
-.adv-week-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  position: absolute;
-  left: 0; right: 0;
+.wk-bar-grip span {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(96, 165, 250, 0.9);
+}
+.cmp-week-bar-wrap {
+  margin-top: 6px;
   width: 100%;
-  margin: 0;
-  height: 26px;
-  background: transparent;
-  pointer-events: none;
 }
-.adv-week-thumb:focus { outline: none; }
-.adv-week-thumb::-webkit-slider-runnable-track { background: transparent; border: none; }
-.adv-week-thumb::-moz-range-track { background: transparent; border: none; }
-.adv-week-thumb::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  pointer-events: auto;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  border: 2px solid #3b82f6;
-  cursor: grab;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-  transition: transform 0.1s;
-}
-.adv-week-thumb::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.15); }
-.adv-week-thumb::-moz-range-thumb {
-  pointer-events: auto;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  border: 2px solid #3b82f6;
-  cursor: grab;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-}
-.adv-week-readout {
-  flex: 0 0 auto;
-  min-width: 92px;
-  text-align: right;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-color, #111827);
-}
+.cmp-week-bar-wrap .wk-bar { flex: unset; display: block; }
+.am-ctrl-weekbar { flex: 2 1 220px; min-width: 0; }
+.am-ctrl-weekbar .wk-bar { flex: unset; display: block; }
 
 /* ============================================
    Player + Breakout Modals – Shared Design System
@@ -15415,9 +15422,8 @@ tr.team-clickable {
   min-width: 0;
 }
 .compare-season-col-right { align-items: flex-end; }
-.compare-season-col-right .compare-season-pills,
-.compare-season-col-right .compare-range-pills,
-.compare-season-col-right .compare-range-custom { justify-content: flex-end; }
+.compare-season-col-right .compare-season-pills { justify-content: flex-end; }
+.compare-season-col-right .cmp-week-bar-wrap { width: 100%; }
 .compare-season-col .compare-season-label { white-space: nowrap; }
 .compare-range-pills {
   display: flex;

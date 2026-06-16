@@ -207,23 +207,9 @@ def build_advanced_metrics_body(
             <label class="am-ctrl-label">Season</label>
             <select id="amSeason" class="am-select am-season-select">__SEASON_OPTIONS__</select>
           </div>
-          <div class="am-ctrl am-mobile-filter" id="amWeekCtrl">
+          <div class="am-ctrl am-mobile-filter am-ctrl-weekbar" id="amWeekCtrl">
             <label class="am-ctrl-label">Week Range</label>
-            <select id="amWeekRange" class="am-select am-season-select">
-              <option value="">Full Season</option>
-              <option value="last4">Last 4 Weeks</option>
-              <option value="last8">Last 8 Weeks</option>
-              <option value="last12">Last 12 Weeks</option>
-              <option value="custom">Custom&hellip;</option>
-            </select>
-          </div>
-          <div class="am-ctrl am-mobile-filter" id="amWeekCustomCtrl" style="display:none;">
-            <label class="am-ctrl-label">Weeks</label>
-            <div style="display:flex;align-items:center;gap:4px;">
-              <input type="number" id="amWeekStart" class="am-age-input" placeholder="1" min="1" max="18" style="width:48px;">
-              <span style="font-size:11px;color:var(--text-muted);">&#8211;</span>
-              <input type="number" id="amWeekEnd" class="am-age-input" placeholder="18" min="1" max="18" style="width:48px;">
-            </div>
+            <div id="amWkBarHost"></div>
           </div>
           <div class="am-ctrl am-mobile-filter" id="amTeamCtrl">
             <label class="am-ctrl-label">Team</label>
@@ -2277,33 +2263,23 @@ _AM_JS = r"""
   if (minGamesSel) {
     minGamesSel.addEventListener('change', () => { state.minVol = minGamesSel.value || ''; state.page = 0; syncURL(); fetchData(); });
   }
-  // Week range controls.
-  const weekRangeSel   = document.getElementById('amWeekRange');
-  const weekCustomCtrl = document.getElementById('amWeekCustomCtrl');
-  const weekStartEl    = document.getElementById('amWeekStart');
-  const weekEndEl      = document.getElementById('amWeekEnd');
-  if (weekRangeSel) {
-    weekRangeSel.addEventListener('change', function() {
-      state.weekRange = weekRangeSel.value || '';
-      state.weekStart = null; state.weekEnd = null;
-      if (weekCustomCtrl) weekCustomCtrl.style.display = state.weekRange === 'custom' ? '' : 'none';
-      if (weekStartEl) weekStartEl.value = '';
-      if (weekEndEl)   weekEndEl.value   = '';
-      // Reset min filter to "Any" and rebuild the control with weekly-appropriate options.
-      state.minVol = '';
+  // Week-bar range selector (Custom Slider 3 style).
+  const amMaxWk     = cfg.currentWeek || 18;
+  const amWkBarHost = document.getElementById('amWkBarHost');
+  if (amWkBarHost && typeof _wkBarBuild === 'function') {
+    amWkBarHost.innerHTML = _wkBarBuild('amWkBar', 1, amMaxWk, 1, amMaxWk);
+    _wkBarInit('amWkBar', function(ws, we) {
+      const isFull = (ws <= 1 && we >= amMaxWk);
+      state.weekRange = isFull ? '' : 'custom';
+      state.weekStart = isFull ? null : ws;
+      state.weekEnd   = isFull ? null : we;
+      state.minVol    = '';
       if (minGamesSel) minGamesSel.value = '';
       updateVolCtrl();
       updateVolHeader();
       state.page = 0; fetchData();
     });
   }
-  function _applyCustomWeeks() {
-    const ws = parseInt(weekStartEl && weekStartEl.value) || null;
-    const we = parseInt(weekEndEl   && weekEndEl.value)   || null;
-    if (ws || we) { state.weekStart = ws; state.weekEnd = we; state.page = 0; fetchData(); }
-  }
-  if (weekStartEl) weekStartEl.addEventListener('change', _applyCustomWeeks);
-  if (weekEndEl)   weekEndEl.addEventListener('change', _applyCustomWeeks);
   if (rosterChk) {
     rosterChk.addEventListener('change', () => { state.rosterOnly = rosterChk.checked; state.page = 0; render(); });
   }

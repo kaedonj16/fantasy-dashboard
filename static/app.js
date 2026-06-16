@@ -9528,77 +9528,119 @@ function getRoleGrade(roleScore) {
 
 const _advMetricsCache = new Map();
 
-// Build the week-range slider: a "Season" reset plus a dual-handle range whose
-// two thumbs select the first/last week being viewed. `ws`/`we` are the active
-// range (null when showing the full season).
-function _advWeekSliderHTML(playerId, leagueId, season, weeks, ws, we) {
-  const min = Number(weeks[0]);
-  const max = Number(weeks[weeks.length - 1]);
-  const lo = ws != null ? ws : min;
-  const hi = we != null ? we : max;
-  const active = ws != null;
-  const span = (max > min) ? (max - min) : 1;
-  const pct = v => ((v - min) / span) * 100;
-  const label = !active ? 'Full Season' : (lo === hi ? ('Week ' + lo) : ('Weeks ' + lo + '–' + hi));
-  const lidAttr = leagueId ? String(leagueId) : '';
-  // Single-week seasons (only one week of data) can't be ranged; show one pill.
-  if (max === min) {
-    return '<div class="adv-metrics-season-pills adv-week-pills">'
-      + `<button class="adv-season-pill${active ? '' : ' active'}" onclick="loadAdvancedMetrics('${playerId}', ${leagueId ? `'${leagueId}'` : 'null'}, ${season})">Season</button>`
-      + `<button class="adv-season-pill${active ? ' active' : ''}" onclick="loadAdvancedMetrics('${playerId}', ${leagueId ? `'${leagueId}'` : 'null'}, ${season}, ${min}, ${max})">W${min}</button>`
-      + '</div>';
+// ── Shared week-bar range selector (Custom Slider 3 style) ──────────────────
+// Dark track bar with labeled week ticks, a bordered selection window, and
+// grip handles on each side. Used in the player modal, compare modal, and
+// the advanced-metrics leaderboard.
+
+// Build HTML for the bar. min/max are integers; ws/we are the current selection
+// (both null means full range selected). Returns an empty string if max < min.
+function _wkBarBuild(id, min, max, ws, we) {
+  if (max < min) return '';
+  const n = max - min + 1;
+  const loW = (ws != null) ? Math.max(min, Math.min(max, ws)) : min;
+  const hiW = (we != null) ? Math.max(min, Math.min(max, we)) : max;
+  let ticks = '';
+  for (let w = min; w <= max; w++) {
+    ticks += '<span class="wk-tick' + (w >= loW && w <= hiW ? ' wk-tick-in' : '') + '">W' + w + '</span>';
   }
-  return `
-    <div class="adv-week-picker${active ? ' is-active' : ''}" id="advWeekPicker"
-         data-pid="${playerId}" data-lid="${lidAttr}" data-season="${season}"
-         data-min="${min}" data-max="${max}">
-      <button class="adv-week-reset${active ? '' : ' active'}"
-              onclick="loadAdvancedMetrics('${playerId}', ${leagueId ? `'${leagueId}'` : 'null'}, ${season})">Season</button>
-      <div class="adv-week-slider">
-        <div class="adv-week-rail"></div>
-        <div class="adv-week-range" id="advWeekRange" style="left:${pct(lo)}%;right:${100 - pct(hi)}%"></div>
-        <input type="range" class="adv-week-thumb adv-week-lo" id="advWeekLo" min="${min}" max="${max}" step="1" value="${lo}" aria-label="First week">
-        <input type="range" class="adv-week-thumb adv-week-hi" id="advWeekHi" min="${min}" max="${max}" step="1" value="${hi}" aria-label="Last week">
-      </div>
-      <div class="adv-week-readout" id="advWeekReadout">${label}</div>
-    </div>`;
+  const pctL = ((loW - min) / n * 100).toFixed(2);
+  const pctR = ((max - hiW) / n * 100).toFixed(2);
+  return '<div class="wk-bar" id="' + id + '" data-min="' + min + '" data-max="' + max
+    + '" data-ws="' + loW + '" data-we="' + hiW + '">'
+    + '<div class="wk-bar-track">'
+    + '<div class="wk-bar-bg"><div class="wk-bar-ticks">' + ticks + '</div></div>'
+    + '<div class="wk-bar-sel" style="left:' + pctL + '%;right:' + pctR + '%">'
+    + '<div class="wk-bar-grip wk-bar-grip-l"><span></span><span></span><span></span></div>'
+    + '<div class="wk-bar-grip wk-bar-grip-r"><span></span><span></span><span></span></div>'
+    + '</div></div></div>';
 }
 
-// Wire the dual-handle slider: live paint while dragging, reload on release.
-function _advWeekSliderSetup() {
-  const picker = document.getElementById('advWeekPicker');
-  if (!picker) return;
-  const loEl = document.getElementById('advWeekLo');
-  const hiEl = document.getElementById('advWeekHi');
-  const rangeEl = document.getElementById('advWeekRange');
-  const readoutEl = document.getElementById('advWeekReadout');
-  if (!loEl || !hiEl) return;
-  const min = Number(picker.dataset.min), max = Number(picker.dataset.max);
-  const pid = picker.dataset.pid;
-  const lid = picker.dataset.lid || null;
-  const season = Number(picker.dataset.season);
-  const span = (max > min) ? (max - min) : 1;
-  const pct = v => ((v - min) / span) * 100;
-  function vals() {
-    let a = Number(loEl.value), b = Number(hiEl.value);
-    if (a > b) {
-      if (document.activeElement === loEl) { b = a; hiEl.value = String(b); }
-      else { a = b; loEl.value = String(a); }
-    }
-    return [a, b];
+// Wire drag interaction on a rendered bar. onChange(ws, we) fires on release.
+function _wkBarInit(id, onChange) {
+  const root = document.getElementById(id);
+  if (!root) return;
+  const track = root.querySelector('.wk-bar-track');
+  const sel   = root.querySelector('.wk-bar-sel');
+  const gripL = root.querySelector('.wk-bar-grip-l');
+  const gripR = root.querySelector('.wk-bar-grip-r');
+  const tickEls = Array.from(root.querySelectorAll('.wk-tick'));
+  if (!track || !sel || !gripL || !gripR) return;
+
+  const min = Number(root.dataset.min);
+  const max = Number(root.dataset.max);
+  const n   = max - min + 1;
+  let ws = Number(root.dataset.ws);
+  let we = Number(root.dataset.we);
+
+  function weekFromX(clientX) {
+    const rect = track.getBoundingClientRect();
+    const pct  = Math.max(0, Math.min(1 - 1e-9, (clientX - rect.left) / rect.width));
+    return min + Math.floor(pct * n);
   }
   function paint() {
-    const [a, b] = vals();
-    rangeEl.style.left = pct(a) + '%';
-    rangeEl.style.right = (100 - pct(b)) + '%';
-    readoutEl.textContent = (a === b) ? ('Week ' + a) : ('Weeks ' + a + '–' + b);
-    picker.classList.add('is-active');
+    sel.style.left  = ((ws - min) / n * 100).toFixed(2) + '%';
+    sel.style.right = ((max - we) / n * 100).toFixed(2) + '%';
+    tickEls.forEach((t, i) => {
+      const w = min + i;
+      t.classList.toggle('wk-tick-in', w >= ws && w <= we);
+    });
   }
-  function commit() { const [a, b] = vals(); loadAdvancedMetrics(pid, lid, season, a, b); }
-  loEl.addEventListener('input', paint);
-  hiEl.addEventListener('input', paint);
-  loEl.addEventListener('change', commit);
-  hiEl.addEventListener('change', commit);
+
+  function startDrag(e, mode) {
+    e.preventDefault();
+    const startX     = e.touches ? e.touches[0].clientX : e.clientX;
+    const startWs    = ws, startWe = we;
+    const startWkFrom = weekFromX(startX);
+
+    function onMove(ev) {
+      if (ev.cancelable) ev.preventDefault();
+      const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+      const w  = weekFromX(cx);
+      if (mode === 'lo') {
+        ws = Math.max(min, Math.min(we, w));
+      } else if (mode === 'hi') {
+        we = Math.max(ws, Math.min(max, w));
+      } else {
+        const delta = w - startWkFrom;
+        const span  = startWe - startWs;
+        ws = Math.max(min, Math.min(max - span, startWs + delta));
+        we = ws + span;
+      }
+      paint();
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onUp);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend',  onUp);
+      onChange(ws, we);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend',  onUp);
+  }
+
+  gripL.addEventListener('mousedown', e => { e.stopPropagation(); startDrag(e, 'lo'); });
+  gripR.addEventListener('mousedown', e => { e.stopPropagation(); startDrag(e, 'hi'); });
+  gripL.addEventListener('touchstart', e => { e.stopPropagation(); startDrag(e, 'lo'); }, { passive: false });
+  gripR.addEventListener('touchstart', e => { e.stopPropagation(); startDrag(e, 'hi'); }, { passive: false });
+
+  sel.addEventListener('mousedown', e => {
+    if (!e.target.closest('.wk-bar-grip')) startDrag(e, 'move');
+  });
+  sel.addEventListener('touchstart', e => {
+    if (!e.target.closest('.wk-bar-grip')) startDrag(e, 'move');
+  }, { passive: false });
+
+  track.addEventListener('click', e => {
+    if (e.target.closest('.wk-bar-sel')) return;
+    const w = weekFromX(e.clientX);
+    ws = w; we = w;
+    paint();
+    onChange(ws, we);
+  });
 }
 
 function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
@@ -9679,14 +9721,24 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, ${yr})">${yr}</button>`;
         });
         pillsHTML += '</div>';
-        // Week range slider: drag the two handles to pick which weeks to view.
-        // Only the free NGS/FTN/EPA metrics exist per week, so a week range shows
-        // that subset (totals summed, rates volume-weighted) for the active season.
-        if (!isCareer && activeSeason && availableWeeks.length) {
-          pillsHTML += _advWeekSliderHTML(playerId, leagueId, activeSeason, availableWeeks, activeWS, activeWE);
+        // Week-bar: filter which weeks are shown (Custom Slider 3 style).
+        if (!isCareer && activeSeason && availableWeeks.length > 1) {
+          const wkMin = Number(availableWeeks[0]);
+          const wkMax = Number(availableWeeks[availableWeeks.length - 1]);
+          const isFullRange = (activeWS == null);
+          const lidExpr2 = leagueId ? ("'" + String(leagueId) + "'") : 'null';
+          pillsHTML += '<div class="adv-week-bar-row">'
+            + '<button class="adv-week-full-btn' + (isFullRange ? ' active' : '') + '" onclick="loadAdvancedMetrics(\'' + playerId + '\',' + lidExpr2 + ',' + activeSeason + ')">Season</button>'
+            + _wkBarBuild('advWkBar', wkMin, wkMax, activeWS, activeWE)
+            + '</div>';
         }
         pillsEl.innerHTML = pillsHTML;
-        _advWeekSliderSetup();
+        if (!isCareer && activeSeason && availableWeeks.length > 1) {
+          const _wkPid = playerId, _wkLid = leagueId, _wkSeas = activeSeason;
+          _wkBarInit('advWkBar', function(ws, we) {
+            loadAdvancedMetrics(_wkPid, _wkLid, _wkSeas, ws, we);
+          });
+        }
       }
 
       // Populate just the bars column (initial render without ranks)
@@ -11601,19 +11653,12 @@ function _cmpSideSelector(which) {
     + seasons.map(s => '<button class="adv-season-pill ' + ((!isCareer && side.season === s) ? 'active' : '') + '" onclick="cmpSetSeason(' + which + ',' + s + ')">' + s + '</button>').join('');
   let rangeHtml = '';
   if (!isCareer) {
-    const r = side.range || 'full';
+    const r    = side.range || 'full';
     const meta = side.rangeMeta;
     const maxWk = (meta && meta.maxWk) ? meta.maxWk : 18;
-    const rb = (val, lbl) => '<button class="adv-season-pill ' + (r === val ? 'active' : '') + '" onclick="cmpSetRange(' + which + ',\'' + val + '\')">' + lbl + '</button>';
-    rangeHtml = '<div class="compare-range-pills">' + rb('full', 'Full') + rb('first', '1st Half') + rb('second', '2nd Half') + rb('last4', 'L4') + rb('custom', 'Custom') + '</div>';
-    if (r === 'custom') {
-      rangeHtml += '<div class="compare-range-custom">Wk '
-        + '<input type="number" min="1" max="' + maxWk + '" class="compare-wk-input" value="' + (side.wkStart || 1) + '" onchange="cmpSetCustom(' + which + ',this.value,null)">&ndash;'
-        + '<input type="number" min="1" max="' + maxWk + '" class="compare-wk-input" value="' + (side.wkEnd || maxWk) + '" onchange="cmpSetCustom(' + which + ',null,this.value)"></div>';
-    }
-    // #1: show the resolved week range + game count so the aggregated numbers
-    // have context; #3: explain (in a tap tooltip) that season-level grades
-    // aren't week-sliced.
+    const barWS = (r === 'custom') ? (side.wkStart || 1)     : 1;
+    const barWE = (r === 'custom') ? (side.wkEnd   || maxWk) : maxWk;
+    rangeHtml = '<div class="cmp-week-bar-wrap">' + _wkBarBuild('cmpWkBar' + which, 1, maxWk, barWS, barWE) + '</div>';
     if (r !== 'full' && meta) {
       const gradesIcon = '<span class="compare-range-info" onclick="cmpShowSeasonGradesTip(event)" aria-label="Why some metrics are missing">ⓘ</span>';
       if (meta.games > 0) {
@@ -11668,26 +11713,47 @@ function cmpSetCustom(which, start, end) {
   cmpRenderMetrics();
 }
 
+// Init the week-bar drag interactions for both compare sides after a re-render.
+function _cmpInitWkBars() {
+  [1, 2].forEach(function(which) {
+    const side = _cmpSides[which];
+    if (side.season === null) return; // career — no bar rendered
+    const maxWk = (side.rangeMeta && side.rangeMeta.maxWk) ? side.rangeMeta.maxWk : 18;
+    _wkBarInit('cmpWkBar' + which, function(ws, we) {
+      if (ws <= 1 && we >= maxWk) {
+        side.range = 'full'; side.wkStart = null; side.wkEnd = null;
+      } else {
+        side.range = 'custom'; side.wkStart = ws; side.wkEnd = we;
+      }
+      side.rangeMeta = null;
+      cmpRenderMetrics();
+    });
+  });
+}
+
 function cmpRenderMetrics() {
   const metricsDiv = document.getElementById('compareMetricsContent');
   if (!metricsDiv) return;
-  // Render the selectors synchronously so the season/week-range pill the user
-  // just tapped highlights instantly, and show a spinner where the rows go so
+  // Render the selectors synchronously so the season/week-range bar the user
+  // just dragged updates instantly, and show a spinner where the rows go so
   // it's clear something is loading (the fetch can take a moment).
   const selectors = () => '<div class="compare-season-selectors">' + _cmpSideSelector(1) + _cmpSideSelector(2) + '</div>';
   const spinner = '<div class="compare-metrics-loading"><div class="loading-spinner" style="width:16px;height:16px;margin:0;flex-shrink:0;"></div><span>Loading metrics…</span></div>';
   metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + spinner + '</div>';
+  _cmpInitWkBars();
   const token = ++_cmpRenderToken;
   Promise.all([_cmpFetchSide(_cmpSides[1]), _cmpFetchSide(_cmpSides[2])]).then(([r1, r2]) => {
     if (token !== _cmpRenderToken) return;  // a newer click superseded this render
     const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position });
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + rows + '</div>';
+    _cmpInitWkBars();
     // #6: keep the weekly-trends section in sync with each side's season/range.
     cmpRenderWeekly(1);
     cmpRenderWeekly(2);
   }).catch(() => {
     if (token !== _cmpRenderToken) return;
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows"><div style="padding:12px 0;color:var(--text-muted);font-size:13px;">Could not load advanced metrics.</div></div>';
+    _cmpInitWkBars();
   });
 }
 
