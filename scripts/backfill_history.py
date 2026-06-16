@@ -4,8 +4,8 @@ Backfill historical NFL data across all three layers of the dashboard:
 
   1. Game logs   -> cache/sleeper_stats/sleeper_stats_s{Y}_w{W}.json  (Sleeper API)
                     + cache/sleeper_stats/redzone_stats_{Y}.json
-  2. Schedules   -> cache/schedule/schedule_s{Y}_w{W}.json            (Tank01 API)
-                    (provides opponent + date on each game log)
+  2. Schedules   -> cache/schedule/schedule_s{Y}_w{W}.json            (nflverse, free)
+                    (provides opponent + date on each game log; no Tank01 key)
   3. Adv metrics -> player_advanced_metrics DB table                  (usage + snaps +
                     target share + air yards)
   4. NGS + FTN   -> player_advanced_metrics DB table                  (NGS separation/
@@ -94,11 +94,14 @@ def backfill_game_logs(season: int) -> int:
 
 
 def backfill_schedules(season: int) -> None:
-    """Fetch and cache schedules (opponent + date) for the season."""
-    from scripts.populate_schedules import populate_schedules_for_season
-    print(f"  [schedules] Fetching weeks 1-18...")
+    """Fetch and cache schedules (opponent + date) for the season.
+
+    Uses the free nflverse source (no Tank01 API key, complete back to 1999).
+    """
+    from data_building.external_data.nflverse_schedules import write_schedules_for_season
+    print(f"  [schedules] Fetching weeks 1-18 from nflverse...")
     try:
-        populate_schedules_for_season(season, max_week=18)
+        write_schedules_for_season(season)
     except Exception as e:
         print(f"  [schedules] failed: {e}")
 
