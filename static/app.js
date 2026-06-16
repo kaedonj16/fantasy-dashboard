@@ -9527,6 +9527,7 @@ function getRoleGrade(roleScore) {
 }
 
 const _advMetricsCache = new Map();
+let _advMetricsToken = 0; // incremented on each loadAdvancedMetrics call; guards stale callbacks
 
 // ── Advanced-metrics config cache ────────────────────────────────────────────
 // Fetches LEADERBOARD_METRICS in frontend format once; cached for the session.
@@ -9655,6 +9656,7 @@ function _wkBarInit(id, onChange) {
 }
 
 function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
+  const token = ++_advMetricsToken;
   const contentEl = document.getElementById('advancedMetricsContent');
   if (!contentEl) return;
 
@@ -9687,6 +9689,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
       return data;
     }))
     .then(metricsData => {
+      if (token !== _advMetricsToken) return; // superseded by a newer call
       if (metricsData.error || metricsData.premium_required) {
         const section = document.getElementById('advancedMetricsSection');
         if (section) section.style.display = 'none';
@@ -9757,6 +9760,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
       // Populate bars — fetch metric config (for full parity with leaderboard) and
       // optionally ranks in parallel, then re-render once with both.
       _ensureAdvMetricsCfg().then(function(cfg) {
+        if (token !== _advMetricsToken) return;
         contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg);
 
         // Fetch position ranks in background and re-render with rank badges.
@@ -9765,6 +9769,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           fetch(`/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`)
             .then(r => r.ok ? r.json() : null)
             .then(ranksData => {
+              if (token !== _advMetricsToken) return; // stale: user selected a different range
               if (ranksData && ranksData.ranks && Object.keys(ranksData.ranks).length) {
                 contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranksData.ranks, cfg);
               }
@@ -9773,18 +9778,28 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
         }
       });
 
-      // Reset the weekly-trends panel when the season pill changes so it
-      // refetches for the newly selected season.
+      // Update weekly-trends panel with current season and week range.
       const wtWrap = document.getElementById('pmWeeklyTrendsWrap');
       if (wtWrap) {
+        // Store active week range so pmWtRender can filter accordingly.
+        wtWrap.dataset.wkStart = activeWS != null ? String(activeWS) : '';
+        wtWrap.dataset.wkEnd   = activeWE != null ? String(activeWE) : '';
+
         const s = (!isCareer && activeSeason) ? String(activeSeason) : '';
         if (wtWrap.dataset.season !== s) {
+          // Season changed — reset panel so it refetches.
           wtWrap.dataset.season = s;
           wtWrap.dataset.loaded = '';
           const wtBody = document.getElementById('pmWeeklyTrendsBody');
           if (wtBody) { wtBody.style.display = 'none'; wtBody.innerHTML = ''; }
           const wtBtn = document.getElementById('pmWeeklyTrendsBtn');
           if (wtBtn) wtBtn.innerHTML = 'Weekly trends &#9662;';
+        } else if (wtWrap.dataset.loaded) {
+          // Panel already loaded — re-render with updated week range filter.
+          const wtBody = document.getElementById('pmWeeklyTrendsBody');
+          if (wtBody && wtBody.style.display !== 'none') {
+            pmWtRender(wtWrap, wtWrap.dataset.position || '');
+          }
         }
       }
     })
@@ -9951,10 +9966,29 @@ function cmpToggleSection(wrapId, headerEl) {
 
 function pmWtRender(wrap, position) {
   var allWeeks = wrap._weeklyData || [];
-  var activeTab = document.querySelector('.pm-wt-tab.pm-wt-tab-active');
-  var nStr = activeTab ? activeTab.dataset.n : '8';
-  var n = (nStr === '' || nStr === undefined) ? 0 : (parseInt(nStr) || 8);
-  var weeks = n > 0 ? allWeeks.slice(-n) : allWeeks;
+  var wkStart = wrap.dataset.wkStart ? parseInt(wrap.dataset.wkStart) : null;
+  var wkEnd   = wrap.dataset.wkEnd   ? parseInt(wrap.dataset.wkEnd)   : null;
+  var rangeActive = (wkStart != null && wkEnd != null);
+
+  var weeks;
+  if (rangeActive) {
+    weeks = allWeeks.filter(function(w) {
+      var wk = Number(w.week); return wk >= wkStart && wk <= wkEnd;
+    });
+  } else {
+    var activeTab = document.querySelector('.pm-wt-tab.pm-wt-tab-active');
+    var nStr = activeTab ? activeTab.dataset.n : '8';
+    var n = (nStr === '' || nStr === undefined) ? 0 : (parseInt(nStr) || 8);
+    weeks = n > 0 ? allWeeks.slice(-n) : allWeeks;
+  }
+
+  // Hide tab bar when a specific range is selected; show it for full-season mode.
+  var body = document.getElementById('pmWeeklyTrendsBody');
+  if (body) {
+    var filterBar = body.querySelector('.pm-wt-filter-bar');
+    if (filterBar) filterBar.style.display = rangeActive ? 'none' : '';
+  }
+
   var el = document.getElementById('pmWtContent');
   if (el) el.innerHTML = buildWeeklyTrendRows(weeks, position);
 }
