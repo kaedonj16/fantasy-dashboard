@@ -9735,14 +9735,10 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
           pillsHTML += `<button class="adv-season-pill${activeClass}" onclick="loadAdvancedMetrics('${playerId}', ${lidExpr}, ${yr})">${yr}</button>`;
         });
         pillsHTML += '</div>';
-        // Week-bar: filter which weeks are shown (Custom Slider 3 style).
-        // Always show for a specific season; use availableWeeks bounds if synced,
-        // else fall back to W1–W18.
-        if (!isCareer && activeSeason) {
-          const wkMin = availableWeeks.length ? Math.min(...availableWeeks) : 1;
-          const wkMax = availableWeeks.length ? Math.max(...availableWeeks) : 18;
-          // Use server-echoed range when available; fall back to the requested
-          // range so the bar doesn't snap to full-range when weekly data is absent.
+        // Week-bar: only show when the player has per-week data for this season.
+        if (!isCareer && activeSeason && availableWeeks.length > 0) {
+          const wkMin = Math.min(...availableWeeks);
+          const wkMax = Math.max(...availableWeeks);
           const barWS = activeWS != null ? activeWS : (weekStart != null ? weekStart : null);
           const barWE = activeWE != null ? activeWE : (weekEnd != null ? weekEnd : null);
           const isFullRange = (barWS == null);
@@ -9753,7 +9749,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
             + '</div>';
         }
         pillsEl.innerHTML = pillsHTML;
-        if (!isCareer && activeSeason) {
+        if (!isCareer && activeSeason && availableWeeks.length > 0) {
           const _wkPid = playerId, _wkLid = leagueId, _wkSeas = activeSeason;
           _wkBarInit('advWkBar', function(ws, we) {
             loadAdvancedMetrics(_wkPid, _wkLid, _wkSeas, ws, we);
