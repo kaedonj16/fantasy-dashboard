@@ -9558,16 +9558,21 @@ function _wkBarBuild(id, min, max, ws, we) {
   }
   const pctL = ((loW - min) / n * 100).toFixed(2);
   const pctR = ((max - hiW) / n * 100).toFixed(2);
+  // Ticks live BELOW the track (not inside it) so grip handles can reach the
+  // edge without overlapping any week labels.
   return '<div class="wk-bar" id="' + id + '" data-min="' + min + '" data-max="' + max
     + '" data-ws="' + loW + '" data-we="' + hiW + '">'
     + '<div class="wk-bar-track">'
     + '<div class="wk-bar-bg"></div>'
     + '<div class="wk-bar-sel" style="left:' + pctL + '%;right:' + pctR + '%">'
-    + '<div class="wk-bar-grip wk-bar-grip-l"><span></span><span></span><span></span></div>'
-    + '<div class="wk-bar-grip wk-bar-grip-r"><span></span><span></span><span></span></div>'
+    + '<div class="wk-bar-grip wk-bar-grip-l" role="slider" aria-label="Start week"'
+    + ' aria-valuemin="' + min + '" aria-valuemax="' + max + '" aria-valuenow="' + loW + '" tabindex="0"><span></span><span></span></div>'
+    + '<div class="wk-bar-grip wk-bar-grip-r" role="slider" aria-label="End week"'
+    + ' aria-valuemin="' + min + '" aria-valuemax="' + max + '" aria-valuenow="' + hiW + '" tabindex="0"><span></span><span></span></div>'
+    + '</div>'
     + '</div>'
     + '<div class="wk-bar-ticks">' + ticks + '</div>'
-    + '</div></div>';
+    + '</div>';
 }
 
 // Wire drag interaction on a rendered bar. onChange(ws, we) fires on release.
@@ -9599,6 +9604,8 @@ function _wkBarInit(id, onChange) {
       const w = min + i;
       t.classList.toggle('wk-tick-in', w >= ws && w <= we);
     });
+    gripL.setAttribute('aria-valuenow', String(ws));
+    gripR.setAttribute('aria-valuenow', String(we));
   }
 
   function startDrag(e, mode) {
@@ -9640,6 +9647,20 @@ function _wkBarInit(id, onChange) {
   gripR.addEventListener('mousedown', e => { e.stopPropagation(); startDrag(e, 'hi'); });
   gripL.addEventListener('touchstart', e => { e.stopPropagation(); startDrag(e, 'lo'); }, { passive: false });
   gripR.addEventListener('touchstart', e => { e.stopPropagation(); startDrag(e, 'hi'); }, { passive: false });
+
+  // Keyboard support: arrow keys adjust the focused handle one week at a time.
+  function _onGripKey(e, mode) {
+    const dec = e.key === 'ArrowLeft' || e.key === 'ArrowDown';
+    const inc = e.key === 'ArrowRight' || e.key === 'ArrowUp';
+    if (!dec && !inc) return;
+    e.preventDefault();
+    if (mode === 'lo') { ws = Math.max(min, Math.min(we, ws + (inc ? 1 : -1))); }
+    else               { we = Math.max(ws, Math.min(max, we + (inc ? 1 : -1))); }
+    paint();
+    onChange(ws, we);
+  }
+  gripL.addEventListener('keydown', e => _onGripKey(e, 'lo'));
+  gripR.addEventListener('keydown', e => _onGripKey(e, 'hi'));
 
   sel.addEventListener('mousedown', e => {
     if (!e.target.closest('.wk-bar-grip')) startDrag(e, 'move');
@@ -9925,22 +9946,31 @@ function _advGetTip() {
     tip.id = 'adv-metric-def-tip';
     tip.className = 'adv-def-tip';
     document.body.appendChild(tip);
+    // Bubble phase so inline onclick handlers can call e.stopPropagation()
+    // to prevent the metric-label click from immediately dismissing the tip.
     document.addEventListener('click', function(e) {
       if (!tip.contains(e.target)) tip.style.display = 'none';
-    }, true);
+    });
   }
   return tip;
 }
 
 function _advPositionTip(tip, anchorEl) {
   const rect = anchorEl.getBoundingClientRect();
-  const tw = 240;
+  const tw = Math.min(240, window.innerWidth - 16);
   let left = rect.left + rect.width / 2 - tw / 2;
   left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
-  const top = rect.bottom + 6;
+  tip.style.maxWidth = tw + 'px';
+  // Read height after display:block so offsetHeight is accurate.
+  const tipH = tip.offsetHeight || 70;
+  // Prefer below the anchor; flip above if it would clip the bottom of the viewport.
+  let top = rect.bottom + 6;
+  if (top + tipH > window.innerHeight - 8) {
+    top = rect.top - tipH - 6;
+  }
+  top = Math.max(8, top);
   tip.style.left = left + 'px';
   tip.style.top = top + 'px';
-  tip.style.maxWidth = tw + 'px';
 }
 
 function advEnterMetricDef(e) {
