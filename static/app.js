@@ -9527,6 +9527,7 @@ function getRoleGrade(roleScore) {
 }
 
 const _advMetricsCache = new Map();
+const _advRanksCache = new Map(); // session cache for player-metric-ranks responses
 let _advMetricsToken = 0; // incremented on each loadAdvancedMetrics call; guards stale callbacks
 
 // ── Advanced-metrics config cache ────────────────────────────────────────────
@@ -9685,12 +9686,30 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
 
   const isAuto = season === 'auto';
   const realSeason = (season != null && season !== 'career' && season !== 'auto');
+  const hasWeekRange = realSeason && weekStart != null && weekEnd != null;
 
   const leagueParam = leagueId ? `&league_id=${leagueId}` : '';
   const seasonParam = realSeason ? `&season=${season}` : '';
-  const weekParam = (realSeason && weekStart != null && weekEnd != null)
-    ? `&week_start=${weekStart}&week_end=${weekEnd}` : '';
+  const weekParam = hasWeekRange ? `&week_start=${weekStart}&week_end=${weekEnd}` : '';
   const url = `/api/player-advanced-metrics/${playerId}?_=1${leagueParam}${seasonParam}${weekParam}`;
+
+  // When season is explicitly known and no week range, pre-fetch ranks in parallel
+  // with the metrics request so we can render once with both instead of two renders.
+  let _earlyRanksPromise = null;
+  if (realSeason && !hasWeekRange) {
+    let _rUrl = `/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${season}`;
+    if (leagueId) _rUrl += `&league_id=${leagueId}`;
+    const _rCached = _advRanksCache.get(_rUrl);
+    _earlyRanksPromise = _rCached
+      ? Promise.resolve(_rCached)
+      : fetch(_rUrl).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
+          if (d && d.ranks) {
+            _advRanksCache.set(_rUrl, d);
+            if (_advRanksCache.size > 20) _advRanksCache.delete(_advRanksCache.keys().next().value);
+          }
+          return d;
+        });
+  }
 
   const _cached = _advMetricsCache.get(url);
   if (!_cached) {
@@ -9780,28 +9799,46 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
         }
       }
 
-      // Populate bars — fetch metric config (for full parity with leaderboard) and
-      // optionally ranks in parallel, then re-render once with both.
+      // Populate bars — fetch metric config and ranks, then render once with both.
+      // When season was known upfront (_earlyRanksPromise), the ranks fetch ran in
+      // parallel with the metrics fetch so both are likely already resolved here.
+      // For week-range views or auto-season, we fall back to a sequential fetch.
       _ensureAdvMetricsCfg().then(function(cfg) {
         if (token !== _advMetricsToken) return;
-        contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive);
 
-        // Fetch position ranks in background and re-render with rank badges.
-        // Season-relative for a full season; week-range-relative when a week
-        // range is active (computed server-side from the weekly tables).
         if (!isCareer && activeSeason) {
-          let rankUrl = `/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`;
-          if (leagueId) rankUrl += `&league_id=${leagueId}`;
-          if (weekActive) rankUrl += `&week_start=${activeWS}&week_end=${activeWE}`;
-          fetch(rankUrl)
-            .then(r => r.ok ? r.json() : null)
-            .then(ranksData => {
-              if (token !== _advMetricsToken) return; // stale: user selected a different range
-              if (ranksData && ranksData.ranks && Object.keys(ranksData.ranks).length) {
-                contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranksData.ranks, cfg, weekActive);
-              }
-            })
-            .catch(() => {});
+          // Determine the ranks promise to use.
+          let _ranksPromise;
+          if (_earlyRanksPromise && !weekActive) {
+            // Already in-flight or resolved from the parallel pre-fetch above.
+            _ranksPromise = _earlyRanksPromise;
+          } else {
+            // Week-range or auto-season: fetch ranks now (season resolved from response).
+            let rankUrl = `/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`;
+            if (leagueId) rankUrl += `&league_id=${leagueId}`;
+            if (weekActive) rankUrl += `&week_start=${activeWS}&week_end=${activeWE}`;
+            const _rCached2 = _advRanksCache.get(rankUrl);
+            _ranksPromise = _rCached2
+              ? Promise.resolve(_rCached2)
+              : fetch(rankUrl).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
+                  if (d && d.ranks) {
+                    _advRanksCache.set(rankUrl, d);
+                    if (_advRanksCache.size > 20) _advRanksCache.delete(_advRanksCache.keys().next().value);
+                  }
+                  return d;
+                });
+          }
+
+          _ranksPromise.then(function(ranksData) {
+            if (token !== _advMetricsToken) return;
+            const ranks = (ranksData && ranksData.ranks && Object.keys(ranksData.ranks).length)
+              ? ranksData.ranks : null;
+            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive);
+          }).catch(function() {
+            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive);
+          });
+        } else {
+          contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive);
         }
       });
 
