@@ -9791,6 +9791,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
         // range is active (computed server-side from the weekly tables).
         if (!isCareer && activeSeason) {
           let rankUrl = `/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`;
+          if (leagueId) rankUrl += `&league_id=${leagueId}`;
           if (weekActive) rankUrl += `&week_start=${activeWS}&week_end=${activeWE}`;
           fetch(rankUrl)
             .then(r => r.ok ? r.json() : null)
@@ -10122,6 +10123,8 @@ function pmToggleWeeklyTrends(playerId) {
 
 const _ADV_METRIC_DESCS = {
   // keyed by metric key — used by renderCompareMetricRows
+  vorp: "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). How much the player produced above a freely-available waiver option.",
+  war: "Wins Above Replacement: season VORP divided by points-per-win (≈ the league's weekly scoring spread). Translates points above replacement into the wins they were worth; elite players are typically 4-6+.",
   role_score: "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position.",
   snap_share: "Percent of the team's offensive snaps the player was on the field for.",
   opportunity_share: "Share of the team's targets plus carries that went to this player.",
@@ -10224,6 +10227,8 @@ const _ADV_METRIC_DESCS = {
   'Air Yds/Game': "Receiving air yards per game; a measure of downfield target volume.",
   'Air Yards Share': "Share of the team's total passing air yards directed at this player; combines target share with depth of target.",
   'WOPR': "Weighted Opportunity Rate: (1.5 × target share) + (0.7 × rush share). Combines air and ground touches into a single opportunity share signal; elite receivers typically exceed 0.50.",
+  'VORP': "Value Over Replacement Points: season PPR points minus a replacement-level starter at the same position (league-size aware, FLEX included). How much the player produced above a freely-available waiver option.",
+  'WAR': "Wins Above Replacement: season VORP divided by points-per-win (≈ the league's weekly scoring spread). Translates points above replacement into the wins they were worth; elite players are typically 4-6+.",
   'Target Quality': "Composite of how valuable a player's targets are (depth, location, situation).",
   'Slot Rate': "Percent of routes run from the slot.",
   'Wide Rate': "Percent of routes run from out wide.",
@@ -10287,6 +10292,16 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
     return `(#${ranks[key]})`;
   }
   function _pg(total) { return (g > 0 && total != null) ? total / g : null; }
+
+  // Value: VORP / WAR — season-only, injected by the API for season views.
+  if (metrics.vorp != null) {
+    const v = metrics.vorp;
+    defs.push({ label: 'VORP', fill: Math.min(Math.max(v, 0) / 150 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('vorp'), cat: 'Value' });
+  }
+  if (metrics.war != null) {
+    const v = metrics.war;
+    defs.push({ label: 'WAR', fill: Math.min(Math.max(v, 0) / 6 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), sub: _rankSub('war'), cat: 'Value' });
+  }
 
   // Role Score (0–100)
   if (metrics.role_score != null) {
@@ -10703,7 +10718,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
   let html = rankNote;
   if (cfg && Object.keys(cfg).length) {
     // Group defs by category using cfg (best-effort — unlabeled defs go to 'Other')
-    const _CAT_ORDER = ['General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
+    const _CAT_ORDER = ['Value', 'General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
     const _catGroups = {};
     const _uncategorized = [];
     for (const def of defs) {
@@ -11594,6 +11609,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
     total_carries:'Carries', total_targets:'Targets', total_receptions:'Receptions',
     total_touches:'Touches', total_rush_tds:'Rush TDs', total_rec_tds:'Rec TDs',
     total_pass_tds:'Pass TDs', total_tds:'Total TDs',
+    vorp:'VORP', war:'WAR',
   };
 
   const _label = key => cfgLabelMap[key] || fallbackLabels[key] || key;
@@ -11608,6 +11624,9 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
 
     // Metric-specific scaling ranges - upper end of realistic elite values
     const metricRanges = {
+      // Value (fantasy points / wins above replacement)
+      'vorp': 150, 'war': 6,
+
       // Decimal-stored rates (0-1)
       'catch_rate': 1, 'snap_share': 1, 'rush_td_rate': 0.08,
 
@@ -11736,7 +11755,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
   // Group the displayed metrics by category (same order as the player modal) so
   // both modals stay visually consistent. Categories with no visible row are
   // dropped. Keys without a cfg category fall to 'Other' (rendered last).
-  const _CAT_ORDER = ['General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
+  const _CAT_ORDER = ['Value', 'General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
   const _groups = {};
   const _order = [];
   for (const key of displayKeys) {
@@ -11864,7 +11883,9 @@ function _cmpRangeBounds(side, weeks) {
 // rank context, so it returns no ranks.
 async function _cmpFetchRanks(pid, season, ws, we) {
   if (season == null) return {};
+  const _lid = (window.__brctx || {}).leagueId;
   let url = `/api/player-metric-ranks/${pid}?season=${season}`;
+  if (_lid && _lid !== 'None') url += `&league_id=${encodeURIComponent(_lid)}`;
   if (ws != null && we != null) url += `&week_start=${ws}&week_end=${we}`;
   try {
     const rd = await fetch(url).then(r => r.ok ? r.json() : null);
@@ -11878,7 +11899,9 @@ async function _cmpFetchSide(side) {
   const advKey = side.pid + '_' + seasonParam;
   let advData = _cmpAdvCache[advKey];
   if (!advData) {
-    try { advData = await fetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}`).then(r => r.json()); } catch (_) { advData = {}; }
+    const _lid = (window.__brctx || {}).leagueId;
+    const _lp = (_lid && _lid !== 'None') ? `&league_id=${encodeURIComponent(_lid)}` : '';
+    try { advData = await fetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}${_lp}`).then(r => r.json()); } catch (_) { advData = {}; }
     _cmpAdvCache[advKey] = advData;
   }
   side.seasons = advData.available_seasons || side.seasons || [];

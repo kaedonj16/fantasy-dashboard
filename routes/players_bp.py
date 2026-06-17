@@ -234,6 +234,29 @@ def api_player_advanced_metrics(player_id: str):
                 if metrics_payload.get(_tot) is not None and metrics_payload.get(_pg) is None:
                     metrics_payload[_pg] = float(metrics_payload[_tot]) / float(_g)
 
+        # VORP/WAR: season-only value metrics, computed league-aware via the
+        # same replacement-level math as the leaderboard. Skipped for career and
+        # week-range views since they are full-season figures.
+        if not is_career_request and active_week_start is None and target_season:
+            try:
+                from data_building.advanced_metrics import get_player_value_metrics
+                _nt = 12
+                _lid = (request.args.get("league_id") or "").strip()
+                if _lid:
+                    try:
+                        from app import get_league_ctx_from_cache
+                        _pf = (request.args.get("platform") or "sleeper").strip()
+                        _vctx = get_league_ctx_from_cache(_pf, _lid, int(target_season)) or {}
+                        _nt = int(_vctx.get("total_rosters") or 0) or 12
+                    except Exception:
+                        _nt = 12
+                _vm = get_player_value_metrics(str(player_id), int(target_season), num_teams=_nt)
+                for _vk, _vv in (_vm.get("metrics") or {}).items():
+                    if _vv is not None:
+                        metrics_payload[_vk] = float(_vv)
+            except Exception:
+                logger.debug("[player-advanced-metrics] value metrics unavailable", exc_info=True)
+
         # Strip PFF (premium) columns from the public response. The blended
         # evaluation score above already consumed the grades it needed; the raw
         # premium columns themselves are not redistributable, so they only ship
@@ -292,6 +315,29 @@ def api_player_metric_ranks(player_id: str):
                 str(player_id), season, week_start, week_end)
         else:
             result = get_player_metric_ranks(str(player_id), season=season)
+            # VORP/WAR ranks are season-only (no week-range equivalent).
+            try:
+                from data_building.advanced_metrics import get_player_value_metrics
+                _nt = 12
+                _lid = (request.args.get("league_id") or "").strip()
+                _vseason = season or (result.get("season") if isinstance(result, dict) else None)
+                if _lid and _vseason:
+                    try:
+                        from app import get_league_ctx_from_cache
+                        _pf = (request.args.get("platform") or "sleeper").strip()
+                        _vctx = get_league_ctx_from_cache(_pf, _lid, int(_vseason)) or {}
+                        _nt = int(_vctx.get("total_rosters") or 0) or 12
+                    except Exception:
+                        _nt = 12
+                _vm = get_player_value_metrics(str(player_id), _vseason, num_teams=_nt)
+                _vr = _vm.get("ranks") or {}
+                if _vr and isinstance(result, dict):
+                    result.setdefault("ranks", {})
+                    for _rk, _rv in _vr.items():
+                        if _rv is not None:
+                            result["ranks"][_rk] = _rv
+            except Exception:
+                logger.debug("[player-metric-ranks] value ranks unavailable", exc_info=True)
         # Don't leak ranks for premium (PFF) metrics on the public site.
         if isinstance(result, dict) and isinstance(result.get("ranks"), dict):
             result["ranks"] = strip_premium_metrics(result["ranks"])

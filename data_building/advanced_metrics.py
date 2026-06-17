@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json as _json
 import os
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -2089,26 +2089,19 @@ def _points_per_win() -> float:
         return _POINTS_PER_WIN_DEFAULT
 
 
-def get_value_leaderboard(
-    kind: str,
-    position: Optional[str] = None,
-    limit: int = 500,
+def _value_table(
     season: Optional[int] = None,
     num_teams: int = 12,
     starters: Optional[Dict[str, float]] = None,
     points_per_win: Optional[float] = None,
-) -> List[Dict[str, Any]]:
-    """Players ranked by VORP or WAR for a season.
+) -> Tuple[Optional[int], List[Dict[str, Any]]]:
+    """Compute VORP and WAR for every skill player in a season.
 
-    VORP = season PPR points − replacement-level points at the same position,
-    where the replacement player is the one ranked at (starters×teams + flex
-    share) within that position. WAR = VORP ÷ points-per-win. Output shape
-    matches get_metric_leaderboard: [{player_id, name, team, position, value,
-    games, vol, age}].
+    Shared core for both the leaderboard and the per-player modal lookups so the
+    numbers always match. Returns (season, recs) where each rec has
+    {player_id, position, pts, games, vorp, war}. Also stamps position-relative
+    ranks (vorp_rank, war_rank) computed across all players at the same position.
     """
-    kind = (kind or "").lower().strip()
-    if kind not in VALUE_METRICS:
-        return []
     teams = int(num_teams) if num_teams and num_teams > 0 else 12
     start_slots = {**_VALUE_STARTERS, **(starters or {})}
     ppw = points_per_win if (points_per_win and points_per_win > 0) else _points_per_win()
@@ -2121,7 +2114,7 @@ def get_value_leaderboard(
                 "ORDER BY season DESC LIMIT 1"
             ).fetchone()
             if not srow:
-                return []
+                return None, []
             season = int(srow["season"])
         rows = conn.execute(
             """SELECT DISTINCT ON (player_id)
@@ -2159,13 +2152,49 @@ def get_value_leaderboard(
         idx = max(0, min(len(pool) - 1, idx))
         repl_pts[pos] = pool[idx]
 
-    pos_filter = (position or "").upper().strip() or None
     for rec in recs:
         vorp = rec["pts"] - repl_pts.get(rec["position"], 0.0)
-        rec["value"] = round(vorp if kind == "vorp" else vorp / ppw, 3)
+        rec["vorp"] = round(vorp, 3)
+        rec["war"] = round(vorp / ppw, 3)
 
+    # Position-relative ranks (1 = best) for each value metric.
+    for pos_recs in (
+        [r for r in recs if r["position"] == p] for p in start_slots
+    ):
+        for key in ("vorp", "war"):
+            for i, rec in enumerate(sorted(pos_recs, key=lambda x: x[key], reverse=True), 1):
+                rec[f"{key}_rank"] = i
+
+    return season, recs
+
+
+def get_value_leaderboard(
+    kind: str,
+    position: Optional[str] = None,
+    limit: int = 500,
+    season: Optional[int] = None,
+    num_teams: int = 12,
+    starters: Optional[Dict[str, float]] = None,
+    points_per_win: Optional[float] = None,
+) -> List[Dict[str, Any]]:
+    """Players ranked by VORP or WAR for a season.
+
+    VORP = season PPR points − replacement-level points at the same position,
+    where the replacement player is the one ranked at (starters×teams + flex
+    share) within that position. WAR = VORP ÷ points-per-win. Output shape
+    matches get_metric_leaderboard: [{player_id, name, team, position, value,
+    games, vol, age}].
+    """
+    kind = (kind or "").lower().strip()
+    if kind not in VALUE_METRICS:
+        return []
+    _season, recs = _value_table(season, num_teams, starters, points_per_win)
+    if not recs:
+        return []
+
+    pos_filter = (position or "").upper().strip() or None
     out_recs = [r for r in recs if not pos_filter or r["position"] == pos_filter]
-    out_recs.sort(key=lambda x: x["value"], reverse=True)
+    out_recs.sort(key=lambda x: x[kind], reverse=True)
     out_recs = out_recs[:limit]
 
     try:
@@ -2182,12 +2211,36 @@ def get_value_leaderboard(
             "name": meta.get("name") or "Unknown",
             "team": meta.get("team") or "",
             "position": rec["position"],
-            "value": rec["value"],
+            "value": rec[kind],
             "games": rec["games"],
             "vol": rec["games"],
             "age": None,
         })
     return out
+
+
+def get_player_value_metrics(
+    player_id: str,
+    season: Optional[int] = None,
+    num_teams: int = 12,
+) -> Dict[str, Any]:
+    """VORP/WAR plus position-relative ranks for a single player.
+
+    Reuses the same replacement-level math as the leaderboard so the numbers
+    match exactly. Returns {"metrics": {vorp, war}, "ranks": {vorp, war}} with
+    values omitted when the player has no season points. Empty dict on no data.
+    """
+    pid = str(player_id)
+    _season, recs = _value_table(season, num_teams)
+    if not recs:
+        return {}
+    rec = next((r for r in recs if r["player_id"] == pid), None)
+    if rec is None:
+        return {}
+    return {
+        "metrics": {"vorp": rec["vorp"], "war": rec["war"]},
+        "ranks": {"vorp": rec.get("vorp_rank"), "war": rec.get("war_rank")},
+    }
 
 
 def get_metric_leaderboard(
