@@ -8295,8 +8295,12 @@ function openPlayerModal(playerId, playerName, opts) {
       const yearsExp = data.stats?.years_exp;
       const pid = String(data.player_id || playerId);
 
-      // Check if player has no game logs (indicating a rookie without NFL stats)
-      const hasGameLogs = data.game_logs_by_year && Object.keys(data.game_logs_by_year).length > 0;
+      // Check if player has no game logs (indicating a rookie without NFL stats).
+      // Game logs themselves are lazy-loaded by the Stats tab; player-details now
+      // ships a cheap has_game_logs boolean instead of the full per-week payload.
+      const hasGameLogs = (typeof data.has_game_logs === 'boolean')
+        ? data.has_game_logs
+        : (data.game_logs_by_year && Object.keys(data.game_logs_by_year).length > 0);
       const isRookieWithoutGameLogs = !hasGameLogs && data.prospect_data && data.prospect_data.prospect_score != null;
 
       if (isElite(pid)) {

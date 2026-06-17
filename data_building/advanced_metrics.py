@@ -2111,6 +2111,23 @@ _VALUE_TABLE_CACHE: Dict[tuple, Tuple[Optional[int], List[Dict[str, Any]]]] = {}
 # instead of once per player visit.
 _POSITION_RANKS_CACHE: Dict[tuple, Dict[str, Dict[str, int]]] = {}
 
+# Daily cache for get_metric_leaderboard. The Advanced Metrics page fetches one
+# leaderboard per visible/extra/filter column, and re-fetches on season/filter
+# changes — each a full season scan + players-index enrichment. Underlying data
+# only changes once a day (cron), so cache per (date, metric, position, season,
+# min_vol, limit). Only non-empty results are cached so a transient empty state
+# (mid-rebuild) isn't locked in for the day.
+_METRIC_LEADERBOARD_CACHE: Dict[tuple, List[Dict[str, Any]]] = {}
+
+
+def clear_daily_caches() -> None:
+    """Drop all in-process daily caches (value table, position ranks, metric
+    leaderboards). Called after a cron rebuild so fresh values are served
+    immediately instead of waiting for the date-keyed entries to roll over."""
+    _VALUE_TABLE_CACHE.clear()
+    _POSITION_RANKS_CACHE.clear()
+    _METRIC_LEADERBOARD_CACHE.clear()
+
 
 def _value_table(
     season: Optional[int] = None,
@@ -2340,6 +2357,14 @@ def get_metric_leaderboard(
     vol_spec = _spec.get("min_vol") or {}
     vol_col = vol_spec.get("col") or "games"
 
+    # Daily cache (keyed on inputs; season=None resolves to "latest", stable per day).
+    from datetime import date as _date
+    _lb_today = _date.today().isoformat()
+    _lb_key = (_lb_today, metric, pos, season, min_vol, limit)
+    _lb_hit = _METRIC_LEADERBOARD_CACHE.get(_lb_key)
+    if _lb_hit is not None:
+        return _lb_hit
+
     with get_conn() as conn:
         # Pre-check which columns exist to avoid aborting the transaction on
         # a missing column reference. All volume columns were added together, so
@@ -2523,6 +2548,11 @@ def get_metric_leaderboard(
             "vol": vol_val,
             "age": _player_age(meta),
         })
+    # Cache non-empty results only; evict stale-date entries to stay bounded.
+    if out:
+        for _k in [k for k in _METRIC_LEADERBOARD_CACHE if k[0] != _lb_today]:
+            _METRIC_LEADERBOARD_CACHE.pop(_k, None)
+        _METRIC_LEADERBOARD_CACHE[_lb_key] = out
     return out
 
 
