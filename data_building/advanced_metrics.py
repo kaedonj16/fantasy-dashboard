@@ -2543,6 +2543,7 @@ def get_metric_leaderboard(
             "name": meta.get("name") or "Unknown",
             "team": meta.get("team") or "",
             "position": r["position"],
+            "headshot": meta.get("espnHeadshot") or "",
             "value": float(r["value"]) if r["value"] is not None else None,
             "games": games_val,
             "vol": vol_val,

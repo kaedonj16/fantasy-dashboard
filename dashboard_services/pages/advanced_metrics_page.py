@@ -332,6 +332,7 @@ def build_advanced_metrics_body(
             </div>
             <div class="am-graph-plot-wrap">
               <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
+              <div id="amGraphHover" class="am-graph-hover"></div>
               <div id="amGraphTip" class="am-graph-tip"></div>
             </div>
           </div>
@@ -811,7 +812,7 @@ def build_advanced_metrics_body(
         border-radius:8px; padding:6px 12px; margin-bottom:10px;
       }
       /* Graph (scatter) modal */
-      .am-graph-card { max-width:720px; }
+      .am-graph-card { max-width:720px; max-height:90vh; }
       .am-graph-controls {
         display:flex; flex-wrap:wrap; gap:12px;
         padding:12px 18px; border-bottom:1px solid var(--border);
@@ -828,7 +829,25 @@ def build_advanced_metrics_body(
       .am-graph-actions { flex:0 0 auto !important; min-width:0 !important; justify-content:flex-end; margin-left:auto; }
       .am-graph-actions .am-add-stat-btn { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
       /* Plot area flexes and scrolls inside the 82vh card so controls never clip. */
-      .am-graph-plot-wrap { padding:14px 16px 16px; overflow:auto; flex:1 1 auto; min-height:0; -webkit-overflow-scrolling:touch; }
+      .am-graph-plot-wrap { position:relative; padding:14px 16px 16px; overflow:auto; flex:1 1 auto; min-height:0; -webkit-overflow-scrolling:touch; }
+      /* Hover/tap card: player headshot + the selected stats. Uses site-theme
+         vars (it's screen chrome, not part of the exported image). */
+      .am-graph-hover {
+        position:absolute; z-index:6; pointer-events:none; display:none;
+        background:var(--card); border:1px solid var(--border); border-radius:10px;
+        box-shadow:0 10px 30px rgba(0,0,0,.30); padding:9px 11px;
+        min-width:150px; max-width:240px;
+      }
+      .am-graph-hover.show { display:block; }
+      .am-graph-hover-top { display:flex; align-items:center; gap:9px; }
+      .am-graph-hover-hs {
+        width:42px; height:42px; border-radius:8px; object-fit:cover;
+        background:var(--row,rgba(0,0,0,.06)); flex-shrink:0;
+      }
+      .am-graph-hover-nm { font-size:13px; font-weight:800; color:var(--text); line-height:1.15; }
+      .am-graph-hover-pos { font-size:11px; color:var(--text-muted); font-weight:600; margin-top:1px; }
+      .am-graph-hover-stats { margin-top:7px; display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--text); }
+      .am-graph-hover-stats .k { color:var(--text-muted); }
       /* Tap-to-inspect line (touch has no hover for the <title> tooltips). */
       .am-graph-tip {
         margin-top:8px; min-height:18px; text-align:center;
@@ -2233,6 +2252,16 @@ _AM_JS = r"""
       .replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+  // Short label = surname, keeping a generational suffix attached
+  // (e.g. "Harold Fannin Jr." -> "Fannin Jr.", "Marvin Harrison Jr." -> "Harrison Jr.").
+  function _amLastName(name) {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '';
+    const SUF = /^(jr|sr|ii|iii|iv|v)\.?$/i;
+    const last = parts.length - 1;
+    if (parts.length >= 2 && SUF.test(parts[last])) return parts[last - 1] + ' ' + parts[last];
+    return parts[last];
+  }
   // Graph's own theme (independent of the site, so shared images can be either).
   // Defaults to the current site theme when the modal opens.
   let _amGraphTheme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
@@ -2322,14 +2351,28 @@ _AM_JS = r"""
       const m = cfg.metrics[k];
       return !pos || !m.positions || m.positions.indexOf(pos) >= 0;
     });
-    const curX = (applic.indexOf(state.metric) >= 0) ? state.metric : (applic[0] || state.metric);
-    const xm = cfg.metrics[curX];
-    const curY = applic.find(function(k) { return k !== curX && cfg.metrics[k].category === (xm && xm.category); })
-      || applic.find(function(k) { return k !== curX; }) || curX;
+    const okk = function(k) { return k && cfg.metrics[k] && applic.indexOf(k) >= 0; };
+    // Curated default scatters per position: opportunity (X) vs efficiency (Y),
+    // bubble = overall value/explosiveness. Falls back to a generic pick below.
+    const PRESETS = {
+      WR: { x: 'target_share',      y: 'yards_per_target', z: 'receiving_epa' },
+      RB: { x: 'opportunity_share', y: 'yards_per_carry',  z: 'rushing_epa' },
+      TE: { x: 'target_share',      y: 'yards_per_reception', z: 'receiving_epa' },
+    };
+    let curX, curY, curZ = '';
+    const preset = pos ? PRESETS[pos] : null;
+    if (preset && okk(preset.x) && okk(preset.y)) {
+      curX = preset.x; curY = preset.y; curZ = okk(preset.z) ? preset.z : '';
+    } else {
+      curX = (applic.indexOf(state.metric) >= 0) ? state.metric : (applic[0] || state.metric);
+      const xm = cfg.metrics[curX];
+      curY = applic.find(function(k) { return k !== curX && cfg.metrics[k].category === (xm && xm.category); })
+        || applic.find(function(k) { return k !== curX; }) || curX;
+    }
     xSel.innerHTML = _amGraphMetricOptions(curX);
     ySel.innerHTML = _amGraphMetricOptions(curY);
     zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions('');
-    xSel.value = curX; ySel.value = curY; zSel.value = '';
+    xSel.value = curX; ySel.value = curY; zSel.value = curZ;
     // Default graph theme to the site theme each open; preload both logos.
     _amGraphTheme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
     _amSyncGraphThemeBtn();
@@ -2374,8 +2417,8 @@ _AM_JS = r"""
         if (!yMap.has(pid)) return;
         const xv = Number(rx.value), yv = yMap.get(pid);
         if (!isFinite(xv) || !isFinite(yv)) return;
-        pts.push({ pid: pid, name: rx.name, position: rx.position, x: xv, y: yv,
-                   z: (zMap && zMap.has(pid)) ? zMap.get(pid) : null });
+        pts.push({ pid: pid, name: rx.name, position: rx.position, headshot: rx.headshot || '',
+                   x: xv, y: yv, z: (zMap && zMap.has(pid)) ? zMap.get(pid) : null });
       });
       const xLower = cfg.metrics[xk] && cfg.metrics[xk].lowerBetter;
       pts.sort(function(a, b) { return xLower ? a.x - b.x : b.x - a.x; });
@@ -2388,7 +2431,7 @@ _AM_JS = r"""
         if (token !== _amGraphToken) return;
         plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo);
         const tipEl = document.getElementById('amGraphTip');
-        if (tipEl) tipEl.innerHTML = '<span style="opacity:.6">Tap a point for player details</span>';
+        if (tipEl) tipEl.innerHTML = '<span style="opacity:.6">Hover or tap a point for player details</span>';
       });
     }).catch(function() {
       if (token === _amGraphToken) plot.innerHTML = '<div class="am-graph-empty">Could not load graph data.</div>';
@@ -2404,8 +2447,8 @@ _AM_JS = r"""
     // (smaller viewBox width => each unit scales up on screen, so text stays legible).
     const isNarrow = (window.innerWidth || 800) <= 600;
     const L = isNarrow
-      ? { W: 392, H: 472, padL: 46, padR: 14, padT: 52, padB: 80, fTitle: 14, fSub: 11, fTick: 12, fAxis: 12.5, fLeg: 12, nt: 3, logo: 175, dotMin: 5.5, dotMax: 13 }
-      : { W: 720, H: 520, padL: 64, padR: 22, padT: 54, padB: 70, fTitle: 14, fSub: 10.5, fTick: 10, fAxis: 11, fLeg: 11, nt: 4, logo: 230, dotMin: 4, dotMax: 15 };
+      ? { W: 392, H: 510, padL: 46, padR: 14, padT: 52, padB: 80, fTitle: 14, fSub: 11, fTick: 12, fAxis: 12.5, fLeg: 12, nt: 3, logo: 185, dotMin: 5.5, dotMax: 13 }
+      : { W: 720, H: 580, padL: 64, padR: 22, padT: 54, padB: 70, fTitle: 14, fSub: 10.5, fTick: 10, fAxis: 11, fLeg: 11, nt: 4, logo: 250, dotMin: 4, dotMax: 15 };
     const W = L.W, H = L.H, padL = L.padL, padR = L.padR, padT = L.padT, padB = L.padB;
     const xs = pts.map(function(p) { return p.x; });
     const ys = pts.map(function(p) { return p.y; });
@@ -2445,7 +2488,7 @@ _AM_JS = r"""
       const lx = padL + (W - padL - padR) / 2 - lw / 2;
       const ly = padT + (H - padT - padB) / 2 - lh / 2;
       s += '<image href="' + logo + '" xlink:href="' + logo + '" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1)
-        + '" width="' + lw + '" height="' + lh + '" opacity="0.06" preserveAspectRatio="xMidYMid meet"/>';
+        + '" width="' + lw + '" height="' + lh + '" opacity="0.10" preserveAspectRatio="xMidYMid meet"/>';
     }
     // Title + context subtitle.
     s += txt((W / 2).toFixed(1), 24, _amEsc(cfg.metrics[yk].label) + ' vs ' + _amEsc(cfg.metrics[xk].label), L.fTitle, TH.text, 800, 'middle');
@@ -2467,21 +2510,39 @@ _AM_JS = r"""
     s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 38), _amEsc(cfg.metrics[xk].label), L.fAxis, TH.text, 700, 'middle');
     s += txt(0, 0, _amEsc(cfg.metrics[yk].label), L.fAxis, TH.text, 700, 'middle',
       'translate(15,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)');
-    // Points. Labels only on desktop with a small set; phones use tap-to-inspect.
-    const showLabels = !isNarrow && pts.length <= 25;
-    pts.forEach(function(p) {
+    // Average reference lines (mean of the plotted players) — dashed crosshair
+    // that splits the chart into above/below-average quadrants.
+    const avgX = xs.reduce(function(a, b) { return a + b; }, 0) / xs.length;
+    const avgY = ys.reduce(function(a, b) { return a + b; }, 0) / ys.length;
+    const avgCol = (_amGraphTheme === 'dark') ? '#f59e0b' : '#d97706';
+    if (avgX >= xmin && avgX <= xmax) {
+      const ax = px(avgX);
+      s += '<line x1="' + ax.toFixed(1) + '" y1="' + padT + '" x2="' + ax.toFixed(1) + '" y2="' + (H - padB)
+        + '" stroke="' + avgCol + '" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.85"/>';
+      s += txt((ax + 3).toFixed(1), (padT + 11), 'avg ' + _amEsc(fmtX(avgX)), L.fLeg - 1, avgCol, 700, 'start');
+    }
+    if (avgY >= ymin && avgY <= ymax) {
+      const ay = py(avgY);
+      s += '<line x1="' + padL + '" y1="' + ay.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + ay.toFixed(1)
+        + '" stroke="' + avgCol + '" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.85"/>';
+      s += txt((W - padR - 3).toFixed(1), (ay - 4).toFixed(1), 'avg ' + _amEsc(fmtY(avgY)), L.fLeg - 1, avgCol, 700, 'end');
+    }
+    // Points. The top 10 (by X) are always labeled; on desktop with a small set
+    // every point is labeled. pts is pre-sorted best-first, so index < 10 = top 10.
+    const showAll = !isNarrow && pts.length <= 25;
+    const lblSize = isNarrow ? 10 : 9;
+    pts.forEach(function(p, idx) {
       const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
-      const nm = p.name + ' (' + (p.position || '') + ')';
-      let dt = cfg.metrics[xk].label + ': ' + fmtX(p.x) + '  ·  ' + cfg.metrics[yk].label + ': ' + fmtY(p.y);
-      if (zk) dt += '  ·  ' + cfg.metrics[zk].label + ': ' + (p.z != null ? fmtVal(p.z, zk) : '–');
+      const stats = [[cfg.metrics[xk].label, fmtX(p.x)], [cfg.metrics[yk].label, fmtY(p.y)]];
+      if (zk) stats.push([cfg.metrics[zk].label, p.z != null ? fmtVal(p.z, zk) : '–']);
+      const info = { nm: p.name, pos: p.position || '', hs: p.headshot || '', stats: stats };
       s += '<circle class="am-graph-dot" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + r.toFixed(1)
         + '" fill="' + col + '" fill-opacity="0.7" stroke="' + col + '" stroke-width="1"'
-        + ' data-nm="' + _amEsc(nm) + '" data-dt="' + _amEsc(dt) + '">'
-        + '<title>' + _amEsc(nm + '  ·  ' + dt) + '</title></circle>';
-      if (showLabels) {
-        const parts = (p.name || '').split(' ');
-        const last = parts[parts.length - 1];
-        s += txt((cx + r + 2).toFixed(1), (cy + 3).toFixed(1), _amEsc(last), 9, TH.muted, 400, 'start');
+        + ' data-info="' + _amEsc(JSON.stringify(info)) + '"></circle>';
+      const isTop = idx < 10;
+      if (isTop || showAll) {
+        s += txt((cx + r + 2).toFixed(1), (cy + 3).toFixed(1), _amEsc(_amLastName(p.name)), lblSize,
+          isTop ? TH.text : TH.muted, isTop ? 700 : 400, 'start');
       }
     });
     // In-SVG legend (positions present) + bubble note, so the shared image is complete.
@@ -2504,51 +2565,93 @@ _AM_JS = r"""
     s += '</svg>';
     return s;
   }
-  // One-time wiring: tap/click a point to show its details (touch has no hover),
-  // and re-render on resize/orientation change so the layout stays responsive.
+  // Build the hover/tap card (headshot + selected stats) from a dot's data-info.
+  function _amDotInfo(dot) {
+    try { return JSON.parse(dot.getAttribute('data-info') || '{}'); } catch (e) { return null; }
+  }
+  function _amShowHover(dot, clientX, clientY) {
+    const wrap = document.querySelector('.am-graph-plot-wrap');
+    const hover = document.getElementById('amGraphHover');
+    if (!wrap || !hover) return;
+    const info = _amDotInfo(dot);
+    if (!info) return;
+    let html = '<div class="am-graph-hover-top">';
+    if (info.hs) html += '<img class="am-graph-hover-hs" src="' + _amEsc(info.hs) + '" alt="" onerror="this.style.display=\'none\'"/>';
+    html += '<div><div class="am-graph-hover-nm">' + _amEsc(info.nm) + '</div>'
+      + '<div class="am-graph-hover-pos">' + _amEsc(info.pos) + '</div></div></div>';
+    html += '<div class="am-graph-hover-stats">';
+    (info.stats || []).forEach(function(st) {
+      html += '<div><span class="k">' + _amEsc(st[0]) + ':</span> <b>' + _amEsc(st[1]) + '</b></div>';
+    });
+    html += '</div>';
+    hover.innerHTML = html;
+    hover.classList.add('show');
+    const wr = wrap.getBoundingClientRect();
+    let x = clientX - wr.left + 14, y = clientY - wr.top + 14;
+    const hw = hover.offsetWidth, hh = hover.offsetHeight;
+    if (x + hw > wrap.clientWidth - 4) x = clientX - wr.left - hw - 14;
+    if (x < 4) x = 4;
+    if (y + hh > wrap.clientHeight - 4) y = Math.max(4, clientY - wr.top - hh - 14);
+    hover.style.left = x + 'px';
+    hover.style.top = y + 'px';
+  }
+  function _amHideHover() {
+    const hover = document.getElementById('amGraphHover');
+    if (hover) hover.classList.remove('show');
+  }
+  // One-time wiring: hover (desktop) / tap (touch) a point to show a card with
+  // the headshot + selected stats; re-render on resize so layout stays responsive.
   (function _amInitGraphInteractions() {
     const plot = document.getElementById('amGraphPlot');
     if (plot) {
+      plot.addEventListener('mousemove', function(e) {
+        const dot = e.target.closest && e.target.closest('circle[data-info]');
+        if (dot) _amShowHover(dot, e.clientX, e.clientY); else _amHideHover();
+      });
+      plot.addEventListener('mouseleave', _amHideHover);
       plot.addEventListener('click', function(e) {
-        const dot = e.target.closest && e.target.closest('circle[data-nm]');
-        const tipEl = document.getElementById('amGraphTip');
-        if (!tipEl) return;
-        if (!dot) {
-          tipEl.innerHTML = '<span style="opacity:.6">Tap a point for player details</span>';
-          return;
-        }
-        tipEl.innerHTML = '';
-        const b = document.createElement('b');
-        b.textContent = dot.getAttribute('data-nm') || '';
-        tipEl.appendChild(b);
-        tipEl.appendChild(document.createTextNode('  ' + (dot.getAttribute('data-dt') || '')));
+        const dot = e.target.closest && e.target.closest('circle[data-info]');
+        if (dot) { _amShowHover(dot, e.clientX, e.clientY); }
+        else { _amHideHover(); }
       });
     }
     let _rt;
     window.addEventListener('resize', function() {
       const modal = document.getElementById('amGraphModal');
       if (!modal || modal.style.display !== 'flex') return;
+      _amHideHover();
       clearTimeout(_rt);
       _rt = setTimeout(function() {
         if (modal.style.display === 'flex') window.amRenderGraph();
       }, 250);
     });
   })();
-  // Export the current graph as a branded PNG: native share when available,
-  // download otherwise. The SVG is self-contained (explicit colors + embedded
-  // logo) so it rasterizes cleanly to canvas.
+  // Export the current graph as a branded PNG. On touch devices (where the
+  // native share sheet is genuinely useful) we use the Web Share API; on
+  // desktop we download directly — the macOS/desktop share sheet for a file is
+  // clunky and unreliable, so a straight download is the better experience.
   window.amShareGraph = function() {
     const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
     if (!svg) return;
+    const btn = document.getElementById('amGraphShareBtn');
     const TH = _amGraphPalette();
-    const vb = (svg.getAttribute('viewBox') || '0 0 720 520').split(/\s+/).map(Number);
-    const W = vb[2] || 720, H = vb[3] || 520, scale = 2;
+    const vb = (svg.getAttribute('viewBox') || '0 0 720 580').split(/\s+/).map(Number);
+    const W = vb[2] || 720, H = vb[3] || 580, scale = 2;
     const clone = svg.cloneNode(true);
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
     clone.setAttribute('width', W); clone.setAttribute('height', H);
     const xml = new XMLSerializer().serializeToString(clone);
     const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+    // Touch device = phone/tablet → native share sheet is the right call.
+    const isTouch = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
+      && (navigator.maxTouchPoints || 0) > 0;
+    const flash = function(msg) {
+      if (!btn) return;
+      const prev = btn.innerHTML;
+      btn.innerHTML = msg;
+      setTimeout(function() { btn.innerHTML = prev; }, 1400);
+    };
     const img = new Image();
     img.onload = function() {
       const canvas = document.createElement('canvas');
@@ -2557,26 +2660,32 @@ _AM_JS = r"""
       ctx.fillStyle = TH.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.toBlob(function(blob) {
-        if (!blob) return;
+        if (!blob) { flash('Failed'); return; }
         const xk = document.getElementById('amGraphX').value;
         const yk = document.getElementById('amGraphY').value;
         const fname = 'br-metrics-' + xk + '-vs-' + yk + '.png';
-        const file = new File([blob], fname, { type: 'image/png' });
-        const title = 'BR Fantasy — Advanced Metrics';
-        const text = (cfg.metrics[yk] ? cfg.metrics[yk].label : yk) + ' vs '
-          + (cfg.metrics[xk] ? cfg.metrics[xk].label : xk);
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          navigator.share({ files: [file], title: title, text: text }).catch(function() {});
-        } else {
+        const download = function() {
           const a = document.createElement('a');
           a.href = URL.createObjectURL(blob);
           a.download = fname;
           document.body.appendChild(a); a.click(); a.remove();
           setTimeout(function() { URL.revokeObjectURL(a.href); }, 3000);
+          flash('Saved ✓');
+        };
+        if (isTouch) {
+          const file = new File([blob], fname, { type: 'image/png' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            const text = (cfg.metrics[yk] ? cfg.metrics[yk].label : yk) + ' vs '
+              + (cfg.metrics[xk] ? cfg.metrics[xk].label : xk);
+            navigator.share({ files: [file], title: 'BR Fantasy — Advanced Metrics', text: text })
+              .catch(function() { download(); });
+            return;
+          }
         }
+        download();
       }, 'image/png');
     };
-    img.onerror = function() {};
+    img.onerror = function() { flash('Failed'); };
     img.src = src;
   };
 
