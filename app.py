@@ -805,7 +805,7 @@ BASE_HTML = """
 
     <!-- Instant branded splash (covers the PWA/first-paint white screen) -->
     <style>
-      #appSplash{{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#020617;transition:opacity .35s ease;}}
+      #appSplash{{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#ffffff;transition:opacity .35s ease;}}
       #appSplash img{{width:170px;max-width:56%;height:auto;animation:appSplashPulse 1.5s ease-in-out infinite;}}
       #appSplash.app-splash-hide{{opacity:0;pointer-events:none;}}
       @keyframes appSplashPulse{{0%,100%{{opacity:.5}}50%{{opacity:1}}}}
@@ -827,7 +827,7 @@ BASE_HTML = """
   <body>
     <!-- Branded loading splash: shown instantly, removed once the page is ready -->
     <div id="appSplash" role="status" aria-label="Loading BR Fantasy">
-      <img src="/static/Website_Logo_dark.png" alt="BR Fantasy" />
+      <img src="/static/BR_Logo.png" alt="BR Fantasy" />
     </div>
     <script>
       (function(){{
