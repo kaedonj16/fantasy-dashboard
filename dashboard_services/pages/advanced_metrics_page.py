@@ -2543,9 +2543,12 @@ _AM_JS = r"""
         + '" stroke="' + avgCol + '" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.85"/>';
       s += txt((W - padR - 3).toFixed(1), (ay - 4).toFixed(1), 'avg ' + _amEsc(fmtY(avgY)), L.fLeg - 1, avgCol, 700, 'end');
     }
-    // Points. The top 10 (by X) are always labeled; on desktop with a small set
-    // every point is labeled. pts is pre-sorted best-first, so index < 10 = top 10.
-    const showAll = !isNarrow && pts.length <= 25;
+    // Label counts scale with pool size:
+    //   ≤50 → bold top 10, show top 25
+    //   >50  → bold top 15, show top 30
+    // pts is pre-sorted best-first, so index position = rank.
+    const boldCut = pts.length > 50 ? 15 : 10;
+    const showCut = pts.length > 50 ? 30 : 25;
     const lblSize = isNarrow ? 10 : 9;
     pts.forEach(function(p, idx) {
       const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
@@ -2555,10 +2558,10 @@ _AM_JS = r"""
       s += '<circle class="am-graph-dot" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + r.toFixed(1)
         + '" fill="' + col + '" fill-opacity="0.7" stroke="' + col + '" stroke-width="1"'
         + ' data-info="' + _amEsc(JSON.stringify(info)) + '"></circle>';
-      const isTop = idx < 10;
-      if (isTop || showAll) {
+      const isBold = idx < boldCut;
+      if (idx < showCut) {
         s += txt((cx + r + 2).toFixed(1), (cy + 3).toFixed(1), _amEsc(_amLastName(p.name)), lblSize,
-          isTop ? TH.text : TH.muted, isTop ? 700 : 400, 'start');
+          isBold ? TH.text : TH.muted, isBold ? 700 : 400, 'start');
       }
     });
     // In-SVG legend (positions present) + bubble note, so the shared image is complete.
