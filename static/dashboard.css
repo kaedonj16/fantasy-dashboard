@@ -13863,6 +13863,19 @@ img, svg, canvas {
 .am-ctrl-weekbar { flex: 2 1 220px; min-width: 0; }
 .am-ctrl-weekbar .wk-bar { flex: unset; display: block; }
 
+/* Mobile: a full-season (18-week) tick row is too cramped for every label.
+   On dense bars, blank every other label (keeping its flex cell so the visible
+   labels stay aligned to their week positions and ~2 cells apart, so nothing
+   overlaps). All weeks remain draggable and the exact selected range is shown
+   numerically in the section header above the bar. */
+@media (max-width: 600px) {
+  .wk-bar-dense .wk-bar-ticks .wk-tick:nth-child(even) { font-size: 0; }
+  .wk-bar-track { height: 34px; }            /* a touch taller for easier dragging */
+  .wk-bar-grip { width: 26px; height: 30px; } /* larger touch targets */
+  .wk-bar-grip-l { margin-left: -13px; }
+  .wk-bar-grip-r { margin-right: -13px; }
+}
+
 
 /* ============================================
    Player + Breakout Modals – Shared Design System
