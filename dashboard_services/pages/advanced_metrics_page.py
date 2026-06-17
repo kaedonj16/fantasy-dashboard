@@ -2565,19 +2565,54 @@ _AM_JS = r"""
         + ' data-info="' + _amEsc(JSON.stringify(d.info)) + '"></circle>';
     });
     // Pass 2 — labels on top of all circles, with a bg-colored halo so they're
-    // readable over both dots and the watermark. Labels normally sit to the
-    // right of the dot; when there isn't room before the right edge we flip them
-    // to the left so names never run off the panel.
+    // readable over both dots and the watermark. ptData is in rank order, so
+    // higher-ranked names claim space first; for each label we try a set of
+    // candidate positions around the dot and take the first that doesn't collide
+    // with an already-placed label. If every candidate collides, the label is
+    // dropped rather than stacked on top of another (no more buried names).
     const charW = lblSize * 0.56; // rough avg glyph width for width estimation
+    const lblH = lblSize + 2;
+    const placed = []; // {x1,y1,x2,y2} of committed labels
+    const overlaps = function(a, b) {
+      return a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
+    };
     ptData.forEach(function(d) {
       if (d.idx >= showCut) return;
       const isBold = d.idx < boldCut;
       const lbl = _amEsc(_amLastName(d.p.name));
-      const estW = _amLastName(d.p.name).length * charW;
-      const flip = (d.cx + d.r + 3 + estW) > (W - padR - 2);
-      const lx = flip ? (d.cx - d.r - 3) : (d.cx + d.r + 3);
-      s += '<text x="' + lx.toFixed(1) + '" y="' + (d.cy + 3).toFixed(1) + '"'
-        + (flip ? ' text-anchor="end"' : '')
+      const tw = _amLastName(d.p.name).length * charW;
+      const gap = d.r + 3, vy = d.cy + 3;
+      // Candidate anchors: right, left, above-right, below-right, above-left, below-left.
+      const cands = [
+        { x: d.cx + gap, y: vy, anchor: 'start' },
+        { x: d.cx - gap, y: vy, anchor: 'end' },
+        { x: d.cx + gap, y: d.cy - d.r - 4, anchor: 'start' },
+        { x: d.cx + gap, y: d.cy + d.r + lblH, anchor: 'start' },
+        { x: d.cx - gap, y: d.cy - d.r - 4, anchor: 'end' },
+        { x: d.cx - gap, y: d.cy + d.r + lblH, anchor: 'end' }
+      ];
+      let chosen = null;
+      for (let ci = 0; ci < cands.length; ci++) {
+        const c = cands[ci];
+        const x1 = c.anchor === 'end' ? c.x - tw : c.x;
+        const x2 = x1 + tw;
+        // Reject off-panel candidates.
+        if (x1 < padL - 2 || x2 > W - padR + 2) continue;
+        const box = { x1: x1 - 1, y1: c.y - lblH, x2: x2 + 1, y2: c.y + 3 };
+        let hit = false;
+        for (let pi = 0; pi < placed.length; pi++) { if (overlaps(box, placed[pi])) { hit = true; break; } }
+        if (!hit) { chosen = c; placed.push(box); break; }
+      }
+      // Bold (top-ranked) names are important enough to always show: if every
+      // candidate collided, force the right position so they're never dropped.
+      if (!chosen) {
+        if (!isBold) return;
+        chosen = cands[0];
+        const x1 = chosen.x, box = { x1: x1 - 1, y1: chosen.y - lblH, x2: x1 + tw + 1, y2: chosen.y + 3 };
+        placed.push(box);
+      }
+      s += '<text x="' + chosen.x.toFixed(1) + '" y="' + chosen.y.toFixed(1) + '"'
+        + (chosen.anchor === 'end' ? ' text-anchor="end"' : '')
         + ' font-size="' + lblSize + '" font-weight="' + (isBold ? 700 : 400) + '"'
         + ' fill="' + (isBold ? TH.text : TH.muted) + '"'
         + ' stroke="' + TH.bg + '" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"'
