@@ -165,11 +165,17 @@ def build_advanced_metrics_body(
             Rank every player by a single advanced metric. Bars are relative to the leader.
           </div>
         </div>
-        <button id="amLegendBtn" type="button" class="am-legend-btn"
-          onclick="document.getElementById('amLegendModal').style.display='flex'">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          Metric Glossary
-        </button>
+        <div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">
+          <button id="amGraphBtn" type="button" class="am-legend-btn" onclick="amOpenGraph()">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><path d="M2 2v10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="5" cy="9" r="1.3" fill="currentColor"/><circle cx="8" cy="5.5" r="1.3" fill="currentColor"/><circle cx="11" cy="7.5" r="1.3" fill="currentColor"/></svg>
+            Graph Metrics
+          </button>
+          <button id="amLegendBtn" type="button" class="am-legend-btn"
+            onclick="document.getElementById('amLegendModal').style.display='flex'">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            Metric Glossary
+          </button>
+        </div>
       </div>
 
       <div id="amLegendModal" class="am-legend-modal" style="display:none;"
@@ -292,6 +298,42 @@ def build_advanced_metrics_body(
                 onclick="document.getElementById('amCompareModal').style.display='none'">&times;</button>
             </div>
             <div class="am-legend-body" id="amCompareBody"></div>
+          </div>
+        </div>
+
+        <!-- Graph metrics modal: scatter of X vs Y (+ optional bubble metric) -->
+        <div id="amGraphModal" class="am-legend-modal" style="display:none;"
+          onclick="if(event.target===this)this.style.display='none'">
+          <div class="am-legend-card am-graph-card" role="dialog" aria-label="Graph metrics">
+            <div class="am-legend-head">
+              <span>Graph Metrics <span id="amGraphCtxNote" style="font-size:11px;font-weight:500;opacity:.55;margin-left:6px;"></span></span>
+              <button type="button" class="am-legend-close" aria-label="Close"
+                onclick="document.getElementById('amGraphModal').style.display='none'">&times;</button>
+            </div>
+            <div class="am-graph-controls">
+              <div class="am-gctrl"><label for="amGraphX">X axis</label><select id="amGraphX" onchange="amRenderGraph()"></select></div>
+              <div class="am-gctrl"><label for="amGraphY">Y axis</label><select id="amGraphY" onchange="amRenderGraph()"></select></div>
+              <div class="am-gctrl"><label for="amGraphZ">Bubble size</label><select id="amGraphZ" onchange="amRenderGraph()"></select></div>
+              <div class="am-gctrl"><label for="amGraphTopN">Show</label><select id="amGraphTopN" onchange="amRenderGraph()">
+                <option value="25">Top 25 by X</option>
+                <option value="50">Top 50 by X</option>
+                <option value="75">Top 75 by X</option>
+              </select></div>
+              <div class="am-gctrl am-graph-actions">
+                <label>&nbsp;</label>
+                <div style="display:flex;gap:6px;">
+                  <button type="button" id="amGraphThemeBtn" class="am-add-stat-btn" onclick="amToggleGraphTheme()" title="Toggle light / dark"></button>
+                  <button type="button" id="amGraphShareBtn" class="am-add-stat-btn" onclick="amShareGraph()" title="Share or download image">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px"><path d="M8 1.5v8M8 1.5 5.5 4M8 1.5 10.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 9v4.5h10V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    Share
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="am-graph-plot-wrap">
+              <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
+              <div id="amGraphTip" class="am-graph-tip"></div>
+            </div>
           </div>
         </div>
 
@@ -768,6 +810,50 @@ def build_advanced_metrics_body(
         background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.25);
         border-radius:8px; padding:6px 12px; margin-bottom:10px;
       }
+      /* Graph (scatter) modal */
+      .am-graph-card { max-width:720px; }
+      .am-graph-controls {
+        display:flex; flex-wrap:wrap; gap:12px;
+        padding:12px 18px; border-bottom:1px solid var(--border);
+      }
+      .am-graph-controls .am-gctrl { display:flex; flex-direction:column; gap:3px; flex:1 1 130px; min-width:120px; }
+      .am-graph-controls label {
+        font-size:10px; text-transform:uppercase; letter-spacing:.04em;
+        color:var(--text-muted); font-weight:700;
+      }
+      .am-graph-controls select {
+        font-size:12px; padding:6px 8px; border:1px solid var(--border);
+        border-radius:7px; background:var(--card); color:var(--text); cursor:pointer; width:100%;
+      }
+      .am-graph-actions { flex:0 0 auto !important; min-width:0 !important; justify-content:flex-end; margin-left:auto; }
+      .am-graph-actions .am-add-stat-btn { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+      /* Plot area flexes and scrolls inside the 82vh card so controls never clip. */
+      .am-graph-plot-wrap { padding:14px 16px 16px; overflow:auto; flex:1 1 auto; min-height:0; -webkit-overflow-scrolling:touch; }
+      /* Tap-to-inspect line (touch has no hover for the <title> tooltips). */
+      .am-graph-tip {
+        margin-top:8px; min-height:18px; text-align:center;
+        font-size:12px; color:var(--text-muted); line-height:1.4;
+      }
+      .am-graph-tip b { color:var(--text); }
+      @media (max-width:600px) {
+        .am-legend-modal { padding:8px; }
+        .am-graph-card { max-height:92vh; }
+        .am-graph-controls { gap:8px; padding:10px 12px; }
+        .am-graph-controls .am-gctrl { flex:1 1 46%; min-width:0; }
+        .am-graph-actions { flex:1 1 100% !important; }
+        .am-graph-actions > div { width:100%; }
+        .am-graph-actions .am-add-stat-btn { flex:1 1 0; justify-content:center; padding:8px 10px; }
+        .am-graph-plot-wrap { padding:10px 10px 12px; }
+        .am-graph-dot { stroke-width:1.25; }
+      }
+      .am-graph-svg { width:100%; height:auto; display:block; touch-action:none; }
+      .am-graph-empty { text-align:center; color:var(--text-muted); font-size:13px; padding:48px 0; }
+      .am-graph-axis { stroke:var(--border); }
+      .am-graph-tick { fill:var(--text-muted); font-size:10px; }
+      .am-graph-axislbl { fill:var(--text); font-size:11px; font-weight:700; }
+      .am-graph-ptlbl { fill:var(--text-muted); font-size:9px; pointer-events:none; }
+      .am-graph-dot { cursor:pointer; transition:fill-opacity .12s; }
+      .am-graph-dot:hover { fill-opacity:1 !important; }
     </style>
     """
 
@@ -2140,6 +2226,359 @@ _AM_JS = r"""
       el.style.display = 'none';
     }
   }
+
+  // ── Graph Metrics (scatter X vs Y, optional bubble = 3rd metric) ──────────
+  function _amEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  // Graph's own theme (independent of the site, so shared images can be either).
+  // Defaults to the current site theme when the modal opens.
+  let _amGraphTheme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
+  function _amGraphPalette() {
+    return (_amGraphTheme === 'dark')
+      ? { bg: '#0f172a', text: '#e2e8f0', muted: '#94a3b8',
+          grid: 'rgba(148,163,184,.22)', axis: 'rgba(148,163,184,.45)', border: 'rgba(148,163,184,.25)' }
+      : { bg: '#ffffff', text: '#1e293b', muted: '#64748b',
+          grid: 'rgba(100,116,139,.16)', axis: 'rgba(100,116,139,.40)', border: 'rgba(100,116,139,.20)' };
+  }
+  // Preload the BR logo (theme-appropriate) as a data URI so it embeds in the SVG
+  // and survives canvas rasterization for the shareable PNG.
+  const _amLogoCache = {};
+  function _amLoadLogo(theme) {
+    if (_amLogoCache[theme] !== undefined) return Promise.resolve(_amLogoCache[theme]);
+    const url = (theme === 'dark') ? '/static/BR_Logo_dark.png' : '/static/BR_Logo.png';
+    return fetch(url).then(function(r) { return r.ok ? r.blob() : null; }).then(function(b) {
+      if (!b) { _amLogoCache[theme] = ''; return ''; }
+      return new Promise(function(res) {
+        const fr = new FileReader();
+        fr.onload = function() { _amLogoCache[theme] = fr.result; res(fr.result); };
+        fr.onerror = function() { _amLogoCache[theme] = ''; res(''); };
+        fr.readAsDataURL(b);
+      });
+    }).catch(function() { _amLogoCache[theme] = ''; return ''; });
+  }
+  function _amSyncGraphThemeBtn() {
+    const b = document.getElementById('amGraphThemeBtn');
+    if (b) b.innerHTML = (_amGraphTheme === 'dark')
+      ? '<span style="font-size:13px;">☾</span> Dark'
+      : '<span style="font-size:13px;">☀</span> Light';
+  }
+  window.amToggleGraphTheme = function() {
+    _amGraphTheme = (_amGraphTheme === 'dark') ? 'light' : 'dark';
+    _amSyncGraphThemeBtn();
+    window.amRenderGraph();
+  };
+  // Build <optgroup> options from cfg.metrics, filtered to the active position.
+  function _amGraphMetricOptions(selectedKey) {
+    const pos = (state.position && state.position !== 'ALL') ? state.position : null;
+    const cats = {};
+    Object.keys(cfg.metrics).forEach(function(k) {
+      const m = cfg.metrics[k];
+      if (pos && m.positions && m.positions.indexOf(pos) === -1) return;
+      const c = m.category || 'Other';
+      (cats[c] = cats[c] || []).push([k, m.label]);
+    });
+    const order = ['Value', 'General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
+    const catKeys = Object.keys(cats).sort(function(a, b) {
+      const ia = order.indexOf(a), ib = order.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+    });
+    let html = '';
+    catKeys.forEach(function(c) {
+      html += '<optgroup label="' + _amEsc(c) + '">';
+      cats[c].sort(function(a, b) { return a[1].localeCompare(b[1]); }).forEach(function(pair) {
+        html += '<option value="' + _amEsc(pair[0]) + '"'
+          + (pair[0] === selectedKey ? ' selected' : '') + '>' + _amEsc(pair[1]) + '</option>';
+      });
+      html += '</optgroup>';
+    });
+    return html;
+  }
+  // Leaderboard params for one metric, mirroring the page's current filters.
+  function _amGraphParams(metricKey) {
+    const p = new URLSearchParams({ metric: metricKey, platform: cfg.platform });
+    if (cfg.leagueId) p.set('league_id', cfg.leagueId);
+    if (state.season) p.set('season', String(state.season));
+    if (state.position && state.position !== 'ALL') p.set('position', state.position);
+    const vol = defaultVol(metricKey);
+    if (vol) p.set('min_vol', vol);
+    const wr = resolveWeekRange();
+    if (wr.ws) p.set('week_start', String(wr.ws));
+    if (wr.we) p.set('week_end', String(wr.we));
+    return p;
+  }
+  let _amGraphToken = 0;
+  window.amOpenGraph = function() {
+    const modal = document.getElementById('amGraphModal');
+    const xSel = document.getElementById('amGraphX');
+    const ySel = document.getElementById('amGraphY');
+    const zSel = document.getElementById('amGraphZ');
+    const note = document.getElementById('amGraphCtxNote');
+    if (!modal || !xSel || !ySel || !zSel) return;
+    const pos = (state.position && state.position !== 'ALL') ? state.position : null;
+    const applic = Object.keys(cfg.metrics).filter(function(k) {
+      const m = cfg.metrics[k];
+      return !pos || !m.positions || m.positions.indexOf(pos) >= 0;
+    });
+    const curX = (applic.indexOf(state.metric) >= 0) ? state.metric : (applic[0] || state.metric);
+    const xm = cfg.metrics[curX];
+    const curY = applic.find(function(k) { return k !== curX && cfg.metrics[k].category === (xm && xm.category); })
+      || applic.find(function(k) { return k !== curX; }) || curX;
+    xSel.innerHTML = _amGraphMetricOptions(curX);
+    ySel.innerHTML = _amGraphMetricOptions(curY);
+    zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions('');
+    xSel.value = curX; ySel.value = curY; zSel.value = '';
+    // Default graph theme to the site theme each open; preload both logos.
+    _amGraphTheme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
+    _amSyncGraphThemeBtn();
+    _amLoadLogo('light'); _amLoadLogo('dark');
+    if (note) {
+      const bits = [];
+      bits.push(state.season || (cfg.seasons && cfg.seasons[0]) || '');
+      bits.push(pos ? pos : 'All positions');
+      const wr = resolveWeekRange();
+      if (wr.ws && wr.we) bits.push('W' + wr.ws + '–W' + wr.we);
+      note.textContent = bits.filter(Boolean).join(' · ');
+    }
+    modal.style.display = 'flex';
+    window.amRenderGraph();
+  };
+  window.amRenderGraph = function() {
+    const plot = document.getElementById('amGraphPlot');
+    const xSel = document.getElementById('amGraphX');
+    const ySel = document.getElementById('amGraphY');
+    const zSel = document.getElementById('amGraphZ');
+    const nSel = document.getElementById('amGraphTopN');
+    if (!plot || !xSel || !ySel) return;
+    const xk = xSel.value, yk = ySel.value, zk = zSel ? zSel.value : '';
+    const topN = nSel ? (parseInt(nSel.value, 10) || 25) : 25;
+    if (!xk || !yk) { plot.innerHTML = '<div class="am-graph-empty">Pick an X and Y metric.</div>'; return; }
+    const token = ++_amGraphToken;
+    plot.innerHTML = '<div class="am-graph-empty"><div class="loading-spinner" style="margin:0 auto 10px;"></div>Loading…</div>';
+    const uniq = [xk, yk]; if (zk && uniq.indexOf(zk) === -1) uniq.push(zk);
+    Promise.all(uniq.map(function(k) {
+      return fetch('/api/advanced-metrics/leaderboard?' + _amGraphParams(k))
+        .then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
+    })).then(function(results) {
+      if (token !== _amGraphToken) return;
+      const byKey = {};
+      uniq.forEach(function(k, i) { byKey[k] = (results[i] && results[i].players) || []; });
+      const xRows = byKey[xk];
+      const yMap = new Map(byKey[yk].map(function(r) { return [String(r.player_id), Number(r.value)]; }));
+      const zMap = zk ? new Map((byKey[zk] || []).map(function(r) { return [String(r.player_id), Number(r.value)]; })) : null;
+      let pts = [];
+      xRows.forEach(function(rx) {
+        const pid = String(rx.player_id);
+        if (!yMap.has(pid)) return;
+        const xv = Number(rx.value), yv = yMap.get(pid);
+        if (!isFinite(xv) || !isFinite(yv)) return;
+        pts.push({ pid: pid, name: rx.name, position: rx.position, x: xv, y: yv,
+                   z: (zMap && zMap.has(pid)) ? zMap.get(pid) : null });
+      });
+      const xLower = cfg.metrics[xk] && cfg.metrics[xk].lowerBetter;
+      pts.sort(function(a, b) { return xLower ? a.x - b.x : b.x - a.x; });
+      pts = pts.slice(0, topN);
+      if (!pts.length) {
+        plot.innerHTML = '<div class="am-graph-empty">No players have data for both metrics with the current filters.</div>';
+        return;
+      }
+      _amLoadLogo(_amGraphTheme).then(function(logo) {
+        if (token !== _amGraphToken) return;
+        plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo);
+        const tipEl = document.getElementById('amGraphTip');
+        if (tipEl) tipEl.innerHTML = '<span style="opacity:.6">Tap a point for player details</span>';
+      });
+    }).catch(function() {
+      if (token === _amGraphToken) plot.innerHTML = '<div class="am-graph-empty">Could not load graph data.</div>';
+    });
+  };
+  // Builds a fully self-contained SVG (explicit theme colors, embedded logo
+  // watermark, in-SVG title/legend) so it renders identically on screen and when
+  // rasterized to a shareable PNG. `logo` is a data: URI (may be empty).
+  function _amBuildScatter(pts, xk, yk, zk, logo) {
+    const TH = _amGraphPalette();
+    const FONT = "system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    // Responsive layout: a portrait viewBox with larger relative fonts on phones
+    // (smaller viewBox width => each unit scales up on screen, so text stays legible).
+    const isNarrow = (window.innerWidth || 800) <= 600;
+    const L = isNarrow
+      ? { W: 392, H: 472, padL: 46, padR: 14, padT: 52, padB: 80, fTitle: 14, fSub: 11, fTick: 12, fAxis: 12.5, fLeg: 12, nt: 3, logo: 175, dotMin: 5.5, dotMax: 13 }
+      : { W: 720, H: 520, padL: 64, padR: 22, padT: 54, padB: 70, fTitle: 14, fSub: 10.5, fTick: 10, fAxis: 11, fLeg: 11, nt: 4, logo: 230, dotMin: 4, dotMax: 15 };
+    const W = L.W, H = L.H, padL = L.padL, padR = L.padR, padT = L.padT, padB = L.padB;
+    const xs = pts.map(function(p) { return p.x; });
+    const ys = pts.map(function(p) { return p.y; });
+    let xmin = Math.min.apply(null, xs), xmax = Math.max.apply(null, xs);
+    let ymin = Math.min.apply(null, ys), ymax = Math.max.apply(null, ys);
+    if (xmin === xmax) { xmin -= 1; xmax += 1; }
+    if (ymin === ymax) { ymin -= 1; ymax += 1; }
+    xmin -= (xmax - xmin) * 0.06; xmax += (xmax - xmin) * 0.06;
+    ymin -= (ymax - ymin) * 0.06; ymax += (ymax - ymin) * 0.06;
+    const px = function(v) { return padL + ((v - xmin) / (xmax - xmin)) * (W - padL - padR); };
+    const py = function(v) { return H - padB - ((v - ymin) / (ymax - ymin)) * (H - padT - padB); };
+    let rOf = function() { return isNarrow ? 6 : 5; };
+    if (zk) {
+      const zs = pts.map(function(p) { return p.z; }).filter(function(v) { return v != null && isFinite(v); });
+      if (zs.length) {
+        const zmin = Math.min.apply(null, zs), zmax = Math.max.apply(null, zs);
+        const span = (zmax - zmin) || 1;
+        rOf = function(p) { return (p.z == null || !isFinite(p.z)) ? (L.dotMin * 0.7) : (L.dotMin + ((p.z - zmin) / span) * (L.dotMax - L.dotMin)); };
+      }
+    }
+    const fmtX = function(v) { return fmtVal(v, xk); };
+    const fmtY = function(v) { return fmtVal(v, yk); };
+    const txt = function(x, y, str, size, fill, weight, anchor, transform) {
+      return '<text x="' + x + '" y="' + y + '"'
+        + (anchor ? ' text-anchor="' + anchor + '"' : '')
+        + (transform ? ' transform="' + transform + '"' : '')
+        + ' font-size="' + size + '" font-weight="' + (weight || 400)
+        + '" fill="' + fill + '">' + str + '</text>';
+    };
+    let s = '<svg class="am-graph-svg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
+      + ' viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="font-family:' + FONT + ';">';
+    // Themed panel background.
+    s += '<rect x="0.5" y="0.5" width="' + (W - 1) + '" height="' + (H - 1) + '" rx="14" fill="' + TH.bg + '" stroke="' + TH.border + '"/>';
+    // Faint centered BR logo watermark (behind the data).
+    if (logo) {
+      const lw = 230, lh = 230;
+      const lx = padL + (W - padL - padR) / 2 - lw / 2;
+      const ly = padT + (H - padT - padB) / 2 - lh / 2;
+      s += '<image href="' + logo + '" xlink:href="' + logo + '" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1)
+        + '" width="' + lw + '" height="' + lh + '" opacity="0.06" preserveAspectRatio="xMidYMid meet"/>';
+    }
+    // Title + context subtitle.
+    s += txt((W / 2).toFixed(1), 24, _amEsc(cfg.metrics[yk].label) + ' vs ' + _amEsc(cfg.metrics[xk].label), L.fTitle, TH.text, 800, 'middle');
+    const noteEl = document.getElementById('amGraphCtxNote');
+    const ctx = noteEl ? noteEl.textContent : '';
+    if (ctx) s += txt((W / 2).toFixed(1), 41, _amEsc(ctx), L.fSub, TH.muted, 500, 'middle');
+    // Axes.
+    s += '<line x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - padR) + '" y2="' + (H - padB) + '" stroke="' + TH.axis + '"/>';
+    s += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (H - padB) + '" stroke="' + TH.axis + '"/>';
+    for (let i = 0; i <= L.nt; i++) {
+      const xv = xmin + (xmax - xmin) * i / L.nt, xx = px(xv);
+      if (i > 0) s += '<line x1="' + xx.toFixed(1) + '" y1="' + padT + '" x2="' + xx.toFixed(1) + '" y2="' + (H - padB) + '" stroke="' + TH.grid + '"/>';
+      s += txt(xx.toFixed(1), (H - padB + 16), _amEsc(fmtX(xv)), L.fTick, TH.muted, 400, 'middle');
+      const yv = ymin + (ymax - ymin) * i / L.nt, yy = py(yv);
+      if (i > 0) s += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="' + TH.grid + '"/>';
+      s += txt((padL - 7), (yy + 3).toFixed(1), _amEsc(fmtY(yv)), L.fTick, TH.muted, 400, 'end');
+    }
+    // Axis titles.
+    s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 38), _amEsc(cfg.metrics[xk].label), L.fAxis, TH.text, 700, 'middle');
+    s += txt(0, 0, _amEsc(cfg.metrics[yk].label), L.fAxis, TH.text, 700, 'middle',
+      'translate(15,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)');
+    // Points. Labels only on desktop with a small set; phones use tap-to-inspect.
+    const showLabels = !isNarrow && pts.length <= 25;
+    pts.forEach(function(p) {
+      const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
+      const nm = p.name + ' (' + (p.position || '') + ')';
+      let dt = cfg.metrics[xk].label + ': ' + fmtX(p.x) + '  ·  ' + cfg.metrics[yk].label + ': ' + fmtY(p.y);
+      if (zk) dt += '  ·  ' + cfg.metrics[zk].label + ': ' + (p.z != null ? fmtVal(p.z, zk) : '–');
+      s += '<circle class="am-graph-dot" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + r.toFixed(1)
+        + '" fill="' + col + '" fill-opacity="0.7" stroke="' + col + '" stroke-width="1"'
+        + ' data-nm="' + _amEsc(nm) + '" data-dt="' + _amEsc(dt) + '">'
+        + '<title>' + _amEsc(nm + '  ·  ' + dt) + '</title></circle>';
+      if (showLabels) {
+        const parts = (p.name || '').split(' ');
+        const last = parts[parts.length - 1];
+        s += txt((cx + r + 2).toFixed(1), (cy + 3).toFixed(1), _amEsc(last), 9, TH.muted, 400, 'start');
+      }
+    });
+    // In-SVG legend (positions present) + bubble note, so the shared image is complete.
+    const posPresent = [];
+    pts.forEach(function(p) { if (p.position && posPresent.indexOf(p.position) === -1) posPresent.push(p.position); });
+    const legendItems = posPresent.slice();
+    const legendY = H - 16;
+    if (legendItems.length > 1 || zk) {
+      const segW = isNarrow ? 50 : 64;
+      const bubbleW = zk ? (isNarrow ? 70 : 150) : 0;
+      const totalW = legendItems.length * segW + bubbleW;
+      let lx2 = Math.max(8, (W - totalW) / 2);
+      legendItems.forEach(function(pp) {
+        s += '<circle cx="' + (lx2 + 5).toFixed(1) + '" cy="' + (legendY - 3) + '" r="5" fill="' + posColor(pp) + '" fill-opacity="0.85"/>';
+        s += txt((lx2 + 14).toFixed(1), legendY, _amEsc(pp), L.fLeg, TH.muted, 600, 'start');
+        lx2 += segW;
+      });
+      if (zk) s += txt((lx2 + 4).toFixed(1), legendY, (isNarrow ? '○ = ' : '○ Bubble = ') + _amEsc(cfg.metrics[zk].label), L.fLeg - 0.5, TH.muted, 500, 'start');
+    }
+    s += '</svg>';
+    return s;
+  }
+  // One-time wiring: tap/click a point to show its details (touch has no hover),
+  // and re-render on resize/orientation change so the layout stays responsive.
+  (function _amInitGraphInteractions() {
+    const plot = document.getElementById('amGraphPlot');
+    if (plot) {
+      plot.addEventListener('click', function(e) {
+        const dot = e.target.closest && e.target.closest('circle[data-nm]');
+        const tipEl = document.getElementById('amGraphTip');
+        if (!tipEl) return;
+        if (!dot) {
+          tipEl.innerHTML = '<span style="opacity:.6">Tap a point for player details</span>';
+          return;
+        }
+        tipEl.innerHTML = '';
+        const b = document.createElement('b');
+        b.textContent = dot.getAttribute('data-nm') || '';
+        tipEl.appendChild(b);
+        tipEl.appendChild(document.createTextNode('  ' + (dot.getAttribute('data-dt') || '')));
+      });
+    }
+    let _rt;
+    window.addEventListener('resize', function() {
+      const modal = document.getElementById('amGraphModal');
+      if (!modal || modal.style.display !== 'flex') return;
+      clearTimeout(_rt);
+      _rt = setTimeout(function() {
+        if (modal.style.display === 'flex') window.amRenderGraph();
+      }, 250);
+    });
+  })();
+  // Export the current graph as a branded PNG: native share when available,
+  // download otherwise. The SVG is self-contained (explicit colors + embedded
+  // logo) so it rasterizes cleanly to canvas.
+  window.amShareGraph = function() {
+    const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
+    if (!svg) return;
+    const TH = _amGraphPalette();
+    const vb = (svg.getAttribute('viewBox') || '0 0 720 520').split(/\s+/).map(Number);
+    const W = vb[2] || 720, H = vb[3] || 520, scale = 2;
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    clone.setAttribute('width', W); clone.setAttribute('height', H);
+    const xml = new XMLSerializer().serializeToString(clone);
+    const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      canvas.width = W * scale; canvas.height = H * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = TH.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(function(blob) {
+        if (!blob) return;
+        const xk = document.getElementById('amGraphX').value;
+        const yk = document.getElementById('amGraphY').value;
+        const fname = 'br-metrics-' + xk + '-vs-' + yk + '.png';
+        const file = new File([blob], fname, { type: 'image/png' });
+        const title = 'BR Fantasy — Advanced Metrics';
+        const text = (cfg.metrics[yk] ? cfg.metrics[yk].label : yk) + ' vs '
+          + (cfg.metrics[xk] ? cfg.metrics[xk].label : xk);
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], title: title, text: text }).catch(function() {});
+        } else {
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = fname;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function() { URL.revokeObjectURL(a.href); }, 3000);
+        }
+      }, 'image/png');
+    };
+    img.onerror = function() {};
+    img.src = src;
+  };
 
   function fetchData() {
     // paywall removed — advanced metrics is available to all users

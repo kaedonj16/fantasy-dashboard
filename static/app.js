@@ -9563,9 +9563,13 @@ function _wkBarBuild(id, min, max, ws, we) {
   }
   const pctL = ((loW - min) / n * 100).toFixed(2);
   const pctR = ((max - hiW) / n * 100).toFixed(2);
+  // With many weeks the per-tick cells get too narrow for "W18"-width labels on
+  // phones; flag dense bars so CSS can thin the labels (every other, endpoints
+  // kept) on small screens. All weeks stay draggable regardless.
+  const dense = n > 10 ? ' wk-bar-dense' : '';
   // Ticks live BELOW the track (not inside it) so grip handles can reach the
   // edge without overlapping any week labels.
-  return '<div class="wk-bar" id="' + id + '" data-min="' + min + '" data-max="' + max
+  return '<div class="wk-bar' + dense + '" id="' + id + '" data-min="' + min + '" data-max="' + max
     + '" data-ws="' + loW + '" data-we="' + hiW + '">'
     + '<div class="wk-bar-track">'
     + '<div class="wk-bar-bg"></div>'
