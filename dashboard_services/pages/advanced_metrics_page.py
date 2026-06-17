@@ -1668,9 +1668,9 @@ _AM_JS = r"""
     // Remove any previous tooltip listeners to avoid duplicates on re-bind.
     if (th._amTipEnter) { th.removeEventListener('mouseenter', th._amTipEnter); delete th._amTipEnter; }
     if (th._amTipLeave) { th.removeEventListener('mouseleave', th._amTipLeave); delete th._amTipLeave; }
-    if (!desc) { delete th.dataset.def; th.style.cursor = ''; return; }
+    if (!desc) { delete th.dataset.def; th.removeAttribute('title'); th.style.cursor = ''; return; }
     th.dataset.def = desc;
-    th.title = desc;
+    th.removeAttribute('title');
     th.style.cursor = 'help';
     th._amTipEnter = function(e) { if (typeof advEnterMetricDef === 'function') advEnterMetricDef(e); };
     th._amTipLeave = function(e) { if (typeof advLeaveMetricDef === 'function') advLeaveMetricDef(e); };
