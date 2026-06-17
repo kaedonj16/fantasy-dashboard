@@ -2526,6 +2526,152 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
         }
 
 
+def get_player_weekly_metric_ranks(
+    player_id: str, season: int, week_start: int, week_end: int
+) -> Dict[str, Any]:
+    """Position-relative ranks for one player over a week range.
+
+    Mirrors get_player_metric_ranks but ranks the *weekly-capable* metrics
+    aggregated over [week_start, week_end]: usage metrics from
+    player_weekly_metrics and NGS/EPA/FTN metrics from
+    player_weekly_advanced_metrics (totals summed, rates volume-weighted — the
+    same aggregation the week-range modal/leaderboard use). A player is ranked
+    among all players at the same position with a non-null value for the metric
+    in the range; ties share a rank. Returns
+    {position, season, week_start, week_end, ranks: {metric_key: rank}}.
+    """
+    lo, hi = (week_start, week_end) if week_start <= week_end else (week_end, week_start)
+    init_weekly_advanced_metrics_db()
+    target = str(player_id)
+
+    # Resolve the player's position for this range (usage table, then adv table).
+    position = None
+    with get_conn() as conn:
+        for tbl in ("player_weekly_metrics", "player_weekly_advanced_metrics"):
+            prow = conn.execute(
+                f"SELECT position FROM {tbl} "
+                "WHERE player_id = %s AND season = %s AND week BETWEEN %s AND %s "
+                "AND position IS NOT NULL ORDER BY week DESC LIMIT 1",
+                (target, int(season), int(lo), int(hi)),
+            ).fetchone()
+            if prow and prow["position"]:
+                position = prow["position"]
+                break
+    if not position:
+        return {"position": None, "season": season,
+                "week_start": lo, "week_end": hi, "ranks": {}}
+
+    # value_by_metric[metric][player_id] = aggregated value over the range.
+    value_by_metric: Dict[str, Dict[str, float]] = {}
+
+    def _record(metric: str, pid: str, val: Optional[float]) -> None:
+        if val is None:
+            return
+        value_by_metric.setdefault(metric, {})[str(pid)] = float(val)
+
+    # ── Usage metrics (player_weekly_metrics) ────────────────────────────────
+    with get_conn() as conn:
+        usage_rows = conn.execute(
+            "SELECT player_id, COUNT(*) AS weeks, "
+            "SUM(targets) AS targets, SUM(receptions) AS receptions, "
+            "SUM(rec_yards) AS rec_yards, SUM(carries) AS carries, "
+            "SUM(rush_yards) AS rush_yards, SUM(touches) AS touches, "
+            "SUM(ppr_pts) AS ppr_pts, AVG(snap_pct) AS snap_pct, "
+            "AVG(target_share) AS target_share "
+            "FROM player_weekly_metrics "
+            "WHERE season = %s AND week BETWEEN %s AND %s AND position = %s "
+            "GROUP BY player_id",
+            (int(season), int(lo), int(hi), position),
+        ).fetchall()
+
+    for r in usage_rows:
+        d = dict(r)
+        pid = d["player_id"]
+        weeks = float(d["weeks"]) if d["weeks"] else 0.0
+        tg = float(d["targets"] or 0); rc = float(d["receptions"] or 0)
+        ry = float(d["rec_yards"] or 0); ca = float(d["carries"] or 0)
+        rch = float(d["rush_yards"] or 0); to = float(d["touches"] or 0)
+        pp = float(d["ppr_pts"] or 0)
+        # Rates (match the week-range modal aggregation).
+        if d["snap_pct"] is not None:
+            _record("snap_share", pid, float(d["snap_pct"]) / 100.0)
+        if d["target_share"] is not None:
+            _record("target_share", pid, float(d["target_share"]) / 100.0)
+        if tg > 0:
+            _record("yards_per_target", pid, ry / tg)
+            _record("catch_rate", pid, rc / tg)
+        if rc > 0:
+            _record("yards_per_reception", pid, ry / rc)
+        if ca > 0:
+            _record("yards_per_carry", pid, rch / ca)
+        if to > 0:
+            _record("yards_per_touch", pid, (ry + rch) / to)
+        # Volume totals + per-game.
+        if tg:
+            _record("total_targets", pid, tg)
+            if weeks: _record("targets_per_game", pid, tg / weeks)
+        if rc:
+            _record("total_receptions", pid, rc)
+            if weeks: _record("receptions_per_game", pid, rc / weeks)
+        if ry:
+            _record("total_rec_yards", pid, ry)
+            if weeks: _record("rec_yards_per_game", pid, ry / weeks)
+        if ca:
+            _record("total_carries", pid, ca)
+            if weeks: _record("carries_per_game", pid, ca / weeks)
+        if rch:
+            _record("total_rush_yards", pid, rch)
+            if weeks: _record("rush_yards_per_game", pid, rch / weeks)
+        if to:
+            _record("total_touches", pid, to)
+            if weeks: _record("touches_per_game", pid, to / weeks)
+        if pp:
+            _record("ppr_pts", pid, pp)
+            if weeks: _record("ppr_pts_per_game", pid, pp / weeks)
+
+    # ── Advanced metrics (player_weekly_advanced_metrics) ────────────────────
+    adv_keys: List[str] = []
+    select_exprs: List[str] = ["player_id"]
+    for m in WEEKLY_ADV_METRIC_COLS:
+        agg = _adv_weekly_agg_sql(m)
+        if not agg:
+            continue
+        value_sql, _ = agg
+        select_exprs.append(f"{value_sql} AS {m}")
+        adv_keys.append(m)
+    if adv_keys:
+        with get_conn() as conn:
+            adv_rows = conn.execute(
+                "SELECT " + ", ".join(select_exprs) +
+                " FROM player_weekly_advanced_metrics "
+                "WHERE season = %s AND week BETWEEN %s AND %s AND position = %s "
+                "GROUP BY player_id",
+                (int(season), int(lo), int(hi), position),
+            ).fetchall()
+        for r in adv_rows:
+            d = dict(r)
+            pid = d["player_id"]
+            for m in adv_keys:
+                if d.get(m) is not None:
+                    _record(m, pid, float(d[m]))
+
+    # ── Rank the target player within each metric ────────────────────────────
+    ranks: Dict[str, int] = {}
+    for metric, vals in value_by_metric.items():
+        if target not in vals:
+            continue
+        my = vals[target]
+        lower_better = bool(LEADERBOARD_METRICS.get(metric, {}).get("lower_better"))
+        if lower_better:
+            better = sum(1 for v in vals.values() if v < my)
+        else:
+            better = sum(1 for v in vals.values() if v > my)
+        ranks[metric] = better + 1
+
+    return {"position": position, "season": season,
+            "week_start": lo, "week_end": hi, "ranks": ranks}
+
+
 def get_top_role_players(position: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     """
     Get players with highest role scores (usage + efficiency).

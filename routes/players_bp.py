@@ -264,15 +264,34 @@ def api_player_advanced_metrics(player_id: str):
 
 @players_bp.route("/api/player-metric-ranks/<player_id>")
 def api_player_metric_ranks(player_id: str):
-    """Position-relative volume ranks for a player in a given season."""
+    """Position-relative volume ranks for a player in a given season.
+
+    With ``week_start`` and ``week_end`` query params, ranks are computed over
+    that week range from the weekly tables instead of season totals.
+    """
     try:
-        from data_building.advanced_metrics import get_player_metric_ranks, strip_premium_metrics
+        from data_building.advanced_metrics import (
+            get_player_metric_ranks, get_player_weekly_metric_ranks, strip_premium_metrics)
         season = request.args.get("season")
         try:
             season = int(season) if season else None
         except (ValueError, TypeError):
             season = None
-        result = get_player_metric_ranks(str(player_id), season=season)
+
+        def _int_arg(name):
+            v = request.args.get(name)
+            try:
+                return int(v) if v not in (None, "") else None
+            except (ValueError, TypeError):
+                return None
+        week_start = _int_arg("week_start")
+        week_end = _int_arg("week_end")
+
+        if season and week_start is not None and week_end is not None:
+            result = get_player_weekly_metric_ranks(
+                str(player_id), season, week_start, week_end)
+        else:
+            result = get_player_metric_ranks(str(player_id), season=season)
         # Don't leak ranks for premium (PFF) metrics on the public site.
         if isinstance(result, dict) and isinstance(result.get("ranks"), dict):
             result["ranks"] = strip_premium_metrics(result["ranks"])

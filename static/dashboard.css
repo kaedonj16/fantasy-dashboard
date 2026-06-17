@@ -13823,7 +13823,7 @@ img, svg, canvas {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  width: 16px;
+  width: 24px;
   height: calc(100% + 4px);
   margin: -2px 0;
   flex-shrink: 0;
@@ -13836,7 +13836,7 @@ img, svg, canvas {
 .wk-bar-grip span {
   display: block;
   width: 2px;
-  height: 11px;
+  height: 13px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.9);
 }
@@ -15608,6 +15608,19 @@ tr.team-clickable {
 .compare-metric-p2-val.compare-metric-win::before {
   content: "\25C2 "; /* ◂ points toward this side's bar */
   font-size: 10px;
+}
+/* Position rank badge shown beside each side's value (#N among the position) */
+.cmp-rank-badge {
+  display: inline-block;
+  margin: 0 3px;
+  padding: 0 4px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  color: var(--text-muted);
+  background: var(--border);
+  border-radius: 4px;
+  vertical-align: middle;
 }
 /* Week-range context label (#1) + season-grades info icon (#3) */
 .compare-range-note {

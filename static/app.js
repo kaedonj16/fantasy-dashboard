@@ -9763,17 +9763,20 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
       // optionally ranks in parallel, then re-render once with both.
       _ensureAdvMetricsCfg().then(function(cfg) {
         if (token !== _advMetricsToken) return;
-        contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg);
+        contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive);
 
         // Fetch position ranks in background and re-render with rank badges.
-        // Ranks are season-relative, so they don't apply to a week-range view.
-        if (!isCareer && activeSeason && !weekActive) {
-          fetch(`/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`)
+        // Season-relative for a full season; week-range-relative when a week
+        // range is active (computed server-side from the weekly tables).
+        if (!isCareer && activeSeason) {
+          let rankUrl = `/api/player-metric-ranks/${encodeURIComponent(playerId)}?season=${activeSeason}`;
+          if (weekActive) rankUrl += `&week_start=${activeWS}&week_end=${activeWE}`;
+          fetch(rankUrl)
             .then(r => r.ok ? r.json() : null)
             .then(ranksData => {
               if (token !== _advMetricsToken) return; // stale: user selected a different range
               if (ranksData && ranksData.ranks && Object.keys(ranksData.ranks).length) {
-                contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranksData.ranks, cfg);
+                contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranksData.ranks, cfg, weekActive);
               }
             })
             .catch(() => {});
@@ -10206,11 +10209,21 @@ const _ADV_METRIC_DESCS = {
   'Pass TDs/G': "Passing touchdowns per game.",
 };
 
-function buildAdvancedMetricsHTML(metricsData, ranks, cfg) {
-  const metrics = metricsData.metrics || {};
+function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
+  let metrics = metricsData.metrics || {};
   // Normalize PFF position codes to canonical fantasy positions
   const _posNorm = { HB: 'RB', FB: 'RB', SE: 'WR', FL: 'WR' };
   const position = _posNorm[(metricsData.position || '').toUpperCase()] || metricsData.position;
+
+  // Week-range view: only metrics that can be sliced by week are meaningful, so
+  // drop everything that isn't weekly-capable (per the leaderboard config).
+  if (weekActive && cfg && Object.keys(cfg).length) {
+    const _wkOk = new Set(Object.keys(cfg).filter(k => cfg[k] && cfg[k].weeklyCapable));
+    ['games', 'position'].forEach(k => _wkOk.add(k));  // meta keys used for rates
+    const _filtered = {};
+    for (const [k, v] of Object.entries(metrics)) { if (_wkOk.has(k)) _filtered[k] = v; }
+    metrics = _filtered;
+  }
 
   const defs = [];
   const g = metrics.games || 0;
@@ -11438,7 +11451,8 @@ function _buildComparePlayerHeader(p) {
   `;
 }
 
-function renderCompareMetricRows(m1, m2, p1, p2, cfg) {
+function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
+  ranks1 = ranks1 || {}; ranks2 = ranks2 || {};
   // Build a map of metrics present in both players
   const allKeys = new Set([...Object.keys(m1 || {}), ...Object.keys(m2 || {})]);
   const pos1 = (p1?.position || '').toUpperCase();
@@ -11639,9 +11653,12 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg) {
 
     const winCls2 = win2 ? ' compare-metric-win' : '';
 
+    const r1 = ranks1[key], r2 = ranks2[key];
+    const rankBadge = r => (r != null) ? `<span class="cmp-rank-badge">#${r}</span>` : '';
+
     return `
       <div class="compare-metric-row">
-        <div class="compare-metric-p1-val${winCls1}">${fmt(v1)}</div>
+        <div class="compare-metric-p1-val${winCls1}">${fmt(v1)}${rankBadge(r1)}</div>
         <div class="compare-bar-left">
           <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
         </div>
@@ -11649,7 +11666,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg) {
         <div class="compare-bar-right">
           <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2)};"></div>
         </div>
-        <div class="compare-metric-p2-val${winCls2}">${fmt(v2)}</div>
+        <div class="compare-metric-p2-val${winCls2}">${fmt(v2)}${rankBadge(r2)}</div>
       </div>
     `;
   }).join("");
@@ -11752,6 +11769,19 @@ function _cmpRangeBounds(side, weeks) {
   return [1, maxWk];
 }
 
+// Fetch position ranks for a compare side. Season-relative for a full season,
+// week-range-relative when a custom range is active. Career has no single-season
+// rank context, so it returns no ranks.
+async function _cmpFetchRanks(pid, season, ws, we) {
+  if (season == null) return {};
+  let url = `/api/player-metric-ranks/${pid}?season=${season}`;
+  if (ws != null && we != null) url += `&week_start=${ws}&week_end=${we}`;
+  try {
+    const rd = await fetch(url).then(r => r.ok ? r.json() : null);
+    return (rd && rd.ranks) ? rd.ranks : {};
+  } catch (_) { return {}; }
+}
+
 // Fetch one side's metrics for display (season-level, or week-range aggregate).
 async function _cmpFetchSide(side) {
   const seasonParam = side.season === null ? 'career' : side.season;
@@ -11768,7 +11798,8 @@ async function _cmpFetchSide(side) {
   // from the season-level metrics pipeline). Clear any stale range metadata.
   if (side.season === null || side.range === 'full') {
     side.rangeMeta = null;
-    return { metrics: advData.metrics || {}, ref: null };
+    const ranks = await _cmpFetchRanks(side.pid, side.season, null, null);
+    return { metrics: advData.metrics || {}, ref: null, ranks };
   }
   // Week-range mode: aggregate the per-week series for the selected weeks.
   const cacheKey = side.pid + '_' + side.season;
@@ -11782,9 +11813,10 @@ async function _cmpFetchSide(side) {
   const maxWk = weeks.length ? Math.max(...weeks.map(w => Number(w.week) || 0)) : 18;
   const sel = weeks.filter(w => { const wk = Number(w.week); return wk >= a && wk <= b; });
   side.rangeMeta = { lo: a, hi: b, games: sel.length, maxWk: maxWk };
+  const ranks = await _cmpFetchRanks(side.pid, side.season, a, b);
   // Reference = the full-season aggregate from the SAME weekly source, so the
   // range-vs-season delta is apples-to-apples (not mixed with the leaderboard).
-  return { metrics: _cmpAggregateWeeks(weeks, a, b), ref: _cmpAggregateWeeks(weeks, 1, maxWk) };
+  return { metrics: _cmpAggregateWeeks(weeks, a, b), ref: _cmpAggregateWeeks(weeks, 1, maxWk), ranks };
 }
 
 // Render one side's selector: season pills + (for a specific season) week-range.
@@ -11889,7 +11921,7 @@ function cmpRenderMetrics() {
   const token = ++_cmpRenderToken;
   Promise.all([_cmpFetchSide(_cmpSides[1]), _cmpFetchSide(_cmpSides[2]), _ensureAdvMetricsCfg()]).then(([r1, r2, cfg]) => {
     if (token !== _cmpRenderToken) return;  // a newer click superseded this render
-    const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position }, cfg);
+    const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position }, cfg, r1.ranks, r2.ranks);
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + rows + '</div>';
     _cmpInitWkBars();
     // #6: keep the weekly-trends section in sync with each side's season/range.
