@@ -311,24 +311,25 @@ else:
         else:
             print("[cron] No advanced metrics calculated")
 
-    # Air yards from stats CSV – runs regardless of offseason gate.
-    # During the offseason current_season is the upcoming year (no CSV yet),
-    # so try the prior season as a fallback.
-    try:
-        from data_building.advanced_metrics import import_air_yards_from_stats_csv, init_advanced_metrics_db
-        from pathlib import Path
-        from utils.paths import DATA_DIR
-        # Ensure the schema (incl. the wopr column) exists before writing, so the
-        # WOPR import succeeds even on the first run / fresh DB rather than failing
-        # silently until a later step's migration creates the column.
-        init_advanced_metrics_db()
-        _ay_season = current_season
-        if not Path(DATA_DIR, "cache", f"stats_player_reg_{{_ay_season}}.csv").exists():
-            _ay_season = current_season - 1
-        updated = import_air_yards_from_stats_csv(_ay_season)
-        print(f"[cron] Air yards import: {{updated}} rows updated for season {{_ay_season}}")
-    except Exception as _e:
-        print(f"[cron] Air yards import failed: {{_e}}")
+# Air yards + WOPR from stats CSV — runs unconditionally (not gated on the
+# usage table or the offseason check), since the CSV is independent of the daily
+# snapshot. During the offseason current_season is the upcoming year (no CSV
+# yet), so fall back to the prior season.
+try:
+    from data_building.advanced_metrics import import_air_yards_from_stats_csv, init_advanced_metrics_db
+    from pathlib import Path
+    from utils.paths import CACHE_DIR
+    # Ensure the schema (incl. the wopr column) exists before writing, so the
+    # WOPR import succeeds even on the first run / fresh DB rather than failing
+    # silently until a later step's migration creates the column.
+    init_advanced_metrics_db()
+    _ay_season = current_season
+    if not Path(CACHE_DIR, f"stats_player_reg_{{_ay_season}}.csv").exists():
+        _ay_season = current_season - 1
+    updated = import_air_yards_from_stats_csv(_ay_season)
+    print(f"[cron] Air yards + WOPR import: {{updated}} rows updated for season {{_ay_season}}")
+except Exception as _e:
+    print(f"[cron] Air yards + WOPR import failed: {{_e}}")
 """, "build_daily_advanced_metrics")
 
     # ------------------------------------------------------------------ #
