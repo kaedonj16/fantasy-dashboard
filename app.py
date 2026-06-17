@@ -18568,6 +18568,7 @@ def api_advanced_metrics_leaderboard():
     from data_building.advanced_metrics import (
         get_metric_leaderboard, get_weekly_range_leaderboard,
         get_adv_weekly_range_leaderboard, adv_weekly_metric_supported,
+        get_value_leaderboard, VALUE_METRICS,
         LEADERBOARD_METRICS, _WEEKLY_METRICS,
         PREMIUM_METRICS, premium_metrics_exposed,
     )
@@ -18595,7 +18596,22 @@ def api_advanced_metrics_leaderboard():
     is_week_filtered = bool(week_start or week_end) and weekly_capable
 
     try:
-        if is_week_filtered and adv_weekly and metric not in _WEEKLY_METRICS:
+        if metric in VALUE_METRICS:
+            # Value metrics (VORP/WAR) are league-size aware; derive num_teams
+            # from the league context when available, else standard 12-team.
+            _num_teams = 12
+            try:
+                _league_id = (request.args.get("league_id") or "").strip()
+                _platform = (request.args.get("platform") or "sleeper").strip()
+                if _league_id:
+                    _ctx = get_league_ctx_from_cache(_platform, _league_id, season) or {}
+                    _num_teams = int(_ctx.get("total_rosters") or 0) or 12
+            except Exception:
+                _num_teams = 12
+            players = get_value_leaderboard(
+                metric, position=position, season=season, num_teams=_num_teams,
+            )
+        elif is_week_filtered and adv_weekly and metric not in _WEEKLY_METRICS:
             players = get_adv_weekly_range_leaderboard(
                 metric, position=position, season=season,
                 week_start=week_start, week_end=week_end, min_vol=min_vol,

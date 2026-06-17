@@ -40,7 +40,7 @@ def build_advanced_metrics_body(
         if _vs:
             _weekly_vol_map[_k] = _vs
     # Group metrics into <optgroup>s by category (General / Passing / Rushing / Receiving).
-    _CAT_ORDER = ["General", "Passing", "Rushing", "Receiving", "Volume"]
+    _CAT_ORDER = ["Value", "General", "Passing", "Rushing", "Receiving", "Volume"]
     groups: dict = {}
     for key, spec in metrics_spec.items():
         if spec.get("hidden"):
@@ -1084,7 +1084,7 @@ _AM_JS = r"""
     }
 
     // Category display order: primary category first, then General, then others
-    const _CAT_ORDER = ['Passing', 'Rushing', 'Receiving', 'Volume', 'General'];
+    const _CAT_ORDER = ['Value', 'Passing', 'Rushing', 'Receiving', 'Volume', 'General'];
     const catOrder = [];
     if (primaryCat !== 'General' && groups[primaryCat]) catOrder.push(primaryCat);
     if (groups['General']) catOrder.push('General');

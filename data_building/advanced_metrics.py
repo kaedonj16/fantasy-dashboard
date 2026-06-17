@@ -1326,6 +1326,11 @@ _V_PASS_ATT  = {"col": "total_pass_att",   "label": "Min Attempts",   "opts": [1
 _V_GAMES     = {"col": "games",            "label": "Min Games",      "opts": [4, 8, 12, 16]}
 
 LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
+    # ── Value (fantasy points above/over replacement) ────────────────────────
+    # vorp/war are computed in Python (league-aware) by get_value_leaderboard,
+    # not from a DB column, so they carry no computed_sql.
+    "vorp":                 {"label": "VORP",                "category": "Value", "positions": ["QB", "RB", "WR", "TE"], "value_metric": True, "desc": "Value Over Replacement Points: season PPR points minus the points of a replacement-level starter at the same position (league-size aware, FLEX included). Measures how much a player produced above a freely-available waiver option."},
+    "war":                  {"label": "WAR",                 "category": "Value", "positions": ["QB", "RB", "WR", "TE"], "value_metric": True, "desc": "Wins Above Replacement: season VORP divided by points-per-win (≈ the league's weekly scoring spread). Translates points above replacement into the wins they were worth; elite players are typically 4-6+."},
     # ── General (applies across positions) ───────────────────────────────────
     "role_score":           {"label": "Role Score",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Overall opportunity score (0-100) blending snap share, touches, and red-zone usage relative to the player's position."},
     "snap_share":           {"label": "Snap Share",          "category": "General", "positions": ["QB", "RB", "WR", "TE"], "pct": True, "pct_frac": True, "min_vol": _V_GAMES, "desc": "Percent of the team's offensive snaps the player was on the field for."},
@@ -1338,7 +1343,6 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "yards_per_attempt":    {"label": "Yards / Attempt",    "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "Passing yards per attempt; core passing efficiency stat."},
     "completion_pct":       {"label": "Completion %",       "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts completed."},
     "adjusted_completion_rate": {"label": "Adj Completion %", "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Completion percent adjusted for drops, throwaways, spikes, and batted passes."},
-    "td_rate":              {"label": "Pass TD Rate",        "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that result in a touchdown."},
     "int_rate":             {"label": "INT Rate",            "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts intercepted. Lower is better."},
     "big_time_throw_rate":  {"label": "Big-Time Throw %",   "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "PFF rate of high-difficulty, high-value throws (deep and into tight windows)."},
     "pressure_to_sack_rate": {"label": "Press/Sack %",      "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pressured dropbacks that turn into sacks. Lower is better."},
@@ -1350,11 +1354,12 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "sack_rate":            {"label": "Sack Rate",           "category": "Passing", "positions": ["QB"], "efficiency": True, "pct": True, "lower_better": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks ending in a sack. Lower is better (nflverse)."},
     "scramble_rate":        {"label": "Scramble Rate",       "category": "Passing", "positions": ["QB"], "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of dropbacks where the QB scrambled (nflverse)."},
     "pff_passing_grade":    {"label": "PFF Pass Grade",      "category": "Passing", "positions": ["QB"], "efficiency": True, "min_vol": _V_PASS_ATT, "desc": "PFF's passing grade (0-100)."},
+    # Touchdown group: rate, season total, and per-game kept adjacent.
+    "td_rate":              {"label": "Pass TD Rate",        "category": "Passing", "subcategory": "Passing",   "positions": ["QB"], "efficiency": True, "pct": True, "min_vol": _V_PASS_ATT, "desc": "Percent of pass attempts that result in a touchdown."},
     "total_pass_tds":       {"label": "Pass TDs",            "category": "Passing", "subcategory": "Passing",   "positions": ["QB"], "integer": True, "desc": "Total passing touchdowns in the season."},
     "pass_tds_per_game":    {"label": "Pass TDs/G",          "category": "Passing", "subcategory": "Passing",   "positions": ["QB"], "min_vol": _V_GAMES, "desc": "Passing touchdowns per game.", "computed_sql": "m.total_pass_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_pass_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     # ── Rushing ──────────────────────────────────────────────────────────────
     "yards_per_carry":      {"label": "Yards / Carry",       "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Rushing yards gained per carry."},
-    "rush_td_rate":         {"label": "Rush TD Rate",        "category": "General", "subcategory": "Rushing",   "positions": ["RB", "QB"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_CARRIES, "desc": "Percent of carries that result in a touchdown."},
     "breakaway_percentage": {"label": "Breakaway %",         "category": "Rushing", "positions": ["RB"], "efficiency": True, "pct": True, "min_vol": _V_CARRIES, "desc": "Percent of rushing yards that came on runs of 15+ yards; explosiveness."},
     "elusive_rating":       {"label": "Elusive Rating",      "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF metric for yards created after contact and missed tackles forced, independent of blocking."},
     "pff_rushing_grade":    {"label": "PFF Rush Grade",      "category": "Rushing", "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PFF's rushing grade (0-100)."},
@@ -1363,6 +1368,8 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "ngs_rush_yards_over_expected_per_att": {"label": "RYOE / Att", "category": "Rushing", "positions": ["RB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "Rush Yards Over Expected per attempt — yards created beyond what blocking/situation expected (NFL Next Gen Stats). A free creation metric, similar in spirit to elusive rating."},
     "avoided_tackles":      {"label": "Avoided Tackles",    "category": "Rushing", "positions": ["RB"], "min_vol": _V_CARRIES, "desc": "Tackles avoided (missed, broken, or forced) on rush attempts per PFF. Rewards runners who make defenders miss."},
     "rz_carries_pg":        {"label": "RZ Carries/G",        "category": "Rushing", "positions": ["QB", "RB"], "min_vol": _V_GAMES, "desc": "Red zone rushing attempts per game (inside opponent's 20-yard line)."},
+    # Touchdown group: rate, season total, and per-game kept adjacent.
+    "rush_td_rate":         {"label": "Rush TD Rate",        "category": "Rushing", "subcategory": "Rushing",   "positions": ["RB", "QB"], "efficiency": True, "pct": True, "pct_frac": True, "min_vol": _V_CARRIES, "desc": "Percent of carries that result in a touchdown."},
     "total_rush_tds":       {"label": "Rush TDs",            "category": "Rushing", "subcategory": "Rushing",   "positions": ["RB", "QB"], "integer": True, "desc": "Total rushing touchdowns in the season."},
     "rush_tds_per_game":    {"label": "Rush TDs/G",          "category": "Rushing", "subcategory": "Rushing",   "positions": ["RB", "QB"], "min_vol": _V_GAMES, "desc": "Rushing touchdowns per game.", "computed_sql": "m.total_rush_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_rush_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "fpts_per_carry":       {"label": "FPTs/Carry",          "category": "Rushing",                              "positions": ["RB", "QB"], "efficiency": True, "min_vol": _V_CARRIES, "desc": "PPR fantasy points per carry (0.1 × rush yards/carry + 6 × rush TD rate). Higher means more value per touch.", "computed_sql": "m.yards_per_carry * 0.1 + m.rush_td_rate * 6", "computed_null": "m.yards_per_carry IS NOT NULL AND m.rush_td_rate IS NOT NULL"},
@@ -2059,6 +2066,130 @@ def get_available_seasons() -> List[int]:
         return []
 
 
+# ── Value metrics (VORP / WAR) ───────────────────────────────────────────────
+# These are computed in Python rather than read from a DB column because the
+# replacement baseline depends on league size and starter slots, which differ
+# per league. Keyed names match LEADERBOARD_METRICS entries flagged value_metric.
+VALUE_METRICS = ("vorp", "war")
+
+# Standard starters per team used to locate the replacement-level player.
+# FLEX is modeled as one extra RB/WR/TE slot per team, split by typical usage.
+_VALUE_STARTERS = {"QB": 1.0, "RB": 2.0, "WR": 3.0, "TE": 1.0}
+_VALUE_FLEX_ALLOC = {"RB": 0.45, "WR": 0.45, "TE": 0.10}
+# Marginal PPR points worth one head-to-head win (≈ weekly team-score stdev).
+# Overridable via the POINTS_PER_WIN env var for non-standard scoring.
+_POINTS_PER_WIN_DEFAULT = 28.0
+
+
+def _points_per_win() -> float:
+    try:
+        v = float(os.getenv("POINTS_PER_WIN", "").strip())
+        return v if v > 0 else _POINTS_PER_WIN_DEFAULT
+    except (TypeError, ValueError):
+        return _POINTS_PER_WIN_DEFAULT
+
+
+def get_value_leaderboard(
+    kind: str,
+    position: Optional[str] = None,
+    limit: int = 500,
+    season: Optional[int] = None,
+    num_teams: int = 12,
+    starters: Optional[Dict[str, float]] = None,
+    points_per_win: Optional[float] = None,
+) -> List[Dict[str, Any]]:
+    """Players ranked by VORP or WAR for a season.
+
+    VORP = season PPR points − replacement-level points at the same position,
+    where the replacement player is the one ranked at (starters×teams + flex
+    share) within that position. WAR = VORP ÷ points-per-win. Output shape
+    matches get_metric_leaderboard: [{player_id, name, team, position, value,
+    games, vol, age}].
+    """
+    kind = (kind or "").lower().strip()
+    if kind not in VALUE_METRICS:
+        return []
+    teams = int(num_teams) if num_teams and num_teams > 0 else 12
+    start_slots = {**_VALUE_STARTERS, **(starters or {})}
+    ppw = points_per_win if (points_per_win and points_per_win > 0) else _points_per_win()
+
+    with get_conn() as conn:
+        if season is None:
+            srow = conn.execute(
+                "SELECT season FROM player_advanced_metrics "
+                "WHERE ppr_pts IS NOT NULL AND season IS NOT NULL "
+                "ORDER BY season DESC LIMIT 1"
+            ).fetchone()
+            if not srow:
+                return []
+            season = int(srow["season"])
+        rows = conn.execute(
+            """SELECT DISTINCT ON (player_id)
+                   player_id, position, ppr_pts, games
+               FROM player_advanced_metrics
+               WHERE season = %s AND ppr_pts IS NOT NULL AND position IS NOT NULL
+               ORDER BY player_id, as_of_date DESC""",
+            (season,),
+        ).fetchall()
+
+    # Bucket season points by canonical position to find replacement levels.
+    pool_by_pos: Dict[str, List[float]] = {}
+    recs: List[Dict[str, Any]] = []
+    for r in rows:
+        pos = _normalize_position(r["position"])
+        if pos not in start_slots:
+            continue
+        pts = float(r["ppr_pts"] or 0.0)
+        recs.append({
+            "player_id": str(r["player_id"]),
+            "position": pos,
+            "pts": pts,
+            "games": int(r["games"]) if r["games"] is not None else None,
+        })
+        pool_by_pos.setdefault(pos, []).append(pts)
+
+    repl_pts: Dict[str, float] = {}
+    for pos, base in start_slots.items():
+        rank = base * teams + _VALUE_FLEX_ALLOC.get(pos, 0.0) * teams
+        pool = sorted(pool_by_pos.get(pos, []), reverse=True)
+        if not pool:
+            repl_pts[pos] = 0.0
+            continue
+        idx = int(round(rank)) - 1
+        idx = max(0, min(len(pool) - 1, idx))
+        repl_pts[pos] = pool[idx]
+
+    pos_filter = (position or "").upper().strip() or None
+    for rec in recs:
+        vorp = rec["pts"] - repl_pts.get(rec["position"], 0.0)
+        rec["value"] = round(vorp if kind == "vorp" else vorp / ppw, 3)
+
+    out_recs = [r for r in recs if not pos_filter or r["position"] == pos_filter]
+    out_recs.sort(key=lambda x: x["value"], reverse=True)
+    out_recs = out_recs[:limit]
+
+    try:
+        from utils.utils import load_players_index
+        idx_meta = load_players_index() or {}
+    except Exception:
+        idx_meta = {}
+
+    out: List[Dict[str, Any]] = []
+    for rec in out_recs:
+        meta = idx_meta.get(rec["player_id"]) or {}
+        out.append({
+            "player_id": rec["player_id"],
+            "name": meta.get("name") or "Unknown",
+            "team": meta.get("team") or "",
+            "position": rec["position"],
+            "value": rec["value"],
+            "games": rec["games"],
+            "vol": rec["games"],
+            "age": None,
+        })
+    return out
+
+
 def get_metric_leaderboard(
     metric: str,
     position: Optional[str] = None,
@@ -2078,6 +2209,9 @@ def get_metric_leaderboard(
     """
     if metric not in LEADERBOARD_METRICS:
         return []
+    # Value metrics (VORP/WAR) are computed in Python, not from a DB column.
+    if metric in VALUE_METRICS:
+        return get_value_leaderboard(metric, position=position, limit=limit, season=season)
     pos = (position or "").upper().strip() or None
     _spec = LEADERBOARD_METRICS[metric]
     _computed_sql = _spec.get("computed_sql")
