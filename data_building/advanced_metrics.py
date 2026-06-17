@@ -2104,6 +2104,30 @@ def _points_per_win() -> float:
 # new day.
 _VALUE_TABLE_CACHE: Dict[tuple, Tuple[Optional[int], List[Dict[str, Any]]]] = {}
 
+# Position-level daily cache for get_player_metric_ranks.
+# Key: (date_str, position, season) → {player_id: {metric: rank_int}}.
+# The CTE computes ranks for the whole position at once, so caching at position
+# granularity means the expensive query runs at most once per position per day
+# instead of once per player visit.
+_POSITION_RANKS_CACHE: Dict[tuple, Dict[str, Dict[str, int]]] = {}
+
+# Daily cache for get_metric_leaderboard. The Advanced Metrics page fetches one
+# leaderboard per visible/extra/filter column, and re-fetches on season/filter
+# changes — each a full season scan + players-index enrichment. Underlying data
+# only changes once a day (cron), so cache per (date, metric, position, season,
+# min_vol, limit). Only non-empty results are cached so a transient empty state
+# (mid-rebuild) isn't locked in for the day.
+_METRIC_LEADERBOARD_CACHE: Dict[tuple, List[Dict[str, Any]]] = {}
+
+
+def clear_daily_caches() -> None:
+    """Drop all in-process daily caches (value table, position ranks, metric
+    leaderboards). Called after a cron rebuild so fresh values are served
+    immediately instead of waiting for the date-keyed entries to roll over."""
+    _VALUE_TABLE_CACHE.clear()
+    _POSITION_RANKS_CACHE.clear()
+    _METRIC_LEADERBOARD_CACHE.clear()
+
 
 def _value_table(
     season: Optional[int] = None,
@@ -2333,6 +2357,14 @@ def get_metric_leaderboard(
     vol_spec = _spec.get("min_vol") or {}
     vol_col = vol_spec.get("col") or "games"
 
+    # Daily cache (keyed on inputs; season=None resolves to "latest", stable per day).
+    from datetime import date as _date
+    _lb_today = _date.today().isoformat()
+    _lb_key = (_lb_today, metric, pos, season, min_vol, limit)
+    _lb_hit = _METRIC_LEADERBOARD_CACHE.get(_lb_key)
+    if _lb_hit is not None:
+        return _lb_hit
+
     with get_conn() as conn:
         # Pre-check which columns exist to avoid aborting the transaction on
         # a missing column reference. All volume columns were added together, so
@@ -2516,6 +2548,11 @@ def get_metric_leaderboard(
             "vol": vol_val,
             "age": _player_age(meta),
         })
+    # Cache non-empty results only; evict stale-date entries to stay bounded.
+    if out:
+        for _k in [k for k in _METRIC_LEADERBOARD_CACHE if k[0] != _lb_today]:
+            _METRIC_LEADERBOARD_CACHE.pop(_k, None)
+        _METRIC_LEADERBOARD_CACHE[_lb_key] = out
     return out
 
 
@@ -2526,7 +2563,14 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
     using SQL window functions across all players at the same position.
     Returns {position, season, ranks: {metric_key: rank}}.
     Empty dict when the player has no data or the season has no volume records.
+
+    Results are cached daily at the position level: the first request for any
+    player in a given (position, season) computes ranks for the whole position
+    and stores them; subsequent requests for any player in that group are instant.
     """
+    from datetime import date as _date
+    _today = _date.today().isoformat()
+
     with get_conn() as conn:
         row = conn.execute(
             "SELECT position, season FROM player_advanced_metrics "
@@ -2539,6 +2583,13 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
         position = row["position"]
         if season is None:
             season = int(row["season"])
+
+        # Cache hit: return this player's slice of the cached position ranks.
+        _cache_key = (_today, position, season)
+        _cached_all = _POSITION_RANKS_CACHE.get(_cache_key)
+        if _cached_all is not None:
+            return {"position": position, "season": season,
+                    "ranks": _cached_all.get(str(player_id), {})}
 
         try:
             result = conn.execute("""
@@ -2766,23 +2817,22 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                              ELSE NULL END AS ngs_avg_yac_above_expectation
                     FROM snapshot
                 )
-                SELECT * FROM r WHERE player_id = %s
-            """, (season, position, player_id)).fetchone()
+                SELECT * FROM r
+            """, (season, position)).fetchall()
         except Exception:
             return {"position": position, "season": season, "ranks": {}}
 
-        if not result:
-            return {"position": position, "season": season, "ranks": {}}
-
-        rank_dict = dict(result)
-        rank_dict.pop("player_id", None)
-        ranks = {k: int(v) for k, v in rank_dict.items() if v is not None}
+        # Build all_ranks: {player_id: {metric: rank_int}} for every player in position.
+        all_ranks: Dict[str, Dict[str, int]] = {}
+        for _row in result:
+            _d = dict(_row)
+            _pid = str(_d.pop("player_id"))
+            all_ranks[_pid] = {k: int(v) for k, v in _d.items() if v is not None}
 
         # Supplement: rank the secondary season metrics the window query above
         # doesn't cover (alignment rates, scramble rate, route/red-zone volume,
-        # fantasy-per-touch) so every metric shown in the season modal carries a
-        # rank. Uses the latest snapshot per player for this season/position and
-        # ranks in Python; columns that don't exist are skipped gracefully.
+        # fantasy-per-touch). Computes ranks for ALL players so the position cache
+        # is fully populated in one pass.
         try:
             _SUPP_GATES = {
                 "scramble_rate":      ("total_pass_att", 50),
@@ -2807,7 +2857,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                 (season, position),
             ).fetchall()]
             for metric, (gate_col, gate_min) in _SUPP_GATES.items():
-                if metric in ranks or not srows or metric not in srows[0]:
+                if not srows or metric not in srows[0]:
                     continue
                 lower_better = bool(LEADERBOARD_METRICS.get(metric, {}).get("lower_better"))
                 vals: Dict[str, float] = {}
@@ -2823,15 +2873,22 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
                     elif g is None or float(g) < gate_min:
                         continue
                     vals[str(r["player_id"])] = float(v)
-                if player_id in vals:
-                    my = vals[player_id]
-                    better = (sum(1 for x in vals.values() if x < my) if lower_better
-                              else sum(1 for x in vals.values() if x > my))
-                    ranks[metric] = better + 1
+                # Compute rank for every qualifying player (RANK semantics: ties share rank).
+                for _pid, _val in vals.items():
+                    if metric not in all_ranks.get(_pid, {}):
+                        _better = (sum(1 for x in vals.values() if x < _val) if lower_better
+                                   else sum(1 for x in vals.values() if x > _val))
+                        all_ranks.setdefault(_pid, {})[metric] = _better + 1
         except Exception:
             pass
 
-        return {"position": position, "season": season, "ranks": ranks}
+        # Store in position cache and evict stale dates.
+        _POSITION_RANKS_CACHE[_cache_key] = all_ranks
+        for _k in [k for k in _POSITION_RANKS_CACHE if k[0] != _today]:
+            _POSITION_RANKS_CACHE.pop(_k, None)
+
+        return {"position": position, "season": season,
+                "ranks": all_ranks.get(str(player_id), {})}
 
 
 def get_player_weekly_metric_ranks(
