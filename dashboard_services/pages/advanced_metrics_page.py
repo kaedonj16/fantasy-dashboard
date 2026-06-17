@@ -2565,12 +2565,19 @@ _AM_JS = r"""
         + ' data-info="' + _amEsc(JSON.stringify(d.info)) + '"></circle>';
     });
     // Pass 2 — labels on top of all circles, with a bg-colored halo so they're
-    // readable over both dots and the watermark.
+    // readable over both dots and the watermark. Labels normally sit to the
+    // right of the dot; when there isn't room before the right edge we flip them
+    // to the left so names never run off the panel.
+    const charW = lblSize * 0.56; // rough avg glyph width for width estimation
     ptData.forEach(function(d) {
       if (d.idx >= showCut) return;
       const isBold = d.idx < boldCut;
       const lbl = _amEsc(_amLastName(d.p.name));
-      s += '<text x="' + (d.cx + d.r + 3).toFixed(1) + '" y="' + (d.cy + 3).toFixed(1) + '"'
+      const estW = _amLastName(d.p.name).length * charW;
+      const flip = (d.cx + d.r + 3 + estW) > (W - padR - 2);
+      const lx = flip ? (d.cx - d.r - 3) : (d.cx + d.r + 3);
+      s += '<text x="' + lx.toFixed(1) + '" y="' + (d.cy + 3).toFixed(1) + '"'
+        + (flip ? ' text-anchor="end"' : '')
         + ' font-size="' + lblSize + '" font-weight="' + (isBold ? 700 : 400) + '"'
         + ' fill="' + (isBold ? TH.text : TH.muted) + '"'
         + ' stroke="' + TH.bg + '" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"'
