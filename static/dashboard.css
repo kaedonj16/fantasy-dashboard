@@ -13775,12 +13775,15 @@ img, svg, canvas {
   inset: 0;
   background: var(--wk-bar-bg);
   border-radius: var(--radius);
-  overflow: hidden;
 }
 .wk-bar-ticks {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: stretch;
   height: 100%;
+  pointer-events: none;
+  z-index: 2;
 }
 .wk-tick {
   flex: 1;

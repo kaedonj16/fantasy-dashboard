@@ -225,6 +225,15 @@ def api_player_advanced_metrics(player_id: str):
         elif quality is not None:
             metrics_payload["player_evaluation_score"] = round(float(quality), 1)
 
+        # Derive per-game rates from totals when not already present (season view)
+        _g = metrics_payload.get('games')
+        if _g and not is_career_request:
+            for _tot, _pg in [('total_targets', 'targets_per_game'),
+                               ('total_receptions', 'receptions_per_game'),
+                               ('total_touches', 'touches_per_game')]:
+                if metrics_payload.get(_tot) is not None and metrics_payload.get(_pg) is None:
+                    metrics_payload[_pg] = float(metrics_payload[_tot]) / float(_g)
+
         # Strip PFF (premium) columns from the public response. The blended
         # evaluation score above already consumed the grades it needed; the raw
         # premium columns themselves are not redistributable, so they only ship

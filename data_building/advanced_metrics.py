@@ -1720,6 +1720,11 @@ def _get_player_weekly_usage_range(
         out["total_touches"] = int(touches)
         out["touches_per_game"] = touches / n
 
+    ppr = _sum("ppr_pts")
+    if ppr:
+        out["ppr_pts"] = ppr
+        out["ppr_pts_per_game"] = ppr / n
+
     pos = next((r.get("position") for r in rows if r.get("position")), None)
     if pos:
         out["position"] = pos
