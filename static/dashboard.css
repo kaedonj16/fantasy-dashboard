@@ -15540,11 +15540,12 @@ tr.team-clickable {
   padding: 4px 0;
   border-radius: 6px;
 }
-.compare-metric-row:nth-child(even) {
+.compare-metric-row.cmp-row-alt {
   background: var(--bg-alt);
   padding: 4px 6px;
   margin: 0 -6px;
 }
+.cmp-cat-head:first-child { padding-top: 2px; }
 .compare-metric-p1-val {
   font-size: 12px;
   font-weight: 700;

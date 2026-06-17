@@ -2519,11 +2519,62 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
 
         rank_dict = dict(result)
         rank_dict.pop("player_id", None)
-        return {
-            "position": position,
-            "season": season,
-            "ranks": {k: int(v) for k, v in rank_dict.items() if v is not None},
-        }
+        ranks = {k: int(v) for k, v in rank_dict.items() if v is not None}
+
+        # Supplement: rank the secondary season metrics the window query above
+        # doesn't cover (alignment rates, scramble rate, route/red-zone volume,
+        # fantasy-per-touch) so every metric shown in the season modal carries a
+        # rank. Uses the latest snapshot per player for this season/position and
+        # ranks in Python; columns that don't exist are skipped gracefully.
+        try:
+            _SUPP_GATES = {
+                "scramble_rate":      ("total_pass_att", 50),
+                "slot_rate":          ("games", 4),
+                "wide_rate":          ("games", 4),
+                "inline_rate":        ("games", 4),
+                "pass_block_rate":    ("games", 4),
+                "route_participation": ("games", 4),
+                "total_routes":       ("games", 4),
+                "routes_per_game":    ("games", 4),
+                "rz_targets_pg":      ("games", 4),
+                "rz_carries_pg":      ("games", 4),
+                "explosive_runs_pg":  ("total_carries", 20),
+                "avoided_tackles_pg": ("total_carries", 20),
+                "fpts_per_carry":     ("total_carries", 20),
+                "fpts_per_reception": ("total_receptions", 10),
+            }
+            srows = [dict(r) for r in conn.execute(
+                "SELECT DISTINCT ON (player_id) * FROM player_advanced_metrics "
+                "WHERE season = %s AND position = %s "
+                "ORDER BY player_id, as_of_date DESC",
+                (season, position),
+            ).fetchall()]
+            for metric, (gate_col, gate_min) in _SUPP_GATES.items():
+                if metric in ranks or not srows or metric not in srows[0]:
+                    continue
+                lower_better = bool(LEADERBOARD_METRICS.get(metric, {}).get("lower_better"))
+                vals: Dict[str, float] = {}
+                for r in srows:
+                    v = r.get(metric)
+                    if v is None:
+                        continue
+                    g = r.get(gate_col)
+                    if gate_col == "games":
+                        # games may be NULL on older rows; treat NULL as passing.
+                        if g is not None and float(g) < gate_min:
+                            continue
+                    elif g is None or float(g) < gate_min:
+                        continue
+                    vals[str(r["player_id"])] = float(v)
+                if player_id in vals:
+                    my = vals[player_id]
+                    better = (sum(1 for x in vals.values() if x < my) if lower_better
+                              else sum(1 for x in vals.values() if x > my))
+                    ranks[metric] = better + 1
+        except Exception:
+            pass
+
+        return {"position": position, "season": season, "ranks": ranks}
 
 
 def get_player_weekly_metric_ranks(

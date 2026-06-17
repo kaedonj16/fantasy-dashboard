@@ -11540,8 +11540,8 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
 
   if (!displayKeys.length) return '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">No shared metrics available</div>';
 
-  // Determine max per metric for bar scaling using metric-specific ranges
-  return displayKeys.map(key => {
+  // Render a single metric row (returns '' when neither player has the value).
+  const _rowHTML = (key, alt) => {
     const v1 = m1?.[key] ?? null;
     const v2 = m2?.[key] ?? null;
     const spec = cfg?.[key] || null;
@@ -11657,7 +11657,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
     const rankBadge = r => (r != null) ? `<span class="cmp-rank-badge">#${r}</span>` : '';
 
     return `
-      <div class="compare-metric-row">
+      <div class="compare-metric-row${alt ? ' cmp-row-alt' : ''}">
         <div class="compare-metric-p1-val${winCls1}">${fmt(v1)}${rankBadge(r1)}</div>
         <div class="compare-bar-left">
           <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
@@ -11669,7 +11669,35 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
         <div class="compare-metric-p2-val${winCls2}">${fmt(v2)}${rankBadge(r2)}</div>
       </div>
     `;
-  }).join("");
+  };
+
+  // Group the displayed metrics by category (same order as the player modal) so
+  // both modals stay visually consistent. Categories with no visible row are
+  // dropped. Keys without a cfg category fall to 'Other' (rendered last).
+  const _CAT_ORDER = ['General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
+  const _groups = {};
+  const _order = [];
+  for (const key of displayKeys) {
+    const cat = (cfg?.[key]?.category) || 'Other';
+    if (!_groups[cat]) { _groups[cat] = []; _order.push(cat); }
+    _groups[cat].push(key);
+  }
+  const orderedCats = _CAT_ORDER.filter(c => _groups[c])
+    .concat(_order.filter(c => !_CAT_ORDER.includes(c)));
+
+  let out = '';
+  let visibleIdx = 0;  // running count of visible rows so zebra striping is continuous
+  for (const cat of orderedCats) {
+    const rows = [];
+    for (const key of _groups[cat]) {
+      const html = _rowHTML(key, visibleIdx % 2 === 1);
+      if (html) { rows.push(html); visibleIdx++; }
+    }
+    if (!rows.length) continue;  // only show a category when it has a visible row
+    if (cat !== 'Other') out += `<div class="am-metrics-cat-head cmp-cat-head">${cat}</div>`;
+    out += rows.join('');
+  }
+  return out || '<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">No shared metrics available</div>';
 }// ── Compare state: each side has a player, a season, and an optional week range
 var _comparePlayerNames = {};
 var _cmpSides = {
