@@ -10622,6 +10622,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
   if (cfg && Object.keys(cfg).length) {
     const _shownLabels = new Set(defs.map(d => d.label));
     const _shownKeys = new Set([
+      'vorp','war',
       'role_score','snap_share','route_participation','opportunity_share',
       'red_zone_usage','grades_offense','yards_per_touch',
       'pff_passing_grade','big_time_throw_rate','adjusted_completion_rate',
@@ -11583,6 +11584,10 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
     if (!rel.length) rel = ['snap_share', 'role_score', 'epa_per_play'];
     displayKeys = rel.filter(k => allKeys.has(k) && (m1?.[k] != null || m2?.[k] != null));
   }
+
+  // Guard against any key appearing twice (e.g. VORP/WAR injected by multiple
+  // paths) so each metric renders exactly one comparison row.
+  displayKeys = [...new Set(displayKeys)];
 
   // Fallback label map for keys missing from cfg
   const fallbackLabels = {

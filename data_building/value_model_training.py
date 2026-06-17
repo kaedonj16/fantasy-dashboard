@@ -175,6 +175,58 @@ def _save_state(key: str, value: float) -> None:
     except Exception:
         pass
 
+def _load_prev_board_from_db() -> dict[str, dict]:
+    """Load yesterday's player values from player_value_history (durable Postgres store).
+
+    Returns a dict keyed by player_id with the same value keys as model_values.json
+    so the ±10%/day per-player move clamp has a reliable baseline even on Render's
+    ephemeral cron containers where model_values.json is the committed (stale) file.
+    """
+    try:
+        from datetime import date as _date
+        from dashboard_services.db import get_conn as _get_conn
+        _today = _date.today().isoformat()
+        with _get_conn() as _conn:
+            _row = _conn.execute(
+                """
+                SELECT MAX(as_of_date) AS d
+                FROM player_value_history
+                WHERE source = 'model' AND as_of_date < %s
+                """,
+                (_today,),
+            ).fetchone()
+            if not _row or not _row["d"]:
+                return {}
+            _prev_date = str(_row["d"])
+            _rows = _conn.execute(
+                """
+                SELECT player_id, value, sf_value,
+                       value_8, value_12, value_14,
+                       sf_value_8, sf_value_12, sf_value_14
+                FROM player_value_history
+                WHERE source = 'model' AND as_of_date = %s
+                """,
+                (_prev_date,),
+            ).fetchall()
+        result: dict[str, dict] = {}
+        for _r in _rows:
+            result[str(_r["player_id"])] = {
+                "value":       float(_r["value"]       or 0),
+                "sf_value":    float(_r["sf_value"]    or 0),
+                "value_8":     float(_r["value_8"]     or 0),
+                "value_12":    float(_r["value_12"]    or 0),
+                "value_14":    float(_r["value_14"]    or 0),
+                "sf_value_8":  float(_r["sf_value_8"]  or 0),
+                "sf_value_12": float(_r["sf_value_12"] or 0),
+                "sf_value_14": float(_r["sf_value_14"] or 0),
+            }
+        print(f"[rewrite_value_table] prev board from DB: {len(result)} players (as_of={_prev_date})")
+        return result
+    except Exception as _e:
+        print(f"[rewrite_value_table] prev board DB load failed: {_e}")
+        return {}
+
+
 def reset_basket_state() -> None:
     """Reset basket/headroom pipeline state to 0 so the next model run uses the raw basket.
 
@@ -715,19 +767,22 @@ def rewrite_value_table_with_model() -> Path:
         print(f"[rewrite_value_table] WLS load skipped: {_wls_err}")
 
     # Previous board values (for the ±10% per-player day-over-day move clamp).
-    # model_values.json is a list of asset dicts; index it by player id. Read the
-    # raw stored board (apply_calibration=False) so the clamp compares against
-    # yesterday's actual displayed values, not a re-overlaid version.
-    _prev_board: dict[str, dict] = {}
-    try:
-        _prev_raw = load_model_value_table(apply_calibration=False)
-        if isinstance(_prev_raw, dict):
-            _prev_board = {str(k): v for k, v in _prev_raw.items() if isinstance(v, dict)}
-        elif isinstance(_prev_raw, list):
-            _prev_board = {str(a.get("id")): a for a in _prev_raw if isinstance(a, dict) and a.get("id") is not None}
-        print(f"[rewrite_value_table] previous board loaded for {len(_prev_board)} players (±10% clamp)")
-    except Exception as _pb_err:
-        print(f"[rewrite_value_table] previous board load skipped: {_pb_err}")
+    # Primary source: player_value_history DB (durable across Render's ephemeral
+    # cron containers). Fallback: model_values.json (local dev / DB unavailable).
+    _prev_board: dict[str, dict] = _load_prev_board_from_db()
+    if not _prev_board:
+        # Fallback: JSON file (valid in local dev; on Render this is the committed
+        # stale file, but it's better than no clamp at all on first run).
+        try:
+            _prev_raw = load_model_value_table(apply_calibration=False)
+            if isinstance(_prev_raw, dict):
+                _prev_board = {str(k): v for k, v in _prev_raw.items() if isinstance(v, dict)}
+            elif isinstance(_prev_raw, list):
+                _prev_board = {str(a.get("id")): a for a in _prev_raw if isinstance(a, dict) and a.get("id") is not None}
+            if _prev_board:
+                print(f"[rewrite_value_table] prev board from JSON: {len(_prev_board)} players (±10% clamp fallback)")
+        except Exception as _pb_err:
+            print(f"[rewrite_value_table] previous board load skipped: {_pb_err}")
 
     # Trade backing at which WLS earns 50% of the blend. Larger K = need more
     # trade history before WLS dominates. Matches the SF blend's half-weight idea.
