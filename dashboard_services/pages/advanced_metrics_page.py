@@ -810,7 +810,7 @@ def build_advanced_metrics_body(
         border-radius:8px; padding:6px 12px; margin-bottom:10px;
       }
       /* Graph (scatter) modal */
-      .am-graph-card { max-width:720px; }
+      .am-graph-card { max-width:720px; max-height:90vh; }
       .am-graph-controls {
         display:flex; flex-wrap:wrap; gap:12px;
         padding:12px 18px; border-bottom:1px solid var(--border);
@@ -2403,8 +2403,8 @@ _AM_JS = r"""
     // (smaller viewBox width => each unit scales up on screen, so text stays legible).
     const isNarrow = (window.innerWidth || 800) <= 600;
     const L = isNarrow
-      ? { W: 392, H: 472, padL: 46, padR: 14, padT: 52, padB: 80, fTitle: 14, fSub: 11, fTick: 12, fAxis: 12.5, fLeg: 12, nt: 3, logo: 175, dotMin: 5.5, dotMax: 13 }
-      : { W: 720, H: 520, padL: 64, padR: 22, padT: 54, padB: 70, fTitle: 14, fSub: 10.5, fTick: 10, fAxis: 11, fLeg: 11, nt: 4, logo: 230, dotMin: 4, dotMax: 15 };
+      ? { W: 392, H: 510, padL: 46, padR: 14, padT: 52, padB: 80, fTitle: 14, fSub: 11, fTick: 12, fAxis: 12.5, fLeg: 12, nt: 3, logo: 185, dotMin: 5.5, dotMax: 13 }
+      : { W: 720, H: 580, padL: 64, padR: 22, padT: 54, padB: 70, fTitle: 14, fSub: 10.5, fTick: 10, fAxis: 11, fLeg: 11, nt: 4, logo: 250, dotMin: 4, dotMax: 15 };
     const W = L.W, H = L.H, padL = L.padL, padR = L.padR, padT = L.padT, padB = L.padB;
     const xs = pts.map(function(p) { return p.x; });
     const ys = pts.map(function(p) { return p.y; });
@@ -2466,6 +2466,23 @@ _AM_JS = r"""
     s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 38), _amEsc(cfg.metrics[xk].label), L.fAxis, TH.text, 700, 'middle');
     s += txt(0, 0, _amEsc(cfg.metrics[yk].label), L.fAxis, TH.text, 700, 'middle',
       'translate(15,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)');
+    // Average reference lines (mean of the plotted players) — dashed crosshair
+    // that splits the chart into above/below-average quadrants.
+    const avgX = xs.reduce(function(a, b) { return a + b; }, 0) / xs.length;
+    const avgY = ys.reduce(function(a, b) { return a + b; }, 0) / ys.length;
+    const avgCol = (_amGraphTheme === 'dark') ? '#f59e0b' : '#d97706';
+    if (avgX >= xmin && avgX <= xmax) {
+      const ax = px(avgX);
+      s += '<line x1="' + ax.toFixed(1) + '" y1="' + padT + '" x2="' + ax.toFixed(1) + '" y2="' + (H - padB)
+        + '" stroke="' + avgCol + '" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.85"/>';
+      s += txt((ax + 3).toFixed(1), (padT + 11), 'avg ' + _amEsc(fmtX(avgX)), L.fLeg - 1, avgCol, 700, 'start');
+    }
+    if (avgY >= ymin && avgY <= ymax) {
+      const ay = py(avgY);
+      s += '<line x1="' + padL + '" y1="' + ay.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + ay.toFixed(1)
+        + '" stroke="' + avgCol + '" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.85"/>';
+      s += txt((W - padR - 3).toFixed(1), (ay - 4).toFixed(1), 'avg ' + _amEsc(fmtY(avgY)), L.fLeg - 1, avgCol, 700, 'end');
+    }
     // Points. Labels only on desktop with a small set; phones use tap-to-inspect.
     const showLabels = !isNarrow && pts.length <= 25;
     pts.forEach(function(p) {
@@ -2533,21 +2550,32 @@ _AM_JS = r"""
       }, 250);
     });
   })();
-  // Export the current graph as a branded PNG: native share when available,
-  // download otherwise. The SVG is self-contained (explicit colors + embedded
-  // logo) so it rasterizes cleanly to canvas.
+  // Export the current graph as a branded PNG. On touch devices (where the
+  // native share sheet is genuinely useful) we use the Web Share API; on
+  // desktop we download directly — the macOS/desktop share sheet for a file is
+  // clunky and unreliable, so a straight download is the better experience.
   window.amShareGraph = function() {
     const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
     if (!svg) return;
+    const btn = document.getElementById('amGraphShareBtn');
     const TH = _amGraphPalette();
-    const vb = (svg.getAttribute('viewBox') || '0 0 720 520').split(/\s+/).map(Number);
-    const W = vb[2] || 720, H = vb[3] || 520, scale = 2;
+    const vb = (svg.getAttribute('viewBox') || '0 0 720 580').split(/\s+/).map(Number);
+    const W = vb[2] || 720, H = vb[3] || 580, scale = 2;
     const clone = svg.cloneNode(true);
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
     clone.setAttribute('width', W); clone.setAttribute('height', H);
     const xml = new XMLSerializer().serializeToString(clone);
     const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+    // Touch device = phone/tablet → native share sheet is the right call.
+    const isTouch = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
+      && (navigator.maxTouchPoints || 0) > 0;
+    const flash = function(msg) {
+      if (!btn) return;
+      const prev = btn.innerHTML;
+      btn.innerHTML = msg;
+      setTimeout(function() { btn.innerHTML = prev; }, 1400);
+    };
     const img = new Image();
     img.onload = function() {
       const canvas = document.createElement('canvas');
@@ -2556,26 +2584,32 @@ _AM_JS = r"""
       ctx.fillStyle = TH.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.toBlob(function(blob) {
-        if (!blob) return;
+        if (!blob) { flash('Failed'); return; }
         const xk = document.getElementById('amGraphX').value;
         const yk = document.getElementById('amGraphY').value;
         const fname = 'br-metrics-' + xk + '-vs-' + yk + '.png';
-        const file = new File([blob], fname, { type: 'image/png' });
-        const title = 'BR Fantasy — Advanced Metrics';
-        const text = (cfg.metrics[yk] ? cfg.metrics[yk].label : yk) + ' vs '
-          + (cfg.metrics[xk] ? cfg.metrics[xk].label : xk);
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          navigator.share({ files: [file], title: title, text: text }).catch(function() {});
-        } else {
+        const download = function() {
           const a = document.createElement('a');
           a.href = URL.createObjectURL(blob);
           a.download = fname;
           document.body.appendChild(a); a.click(); a.remove();
           setTimeout(function() { URL.revokeObjectURL(a.href); }, 3000);
+          flash('Saved ✓');
+        };
+        if (isTouch) {
+          const file = new File([blob], fname, { type: 'image/png' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            const text = (cfg.metrics[yk] ? cfg.metrics[yk].label : yk) + ' vs '
+              + (cfg.metrics[xk] ? cfg.metrics[xk].label : xk);
+            navigator.share({ files: [file], title: 'BR Fantasy — Advanced Metrics', text: text })
+              .catch(function() { download(); });
+            return;
+          }
         }
+        download();
       }, 'image/png');
     };
-    img.onerror = function() {};
+    img.onerror = function() { flash('Failed'); };
     img.src = src;
   };
 
