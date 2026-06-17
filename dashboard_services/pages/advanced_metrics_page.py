@@ -842,6 +842,9 @@ def build_advanced_metrics_body(
         min-width:150px; max-width:240px;
       }
       .am-graph-hover.show { display:block; }
+      .am-graph-hover.pinned { pointer-events:auto; border-color:var(--accent,#f59e0b); box-shadow:0 10px 30px rgba(0,0,0,.30),0 0 0 2px color-mix(in srgb,var(--accent,#f59e0b) 25%,transparent); }
+      .am-graph-hover-close { position:absolute; top:5px; right:7px; background:none; border:none; padding:2px 4px; cursor:pointer; font-size:13px; line-height:1; color:var(--text-muted); }
+      .am-graph-hover-close:hover { color:var(--text); }
       .am-graph-hover-top { display:flex; align-items:center; gap:9px; }
       .am-graph-hover-hs {
         width:42px; height:42px; border-radius:8px; object-fit:cover;
@@ -2342,6 +2345,8 @@ _AM_JS = r"""
     return p;
   }
   let _amGraphToken = 0;
+  let _amPinnedDot = null;
+  const _amHsPreload = {};
   window.amOpenGraph = function() {
     const modal = document.getElementById('amGraphModal');
     const xSel = document.getElementById('amGraphX');
@@ -2430,6 +2435,14 @@ _AM_JS = r"""
         plot.innerHTML = '<div class="am-graph-empty">No players have data for both metrics with the current filters.</div>';
         return;
       }
+      // Preload headshots so they're browser-cached by first hover.
+      pts.forEach(function(p) {
+        if (p.headshot && !_amHsPreload[p.headshot]) {
+          const _pi = new Image(); _pi.src = p.headshot;
+          _amHsPreload[p.headshot] = _pi;
+        }
+      });
+      _amPinnedDot = null; _amHideHoverForce();
       _amLoadLogo(_amGraphTheme).then(function(logo) {
         if (token !== _amGraphToken) return;
         plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo);
@@ -2572,13 +2585,15 @@ _AM_JS = r"""
   function _amDotInfo(dot) {
     try { return JSON.parse(dot.getAttribute('data-info') || '{}'); } catch (e) { return null; }
   }
-  function _amShowHover(dot, clientX, clientY) {
+  function _amShowHover(dot, clientX, clientY, pinned) {
     const wrap = document.querySelector('.am-graph-plot-wrap');
     const hover = document.getElementById('amGraphHover');
     if (!wrap || !hover) return;
     const info = _amDotInfo(dot);
     if (!info) return;
-    let html = '<div class="am-graph-hover-top">';
+    let html = '';
+    if (pinned) html += '<button class="am-graph-hover-close" onclick="_amUnpin()" title="Close">✕</button>';
+    html += '<div class="am-graph-hover-top">';
     if (info.hs) html += '<img class="am-graph-hover-hs" src="' + _amEsc(info.hs) + '" alt="" onerror="this.style.display=\'none\'"/>';
     html += '<div><div class="am-graph-hover-nm">' + _amEsc(info.nm) + '</div>'
       + '<div class="am-graph-hover-pos">' + _amEsc(info.pos) + '</div></div></div>';
@@ -2588,6 +2603,7 @@ _AM_JS = r"""
     });
     html += '</div>';
     hover.innerHTML = html;
+    hover.classList.toggle('pinned', !!pinned);
     hover.classList.add('show');
     const wr = wrap.getBoundingClientRect();
     let x = clientX - wr.left + 14, y = clientY - wr.top + 14;
@@ -2599,30 +2615,50 @@ _AM_JS = r"""
     hover.style.top = y + 'px';
   }
   function _amHideHover() {
+    if (_amPinnedDot) return;
     const hover = document.getElementById('amGraphHover');
-    if (hover) hover.classList.remove('show');
+    if (hover) { hover.classList.remove('show'); hover.classList.remove('pinned'); }
   }
+  function _amHideHoverForce() {
+    const hover = document.getElementById('amGraphHover');
+    if (hover) { hover.classList.remove('show'); hover.classList.remove('pinned'); }
+  }
+  window._amUnpin = function() {
+    _amPinnedDot = null;
+    _amHideHoverForce();
+  };
   // One-time wiring: hover (desktop) / tap (touch) a point to show a card with
   // the headshot + selected stats; re-render on resize so layout stays responsive.
   (function _amInitGraphInteractions() {
     const plot = document.getElementById('amGraphPlot');
     if (plot) {
       plot.addEventListener('mousemove', function(e) {
+        if (_amPinnedDot) return;
         const dot = e.target.closest && e.target.closest('circle[data-info]');
-        if (dot) _amShowHover(dot, e.clientX, e.clientY); else _amHideHover();
+        if (dot) _amShowHover(dot, e.clientX, e.clientY, false); else _amHideHover();
       });
-      plot.addEventListener('mouseleave', _amHideHover);
+      plot.addEventListener('mouseleave', function() {
+        if (_amPinnedDot) return;
+        _amHideHover();
+      });
       plot.addEventListener('click', function(e) {
         const dot = e.target.closest && e.target.closest('circle[data-info]');
-        if (dot) { _amShowHover(dot, e.clientX, e.clientY); }
-        else { _amHideHover(); }
+        if (dot) {
+          if (_amPinnedDot === dot) {
+            _amPinnedDot = null; _amHideHoverForce();
+          } else {
+            _amPinnedDot = dot; _amShowHover(dot, e.clientX, e.clientY, true);
+          }
+        } else {
+          _amPinnedDot = null; _amHideHoverForce();
+        }
       });
     }
     let _rt;
     window.addEventListener('resize', function() {
       const modal = document.getElementById('amGraphModal');
       if (!modal || modal.style.display !== 'flex') return;
-      _amHideHover();
+      _amPinnedDot = null; _amHideHoverForce();
       clearTimeout(_rt);
       _rt = setTimeout(function() {
         if (modal.style.display === 'flex') window.amRenderGraph();
