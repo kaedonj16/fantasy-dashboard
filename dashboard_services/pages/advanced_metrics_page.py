@@ -2551,19 +2551,31 @@ _AM_JS = r"""
     const boldCut = pts.length > 50 ? 15 : 10;
     const showCut = pts.length > 50 ? 30 : 25;
     const lblSize = isNarrow ? 10 : 9;
-    pts.forEach(function(p, idx) {
+    // Pre-compute per-point layout so we can do two passes (circles then labels).
+    const ptData = pts.map(function(p, idx) {
       const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
       const stats = [[cfg.metrics[xk].label, fmtX(p.x)], [cfg.metrics[yk].label, fmtY(p.y)]];
       if (zk) stats.push([cfg.metrics[zk].label, p.z != null ? fmtVal(p.z, zk) : '–']);
       const info = { nm: p.name, pos: p.position || '', hs: p.headshot || '', stats: stats };
-      s += '<circle class="am-graph-dot" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + r.toFixed(1)
-        + '" fill="' + col + '" fill-opacity="0.7" stroke="' + col + '" stroke-width="1"'
-        + ' data-info="' + _amEsc(JSON.stringify(info)) + '"></circle>';
-      const isBold = idx < boldCut;
-      if (idx < showCut) {
-        s += txt((cx + r + 2).toFixed(1), (cy + 3).toFixed(1), _amEsc(_amLastName(p.name)), lblSize,
-          isBold ? TH.text : TH.muted, isBold ? 700 : 400, 'start');
-      }
+      return { p: p, idx: idx, cx: cx, cy: cy, r: r, col: col, info: info };
+    });
+    // Pass 1 — circles, largest-first so small dots render on top.
+    ptData.slice().sort(function(a, b) { return b.r - a.r; }).forEach(function(d) {
+      s += '<circle class="am-graph-dot" cx="' + d.cx.toFixed(1) + '" cy="' + d.cy.toFixed(1) + '" r="' + d.r.toFixed(1)
+        + '" fill="' + d.col + '" fill-opacity="0.78" stroke="' + TH.bg + '" stroke-width="1.5"'
+        + ' data-info="' + _amEsc(JSON.stringify(d.info)) + '"></circle>';
+    });
+    // Pass 2 — labels on top of all circles, with a bg-colored halo so they're
+    // readable over both dots and the watermark.
+    ptData.forEach(function(d) {
+      if (d.idx >= showCut) return;
+      const isBold = d.idx < boldCut;
+      const lbl = _amEsc(_amLastName(d.p.name));
+      s += '<text x="' + (d.cx + d.r + 3).toFixed(1) + '" y="' + (d.cy + 3).toFixed(1) + '"'
+        + ' font-size="' + lblSize + '" font-weight="' + (isBold ? 700 : 400) + '"'
+        + ' fill="' + (isBold ? TH.text : TH.muted) + '"'
+        + ' stroke="' + TH.bg + '" stroke-width="3" stroke-linejoin="round" paint-order="stroke fill"'
+        + '>' + lbl + '</text>';
     });
     // In-SVG legend (positions present) + bubble note, so the shared image is complete.
     const posPresent = [];
@@ -2697,18 +2709,18 @@ _AM_JS = r"""
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = TH.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(function(blob) {
-        if (!blob) { flash('Failed'); return; }
-        const xk = document.getElementById('amGraphX').value;
-        const yk = document.getElementById('amGraphY').value;
-        const fname = 'br-metrics-' + xk + '-vs-' + yk + '.png';
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = fname;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(function() { URL.revokeObjectURL(a.href); }, 3000);
-        flash('Saved ✓');
-      }, 'image/png');
+      const xk = document.getElementById('amGraphX').value;
+      const yk = document.getElementById('amGraphY').value;
+      const fname = 'br-metrics-' + xk + '-vs-' + yk + '.png';
+      const dataUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = fname;
+      a.style.position = 'fixed'; a.style.left = '-9999px';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function() { document.body.removeChild(a); }, 100);
+      flash('Saved ✓');
     };
     img.onerror = function() { flash('Failed'); };
     img.src = src;
