@@ -2094,13 +2094,15 @@ def _points_per_win() -> float:
         return _POINTS_PER_WIN_DEFAULT
 
 
-# In-process TTL cache for _value_table. The full-season VORP/WAR computation is
+# In-process daily cache for _value_table. The full-season VORP/WAR computation is
 # identical for every player in a league, but the player modal calls it twice per
 # open (metrics + ranks) and the compare modal up to 4× — each previously a full
-# weekly-table scan + Python pass over every player. Cache by the inputs that
-# actually change the result so repeated opens within the TTL are ~free.
-_VALUE_TABLE_CACHE: Dict[tuple, Tuple[float, Tuple[Optional[int], List[Dict[str, Any]]]]] = {}
-_VALUE_TABLE_TTL = 600  # seconds; values only change once daily after cron
+# weekly-table scan + Python pass over every player. The underlying values only
+# change once a day (after cron rebuilds player_weekly_metrics), so the cache is
+# keyed by today's date and the inputs that affect the result: entries from a
+# prior day are naturally bypassed and recomputed once on the first call of the
+# new day.
+_VALUE_TABLE_CACHE: Dict[tuple, Tuple[Optional[int], List[Dict[str, Any]]]] = {}
 
 
 def _value_table(
@@ -2116,17 +2118,17 @@ def _value_table(
     {player_id, position, pts, games, vorp, war}. Also stamps position-relative
     ranks (vorp_rank, war_rank) computed across all players at the same position.
 
-    Results are memoized for _VALUE_TABLE_TTL seconds keyed by the inputs that
-    affect the output, so the same league/season is computed once per TTL window
-    instead of once per modal fetch.
+    Results are memoized for the current day keyed by the inputs that affect the
+    output, so the same league/season is computed once per day instead of once
+    per modal fetch.
     """
-    import time as _time
+    from datetime import date as _date
     _starters_key = tuple(sorted((starters or {}).items()))
-    _cache_key = (season, int(num_teams) if num_teams else 12, _starters_key, points_per_win)
-    _now = _time.time()
+    _cache_key = (_date.today().isoformat(), season,
+                  int(num_teams) if num_teams else 12, _starters_key, points_per_win)
     _hit = _VALUE_TABLE_CACHE.get(_cache_key)
-    if _hit is not None and (_now - _hit[0]) < _VALUE_TABLE_TTL:
-        return _hit[1]
+    if _hit is not None:
+        return _hit
     teams = int(num_teams) if num_teams and num_teams > 0 else 12
     start_slots = {**_VALUE_STARTERS, **(starters or {})}
     ppw = points_per_win if (points_per_win and points_per_win > 0) else _points_per_win()
@@ -2204,7 +2206,12 @@ def _value_table(
                 rec[f"{key}_rank"] = i
 
     _result = (season, recs)
-    _VALUE_TABLE_CACHE[_cache_key] = (_now, _result)
+    # Keep the cache from growing without bound across days: drop entries whose
+    # date prefix isn't today before inserting the fresh one.
+    _today = _cache_key[0]
+    for _k in [k for k in _VALUE_TABLE_CACHE if k[0] != _today]:
+        _VALUE_TABLE_CACHE.pop(_k, None)
+    _VALUE_TABLE_CACHE[_cache_key] = _result
     return _result
 
 
