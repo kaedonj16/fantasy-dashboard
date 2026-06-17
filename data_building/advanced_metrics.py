@@ -1403,7 +1403,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "total_tds":          {"label": "Total TDs",    "category": "General", "positions": ["QB", "RB", "WR", "TE"], "integer": True, "desc": "Total touchdowns (rush + receiving + passing) in the season."},
     "total_tds_per_game": {"label": "Total TDs/G",  "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Total touchdowns per game.", "computed_sql": "m.total_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "ppr_pts":          {"label": "PPR Points",  "category": "General", "positions": ["QB", "RB", "WR", "TE"], "desc": "Total PPR fantasy points for the period (0.5 PPR scoring)."},
-    "ppr_pts_per_game": {"label": "PPR FPPG",   "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "PPR fantasy points per game."},
+    "ppr_pts_per_game": {"label": "Fantasy PPG",   "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "PPR fantasy points per game."},
 }
 
 # Metrics that can be filtered to a week range using player_weekly_metrics.
