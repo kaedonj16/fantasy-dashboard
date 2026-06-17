@@ -107,7 +107,21 @@ def render_url_to_png(
             with sync_playwright() as p:
                 browser = p.chromium.launch(
                     headless=True,
-                    args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+                    # Low-memory flags: the web service runs on a small instance,
+                    # so trim Chromium's footprint to reduce OOM risk. If a launch
+                    # still fails, the caller falls back to the static logo.
+                    args=[
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu",
+                        "--single-process",
+                        "--no-zygote",
+                        "--disable-extensions",
+                        "--disable-background-networking",
+                        "--disable-default-apps",
+                        "--mute-audio",
+                        "--hide-scrollbars",
+                    ],
                 )
                 page = browser.new_page(
                     viewport={"width": width, "height": height},
