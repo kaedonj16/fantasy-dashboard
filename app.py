@@ -26216,7 +26216,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="{_sc_og_image}">
   <script>
-    (function(){{{"document.documentElement.setAttribute('data-theme','dark');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
+    (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
   </script>
   <link rel="stylesheet" href="/static/dashboard.css?v={_CSS_V}">
   <link rel="stylesheet" href="/static/font-awesome.css?v={_CSS_V}">
@@ -26232,14 +26232,14 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
       padding:5px 10px; font-size:13px; cursor:pointer; }}
     .sc-toggle-wrap {{ position:relative; }}
     {('''
-    /* og=1 render mode: fixed 1200x630 dark canvas, card centered and scaled
+    /* og=1 render mode: fixed 1200x630 light canvas, card centered and scaled
        up to fill the landscape social-preview frame. */
-    html, body {{ background:#020617 !important; }}
+    html, body {{ background:#eef2f7 !important; }}
     body {{ width:1200px !important; height:630px !important; padding:0 !important;
       justify-content:center !important; align-items:center !important; overflow:hidden;
-      background:radial-gradient(circle at 50% 0%, #0b1a36 0%, #020617 70%) !important; }}
+      background:radial-gradient(circle at 50% 0%, #ffffff 0%, #e2e8f0 75%) !important; }}
     .share-card-wrap {{ transform:scale(1.34); transform-origin:center center; }}
-    .share-card {{ box-shadow:0 30px 80px rgba(0,0,0,.55); }}
+    .share-card {{ box-shadow:0 24px 60px rgba(15,23,42,.18); }}
     ''') if is_og else ''}
   </style>
 </head>
@@ -26297,7 +26297,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
     // Load saved or default theme (falls back to browser preference)
-    var saved = {"'dark'" if is_og else "localStorage.getItem(THEME_KEY) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')"};
+    var saved = {"'light'" if is_og else "localStorage.getItem(THEME_KEY) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')"};
     applyTheme(saved);
     // Standalone toggle button
     var toggleBtn = document.getElementById('scThemeToggle');
@@ -26352,7 +26352,7 @@ def share_card_og_image(platform: str, season: int, league_id: str, roster_id: s
         cache_key=f"team:{platform}:{season}:{league_id}:{roster_id}",
     )
     if not png:
-        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo_dark.png")
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png")
     return Response(png, mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=3600"})
 
@@ -26953,7 +26953,7 @@ def page_trade_card(share_id: str):
   <meta name="twitter:image" content="{_og_image_url}">
   <link rel="icon" href="/static/BR_Logo.png" type="image/png">
   <script>
-    (function(){{{"document.documentElement.setAttribute('data-theme','dark');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
+    (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
   </script>
   <style>
     :root{{--tc-bg:#0b1120;--tc-card:#0f1d36;--tc-hdr:#0b1628;--tc-border:rgba(255,255,255,.1);--tc-border-sub:rgba(255,255,255,.07);--tc-text:#e2e8f0;--tc-text2:#f1f5f9;--tc-muted:#94a3b8;--tc-dim:#64748b;--tc-dimmer:#475569;--tc-bar:rgba(255,255,255,.08);}}
@@ -27019,14 +27019,14 @@ def page_trade_card(share_id: str):
       .pi-cell{{padding:7px 5px}}
     }}
     {('''
-    /* og=1 render mode: fixed 1200x630 dark canvas with the card centered and
+    /* og=1 render mode: fixed 1200x630 light canvas with the card centered and
        scaled up to fill the landscape social-preview frame. */
-    html[data-theme]{{background:#0b1120;}}
+    html[data-theme]{{background:#eef2f7;}}
     body{{width:1200px !important;height:630px !important;padding:0 !important;
       justify-content:center !important;align-items:center !important;overflow:hidden;
-      background:radial-gradient(circle at 50% 0%, #14213d 0%, #0b1120 70%) !important;}}
+      background:radial-gradient(circle at 50% 0%, #ffffff 0%, #e2e8f0 75%) !important;}}
     .wrap{{transform:scale(1.42);transform-origin:center center;}}
-    .card{{box-shadow:0 30px 80px rgba(0,0,0,.5);}}
+    .card{{box-shadow:0 24px 60px rgba(15,23,42,.18);}}
     ''') if is_og else ''}
   </style>
 </head>
@@ -27095,7 +27095,7 @@ def page_trade_card(share_id: str):
       var btn = document.getElementById('tcToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
-    var saved = {"'dark'" if is_og else "localStorage.getItem(THEME_KEY) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')"};
+    var saved = {"'light'" if is_og else "localStorage.getItem(THEME_KEY) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')"};
     applyTheme(saved);
     var toggleBtn = document.getElementById('tcToggle');
     if (toggleBtn) {{

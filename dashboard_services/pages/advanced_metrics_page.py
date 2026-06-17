@@ -885,7 +885,7 @@ def build_advanced_metrics_body(
          hiding the modal's own ancestors (which would also hide the modal), we
          lay an opaque, top-of-stack overlay over the whole page. Used by
          /metrics/og.png (headless screenshot). */
-      html.og-render, html.og-render body { background:#0b1120 !important; margin:0 !important; padding:0 !important; overflow:hidden !important; }
+      html.og-render, html.og-render body { background:#eef2f7 !important; margin:0 !important; padding:0 !important; overflow:hidden !important; }
       html.og-render #appSplash { display:none !important; }
       /* Any transform on an ancestor would make position:fixed relative to it,
          not the viewport — neutralize so the overlay truly fills the frame. */
@@ -893,7 +893,7 @@ def build_advanced_metrics_body(
       html.og-render #amGraphModal {
         position:fixed !important; inset:0 !important; z-index:2147483600 !important; display:flex !important;
         align-items:center !important; justify-content:center !important;
-        background:radial-gradient(circle at 50% 0%, #14213d 0%, #0b1120 70%) !important; padding:0 !important;
+        background:radial-gradient(circle at 50% 0%, #ffffff 0%, #e2e8f0 75%) !important; padding:0 !important;
       }
       html.og-render .am-graph-card {
         width:1200px !important; height:630px !important; max-width:1200px !important; max-height:630px !important;
@@ -3171,10 +3171,10 @@ _AM_JS = r"""
     const _gnInit = _initParams.get('gn') || '';
     if (_isOgRender) {
       // Strip page chrome so only the graph fills the 1200x630 capture frame,
-      // and force the dark theme for a consistent preview.
+      // and force the light theme for a consistent preview.
       document.documentElement.classList.add('og-render');
-      document.documentElement.setAttribute('data-theme', 'dark');
-      _amGraphTheme = 'dark';
+      document.documentElement.setAttribute('data-theme', 'light');
+      _amGraphTheme = 'light';
     }
     window.addEventListener('load', function() {
       window.amOpenGraph();
@@ -3187,7 +3187,7 @@ _AM_JS = r"""
         if (_gyInit && ySel) ySel.value = _gyInit;
         if (_gzInit && zSel) zSel.value = _gzInit;
         if (_gnInit && nSel) nSel.value = _gnInit;
-        if (_isOgRender) _amGraphTheme = 'dark';
+        if (_isOgRender) _amGraphTheme = 'light';
         window.amRenderGraph();
       }, 50);
     });
