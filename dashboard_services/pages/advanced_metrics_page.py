@@ -323,9 +323,13 @@ def build_advanced_metrics_body(
                 <label>&nbsp;</label>
                 <div style="display:flex;gap:6px;">
                   <button type="button" id="amGraphThemeBtn" class="am-add-stat-btn" onclick="amToggleGraphTheme()" title="Toggle light / dark"></button>
-                  <button type="button" id="amGraphShareBtn" class="am-add-stat-btn" onclick="amShareGraph()" title="Share or download image">
-                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px"><path d="M8 1.5v8M8 1.5 5.5 4M8 1.5 10.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 9v4.5h10V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                    Share
+                  <button type="button" id="amGraphDownloadBtn" class="am-add-stat-btn" onclick="amDownloadGraph()" title="Download image">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px"><path d="M8 1.5v8M8 9.5 5.5 7M8 9.5 10.5 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11v3.5h10V11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    Download
+                  </button>
+                  <button type="button" id="amGraphCopyBtn" class="am-add-stat-btn am-graph-copy-btn" onclick="amCopyGraphLink()" title="Copy a link that reopens this graph">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px"><path d="M6.5 9.5a2.5 2.5 0 0 0 3.6.1l2-2a2.5 2.5 0 0 0-3.5-3.6l-1 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M9.5 6.5a2.5 2.5 0 0 0-3.6-.1l-2 2a2.5 2.5 0 0 0 3.5 3.6l1-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    Copy link
                   </button>
                 </div>
               </div>
@@ -2625,14 +2629,11 @@ _AM_JS = r"""
       }, 250);
     });
   })();
-  // Export the current graph as a branded PNG. On touch devices (where the
-  // native share sheet is genuinely useful) we use the Web Share API; on
-  // desktop we download directly — the macOS/desktop share sheet for a file is
-  // clunky and unreliable, so a straight download is the better experience.
-  window.amShareGraph = function() {
+  // Download the current graph as a branded PNG.
+  window.amDownloadGraph = function() {
     const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
     if (!svg) return;
-    const btn = document.getElementById('amGraphShareBtn');
+    const btn = document.getElementById('amGraphDownloadBtn');
     const TH = _amGraphPalette();
     const vb = (svg.getAttribute('viewBox') || '0 0 720 580').split(/\s+/).map(Number);
     const W = vb[2] || 720, H = vb[3] || 580, scale = 2;
@@ -2642,15 +2643,13 @@ _AM_JS = r"""
     clone.setAttribute('width', W); clone.setAttribute('height', H);
     const xml = new XMLSerializer().serializeToString(clone);
     const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
-    // Touch device = phone/tablet → native share sheet is the right call.
-    const isTouch = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
-      && (navigator.maxTouchPoints || 0) > 0;
     const flash = function(msg) {
       if (!btn) return;
       const prev = btn.innerHTML;
       btn.innerHTML = msg;
       setTimeout(function() { btn.innerHTML = prev; }, 1400);
     };
+    flash('Saving…');
     const img = new Image();
     img.onload = function() {
       const canvas = document.createElement('canvas');
@@ -2663,29 +2662,50 @@ _AM_JS = r"""
         const xk = document.getElementById('amGraphX').value;
         const yk = document.getElementById('amGraphY').value;
         const fname = 'br-metrics-' + xk + '-vs-' + yk + '.png';
-        const download = function() {
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = fname;
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(function() { URL.revokeObjectURL(a.href); }, 3000);
-          flash('Saved ✓');
-        };
-        if (isTouch) {
-          const file = new File([blob], fname, { type: 'image/png' });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            const text = (cfg.metrics[yk] ? cfg.metrics[yk].label : yk) + ' vs '
-              + (cfg.metrics[xk] ? cfg.metrics[xk].label : xk);
-            navigator.share({ files: [file], title: 'BR Fantasy — Advanced Metrics', text: text })
-              .catch(function() { download(); });
-            return;
-          }
-        }
-        download();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fname;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function() { URL.revokeObjectURL(a.href); }, 3000);
+        flash('Saved ✓');
       }, 'image/png');
     };
     img.onerror = function() { flash('Failed'); };
     img.src = src;
+  };
+  // Copy a shareable link that will reopen this exact graph configuration.
+  window.amCopyGraphLink = function() {
+    const btn = document.getElementById('amGraphCopyBtn');
+    const xk = (document.getElementById('amGraphX') || {}).value || '';
+    const yk = (document.getElementById('amGraphY') || {}).value || '';
+    const zEl = document.getElementById('amGraphZ');
+    const zk = zEl ? zEl.value : '';
+    const nEl = document.getElementById('amGraphTopN');
+    const topN = nEl ? nEl.value : '25';
+    const p = new URLSearchParams(window.location.search);
+    p.set('graph', '1');
+    if (xk) p.set('gx', xk); else p.delete('gx');
+    if (yk) p.set('gy', yk); else p.delete('gy');
+    if (zk) p.set('gz', zk); else p.delete('gz');
+    p.set('gn', topN);
+    const url = window.location.origin + window.location.pathname + '?' + p.toString();
+    const flash = function(msg) {
+      if (!btn) return;
+      const prev = btn.innerHTML;
+      btn.innerHTML = msg;
+      setTimeout(function() { btn.innerHTML = prev; }, 2000);
+    };
+    navigator.clipboard.writeText(url).then(function() {
+      flash('✓ Copied!');
+    }).catch(function() {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+        document.body.removeChild(ta);
+        flash('✓ Copied!');
+      } catch(_) { flash('Failed'); }
+    });
   };
 
   function fetchData() {
@@ -3015,6 +3035,27 @@ _AM_JS = r"""
   if (_presetInit && _PRESETS[_presetInit]) amLoadPreset(_presetInit);
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
   updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL(); fetchData(); loadOwnedRoster();
+  // Auto-open graph modal when ?graph=1 is in the URL (from a copied graph link).
+  if (_initParams.get('graph') === '1') {
+    const _gxInit = _initParams.get('gx') || '';
+    const _gyInit = _initParams.get('gy') || '';
+    const _gzInit = _initParams.get('gz') || '';
+    const _gnInit = _initParams.get('gn') || '';
+    window.addEventListener('load', function() {
+      window.amOpenGraph();
+      setTimeout(function() {
+        const xSel = document.getElementById('amGraphX');
+        const ySel = document.getElementById('amGraphY');
+        const zSel = document.getElementById('amGraphZ');
+        const nSel = document.getElementById('amGraphTopN');
+        if (_gxInit && xSel) xSel.value = _gxInit;
+        if (_gyInit && ySel) ySel.value = _gyInit;
+        if (_gzInit && zSel) zSel.value = _gzInit;
+        if (_gnInit && nSel) nSel.value = _gnInit;
+        window.amRenderGraph();
+      }, 50);
+    });
+  }
 
   // Info tooltip: position:fixed so it escapes the card's overflow:hidden container
   const _infoEl = document.getElementById('amMetricInfo');

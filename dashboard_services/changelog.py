@@ -5,6 +5,12 @@ Each entry represents a user-facing change.
 
 CHANGELOG = [
     {
+        "date": "2026-06-17",
+        "tag": "new",
+        "text": "Advanced Metrics Graph: Plot any two (or three) efficiency metrics as a scatter chart directly from the Advanced Metrics page. Includes position presets for WR, RB, and TE, bubble sizing by a third stat, top-player labels, average crosshair lines, light/dark mode, and a BR watermark. Download the chart as a PNG or copy a shareable link that reopens the exact graph configuration.",
+        "link": "/metrics"
+    },
+    {
         "date": "2026-06-13",
         "tag": "new",
         "text": "Player Modal: Advanced Metrics tab now shows positional ranks for every efficiency stat with position-group minimums (4+ games, 20+ carries, 15+ targets, 50+ pass attempts). Weekly Trends is here: see a sparkline, rolling average, and trend arrow for key stats across the season with a time filter to zoom in on any stretch of weeks.",
