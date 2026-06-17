@@ -467,6 +467,9 @@ def build_advanced_metrics_body(
         color:var(--text-muted); padding:8px 10px; border-bottom:1px solid var(--border); }
       .am-table th.am-sortable { cursor:pointer; user-select:none; }
       .am-table th.am-sortable:hover { color:var(--text); }
+      /* Column header with a metric definition shows a dotted underline on hover */
+      .am-table th[data-def] { cursor:help; }
+      .am-table th[data-def]:hover { color:var(--text); text-decoration:underline dotted; text-underline-offset:2px; }
       .am-table th.am-sort-desc::after { content:' ↓'; }
       .am-table th.am-sort-asc::after { content:' ↑'; }
       .am-table td { padding:9px 10px; border-bottom:1px solid var(--border); font-size:14px; }
@@ -1648,11 +1651,31 @@ _AM_JS = r"""
       th.id = 'amFilterColHdr_' + key;
       th.className = 'am-games am-sortable am-filter-col-hdr';
       th.textContent = (cfg.metrics[key] && cfg.metrics[key].label) || key;
-      th.title = (cfg.metrics[key] && cfg.metrics[key].desc) || key;
       th.addEventListener('click', function() { sortByCol(key); });
+      _bindColTip(th, key);
       if (metricHdr) thead.insertBefore(th, metricHdr);
       else thead.appendChild(th);
     });
+  }
+
+  // Attach the shared metric-definition tooltip to a column header <th>.
+  // Uses mouseenter/mouseleave (desktop hover) bound via addEventListener so
+  // the sort click-handler already on the element is not affected.  Stores
+  // the bound functions on the element itself so they can be removed cleanly
+  // when the primary metric header is refreshed.
+  function _bindColTip(th, key) {
+    const desc = (cfg.metrics[key] && cfg.metrics[key].desc) || '';
+    // Remove any previous tooltip listeners to avoid duplicates on re-bind.
+    if (th._amTipEnter) { th.removeEventListener('mouseenter', th._amTipEnter); delete th._amTipEnter; }
+    if (th._amTipLeave) { th.removeEventListener('mouseleave', th._amTipLeave); delete th._amTipLeave; }
+    if (!desc) { delete th.dataset.def; th.style.cursor = ''; return; }
+    th.dataset.def = desc;
+    th.title = desc;
+    th.style.cursor = 'help';
+    th._amTipEnter = function(e) { if (typeof advEnterMetricDef === 'function') advEnterMetricDef(e); };
+    th._amTipLeave = function(e) { if (typeof advLeaveMetricDef === 'function') advLeaveMetricDef(e); };
+    th.addEventListener('mouseenter', th._amTipEnter);
+    th.addEventListener('mouseleave', th._amTipLeave);
   }
 
   function syncExtraCols() {
@@ -1665,6 +1688,7 @@ _AM_JS = r"""
       th.className = 'am-barcell am-extra-header';
       th.textContent = (cfg.metrics[key] && cfg.metrics[key].label) || key;
       th.addEventListener('click', function() { sortByCol(key); });
+      _bindColTip(th, key);
       thead.appendChild(th);
     });
     syncFilterCols();
@@ -2088,7 +2112,10 @@ _AM_JS = r"""
     const thWks = document.querySelector('#amTable thead th.am-weeks');
     if (thWks) thWks.style.display = isWeekly ? '' : 'none';
     const mh = document.getElementById('amMetricHeader');
-    if (mh) mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '–';
+    if (mh) {
+      mh.textContent = (cfg.metrics[state.metric] && cfg.metrics[state.metric].label) || '–';
+      _bindColTip(mh, state.metric);
+    }
     syncExtraCols();
   }
   // Resolve the active week range into {week_start, week_end} integers or null.
