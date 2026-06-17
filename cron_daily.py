@@ -315,9 +315,13 @@ else:
     # During the offseason current_season is the upcoming year (no CSV yet),
     # so try the prior season as a fallback.
     try:
-        from data_building.advanced_metrics import import_air_yards_from_stats_csv
+        from data_building.advanced_metrics import import_air_yards_from_stats_csv, init_advanced_metrics_db
         from pathlib import Path
         from utils.paths import DATA_DIR
+        # Ensure the schema (incl. the wopr column) exists before writing, so the
+        # WOPR import succeeds even on the first run / fresh DB rather than failing
+        # silently until a later step's migration creates the column.
+        init_advanced_metrics_db()
         _ay_season = current_season
         if not Path(DATA_DIR, "cache", f"stats_player_reg_{{_ay_season}}.csv").exists():
             _ay_season = current_season - 1
