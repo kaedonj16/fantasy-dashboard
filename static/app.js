@@ -10237,6 +10237,24 @@ const _ADV_METRIC_DESCS = {
   'Receptions': "Total receptions in the season.",
   'Pass TDs': "Total passing touchdowns in the season.",
   'Pass TDs/G': "Passing touchdowns per game.",
+  // Labels that previously had no definition (efficiency / EPA / NGS / volume tiles)
+  'Passing EPA': "Total Expected Points Added on the player's pass attempts over the season.",
+  'EPA/Play': "Expected Points Added per play — the average value of each play the player was involved in.",
+  'CPOE': "Completion Percentage Over Expected — accuracy adjusted for throw difficulty.",
+  'Success Rate': "Percent of plays with positive EPA (a 'successful' play).",
+  'Sack Rate': "Percent of dropbacks that ended in a sack. Lower is better.",
+  'Rushing EPA': "Total Expected Points Added on the player's rushing attempts over the season.",
+  'RYOE/Att': "Rush Yards Over Expected per attempt — yards created beyond what blocking/situation expected (NFL Next Gen Stats).",
+  'Separation': "Average yards of separation from the nearest defender at the moment of catch/incompletion (NFL Next Gen Stats).",
+  'Cushion': "Average yards of cushion the defender gives at the snap (NFL Next Gen Stats).",
+  'YAC Over Expected': "Yards after catch above what was expected given the catch situation (NFL Next Gen Stats).",
+  'Receiving EPA': "Total Expected Points Added on the player's targets over the season.",
+  'Touches': "Total carries plus receptions in the season.",
+  'PPR Points': "Total PPR fantasy points scored in the season.",
+  'PPR Pts/G': "PPR fantasy points per game.",
+  'Rec Yds/G': "Receiving yards per game.",
+  'Rec Yards': "Total receiving yards in the season.",
+  'Rush Yards': "Total rushing yards in the season.",
 };
 
 function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
@@ -11684,11 +11702,13 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
     const winCls2 = win2 ? ' compare-metric-win' : '';
 
     const r1 = ranks1[key], r2 = ranks2[key];
-    const rankBadge = r => (r != null) ? `<span class="cmp-rank-badge">#${r}</span>` : '';
+    // Render ranks with the same style the player modal uses: a small "(#N)"
+    // sub-line beneath the value rather than an inline pill badge.
+    const rankSub = r => (r != null) ? `<div class="pm-comp-sub rank-badge">(#${r})</div>` : '';
 
     return `
       <div class="compare-metric-row${alt ? ' cmp-row-alt' : ''}">
-        <div class="compare-metric-p1-val${winCls1}">${fmt(v1)}${rankBadge(r1)}</div>
+        <div class="compare-metric-p1-val${winCls1}">${fmt(v1)}${rankSub(r1)}</div>
         <div class="compare-bar-left">
           <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
         </div>
@@ -11696,7 +11716,7 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
         <div class="compare-bar-right">
           <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2)};"></div>
         </div>
-        <div class="compare-metric-p2-val${winCls2}">${fmt(v2)}${rankBadge(r2)}</div>
+        <div class="compare-metric-p2-val${winCls2}">${fmt(v2)}${rankSub(r2)}</div>
       </div>
     `;
   };

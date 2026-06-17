@@ -15614,31 +15614,18 @@ tr.team-clickable {
   font-size: 13px;
   color: var(--text-muted);
 }
-/* "Who has more" winner marker on the better value of each metric row */
+/* "Who has more" winner highlight on the better value of each metric row.
+   (The directional carets were removed — the green bold value is the marker.) */
 .compare-metric-win {
   color: #10b981 !important;
   font-weight: 800;
 }
-.compare-metric-p1-val.compare-metric-win::after {
-  content: " \25B8"; /* ▸ points toward this side's bar */
-  font-size: 10px;
-}
-.compare-metric-p2-val.compare-metric-win::before {
-  content: "\25C2 "; /* ◂ points toward this side's bar */
-  font-size: 10px;
-}
-/* Position rank badge shown beside each side's value (#N among the position) */
-.cmp-rank-badge {
-  display: inline-block;
-  margin: 0 3px;
-  padding: 0 4px;
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 14px;
-  color: var(--text-muted);
-  background: var(--border);
-  border-radius: 4px;
-  vertical-align: middle;
+/* Rank sub-line stays muted/regular weight even when its value cell wins, so it
+   reads the same as the player modal's "(#N)" badge regardless of win state. */
+.compare-metric-p1-val .pm-comp-sub.rank-badge,
+.compare-metric-p2-val .pm-comp-sub.rank-badge {
+  color: var(--text-muted) !important;
+  font-weight: 600;
 }
 /* Week-range context label (#1) + season-grades info icon (#3) */
 .compare-range-note {
