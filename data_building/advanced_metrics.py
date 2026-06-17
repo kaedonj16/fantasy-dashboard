@@ -2072,6 +2072,11 @@ def get_available_seasons() -> List[int]:
 # per league. Keyed names match LEADERBOARD_METRICS entries flagged value_metric.
 VALUE_METRICS = ("vorp", "war")
 
+# Metrics whose data lives only in player_weekly_metrics (no column on
+# player_advanced_metrics). In season mode these must be aggregated from the
+# weekly table rather than read as a column.
+_SEASON_FROM_WEEKLY = frozenset({"ppr_pts", "ppr_pts_per_game"})
+
 # Standard starters per team used to locate the replacement-level player.
 # FLEX is modeled as one extra RB/WR/TE slot per team, split by typical usage.
 _VALUE_STARTERS = {"QB": 1.0, "RB": 2.0, "WR": 3.0, "TE": 1.0}
@@ -2106,10 +2111,13 @@ def _value_table(
     start_slots = {**_VALUE_STARTERS, **(starters or {})}
     ppw = points_per_win if (points_per_win and points_per_win > 0) else _points_per_win()
 
+    # Season fantasy points live in player_weekly_metrics (Sleeper-sourced), not
+    # player_advanced_metrics — there is no ppr_pts column on the latter. Aggregate
+    # the weekly rows into season totals so VORP/WAR have real inputs.
     with get_conn() as conn:
         if season is None:
             srow = conn.execute(
-                "SELECT season FROM player_advanced_metrics "
+                "SELECT season FROM player_weekly_metrics "
                 "WHERE ppr_pts IS NOT NULL AND season IS NOT NULL "
                 "ORDER BY season DESC LIMIT 1"
             ).fetchone()
@@ -2117,29 +2125,39 @@ def _value_table(
                 return None, []
             season = int(srow["season"])
         rows = conn.execute(
-            """SELECT DISTINCT ON (player_id)
-                   player_id, position, ppr_pts, games
-               FROM player_advanced_metrics
+            """SELECT player_id, position,
+                      SUM(ppr_pts) AS pts, COUNT(*) AS games
+               FROM player_weekly_metrics
                WHERE season = %s AND ppr_pts IS NOT NULL AND position IS NOT NULL
-               ORDER BY player_id, as_of_date DESC""",
+               GROUP BY player_id, position""",
             (season,),
         ).fetchall()
 
-    # Bucket season points by canonical position to find replacement levels.
-    pool_by_pos: Dict[str, List[float]] = {}
-    recs: List[Dict[str, Any]] = []
+    # Fold to one rec per player: total points across all weeks, position taken
+    # from the row where they played the most weeks (positions rarely vary).
+    by_pid: Dict[str, Dict[str, Any]] = {}
     for r in rows:
         pos = _normalize_position(r["position"])
         if pos not in start_slots:
             continue
-        pts = float(r["ppr_pts"] or 0.0)
-        recs.append({
-            "player_id": str(r["player_id"]),
-            "position": pos,
-            "pts": pts,
-            "games": int(r["games"]) if r["games"] is not None else None,
-        })
-        pool_by_pos.setdefault(pos, []).append(pts)
+        pid = str(r["player_id"])
+        pts = float(r["pts"] or 0.0)
+        gms = int(r["games"]) if r["games"] is not None else 0
+        cur = by_pid.get(pid)
+        if cur is None:
+            by_pid[pid] = {"player_id": pid, "position": pos, "pts": pts, "games": gms}
+        else:
+            cur["pts"] += pts
+            if gms > cur["games"]:
+                cur["position"] = pos
+            cur["games"] += gms
+
+    # Bucket season points by canonical position to find replacement levels.
+    pool_by_pos: Dict[str, List[float]] = {}
+    recs: List[Dict[str, Any]] = []
+    for rec in by_pid.values():
+        recs.append(rec)
+        pool_by_pos.setdefault(rec["position"], []).append(rec["pts"])
 
     repl_pts: Dict[str, float] = {}
     for pos, base in start_slots.items():
@@ -2265,6 +2283,14 @@ def get_metric_leaderboard(
     # Value metrics (VORP/WAR) are computed in Python, not from a DB column.
     if metric in VALUE_METRICS:
         return get_value_leaderboard(metric, position=position, limit=limit, season=season)
+    # ppr_pts / ppr_pts_per_game have no column in player_advanced_metrics — the
+    # fantasy points live in player_weekly_metrics. In season mode (no week range)
+    # aggregate the full season from the weekly table instead of querying a
+    # non-existent column, which would otherwise return nothing.
+    if metric in _SEASON_FROM_WEEKLY:
+        return get_weekly_range_leaderboard(
+            metric, position=position, season=season, min_vol=min_vol, limit=limit,
+        )
     pos = (position or "").upper().strip() or None
     _spec = LEADERBOARD_METRICS[metric]
     _computed_sql = _spec.get("computed_sql")
