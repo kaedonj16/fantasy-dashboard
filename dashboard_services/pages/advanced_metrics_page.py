@@ -165,11 +165,17 @@ def build_advanced_metrics_body(
             Rank every player by a single advanced metric. Bars are relative to the leader.
           </div>
         </div>
-        <button id="amLegendBtn" type="button" class="am-legend-btn"
-          onclick="document.getElementById('amLegendModal').style.display='flex'">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          Metric Glossary
-        </button>
+        <div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">
+          <button id="amGraphBtn" type="button" class="am-legend-btn" onclick="amOpenGraph()">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><path d="M2 2v10h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="5" cy="9" r="1.3" fill="currentColor"/><circle cx="8" cy="5.5" r="1.3" fill="currentColor"/><circle cx="11" cy="7.5" r="1.3" fill="currentColor"/></svg>
+            Graph Metrics
+          </button>
+          <button id="amLegendBtn" type="button" class="am-legend-btn"
+            onclick="document.getElementById('amLegendModal').style.display='flex'">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            Metric Glossary
+          </button>
+        </div>
       </div>
 
       <div id="amLegendModal" class="am-legend-modal" style="display:none;"
@@ -292,6 +298,31 @@ def build_advanced_metrics_body(
                 onclick="document.getElementById('amCompareModal').style.display='none'">&times;</button>
             </div>
             <div class="am-legend-body" id="amCompareBody"></div>
+          </div>
+        </div>
+
+        <!-- Graph metrics modal: scatter of X vs Y (+ optional bubble metric) -->
+        <div id="amGraphModal" class="am-legend-modal" style="display:none;"
+          onclick="if(event.target===this)this.style.display='none'">
+          <div class="am-legend-card am-graph-card" role="dialog" aria-label="Graph metrics">
+            <div class="am-legend-head">
+              <span>Graph Metrics <span id="amGraphCtxNote" style="font-size:11px;font-weight:500;opacity:.55;margin-left:6px;"></span></span>
+              <button type="button" class="am-legend-close" aria-label="Close"
+                onclick="document.getElementById('amGraphModal').style.display='none'">&times;</button>
+            </div>
+            <div class="am-graph-controls">
+              <div class="am-gctrl"><label for="amGraphX">X axis</label><select id="amGraphX" onchange="amRenderGraph()"></select></div>
+              <div class="am-gctrl"><label for="amGraphY">Y axis</label><select id="amGraphY" onchange="amRenderGraph()"></select></div>
+              <div class="am-gctrl"><label for="amGraphZ">Bubble size</label><select id="amGraphZ" onchange="amRenderGraph()"></select></div>
+              <div class="am-gctrl"><label for="amGraphTopN">Show</label><select id="amGraphTopN" onchange="amRenderGraph()">
+                <option value="25">Top 25 by X</option>
+                <option value="50">Top 50 by X</option>
+                <option value="75">Top 75 by X</option>
+              </select></div>
+            </div>
+            <div class="am-graph-plot-wrap">
+              <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
+            </div>
           </div>
         </div>
 
@@ -767,6 +798,30 @@ def build_advanced_metrics_body(
         background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.25);
         border-radius:8px; padding:6px 12px; margin-bottom:10px;
       }
+      /* Graph (scatter) modal */
+      .am-graph-card { max-width:720px; }
+      .am-graph-controls {
+        display:flex; flex-wrap:wrap; gap:12px;
+        padding:12px 18px; border-bottom:1px solid var(--border);
+      }
+      .am-graph-controls .am-gctrl { display:flex; flex-direction:column; gap:3px; flex:1 1 130px; min-width:120px; }
+      .am-graph-controls label {
+        font-size:10px; text-transform:uppercase; letter-spacing:.04em;
+        color:var(--text-muted); font-weight:700;
+      }
+      .am-graph-controls select {
+        font-size:12px; padding:6px 8px; border:1px solid var(--border);
+        border-radius:7px; background:var(--card); color:var(--text); cursor:pointer; width:100%;
+      }
+      .am-graph-plot-wrap { padding:14px 16px 16px; overflow:auto; }
+      .am-graph-svg { width:100%; height:auto; display:block; touch-action:none; }
+      .am-graph-empty { text-align:center; color:var(--text-muted); font-size:13px; padding:48px 0; }
+      .am-graph-axis { stroke:var(--border); }
+      .am-graph-tick { fill:var(--text-muted); font-size:10px; }
+      .am-graph-axislbl { fill:var(--text); font-size:11px; font-weight:700; }
+      .am-graph-ptlbl { fill:var(--text-muted); font-size:9px; pointer-events:none; }
+      .am-graph-dot { cursor:pointer; transition:fill-opacity .12s; }
+      .am-graph-dot:hover { fill-opacity:1 !important; }
     </style>
     """
 
@@ -2138,6 +2193,195 @@ _AM_JS = r"""
     } else {
       el.style.display = 'none';
     }
+  }
+
+  // ── Graph Metrics (scatter X vs Y, optional bubble = 3rd metric) ──────────
+  function _amEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  // Build <optgroup> options from cfg.metrics, filtered to the active position.
+  function _amGraphMetricOptions(selectedKey) {
+    const pos = (state.position && state.position !== 'ALL') ? state.position : null;
+    const cats = {};
+    Object.keys(cfg.metrics).forEach(function(k) {
+      const m = cfg.metrics[k];
+      if (pos && m.positions && m.positions.indexOf(pos) === -1) return;
+      const c = m.category || 'Other';
+      (cats[c] = cats[c] || []).push([k, m.label]);
+    });
+    const order = ['Value', 'General', 'Passing', 'Rushing', 'Receiving', 'Volume'];
+    const catKeys = Object.keys(cats).sort(function(a, b) {
+      const ia = order.indexOf(a), ib = order.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+    });
+    let html = '';
+    catKeys.forEach(function(c) {
+      html += '<optgroup label="' + _amEsc(c) + '">';
+      cats[c].sort(function(a, b) { return a[1].localeCompare(b[1]); }).forEach(function(pair) {
+        html += '<option value="' + _amEsc(pair[0]) + '"'
+          + (pair[0] === selectedKey ? ' selected' : '') + '>' + _amEsc(pair[1]) + '</option>';
+      });
+      html += '</optgroup>';
+    });
+    return html;
+  }
+  // Leaderboard params for one metric, mirroring the page's current filters.
+  function _amGraphParams(metricKey) {
+    const p = new URLSearchParams({ metric: metricKey, platform: cfg.platform });
+    if (cfg.leagueId) p.set('league_id', cfg.leagueId);
+    if (state.season) p.set('season', String(state.season));
+    if (state.position && state.position !== 'ALL') p.set('position', state.position);
+    const vol = defaultVol(metricKey);
+    if (vol) p.set('min_vol', vol);
+    const wr = resolveWeekRange();
+    if (wr.ws) p.set('week_start', String(wr.ws));
+    if (wr.we) p.set('week_end', String(wr.we));
+    return p;
+  }
+  let _amGraphToken = 0;
+  window.amOpenGraph = function() {
+    const modal = document.getElementById('amGraphModal');
+    const xSel = document.getElementById('amGraphX');
+    const ySel = document.getElementById('amGraphY');
+    const zSel = document.getElementById('amGraphZ');
+    const note = document.getElementById('amGraphCtxNote');
+    if (!modal || !xSel || !ySel || !zSel) return;
+    const pos = (state.position && state.position !== 'ALL') ? state.position : null;
+    const applic = Object.keys(cfg.metrics).filter(function(k) {
+      const m = cfg.metrics[k];
+      return !pos || !m.positions || m.positions.indexOf(pos) >= 0;
+    });
+    const curX = (applic.indexOf(state.metric) >= 0) ? state.metric : (applic[0] || state.metric);
+    const xm = cfg.metrics[curX];
+    const curY = applic.find(function(k) { return k !== curX && cfg.metrics[k].category === (xm && xm.category); })
+      || applic.find(function(k) { return k !== curX; }) || curX;
+    xSel.innerHTML = _amGraphMetricOptions(curX);
+    ySel.innerHTML = _amGraphMetricOptions(curY);
+    zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions('');
+    xSel.value = curX; ySel.value = curY; zSel.value = '';
+    if (note) {
+      const bits = [];
+      bits.push(state.season || (cfg.seasons && cfg.seasons[0]) || '');
+      bits.push(pos ? pos : 'All positions');
+      const wr = resolveWeekRange();
+      if (wr.ws && wr.we) bits.push('W' + wr.ws + '–W' + wr.we);
+      note.textContent = bits.filter(Boolean).join(' · ');
+    }
+    modal.style.display = 'flex';
+    window.amRenderGraph();
+  };
+  window.amRenderGraph = function() {
+    const plot = document.getElementById('amGraphPlot');
+    const xSel = document.getElementById('amGraphX');
+    const ySel = document.getElementById('amGraphY');
+    const zSel = document.getElementById('amGraphZ');
+    const nSel = document.getElementById('amGraphTopN');
+    if (!plot || !xSel || !ySel) return;
+    const xk = xSel.value, yk = ySel.value, zk = zSel ? zSel.value : '';
+    const topN = nSel ? (parseInt(nSel.value, 10) || 25) : 25;
+    if (!xk || !yk) { plot.innerHTML = '<div class="am-graph-empty">Pick an X and Y metric.</div>'; return; }
+    const token = ++_amGraphToken;
+    plot.innerHTML = '<div class="am-graph-empty"><div class="loading-spinner" style="margin:0 auto 10px;"></div>Loading…</div>';
+    const uniq = [xk, yk]; if (zk && uniq.indexOf(zk) === -1) uniq.push(zk);
+    Promise.all(uniq.map(function(k) {
+      return fetch('/api/advanced-metrics/leaderboard?' + _amGraphParams(k))
+        .then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
+    })).then(function(results) {
+      if (token !== _amGraphToken) return;
+      const byKey = {};
+      uniq.forEach(function(k, i) { byKey[k] = (results[i] && results[i].players) || []; });
+      const xRows = byKey[xk];
+      const yMap = new Map(byKey[yk].map(function(r) { return [String(r.player_id), Number(r.value)]; }));
+      const zMap = zk ? new Map((byKey[zk] || []).map(function(r) { return [String(r.player_id), Number(r.value)]; })) : null;
+      let pts = [];
+      xRows.forEach(function(rx) {
+        const pid = String(rx.player_id);
+        if (!yMap.has(pid)) return;
+        const xv = Number(rx.value), yv = yMap.get(pid);
+        if (!isFinite(xv) || !isFinite(yv)) return;
+        pts.push({ pid: pid, name: rx.name, position: rx.position, x: xv, y: yv,
+                   z: (zMap && zMap.has(pid)) ? zMap.get(pid) : null });
+      });
+      const xLower = cfg.metrics[xk] && cfg.metrics[xk].lowerBetter;
+      pts.sort(function(a, b) { return xLower ? a.x - b.x : b.x - a.x; });
+      pts = pts.slice(0, topN);
+      if (!pts.length) {
+        plot.innerHTML = '<div class="am-graph-empty">No players have data for both metrics with the current filters.</div>';
+        return;
+      }
+      plot.innerHTML = _amBuildScatter(pts, xk, yk, zk);
+    }).catch(function() {
+      if (token === _amGraphToken) plot.innerHTML = '<div class="am-graph-empty">Could not load graph data.</div>';
+    });
+  };
+  function _amBuildScatter(pts, xk, yk, zk) {
+    const W = 680, H = 440, padL = 60, padR = 18, padT = 16, padB = 48;
+    const xs = pts.map(function(p) { return p.x; });
+    const ys = pts.map(function(p) { return p.y; });
+    let xmin = Math.min.apply(null, xs), xmax = Math.max.apply(null, xs);
+    let ymin = Math.min.apply(null, ys), ymax = Math.max.apply(null, ys);
+    if (xmin === xmax) { xmin -= 1; xmax += 1; }
+    if (ymin === ymax) { ymin -= 1; ymax += 1; }
+    xmin -= (xmax - xmin) * 0.06; xmax += (xmax - xmin) * 0.06;
+    ymin -= (ymax - ymin) * 0.06; ymax += (ymax - ymin) * 0.06;
+    const px = function(v) { return padL + ((v - xmin) / (xmax - xmin)) * (W - padL - padR); };
+    const py = function(v) { return H - padB - ((v - ymin) / (ymax - ymin)) * (H - padT - padB); };
+    let rOf = function() { return 5; };
+    if (zk) {
+      const zs = pts.map(function(p) { return p.z; }).filter(function(v) { return v != null && isFinite(v); });
+      if (zs.length) {
+        const zmin = Math.min.apply(null, zs), zmax = Math.max.apply(null, zs);
+        const span = (zmax - zmin) || 1;
+        rOf = function(p) { return (p.z == null || !isFinite(p.z)) ? 3.5 : (4 + ((p.z - zmin) / span) * 11); };
+      }
+    }
+    const fmtX = function(v) { return fmtVal(v, xk); };
+    const fmtY = function(v) { return fmtVal(v, yk); };
+    let s = '<svg class="am-graph-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet">';
+    s += '<line class="am-graph-axis" x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - padR) + '" y2="' + (H - padB) + '"/>';
+    s += '<line class="am-graph-axis" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (H - padB) + '"/>';
+    for (let i = 0; i <= 4; i++) {
+      const xv = xmin + (xmax - xmin) * i / 4, xx = px(xv);
+      s += '<line class="am-graph-axis" x1="' + xx.toFixed(1) + '" y1="' + (H - padB) + '" x2="' + xx.toFixed(1) + '" y2="' + (H - padB + 4) + '"/>';
+      s += '<text class="am-graph-tick" x="' + xx.toFixed(1) + '" y="' + (H - padB + 16) + '" text-anchor="middle">' + _amEsc(fmtX(xv)) + '</text>';
+      const yv = ymin + (ymax - ymin) * i / 4, yy = py(yv);
+      s += '<line class="am-graph-axis" x1="' + (padL - 4) + '" y1="' + yy.toFixed(1) + '" x2="' + padL + '" y2="' + yy.toFixed(1) + '"/>';
+      s += '<text class="am-graph-tick" x="' + (padL - 7) + '" y="' + (yy + 3).toFixed(1) + '" text-anchor="end">' + _amEsc(fmtY(yv)) + '</text>';
+    }
+    s += '<text class="am-graph-axislbl" x="' + ((padL + W - padR) / 2).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + _amEsc(cfg.metrics[xk].label) + '</text>';
+    s += '<text class="am-graph-axislbl" transform="translate(14,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)" text-anchor="middle">' + _amEsc(cfg.metrics[yk].label) + '</text>';
+    const showLabels = pts.length <= 25;
+    pts.forEach(function(p) {
+      const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
+      let tip = p.name + ' (' + (p.position || '') + ')  ·  '
+        + cfg.metrics[xk].label + ': ' + fmtX(p.x) + '  ·  '
+        + cfg.metrics[yk].label + ': ' + fmtY(p.y);
+      if (zk) tip += '  ·  ' + cfg.metrics[zk].label + ': ' + (p.z != null ? fmtVal(p.z, zk) : '–');
+      s += '<circle class="am-graph-dot" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + r.toFixed(1)
+        + '" fill="' + col + '" fill-opacity="0.68" stroke="' + col + '" stroke-width="1">'
+        + '<title>' + _amEsc(tip) + '</title></circle>';
+      if (showLabels) {
+        const parts = (p.name || '').split(' ');
+        const last = parts[parts.length - 1];
+        s += '<text class="am-graph-ptlbl" x="' + (cx + r + 2).toFixed(1) + '" y="' + (cy + 3).toFixed(1) + '">' + _amEsc(last) + '</text>';
+      }
+    });
+    s += '</svg>';
+    const posPresent = [];
+    pts.forEach(function(p) { if (p.position && posPresent.indexOf(p.position) === -1) posPresent.push(p.position); });
+    if (posPresent.length > 1) {
+      s += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:8px;">';
+      posPresent.forEach(function(pp) {
+        s += '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);">'
+          + '<span style="width:9px;height:9px;border-radius:50%;background:' + posColor(pp) + ';display:inline-block;"></span>'
+          + _amEsc(pp) + '</span>';
+      });
+      s += '</div>';
+    }
+    if (zk) s += '<div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:6px;">Bubble size = ' + _amEsc(cfg.metrics[zk].label) + '</div>';
+    return s;
   }
 
   function fetchData() {
