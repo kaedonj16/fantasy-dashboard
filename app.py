@@ -17051,15 +17051,10 @@ def api_run_daily_cron():
                 if _mv.exists():
                     _mv.unlink()
                     logger.info("[run-daily-cron] Deleted %s to force full rebuild", _mv)
-                # Reset basket/headroom pipeline state so the model uses the raw
-                # basket on this run.  Without this, a contaminated DB state
-                # (basket ≈ 999.9 from old max-anchor runs) keeps _1qb_scale ≈ 1.0
-                # for weeks, leaving all top players stuck at 999.9.
-                try:
-                    from data_building.value_model_training import reset_basket_state
-                    reset_basket_state()
-                except Exception as _rbs_err:
-                    logger.warning("[run-daily-cron] reset_basket_state failed (non-fatal): %s", _rbs_err)
+                # The board anchors the top-5 average to 999.9 fresh each run (no
+                # basket EMA state to reset). Deleting model_values.json above also
+                # means this forced run rebuilds unclamped, then subsequent daily
+                # runs apply the ±10% per-player move clamp from there.
                 # Set env var so cron_daily.main() also bypasses freshness guards
                 os.environ["CRON_FORCE_REBUILD"] = "1"
             from cron_daily import main as _cron_main

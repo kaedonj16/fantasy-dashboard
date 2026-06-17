@@ -574,6 +574,13 @@ def _write_calibrated(rows: list[dict], league_size: int = 10) -> int:
         return 0
     col_1qb, col_sf = _col_names(2, league_size)
     with get_conn() as conn:
+        # Per-player trade backing columns (confidence signal for the value model's
+        # WLS blend). Idempotent migration so older DBs gain the columns.
+        conn.execute(
+            "ALTER TABLE player_values "
+            "ADD COLUMN IF NOT EXISTS calibration_backing NUMERIC, "
+            "ADD COLUMN IF NOT EXISTS calibration_backing_sf NUMERIC"
+        )
         prev = _prev_values(conn, col_1qb, col_sf, [r["player_id"] for r in rows])
         for r in rows:
             p1, psf = prev.get(str(r["player_id"]), (None, None))
@@ -584,9 +591,14 @@ def _write_calibrated(rows: list[dict], league_size: int = 10) -> int:
             }
             extra = ""
             if league_size == 10:
-                extra = ", calibration_weight = %(calibration_weight)s, calibration_source = %(calibration_source)s"
+                extra = (", calibration_weight = %(calibration_weight)s"
+                         ", calibration_source = %(calibration_source)s"
+                         ", calibration_backing = %(calibration_backing)s"
+                         ", calibration_backing_sf = %(calibration_backing_sf)s")
                 params["calibration_weight"] = r["calibration_weight"]
                 params["calibration_source"] = r["calibration_source"]
+                params["calibration_backing"] = r.get("calibration_backing", 0.0)
+                params["calibration_backing_sf"] = r.get("calibration_backing_sf", 0.0)
             conn.execute(
                 f"""
                 UPDATE player_values SET
@@ -764,6 +776,11 @@ def run_trade_value_model(
 
     logger.info("[trade_value_model] %d trade constraints - solving...", M)
     v_1qb = _solve(AtWA_1qb, AtWb_1qb, prior_1qb, lambda_reg)
+    # Per-player 1QB "backing" = diagonal of AᵀWA (total decayed weight of trades
+    # the player appears in). Persisted so the value model can confidence-weight
+    # the WLS blend (rich trade history → trust WLS; thin → lean on vendors).
+    # Captured before the matrix is freed.
+    backing_1qb = np.diag(AtWA_1qb)[:n_pl].copy()
     del AtWA_1qb, AtWb_1qb; gc.collect()
     v_sf  = _solve(AtWA_sf,  AtWb_sf,  prior_sf,  lambda_reg)
     # Per-player SF "backing" = diagonal of AᵀWA (total decayed weight of SF
@@ -863,6 +880,8 @@ def run_trade_value_model(
                 "calibrated_value_sf":   round(cal_sf,  2),
                 "calibration_weight":    min(weight, 1.0),
                 "calibration_source":    "trade_wls",
+                "calibration_backing":    round(float(backing_1qb[i]), 4) if i < len(backing_1qb) else 0.0,
+                "calibration_backing_sf": round(float(sf_backing[i]), 4) if i < len(sf_backing) else 0.0,
             })
 
     val_key = "redraft_value_1qb" if league_type == 1 else "calibrated_value_1qb"

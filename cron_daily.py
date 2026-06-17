@@ -432,17 +432,9 @@ print(f"[cron] Matchup ratings: {{len(res.get('ratings', {{}}))}} teams -> {{out
     if not force_rebuild and _model_values_fresh():
         print("[cron] Model values already built today, skipping")
     else:
-        if force_rebuild:
-            # Reset basket/headroom pipeline state so the model uses the raw
-            # basket on this run instead of EMA-blending with a stale prior.
-            # Without this, a DB state contaminated by old max-anchor runs
-            # (basket ≈ 999.9) keeps _1qb_scale ≈ 1.0 for weeks due to the
-            # low EMA alpha (0.15), leaving all top players stuck at 999.9.
-            _run_step("""
-from dotenv import load_dotenv; load_dotenv()
-from data_building.value_model_training import reset_basket_state
-reset_basket_state()
-""", "reset_basket_state")
+        # The board now anchors the top-5 average to 999.9 fresh each run (no basket
+        # EMA), with a per-player ±10% day-over-day clamp for stability — so there
+        # is no basket/headroom state to reset here anymore.
         _run_step("""
 from dotenv import load_dotenv; load_dotenv()
 from data_building.build_daily_value_table import build_daily_model_values

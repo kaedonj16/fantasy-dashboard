@@ -16,7 +16,7 @@ from dashboard_services.picks import load_pick_value_table
 from data_building.external_data.player_history import load_player_history_df, build_player_history_features
 from data_building.external_data.player_investment import load_player_investment_context
 from utils.paths import DATA_DIR
-from utils.utils import load_teams_index, bucket_for_slot, normalize_name, load_players_index
+from utils.utils import load_teams_index, bucket_for_slot, normalize_name, load_players_index, load_model_value_table
 from utils.coerce import safe_int as _safe_int
 
 # ------------------------------------------------
@@ -679,18 +679,61 @@ def rewrite_value_table_with_model() -> Path:
     # Load WLS calibrated SF values (produced by trade_value_model.py).
     # These are market-derived QB SF values from real dynasty trades.
     # Used instead of a hardcoded boost so QB SF values reflect actual trade markets.
+    # Confidence-weighted WLS blend inputs: the market-derived 1QB/SF values plus
+    # each player's trade "backing" (decayed trade weight). Players with heavy
+    # trade history lean fully on WLS; thin-data players lean on the vendor/engine
+    # blend. Missing columns/rows degrade gracefully (weight 0 → vendor blend).
+    wls_1qb_values: dict[str, float] = {}
     wls_sf_values: dict[str, float] = {}
+    wls_backing: dict[str, float] = {}
+    wls_backing_sf: dict[str, float] = {}
     try:
         from dashboard_services.db import get_conn as _get_conn
         with _get_conn() as _conn:
             _wls_rows = _conn.execute(
-                "SELECT player_id, calibrated_value_sf FROM player_values "
-                "WHERE calibrated_value_sf IS NOT NULL AND calibrated_value_sf > 0"
+                "SELECT player_id, calibrated_value_1qb, calibrated_value_sf, "
+                "       calibration_backing, calibration_backing_sf "
+                "FROM player_values"
             ).fetchall()
-        wls_sf_values = {str(r["player_id"]): float(r["calibrated_value_sf"]) for r in _wls_rows}
-        print(f"[rewrite_value_table] Loaded {len(wls_sf_values)} WLS SF values from DB")
+        for _r in _wls_rows:
+            _pid = str(_r["player_id"])
+            _v1  = _r.get("calibrated_value_1qb")
+            _vsf = _r.get("calibrated_value_sf")
+            _b1  = _r.get("calibration_backing")
+            _bsf = _r.get("calibration_backing_sf")
+            if _v1 is not None and float(_v1) > 0:
+                wls_1qb_values[_pid] = float(_v1)
+            if _vsf is not None and float(_vsf) > 0:
+                wls_sf_values[_pid] = float(_vsf)
+            if _b1 is not None:
+                wls_backing[_pid] = max(0.0, float(_b1))
+            if _bsf is not None:
+                wls_backing_sf[_pid] = max(0.0, float(_bsf))
+        print(f"[rewrite_value_table] Loaded WLS values: {len(wls_1qb_values)} 1QB, "
+              f"{len(wls_sf_values)} SF; backing for {len(wls_backing)} players")
     except Exception as _wls_err:
-        print(f"[rewrite_value_table] WLS SF load skipped: {_wls_err}")
+        print(f"[rewrite_value_table] WLS load skipped: {_wls_err}")
+
+    # Previous board values (for the ±10% per-player day-over-day move clamp).
+    # model_values.json is a list of asset dicts; index it by player id. Read the
+    # raw stored board (apply_calibration=False) so the clamp compares against
+    # yesterday's actual displayed values, not a re-overlaid version.
+    _prev_board: dict[str, dict] = {}
+    try:
+        _prev_raw = load_model_value_table(apply_calibration=False)
+        if isinstance(_prev_raw, dict):
+            _prev_board = {str(k): v for k, v in _prev_raw.items() if isinstance(v, dict)}
+        elif isinstance(_prev_raw, list):
+            _prev_board = {str(a.get("id")): a for a in _prev_raw if isinstance(a, dict) and a.get("id") is not None}
+        print(f"[rewrite_value_table] previous board loaded for {len(_prev_board)} players (±10% clamp)")
+    except Exception as _pb_err:
+        print(f"[rewrite_value_table] previous board load skipped: {_pb_err}")
+
+    # Trade backing at which WLS earns 50% of the blend. Larger K = need more
+    # trade history before WLS dominates. Matches the SF blend's half-weight idea.
+    _WLS_BLEND_K = 6.0
+    # Max day-over-day move per player (the only smoothing). 0.10 = ±10%/day.
+    _MAX_DAILY_MOVE = 0.10
 
     # CRITICAL FIX: Load vendor values to use directly when available
     fc_df = load_fantasycalc_df()
@@ -927,6 +970,15 @@ def rewrite_value_table_with_model() -> Path:
             # ML fallback).
             final_value = 0.0
 
+        # Confidence-weighted WLS blend (1QB): lean on the trade market in
+        # proportion to how much trade history backs this player. Heavy backing →
+        # ~pure WLS; thin/none → keep the vendor/engine blend.
+        _wls1 = wls_1qb_values.get(pid)
+        if _wls1 is not None and _wls1 > 0:
+            _b1 = wls_backing.get(pid, 0.0)
+            _conf1 = _b1 / (_b1 + _WLS_BLEND_K) if _b1 > 0 else 0.0
+            final_value = (_conf1 * _wls1 + (1.0 - _conf1) * final_value) if final_value > 0 else _wls1
+
         # Calculate Superflex value - use engine values as primary source
         if pid in sf_engine_map:
             sf_value = sf_engine_map[pid]
@@ -936,16 +988,18 @@ def rewrite_value_table_with_model() -> Path:
             # No SF engine value and no SF vendor blend → no SF signal.
             sf_value = 0.0
 
-        # Non-QB players are not less valuable in SF - QBs go up, everyone else stays the same.
-        # Floor non-QB sf_value at their 1QB value to prevent the DP 2QB blend from pulling them down.
         position = player.get("position")
+        # Confidence-weighted WLS blend (SF): same idea as the 1QB blend, using the
+        # SF-specific trade backing so the SF board is market-driven too.
+        _wlssf = wls_sf_values.get(pid)
+        if _wlssf is not None and _wlssf > 0:
+            _bsf = wls_backing_sf.get(pid, 0.0)
+            _confsf = _bsf / (_bsf + _WLS_BLEND_K) if _bsf > 0 else 0.0
+            sf_value = (_confsf * _wlssf + (1.0 - _confsf) * sf_value) if sf_value > 0 else _wlssf
+        # Non-QB players are not less valuable in SF — floor at their (blended) 1QB
+        # value so the DP 2QB blend can't pull them below it.
         if position != "QB":
             sf_value = max(sf_value, final_value)
-        elif pid in wls_sf_values:
-            # WLS market value can only improve (never downgrade) the engine's SF value.
-            # The sf_engine already gives top QBs (Allen: 999.9) their correct SF premium.
-            # WLS refines this with real trade data but shouldn't override a higher engine value.
-            sf_value = max(sf_value, wls_sf_values[pid])
 
         age = player.get("age")
         if age is None and row is not None:
@@ -973,8 +1027,10 @@ def rewrite_value_table_with_model() -> Path:
             # Guard the numerator too, else eng_n == 0 collapses value_{n} to 0.
             ratio = (eng_n / eng_base) if (eng_base > 0 and eng_n > 0) else 1.0
             sf_ratio = (sf_eng_n / sf_eng_base) if (sf_eng_base > 0 and sf_eng_n > 0) else 1.0
-            size_values[f"value_{n}"] = round(min(float(final_value) * ratio, 999.9), 1)
-            sf_size_values[f"sf_value_{n}"] = round(min(float(sf_value) * sf_ratio, 999.9), 1)
+            # No 999.9 cap here — the top-5 anchor below sets the ceiling and lets
+            # the very top float above 999.9.
+            size_values[f"value_{n}"] = round(float(final_value) * ratio, 1)
+            sf_size_values[f"sf_value_{n}"] = round(float(sf_value) * sf_ratio, 1)
 
         asset = {
             "id": player.get("id"),
@@ -982,8 +1038,8 @@ def rewrite_value_table_with_model() -> Path:
             "team": player.get("team"),
             "position": player.get("position"),
             "age": age,
-            "value": round(min(float(final_value), 999.9), 1),
-            "sf_value": round(min(float(sf_value), 999.9), 1),
+            "value": round(float(final_value), 1),
+            "sf_value": round(float(sf_value), 1),
             "search_name": normalize_name(name) if name else "",
             "pos_rank": None,
             "pos_rank_label": None,
@@ -1083,63 +1139,67 @@ def rewrite_value_table_with_model() -> Path:
                 pick_asset[f"sf_value_{n}"] = float(val)
         cleaned_assets.append(pick_asset)
 
-    # Normalize 1QB value scale so the top non-QB player always equals 999.9.
-    # In 1QB leagues QBs are not premium, so the best RB/WR/TE should anchor the
-    # ceiling.  This replaces the old _max_sf > _max_1qb approach which silently
-    # skipped normalization whenever the QB SF engine value failed to load.
-    #
-    # The raw scale is EMA-smoothed against the previous run's scale so that
-    # day-to-day noise in trade data (different trades sampled each day) doesn't
-    # cause the entire roster to jump in value overnight.
+    # ── Anchor each board so the TOP-5 average = 999.9, fresh every day ───────
+    # No EMA on the scale: the anchor is recomputed from today's values so the
+    # board reflects the current market and the top 2-3 float above 999.9 when
+    # they're worth more than the top-5 average. Day-to-day stability is handled
+    # solely by the per-player ±10% move clamp applied afterwards.
+    #   • 1QB board anchors to the top-5 NON-QB average (QBs aren't premium in 1QB).
+    #   • SF board anchors to the top-5 overall average (QBs are premium in SF).
     _SKILL_POS   = {"QB", "RB", "WR", "TE"}
     _NON_QB_POS  = {"RB", "WR", "TE"}
     _1qb_keys    = ["value", "value_8", "value_12", "value_14"]
-    _non_qb_vals = sorted(
-        (float(a.get("value") or 0) for a in cleaned_assets
-         if str(a.get("position") or "").upper() in _NON_QB_POS),
-        reverse=True,
-    )
-    _max_non_qb = _non_qb_vals[0] if _non_qb_vals else 0.0
-    # Run whenever there are non-QBs. The old `< 999.9` guard skipped the basket
-    # scaling entirely once the top player hit the 999.9 base cap (lines ~1016),
-    # which pinned the #1 to a flat 999.9 and never let them float above it.
-    if _max_non_qb > 0:
-        # Basket anchor: the mean of the top N non-QBs is the ceiling estimate.
-        # One player drifting moves this ~N× less than it moves the single max,
-        # so the rest of the board no longer slides when the top player ticks up.
-        _topN   = _non_qb_vals[:_ANCHOR_BASKET_N]
-        _basket = sum(_topN) / len(_topN)
-        _raw_headroom = _max_non_qb / _basket if _basket > 0 else 1.0
+    _sf_keys     = ["sf_value", "sf_value_8", "sf_value_12", "sf_value_14"]
 
-        # Smooth the basket (tracks genuine tier drift over ~2 weeks) and the
-        # headroom ratio (near-fixed, so a single #1 pulling away rides the cap
-        # instead of compressing everyone). Both persist durably in Postgres.
-        _prev_basket   = _load_state(_BASKET_STATE_KEY)
-        _prev_headroom = _load_state(_HEADROOM_STATE_KEY)
-        _smoothed_basket = (
-            _BASKET_EMA_ALPHA * _basket + (1.0 - _BASKET_EMA_ALPHA) * _prev_basket
-            if _prev_basket > 0 else _basket
-        )
-        _smoothed_headroom = (
-            _HEADROOM_EMA_ALPHA * _raw_headroom + (1.0 - _HEADROOM_EMA_ALPHA) * _prev_headroom
-            if _prev_headroom > 0 else _raw_headroom
-        )
-        _save_state(_BASKET_STATE_KEY, _smoothed_basket)
-        _save_state(_HEADROOM_STATE_KEY, _smoothed_headroom)
+    def _anchor_scale(vals: list[float]) -> float:
+        top = sorted(vals, reverse=True)[:_ANCHOR_BASKET_N]
+        if not top:
+            return 1.0
+        basket = sum(top) / len(top)
+        return (999.9 / basket) if basket > 0 else 1.0
 
-        # Anchor the BASKET MEAN (mean of top-N non-QBs) to 999.9 instead of
-        # pinning the single #1. This lets the #1 float above 999.9 proportional
-        # to how far ahead of the basket they are — their sparkline moves — while
-        # the rest of the board no longer compresses whenever the anchor shifts.
-        # No hard ceiling: the smoothed basket provides a soft cap naturally.
-        _1qb_scale = 999.9 / _smoothed_basket if _smoothed_basket > 0 else 1.0
-        _persist_scale(_1qb_scale)  # kept for back-compat / the reset script
+    _1qb_scale = _anchor_scale([
+        float(a.get("value") or 0) for a in cleaned_assets
+        if str(a.get("position") or "").upper() in _NON_QB_POS
+    ])
+    _sf_scale = _anchor_scale([
+        float(a.get("sf_value") or 0) for a in cleaned_assets
+        if str(a.get("position") or "").upper() in _SKILL_POS
+    ])
+    _persist_scale(_1qb_scale)  # kept for back-compat / external tooling
+    for _a in cleaned_assets:
+        if str(_a.get("position") or "").upper() not in _SKILL_POS:
+            continue
+        for _k in _1qb_keys:
+            if _a.get(_k) is not None:
+                _a[_k] = round(float(_a[_k]) * _1qb_scale, 1)
+        for _k in _sf_keys:
+            if _a.get(_k) is not None:
+                _a[_k] = round(float(_a[_k]) * _sf_scale, 1)
+
+    # ── Per-player ±10% day-over-day move clamp (the only smoothing) ──────────
+    # A player's value may move at most ±10% vs. yesterday's stored value; within
+    # that band it moves freely. Prevents a single hot trade from swinging the
+    # board overnight without the weeks-long lag an EMA introduces. New players
+    # (no prior) are left as-is.
+    if _prev_board:
+        _clamp_keys = _1qb_keys + _sf_keys
         for _a in cleaned_assets:
-            if str(_a.get("position") or "").upper() not in _SKILL_POS:
+            _pid = str(_a.get("id") or "")
+            _prev = _prev_board.get(_pid)
+            if not _prev:
                 continue
-            for _k in _1qb_keys:
-                if _a.get(_k) is not None:
-                    _a[_k] = round(float(_a[_k]) * _1qb_scale, 1)
+            for _k in _clamp_keys:
+                _cur = _a.get(_k)
+                _old = _prev.get(_k)
+                if _cur is None or _old is None:
+                    continue
+                _old = float(_old)
+                if _old <= 0:
+                    continue
+                _lo = _old * (1.0 - _MAX_DAILY_MOVE)
+                _hi = _old * (1.0 + _MAX_DAILY_MOVE)
+                _a[_k] = round(min(max(float(_cur), _lo), _hi), 1)
 
     pos_to_indices: dict[str, list[int]] = {}
 
