@@ -147,12 +147,13 @@ def init_advanced_metrics_db():
                 ADD COLUMN IF NOT EXISTS total_routes   NUMERIC;
         """)
 
-        # Target share and air yards (usage/stats CSV sourced).
+        # Target share, air yards, and WOPR (usage/stats CSV sourced).
         conn.execute("""
             ALTER TABLE player_advanced_metrics
                 ADD COLUMN IF NOT EXISTS target_share    NUMERIC,
                 ADD COLUMN IF NOT EXISTS air_yards_share NUMERIC,
-                ADD COLUMN IF NOT EXISTS air_yards_per_game NUMERIC;
+                ADD COLUMN IF NOT EXISTS air_yards_per_game NUMERIC,
+                ADD COLUMN IF NOT EXISTS wopr            NUMERIC;
         """)
 
         # Red zone breakdown (split from red_zone_usage).
@@ -1065,11 +1066,17 @@ def import_air_yards_from_stats_csv(season: int) -> int:
                 games = float(row.get("games") or 0) or None
                 rec_air = float(row.get("receiving_air_yards") or 0) or None
                 ayr_share = float(row.get("air_yards_share") or 0) or None
+                wopr_raw = float(row.get("wopr") or 0) or None
             except (TypeError, ValueError):
                 continue
             air_pg = round(rec_air / games, 1) if rec_air and games else None
             ayr_pct = round(ayr_share * 100.0, 1) if ayr_share else None
-            rows_by_player[sleeper_id] = {"air_yards_per_game": air_pg, "air_yards_share": ayr_pct}
+            wopr_val = round(wopr_raw, 3) if wopr_raw else None
+            rows_by_player[sleeper_id] = {
+                "air_yards_per_game": air_pg,
+                "air_yards_share": ayr_pct,
+                "wopr": wopr_val,
+            }
 
     if not rows_by_player:
         return 0
@@ -1080,7 +1087,8 @@ def import_air_yards_from_stats_csv(season: int) -> int:
             result = conn.execute("""
                 UPDATE player_advanced_metrics
                 SET air_yards_per_game = %s,
-                    air_yards_share    = %s
+                    air_yards_share    = %s,
+                    wopr               = %s
                 WHERE player_id = %s
                   AND season = %s
                   AND as_of_date = (
@@ -1088,7 +1096,7 @@ def import_air_yards_from_stats_csv(season: int) -> int:
                       WHERE player_id = %s AND season = %s
                   )
             """, (
-                vals["air_yards_per_game"], vals["air_yards_share"],
+                vals["air_yards_per_game"], vals["air_yards_share"], vals["wopr"],
                 sleeper_id, season, sleeper_id, season,
             ))
             if result.rowcount:
@@ -1365,6 +1373,7 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "target_share":         {"label": "Target Share",        "category": "Receiving", "positions": ["WR", "TE", "RB"], "pct": True, "min_vol": _V_GAMES, "desc": "Percent of the team's total targets directed at this player."},
     "air_yards_per_game":   {"label": "Air Yards / Game",    "category": "Receiving", "positions": ["WR", "TE"], "min_vol": _V_GAMES, "desc": "Receiving air yards (distance thrown in the air to the player) per game; a measure of downfield target volume."},
     "air_yards_share":      {"label": "Air Yards Share",     "category": "Receiving", "positions": ["WR", "TE"], "pct": True, "min_vol": _V_GAMES, "desc": "Share of the team's total passing air yards directed at this player; combines target share with depth of target."},
+    "wopr":                 {"label": "WOPR",                "category": "Receiving", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Weighted Opportunity Rate: (1.5 × target share) + (0.7 × rush share). Combines air and ground touches into a single opportunity share signal; elite receivers typically exceed 0.50."},
     "rz_targets_pg":        {"label": "RZ Targets/G",        "category": "Receiving", "positions": ["QB", "WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Red zone targets per game (inside opponent's 20-yard line)."},
     "yards_per_target":     {"label": "Yards / Target",      "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_TARGETS, "desc": "Receiving yards earned per time targeted; measures efficiency on volume."},
     "yards_per_reception":  {"label": "Yards / Reception",   "category": "Receiving", "positions": ["WR", "RB", "TE"], "efficiency": True, "min_vol": _V_RECS, "desc": "Average yards gained per catch; higher means a more downfield/explosive role."},

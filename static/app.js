@@ -10217,6 +10217,7 @@ const _ADV_METRIC_DESCS = {
   'Target Share': "Percent of the team's total targets directed at this player.",
   'Air Yds/Game': "Receiving air yards per game; a measure of downfield target volume.",
   'Air Yards Share': "Share of the team's total passing air yards directed at this player; combines target share with depth of target.",
+  'WOPR': "Weighted Opportunity Rate: (1.5 × target share) + (0.7 × rush share). Combines air and ground touches into a single opportunity share signal; elite receivers typically exceed 0.50.",
   'Target Quality': "Composite of how valuable a player's targets are (depth, location, situation).",
   'Slot Rate': "Percent of routes run from the slot.",
   'Wide Rate': "Percent of routes run from out wide.",
@@ -10474,6 +10475,11 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
     if (metrics.air_yards_share != null) {
       const pct = metrics.air_yards_share;
       defs.push({ label: 'Air Yards Share', fill: Math.min(pct / 35 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('air_yards_share'), cat: 'Receiving' });
+    }
+    if (metrics.wopr != null) {
+      const v = metrics.wopr;
+      // WOPR ≥ 0.50 is elite; scale bar so 0.65 = 100%
+      defs.push({ label: 'WOPR', fill: Math.min(v / 0.65 * 100, 100), display: v.toFixed(3), sub: _rankSub('wopr'), cat: 'Receiving' });
     }
     if (metrics.target_quality_score != null) {
       const v = metrics.target_quality_score;
