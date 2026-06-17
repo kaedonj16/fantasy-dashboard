@@ -12164,7 +12164,65 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
     body = build_advanced_metrics_body(
         True, LEADERBOARD_METRICS, league_id, season, platform
     )
-    return render_page("Advanced Metrics", league_id, "advanced-metrics", body, platform, season)
+    # When a shared graph link is opened (?graph=1&gx=&gy=...), give it a rich
+    # social preview whose image is a server-rendered screenshot of that graph.
+    og_tags = ""
+    if request.args.get("graph") == "1":
+        gx = request.args.get("gx") or ""
+        gy = request.args.get("gy") or ""
+        def _mlabel(k):
+            m = LEADERBOARD_METRICS.get(k) or {}
+            return m.get("label") or k
+        if gx and gy:
+            origin = request.host_url.rstrip("/")
+            from urllib.parse import urlencode as _ue
+            _og_qs = {k: request.args.get(k) for k in ("gx", "gy", "gz", "gn", "season", "metric", "pos", "minvol")
+                      if request.args.get(k)}
+            og_img = f"{origin}/{platform}/{season}/{league_id}/metrics/og.png?{_ue(_og_qs)}"
+            og_title = f"{_mlabel(gy)} vs {_mlabel(gx)} | BR Fantasy"
+            og_desc = "Advanced metrics scatter — compare efficiency and opportunity across the league."
+            t = html.escape(og_title, quote=True)
+            d = html.escape(og_desc, quote=True)
+            img = html.escape(og_img, quote=True)
+            url = html.escape(request.url, quote=True)
+            og_tags = (
+                f"<meta property=\"og:site_name\" content=\"BR Fantasy\">"
+                f"<meta property=\"og:type\" content=\"website\">"
+                f"<meta property=\"og:title\" content=\"{t}\">"
+                f"<meta property=\"og:description\" content=\"{d}\">"
+                f"<meta property=\"og:url\" content=\"{url}\">"
+                f"<meta property=\"og:image\" content=\"{img}\">"
+                f"<meta property=\"og:image:width\" content=\"1200\">"
+                f"<meta property=\"og:image:height\" content=\"630\">"
+                f"<meta name=\"twitter:card\" content=\"summary_large_image\">"
+                f"<meta name=\"twitter:title\" content=\"{t}\">"
+                f"<meta name=\"twitter:description\" content=\"{d}\">"
+                f"<meta name=\"twitter:image\" content=\"{img}\">"
+            )
+    return render_page("Advanced Metrics", league_id, "advanced-metrics", body, platform, season, og_tags=og_tags)
+
+
+@app.route("/<platform>/<int:season>/<league_id>/metrics/og.png")
+def metrics_graph_og_image(platform: str, season: int, league_id: str):
+    """Social-share preview image for a shared advanced-metrics graph — a
+    headless screenshot of the graph rendered in og=1 mode. Falls back to the
+    static logo if rendering is unavailable."""
+    from dashboard_services.og_render import render_url_to_png
+    from urllib.parse import urlencode as _ue
+    params = {k: request.args.get(k) for k in ("gx", "gy", "gz", "gn", "season", "metric", "pos", "minvol")
+              if request.args.get(k)}
+    params["og"] = "1"
+    render_url = f"{request.host_url.rstrip('/')}/{platform}/{season}/{league_id}/metrics?{_ue(params)}"
+    cache_key = "graph:" + _ue({k: v for k, v in sorted(params.items())})
+    png = render_url_to_png(
+        render_url, 1200, 630,
+        wait_selector="html[data-og-ready]",
+        cache_key=cache_key,
+    )
+    if not png:
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png")
+    return Response(png, mimetype="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.route("/<platform>/<int:season>/<league_id>/breakouts")
@@ -25842,7 +25900,9 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
         roster_id = session.get("viewer_roster_id") or ""
     # Serve from cache if fresh
     _sc_key = (platform, league_id, season, roster_id)
-    _is_embed_req = request.args.get('embed') == '1'
+    # og=1 (social-preview render mode) bypasses the cache so it never serves the
+    # normal interactive card, and its own response is not cached.
+    _is_embed_req = request.args.get('embed') == '1' or request.args.get('og') == '1'
     _sc_cached = _SHARE_CARD_CACHE.get(_sc_key)
     if not _is_embed_req and _sc_cached and time.time() - _sc_cached["ts"] < _SHARE_CARD_CACHE_TTL:
         return _sc_cached["html"], 200, {"Content-Type": "text/html; charset=utf-8"}
@@ -26137,8 +26197,10 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
                 + '</div>'
             )
 
-        is_embed = request.args.get('embed') == '1'
+        is_og = request.args.get('og') == '1'
+        is_embed = request.args.get('embed') == '1' or is_og
         share_url = request.url.split('?')[0]  # strip ?embed=1 from canonical share URL
+        _sc_og_image = share_url.rstrip('/') + '/og.png'
         footer_style = 'display:none' if is_embed else ''
         card_html = f"""<!doctype html>
 <html lang="en" data-theme="dark" id="scRoot">
@@ -26148,9 +26210,13 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta property="og:title" content="{team_name} - BR Fantasy Report">
   <meta property="og:description" content="{record} · {grade_label} grade · {win_window} · {season} season">
-  <meta property="og:image" content="{avatar_url or '/static/BR_Logo_dark.png'}">
+  <meta property="og:image" content="{_sc_og_image}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="{_sc_og_image}">
   <script>
-    (function(){{var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}})();
+    (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
   </script>
   <link rel="stylesheet" href="/static/dashboard.css?v={_CSS_V}">
   <link rel="stylesheet" href="/static/font-awesome.css?v={_CSS_V}">
@@ -26165,9 +26231,19 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
       border:1px solid var(--border,#334155); color:var(--text-muted,#94a3b8); border-radius:8px;
       padding:5px 10px; font-size:13px; cursor:pointer; }}
     .sc-toggle-wrap {{ position:relative; }}
+    {('''
+    /* og=1 render mode: fixed 1200x630 light canvas, card centered and scaled
+       up to fill the landscape social-preview frame. */
+    html, body {{ background:#eef2f7 !important; }}
+    body {{ width:1200px !important; height:630px !important; padding:0 !important;
+      justify-content:center !important; align-items:center !important; overflow:hidden;
+      background:radial-gradient(circle at 50% 0%, #ffffff 0%, #e2e8f0 75%) !important; }}
+    .share-card-wrap {{ transform:scale(1.34); transform-origin:center center; }}
+    .share-card {{ box-shadow:0 24px 60px rgba(15,23,42,.18); }}
+    ''') if is_og else ''}
   </style>
 </head>
-<body>
+<body{' class="og-mode"' if is_og else ''}>
   <div class="share-card-wrap">
     <div class="sc-toggle-wrap" {'style="display:none"' if is_embed else ''}>
       <button class="sc-toggle-btn" id="scThemeToggle" title="Toggle dark/light">&#9728;</button>
@@ -26221,7 +26297,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
     // Load saved or default theme (falls back to browser preference)
-    var saved = localStorage.getItem(THEME_KEY) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    var saved = {"'light'" if is_og else "localStorage.getItem(THEME_KEY) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')"};
     applyTheme(saved);
     // Standalone toggle button
     var toggleBtn = document.getElementById('scThemeToggle');
@@ -26259,6 +26335,26 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
     except Exception as exc:
         logger.exception("[page-share-card] %s", exc)
         return "<h2>Unable to load report card. Try again later.</h2>", 500
+
+
+@app.route("/<platform>/<int:season>/<league_id>/share-card/og.png")
+@app.route("/<platform>/<int:season>/<league_id>/share-card/<roster_id>/og.png")
+def share_card_og_image(platform: str, season: int, league_id: str, roster_id: str = ""):
+    """Social-share preview image for a team report card — a screenshot of the
+    card's og=1 render mode, with a graceful fallback to the static logo."""
+    from dashboard_services.og_render import render_url_to_png
+    base = f"{request.host_url.rstrip('/')}/{platform}/{season}/{league_id}/share-card"
+    if roster_id:
+        base += f"/{roster_id}"
+    png = render_url_to_png(
+        base + "?og=1", 1200, 630,
+        wait_selector=".share-card",
+        cache_key=f"team:{platform}:{season}:{league_id}:{roster_id}",
+    )
+    if not png:
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png")
+    return Response(png, mimetype="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"})
 
 
 # ── Feature 1: Live Draft Board Suggest ──────────────────────────────────────
@@ -26769,9 +26865,15 @@ def page_trade_card(share_id: str):
     total_a_str = f"{eff_a:,.1f}" if eff_a else (f"{total_a:,.1f}" if total_a else "0")
     total_b_str = f"{eff_b:,.1f}" if eff_b else (f"{total_b:,.1f}" if total_b else "0")
     is_embed = request.args.get('embed') == '1'
+    # og=1 is the render mode used by /trade-card/<id>/og.png: a fixed 1200x630
+    # dark canvas with the card centered, used to rasterize the social preview.
+    is_og = request.args.get('og') == '1'
+    if is_og:
+        is_embed = True  # hide toolbar/footer chrome for the screenshot
     copy_link_style = 'display:none' if is_embed else ''
     body_pad = '0' if is_embed else '16px'
     share_url = request.url.split('?')[0]
+    _og_image_url = f"{request.host_url.rstrip('/')}/trade-card/{share_id}/og.png"
     from urllib.parse import urlencode as _ue
     _PLAY_KEYS = {"a", "b", "ap", "bp", "t1", "t2", "roster_id"}
     _play_qs = _ue({k: v for k, v in p.items() if k in _PLAY_KEYS and v})
@@ -26819,7 +26921,7 @@ def page_trade_card(share_id: str):
                 _pi_default = has_premium_access(_viewer_id, p.get("league_id") or None, p.get("platform") or "sleeper")
             except Exception:
                 pass
-    pi_html = pi_html.replace("__PI_DISPLAY__", "block" if _pi_default else "none")
+    pi_html = pi_html.replace("__PI_DISPLAY__", "block" if (_pi_default and not is_og) else "none")
 
     # In embed/modal mode the PI toggle lives in the scm-toolbar (via postMessage).
     # On the standalone page it lives in the card header.
@@ -26841,15 +26943,17 @@ def page_trade_card(share_id: str):
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta property="og:title" content="{og_title}">
   <meta property="og:description" content="{verdict}">
-  <meta property="og:image" content="{request.host_url.rstrip('/')}/static/BR_Logo.png">
+  <meta property="og:image" content="{_og_image_url}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
   <meta property="og:type" content="website">
-  <meta name="twitter:card" content="summary">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{og_title}">
   <meta name="twitter:description" content="{verdict}">
-  <meta name="twitter:image" content="{request.host_url.rstrip('/')}/static/BR_Logo.png">
+  <meta name="twitter:image" content="{_og_image_url}">
   <link rel="icon" href="/static/BR_Logo.png" type="image/png">
   <script>
-    (function(){{var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}})();
+    (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
   </script>
   <style>
     :root{{--tc-bg:#0b1120;--tc-card:#0f1d36;--tc-hdr:#0b1628;--tc-border:rgba(255,255,255,.1);--tc-border-sub:rgba(255,255,255,.07);--tc-text:#e2e8f0;--tc-text2:#f1f5f9;--tc-muted:#94a3b8;--tc-dim:#64748b;--tc-dimmer:#475569;--tc-bar:rgba(255,255,255,.08);}}
@@ -26914,9 +27018,19 @@ def page_trade_card(share_id: str):
       .pi-grid{{grid-template-columns:repeat(2,1fr)}}
       .pi-cell{{padding:7px 5px}}
     }}
+    {('''
+    /* og=1 render mode: fixed 1200x630 light canvas with the card centered and
+       scaled up to fill the landscape social-preview frame. */
+    html[data-theme]{{background:#eef2f7;}}
+    body{{width:1200px !important;height:630px !important;padding:0 !important;
+      justify-content:center !important;align-items:center !important;overflow:hidden;
+      background:radial-gradient(circle at 50% 0%, #ffffff 0%, #e2e8f0 75%) !important;}}
+    .wrap{{transform:scale(1.42);transform-origin:center center;}}
+    .card{{box-shadow:0 24px 60px rgba(15,23,42,.18);}}
+    ''') if is_og else ''}
   </style>
 </head>
-<body>
+<body{' class="og-mode"' if is_og else ''}>
   <div class="wrap">
     <button class="tc-toggle" id="tcToggle" style="{'display:none' if is_embed else ''}" title="Toggle dark/light">&#9728;</button>
     <div class="card">
@@ -26981,7 +27095,7 @@ def page_trade_card(share_id: str):
       var btn = document.getElementById('tcToggle');
       if (btn) btn.innerHTML = t === 'dark' ? '&#9728;' : '&#9790;';
     }}
-    var saved = localStorage.getItem(THEME_KEY) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    var saved = {"'light'" if is_og else "localStorage.getItem(THEME_KEY) || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')"};
     applyTheme(saved);
     var toggleBtn = document.getElementById('tcToggle');
     if (toggleBtn) {{
@@ -27022,6 +27136,24 @@ def page_trade_card(share_id: str):
 </body>
 </html>"""
     return card_html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/trade-card/<share_id>/og.png")
+def trade_card_og_image(share_id: str):
+    """Social-share preview image for a shared trade — a screenshot of the
+    trade card's og=1 render mode. Falls back to the static logo if headless
+    rendering is unavailable so share links never break."""
+    from dashboard_services.og_render import render_url_to_png
+    render_url = f"{request.host_url.rstrip('/')}/trade-card/{share_id}?og=1"
+    png = render_url_to_png(
+        render_url, 1200, 630,
+        wait_selector=".card",
+        cache_key=f"trade:{share_id}",
+    )
+    if not png:
+        return redirect(f"{request.host_url.rstrip('/')}/static/BR_Logo.png")
+    return Response(png, mimetype="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"})
 
 
 # ── Push notifications ─────────────────────────────────────────────────────────
