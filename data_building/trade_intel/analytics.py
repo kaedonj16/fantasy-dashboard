@@ -89,46 +89,51 @@ def _load_model_values(season: int) -> dict[str, dict]:
 def _load_trades(season: int) -> list[dict]:
     # 120-day window covers the 90d metrics + buffer; anything older
     # contributes only 0.08 decay weight and is not worth the memory cost.
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT t.id, t.transaction_id, t.created_at,
-                   COALESCE(l.num_teams, 10) AS num_teams,
-                   a.side, a.asset_type, a.player_id,
-                   a.pick_season, a.pick_round, a.pick_order
-            FROM trade_intel_trades t
-            LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
-            LEFT JOIN trade_intel_assets  a ON a.trade_id  = t.id
-            WHERE t.season = %s AND t.status = 'complete'
-              AND t.created_at >= NOW() - INTERVAL '120 days'
-            ORDER BY t.id
-            """,
-            (season,),
-        ).fetchall()
-
-    if not rows:
-        return []
-
+    #
+    # Stream the trades×assets join through a server-side (named) cursor so the
+    # full result set never materializes client-side alongside the trades dict.
+    # Loading both at once (.fetchall() + dict) doubled peak memory and was OOMing
+    # the 512Mi cron once the league pool grew. Rows arrive in itersize batches
+    # and are folded into the dict as they come, so only one batch is resident.
     trades: dict[int, dict] = {}
-    for r in rows:
-        tid = r["id"]
-        if tid not in trades:
-            trades[tid] = {
-                "trade_id":       tid,
-                "transaction_id": r["transaction_id"],
-                "created_at":     r["created_at"],
-                "num_teams":      int(r["num_teams"] or 10),
-                "assets":         [],
-            }
-        if r["side"] is not None:
-            trades[tid]["assets"].append({
-                "side":        r["side"],
-                "asset_type":  r["asset_type"],
-                "player_id":   r["player_id"],
-                "pick_season": r["pick_season"],
-                "pick_round":  r["pick_round"],
-                "pick_order":  r["pick_order"],
-            })
+    with get_conn() as conn:
+        with conn.cursor(name="ti_load_trades") as cur:
+            cur.itersize = 5000
+            cur.execute(
+                """
+                SELECT t.id, t.transaction_id, t.created_at,
+                       COALESCE(l.num_teams, 10) AS num_teams,
+                       a.side, a.asset_type, a.player_id,
+                       a.pick_season, a.pick_round, a.pick_order
+                FROM trade_intel_trades t
+                LEFT JOIN trade_intel_leagues l ON l.league_id = t.league_id
+                LEFT JOIN trade_intel_assets  a ON a.trade_id  = t.id
+                WHERE t.season = %s AND t.status = 'complete'
+                  AND t.created_at >= NOW() - INTERVAL '120 days'
+                ORDER BY t.id
+                """,
+                (season,),
+            )
+            for r in cur:
+                tid = r["id"]
+                trade = trades.get(tid)
+                if trade is None:
+                    trade = trades[tid] = {
+                        "trade_id":       tid,
+                        "transaction_id": r["transaction_id"],
+                        "created_at":     r["created_at"],
+                        "num_teams":      int(r["num_teams"] or 10),
+                        "assets":         [],
+                    }
+                if r["side"] is not None:
+                    trade["assets"].append({
+                        "side":        r["side"],
+                        "asset_type":  r["asset_type"],
+                        "player_id":   r["player_id"],
+                        "pick_season": r["pick_season"],
+                        "pick_round":  r["pick_round"],
+                        "pick_order":  r["pick_order"],
+                    })
 
     return list(trades.values())
 
