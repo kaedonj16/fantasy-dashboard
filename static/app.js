@@ -9955,20 +9955,26 @@ function _advGetTip() {
   return tip;
 }
 
-function _advPositionTip(tip, anchorEl) {
-  const rect = anchorEl.getBoundingClientRect();
+function _advPositionTip(tip, anchorEl, mouseX, mouseY) {
   const tw = Math.min(240, window.innerWidth - 16);
-  let left = rect.left + rect.width / 2 - tw / 2;
-  left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
   tip.style.maxWidth = tw + 'px';
-  // Read height after display:block so offsetHeight is accurate.
   const tipH = tip.offsetHeight || 70;
-  // Prefer below the anchor; flip above if it would clip the bottom of the viewport.
-  let top = rect.bottom + 6;
-  if (top + tipH > window.innerHeight - 8) {
-    top = rect.top - tipH - 6;
+  let left, top;
+  if (mouseX != null && mouseY != null) {
+    // Position near mouse cursor rather than element center (avoids wide-element offset).
+    left = mouseX - tw / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+    top = mouseY + 16;
+    if (top + tipH > window.innerHeight - 8) top = mouseY - tipH - 10;
+    top = Math.max(8, top);
+  } else {
+    const rect = anchorEl.getBoundingClientRect();
+    left = rect.left + rect.width / 2 - tw / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+    top = rect.bottom + 6;
+    if (top + tipH > window.innerHeight - 8) top = rect.top - tipH - 6;
+    top = Math.max(8, top);
   }
-  top = Math.max(8, top);
   tip.style.left = left + 'px';
   tip.style.top = top + 'px';
 }
@@ -9983,7 +9989,7 @@ function advEnterMetricDef(e) {
   tip.textContent = def;
   tip.dataset.src = def;
   tip.style.display = 'block';
-  _advPositionTip(tip, el);
+  _advPositionTip(tip, el, e.clientX, e.clientY);
 }
 
 function advLeaveMetricDef(e) {
@@ -10007,7 +10013,7 @@ function advShowMetricDef(e) {
   tip.textContent = def;
   tip.dataset.src = def;
   tip.style.display = 'block';
-  _advPositionTip(tip, el);
+  _advPositionTip(tip, el, e.clientX, e.clientY);
 }
 
 function advShowInfoTip(e) {
