@@ -2321,14 +2321,28 @@ _AM_JS = r"""
       const m = cfg.metrics[k];
       return !pos || !m.positions || m.positions.indexOf(pos) >= 0;
     });
-    const curX = (applic.indexOf(state.metric) >= 0) ? state.metric : (applic[0] || state.metric);
-    const xm = cfg.metrics[curX];
-    const curY = applic.find(function(k) { return k !== curX && cfg.metrics[k].category === (xm && xm.category); })
-      || applic.find(function(k) { return k !== curX; }) || curX;
+    const okk = function(k) { return k && cfg.metrics[k] && applic.indexOf(k) >= 0; };
+    // Curated default scatters per position: opportunity (X) vs efficiency (Y),
+    // bubble = overall value/explosiveness. Falls back to a generic pick below.
+    const PRESETS = {
+      WR: { x: 'target_share',      y: 'yards_per_target', z: 'receiving_epa' },
+      RB: { x: 'opportunity_share', y: 'yards_per_carry',  z: 'rushing_epa' },
+      TE: { x: 'target_share',      y: 'yards_per_reception', z: 'receiving_epa' },
+    };
+    let curX, curY, curZ = '';
+    const preset = pos ? PRESETS[pos] : null;
+    if (preset && okk(preset.x) && okk(preset.y)) {
+      curX = preset.x; curY = preset.y; curZ = okk(preset.z) ? preset.z : '';
+    } else {
+      curX = (applic.indexOf(state.metric) >= 0) ? state.metric : (applic[0] || state.metric);
+      const xm = cfg.metrics[curX];
+      curY = applic.find(function(k) { return k !== curX && cfg.metrics[k].category === (xm && xm.category); })
+        || applic.find(function(k) { return k !== curX; }) || curX;
+    }
     xSel.innerHTML = _amGraphMetricOptions(curX);
     ySel.innerHTML = _amGraphMetricOptions(curY);
     zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions('');
-    xSel.value = curX; ySel.value = curY; zSel.value = '';
+    xSel.value = curX; ySel.value = curY; zSel.value = curZ;
     // Default graph theme to the site theme each open; preload both logos.
     _amGraphTheme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
     _amSyncGraphThemeBtn();
@@ -2444,7 +2458,7 @@ _AM_JS = r"""
       const lx = padL + (W - padL - padR) / 2 - lw / 2;
       const ly = padT + (H - padT - padB) / 2 - lh / 2;
       s += '<image href="' + logo + '" xlink:href="' + logo + '" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1)
-        + '" width="' + lw + '" height="' + lh + '" opacity="0.06" preserveAspectRatio="xMidYMid meet"/>';
+        + '" width="' + lw + '" height="' + lh + '" opacity="0.10" preserveAspectRatio="xMidYMid meet"/>';
     }
     // Title + context subtitle.
     s += txt((W / 2).toFixed(1), 24, _amEsc(cfg.metrics[yk].label) + ' vs ' + _amEsc(cfg.metrics[xk].label), L.fTitle, TH.text, 800, 'middle');
@@ -2483,9 +2497,11 @@ _AM_JS = r"""
         + '" stroke="' + avgCol + '" stroke-width="1.2" stroke-dasharray="5 4" opacity="0.85"/>';
       s += txt((W - padR - 3).toFixed(1), (ay - 4).toFixed(1), 'avg ' + _amEsc(fmtY(avgY)), L.fLeg - 1, avgCol, 700, 'end');
     }
-    // Points. Labels only on desktop with a small set; phones use tap-to-inspect.
-    const showLabels = !isNarrow && pts.length <= 25;
-    pts.forEach(function(p) {
+    // Points. The top 10 (by X) are always labeled; on desktop with a small set
+    // every point is labeled. pts is pre-sorted best-first, so index < 10 = top 10.
+    const showAll = !isNarrow && pts.length <= 25;
+    const lblSize = isNarrow ? 10 : 9;
+    pts.forEach(function(p, idx) {
       const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
       const nm = p.name + ' (' + (p.position || '') + ')';
       let dt = cfg.metrics[xk].label + ': ' + fmtX(p.x) + '  ·  ' + cfg.metrics[yk].label + ': ' + fmtY(p.y);
@@ -2494,10 +2510,12 @@ _AM_JS = r"""
         + '" fill="' + col + '" fill-opacity="0.7" stroke="' + col + '" stroke-width="1"'
         + ' data-nm="' + _amEsc(nm) + '" data-dt="' + _amEsc(dt) + '">'
         + '<title>' + _amEsc(nm + '  ·  ' + dt) + '</title></circle>';
-      if (showLabels) {
+      const isTop = idx < 10;
+      if (isTop || showAll) {
         const parts = (p.name || '').split(' ');
         const last = parts[parts.length - 1];
-        s += txt((cx + r + 2).toFixed(1), (cy + 3).toFixed(1), _amEsc(last), 9, TH.muted, 400, 'start');
+        s += txt((cx + r + 2).toFixed(1), (cy + 3).toFixed(1), _amEsc(last), lblSize,
+          isTop ? TH.text : TH.muted, isTop ? 700 : 400, 'start');
       }
     });
     // In-SVG legend (positions present) + bubble note, so the shared image is complete.
