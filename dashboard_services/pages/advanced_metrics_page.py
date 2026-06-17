@@ -319,6 +319,16 @@ def build_advanced_metrics_body(
                 <option value="50">Top 50 by X</option>
                 <option value="75">Top 75 by X</option>
               </select></div>
+              <div class="am-gctrl am-graph-actions">
+                <label>&nbsp;</label>
+                <div style="display:flex;gap:6px;">
+                  <button type="button" id="amGraphThemeBtn" class="am-add-stat-btn" onclick="amToggleGraphTheme()" title="Toggle light / dark"></button>
+                  <button type="button" id="amGraphShareBtn" class="am-add-stat-btn" onclick="amShareGraph()" title="Share or download image">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="vertical-align:-1px"><path d="M8 1.5v8M8 1.5 5.5 4M8 1.5 10.5 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 9v4.5h10V9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    Share
+                  </button>
+                </div>
+              </div>
             </div>
             <div class="am-graph-plot-wrap">
               <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
@@ -813,6 +823,8 @@ def build_advanced_metrics_body(
         font-size:12px; padding:6px 8px; border:1px solid var(--border);
         border-radius:7px; background:var(--card); color:var(--text); cursor:pointer; width:100%;
       }
+      .am-graph-actions { flex:0 0 auto !important; min-width:0 !important; justify-content:flex-end; margin-left:auto; }
+      .am-graph-actions .am-add-stat-btn { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
       .am-graph-plot-wrap { padding:14px 16px 16px; overflow:auto; }
       .am-graph-svg { width:100%; height:auto; display:block; touch-action:none; }
       .am-graph-empty { text-align:center; color:var(--text-muted); font-size:13px; padding:48px 0; }
@@ -2201,6 +2213,43 @@ _AM_JS = r"""
       .replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+  // Graph's own theme (independent of the site, so shared images can be either).
+  // Defaults to the current site theme when the modal opens.
+  let _amGraphTheme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
+  function _amGraphPalette() {
+    return (_amGraphTheme === 'dark')
+      ? { bg: '#0f172a', text: '#e2e8f0', muted: '#94a3b8',
+          grid: 'rgba(148,163,184,.22)', axis: 'rgba(148,163,184,.45)', border: 'rgba(148,163,184,.25)' }
+      : { bg: '#ffffff', text: '#1e293b', muted: '#64748b',
+          grid: 'rgba(100,116,139,.16)', axis: 'rgba(100,116,139,.40)', border: 'rgba(100,116,139,.20)' };
+  }
+  // Preload the BR logo (theme-appropriate) as a data URI so it embeds in the SVG
+  // and survives canvas rasterization for the shareable PNG.
+  const _amLogoCache = {};
+  function _amLoadLogo(theme) {
+    if (_amLogoCache[theme] !== undefined) return Promise.resolve(_amLogoCache[theme]);
+    const url = (theme === 'dark') ? '/static/BR_Logo_dark.png' : '/static/BR_Logo.png';
+    return fetch(url).then(function(r) { return r.ok ? r.blob() : null; }).then(function(b) {
+      if (!b) { _amLogoCache[theme] = ''; return ''; }
+      return new Promise(function(res) {
+        const fr = new FileReader();
+        fr.onload = function() { _amLogoCache[theme] = fr.result; res(fr.result); };
+        fr.onerror = function() { _amLogoCache[theme] = ''; res(''); };
+        fr.readAsDataURL(b);
+      });
+    }).catch(function() { _amLogoCache[theme] = ''; return ''; });
+  }
+  function _amSyncGraphThemeBtn() {
+    const b = document.getElementById('amGraphThemeBtn');
+    if (b) b.innerHTML = (_amGraphTheme === 'dark')
+      ? '<span style="font-size:13px;">☾</span> Dark'
+      : '<span style="font-size:13px;">☀</span> Light';
+  }
+  window.amToggleGraphTheme = function() {
+    _amGraphTheme = (_amGraphTheme === 'dark') ? 'light' : 'dark';
+    _amSyncGraphThemeBtn();
+    window.amRenderGraph();
+  };
   // Build <optgroup> options from cfg.metrics, filtered to the active position.
   function _amGraphMetricOptions(selectedKey) {
     const pos = (state.position && state.position !== 'ALL') ? state.position : null;
@@ -2261,6 +2310,10 @@ _AM_JS = r"""
     ySel.innerHTML = _amGraphMetricOptions(curY);
     zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions('');
     xSel.value = curX; ySel.value = curY; zSel.value = '';
+    // Default graph theme to the site theme each open; preload both logos.
+    _amGraphTheme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
+    _amSyncGraphThemeBtn();
+    _amLoadLogo('light'); _amLoadLogo('dark');
     if (note) {
       const bits = [];
       bits.push(state.season || (cfg.seasons && cfg.seasons[0]) || '');
@@ -2311,13 +2364,21 @@ _AM_JS = r"""
         plot.innerHTML = '<div class="am-graph-empty">No players have data for both metrics with the current filters.</div>';
         return;
       }
-      plot.innerHTML = _amBuildScatter(pts, xk, yk, zk);
+      _amLoadLogo(_amGraphTheme).then(function(logo) {
+        if (token !== _amGraphToken) return;
+        plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo);
+      });
     }).catch(function() {
       if (token === _amGraphToken) plot.innerHTML = '<div class="am-graph-empty">Could not load graph data.</div>';
     });
   };
-  function _amBuildScatter(pts, xk, yk, zk) {
-    const W = 680, H = 440, padL = 60, padR = 18, padT = 16, padB = 48;
+  // Builds a fully self-contained SVG (explicit theme colors, embedded logo
+  // watermark, in-SVG title/legend) so it renders identically on screen and when
+  // rasterized to a shareable PNG. `logo` is a data: URI (may be empty).
+  function _amBuildScatter(pts, xk, yk, zk, logo) {
+    const TH = _amGraphPalette();
+    const FONT = "system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+    const W = 720, H = 520, padL = 64, padR = 22, padT = 54, padB = 70;
     const xs = pts.map(function(p) { return p.x; });
     const ys = pts.map(function(p) { return p.y; });
     let xmin = Math.min.apply(null, xs), xmax = Math.max.apply(null, xs);
@@ -2339,19 +2400,46 @@ _AM_JS = r"""
     }
     const fmtX = function(v) { return fmtVal(v, xk); };
     const fmtY = function(v) { return fmtVal(v, yk); };
-    let s = '<svg class="am-graph-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet">';
-    s += '<line class="am-graph-axis" x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - padR) + '" y2="' + (H - padB) + '"/>';
-    s += '<line class="am-graph-axis" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (H - padB) + '"/>';
+    const txt = function(x, y, str, size, fill, weight, anchor, transform) {
+      return '<text x="' + x + '" y="' + y + '"'
+        + (anchor ? ' text-anchor="' + anchor + '"' : '')
+        + (transform ? ' transform="' + transform + '"' : '')
+        + ' font-size="' + size + '" font-weight="' + (weight || 400)
+        + '" fill="' + fill + '">' + str + '</text>';
+    };
+    let s = '<svg class="am-graph-svg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
+      + ' viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" style="font-family:' + FONT + ';">';
+    // Themed panel background.
+    s += '<rect x="0.5" y="0.5" width="' + (W - 1) + '" height="' + (H - 1) + '" rx="14" fill="' + TH.bg + '" stroke="' + TH.border + '"/>';
+    // Faint centered BR logo watermark (behind the data).
+    if (logo) {
+      const lw = 230, lh = 230;
+      const lx = padL + (W - padL - padR) / 2 - lw / 2;
+      const ly = padT + (H - padT - padB) / 2 - lh / 2;
+      s += '<image href="' + logo + '" xlink:href="' + logo + '" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1)
+        + '" width="' + lw + '" height="' + lh + '" opacity="0.06" preserveAspectRatio="xMidYMid meet"/>';
+    }
+    // Title + context subtitle.
+    s += txt((W / 2).toFixed(1), 24, _amEsc(cfg.metrics[yk].label) + ' vs ' + _amEsc(cfg.metrics[xk].label), 14, TH.text, 800, 'middle');
+    const noteEl = document.getElementById('amGraphCtxNote');
+    const ctx = noteEl ? noteEl.textContent : '';
+    if (ctx) s += txt((W / 2).toFixed(1), 41, _amEsc(ctx), 10.5, TH.muted, 500, 'middle');
+    // Axes.
+    s += '<line x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - padR) + '" y2="' + (H - padB) + '" stroke="' + TH.axis + '"/>';
+    s += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (H - padB) + '" stroke="' + TH.axis + '"/>';
     for (let i = 0; i <= 4; i++) {
       const xv = xmin + (xmax - xmin) * i / 4, xx = px(xv);
-      s += '<line class="am-graph-axis" x1="' + xx.toFixed(1) + '" y1="' + (H - padB) + '" x2="' + xx.toFixed(1) + '" y2="' + (H - padB + 4) + '"/>';
-      s += '<text class="am-graph-tick" x="' + xx.toFixed(1) + '" y="' + (H - padB + 16) + '" text-anchor="middle">' + _amEsc(fmtX(xv)) + '</text>';
+      if (i > 0) s += '<line x1="' + xx.toFixed(1) + '" y1="' + padT + '" x2="' + xx.toFixed(1) + '" y2="' + (H - padB) + '" stroke="' + TH.grid + '"/>';
+      s += txt(xx.toFixed(1), (H - padB + 16), _amEsc(fmtX(xv)), 10, TH.muted, 400, 'middle');
       const yv = ymin + (ymax - ymin) * i / 4, yy = py(yv);
-      s += '<line class="am-graph-axis" x1="' + (padL - 4) + '" y1="' + yy.toFixed(1) + '" x2="' + padL + '" y2="' + yy.toFixed(1) + '"/>';
-      s += '<text class="am-graph-tick" x="' + (padL - 7) + '" y="' + (yy + 3).toFixed(1) + '" text-anchor="end">' + _amEsc(fmtY(yv)) + '</text>';
+      if (i > 0) s += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="' + TH.grid + '"/>';
+      s += txt((padL - 7), (yy + 3).toFixed(1), _amEsc(fmtY(yv)), 10, TH.muted, 400, 'end');
     }
-    s += '<text class="am-graph-axislbl" x="' + ((padL + W - padR) / 2).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + _amEsc(cfg.metrics[xk].label) + '</text>';
-    s += '<text class="am-graph-axislbl" transform="translate(14,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)" text-anchor="middle">' + _amEsc(cfg.metrics[yk].label) + '</text>';
+    // Axis titles.
+    s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 36), _amEsc(cfg.metrics[xk].label), 11, TH.text, 700, 'middle');
+    s += txt(0, 0, _amEsc(cfg.metrics[yk].label), 11, TH.text, 700, 'middle',
+      'translate(16,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)');
+    // Points.
     const showLabels = pts.length <= 25;
     pts.forEach(function(p) {
       const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
@@ -2360,29 +2448,79 @@ _AM_JS = r"""
         + cfg.metrics[yk].label + ': ' + fmtY(p.y);
       if (zk) tip += '  ·  ' + cfg.metrics[zk].label + ': ' + (p.z != null ? fmtVal(p.z, zk) : '–');
       s += '<circle class="am-graph-dot" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + r.toFixed(1)
-        + '" fill="' + col + '" fill-opacity="0.68" stroke="' + col + '" stroke-width="1">'
+        + '" fill="' + col + '" fill-opacity="0.7" stroke="' + col + '" stroke-width="1">'
         + '<title>' + _amEsc(tip) + '</title></circle>';
       if (showLabels) {
         const parts = (p.name || '').split(' ');
         const last = parts[parts.length - 1];
-        s += '<text class="am-graph-ptlbl" x="' + (cx + r + 2).toFixed(1) + '" y="' + (cy + 3).toFixed(1) + '">' + _amEsc(last) + '</text>';
+        s += txt((cx + r + 2).toFixed(1), (cy + 3).toFixed(1), _amEsc(last), 9, TH.muted, 400, 'start');
       }
     });
-    s += '</svg>';
+    // In-SVG legend (positions present) + bubble note, so the shared image is complete.
     const posPresent = [];
     pts.forEach(function(p) { if (p.position && posPresent.indexOf(p.position) === -1) posPresent.push(p.position); });
-    if (posPresent.length > 1) {
-      s += '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:8px;">';
-      posPresent.forEach(function(pp) {
-        s += '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);">'
-          + '<span style="width:9px;height:9px;border-radius:50%;background:' + posColor(pp) + ';display:inline-block;"></span>'
-          + _amEsc(pp) + '</span>';
+    let legendItems = posPresent.slice();
+    const legendY = H - 16;
+    if (legendItems.length > 1 || zk) {
+      // Center the legend row.
+      const segW = 64;
+      const totalW = legendItems.length * segW + (zk ? 150 : 0);
+      let lx2 = (W - totalW) / 2;
+      legendItems.forEach(function(pp) {
+        s += '<circle cx="' + (lx2 + 5).toFixed(1) + '" cy="' + (legendY - 3) + '" r="5" fill="' + posColor(pp) + '" fill-opacity="0.85"/>';
+        s += txt((lx2 + 14).toFixed(1), legendY, _amEsc(pp), 11, TH.muted, 600, 'start');
+        lx2 += segW;
       });
-      s += '</div>';
+      if (zk) s += txt((lx2 + 4).toFixed(1), legendY, '○ Bubble = ' + _amEsc(cfg.metrics[zk].label), 10.5, TH.muted, 500, 'start');
     }
-    if (zk) s += '<div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:6px;">Bubble size = ' + _amEsc(cfg.metrics[zk].label) + '</div>';
+    s += '</svg>';
     return s;
   }
+  // Export the current graph as a branded PNG: native share when available,
+  // download otherwise. The SVG is self-contained (explicit colors + embedded
+  // logo) so it rasterizes cleanly to canvas.
+  window.amShareGraph = function() {
+    const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
+    if (!svg) return;
+    const TH = _amGraphPalette();
+    const vb = (svg.getAttribute('viewBox') || '0 0 720 520').split(/\s+/).map(Number);
+    const W = vb[2] || 720, H = vb[3] || 520, scale = 2;
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    clone.setAttribute('width', W); clone.setAttribute('height', H);
+    const xml = new XMLSerializer().serializeToString(clone);
+    const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      canvas.width = W * scale; canvas.height = H * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = TH.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(function(blob) {
+        if (!blob) return;
+        const xk = document.getElementById('amGraphX').value;
+        const yk = document.getElementById('amGraphY').value;
+        const fname = 'br-metrics-' + xk + '-vs-' + yk + '.png';
+        const file = new File([blob], fname, { type: 'image/png' });
+        const title = 'BR Fantasy — Advanced Metrics';
+        const text = (cfg.metrics[yk] ? cfg.metrics[yk].label : yk) + ' vs '
+          + (cfg.metrics[xk] ? cfg.metrics[xk].label : xk);
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], title: title, text: text }).catch(function() {});
+        } else {
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = fname;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(function() { URL.revokeObjectURL(a.href); }, 3000);
+        }
+      }, 'image/png');
+    };
+    img.onerror = function() {};
+    img.src = src;
+  };
 
   function fetchData() {
     // paywall removed — advanced metrics is available to all users
