@@ -332,6 +332,7 @@ def build_advanced_metrics_body(
             </div>
             <div class="am-graph-plot-wrap">
               <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
+              <div id="amGraphTip" class="am-graph-tip"></div>
             </div>
           </div>
         </div>
@@ -825,7 +826,25 @@ def build_advanced_metrics_body(
       }
       .am-graph-actions { flex:0 0 auto !important; min-width:0 !important; justify-content:flex-end; margin-left:auto; }
       .am-graph-actions .am-add-stat-btn { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
-      .am-graph-plot-wrap { padding:14px 16px 16px; overflow:auto; }
+      /* Plot area flexes and scrolls inside the 82vh card so controls never clip. */
+      .am-graph-plot-wrap { padding:14px 16px 16px; overflow:auto; flex:1 1 auto; min-height:0; -webkit-overflow-scrolling:touch; }
+      /* Tap-to-inspect line (touch has no hover for the <title> tooltips). */
+      .am-graph-tip {
+        margin-top:8px; min-height:18px; text-align:center;
+        font-size:12px; color:var(--text-muted); line-height:1.4;
+      }
+      .am-graph-tip b { color:var(--text); }
+      @media (max-width:600px) {
+        .am-legend-modal { padding:8px; }
+        .am-graph-card { max-height:92vh; }
+        .am-graph-controls { gap:8px; padding:10px 12px; }
+        .am-graph-controls .am-gctrl { flex:1 1 46%; min-width:0; }
+        .am-graph-actions { flex:1 1 100% !important; }
+        .am-graph-actions > div { width:100%; }
+        .am-graph-actions .am-add-stat-btn { flex:1 1 0; justify-content:center; padding:8px 10px; }
+        .am-graph-plot-wrap { padding:10px 10px 12px; }
+        .am-graph-dot { stroke-width:1.25; }
+      }
       .am-graph-svg { width:100%; height:auto; display:block; touch-action:none; }
       .am-graph-empty { text-align:center; color:var(--text-muted); font-size:13px; padding:48px 0; }
       .am-graph-axis { stroke:var(--border); }
@@ -2367,6 +2386,8 @@ _AM_JS = r"""
       _amLoadLogo(_amGraphTheme).then(function(logo) {
         if (token !== _amGraphToken) return;
         plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo);
+        const tipEl = document.getElementById('amGraphTip');
+        if (tipEl) tipEl.innerHTML = '<span style="opacity:.6">Tap a point for player details</span>';
       });
     }).catch(function() {
       if (token === _amGraphToken) plot.innerHTML = '<div class="am-graph-empty">Could not load graph data.</div>';
@@ -2378,7 +2399,13 @@ _AM_JS = r"""
   function _amBuildScatter(pts, xk, yk, zk, logo) {
     const TH = _amGraphPalette();
     const FONT = "system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
-    const W = 720, H = 520, padL = 64, padR = 22, padT = 54, padB = 70;
+    // Responsive layout: a portrait viewBox with larger relative fonts on phones
+    // (smaller viewBox width => each unit scales up on screen, so text stays legible).
+    const isNarrow = (window.innerWidth || 800) <= 600;
+    const L = isNarrow
+      ? { W: 392, H: 472, padL: 46, padR: 14, padT: 52, padB: 80, fTitle: 14, fSub: 11, fTick: 12, fAxis: 12.5, fLeg: 12, nt: 3, logo: 175, dotMin: 5.5, dotMax: 13 }
+      : { W: 720, H: 520, padL: 64, padR: 22, padT: 54, padB: 70, fTitle: 14, fSub: 10.5, fTick: 10, fAxis: 11, fLeg: 11, nt: 4, logo: 230, dotMin: 4, dotMax: 15 };
+    const W = L.W, H = L.H, padL = L.padL, padR = L.padR, padT = L.padT, padB = L.padB;
     const xs = pts.map(function(p) { return p.x; });
     const ys = pts.map(function(p) { return p.y; });
     let xmin = Math.min.apply(null, xs), xmax = Math.max.apply(null, xs);
@@ -2389,13 +2416,13 @@ _AM_JS = r"""
     ymin -= (ymax - ymin) * 0.06; ymax += (ymax - ymin) * 0.06;
     const px = function(v) { return padL + ((v - xmin) / (xmax - xmin)) * (W - padL - padR); };
     const py = function(v) { return H - padB - ((v - ymin) / (ymax - ymin)) * (H - padT - padB); };
-    let rOf = function() { return 5; };
+    let rOf = function() { return isNarrow ? 6 : 5; };
     if (zk) {
       const zs = pts.map(function(p) { return p.z; }).filter(function(v) { return v != null && isFinite(v); });
       if (zs.length) {
         const zmin = Math.min.apply(null, zs), zmax = Math.max.apply(null, zs);
         const span = (zmax - zmin) || 1;
-        rOf = function(p) { return (p.z == null || !isFinite(p.z)) ? 3.5 : (4 + ((p.z - zmin) / span) * 11); };
+        rOf = function(p) { return (p.z == null || !isFinite(p.z)) ? (L.dotMin * 0.7) : (L.dotMin + ((p.z - zmin) / span) * (L.dotMax - L.dotMin)); };
       }
     }
     const fmtX = function(v) { return fmtVal(v, xk); };
@@ -2420,36 +2447,36 @@ _AM_JS = r"""
         + '" width="' + lw + '" height="' + lh + '" opacity="0.06" preserveAspectRatio="xMidYMid meet"/>';
     }
     // Title + context subtitle.
-    s += txt((W / 2).toFixed(1), 24, _amEsc(cfg.metrics[yk].label) + ' vs ' + _amEsc(cfg.metrics[xk].label), 14, TH.text, 800, 'middle');
+    s += txt((W / 2).toFixed(1), 24, _amEsc(cfg.metrics[yk].label) + ' vs ' + _amEsc(cfg.metrics[xk].label), L.fTitle, TH.text, 800, 'middle');
     const noteEl = document.getElementById('amGraphCtxNote');
     const ctx = noteEl ? noteEl.textContent : '';
-    if (ctx) s += txt((W / 2).toFixed(1), 41, _amEsc(ctx), 10.5, TH.muted, 500, 'middle');
+    if (ctx) s += txt((W / 2).toFixed(1), 41, _amEsc(ctx), L.fSub, TH.muted, 500, 'middle');
     // Axes.
     s += '<line x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - padR) + '" y2="' + (H - padB) + '" stroke="' + TH.axis + '"/>';
     s += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (H - padB) + '" stroke="' + TH.axis + '"/>';
-    for (let i = 0; i <= 4; i++) {
-      const xv = xmin + (xmax - xmin) * i / 4, xx = px(xv);
+    for (let i = 0; i <= L.nt; i++) {
+      const xv = xmin + (xmax - xmin) * i / L.nt, xx = px(xv);
       if (i > 0) s += '<line x1="' + xx.toFixed(1) + '" y1="' + padT + '" x2="' + xx.toFixed(1) + '" y2="' + (H - padB) + '" stroke="' + TH.grid + '"/>';
-      s += txt(xx.toFixed(1), (H - padB + 16), _amEsc(fmtX(xv)), 10, TH.muted, 400, 'middle');
-      const yv = ymin + (ymax - ymin) * i / 4, yy = py(yv);
+      s += txt(xx.toFixed(1), (H - padB + 16), _amEsc(fmtX(xv)), L.fTick, TH.muted, 400, 'middle');
+      const yv = ymin + (ymax - ymin) * i / L.nt, yy = py(yv);
       if (i > 0) s += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + yy.toFixed(1) + '" stroke="' + TH.grid + '"/>';
-      s += txt((padL - 7), (yy + 3).toFixed(1), _amEsc(fmtY(yv)), 10, TH.muted, 400, 'end');
+      s += txt((padL - 7), (yy + 3).toFixed(1), _amEsc(fmtY(yv)), L.fTick, TH.muted, 400, 'end');
     }
     // Axis titles.
-    s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 36), _amEsc(cfg.metrics[xk].label), 11, TH.text, 700, 'middle');
-    s += txt(0, 0, _amEsc(cfg.metrics[yk].label), 11, TH.text, 700, 'middle',
-      'translate(16,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)');
-    // Points.
-    const showLabels = pts.length <= 25;
+    s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 38), _amEsc(cfg.metrics[xk].label), L.fAxis, TH.text, 700, 'middle');
+    s += txt(0, 0, _amEsc(cfg.metrics[yk].label), L.fAxis, TH.text, 700, 'middle',
+      'translate(15,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)');
+    // Points. Labels only on desktop with a small set; phones use tap-to-inspect.
+    const showLabels = !isNarrow && pts.length <= 25;
     pts.forEach(function(p) {
       const cx = px(p.x), cy = py(p.y), r = rOf(p), col = posColor(p.position);
-      let tip = p.name + ' (' + (p.position || '') + ')  ·  '
-        + cfg.metrics[xk].label + ': ' + fmtX(p.x) + '  ·  '
-        + cfg.metrics[yk].label + ': ' + fmtY(p.y);
-      if (zk) tip += '  ·  ' + cfg.metrics[zk].label + ': ' + (p.z != null ? fmtVal(p.z, zk) : '–');
+      const nm = p.name + ' (' + (p.position || '') + ')';
+      let dt = cfg.metrics[xk].label + ': ' + fmtX(p.x) + '  ·  ' + cfg.metrics[yk].label + ': ' + fmtY(p.y);
+      if (zk) dt += '  ·  ' + cfg.metrics[zk].label + ': ' + (p.z != null ? fmtVal(p.z, zk) : '–');
       s += '<circle class="am-graph-dot" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + r.toFixed(1)
-        + '" fill="' + col + '" fill-opacity="0.7" stroke="' + col + '" stroke-width="1">'
-        + '<title>' + _amEsc(tip) + '</title></circle>';
+        + '" fill="' + col + '" fill-opacity="0.7" stroke="' + col + '" stroke-width="1"'
+        + ' data-nm="' + _amEsc(nm) + '" data-dt="' + _amEsc(dt) + '">'
+        + '<title>' + _amEsc(nm + '  ·  ' + dt) + '</title></circle>';
       if (showLabels) {
         const parts = (p.name || '').split(' ');
         const last = parts[parts.length - 1];
@@ -2459,23 +2486,53 @@ _AM_JS = r"""
     // In-SVG legend (positions present) + bubble note, so the shared image is complete.
     const posPresent = [];
     pts.forEach(function(p) { if (p.position && posPresent.indexOf(p.position) === -1) posPresent.push(p.position); });
-    let legendItems = posPresent.slice();
+    const legendItems = posPresent.slice();
     const legendY = H - 16;
     if (legendItems.length > 1 || zk) {
-      // Center the legend row.
-      const segW = 64;
-      const totalW = legendItems.length * segW + (zk ? 150 : 0);
-      let lx2 = (W - totalW) / 2;
+      const segW = isNarrow ? 50 : 64;
+      const bubbleW = zk ? (isNarrow ? 70 : 150) : 0;
+      const totalW = legendItems.length * segW + bubbleW;
+      let lx2 = Math.max(8, (W - totalW) / 2);
       legendItems.forEach(function(pp) {
         s += '<circle cx="' + (lx2 + 5).toFixed(1) + '" cy="' + (legendY - 3) + '" r="5" fill="' + posColor(pp) + '" fill-opacity="0.85"/>';
-        s += txt((lx2 + 14).toFixed(1), legendY, _amEsc(pp), 11, TH.muted, 600, 'start');
+        s += txt((lx2 + 14).toFixed(1), legendY, _amEsc(pp), L.fLeg, TH.muted, 600, 'start');
         lx2 += segW;
       });
-      if (zk) s += txt((lx2 + 4).toFixed(1), legendY, '○ Bubble = ' + _amEsc(cfg.metrics[zk].label), 10.5, TH.muted, 500, 'start');
+      if (zk) s += txt((lx2 + 4).toFixed(1), legendY, (isNarrow ? '○ = ' : '○ Bubble = ') + _amEsc(cfg.metrics[zk].label), L.fLeg - 0.5, TH.muted, 500, 'start');
     }
     s += '</svg>';
     return s;
   }
+  // One-time wiring: tap/click a point to show its details (touch has no hover),
+  // and re-render on resize/orientation change so the layout stays responsive.
+  (function _amInitGraphInteractions() {
+    const plot = document.getElementById('amGraphPlot');
+    if (plot) {
+      plot.addEventListener('click', function(e) {
+        const dot = e.target.closest && e.target.closest('circle[data-nm]');
+        const tipEl = document.getElementById('amGraphTip');
+        if (!tipEl) return;
+        if (!dot) {
+          tipEl.innerHTML = '<span style="opacity:.6">Tap a point for player details</span>';
+          return;
+        }
+        tipEl.innerHTML = '';
+        const b = document.createElement('b');
+        b.textContent = dot.getAttribute('data-nm') || '';
+        tipEl.appendChild(b);
+        tipEl.appendChild(document.createTextNode('  ' + (dot.getAttribute('data-dt') || '')));
+      });
+    }
+    let _rt;
+    window.addEventListener('resize', function() {
+      const modal = document.getElementById('amGraphModal');
+      if (!modal || modal.style.display !== 'flex') return;
+      clearTimeout(_rt);
+      _rt = setTimeout(function() {
+        if (modal.style.display === 'flex') window.amRenderGraph();
+      }, 250);
+    });
+  })();
   // Export the current graph as a branded PNG: native share when available,
   // download otherwise. The SVG is self-contained (explicit colors + embedded
   // logo) so it rasterizes cleanly to canvas.
