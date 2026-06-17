@@ -71,6 +71,32 @@ services:
         sync: false
       - key: PYTHON_ENV
         value: production
+      # Cache-flush after each cron run — most critical missing vars
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+      # AI market-pulse blurbs
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: AI_ENABLED
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      # Push notifications
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      # Rookie pipeline data sources
+      - key: SPORTRADAR_API_KEY
+        sync: false
+      - key: SPORTRADAR_ACCESS_LEVEL
+        sync: false
+      - key: CFBD_API_KEY
+        sync: false
+      - key: TZ
+        value: America/Chicago
 
   - type: cron
     name: trade-recrawl

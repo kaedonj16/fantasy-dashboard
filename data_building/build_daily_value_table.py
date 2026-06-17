@@ -142,7 +142,7 @@ def build_daily_model_values():
         print(f"[build_daily_data] WARNING: load_model_value_table returned empty list", file=sys.stderr)
 
     try:
-        n = record_model_value_snapshot(model_value_table)
+        n = record_model_value_snapshot(model_value_table, ema_alpha=1.0)
         print(f"[build_daily_data] record_model_value_snapshot wrote {n} rows")
     except Exception as e:
         print(f"[build_daily_data] FAILED at record_model_value_snapshot: {type(e).__name__}: {e}", file=sys.stderr)
