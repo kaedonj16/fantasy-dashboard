@@ -4,7 +4,7 @@
   "description": "Dynasty fantasy football analytics and trade tools",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "background_color": "#020617",
   "theme_color": "#38bdf8",
   "orientation": "portrait-primary",
   "icons": [

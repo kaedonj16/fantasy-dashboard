@@ -803,6 +803,15 @@ BASE_HTML = """
     <meta name="mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-title" content="BR Fantasy">
 
+    <!-- Instant branded splash (covers the PWA/first-paint white screen) -->
+    <style>
+      #appSplash{{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#020617;transition:opacity .35s ease;}}
+      #appSplash img{{width:170px;max-width:56%;height:auto;animation:appSplashPulse 1.5s ease-in-out infinite;}}
+      #appSplash.app-splash-hide{{opacity:0;pointer-events:none;}}
+      @keyframes appSplashPulse{{0%,100%{{opacity:.5}}50%{{opacity:1}}}}
+      @media (prefers-reduced-motion: reduce){{#appSplash img{{animation:none}}}}
+    </style>
+
     <link rel="stylesheet" href="/static/dashboard.css?v={css_v}">
     <link rel="stylesheet" href="/static/icons.css?v={icons_v}">
     <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
@@ -816,6 +825,22 @@ BASE_HTML = """
     </script>
   </head>
   <body>
+    <!-- Branded loading splash: shown instantly, removed once the page is ready -->
+    <div id="appSplash" role="status" aria-label="Loading BR Fantasy">
+      <img src="/static/Website_Logo_dark.png" alt="BR Fantasy" />
+    </div>
+    <script>
+      (function(){{
+        function hide(){{
+          var s=document.getElementById('appSplash');
+          if(!s)return;
+          s.classList.add('app-splash-hide');
+          setTimeout(function(){{ if(s.parentNode) s.parentNode.removeChild(s); }},400);
+        }}
+        if(document.readyState==='complete'){{ hide(); }} else {{ window.addEventListener('load',hide); }}
+        setTimeout(hide,6000);  // safety: never let the splash get stuck
+      }})();
+    </script>
     <a class="skip-link" href="#page-root">Skip to main content</a>
     <div id="app-scale">
       {nav}
