@@ -879,6 +879,35 @@ def build_advanced_metrics_body(
       .am-graph-ptlbl { fill:var(--text-muted); font-size:9px; pointer-events:none; }
       .am-graph-dot { cursor:pointer; transition:fill-opacity .12s; }
       .am-graph-dot:hover { fill-opacity:1 !important; }
+
+      /* og=1 social-preview render mode: turn the graph modal into a clean,
+         full-bleed 1200x630 dark canvas with the scatter centered. Rather than
+         hiding the modal's own ancestors (which would also hide the modal), we
+         lay an opaque, top-of-stack overlay over the whole page. Used by
+         /metrics/og.png (headless screenshot). */
+      html.og-render, html.og-render body { background:#0b1120 !important; margin:0 !important; padding:0 !important; overflow:hidden !important; }
+      html.og-render #appSplash { display:none !important; }
+      /* Any transform on an ancestor would make position:fixed relative to it,
+         not the viewport — neutralize so the overlay truly fills the frame. */
+      html.og-render #app-scale { transform:none !important; }
+      html.og-render #amGraphModal {
+        position:fixed !important; inset:0 !important; z-index:2147483600 !important; display:flex !important;
+        align-items:center !important; justify-content:center !important;
+        background:radial-gradient(circle at 50% 0%, #14213d 0%, #0b1120 70%) !important; padding:0 !important;
+      }
+      html.og-render .am-graph-card {
+        width:1200px !important; height:630px !important; max-width:1200px !important; max-height:630px !important;
+        border:none !important; border-radius:0 !important; box-shadow:none !important;
+        background:transparent !important; display:flex !important; flex-direction:column !important;
+      }
+      html.og-render .am-legend-head, html.og-render .am-graph-controls,
+      html.og-render #amGraphHover, html.og-render #amGraphTip { display:none !important; }
+      html.og-render .am-graph-plot-wrap {
+        flex:1 1 auto !important; display:flex !important; align-items:center !important; justify-content:center !important;
+        padding:18px !important; overflow:hidden !important;
+      }
+      html.og-render #amGraphPlot { width:100%; display:flex; align-items:center; justify-content:center; }
+      html.og-render .am-graph-svg { width:auto !important; height:594px !important; max-width:1164px !important; }
     </style>
     """
 
@@ -2448,6 +2477,10 @@ _AM_JS = r"""
         plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo);
         const tipEl = document.getElementById('amGraphTip');
         if (tipEl) tipEl.innerHTML = '<span style="opacity:.6">Hover or tap a point for player details</span>';
+        // Signal the social-preview renderer that the graph is fully drawn.
+        if (_initParams.get('og') === '1') {
+          document.documentElement.setAttribute('data-og-ready', '1');
+        }
       });
     }).catch(function() {
       if (token === _amGraphToken) plot.innerHTML = '<div class="am-graph-empty">Could not load graph data.</div>';
@@ -3128,12 +3161,21 @@ _AM_JS = r"""
   if (_presetInit && _PRESETS[_presetInit]) amLoadPreset(_presetInit);
   updateSortBtn(); updatePosButtons(); updateMetricTip(); updateVolCtrl(); updateVolHeader();
   updateSortHeaders(); updateCompareBar(); updateFilterBar(); syncURL(); fetchData(); loadOwnedRoster();
-  // Auto-open graph modal when ?graph=1 is in the URL (from a copied graph link).
-  if (_initParams.get('graph') === '1') {
+  // Auto-open graph modal when ?graph=1 is in the URL (from a copied graph
+  // link), or when ?og=1 (the headless social-preview render mode).
+  const _isOgRender = _initParams.get('og') === '1';
+  if (_initParams.get('graph') === '1' || _isOgRender) {
     const _gxInit = _initParams.get('gx') || '';
     const _gyInit = _initParams.get('gy') || '';
     const _gzInit = _initParams.get('gz') || '';
     const _gnInit = _initParams.get('gn') || '';
+    if (_isOgRender) {
+      // Strip page chrome so only the graph fills the 1200x630 capture frame,
+      // and force the dark theme for a consistent preview.
+      document.documentElement.classList.add('og-render');
+      document.documentElement.setAttribute('data-theme', 'dark');
+      _amGraphTheme = 'dark';
+    }
     window.addEventListener('load', function() {
       window.amOpenGraph();
       setTimeout(function() {
@@ -3145,6 +3187,7 @@ _AM_JS = r"""
         if (_gyInit && ySel) ySel.value = _gyInit;
         if (_gzInit && zSel) zSel.value = _gzInit;
         if (_gnInit && nSel) nSel.value = _gnInit;
+        if (_isOgRender) _amGraphTheme = 'dark';
         window.amRenderGraph();
       }, 50);
     });

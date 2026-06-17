@@ -7,6 +7,12 @@ CHANGELOG = [
     {
         "date": "2026-06-17",
         "tag": "new",
+        "text": "Rich link previews: Sharing a metrics graph, a trade card, or a team report card now unfurls with a real preview image of that exact card — generated on the server — instead of just the BR logo, on iMessage, Discord, X, and more.",
+        "link": "/metrics"
+    },
+    {
+        "date": "2026-06-17",
+        "tag": "new",
         "text": "Advanced Metrics Graph: Plot any two (or three) efficiency metrics as a scatter chart directly from the Advanced Metrics page. Includes position presets for WR, RB, and TE, bubble sizing by a third stat, top-player labels, average crosshair lines, light/dark mode, and a BR watermark. Download the chart as a PNG or copy a shareable link that reopens the exact graph configuration.",
         "link": "/metrics"
     },
