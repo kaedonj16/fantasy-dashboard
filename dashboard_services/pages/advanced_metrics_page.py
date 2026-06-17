@@ -12,11 +12,11 @@ from typing import Optional
 
 
 def build_advanced_metrics_body(
-    has_premium: bool,
-    metrics_spec: dict,
-    league_id: Optional[str] = None,
-    season: Optional[int] = None,
-    platform: Optional[str] = None,
+        has_premium: bool,
+        metrics_spec: dict,
+        league_id: Optional[str] = None,
+        season: Optional[int] = None,
+        platform: Optional[str] = None,
 ) -> str:
     from data_building.advanced_metrics import (
         get_available_seasons, _WEEKLY_METRICS,
@@ -141,7 +141,7 @@ def build_advanced_metrics_body(
             }
             for key, spec in metrics_spec.items()
             if not spec.get("hidden")
-            and not (_hide_premium and key in PREMIUM_METRICS)
+               and not (_hide_premium and key in PREMIUM_METRICS)
         },
     })
 
@@ -350,7 +350,8 @@ def build_advanced_metrics_body(
 
       </div>
     </div>
-    """.replace("__METRIC_OPTIONS__", metric_options).replace("__SEASON_OPTIONS__", season_options).replace("__LEGEND__", legend_html).replace("{count}", str(sum(1 for s in metrics_spec.values() if not s.get("hidden"))))
+    """.replace("__METRIC_OPTIONS__", metric_options).replace("__SEASON_OPTIONS__", season_options).replace(
+        "__LEGEND__", legend_html).replace("{count}", str(sum(1 for s in metrics_spec.values() if not s.get("hidden"))))
 
     style = """
     <style>
@@ -771,10 +772,10 @@ def build_advanced_metrics_body(
     """
 
     script = (
-        "<script>\n(function(){\n"
-        "const AM_CFG = " + cfg + ";\n"
-        + _AM_JS +
-        "\n})();\n</script>"
+            "<script>\n(function(){\n"
+            "const AM_CFG = " + cfg + ";\n"
+            + _AM_JS +
+            "\n})();\n</script>"
     )
 
     return html + style + script
@@ -955,7 +956,7 @@ _AM_JS = r"""
   const _PRESETS = {
     'QB':        ['epa_per_play', 'yards_per_attempt', 'cpoe', 'success_rate', 'td_rate', 'int_rate', 'pass_tds_per_game'],
     'RB':        ['opportunity_share', 'yards_per_carry', 'rushing_epa', 'breakaway_percentage', 'yards_per_touch', 'red_zone_usage', 'total_tds_per_game'],
-    'WR':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_avg_separation', 'air_yards_share', 'rec_tds_per_game'],
+    'WR':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_avg_separation', 'air_yards_share', 'rec_tds_per_game', 'fpts_per_reception'],
     'TE':        ['target_share', 'yards_per_target', 'receiving_epa', 'ngs_avg_yac_above_expectation', 'rz_targets_pg', 'rec_tds_per_game'],
     'General':   ['snap_share', 'opportunity_share', 'role_score', 'red_zone_usage', 'yards_per_touch', 'total_tds_per_game'],
     'Rushing':   ['yards_per_carry', 'rushing_epa', 'breakaway_percentage', 'explosive_runs_10_plus', 'opportunity_share', 'carries_per_game', 'red_zone_usage'],
