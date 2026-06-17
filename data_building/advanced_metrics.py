@@ -2206,12 +2206,18 @@ def _value_table(
                 rec[f"{key}_rank"] = i
 
     _result = (season, recs)
-    # Keep the cache from growing without bound across days: drop entries whose
-    # date prefix isn't today before inserting the fresh one.
-    _today = _cache_key[0]
-    for _k in [k for k in _VALUE_TABLE_CACHE if k[0] != _today]:
-        _VALUE_TABLE_CACHE.pop(_k, None)
-    _VALUE_TABLE_CACHE[_cache_key] = _result
+    # Only cache a real result. An empty recs means there was no data to compute
+    # from yet — a transient state in the offseason or while the daily cron is
+    # mid-rebuild. Caching that emptiness would serve "no data" for the rest of
+    # the day; instead leave the cache unset so the next request retries and
+    # populates it once the data is actually there. (The user's rule: if it isn't
+    # there for the day, keep trying to create it.)
+    if recs:
+        _today = _cache_key[0]
+        # Keep the cache bounded: drop entries whose date prefix isn't today.
+        for _k in [k for k in _VALUE_TABLE_CACHE if k[0] != _today]:
+            _VALUE_TABLE_CACHE.pop(_k, None)
+        _VALUE_TABLE_CACHE[_cache_key] = _result
     return _result
 
 
