@@ -319,6 +319,10 @@ def build_advanced_metrics_body(
                 <option value="50">Top 50 by X</option>
                 <option value="75">Top 75 by X</option>
               </select></div>
+              <div class="am-gctrl" id="amGraphVolCtrl" style="display:none;">
+                <label id="amGraphVolLabel">Min</label>
+                <select id="amGraphMinVolSel"></select>
+              </div>
               <div class="am-gctrl am-graph-actions">
                 <label>&nbsp;</label>
                 <div style="display:flex;gap:6px;">
@@ -2375,16 +2379,38 @@ _AM_JS = r"""
     });
     return html;
   }
+  // Min vol state for the graph-modal X metric. Initialized to defaultVol(xk)
+  // each time X changes; user can override via the #amGraphMinVolSel control.
+  let _amGraphMinVol = '';
+  let _amGraphLastXk = '';
+  // Populate/show the min-vol control for a given X metric key, or hide it.
+  function _amUpdateGraphVolCtrl(xk) {
+    const ctrl = document.getElementById('amGraphVolCtrl');
+    const sel = document.getElementById('amGraphMinVolSel');
+    const lbl = document.getElementById('amGraphVolLabel');
+    if (!ctrl || !sel) return;
+    const spec = cfg.metrics[xk] && cfg.metrics[xk].minVol;
+    if (!spec || !spec.opts || !spec.opts.length) { ctrl.style.display = 'none'; return; }
+    if (lbl) lbl.textContent = 'Min ' + spec.label;
+    sel.innerHTML = '<option value="">Any</option>'
+      + spec.opts.map(function(v) {
+          return '<option value="' + v + '"' + (String(v) === _amGraphMinVol ? ' selected' : '') + '>' + v + '+</option>';
+        }).join('');
+    sel.value = _amGraphMinVol;
+    ctrl.style.display = '';
+  }
   // Leaderboard params for one metric. Uses the graph-modal's own position filter
   // (_amGraphPos) if set, otherwise falls back to the page's position filter.
-  function _amGraphParams(metricKey) {
+  // For the X metric _amGraphMinVol overrides the default min-vol so the user
+  // can adjust it from the graph modal's own control.
+  function _amGraphParams(metricKey, isX) {
     const p = new URLSearchParams({ metric: metricKey, platform: cfg.platform });
     if (cfg.leagueId) p.set('league_id', cfg.leagueId);
     if (state.season) p.set('season', String(state.season));
     const graphPos = _amGraphPos || (state.position !== 'ALL' ? state.position : null);
     if (graphPos) p.set('position', graphPos);
-    const vol = defaultVol(metricKey);
-    if (vol) p.set('min_vol', vol);
+    const vol = isX ? _amGraphMinVol : defaultVol(metricKey);
+    if (vol) p.set('min_vol', vol); else p.delete('min_vol');
     const wr = resolveWeekRange();
     if (wr.ws) p.set('week_start', String(wr.ws));
     if (wr.we) p.set('week_end', String(wr.we));
@@ -2438,6 +2464,10 @@ _AM_JS = r"""
     ySel.innerHTML = _amGraphMetricOptions(curY);
     zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions('');
     xSel.value = curX; ySel.value = curY; zSel.value = curZ;
+    // Initialise the min-vol control for the chosen X metric.
+    _amGraphLastXk = curX;
+    _amGraphMinVol = defaultVol(curX);
+    _amUpdateGraphVolCtrl(curX);
     // Default graph theme to the site theme each open; preload both logos.
     _amGraphTheme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
     _amSyncGraphThemeBtn();
@@ -2463,11 +2493,17 @@ _AM_JS = r"""
     const xk = xSel.value, yk = ySel.value, zk = zSel ? zSel.value : '';
     const topN = nSel ? (parseInt(nSel.value, 10) || 25) : 25;
     if (!xk || !yk) { plot.innerHTML = '<div class="am-graph-empty">Pick an X and Y metric.</div>'; return; }
+    // When X changes reset min-vol to the new metric's default and refresh the control.
+    if (xk !== _amGraphLastXk) {
+      _amGraphLastXk = xk;
+      _amGraphMinVol = defaultVol(xk);
+      _amUpdateGraphVolCtrl(xk);
+    }
     const token = ++_amGraphToken;
     plot.innerHTML = '<div class="am-graph-empty"><div class="loading-spinner" style="margin:0 auto 10px;"></div>Loading…</div>';
     const uniq = [xk, yk]; if (zk && uniq.indexOf(zk) === -1) uniq.push(zk);
     Promise.all(uniq.map(function(k) {
-      return fetch('/api/advanced-metrics/leaderboard?' + _amGraphParams(k))
+      return fetch('/api/advanced-metrics/leaderboard?' + _amGraphParams(k, k === xk))
         .then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
     })).then(function(results) {
       if (token !== _amGraphToken) return;
@@ -2756,6 +2792,13 @@ _AM_JS = r"""
   // the headshot + selected stats; re-render on resize so layout stays responsive.
   // Also wires the graph-modal position filter buttons.
   (function _amInitGraphInteractions() {
+    const graphVolSel = document.getElementById('amGraphMinVolSel');
+    if (graphVolSel) {
+      graphVolSel.addEventListener('change', function() {
+        _amGraphMinVol = this.value;
+        window.amRenderGraph();
+      });
+    }
     const posBar = document.getElementById('amGraphPosBar');
     if (posBar) {
       posBar.addEventListener('click', function(e) {
