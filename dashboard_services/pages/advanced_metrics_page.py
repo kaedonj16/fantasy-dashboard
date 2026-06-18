@@ -292,12 +292,12 @@ def build_advanced_metrics_body(
         </div>
 
         <div id="amCompareModal" class="am-legend-modal" style="display:none;"
-          onclick="if(event.target===this)this.style.display='none'">
+          onclick="if(event.target===this){this.style.display='none';var b=document.getElementById('amCompareBody');if(b)b.dataset.cmpReady='';}">
           <div class="am-legend-card am-cmp-card" role="dialog" aria-label="Compare pinned players">
             <div class="am-legend-head">
               <span>Compare Pinned Players</span>
               <button type="button" class="am-legend-close" aria-label="Close"
-                onclick="document.getElementById('amCompareModal').style.display='none'">&times;</button>
+                onclick="document.getElementById('amCompareModal').style.display='none';var b=document.getElementById('amCompareBody');if(b)b.dataset.cmpReady='';">&times;</button>
             </div>
             <div class="am-legend-body" id="amCompareBody"></div>
           </div>
@@ -1035,6 +1035,19 @@ _AM_JS = r"""
                   pinnedIds: _loadPins() };
   const MAX_COMPARE = 6;
   const _amCmpWeekly = {};  // `${pid}_${season}` -> weekly series (Compare modal week ranges)
+  const _amCmpSeason = {};   // `${pid}_${season}` -> season-level metrics (non-page seasons)
+  let _amCmpToken = 0;       // guards against overlapping/stale re-renders while dragging
+
+  // Fetch JSON with a hard timeout so a slow/overloaded endpoint can't leave the
+  // Compare modal stuck on "Loading…" forever; on timeout/failure resolve null.
+  function _amCmpFetch(url, ms) {
+    const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const t = ctl ? setTimeout(function() { ctl.abort(); }, ms || 8000) : null;
+    return fetch(url, ctl ? { signal: ctl.signal } : undefined)
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .catch(function() { return null; })
+      .finally(function() { if (t) clearTimeout(t); });
+  }
 
   // Resolve a week-range key into [lo, hi] against the season's last played week.
   function _amCmpBounds(range, wk, maxWk) {
@@ -1594,7 +1607,25 @@ _AM_JS = r"""
     const rangeFor = (p) => state.cmpRanges[String(p.player_id)] || '';
 
     modal.style.display = 'flex';
-    body.innerHTML = '<div style="padding:18px;color:var(--text-muted);font-size:13px;">Loading…</div>';
+    const token = ++_amCmpToken;
+
+    // Only the players whose split needs uncached data require a network call.
+    // Page-season / full-season columns reuse already-loaded values, so adjusting
+    // one player's week range never re-fetches the others — it just re-aggregates
+    // that one player's (cached) weekly series locally.
+    const needsFetch = players.some((p) => {
+      const pid = String(p.player_id);
+      const s = seasonFor(p);
+      if (rangeFor(p)) return !_amCmpWeekly[pid + '_' + s];
+      if (s === pageSeason) return false;
+      return !_amCmpSeason[pid + '_' + s];
+    });
+    // Show the spinner only when we actually have to wait on the network and the
+    // table isn't already on screen — so tweaking a cached range never flashes
+    // (or sticks on) "Loading…".
+    if (needsFetch && body.dataset.cmpReady !== '1') {
+      body.innerHTML = '<div style="padding:18px;color:var(--text-muted);font-size:13px;">Loading…</div>';
+    }
 
     // Resolve each pinned player's data source:
     //   • 'range' – client-side weekly aggregate for a selected week range
@@ -1609,9 +1640,11 @@ _AM_JS = r"""
         const ck = pid + '_' + s;
         let weeks = _amCmpWeekly[ck];
         if (!weeks) {
-          try { weeks = (await fetch('/api/player-weekly-metrics/' + encodeURIComponent(pid) + '?season=' + encodeURIComponent(s)).then(r => r.json())).weeks || []; }
-          catch (_) { weeks = []; }
-          _amCmpWeekly[ck] = weeks;
+          const d = await _amCmpFetch('/api/player-weekly-metrics/' + encodeURIComponent(pid) + '?season=' + encodeURIComponent(s));
+          weeks = (d && d.weeks) || [];
+          // Only cache a real result; don't poison the cache on a transient
+          // failure/timeout so a later interaction can retry.
+          if (weeks.length) _amCmpWeekly[ck] = weeks;
         }
         const maxWk = weeks.length ? Math.max(...weeks.map(w => Number(w.week) || 0)) : 18;
         const [lo, hi] = _amCmpBounds(range, state.cmpWk[pid], maxWk);
@@ -1620,12 +1653,19 @@ _AM_JS = r"""
         return { mode: 'range', agg: agg };
       }
       if (s === pageSeason) return { mode: 'page' };
-      try {
-        const r = await fetch('/api/player-advanced-metrics/' + encodeURIComponent(pid) + '?season=' + encodeURIComponent(s));
-        const d = r.ok ? await r.json() : {};
-        return { mode: 'fetch', metrics: d.metrics || {} };
-      } catch (_) { return { mode: 'fetch', metrics: {} }; }
+      const ck = pid + '_' + s;
+      let metrics = _amCmpSeason[ck];
+      if (!metrics) {
+        const d = await _amCmpFetch('/api/player-advanced-metrics/' + encodeURIComponent(pid) + '?season=' + encodeURIComponent(s));
+        metrics = (d && d.metrics) || {};
+        if (Object.keys(metrics).length) _amCmpSeason[ck] = metrics;
+      }
+      return { mode: 'fetch', metrics: metrics };
     }));
+
+    // A newer drag/season change started while we were awaiting — drop this
+    // stale render so the latest interaction wins (prevents flicker / clobber).
+    if (token !== _amCmpToken) return;
 
     const valueFor = (p, i, key) => {
       const pp = perPlayer[i];
@@ -1699,6 +1739,7 @@ _AM_JS = r"""
           : 'Pick a season or week range per player to compare across splits. Showing the primary metric plus any added metrics; ranks reflect the page season.')
       + '</div>';
     body.innerHTML = html;
+    body.dataset.cmpReady = '1';
     if (window.initCustomSelects) window.initCustomSelects(body);
     _amCmpInitWkBars(players);
     modal.style.display = 'flex';
