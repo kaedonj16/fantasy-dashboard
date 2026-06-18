@@ -343,6 +343,8 @@ def api_player_metric_ranks(player_id: str):
             result["ranks"] = strip_premium_metrics(result["ranks"])
         if isinstance(result, dict) and isinstance(result.get("counts"), dict):
             result["counts"] = strip_premium_metrics(result["counts"])
+        if isinstance(result, dict) and isinstance(result.get("bounds"), dict):
+            result["bounds"] = strip_premium_metrics(result["bounds"])
         resp = jsonify(result)
         # Ranks are computed at most daily; let the browser reuse for a few
         # minutes so reopening player/compare modals is instant.
