@@ -3,14 +3,10 @@ services:
   - type: web
     name: brfantasy
     runtime: python
-    plan: free
-    # OG image rendering (Playwright/Chromium) is intentionally excluded from the
-    # web-service build — the free-plan instance has only 512 MB RAM, and launching
-    # a headless browser pushes it into OOM territory, killing gunicorn workers and
-    # making all page loads hang. og_render.py degrades gracefully to the static
-    # logo when Playwright is unavailable, so share links still work.
-    # To re-enable OG renders, upgrade to a plan with ≥ 2 GB RAM and add:
-    #   && python -m playwright install chromium
+    plan: standard
+    # Playwright/Chromium excluded from web-service build while diagnosing
+    # performance issues — og_render.py degrades gracefully to the static logo.
+    # Re-add `&& python -m playwright install chromium` once confirmed stable.
     buildCommand: pip install -r requirements.txt
     startCommand: python startup.py
     envVars:
