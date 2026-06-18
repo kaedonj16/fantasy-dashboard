@@ -741,12 +741,12 @@ def build_advanced_metrics_body(
          hidden in this compact column; the selected weeks show in the note below. */
       .am-cmp-wkbar-wrap { margin-top:11px; }
       .am-cmp-wkbar-wrap .wk-bar { flex:unset; display:block; width:100%; }
-      /* Compact column can't fit every week label; keep the endpoints as a scale
-         (W1 … W18) and blank the rest. Exact selected weeks show in the note. */
+      /* Compact column can't fit every week label; show every other week
+         starting at W1 (W1, W3, W5 …) as a scale. Exact selected weeks show
+         in the note below. */
       .am-cmp-wkbar-wrap .wk-bar-ticks { display:flex; margin-top:3px; }
       .am-cmp-wkbar-wrap .wk-tick { font-size:0; }
-      .am-cmp-wkbar-wrap .wk-tick:first-child,
-      .am-cmp-wkbar-wrap .wk-tick:last-child { font-size:9px; }
+      .am-cmp-wkbar-wrap .wk-tick:nth-child(odd) { font-size:9px; }
       .am-cmp-wknote { margin-top:6px; font-size:10px; font-weight:700; color:var(--text-muted); }
       .am-cmp-wknote-warn { color:#f59e0b; }
       .am-cmp-wknote-muted { font-weight:600; opacity:.55; }
