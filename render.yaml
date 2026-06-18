@@ -4,11 +4,14 @@ services:
     name: brfantasy
     runtime: python
     plan: free
-    # Chromium is needed at runtime to render social-share (Open Graph) preview
-    # images for shared graphs / trade cards / team cards. Rendering is cached
-    # and degrades gracefully to the static logo if the browser is unavailable.
-    # NOTE: headless Chromium is memory-hungry; on the free plan watch for OOM.
-    buildCommand: pip install -r requirements.txt && python -m playwright install chromium
+    # OG image rendering (Playwright/Chromium) is intentionally excluded from the
+    # web-service build — the free-plan instance has only 512 MB RAM, and launching
+    # a headless browser pushes it into OOM territory, killing gunicorn workers and
+    # making all page loads hang. og_render.py degrades gracefully to the static
+    # logo when Playwright is unavailable, so share links still work.
+    # To re-enable OG renders, upgrade to a plan with ≥ 2 GB RAM and add:
+    #   && python -m playwright install chromium
+    buildCommand: pip install -r requirements.txt
     startCommand: python startup.py
     envVars:
       - key: PYTHON_VERSION
