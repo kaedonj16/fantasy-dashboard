@@ -2995,7 +2995,7 @@ _AM_JS = r"""
       }, 250);
     });
   })();
-  // Download the current graph as a branded PNG.
+  // Download / share the current graph as a branded PNG.
   window.amDownloadGraph = function() {
     const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
     if (!svg) return;
@@ -3014,41 +3014,78 @@ _AM_JS = r"""
     clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
     clone.setAttribute('width', W); clone.setAttribute('height', H);
     const xml = new XMLSerializer().serializeToString(clone);
-    const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+    // Encode as base64 data URI (not raw URI-encoded) — more robust across browsers
+    // for loading an <svg> into an <img>, and avoids issues with special chars.
+    let src;
+    try {
+      src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(xml)));
+    } catch (_) {
+      src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+    }
     flash('Saving…');
+    const xk = document.getElementById('amGraphX').value;
+    const yk = document.getElementById('amGraphY').value;
+    const fname = 'br-metrics-' + xk + '-vs-' + yk + '.png';
     const img = new Image();
     img.onload = function() {
-      const canvas = document.createElement('canvas');
-      canvas.width = W * scale; canvas.height = H * scale;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = TH.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const xk = document.getElementById('amGraphX').value;
-      const yk = document.getElementById('amGraphY').value;
-      const fname = 'br-metrics-' + xk + '-vs-' + yk + '.png';
-      // iOS Safari ignores <a download> and navigates the page — open in new tab instead
-      // so the user can long-press → "Save to Photos / Files".
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-      canvas.toBlob(function(blob) {
-        if (!blob) { flash('Failed'); return; }
-        const objUrl = URL.createObjectURL(blob);
-        if (isIOS) {
-          const w = window.open(objUrl, '_blank');
-          flash(w ? 'Tap & hold to save' : 'Failed');
-          setTimeout(function() { URL.revokeObjectURL(objUrl); }, 15000);
-        } else {
-          const a = document.createElement('a');
-          a.href = objUrl; a.download = fname;
-          a.style.position = 'fixed'; a.style.left = '-9999px';
-          document.body.appendChild(a); a.click();
-          setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(objUrl); }, 1000);
-          flash('Saved ✓');
+      let canvas, blobMaker;
+      try {
+        canvas = document.createElement('canvas');
+        canvas.width = W * scale; canvas.height = H * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = TH.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      } catch (e) { flash('Failed'); return; }
+      // Wrap toBlob in case the canvas is tainted (throws SecurityError).
+      blobMaker = function(cb) {
+        try { canvas.toBlob(cb, 'image/png'); }
+        catch (e) { cb(null); }
+      };
+      blobMaker(function(blob) {
+        if (!blob) {
+          // Last-resort fallback: data-URL anchor download.
+          try {
+            const a = document.createElement('a');
+            a.href = canvas.toDataURL('image/png'); a.download = fname;
+            document.body.appendChild(a); a.click();
+            setTimeout(function() { document.body.removeChild(a); }, 100);
+            flash('Saved ✓');
+          } catch (e2) { flash('Failed'); }
+          return;
         }
-      }, 'image/png');
+        // Prefer the native share sheet on mobile (Save to Photos, Messages, …).
+        let file = null;
+        try { file = new File([blob], fname, { type: 'image/png' }); } catch (_) {}
+        if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], title: 'BR Fantasy Metrics' })
+            .then(function() { flash('Shared ✓'); })
+            .catch(function(err) {
+              if (err && err.name === 'AbortError') { flash('Download'); return; }
+              _amAnchorDownload(blob, fname, flash);
+            });
+          return;
+        }
+        _amAnchorDownload(blob, fname, flash);
+      });
     };
     img.onerror = function() { flash('Failed'); };
     img.src = src;
   };
+  // Trigger a real file download from a Blob via an <a download> click.
+  function _amAnchorDownload(blob, fname, flash) {
+    try {
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl; a.download = fname;
+      a.rel = 'noopener';
+      a.style.position = 'fixed'; a.style.left = '-9999px';
+      document.body.appendChild(a); a.click();
+      setTimeout(function() {
+        document.body.removeChild(a); URL.revokeObjectURL(objUrl);
+      }, 1000);
+      flash('Saved ✓');
+    } catch (e) { flash('Failed'); }
+  }
   // Copy a shareable link that will reopen this exact graph configuration.
   window.amCopyGraphLink = function() {
     const btn = document.getElementById('amGraphCopyBtn');
