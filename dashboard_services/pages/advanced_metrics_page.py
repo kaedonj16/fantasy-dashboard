@@ -833,7 +833,7 @@ def build_advanced_metrics_body(
         border-radius:8px; padding:6px 12px; margin-bottom:10px;
       }
       /* Graph (scatter) modal */
-      .am-graph-card { max-width:720px; max-height:90vh; }
+      .am-graph-card { max-width:720px; max-height:97vh; }
       .am-graph-controls {
         display:flex; flex-wrap:wrap; gap:12px;
         padding:12px 18px; border-bottom:1px solid var(--border);
