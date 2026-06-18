@@ -720,34 +720,38 @@ def build_advanced_metrics_body(
       .am-trend-delta-flat { color:var(--text-muted); opacity:.6; }
       @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { display:none; } }
       /* Pinned-player comparison modal */
-      .am-cmp-card { max-width:720px; }
-      .am-cmp-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
-      .am-cmp-table th, .am-cmp-table td { padding:9px 10px; border-bottom:1px solid var(--border); text-align:left; }
-      .am-cmp-table th { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); }
-      .am-cmp-player-head { font-size:13px !important; text-transform:none !important; letter-spacing:0 !important; color:var(--text) !important; font-weight:800 !important; }
+      .am-cmp-card { max-width:760px; }
+      .am-cmp-table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; margin-top:4px; }
+      .am-cmp-table th, .am-cmp-table td { padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; }
+      .am-cmp-table thead th { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); border-bottom:2px solid var(--border); }
+      .am-cmp-table tbody tr:hover td { background:rgba(128,128,128,.04); }
+      .am-cmp-table th:first-child, .am-cmp-table td:first-child { padding-left:2px; }
+      /* Player header cell */
+      .am-cmp-player-head { vertical-align:top; min-width:150px; text-transform:none !important; letter-spacing:0 !important; color:var(--text) !important; }
+      .am-cmp-head-name { display:flex; align-items:center; gap:6px; font-size:14px; font-weight:800; color:var(--text); }
+      .am-cmp-head-pos { font-size:10px; font-weight:800; padding:1px 6px; border-radius:6px; color:#fff; letter-spacing:.02em; flex-shrink:0; }
       .am-cmp-player-meta { font-size:11px; font-weight:600; color:var(--text-muted); margin-left:5px; }
       /* Sizing feeds the custom dropdown (CSD copies font-weight/radius/padding/
          min-width from the original select onto its .csd-trigger). */
-      .am-cmp-season-sel { font-weight:600; border-radius:8px; padding:4px 10px; min-width:96px; font-size:12px; }
-      .am-cmp-player-head { vertical-align:top; }
-      .am-cmp-player-head .csd-wrap { margin-top:6px; }
-      /* Per-player week-range controls in the Compare modal */
-      .am-cmp-range { display:flex; flex-wrap:wrap; gap:3px; margin-top:6px; }
-      .am-cmp-range-pill { background:var(--bg-alt); border:1px solid var(--border); color:var(--text-muted);
-        border-radius:14px; padding:2px 8px; font-size:11px; font-weight:600; cursor:pointer; transition:all .12s; white-space:nowrap; }
-      .am-cmp-range-pill:hover { color:var(--text); border-color:#3b82f6; }
-      .am-cmp-range-pill.active { background:#3b82f6; border-color:#3b82f6; color:#fff; }
-      .am-cmp-wk { display:flex; align-items:center; gap:3px; margin-top:5px; font-size:11px; color:var(--text-muted); }
-      .am-cmp-wk-input { width:42px; padding:2px 5px; border:1px solid var(--border); border-radius:6px;
-        background:var(--card-bg, var(--card)); color:var(--text); font-size:11px; text-align:center; }
-      .am-cmp-wknote { margin-top:5px; font-size:10px; font-weight:600; color:var(--text-muted); }
+      .am-cmp-season-sel { font-weight:600; border-radius:8px; padding:4px 10px; min-width:92px; font-size:12px; margin-top:8px; }
+      .am-cmp-player-head .csd-wrap { margin-top:8px; }
+      /* Per-player week-range bar (reuses the page's draggable wk-bar). Ticks are
+         hidden in this compact column; the selected weeks show in the note below. */
+      .am-cmp-wkbar-wrap { margin-top:11px; max-width:210px; }
+      .am-cmp-wkbar-wrap .wk-bar { flex:unset; display:block; width:100%; }
+      .am-cmp-wkbar-wrap .wk-bar-ticks { display:none; }
+      .am-cmp-wknote { margin-top:6px; font-size:10px; font-weight:700; color:var(--text-muted); }
       .am-cmp-wknote-warn { color:#f59e0b; }
-      .am-cmp-metric { font-weight:600; color:var(--text); white-space:nowrap; }
-      .am-cmp-val { font-weight:700; font-variant-numeric:tabular-nums; }
+      .am-cmp-wknote-muted { font-weight:600; opacity:.55; }
+      /* Metric rows */
+      .am-cmp-metric { font-weight:700; color:var(--text-muted); white-space:nowrap; font-size:12px; }
+      .am-cmp-val { font-weight:800; font-variant-numeric:tabular-nums; font-size:14px; }
       .am-cmp-best { color:#10b981; }
-      .am-cmp-rank { font-size:10px; color:var(--text-muted); margin-left:5px; font-weight:600; }
-      .am-cmp-bar { height:5px; border-radius:3px; background:rgba(128,128,128,.18); margin-top:5px; overflow:hidden; max-width:120px; }
-      .am-cmp-bar > div { height:100%; border-radius:3px; }
+      .am-cmp-rank { font-size:10px; color:var(--text-muted); margin-left:6px; font-weight:700; }
+      .am-cmp-bar { height:6px; border-radius:4px; background:rgba(128,128,128,.16); margin-top:6px; overflow:hidden; max-width:160px; }
+      .am-cmp-bar > div { height:100%; border-radius:4px; transition:width .2s ease; }
+      .am-cmp-cat-row td { font-size:10px !important; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+        color:var(--text-muted); background:rgba(128,128,128,.05); padding:5px 12px !important; }
       /* YoY trend arrows - inline beside the value */
       .am-val-row { display:flex; align-items:center; gap:3px; }
       .am-trend-up   { font-size:11px; font-weight:700; color:#10b981; line-height:1; flex-shrink:0; }
@@ -1507,53 +1511,56 @@ _AM_JS = r"""
     state.cmpRanges[String(pid)] = '';  // week ranges are season-specific
     window.amShowCompare();
   };
-  // Change a single player's week range in the Compare modal.
-  window.amSetCmpRange = function(pid, range) {
-    state.cmpRanges[String(pid)] = range;
-    if (range === 'custom') {
-      const cur = state.cmpWk[String(pid)] || {};
-      if (!cur.start) cur.start = 1;
-      if (!cur.end) cur.end = 18;
-      state.cmpWk[String(pid)] = cur;
-    }
-    window.amShowCompare();
-  };
-  // Edit a custom week bound, clamped to the player's played weeks (start<=end).
-  window.amSetCmpWeeks = function(pid, which, val) {
-    pid = String(pid);
-    const cur = state.cmpWk[pid] || { start: 1, end: 18 };
-    const season = String(state.cmpSeasons[pid] || state.season || (cfg.seasons && cfg.seasons[0]) || '');
-    const weeks = _amCmpWeekly[pid + '_' + season] || [];
-    const maxWk = weeks.length ? Math.max(...weeks.map(w => Number(w.week) || 0)) : 18;
-    const clamp = v => Math.min(maxWk, Math.max(1, Math.round(Number(v) || 1)));
-    if (which === 'start') cur.start = clamp(val);
-    if (which === 'end') cur.end = clamp(val);
-    if (cur.start > cur.end) { const t = cur.start; cur.start = cur.end; cur.end = t; }
-    state.cmpWk[pid] = cur;
-    state.cmpRanges[pid] = 'custom';
-    window.amShowCompare();
-  };
-  // Per-player week-range pills + custom inputs + games label for the modal header.
+  // Per-player draggable week-range bar + games label for the modal header.
+  // Reuses the page-level wk-bar component (_wkBarBuild/_wkBarInit) so the
+  // compare splits use the same control as the main leaderboard.
   function cmpRangeControls(p, meta) {
+    if (typeof _wkBarBuild !== 'function') return '';
     const pid = String(p.player_id);
     const r = state.cmpRanges[pid] || '';
-    const pill = (val, lbl) => '<button class="am-cmp-range-pill' + (r === val ? ' active' : '')
-      + '" onclick="amSetCmpRange(\'' + pid + '\',\'' + val + '\')">' + lbl + '</button>';
-    let h = '<div class="am-cmp-range">' + pill('', 'Full') + pill('first', '1st') + pill('second', '2nd')
-      + pill('last4', 'L4') + pill('custom', 'Cust') + '</div>';
+    const s = String(state.cmpSeasons[pid] || state.season || (cfg.seasons && cfg.seasons[0]) || '');
+    const latest = String((cfg.seasons && cfg.seasons[0]) || '');
+    // Before weekly data loads we don't know the player's true last week, so
+    // default to the current NFL week for the latest season, else a full 18.
+    const defMax = (s === latest) ? (cfg.currentWeek || 18) : 18;
+    const maxWk = (meta && meta.maxWk) ? meta.maxWk : defMax;
+    let ws = 1, we = maxWk;
     if (r === 'custom') {
-      const wk = state.cmpWk[pid] || { start: 1, end: 18 };
-      const mx = (meta && meta.maxWk) ? meta.maxWk : 18;
-      h += '<div class="am-cmp-wk">Wk '
-        + '<input type="number" min="1" max="' + mx + '" class="am-cmp-wk-input" value="' + (wk.start || 1) + '" onchange="amSetCmpWeeks(\'' + pid + '\',\'start\',this.value)">&ndash;'
-        + '<input type="number" min="1" max="' + mx + '" class="am-cmp-wk-input" value="' + (wk.end || mx) + '" onchange="amSetCmpWeeks(\'' + pid + '\',\'end\',this.value)"></div>';
+      const wk = state.cmpWk[pid] || { start: 1, end: maxWk };
+      ws = Math.min(maxWk, Math.max(1, wk.start || 1));
+      we = Math.min(maxWk, Math.max(ws, wk.end || maxWk));
     }
+    let note;
     if (r && meta) {
-      h += meta.games > 0
-        ? '<div class="am-cmp-wknote">Wks ' + meta.lo + '&ndash;' + meta.hi + ' &middot; ' + meta.games + 'g</div>'
-        : '<div class="am-cmp-wknote am-cmp-wknote-warn">No games in range</div>';
+      note = meta.games > 0
+        ? 'Wks ' + meta.lo + '&ndash;' + meta.hi + ' &middot; ' + meta.games + 'g'
+        : '<span class="am-cmp-wknote-warn">No games in range</span>';
+    } else {
+      note = '<span class="am-cmp-wknote-muted">Full season &middot; drag to filter</span>';
     }
-    return h;
+    return '<div class="am-cmp-wkbar-wrap">' + _wkBarBuild('amCmpWk_' + pid, 1, maxWk, ws, we)
+      + '<div class="am-cmp-wknote">' + note + '</div></div>';
+  }
+
+  // Wire drag interaction on every per-player week bar after a modal re-render.
+  function _amCmpInitWkBars(players) {
+    if (typeof _wkBarInit !== 'function') return;
+    players.forEach(function(p) {
+      const pid = String(p.player_id);
+      const bar = document.getElementById('amCmpWk_' + pid);
+      if (!bar) return;
+      const mx = Number(bar.dataset.max) || (cfg.currentWeek || 18);
+      _wkBarInit('amCmpWk_' + pid, function(ws, we) {
+        if (ws <= 1 && we >= mx) {
+          state.cmpRanges[pid] = '';   // full season
+          state.cmpWk[pid] = null;
+        } else {
+          state.cmpRanges[pid] = 'custom';
+          state.cmpWk[pid] = { start: ws, end: we };
+        }
+        window.amShowCompare();
+      });
+    });
   }
 
   window.amShowCompare = async function() {
@@ -1645,8 +1652,10 @@ _AM_JS = r"""
       const opts = seasonsList.map(yr =>
         '<option value="' + yr + '"' + (String(yr) === s ? ' selected' : '') + '>' + yr + '</option>'
       ).join('');
-      html += '<th class="am-cmp-player-head">' + (p.name || '')
-        + '<span class="am-cmp-player-meta" style="color:' + posColor(p.position) + '">' + (p.position || '') + '</span>'
+      html += '<th class="am-cmp-player-head">'
+        + '<div class="am-cmp-head-name">' + (p.name || '')
+        + (p.position ? '<span class="am-cmp-head-pos" style="background:' + posColor(p.position) + '">' + p.position + '</span>' : '')
+        + '</div>'
         + (seasonsList.length
             ? '<select class="am-cmp-season-sel" onchange="amSetCmpSeason(\'' + pid + '\', this.value)">' + opts + '</select>' + cmpRangeControls(p, rangeMeta[pid])
             : '<span class="am-cmp-player-meta">' + (p.team || '') + '</span>')
@@ -1696,6 +1705,7 @@ _AM_JS = r"""
       + '</div>';
     body.innerHTML = html;
     if (window.initCustomSelects) window.initCustomSelects(body);
+    _amCmpInitWkBars(players);
     modal.style.display = 'flex';
   };
 
