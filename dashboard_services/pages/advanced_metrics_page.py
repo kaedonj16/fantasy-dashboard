@@ -334,6 +334,13 @@ def build_advanced_metrics_body(
                 </div>
               </div>
             </div>
+            <div class="am-graph-pos-bar" id="amGraphPosBar">
+              <button class="am-pos active" data-gpos="">All</button>
+              <button class="am-pos" data-gpos="QB">QB</button>
+              <button class="am-pos" data-gpos="RB">RB</button>
+              <button class="am-pos" data-gpos="WR">WR</button>
+              <button class="am-pos" data-gpos="TE">TE</button>
+            </div>
             <div class="am-graph-plot-wrap">
               <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
               <div id="amGraphHover" class="am-graph-hover"></div>
@@ -831,6 +838,11 @@ def build_advanced_metrics_body(
       }
       .am-graph-actions { flex:0 0 auto !important; min-width:0 !important; justify-content:flex-end; margin-left:auto; }
       .am-graph-actions .am-add-stat-btn { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+      /* Position filter bar inside the graph modal */
+      .am-graph-pos-bar {
+        display:flex; gap:6px; padding:8px 18px;
+        border-bottom:1px solid var(--border); flex-wrap:wrap;
+      }
       /* Plot area flexes and scrolls inside the 82vh card so controls never clip. */
       .am-graph-plot-wrap { position:relative; padding:14px 16px 16px; overflow:auto; flex:1 1 auto; min-height:0; -webkit-overflow-scrolling:touch; }
       /* Hover/tap card: player headshot + the selected stats. Uses site-theme
@@ -2334,9 +2346,12 @@ _AM_JS = r"""
     _amSyncGraphThemeBtn();
     window.amRenderGraph();
   };
-  // Build <optgroup> options from cfg.metrics, filtered to the active position.
+  // Position filter local to the graph modal (null = all). Initialized from
+  // state.position each time the modal opens; can be changed without leaving the modal.
+  let _amGraphPos = null;
+  // Build <optgroup> options from cfg.metrics, filtered to the graph-local position.
   function _amGraphMetricOptions(selectedKey) {
-    const pos = (state.position && state.position !== 'ALL') ? state.position : null;
+    const pos = _amGraphPos;
     const cats = {};
     Object.keys(cfg.metrics).forEach(function(k) {
       const m = cfg.metrics[k];
@@ -2360,12 +2375,14 @@ _AM_JS = r"""
     });
     return html;
   }
-  // Leaderboard params for one metric, mirroring the page's current filters.
+  // Leaderboard params for one metric. Uses the graph-modal's own position filter
+  // (_amGraphPos) if set, otherwise falls back to the page's position filter.
   function _amGraphParams(metricKey) {
     const p = new URLSearchParams({ metric: metricKey, platform: cfg.platform });
     if (cfg.leagueId) p.set('league_id', cfg.leagueId);
     if (state.season) p.set('season', String(state.season));
-    if (state.position && state.position !== 'ALL') p.set('position', state.position);
+    const graphPos = _amGraphPos || (state.position !== 'ALL' ? state.position : null);
+    if (graphPos) p.set('position', graphPos);
     const vol = defaultVol(metricKey);
     if (vol) p.set('min_vol', vol);
     const wr = resolveWeekRange();
@@ -2376,6 +2393,15 @@ _AM_JS = r"""
   let _amGraphToken = 0;
   let _amPinnedDot = null;
   const _amHsPreload = {};
+  // Sync the graph-modal's position button active states to _amGraphPos.
+  function _amSyncGraphPosBtns() {
+    const bar = document.getElementById('amGraphPosBar');
+    if (!bar) return;
+    bar.querySelectorAll('[data-gpos]').forEach(function(btn) {
+      const v = btn.getAttribute('data-gpos');
+      btn.classList.toggle('active', v === (_amGraphPos || ''));
+    });
+  }
   window.amOpenGraph = function() {
     const modal = document.getElementById('amGraphModal');
     const xSel = document.getElementById('amGraphX');
@@ -2383,28 +2409,30 @@ _AM_JS = r"""
     const zSel = document.getElementById('amGraphZ');
     const note = document.getElementById('amGraphCtxNote');
     if (!modal || !xSel || !ySel || !zSel) return;
-    const pos = (state.position && state.position !== 'ALL') ? state.position : null;
+    // Initialize the graph-local position filter from the page's current position.
+    _amGraphPos = (state.position && state.position !== 'ALL') ? state.position : null;
+    _amSyncGraphPosBtns();
     const applic = Object.keys(cfg.metrics).filter(function(k) {
       const m = cfg.metrics[k];
-      return !pos || !m.positions || m.positions.indexOf(pos) >= 0;
+      return !_amGraphPos || !m.positions || m.positions.indexOf(_amGraphPos) >= 0;
     });
-    const okk = function(k) { return k && cfg.metrics[k] && applic.indexOf(k) >= 0; };
-    // Curated default scatters per position: opportunity (X) vs efficiency (Y),
-    // bubble = overall value/explosiveness. Falls back to a generic pick below.
-    const PRESETS = {
-      WR: { x: 'target_share',      y: 'yards_per_target', z: 'receiving_epa' },
-      RB: { x: 'opportunity_share', y: 'yards_per_carry',  z: 'rushing_epa' },
-      TE: { x: 'target_share',      y: 'yards_per_reception', z: 'receiving_epa' },
-    };
-    let curX, curY, curZ = '';
-    const preset = pos ? PRESETS[pos] : null;
-    if (preset && okk(preset.x) && okk(preset.y)) {
-      curX = preset.x; curY = preset.y; curZ = okk(preset.z) ? preset.z : '';
-    } else {
-      curX = (applic.indexOf(state.metric) >= 0) ? state.metric : (applic[0] || state.metric);
-      const xm = cfg.metrics[curX];
-      curY = applic.find(function(k) { return k !== curX && cfg.metrics[k].category === (xm && xm.category); })
-        || applic.find(function(k) { return k !== curX; }) || curX;
+    // X = current primary metric; Y = next metric in same category.
+    // If primary is the last in its category, use the one above it instead
+    // (so Y is always adjacent and never from a different category).
+    let curX = (applic.indexOf(state.metric) >= 0) ? state.metric : (applic[0] || '');
+    let curY = '', curZ = '';
+    if (curX) {
+      const xCat = cfg.metrics[curX] && cfg.metrics[curX].category;
+      // Sort within category by label (same order as the dropdown) for a stable "next".
+      const catMetrics = applic
+        .filter(function(k) { return cfg.metrics[k].category === xCat; })
+        .sort(function(a, b) { return cfg.metrics[a].label.localeCompare(cfg.metrics[b].label); });
+      const idx = catMetrics.indexOf(curX);
+      if (catMetrics.length > 1) {
+        curY = idx < catMetrics.length - 1 ? catMetrics[idx + 1] : catMetrics[idx - 1];
+      } else {
+        curY = applic.find(function(k) { return k !== curX; }) || '';
+      }
     }
     xSel.innerHTML = _amGraphMetricOptions(curX);
     ySel.innerHTML = _amGraphMetricOptions(curY);
@@ -2417,7 +2445,7 @@ _AM_JS = r"""
     if (note) {
       const bits = [];
       bits.push(state.season || (cfg.seasons && cfg.seasons[0]) || '');
-      bits.push(pos ? pos : 'All positions');
+      bits.push(_amGraphPos ? _amGraphPos : 'All positions');
       const wr = resolveWeekRange();
       if (wr.ws && wr.we) bits.push('W' + wr.ws + '–W' + wr.we);
       note.textContent = bits.filter(Boolean).join(' · ');
@@ -2448,18 +2476,22 @@ _AM_JS = r"""
       const xRows = byKey[xk];
       const yMap = new Map(byKey[yk].map(function(r) { return [String(r.player_id), Number(r.value)]; }));
       const zMap = zk ? new Map((byKey[zk] || []).map(function(r) { return [String(r.player_id), Number(r.value)]; })) : null;
-      let pts = [];
+      let ptsAll = [];
       xRows.forEach(function(rx) {
         const pid = String(rx.player_id);
         if (!yMap.has(pid)) return;
         const xv = Number(rx.value), yv = yMap.get(pid);
         if (!isFinite(xv) || !isFinite(yv)) return;
-        pts.push({ pid: pid, name: rx.name, position: rx.position, headshot: rx.headshot || '',
-                   x: xv, y: yv, z: (zMap && zMap.has(pid)) ? zMap.get(pid) : null });
+        ptsAll.push({ pid: pid, name: rx.name, position: rx.position, headshot: rx.headshot || '',
+                      x: xv, y: yv, z: (zMap && zMap.has(pid)) ? zMap.get(pid) : null });
       });
       const xLower = cfg.metrics[xk] && cfg.metrics[xk].lowerBetter;
-      pts.sort(function(a, b) { return xLower ? a.x - b.x : b.x - a.x; });
-      pts = pts.slice(0, topN);
+      ptsAll.sort(function(a, b) { return xLower ? a.x - b.x : b.x - a.x; });
+      // Compute averages from the FULL eligible population so average lines are
+      // consistent regardless of the TopN display setting.
+      const avgXFull = ptsAll.length ? ptsAll.reduce(function(s, p) { return s + p.x; }, 0) / ptsAll.length : 0;
+      const avgYFull = ptsAll.length ? ptsAll.reduce(function(s, p) { return s + p.y; }, 0) / ptsAll.length : 0;
+      const pts = ptsAll.slice(0, topN);
       if (!pts.length) {
         plot.innerHTML = '<div class="am-graph-empty">No players have data for both metrics with the current filters.</div>';
         return;
@@ -2474,7 +2506,7 @@ _AM_JS = r"""
       _amPinnedDot = null; _amHideHoverForce();
       _amLoadLogo(_amGraphTheme).then(function(logo) {
         if (token !== _amGraphToken) return;
-        plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo);
+        plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo, avgXFull, avgYFull);
         const tipEl = document.getElementById('amGraphTip');
         if (tipEl) tipEl.innerHTML = '<span style="opacity:.6">Hover or tap a point for player details</span>';
         // Signal the social-preview renderer that the graph is fully drawn.
@@ -2489,7 +2521,9 @@ _AM_JS = r"""
   // Builds a fully self-contained SVG (explicit theme colors, embedded logo
   // watermark, in-SVG title/legend) so it renders identically on screen and when
   // rasterized to a shareable PNG. `logo` is a data: URI (may be empty).
-  function _amBuildScatter(pts, xk, yk, zk, logo) {
+  // `avgXFull`/`avgYFull` are averages from the full population; when provided
+  // the crosshair lines reflect the whole position group, not just the visible TopN.
+  function _amBuildScatter(pts, xk, yk, zk, logo, avgXFull, avgYFull) {
     const TH = _amGraphPalette();
     const FONT = "system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
     // Responsive layout: a portrait viewBox with larger relative fonts on phones
@@ -2559,10 +2593,11 @@ _AM_JS = r"""
     s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 38), _amEsc(cfg.metrics[xk].label), L.fAxis, TH.text, 700, 'middle');
     s += txt(0, 0, _amEsc(cfg.metrics[yk].label), L.fAxis, TH.text, 700, 'middle',
       'translate(15,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)');
-    // Average reference lines (mean of the plotted players) — dashed crosshair
-    // that splits the chart into above/below-average quadrants.
-    const avgX = xs.reduce(function(a, b) { return a + b; }, 0) / xs.length;
-    const avgY = ys.reduce(function(a, b) { return a + b; }, 0) / ys.length;
+    // Average reference lines — crosshair splitting above/below-average quadrants.
+    // Uses the full-population averages passed from amRenderGraph so the lines
+    // are stable regardless of the TopN setting.
+    const avgX = (avgXFull != null) ? avgXFull : xs.reduce(function(a, b) { return a + b; }, 0) / xs.length;
+    const avgY = (avgYFull != null) ? avgYFull : ys.reduce(function(a, b) { return a + b; }, 0) / ys.length;
     const avgCol = (_amGraphTheme === 'dark') ? '#f59e0b' : '#d97706';
     if (avgX >= xmin && avgX <= xmax) {
       const ax = px(avgX);
@@ -2719,7 +2754,37 @@ _AM_JS = r"""
   };
   // One-time wiring: hover (desktop) / tap (touch) a point to show a card with
   // the headshot + selected stats; re-render on resize so layout stays responsive.
+  // Also wires the graph-modal position filter buttons.
   (function _amInitGraphInteractions() {
+    const posBar = document.getElementById('amGraphPosBar');
+    if (posBar) {
+      posBar.addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-gpos]');
+        if (!btn) return;
+        _amGraphPos = btn.getAttribute('data-gpos') || null;
+        _amSyncGraphPosBtns();
+        // Rebuild metric selectors filtered to the new position, preserving
+        // current X/Y selections where valid.
+        const xSel = document.getElementById('amGraphX');
+        const ySel = document.getElementById('amGraphY');
+        const zSel = document.getElementById('amGraphZ');
+        const curX = xSel ? xSel.value : '';
+        const curY = ySel ? ySel.value : '';
+        const curZ = zSel ? zSel.value : '';
+        if (xSel) { xSel.innerHTML = _amGraphMetricOptions(curX); xSel.value = curX; }
+        if (ySel) { ySel.innerHTML = _amGraphMetricOptions(curY); ySel.value = curY; }
+        if (zSel) { zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions(curZ); zSel.value = curZ; }
+        // Update context note
+        const note = document.getElementById('amGraphCtxNote');
+        if (note) {
+          const bits = [state.season || '', _amGraphPos || 'All positions'];
+          const wr = resolveWeekRange();
+          if (wr.ws && wr.we) bits.push('W' + wr.ws + '–W' + wr.we);
+          note.textContent = bits.filter(Boolean).join(' · ');
+        }
+        window.amRenderGraph();
+      });
+    }
     const plot = document.getElementById('amGraphPlot');
     if (plot) {
       plot.addEventListener('mousemove', function(e) {
@@ -2760,6 +2825,16 @@ _AM_JS = r"""
     const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
     if (!svg) return;
     const btn = document.getElementById('amGraphDownloadBtn');
+    const flash = function(msg) {
+      if (!btn) return;
+      const prev = btn.innerHTML;
+      btn.innerHTML = msg;
+      setTimeout(function() { btn.innerHTML = prev; }, 2500);
+    };
+    // On touch/mobile, data-URL anchor clicks navigate the current page away on
+    // iOS Safari, closing the modal and losing graph state. Redirect to Copy Link.
+    const isMobile = navigator.maxTouchPoints > 1 || window.matchMedia('(pointer:coarse)').matches;
+    if (isMobile) { flash('Use Copy Link ↑'); return; }
     const TH = _amGraphPalette();
     const vb = (svg.getAttribute('viewBox') || '0 0 720 580').split(/\s+/).map(Number);
     const W = vb[2] || 720, H = vb[3] || 580, scale = 2;
@@ -2769,12 +2844,6 @@ _AM_JS = r"""
     clone.setAttribute('width', W); clone.setAttribute('height', H);
     const xml = new XMLSerializer().serializeToString(clone);
     const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
-    const flash = function(msg) {
-      if (!btn) return;
-      const prev = btn.innerHTML;
-      btn.innerHTML = msg;
-      setTimeout(function() { btn.innerHTML = prev; }, 1400);
-    };
     flash('Saving…');
     const img = new Image();
     img.onload = function() {
