@@ -10367,11 +10367,11 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts) {
   // Value: VORP / WAR — season-only, injected by the API for season views.
   if (metrics.vorp != null) {
     const v = metrics.vorp;
-    defs.push({ label: 'VORP', fill: Math.min(Math.max(v, 0) / 150 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('vorp'), cat: 'Value' });
+    defs.push({ label: 'VORP', fill: Math.min(Math.max(v, 0) / 150 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'vorp', sub: _rankSub('vorp'), cat: 'Value' });
   }
   if (metrics.war != null) {
     const v = metrics.war;
-    defs.push({ label: 'WAR', fill: Math.min(Math.max(v, 0) / 6 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), sub: _rankSub('war'), cat: 'Value' });
+    defs.push({ label: 'WAR', fill: Math.min(Math.max(v, 0) / 6 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), key: 'war', sub: _rankSub('war'), cat: 'Value' });
   }
 
   // Role Score (0–100)
@@ -10382,33 +10382,33 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts) {
   if (metrics.snap_share != null && position !== "QB") {
     const pct = metrics.snap_share * 100;
     const snapLabel = (position === 'WR' || position === 'TE') ? 'Route Partic' : 'Snap Share';
-    defs.push({ label: snapLabel, fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('snap_share'), cat: 'General' });
+    defs.push({ label: snapLabel, fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', key: 'snap_share', sub: _rankSub('snap_share'), cat: 'General' });
   }
 
   if (position === 'QB') {
     if (metrics.pff_passing_grade != null) {
       const v = metrics.pff_passing_grade;
-      defs.push({ label: 'PFF Pass Grade', fill: v, display: v.toFixed(1), sub: _rankSub('pff_passing_grade'), cat: 'Passing' });
+      defs.push({ label: 'PFF Pass Grade', fill: v, display: v.toFixed(1), key: 'pff_passing_grade', sub: _rankSub('pff_passing_grade'), cat: 'Passing' });
     }
     if (metrics.big_time_throw_rate != null) {
       const v = metrics.big_time_throw_rate;
-      defs.push({ label: 'BTT Rate', fill: Math.min(v / 15 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('big_time_throw_rate'), cat: 'Passing' });
+      defs.push({ label: 'BTT Rate', fill: Math.min(v / 15 * 100, 100), display: v.toFixed(1) + '%', key: 'big_time_throw_rate', sub: _rankSub('big_time_throw_rate'), cat: 'Passing' });
     }
     if (metrics.adjusted_completion_rate != null) {
       const v = metrics.adjusted_completion_rate;
-      defs.push({ label: 'Adj Comp %', fill: Math.min(Math.max(v - 55, 0) / 35 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('adjusted_completion_rate'), cat: 'Passing' });
+      defs.push({ label: 'Adj Comp %', fill: Math.min(Math.max(v - 55, 0) / 35 * 100, 100), display: v.toFixed(1) + '%', key: 'adjusted_completion_rate', sub: _rankSub('adjusted_completion_rate'), cat: 'Passing' });
     }
     if (metrics.nfl_passer_rating != null) {
       const v = metrics.nfl_passer_rating;
-      defs.push({ label: 'Passer Rating', fill: Math.min(Math.max(v - 60, 0) / 70 * 100, 100), display: v.toFixed(1), sub: _rankSub('nfl_passer_rating'), cat: 'Passing' });
+      defs.push({ label: 'Passer Rating', fill: Math.min(Math.max(v - 60, 0) / 70 * 100, 100), display: v.toFixed(1), key: 'nfl_passer_rating', sub: _rankSub('nfl_passer_rating'), cat: 'Passing' });
     }
     if (metrics.yards_per_attempt != null) {
       const v = metrics.yards_per_attempt;
-      defs.push({ label: 'Yds/Attempt', fill: Math.min(Math.max(v - 4, 0) / 6 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_attempt'), cat: 'Passing' });
+      defs.push({ label: 'Yds/Attempt', fill: Math.min(Math.max(v - 4, 0) / 6 * 100, 100), display: v.toFixed(1), key: 'yards_per_attempt', sub: _rankSub('yards_per_attempt'), cat: 'Passing' });
     }
     if (metrics.completion_pct != null) {
       const pct = metrics.completion_pct;
-      defs.push({ label: 'Completion %', fill: Math.min(Math.max(pct - 50, 0) / 35 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('completion_pct'), cat: 'Passing' });
+      defs.push({ label: 'Completion %', fill: Math.min(Math.max(pct - 50, 0) / 35 * 100, 100), display: pct.toFixed(1) + '%', key: 'completion_pct', sub: _rankSub('completion_pct'), cat: 'Passing' });
     }
     if (metrics.td_rate != null && metrics.int_rate != null && metrics.int_rate > 0) {
       const ratio = metrics.td_rate / metrics.int_rate;
@@ -10416,121 +10416,121 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts) {
     }
     if (metrics.passing_epa != null) {
       const v = metrics.passing_epa;
-      defs.push({ label: 'Passing EPA', fill: Math.min(Math.max(v + 50, 0) / 200 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('passing_epa'), cat: 'Passing' });
+      defs.push({ label: 'Passing EPA', fill: Math.min(Math.max(v + 50, 0) / 200 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'passing_epa', sub: _rankSub('passing_epa'), cat: 'Passing' });
     }
     if (metrics.epa_per_play != null) {
       const v = metrics.epa_per_play;
-      defs.push({ label: 'EPA/Play', fill: Math.min(Math.max(v + 0.2, 0) / 0.5 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), sub: _rankSub('epa_per_play'), cat: 'Passing' });
+      defs.push({ label: 'EPA/Play', fill: Math.min(Math.max(v + 0.2, 0) / 0.5 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), key: 'epa_per_play', sub: _rankSub('epa_per_play'), cat: 'Passing' });
     }
     if (metrics.cpoe != null) {
       const v = metrics.cpoe;
-      defs.push({ label: 'CPOE', fill: Math.min(Math.max(v + 5, 0) / 15 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1) + '%', sub: _rankSub('cpoe'), cat: 'Passing' });
+      defs.push({ label: 'CPOE', fill: Math.min(Math.max(v + 5, 0) / 15 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1) + '%', key: 'cpoe', sub: _rankSub('cpoe'), cat: 'Passing' });
     }
     if (metrics.success_rate != null) {
       const v = metrics.success_rate;
-      defs.push({ label: 'Success Rate', fill: Math.min(v / 55 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('success_rate'), cat: 'Passing' });
+      defs.push({ label: 'Success Rate', fill: Math.min(v / 55 * 100, 100), display: v.toFixed(1) + '%', key: 'success_rate', sub: _rankSub('success_rate'), cat: 'Passing' });
     }
     if (metrics.sack_rate != null) {
       const v = metrics.sack_rate;
-      defs.push({ label: 'Sack Rate', fill: Math.max(0, 100 - v * 8), display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 8 ? '#f59e0b' : '#ef4444', sub: _rankSub('sack_rate'), cat: 'Passing' });
+      defs.push({ label: 'Sack Rate', fill: Math.max(0, 100 - v * 8), display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 8 ? '#f59e0b' : '#ef4444', key: 'sack_rate', sub: _rankSub('sack_rate'), cat: 'Passing' });
     }
     if (metrics.pressure_to_sack_rate != null) {
       const v = metrics.pressure_to_sack_rate;
       const fill = Math.max(0, 100 - v);
-      defs.push({ label: 'Pressure→Sack%', fill, display: v.toFixed(1) + '%', forceColor: v <= 20 ? '#10b981' : v <= 35 ? '#3b82f6' : '#ef4444', sub: _rankSub('pressure_to_sack_rate'), cat: 'Passing' });
+      defs.push({ label: 'Pressure→Sack%', fill, display: v.toFixed(1) + '%', forceColor: v <= 20 ? '#10b981' : v <= 35 ? '#3b82f6' : '#ef4444', key: 'pressure_to_sack_rate', sub: _rankSub('pressure_to_sack_rate'), cat: 'Passing' });
     }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
-      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_carry'), cat: 'Rushing' });
+      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1), key: 'yards_per_carry', sub: _rankSub('yards_per_carry'), cat: 'Rushing' });
     }
     if (metrics.rush_td_rate != null) {
       const v = metrics.rush_td_rate;
-      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 800, 100), display: (v * 100).toFixed(1) + '%', sub: _rankSub('rush_td_rate'), cat: 'Rushing' });
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 800, 100), display: (v * 100).toFixed(1) + '%', key: 'rush_td_rate', sub: _rankSub('rush_td_rate'), cat: 'Rushing' });
     }
   } else if (position === 'RB') {
     if (metrics.pff_rushing_grade != null) {
       const v = metrics.pff_rushing_grade;
-      defs.push({ label: 'PFF Rush Grade', fill: v, display: v.toFixed(1), sub: _rankSub('pff_rushing_grade'), cat: 'Rushing' });
+      defs.push({ label: 'PFF Rush Grade', fill: v, display: v.toFixed(1), key: 'pff_rushing_grade', sub: _rankSub('pff_rushing_grade'), cat: 'Rushing' });
     }
     if (metrics.breakaway_percentage != null) {
       const v = metrics.breakaway_percentage;
-      defs.push({ label: 'Breakaway %', fill: Math.min(v * 2.5, 100), display: v.toFixed(1) + '%', sub: _rankSub('breakaway_percentage'), cat: 'Rushing' });
+      defs.push({ label: 'Breakaway %', fill: Math.min(v * 2.5, 100), display: v.toFixed(1) + '%', key: 'breakaway_percentage', sub: _rankSub('breakaway_percentage'), cat: 'Rushing' });
     }
     if (metrics.explosive_runs_10_plus != null) {
       const v = metrics.explosive_runs_10_plus;
-      defs.push({ label: 'Explosive Runs', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(0), sub: _rankSub('explosive_runs_10_plus'), cat: 'Rushing' });
+      defs.push({ label: 'Explosive Runs', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(0), key: 'explosive_runs_10_plus', sub: _rankSub('explosive_runs_10_plus'), cat: 'Rushing' });
     }
     if (metrics.rushing_epa != null) {
       const v = metrics.rushing_epa;
-      defs.push({ label: 'Rushing EPA', fill: Math.min(Math.max(v + 20, 0) / 60 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('rushing_epa'), cat: 'Rushing' });
+      defs.push({ label: 'Rushing EPA', fill: Math.min(Math.max(v + 20, 0) / 60 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'rushing_epa', sub: _rankSub('rushing_epa'), cat: 'Rushing' });
     }
     if (metrics.ngs_rush_yards_over_expected_per_att != null) {
       const v = metrics.ngs_rush_yards_over_expected_per_att;
-      defs.push({ label: 'RYOE/Att', fill: Math.min(Math.max(v + 1, 0) / 2.5 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), sub: _rankSub('ngs_rush_yards_over_expected_per_att'), cat: 'Rushing' });
+      defs.push({ label: 'RYOE/Att', fill: Math.min(Math.max(v + 1, 0) / 2.5 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), key: 'ngs_rush_yards_over_expected_per_att', sub: _rankSub('ngs_rush_yards_over_expected_per_att'), cat: 'Rushing' });
     }
     if (metrics.elusive_rating != null) {
       const v = metrics.elusive_rating;
-      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 200 * 100, 100), display: v.toFixed(1), sub: _rankSub('elusive_rating'), cat: 'Rushing' });
+      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 200 * 100, 100), display: v.toFixed(1), key: 'elusive_rating', sub: _rankSub('elusive_rating'), cat: 'Rushing' });
     }
     if (metrics.avoided_tackles != null && metrics.avoided_tackles > 0) {
       const v = metrics.avoided_tackles;
-      defs.push({ label: 'Avoided Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0), sub: _rankSub('avoided_tackles'), cat: 'Rushing' });
+      defs.push({ label: 'Avoided Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0), key: 'avoided_tackles', sub: _rankSub('avoided_tackles'), cat: 'Rushing' });
     }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
-      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_carry'), cat: 'Rushing' });
+      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1), key: 'yards_per_carry', sub: _rankSub('yards_per_carry'), cat: 'Rushing' });
     }
     if (metrics.yards_per_touch != null) {
       const v = metrics.yards_per_touch;
-      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_touch'), cat: 'General' });
+      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), key: 'yards_per_touch', sub: _rankSub('yards_per_touch'), cat: 'General' });
     }
     if (metrics.rush_td_rate != null) {
       const v = metrics.rush_td_rate;
-      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%', sub: _rankSub('rush_td_rate'), cat: 'Rushing' });
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%', key: 'rush_td_rate', sub: _rankSub('rush_td_rate'), cat: 'Rushing' });
     }
     if (metrics.opportunity_share != null) {
       const oppShare = metrics.opportunity_share;
       const fillPercent = Math.min(oppShare * 4, 100);
       const color = oppShare >= 25 ? '#10b981' : oppShare >= 15 ? '#3b82f6' : oppShare >= 10 ? '#f59e0b' : '#6b7280';
-      defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color, sub: _rankSub('opportunity_share'), cat: 'General' });
+      defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color, key: 'opportunity_share', sub: _rankSub('opportunity_share'), cat: 'General' });
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
-      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 95 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('catch_rate'), cat: 'Receiving' });
+      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 95 * 100, 100), display: pct.toFixed(1) + '%', key: 'catch_rate', sub: _rankSub('catch_rate'), cat: 'Receiving' });
     }
     if (metrics.grades_offense != null) {
       const v = metrics.grades_offense;
-      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1), sub: _rankSub('grades_offense'), cat: 'Rushing' });
+      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1), key: 'grades_offense', sub: _rankSub('grades_offense'), cat: 'Rushing' });
     }
   } else if (position === 'WR' || position === 'TE') {
     if (metrics.grades_offense != null) {
       const v = metrics.grades_offense;
-      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1), sub: _rankSub('grades_offense'), cat: 'Receiving' });
+      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1), key: 'grades_offense', sub: _rankSub('grades_offense'), cat: 'Receiving' });
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
-      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('catch_rate'), cat: 'Receiving' });
+      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', key: 'catch_rate', sub: _rankSub('catch_rate'), cat: 'Receiving' });
     }
     if (metrics.yprr != null) {
       const v = metrics.yprr;
-      defs.push({ label: 'Yds/Route Run', fill: Math.min(v / 3.0 * 100, 100), display: v.toFixed(2), sub: _rankSub('yprr'), cat: 'Receiving' });
+      defs.push({ label: 'Yds/Route Run', fill: Math.min(v / 3.0 * 100, 100), display: v.toFixed(2), key: 'yprr', sub: _rankSub('yprr'), cat: 'Receiving' });
     }
     if (metrics.drop_rate != null) {
       const v = metrics.drop_rate;
       const fill = Math.max(0, 100 - v * 5);
-      defs.push({ label: 'Drop Rate', fill, display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 10 ? '#f59e0b' : '#ef4444', sub: _rankSub('drop_rate'), cat: 'Receiving' });
+      defs.push({ label: 'Drop Rate', fill, display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 10 ? '#f59e0b' : '#ef4444', key: 'drop_rate', sub: _rankSub('drop_rate'), cat: 'Receiving' });
     }
     if (metrics.yards_per_target != null) {
       const v = metrics.yards_per_target;
-      defs.push({ label: 'Yds/Target', fill: Math.min(Math.max(v - 2, 0) / 10 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_target'), cat: 'Receiving' });
+      defs.push({ label: 'Yds/Target', fill: Math.min(Math.max(v - 2, 0) / 10 * 100, 100), display: v.toFixed(1), key: 'yards_per_target', sub: _rankSub('yards_per_target'), cat: 'Receiving' });
     }
     if (metrics.yards_per_reception != null) {
       const v = metrics.yards_per_reception;
-      defs.push({ label: 'Yds/Reception', fill: Math.min(Math.max(v - 4, 0) / 14 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_reception'), cat: 'Receiving' });
+      defs.push({ label: 'Yds/Reception', fill: Math.min(Math.max(v - 4, 0) / 14 * 100, 100), display: v.toFixed(1), key: 'yards_per_reception', sub: _rankSub('yards_per_reception'), cat: 'Receiving' });
     }
     if (metrics.yards_after_catch_per_reception != null) {
       const v = metrics.yards_after_catch_per_reception;
-      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_after_catch_per_reception'), cat: 'Receiving' });
+      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1), key: 'yards_after_catch_per_reception', sub: _rankSub('yards_after_catch_per_reception'), cat: 'Receiving' });
     }
     if (metrics.yards_after_catch != null) {
       const v = metrics.yards_after_catch;
@@ -10538,48 +10538,48 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts) {
     }
     if (metrics.avg_depth_of_target != null) {
       const v = metrics.avg_depth_of_target;
-      defs.push({ label: 'aDOT', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), sub: _rankSub('avg_depth_of_target'), cat: 'Receiving' });
+      defs.push({ label: 'aDOT', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), key: 'avg_depth_of_target', sub: _rankSub('avg_depth_of_target'), cat: 'Receiving' });
     }
     if (metrics.contested_catch_rate != null) {
       const v = metrics.contested_catch_rate;
-      defs.push({ label: 'Contested Catch %', fill: Math.min(v / 65 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('contested_catch_rate'), cat: 'Receiving' });
+      defs.push({ label: 'Contested Catch %', fill: Math.min(v / 65 * 100, 100), display: v.toFixed(1) + '%', key: 'contested_catch_rate', sub: _rankSub('contested_catch_rate'), cat: 'Receiving' });
     }
     if (metrics.ngs_avg_separation != null) {
       const v = metrics.ngs_avg_separation;
-      defs.push({ label: 'Separation', fill: Math.min(v / 5 * 100, 100), display: v.toFixed(1), sub: _rankSub('ngs_avg_separation'), cat: 'Receiving' });
+      defs.push({ label: 'Separation', fill: Math.min(v / 5 * 100, 100), display: v.toFixed(1), key: 'ngs_avg_separation', sub: _rankSub('ngs_avg_separation'), cat: 'Receiving' });
     }
     if (metrics.ngs_avg_cushion != null) {
       const v = metrics.ngs_avg_cushion;
-      defs.push({ label: 'Cushion', fill: Math.min(v / 9 * 100, 100), display: v.toFixed(1), sub: _rankSub('ngs_avg_cushion'), cat: 'Receiving' });
+      defs.push({ label: 'Cushion', fill: Math.min(v / 9 * 100, 100), display: v.toFixed(1), key: 'ngs_avg_cushion', sub: _rankSub('ngs_avg_cushion'), cat: 'Receiving' });
     }
     if (metrics.ngs_avg_yac_above_expectation != null) {
       const v = metrics.ngs_avg_yac_above_expectation;
-      defs.push({ label: 'YAC Over Expected', fill: Math.min(Math.max(v + 2, 0) / 4 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('ngs_avg_yac_above_expectation'), cat: 'Receiving' });
+      defs.push({ label: 'YAC Over Expected', fill: Math.min(Math.max(v + 2, 0) / 4 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'ngs_avg_yac_above_expectation', sub: _rankSub('ngs_avg_yac_above_expectation'), cat: 'Receiving' });
     }
     if (metrics.target_share != null) {
       const pct = metrics.target_share;
-      defs.push({ label: 'Target Share', fill: Math.min(pct / 28 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('target_share'), cat: 'Receiving' });
+      defs.push({ label: 'Target Share', fill: Math.min(pct / 28 * 100, 100), display: pct.toFixed(1) + '%', key: 'target_share', sub: _rankSub('target_share'), cat: 'Receiving' });
     }
     if (metrics.air_yards_per_game != null) {
       const v = metrics.air_yards_per_game;
-      defs.push({ label: 'Air Yds/Game', fill: Math.min(v / 110 * 100, 100), display: v.toFixed(1), sub: _rankSub('air_yards_per_game'), cat: 'Receiving' });
+      defs.push({ label: 'Air Yds/Game', fill: Math.min(v / 110 * 100, 100), display: v.toFixed(1), key: 'air_yards_per_game', sub: _rankSub('air_yards_per_game'), cat: 'Receiving' });
     }
     if (metrics.air_yards_share != null) {
       const pct = metrics.air_yards_share;
-      defs.push({ label: 'Air Yards Share', fill: Math.min(pct / 35 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('air_yards_share'), cat: 'Receiving' });
+      defs.push({ label: 'Air Yards Share', fill: Math.min(pct / 35 * 100, 100), display: pct.toFixed(1) + '%', key: 'air_yards_share', sub: _rankSub('air_yards_share'), cat: 'Receiving' });
     }
     if (metrics.wopr != null) {
       const v = metrics.wopr;
       // WOPR ≥ 0.50 is elite; scale bar so 0.65 = 100%
-      defs.push({ label: 'WOPR', fill: Math.min(v / 0.65 * 100, 100), display: v.toFixed(3), sub: _rankSub('wopr'), cat: 'Receiving' });
+      defs.push({ label: 'WOPR', fill: Math.min(v / 0.65 * 100, 100), display: v.toFixed(3), key: 'wopr', sub: _rankSub('wopr'), cat: 'Receiving' });
     }
     if (metrics.target_quality_score != null) {
       const v = metrics.target_quality_score;
-      defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), sub: _rankSub('target_quality_score'), cat: 'Receiving' });
+      defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), key: 'target_quality_score', sub: _rankSub('target_quality_score'), cat: 'Receiving' });
     }
     if (metrics.receiving_epa != null) {
       const v = metrics.receiving_epa;
-      defs.push({ label: 'Receiving EPA', fill: Math.min(Math.max(v + 20, 0) / 80 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('receiving_epa'), cat: 'Receiving' });
+      defs.push({ label: 'Receiving EPA', fill: Math.min(Math.max(v + 20, 0) / 80 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'receiving_epa', sub: _rankSub('receiving_epa'), cat: 'Receiving' });
     }
     if (metrics.slot_rate != null) {
       const v = metrics.slot_rate;
@@ -10603,21 +10603,21 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts) {
     }
     if (metrics.yards_per_touch != null) {
       const v = metrics.yards_per_touch;
-      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_touch'), cat: 'General' });
+      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), key: 'yards_per_touch', sub: _rankSub('yards_per_touch'), cat: 'General' });
     }
     if (metrics.total_touches != null) {
-      defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 150 * 100, 100), display: Math.round(metrics.total_touches).toString(), sub: _rankSub('total_touches'), cat: 'General' });
+      defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 150 * 100, 100), display: Math.round(metrics.total_touches).toString(), key: 'total_touches', sub: _rankSub('total_touches'), cat: 'General' });
     }
   }
 
   if (metrics.target_quality_score != null && position === 'RB') {
     const v = metrics.target_quality_score;
-    defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), sub: _rankSub('target_quality_score'), cat: 'Receiving' });
+    defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), key: 'target_quality_score', sub: _rankSub('target_quality_score'), cat: 'Receiving' });
   }
 
   if (metrics.red_zone_usage != null && position !== 'QB') {
     const v = metrics.red_zone_usage;
-    defs.push({ label: 'RZ Usage/G', fill: Math.min(v / 3 * 100, 100), display: v.toFixed(1), sub: _rankSub('red_zone_usage'), cat: 'General' });
+    defs.push({ label: 'RZ Usage/G', fill: Math.min(v / 3 * 100, 100), display: v.toFixed(1), key: 'red_zone_usage', sub: _rankSub('red_zone_usage'), cat: 'General' });
   }
 
   if (metrics.usage_trend != null) {
@@ -10647,46 +10647,46 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts) {
   // PPR fantasy points (all positions, when available — week range view)
   if (metrics.ppr_pts != null) {
     const _ppMax = position === 'QB' ? 500 : position === 'RB' ? 350 : 300;
-    defs.push({ label: 'PPR Points', fill: Math.min(metrics.ppr_pts / _ppMax * 100, 100), display: Math.round(metrics.ppr_pts).toString(), sub: _rankSub('ppr_pts'), cat: 'General' });
+    defs.push({ label: 'PPR Points', fill: Math.min(metrics.ppr_pts / _ppMax * 100, 100), display: Math.round(metrics.ppr_pts).toString(), key: 'ppr_pts', sub: _rankSub('ppr_pts'), cat: 'General' });
   }
   if (metrics.ppr_pts_per_game != null) {
-    defs.push({ label: 'PPR Pts/G', fill: Math.min(metrics.ppr_pts_per_game / 30 * 100, 100), display: metrics.ppr_pts_per_game.toFixed(1), sub: _rankSub('ppr_pts_per_game'), cat: 'General' });
+    defs.push({ label: 'PPR Pts/G', fill: Math.min(metrics.ppr_pts_per_game / 30 * 100, 100), display: metrics.ppr_pts_per_game.toFixed(1), key: 'ppr_pts_per_game', sub: _rankSub('ppr_pts_per_game'), cat: 'General' });
   }
 
   // Volume metrics per position (replacing old volDefs section)
   if (position === 'WR' || position === 'TE') {
     const _tpg = metrics.targets_per_game != null ? metrics.targets_per_game : _pg(metrics.total_targets);
-    if (_tpg != null) defs.push({ label: 'Targets/G', fill: Math.min(_tpg / (position === 'TE' ? 8 : 12) * 100, 100), display: _tpg.toFixed(1), sub: _rankSub('targets_per_game'), cat: 'Receiving' });
+    if (_tpg != null) defs.push({ label: 'Targets/G', fill: Math.min(_tpg / (position === 'TE' ? 8 : 12) * 100, 100), display: _tpg.toFixed(1), key: 'targets_per_game', sub: _rankSub('targets_per_game'), cat: 'Receiving' });
     const _rpg = metrics.receptions_per_game != null ? metrics.receptions_per_game : _pg(metrics.total_receptions);
-    if (_rpg != null) defs.push({ label: 'Receptions/G', fill: Math.min(_rpg / 9 * 100, 100), display: _rpg.toFixed(1), sub: _rankSub('receptions_per_game'), cat: 'Receiving' });
+    if (_rpg != null) defs.push({ label: 'Receptions/G', fill: Math.min(_rpg / 9 * 100, 100), display: _rpg.toFixed(1), key: 'receptions_per_game', sub: _rankSub('receptions_per_game'), cat: 'Receiving' });
     const _recypg = metrics.rec_yards_per_game != null ? metrics.rec_yards_per_game : _pg(metrics.total_rec_yards);
-    if (_recypg != null) defs.push({ label: 'Rec Yds/G', fill: Math.min(_recypg / 100 * 100, 100), display: _recypg.toFixed(1), sub: _rankSub('rec_yards_per_game'), cat: 'Receiving' });
-    if (metrics.total_targets != null) defs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / (position === 'TE' ? 120 : 180) * 100, 100), display: Math.round(metrics.total_targets).toString(), sub: _rankSub('total_targets'), cat: 'Volume' });
-    if (metrics.total_receptions != null) defs.push({ label: 'Receptions', fill: Math.min(metrics.total_receptions / 130 * 100, 100), display: Math.round(metrics.total_receptions).toString(), sub: _rankSub('total_receptions'), cat: 'Volume' });
-    if (metrics.total_rec_yards != null) defs.push({ label: 'Rec Yards', fill: Math.min(metrics.total_rec_yards / 1500 * 100, 100), display: Math.round(metrics.total_rec_yards).toString(), sub: _rankSub('total_rec_yards'), cat: 'Volume' });
+    if (_recypg != null) defs.push({ label: 'Rec Yds/G', fill: Math.min(_recypg / 100 * 100, 100), display: _recypg.toFixed(1), key: 'rec_yards_per_game', sub: _rankSub('rec_yards_per_game'), cat: 'Receiving' });
+    if (metrics.total_targets != null) defs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / (position === 'TE' ? 120 : 180) * 100, 100), display: Math.round(metrics.total_targets).toString(), key: 'total_targets', sub: _rankSub('total_targets'), cat: 'Volume' });
+    if (metrics.total_receptions != null) defs.push({ label: 'Receptions', fill: Math.min(metrics.total_receptions / 130 * 100, 100), display: Math.round(metrics.total_receptions).toString(), key: 'total_receptions', sub: _rankSub('total_receptions'), cat: 'Volume' });
+    if (metrics.total_rec_yards != null) defs.push({ label: 'Rec Yards', fill: Math.min(metrics.total_rec_yards / 1500 * 100, 100), display: Math.round(metrics.total_rec_yards).toString(), key: 'total_rec_yards', sub: _rankSub('total_rec_yards'), cat: 'Volume' });
     const _recTdMax = position === 'TE' ? 12 : 14;
-    if (metrics.total_rec_tds != null) defs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / _recTdMax * 100, 100), display: Math.round(metrics.total_rec_tds).toString(), sub: _rankSub('total_rec_tds'), cat: 'Receiving' });
-    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 15 * 100, 100), display: Math.round(metrics.total_tds).toString(), sub: _rankSub('total_tds'), cat: 'General' });
+    if (metrics.total_rec_tds != null) defs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / _recTdMax * 100, 100), display: Math.round(metrics.total_rec_tds).toString(), key: 'total_rec_tds', sub: _rankSub('total_rec_tds'), cat: 'Receiving' });
+    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 15 * 100, 100), display: Math.round(metrics.total_tds).toString(), key: 'total_tds', sub: _rankSub('total_tds'), cat: 'General' });
   } else if (position === 'RB') {
     const _cpg = metrics.carries_per_game != null ? metrics.carries_per_game : _pg(metrics.total_carries);
-    if (_cpg != null) defs.push({ label: 'Carries/G', fill: Math.min(_cpg / 22 * 100, 100), display: _cpg.toFixed(1), sub: _rankSub('carries_per_game'), cat: 'Rushing' });
-    if (metrics.total_carries != null) defs.push({ label: 'Carries', fill: Math.min(metrics.total_carries / 300 * 100, 100), display: Math.round(metrics.total_carries).toString(), sub: _rankSub('total_carries'), cat: 'Volume' });
+    if (_cpg != null) defs.push({ label: 'Carries/G', fill: Math.min(_cpg / 22 * 100, 100), display: _cpg.toFixed(1), key: 'carries_per_game', sub: _rankSub('carries_per_game'), cat: 'Rushing' });
+    if (metrics.total_carries != null) defs.push({ label: 'Carries', fill: Math.min(metrics.total_carries / 300 * 100, 100), display: Math.round(metrics.total_carries).toString(), key: 'total_carries', sub: _rankSub('total_carries'), cat: 'Volume' });
     const _tpgRb = metrics.targets_per_game != null ? metrics.targets_per_game : _pg(metrics.total_targets);
-    if (_tpgRb != null) defs.push({ label: 'Targets/G', fill: Math.min(_tpgRb / 7 * 100, 100), display: _tpgRb.toFixed(1), sub: _rankSub('targets_per_game'), cat: 'Receiving' });
-    if (metrics.total_targets != null) defs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / 100 * 100, 100), display: Math.round(metrics.total_targets).toString(), sub: _rankSub('total_targets'), cat: 'Volume' });
+    if (_tpgRb != null) defs.push({ label: 'Targets/G', fill: Math.min(_tpgRb / 7 * 100, 100), display: _tpgRb.toFixed(1), key: 'targets_per_game', sub: _rankSub('targets_per_game'), cat: 'Receiving' });
+    if (metrics.total_targets != null) defs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / 100 * 100, 100), display: Math.round(metrics.total_targets).toString(), key: 'total_targets', sub: _rankSub('total_targets'), cat: 'Volume' });
     const _thpgRb = metrics.touches_per_game != null ? metrics.touches_per_game : _pg(metrics.total_touches);
-    if (_thpgRb != null) defs.push({ label: 'Touches/G', fill: Math.min(_thpgRb / 25 * 100, 100), display: _thpgRb.toFixed(1), sub: _rankSub('touches_per_game'), cat: 'General' });
-    if (metrics.total_touches != null) defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 300 * 100, 100), display: Math.round(metrics.total_touches).toString(), sub: _rankSub('total_touches'), cat: 'Volume' });
-    if (metrics.total_rush_yards != null) defs.push({ label: 'Rush Yards', fill: Math.min(metrics.total_rush_yards / 1700 * 100, 100), display: Math.round(metrics.total_rush_yards).toString(), sub: _rankSub('total_rush_yards'), cat: 'Volume' });
-    if (metrics.total_rush_tds != null) defs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 16 * 100, 100), display: Math.round(metrics.total_rush_tds).toString(), sub: _rankSub('total_rush_tds'), cat: 'Rushing' });
-    if (metrics.total_rec_tds != null) defs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / 8 * 100, 100), display: Math.round(metrics.total_rec_tds).toString(), sub: _rankSub('total_rec_tds'), cat: 'Receiving' });
-    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 20 * 100, 100), display: Math.round(metrics.total_tds).toString(), sub: _rankSub('total_tds'), cat: 'General' });
+    if (_thpgRb != null) defs.push({ label: 'Touches/G', fill: Math.min(_thpgRb / 25 * 100, 100), display: _thpgRb.toFixed(1), key: 'touches_per_game', sub: _rankSub('touches_per_game'), cat: 'General' });
+    if (metrics.total_touches != null) defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 300 * 100, 100), display: Math.round(metrics.total_touches).toString(), key: 'total_touches', sub: _rankSub('total_touches'), cat: 'Volume' });
+    if (metrics.total_rush_yards != null) defs.push({ label: 'Rush Yards', fill: Math.min(metrics.total_rush_yards / 1700 * 100, 100), display: Math.round(metrics.total_rush_yards).toString(), key: 'total_rush_yards', sub: _rankSub('total_rush_yards'), cat: 'Volume' });
+    if (metrics.total_rush_tds != null) defs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 16 * 100, 100), display: Math.round(metrics.total_rush_tds).toString(), key: 'total_rush_tds', sub: _rankSub('total_rush_tds'), cat: 'Rushing' });
+    if (metrics.total_rec_tds != null) defs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / 8 * 100, 100), display: Math.round(metrics.total_rec_tds).toString(), key: 'total_rec_tds', sub: _rankSub('total_rec_tds'), cat: 'Receiving' });
+    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 20 * 100, 100), display: Math.round(metrics.total_tds).toString(), key: 'total_tds', sub: _rankSub('total_tds'), cat: 'General' });
   } else if (position === 'QB') {
-    if (metrics.total_pass_tds != null) defs.push({ label: 'Pass TDs', fill: Math.min(metrics.total_pass_tds / 40 * 100, 100), display: Math.round(metrics.total_pass_tds).toString(), sub: _rankSub('total_pass_tds'), cat: 'Passing' });
+    if (metrics.total_pass_tds != null) defs.push({ label: 'Pass TDs', fill: Math.min(metrics.total_pass_tds / 40 * 100, 100), display: Math.round(metrics.total_pass_tds).toString(), key: 'total_pass_tds', sub: _rankSub('total_pass_tds'), cat: 'Passing' });
     const _ptpg = metrics.pass_tds_per_game != null ? metrics.pass_tds_per_game : _pg(metrics.total_pass_tds);
-    if (_ptpg != null) defs.push({ label: 'Pass TDs/G', fill: Math.min(_ptpg / 3 * 100, 100), display: _ptpg.toFixed(1), sub: _rankSub('pass_tds_per_game'), cat: 'Passing' });
-    if (metrics.total_rush_tds != null) defs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 15 * 100, 100), display: Math.round(metrics.total_rush_tds).toString(), sub: _rankSub('total_rush_tds'), cat: 'Rushing' });
-    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 45 * 100, 100), display: Math.round(metrics.total_tds).toString(), sub: _rankSub('total_tds'), cat: 'General' });
+    if (_ptpg != null) defs.push({ label: 'Pass TDs/G', fill: Math.min(_ptpg / 3 * 100, 100), display: _ptpg.toFixed(1), key: 'pass_tds_per_game', sub: _rankSub('pass_tds_per_game'), cat: 'Passing' });
+    if (metrics.total_rush_tds != null) defs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 15 * 100, 100), display: Math.round(metrics.total_rush_tds).toString(), key: 'total_rush_tds', sub: _rankSub('total_rush_tds'), cat: 'Rushing' });
+    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 45 * 100, 100), display: Math.round(metrics.total_tds).toString(), key: 'total_tds', sub: _rankSub('total_tds'), cat: 'General' });
   }
 
   // Append any remaining cfg metrics not already covered above
@@ -10751,6 +10751,16 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts) {
       defs.push({ label: spec.label || key, key, fill, display: displayStr, sub: _rankSub(key), desc: spec.desc || '' });
     }
   }
+
+  // Rank-drive every bar that has a positional rank: bar length then reflects
+  // "how good vs. position" rather than an arbitrary value scale (and is
+  // consistent with the Compare modal). Defs with a forced color (trend arrows)
+  // and metrics without a rank keep their value-based fill.
+  defs.forEach(function(d) {
+    if (!d.key || d.forceColor) return;
+    const rf = _rankFillPM(d.key);
+    if (rf != null) d.fill = rf;
+  });
 
   if (defs.length === 0) return '';
 
