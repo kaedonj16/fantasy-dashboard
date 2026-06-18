@@ -741,7 +741,12 @@ def build_advanced_metrics_body(
          hidden in this compact column; the selected weeks show in the note below. */
       .am-cmp-wkbar-wrap { margin-top:11px; }
       .am-cmp-wkbar-wrap .wk-bar { flex:unset; display:block; width:100%; }
-      .am-cmp-wkbar-wrap .wk-bar-ticks { display:none; }
+      /* Compact column can't fit every week label; keep the endpoints as a scale
+         (W1 … W18) and blank the rest. Exact selected weeks show in the note. */
+      .am-cmp-wkbar-wrap .wk-bar-ticks { display:flex; margin-top:3px; }
+      .am-cmp-wkbar-wrap .wk-tick { font-size:0; }
+      .am-cmp-wkbar-wrap .wk-tick:first-child,
+      .am-cmp-wkbar-wrap .wk-tick:last-child { font-size:9px; }
       .am-cmp-wknote { margin-top:6px; font-size:10px; font-weight:700; color:var(--text-muted); }
       .am-cmp-wknote-warn { color:#f59e0b; }
       .am-cmp-wknote-muted { font-weight:600; opacity:.55; }
@@ -1640,23 +1645,10 @@ _AM_JS = r"""
 
     const anyRange = players.some(p => rangeFor(p));
 
-    // When any player has a week range, expand to show all weekly metrics
-    // applicable to the players' positions, grouped by category.
-    if (anyRange) {
-      const allPos = new Set(players.map(p => (p.position || '').toUpperCase()).filter(Boolean));
-      const weeklyKeys = [];
-      for (const [key, spec] of Object.entries(cfg.metrics)) {
-        if (!spec.weeklyCapable) continue;
-        if (spec.positions && spec.positions.length) {
-          if (!spec.positions.some(p => allPos.has(p))) continue;
-        }
-        weeklyKeys.push(key);
-      }
-      const ordered = _orderByCategory(weeklyKeys);
-      const seen = new Set([state.metric]);
-      metricsList = [state.metric];
-      for (const k of ordered) { if (!seen.has(k)) { metricsList.push(k); seen.add(k); } }
-    }
+    // Always show exactly the metrics the user selected on the page (primary +
+    // any added compare metrics) — even when a week range is active. Week ranges
+    // simply re-aggregate those same metrics over the chosen weeks.
+    metricsList = [state.metric, ...state.extraMetrics];
 
     let html = '<table class="am-cmp-table"><thead><tr><th>Metric</th>';
     players.forEach((p) => {
@@ -1676,7 +1668,6 @@ _AM_JS = r"""
     });
     html += '</tr></thead><tbody>';
 
-    let _lastCmpCat = null;
     metricsList.forEach(key => {
       const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
       const lower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
@@ -1687,15 +1678,6 @@ _AM_JS = r"""
         ? (lower ? Math.min(...present) : Math.max(...present))
         : null;
       const barMax = present.length ? Math.max(...present.map(v => Math.abs(v))) || 1 : 1;
-
-      if (anyRange) {
-        const spec = cfg.metrics[key];
-        const cat = (spec && spec.category) || '';
-        if (cat && cat !== _lastCmpCat) {
-          html += '<tr class="am-cmp-cat-row"><td colspan="' + (players.length + 1) + '">' + cat + '</td></tr>';
-          _lastCmpCat = cat;
-        }
-      }
 
       html += '<tr><td class="am-cmp-metric">' + lbl + '</td>';
       players.forEach((p, i) => {
