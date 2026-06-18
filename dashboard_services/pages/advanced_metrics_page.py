@@ -719,8 +719,10 @@ def build_advanced_metrics_body(
       .am-trend-delta-down { color:#ef4444; }
       .am-trend-delta-flat { color:var(--text-muted); opacity:.6; }
       @media (max-width:600px) { .am-trendcell { min-width:80px; } .am-spark { display:none; } }
-      /* Pinned-player comparison modal */
-      .am-cmp-card { max-width:760px; }
+      /* Pinned-player comparison modal — width grows with player count */
+      .am-cmp-card { max-width:min(95vw,1100px); }
+      .am-legend-body { overflow-x:auto; }
+      .am-cmp-table { min-width:520px; }
       .am-cmp-table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; margin-top:4px; }
       .am-cmp-table th, .am-cmp-table td { padding:10px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; }
       .am-cmp-table thead th { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); border-bottom:2px solid var(--border); }
@@ -737,7 +739,7 @@ def build_advanced_metrics_body(
       .am-cmp-player-head .csd-wrap { margin-top:8px; }
       /* Per-player week-range bar (reuses the page's draggable wk-bar). Ticks are
          hidden in this compact column; the selected weeks show in the note below. */
-      .am-cmp-wkbar-wrap { margin-top:11px; max-width:210px; }
+      .am-cmp-wkbar-wrap { margin-top:11px; }
       .am-cmp-wkbar-wrap .wk-bar { flex:unset; display:block; width:100%; }
       .am-cmp-wkbar-wrap .wk-bar-ticks { display:none; }
       .am-cmp-wknote { margin-top:6px; font-size:10px; font-weight:700; color:var(--text-muted); }
@@ -1189,10 +1191,15 @@ _AM_JS = r"""
     return '<span class="am-pct-badge" style="color:' + color + '">' + label + '</span>';
   }
 
+  const _AM_MAX_PINS = 5;
   window.amTogglePin = function(id) {
     const sid = String(id);
-    if (state.pinnedIds.has(sid)) state.pinnedIds.delete(sid);
-    else state.pinnedIds.add(sid);
+    if (state.pinnedIds.has(sid)) {
+      state.pinnedIds.delete(sid);
+    } else {
+      if (state.pinnedIds.size >= _AM_MAX_PINS) return; // silently ignore beyond 5
+      state.pinnedIds.add(sid);
+    }
     _savePins();
     render();
   };
@@ -1569,6 +1576,12 @@ _AM_JS = r"""
     if (!modal || !body) return;
     const players = pinnedRows();
     if (players.length < 2) return;
+    // Size card to content: each player column needs ~180px, metric label ~140px.
+    const card = modal.querySelector('.am-cmp-card');
+    if (card) {
+      const ideal = 140 + players.length * 180;
+      card.style.maxWidth = Math.min(Math.max(560, ideal), window.innerWidth * 0.95) + 'px';
+    }
     let metricsList = [state.metric, ...state.extraMetrics];
     const pageSeason = String(state.season || (cfg.seasons && cfg.seasons[0]) || '');
     const seasonsList = (cfg.seasons || []).slice();
@@ -2166,7 +2179,7 @@ _AM_JS = r"""
       const ownedBadge = owned ? '<span class="am-owned-badge">YOURS</span>' : '';
       const pinBtn = '<button class="am-pin-btn' + (pinned ? ' am-pin-active' : '') + '" '
         + 'onclick="event.stopPropagation();amTogglePin(\'' + r.player_id + '\')" '
-        + 'title="' + (pinned ? 'Unpin' : 'Pin to top') + '">' + _PIN_SVG + '</button>';
+        + 'title="' + (pinned ? 'Unpin' : (state.pinnedIds.size >= _AM_MAX_PINS ? 'Unpin another player first (max 5)' : 'Pin to compare')) + '">' + _PIN_SVG + '</button>';
       const rankCell = '<td class="am-rank"><div class="am-rank-cell">' + pinBtn + '<span>' + rank + '</span></div></td>';
       const playerCell = '<td class="am-player"><div class="am-player-inner">'
         + '<span class="am-name">' + (r.name || '') + '</span>'
