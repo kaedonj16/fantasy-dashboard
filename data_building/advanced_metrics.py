@@ -2557,6 +2557,18 @@ def get_metric_leaderboard(
     return out
 
 
+def _rank_counts(all_ranks: Dict[str, Dict[str, int]]) -> Dict[str, int]:
+    """Per-metric count of qualified (ranked) players, used as the denominator
+    for converting a rank into a positional percentile on the client (so bar
+    widths reflect 'how good vs. position' rather than an arbitrary value scale).
+    """
+    counts: Dict[str, int] = {}
+    for pranks in all_ranks.values():
+        for metric in pranks:
+            counts[metric] = counts.get(metric, 0) + 1
+    return counts
+
+
 def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dict[str, Any]:
     """
     Return position-relative volume ranks for one player in a given season.
@@ -2590,7 +2602,8 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
         _cached_all = _POSITION_RANKS_CACHE.get(_cache_key)
         if _cached_all is not None:
             return {"position": position, "season": season,
-                    "ranks": _cached_all.get(str(player_id), {})}
+                    "ranks": _cached_all.get(str(player_id), {}),
+                    "counts": _rank_counts(_cached_all)}
 
         try:
             result = conn.execute("""
@@ -2889,7 +2902,8 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
             _POSITION_RANKS_CACHE.pop(_k, None)
 
         return {"position": position, "season": season,
-                "ranks": all_ranks.get(str(player_id), {})}
+                "ranks": all_ranks.get(str(player_id), {}),
+                "counts": _rank_counts(all_ranks)}
 
 
 def get_player_weekly_metric_ranks(
@@ -3023,6 +3037,7 @@ def get_player_weekly_metric_ranks(
 
     # ── Rank the target player within each metric ────────────────────────────
     ranks: Dict[str, int] = {}
+    counts: Dict[str, int] = {}
     for metric, vals in value_by_metric.items():
         if target not in vals:
             continue
@@ -3033,9 +3048,10 @@ def get_player_weekly_metric_ranks(
         else:
             better = sum(1 for v in vals.values() if v > my)
         ranks[metric] = better + 1
+        counts[metric] = len(vals)
 
     return {"position": position, "season": season,
-            "week_start": lo, "week_end": hi, "ranks": ranks}
+            "week_start": lo, "week_end": hi, "ranks": ranks, "counts": counts}
 
 
 def get_top_role_players(position: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:

@@ -9841,12 +9841,13 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
             if (token !== _advMetricsToken) return;
             const ranks = (ranksData && ranksData.ranks && Object.keys(ranksData.ranks).length)
               ? ranksData.ranks : null;
-            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive);
+            const counts = (ranksData && ranksData.counts) ? ranksData.counts : null;
+            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts);
           }).catch(function() {
-            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive);
+            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive, null);
           });
         } else {
-          contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive);
+          contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive, null);
         }
       });
 
@@ -10314,7 +10315,8 @@ const _ADV_METRIC_DESCS = {
   'Rush Yards': "Total rushing yards in the season.",
 };
 
-function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
+function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts) {
+  counts = counts || {};
   let metrics = metricsData.metrics || {};
   // Normalize PFF position codes to canonical fantasy positions
   const _posNorm = { HB: 'RB', FB: 'RB', SE: 'WR', FL: 'WR' };
@@ -10337,6 +10339,30 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
     return `(#${ranks[key]})`;
   }
   function _pg(total) { return (g > 0 && total != null) ? total / g : null; }
+  // Positional rank → 0-100 bar fill (rank 1 = best ≈ 100%, last ≈ small floor).
+  // Reflects "how good vs. position", so it's accurate and position-aware.
+  // Returns null when no rank/denominator is available for the metric.
+  function _rankFillPM(key) {
+    if (!ranks || ranks[key] == null) return null;
+    const c = counts[key];
+    if (!c || c < 2) return null;
+    const pctile = (c - ranks[key]) / (c - 1);
+    return 8 + pctile * 92;
+  }
+  // Realistic elite value for metrics that fall through to the generic loop and
+  // have no positional rank (e.g. career view). Used so bars don't render at a
+  // misleading width from the old "abs*5" / flat-100 heuristics.
+  const _PM_FALLBACK_SCALE = {
+    wopr: 0.65, air_yards_share: 38, air_yards_per_game: 110,
+    targets_per_game: 11, receptions_per_game: 8,
+    carries_per_game: 18, touches_per_game: 20,
+    rz_carries_pg: 3, rz_targets_pg: 2.5, red_zone_usage: 3,
+    rec_yards_per_game: 100, rush_yards_per_game: 110,
+    yprr: 3, route_participation: 100, routes_per_game: 40,
+    pass_tds_per_game: 2.5, rush_tds_per_game: 1, rec_tds_per_game: 1,
+    total_tds_per_game: 1.5, fpts_per_carry: 1.5, fpts_per_reception: 3,
+    explosive_runs_pg: 2, avoided_tackles_pg: 2.5,
+  };
 
   // Value: VORP / WAR — season-only, injected by the API for season views.
   if (metrics.vorp != null) {
@@ -10703,14 +10729,24 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
         if (!spec.positions.includes(position)) continue;
       }
       let fill, displayStr;
-      if (spec.pct_frac) { fill = Math.min(val * 100, 100); displayStr = (val * 100).toFixed(1) + '%'; }
-      else if (spec.pct) { fill = Math.min(Math.abs(val), 100); displayStr = val.toFixed(1) + '%'; }
-      else if (spec.integer) { fill = Math.min(Math.abs(val), 100); displayStr = Math.round(val).toString(); }
-      else {
-        const abs = Math.abs(val);
-        fill = abs < 1 ? abs * 100 : Math.min(abs * 5, 100);
+      // Display string (independent of bar scaling).
+      if (spec.pct_frac) displayStr = (val * 100).toFixed(1) + '%';
+      else if (spec.pct) displayStr = val.toFixed(1) + '%';
+      else if (spec.integer) displayStr = Math.round(val).toString();
+      else { const abs = Math.abs(val); displayStr = val.toFixed(abs >= 10 ? 1 : 2); }
+      // Bar fill: prefer positional rank-percentile (accurate + position-aware);
+      // fall back to a corrected per-metric value scale, then a generic formula.
+      const rf = _rankFillPM(key);
+      if (rf != null) {
+        fill = rf;  // rank already encodes direction (good = high), no flip
+      } else {
+        const sc = _PM_FALLBACK_SCALE[key];
+        if (spec.pct_frac) fill = Math.min(val * 100, 100);
+        else if (sc) fill = Math.min(Math.abs(val) / sc * 100, 100);
+        else if (spec.pct) fill = Math.min(Math.abs(val), 100);
+        else if (spec.integer) fill = Math.min(Math.abs(val), 100);
+        else { const abs = Math.abs(val); fill = abs < 1 ? abs * 100 : Math.min(abs * 5, 100); }
         if (spec.lower_better) fill = Math.max(0, 100 - fill);
-        displayStr = val.toFixed(abs >= 10 ? 1 : 2);
       }
       defs.push({ label: spec.label || key, key, fill, display: displayStr, sub: _rankSub(key), desc: spec.desc || '' });
     }
@@ -11572,8 +11608,19 @@ function _buildComparePlayerHeader(p) {
   `;
 }
 
-function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
+function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, counts2) {
   ranks1 = ranks1 || {}; ranks2 = ranks2 || {};
+  counts1 = counts1 || {}; counts2 = counts2 || {};
+  // Convert a positional rank into a 0-100 bar fill. Rank 1 (best at the
+  // position) → ~100%, last → a small visible floor. This makes bars reflect
+  // "how good vs. position" — which automatically handles positional context
+  // (e.g. Total TDs ranked among QBs vs. among WRs) instead of an arbitrary
+  // value scale. Returns null when no rank/denominator is available.
+  const _rankFill = (rank, count) => {
+    if (rank == null || !count || count < 2) return null;
+    const pctile = (count - rank) / (count - 1); // 1.0 best … 0.0 worst
+    return 8 + pctile * 92;
+  };
   // Build a map of metrics present in both players
   const allKeys = new Set([...Object.keys(m1 || {}), ...Object.keys(m2 || {})]);
   const pos1 = (p1?.position || '').toUpperCase();
@@ -11721,17 +11768,42 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
       'total_carries': 300, 'total_targets': 180, 'total_receptions': 130,
       'total_touches': 350, 'total_rush_tds': 18, 'total_rec_tds': 14,
       'total_pass_tds': 40, 'total_tds': 45,
+
+      // Opportunity / per-game rates — these previously fell through to the
+      // default range of 100, rendering near-empty bars. (Rank-percentile is
+      // used when available; these are the career-view / unranked fallback.)
+      'wopr': 0.65, 'air_yards_share': 38, 'air_yards_per_game': 110,
+      'targets_per_game': 11, 'receptions_per_game': 8,
+      'carries_per_game': 18, 'touches_per_game': 20,
+      'rz_carries_pg': 3, 'rz_targets_pg': 2.5,
+      'rec_yards_per_game': 100, 'rush_yards_per_game': 110,
+      'total_rec_yards': 1500, 'total_rush_yards': 1600,
+      'ppr_pts': 350, 'ppr_pts_per_game': 24,
+      'yprr': 3, 'route_participation': 100, 'total_routes': 650, 'routes_per_game': 40,
+      'pass_tds_per_game': 2.5, 'rush_tds_per_game': 1, 'rec_tds_per_game': 1,
+      'total_tds_per_game': 1.5,
+      'fpts_per_carry': 1.5, 'fpts_per_reception': 3,
+      'explosive_runs_pg': 2, 'avoided_tackles_pg': 2.5,
     };
     
     const range = metricRanges[key] || 100; // Default to 100 if not specified
-    const pct1 = v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0;
-    const pct2 = v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0;
+    // Prefer positional rank-percentile for the bar width (accurate + position-
+    // aware); fall back to value/range scaling for metrics without a rank.
+    const rf1 = _rankFill(ranks1[key], counts1[key]);
+    const rf2 = _rankFill(ranks2[key], counts2[key]);
+    const pct1 = rf1 != null ? Math.round(rf1)
+      : (v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0);
+    const pct2 = rf2 != null ? Math.round(rf2)
+      : (v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0);
 
     const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate'].includes(key);
 
-    function barColor(pct, raw) {
+    // barColor: when the bar is rank-driven (isRankFill), the fill already
+    // encodes "good = high" regardless of lower_better, so use the normal
+    // higher-is-better thresholds. Only value-scaled inverse metrics flip.
+    function barColor(pct, raw, isRankFill) {
       if (raw == null) return '#374151';
-      if (isInverse) {
+      if (isInverse && !isRankFill) {
         if (pct <= 25) return '#10b981';
         if (pct <= 55) return '#3b82f6';
         return '#ef4444';
@@ -11791,11 +11863,11 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
       <div class="compare-metric-row${alt ? ' cmp-row-alt' : ''}">
         <div class="compare-metric-p1-val${winCls1}">${fmt(v1)}${rankSub(r1)}</div>
         <div class="compare-bar-left">
-          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
+          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1, rf1 != null)};"></div>
         </div>
         <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` title="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${_label(key)}</div>
         <div class="compare-bar-right">
-          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2)};"></div>
+          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2, rf2 != null)};"></div>
         </div>
         <div class="compare-metric-p2-val${winCls2}">${fmt(v2)}${rankSub(r2)}</div>
       </div>
@@ -11932,15 +12004,15 @@ function _cmpRangeBounds(side, weeks) {
 // week-range-relative when a custom range is active. Career has no single-season
 // rank context, so it returns no ranks.
 async function _cmpFetchRanks(pid, season, ws, we) {
-  if (season == null) return {};
+  if (season == null) return { ranks: {}, counts: {} };
   const _lid = (window.__brctx || {}).leagueId;
   let url = `/api/player-metric-ranks/${pid}?season=${season}`;
   if (_lid && _lid !== 'None') url += `&league_id=${encodeURIComponent(_lid)}`;
   if (ws != null && we != null) url += `&week_start=${ws}&week_end=${we}`;
   try {
     const rd = await fetch(url).then(r => r.ok ? r.json() : null);
-    return (rd && rd.ranks) ? rd.ranks : {};
-  } catch (_) { return {}; }
+    return { ranks: (rd && rd.ranks) || {}, counts: (rd && rd.counts) || {} };
+  } catch (_) { return { ranks: {}, counts: {} }; }
 }
 
 // Fetch one side's metrics for display (season-level, or week-range aggregate).
@@ -11961,8 +12033,8 @@ async function _cmpFetchSide(side) {
   // from the season-level metrics pipeline). Clear any stale range metadata.
   if (side.season === null || side.range === 'full') {
     side.rangeMeta = null;
-    const ranks = await _cmpFetchRanks(side.pid, side.season, null, null);
-    return { metrics: advData.metrics || {}, ref: null, ranks };
+    const { ranks, counts } = await _cmpFetchRanks(side.pid, side.season, null, null);
+    return { metrics: advData.metrics || {}, ref: null, ranks, counts };
   }
   // Week-range mode: aggregate the per-week series for the selected weeks.
   const cacheKey = side.pid + '_' + side.season;
@@ -11976,10 +12048,10 @@ async function _cmpFetchSide(side) {
   const maxWk = weeks.length ? Math.max(...weeks.map(w => Number(w.week) || 0)) : 18;
   const sel = weeks.filter(w => { const wk = Number(w.week); return wk >= a && wk <= b; });
   side.rangeMeta = { lo: a, hi: b, games: sel.length, maxWk: maxWk };
-  const ranks = await _cmpFetchRanks(side.pid, side.season, a, b);
+  const { ranks, counts } = await _cmpFetchRanks(side.pid, side.season, a, b);
   // Reference = the full-season aggregate from the SAME weekly source, so the
   // range-vs-season delta is apples-to-apples (not mixed with the leaderboard).
-  return { metrics: _cmpAggregateWeeks(weeks, a, b), ref: _cmpAggregateWeeks(weeks, 1, maxWk), ranks };
+  return { metrics: _cmpAggregateWeeks(weeks, a, b), ref: _cmpAggregateWeeks(weeks, 1, maxWk), ranks, counts };
 }
 
 // Render one side's selector: season pills + (for a specific season) week-range.
@@ -12084,7 +12156,7 @@ function cmpRenderMetrics() {
   const token = ++_cmpRenderToken;
   Promise.all([_cmpFetchSide(_cmpSides[1]), _cmpFetchSide(_cmpSides[2]), _ensureAdvMetricsCfg()]).then(([r1, r2, cfg]) => {
     if (token !== _cmpRenderToken) return;  // a newer click superseded this render
-    const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position }, cfg, r1.ranks, r2.ranks);
+    const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position }, cfg, r1.ranks, r2.ranks, r1.counts, r2.counts);
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + rows + '</div>';
     _cmpInitWkBars();
     // #6: keep the weekly-trends section in sync with each side's season/range.
@@ -12127,6 +12199,37 @@ function loadCompareMetrics(playerId1, playerId2, season1, season2) {
   _cmpSides[1].pid = String(playerId1); _cmpSides[1].season = (season1 === undefined ? null : season1); _cmpSides[1].range = 'full';
   _cmpSides[2].pid = String(playerId2); _cmpSides[2].season = (season2 === undefined ? null : season2); _cmpSides[2].range = 'full';
   cmpRenderMetrics();
+}
+
+// Lazy-load a player's game logs into a compare-modal column. Mirrors the
+// single player modal's Stats tab fetch (same /api/player-game-logs endpoint
+// and league params) since /api/player-details returns no game logs.
+function _cmpLoadGameLogs(pid, position, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '<div class="player-modal-loading" style="padding:24px 0;"><div class="loading-spinner" style="width:16px;height:16px;margin:0 auto;"></div></div>';
+  const pathParts = window.location.pathname.split('/').filter(p => p);
+  const _platform = pathParts[0] || 'sleeper';
+  const _season   = pathParts[1] || new Date().getFullYear();
+  const _leagueId = pathParts[2] || null;
+  const _lt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
+  const _ls = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+  let logsUrl = `/api/player-game-logs/${encodeURIComponent(pid)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
+  if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
+  fetch(logsUrl)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+      if (!el.isConnected) return;
+      const logsByYear = data.game_logs_by_year || {};
+      if (!Object.keys(logsByYear).length) {
+        el.innerHTML = '<div style="padding:24px 0;color:var(--text-muted);font-size:13px;text-align:center;">No game log data available.</div>';
+        return;
+      }
+      el.innerHTML = _buildStatsHTML(logsByYear, true, position || '');
+    })
+    .catch(() => {
+      if (el.isConnected) el.innerHTML = '<div style="padding:24px 0;color:var(--text-muted);font-size:13px;text-align:center;">Could not load game logs.</div>';
+    });
 }
 
 function openComparisonView(p1, p2) {
@@ -12216,11 +12319,11 @@ function openComparisonView(p1, p2) {
     </div>
   `;
 
-  // Inject game logs for both players
-  const gl1 = document.getElementById('compareGameLogs1');
-  const gl2 = document.getElementById('compareGameLogs2');
-  if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year, true, p1.position);
-  if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year, true, p2.position);
+  // Inject game logs for both players. /api/player-details deliberately returns
+  // an empty game_logs_by_year (it's expensive), so — like the single player
+  // modal's Stats tab — we lazy-load them from /api/player-game-logs here.
+  _cmpLoadGameLogs(p1.player_id, p1.position, 'compareGameLogs1');
+  _cmpLoadGameLogs(p2.player_id, p2.position, 'compareGameLogs2');
 
   // Weekly usage trends are rendered by cmpRenderWeekly() (driven from
   // cmpRenderMetrics) so they track each side's selected season + week range.

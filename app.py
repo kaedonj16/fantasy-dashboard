@@ -18750,7 +18750,7 @@ def api_advanced_metrics_leaderboard():
 
     spec = LEADERBOARD_METRICS[metric]
     vol_col = (spec.get("min_vol") or {}).get("col") or "games"
-    return jsonify({
+    resp = jsonify({
         "metric": metric,
         "label": spec["label"],
         "positions": spec["positions"],
@@ -18760,6 +18760,11 @@ def api_advanced_metrics_leaderboard():
         "is_week_filtered": is_week_filtered,
         "players": players,
     })
+    # Leaderboard data is rebuilt at most daily, so let the browser reuse the
+    # response for a few minutes — makes graph reopens / metric toggles instant
+    # even across page reloads within a session.
+    resp.headers["Cache-Control"] = "private, max-age=300"
+    return resp
 
 
 @app.route("/api/advanced-metrics/weekly-bulk")
