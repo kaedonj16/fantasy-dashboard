@@ -341,7 +341,15 @@ def api_player_metric_ranks(player_id: str):
         # Don't leak ranks for premium (PFF) metrics on the public site.
         if isinstance(result, dict) and isinstance(result.get("ranks"), dict):
             result["ranks"] = strip_premium_metrics(result["ranks"])
-        return jsonify(result)
+        if isinstance(result, dict) and isinstance(result.get("counts"), dict):
+            result["counts"] = strip_premium_metrics(result["counts"])
+        if isinstance(result, dict) and isinstance(result.get("bounds"), dict):
+            result["bounds"] = strip_premium_metrics(result["bounds"])
+        resp = jsonify(result)
+        # Ranks are computed at most daily; let the browser reuse for a few
+        # minutes so reopening player/compare modals is instant.
+        resp.headers["Cache-Control"] = "private, max-age=300"
+        return resp
     except Exception:
         logger.exception("[player-metric-ranks] Error for %s", player_id)
         return jsonify({"ranks": {}}), 500

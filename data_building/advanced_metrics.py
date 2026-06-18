@@ -2111,6 +2111,13 @@ _VALUE_TABLE_CACHE: Dict[tuple, Tuple[Optional[int], List[Dict[str, Any]]]] = {}
 # instead of once per player visit.
 _POSITION_RANKS_CACHE: Dict[tuple, Dict[str, Dict[str, int]]] = {}
 
+# Parallel to _POSITION_RANKS_CACHE: per-metric [min, max] value bounds across
+# the qualified players at a position, so bar widths in the player/compare
+# modals can scale by the metric's actual value relative to its positional
+# range (preserving real magnitude gaps) instead of by even rank steps.
+# Key: (date_str, position, season) → {metric: [lo, hi]}.
+_POSITION_BOUNDS_CACHE: Dict[tuple, Dict[str, list]] = {}
+
 # Daily cache for get_metric_leaderboard. The Advanced Metrics page fetches one
 # leaderboard per visible/extra/filter column, and re-fetches on season/filter
 # changes — each a full season scan + players-index enrichment. Underlying data
@@ -2126,6 +2133,7 @@ def clear_daily_caches() -> None:
     immediately instead of waiting for the date-keyed entries to roll over."""
     _VALUE_TABLE_CACHE.clear()
     _POSITION_RANKS_CACHE.clear()
+    _POSITION_BOUNDS_CACHE.clear()
     _METRIC_LEADERBOARD_CACHE.clear()
 
 
@@ -2557,6 +2565,88 @@ def get_metric_leaderboard(
     return out
 
 
+# Per-game metrics derived from season totals (not stored columns), so bar
+# bounds for them are computed from total / games.
+_PER_GAME_BOUNDS = {
+    "carries_per_game": "total_carries",
+    "targets_per_game": "total_targets",
+    "receptions_per_game": "total_receptions",
+    "touches_per_game": "total_touches",
+    "rush_tds_per_game": "total_rush_tds",
+    "rec_tds_per_game": "total_rec_tds",
+    "pass_tds_per_game": "total_pass_tds",
+    "total_tds_per_game": "total_tds",
+    "rec_yards_per_game": "total_rec_yards",
+    "rush_yards_per_game": "total_rush_yards",
+    "ppr_pts_per_game": "ppr_pts",
+}
+
+
+def _compute_position_bounds(srows: List[dict]) -> Dict[str, list]:
+    """Per-metric [min, max] across the position's qualified players (4+ games).
+
+    Used by the player/compare modals to scale each bar by the metric's actual
+    value within its positional range — so a large lead at the top of the
+    position shows a long bar and a real gap, while bunched values show small
+    gaps (rank-based widths would flatten both to even steps).
+    """
+    bounds: Dict[str, list] = {}
+
+    def _bnd(metric: str, val) -> None:
+        if val is None:
+            return
+        try:
+            v = float(val)
+        except (TypeError, ValueError):
+            return
+        b = bounds.get(metric)
+        if b is None:
+            bounds[metric] = [v, v]
+        else:
+            if v < b[0]:
+                b[0] = v
+            if v > b[1]:
+                b[1] = v
+
+    for r in srows:
+        g = r.get("games")
+        # Match the rank snapshot's 4+ games qualification (NULL games = older
+        # rows predating the column → treat as passing).
+        if g is not None:
+            try:
+                if float(g) < 4:
+                    continue
+            except (TypeError, ValueError):
+                pass
+        # Stored metric columns that are also rankable/leaderboard metrics.
+        for col, val in r.items():
+            if col in LEADERBOARD_METRICS:
+                _bnd(col, val)
+        # Per-game derived metrics.
+        try:
+            gf = float(g) if g else 0.0
+        except (TypeError, ValueError):
+            gf = 0.0
+        if gf > 0:
+            for metric, total_col in _PER_GAME_BOUNDS.items():
+                tv = r.get(total_col)
+                if tv is not None:
+                    _bnd(metric, float(tv) / gf)
+    return bounds
+
+
+def _rank_counts(all_ranks: Dict[str, Dict[str, int]]) -> Dict[str, int]:
+    """Per-metric count of qualified (ranked) players, used as the denominator
+    for converting a rank into a positional percentile on the client (so bar
+    widths reflect 'how good vs. position' rather than an arbitrary value scale).
+    """
+    counts: Dict[str, int] = {}
+    for pranks in all_ranks.values():
+        for metric in pranks:
+            counts[metric] = counts.get(metric, 0) + 1
+    return counts
+
+
 def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dict[str, Any]:
     """
     Return position-relative volume ranks for one player in a given season.
@@ -2590,7 +2680,9 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
         _cached_all = _POSITION_RANKS_CACHE.get(_cache_key)
         if _cached_all is not None:
             return {"position": position, "season": season,
-                    "ranks": _cached_all.get(str(player_id), {})}
+                    "ranks": _cached_all.get(str(player_id), {}),
+                    "counts": _rank_counts(_cached_all),
+                    "bounds": _POSITION_BOUNDS_CACHE.get(_cache_key, {})}
 
         try:
             result = conn.execute("""
@@ -2834,6 +2926,7 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
         # doesn't cover (alignment rates, scramble rate, route/red-zone volume,
         # fantasy-per-touch). Computes ranks for ALL players so the position cache
         # is fully populated in one pass.
+        srows: List[dict] = []
         try:
             _SUPP_GATES = {
                 "scramble_rate":      ("total_pass_att", 50),
@@ -2883,13 +2976,24 @@ def get_player_metric_ranks(player_id: str, season: Optional[int] = None) -> Dic
         except Exception:
             pass
 
-        # Store in position cache and evict stale dates.
+        # Per-metric value bounds [min, max] across qualified players, so the
+        # client can scale bars by the metric's actual value within its
+        # positional range (real magnitude gaps preserved). Derived from the
+        # same DISTINCT-on-player snapshot used for the supplement ranks.
+        bounds = _compute_position_bounds(srows)
+
+        # Store in position caches and evict stale dates.
         _POSITION_RANKS_CACHE[_cache_key] = all_ranks
+        _POSITION_BOUNDS_CACHE[_cache_key] = bounds
         for _k in [k for k in _POSITION_RANKS_CACHE if k[0] != _today]:
             _POSITION_RANKS_CACHE.pop(_k, None)
+        for _k in [k for k in _POSITION_BOUNDS_CACHE if k[0] != _today]:
+            _POSITION_BOUNDS_CACHE.pop(_k, None)
 
         return {"position": position, "season": season,
-                "ranks": all_ranks.get(str(player_id), {})}
+                "ranks": all_ranks.get(str(player_id), {}),
+                "counts": _rank_counts(all_ranks),
+                "bounds": bounds}
 
 
 def get_player_weekly_metric_ranks(
@@ -3023,6 +3127,7 @@ def get_player_weekly_metric_ranks(
 
     # ── Rank the target player within each metric ────────────────────────────
     ranks: Dict[str, int] = {}
+    counts: Dict[str, int] = {}
     for metric, vals in value_by_metric.items():
         if target not in vals:
             continue
@@ -3033,9 +3138,19 @@ def get_player_weekly_metric_ranks(
         else:
             better = sum(1 for v in vals.values() if v > my)
         ranks[metric] = better + 1
+        counts[metric] = len(vals)
+
+    # Per-metric value bounds over the same week-range population, for
+    # magnitude-preserving bar scaling on the client.
+    bounds: Dict[str, list] = {}
+    for metric, vals in value_by_metric.items():
+        if vals:
+            vs = list(vals.values())
+            bounds[metric] = [min(vs), max(vs)]
 
     return {"position": position, "season": season,
-            "week_start": lo, "week_end": hi, "ranks": ranks}
+            "week_start": lo, "week_end": hi, "ranks": ranks, "counts": counts,
+            "bounds": bounds}
 
 
 def get_top_role_players(position: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:

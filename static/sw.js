@@ -2,7 +2,7 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v5';
+const CACHE_NAME = 'br-fantasy-v6';
 
 const PRECACHE_URLS = [
   '/static/dashboard.css',
@@ -73,7 +73,11 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(request).then(response => {
         if (response && response.status === 200 && CACHE_ON_VISIT.has(url.pathname)) {
-          caches.open(CACHE_NAME).then(cache => cache.put(request, response.clone()));
+          // Clone synchronously, BEFORE returning the response — otherwise the
+          // deferred caches.open().then() runs after the body is already being
+          // consumed by the browser, throwing "Response body is already used".
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
         }
         return response;
       }).catch(() =>

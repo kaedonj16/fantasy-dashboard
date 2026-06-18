@@ -9841,12 +9841,14 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
             if (token !== _advMetricsToken) return;
             const ranks = (ranksData && ranksData.ranks && Object.keys(ranksData.ranks).length)
               ? ranksData.ranks : null;
-            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive);
+            const counts = (ranksData && ranksData.counts) ? ranksData.counts : null;
+            const bounds = (ranksData && ranksData.bounds) ? ranksData.bounds : null;
+            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, bounds);
           }).catch(function() {
-            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive);
+            contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive, null, null);
           });
         } else {
-          contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive);
+          contentEl.innerHTML = buildAdvancedMetricsHTML(metricsData, null, cfg, weekActive, null, null);
         }
       });
 
@@ -10314,7 +10316,9 @@ const _ADV_METRIC_DESCS = {
   'Rush Yards': "Total rushing yards in the season.",
 };
 
-function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
+function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, bounds) {
+  counts = counts || {};
+  bounds = bounds || {};
   let metrics = metricsData.metrics || {};
   // Normalize PFF position codes to canonical fantasy positions
   const _posNorm = { HB: 'RB', FB: 'RB', SE: 'WR', FL: 'WR' };
@@ -10337,15 +10341,58 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
     return `(#${ranks[key]})`;
   }
   function _pg(total) { return (g > 0 && total != null) ? total / g : null; }
+  // Bar fill from the metric's value relative to the position's min–max range
+  // (from the ranks API `bounds`). Preserves real magnitude — a big lead at the
+  // top shows a long bar with a visible gap; bunched values show small gaps —
+  // while staying position-aware (bounds are built from that position's field).
+  // Returns null when no usable bounds exist (→ caller uses a value-scale fallback).
+  function _boundsFill(key, val) {
+    if (val == null || !bounds || !bounds[key]) return null;
+    const b = bounds[key];
+    let lo = b[0], hi = b[1];
+    if (!(hi > lo)) return null;  // degenerate range (all equal / single player)
+    let t = (val - lo) / (hi - lo);
+    if (cfg && cfg[key] && cfg[key].lower_better) t = 1 - t;
+    t = Math.max(0, Math.min(1, t));
+    return 8 + t * 92;  // 8% floor so the worst still shows a sliver
+  }
+  // Recover a metric's numeric value (stored, or derived per-game from a total)
+  // so the bounds-fill post-process can scale any def's bar.
+  const _PM_PER_GAME = {
+    carries_per_game: 'total_carries', targets_per_game: 'total_targets',
+    receptions_per_game: 'total_receptions', touches_per_game: 'total_touches',
+    rush_tds_per_game: 'total_rush_tds', rec_tds_per_game: 'total_rec_tds',
+    pass_tds_per_game: 'total_pass_tds', total_tds_per_game: 'total_tds',
+    rec_yards_per_game: 'total_rec_yards', rush_yards_per_game: 'total_rush_yards',
+    ppr_pts_per_game: 'ppr_pts',
+  };
+  function _metricVal(key) {
+    if (metrics[key] != null) return metrics[key];
+    if (_PM_PER_GAME[key]) return _pg(metrics[_PM_PER_GAME[key]]);
+    return null;
+  }
+  // Realistic elite value for metrics with no positional bounds (e.g. career
+  // view). Keeps bars from rendering at a misleading width via old heuristics.
+  const _PM_FALLBACK_SCALE = {
+    wopr: 0.65, air_yards_share: 38, air_yards_per_game: 110,
+    targets_per_game: 11, receptions_per_game: 8,
+    carries_per_game: 18, touches_per_game: 20,
+    rz_carries_pg: 3, rz_targets_pg: 2.5, red_zone_usage: 3,
+    rec_yards_per_game: 100, rush_yards_per_game: 110,
+    yprr: 3, route_participation: 100, routes_per_game: 40,
+    pass_tds_per_game: 2.5, rush_tds_per_game: 1, rec_tds_per_game: 1,
+    total_tds_per_game: 1.5, fpts_per_carry: 1.5, fpts_per_reception: 3,
+    explosive_runs_pg: 2, avoided_tackles_pg: 2.5,
+  };
 
   // Value: VORP / WAR — season-only, injected by the API for season views.
   if (metrics.vorp != null) {
     const v = metrics.vorp;
-    defs.push({ label: 'VORP', fill: Math.min(Math.max(v, 0) / 150 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('vorp'), cat: 'Value' });
+    defs.push({ label: 'VORP', fill: Math.min(Math.max(v, 0) / 150 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'vorp', sub: _rankSub('vorp'), cat: 'Value' });
   }
   if (metrics.war != null) {
     const v = metrics.war;
-    defs.push({ label: 'WAR', fill: Math.min(Math.max(v, 0) / 6 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), sub: _rankSub('war'), cat: 'Value' });
+    defs.push({ label: 'WAR', fill: Math.min(Math.max(v, 0) / 6 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), key: 'war', sub: _rankSub('war'), cat: 'Value' });
   }
 
   // Role Score (0–100)
@@ -10356,33 +10403,33 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
   if (metrics.snap_share != null && position !== "QB") {
     const pct = metrics.snap_share * 100;
     const snapLabel = (position === 'WR' || position === 'TE') ? 'Route Partic' : 'Snap Share';
-    defs.push({ label: snapLabel, fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('snap_share'), cat: 'General' });
+    defs.push({ label: snapLabel, fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', key: 'snap_share', sub: _rankSub('snap_share'), cat: 'General' });
   }
 
   if (position === 'QB') {
     if (metrics.pff_passing_grade != null) {
       const v = metrics.pff_passing_grade;
-      defs.push({ label: 'PFF Pass Grade', fill: v, display: v.toFixed(1), sub: _rankSub('pff_passing_grade'), cat: 'Passing' });
+      defs.push({ label: 'PFF Pass Grade', fill: v, display: v.toFixed(1), key: 'pff_passing_grade', sub: _rankSub('pff_passing_grade'), cat: 'Passing' });
     }
     if (metrics.big_time_throw_rate != null) {
       const v = metrics.big_time_throw_rate;
-      defs.push({ label: 'BTT Rate', fill: Math.min(v / 15 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('big_time_throw_rate'), cat: 'Passing' });
+      defs.push({ label: 'BTT Rate', fill: Math.min(v / 15 * 100, 100), display: v.toFixed(1) + '%', key: 'big_time_throw_rate', sub: _rankSub('big_time_throw_rate'), cat: 'Passing' });
     }
     if (metrics.adjusted_completion_rate != null) {
       const v = metrics.adjusted_completion_rate;
-      defs.push({ label: 'Adj Comp %', fill: Math.min(Math.max(v - 55, 0) / 35 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('adjusted_completion_rate'), cat: 'Passing' });
+      defs.push({ label: 'Adj Comp %', fill: Math.min(Math.max(v - 55, 0) / 35 * 100, 100), display: v.toFixed(1) + '%', key: 'adjusted_completion_rate', sub: _rankSub('adjusted_completion_rate'), cat: 'Passing' });
     }
     if (metrics.nfl_passer_rating != null) {
       const v = metrics.nfl_passer_rating;
-      defs.push({ label: 'Passer Rating', fill: Math.min(Math.max(v - 60, 0) / 70 * 100, 100), display: v.toFixed(1), sub: _rankSub('nfl_passer_rating'), cat: 'Passing' });
+      defs.push({ label: 'Passer Rating', fill: Math.min(Math.max(v - 60, 0) / 70 * 100, 100), display: v.toFixed(1), key: 'nfl_passer_rating', sub: _rankSub('nfl_passer_rating'), cat: 'Passing' });
     }
     if (metrics.yards_per_attempt != null) {
       const v = metrics.yards_per_attempt;
-      defs.push({ label: 'Yds/Attempt', fill: Math.min(Math.max(v - 4, 0) / 6 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_attempt'), cat: 'Passing' });
+      defs.push({ label: 'Yds/Attempt', fill: Math.min(Math.max(v - 4, 0) / 6 * 100, 100), display: v.toFixed(1), key: 'yards_per_attempt', sub: _rankSub('yards_per_attempt'), cat: 'Passing' });
     }
     if (metrics.completion_pct != null) {
       const pct = metrics.completion_pct;
-      defs.push({ label: 'Completion %', fill: Math.min(Math.max(pct - 50, 0) / 35 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('completion_pct'), cat: 'Passing' });
+      defs.push({ label: 'Completion %', fill: Math.min(Math.max(pct - 50, 0) / 35 * 100, 100), display: pct.toFixed(1) + '%', key: 'completion_pct', sub: _rankSub('completion_pct'), cat: 'Passing' });
     }
     if (metrics.td_rate != null && metrics.int_rate != null && metrics.int_rate > 0) {
       const ratio = metrics.td_rate / metrics.int_rate;
@@ -10390,121 +10437,121 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
     }
     if (metrics.passing_epa != null) {
       const v = metrics.passing_epa;
-      defs.push({ label: 'Passing EPA', fill: Math.min(Math.max(v + 50, 0) / 200 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('passing_epa'), cat: 'Passing' });
+      defs.push({ label: 'Passing EPA', fill: Math.min(Math.max(v + 50, 0) / 200 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'passing_epa', sub: _rankSub('passing_epa'), cat: 'Passing' });
     }
     if (metrics.epa_per_play != null) {
       const v = metrics.epa_per_play;
-      defs.push({ label: 'EPA/Play', fill: Math.min(Math.max(v + 0.2, 0) / 0.5 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), sub: _rankSub('epa_per_play'), cat: 'Passing' });
+      defs.push({ label: 'EPA/Play', fill: Math.min(Math.max(v + 0.2, 0) / 0.5 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), key: 'epa_per_play', sub: _rankSub('epa_per_play'), cat: 'Passing' });
     }
     if (metrics.cpoe != null) {
       const v = metrics.cpoe;
-      defs.push({ label: 'CPOE', fill: Math.min(Math.max(v + 5, 0) / 15 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1) + '%', sub: _rankSub('cpoe'), cat: 'Passing' });
+      defs.push({ label: 'CPOE', fill: Math.min(Math.max(v + 5, 0) / 15 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1) + '%', key: 'cpoe', sub: _rankSub('cpoe'), cat: 'Passing' });
     }
     if (metrics.success_rate != null) {
       const v = metrics.success_rate;
-      defs.push({ label: 'Success Rate', fill: Math.min(v / 55 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('success_rate'), cat: 'Passing' });
+      defs.push({ label: 'Success Rate', fill: Math.min(v / 55 * 100, 100), display: v.toFixed(1) + '%', key: 'success_rate', sub: _rankSub('success_rate'), cat: 'Passing' });
     }
     if (metrics.sack_rate != null) {
       const v = metrics.sack_rate;
-      defs.push({ label: 'Sack Rate', fill: Math.max(0, 100 - v * 8), display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 8 ? '#f59e0b' : '#ef4444', sub: _rankSub('sack_rate'), cat: 'Passing' });
+      defs.push({ label: 'Sack Rate', fill: Math.max(0, 100 - v * 8), display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 8 ? '#f59e0b' : '#ef4444', key: 'sack_rate', sub: _rankSub('sack_rate'), cat: 'Passing' });
     }
     if (metrics.pressure_to_sack_rate != null) {
       const v = metrics.pressure_to_sack_rate;
       const fill = Math.max(0, 100 - v);
-      defs.push({ label: 'Pressure→Sack%', fill, display: v.toFixed(1) + '%', forceColor: v <= 20 ? '#10b981' : v <= 35 ? '#3b82f6' : '#ef4444', sub: _rankSub('pressure_to_sack_rate'), cat: 'Passing' });
+      defs.push({ label: 'Pressure→Sack%', fill, display: v.toFixed(1) + '%', forceColor: v <= 20 ? '#10b981' : v <= 35 ? '#3b82f6' : '#ef4444', key: 'pressure_to_sack_rate', sub: _rankSub('pressure_to_sack_rate'), cat: 'Passing' });
     }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
-      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_carry'), cat: 'Rushing' });
+      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1), key: 'yards_per_carry', sub: _rankSub('yards_per_carry'), cat: 'Rushing' });
     }
     if (metrics.rush_td_rate != null) {
       const v = metrics.rush_td_rate;
-      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 800, 100), display: (v * 100).toFixed(1) + '%', sub: _rankSub('rush_td_rate'), cat: 'Rushing' });
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 800, 100), display: (v * 100).toFixed(1) + '%', key: 'rush_td_rate', sub: _rankSub('rush_td_rate'), cat: 'Rushing' });
     }
   } else if (position === 'RB') {
     if (metrics.pff_rushing_grade != null) {
       const v = metrics.pff_rushing_grade;
-      defs.push({ label: 'PFF Rush Grade', fill: v, display: v.toFixed(1), sub: _rankSub('pff_rushing_grade'), cat: 'Rushing' });
+      defs.push({ label: 'PFF Rush Grade', fill: v, display: v.toFixed(1), key: 'pff_rushing_grade', sub: _rankSub('pff_rushing_grade'), cat: 'Rushing' });
     }
     if (metrics.breakaway_percentage != null) {
       const v = metrics.breakaway_percentage;
-      defs.push({ label: 'Breakaway %', fill: Math.min(v * 2.5, 100), display: v.toFixed(1) + '%', sub: _rankSub('breakaway_percentage'), cat: 'Rushing' });
+      defs.push({ label: 'Breakaway %', fill: Math.min(v * 2.5, 100), display: v.toFixed(1) + '%', key: 'breakaway_percentage', sub: _rankSub('breakaway_percentage'), cat: 'Rushing' });
     }
     if (metrics.explosive_runs_10_plus != null) {
       const v = metrics.explosive_runs_10_plus;
-      defs.push({ label: 'Explosive Runs', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(0), sub: _rankSub('explosive_runs_10_plus'), cat: 'Rushing' });
+      defs.push({ label: 'Explosive Runs', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(0), key: 'explosive_runs_10_plus', sub: _rankSub('explosive_runs_10_plus'), cat: 'Rushing' });
     }
     if (metrics.rushing_epa != null) {
       const v = metrics.rushing_epa;
-      defs.push({ label: 'Rushing EPA', fill: Math.min(Math.max(v + 20, 0) / 60 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('rushing_epa'), cat: 'Rushing' });
+      defs.push({ label: 'Rushing EPA', fill: Math.min(Math.max(v + 20, 0) / 60 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'rushing_epa', sub: _rankSub('rushing_epa'), cat: 'Rushing' });
     }
     if (metrics.ngs_rush_yards_over_expected_per_att != null) {
       const v = metrics.ngs_rush_yards_over_expected_per_att;
-      defs.push({ label: 'RYOE/Att', fill: Math.min(Math.max(v + 1, 0) / 2.5 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), sub: _rankSub('ngs_rush_yards_over_expected_per_att'), cat: 'Rushing' });
+      defs.push({ label: 'RYOE/Att', fill: Math.min(Math.max(v + 1, 0) / 2.5 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(2), key: 'ngs_rush_yards_over_expected_per_att', sub: _rankSub('ngs_rush_yards_over_expected_per_att'), cat: 'Rushing' });
     }
     if (metrics.elusive_rating != null) {
       const v = metrics.elusive_rating;
-      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 200 * 100, 100), display: v.toFixed(1), sub: _rankSub('elusive_rating'), cat: 'Rushing' });
+      defs.push({ label: 'Elusive Rating', fill: Math.min(v / 200 * 100, 100), display: v.toFixed(1), key: 'elusive_rating', sub: _rankSub('elusive_rating'), cat: 'Rushing' });
     }
     if (metrics.avoided_tackles != null && metrics.avoided_tackles > 0) {
       const v = metrics.avoided_tackles;
-      defs.push({ label: 'Avoided Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0), sub: _rankSub('avoided_tackles'), cat: 'Rushing' });
+      defs.push({ label: 'Avoided Tackles', fill: Math.min(v / 30 * 100, 100), display: v.toFixed(0), key: 'avoided_tackles', sub: _rankSub('avoided_tackles'), cat: 'Rushing' });
     }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
-      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_carry'), cat: 'Rushing' });
+      defs.push({ label: 'Yds/Carry', fill: Math.min(v / 7 * 100, 100), display: v.toFixed(1), key: 'yards_per_carry', sub: _rankSub('yards_per_carry'), cat: 'Rushing' });
     }
     if (metrics.yards_per_touch != null) {
       const v = metrics.yards_per_touch;
-      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_touch'), cat: 'General' });
+      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), key: 'yards_per_touch', sub: _rankSub('yards_per_touch'), cat: 'General' });
     }
     if (metrics.rush_td_rate != null) {
       const v = metrics.rush_td_rate;
-      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%', sub: _rankSub('rush_td_rate'), cat: 'Rushing' });
+      defs.push({ label: 'Rush TD Rate', fill: Math.min(v * 1000, 100), display: (v * 100).toFixed(1) + '%', key: 'rush_td_rate', sub: _rankSub('rush_td_rate'), cat: 'Rushing' });
     }
     if (metrics.opportunity_share != null) {
       const oppShare = metrics.opportunity_share;
       const fillPercent = Math.min(oppShare * 4, 100);
       const color = oppShare >= 25 ? '#10b981' : oppShare >= 15 ? '#3b82f6' : oppShare >= 10 ? '#f59e0b' : '#6b7280';
-      defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color, sub: _rankSub('opportunity_share'), cat: 'General' });
+      defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color, key: 'opportunity_share', sub: _rankSub('opportunity_share'), cat: 'General' });
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
-      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 95 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('catch_rate'), cat: 'Receiving' });
+      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 95 * 100, 100), display: pct.toFixed(1) + '%', key: 'catch_rate', sub: _rankSub('catch_rate'), cat: 'Receiving' });
     }
     if (metrics.grades_offense != null) {
       const v = metrics.grades_offense;
-      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1), sub: _rankSub('grades_offense'), cat: 'Rushing' });
+      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1), key: 'grades_offense', sub: _rankSub('grades_offense'), cat: 'Rushing' });
     }
   } else if (position === 'WR' || position === 'TE') {
     if (metrics.grades_offense != null) {
       const v = metrics.grades_offense;
-      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1), sub: _rankSub('grades_offense'), cat: 'Receiving' });
+      defs.push({ label: 'PFF Off Grade', fill: v, display: v.toFixed(1), key: 'grades_offense', sub: _rankSub('grades_offense'), cat: 'Receiving' });
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
-      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('catch_rate'), cat: 'Receiving' });
+      defs.push({ label: 'Catch Rate', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', key: 'catch_rate', sub: _rankSub('catch_rate'), cat: 'Receiving' });
     }
     if (metrics.yprr != null) {
       const v = metrics.yprr;
-      defs.push({ label: 'Yds/Route Run', fill: Math.min(v / 3.0 * 100, 100), display: v.toFixed(2), sub: _rankSub('yprr'), cat: 'Receiving' });
+      defs.push({ label: 'Yds/Route Run', fill: Math.min(v / 3.0 * 100, 100), display: v.toFixed(2), key: 'yprr', sub: _rankSub('yprr'), cat: 'Receiving' });
     }
     if (metrics.drop_rate != null) {
       const v = metrics.drop_rate;
       const fill = Math.max(0, 100 - v * 5);
-      defs.push({ label: 'Drop Rate', fill, display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 10 ? '#f59e0b' : '#ef4444', sub: _rankSub('drop_rate'), cat: 'Receiving' });
+      defs.push({ label: 'Drop Rate', fill, display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 10 ? '#f59e0b' : '#ef4444', key: 'drop_rate', sub: _rankSub('drop_rate'), cat: 'Receiving' });
     }
     if (metrics.yards_per_target != null) {
       const v = metrics.yards_per_target;
-      defs.push({ label: 'Yds/Target', fill: Math.min(Math.max(v - 2, 0) / 10 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_target'), cat: 'Receiving' });
+      defs.push({ label: 'Yds/Target', fill: Math.min(Math.max(v - 2, 0) / 10 * 100, 100), display: v.toFixed(1), key: 'yards_per_target', sub: _rankSub('yards_per_target'), cat: 'Receiving' });
     }
     if (metrics.yards_per_reception != null) {
       const v = metrics.yards_per_reception;
-      defs.push({ label: 'Yds/Reception', fill: Math.min(Math.max(v - 4, 0) / 14 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_reception'), cat: 'Receiving' });
+      defs.push({ label: 'Yds/Reception', fill: Math.min(Math.max(v - 4, 0) / 14 * 100, 100), display: v.toFixed(1), key: 'yards_per_reception', sub: _rankSub('yards_per_reception'), cat: 'Receiving' });
     }
     if (metrics.yards_after_catch_per_reception != null) {
       const v = metrics.yards_after_catch_per_reception;
-      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_after_catch_per_reception'), cat: 'Receiving' });
+      defs.push({ label: 'YAC/Rec', fill: Math.min(v / 10 * 100, 100), display: v.toFixed(1), key: 'yards_after_catch_per_reception', sub: _rankSub('yards_after_catch_per_reception'), cat: 'Receiving' });
     }
     if (metrics.yards_after_catch != null) {
       const v = metrics.yards_after_catch;
@@ -10512,48 +10559,48 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
     }
     if (metrics.avg_depth_of_target != null) {
       const v = metrics.avg_depth_of_target;
-      defs.push({ label: 'aDOT', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), sub: _rankSub('avg_depth_of_target'), cat: 'Receiving' });
+      defs.push({ label: 'aDOT', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), key: 'avg_depth_of_target', sub: _rankSub('avg_depth_of_target'), cat: 'Receiving' });
     }
     if (metrics.contested_catch_rate != null) {
       const v = metrics.contested_catch_rate;
-      defs.push({ label: 'Contested Catch %', fill: Math.min(v / 65 * 100, 100), display: v.toFixed(1) + '%', sub: _rankSub('contested_catch_rate'), cat: 'Receiving' });
+      defs.push({ label: 'Contested Catch %', fill: Math.min(v / 65 * 100, 100), display: v.toFixed(1) + '%', key: 'contested_catch_rate', sub: _rankSub('contested_catch_rate'), cat: 'Receiving' });
     }
     if (metrics.ngs_avg_separation != null) {
       const v = metrics.ngs_avg_separation;
-      defs.push({ label: 'Separation', fill: Math.min(v / 5 * 100, 100), display: v.toFixed(1), sub: _rankSub('ngs_avg_separation'), cat: 'Receiving' });
+      defs.push({ label: 'Separation', fill: Math.min(v / 5 * 100, 100), display: v.toFixed(1), key: 'ngs_avg_separation', sub: _rankSub('ngs_avg_separation'), cat: 'Receiving' });
     }
     if (metrics.ngs_avg_cushion != null) {
       const v = metrics.ngs_avg_cushion;
-      defs.push({ label: 'Cushion', fill: Math.min(v / 9 * 100, 100), display: v.toFixed(1), sub: _rankSub('ngs_avg_cushion'), cat: 'Receiving' });
+      defs.push({ label: 'Cushion', fill: Math.min(v / 9 * 100, 100), display: v.toFixed(1), key: 'ngs_avg_cushion', sub: _rankSub('ngs_avg_cushion'), cat: 'Receiving' });
     }
     if (metrics.ngs_avg_yac_above_expectation != null) {
       const v = metrics.ngs_avg_yac_above_expectation;
-      defs.push({ label: 'YAC Over Expected', fill: Math.min(Math.max(v + 2, 0) / 4 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('ngs_avg_yac_above_expectation'), cat: 'Receiving' });
+      defs.push({ label: 'YAC Over Expected', fill: Math.min(Math.max(v + 2, 0) / 4 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'ngs_avg_yac_above_expectation', sub: _rankSub('ngs_avg_yac_above_expectation'), cat: 'Receiving' });
     }
     if (metrics.target_share != null) {
       const pct = metrics.target_share;
-      defs.push({ label: 'Target Share', fill: Math.min(pct / 28 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('target_share'), cat: 'Receiving' });
+      defs.push({ label: 'Target Share', fill: Math.min(pct / 28 * 100, 100), display: pct.toFixed(1) + '%', key: 'target_share', sub: _rankSub('target_share'), cat: 'Receiving' });
     }
     if (metrics.air_yards_per_game != null) {
       const v = metrics.air_yards_per_game;
-      defs.push({ label: 'Air Yds/Game', fill: Math.min(v / 110 * 100, 100), display: v.toFixed(1), sub: _rankSub('air_yards_per_game'), cat: 'Receiving' });
+      defs.push({ label: 'Air Yds/Game', fill: Math.min(v / 110 * 100, 100), display: v.toFixed(1), key: 'air_yards_per_game', sub: _rankSub('air_yards_per_game'), cat: 'Receiving' });
     }
     if (metrics.air_yards_share != null) {
       const pct = metrics.air_yards_share;
-      defs.push({ label: 'Air Yards Share', fill: Math.min(pct / 35 * 100, 100), display: pct.toFixed(1) + '%', sub: _rankSub('air_yards_share'), cat: 'Receiving' });
+      defs.push({ label: 'Air Yards Share', fill: Math.min(pct / 35 * 100, 100), display: pct.toFixed(1) + '%', key: 'air_yards_share', sub: _rankSub('air_yards_share'), cat: 'Receiving' });
     }
     if (metrics.wopr != null) {
       const v = metrics.wopr;
       // WOPR ≥ 0.50 is elite; scale bar so 0.65 = 100%
-      defs.push({ label: 'WOPR', fill: Math.min(v / 0.65 * 100, 100), display: v.toFixed(3), sub: _rankSub('wopr'), cat: 'Receiving' });
+      defs.push({ label: 'WOPR', fill: Math.min(v / 0.65 * 100, 100), display: v.toFixed(3), key: 'wopr', sub: _rankSub('wopr'), cat: 'Receiving' });
     }
     if (metrics.target_quality_score != null) {
       const v = metrics.target_quality_score;
-      defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), sub: _rankSub('target_quality_score'), cat: 'Receiving' });
+      defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), key: 'target_quality_score', sub: _rankSub('target_quality_score'), cat: 'Receiving' });
     }
     if (metrics.receiving_epa != null) {
       const v = metrics.receiving_epa;
-      defs.push({ label: 'Receiving EPA', fill: Math.min(Math.max(v + 20, 0) / 80 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), sub: _rankSub('receiving_epa'), cat: 'Receiving' });
+      defs.push({ label: 'Receiving EPA', fill: Math.min(Math.max(v + 20, 0) / 80 * 100, 100), display: (v >= 0 ? '+' : '') + v.toFixed(1), key: 'receiving_epa', sub: _rankSub('receiving_epa'), cat: 'Receiving' });
     }
     if (metrics.slot_rate != null) {
       const v = metrics.slot_rate;
@@ -10577,21 +10624,21 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
     }
     if (metrics.yards_per_touch != null) {
       const v = metrics.yards_per_touch;
-      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), sub: _rankSub('yards_per_touch'), cat: 'General' });
+      defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), key: 'yards_per_touch', sub: _rankSub('yards_per_touch'), cat: 'General' });
     }
     if (metrics.total_touches != null) {
-      defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 150 * 100, 100), display: Math.round(metrics.total_touches).toString(), sub: _rankSub('total_touches'), cat: 'General' });
+      defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 150 * 100, 100), display: Math.round(metrics.total_touches).toString(), key: 'total_touches', sub: _rankSub('total_touches'), cat: 'General' });
     }
   }
 
   if (metrics.target_quality_score != null && position === 'RB') {
     const v = metrics.target_quality_score;
-    defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), sub: _rankSub('target_quality_score'), cat: 'Receiving' });
+    defs.push({ label: 'Target Quality', fill: Math.min(v / 20 * 100, 100), display: v.toFixed(1), key: 'target_quality_score', sub: _rankSub('target_quality_score'), cat: 'Receiving' });
   }
 
   if (metrics.red_zone_usage != null && position !== 'QB') {
     const v = metrics.red_zone_usage;
-    defs.push({ label: 'RZ Usage/G', fill: Math.min(v / 3 * 100, 100), display: v.toFixed(1), sub: _rankSub('red_zone_usage'), cat: 'General' });
+    defs.push({ label: 'RZ Usage/G', fill: Math.min(v / 3 * 100, 100), display: v.toFixed(1), key: 'red_zone_usage', sub: _rankSub('red_zone_usage'), cat: 'General' });
   }
 
   if (metrics.usage_trend != null) {
@@ -10621,46 +10668,46 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
   // PPR fantasy points (all positions, when available — week range view)
   if (metrics.ppr_pts != null) {
     const _ppMax = position === 'QB' ? 500 : position === 'RB' ? 350 : 300;
-    defs.push({ label: 'PPR Points', fill: Math.min(metrics.ppr_pts / _ppMax * 100, 100), display: Math.round(metrics.ppr_pts).toString(), sub: _rankSub('ppr_pts'), cat: 'General' });
+    defs.push({ label: 'PPR Points', fill: Math.min(metrics.ppr_pts / _ppMax * 100, 100), display: Math.round(metrics.ppr_pts).toString(), key: 'ppr_pts', sub: _rankSub('ppr_pts'), cat: 'General' });
   }
   if (metrics.ppr_pts_per_game != null) {
-    defs.push({ label: 'PPR Pts/G', fill: Math.min(metrics.ppr_pts_per_game / 30 * 100, 100), display: metrics.ppr_pts_per_game.toFixed(1), sub: _rankSub('ppr_pts_per_game'), cat: 'General' });
+    defs.push({ label: 'PPR Pts/G', fill: Math.min(metrics.ppr_pts_per_game / 30 * 100, 100), display: metrics.ppr_pts_per_game.toFixed(1), key: 'ppr_pts_per_game', sub: _rankSub('ppr_pts_per_game'), cat: 'General' });
   }
 
   // Volume metrics per position (replacing old volDefs section)
   if (position === 'WR' || position === 'TE') {
     const _tpg = metrics.targets_per_game != null ? metrics.targets_per_game : _pg(metrics.total_targets);
-    if (_tpg != null) defs.push({ label: 'Targets/G', fill: Math.min(_tpg / (position === 'TE' ? 8 : 12) * 100, 100), display: _tpg.toFixed(1), sub: _rankSub('targets_per_game'), cat: 'Receiving' });
+    if (_tpg != null) defs.push({ label: 'Targets/G', fill: Math.min(_tpg / (position === 'TE' ? 8 : 12) * 100, 100), display: _tpg.toFixed(1), key: 'targets_per_game', sub: _rankSub('targets_per_game'), cat: 'Receiving' });
     const _rpg = metrics.receptions_per_game != null ? metrics.receptions_per_game : _pg(metrics.total_receptions);
-    if (_rpg != null) defs.push({ label: 'Receptions/G', fill: Math.min(_rpg / 9 * 100, 100), display: _rpg.toFixed(1), sub: _rankSub('receptions_per_game'), cat: 'Receiving' });
+    if (_rpg != null) defs.push({ label: 'Receptions/G', fill: Math.min(_rpg / 9 * 100, 100), display: _rpg.toFixed(1), key: 'receptions_per_game', sub: _rankSub('receptions_per_game'), cat: 'Receiving' });
     const _recypg = metrics.rec_yards_per_game != null ? metrics.rec_yards_per_game : _pg(metrics.total_rec_yards);
-    if (_recypg != null) defs.push({ label: 'Rec Yds/G', fill: Math.min(_recypg / 100 * 100, 100), display: _recypg.toFixed(1), sub: _rankSub('rec_yards_per_game'), cat: 'Receiving' });
-    if (metrics.total_targets != null) defs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / (position === 'TE' ? 120 : 180) * 100, 100), display: Math.round(metrics.total_targets).toString(), sub: _rankSub('total_targets'), cat: 'Volume' });
-    if (metrics.total_receptions != null) defs.push({ label: 'Receptions', fill: Math.min(metrics.total_receptions / 130 * 100, 100), display: Math.round(metrics.total_receptions).toString(), sub: _rankSub('total_receptions'), cat: 'Volume' });
-    if (metrics.total_rec_yards != null) defs.push({ label: 'Rec Yards', fill: Math.min(metrics.total_rec_yards / 1500 * 100, 100), display: Math.round(metrics.total_rec_yards).toString(), sub: _rankSub('total_rec_yards'), cat: 'Volume' });
+    if (_recypg != null) defs.push({ label: 'Rec Yds/G', fill: Math.min(_recypg / 100 * 100, 100), display: _recypg.toFixed(1), key: 'rec_yards_per_game', sub: _rankSub('rec_yards_per_game'), cat: 'Receiving' });
+    if (metrics.total_targets != null) defs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / (position === 'TE' ? 120 : 180) * 100, 100), display: Math.round(metrics.total_targets).toString(), key: 'total_targets', sub: _rankSub('total_targets'), cat: 'Volume' });
+    if (metrics.total_receptions != null) defs.push({ label: 'Receptions', fill: Math.min(metrics.total_receptions / 130 * 100, 100), display: Math.round(metrics.total_receptions).toString(), key: 'total_receptions', sub: _rankSub('total_receptions'), cat: 'Volume' });
+    if (metrics.total_rec_yards != null) defs.push({ label: 'Rec Yards', fill: Math.min(metrics.total_rec_yards / 1500 * 100, 100), display: Math.round(metrics.total_rec_yards).toString(), key: 'total_rec_yards', sub: _rankSub('total_rec_yards'), cat: 'Volume' });
     const _recTdMax = position === 'TE' ? 12 : 14;
-    if (metrics.total_rec_tds != null) defs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / _recTdMax * 100, 100), display: Math.round(metrics.total_rec_tds).toString(), sub: _rankSub('total_rec_tds'), cat: 'Receiving' });
-    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 15 * 100, 100), display: Math.round(metrics.total_tds).toString(), sub: _rankSub('total_tds'), cat: 'General' });
+    if (metrics.total_rec_tds != null) defs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / _recTdMax * 100, 100), display: Math.round(metrics.total_rec_tds).toString(), key: 'total_rec_tds', sub: _rankSub('total_rec_tds'), cat: 'Receiving' });
+    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 15 * 100, 100), display: Math.round(metrics.total_tds).toString(), key: 'total_tds', sub: _rankSub('total_tds'), cat: 'General' });
   } else if (position === 'RB') {
     const _cpg = metrics.carries_per_game != null ? metrics.carries_per_game : _pg(metrics.total_carries);
-    if (_cpg != null) defs.push({ label: 'Carries/G', fill: Math.min(_cpg / 22 * 100, 100), display: _cpg.toFixed(1), sub: _rankSub('carries_per_game'), cat: 'Rushing' });
-    if (metrics.total_carries != null) defs.push({ label: 'Carries', fill: Math.min(metrics.total_carries / 300 * 100, 100), display: Math.round(metrics.total_carries).toString(), sub: _rankSub('total_carries'), cat: 'Volume' });
+    if (_cpg != null) defs.push({ label: 'Carries/G', fill: Math.min(_cpg / 22 * 100, 100), display: _cpg.toFixed(1), key: 'carries_per_game', sub: _rankSub('carries_per_game'), cat: 'Rushing' });
+    if (metrics.total_carries != null) defs.push({ label: 'Carries', fill: Math.min(metrics.total_carries / 300 * 100, 100), display: Math.round(metrics.total_carries).toString(), key: 'total_carries', sub: _rankSub('total_carries'), cat: 'Volume' });
     const _tpgRb = metrics.targets_per_game != null ? metrics.targets_per_game : _pg(metrics.total_targets);
-    if (_tpgRb != null) defs.push({ label: 'Targets/G', fill: Math.min(_tpgRb / 7 * 100, 100), display: _tpgRb.toFixed(1), sub: _rankSub('targets_per_game'), cat: 'Receiving' });
-    if (metrics.total_targets != null) defs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / 100 * 100, 100), display: Math.round(metrics.total_targets).toString(), sub: _rankSub('total_targets'), cat: 'Volume' });
+    if (_tpgRb != null) defs.push({ label: 'Targets/G', fill: Math.min(_tpgRb / 7 * 100, 100), display: _tpgRb.toFixed(1), key: 'targets_per_game', sub: _rankSub('targets_per_game'), cat: 'Receiving' });
+    if (metrics.total_targets != null) defs.push({ label: 'Targets', fill: Math.min(metrics.total_targets / 100 * 100, 100), display: Math.round(metrics.total_targets).toString(), key: 'total_targets', sub: _rankSub('total_targets'), cat: 'Volume' });
     const _thpgRb = metrics.touches_per_game != null ? metrics.touches_per_game : _pg(metrics.total_touches);
-    if (_thpgRb != null) defs.push({ label: 'Touches/G', fill: Math.min(_thpgRb / 25 * 100, 100), display: _thpgRb.toFixed(1), sub: _rankSub('touches_per_game'), cat: 'General' });
-    if (metrics.total_touches != null) defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 300 * 100, 100), display: Math.round(metrics.total_touches).toString(), sub: _rankSub('total_touches'), cat: 'Volume' });
-    if (metrics.total_rush_yards != null) defs.push({ label: 'Rush Yards', fill: Math.min(metrics.total_rush_yards / 1700 * 100, 100), display: Math.round(metrics.total_rush_yards).toString(), sub: _rankSub('total_rush_yards'), cat: 'Volume' });
-    if (metrics.total_rush_tds != null) defs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 16 * 100, 100), display: Math.round(metrics.total_rush_tds).toString(), sub: _rankSub('total_rush_tds'), cat: 'Rushing' });
-    if (metrics.total_rec_tds != null) defs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / 8 * 100, 100), display: Math.round(metrics.total_rec_tds).toString(), sub: _rankSub('total_rec_tds'), cat: 'Receiving' });
-    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 20 * 100, 100), display: Math.round(metrics.total_tds).toString(), sub: _rankSub('total_tds'), cat: 'General' });
+    if (_thpgRb != null) defs.push({ label: 'Touches/G', fill: Math.min(_thpgRb / 25 * 100, 100), display: _thpgRb.toFixed(1), key: 'touches_per_game', sub: _rankSub('touches_per_game'), cat: 'General' });
+    if (metrics.total_touches != null) defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 300 * 100, 100), display: Math.round(metrics.total_touches).toString(), key: 'total_touches', sub: _rankSub('total_touches'), cat: 'Volume' });
+    if (metrics.total_rush_yards != null) defs.push({ label: 'Rush Yards', fill: Math.min(metrics.total_rush_yards / 1700 * 100, 100), display: Math.round(metrics.total_rush_yards).toString(), key: 'total_rush_yards', sub: _rankSub('total_rush_yards'), cat: 'Volume' });
+    if (metrics.total_rush_tds != null) defs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 16 * 100, 100), display: Math.round(metrics.total_rush_tds).toString(), key: 'total_rush_tds', sub: _rankSub('total_rush_tds'), cat: 'Rushing' });
+    if (metrics.total_rec_tds != null) defs.push({ label: 'Rec TDs', fill: Math.min(metrics.total_rec_tds / 8 * 100, 100), display: Math.round(metrics.total_rec_tds).toString(), key: 'total_rec_tds', sub: _rankSub('total_rec_tds'), cat: 'Receiving' });
+    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 20 * 100, 100), display: Math.round(metrics.total_tds).toString(), key: 'total_tds', sub: _rankSub('total_tds'), cat: 'General' });
   } else if (position === 'QB') {
-    if (metrics.total_pass_tds != null) defs.push({ label: 'Pass TDs', fill: Math.min(metrics.total_pass_tds / 40 * 100, 100), display: Math.round(metrics.total_pass_tds).toString(), sub: _rankSub('total_pass_tds'), cat: 'Passing' });
+    if (metrics.total_pass_tds != null) defs.push({ label: 'Pass TDs', fill: Math.min(metrics.total_pass_tds / 40 * 100, 100), display: Math.round(metrics.total_pass_tds).toString(), key: 'total_pass_tds', sub: _rankSub('total_pass_tds'), cat: 'Passing' });
     const _ptpg = metrics.pass_tds_per_game != null ? metrics.pass_tds_per_game : _pg(metrics.total_pass_tds);
-    if (_ptpg != null) defs.push({ label: 'Pass TDs/G', fill: Math.min(_ptpg / 3 * 100, 100), display: _ptpg.toFixed(1), sub: _rankSub('pass_tds_per_game'), cat: 'Passing' });
-    if (metrics.total_rush_tds != null) defs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 15 * 100, 100), display: Math.round(metrics.total_rush_tds).toString(), sub: _rankSub('total_rush_tds'), cat: 'Rushing' });
-    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 45 * 100, 100), display: Math.round(metrics.total_tds).toString(), sub: _rankSub('total_tds'), cat: 'General' });
+    if (_ptpg != null) defs.push({ label: 'Pass TDs/G', fill: Math.min(_ptpg / 3 * 100, 100), display: _ptpg.toFixed(1), key: 'pass_tds_per_game', sub: _rankSub('pass_tds_per_game'), cat: 'Passing' });
+    if (metrics.total_rush_tds != null) defs.push({ label: 'Rush TDs', fill: Math.min(metrics.total_rush_tds / 15 * 100, 100), display: Math.round(metrics.total_rush_tds).toString(), key: 'total_rush_tds', sub: _rankSub('total_rush_tds'), cat: 'Rushing' });
+    if (metrics.total_tds != null) defs.push({ label: 'Total TDs', fill: Math.min(metrics.total_tds / 45 * 100, 100), display: Math.round(metrics.total_tds).toString(), key: 'total_tds', sub: _rankSub('total_tds'), cat: 'General' });
   }
 
   // Append any remaining cfg metrics not already covered above
@@ -10703,18 +10750,39 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive) {
         if (!spec.positions.includes(position)) continue;
       }
       let fill, displayStr;
-      if (spec.pct_frac) { fill = Math.min(val * 100, 100); displayStr = (val * 100).toFixed(1) + '%'; }
-      else if (spec.pct) { fill = Math.min(Math.abs(val), 100); displayStr = val.toFixed(1) + '%'; }
-      else if (spec.integer) { fill = Math.min(Math.abs(val), 100); displayStr = Math.round(val).toString(); }
-      else {
-        const abs = Math.abs(val);
-        fill = abs < 1 ? abs * 100 : Math.min(abs * 5, 100);
+      // Display string (independent of bar scaling).
+      if (spec.pct_frac) displayStr = (val * 100).toFixed(1) + '%';
+      else if (spec.pct) displayStr = val.toFixed(1) + '%';
+      else if (spec.integer) displayStr = Math.round(val).toString();
+      else { const abs = Math.abs(val); displayStr = val.toFixed(abs >= 10 ? 1 : 2); }
+      // Bar fill: prefer value-relative-to-position bounds (magnitude-preserving
+      // + position-aware); fall back to a corrected per-metric value scale, then
+      // a generic formula.
+      const bf = _boundsFill(key, val);
+      if (bf != null) {
+        fill = bf;  // bounds already encode direction (good = high), no flip
+      } else {
+        const sc = _PM_FALLBACK_SCALE[key];
+        if (spec.pct_frac) fill = Math.min(val * 100, 100);
+        else if (sc) fill = Math.min(Math.abs(val) / sc * 100, 100);
+        else if (spec.pct) fill = Math.min(Math.abs(val), 100);
+        else if (spec.integer) fill = Math.min(Math.abs(val), 100);
+        else { const abs = Math.abs(val); fill = abs < 1 ? abs * 100 : Math.min(abs * 5, 100); }
         if (spec.lower_better) fill = Math.max(0, 100 - fill);
-        displayStr = val.toFixed(abs >= 10 ? 1 : 2);
       }
       defs.push({ label: spec.label || key, key, fill, display: displayStr, sub: _rankSub(key), desc: spec.desc || '' });
     }
   }
+
+  // Scale every bar by the metric's value within its positional range, so bar
+  // length reflects real magnitude (big leads show big gaps) while staying
+  // position-aware — consistent with the Compare modal. Trend arrows (forced
+  // color) and metrics without bounds keep their value-scale fill.
+  defs.forEach(function(d) {
+    if (!d.key || d.forceColor) return;
+    const bf = _boundsFill(d.key, _metricVal(d.key));
+    if (bf != null) d.fill = bf;
+  });
 
   if (defs.length === 0) return '';
 
@@ -11572,8 +11640,24 @@ function _buildComparePlayerHeader(p) {
   `;
 }
 
-function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
+function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, counts2, bounds1, bounds2) {
   ranks1 = ranks1 || {}; ranks2 = ranks2 || {};
+  counts1 = counts1 || {}; counts2 = counts2 || {};
+  bounds1 = bounds1 || {}; bounds2 = bounds2 || {};
+  // Bar fill from a value relative to the position's min–max range (from the
+  // ranks API `bounds`). Preserves real magnitude — a big lead at the top of
+  // the position shows a long bar with a visible gap; bunched values show small
+  // gaps — while staying position-aware (Total TDs scaled within QBs vs. WRs).
+  // Returns null when no usable bounds exist (→ value-scale fallback).
+  const _boundsFillCmp = (key, val, b) => {
+    if (val == null || !b || !b[key]) return null;
+    let lo = b[key][0], hi = b[key][1];
+    if (!(hi > lo)) return null;
+    let t = (val - lo) / (hi - lo);
+    if (cfg && cfg[key] && cfg[key].lower_better) t = 1 - t;
+    t = Math.max(0, Math.min(1, t));
+    return 8 + t * 92;
+  };
   // Build a map of metrics present in both players
   const allKeys = new Set([...Object.keys(m1 || {}), ...Object.keys(m2 || {})]);
   const pos1 = (p1?.position || '').toUpperCase();
@@ -11721,17 +11805,43 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
       'total_carries': 300, 'total_targets': 180, 'total_receptions': 130,
       'total_touches': 350, 'total_rush_tds': 18, 'total_rec_tds': 14,
       'total_pass_tds': 40, 'total_tds': 45,
+
+      // Opportunity / per-game rates — these previously fell through to the
+      // default range of 100, rendering near-empty bars. (Rank-percentile is
+      // used when available; these are the career-view / unranked fallback.)
+      'wopr': 0.65, 'air_yards_share': 38, 'air_yards_per_game': 110,
+      'targets_per_game': 11, 'receptions_per_game': 8,
+      'carries_per_game': 18, 'touches_per_game': 20,
+      'rz_carries_pg': 3, 'rz_targets_pg': 2.5,
+      'rec_yards_per_game': 100, 'rush_yards_per_game': 110,
+      'total_rec_yards': 1500, 'total_rush_yards': 1600,
+      'ppr_pts': 350, 'ppr_pts_per_game': 24,
+      'yprr': 3, 'route_participation': 100, 'total_routes': 650, 'routes_per_game': 40,
+      'pass_tds_per_game': 2.5, 'rush_tds_per_game': 1, 'rec_tds_per_game': 1,
+      'total_tds_per_game': 1.5,
+      'fpts_per_carry': 1.5, 'fpts_per_reception': 3,
+      'explosive_runs_pg': 2, 'avoided_tackles_pg': 2.5,
     };
     
     const range = metricRanges[key] || 100; // Default to 100 if not specified
-    const pct1 = v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0;
-    const pct2 = v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0;
+    // Prefer value-relative-to-position bounds for the bar width (magnitude-
+    // preserving + position-aware); fall back to value/range scaling when no
+    // bounds are available (e.g. career view).
+    const rf1 = _boundsFillCmp(key, v1, bounds1);
+    const rf2 = _boundsFillCmp(key, v2, bounds2);
+    const pct1 = rf1 != null ? Math.round(rf1)
+      : (v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0);
+    const pct2 = rf2 != null ? Math.round(rf2)
+      : (v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0);
 
     const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate'].includes(key);
 
-    function barColor(pct, raw) {
+    // barColor: when the bar is bounds-driven (isRankFill), the fill already
+    // encodes "good = high" regardless of lower_better, so use the normal
+    // higher-is-better thresholds. Only value-scaled inverse metrics flip.
+    function barColor(pct, raw, isRankFill) {
       if (raw == null) return '#374151';
-      if (isInverse) {
+      if (isInverse && !isRankFill) {
         if (pct <= 25) return '#10b981';
         if (pct <= 55) return '#3b82f6';
         return '#ef4444';
@@ -11791,11 +11901,11 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2) {
       <div class="compare-metric-row${alt ? ' cmp-row-alt' : ''}">
         <div class="compare-metric-p1-val${winCls1}">${fmt(v1)}${rankSub(r1)}</div>
         <div class="compare-bar-left">
-          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1)};"></div>
+          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1, rf1 != null)};"></div>
         </div>
         <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` title="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${_label(key)}</div>
         <div class="compare-bar-right">
-          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2)};"></div>
+          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2, rf2 != null)};"></div>
         </div>
         <div class="compare-metric-p2-val${winCls2}">${fmt(v2)}${rankSub(r2)}</div>
       </div>
@@ -11932,15 +12042,15 @@ function _cmpRangeBounds(side, weeks) {
 // week-range-relative when a custom range is active. Career has no single-season
 // rank context, so it returns no ranks.
 async function _cmpFetchRanks(pid, season, ws, we) {
-  if (season == null) return {};
+  if (season == null) return { ranks: {}, counts: {}, bounds: {} };
   const _lid = (window.__brctx || {}).leagueId;
   let url = `/api/player-metric-ranks/${pid}?season=${season}`;
   if (_lid && _lid !== 'None') url += `&league_id=${encodeURIComponent(_lid)}`;
   if (ws != null && we != null) url += `&week_start=${ws}&week_end=${we}`;
   try {
     const rd = await fetch(url).then(r => r.ok ? r.json() : null);
-    return (rd && rd.ranks) ? rd.ranks : {};
-  } catch (_) { return {}; }
+    return { ranks: (rd && rd.ranks) || {}, counts: (rd && rd.counts) || {}, bounds: (rd && rd.bounds) || {} };
+  } catch (_) { return { ranks: {}, counts: {}, bounds: {} }; }
 }
 
 // Fetch one side's metrics for display (season-level, or week-range aggregate).
@@ -11961,8 +12071,8 @@ async function _cmpFetchSide(side) {
   // from the season-level metrics pipeline). Clear any stale range metadata.
   if (side.season === null || side.range === 'full') {
     side.rangeMeta = null;
-    const ranks = await _cmpFetchRanks(side.pid, side.season, null, null);
-    return { metrics: advData.metrics || {}, ref: null, ranks };
+    const { ranks, counts, bounds } = await _cmpFetchRanks(side.pid, side.season, null, null);
+    return { metrics: advData.metrics || {}, ref: null, ranks, counts, bounds };
   }
   // Week-range mode: aggregate the per-week series for the selected weeks.
   const cacheKey = side.pid + '_' + side.season;
@@ -11976,10 +12086,10 @@ async function _cmpFetchSide(side) {
   const maxWk = weeks.length ? Math.max(...weeks.map(w => Number(w.week) || 0)) : 18;
   const sel = weeks.filter(w => { const wk = Number(w.week); return wk >= a && wk <= b; });
   side.rangeMeta = { lo: a, hi: b, games: sel.length, maxWk: maxWk };
-  const ranks = await _cmpFetchRanks(side.pid, side.season, a, b);
+  const { ranks, counts, bounds } = await _cmpFetchRanks(side.pid, side.season, a, b);
   // Reference = the full-season aggregate from the SAME weekly source, so the
   // range-vs-season delta is apples-to-apples (not mixed with the leaderboard).
-  return { metrics: _cmpAggregateWeeks(weeks, a, b), ref: _cmpAggregateWeeks(weeks, 1, maxWk), ranks };
+  return { metrics: _cmpAggregateWeeks(weeks, a, b), ref: _cmpAggregateWeeks(weeks, 1, maxWk), ranks, counts, bounds };
 }
 
 // Render one side's selector: season pills + (for a specific season) week-range.
@@ -12084,7 +12194,7 @@ function cmpRenderMetrics() {
   const token = ++_cmpRenderToken;
   Promise.all([_cmpFetchSide(_cmpSides[1]), _cmpFetchSide(_cmpSides[2]), _ensureAdvMetricsCfg()]).then(([r1, r2, cfg]) => {
     if (token !== _cmpRenderToken) return;  // a newer click superseded this render
-    const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position }, cfg, r1.ranks, r2.ranks);
+    const rows = renderCompareMetricRows(r1.metrics, r2.metrics, { position: _cmpSides[1].position }, { position: _cmpSides[2].position }, cfg, r1.ranks, r2.ranks, r1.counts, r2.counts, r1.bounds, r2.bounds);
     metricsDiv.innerHTML = selectors() + '<div id="compareMetricsRows">' + rows + '</div>';
     _cmpInitWkBars();
     // #6: keep the weekly-trends section in sync with each side's season/range.
@@ -12127,6 +12237,37 @@ function loadCompareMetrics(playerId1, playerId2, season1, season2) {
   _cmpSides[1].pid = String(playerId1); _cmpSides[1].season = (season1 === undefined ? null : season1); _cmpSides[1].range = 'full';
   _cmpSides[2].pid = String(playerId2); _cmpSides[2].season = (season2 === undefined ? null : season2); _cmpSides[2].range = 'full';
   cmpRenderMetrics();
+}
+
+// Lazy-load a player's game logs into a compare-modal column. Mirrors the
+// single player modal's Stats tab fetch (same /api/player-game-logs endpoint
+// and league params) since /api/player-details returns no game logs.
+function _cmpLoadGameLogs(pid, position, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '<div class="player-modal-loading" style="padding:24px 0;"><div class="loading-spinner" style="width:16px;height:16px;margin:0 auto;"></div></div>';
+  const pathParts = window.location.pathname.split('/').filter(p => p);
+  const _platform = pathParts[0] || 'sleeper';
+  const _season   = pathParts[1] || new Date().getFullYear();
+  const _leagueId = pathParts[2] || null;
+  const _lt = (typeof _leagueType !== 'undefined') ? _leagueType : '1qb';
+  const _ls = (typeof _leagueSize !== 'undefined') ? _leagueSize : 10;
+  let logsUrl = `/api/player-game-logs/${encodeURIComponent(pid)}?season=${_season}&league_type=${_lt}&league_size=${_ls}`;
+  if (_leagueId) logsUrl += `&league_id=${_leagueId}&platform=${_platform}`;
+  fetch(logsUrl)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => {
+      if (!el.isConnected) return;
+      const logsByYear = data.game_logs_by_year || {};
+      if (!Object.keys(logsByYear).length) {
+        el.innerHTML = '<div style="padding:24px 0;color:var(--text-muted);font-size:13px;text-align:center;">No game log data available.</div>';
+        return;
+      }
+      el.innerHTML = _buildStatsHTML(logsByYear, true, position || '');
+    })
+    .catch(() => {
+      if (el.isConnected) el.innerHTML = '<div style="padding:24px 0;color:var(--text-muted);font-size:13px;text-align:center;">Could not load game logs.</div>';
+    });
 }
 
 function openComparisonView(p1, p2) {
@@ -12216,11 +12357,11 @@ function openComparisonView(p1, p2) {
     </div>
   `;
 
-  // Inject game logs for both players
-  const gl1 = document.getElementById('compareGameLogs1');
-  const gl2 = document.getElementById('compareGameLogs2');
-  if (gl1) gl1.innerHTML = _buildStatsHTML(p1.game_logs_by_year, true, p1.position);
-  if (gl2) gl2.innerHTML = _buildStatsHTML(p2.game_logs_by_year, true, p2.position);
+  // Inject game logs for both players. /api/player-details deliberately returns
+  // an empty game_logs_by_year (it's expensive), so — like the single player
+  // modal's Stats tab — we lazy-load them from /api/player-game-logs here.
+  _cmpLoadGameLogs(p1.player_id, p1.position, 'compareGameLogs1');
+  _cmpLoadGameLogs(p2.player_id, p2.position, 'compareGameLogs2');
 
   // Weekly usage trends are rendered by cmpRenderWeekly() (driven from
   // cmpRenderMetrics) so they track each side's selected season + week range.

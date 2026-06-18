@@ -2405,7 +2405,7 @@ _AM_JS = r"""
     if (!ctrl || !sel) return;
     const spec = cfg.metrics[xk] && cfg.metrics[xk].minVol;
     if (!spec || !spec.opts || !spec.opts.length) { ctrl.style.display = 'none'; return; }
-    if (lbl) lbl.textContent = 'Min ' + spec.label;
+    if (lbl) lbl.textContent = spec.label;
     sel.innerHTML = '<option value="">Any</option>'
       + spec.opts.map(function(v) {
           return '<option value="' + v + '"' + (String(v) === _amGraphMinVol ? ' selected' : '') + '>' + v + '+</option>';
@@ -2433,6 +2433,31 @@ _AM_JS = r"""
   let _amGraphToken = 0;
   let _amPinnedDot = null;
   const _amHsPreload = {};
+  // Client-side cache of per-metric leaderboard responses, keyed by request URL
+  // (the params are deterministic for a given metric + filter set). Reopening a
+  // graph or toggling back to a prior axis is then instant — no refetch. Entries
+  // are invalidated whenever the underlying season/week filters change.
+  const _amLbCache = new Map();
+  let _amLbCacheSig = '';
+  function _amFetchLeaderboard(url) {
+    const hit = _amLbCache.get(url);
+    if (hit) return Promise.resolve(hit);
+    return fetch(url).then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (d) {
+          _amLbCache.set(url, d);
+          if (_amLbCache.size > 60) _amLbCache.delete(_amLbCache.keys().next().value);
+        }
+        return d;
+      }).catch(function() { return null; });
+  }
+  // Drop cached leaderboards when the season/week/league context changes so we
+  // never show stale data after the user switches the page-level filters.
+  function _amSyncLbCache() {
+    const sig = [state.season || '', cfg.leagueId || '', cfg.platform || '',
+                 (resolveWeekRange().ws || ''), (resolveWeekRange().we || '')].join('|');
+    if (sig !== _amLbCacheSig) { _amLbCache.clear(); _amLbCacheSig = sig; }
+  }
   // Sync the graph-modal's position button active states to _amGraphPos.
   function _amSyncGraphPosBtns() {
     const bar = document.getElementById('amGraphPosBar');
@@ -2513,13 +2538,17 @@ _AM_JS = r"""
       _amGraphMinVol = defaultVol(xk);
       _amUpdateGraphVolCtrl(xk);
     }
+    _amSyncLbCache();
     const token = ++_amGraphToken;
-    plot.innerHTML = '<div class="am-graph-empty"><div class="loading-spinner" style="margin:0 auto 10px;"></div>Loading…</div>';
     const uniq = [xk, yk]; if (zk && uniq.indexOf(zk) === -1) uniq.push(zk);
-    Promise.all(uniq.map(function(k) {
-      return fetch('/api/advanced-metrics/leaderboard?' + _amGraphParams(k, k === xk))
-        .then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
-    })).then(function(results) {
+    const urls = uniq.map(function(k) { return '/api/advanced-metrics/leaderboard?' + _amGraphParams(k, k === xk); });
+    // If every needed series is already cached, render synchronously (no spinner
+    // flash) so reopening / toggling axes is effectively instant.
+    const allCached = urls.every(function(u) { return _amLbCache.has(u); });
+    if (!allCached) {
+      plot.innerHTML = '<div class="am-graph-empty"><div class="loading-spinner" style="margin:0 auto 10px;"></div>Loading…</div>';
+    }
+    Promise.all(urls.map(_amFetchLeaderboard)).then(function(results) {
       if (token !== _amGraphToken) return;
       const byKey = {};
       uniq.forEach(function(k, i) { byKey[k] = (results[i] && results[i].players) || []; });
