@@ -817,7 +817,9 @@ BASE_HTML = """
     <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
     <link rel="stylesheet" href="/static/paywall.css">
 
-    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+    <!-- defer so a slow CDN never render-blocks first paint / the splash;
+         chart code guards with `typeof Plotly !== 'undefined'` and polls. -->
+    <script defer src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
     <script>
       if ('serviceWorker' in navigator) {{
         navigator.serviceWorker.register('/sw.js').catch(() => {{}});

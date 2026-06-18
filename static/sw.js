@@ -2,7 +2,14 @@
 // Caches static assets and key pages for offline/fast repeat loads.
 // Handles Web Push notifications.
 
-const CACHE_NAME = 'br-fantasy-v6';
+const CACHE_NAME = 'br-fantasy-v7';
+
+// How long to wait on the network for a page (when we already have a cached
+// copy) before painting the cached version. This is what kills the blank
+// white screen on PWA launch: instead of staring at the browser's blank page
+// while a slow/cold server trickles a response in, we show the last-good page
+// immediately and quietly update the cache once the network finishes.
+const NAV_TIMEOUT_MS = 3500;
 
 const PRECACHE_URLS = [
   '/static/dashboard.css',
@@ -10,18 +17,6 @@ const PRECACHE_URLS = [
   '/static/BR_Logo.png',
   '/static/Website_Logo.png',
 ];
-
-// Navigation pages to cache as user visits them
-const CACHE_ON_VISIT = new Set([
-  '/dynasty-trade-value-chart',
-  '/top-movers',
-  '/players',
-  '/rankings/dynasty',
-  '/rankings/dynasty-qb',
-  '/rankings/dynasty-rb',
-  '/rankings/dynasty-wr',
-  '/rankings/dynasty-te',
-]);
 
 // ── Install: pre-cache static assets ─────────────────────────────────────────
 self.addEventListener('install', event => {
@@ -68,24 +63,47 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Navigation: network-first, cache key pages for offline fallback
+  // Navigation: network-first with a timeout fallback to cache.
+  //  - Network wins quickly  → fresh page (and we refresh the cache).
+  //  - Network is slow        → serve the cached page after NAV_TIMEOUT_MS so the
+  //                             user never sees a blank screen; the in-flight
+  //                             request keeps going and updates the cache.
+  //  - Network fails / offline → cached page, else the cached home shell.
+  // Every successful page (including the "/" PWA start_url) is cached so repeat
+  // launches paint instantly.
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request).then(response => {
-        if (response && response.status === 200 && CACHE_ON_VISIT.has(url.pathname)) {
-          // Clone synchronously, BEFORE returning the response — otherwise the
-          // deferred caches.open().then() runs after the body is already being
-          // consumed by the browser, throwing "Response body is already used".
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
-        }
-        return response;
-      }).catch(() =>
-        caches.match(request).then(cached => cached || caches.match('/'))
-      )
-    );
+    event.respondWith(handleNavigate(request));
   }
 });
+
+async function handleNavigate(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request);
+
+  // Kick off the network request. Clone BEFORE returning so the body isn't
+  // already consumed when we stash it in the cache.
+  const networkFetch = fetch(request).then(response => {
+    if (response && response.status === 200) {
+      try { cache.put(request, response.clone()); } catch (_) {}
+    }
+    return response;
+  }).catch(() => null);
+
+  if (cached) {
+    // Race the network against a timeout. Whichever resolves first wins; on a
+    // slow server the timeout fires and we serve the cached shell immediately
+    // while networkFetch keeps running in the background to refresh the cache.
+    const timeout = new Promise(resolve => setTimeout(() => resolve(null), NAV_TIMEOUT_MS));
+    const winner = await Promise.race([networkFetch, timeout]);
+    return winner || cached;
+  }
+
+  // No cached copy yet: wait for the network, then fall back to the home shell.
+  const net = await networkFetch;
+  if (net) return net;
+  const home = await cache.match('/');
+  return home || Response.error();
+}
 
 // ── Push notifications ─────────────────────────────────────────────────────────
 self.addEventListener('push', event => {
