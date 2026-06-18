@@ -312,6 +312,10 @@ def build_advanced_metrics_body(
               <button type="button" class="am-legend-close" aria-label="Close"
                 onclick="document.getElementById('amGraphModal').style.display='none'">&times;</button>
             </div>
+            <button type="button" class="am-graph-ctrl-toggle" id="amGraphCtrlToggle" onclick="amToggleGraphControls()">
+              <span id="amGraphCtrlLabel">Settings</span>
+              <span id="amGraphCtrlChev">&#9660;</span>
+            </button>
             <div class="am-graph-controls">
               <div class="am-gctrl"><label for="amGraphX">X axis</label><select id="amGraphX" onchange="amRenderGraph()"></select></div>
               <div class="am-gctrl"><label for="amGraphY">Y axis</label><select id="amGraphY" onchange="amRenderGraph()"></select></div>
@@ -893,7 +897,21 @@ def build_advanced_metrics_body(
         font-size:12px; color:var(--text-muted); line-height:1.4;
       }
       .am-graph-tip b { color:var(--text); }
+      /* Mobile controls toggle button (hidden on desktop) */
+      .am-graph-ctrl-toggle {
+        display:none; width:100%; padding:7px 14px;
+        border:none; border-bottom:1px solid var(--border);
+        background:var(--bg-alt,rgba(0,0,0,.03)); cursor:pointer;
+        font-size:11px; font-weight:700; color:var(--text-muted);
+        text-transform:uppercase; letter-spacing:.04em;
+        align-items:center; justify-content:space-between;
+      }
+      .am-graph-ctrl-toggle:active { background:var(--row,rgba(0,0,0,.06)); }
+      /* Controls hidden state (mobile) */
+      .am-graph-controls.am-ctrl-hidden,
+      .am-graph-pos-bar.am-ctrl-hidden { display:none !important; }
       @media (max-width:600px) {
+        .am-graph-ctrl-toggle { display:flex; }
         .am-legend-modal { padding:8px; }
         .am-graph-card { max-height:92vh; }
         .am-graph-controls { gap:8px; padding:10px 12px; }
@@ -2565,7 +2583,32 @@ _AM_JS = r"""
       note.textContent = bits.filter(Boolean).join(' · ');
     }
     modal.style.display = 'flex';
+    // On mobile, start with controls collapsed so the chart is immediately visible.
+    const isMobileView = window.matchMedia('(max-width:600px)').matches;
+    const ctrl = modal.querySelector('.am-graph-controls');
+    const pos = document.getElementById('amGraphPosBar');
+    const chev = document.getElementById('amGraphCtrlChev');
+    if (isMobileView && ctrl) {
+      ctrl.classList.add('am-ctrl-hidden');
+      if (pos) pos.classList.add('am-ctrl-hidden');
+      if (chev) chev.textContent = '▼';
+    } else {
+      if (ctrl) ctrl.classList.remove('am-ctrl-hidden');
+      if (pos) pos.classList.remove('am-ctrl-hidden');
+      if (chev) chev.textContent = '▲';
+    }
     window.amRenderGraph();
+  };
+  window.amToggleGraphControls = function() {
+    const modal = document.getElementById('amGraphModal');
+    if (!modal) return;
+    const ctrl = modal.querySelector('.am-graph-controls');
+    const pos = document.getElementById('amGraphPosBar');
+    const chev = document.getElementById('amGraphCtrlChev');
+    if (!ctrl) return;
+    const nowHidden = ctrl.classList.toggle('am-ctrl-hidden');
+    if (pos) pos.classList.toggle('am-ctrl-hidden', nowHidden);
+    if (chev) chev.textContent = nowHidden ? '▼' : '▲';
   };
   window.amRenderGraph = function() {
     const plot = document.getElementById('amGraphPlot');
@@ -2962,10 +3005,6 @@ _AM_JS = r"""
       btn.innerHTML = msg;
       setTimeout(function() { btn.innerHTML = prev; }, 2500);
     };
-    // On touch/mobile, data-URL anchor clicks navigate the current page away on
-    // iOS Safari, closing the modal and losing graph state. Redirect to Copy Link.
-    const isMobile = navigator.maxTouchPoints > 1 || window.matchMedia('(pointer:coarse)').matches;
-    if (isMobile) { flash('Use Copy Link ↑'); return; }
     const TH = _amGraphPalette();
     const vb = (svg.getAttribute('viewBox') || '0 0 720 580').split(/\s+/).map(Number);
     const W = vb[2] || 720, H = vb[3] || 580, scale = 2;
@@ -2986,15 +3025,25 @@ _AM_JS = r"""
       const xk = document.getElementById('amGraphX').value;
       const yk = document.getElementById('amGraphY').value;
       const fname = 'br-metrics-' + xk + '-vs-' + yk + '.png';
-      const dataUrl = canvas.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = dataUrl;
-      a.download = fname;
-      a.style.position = 'fixed'; a.style.left = '-9999px';
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(function() { document.body.removeChild(a); }, 100);
-      flash('Saved ✓');
+      // iOS Safari ignores <a download> and navigates the page — open in new tab instead
+      // so the user can long-press → "Save to Photos / Files".
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      canvas.toBlob(function(blob) {
+        if (!blob) { flash('Failed'); return; }
+        const objUrl = URL.createObjectURL(blob);
+        if (isIOS) {
+          const w = window.open(objUrl, '_blank');
+          flash(w ? 'Tap & hold to save' : 'Failed');
+          setTimeout(function() { URL.revokeObjectURL(objUrl); }, 15000);
+        } else {
+          const a = document.createElement('a');
+          a.href = objUrl; a.download = fname;
+          a.style.position = 'fixed'; a.style.left = '-9999px';
+          document.body.appendChild(a); a.click();
+          setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(objUrl); }, 1000);
+          flash('Saved ✓');
+        }
+      }, 'image/png');
     };
     img.onerror = function() { flash('Failed'); };
     img.src = src;
