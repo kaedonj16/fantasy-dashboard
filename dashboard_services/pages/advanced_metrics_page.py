@@ -241,6 +241,13 @@ def build_advanced_metrics_body(
             <button class="am-pos" data-pos="WR">WR</button>
             <button class="am-pos" data-pos="TE">TE</button>
           </div>
+          <!-- Add Metric picker lives here so it's always accessible even when
+               the compare bar is collapsed (no extra metrics selected). -->
+          <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
+            <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Metric</button>
+            <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
+          </div>
+          <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
           <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
           <label class="am-roster-toggle" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
             <input type="checkbox" id="amTrendToggle">
@@ -252,19 +259,15 @@ def build_advanced_metrics_body(
           </label>
         </div>
 
-        <!-- Compare bar: chips for active metrics + add-stat picker -->
-        <div id="amCompareBar" class="am-compare-bar">
+        <!-- Compare bar: only visible when extra metrics or pinned-compare is active. -->
+        <div id="amCompareBar" class="am-compare-bar" style="display:none;">
           <div id="amCompareChips" class="am-compare-chips"></div>
           <button id="amComparePinnedBtn" type="button" class="am-add-stat-btn" style="display:none;">&#8645; Compare Pinned</button>
-          <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
-            <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Add Metric</button>
-            <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
-          </div>
           <button id="amClearExtrasBtn" type="button" class="am-add-stat-btn am-clear-btn" style="display:none;" onclick="amClearExtras()">&#10005; Clear</button>
         </div>
 
-        <!-- Filter bar: age + combo conditions -->
-        <div id="amFilterBar" class="am-filter-bar">
+        <!-- Filter bar: only visible when combo filters, age, or vol control is active. -->
+        <div id="amFilterBar" class="am-filter-bar" style="display:none;">
           <div class="am-filter-chips" id="amFilterChips"></div>
           <div class="am-age-wrap" id="amAgeWrap" style="display:none;">
             <span class="am-filter-label">Age:</span>
@@ -276,7 +279,6 @@ def build_advanced_metrics_body(
             <span class="am-filter-label" id="amVolLabel">Min</span>
             <select id="amMinGames" class="am-select am-season-select" style="font-size:12px;padding:4px 8px;"></select>
           </div>
-          <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
           <div id="amFilterForm" class="am-filter-form" style="display:none;">
             <select id="amFilterKey" class="am-select am-season-select" style="min-width:110px;font-size:12px;padding:5px 8px;"></select>
             <select id="amFilterOp" class="am-select am-season-select" style="min-width:52px;font-size:12px;padding:5px 8px;">
@@ -319,6 +321,10 @@ def build_advanced_metrics_body(
                 <option value="50">Top 50 by X</option>
                 <option value="75">Top 75 by X</option>
               </select></div>
+              <div class="am-gctrl" id="amGraphVolCtrl" style="display:none;">
+                <label id="amGraphVolLabel">Min</label>
+                <select id="amGraphMinVolSel"></select>
+              </div>
               <div class="am-gctrl am-graph-actions">
                 <label>&nbsp;</label>
                 <div style="display:flex;gap:6px;">
@@ -333,6 +339,13 @@ def build_advanced_metrics_body(
                   </button>
                 </div>
               </div>
+            </div>
+            <div class="am-graph-pos-bar" id="amGraphPosBar">
+              <button class="am-pos active" data-gpos="">All</button>
+              <button class="am-pos" data-gpos="QB">QB</button>
+              <button class="am-pos" data-gpos="RB">RB</button>
+              <button class="am-pos" data-gpos="WR">WR</button>
+              <button class="am-pos" data-gpos="TE">TE</button>
             </div>
             <div class="am-graph-plot-wrap">
               <div id="amGraphPlot"><div class="am-graph-empty">Pick two metrics to plot.</div></div>
@@ -444,7 +457,7 @@ def build_advanced_metrics_body(
       @media (max-width:600px) {
         .am-legend-btn { padding:6px 10px; font-size:11px; }
       }
-      .am-controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin:16px 0 12px; }
+      .am-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:12px 0 8px; }
       .am-ctrl { display:flex; flex-direction:column; gap:4px; }
       .am-ctrl-search { flex:1; min-width:160px; }
       .am-ctrl-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
@@ -463,25 +476,25 @@ def build_advanced_metrics_body(
       .am-season-select { min-width:90px; }
       .am-search { width:100%; box-sizing:border-box; }
       .am-sort-btn { cursor:pointer; font-weight:600; white-space:nowrap; }
-      /* Subcontrols row: positions + roster toggle always on one line */
-      .am-subcontrols { display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:nowrap; }
-      .am-positions { display:flex; gap:6px; flex:1; min-width:0; overflow-x:auto; padding-bottom:1px; }
+      /* Subcontrols row: positions + action buttons + toggles */
+      .am-subcontrols { display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+      .am-positions { display:flex; gap:5px; flex:1 1 auto; min-width:0; overflow-x:auto; padding-bottom:1px; }
       .am-roster-toggle { flex-shrink:0; }
       .am-filters-btn { display:none; }
       /* Mobile: metric 2/3 + season 1/3 on the first row, search full width,
          Team/Min/Sort collapsed behind a Filters button beside the position
          pills, toggles wrap underneath. Desktop keeps one aligned row. */
       @media (max-width:600px) {
-        .am-controls { gap:10px; }
-        .am-ctrl { flex:1 1 calc(50% - 5px); min-width:0; }
+        .am-controls { gap:8px; }
+        .am-ctrl { flex:1 1 calc(50% - 4px); min-width:0; }
         .am-controls .am-ctrl:first-child { flex:2 1 0; }
         #amSeasonCtrl { flex:1 1 0; }
         .am-ctrl-search { flex:1 1 100%; order:1; }
         .am-mobile-filter { order:2; }
         .am-ctrl .am-select, .am-ctrl .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
         .am-controls:not(.am-open) .am-mobile-filter { display:none !important; }
-        .am-filters-btn { display:inline-block; flex-shrink:0; padding:6px 14px; font-size:12px; border-radius:20px; }
-        .am-subcontrols { flex-wrap:wrap; row-gap:10px; }
+        .am-filters-btn { display:inline-block; flex-shrink:0; padding:6px 12px; font-size:12px; border-radius:20px; }
+        .am-subcontrols { row-gap:8px; }
         .am-positions { flex:1 1 auto; flex-wrap:wrap; overflow-x:visible; min-width:0; }
       }
       .am-pos {
@@ -592,9 +605,12 @@ def build_advanced_metrics_body(
       /* ── Multi-stat compare bar ─────────────────────────────────────── */
       .am-compare-bar {
         display:flex; align-items:center; gap:6px; flex-wrap:wrap;
-        margin-bottom:12px; min-height:28px;
+        margin-bottom:8px;
       }
       .am-compare-chips { display:flex; flex-wrap:wrap; gap:6px; flex:1; min-width:0; }
+      @media (max-width:600px) {
+        .am-compare-chips { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px; }
+      }
       .am-chip {
         display:inline-flex; align-items:center; gap:5px;
         padding:3px 10px; border-radius:14px;
@@ -753,9 +769,12 @@ def build_advanced_metrics_body(
       /* ── Filter bar ──────────────────────────────────────────────────────── */
       .am-filter-bar {
         display:flex; align-items:center; gap:6px; flex-wrap:wrap;
-        margin-bottom:10px; min-height:24px; padding-right:4px;
+        margin-bottom:8px; padding-right:4px;
       }
       .am-filter-chips { display:flex; flex-wrap:wrap; gap:5px; flex:1; min-width:0; }
+      @media (max-width:600px) {
+        .am-filter-chips { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+      }
       .am-filter-chip {
         display:inline-flex; align-items:center; gap:4px;
         padding:3px 9px; border-radius:12px;
@@ -802,10 +821,8 @@ def build_advanced_metrics_body(
       .am-sp-preset-btn:hover { background:rgba(37,99,235,.14); }
       /* Filter column headers inserted before primary metric column */
       th.am-filter-col-hdr { border-left:1px solid var(--border); }
-      /* Mobile: hide the age filter and + Filter button unless Filters dropdown is open */
+      /* Mobile: show filter bar content (age inputs etc.) when Filters is open */
       @media (max-width:600px) {
-        #amAddFilterBtn { display:none !important; }
-        #amFilterBar.am-mobile-open #amAddFilterBtn { display:inline-flex !important; }
         #amFilterBar.am-mobile-open { flex-wrap:wrap; }
       }
       /* Week range note */
@@ -832,6 +849,11 @@ def build_advanced_metrics_body(
       }
       .am-graph-actions { flex:0 0 auto !important; min-width:0 !important; justify-content:flex-end; margin-left:auto; }
       .am-graph-actions .am-add-stat-btn { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+      /* Position filter bar inside the graph modal */
+      .am-graph-pos-bar {
+        display:flex; gap:6px; padding:8px 18px;
+        border-bottom:1px solid var(--border); flex-wrap:wrap;
+      }
       /* Plot area flexes and scrolls inside the 82vh card so controls never clip. */
       .am-graph-plot-wrap { position:relative; padding:14px 16px 16px; overflow:auto; flex:1 1 auto; min-height:0; -webkit-overflow-scrolling:touch; }
       /* Hover/tap card: player headshot + the selected stats. Uses site-theme
@@ -1177,19 +1199,24 @@ _AM_JS = r"""
 
   // ── Multi-stat compare ────────────────────────────────────────────────────
   function updateCompareBar() {
+    const bar     = document.getElementById('amCompareBar');
     const chipsEl = document.getElementById('amCompareChips');
     const addBtn  = document.getElementById('amAddStatBtn');
+    const pinnedBtn = document.getElementById('amComparePinnedBtn');
     if (!chipsEl) return;
-    const all = [state.metric, ...state.extraMetrics];
-    chipsEl.innerHTML = all.map((key, i) => {
+    // Only show extra-metric chips (not the primary) — the primary is already
+    // visible in the dropdown, so showing it here when alone is redundant clutter.
+    chipsEl.innerHTML = state.extraMetrics.map(function(key) {
       const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
-      const primary = i === 0;
-      const x = primary ? '' : '<button class="am-chip-x" onclick="event.stopPropagation();amRemoveExtra(\'' + key + '\')" aria-label="Remove">×</button>';
-      return '<span class="am-chip' + (primary ? ' am-chip-primary' : '') + '">' + lbl + x + '</span>';
+      return '<span class="am-chip">' + lbl
+        + '<button class="am-chip-x" onclick="event.stopPropagation();amRemoveExtra(\'' + key + '\')" aria-label="Remove">\xd7</button></span>';
     }).join('');
     if (addBtn) addBtn.disabled = state.extraMetrics.length >= MAX_COMPARE;
     const clearBtn = document.getElementById('amClearExtrasBtn');
     if (clearBtn) clearBtn.style.display = state.extraMetrics.length ? '' : 'none';
+    // Show the compare bar only when there's something to show.
+    const hasPinned = pinnedBtn && pinnedBtn.style.display !== 'none';
+    if (bar) bar.style.display = (state.extraMetrics.length > 0 || hasPinned) ? 'flex' : 'none';
   }
 
   function buildStatPicker() {
@@ -1878,6 +1905,8 @@ _AM_JS = r"""
       minGamesSel.value = prev || '';
       gamesCtrl.style.display = '';
     }
+    // Sync filter-bar visibility after the vol control state changes.
+    updateFilterBar();
   }
   function updatePosButtons() {
     const rel = new Set(relevantPositions(state.metric));
@@ -2335,9 +2364,12 @@ _AM_JS = r"""
     _amSyncGraphThemeBtn();
     window.amRenderGraph();
   };
-  // Build <optgroup> options from cfg.metrics, filtered to the active position.
+  // Position filter local to the graph modal (null = all). Initialized from
+  // state.position each time the modal opens; can be changed without leaving the modal.
+  let _amGraphPos = null;
+  // Build <optgroup> options from cfg.metrics, filtered to the graph-local position.
   function _amGraphMetricOptions(selectedKey) {
-    const pos = (state.position && state.position !== 'ALL') ? state.position : null;
+    const pos = _amGraphPos;
     const cats = {};
     Object.keys(cfg.metrics).forEach(function(k) {
       const m = cfg.metrics[k];
@@ -2361,14 +2393,38 @@ _AM_JS = r"""
     });
     return html;
   }
-  // Leaderboard params for one metric, mirroring the page's current filters.
-  function _amGraphParams(metricKey) {
+  // Min vol state for the graph-modal X metric. Initialized to defaultVol(xk)
+  // each time X changes; user can override via the #amGraphMinVolSel control.
+  let _amGraphMinVol = '';
+  let _amGraphLastXk = '';
+  // Populate/show the min-vol control for a given X metric key, or hide it.
+  function _amUpdateGraphVolCtrl(xk) {
+    const ctrl = document.getElementById('amGraphVolCtrl');
+    const sel = document.getElementById('amGraphMinVolSel');
+    const lbl = document.getElementById('amGraphVolLabel');
+    if (!ctrl || !sel) return;
+    const spec = cfg.metrics[xk] && cfg.metrics[xk].minVol;
+    if (!spec || !spec.opts || !spec.opts.length) { ctrl.style.display = 'none'; return; }
+    if (lbl) lbl.textContent = 'Min ' + spec.label;
+    sel.innerHTML = '<option value="">Any</option>'
+      + spec.opts.map(function(v) {
+          return '<option value="' + v + '"' + (String(v) === _amGraphMinVol ? ' selected' : '') + '>' + v + '+</option>';
+        }).join('');
+    sel.value = _amGraphMinVol;
+    ctrl.style.display = '';
+  }
+  // Leaderboard params for one metric. Uses the graph-modal's own position filter
+  // (_amGraphPos) if set, otherwise falls back to the page's position filter.
+  // For the X metric _amGraphMinVol overrides the default min-vol so the user
+  // can adjust it from the graph modal's own control.
+  function _amGraphParams(metricKey, isX) {
     const p = new URLSearchParams({ metric: metricKey, platform: cfg.platform });
     if (cfg.leagueId) p.set('league_id', cfg.leagueId);
     if (state.season) p.set('season', String(state.season));
-    if (state.position && state.position !== 'ALL') p.set('position', state.position);
-    const vol = defaultVol(metricKey);
-    if (vol) p.set('min_vol', vol);
+    const graphPos = _amGraphPos || (state.position !== 'ALL' ? state.position : null);
+    if (graphPos) p.set('position', graphPos);
+    const vol = isX ? _amGraphMinVol : defaultVol(metricKey);
+    if (vol) p.set('min_vol', vol); else p.delete('min_vol');
     const wr = resolveWeekRange();
     if (wr.ws) p.set('week_start', String(wr.ws));
     if (wr.we) p.set('week_end', String(wr.we));
@@ -2377,6 +2433,15 @@ _AM_JS = r"""
   let _amGraphToken = 0;
   let _amPinnedDot = null;
   const _amHsPreload = {};
+  // Sync the graph-modal's position button active states to _amGraphPos.
+  function _amSyncGraphPosBtns() {
+    const bar = document.getElementById('amGraphPosBar');
+    if (!bar) return;
+    bar.querySelectorAll('[data-gpos]').forEach(function(btn) {
+      const v = btn.getAttribute('data-gpos');
+      btn.classList.toggle('active', v === (_amGraphPos || ''));
+    });
+  }
   window.amOpenGraph = function() {
     const modal = document.getElementById('amGraphModal');
     const xSel = document.getElementById('amGraphX');
@@ -2384,33 +2449,39 @@ _AM_JS = r"""
     const zSel = document.getElementById('amGraphZ');
     const note = document.getElementById('amGraphCtxNote');
     if (!modal || !xSel || !ySel || !zSel) return;
-    const pos = (state.position && state.position !== 'ALL') ? state.position : null;
+    // Initialize the graph-local position filter from the page's current position.
+    _amGraphPos = (state.position && state.position !== 'ALL') ? state.position : null;
+    _amSyncGraphPosBtns();
     const applic = Object.keys(cfg.metrics).filter(function(k) {
       const m = cfg.metrics[k];
-      return !pos || !m.positions || m.positions.indexOf(pos) >= 0;
+      return !_amGraphPos || !m.positions || m.positions.indexOf(_amGraphPos) >= 0;
     });
-    const okk = function(k) { return k && cfg.metrics[k] && applic.indexOf(k) >= 0; };
-    // Curated default scatters per position: opportunity (X) vs efficiency (Y),
-    // bubble = overall value/explosiveness. Falls back to a generic pick below.
-    const PRESETS = {
-      WR: { x: 'target_share',      y: 'yards_per_target', z: 'receiving_epa' },
-      RB: { x: 'opportunity_share', y: 'yards_per_carry',  z: 'rushing_epa' },
-      TE: { x: 'target_share',      y: 'yards_per_reception', z: 'receiving_epa' },
-    };
-    let curX, curY, curZ = '';
-    const preset = pos ? PRESETS[pos] : null;
-    if (preset && okk(preset.x) && okk(preset.y)) {
-      curX = preset.x; curY = preset.y; curZ = okk(preset.z) ? preset.z : '';
-    } else {
-      curX = (applic.indexOf(state.metric) >= 0) ? state.metric : (applic[0] || state.metric);
-      const xm = cfg.metrics[curX];
-      curY = applic.find(function(k) { return k !== curX && cfg.metrics[k].category === (xm && xm.category); })
-        || applic.find(function(k) { return k !== curX; }) || curX;
+    // X = current primary metric; Y = next metric in same category.
+    // If primary is the last in its category, use the one above it instead
+    // (so Y is always adjacent and never from a different category).
+    let curX = (applic.indexOf(state.metric) >= 0) ? state.metric : (applic[0] || '');
+    let curY = '', curZ = '';
+    if (curX) {
+      const xCat = cfg.metrics[curX] && cfg.metrics[curX].category;
+      // Sort within category by label (same order as the dropdown) for a stable "next".
+      const catMetrics = applic
+        .filter(function(k) { return cfg.metrics[k].category === xCat; })
+        .sort(function(a, b) { return cfg.metrics[a].label.localeCompare(cfg.metrics[b].label); });
+      const idx = catMetrics.indexOf(curX);
+      if (catMetrics.length > 1) {
+        curY = idx < catMetrics.length - 1 ? catMetrics[idx + 1] : catMetrics[idx - 1];
+      } else {
+        curY = applic.find(function(k) { return k !== curX; }) || '';
+      }
     }
     xSel.innerHTML = _amGraphMetricOptions(curX);
     ySel.innerHTML = _amGraphMetricOptions(curY);
     zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions('');
     xSel.value = curX; ySel.value = curY; zSel.value = curZ;
+    // Initialise the min-vol control for the chosen X metric.
+    _amGraphLastXk = curX;
+    _amGraphMinVol = defaultVol(curX);
+    _amUpdateGraphVolCtrl(curX);
     // Default graph theme to the site theme each open; preload both logos.
     _amGraphTheme = (document.documentElement.getAttribute('data-theme') === 'dark') ? 'dark' : 'light';
     _amSyncGraphThemeBtn();
@@ -2418,7 +2489,7 @@ _AM_JS = r"""
     if (note) {
       const bits = [];
       bits.push(state.season || (cfg.seasons && cfg.seasons[0]) || '');
-      bits.push(pos ? pos : 'All positions');
+      bits.push(_amGraphPos ? _amGraphPos : 'All positions');
       const wr = resolveWeekRange();
       if (wr.ws && wr.we) bits.push('W' + wr.ws + '–W' + wr.we);
       note.textContent = bits.filter(Boolean).join(' · ');
@@ -2436,11 +2507,17 @@ _AM_JS = r"""
     const xk = xSel.value, yk = ySel.value, zk = zSel ? zSel.value : '';
     const topN = nSel ? (parseInt(nSel.value, 10) || 25) : 25;
     if (!xk || !yk) { plot.innerHTML = '<div class="am-graph-empty">Pick an X and Y metric.</div>'; return; }
+    // When X changes reset min-vol to the new metric's default and refresh the control.
+    if (xk !== _amGraphLastXk) {
+      _amGraphLastXk = xk;
+      _amGraphMinVol = defaultVol(xk);
+      _amUpdateGraphVolCtrl(xk);
+    }
     const token = ++_amGraphToken;
     plot.innerHTML = '<div class="am-graph-empty"><div class="loading-spinner" style="margin:0 auto 10px;"></div>Loading…</div>';
     const uniq = [xk, yk]; if (zk && uniq.indexOf(zk) === -1) uniq.push(zk);
     Promise.all(uniq.map(function(k) {
-      return fetch('/api/advanced-metrics/leaderboard?' + _amGraphParams(k))
+      return fetch('/api/advanced-metrics/leaderboard?' + _amGraphParams(k, k === xk))
         .then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
     })).then(function(results) {
       if (token !== _amGraphToken) return;
@@ -2449,18 +2526,22 @@ _AM_JS = r"""
       const xRows = byKey[xk];
       const yMap = new Map(byKey[yk].map(function(r) { return [String(r.player_id), Number(r.value)]; }));
       const zMap = zk ? new Map((byKey[zk] || []).map(function(r) { return [String(r.player_id), Number(r.value)]; })) : null;
-      let pts = [];
+      let ptsAll = [];
       xRows.forEach(function(rx) {
         const pid = String(rx.player_id);
         if (!yMap.has(pid)) return;
         const xv = Number(rx.value), yv = yMap.get(pid);
         if (!isFinite(xv) || !isFinite(yv)) return;
-        pts.push({ pid: pid, name: rx.name, position: rx.position, headshot: rx.headshot || '',
-                   x: xv, y: yv, z: (zMap && zMap.has(pid)) ? zMap.get(pid) : null });
+        ptsAll.push({ pid: pid, name: rx.name, position: rx.position, headshot: rx.headshot || '',
+                      x: xv, y: yv, z: (zMap && zMap.has(pid)) ? zMap.get(pid) : null });
       });
       const xLower = cfg.metrics[xk] && cfg.metrics[xk].lowerBetter;
-      pts.sort(function(a, b) { return xLower ? a.x - b.x : b.x - a.x; });
-      pts = pts.slice(0, topN);
+      ptsAll.sort(function(a, b) { return xLower ? a.x - b.x : b.x - a.x; });
+      // Compute averages from the FULL eligible population so average lines are
+      // consistent regardless of the TopN display setting.
+      const avgXFull = ptsAll.length ? ptsAll.reduce(function(s, p) { return s + p.x; }, 0) / ptsAll.length : 0;
+      const avgYFull = ptsAll.length ? ptsAll.reduce(function(s, p) { return s + p.y; }, 0) / ptsAll.length : 0;
+      const pts = ptsAll.slice(0, topN);
       if (!pts.length) {
         plot.innerHTML = '<div class="am-graph-empty">No players have data for both metrics with the current filters.</div>';
         return;
@@ -2475,7 +2556,7 @@ _AM_JS = r"""
       _amPinnedDot = null; _amHideHoverForce();
       _amLoadLogo(_amGraphTheme).then(function(logo) {
         if (token !== _amGraphToken) return;
-        plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo);
+        plot.innerHTML = _amBuildScatter(pts, xk, yk, zk, logo, avgXFull, avgYFull);
         const tipEl = document.getElementById('amGraphTip');
         if (tipEl) tipEl.innerHTML = '<span style="opacity:.6">Hover or tap a point for player details</span>';
         // Signal the social-preview renderer that the graph is fully drawn.
@@ -2490,7 +2571,9 @@ _AM_JS = r"""
   // Builds a fully self-contained SVG (explicit theme colors, embedded logo
   // watermark, in-SVG title/legend) so it renders identically on screen and when
   // rasterized to a shareable PNG. `logo` is a data: URI (may be empty).
-  function _amBuildScatter(pts, xk, yk, zk, logo) {
+  // `avgXFull`/`avgYFull` are averages from the full population; when provided
+  // the crosshair lines reflect the whole position group, not just the visible TopN.
+  function _amBuildScatter(pts, xk, yk, zk, logo, avgXFull, avgYFull) {
     const TH = _amGraphPalette();
     const FONT = "system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
     // Responsive layout: a portrait viewBox with larger relative fonts on phones
@@ -2560,10 +2643,11 @@ _AM_JS = r"""
     s += txt(((padL + W - padR) / 2).toFixed(1), (H - padB + 38), _amEsc(cfg.metrics[xk].label), L.fAxis, TH.text, 700, 'middle');
     s += txt(0, 0, _amEsc(cfg.metrics[yk].label), L.fAxis, TH.text, 700, 'middle',
       'translate(15,' + ((padT + H - padB) / 2).toFixed(1) + ') rotate(-90)');
-    // Average reference lines (mean of the plotted players) — dashed crosshair
-    // that splits the chart into above/below-average quadrants.
-    const avgX = xs.reduce(function(a, b) { return a + b; }, 0) / xs.length;
-    const avgY = ys.reduce(function(a, b) { return a + b; }, 0) / ys.length;
+    // Average reference lines — crosshair splitting above/below-average quadrants.
+    // Uses the full-population averages passed from amRenderGraph so the lines
+    // are stable regardless of the TopN setting.
+    const avgX = (avgXFull != null) ? avgXFull : xs.reduce(function(a, b) { return a + b; }, 0) / xs.length;
+    const avgY = (avgYFull != null) ? avgYFull : ys.reduce(function(a, b) { return a + b; }, 0) / ys.length;
     const avgCol = (_amGraphTheme === 'dark') ? '#f59e0b' : '#d97706';
     if (avgX >= xmin && avgX <= xmax) {
       const ax = px(avgX);
@@ -2720,7 +2804,44 @@ _AM_JS = r"""
   };
   // One-time wiring: hover (desktop) / tap (touch) a point to show a card with
   // the headshot + selected stats; re-render on resize so layout stays responsive.
+  // Also wires the graph-modal position filter buttons.
   (function _amInitGraphInteractions() {
+    const graphVolSel = document.getElementById('amGraphMinVolSel');
+    if (graphVolSel) {
+      graphVolSel.addEventListener('change', function() {
+        _amGraphMinVol = this.value;
+        window.amRenderGraph();
+      });
+    }
+    const posBar = document.getElementById('amGraphPosBar');
+    if (posBar) {
+      posBar.addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-gpos]');
+        if (!btn) return;
+        _amGraphPos = btn.getAttribute('data-gpos') || null;
+        _amSyncGraphPosBtns();
+        // Rebuild metric selectors filtered to the new position, preserving
+        // current X/Y selections where valid.
+        const xSel = document.getElementById('amGraphX');
+        const ySel = document.getElementById('amGraphY');
+        const zSel = document.getElementById('amGraphZ');
+        const curX = xSel ? xSel.value : '';
+        const curY = ySel ? ySel.value : '';
+        const curZ = zSel ? zSel.value : '';
+        if (xSel) { xSel.innerHTML = _amGraphMetricOptions(curX); xSel.value = curX; }
+        if (ySel) { ySel.innerHTML = _amGraphMetricOptions(curY); ySel.value = curY; }
+        if (zSel) { zSel.innerHTML = '<option value="">None</option>' + _amGraphMetricOptions(curZ); zSel.value = curZ; }
+        // Update context note
+        const note = document.getElementById('amGraphCtxNote');
+        if (note) {
+          const bits = [state.season || '', _amGraphPos || 'All positions'];
+          const wr = resolveWeekRange();
+          if (wr.ws && wr.we) bits.push('W' + wr.ws + '–W' + wr.we);
+          note.textContent = bits.filter(Boolean).join(' · ');
+        }
+        window.amRenderGraph();
+      });
+    }
     const plot = document.getElementById('amGraphPlot');
     if (plot) {
       plot.addEventListener('mousemove', function(e) {
@@ -2761,6 +2882,16 @@ _AM_JS = r"""
     const svg = document.querySelector('#amGraphPlot svg.am-graph-svg');
     if (!svg) return;
     const btn = document.getElementById('amGraphDownloadBtn');
+    const flash = function(msg) {
+      if (!btn) return;
+      const prev = btn.innerHTML;
+      btn.innerHTML = msg;
+      setTimeout(function() { btn.innerHTML = prev; }, 2500);
+    };
+    // On touch/mobile, data-URL anchor clicks navigate the current page away on
+    // iOS Safari, closing the modal and losing graph state. Redirect to Copy Link.
+    const isMobile = navigator.maxTouchPoints > 1 || window.matchMedia('(pointer:coarse)').matches;
+    if (isMobile) { flash('Use Copy Link ↑'); return; }
     const TH = _amGraphPalette();
     const vb = (svg.getAttribute('viewBox') || '0 0 720 580').split(/\s+/).map(Number);
     const W = vb[2] || 720, H = vb[3] || 580, scale = 2;
@@ -2770,12 +2901,6 @@ _AM_JS = r"""
     clone.setAttribute('width', W); clone.setAttribute('height', H);
     const xml = new XMLSerializer().serializeToString(clone);
     const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
-    const flash = function(msg) {
-      if (!btn) return;
-      const prev = btn.innerHTML;
-      btn.innerHTML = msg;
-      setTimeout(function() { btn.innerHTML = prev; }, 1400);
-    };
     flash('Saving…');
     const img = new Image();
     img.onload = function() {
@@ -2980,6 +3105,12 @@ _AM_JS = r"""
       return '<span class="am-filter-chip">' + lbl + ' ' + opSym + ' ' + f.val
         + ' <button class="am-chip-x" onclick="amRemoveFilter(' + idx + ')" aria-label="Remove">\xd7</button></span>';
     }).join('');
+    // Show the filter bar only when there's something to show: active chips,
+    // the age-input controls, the vol (min games) control, or the filter form.
+    const ageVis  = (document.getElementById('amAgeWrap')  || {}).style.display !== 'none';
+    const volVis  = (document.getElementById('amGamesCtrl') || {}).style.display !== 'none';
+    const formVis = (document.getElementById('amFilterForm') || {}).style.display !== 'none';
+    if (bar) bar.style.display = (state.comboFilters.length > 0 || ageVis || volVis || formVis) ? 'flex' : 'none';
   }
   window.amRemoveFilter = function(idx) {
     const removed = state.comboFilters[idx];
@@ -3002,7 +3133,7 @@ _AM_JS = r"""
     const wrap = document.getElementById('amAgeWrap');
     if (!wrap) return;
     const hasAge = state.rows.some(r => r.age != null);
-    if (!hasAge) { wrap.style.display = 'none'; return; }
+    if (!hasAge) { wrap.style.display = 'none'; updateFilterBar(); return; }
     // On mobile, only show the age inputs when the Filters dropdown is open.
     const isMobile = window.innerWidth <= 600;
     if (isMobile) {
@@ -3011,6 +3142,7 @@ _AM_JS = r"""
     } else {
       wrap.style.display = '';
     }
+    updateFilterBar();
   }
 
   metricSel.addEventListener('change', () => {
@@ -3114,7 +3246,11 @@ _AM_JS = r"""
   const filterCancel = document.getElementById('amFilterCancel');
   if (addFilterBtn && filterForm) {
     addFilterBtn.addEventListener('click', function() {
-      filterForm.style.display = filterForm.style.display === 'none' ? '' : 'none';
+      const opening = filterForm.style.display === 'none';
+      filterForm.style.display = opening ? '' : 'none';
+      // Ensure the filter bar is visible when the form is open.
+      const fb = document.getElementById('amFilterBar');
+      if (opening && fb) { fb.style.display = 'flex'; updateFilterBar(); }
     });
   }
   if (filterApply) {
