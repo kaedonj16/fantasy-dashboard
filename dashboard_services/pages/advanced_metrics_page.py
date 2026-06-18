@@ -241,6 +241,13 @@ def build_advanced_metrics_body(
             <button class="am-pos" data-pos="WR">WR</button>
             <button class="am-pos" data-pos="TE">TE</button>
           </div>
+          <!-- Add Metric picker lives here so it's always accessible even when
+               the compare bar is collapsed (no extra metrics selected). -->
+          <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
+            <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Metric</button>
+            <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
+          </div>
+          <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
           <button id="amFiltersBtn" type="button" class="am-sort-btn am-filters-btn">Filters &#9662;</button>
           <label class="am-roster-toggle" id="amTrendToggleWrap" title="Show each player's recent usage trend (last 6 weeks) next to the metric">
             <input type="checkbox" id="amTrendToggle">
@@ -252,19 +259,15 @@ def build_advanced_metrics_body(
           </label>
         </div>
 
-        <!-- Compare bar: chips for active metrics + add-stat picker -->
-        <div id="amCompareBar" class="am-compare-bar">
+        <!-- Compare bar: only visible when extra metrics or pinned-compare is active. -->
+        <div id="amCompareBar" class="am-compare-bar" style="display:none;">
           <div id="amCompareChips" class="am-compare-chips"></div>
           <button id="amComparePinnedBtn" type="button" class="am-add-stat-btn" style="display:none;">&#8645; Compare Pinned</button>
-          <div id="amAddStatWrap" style="position:relative;flex-shrink:0;">
-            <button id="amAddStatBtn" type="button" class="am-add-stat-btn">&#43; Add Metric</button>
-            <div id="amStatPicker" class="am-stat-picker" style="display:none;"></div>
-          </div>
           <button id="amClearExtrasBtn" type="button" class="am-add-stat-btn am-clear-btn" style="display:none;" onclick="amClearExtras()">&#10005; Clear</button>
         </div>
 
-        <!-- Filter bar: age + combo conditions -->
-        <div id="amFilterBar" class="am-filter-bar">
+        <!-- Filter bar: only visible when combo filters, age, or vol control is active. -->
+        <div id="amFilterBar" class="am-filter-bar" style="display:none;">
           <div class="am-filter-chips" id="amFilterChips"></div>
           <div class="am-age-wrap" id="amAgeWrap" style="display:none;">
             <span class="am-filter-label">Age:</span>
@@ -276,7 +279,6 @@ def build_advanced_metrics_body(
             <span class="am-filter-label" id="amVolLabel">Min</span>
             <select id="amMinGames" class="am-select am-season-select" style="font-size:12px;padding:4px 8px;"></select>
           </div>
-          <button id="amAddFilterBtn" type="button" class="am-add-stat-btn">&#43; Filter</button>
           <div id="amFilterForm" class="am-filter-form" style="display:none;">
             <select id="amFilterKey" class="am-select am-season-select" style="min-width:110px;font-size:12px;padding:5px 8px;"></select>
             <select id="amFilterOp" class="am-select am-season-select" style="min-width:52px;font-size:12px;padding:5px 8px;">
@@ -454,7 +456,7 @@ def build_advanced_metrics_body(
       @media (max-width:600px) {
         .am-legend-btn { padding:6px 10px; font-size:11px; }
       }
-      .am-controls { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin:16px 0 12px; }
+      .am-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin:12px 0 8px; }
       .am-ctrl { display:flex; flex-direction:column; gap:4px; }
       .am-ctrl-search { flex:1; min-width:160px; }
       .am-ctrl-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
@@ -473,25 +475,25 @@ def build_advanced_metrics_body(
       .am-season-select { min-width:90px; }
       .am-search { width:100%; box-sizing:border-box; }
       .am-sort-btn { cursor:pointer; font-weight:600; white-space:nowrap; }
-      /* Subcontrols row: positions + roster toggle always on one line */
-      .am-subcontrols { display:flex; align-items:center; gap:8px; margin-bottom:14px; flex-wrap:nowrap; }
-      .am-positions { display:flex; gap:6px; flex:1; min-width:0; overflow-x:auto; padding-bottom:1px; }
+      /* Subcontrols row: positions + action buttons + toggles */
+      .am-subcontrols { display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+      .am-positions { display:flex; gap:5px; flex:1 1 auto; min-width:0; overflow-x:auto; padding-bottom:1px; }
       .am-roster-toggle { flex-shrink:0; }
       .am-filters-btn { display:none; }
       /* Mobile: metric 2/3 + season 1/3 on the first row, search full width,
          Team/Min/Sort collapsed behind a Filters button beside the position
          pills, toggles wrap underneath. Desktop keeps one aligned row. */
       @media (max-width:600px) {
-        .am-controls { gap:10px; }
-        .am-ctrl { flex:1 1 calc(50% - 5px); min-width:0; }
+        .am-controls { gap:8px; }
+        .am-ctrl { flex:1 1 calc(50% - 4px); min-width:0; }
         .am-controls .am-ctrl:first-child { flex:2 1 0; }
         #amSeasonCtrl { flex:1 1 0; }
         .am-ctrl-search { flex:1 1 100%; order:1; }
         .am-mobile-filter { order:2; }
         .am-ctrl .am-select, .am-ctrl .am-sort-btn { width:100%; min-width:0; box-sizing:border-box; }
         .am-controls:not(.am-open) .am-mobile-filter { display:none !important; }
-        .am-filters-btn { display:inline-block; flex-shrink:0; padding:6px 14px; font-size:12px; border-radius:20px; }
-        .am-subcontrols { flex-wrap:wrap; row-gap:10px; }
+        .am-filters-btn { display:inline-block; flex-shrink:0; padding:6px 12px; font-size:12px; border-radius:20px; }
+        .am-subcontrols { row-gap:8px; }
         .am-positions { flex:1 1 auto; flex-wrap:wrap; overflow-x:visible; min-width:0; }
       }
       .am-pos {
@@ -602,9 +604,12 @@ def build_advanced_metrics_body(
       /* ── Multi-stat compare bar ─────────────────────────────────────── */
       .am-compare-bar {
         display:flex; align-items:center; gap:6px; flex-wrap:wrap;
-        margin-bottom:12px; min-height:28px;
+        margin-bottom:8px;
       }
       .am-compare-chips { display:flex; flex-wrap:wrap; gap:6px; flex:1; min-width:0; }
+      @media (max-width:600px) {
+        .am-compare-chips { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px; }
+      }
       .am-chip {
         display:inline-flex; align-items:center; gap:5px;
         padding:3px 10px; border-radius:14px;
@@ -763,9 +768,12 @@ def build_advanced_metrics_body(
       /* ── Filter bar ──────────────────────────────────────────────────────── */
       .am-filter-bar {
         display:flex; align-items:center; gap:6px; flex-wrap:wrap;
-        margin-bottom:10px; min-height:24px; padding-right:4px;
+        margin-bottom:8px; padding-right:4px;
       }
       .am-filter-chips { display:flex; flex-wrap:wrap; gap:5px; flex:1; min-width:0; }
+      @media (max-width:600px) {
+        .am-filter-chips { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+      }
       .am-filter-chip {
         display:inline-flex; align-items:center; gap:4px;
         padding:3px 9px; border-radius:12px;
@@ -812,10 +820,8 @@ def build_advanced_metrics_body(
       .am-sp-preset-btn:hover { background:rgba(37,99,235,.14); }
       /* Filter column headers inserted before primary metric column */
       th.am-filter-col-hdr { border-left:1px solid var(--border); }
-      /* Mobile: hide the age filter and + Filter button unless Filters dropdown is open */
+      /* Mobile: show filter bar content (age inputs etc.) when Filters is open */
       @media (max-width:600px) {
-        #amAddFilterBtn { display:none !important; }
-        #amFilterBar.am-mobile-open #amAddFilterBtn { display:inline-flex !important; }
         #amFilterBar.am-mobile-open { flex-wrap:wrap; }
       }
       /* Week range note */
@@ -1192,19 +1198,24 @@ _AM_JS = r"""
 
   // ── Multi-stat compare ────────────────────────────────────────────────────
   function updateCompareBar() {
+    const bar     = document.getElementById('amCompareBar');
     const chipsEl = document.getElementById('amCompareChips');
     const addBtn  = document.getElementById('amAddStatBtn');
+    const pinnedBtn = document.getElementById('amComparePinnedBtn');
     if (!chipsEl) return;
-    const all = [state.metric, ...state.extraMetrics];
-    chipsEl.innerHTML = all.map((key, i) => {
+    // Only show extra-metric chips (not the primary) — the primary is already
+    // visible in the dropdown, so showing it here when alone is redundant clutter.
+    chipsEl.innerHTML = state.extraMetrics.map(function(key) {
       const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
-      const primary = i === 0;
-      const x = primary ? '' : '<button class="am-chip-x" onclick="event.stopPropagation();amRemoveExtra(\'' + key + '\')" aria-label="Remove">×</button>';
-      return '<span class="am-chip' + (primary ? ' am-chip-primary' : '') + '">' + lbl + x + '</span>';
+      return '<span class="am-chip">' + lbl
+        + '<button class="am-chip-x" onclick="event.stopPropagation();amRemoveExtra(\'' + key + '\')" aria-label="Remove">\xd7</button></span>';
     }).join('');
     if (addBtn) addBtn.disabled = state.extraMetrics.length >= MAX_COMPARE;
     const clearBtn = document.getElementById('amClearExtrasBtn');
     if (clearBtn) clearBtn.style.display = state.extraMetrics.length ? '' : 'none';
+    // Show the compare bar only when there's something to show.
+    const hasPinned = pinnedBtn && pinnedBtn.style.display !== 'none';
+    if (bar) bar.style.display = (state.extraMetrics.length > 0 || hasPinned) ? 'flex' : 'none';
   }
 
   function buildStatPicker() {
@@ -1893,6 +1904,8 @@ _AM_JS = r"""
       minGamesSel.value = prev || '';
       gamesCtrl.style.display = '';
     }
+    // Sync filter-bar visibility after the vol control state changes.
+    updateFilterBar();
   }
   function updatePosButtons() {
     const rel = new Set(relevantPositions(state.metric));
@@ -3091,6 +3104,12 @@ _AM_JS = r"""
       return '<span class="am-filter-chip">' + lbl + ' ' + opSym + ' ' + f.val
         + ' <button class="am-chip-x" onclick="amRemoveFilter(' + idx + ')" aria-label="Remove">\xd7</button></span>';
     }).join('');
+    // Show the filter bar only when there's something to show: active chips,
+    // the age-input controls, the vol (min games) control, or the filter form.
+    const ageVis  = (document.getElementById('amAgeWrap')  || {}).style.display !== 'none';
+    const volVis  = (document.getElementById('amGamesCtrl') || {}).style.display !== 'none';
+    const formVis = (document.getElementById('amFilterForm') || {}).style.display !== 'none';
+    if (bar) bar.style.display = (state.comboFilters.length > 0 || ageVis || volVis || formVis) ? 'flex' : 'none';
   }
   window.amRemoveFilter = function(idx) {
     const removed = state.comboFilters[idx];
@@ -3113,7 +3132,7 @@ _AM_JS = r"""
     const wrap = document.getElementById('amAgeWrap');
     if (!wrap) return;
     const hasAge = state.rows.some(r => r.age != null);
-    if (!hasAge) { wrap.style.display = 'none'; return; }
+    if (!hasAge) { wrap.style.display = 'none'; updateFilterBar(); return; }
     // On mobile, only show the age inputs when the Filters dropdown is open.
     const isMobile = window.innerWidth <= 600;
     if (isMobile) {
@@ -3122,6 +3141,7 @@ _AM_JS = r"""
     } else {
       wrap.style.display = '';
     }
+    updateFilterBar();
   }
 
   metricSel.addEventListener('change', () => {
@@ -3225,7 +3245,11 @@ _AM_JS = r"""
   const filterCancel = document.getElementById('amFilterCancel');
   if (addFilterBtn && filterForm) {
     addFilterBtn.addEventListener('click', function() {
-      filterForm.style.display = filterForm.style.display === 'none' ? '' : 'none';
+      const opening = filterForm.style.display === 'none';
+      filterForm.style.display = opening ? '' : 'none';
+      // Ensure the filter bar is visible when the form is open.
+      const fb = document.getElementById('amFilterBar');
+      if (opening && fb) { fb.style.display = 'flex'; updateFilterBar(); }
     });
   }
   if (filterApply) {
