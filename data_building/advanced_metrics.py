@@ -2385,7 +2385,8 @@ def get_metric_leaderboard(
                 "AND column_name = ANY(%s)",
                 (["games", "total_targets", "total_receptions",
                   "total_carries", "total_touches", "total_pass_att",
-                  "total_rush_tds", "total_rec_tds", "total_pass_tds", "total_tds"],),
+                  "total_rush_tds", "total_rec_tds", "total_pass_tds", "total_tds",
+                  "completion_pct"],),
             ).fetchall()
         }
         has_games = "games" in existing_cols
@@ -2488,6 +2489,24 @@ def get_metric_leaderboard(
         else:
             specific_vol_col = ""
 
+        # Context volume columns returned on every row (rendered like the Games
+        # column in the UI — a plain number, no bar). The frontend shows the
+        # relevant ones for the primary metric's category (receptions/targets for
+        # receiving, attempts/completions for passing, carries for rushing).
+        _ctx_map = {
+            "ctx_receptions": "total_receptions",
+            "ctx_targets": "total_targets",
+            "ctx_carries": "total_carries",
+            "ctx_attempts": "total_pass_att",
+        }
+        _ctx_parts = [f"m.{col} AS {alias}" for alias, col in _ctx_map.items()
+                      if col in existing_cols]
+        if "total_pass_att" in existing_cols and "completion_pct" in existing_cols:
+            _ctx_parts.append(
+                "CASE WHEN m.total_pass_att IS NOT NULL AND m.completion_pct IS NOT NULL "
+                "THEN ROUND(m.total_pass_att * m.completion_pct / 100.0) END AS ctx_completions")
+        ctx_cols = (", ".join(_ctx_parts) + ", ") if _ctx_parts else ""
+
         # Computed metrics (per-game rates) use SQL expressions instead of columns.
         if _computed_sql:
             metric_value_expr = f"{_computed_sql} AS value"
@@ -2504,7 +2523,7 @@ def get_metric_leaderboard(
             f"""SELECT t.*
                 FROM (
                     SELECT DISTINCT ON (m.player_id)
-                        m.player_id, m.position, {games_col} {specific_vol_col}
+                        m.player_id, m.position, {games_col} {specific_vol_col} {ctx_cols}
                         {metric_value_expr}
                     FROM player_advanced_metrics m{vol_join}
                     WHERE {metric_where}{gate}
@@ -2536,26 +2555,40 @@ def get_metric_leaderboard(
             return None
         return None
 
+    def _ctx_int(rd: dict, key: str):
+        v = rd.get(key)
+        try:
+            return int(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
     out: List[Dict[str, Any]] = []
     for r in rows:
-        pid = str(r["player_id"])
+        rd = dict(r)
+        pid = str(rd["player_id"])
         meta = idx.get(pid) or {}
-        games_val = (int(r["games"]) if r["games"] is not None else None) if has_games else None
+        games_val = (int(rd["games"]) if rd.get("games") is not None else None) if has_games else None
         # Use the metric-specific volume column when available; fall back to games.
         if has_specific_vol:
-            vol_val = int(r["vol"]) if r["vol"] is not None else None
+            vol_val = int(rd["vol"]) if rd.get("vol") is not None else None
         else:
             vol_val = games_val
         out.append({
             "player_id": pid,
             "name": meta.get("name") or "Unknown",
             "team": meta.get("team") or "",
-            "position": r["position"],
+            "position": rd["position"],
             "headshot": meta.get("espnHeadshot") or "",
-            "value": float(r["value"]) if r["value"] is not None else None,
+            "value": float(rd["value"]) if rd.get("value") is not None else None,
             "games": games_val,
             "vol": vol_val,
             "age": _player_age(meta),
+            # Context volume (plain-number columns in the UI).
+            "rec": _ctx_int(rd, "ctx_receptions"),
+            "tgt": _ctx_int(rd, "ctx_targets"),
+            "car": _ctx_int(rd, "ctx_carries"),
+            "att": _ctx_int(rd, "ctx_attempts"),
+            "cmp": _ctx_int(rd, "ctx_completions"),
         })
     # Cache non-empty results only; evict stale-date entries to stay bounded.
     if out:
