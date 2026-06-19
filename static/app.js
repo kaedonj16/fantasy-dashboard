@@ -10626,7 +10626,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
       defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), key: 'yards_per_touch', sub: _rankSub('yards_per_touch'), cat: 'General' });
     }
     if (metrics.total_touches != null) {
-      defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 150 * 100, 100), display: Math.round(metrics.total_touches).toString(), key: 'total_touches', sub: _rankSub('total_touches'), cat: 'General' });
+      defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 150 * 100, 100), display: Math.round(metrics.total_touches).toString(), key: 'total_touches', sub: _rankSub('total_touches'), cat: 'Volume' });
     }
   }
 
