@@ -1608,28 +1608,29 @@ _AM_JS = r"""
     t = Math.max(0, Math.min(1, t));
     return 8 + t * 92;  // 8% floor so the worst still shows a sliver
   }
-  // Unified bar fill (%) for the Compare modal. Mode by metric type:
-  //  • Role Score → its native 0–100 scale.
-  //  • Efficiency / rate → RANK within position (compressed values would look
-  //    full otherwise); page-season columns only, else positional bounds.
-  //  • Volume / counting → relative to the position leader (max), so a player
-  //    with half the leader's volume shows ~half a bar.
+  // Unified bar fill (%) for the Compare modal — same four-shape model as the
+  // player modal:
+  //  • SCORE  (grades, ratings, VORP/WAR) → value ÷ ceiling.
+  //  • MINMAX (EPA totals) → position [min,max], so big leads & negatives show.
+  //  • RANK   (efficiency rates) → percentile within position (page columns).
+  //  • LEADER (volume) → value ÷ position leader.
+  const _AM_SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
+    pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
+  const _AM_MINMAX = ['passing_epa', 'rushing_epa', 'receiving_epa'];
+  const _AM_RATE = ['avoided_tackles_pg', 'explosive_runs_pg'];
   function _amBarFill(key, v, pos, mode, rk, stats, barMax) {
     const m = cfg.metrics[key] || {};
-    if (key === 'role_score') return Math.max(4, Math.min(100, v));
-    const isEff = m.efficiency || m.pct || m.pctFrac;
-    if (isEff) {
-      if (mode === 'page' && stats && rk) {
-        const rf = _amRankFill(rk, stats.counts[pos]);
-        if (rf != null) return rf;
-      }
-      const bf = (stats && stats.bounds[pos]) ? _amBoundsFill(key, v, stats.bounds[pos]) : null;
-      if (bf != null) return bf;
-    } else {
-      const b = stats && stats.bounds[pos];
-      if (b && b[1] > 0) return Math.max(4, Math.min(100, (v / b[1]) * 100));
-    }
-    return Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
+    const valFb = Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
+    const ceil = _AM_SCORE_CEIL[key];
+    if (ceil) return Math.max(4, Math.min(100, (v / ceil) * 100));
+    const b = (stats && stats.bounds[pos]) || null;
+    const rankF = (mode === 'page' && stats && rk) ? _amRankFill(rk, stats.counts[pos]) : null;
+    const mmF = b ? _amBoundsFill(key, v, b) : null;
+    if (_AM_MINMAX.indexOf(key) >= 0) return mmF != null ? mmF : (rankF != null ? rankF : valFb);
+    const isEff = m.efficiency || m.pct || m.pctFrac || _AM_RATE.indexOf(key) >= 0;
+    if (isEff) return rankF != null ? rankF : (mmF != null ? mmF : valFb);
+    if (b && b[1] > 0) return Math.max(4, Math.min(100, (v / b[1]) * 100));  // volume → leader
+    return rankF != null ? rankF : valFb;
   }
   // Change a single player's season in the Compare modal and re-render.
   window.amSetCmpSeason = function(pid, season) {
