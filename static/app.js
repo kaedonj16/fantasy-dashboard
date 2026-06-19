@@ -9534,12 +9534,22 @@ const _advMetricsCache = new Map();
 const _advRanksCache = new Map(); // session cache for player-metric-ranks responses
 let _advMetricsToken = 0; // incremented on each loadAdvancedMetrics call; guards stale callbacks
 
+// Fetch with a hard timeout so a hung request (slow cold server, dropped
+// connection that never errors) can't leave the Advanced Metrics tab spinning
+// forever — it aborts and rejects, which the caller turns into a Retry.
+function _advFetch(url, ms) {
+  const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const t = ctl ? setTimeout(function() { ctl.abort(); }, ms || 12000) : null;
+  return fetch(url, ctl ? { signal: ctl.signal } : undefined)
+    .finally(function() { if (t) clearTimeout(t); });
+}
+
 // ── Advanced-metrics config cache ────────────────────────────────────────────
 // Fetches LEADERBOARD_METRICS in frontend format once; cached for the session.
 let _advMetricsCfg = null;
 function _ensureAdvMetricsCfg() {
   if (_advMetricsCfg) return Promise.resolve(_advMetricsCfg);
-  return fetch('/api/advanced-metrics/config')
+  return _advFetch('/api/advanced-metrics/config', 12000)
     .then(function(r) { return r.ok ? r.json() : {}; })
     .then(function(d) { _advMetricsCfg = d.metrics || {}; return _advMetricsCfg; })
     .catch(function() { return {}; });
@@ -9710,7 +9720,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
     const _rCached = _advRanksCache.get(_rUrl);
     _earlyRanksPromise = _rCached
       ? Promise.resolve(_rCached)
-      : fetch(_rUrl).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
+      : _advFetch(_rUrl, 12000).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
           if (d && d.ranks) {
             _advRanksCache.set(_rUrl, d);
             if (_advRanksCache.size > 20) _advRanksCache.delete(_advRanksCache.keys().next().value);
@@ -9729,7 +9739,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
     `;
   }
 
-  (_cached ? Promise.resolve(_cached) : fetch(url)
+  (_cached ? Promise.resolve(_cached) : _advFetch(url, 12000)
     .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
     .then(data => {
       if (!data.error && !data.premium_required) {
@@ -9828,7 +9838,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
             const _rCached2 = _advRanksCache.get(rankUrl);
             _ranksPromise = _rCached2
               ? Promise.resolve(_rCached2)
-              : fetch(rankUrl).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
+              : _advFetch(rankUrl, 12000).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
                   if (d && d.ranks) {
                     _advRanksCache.set(rankUrl, d);
                     if (_advRanksCache.size > 20) _advRanksCache.delete(_advRanksCache.keys().next().value);
@@ -9884,8 +9894,20 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
     })
     .catch(err => {
       console.error('Error loading advanced metrics:', err);
-      const section = document.getElementById('advancedMetricsSection');
-      if (section) section.style.display = 'none';
+      if (token !== _advMetricsToken) return;  // superseded by a newer open
+      // A transient network error (e.g. ERR_NETWORK_CHANGED on a Wi-Fi switch)
+      // used to hide the whole section, so it appeared to "never load" with no
+      // way to recover. Keep it visible and offer a one-tap retry instead.
+      contentEl.innerHTML = '<div style="padding:14px 0;font-size:13px;color:var(--text-muted);">'
+        + 'Couldn’t load advanced metrics — network hiccup. '
+        + '<button type="button" class="adv-retry-btn" style="margin-left:6px;padding:4px 12px;'
+        + 'border:1px solid var(--border,#334155);border-radius:6px;background:transparent;'
+        + 'color:var(--accent,#3b82f6);cursor:pointer;font-weight:700;">Retry</button>'
+        + '</div>';
+      const _btn = contentEl.querySelector('.adv-retry-btn');
+      if (_btn) _btn.addEventListener('click', function() {
+        loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd);
+      });
     });
 }
 

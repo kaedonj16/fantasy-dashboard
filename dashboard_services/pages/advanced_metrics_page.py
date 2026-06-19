@@ -3346,7 +3346,18 @@ _AM_JS = r"""
         if (state.filterColKeys) [...state.filterColKeys].forEach(k => fetchExtraData(k));
         render();
       })
-      .catch(() => { state.fetching = false; loading.style.display = 'none'; empty.style.display = ''; });
+      .catch(() => {
+        state.fetching = false; loading.style.display = 'none';
+        // Network error (e.g. ERR_NETWORK_CHANGED): show a recoverable retry
+        // rather than the misleading "No data for this metric yet." message.
+        empty.style.display = '';
+        empty.innerHTML = 'Couldn’t load this metric — network hiccup. '
+          + '<button type="button" id="amRetryBtn" style="margin-left:6px;padding:5px 12px;'
+          + 'border:1px solid var(--border);border-radius:8px;background:var(--card);'
+          + 'color:var(--accent,#2563eb);cursor:pointer;font-weight:700;">Retry</button>';
+        const _rb = document.getElementById('amRetryBtn');
+        if (_rb) _rb.addEventListener('click', function() { empty.style.display = 'none'; fetchData(); });
+      });
   }
 
   // Load the viewer's roster so owned players can be highlighted / filtered.
