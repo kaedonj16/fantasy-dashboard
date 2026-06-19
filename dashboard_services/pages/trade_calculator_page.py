@@ -188,17 +188,22 @@ def build_trade_calculator_body(
                 </button>
                 <div class="otc-settings-dropdown" id="otcSettingsDropdown" style="display:none;">
                   <div class="otc-settings-dropdown-header">League Settings</div>
-                  <div class="otc-settings-field">
-                    <span class="otc-settings-field-label">League Size</span>
-                    {league_size_block}
+                  <div class="otc-settings-field" id="otcSideSlot">
+                    <span class="otc-settings-field-label">Trade side</span>
+                  </div>
+                  <div class="otc-settings-grid2">
+                    <div class="otc-settings-field">
+                      <span class="otc-settings-field-label">League Size</span>
+                      {league_size_block}
+                    </div>
+                    <div class="otc-settings-field">
+                      <span class="otc-settings-field-label">TE Premium</span>
+                      {te_premium_block}
+                    </div>
                   </div>
                   <div class="otc-settings-field">
                     <span class="otc-settings-field-label">League Format</span>
                     {league_type_block}
-                  </div>
-                  <div class="otc-settings-field">
-                    <span class="otc-settings-field-label">TE Premium</span>
-                    {te_premium_block}
                   </div>
                   {restrict_field}
                 </div>
@@ -1102,4 +1107,26 @@ def build_trade_calculator_body(
         </div>
       </div>
     </div>
+    <script>
+      /* Mobile: relocate the Team 1 / Team 2 toggle into the Settings dropdown
+         so the toolbar isn't crowded. Reparents the same element (state and
+         change-bindings stay intact) rather than duplicating the radios. */
+      (function () {{
+        var mq = window.matchMedia('(max-width:600px)');
+        function place() {{
+          var toggle = document.querySelector('.otc-page-head-controls .otc-viewer-toggles');
+          var slot = document.getElementById('otcSideSlot');
+          var row = document.querySelector('.otc-page-head-controls .otc-settings-row');
+          if (!toggle || !slot || !row) return;
+          if (mq.matches) {{
+            if (toggle.parentElement !== slot) slot.appendChild(toggle);
+          }} else if (toggle.parentElement !== row) {{
+            row.insertBefore(toggle, row.firstChild);
+          }}
+        }}
+        place();
+        if (mq.addEventListener) mq.addEventListener('change', place);
+        else if (mq.addListener) mq.addListener(place);
+      }})();
+    </script>
     """
