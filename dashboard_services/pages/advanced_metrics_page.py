@@ -781,6 +781,24 @@ def build_advanced_metrics_body(
       .am-row.am-pinned:hover { background:rgba(37,99,235,.1); }
       .am-row.am-pinned.am-owned { background:rgba(37,99,235,.1); }
       .am-pin-divider td { border-bottom:2px dashed var(--accent,#2563eb) !important; padding:0 !important; height:2px !important; }
+      /* Mobile: pack the compare table so two players fit on screen without the
+         right column getting clipped. Drop the 520px min-width, shrink padding /
+         fonts, let the metric-label column wrap so player columns get the room. */
+      @media (max-width:600px) {
+        .am-cmp-table { min-width:0; font-size:12px; }
+        .am-cmp-table th, .am-cmp-table td { padding:7px 5px; }
+        .am-cmp-table th:first-child, .am-cmp-table td:first-child { padding-left:2px; }
+        .am-cmp-player-head { min-width:0; }
+        .am-cmp-head-name { font-size:12px; gap:4px; }
+        .am-cmp-head-pos { font-size:9px; padding:1px 4px; }
+        .am-cmp-metric { font-size:10px; white-space:normal; line-height:1.2; }
+        .am-cmp-val { font-size:12px; }
+        .am-cmp-rank { font-size:9px; margin-left:3px; }
+        .am-cmp-bar { max-width:none; }
+        .am-cmp-season-sel { min-width:0; width:100%; padding:3px 6px; font-size:11px; margin-top:6px; }
+        .am-cmp-wkbar-wrap { margin-top:8px; }
+        .am-cmp-wknote { font-size:9px; }
+      }
       /* ── Filter bar ──────────────────────────────────────────────────────── */
       .am-filter-bar {
         display:flex; align-items:center; gap:6px; flex-wrap:wrap;
@@ -1590,6 +1608,29 @@ _AM_JS = r"""
     t = Math.max(0, Math.min(1, t));
     return 8 + t * 92;  // 8% floor so the worst still shows a sliver
   }
+  // Unified bar fill (%) for the Compare modal. Mode by metric type:
+  //  • Role Score → its native 0–100 scale.
+  //  • Efficiency / rate → RANK within position (compressed values would look
+  //    full otherwise); page-season columns only, else positional bounds.
+  //  • Volume / counting → relative to the position leader (max), so a player
+  //    with half the leader's volume shows ~half a bar.
+  function _amBarFill(key, v, pos, mode, rk, stats, barMax) {
+    const m = cfg.metrics[key] || {};
+    if (key === 'role_score') return Math.max(4, Math.min(100, v));
+    const isEff = m.efficiency || m.pct || m.pctFrac;
+    if (isEff) {
+      if (mode === 'page' && stats && rk) {
+        const rf = _amRankFill(rk, stats.counts[pos]);
+        if (rf != null) return rf;
+      }
+      const bf = (stats && stats.bounds[pos]) ? _amBoundsFill(key, v, stats.bounds[pos]) : null;
+      if (bf != null) return bf;
+    } else {
+      const b = stats && stats.bounds[pos];
+      if (b && b[1] > 0) return Math.max(4, Math.min(100, (v / b[1]) * 100));
+    }
+    return Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
+  }
   // Change a single player's season in the Compare modal and re-render.
   window.amSetCmpSeason = function(pid, season) {
     state.cmpSeasons[String(pid)] = season;
@@ -1789,16 +1830,9 @@ _AM_JS = r"""
         const isBest = best != null && v === best && present.length > 1;
         // Rank only for page-season columns (positional, matching the leaderboard).
         const rk = (perPlayer[i].mode === 'page' && stats) ? stats.ranks[String(p.player_id)] : null;
-        // Bar: rank within position (matches the player modal — a #16 in a
-        // bunched-top metric isn't a full bar). Page-season columns use the
-        // positional rank; other splits fall back to bounds, then value scale.
-        const rf = (perPlayer[i].mode === 'page' && stats)
-          ? _amRankFill(rk, stats.counts[pos]) : null;
-        const bf = (rf == null && stats && stats.bounds[pos])
-          ? _amBoundsFill(key, v, stats.bounds[pos]) : null;
-        const w = rf != null ? Math.round(rf)
-          : (bf != null ? Math.round(bf)
-            : Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100))));
+        // Bar: role score uses 0–100; efficiency uses rank; volume scales to the
+        // position leader (so half the leader's volume ≈ half a bar).
+        const w = Math.round(_amBarFill(key, v, pos, perPlayer[i].mode, rk, stats, barMax));
         html += '<td><span class="am-cmp-val' + (isBest ? ' am-cmp-best' : '') + '">' + fmtVal(v, key) + '</span>'
           + (rk ? '<span class="am-cmp-rank">#' + rk + '</span>' : '')
           + '<div class="am-cmp-bar"><div style="width:' + w + '%;background:' + posColor(p.position) + '"></div></div></td>';
