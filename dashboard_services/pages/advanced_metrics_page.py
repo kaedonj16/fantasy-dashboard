@@ -1560,15 +1560,24 @@ _AM_JS = r"""
     entries = entries.filter(e => e[1] != null && !Number.isNaN(e[1]));
     const byPos = {};
     entries.forEach(e => { (byPos[e[2]] = byPos[e[2]] || []).push(e); });
-    const ranks = {}, bounds = {};
+    const ranks = {}, bounds = {}, counts = {};
     Object.keys(byPos).forEach(pos => {
       const arr = byPos[pos];
       arr.sort((a, b) => lower ? a[1] - b[1] : b[1] - a[1]);
       arr.forEach((e, i) => { ranks[e[0]] = i + 1; });
       const vals = arr.map(e => e[1]);
       bounds[pos] = [Math.min(...vals), Math.max(...vals)];
+      counts[pos] = arr.length;
     });
-    return { ranks: ranks, bounds: bounds };
+    return { ranks: ranks, bounds: bounds, counts: counts };
+  }
+  // Bar fill (8–100%) by RANK within position — so a mid-ranked player in a
+  // bunched-top metric (role score, snap share, yards/touch…) doesn't show a
+  // near-full bar. #1 → 100, last → 8.
+  function _amRankFill(rank, count) {
+    if (!rank || !count || count < 2) return null;
+    const t = (count - rank) / (count - 1);
+    return 8 + Math.max(0, Math.min(1, t)) * 92;
   }
   // Bar fill (8–100%) by where `val` sits in its position's [min,max] range —
   // the same magnitude-preserving, position-aware scaling the player modal uses.
@@ -1780,12 +1789,16 @@ _AM_JS = r"""
         const isBest = best != null && v === best && present.length > 1;
         // Rank only for page-season columns (positional, matching the leaderboard).
         const rk = (perPlayer[i].mode === 'page' && stats) ? stats.ranks[String(p.player_id)] : null;
-        // Bar: position-aware bounds fill (matches the player modal); fall back
-        // to the pinned-relative scale when no positional bounds are available.
-        const bf = stats && stats.bounds[pos] ? _amBoundsFill(key, v, stats.bounds[pos]) : null;
-        const w = bf != null
-          ? Math.round(bf)
-          : Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
+        // Bar: rank within position (matches the player modal — a #16 in a
+        // bunched-top metric isn't a full bar). Page-season columns use the
+        // positional rank; other splits fall back to bounds, then value scale.
+        const rf = (perPlayer[i].mode === 'page' && stats)
+          ? _amRankFill(rk, stats.counts[pos]) : null;
+        const bf = (rf == null && stats && stats.bounds[pos])
+          ? _amBoundsFill(key, v, stats.bounds[pos]) : null;
+        const w = rf != null ? Math.round(rf)
+          : (bf != null ? Math.round(bf)
+            : Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100))));
         html += '<td><span class="am-cmp-val' + (isBest ? ' am-cmp-best' : '') + '">' + fmtVal(v, key) + '</span>'
           + (rk ? '<span class="am-cmp-rank">#' + rk + '</span>' : '')
           + '<div class="am-cmp-bar"><div style="width:' + w + '%;background:' + posColor(p.position) + '"></div></div></td>';

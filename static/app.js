@@ -10397,13 +10397,12 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
 
   // Role Score (0–100)
   if (metrics.role_score != null) {
-    defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1), sub: getRoleGrade(metrics.role_score), cat: 'General' });
+    defs.push({ label: 'Role Score', fill: metrics.role_score, display: metrics.role_score.toFixed(1), key: 'role_score', sub: getRoleGrade(metrics.role_score), cat: 'General' });
   }
   // Snap Share (0–1 → %).  85 % = starter ceiling → full bar.
   if (metrics.snap_share != null && position !== "QB") {
     const pct = metrics.snap_share * 100;
-    const snapLabel = (position === 'WR' || position === 'TE') ? 'Route Partic' : 'Snap Share';
-    defs.push({ label: snapLabel, fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', key: 'snap_share', sub: _rankSub('snap_share'), cat: 'General' });
+    defs.push({ label: 'Snap Share', fill: Math.min(pct / 85 * 100, 100), display: pct.toFixed(1) + '%', key: 'snap_share', sub: _rankSub('snap_share'), cat: 'General' });
   }
 
   if (position === 'QB') {
@@ -10774,12 +10773,22 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     }
   }
 
-  // Scale every bar by the metric's value within its positional range, so bar
-  // length reflects real magnitude (big leads show big gaps) while staying
-  // position-aware — consistent with the Compare modal. Trend arrows (forced
-  // color) and metrics without bounds keep their value-scale fill.
+  // Bar length reflects the player's RANK within their position, so a #16 in a
+  // bunched-at-the-top metric (role score, snap share, yards/touch, target
+  // quality…) no longer renders as a near-full bar. Falls back to value-relative
+  // -to-position bounds when no rank exists (e.g. career view), then to the
+  // per-metric value scale already set above. Trend arrows keep their own fill.
+  function _rankFill(key) {
+    const r = ranks && ranks[key];
+    const n = counts && counts[key];
+    if (!r || !n || n < 2) return null;
+    const t = (n - r) / (n - 1);  // #1 → 1, last → 0
+    return 8 + Math.max(0, Math.min(1, t)) * 92;  // 8% floor so worst still shows
+  }
   defs.forEach(function(d) {
     if (!d.key || d.forceColor) return;
+    const rf = _rankFill(d.key);
+    if (rf != null) { d.fill = rf; return; }
     const bf = _boundsFill(d.key, _metricVal(d.key));
     if (bf != null) d.fill = bf;
   });
@@ -10848,7 +10857,9 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     if (_catGroups['__other__']) _catGroups['__other__'] = _uncategorized;
     else if (_uncategorized.length) _catGroups['__other__'] = _uncategorized;
     for (const cat of orderedCats) {
-      const group = _catGroups[cat] || [];
+      // Alphabetical within each category for predictable scanning.
+      const group = (_catGroups[cat] || []).slice()
+        .sort((a, b) => (a.label || '').localeCompare(b.label || ''));
       if (!group.length) continue;
       const catLabel = cat === '__other__' ? '' : cat;
       if (catLabel) html += '<div class="am-metrics-cat-head">' + catLabel + '</div>';
@@ -11824,14 +11835,24 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     };
     
     const range = metricRanges[key] || 100; // Default to 100 if not specified
-    // Prefer value-relative-to-position bounds for the bar width (magnitude-
-    // preserving + position-aware); fall back to value/range scaling when no
-    // bounds are available (e.g. career view).
-    const rf1 = _boundsFillCmp(key, v1, bounds1);
-    const rf2 = _boundsFillCmp(key, v2, bounds2);
-    const pct1 = rf1 != null ? Math.round(rf1)
+    // Bar width reflects RANK within position first (so bunched-top metrics like
+    // role score / snap share / yards-per-touch / target quality don't show a
+    // near-full bar for a mid-ranked player); fall back to value-relative-to-
+    // position bounds, then to value/range scaling (career view).
+    const _rankPct = (r, n) => {
+      if (!r || !n || n < 2) return null;
+      const t = (n - r) / (n - 1);  // #1 → 1, last → 0
+      return 8 + Math.max(0, Math.min(1, t)) * 92;
+    };
+    const rf1 = _rankPct(ranks1[key], counts1[key]);
+    const rf2 = _rankPct(ranks2[key], counts2[key]);
+    const bf1 = rf1 != null ? null : _boundsFillCmp(key, v1, bounds1);
+    const bf2 = rf2 != null ? null : _boundsFillCmp(key, v2, bounds2);
+    const fill1 = rf1 != null ? rf1 : bf1;
+    const fill2 = rf2 != null ? rf2 : bf2;
+    const pct1 = fill1 != null ? Math.round(fill1)
       : (v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0);
-    const pct2 = rf2 != null ? Math.round(rf2)
+    const pct2 = fill2 != null ? Math.round(fill2)
       : (v2 != null ? Math.min(100, Math.round((v2 / range) * 100)) : 0);
 
     const isInverse = spec ? spec.lower_better : ['int_rate', 'drop_rate', 'fumble_rate', 'pressure_to_sack_rate', 'sack_rate'].includes(key);
@@ -11901,11 +11922,11 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
       <div class="compare-metric-row${alt ? ' cmp-row-alt' : ''}">
         <div class="compare-metric-p1-val${winCls1}">${fmt(v1)}${rankSub(r1)}</div>
         <div class="compare-bar-left">
-          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1, rf1 != null)};"></div>
+          <div class="compare-bar-fill" style="width:${pct1}%;background:${barColor(pct1, v1, fill1 != null)};"></div>
         </div>
         <div class="compare-metric-label"${(spec?.desc || _ADV_METRIC_DESCS[key]) ? ` title="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" data-def="${(spec?.desc || _ADV_METRIC_DESCS[key]).replace(/"/g, '&quot;')}" onclick="advShowMetricDef(event)" onmouseenter="advEnterMetricDef(event)" onmouseleave="advLeaveMetricDef(event)"` : ''}>${_label(key)}</div>
         <div class="compare-bar-right">
-          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2, rf2 != null)};"></div>
+          <div class="compare-bar-fill" style="width:${pct2}%;background:${barColor(pct2, v2, fill2 != null)};"></div>
         </div>
         <div class="compare-metric-p2-val${winCls2}">${fmt(v2)}${rankSub(r2)}</div>
       </div>
@@ -11923,6 +11944,11 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     if (!_groups[cat]) { _groups[cat] = []; _order.push(cat); }
     _groups[cat].push(key);
   }
+  // Alphabetical within each category for predictable scanning (matches the
+  // player modal).
+  Object.keys(_groups).forEach(cat => {
+    _groups[cat].sort((a, b) => _label(a).localeCompare(_label(b)));
+  });
   const orderedCats = _CAT_ORDER.filter(c => _groups[c])
     .concat(_order.filter(c => !_CAT_ORDER.includes(c)));
 
