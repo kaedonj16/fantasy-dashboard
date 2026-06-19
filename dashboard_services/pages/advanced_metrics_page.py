@@ -1435,7 +1435,8 @@ _AM_JS = r"""
     return ordered;
   }
 
-  function fetchExtraData(key) {
+  function fetchExtraData(key, _attempt) {
+    _attempt = _attempt || 0;
     function _buildExtraParams(s) {
       const p = new URLSearchParams({ metric: key, platform: cfg.platform });
       if (cfg.leagueId) p.set('league_id', cfg.leagueId);
@@ -1452,18 +1453,22 @@ _AM_JS = r"""
     const seasons = cfg.seasons || [];
     const curIdx = seasons.indexOf(Number(curSeason));
     const prevSeason = (curIdx >= 0 && curIdx + 1 < seasons.length) ? seasons[curIdx + 1] : null;
-    const fetches = [
-      fetch('/api/advanced-metrics/leaderboard?' + _buildExtraParams(curSeason)).then(r => r.ok ? r.json() : null),
-    ];
-    if (prevSeason) {
-      fetches.push(
-        fetch('/api/advanced-metrics/leaderboard?' + _buildExtraParams(String(prevSeason))).then(r => r.ok ? r.json() : null)
-      );
-    }
-    Promise.all(fetches).then(function(results) {
-      const curr = results[0];
-      const prev = results[1] || null;
-      if (!curr) return;
+    const curUrl = '/api/advanced-metrics/leaderboard?' + _buildExtraParams(curSeason);
+    const prevUrl = prevSeason ? '/api/advanced-metrics/leaderboard?' + _buildExtraParams(String(prevSeason)) : null;
+    // Primary (current-season) column, with a hard timeout so a hung request
+    // can't leave the column's skeleton spinning forever.
+    return _amCmpFetch(curUrl, 12000).then(function(curr) {
+      if (!curr) {
+        // Transient failure/timeout (often server contention from a preset's
+        // burst of requests): retry once, then give up and clear the skeleton.
+        if (_attempt < 1) {
+          return new Promise(function(res) { setTimeout(res, 1200); })
+            .then(function() { return fetchExtraData(key, _attempt + 1); });
+        }
+        state.extraData[key] = { byId: {}, maxAbs: 1, failed: true };
+        render();
+        return;
+      }
       const rows = curr.players || [];
       const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
       // Capture positions so the Compare modal can rank/scale within position.
@@ -1473,11 +1478,34 @@ _AM_JS = r"""
         }
       });
       state.extraData[key] = { byId: Object.fromEntries(rows.map(r => [String(r.player_id), Number(r.value)])), maxAbs };
-      if (prev) {
-        state.extraPrevData[key] = Object.fromEntries((prev.players || []).map(r => [String(r.player_id), Number(r.value)]));
-      }
       render();
-    }).catch(function() {});
+      // Previous-season values (YoY trend arrows) are non-essential — fetch them
+      // off the critical path so the column shows immediately and the initial
+      // request burst is halved.
+      if (prevUrl) {
+        _amCmpFetch(prevUrl, 12000).then(function(prev) {
+          if (prev) {
+            state.extraPrevData[key] = Object.fromEntries((prev.players || []).map(r => [String(r.player_id), Number(r.value)]));
+            render();
+          }
+        });
+      }
+    });
+  }
+  // Load several extra-metric columns with bounded concurrency so a preset
+  // doesn't fire a dozen leaderboard requests at once and starve the server
+  // (which made columns load slowly or never finish).
+  function _loadExtras(keys) {
+    const list = (keys || []).filter(Boolean);
+    const MAX = 4;
+    let i = 0, active = 0;
+    function pump() {
+      while (active < MAX && i < list.length) {
+        active++;
+        fetchExtraData(list[i++]).catch(function() {}).finally(function() { active--; pump(); });
+      }
+    }
+    pump();
   }
 
   // ── Weekly usage trends ───────────────────────────────────────────────────
@@ -3311,10 +3339,14 @@ _AM_JS = r"""
     if (prevSeason) prevParams.set('season', String(prevSeason));
     if (state.minVol) prevParams.set('min_vol', state.minVol);
 
-    const mainFetch = fetch('/api/advanced-metrics/leaderboard?' + params)
-      .then(r => { if (r.status === 403) return null; return r.json(); });
+    // Hard timeout so a hung primary request shows the Retry (see .catch) rather
+    // than spinning the whole table forever.
+    const _mainCtl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const _mainTo = _mainCtl ? setTimeout(function() { _mainCtl.abort(); }, 15000) : null;
+    const mainFetch = fetch('/api/advanced-metrics/leaderboard?' + params, _mainCtl ? { signal: _mainCtl.signal } : undefined)
+      .then(r => { if (_mainTo) clearTimeout(_mainTo); if (r.status === 403) return null; return r.json(); });
     const prevFetch = hasPrevInData
-      ? fetch('/api/advanced-metrics/leaderboard?' + prevParams).then(r => r.ok ? r.json() : null).catch(() => null)
+      ? _amCmpFetch('/api/advanced-metrics/leaderboard?' + prevParams, 15000)
       : Promise.resolve(null);
 
     Promise.all([mainFetch, prevFetch])
@@ -3342,8 +3374,7 @@ _AM_JS = r"""
         // Re-fetch all extra metrics and filter col metrics (season / filter may have changed).
         state.extraData = {};
         state.extraPrevData = {};
-        state.extraMetrics.forEach(k => fetchExtraData(k));
-        if (state.filterColKeys) [...state.filterColKeys].forEach(k => fetchExtraData(k));
+        _loadExtras([...state.extraMetrics, ...(state.filterColKeys ? [...state.filterColKeys] : [])]);
         render();
       })
       .catch(() => {
