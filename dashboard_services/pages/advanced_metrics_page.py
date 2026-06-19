@@ -1983,15 +1983,21 @@ _AM_JS = r"""
   // bar) keyed to the primary metric's category — receptions/targets for
   // receiving, attempts/completions for passing, carries for rushing.
   function contextColsFor() {
-    // Season view only — the weekly leaderboard doesn't carry these totals yet.
-    if (state.weekRange && state.weekRange !== '') return [];
     const cat = (cfg.metrics[state.metric] && cfg.metrics[state.metric].category) || '';
-    if (cat === 'Receiving') return [{ key: 'rec', label: 'Rec', title: 'Receptions' },
+    let cols = [];
+    if (cat === 'Receiving') cols = [{ key: 'rec', label: 'Rec', title: 'Receptions' },
       { key: 'tgt', label: 'Tgt', title: 'Targets' }];
-    if (cat === 'Passing') return [{ key: 'att', label: 'Att', title: 'Pass attempts' },
+    else if (cat === 'Passing') cols = [{ key: 'att', label: 'Att', title: 'Pass attempts' },
       { key: 'cmp', label: 'Cmp', title: 'Completions' }];
-    if (cat === 'Rushing') return [{ key: 'car', label: 'Car', title: 'Carries' }];
-    return [];
+    else if (cat === 'Rushing') cols = [{ key: 'car', label: 'Car', title: 'Carries' }];
+    // Only show a context column when the loaded rows actually carry that value.
+    // Auto-hides passing attempts/completions in week-range view and any metric
+    // whose source (e.g. NGS/EPA weekly store) lacks these volume totals — no
+    // columns of dashes.
+    const rows = state.rows || [];
+    return cols.filter(function(c) {
+      return rows.some(function(r) { return r[c.key] != null; });
+    });
   }
   function syncContextCols() {
     const thead = document.querySelector('#amTable thead tr');

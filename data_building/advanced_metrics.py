@@ -1501,10 +1501,14 @@ def get_weekly_range_leaderboard(
     # the weeks count; apply the min-vol filter separately.
     has_min = bool(min_col)
     use_vol_filter = has_min and bool(min_vol and int(min_vol) > 0)
+    # Context volume sums for the always-visible columns (receiving/rushing only;
+    # the weekly table has no passing attempts/completions).
+    _ctx_inner = ("SUM(receptions) AS ctx_receptions, SUM(targets) AS ctx_targets, "
+                  "SUM(carries) AS ctx_carries")
     inner_select = (
-        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value, {min_col} AS _wvol"
+        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value, {_ctx_inner}, {min_col} AS _wvol"
         if has_min else
-        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value"
+        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value, {_ctx_inner}"
     )
     outer_where = "t.value IS NOT NULL"
     if use_vol_filter:
@@ -1515,7 +1519,8 @@ def get_weekly_range_leaderboard(
     with get_conn() as conn:
         rows = conn.execute(
             f"""
-            SELECT t.player_id, t.position, t.weeks_played, t.value{', t._wvol' if has_min else ''}
+            SELECT t.player_id, t.position, t.weeks_played, t.value,
+                   t.ctx_receptions, t.ctx_targets, t.ctx_carries{', t._wvol' if has_min else ''}
             FROM (
                 SELECT {inner_select}
                 FROM player_weekly_metrics
@@ -1539,17 +1544,28 @@ def get_weekly_range_leaderboard(
     for r in rows:
         pid = str(r["player_id"])
         meta = idx.get(pid) or {}
-        weeks = int(r["weeks_played"]) if r["weeks_played"] is not None else None
-        vol_val = int(r["_wvol"]) if has_min and r["_wvol"] is not None else None
+        rd = dict(r)
+        weeks = int(rd["weeks_played"]) if rd.get("weeks_played") is not None else None
+        vol_val = int(rd["_wvol"]) if has_min and rd.get("_wvol") is not None else None
+        def _ci(k):
+            v = rd.get(k)
+            try:
+                return int(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
         out.append({
             "player_id": pid,
             "name": meta.get("name") or "Unknown",
             "team": meta.get("team") or "",
-            "position": r["position"],
-            "value": float(r["value"]) if r["value"] is not None else None,
+            "position": rd["position"],
+            "value": float(rd["value"]) if rd.get("value") is not None else None,
             "games": weeks,
             "vol": vol_val if vol_val is not None else weeks,
             "weeks": weeks,
+            # Context volume (receiving/rushing; passing has no weekly data).
+            "rec": _ci("ctx_receptions"),
+            "tgt": _ci("ctx_targets"),
+            "car": _ci("ctx_carries"),
         })
     return out
 
@@ -1955,17 +1971,28 @@ def get_adv_weekly_range_leaderboard(
     for r in rows:
         pid = str(r["player_id"])
         meta = idx.get(pid) or {}
-        weeks = int(r["weeks_played"]) if r["weeks_played"] is not None else None
-        vol_val = int(r["_wvol"]) if has_min and r["_wvol"] is not None else None
+        rd = dict(r)
+        weeks = int(rd["weeks_played"]) if rd.get("weeks_played") is not None else None
+        vol_val = int(rd["_wvol"]) if has_min and rd.get("_wvol") is not None else None
+        def _ci(k):
+            v = rd.get(k)
+            try:
+                return int(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
         out.append({
             "player_id": pid,
             "name": meta.get("name") or "Unknown",
             "team": meta.get("team") or "",
-            "position": r["position"],
-            "value": float(r["value"]) if r["value"] is not None else None,
+            "position": rd["position"],
+            "value": float(rd["value"]) if rd.get("value") is not None else None,
             "games": weeks,
             "vol": vol_val if vol_val is not None else weeks,
             "weeks": weeks,
+            # Context volume (receiving/rushing; passing has no weekly data).
+            "rec": _ci("ctx_receptions"),
+            "tgt": _ci("ctx_targets"),
+            "car": _ci("ctx_carries"),
         })
     return out
 
