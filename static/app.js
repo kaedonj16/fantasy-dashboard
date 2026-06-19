@@ -10773,11 +10773,13 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     }
   }
 
-  // Bar length reflects the player's RANK within their position, so a #16 in a
-  // bunched-at-the-top metric (role score, snap share, yards/touch, target
-  // quality…) no longer renders as a near-full bar. Falls back to value-relative
-  // -to-position bounds when no rank exists (e.g. career view), then to the
-  // per-metric value scale already set above. Trend arrows keep their own fill.
+  // Bar fill by metric type:
+  //  • Role Score → its native 0–100 scale.
+  //  • Efficiency / rate (compressed values, e.g. yards/touch, snap share,
+  //    target quality) → RANK within position, so a mid-ranked player isn't a
+  //    near-full bar.
+  //  • Volume / counting (touches, totals, per-game) → relative to the position
+  //    leader, so half the leader's volume shows ~half a bar.
   function _rankFill(key) {
     const r = ranks && ranks[key];
     const n = counts && counts[key];
@@ -10785,12 +10787,22 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     const t = (n - r) / (n - 1);  // #1 → 1, last → 0
     return 8 + Math.max(0, Math.min(1, t)) * 92;  // 8% floor so worst still shows
   }
+  function _leaderFill(key, val) {
+    const b = bounds && bounds[key];
+    if (!b || !(b[1] > 0)) return null;
+    return Math.max(4, Math.min(100, (val / b[1]) * 100));  // relative to leader (max)
+  }
   defs.forEach(function(d) {
     if (!d.key || d.forceColor) return;
-    const rf = _rankFill(d.key);
-    if (rf != null) { d.fill = rf; return; }
-    const bf = _boundsFill(d.key, _metricVal(d.key));
-    if (bf != null) d.fill = bf;
+    const val = _metricVal(d.key);
+    if (val == null) return;
+    const spec = cfg && cfg[d.key];
+    if (d.key === 'role_score') { d.fill = Math.max(4, Math.min(100, val)); return; }
+    const isEff = spec && (spec.efficiency || spec.pct || spec.pct_frac);
+    let f = isEff ? _rankFill(d.key) : _leaderFill(d.key, val);
+    if (f == null) f = _rankFill(d.key);                 // volume w/o bounds → rank
+    if (f == null) f = _boundsFill(d.key, val);          // last resort
+    if (f != null) d.fill = f;
   });
 
   if (defs.length === 0) return '';
@@ -11835,21 +11847,30 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     };
     
     const range = metricRanges[key] || 100; // Default to 100 if not specified
-    // Bar width reflects RANK within position first (so bunched-top metrics like
-    // role score / snap share / yards-per-touch / target quality don't show a
-    // near-full bar for a mid-ranked player); fall back to value-relative-to-
-    // position bounds, then to value/range scaling (career view).
+    // Bar fill by metric type (consistent with the player modal):
+    //  • Role Score → 0–100 scale.
+    //  • Efficiency / rate → RANK within position (compressed values otherwise
+    //    look full for a mid-ranked player).
+    //  • Volume / counting → relative to the position leader (max), so half the
+    //    leader's volume shows ~half a bar.
     const _rankPct = (r, n) => {
       if (!r || !n || n < 2) return null;
       const t = (n - r) / (n - 1);  // #1 → 1, last → 0
       return 8 + Math.max(0, Math.min(1, t)) * 92;
     };
-    const rf1 = _rankPct(ranks1[key], counts1[key]);
-    const rf2 = _rankPct(ranks2[key], counts2[key]);
-    const bf1 = rf1 != null ? null : _boundsFillCmp(key, v1, bounds1);
-    const bf2 = rf2 != null ? null : _boundsFillCmp(key, v2, bounds2);
-    const fill1 = rf1 != null ? rf1 : bf1;
-    const fill2 = rf2 != null ? rf2 : bf2;
+    const _barFill = (val, ranksX, countsX, boundsX) => {
+      if (val == null) return null;
+      if (key === 'role_score') return Math.max(4, Math.min(100, val));
+      const isEff = spec && (spec.efficiency || spec.pct || spec.pct_frac);
+      if (isEff) {
+        return _rankPct(ranksX[key], countsX[key]) ?? _boundsFillCmp(key, val, boundsX);
+      }
+      const b = boundsX && boundsX[key];
+      if (b && b[1] > 0) return Math.max(4, Math.min(100, (val / b[1]) * 100));
+      return _rankPct(ranksX[key], countsX[key]);
+    };
+    const fill1 = _barFill(v1, ranks1, counts1, bounds1);
+    const fill2 = _barFill(v2, ranks2, counts2, bounds2);
     const pct1 = fill1 != null ? Math.round(fill1)
       : (v1 != null ? Math.min(100, Math.round((v1 / range) * 100)) : 0);
     const pct2 = fill2 != null ? Math.round(fill2)
