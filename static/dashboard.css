@@ -21383,6 +21383,12 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
 /* Controls stretch to fill the dropdown for a clean, aligned column */
 .otc-settings-dropdown .otc-ctrl-group { margin: 0; padding: 0; border: none; width: 100%; }
 .otc-settings-dropdown .otc-ctrl-select { width: 100% !important; }
+/* League Size + TE Premium share one row to save vertical space */
+.otc-settings-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+/* "Trade side" (Team 1/Team 2) only appears in the dropdown on mobile, where the
+   toolbar toggle is relocated here; hidden on desktop (toggle stays in toolbar). */
+#otcSideSlot { display: none; }
+@media (max-width: 600px) { #otcSideSlot { display: block; } }
 /* League-format 1QB/SF row sits centered with its labels */
 .otc-settings-dropdown #leagueTypeControl { justify-content: flex-start; gap: 10px; }
 /* Roster-filter checkbox row */
