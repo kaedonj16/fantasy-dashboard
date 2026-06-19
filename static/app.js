@@ -9884,8 +9884,20 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
     })
     .catch(err => {
       console.error('Error loading advanced metrics:', err);
-      const section = document.getElementById('advancedMetricsSection');
-      if (section) section.style.display = 'none';
+      if (token !== _advMetricsToken) return;  // superseded by a newer open
+      // A transient network error (e.g. ERR_NETWORK_CHANGED on a Wi-Fi switch)
+      // used to hide the whole section, so it appeared to "never load" with no
+      // way to recover. Keep it visible and offer a one-tap retry instead.
+      contentEl.innerHTML = '<div style="padding:14px 0;font-size:13px;color:var(--text-muted);">'
+        + 'Couldn’t load advanced metrics — network hiccup. '
+        + '<button type="button" class="adv-retry-btn" style="margin-left:6px;padding:4px 12px;'
+        + 'border:1px solid var(--border,#334155);border-radius:6px;background:transparent;'
+        + 'color:var(--accent,#3b82f6);cursor:pointer;font-weight:700;">Retry</button>'
+        + '</div>';
+      const _btn = contentEl.querySelector('.adv-retry-btn');
+      if (_btn) _btn.addEventListener('click', function() {
+        loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd);
+      });
     });
 }
 
