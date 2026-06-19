@@ -251,6 +251,14 @@ try {
   // Mark explicit logout so auto-restore skips this session.
   sessionStorage.setItem('_explicitLogout', '1');
 } catch(_) {}
-window.location.replace('/');
+// In the installed PWA the service worker caches navigations, so without this a
+// logged-in page could be served from cache after logout. Purge all caches,
+// then go home so every later navigation re-fetches a fresh, logged-out page.
+function _go(){ window.location.replace('/'); }
+if (window.caches && caches.keys) {
+  caches.keys()
+    .then(function(ks){ return Promise.all(ks.map(function(k){ return caches.delete(k); })); })
+    .then(_go, _go);
+} else { _go(); }
 </script>
 </body></html>"""
