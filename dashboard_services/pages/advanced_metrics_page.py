@@ -1041,6 +1041,7 @@ _AM_JS = r"""
                   weekEnd: null,       // resolved numeric week end
                   extraMetrics: [],     // up to 4 extra metric keys
                   extraData: {},        // key -> { byId:{player_id->value}, maxAbs }
+                  playerPos: {},        // player_id -> position (for positional ranks/bounds)
                   extraPrevData: {},    // key -> { player_id -> prev-season value }
                   prevData: {},         // player_id -> previous-season value (for YoY trend)
                   showTrends: false,    // weekly usage trend column toggle
@@ -1447,6 +1448,12 @@ _AM_JS = r"""
       if (!curr) return;
       const rows = curr.players || [];
       const maxAbs = rows.reduce((m, r) => Math.max(m, Math.abs(Number(r.value) || 0)), 0) || 1;
+      // Capture positions so the Compare modal can rank/scale within position.
+      rows.forEach(r => {
+        if (r.player_id != null && r.position) {
+          state.playerPos[String(r.player_id)] = String(r.position).toUpperCase();
+        }
+      });
       state.extraData[key] = { byId: Object.fromEntries(rows.map(r => [String(r.player_id), Number(r.value)])), maxAbs };
       if (prev) {
         state.extraPrevData[key] = Object.fromEntries((prev.players || []).map(r => [String(r.player_id), Number(r.value)]));
@@ -1533,21 +1540,46 @@ _AM_JS = r"""
     const btn = document.getElementById('amComparePinnedBtn');
     if (btn) btn.style.display = pinnedRows().length >= 2 ? '' : 'none';
   }
-  function _metricRanks(key) {
-    // player_id -> rank for a metric, among the players that have a value.
+  // Positional rank + value bounds for a metric, computed from the loaded
+  // leaderboard field (same data & filters the page is showing). Ranks are
+  // WITHIN each position — matching the player modal / a position-filtered
+  // leaderboard — so a multi-position efficiency metric like yards/touch doesn't
+  // bury RBs beneath WRs. bounds[pos] = [min, max] drive position-aware bars.
+  function _amPosStats(key) {
     const lower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
-    let entries;
+    let entries;  // [id, value, position]
     if (key === state.metric) {
-      entries = state.rows.map(r => [String(r.player_id), Number(r.value)]);
+      entries = state.rows.map(r => [String(r.player_id), Number(r.value),
+        String(r.position || state.playerPos[String(r.player_id)] || '').toUpperCase()]);
     } else {
       const ed = state.extraData[key];
-      if (!ed) return null; // still loading
-      entries = Object.entries(ed.byId).map(([id, v]) => [id, Number(v)]);
+      if (!ed) return null;  // still loading
+      entries = Object.entries(ed.byId).map(([id, v]) =>
+        [id, Number(v), String(state.playerPos[id] || '').toUpperCase()]);
     }
-    entries.sort((a, b) => lower ? a[1] - b[1] : b[1] - a[1]);
-    const ranks = {};
-    entries.forEach(([id], i) => { ranks[id] = i + 1; });
-    return ranks;
+    entries = entries.filter(e => e[1] != null && !Number.isNaN(e[1]));
+    const byPos = {};
+    entries.forEach(e => { (byPos[e[2]] = byPos[e[2]] || []).push(e); });
+    const ranks = {}, bounds = {};
+    Object.keys(byPos).forEach(pos => {
+      const arr = byPos[pos];
+      arr.sort((a, b) => lower ? a[1] - b[1] : b[1] - a[1]);
+      arr.forEach((e, i) => { ranks[e[0]] = i + 1; });
+      const vals = arr.map(e => e[1]);
+      bounds[pos] = [Math.min(...vals), Math.max(...vals)];
+    });
+    return { ranks: ranks, bounds: bounds };
+  }
+  // Bar fill (8–100%) by where `val` sits in its position's [min,max] range —
+  // the same magnitude-preserving, position-aware scaling the player modal uses.
+  function _amBoundsFill(key, val, bnds) {
+    if (val == null || !bnds) return null;
+    const lo = bnds[0], hi = bnds[1];
+    if (!(hi > lo)) return null;  // degenerate (single player / all equal)
+    let t = (val - lo) / (hi - lo);
+    if (cfg.metrics[key] && cfg.metrics[key].lowerBetter) t = 1 - t;
+    t = Math.max(0, Math.min(1, t));
+    return 8 + t * 92;  // 8% floor so the worst still shows a sliver
   }
   // Change a single player's season in the Compare modal and re-render.
   window.amSetCmpSeason = function(pid, season) {
@@ -1730,21 +1762,30 @@ _AM_JS = r"""
     metricsList.forEach(key => {
       const lbl = (cfg.metrics[key] && cfg.metrics[key].label) || key;
       const lower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
-      const ranks = _metricRanks(key);
+      const stats = _amPosStats(key);  // positional ranks + per-position bounds
       const vals = players.map((p, i) => valueFor(p, i, key));
       const present = vals.filter(v => v != null);
       const best = present.length
         ? (lower ? Math.min(...present) : Math.max(...present))
         : null;
+      // Fallback scale (only used when a player's position has no bounds, e.g.
+      // a different-season column): relative to the largest pinned value.
       const barMax = present.length ? Math.max(...present.map(v => Math.abs(v))) || 1 : 1;
 
       html += '<tr><td class="am-cmp-metric">' + lbl + '</td>';
       players.forEach((p, i) => {
         const v = vals[i];
         if (v == null) { html += '<td><span style="opacity:.4">–</span></td>'; return; }
+        const pos = String(p.position || '').toUpperCase();
         const isBest = best != null && v === best && present.length > 1;
-        const rk = (perPlayer[i].mode === 'page' && ranks) ? ranks[String(p.player_id)] : null;
-        const w = Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
+        // Rank only for page-season columns (positional, matching the leaderboard).
+        const rk = (perPlayer[i].mode === 'page' && stats) ? stats.ranks[String(p.player_id)] : null;
+        // Bar: position-aware bounds fill (matches the player modal); fall back
+        // to the pinned-relative scale when no positional bounds are available.
+        const bf = stats && stats.bounds[pos] ? _amBoundsFill(key, v, stats.bounds[pos]) : null;
+        const w = bf != null
+          ? Math.round(bf)
+          : Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
         html += '<td><span class="am-cmp-val' + (isBest ? ' am-cmp-best' : '') + '">' + fmtVal(v, key) + '</span>'
           + (rk ? '<span class="am-cmp-rank">#' + rk + '</span>' : '')
           + '<div class="am-cmp-bar"><div style="width:' + w + '%;background:' + posColor(p.position) + '"></div></div></td>';
@@ -1755,7 +1796,7 @@ _AM_JS = r"""
     html += '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;">'
       + (anyRange
           ? 'Week ranges are aggregated from weekly usage data (matching the week-range leaderboard); season-level metrics like PFF grades and role score show “–” for a range, and ranks apply only to full page-season columns.'
-          : 'Pick a season or week range per player to compare across splits. Showing the primary metric plus any added metrics; ranks reflect the page season.')
+          : 'Pick a season or week range per player to compare across splits. Showing the primary metric plus any added metrics. Ranks and bars are within position, using the current page filters — matching the leaderboard.')
       + '</div>';
     body.innerHTML = html;
     body.dataset.cmpReady = '1';
@@ -3160,6 +3201,12 @@ _AM_JS = r"""
         state.fetching = false;
         state.rows = d.players || [];
         state.volCol = d.vol_col || 'games';
+        // Position lookup for positional ranks/bounds in the Compare modal.
+        state.rows.forEach(r => {
+          if (r.player_id != null && r.position) {
+            state.playerPos[String(r.player_id)] = String(r.position).toUpperCase();
+          }
+        });
         // Build previous-season lookup for trend arrows.
         if (pd && pd.players) {
           state.prevData = Object.fromEntries(pd.players.map(r => [String(r.player_id), Number(r.value)]));
