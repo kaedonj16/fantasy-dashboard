@@ -247,7 +247,39 @@ def _static_hash(filename: str) -> str:
     except OSError:
         return "0"
 
-_APP_JS_V = _static_hash("app.js")
+
+def _ensure_minified_appjs() -> str:
+    """Minify app.js → app.min.js at startup (once, under --preload) and return
+    the filename to serve. The minified file is regenerated whenever app.js
+    changes (tracked via a source-hash sidecar), so it never goes stale. Falls
+    back to the unminified app.js if rjsmin is unavailable or minification fails,
+    so the site never breaks.
+    """
+    static_dir = Path(__file__).parent / "static"
+    src = static_dir / "app.js"
+    out = static_dir / "app.min.js"
+    meta = static_dir / "app.min.js.src"  # stores the app.js hash it was built from
+    try:
+        src_hash = hashlib.md5(src.read_bytes()).hexdigest()
+    except OSError:
+        return "app.js"
+    try:
+        if out.exists() and meta.exists() and meta.read_text().strip() == src_hash:
+            return "app.min.js"  # already current
+        import rjsmin
+        minified = rjsmin.jsmin(src.read_text(encoding="utf-8"))
+        if not minified or len(minified) < len(src.read_text(encoding="utf-8")) * 0.4:
+            return "app.js"  # sanity check failed — serve original
+        out.write_text(minified, encoding="utf-8")
+        meta.write_text(src_hash, encoding="utf-8")
+        return "app.min.js"
+    except Exception as _e:  # rjsmin missing or any failure → safe fallback
+        logger.info("[app.js] minify unavailable, serving unminified: %s", _e)
+        return "app.js"
+
+
+_APP_JS_FILE = _ensure_minified_appjs()
+_APP_JS_V = _static_hash(_APP_JS_FILE)
 _PAYWALL_JS_V = _static_hash("paywall.js")
 _CSS_V = _static_hash("dashboard.css")
 _FA_V = _static_hash("font-awesome.css")
@@ -894,7 +926,7 @@ BASE_HTML = """
     <!-- Feature 15: Ask My GM floating chat widget -->
     {ask_gm_widget}
 
-    <script src="/static/app.js?v={app_js_v}"></script>
+    <script src="/static/{app_js_file}?v={app_js_v}"></script>
     <script src="/static/paywall.js?v={paywall_js_v}"></script>
     <script>
       {adsense_init}
@@ -2069,6 +2101,7 @@ def render_page(
         support_url=f"/{platform}/{season}/{league_id}/support" if (league_id and platform and season) else "/support",
         contact_url=f"/{platform}/{season}/{league_id}/contact" if (league_id and platform and season) else "/contact",
         yt_url="https://youtube.com/@hoodiekj",
+        app_js_file=_APP_JS_FILE,
         app_js_v=_APP_JS_V,
         paywall_js_v=_PAYWALL_JS_V,
         css_v=_CSS_V,
@@ -26522,11 +26555,14 @@ def top_movers_page():
 
 def _rankings_page(position: str | None = None):
     from dashboard_services.pages.dynasty_pages import build_rankings_hub_body
+    # Use the shared 15-min cache (it already loads from the DB and applies the
+    # same FC-zeroing / rookie processing other pages use). Calling
+    # load_current_values_from_db() directly here bypassed the cache on all five
+    # ranking routes and could show raw, inconsistent values.
     try:
-        from dashboard_services.player_value_history import load_current_values_from_db
-        value_table = load_current_values_from_db() or get_model_value_table_cached() or []
-    except Exception:
         value_table = get_model_value_table_cached() or []
+    except Exception:
+        value_table = []
 
     from datetime import datetime as _dt
     as_of  = _dt.now().strftime("%B %Y")

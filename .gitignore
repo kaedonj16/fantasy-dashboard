@@ -49,3 +49,7 @@ data/dynasty_dashboard.db
 node_modules/
 package-lock.json
 package.json
+
+# Generated at startup by _ensure_minified_appjs()
+static/app.min.js
+static/app.min.js.src

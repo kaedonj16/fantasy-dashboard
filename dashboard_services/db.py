@@ -4,6 +4,7 @@ import datetime
 import json
 import logging
 import os
+import threading
 import time
 from contextlib import contextmanager
 from decimal import Decimal
@@ -14,6 +15,22 @@ import psycopg
 logger = logging.getLogger(__name__)
 from psycopg.rows import dict_row
 from psycopg.types.json import set_json_dumps
+
+# Connection pooling. A fresh psycopg.connect() per call pays TCP+TLS+auth +
+# an isolation-level round-trip to the remote Postgres on every query; with a
+# pool we reuse warm connections. Optional import so the app still runs (falling
+# back to direct connections) if psycopg_pool isn't installed.
+try:
+    from psycopg_pool import ConnectionPool, PoolTimeout
+    _POOL_AVAILABLE = True
+except Exception:  # pragma: no cover - dependency missing
+    ConnectionPool = None  # type: ignore
+    PoolTimeout = Exception  # type: ignore
+    _POOL_AVAILABLE = False
+
+_pool = None
+_pool_pid = None
+_pool_lock = threading.Lock()
 
 
 def _json_default(obj):
@@ -73,8 +90,51 @@ def is_connection_healthy(conn: psycopg.Connection) -> bool:
         return False
 
 
+def _configure_pooled_conn(conn: psycopg.Connection) -> None:
+    """Run once per pooled connection: set the session's default isolation level
+    so individual checkouts don't pay a per-request SET round-trip."""
+    try:
+        conn.execute("SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+
+def _get_pool():
+    """Lazily build a process-local connection pool, fork-safe under gunicorn
+    ``--preload``: a pool created in the master before fork must never be shared
+    across worker processes, so we rebuild when the pid changes."""
+    global _pool, _pool_pid
+    pid = os.getpid()
+    if _pool is not None and _pool_pid == pid:
+        return _pool
+    with _pool_lock:
+        if _pool is not None and _pool_pid == pid:
+            return _pool
+        # New process: build a fresh pool bound to this pid. Abandon (do NOT
+        # close) any inherited pool — closing would disturb the parent's sockets.
+        max_size = int(os.getenv("DB_POOL_MAX", str(int(os.getenv("WEB_THREADS", "2")) + 2)))
+        _pool = ConnectionPool(
+            get_database_url(),
+            min_size=1,
+            max_size=max(2, max_size),
+            kwargs={"row_factory": dict_row},
+            configure=_configure_pooled_conn,
+            timeout=30.0,
+            max_idle=300.0,
+            name=f"brfantasy-{pid}",
+            open=True,
+        )
+        _pool_pid = pid
+        return _pool
+
+
 @contextmanager
-def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Connection]:
+def _get_conn_direct(autocommit: bool, retries: int) -> Iterator[psycopg.Connection]:
+    """Fallback path (no psycopg_pool): a fresh connection per call."""
     url = get_database_url()
     last_err: Exception = RuntimeError("get_conn: no attempts made")
     conn = None
@@ -85,37 +145,73 @@ def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Con
         except psycopg.OperationalError as e:
             last_err = e
             if attempt < retries - 1:
-                wait = 2 ** attempt
-                logger.warning("DB connection failed (attempt %d/%d), retrying in %ds: %s", attempt + 1, retries, wait, e)
-                time.sleep(wait)
+                time.sleep(2 ** attempt)
     if conn is None:
         raise last_err
     try:
         conn.autocommit = autocommit
-        # Set isolation level to READ COMMITTED to reduce deadlock likelihood
-        # Only set when not in autocommit mode to avoid transaction conflicts
         if not autocommit:
             conn.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
         yield conn
         if not autocommit:
-            try:
-                conn.commit()
-            except Exception as commit_error:
-                logger.error("COMMIT FAILED for conn %d: %s", id(conn), commit_error)
-                raise
-    except Exception as e:
-        logger.error("Exception in conn %d: %s: %s", id(conn), type(e).__name__, e)
+            conn.commit()
+    except Exception:
         if not autocommit:
             try:
-                # Check if connection is still alive before attempting rollback
                 if is_connection_healthy(conn):
                     conn.rollback()
-                    logger.info("Rollback complete: conn %d", id(conn))
-                else:
-                    logger.warning("Connection unhealthy, skipping rollback: conn %d", id(conn))
-            except Exception as rollback_error:
-                logger.error("Rollback failed for conn %d: %s", id(conn), rollback_error)
-                # Don't re-raise rollback error - the original exception is more important
+            except Exception:
+                pass
         raise
     finally:
         conn.close()
+
+
+@contextmanager
+def get_conn(autocommit: bool = False, retries: int = 3) -> Iterator[psycopg.Connection]:
+    if not _POOL_AVAILABLE:
+        with _get_conn_direct(autocommit, retries) as conn:
+            yield conn
+        return
+
+    # Acquire a pooled connection (with retry/backoff on connect/timeout).
+    last_err: Exception = RuntimeError("get_conn: no attempts made")
+    cm = None
+    conn = None
+    for attempt in range(retries):
+        try:
+            cm = _get_pool().connection()
+            conn = cm.__enter__()
+            break
+        except (psycopg.OperationalError, PoolTimeout) as e:  # type: ignore
+            last_err = e
+            cm = None
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+    if conn is None or cm is None:
+        raise last_err
+
+    # The pool default is autocommit=False; flip per-checkout when requested and
+    # restore before returning the connection so the next borrower sees default.
+    set_ac = bool(autocommit) and not conn.autocommit
+    if set_ac:
+        conn.autocommit = True
+    try:
+        yield conn
+    except BaseException as e:
+        if set_ac:
+            try:
+                conn.autocommit = False
+            except Exception:
+                pass
+        # pool.connection().__exit__ rolls back (non-autocommit) and returns it.
+        cm.__exit__(type(e), e, e.__traceback__)
+        raise
+    else:
+        if set_ac:
+            try:
+                conn.autocommit = False
+            except Exception:
+                pass
+        # pool.connection().__exit__ commits (non-autocommit) and returns it.
+        cm.__exit__(None, None, None)

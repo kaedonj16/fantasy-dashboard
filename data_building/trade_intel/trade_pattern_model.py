@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -430,9 +431,22 @@ def save_model(model: dict, path: str = MODEL_PATH) -> None:
     )
 
 
+# mtime-guarded cache: this model file is ~11.6 MB; parsing it per request
+# (the player-packages API is hit during /trade interactions) costs hundreds of
+# ms and heavy GC on a 1-CPU host. Cache the parsed object keyed on (path, mtime).
+_MODEL_CACHE: dict = {}
+_MODEL_CACHE_LOCK = threading.Lock()
+
+
 def load_model(path: str = MODEL_PATH) -> Optional[dict]:
-    if not os.path.exists(path):
+    try:
+        st = os.stat(path)
+    except OSError:
         return None
+    sig = (st.st_mtime_ns, st.st_size)
+    hit = _MODEL_CACHE.get(path)
+    if hit is not None and hit[0] == sig:
+        return hit[1]
     try:
         with open(path) as f:
             model = json.load(f)
@@ -445,6 +459,8 @@ def load_model(path: str = MODEL_PATH) -> Optional[dict]:
                     logger.warning("[trade_model] Model is %d days old", age.days)
             except Exception:
                 pass
+        with _MODEL_CACHE_LOCK:
+            _MODEL_CACHE[path] = (sig, model)
         return model
     except Exception as exc:
         logger.warning("[trade_model] Failed to load model from %s: %s", path, exc)

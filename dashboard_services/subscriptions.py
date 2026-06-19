@@ -170,14 +170,35 @@ def has_premium_for_viewer(
     member of that league.
     """
     platform = platform or "sleeper"
+    # Per-request memoization: render_page (every server-rendered page) plus some
+    # handlers call this 1-2x per request, each hitting the DB. Cache the result
+    # on flask.g so a page render costs at most one premium lookup.
+    _cache = None
+    _key = (viewer_username, viewer_user_id, league_id, platform, str(season))
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            _cache = getattr(g, "_premium_cache", None)
+            if _cache is None:
+                _cache = {}
+                g._premium_cache = _cache
+            if _key in _cache:
+                return _cache[_key]
+    except Exception:
+        _cache = None
+
+    result = False
     # Own subscription works everywhere.
     if viewer_username and has_premium_access(viewer_username, None, platform):
-        return True
+        result = True
     # League subscription only for actual members.
-    if league_id and has_premium_access(None, league_id, platform):
-        if viewer_is_league_member(viewer_user_id, league_id, platform, season):
-            return True
-    return False
+    elif league_id and has_premium_access(None, league_id, platform) \
+            and viewer_is_league_member(viewer_user_id, league_id, platform, season):
+        result = True
+
+    if _cache is not None:
+        _cache[_key] = result
+    return result
 
 
 def get_subscription_info(user_id: Optional[str], league_id: Optional[str], platform: str = "sleeper") -> Dict[
