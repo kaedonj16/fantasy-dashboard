@@ -1414,8 +1414,8 @@ LEADERBOARD_METRICS: Dict[str, Dict[str, Any]] = {
     "rec_yards_per_game": {"label": "Rec Yds/G",    "category": "Receiving", "positions": ["WR", "RB", "TE"], "min_vol": _V_GAMES, "desc": "Receiving yards per game."},
     "total_routes":       {"label": "Routes",       "category": "Volume", "positions": ["WR", "TE", "RB"], "integer": True, "desc": "Estimated total routes run (= season receiving yards ÷ yprr). Requires both yprr and receptions data."},
     "routes_per_game":    {"label": "Routes/G",     "category": "Volume", "positions": ["WR", "TE", "RB"], "min_vol": _V_GAMES, "desc": "Routes run per game.", "computed_sql": "m.total_routes::float / NULLIF(v.vol, 0)", "computed_null": "m.total_routes IS NOT NULL"},
-    "total_touches":      {"label": "Touches",      "category": "General", "positions": ["RB", "WR", "TE"], "integer": True, "desc": "Total carries plus receptions in the season."},
-    "touches_per_game":   {"label": "Touches/G",    "category": "General", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Carries plus receptions per game.", "computed_sql": "m.total_touches::float / NULLIF(m.games, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
+    "total_touches":      {"label": "Touches",      "category": "Volume", "positions": ["RB", "WR", "TE"], "integer": True, "desc": "Total carries plus receptions in the season."},
+    "touches_per_game":   {"label": "Touches/G",    "category": "Volume", "positions": ["RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Carries plus receptions per game.", "computed_sql": "m.total_touches::float / NULLIF(m.games, 0)", "computed_null": "m.total_touches IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "total_tds":          {"label": "Total TDs",    "category": "General", "positions": ["QB", "RB", "WR", "TE"], "integer": True, "desc": "Total touchdowns (rush + receiving + passing) in the season."},
     "total_tds_per_game": {"label": "Total TDs/G",  "category": "General", "positions": ["QB", "RB", "WR", "TE"], "min_vol": _V_GAMES, "desc": "Total touchdowns per game.", "computed_sql": "m.total_tds::float / NULLIF(m.games, 0)", "computed_null": "m.total_tds IS NOT NULL AND m.games IS NOT NULL AND m.games > 0"},
     "ppr_pts":          {"label": "PPR Points",  "category": "General", "positions": ["QB", "RB", "WR", "TE"], "desc": "Total PPR fantasy points for the period (0.5 PPR scoring)."},
@@ -1501,10 +1501,14 @@ def get_weekly_range_leaderboard(
     # the weeks count; apply the min-vol filter separately.
     has_min = bool(min_col)
     use_vol_filter = has_min and bool(min_vol and int(min_vol) > 0)
+    # Context volume sums for the always-visible columns (receiving/rushing only;
+    # the weekly table has no passing attempts/completions).
+    _ctx_inner = ("SUM(receptions) AS ctx_receptions, SUM(targets) AS ctx_targets, "
+                  "SUM(carries) AS ctx_carries")
     inner_select = (
-        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value, {min_col} AS _wvol"
+        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value, {_ctx_inner}, {min_col} AS _wvol"
         if has_min else
-        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value"
+        f"player_id, position, COUNT(*) AS weeks_played, {agg_sql} AS value, {_ctx_inner}"
     )
     outer_where = "t.value IS NOT NULL"
     if use_vol_filter:
@@ -1515,7 +1519,8 @@ def get_weekly_range_leaderboard(
     with get_conn() as conn:
         rows = conn.execute(
             f"""
-            SELECT t.player_id, t.position, t.weeks_played, t.value{', t._wvol' if has_min else ''}
+            SELECT t.player_id, t.position, t.weeks_played, t.value,
+                   t.ctx_receptions, t.ctx_targets, t.ctx_carries{', t._wvol' if has_min else ''}
             FROM (
                 SELECT {inner_select}
                 FROM player_weekly_metrics
@@ -1539,17 +1544,28 @@ def get_weekly_range_leaderboard(
     for r in rows:
         pid = str(r["player_id"])
         meta = idx.get(pid) or {}
-        weeks = int(r["weeks_played"]) if r["weeks_played"] is not None else None
-        vol_val = int(r["_wvol"]) if has_min and r["_wvol"] is not None else None
+        rd = dict(r)
+        weeks = int(rd["weeks_played"]) if rd.get("weeks_played") is not None else None
+        vol_val = int(rd["_wvol"]) if has_min and rd.get("_wvol") is not None else None
+        def _ci(k):
+            v = rd.get(k)
+            try:
+                return int(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
         out.append({
             "player_id": pid,
             "name": meta.get("name") or "Unknown",
             "team": meta.get("team") or "",
-            "position": r["position"],
-            "value": float(r["value"]) if r["value"] is not None else None,
+            "position": rd["position"],
+            "value": float(rd["value"]) if rd.get("value") is not None else None,
             "games": weeks,
             "vol": vol_val if vol_val is not None else weeks,
             "weeks": weeks,
+            # Context volume (receiving/rushing; passing has no weekly data).
+            "rec": _ci("ctx_receptions"),
+            "tgt": _ci("ctx_targets"),
+            "car": _ci("ctx_carries"),
         })
     return out
 
@@ -1955,17 +1971,28 @@ def get_adv_weekly_range_leaderboard(
     for r in rows:
         pid = str(r["player_id"])
         meta = idx.get(pid) or {}
-        weeks = int(r["weeks_played"]) if r["weeks_played"] is not None else None
-        vol_val = int(r["_wvol"]) if has_min and r["_wvol"] is not None else None
+        rd = dict(r)
+        weeks = int(rd["weeks_played"]) if rd.get("weeks_played") is not None else None
+        vol_val = int(rd["_wvol"]) if has_min and rd.get("_wvol") is not None else None
+        def _ci(k):
+            v = rd.get(k)
+            try:
+                return int(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
         out.append({
             "player_id": pid,
             "name": meta.get("name") or "Unknown",
             "team": meta.get("team") or "",
-            "position": r["position"],
-            "value": float(r["value"]) if r["value"] is not None else None,
+            "position": rd["position"],
+            "value": float(rd["value"]) if rd.get("value") is not None else None,
             "games": weeks,
             "vol": vol_val if vol_val is not None else weeks,
             "weeks": weeks,
+            # Context volume (receiving/rushing; passing has no weekly data).
+            "rec": _ci("ctx_receptions"),
+            "tgt": _ci("ctx_targets"),
+            "car": _ci("ctx_carries"),
         })
     return out
 
@@ -2385,7 +2412,8 @@ def get_metric_leaderboard(
                 "AND column_name = ANY(%s)",
                 (["games", "total_targets", "total_receptions",
                   "total_carries", "total_touches", "total_pass_att",
-                  "total_rush_tds", "total_rec_tds", "total_pass_tds", "total_tds"],),
+                  "total_rush_tds", "total_rec_tds", "total_pass_tds", "total_tds",
+                  "completion_pct"],),
             ).fetchall()
         }
         has_games = "games" in existing_cols
@@ -2488,6 +2516,24 @@ def get_metric_leaderboard(
         else:
             specific_vol_col = ""
 
+        # Context volume columns returned on every row (rendered like the Games
+        # column in the UI — a plain number, no bar). The frontend shows the
+        # relevant ones for the primary metric's category (receptions/targets for
+        # receiving, attempts/completions for passing, carries for rushing).
+        _ctx_map = {
+            "ctx_receptions": "total_receptions",
+            "ctx_targets": "total_targets",
+            "ctx_carries": "total_carries",
+            "ctx_attempts": "total_pass_att",
+        }
+        _ctx_parts = [f"m.{col} AS {alias}" for alias, col in _ctx_map.items()
+                      if col in existing_cols]
+        if "total_pass_att" in existing_cols and "completion_pct" in existing_cols:
+            _ctx_parts.append(
+                "CASE WHEN m.total_pass_att IS NOT NULL AND m.completion_pct IS NOT NULL "
+                "THEN ROUND(m.total_pass_att * m.completion_pct / 100.0) END AS ctx_completions")
+        ctx_cols = (", ".join(_ctx_parts) + ", ") if _ctx_parts else ""
+
         # Computed metrics (per-game rates) use SQL expressions instead of columns.
         if _computed_sql:
             metric_value_expr = f"{_computed_sql} AS value"
@@ -2504,7 +2550,7 @@ def get_metric_leaderboard(
             f"""SELECT t.*
                 FROM (
                     SELECT DISTINCT ON (m.player_id)
-                        m.player_id, m.position, {games_col} {specific_vol_col}
+                        m.player_id, m.position, {games_col} {specific_vol_col} {ctx_cols}
                         {metric_value_expr}
                     FROM player_advanced_metrics m{vol_join}
                     WHERE {metric_where}{gate}
@@ -2536,26 +2582,40 @@ def get_metric_leaderboard(
             return None
         return None
 
+    def _ctx_int(rd: dict, key: str):
+        v = rd.get(key)
+        try:
+            return int(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
     out: List[Dict[str, Any]] = []
     for r in rows:
-        pid = str(r["player_id"])
+        rd = dict(r)
+        pid = str(rd["player_id"])
         meta = idx.get(pid) or {}
-        games_val = (int(r["games"]) if r["games"] is not None else None) if has_games else None
+        games_val = (int(rd["games"]) if rd.get("games") is not None else None) if has_games else None
         # Use the metric-specific volume column when available; fall back to games.
         if has_specific_vol:
-            vol_val = int(r["vol"]) if r["vol"] is not None else None
+            vol_val = int(rd["vol"]) if rd.get("vol") is not None else None
         else:
             vol_val = games_val
         out.append({
             "player_id": pid,
             "name": meta.get("name") or "Unknown",
             "team": meta.get("team") or "",
-            "position": r["position"],
+            "position": rd["position"],
             "headshot": meta.get("espnHeadshot") or "",
-            "value": float(r["value"]) if r["value"] is not None else None,
+            "value": float(rd["value"]) if rd.get("value") is not None else None,
             "games": games_val,
             "vol": vol_val,
             "age": _player_age(meta),
+            # Context volume (plain-number columns in the UI).
+            "rec": _ctx_int(rd, "ctx_receptions"),
+            "tgt": _ctx_int(rd, "ctx_targets"),
+            "car": _ctx_int(rd, "ctx_carries"),
+            "att": _ctx_int(rd, "ctx_attempts"),
+            "cmp": _ctx_int(rd, "ctx_completions"),
         })
     # Cache non-empty results only; evict stale-date entries to stay bounded.
     if out:

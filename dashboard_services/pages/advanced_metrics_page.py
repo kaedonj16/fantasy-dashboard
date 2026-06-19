@@ -1608,28 +1608,29 @@ _AM_JS = r"""
     t = Math.max(0, Math.min(1, t));
     return 8 + t * 92;  // 8% floor so the worst still shows a sliver
   }
-  // Unified bar fill (%) for the Compare modal. Mode by metric type:
-  //  • Role Score → its native 0–100 scale.
-  //  • Efficiency / rate → RANK within position (compressed values would look
-  //    full otherwise); page-season columns only, else positional bounds.
-  //  • Volume / counting → relative to the position leader (max), so a player
-  //    with half the leader's volume shows ~half a bar.
+  // Unified bar fill (%) for the Compare modal — same four-shape model as the
+  // player modal:
+  //  • SCORE  (grades, ratings, VORP/WAR) → value ÷ ceiling.
+  //  • MINMAX (EPA totals) → position [min,max], so big leads & negatives show.
+  //  • RANK   (efficiency rates) → percentile within position (page columns).
+  //  • LEADER (volume) → value ÷ position leader.
+  const _AM_SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
+    pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
+  const _AM_MINMAX = ['passing_epa', 'rushing_epa', 'receiving_epa'];
+  const _AM_RATE = ['avoided_tackles_pg', 'explosive_runs_pg'];
   function _amBarFill(key, v, pos, mode, rk, stats, barMax) {
     const m = cfg.metrics[key] || {};
-    if (key === 'role_score') return Math.max(4, Math.min(100, v));
-    const isEff = m.efficiency || m.pct || m.pctFrac;
-    if (isEff) {
-      if (mode === 'page' && stats && rk) {
-        const rf = _amRankFill(rk, stats.counts[pos]);
-        if (rf != null) return rf;
-      }
-      const bf = (stats && stats.bounds[pos]) ? _amBoundsFill(key, v, stats.bounds[pos]) : null;
-      if (bf != null) return bf;
-    } else {
-      const b = stats && stats.bounds[pos];
-      if (b && b[1] > 0) return Math.max(4, Math.min(100, (v / b[1]) * 100));
-    }
-    return Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
+    const valFb = Math.min(100, Math.max(3, Math.round(Math.abs(v) / barMax * 100)));
+    const ceil = _AM_SCORE_CEIL[key];
+    if (ceil) return Math.max(4, Math.min(100, (v / ceil) * 100));
+    const b = (stats && stats.bounds[pos]) || null;
+    const rankF = (mode === 'page' && stats && rk) ? _amRankFill(rk, stats.counts[pos]) : null;
+    const mmF = b ? _amBoundsFill(key, v, b) : null;
+    if (_AM_MINMAX.indexOf(key) >= 0) return mmF != null ? mmF : (rankF != null ? rankF : valFb);
+    const isEff = m.efficiency || m.pct || m.pctFrac || _AM_RATE.indexOf(key) >= 0;
+    if (isEff) return rankF != null ? rankF : (mmF != null ? mmF : valFb);
+    if (b && b[1] > 0) return Math.max(4, Math.min(100, (v / b[1]) * 100));  // volume → leader
+    return rankF != null ? rankF : valFb;
   }
   // Change a single player's season in the Compare modal and re-render.
   window.amSetCmpSeason = function(pid, season) {
@@ -1978,6 +1979,42 @@ _AM_JS = r"""
       else thead.appendChild(th);
     });
   }
+  // Context volume columns: always-visible plain-number columns (like Games, no
+  // bar) keyed to the primary metric's category — receptions/targets for
+  // receiving, attempts/completions for passing, carries for rushing.
+  function contextColsFor() {
+    const cat = (cfg.metrics[state.metric] && cfg.metrics[state.metric].category) || '';
+    let cols = [];
+    if (cat === 'Receiving') cols = [{ key: 'rec', label: 'Rec', title: 'Receptions' },
+      { key: 'tgt', label: 'Tgt', title: 'Targets' }];
+    else if (cat === 'Passing') cols = [{ key: 'att', label: 'Att', title: 'Pass attempts' },
+      { key: 'cmp', label: 'Cmp', title: 'Completions' }];
+    else if (cat === 'Rushing') cols = [{ key: 'car', label: 'Car', title: 'Carries' }];
+    // Only show a context column when the loaded rows actually carry that value.
+    // Auto-hides passing attempts/completions in week-range view and any metric
+    // whose source (e.g. NGS/EPA weekly store) lacks these volume totals — no
+    // columns of dashes.
+    const rows = state.rows || [];
+    return cols.filter(function(c) {
+      return rows.some(function(r) { return r[c.key] != null; });
+    });
+  }
+  function syncContextCols() {
+    const thead = document.querySelector('#amTable thead tr');
+    if (!thead) return;
+    thead.querySelectorAll('.am-context-col-hdr').forEach(function(el) { el.remove(); });
+    const weeksHdr = thead.querySelector('th.am-weeks');
+    if (!weeksHdr) return;
+    let anchor = weeksHdr;
+    contextColsFor().forEach(function(c) {
+      const th = document.createElement('th');
+      th.className = 'am-games am-context-col-hdr';
+      th.textContent = c.label;
+      th.title = c.title || c.label;
+      anchor.insertAdjacentElement('afterend', th);
+      anchor = th;
+    });
+  }
 
   // Attach the shared metric-definition tooltip to a column header <th>.
   // Uses mouseenter/mouseleave (desktop hover) bound via addEventListener so
@@ -2013,6 +2050,7 @@ _AM_JS = r"""
       thead.appendChild(th);
     });
     syncFilterCols();
+    syncContextCols();
     syncTrendHeader();
     updateSortHeaders();
   }
@@ -2150,25 +2188,54 @@ _AM_JS = r"""
     const _p95 = _vals[Math.min(Math.floor(_vals.length * 0.95), _vals.length - 1)] || 1;
     const _trueMax = _vals[_vals.length - 1] || 1;
     const maxAbs = Math.min(_trueMax, _p95 * 1.3) || 1;
+    // Signed field detection: when any value is negative (EPA, CPOE, RYOE…),
+    // |value|/max would draw a long bar for a below-average player. Use a
+    // min→max mapping instead. Lower-better metrics are inverted so good = long.
+    const _signedVals = posRows.map(r => Number(r.value)).filter(v => !isNaN(v));
+    const _fieldMin = _signedVals.length ? Math.min.apply(null, _signedVals) : 0;
+    const _fieldMax = _signedVals.length ? Math.max.apply(null, _signedVals) : 1;
+    // Bar fill %: relative-to-leader for normal non-negative higher-better
+    // metrics; min→max (direction-aware) for signed or lower-better metrics.
+    function _barPct(val, opts) {
+      if (val == null || isNaN(Number(val))) return 2;
+      const v = Number(val);
+      if (opts.signed || opts.lower) {
+        const span = (opts.fieldMax - opts.fieldMin) || 1;
+        let t = (v - opts.fieldMin) / span;
+        if (opts.lower) t = 1 - t;
+        return Math.round(8 + Math.max(0, Math.min(1, t)) * 92);
+      }
+      return Math.min(100, Math.max(2, Math.round(Math.abs(v) / opts.capMax * 100)));
+    }
+    const _primBar = { signed: _fieldMin < 0, lower: _primLower,
+      fieldMin: _fieldMin, fieldMax: _fieldMax, capMax: maxAbs };
 
     // Extra columns: same logic - scale to the max among the displayed rows so the leader fills the bar.
     const extraMaxMap = {};
     const extraAvgMap = {};
     const extraRankMap = {};
     const extraRankTotal = {};
+    const extraBarMap = {};  // key -> {signed, lower, fieldMin, fieldMax, capMax}
     state.extraMetrics.forEach(function(key) {
       const ed = state.extraData[key];
       if (!ed) return;
-      let mx = 0, sum = 0, n = 0;
+      let mx = 0, sum = 0, n = 0, fMin = Infinity, fMax = -Infinity;
       posRows.forEach(function(r) {
         const v = ed.byId[String(r.player_id)];
         if (v != null) {
-          mx = Math.max(mx, Math.abs(Number(v) || 0));
-          sum += Number(v) || 0;
+          const nv = Number(v) || 0;
+          mx = Math.max(mx, Math.abs(nv));
+          fMin = Math.min(fMin, nv); fMax = Math.max(fMax, nv);
+          sum += nv;
           n++;
         }
       });
       extraMaxMap[key] = mx || 1;
+      if (n) {
+        const _eLow = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
+        extraBarMap[key] = { signed: fMin < 0, lower: _eLow,
+          fieldMin: fMin, fieldMax: fMax, capMax: mx || 1 };
+      }
       if (n) extraAvgMap[key] = sum / n;
       const _extraLower = !!(cfg.metrics[key] && cfg.metrics[key].lowerBetter);
       const _ePairs = posRows
@@ -2251,7 +2318,7 @@ _AM_JS = r"""
     let avgPct = null;
     if (posRows.length) {
       const avg = posRows.reduce((s, r) => s + (Number(r.value) || 0), 0) / posRows.length;
-      avgPct = Math.max(0, Math.min(100, Math.round(Math.abs(avg) / maxAbs * 100)));
+      avgPct = Math.max(0, Math.min(100, _barPct(avg, _primBar)));
       if (avgNote) {
         avgNote.style.display = '';
         const lbl = state.position !== 'ALL' ? state.position : 'Field';
@@ -2306,6 +2373,12 @@ _AM_JS = r"""
       const volNum = r.vol != null ? r.vol : (r.games != null ? r.games : '–');
       const gamesCell = '<td class="am-games">' + volNum + '</td>';
       const weeksCell = '<td class="am-weeks" style="display:' + (!!(state.weekRange && state.weekRange !== '') ? '' : 'none') + '">' + (r.weeks != null ? r.weeks : '–') + '</td>';
+      // Context volume cells (plain numbers, like Games) for the metric's category.
+      let contextCells = '';
+      contextColsFor().forEach(function(c) {
+        const cv = r[c.key];
+        contextCells += '<td class="am-games">' + (cv != null ? cv : '–') + '</td>';
+      });
       const ownedBadge = owned ? '<span class="am-owned-badge">YOURS</span>' : '';
       const pinBtn = '<button class="am-pin-btn' + (pinned ? ' am-pin-active' : '') + '" '
         + 'onclick="event.stopPropagation();amTogglePin(\'' + r.player_id + '\')" '
@@ -2338,7 +2411,7 @@ _AM_JS = r"""
       const trend = trendArrow(r.value, prevVal);
       let metricCell;
       if (!multiMode) {
-        const pct = Math.min(100, Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100)));
+        const pct = _barPct(Number(r.value), _primBar);
         const avgLbl = (avgPct != null && i === 0) ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
         const avgMark = (avgPct != null)
           ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl + '</div>'
@@ -2348,7 +2421,7 @@ _AM_JS = r"""
           + '<div class="am-val-wrap"><div class="am-val-row">' + trend + '<span class="am-val">' + fmtVal(r.value, state.metric) + '</span></div>' + badge + '</div>'
           + '</div></td>';
       } else {
-        const pct = Math.min(100, Math.max(2, Math.round(Math.abs(Number(r.value) || 0) / maxAbs * 100)));
+        const pct = _barPct(Number(r.value), _primBar);
         const avgLbl2 = (avgPct != null && i === 0) ? '<span class="am-bar-avg-lbl">AVG</span>' : '';
         const avgMark2 = (avgPct != null)
           ? '<div class="am-bar-avg" style="left:' + avgPct + '%" title="' + (state.position !== 'ALL' ? state.position : 'Field') + ' average">' + avgLbl2 + '</div>'
@@ -2367,11 +2440,12 @@ _AM_JS = r"""
             return;
           }
           const val = ed.byId[String(r.player_id)] !== undefined ? ed.byId[String(r.player_id)] : null;
-          const pctBar = val != null ? Math.min(100, Math.max(2, Math.round(Math.abs(Number(val)) / extraMaxMap[key] * 100))) : 2;
+          const _eBar = extraBarMap[key] || { signed: false, lower: false, fieldMin: 0, fieldMax: 1, capMax: extraMaxMap[key] };
+          const pctBar = val != null ? _barPct(Number(val), _eBar) : 2;
           const disp = val != null ? fmtVal(val, key) : '–';
           const avgVE = extraAvgMap[key];
           const avgMarkE = (avgVE != null)
-            ? '<div class="am-bar-avg" style="left:' + Math.max(0, Math.min(100, Math.round(Math.abs(avgVE) / extraMaxMap[key] * 100))) + '%" '
+            ? '<div class="am-bar-avg" style="left:' + Math.max(0, Math.min(100, _barPct(avgVE, _eBar))) + '%" '
               + 'title="Average: ' + fmtVal(avgVE, key) + '"></div>'
             : '';
           const rkE = extraRankMap[key] ? extraRankMap[key][String(r.player_id)] : null;
@@ -2398,6 +2472,7 @@ _AM_JS = r"""
         + playerCell
         + gamesCell
         + weeksCell
+        + contextCells
         + filterColCells
         + metricCell
         + (state.showTrends ? trendCellHtml(r.player_id, col) : '')

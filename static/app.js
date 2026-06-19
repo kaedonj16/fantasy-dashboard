@@ -10452,12 +10452,12 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     }
     if (metrics.sack_rate != null) {
       const v = metrics.sack_rate;
-      defs.push({ label: 'Sack Rate', fill: Math.max(0, 100 - v * 8), display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 8 ? '#f59e0b' : '#ef4444', key: 'sack_rate', sub: _rankSub('sack_rate'), cat: 'Passing' });
+      defs.push({ label: 'Sack Rate', fill: Math.max(0, 100 - v * 8), display: v.toFixed(1) + '%', key: 'sack_rate', sub: _rankSub('sack_rate'), cat: 'Passing' });
     }
     if (metrics.pressure_to_sack_rate != null) {
       const v = metrics.pressure_to_sack_rate;
       const fill = Math.max(0, 100 - v);
-      defs.push({ label: 'Pressure→Sack%', fill, display: v.toFixed(1) + '%', forceColor: v <= 20 ? '#10b981' : v <= 35 ? '#3b82f6' : '#ef4444', key: 'pressure_to_sack_rate', sub: _rankSub('pressure_to_sack_rate'), cat: 'Passing' });
+      defs.push({ label: 'Pressure→Sack%', fill, display: v.toFixed(1) + '%', key: 'pressure_to_sack_rate', sub: _rankSub('pressure_to_sack_rate'), cat: 'Passing' });
     }
     if (metrics.yards_per_carry != null) {
       const v = metrics.yards_per_carry;
@@ -10512,7 +10512,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
       const oppShare = metrics.opportunity_share;
       const fillPercent = Math.min(oppShare * 4, 100);
       const color = oppShare >= 25 ? '#10b981' : oppShare >= 15 ? '#3b82f6' : oppShare >= 10 ? '#f59e0b' : '#6b7280';
-      defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', forceColor: color, key: 'opportunity_share', sub: _rankSub('opportunity_share'), cat: 'General' });
+      defs.push({ label: 'Opp Share', fill: fillPercent, display: oppShare.toFixed(1) + '%', key: 'opportunity_share', sub: _rankSub('opportunity_share'), cat: 'General' });
     }
     if (metrics.catch_rate != null) {
       const pct = metrics.catch_rate * 100;
@@ -10538,7 +10538,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     if (metrics.drop_rate != null) {
       const v = metrics.drop_rate;
       const fill = Math.max(0, 100 - v * 5);
-      defs.push({ label: 'Drop Rate', fill, display: v.toFixed(1) + '%', forceColor: v <= 5 ? '#10b981' : v <= 10 ? '#f59e0b' : '#ef4444', key: 'drop_rate', sub: _rankSub('drop_rate'), cat: 'Receiving' });
+      defs.push({ label: 'Drop Rate', fill, display: v.toFixed(1) + '%', key: 'drop_rate', sub: _rankSub('drop_rate'), cat: 'Receiving' });
     }
     if (metrics.yards_per_target != null) {
       const v = metrics.yards_per_target;
@@ -10626,7 +10626,7 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
       defs.push({ label: 'Yds/Touch', fill: Math.min(v / 8 * 100, 100), display: v.toFixed(1), key: 'yards_per_touch', sub: _rankSub('yards_per_touch'), cat: 'General' });
     }
     if (metrics.total_touches != null) {
-      defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 150 * 100, 100), display: Math.round(metrics.total_touches).toString(), key: 'total_touches', sub: _rankSub('total_touches'), cat: 'General' });
+      defs.push({ label: 'Touches', fill: Math.min(metrics.total_touches / 150 * 100, 100), display: Math.round(metrics.total_touches).toString(), key: 'total_touches', sub: _rankSub('total_touches'), cat: 'Volume' });
     }
   }
 
@@ -10773,35 +10773,46 @@ function buildAdvancedMetricsHTML(metricsData, ranks, cfg, weekActive, counts, b
     }
   }
 
-  // Bar fill by metric type:
-  //  • Role Score → its native 0–100 scale.
-  //  • Efficiency / rate (compressed values, e.g. yards/touch, snap share,
-  //    target quality) → RANK within position, so a mid-ranked player isn't a
-  //    near-full bar.
-  //  • Volume / counting (touches, totals, per-game) → relative to the position
-  //    leader, so half the leader's volume shows ~half a bar.
+  // ── Bar fill model — four shapes, each matched to what the metric means ────
+  //  • SCORE  — designed 0→ceiling scale; value ÷ ceiling (grades, ratings,
+  //             VORP/WAR). Magnitude shows; below-replacement floors near empty.
+  //  • MINMAX — wide-range value that can go negative (EPA totals); map the
+  //             position's [min,max] onto the bar so a big lead AND negatives
+  //             both render (lowest, often negative, sits at the floor).
+  //  • RANK   — compressed efficiency rates that bunch near the top; percentile
+  //             within position so a mid-pack player reads mid-pack.
+  //  • LEADER — non-negative volume; value ÷ position leader (½ leader = ½ bar).
+  const _SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
+    pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
+  const _MINMAX_KEYS = new Set(['passing_epa', 'rushing_epa', 'receiving_epa']);
+  const _RATE_KEYS = new Set(['avoided_tackles_pg', 'explosive_runs_pg']);  // per-carry rates → rank
   function _rankFill(key) {
     const r = ranks && ranks[key];
     const n = counts && counts[key];
     if (!r || !n || n < 2) return null;
-    const t = (n - r) / (n - 1);  // #1 → 1, last → 0
-    return 8 + Math.max(0, Math.min(1, t)) * 92;  // 8% floor so worst still shows
+    return 8 + Math.max(0, Math.min(1, (n - r) / (n - 1))) * 92;  // #1 → 100, last → 8
   }
   function _leaderFill(key, val) {
     const b = bounds && bounds[key];
     if (!b || !(b[1] > 0)) return null;
     return Math.max(4, Math.min(100, (val / b[1]) * 100));  // relative to leader (max)
   }
+  function _barFor(key, val) {
+    const ceil = _SCORE_CEIL[key];
+    if (ceil) return Math.max(4, Math.min(100, (val / ceil) * 100));
+    const spec = cfg && cfg[key];
+    if (_MINMAX_KEYS.has(key)) return _boundsFill(key, val) != null ? _boundsFill(key, val) : _rankFill(key);
+    if ((spec && (spec.efficiency || spec.pct || spec.pct_frac)) || _RATE_KEYS.has(key)) {
+      const r = _rankFill(key); return r != null ? r : _boundsFill(key, val);
+    }
+    const l = _leaderFill(key, val); return l != null ? l : _rankFill(key);  // volume
+  }
   defs.forEach(function(d) {
     if (!d.key || d.forceColor) return;
     const val = _metricVal(d.key);
     if (val == null) return;
-    const spec = cfg && cfg[d.key];
-    if (d.key === 'role_score') { d.fill = Math.max(4, Math.min(100, val)); return; }
-    const isEff = spec && (spec.efficiency || spec.pct || spec.pct_frac);
-    let f = isEff ? _rankFill(d.key) : _leaderFill(d.key, val);
-    if (f == null) f = _rankFill(d.key);                 // volume w/o bounds → rank
-    if (f == null) f = _boundsFill(d.key, val);          // last resort
+    let f = _barFor(d.key, val);
+    if (f == null) f = _boundsFill(d.key, val);  // last resort
     if (f != null) d.fill = f;
   });
 
@@ -11847,25 +11858,27 @@ function renderCompareMetricRows(m1, m2, p1, p2, cfg, ranks1, ranks2, counts1, c
     };
     
     const range = metricRanges[key] || 100; // Default to 100 if not specified
-    // Bar fill by metric type (consistent with the player modal):
-    //  • Role Score → 0–100 scale.
-    //  • Efficiency / rate → RANK within position (compressed values otherwise
-    //    look full for a mid-ranked player).
-    //  • Volume / counting → relative to the position leader (max), so half the
-    //    leader's volume shows ~half a bar.
+    // Bar fill by metric type (same four-shape model as the player modal):
+    //  • SCORE  (grades, ratings, VORP/WAR) → value ÷ ceiling.
+    //  • MINMAX (EPA totals) → position [min,max] so big leads & negatives show.
+    //  • RANK   (efficiency rates) → percentile within position.
+    //  • LEADER (volume) → value ÷ position leader.
+    const _SCORE_CEIL = { role_score: 100, grades_offense: 100, pff_passing_grade: 100,
+      pff_rushing_grade: 100, nfl_passer_rating: 158.3, vorp: 150, war: 6 };
+    const _MINMAX = new Set(['passing_epa', 'rushing_epa', 'receiving_epa']);
+    const _RATE = new Set(['avoided_tackles_pg', 'explosive_runs_pg']);
     const _rankPct = (r, n) => {
       if (!r || !n || n < 2) return null;
-      const t = (n - r) / (n - 1);  // #1 → 1, last → 0
-      return 8 + Math.max(0, Math.min(1, t)) * 92;
+      return 8 + Math.max(0, Math.min(1, (n - r) / (n - 1))) * 92;
     };
     const _barFill = (val, ranksX, countsX, boundsX) => {
       if (val == null) return null;
-      if (key === 'role_score') return Math.max(4, Math.min(100, val));
-      const isEff = spec && (spec.efficiency || spec.pct || spec.pct_frac);
-      if (isEff) {
-        return _rankPct(ranksX[key], countsX[key]) ?? _boundsFillCmp(key, val, boundsX);
-      }
-      const b = boundsX && boundsX[key];
+      const ceil = _SCORE_CEIL[key];
+      if (ceil) return Math.max(4, Math.min(100, (val / ceil) * 100));
+      if (_MINMAX.has(key)) return _boundsFillCmp(key, val, boundsX) ?? _rankPct(ranksX[key], countsX[key]);
+      const isEff = (spec && (spec.efficiency || spec.pct || spec.pct_frac)) || _RATE.has(key);
+      if (isEff) return _rankPct(ranksX[key], countsX[key]) ?? _boundsFillCmp(key, val, boundsX);
+      const b = boundsX && boundsX[key];  // volume → relative to leader
       if (b && b[1] > 0) return Math.max(4, Math.min(100, (val / b[1]) * 100));
       return _rankPct(ranksX[key], countsX[key]);
     };
