@@ -9534,6 +9534,16 @@ const _advMetricsCache = new Map();
 const _advRanksCache = new Map(); // session cache for player-metric-ranks responses
 let _advMetricsToken = 0; // incremented on each loadAdvancedMetrics call; guards stale callbacks
 
+// Fetch with a hard timeout so a hung request (slow cold server, dropped
+// connection that never errors) can't leave the Advanced Metrics tab spinning
+// forever — it aborts and rejects, which the caller turns into a Retry.
+function _advFetch(url, ms) {
+  const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const t = ctl ? setTimeout(function() { ctl.abort(); }, ms || 12000) : null;
+  return fetch(url, ctl ? { signal: ctl.signal } : undefined)
+    .finally(function() { if (t) clearTimeout(t); });
+}
+
 // ── Advanced-metrics config cache ────────────────────────────────────────────
 // Fetches LEADERBOARD_METRICS in frontend format once; cached for the session.
 let _advMetricsCfg = null;
@@ -9710,7 +9720,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
     const _rCached = _advRanksCache.get(_rUrl);
     _earlyRanksPromise = _rCached
       ? Promise.resolve(_rCached)
-      : fetch(_rUrl).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
+      : _advFetch(_rUrl, 12000).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
           if (d && d.ranks) {
             _advRanksCache.set(_rUrl, d);
             if (_advRanksCache.size > 20) _advRanksCache.delete(_advRanksCache.keys().next().value);
@@ -9729,7 +9739,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
     `;
   }
 
-  (_cached ? Promise.resolve(_cached) : fetch(url)
+  (_cached ? Promise.resolve(_cached) : _advFetch(url, 12000)
     .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
     .then(data => {
       if (!data.error && !data.premium_required) {
@@ -9828,7 +9838,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
             const _rCached2 = _advRanksCache.get(rankUrl);
             _ranksPromise = _rCached2
               ? Promise.resolve(_rCached2)
-              : fetch(rankUrl).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
+              : _advFetch(rankUrl, 12000).then(r => r.ok ? r.json() : null).catch(() => null).then(d => {
                   if (d && d.ranks) {
                     _advRanksCache.set(rankUrl, d);
                     if (_advRanksCache.size > 20) _advRanksCache.delete(_advRanksCache.keys().next().value);
