@@ -4,6 +4,7 @@ import glob
 import json
 import os
 import re
+import threading as _threading
 import requests
 import time
 import traceback
@@ -212,6 +213,30 @@ def read_json(path: str) -> Optional[dict]:
         return None
 
 
+# mtime+size-guarded in-memory cache for large, frequently-read JSON files
+# (e.g. the 1.1 MB players_index, fp_projections, usage_rows). Avoids re-parsing
+# the same file dozens of times per request. The cached object is SHARED — treat
+# it as read-only.
+_JSON_CACHE: Dict[str, tuple] = {}
+_JSON_CACHE_LOCK = _threading.Lock()
+
+
+def read_json_cached(path: str) -> Optional[dict]:
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    sig = (st.st_mtime_ns, st.st_size)
+    hit = _JSON_CACHE.get(path)
+    if hit is not None and hit[0] == sig:
+        return hit[1]
+    data = read_json(path)
+    if data is not None:
+        with _JSON_CACHE_LOCK:
+            _JSON_CACHE[path] = (sig, data)
+    return data
+
+
 def write_json(path, data):
     """
     Safely writes a JSON object to disk.
@@ -226,8 +251,13 @@ def write_json(path, data):
 
 
 def load_players_index() -> Optional[Dict]:
-    """Returns the cached player index (Sleeper ↔ Tank01/name/team) or None."""
-    return read_json(path_players_index())
+    """Returns the cached player index (Sleeper ↔ Tank01/name/team) or None.
+
+    Uses an mtime-guarded in-memory cache: this 1.1 MB file is read dozens of
+    times per request, so re-parsing it each time is pure CPU waste. The
+    returned dict is shared — callers must treat it as read-only.
+    """
+    return read_json_cached(path_players_index())
 
 
 def load_relevant_index() -> Optional[Dict]:
