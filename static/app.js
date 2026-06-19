@@ -1361,7 +1361,7 @@ function initManagerPills(root = document) {
     if (currentIndex === -1) currentIndex = 0;
   }
 
-  function activateIndex(idx) {
+  function activateIndex(idx, scroll = true) {
     if (idx < 0) idx = pills.length - 1;
     if (idx >= pills.length) idx = 0;
     currentIndex = idx;
@@ -1376,7 +1376,7 @@ function initManagerPills(root = document) {
       panel.classList.toggle("active", pid === teamId);
     });
 
-    activePill.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    if (scroll) activePill.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
   }
 
   pills.forEach((pill, idx) => {
@@ -1386,7 +1386,7 @@ function initManagerPills(root = document) {
   bindOnce(leftArrow, "pillArrowLeft", "click", () => activateIndex(currentIndex - 1));
   bindOnce(rightArrow, "pillArrowRight", "click", () => activateIndex(currentIndex + 1));
 
-  activateIndex(currentIndex);
+  activateIndex(currentIndex, false);  // initial activation must not scroll the page (mobile jumped to mid-page)
 }
 
 function initCardTabs(root = document) {
@@ -6617,6 +6617,25 @@ window.initTradePage = function initTradePage(root = document) {
   // This is the bottleneck for the "Roster filter" feature becoming usable.
   initRosterFilter();
 
+  // Bind controls IMMEDIATELY (not gated behind the background data fetches
+  // below). These only attach event listeners and need no fetched data, so the
+  // toolbar — Settings dropdown, Team 1/2 toggle, scoring controls, Analyze,
+  // etc. — works instantly. Previously they were inside the allSettled().then(),
+  // so a single hung fetch left the whole toolbar dead.
+  bindLeagueTypeControls();
+  bindLeagueSizeControls();
+  bindScoringFormatControls();
+  bindScoringTypeControls();
+  bindTePremiumControls();
+  bindTradeSettingsDropdown();
+  bindViewerSideControls();
+  bindAnalyzeTrade();
+  bindTeamSelector();
+  bindSetupButton();
+  bindClearTradeButton();
+  bindShareButton();
+  initMoversBreakoutsTabs();
+
   Promise.allSettled([
     ensurePlayersLoaded(),
     loadTopMovers(),
@@ -6625,20 +6644,6 @@ window.initTradePage = function initTradePage(root = document) {
   ]).then(() => {
     setupSearch("A");
     setupSearch("B");
-    bindLeagueTypeControls();
-    bindLeagueSizeControls();
-    bindScoringFormatControls();
-    bindScoringTypeControls();
-    bindTePremiumControls();
-    bindTradeSettingsDropdown();
-    bindViewerSideControls();
-    bindAnalyzeTrade();
-    bindTeamSelector();
-    bindSetupButton();
-    bindClearTradeButton();
-    bindShareButton();
-
-    initMoversBreakoutsTabs();
 
     // Re-verify premium status client-side so stale page renders don't lock out subscribers
     (async function checkPremiumState() {
