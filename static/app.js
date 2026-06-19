@@ -6635,6 +6635,11 @@ window.initTradePage = function initTradePage(root = document) {
   bindClearTradeButton();
   bindShareButton();
   initMoversBreakoutsTabs();
+  // Search inputs bind immediately too — renderSide() lazily awaits
+  // ensurePlayersLoaded() at query time, so they must not be gated behind the
+  // background fetches (a hung fetch left the search bars dead).
+  setupSearch("A");
+  setupSearch("B");
 
   Promise.allSettled([
     ensurePlayersLoaded(),
@@ -6642,9 +6647,6 @@ window.initTradePage = function initTradePage(root = document) {
     loadPlayerDeltas(),
     loadPlayerIndicators(),
   ]).then(() => {
-    setupSearch("A");
-    setupSearch("B");
-
     // Re-verify premium status client-side so stale page renders don't lock out subscribers
     (async function checkPremiumState() {
       const leagueId = root.querySelector("#leagueIdInput")?.value || "";
