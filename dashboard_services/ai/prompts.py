@@ -6,6 +6,19 @@ from dashboard_services.ai.client import clean_ai_text, get_ai_client
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 
+# Appended to every system prompt that receives player data carrying positional
+# rank labels (pos_rank_label / sf_pos_rank_label). Without this, models read
+# "WR2" as a lineup-slot/tier instead of the player's rank-by-value.
+POS_RANK_LABEL_NOTE = (
+    "\n\nPOSITIONAL RANK LABELS: A label written as a position immediately followed by a "
+    "number — e.g. \"WR2\", \"TE2\", \"RB5\", \"QB1\" — is that player's OVERALL positional "
+    "rank by trade value, where 1 = the single most valuable player at that position "
+    "leaguewide. So \"WR2\" means the 2nd-most-valuable WR overall (an elite, high-end "
+    "asset), NOT a WR2 starter slot or a mid-tier/role designation. Always interpret these "
+    "as rank-by-value, and when you reference one, phrase it as a ranking (e.g. \"the WR2 "
+    "overall\" or \"a top-3 WR\"), never as a lineup tier."
+)
+
 ASK_GM_SYSTEM = """You are a sharp dynasty fantasy football analyst giving direct, personalized advice to a team owner.
 
 Rules:
@@ -27,7 +40,7 @@ def ask_gm_stream(question: str, team_context: dict) -> Generator[str, None, Non
     stream = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[
-            {"role": "system", "content": ASK_GM_SYSTEM},
+            {"role": "system", "content": ASK_GM_SYSTEM + POS_RANK_LABEL_NOTE},
             {"role": "user", "content": user_msg},
         ],
         stream=True,
@@ -316,7 +329,7 @@ Trade context:
     resp = client.responses.create(
         model=OPENAI_MODEL,
         input=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": system_prompt + POS_RANK_LABEL_NOTE},
             {"role": "user", "content": user_prompt},
         ],
         text={
@@ -411,7 +424,7 @@ Rankings context:
     resp = client.responses.create(
         model=OPENAI_MODEL,
         input=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": system_prompt + POS_RANK_LABEL_NOTE},
             {"role": "user", "content": user_prompt},
         ],
         text={
@@ -511,7 +524,7 @@ Trade suggestions context:
     resp = client.responses.create(
         model=OPENAI_MODEL,
         input=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": system_prompt + POS_RANK_LABEL_NOTE},
             {"role": "user", "content": user_prompt},
         ],
         text={
@@ -579,7 +592,7 @@ def generate_team_ai_result(team_ctx: dict, mode: str = "gm_memo") -> dict:
     resp = client.responses.create(
         model=OPENAI_MODEL,
         input=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": system_prompt + POS_RANK_LABEL_NOTE},
             {"role": "user", "content": user_prompt},
         ],
         text={
