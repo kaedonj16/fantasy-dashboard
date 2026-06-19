@@ -9549,7 +9549,7 @@ function _advFetch(url, ms) {
 let _advMetricsCfg = null;
 function _ensureAdvMetricsCfg() {
   if (_advMetricsCfg) return Promise.resolve(_advMetricsCfg);
-  return fetch('/api/advanced-metrics/config')
+  return _advFetch('/api/advanced-metrics/config', 12000)
     .then(function(r) { return r.ok ? r.json() : {}; })
     .then(function(d) { _advMetricsCfg = d.metrics || {}; return _advMetricsCfg; })
     .catch(function() { return {}; });
