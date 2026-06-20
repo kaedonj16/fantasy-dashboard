@@ -787,6 +787,14 @@ def rewrite_value_table_with_model() -> Path:
     # Trade backing at which WLS earns 50% of the blend. Larger K = need more
     # trade history before WLS dominates. Matches the SF blend's half-weight idea.
     _WLS_BLEND_K = 6.0
+    # Over-market guardrail: pull a player down when the model value sits
+    # drastically above BOTH external markets (a stale / declining player whose
+    # market crashed, e.g. an injured FA the engine still rates on past usage).
+    # Conservative — only extreme, agreed cases — so the model keeps its
+    # intentional above-market upside picks (where at least one source rates the
+    # player). A player simply missing from a source counts as a low signal.
+    _OVERMARKET_TRIGGER = 2.5    # model must be >= 2.5x the external consensus to act
+    _OVERMARKET_MIN_GAP = 100.0  # ...and at least this many points above it (skip low-stakes)
     # Max day-over-day move per player (the only smoothing). 0.10 = ±10%/day.
     _MAX_DAILY_MOVE = 0.10
 
@@ -1034,6 +1042,17 @@ def rewrite_value_table_with_model() -> Path:
             _conf1 = _b1 / (_b1 + _WLS_BLEND_K) if _b1 > 0 else 0.0
             final_value = (_conf1 * _wls1 + (1.0 - _conf1) * final_value) if final_value > 0 else _wls1
 
+        # Over-market guardrail (1QB). Reuses the same trusted external reads the
+        # blend uses: fc_val (normalized FC) and dp_val (normalized DP, already 0
+        # for TEs which DP misvalues). max() of the two means we only pull down
+        # when BOTH markets are far below the model — a player either source rates
+        # decently keeps the model's above-market call.
+        _mkt_ref = max(fc_val, dp_val)
+        if ((fc_val > 0 or dp_val > 0) and player_position != "PICK" and final_value > 0
+                and final_value >= _OVERMARKET_TRIGGER * max(_mkt_ref, 1.0)
+                and (final_value - _mkt_ref) >= _OVERMARKET_MIN_GAP):
+            final_value = max(_mkt_ref * _OVERMARKET_TRIGGER, _mkt_ref)
+
         # Calculate Superflex value - use engine values as primary source
         if pid in sf_engine_map:
             sf_value = sf_engine_map[pid]
@@ -1051,6 +1070,14 @@ def rewrite_value_table_with_model() -> Path:
             _bsf = wls_backing_sf.get(pid, 0.0)
             _confsf = _bsf / (_bsf + _WLS_BLEND_K) if _bsf > 0 else 0.0
             sf_value = (_confsf * _wlssf + (1.0 - _confsf) * sf_value) if sf_value > 0 else _wlssf
+        # Over-market guardrail (SF), using the FC SF read only — DP's 1QB value
+        # understates SF QBs, so applying it here would wrongly tank QBs. Non-QBs
+        # are additionally floored to the (already-guarded) 1QB value just below.
+        _mkt_ref_sf = fc_sf_by_sid.get(pid, 0.0)
+        if (_mkt_ref_sf > 0 and player_position != "PICK" and sf_value > 0
+                and sf_value >= _OVERMARKET_TRIGGER * max(_mkt_ref_sf, 1.0)
+                and (sf_value - _mkt_ref_sf) >= _OVERMARKET_MIN_GAP):
+            sf_value = max(_mkt_ref_sf * _OVERMARKET_TRIGGER, _mkt_ref_sf)
         # Non-QB players are not less valuable in SF — floor at their (blended) 1QB
         # value so the DP 2QB blend can't pull them below it.
         if position != "QB":
