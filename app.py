@@ -822,6 +822,13 @@ BASE_HTML = """
     <!-- Google AdSense -->
     {adsense_script}
 
+    <!-- Warm up TLS to the third-party origins we load from so first paint /
+         charts / ads aren't blocked on a cold connection handshake. -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>
+    <link rel="dns-prefetch" href="https://pagead2.googlesyndication.com">
+
     <link rel="icon" href="/static/BR_Logo.png" type="image/png">
     <link rel="shortcut icon" href="/static/BR_Logo.png" type="image/png">
     <link rel="apple-touch-icon" href="/static/BR_Logo.png">

@@ -901,6 +901,53 @@ function emptyState(container, message, iconClass) {
     });
   }
 
+  // Share a rendered <canvas> via the native share sheet (Save to Photos,
+  // Messages, etc.) when supported, falling back to a file download. Mirrors the
+  // advanced-metrics graph modal's share behavior. Resolves with the outcome.
+  function _shareOrDownloadCanvas(canvas, fname, title) {
+    return new Promise(function (resolve) {
+      var handled = false;
+      function anchorBlob(blob) {
+        try {
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.download = fname; a.href = url; a.rel = 'noopener';
+          a.style.position = 'fixed'; a.style.left = '-9999px';
+          document.body.appendChild(a); a.click();
+          setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+          resolve('downloaded');
+        } catch (e) { resolve('failed'); }
+      }
+      function anchorDataUrl() {
+        try {
+          var a = document.createElement('a');
+          a.download = fname; a.href = canvas.toDataURL('image/png');
+          document.body.appendChild(a); a.click();
+          setTimeout(function () { document.body.removeChild(a); }, 100);
+          resolve('downloaded');
+        } catch (e) { resolve('failed'); }
+      }
+      function handle(blob) {
+        if (handled) return; handled = true;
+        if (!blob) { anchorDataUrl(); return; }
+        var file = null;
+        try { file = new File([blob], fname, { type: 'image/png' }); } catch (_) {}
+        if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], title: title })
+            .then(function () { resolve('shared'); })
+            .catch(function (err) {
+              if (err && err.name === 'AbortError') { resolve('cancelled'); return; }
+              anchorBlob(blob);
+            });
+          return;
+        }
+        anchorBlob(blob);
+      }
+      try { canvas.toBlob(handle, 'image/png'); }
+      catch (e) { anchorDataUrl(); }
+    });
+  }
+
   window.openShareCardModal = function (cardUrl, shareUrl, calcUrl) {
     var existing = document.getElementById('scm-overlay');
     if (existing) existing.remove();
@@ -1007,12 +1054,11 @@ function emptyState(container, message, iconClass) {
           windowWidth: fd.documentElement.scrollWidth,
           windowHeight: fd.documentElement.scrollHeight,
         });
-        var a = document.createElement('a');
-        a.download = 'br-fantasy-card.png';
-        a.href = canvas.toDataURL('image/png');
-        a.click();
+        // Use the native share sheet when available (Save to Photos / Messages),
+        // falling back to a download — same flow as the graph modal.
+        await _shareOrDownloadCanvas(canvas, 'br-fantasy-card.png', 'BR Fantasy');
       } catch (err) {
-        console.warn('[scm] download failed, opening tab:', err);
+        console.warn('[scm] share/download failed, opening tab:', err);
         window.open(cardUrl, '_blank', 'noopener');
       } finally {
         btn.textContent = origText;
