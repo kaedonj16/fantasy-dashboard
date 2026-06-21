@@ -414,7 +414,42 @@ def get_player_value_history(
     return out
 
 
+# Daily-ish cache for top-movers, keyed by the latest snapshot date so it
+# auto-invalidates when the cron writes a new value board. The uncached compute
+# runs a ~14-query day-search loop + heavy CTE and is hit from several endpoints.
+_TOP_MOVERS_CACHE: dict = {}
+
+
 def get_top_movers(
+        *,
+        days: int = 7,
+        limit: int = 15,
+        source: str = "model",
+        league_type: str = "1qb",
+        league_size: int = 10,
+        min_baseline_value: int = 0,
+) -> dict:
+    """Cached wrapper around the (expensive) top-movers computation."""
+    init_value_history_db()
+    latest = get_latest_snapshot_date(source=source)
+    key = (str(latest), days, limit, source, league_type, league_size, min_baseline_value)
+    hit = _TOP_MOVERS_CACHE.get(key)
+    if hit is not None:
+        return hit
+    result = _get_top_movers_uncached(
+        days=days, limit=limit, source=source, league_type=league_type,
+        league_size=league_size, min_baseline_value=min_baseline_value,
+    )
+    # Cache only a populated result so a transient empty board doesn't stick.
+    if result and (result.get("risers") or result.get("fallers")):
+        # Keyed by latest snapshot date — drop entries from older boards.
+        for k in [k for k in _TOP_MOVERS_CACHE if k[0] != key[0]]:
+            _TOP_MOVERS_CACHE.pop(k, None)
+        _TOP_MOVERS_CACHE[key] = result
+    return result
+
+
+def _get_top_movers_uncached(
         *,
         days: int = 7,
         limit: int = 15,
