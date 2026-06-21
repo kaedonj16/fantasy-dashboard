@@ -56,3 +56,5 @@ package.json
 # Generated at startup by _ensure_minified_appjs()
 static/app.min.js
 static/app.min.js.src
+static/dashboard.min.css
+static/dashboard.min.css.src
