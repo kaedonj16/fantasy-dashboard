@@ -2013,28 +2013,48 @@ window.initTradePage = function initTradePage(root = document) {
     }
   }
 
+  // In-flight dedupe: these fire on init and again on league-type/size changes,
+  // so collapse concurrent identical requests (keyed by params) into one.
+  let _deltasInflight = null, _deltasKey = "";
   async function loadPlayerDeltas() {
-    try {
-      const leagueType = getLeagueType();
-      const leagueSize = getLeagueSize();
-      const res = await fetch(`/api/player-deltas?days=7&league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
-      if (!res.ok) return;
-      playerDeltas = await res.json();
-    } catch (err) {
-      console.error("[trade] Failed to load player deltas:", err);
-    }
+    const leagueType = getLeagueType();
+    const leagueSize = getLeagueSize();
+    const key = leagueType + "|" + leagueSize;
+    if (_deltasInflight && _deltasKey === key) return _deltasInflight;
+    _deltasKey = key;
+    _deltasInflight = (async () => {
+      try {
+        const res = await fetch(`/api/player-deltas?days=7&league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
+        if (!res.ok) return;
+        playerDeltas = await res.json();
+      } catch (err) {
+        console.error("[trade] Failed to load player deltas:", err);
+      } finally {
+        _deltasInflight = null;
+      }
+    })();
+    return _deltasInflight;
   }
 
+  let _indicatorsInflight = null, _indicatorsKey = "";
   async function loadPlayerIndicators() {
-    try {
-      const leagueType = getLeagueType();
-      const leagueSize = getLeagueSize();
-      const res = await fetch(`/api/player-indicators?league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
-      if (!res.ok) return;
-      playerIndicators = await res.json();
-    } catch (err) {
-      console.error("[trade] Failed to load player indicators:", err);
-    }
+    const leagueType = getLeagueType();
+    const leagueSize = getLeagueSize();
+    const key = leagueType + "|" + leagueSize;
+    if (_indicatorsInflight && _indicatorsKey === key) return _indicatorsInflight;
+    _indicatorsKey = key;
+    _indicatorsInflight = (async () => {
+      try {
+        const res = await fetch(`/api/player-indicators?league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
+        if (!res.ok) return;
+        playerIndicators = await res.json();
+      } catch (err) {
+        console.error("[trade] Failed to load player indicators:", err);
+      } finally {
+        _indicatorsInflight = null;
+      }
+    })();
+    return _indicatorsInflight;
   }
 
   function isRookie(playerId) {

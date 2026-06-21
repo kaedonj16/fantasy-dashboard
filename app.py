@@ -130,6 +130,7 @@ from utils.utils import (
     get_week_projections_cached,
     load_idp_index,
     load_model_value_table,
+    read_json_cached,
     load_players_index,
     load_teams_index,
     load_week_projection,
@@ -6160,11 +6161,9 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
     # K and DEF carry no receptions, so their PPG is variant-independent (0 rec).
     _EST_REC = {"QB": 0.0, "RB": 3.0, "WR": 5.0, "TE": 4.0, "K": 0.0, "DEF": 0.0}
     try:
-        import json as _json
         _fp_path = os.path.join("cache", f"fp_projections_{season}_ppr.json")
-        with open(_fp_path) as _fp_f:
-            _fp_data = _json.load(_fp_f)
-        for _fp_pid, _fp_entry in _fp_data.items():
+        _fp_data = read_json_cached(_fp_path)  # mtime-cached; re-parses only when the file changes
+        for _fp_pid, _fp_entry in (_fp_data or {}).items():
             if _fp_pid in fallback:
                 continue
             _ppg = float(_fp_entry.get("ppg") or 0)
@@ -6194,13 +6193,10 @@ def build_projections_by_week(season: int, weeks: int, raw_scoring_settings: dic
     # kickers under pos PK/K.  Their scoring is variant-independent, so the flat
     # PPR per-game value is used as-is.
     try:
-        import json as _json
         for _yr in (season, season - 1):
-            _u_path = os.path.join("cache", "player_history", f"usage_rows_{_yr}.json")
-            if not os.path.exists(_u_path):
+            _usage = _load_usage_rows_cached(_yr)  # short-TTL cached; avoids re-parsing ~2 MB/req
+            if not _usage:
                 continue
-            with open(_u_path) as _u_f:
-                _usage = _json.load(_u_f)
             for _p in _usage:
                 _pid = str(_p.get("id") or "")
                 if not _pid or _pid in fallback:
@@ -18516,10 +18512,8 @@ def api_league_players():
         _usage_data_lp = None
         _usage_season_lp = None
         for _s in [_season_lp, _season_lp - 1]:
-            _up = _os_lp.path.join("cache", "player_history", f"usage_rows_{_s}.json")
-            if _os_lp.path.exists(_up):
-                with open(_up) as _f:
-                    _usage_data_lp = _json_lp.load(_f)
+            _usage_data_lp = _load_usage_rows_cached(_s)  # short-TTL cached
+            if _usage_data_lp:
                 _usage_season_lp = _s
                 break
         if _usage_data_lp:
