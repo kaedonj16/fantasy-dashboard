@@ -45,7 +45,10 @@ results.txt
 data/fc_rookie_adp_*.json
 data/fantasy.db
 data/dynasty_dashboard.db
-.claude/
+.claude/*
+# …but DO commit the shared SessionStart hook + its settings so web sessions use them.
+!.claude/settings.json
+!.claude/hooks/
 node_modules/
 package-lock.json
 package.json
