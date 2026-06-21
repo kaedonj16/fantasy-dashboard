@@ -2024,7 +2024,7 @@ window.initTradePage = function initTradePage(root = document) {
     _deltasKey = key;
     _deltasInflight = (async () => {
       try {
-        const res = await fetch(`/api/player-deltas?days=7&league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
+        const res = await _advFetch(`/api/player-deltas?days=7&league_type=${leagueType}&league_size=${leagueSize}`, 8000, { cache: "no-store" });
         if (!res.ok) return;
         playerDeltas = await res.json();
       } catch (err) {
@@ -2045,7 +2045,7 @@ window.initTradePage = function initTradePage(root = document) {
     _indicatorsKey = key;
     _indicatorsInflight = (async () => {
       try {
-        const res = await fetch(`/api/player-indicators?league_type=${leagueType}&league_size=${leagueSize}`, { cache: "no-store" });
+        const res = await _advFetch(`/api/player-indicators?league_type=${leagueType}&league_size=${leagueSize}`, 8000, { cache: "no-store" });
         if (!res.ok) return;
         playerIndicators = await res.json();
       } catch (err) {
@@ -9610,10 +9610,11 @@ let _advMetricsToken = 0; // incremented on each loadAdvancedMetrics call; guard
 // Fetch with a hard timeout so a hung request (slow cold server, dropped
 // connection that never errors) can't leave the Advanced Metrics tab spinning
 // forever — it aborts and rejects, which the caller turns into a Retry.
-function _advFetch(url, ms) {
+function _advFetch(url, ms, init) {
   const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   const t = ctl ? setTimeout(function() { ctl.abort(); }, ms || 12000) : null;
-  return fetch(url, ctl ? { signal: ctl.signal } : undefined)
+  const opts = Object.assign({}, init || {}, ctl ? { signal: ctl.signal } : {});
+  return fetch(url, opts)
     .finally(function() { if (t) clearTimeout(t); });
 }
 
@@ -12203,7 +12204,7 @@ async function _cmpFetchRanks(pid, season, ws, we) {
   if (_lid && _lid !== 'None') url += `&league_id=${encodeURIComponent(_lid)}`;
   if (ws != null && we != null) url += `&week_start=${ws}&week_end=${we}`;
   try {
-    const rd = await fetch(url).then(r => r.ok ? r.json() : null);
+    const rd = await _advFetch(url, 12000).then(r => r.ok ? r.json() : null);
     return { ranks: (rd && rd.ranks) || {}, counts: (rd && rd.counts) || {}, bounds: (rd && rd.bounds) || {} };
   } catch (_) { return { ranks: {}, counts: {}, bounds: {} }; }
 }
@@ -12216,7 +12217,7 @@ async function _cmpFetchSide(side) {
   if (!advData) {
     const _lid = (window.__brctx || {}).leagueId;
     const _lp = (_lid && _lid !== 'None') ? `&league_id=${encodeURIComponent(_lid)}` : '';
-    try { advData = await fetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}${_lp}`).then(r => r.json()); } catch (_) { advData = {}; }
+    try { advData = await _advFetch(`/api/player-advanced-metrics/${side.pid}?season=${seasonParam}${_lp}`, 12000).then(r => r.json()); } catch (_) { advData = {}; }
     _cmpAdvCache[advKey] = advData;
   }
   side.seasons = advData.available_seasons || side.seasons || [];
@@ -12233,7 +12234,7 @@ async function _cmpFetchSide(side) {
   const cacheKey = side.pid + '_' + side.season;
   let weeks = _cmpWeeklyCache[cacheKey];
   if (!weeks) {
-    try { weeks = (await fetch(`/api/player-weekly-metrics/${side.pid}?season=${side.season}`).then(r => r.json())).weeks || []; }
+    try { weeks = (await _advFetch(`/api/player-weekly-metrics/${side.pid}?season=${side.season}`, 12000).then(r => r.json())).weeks || []; }
     catch (_) { weeks = []; }
     _cmpWeeklyCache[cacheKey] = weeks;
   }
