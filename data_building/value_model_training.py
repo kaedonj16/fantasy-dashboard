@@ -15,6 +15,7 @@ from dashboard_services.api import get_nfl_state
 from dashboard_services.picks import load_pick_value_table
 from data_building.external_data.player_history import load_player_history_df, build_player_history_features
 from data_building.external_data.player_investment import load_player_investment_context
+from data_building.value_guardrails import overmarket_capped
 from utils.paths import DATA_DIR
 from utils.utils import load_teams_index, bucket_for_slot, normalize_name, load_players_index, load_model_value_table
 from utils.coerce import safe_int as _safe_int
@@ -1044,14 +1045,11 @@ def rewrite_value_table_with_model() -> Path:
 
         # Over-market guardrail (1QB). Reuses the same trusted external reads the
         # blend uses: fc_val (normalized FC) and dp_val (normalized DP, already 0
-        # for TEs which DP misvalues). max() of the two means we only pull down
-        # when BOTH markets are far below the model — a player either source rates
-        # decently keeps the model's above-market call.
-        _mkt_ref = max(fc_val, dp_val)
-        if ((fc_val > 0 or dp_val > 0) and player_position != "PICK" and final_value > 0
-                and final_value >= _OVERMARKET_TRIGGER * max(_mkt_ref, 1.0)
-                and (final_value - _mkt_ref) >= _OVERMARKET_MIN_GAP):
-            final_value = max(_mkt_ref * _OVERMARKET_TRIGGER, _mkt_ref)
+        # for TEs which DP misvalues). See data_building/value_guardrails.py.
+        if player_position != "PICK":
+            final_value = overmarket_capped(
+                final_value, fc_val, dp_val,
+                trigger=_OVERMARKET_TRIGGER, min_gap=_OVERMARKET_MIN_GAP)
 
         # Calculate Superflex value - use engine values as primary source
         if pid in sf_engine_map:
@@ -1073,11 +1071,10 @@ def rewrite_value_table_with_model() -> Path:
         # Over-market guardrail (SF), using the FC SF read only — DP's 1QB value
         # understates SF QBs, so applying it here would wrongly tank QBs. Non-QBs
         # are additionally floored to the (already-guarded) 1QB value just below.
-        _mkt_ref_sf = fc_sf_by_sid.get(pid, 0.0)
-        if (_mkt_ref_sf > 0 and player_position != "PICK" and sf_value > 0
-                and sf_value >= _OVERMARKET_TRIGGER * max(_mkt_ref_sf, 1.0)
-                and (sf_value - _mkt_ref_sf) >= _OVERMARKET_MIN_GAP):
-            sf_value = max(_mkt_ref_sf * _OVERMARKET_TRIGGER, _mkt_ref_sf)
+        if player_position != "PICK":
+            sf_value = overmarket_capped(
+                sf_value, fc_sf_by_sid.get(pid, 0.0), 0.0,
+                trigger=_OVERMARKET_TRIGGER, min_gap=_OVERMARKET_MIN_GAP)
         # Non-QB players are not less valuable in SF — floor at their (blended) 1QB
         # value so the DP 2QB blend can't pull them below it.
         if position != "QB":
