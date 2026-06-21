@@ -201,6 +201,20 @@ if _sentry_dsn:
 else:
     logger.info("[sentry] SENTRY_DSN not set - error tracking disabled")
 
+# Client-side (browser) error tracking. Loaded async, only when a browser DSN is
+# configured (SENTRY_JS_DSN — a separate public DSN from the server one). Empty
+# string → injected nowhere, zero effect.
+_sentry_js_dsn = os.environ.get("SENTRY_JS_DSN", "")
+_SENTRY_JS_SNIPPET = ""
+if _sentry_js_dsn:
+    _SENTRY_JS_SNIPPET = (
+        '<script>(function(){var s=document.createElement("script");s.async=true;'
+        's.src="https://browser.sentry-cdn.com/7.120.0/bundle.min.js";s.crossOrigin="anonymous";'
+        's.onload=function(){try{window.Sentry&&Sentry.init({dsn:'
+        + json.dumps(_sentry_js_dsn) +
+        ',sampleRate:1.0});}catch(e){}};document.head.appendChild(s);})();</script>'
+    )
+
 DASHBOARD_CACHE = {}
 # Per-key locks prevent simultaneous first-loads for the same league from both
 # running the full build_league_context (~40 API calls) at the same time.
@@ -829,6 +843,7 @@ BASE_HTML = """
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://pagead2.googlesyndication.com" crossorigin>
     <link rel="dns-prefetch" href="https://pagead2.googlesyndication.com">
+    {sentry_js}
 
     <link rel="icon" href="/static/BR_Logo.png" type="image/png">
     <link rel="shortcut icon" href="/static/BR_Logo.png" type="image/png">
@@ -2110,6 +2125,7 @@ def render_page(
         contact_url=f"/{platform}/{season}/{league_id}/contact" if (league_id and platform and season) else "/contact",
         yt_url="https://youtube.com/@hoodiekj",
         app_js_file=_APP_JS_FILE,
+        sentry_js=_SENTRY_JS_SNIPPET,
         app_js_v=_APP_JS_V,
         paywall_js_v=_PAYWALL_JS_V,
         css_v=_CSS_V,
