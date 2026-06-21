@@ -293,10 +293,38 @@ def _ensure_minified_appjs() -> str:
         return "app.js"
 
 
+def _ensure_minified_css() -> str:
+    """Minify dashboard.css → dashboard.min.css at startup (regenerated when the
+    source changes, via a hash sidecar). Falls back to the unminified file if
+    rcssmin is unavailable or minification fails."""
+    static_dir = Path(__file__).parent / "static"
+    src = static_dir / "dashboard.css"
+    out = static_dir / "dashboard.min.css"
+    meta = static_dir / "dashboard.min.css.src"
+    try:
+        src_hash = hashlib.md5(src.read_bytes()).hexdigest()
+    except OSError:
+        return "dashboard.css"
+    try:
+        if out.exists() and meta.exists() and meta.read_text().strip() == src_hash:
+            return "dashboard.min.css"
+        import rcssmin
+        minified = rcssmin.cssmin(src.read_text(encoding="utf-8"))
+        if not minified or len(minified) < len(src.read_text(encoding="utf-8")) * 0.3:
+            return "dashboard.css"
+        out.write_text(minified, encoding="utf-8")
+        meta.write_text(src_hash, encoding="utf-8")
+        return "dashboard.min.css"
+    except Exception as _e:
+        logger.info("[dashboard.css] minify unavailable, serving unminified: %s", _e)
+        return "dashboard.css"
+
+
 _APP_JS_FILE = _ensure_minified_appjs()
 _APP_JS_V = _static_hash(_APP_JS_FILE)
 _PAYWALL_JS_V = _static_hash("paywall.js")
-_CSS_V = _static_hash("dashboard.css")
+_CSS_FILE = _ensure_minified_css()
+_CSS_V = _static_hash(_CSS_FILE)
 _FA_V = _static_hash("font-awesome.css")
 _ICONS_V = _static_hash("icons.css")
 
@@ -867,7 +895,7 @@ BASE_HTML = """
       @media (prefers-reduced-motion: reduce){{#appSplash img{{animation:none}}}}
     </style>
 
-    <link rel="stylesheet" href="/static/dashboard.css?v={css_v}">
+    <link rel="stylesheet" href="/static/{css_file}?v={css_v}">
     <link rel="stylesheet" href="/static/icons.css?v={icons_v}">
     <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
     <link rel="stylesheet" href="/static/paywall.css">
@@ -894,8 +922,11 @@ BASE_HTML = """
           s.classList.add('app-splash-hide');
           setTimeout(function(){{ if(s.parentNode) s.parentNode.removeChild(s); }},400);
         }}
-        if(document.readyState==='complete'){{ hide(); }} else {{ window.addEventListener('load',hide); }}
-        setTimeout(hide,6000);  // safety: never let the splash get stuck
+        // Reveal the (already server-rendered) content as soon as the DOM is
+        // parsed — waiting for window 'load' gated LCP behind every image and
+        // deferred script (measured LCP was ~14.6s on mobile).
+        if(document.readyState!=='loading'){{ hide(); }} else {{ document.addEventListener('DOMContentLoaded',hide); }}
+        setTimeout(hide,2500);  // safety: never let the splash get stuck
       }})();
     </script>
     <a class="skip-link" href="#page-root">Skip to main content</a>
@@ -1770,8 +1801,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
 
 
 _AD_SCRIPT = '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9164153092633845" crossorigin="anonymous"></script>'
-_AD_TOP = """<div class="ad-container ad-top-banner"><ins class="adsbygoogle" style="display:block;max-height:90px;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal"></ins></div>"""
-_AD_BOTTOM = """<div class="ad-container ad-bottom-content"><ins class="adsbygoogle" style="display:block;max-height:90px;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal"></ins></div>"""
+_AD_TOP = """<div class="ad-container ad-top-banner" style="min-height:90px"><ins class="adsbygoogle" style="display:block;min-height:90px;max-height:90px;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal"></ins></div>"""
+_AD_BOTTOM = """<div class="ad-container ad-bottom-content" style="min-height:90px"><ins class="adsbygoogle" style="display:block;min-height:90px;max-height:90px;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal"></ins></div>"""
 _AD_INIT = """window.addEventListener('load', function() { setTimeout(function() { try { (adsbygoogle = window.adsbygoogle || []).push({}); (adsbygoogle = window.adsbygoogle || []).push({}); } catch(e) { console.warn('AdSense initialization error:', e); } }, 100); });"""
 
 
@@ -2128,6 +2159,7 @@ def render_page(
         sentry_js=_SENTRY_JS_SNIPPET,
         app_js_v=_APP_JS_V,
         paywall_js_v=_PAYWALL_JS_V,
+        css_file=_CSS_FILE,
         css_v=_CSS_V,
         fa_v=_FA_V,
         icons_v=_ICONS_V,
@@ -26275,7 +26307,7 @@ def page_share_card(platform: str, season: int, league_id: str, roster_id: str =
   <script>
     (function(){{{"document.documentElement.setAttribute('data-theme','light');" if is_og else "var t=localStorage.getItem('sc-card-theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);"}}})();
   </script>
-  <link rel="stylesheet" href="/static/dashboard.css?v={_CSS_V}">
+  <link rel="stylesheet" href="/static/{_CSS_FILE}?v={_CSS_V}">
   <link rel="stylesheet" href="/static/font-awesome.css?v={_CSS_V}">
   <style>
     body {{ background:var(--bg,#020617); {'min-height:100vh; justify-content:center;' if not is_embed else ''} display:flex; flex-direction:column; align-items:center; padding:{'0' if is_embed else '16px'}; }}
