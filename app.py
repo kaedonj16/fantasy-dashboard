@@ -915,8 +915,11 @@ BASE_HTML = """
 
     <link rel="stylesheet" href="/static/{css_file}?v={css_v}">
     <link rel="stylesheet" href="/static/icons.css?v={icons_v}">
-    <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
-    <link rel="stylesheet" href="/static/paywall.css">
+    <!-- Non-critical CSS (icon font, paywall modal) loaded async so it doesn't
+         block first paint; falls back to a normal stylesheet without JS. -->
+    <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="/static/paywall.css" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}"><link rel="stylesheet" href="/static/paywall.css"></noscript>
 
     <!-- Plotly is loaded on demand (window.ensurePlotly) only when a chart is
          actually rendered, instead of ~1 MB on every page. -->
