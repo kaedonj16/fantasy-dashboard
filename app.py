@@ -333,11 +333,14 @@ _ICONS_V = _static_hash("icons.css")
 def _add_cache_headers(response):
     path = request.path
     if path.startswith("/static/"):
-        # Versioned assets (e.g. ?v=123) can be cached aggressively; others get 1-day
+        # Versioned assets (e.g. ?v=123) can be cached aggressively; others
+        # (logos, icons, fonts, manifest) rarely change, so a week beats 1 day
+        # and satisfies the "efficient cache lifetimes" audit without versioning
+        # every URL. Cloudflare honours this at the edge too.
         if request.args.get("v"):
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         else:
-            response.headers["Cache-Control"] = "public, max-age=86400"
+            response.headers["Cache-Control"] = "public, max-age=604800"
     return response
 
 
