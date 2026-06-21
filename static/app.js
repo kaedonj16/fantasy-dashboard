@@ -8188,8 +8188,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 yaxis: { title: 'Points' }
               };
 
-              // Render chart
-              Plotly.newPlot('historyChartPlotly', traces, layout, { displayModeBar: false });
+              // Render chart (load Plotly on demand)
+              if (window.ensurePlotly) window.ensurePlotly().then(function () { Plotly.newPlot('historyChartPlotly', traces, layout, { displayModeBar: false }); }).catch(function () {});
             } else {
               chartContent.innerHTML = '<div class="history-empty">No chart data available.</div>';
             }
@@ -8855,7 +8855,7 @@ function openPlayerModal(playerId, playerName, opts) {
       // ── Render value history chart in Overview panel ───────────────────────
       if (data.value_history && data.value_history.length > 0) {
         const chartDiv = document.getElementById('playerValueChart');
-        if (chartDiv && typeof Plotly !== 'undefined') {
+        if (chartDiv) {
           const formatDateLabel = (dateStr) => {
             if (!dateStr) return '';
             const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -8956,10 +8956,12 @@ function openPlayerModal(playerId, playerName, opts) {
             hovermode: 'closest',
           };
 
-          Plotly.newPlot('playerValueChart', traces, layout, {
-            displayModeBar: false,
-            responsive: true
-          });
+          if (window.ensurePlotly) window.ensurePlotly().then(function () {
+            Plotly.newPlot('playerValueChart', traces, layout, {
+              displayModeBar: false,
+              responsive: true
+            });
+          }).catch(function () {});
         }
       }
 
@@ -12550,7 +12552,7 @@ function openComparisonView(p1, p2) {
     });
 
   // Render value history chart with two lines
-  if (typeof Plotly !== 'undefined') {
+  if (document.getElementById('compareValueChart')) {
     const chartDiv = document.getElementById('compareValueChart');
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
@@ -12572,7 +12574,7 @@ function openComparisonView(p1, p2) {
       makeTrace(p2.value_history, p2.name, '#f59e0b'),
     ];
 
-    Plotly.newPlot(chartDiv, traces, {
+    const _cmpLayout = {
       paper_bgcolor: 'transparent',
       plot_bgcolor: bgColor,
       margin: { t: 10, r: 16, b: 40, l: 46 },
@@ -12581,7 +12583,10 @@ function openComparisonView(p1, p2) {
       legend: { font: { size: 12, color: textColor }, bgcolor: 'transparent', orientation: 'h', x: 0, y: 1.1 },
       hovermode: 'x unified',
       showlegend: true,
-    }, { responsive: true, displayModeBar: false });
+    };
+    if (window.ensurePlotly) window.ensurePlotly().then(function () {
+      Plotly.newPlot(chartDiv, traces, _cmpLayout, { responsive: true, displayModeBar: false });
+    }).catch(function () {});
   }
 }
 
@@ -12767,13 +12772,15 @@ function tmSwitchTab(tab) {
   // Plotly charts are created while their panel is display:none (roster is the
   // default tab), so they measure a 0-width container and fall back to a wide
   // default that overflows the column. Resize them once the panel is visible.
-  if (tab === 'charts' && typeof Plotly !== 'undefined') {
-    requestAnimationFrame(() => {
-      ['teamWeeklyChart', 'teamRadarChart'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) { try { Plotly.Plots.resize(el); } catch (_) {} }
+  if (tab === 'charts' && window.ensurePlotly) {
+    window.ensurePlotly().then(function () {
+      requestAnimationFrame(() => {
+        ['teamWeeklyChart', 'teamRadarChart'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) { try { Plotly.Plots.resize(el); } catch (_) {} }
+        });
       });
-    });
+    }).catch(function () {});
   }
 }
 
@@ -13301,8 +13308,8 @@ function renderTeamDetails(data) {
     };
   }
 
-  // Render charts using Plotly (if data exists)
-  if (data.graphs && typeof Plotly !== 'undefined') {
+  // Render charts using Plotly (loaded on demand)
+  if (data.graphs && window.ensurePlotly) {
     // Render weekly scores chart
     if (data.graphs.weekly_scores && data.graphs.weekly_scores.length > 0) {
       const weeks = data.graphs.weekly_scores.map(d => d.week);
@@ -13367,7 +13374,7 @@ function renderTeamDetails(data) {
         plot_bgcolor: 'rgba(0,0,0,0)'
       };
 
-      Plotly.newPlot('teamWeeklyChart', traces, weeklyLayout, { responsive: true, displayModeBar: false });
+      window.ensurePlotly().then(function () { Plotly.newPlot('teamWeeklyChart', traces, weeklyLayout, { responsive: true, displayModeBar: false }); }).catch(function () {});
     }
 
     // Render radar chart
@@ -13430,10 +13437,12 @@ function renderTeamDetails(data) {
         }
       };
 
-      Plotly.newPlot('teamRadarChart', [radarTrace], radarLayout, {
-        responsive: true,
-        displayModeBar: false,
-      });
+      window.ensurePlotly().then(function () {
+        Plotly.newPlot('teamRadarChart', [radarTrace], radarLayout, {
+          responsive: true,
+          displayModeBar: false,
+        });
+      }).catch(function () {});
     }
   }
 }

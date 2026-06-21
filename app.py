@@ -215,6 +215,21 @@ if _sentry_js_dsn:
         ',sampleRate:1.0});}catch(e){}};document.head.appendChild(s);})();</script>'
     )
 
+# Plotly is ~1 MB and was loaded on every page even without a chart. Define a
+# global window.ensurePlotly() that injects it on demand (once, cached) and
+# resolves when ready; chart code awaits it instead of relying on a global load.
+_PLOTLY_LOADER = (
+    '<script>window.ensurePlotly=function(){'
+    'if(window._plotlyPromise)return window._plotlyPromise;'
+    'window._plotlyPromise=new Promise(function(res,rej){'
+    'if(window.Plotly){res(window.Plotly);return;}'
+    'var s=document.createElement("script");'
+    's.src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js";'
+    's.onload=function(){res(window.Plotly);};'
+    's.onerror=function(){window._plotlyPromise=null;rej(new Error("plotly load failed"));};'
+    'document.head.appendChild(s);});return window._plotlyPromise;};</script>'
+)
+
 DASHBOARD_CACHE = {}
 # Per-key locks prevent simultaneous first-loads for the same league from both
 # running the full build_league_context (~40 API calls) at the same time.
@@ -903,9 +918,9 @@ BASE_HTML = """
     <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
     <link rel="stylesheet" href="/static/paywall.css">
 
-    <!-- defer so a slow CDN never render-blocks first paint / the splash;
-         chart code guards with `typeof Plotly !== 'undefined'` and polls. -->
-    <script defer src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+    <!-- Plotly is loaded on demand (window.ensurePlotly) only when a chart is
+         actually rendered, instead of ~1 MB on every page. -->
+    {plotly_loader}
     <script>
       if ('serviceWorker' in navigator) {{
         navigator.serviceWorker.register('/sw.js').catch(() => {{}});
@@ -2160,6 +2175,7 @@ def render_page(
         yt_url="https://youtube.com/@hoodiekj",
         app_js_file=_APP_JS_FILE,
         sentry_js=_SENTRY_JS_SNIPPET,
+        plotly_loader=_PLOTLY_LOADER,
         app_js_v=_APP_JS_V,
         paywall_js_v=_PAYWALL_JS_V,
         css_file=_CSS_FILE,
@@ -8958,13 +8974,7 @@ def build_teams_body(ctx: dict) -> str:
           }} catch(e) {{}}
         }}
         function tryRender(el) {{
-          if (typeof Plotly !== 'undefined') {{
-            renderChart(el);
-          }} else {{
-            var t = setInterval(function() {{
-              if (typeof Plotly !== 'undefined') {{ clearInterval(t); renderChart(el); }}
-            }}, 80);
-          }}
+          if (window.ensurePlotly) {{ window.ensurePlotly().then(function() {{ renderChart(el); }}).catch(function() {{}}); }}
         }}
         var charts = document.querySelectorAll('.team-chart-lazy');
         if ('IntersectionObserver' in window) {{
