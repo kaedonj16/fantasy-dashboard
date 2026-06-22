@@ -979,6 +979,7 @@ BASE_HTML = """
         </div>
         <div class="site-footer-links">
           <a href="{about_url}">About</a>
+          <a href="{guides_url}">Guides</a>
           <a href="{privacy_url}">Privacy</a>
           <a href="{terms_url}">Terms</a>
           <a href="{faq_url}">FAQ</a>
@@ -2175,6 +2176,7 @@ def render_page(
         ad_bottom="" if is_premium else _AD_BOTTOM,
         adsense_init="" if is_premium else _AD_INIT,
         about_url=f"/{platform}/{season}/{league_id}/about" if (league_id and platform and season) else "/about",
+        guides_url=f"/{platform}/{season}/{league_id}/guides" if (league_id and platform and season) else "/guides",
         privacy_url=f"/{platform}/{season}/{league_id}/privacy" if (league_id and platform and season) else "/privacy",
         terms_url=f"/{platform}/{season}/{league_id}/terms" if (league_id and platform and season) else "/terms",
         faq_url=f"/{platform}/{season}/{league_id}/faq" if (league_id and platform and season) else "/faq",
