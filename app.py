@@ -314,6 +314,72 @@ def _ensure_minified_appjs() -> str:
         return "app.js"
 
 
+def _ensure_public_js() -> str:
+    """Build a slim public.js (then minify to public.min.js) for the public,
+    logged-out landing/SEO pages.
+
+    The full app.js is ~785 KB and is parsed/compiled on every page even though
+    public pages use only the shared chrome + the home lookup form. On mobile
+    (4x CPU throttle) that parse cost is a big chunk of Total Blocking Time.
+
+    public.js = everything in app.js up to the `@public-js:core-end` marker
+    (shared utils, nav/chrome, changelog, dark mode, custom selects, home lookup)
+    PLUS any region wrapped in `@public-js:include-start/end` (small shared
+    helpers defined further down, e.g. _advFetch). The heavy feature code below
+    the marker (player modal, advanced metrics, compare, redzone, trade calc
+    internals) is excluded. Falls back to app.js on any problem so nothing breaks.
+    """
+    static_dir = Path(__file__).parent / "static"
+    src = static_dir / "app.js"
+    out = static_dir / "public.js"
+    out_min = static_dir / "public.min.js"
+    meta = static_dir / "public.min.js.src"
+    try:
+        full = src.read_text(encoding="utf-8")
+        src_hash = hashlib.md5(full.encode("utf-8")).hexdigest()
+    except OSError:
+        return _APP_JS_FILE
+    marker = "// @public-js:core-end"
+    if marker not in full:
+        return _APP_JS_FILE  # marker missing → safest to serve full bundle
+    try:
+        if out_min.exists() and meta.exists() and meta.read_text().strip() == src_hash:
+            return "public.min.js"  # already current
+        core = full.split(marker, 1)[0]
+        # Pull in explicitly-marked shared helpers that live below the marker.
+        includes = []
+        rest = full.split(marker, 1)[1]
+        start_tok, end_tok = "// @public-js:include-start", "// @public-js:include-end"
+        idx = 0
+        while True:
+            s = rest.find(start_tok, idx)
+            if s == -1:
+                break
+            s_nl = rest.find("\n", s)          # skip the rest of the marker line
+            e = rest.find(end_tok, s)
+            if s_nl == -1 or e == -1:
+                break
+            includes.append(rest[s_nl + 1:e])
+            idx = e + len(end_tok)
+        public_src = core + "\n" + "\n".join(includes) + "\n"
+        out.write_text(public_src, encoding="utf-8")
+        try:
+            import rjsmin
+            minified = rjsmin.jsmin(public_src)
+            if minified and len(minified) > 200:
+                out_min.write_text(minified, encoding="utf-8")
+                meta.write_text(src_hash, encoding="utf-8")
+                logger.info("[public.js] built: %d KB min (from %d KB app.js)",
+                            len(minified) // 1024, len(full) // 1024)
+                return "public.min.js"
+        except Exception as _e:
+            logger.info("[public.js] minify unavailable: %s", _e)
+        return "public.js"
+    except Exception as _e:
+        logger.warning("[public.js] build failed, serving full app.js: %s", _e)
+        return _APP_JS_FILE
+
+
 def _ensure_minified_css() -> str:
     """Minify dashboard.css → dashboard.min.css at startup (regenerated when the
     source changes, via a hash sidecar). Falls back to the unminified file if
@@ -343,6 +409,8 @@ def _ensure_minified_css() -> str:
 
 _APP_JS_FILE = _ensure_minified_appjs()
 _APP_JS_V = _static_hash(_APP_JS_FILE)
+_PUBLIC_JS_FILE = _ensure_public_js()
+_PUBLIC_JS_V = _static_hash(_PUBLIC_JS_FILE)
 _PAYWALL_JS_V = _static_hash("paywall.js")
 _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
@@ -2173,6 +2241,13 @@ def render_page(
     _nav_season   = season or (int(_nav_season_raw) if _nav_season_raw else None)
     nav_html = build_nav(_nav_lid, active, _nav_platform, _nav_season)
 
+    # Lightweight public pages (lite_js=True) serve the slim public.js to
+    # logged-out visitors to cut mobile parse/Total-Blocking-Time. Logged-in
+    # users always get the full app.js (they need modals, trade tools, etc.).
+    _use_lite = bool(kwargs.get("lite_js")) and not session.get("viewer_username")
+    _page_js_file = _PUBLIC_JS_FILE if _use_lite else _APP_JS_FILE
+    _page_js_v = _PUBLIC_JS_V if _use_lite else _APP_JS_V
+
     meta_tags = _build_seo_meta_tags(
         description, canonical, noindex,
         is_league_scoped=bool(league_id and platform and season),
@@ -2221,10 +2296,10 @@ def render_page(
         support_url=f"/{platform}/{season}/{league_id}/support" if (league_id and platform and season) else "/support",
         contact_url=f"/{platform}/{season}/{league_id}/contact" if (league_id and platform and season) else "/contact",
         yt_url="https://youtube.com/@hoodiekj",
-        app_js_file=_APP_JS_FILE,
+        app_js_file=_page_js_file,
         sentry_js=_SENTRY_JS_SNIPPET,
         plotly_loader=_PLOTLY_LOADER,
-        app_js_v=_APP_JS_V,
+        app_js_v=_page_js_v,
         paywall_js_v=_PAYWALL_JS_V,
         css_file=_CSS_FILE,
         css_v=_CSS_V,
@@ -16681,7 +16756,7 @@ def index():
                 error=err,
                 recent_updates=generate_recent_updates_html(),
             )
-            return render_page("BR Fantasy Dashboard", None, "home", body_html)
+            return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
         # If username/team-name provided, set viewer session
         # For ESPN leagues the "username" field holds the team owner's name or team name
@@ -16703,7 +16778,7 @@ def index():
                         error="Could not match that username to a team in this league.",
                         recent_updates=generate_recent_updates_html(),
                     )
-                    return render_page("BR Fantasy Dashboard", None, "home", body_html)
+                    return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
         key = _cache_key(platform, season, league_id)
         entry = DASHBOARD_CACHE.get(key)
@@ -16784,6 +16859,7 @@ def index():
             "redraft trade calculator, daily player trade values, real-trade market data, "
             "power rankings, breakout candidates, and advanced metrics."
         ),
+        lite_js=True,
     )
 
 

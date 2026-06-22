@@ -58,3 +58,7 @@ static/app.min.js
 static/app.min.js.src
 static/dashboard.min.css
 static/dashboard.min.css.src
+# Generated at startup by _ensure_public_js() (slim bundle for public pages)
+static/public.js
+static/public.min.js
+static/public.min.js.src

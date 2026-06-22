@@ -2341,7 +2341,7 @@ window.initTradePage = function initTradePage(root = document) {
           if (typeof rkOpenModal === 'function') {
             rkOpenModal(p);
           } else {
-            openProspectModal(p.id, p.name || "Unknown");
+            if (typeof openProspectModal === 'function') openProspectModal(p.id, p.name || "Unknown");
           }
         } else {
           if (typeof openPlayerModal === 'function') {
@@ -3102,7 +3102,7 @@ window.initTradePage = function initTradePage(root = document) {
             if (typeof rkOpenModal === 'function') {
               rkOpenModal(p);
             } else {
-              openProspectModal(p.id, p.name || 'Unknown');
+              if (typeof openProspectModal === 'function') openProspectModal(p.id, p.name || 'Unknown');
             }
           } else {
             if (typeof openPlayerModal === 'function') {
@@ -6967,7 +6967,7 @@ window.initPageRoot = function initPageRoot(root = document) {
   }
   
   // Setup fun awards grid if present
-  setupFunAwardsGrid();
+  if (typeof setupFunAwardsGrid === 'function') setupFunAwardsGrid();
 };
 
 function showDashboardLoadingOverlay(text, subtext) {
@@ -8123,7 +8123,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.html) {
               awardsContent.innerHTML = data.html;
               // Setup dynamic grid columns for fun awards
-              setupFunAwardsGrid();
+              if (typeof setupFunAwardsGrid === 'function') setupFunAwardsGrid();
             } else {
               awardsContent.innerHTML = '<div class="history-empty">Failed to load season awards.</div>';
             }
@@ -8227,6 +8227,7 @@ function pmSlugify(name) {
     .replace(/^-+|-+$/g, "");
 }
 
+// @public-js:core-end  (everything below is app/feature code; excluded from public.js)
 function openPlayerModal(playerId, playerName, opts) {
   opts = opts || {};
 
@@ -9612,6 +9613,7 @@ let _advMetricsToken = 0; // incremented on each loadAdvancedMetrics call; guard
 // Fetch with a hard timeout so a hung request (slow cold server, dropped
 // connection that never errors) can't leave the Advanced Metrics tab spinning
 // forever — it aborts and rejects, which the caller turns into a Retry.
+// @public-js:include-start  (shared fetch helper used by core/public-page code)
 function _advFetch(url, ms, init) {
   const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   const t = ctl ? setTimeout(function() { ctl.abort(); }, ms || 12000) : null;
@@ -9619,6 +9621,7 @@ function _advFetch(url, ms, init) {
   return fetch(url, opts)
     .finally(function() { if (t) clearTimeout(t); });
 }
+// @public-js:include-end
 
 // ── Advanced-metrics config cache ────────────────────────────────────────────
 // Fetches LEADERBOARD_METRICS in frontend format once; cached for the session.
