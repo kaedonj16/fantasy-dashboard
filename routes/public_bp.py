@@ -500,41 +500,42 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
             <div class="static-section">
               <div class="static-section-title">How It Started</div>
               <p>
-                BR Fantasy began as a commissioner trying to make a new dynasty league with
-                friends more fun. It started with spreadsheets &mdash; weekly stats showing who
-                scored the most, which teams were actually good, and who was trash.
+                As commissioner of a new dynasty league with my friends, I wanted to make it more
+                fun. So I started making spreadsheets with weekly stats &mdash; showing who scored
+                the most, which teams were actually good, and who was trash.
               </p>
               <p style="margin-top:8px;">
-                Something clicked. League mates started interacting way more. Instead of just
-                &ldquo;I won,&rdquo; it became &ldquo;you got carried by Puka dropping 40.&rdquo;
-                The trash talk got better. People wanted to see the data. The whole thing felt
-                less like &ldquo;check your lineup&rdquo; and more like an actual community.
+                My league mates started interacting way more. We'd talk about someone getting
+                carried by Puka because he scored 40, not just that they won. The trash talk got
+                better. People wanted to see the data. It made the whole thing feel less like
+                &ldquo;check your lineup&rdquo; and more like an actual community.
               </p>
               <p style="margin-top:8px;">
-                There were weekly recap videos, too. By Week 8 the commish was 1&ndash;7 and
-                getting abused in the chat &mdash; arguing every week that he was getting hosed.
-                Then he ran it back 6&ndash;0 and made the playoffs. Between the videos and the
-                stats, it was the best season of fantasy any of them had played.
+                I was making weekly recap videos, and by Week 8 I was 1&ndash;7, getting abused in
+                the chat for being so bad. Every week I'd argue I was getting hosed. Then I ran it
+                back 6&ndash;0 and made the playoffs. These videos and the website made the whole
+                season better than anything I'd played before.
               </p>
               <p style="margin-top:8px;">
-                So it kept growing. More graphs, value tracking, recaps &mdash; everything that
-                used to be done by hand, built into an actual website.
+                I liked doing it so much that I just kept expanding it &mdash; more graphs, value
+                tracking, recaps. Basically built out everything I was doing manually into an
+                actual website.
               </p>
             </div>
 
             <div class="static-section">
               <div class="static-section-title">Why It's Public</div>
               <p>
-                Figuring other commissioners might want the same thing, we made it accessible to
-                everyone. If you run a league and want to show people what's actually happening
-                beyond the scores, give it a try &mdash; it's free. Got feedback or ideas? Let us
-                know on the <a href="/contact">Contact</a> page.
+                I figured other commissioners might want this too, so I made it accessible. If
+                you're running a league and want to show people what's actually happening beyond
+                just scores, try it &mdash; it's free. If you have feedback or ideas, let me know
+                on the <a href="/contact">Contact</a> page.
               </p>
               <p style="margin-top:8px;">
-                It's maintained by
+                I'm
                 <a href="https://youtube.com/@hoodiekj" target="_blank" rel="noopener">hoodiekj</a>,
                 a fantasy football player and developer who wanted better tools than the major
-                platforms provide.
+                platforms provide &mdash; and I build and maintain BR Fantasy myself.
               </p>
             </div>
 
