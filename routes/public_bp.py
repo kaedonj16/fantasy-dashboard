@@ -498,13 +498,43 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
             </div>
 
             <div class="static-section">
-              <div class="static-section-title">Who Built It?</div>
+              <div class="static-section-title">How It Started</div>
               <p>
-                This project was created by
+                BR Fantasy began as a commissioner trying to make a new dynasty league with
+                friends more fun. It started with spreadsheets &mdash; weekly stats showing who
+                scored the most, which teams were actually good, and who was trash.
+              </p>
+              <p style="margin-top:8px;">
+                Something clicked. League mates started interacting way more. Instead of just
+                &ldquo;I won,&rdquo; it became &ldquo;you got carried by Puka dropping 40.&rdquo;
+                The trash talk got better. People wanted to see the data. The whole thing felt
+                less like &ldquo;check your lineup&rdquo; and more like an actual community.
+              </p>
+              <p style="margin-top:8px;">
+                There were weekly recap videos, too. By Week 8 the commish was 1&ndash;7 and
+                getting abused in the chat &mdash; arguing every week that he was getting hosed.
+                Then he ran it back 6&ndash;0 and made the playoffs. Between the videos and the
+                stats, it was the best season of fantasy any of them had played.
+              </p>
+              <p style="margin-top:8px;">
+                So it kept growing. More graphs, value tracking, recaps &mdash; everything that
+                used to be done by hand, built into an actual website.
+              </p>
+            </div>
+
+            <div class="static-section">
+              <div class="static-section-title">Why It's Public</div>
+              <p>
+                Figuring other commissioners might want the same thing, we made it accessible to
+                everyone. If you run a league and want to show people what's actually happening
+                beyond the scores, give it a try &mdash; it's free. Got feedback or ideas? Let us
+                know on the <a href="/contact">Contact</a> page.
+              </p>
+              <p style="margin-top:8px;">
+                It's maintained by
                 <a href="https://youtube.com/@hoodiekj" target="_blank" rel="noopener">hoodiekj</a>,
-                a fantasy football player and developer who wanted better tools than what
-                the major platforms provide. What started as a personal league tool has
-                grown into a full-featured dashboard used by leagues across the country.
+                a fantasy football player and developer who wanted better tools than the major
+                platforms provide.
               </p>
             </div>
 
