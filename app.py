@@ -17074,10 +17074,13 @@ def api_refresh_page():
             league_id_safe = ctx.get("league_id") or league_id
             season_safe = int(ctx.get("season") or season or datetime.now().year)
             num_teams = ctx.get("total_rosters") or None
-            rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+            _ss = ctx.get("scoring_settings") or {}
+            rec = float(_ss.get("rec") or 0)
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+            te_premium = float(_ss.get("bonus_rec_te") or 0)
             body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
                                                     scoring_format=scoring_format,
+                                                    te_premium=te_premium,
                                                     platform=platform)
 
         else:

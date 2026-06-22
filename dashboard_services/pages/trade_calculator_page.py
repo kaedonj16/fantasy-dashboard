@@ -18,6 +18,7 @@ def build_trade_calculator_body(
         has_premium: bool = False,
         is_superflex: bool = False,
         platform: Optional[str] = None,
+        te_premium: float = 0.0,
         seo_footer: str = "",
 ) -> str:
     league_val = league_id or ""
@@ -160,13 +161,22 @@ def build_trade_calculator_body(
                 </select>
               </div>"""
 
-    # TE premium dropdown: scales tight-end values when leagues award bonus TE points
-    te_premium_block = """
+    # TE premium dropdown: scales tight-end values when leagues award bonus TE points.
+    # Defaults to the league's actual setting (Sleeper bonus_rec_te) when known, snapped
+    # to the nearest supported option, so TE-premium leagues are applied automatically.
+    try:
+        _tep_raw = float(te_premium or 0)
+    except (TypeError, ValueError):
+        _tep_raw = 0.0
+    _tep_val = 1.0 if _tep_raw >= 0.75 else 0.5 if _tep_raw >= 0.25 else 0.0
+    def _tep_sel(v: float) -> str:
+        return " selected" if abs(_tep_val - v) < 1e-9 else ""
+    te_premium_block = f"""
               <div class="otc-ctrl-group" id="tePremiumControl">
                 <select class="otc-ctrl-select" id="tePremiumSelect" name="tePremium" style="width: 78px;">
-                  <option value="0" selected>TE Std</option>
-                  <option value="0.5">TE +0.5</option>
-                  <option value="1">TE +1.0</option>
+                  <option value="0"{_tep_sel(0.0)}>TE Std</option>
+                  <option value="0.5"{_tep_sel(0.5)}>TE +0.5</option>
+                  <option value="1"{_tep_sel(1.0)}>TE +1.0</option>
                 </select>
               </div>"""
 

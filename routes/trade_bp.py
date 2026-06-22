@@ -251,8 +251,12 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         league_id_safe = ctx.get("league_id") or league_id
         season_safe = int(ctx.get("season") or season or datetime.now().year)
         num_teams = ctx.get("total_rosters") or None
-        rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+        _ss = ctx.get("scoring_settings") or {}
+        rec = float(_ss.get("rec") or 0)
         scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+        # Auto-apply the league's TE-premium bonus (Sleeper bonus_rec_te) so TE values
+        # reflect the actual scoring without the user having to set it manually.
+        te_premium = float(_ss.get("bonus_rec_te") or 0)
         viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or [])
         viewer_roster_id = viewer.get("viewer_roster_id") or ""
         has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
@@ -263,6 +267,7 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
                                            viewer_roster_id=viewer_roster_id,
                                            has_premium=has_premium,
                                            is_superflex=_is_sf,
+                                           te_premium=te_premium,
                                            platform=platform)
     else:
         state = get_nfl_state() or {}
