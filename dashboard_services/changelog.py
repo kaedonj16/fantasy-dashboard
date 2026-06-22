@@ -13,7 +13,7 @@ CHANGELOG = [
     {
         "date": "2026-06-17",
         "tag": "new",
-        "text": "Rich link previews: Sharing a metrics graph, a trade card, or a team report card now unfurls with a real preview image of that exact card — generated on the server — instead of just the BR logo, on iMessage, Discord, X, and more.",
+        "text": "Rich link previews: Sharing a metrics graph, a trade card, or a team report card now unfurls with a real preview image of that exact card, generated on the server, instead of just the BR logo, on iMessage, Discord, X, and more.",
         "link": "/metrics"
     },
     {

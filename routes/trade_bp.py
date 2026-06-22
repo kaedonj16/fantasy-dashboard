@@ -53,7 +53,7 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
               <span style="font-size:13px;font-weight:700;">2. Compare Values</span>
             </div>
             <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.55;">
-              Values are built from thousands of real trades across Sleeper, ESPN, and Yahoo leagues — not guesses.
+              Values are built from thousands of real trades across Sleeper, ESPN, and Yahoo leagues, not guesses.
             </p>
           </div>
           <div style="background:var(--bg-alt,rgba(0,0,0,.03));border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
@@ -109,7 +109,7 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
                 <i class="fa-solid fa-layer-group" style="color:#f59e0b;font-size:13px;"></i>
               </span>
               <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
-                Don't trade purely by total value — roster construction matters. Two solid
+                Don't trade purely by total value, roster construction matters. Two solid
                 starters often beat one star plus a bench piece.
               </p>
             </div>
@@ -136,7 +136,7 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
                 <i class="fa-solid fa-magnifying-glass-chart" style="color:#10b981;font-size:13px;"></i>
               </span>
               <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
-                Use real trade comparisons to sanity-check a deal — if similar trades have
+                Use real trade comparisons to sanity-check a deal, if similar trades have
                 happened before, you'll see how the market actually valued them.
               </p>
             </div>
@@ -153,7 +153,7 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
             <details class="tc-faq-item">
               <summary class="tc-faq-q">Is the trade calculator free?</summary>
               <p class="tc-faq-a">
-                Yes. The trade calculator and player trade values are free to use — no account
+                Yes. The trade calculator and player trade values are free to use, no account
                 required. Connecting your Sleeper, ESPN, or Yahoo league unlocks personalized
                 analysis tailored to your roster and scoring settings.
               </p>

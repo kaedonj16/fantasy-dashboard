@@ -5951,7 +5951,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
 
         <div id="weekly-rz-cta" class="weekly-rz-cta" style="display:none">
           <span class="weekly-rz-cta-dot"></span>
-          <span class="weekly-rz-cta-text">NFL games are live right now — track your players in real time.</span>
+          <span class="weekly-rz-cta-text">NFL games are live right now, track your players in real time.</span>
           <a href="./redzone" class="weekly-rz-cta-link">Watch on Redzone →</a>
         </div>
 
@@ -12289,7 +12289,7 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
                       if request.args.get(k)}
             og_img = f"{origin}/{platform}/{season}/{league_id}/metrics/og.png?{_ue(_og_qs)}"
             og_title = f"{_mlabel(gy)} vs {_mlabel(gx)} | BR Fantasy"
-            og_desc = "Advanced metrics scatter — compare efficiency and opportunity across the league."
+            og_desc = "Advanced metrics scatter: compare efficiency and opportunity across the league."
             t = html.escape(og_title, quote=True)
             d = html.escape(og_desc, quote=True)
             img = html.escape(og_img, quote=True)
@@ -25244,7 +25244,7 @@ def build_portfolio_body(
         f"<div class='card' style='margin-bottom:14px;padding:14px 16px;'>"
         f"<div style='display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;'>"
         f"<div>"
-        f"<div style='font-size:15px;font-weight:700;'>My Leagues &mdash; {season}</div>"
+        f"<div style='font-size:15px;font-weight:700;'>My Leagues: {season}</div>"
         f"<div style='font-size:13px;color:var(--text-muted);margin-top:3px;'>Signed in as <strong>{html.escape(username)}</strong></div>"
         f"</div>"
         f"<div style='display:flex;gap:24px;flex-shrink:0;'>"
@@ -26585,7 +26585,7 @@ def dynasty_trade_value_chart():
     return page_players(
         _title=f"Dynasty Fantasy Football Trade Value Chart {year} | BR Fantasy",
         _desc=(
-            f"Updated {as_of} — real dynasty trade values for 1QB and Superflex leagues. "
+            f"Updated {as_of}: real dynasty trade values for 1QB and Superflex leagues. "
             f"Sortable by position, age, and value. Use with the free Trade Calculator."
         ),
         _canonical="/dynasty-trade-value-chart",
@@ -26614,11 +26614,11 @@ def top_movers_page():
     body = build_risers_fallers_body(movers, as_of_date=date_label)
 
     return render_page(
-        f"Top Movers — {date_label} | BR Fantasy",
+        f"Top Movers: {date_label} | BR Fantasy",
         None, "players", body,
         description=(
             f"Dynasty fantasy football risers and fallers for the week of {date_label}. "
-            f"Biggest trade value movers — act fast with the BR Fantasy Trade Calculator."
+            f"Biggest trade value movers, act fast with the BR Fantasy Trade Calculator."
         ),
     )
 
@@ -27004,9 +27004,9 @@ def page_trade_card(share_id: str):
             if pi and pi.get("available") and pi.get("delta"):
                 dlt = pi["delta"]
                 def _pi_sign(v):
-                    return (f'+{v:.1f}' if v > 0 else f'{v:.1f}') if v is not None else "—"
+                    return (f'+{v:.1f}' if v > 0 else f'{v:.1f}') if v is not None else "-"
                 def _pi_pct(v):
-                    return (f'+{v:.1f}%' if v > 0 else f'{v:.1f}%') if v is not None else "—"
+                    return (f'+{v:.1f}%' if v > 0 else f'{v:.1f}%') if v is not None else "-"
                 rows_pi = [
                     ("Playoff Odds", _pi_pct(dlt.get("playoff_pct"))),
                     ("Proj. Wins",   _pi_sign(dlt.get("avg_final_wins"))),
@@ -27015,7 +27015,7 @@ def page_trade_card(share_id: str):
                 ]
                 cells = "".join(
                     f'<div class="pi-cell"><div class="pi-label">{lbl}</div>'
-                    f'<div class="pi-val {("pi-pos" if "+" in val else "pi-neg") if val != "—" else ""}">{val}</div></div>'
+                    f'<div class="pi-val {("pi-pos" if "+" in val else "pi-neg") if val != "-" else ""}">{val}</div></div>'
                     for lbl, val in rows_pi
                 )
                 pi_html = f"""
@@ -27654,7 +27654,7 @@ def _notify_changelog_on_startup():
         # Trim long text to a push-friendly length
         body = text if len(text) <= 120 else text[:117] + "…"
         tag_labels = {"feature": "New feature", "new": "New", "fix": "Fix", "update": "Update"}
-        title = f"BR Fantasy — {tag_labels.get(tag, 'Update')}"
+        title = f"BR Fantasy: {tag_labels.get(tag, 'Update')}"
 
         result = _push_broadcast(title=title, body=body, url=link, tag=f"changelog-{latest_date}")
         sent = result.get_json().get("sent", 0) if hasattr(result, "get_json") else 0

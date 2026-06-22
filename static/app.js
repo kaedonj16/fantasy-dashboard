@@ -9975,7 +9975,7 @@ function loadAdvancedMetrics(playerId, leagueId, season, weekStart, weekEnd) {
       // used to hide the whole section, so it appeared to "never load" with no
       // way to recover. Keep it visible and offer a one-tap retry instead.
       contentEl.innerHTML = '<div style="padding:14px 0;font-size:13px;color:var(--text-muted);">'
-        + 'Couldn’t load advanced metrics — network hiccup. '
+        + 'Couldn’t load advanced metrics, network hiccup. '
         + '<button type="button" class="adv-retry-btn" style="margin-left:6px;padding:4px 12px;'
         + 'border:1px solid var(--border,#334155);border-radius:6px;background:transparent;'
         + 'color:var(--accent,#3b82f6);cursor:pointer;font-weight:700;">Retry</button>'
@@ -10312,12 +10312,12 @@ const _ADV_METRIC_DESCS = {
   ngs_avg_separation: "Average yards of separation from the nearest defender at the moment of catch/incompletion (NFL Next Gen Stats).",
   ngs_avg_cushion: "Average yards of cushion the defender gives at the snap (NFL Next Gen Stats).",
   ngs_avg_yac_above_expectation: "Yards after catch above what was expected given the catch situation (NFL Next Gen Stats).",
-  epa_per_play: "Expected Points Added per play — the average value of each play the player was involved in.",
+  epa_per_play: "Expected Points Added per play: the average value of each play the player was involved in.",
   passing_epa: "Total Expected Points Added on the player's pass attempts over the season.",
   rushing_epa: "Total Expected Points Added on the player's rushing attempts over the season.",
   receiving_epa: "Total Expected Points Added on the player's targets over the season.",
-  cpoe: "Completion Percentage Over Expected — accuracy adjusted for throw difficulty.",
-  ngs_rush_yards_over_expected_per_att: "Rush Yards Over Expected per attempt — yards created beyond what blocking/situation expected (NFL Next Gen Stats).",
+  cpoe: "Completion Percentage Over Expected: accuracy adjusted for throw difficulty.",
+  ngs_rush_yards_over_expected_per_att: "Rush Yards Over Expected per attempt: yards created beyond what blocking/situation expected (NFL Next Gen Stats).",
   sack_rate: "Percent of dropbacks that ended in a sack. Lower is better.",
   scramble_rate: "Percent of dropbacks where the QB scrambled.",
   success_rate: "Percent of plays with positive EPA (a 'successful' play).",
@@ -10396,12 +10396,12 @@ const _ADV_METRIC_DESCS = {
   'Pass TDs/G': "Passing touchdowns per game.",
   // Labels that previously had no definition (efficiency / EPA / NGS / volume tiles)
   'Passing EPA': "Total Expected Points Added on the player's pass attempts over the season.",
-  'EPA/Play': "Expected Points Added per play — the average value of each play the player was involved in.",
-  'CPOE': "Completion Percentage Over Expected — accuracy adjusted for throw difficulty.",
+  'EPA/Play': "Expected Points Added per play: the average value of each play the player was involved in.",
+  'CPOE': "Completion Percentage Over Expected: accuracy adjusted for throw difficulty.",
   'Success Rate': "Percent of plays with positive EPA (a 'successful' play).",
   'Sack Rate': "Percent of dropbacks that ended in a sack. Lower is better.",
   'Rushing EPA': "Total Expected Points Added on the player's rushing attempts over the season.",
-  'RYOE/Att': "Rush Yards Over Expected per attempt — yards created beyond what blocking/situation expected (NFL Next Gen Stats).",
+  'RYOE/Att': "Rush Yards Over Expected per attempt: yards created beyond what blocking/situation expected (NFL Next Gen Stats).",
   'Separation': "Average yards of separation from the nearest defender at the moment of catch/incompletion (NFL Next Gen Stats).",
   'Cushion': "Average yards of cushion the defender gives at the snap (NFL Next Gen Stats).",
   'YAC Over Expected': "Yards after catch above what was expected given the catch situation (NFL Next Gen Stats).",
@@ -12286,7 +12286,7 @@ function _cmpSideSelector(which) {
 function cmpShowSeasonGradesTip(e) {
   e.stopPropagation();
   const tip = _advGetTip();
-  const msg = 'PFF grades, role score, and other season-level metrics aren’t shown for week ranges — they’re only published per full season. Week-range numbers are aggregated from the weekly usage data and may differ slightly from the season leaderboard.';
+  const msg = 'PFF grades, role score, and other season-level metrics aren’t shown for week ranges, they’re only published per full season. Week-range numbers are aggregated from the weekly usage data and may differ slightly from the season leaderboard.';
   if (tip.style.display !== 'none' && tip.dataset.src === '__cmpgrades__') { tip.style.display = 'none'; return; }
   tip.textContent = msg;
   tip.dataset.src = '__cmpgrades__';
@@ -15456,7 +15456,7 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
             + (r.pts !== null ? '<span class="rz-pm-spts ' + (r.pts >= 0 ? 'pos' : 'neg') + '">' + (r.pts >= 0 ? '+' : '') + r.pts + '</span>' : '<span class="rz-pm-spts"></span>')
             + '</div>';
         }).join('')
-        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + (total > 0 ? total : (fantasyPts !== null ? fantasyPts : '—')) + ' pts</span></div>'
+        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + (total > 0 ? total : (fantasyPts !== null ? fantasyPts : '-')) + ' pts</span></div>'
         + '</div>';
     }
   }
@@ -16107,7 +16107,7 @@ window._rzSyncTabLive = function(panel) {
         pid: '0', name: 'Blowout Alert', pos: '', nflTeam: leader,
         rosterId: '', owner: '', league: '',
         mine: false, opp: false,
-        desc: leader + ' leading ' + trailer + ' by ' + spread + ' — watch for reduced volume',
+        desc: leader + ' leading ' + trailer + ' by ' + spread + ', watch for reduced volume',
         kind: 'neg', stats: ['blowout'], pts: 0, ts: Date.now() + Math.random(),
         line: g.away + ' ' + g.ap + ' @ ' + g.home + ' ' + g.hp,
         gameQuarter: g.qLabel, gameClock: g.clock
@@ -16621,7 +16621,7 @@ window._rzSyncTabLive = function(panel) {
     });
     var tiles = positions.map(function(pos) {
       var ldr = leaders[pos];
-      if (!ldr) return '<div class="rz-pl-tile rz-pl-empty"><div class="rz-pl-pos">' + pos + '</div><div class="rz-pl-name">—</div><div class="rz-pl-pts">—</div></div>';
+      if (!ldr) return '<div class="rz-pl-tile rz-pl-empty"><div class="rz-pl-pos">' + pos + '</div><div class="rz-pl-name">-</div><div class="rz-pl-pts">-</div></div>';
       var p = (_state.player_info || {})[ldr.pid] || {};
       var mine = myStarters.has(ldr.pid) || _isMyRid(ldr.roster_id);
       return (
@@ -16784,7 +16784,7 @@ window._rzSyncTabLive = function(panel) {
 
     var gameIds = Object.keys(gameMap);
     if (!gameIds.length) {
-      return '<div class="rz-pregame-empty-hint">Plays appear here as games unfold — targets, catches, carries and touchdowns with live fantasy points.</div>';
+      return '<div class="rz-pregame-empty-hint">Plays appear here as games unfold, targets, catches, carries and touchdowns with live fantasy points.</div>';
     }
 
     // Sort: games with my players first
@@ -17411,7 +17411,7 @@ window._rzSyncTabLive = function(panel) {
       if (!_isGameDay()) {
         // Non-game day: show idle state, don't poll
         _countdown = 3600;
-        if (el) el.textContent = '—';
+        if (el) el.textContent = '-';
         return;
       }
       _countdown = _pollInterval();
