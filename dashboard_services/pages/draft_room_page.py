@@ -56,8 +56,9 @@ _DRAFT_ROOM_HTML = r"""
     <div class="dr-setup-grid">
       <label class="dr-field"><span>Draft Type</span>
         <select id="drType">
-          <option value="startup">Startup (all players)</option>
-          <option value="rookie">Rookie</option>
+          <option value="startup">Startup (Dynasty)</option>
+          <option value="rookie">Rookie (Dynasty)</option>
+          <option value="redraft">Redraft</option>
         </select>
       </label>
       <label class="dr-field"><span>Teams</span>
@@ -98,6 +99,8 @@ _DRAFT_ROOM_HTML = r"""
         <span class="dr-pill" id="drRoundPill">Round 1</span>
         <span class="dr-pill" id="drPickPill">Pick 1</span>
         <span class="dr-onclock">On the clock: <b id="drOnClock">Team 1</b></span>
+        <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
+        <span class="dr-progress" id="drProgress"></span>
       </div>
       <div class="dr-status-right">
         <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
@@ -166,6 +169,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-status-right { display: flex; align-items: center; gap: 6px; }
   .dr-pill { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
     background: rgba(56,189,248,.14); color: var(--accent,#38bdf8); }
+  .dr-pill-you { background: rgba(34,197,94,.16); color: #22c55e; }
+  .dr-progress { font-size: 12px; color: var(--text-muted); }
   .dr-onclock { font-size: 13px; color: var(--text-muted); }
   .dr-onclock b { color: var(--text); }
   .dr-cols { display: grid; grid-template-columns: 1fr 340px; gap: 14px; align-items: start; }
@@ -175,9 +180,14 @@ _DRAFT_ROOM_HTML = r"""
     border: 1px solid var(--border); border-radius: 8px; padding: 6px; min-height: 52px;
     background: var(--surface,#0f172a); display: flex; align-items: center; gap: 7px; position: relative;
   }
-  .dr-cell-empty { opacity: .5; }
-  .dr-cell-current { outline: 2px solid var(--accent,#38bdf8); outline-offset: 0; }
+  .dr-cell-empty { opacity: .45; }
+  .dr-cell-filled { background: linear-gradient(180deg, rgba(56,189,248,.05), var(--surface,#0f172a)); }
+  .dr-cell-current { outline: 2px solid var(--accent,#38bdf8); animation: drPulse 1.6s ease-in-out infinite; }
+  @keyframes drPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(56,189,248,.0); } 50% { box-shadow: 0 0 0 3px rgba(56,189,248,.18); } }
   .dr-cell-mine { box-shadow: inset 3px 0 0 var(--accent,#38bdf8); }
+  .dr-cell-just { animation: drPop .35s ease; }
+  @keyframes drPop { 0% { transform: scale(.92); opacity: .3; } 100% { transform: scale(1); opacity: 1; } }
+  .dr-cell-val { position: absolute; top: 2px; right: 5px; font-size: 9px; font-weight: 800; color: var(--accent,#38bdf8); }
   .dr-cell-num { position: absolute; top: 2px; left: 5px; font-size: 9px; font-weight: 700; color: var(--text-muted); }
   .dr-hs { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: rgba(0,0,0,.15); }
   .dr-cell-body { min-width: 0; line-height: 1.2; }
@@ -224,6 +234,7 @@ _DRAFT_ROOM_HTML = r"""
   var players = [];        // best-available pool
   var drafted = {};        // id -> true
   var posFilter = 'ALL';
+  var justPick = null;     // pick # filled this render (for the pop-in animation)
 
   // ── Pick-order helper (snake / linear / 3rr) ───────────────────────────────
   function pickDir(r, order){            // true = forward (slot 1 → N)
@@ -310,8 +321,19 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Data ─────────────────────────────────────────────────────────────────
-  function adpOf(p){ return state.sf ? p.sf_avg_pick : p.avg_pick; }
-  function valOf(p){ return state.sf ? (p.sf_value || p.value || 0) : (p.value || 0); }
+  function redraftVal(p){
+    return (state.sf ? (p.redraft_value_sf != null ? p.redraft_value_sf : p.redraft_value_1qb)
+                     : p.redraft_value_1qb) || 0;
+  }
+  function valOf(p){
+    if (state.type === 'redraft') return redraftVal(p);
+    return state.sf ? (p.sf_value || p.value || 0) : (p.value || 0);
+  }
+  function adpOf(p){
+    // Redraft has no market ADP feed, so derive a rank from redraft value.
+    if (state.type === 'redraft') return (p._radp != null ? p._radp : null);
+    return state.sf ? p.sf_avg_pick : p.avg_pick;
+  }
 
   function loadPlayers(){
     fetch('/api/league-players', { cache: 'no-store' })
@@ -323,8 +345,14 @@ _DRAFT_ROOM_HTML = r"""
           var pos = String(p.position || '').toUpperCase();
           if (pos === 'PICK') return false;
           if (state.type === 'rookie' && !p.is_rookie) return false;
+          if (state.type === 'redraft') return redraftVal(p) > 0;  // must have a redraft value
           return ['QB','RB','WR','TE'].indexOf(pos) >= 0 || p.is_rookie;
         });
+        // Derive a stable redraft ADP rank (1 = top redraft value).
+        if (state.type === 'redraft'){
+          players.slice().sort(function(a, b){ return redraftVal(b) - redraftVal(a); })
+            .forEach(function(p, i){ p._radp = i + 1; });
+        }
         // rebuild drafted set from saved picks
         drafted = {};
         Object.keys(state.picks).forEach(function(k){ var pp = state.picks[k]; if (pp) drafted[String(pp.id)] = true; });
@@ -337,7 +365,15 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  function render(){ renderStatus(); renderBoard(); renderBA(); save(); }
+  function render(){ renderStatus(); renderBoard(); renderBA(); justPick = null; save(); }
+
+  function userNextPick(){
+    var total = state.teams * state.rounds;
+    for (var pn = state.current; pn <= total; pn++){
+      if (slotOnClock(pn, state.teams, state.order) === state.slot) return pn;
+    }
+    return null;
+  }
 
   function renderStatus(){
     var total = state.teams * state.rounds;
@@ -351,6 +387,11 @@ _DRAFT_ROOM_HTML = r"""
       var slot = slotOnClock(state.current, state.teams, state.order);
       oc.textContent = (slot === state.slot) ? ('Team ' + slot + ' (You)') : ('Team ' + slot);
     }
+    var nextPill = document.getElementById('drNextPill');
+    var np = done ? null : userNextPick();
+    if (np){ nextPill.style.display = ''; nextPill.textContent = 'Your next: #' + np + ' (R' + Math.ceil(np / state.teams) + ')'; }
+    else { nextPill.style.display = 'none'; }
+    document.getElementById('drProgress').textContent = Math.min(state.current - 1, total) + ' / ' + total + ' picks';
   }
 
   function renderBoard(){
@@ -371,10 +412,13 @@ _DRAFT_ROOM_HTML = r"""
         var pl = state.picks[pn];
         var isCurrent = (pn === state.current);
         var mine = (slot === state.slot);
-        var cls = 'dr-cell' + (pl ? '' : ' dr-cell-empty') + (isCurrent ? ' dr-cell-current' : '') + (mine ? ' dr-cell-mine' : '');
+        var cls = 'dr-cell' + (pl ? ' dr-cell-filled' : ' dr-cell-empty')
+          + (isCurrent ? ' dr-cell-current' : '') + (mine ? ' dr-cell-mine' : '')
+          + (pn === justPick ? ' dr-cell-just' : '');
         html += '<div class="' + cls + '">';
         html += '<span class="dr-cell-num">' + pn + '</span>';
         if (pl){
+          if (pl.val != null) html += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
           html += '<img class="dr-hs" src="' + hsUrl(pl.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
           html += '<div class="dr-cell-body">';
           html += '<div class="dr-cell-name">' + esc(pl.name) + '</div>';
@@ -429,8 +473,9 @@ _DRAFT_ROOM_HTML = r"""
     if (state.current > total) return;
     var p = players.filter(function(x){ return String(x.id) === String(id); })[0];
     if (!p || drafted[String(id)]) return;
-    state.picks[state.current] = { id: p.id, name: p.name, position: p.position, team: p.team };
+    state.picks[state.current] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)) };
     drafted[String(id)] = true;
+    justPick = state.current;
     state.current++;
     render();
   }
