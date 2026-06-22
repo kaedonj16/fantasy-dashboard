@@ -164,7 +164,7 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
   <div class="dvt-hero">
     <h1 class="dvt-title">Dynasty Fantasy Football Trade Value Chart</h1>
     <p class="dvt-subtitle">
-      Updated {html.escape(date_str)} &mdash; real dynasty trade values for 1QB and Superflex leagues.
+      Updated {html.escape(date_str)}: real dynasty trade values for 1QB and Superflex leagues.
       Use these values in the <a href="/trade">Trade Calculator</a> to evaluate any deal.
     </p>
     <div class="dvt-stat-pills">
@@ -294,12 +294,22 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None) -> st
         delta_color = "#22c55e" if direction == "riser" else "#ef4444"
         pct = abs(change / val * 100) if val else 0
         pct_str = f"{pct:.0f}%" if pct >= 1 else ""
+        # Real players (not draft picks) carry data-player-id so the in-app player
+        # modal opens for signed-in users; logged-out visitors follow the href to
+        # the public player page (handled by the global click handler in app.js).
+        pid = str(p.get("player_id") or "")
+        data_attrs = ""
+        if pid and pos != "PICK" and "_" not in pid:
+            data_attrs = (
+                f' data-player-id="{html.escape(pid, quote=True)}"'
+                f' data-player-name="{html.escape(name, quote=True)}"'
+            )
         return (
             f'<div class="rf-row" style="--pos-accent:{accent};">'
             f'<div class="rf-left-bar"></div>'
             f'<div class="rf-info">'
             f'<span class="rf-pos-badge" style="background:{accent};">{html.escape(pos)}</span>'
-            f'<a class="rf-name" href="/player/{slug}/trade-value">{html.escape(name)}</a>'
+            f'<a class="rf-name" href="/player/{slug}/trade-value"{data_attrs}>{html.escape(name)}</a>'
             f'<span class="rf-team">{html.escape(team)}</span>'
             f'</div>'
             f'<div class="rf-val-wrap">'
@@ -328,7 +338,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None) -> st
   <div class="rf-hero">
     <h1 class="rf-title">Dynasty Fantasy Football Top Movers</h1>
     <p class="rf-subtitle">
-      Biggest dynasty trade value movers this week &mdash; {range_note}.
+      Biggest dynasty trade value movers this week, {range_note}.
       Use the <a href="/trade">Trade Calculator</a> to act on these moves.
     </p>
   </div>
@@ -356,7 +366,7 @@ def build_risers_fallers_body(movers: dict, as_of_date: str | None = None) -> st
     or increased competition.</p>
 
     <h2>How to Use Top Movers</h2>
-    <p>Risers are buy candidates &mdash; their real market value is rising but roster holders
+    <p>Risers are buy candidates, their real market value is rising but roster holders
     may not have adjusted their asking price yet. Fallers are sell candidates for the same
     reason. Use the <a href="/trade">BR Fantasy Trade Calculator</a> to turn this intel
     into winning trades in your dynasty league.</p>

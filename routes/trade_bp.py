@@ -53,7 +53,7 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
               <span style="font-size:13px;font-weight:700;">2. Compare Values</span>
             </div>
             <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.55;">
-              Values are built from thousands of real trades across Sleeper, ESPN, and Yahoo leagues — not guesses.
+              Values are built from thousands of real trades across Sleeper, ESPN, and Yahoo leagues, not guesses.
             </p>
           </div>
           <div style="background:var(--bg-alt,rgba(0,0,0,.03));border:1px solid var(--border);border-radius:12px;padding:16px 18px;">
@@ -109,7 +109,7 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
                 <i class="fa-solid fa-layer-group" style="color:#f59e0b;font-size:13px;"></i>
               </span>
               <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
-                Don't trade purely by total value — roster construction matters. Two solid
+                Don't trade purely by total value, roster construction matters. Two solid
                 starters often beat one star plus a bench piece.
               </p>
             </div>
@@ -136,7 +136,7 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
                 <i class="fa-solid fa-magnifying-glass-chart" style="color:#10b981;font-size:13px;"></i>
               </span>
               <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.6;">
-                Use real trade comparisons to sanity-check a deal — if similar trades have
+                Use real trade comparisons to sanity-check a deal, if similar trades have
                 happened before, you'll see how the market actually valued them.
               </p>
             </div>
@@ -153,7 +153,7 @@ _TRADE_CALCULATOR_SEO_CONTENT = """
             <details class="tc-faq-item">
               <summary class="tc-faq-q">Is the trade calculator free?</summary>
               <p class="tc-faq-a">
-                Yes. The trade calculator and player trade values are free to use — no account
+                Yes. The trade calculator and player trade values are free to use, no account
                 required. Connecting your Sleeper, ESPN, or Yahoo league unlocks personalized
                 analysis tailored to your roster and scoring settings.
               </p>
@@ -251,8 +251,12 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
         league_id_safe = ctx.get("league_id") or league_id
         season_safe = int(ctx.get("season") or season or datetime.now().year)
         num_teams = ctx.get("total_rosters") or None
-        rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+        _ss = ctx.get("scoring_settings") or {}
+        rec = float(_ss.get("rec") or 0)
         scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+        # Auto-apply the league's TE-premium bonus (Sleeper bonus_rec_te) so TE values
+        # reflect the actual scoring without the user having to set it manually.
+        te_premium = float(_ss.get("bonus_rec_te") or 0)
         viewer = get_viewer_session_for_league(ctx.get("users") or [], ctx.get("rosters") or [])
         viewer_roster_id = viewer.get("viewer_roster_id") or ""
         has_premium = has_premium_for_viewer(user_id, session.get("viewer_user_id"), league_id, platform or "sleeper", season)
@@ -263,6 +267,7 @@ def page_trade(platform: Optional[str] = None, season: Optional[int] = None,
                                            viewer_roster_id=viewer_roster_id,
                                            has_premium=has_premium,
                                            is_superflex=_is_sf,
+                                           te_premium=te_premium,
                                            platform=platform)
     else:
         state = get_nfl_state() or {}

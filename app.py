@@ -207,12 +207,18 @@ else:
 _sentry_js_dsn = os.environ.get("SENTRY_JS_DSN", "")
 _SENTRY_JS_SNIPPET = ""
 if _sentry_js_dsn:
+    # Load Sentry off the critical path (at idle / after load) so its bundle
+    # doesn't add to mobile Total Blocking Time during initial render. Runtime
+    # errors after load are still captured; only the brief pre-idle window isn't.
     _SENTRY_JS_SNIPPET = (
-        '<script>(function(){var s=document.createElement("script");s.async=true;'
+        '<script>(function(){var done=false;function load(){if(done)return;done=true;'
+        'var s=document.createElement("script");s.async=true;'
         's.src="https://browser.sentry-cdn.com/7.120.0/bundle.min.js";s.crossOrigin="anonymous";'
         's.onload=function(){try{window.Sentry&&Sentry.init({dsn:'
         + json.dumps(_sentry_js_dsn) +
-        ',sampleRate:1.0});}catch(e){}};document.head.appendChild(s);})();</script>'
+        ',sampleRate:1.0});}catch(e){}};document.head.appendChild(s);}'
+        'if("requestIdleCallback"in window){requestIdleCallback(load,{timeout:5000});}'
+        'else{window.addEventListener("load",function(){setTimeout(load,2000);});}})();</script>'
     )
 
 # Plotly is ~1 MB and was loaded on every page even without a chart. Define a
@@ -308,6 +314,72 @@ def _ensure_minified_appjs() -> str:
         return "app.js"
 
 
+def _ensure_public_js() -> str:
+    """Build a slim public.js (then minify to public.min.js) for the public,
+    logged-out landing/SEO pages.
+
+    The full app.js is ~785 KB and is parsed/compiled on every page even though
+    public pages use only the shared chrome + the home lookup form. On mobile
+    (4x CPU throttle) that parse cost is a big chunk of Total Blocking Time.
+
+    public.js = everything in app.js up to the `@public-js:core-end` marker
+    (shared utils, nav/chrome, changelog, dark mode, custom selects, home lookup)
+    PLUS any region wrapped in `@public-js:include-start/end` (small shared
+    helpers defined further down, e.g. _advFetch). The heavy feature code below
+    the marker (player modal, advanced metrics, compare, redzone, trade calc
+    internals) is excluded. Falls back to app.js on any problem so nothing breaks.
+    """
+    static_dir = Path(__file__).parent / "static"
+    src = static_dir / "app.js"
+    out = static_dir / "public.js"
+    out_min = static_dir / "public.min.js"
+    meta = static_dir / "public.min.js.src"
+    try:
+        full = src.read_text(encoding="utf-8")
+        src_hash = hashlib.md5(full.encode("utf-8")).hexdigest()
+    except OSError:
+        return _APP_JS_FILE
+    marker = "// @public-js:core-end"
+    if marker not in full:
+        return _APP_JS_FILE  # marker missing → safest to serve full bundle
+    try:
+        if out_min.exists() and meta.exists() and meta.read_text().strip() == src_hash:
+            return "public.min.js"  # already current
+        core = full.split(marker, 1)[0]
+        # Pull in explicitly-marked shared helpers that live below the marker.
+        includes = []
+        rest = full.split(marker, 1)[1]
+        start_tok, end_tok = "// @public-js:include-start", "// @public-js:include-end"
+        idx = 0
+        while True:
+            s = rest.find(start_tok, idx)
+            if s == -1:
+                break
+            s_nl = rest.find("\n", s)          # skip the rest of the marker line
+            e = rest.find(end_tok, s)
+            if s_nl == -1 or e == -1:
+                break
+            includes.append(rest[s_nl + 1:e])
+            idx = e + len(end_tok)
+        public_src = core + "\n" + "\n".join(includes) + "\n"
+        out.write_text(public_src, encoding="utf-8")
+        try:
+            import rjsmin
+            minified = rjsmin.jsmin(public_src)
+            if minified and len(minified) > 200:
+                out_min.write_text(minified, encoding="utf-8")
+                meta.write_text(src_hash, encoding="utf-8")
+                logger.info("[public.js] built: %d KB min (from %d KB app.js)",
+                            len(minified) // 1024, len(full) // 1024)
+                return "public.min.js"
+        except Exception as _e:
+            logger.info("[public.js] minify unavailable: %s", _e)
+        return "public.js"
+    except Exception as _e:
+        logger.warning("[public.js] build failed, serving full app.js: %s", _e)
+        return _APP_JS_FILE
+
+
 def _ensure_minified_css() -> str:
     """Minify dashboard.css → dashboard.min.css at startup (regenerated when the
     source changes, via a hash sidecar). Falls back to the unminified file if
@@ -337,6 +409,8 @@ def _ensure_minified_css() -> str:
 
 _APP_JS_FILE = _ensure_minified_appjs()
 _APP_JS_V = _static_hash(_APP_JS_FILE)
+_PUBLIC_JS_FILE = _ensure_public_js()
+_PUBLIC_JS_V = _static_hash(_PUBLIC_JS_FILE)
 _PAYWALL_JS_V = _static_hash("paywall.js")
 _CSS_FILE = _ensure_minified_css()
 _CSS_V = _static_hash(_CSS_FILE)
@@ -915,11 +989,16 @@ BASE_HTML = """
 
     <link rel="stylesheet" href="/static/{css_file}?v={css_v}">
     <link rel="stylesheet" href="/static/icons.css?v={icons_v}">
-    <!-- Non-critical CSS (icon font, paywall modal) loaded async so it doesn't
-         block first paint; falls back to a normal stylesheet without JS. -->
-    <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}" media="print" onload="this.media='all'">
+    <!-- Font Awesome is render-blocking on purpose: it's the ONLY source of the
+         icon box sizing (.fa{{display:inline-block;width:1em;line-height:1}}). If it
+         loads async, every <i class="fa-…"> renders 0x0 until it applies, then pops
+         to ~1em and reflows everything below it — that was the ~0.4 CLS. It's a tiny
+         (~8 KB) same-origin file, so the render-blocking cost is negligible. -->
+    <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
+    <!-- Paywall CSS only styles the (hidden) upgrade modal — no above-the-fold
+         layout impact — so it stays async and doesn't block first paint. -->
     <link rel="stylesheet" href="/static/paywall.css" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}"><link rel="stylesheet" href="/static/paywall.css"></noscript>
+    <noscript><link rel="stylesheet" href="/static/paywall.css"></noscript>
 
     <!-- Plotly is loaded on demand (window.ensurePlotly) only when a chart is
          actually rendered, instead of ~1 MB on every page. -->
@@ -974,6 +1053,7 @@ BASE_HTML = """
         </div>
         <div class="site-footer-links">
           <a href="{about_url}">About</a>
+          <a href="{guides_url}">Guides</a>
           <a href="{privacy_url}">Privacy</a>
           <a href="{terms_url}">Terms</a>
           <a href="{faq_url}">FAQ</a>
@@ -1821,10 +1901,42 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     )
 
 
-_AD_SCRIPT = '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9164153092633845" crossorigin="anonymous"></script>'
-_AD_TOP = """<div class="ad-container ad-top-banner" style="min-height:90px"><ins class="adsbygoogle" style="display:block;min-height:90px;max-height:90px;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal"></ins></div>"""
-_AD_BOTTOM = """<div class="ad-container ad-bottom-content" style="min-height:90px"><ins class="adsbygoogle" style="display:block;min-height:90px;max-height:90px;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal"></ins></div>"""
-_AD_INIT = """window.addEventListener('load', function() { setTimeout(function() { try { (adsbygoogle = window.adsbygoogle || []).push({}); (adsbygoogle = window.adsbygoogle || []).push({}); } catch(e) { console.warn('AdSense initialization error:', e); } }, 100); });"""
+# The AdSense library is the biggest controllable mobile-perf drain: in the
+# <head> it competes for bandwidth on the critical path and runs on the main
+# thread (Total Blocking Time). We now load it lazily (see _AD_INIT) on first
+# user interaction or at idle, so it's off the initial render path. The ad <ins>
+# slots still reserve their fixed height, so deferring the fill causes no CLS.
+_AD_SCRIPT = ''
+_AD_TOP = """<div class="ad-container ad-top-banner"><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></div>"""
+_AD_BOTTOM = """<div class="ad-container ad-bottom-content"><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></div>"""
+_AD_INIT = """(function(){
+  var loaded = false;
+  function loadAds(){
+    if (loaded) return; loaded = true;
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9164153092633845';
+    s.crossOrigin = 'anonymous';
+    s.onload = function(){
+      try {
+        var slots = document.querySelectorAll('ins.adsbygoogle');
+        for (var i = 0; i < slots.length; i++) {
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        }
+      } catch(e) { console.warn('AdSense init error:', e); }
+    };
+    document.head.appendChild(s);
+  }
+  var evts = ['scroll','pointerdown','keydown','touchstart','mousemove'];
+  function onFirstInteract(){
+    evts.forEach(function(e){ window.removeEventListener(e, onFirstInteract); });
+    loadAds();
+  }
+  evts.forEach(function(e){ window.addEventListener(e, onFirstInteract, { passive: true }); });
+  // Fallback so ads still load without any interaction, but well after first paint.
+  if ('requestIdleCallback' in window) { requestIdleCallback(loadAds, { timeout: 4000 }); }
+  else { window.addEventListener('load', function(){ setTimeout(loadAds, 3500); }); }
+})();"""
 
 
 def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
@@ -2129,6 +2241,13 @@ def render_page(
     _nav_season   = season or (int(_nav_season_raw) if _nav_season_raw else None)
     nav_html = build_nav(_nav_lid, active, _nav_platform, _nav_season)
 
+    # Lightweight public pages (lite_js=True) serve the slim public.js to
+    # logged-out visitors to cut mobile parse/Total-Blocking-Time. Logged-in
+    # users always get the full app.js (they need modals, trade tools, etc.).
+    _use_lite = bool(kwargs.get("lite_js")) and not session.get("viewer_username")
+    _page_js_file = _PUBLIC_JS_FILE if _use_lite else _APP_JS_FILE
+    _page_js_v = _PUBLIC_JS_V if _use_lite else _APP_JS_V
+
     meta_tags = _build_seo_meta_tags(
         description, canonical, noindex,
         is_league_scoped=bool(league_id and platform and season),
@@ -2170,16 +2289,17 @@ def render_page(
         ad_bottom="" if is_premium else _AD_BOTTOM,
         adsense_init="" if is_premium else _AD_INIT,
         about_url=f"/{platform}/{season}/{league_id}/about" if (league_id and platform and season) else "/about",
+        guides_url=f"/{platform}/{season}/{league_id}/guides" if (league_id and platform and season) else "/guides",
         privacy_url=f"/{platform}/{season}/{league_id}/privacy" if (league_id and platform and season) else "/privacy",
         terms_url=f"/{platform}/{season}/{league_id}/terms" if (league_id and platform and season) else "/terms",
         faq_url=f"/{platform}/{season}/{league_id}/faq" if (league_id and platform and season) else "/faq",
         support_url=f"/{platform}/{season}/{league_id}/support" if (league_id and platform and season) else "/support",
         contact_url=f"/{platform}/{season}/{league_id}/contact" if (league_id and platform and season) else "/contact",
         yt_url="https://youtube.com/@hoodiekj",
-        app_js_file=_APP_JS_FILE,
+        app_js_file=_page_js_file,
         sentry_js=_SENTRY_JS_SNIPPET,
         plotly_loader=_PLOTLY_LOADER,
-        app_js_v=_APP_JS_V,
+        app_js_v=_page_js_v,
         paywall_js_v=_PAYWALL_JS_V,
         css_file=_CSS_FILE,
         css_v=_CSS_V,
@@ -5944,7 +6064,7 @@ def build_weekly_hub_body(ctx: dict) -> str:
 
         <div id="weekly-rz-cta" class="weekly-rz-cta" style="display:none">
           <span class="weekly-rz-cta-dot"></span>
-          <span class="weekly-rz-cta-text">NFL games are live right now — track your players in real time.</span>
+          <span class="weekly-rz-cta-text">NFL games are live right now, track your players in real time.</span>
           <a href="./redzone" class="weekly-rz-cta-link">Watch on Redzone →</a>
         </div>
 
@@ -12282,7 +12402,7 @@ def page_advanced_metrics(platform: str = None, season: int = None, league_id: s
                       if request.args.get(k)}
             og_img = f"{origin}/{platform}/{season}/{league_id}/metrics/og.png?{_ue(_og_qs)}"
             og_title = f"{_mlabel(gy)} vs {_mlabel(gx)} | BR Fantasy"
-            og_desc = "Advanced metrics scatter — compare efficiency and opportunity across the league."
+            og_desc = "Advanced metrics scatter: compare efficiency and opportunity across the league."
             t = html.escape(og_title, quote=True)
             d = html.escape(og_desc, quote=True)
             img = html.escape(og_img, quote=True)
@@ -16636,7 +16756,7 @@ def index():
                 error=err,
                 recent_updates=generate_recent_updates_html(),
             )
-            return render_page("BR Fantasy Dashboard", None, "home", body_html)
+            return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
         # If username/team-name provided, set viewer session
         # For ESPN leagues the "username" field holds the team owner's name or team name
@@ -16658,7 +16778,7 @@ def index():
                         error="Could not match that username to a team in this league.",
                         recent_updates=generate_recent_updates_html(),
                     )
-                    return render_page("BR Fantasy Dashboard", None, "home", body_html)
+                    return render_page("BR Fantasy Dashboard", None, "home", body_html, lite_js=True)
 
         key = _cache_key(platform, season, league_id)
         entry = DASHBOARD_CACHE.get(key)
@@ -16739,6 +16859,7 @@ def index():
             "redraft trade calculator, daily player trade values, real-trade market data, "
             "power rankings, breakout candidates, and advanced metrics."
         ),
+        lite_js=True,
     )
 
 
@@ -16953,10 +17074,13 @@ def api_refresh_page():
             league_id_safe = ctx.get("league_id") or league_id
             season_safe = int(ctx.get("season") or season or datetime.now().year)
             num_teams = ctx.get("total_rosters") or None
-            rec = float((ctx.get("scoring_settings") or {}).get("rec") or 0)
+            _ss = ctx.get("scoring_settings") or {}
+            rec = float(_ss.get("rec") or 0)
             scoring_format = "ppr" if rec >= 1.0 else "half" if rec >= 0.5 else "std"
+            te_premium = float(_ss.get("bonus_rec_te") or 0)
             body_html = build_trade_calculator_body(league_id_safe, season_safe, num_teams=num_teams,
                                                     scoring_format=scoring_format,
+                                                    te_premium=te_premium,
                                                     platform=platform)
 
         else:
@@ -25237,7 +25361,7 @@ def build_portfolio_body(
         f"<div class='card' style='margin-bottom:14px;padding:14px 16px;'>"
         f"<div style='display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;'>"
         f"<div>"
-        f"<div style='font-size:15px;font-weight:700;'>My Leagues &mdash; {season}</div>"
+        f"<div style='font-size:15px;font-weight:700;'>My Leagues: {season}</div>"
         f"<div style='font-size:13px;color:var(--text-muted);margin-top:3px;'>Signed in as <strong>{html.escape(username)}</strong></div>"
         f"</div>"
         f"<div style='display:flex;gap:24px;flex-shrink:0;'>"
@@ -26578,7 +26702,7 @@ def dynasty_trade_value_chart():
     return page_players(
         _title=f"Dynasty Fantasy Football Trade Value Chart {year} | BR Fantasy",
         _desc=(
-            f"Updated {as_of} — real dynasty trade values for 1QB and Superflex leagues. "
+            f"Updated {as_of}: real dynasty trade values for 1QB and Superflex leagues. "
             f"Sortable by position, age, and value. Use with the free Trade Calculator."
         ),
         _canonical="/dynasty-trade-value-chart",
@@ -26607,11 +26731,11 @@ def top_movers_page():
     body = build_risers_fallers_body(movers, as_of_date=date_label)
 
     return render_page(
-        f"Top Movers — {date_label} | BR Fantasy",
+        f"Top Movers: {date_label} | BR Fantasy",
         None, "players", body,
         description=(
             f"Dynasty fantasy football risers and fallers for the week of {date_label}. "
-            f"Biggest trade value movers — act fast with the BR Fantasy Trade Calculator."
+            f"Biggest trade value movers, act fast with the BR Fantasy Trade Calculator."
         ),
     )
 
@@ -27647,7 +27771,7 @@ def _notify_changelog_on_startup():
         # Trim long text to a push-friendly length
         body = text if len(text) <= 120 else text[:117] + "…"
         tag_labels = {"feature": "New feature", "new": "New", "fix": "Fix", "update": "Update"}
-        title = f"BR Fantasy — {tag_labels.get(tag, 'Update')}"
+        title = f"BR Fantasy: {tag_labels.get(tag, 'Update')}"
 
         result = _push_broadcast(title=title, body=body, url=link, tag=f"changelog-{latest_date}")
         sent = result.get_json().get("sent", 0) if hasattr(result, "get_json") else 0

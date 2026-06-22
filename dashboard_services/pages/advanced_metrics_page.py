@@ -392,7 +392,7 @@ def build_advanced_metrics_body(
 
         <div id="amWeekNote" class="am-week-note" style="display:none;">
           <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style="flex-shrink:0;opacity:.7"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.4"/><path d="M7 6.5v3M7 4.5h.01" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-          <span id="amWeekNoteText">Full Season Only &mdash; this metric doesn't support week filtering.</span>
+          <span id="amWeekNoteText">Full Season Only: this metric doesn't support week filtering.</span>
         </div>
 
         <div class="am-table-wrap">
@@ -1872,7 +1872,7 @@ _AM_JS = r"""
     html += '<div style="font-size:11px;color:var(--text-muted);margin-top:10px;">'
       + (anyRange
           ? 'Week ranges are aggregated from weekly usage data (matching the week-range leaderboard); season-level metrics like PFF grades and role score show “–” for a range, and ranks apply only to full page-season columns.'
-          : 'Pick a season or week range per player to compare across splits. Showing the primary metric plus any added metrics. Ranks and bars are within position, using the current page filters — matching the leaderboard.')
+          : 'Pick a season or week range per player to compare across splits. Showing the primary metric plus any added metrics. Ranks and bars are within position, using the current page filters, matching the leaderboard.')
       + '</div>';
     body.innerHTML = html;
     body.dataset.cmpReady = '1';
@@ -3382,7 +3382,7 @@ _AM_JS = r"""
         // Network error (e.g. ERR_NETWORK_CHANGED): show a recoverable retry
         // rather than the misleading "No data for this metric yet." message.
         empty.style.display = '';
-        empty.innerHTML = 'Couldn’t load this metric — network hiccup. '
+        empty.innerHTML = 'Couldn’t load this metric, network hiccup. '
           + '<button type="button" id="amRetryBtn" style="margin-left:6px;padding:5px 12px;'
           + 'border:1px solid var(--border);border-radius:8px;background:var(--card);'
           + 'color:var(--accent,#2563eb);cursor:pointer;font-weight:700;">Retry</button>';

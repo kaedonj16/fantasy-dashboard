@@ -11,7 +11,7 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4-mini")
 # "WR2" as a lineup-slot/tier instead of the player's rank-by-value.
 POS_RANK_LABEL_NOTE = (
     "\n\nPOSITIONAL RANK LABELS: A label written as a position immediately followed by a "
-    "number — e.g. \"WR2\", \"TE2\", \"RB5\", \"QB1\" — is that player's OVERALL positional "
+    "number, e.g. \"WR2\", \"TE2\", \"RB5\", \"QB1\", is that player's OVERALL positional "
     "rank by trade value, where 1 = the single most valuable player at that position "
     "leaguewide. So \"WR2\" means the 2nd-most-valuable WR overall (an elite, high-end "
     "asset), NOT a WR2 starter slot or a mid-tier/role designation. Always interpret these "

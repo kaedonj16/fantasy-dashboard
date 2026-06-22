@@ -12928,6 +12928,26 @@ img, svg, canvas {
   overflow: hidden;
 }
 
+/* Banner ad slots: fixed, clipped height so the reserved space can't balloon
+   when the slot is unfilled or AdSense serves a taller creative. Height is set
+   in render-blocking CSS, so the space is still reserved at first paint (no CLS),
+   but the visible block stays a slim leaderboard instead of a big grey box. */
+.ad-top-banner,
+.ad-bottom-content {
+  height: 90px;
+  min-height: 90px;
+  max-height: 90px;
+  overflow: hidden;
+}
+.ad-top-banner .adsbygoogle,
+.ad-bottom-content .adsbygoogle {
+  display: block;
+  width: 100%;
+  height: 90px;
+  max-height: 90px;
+  overflow: hidden;
+}
+
 .ad-top-banner {
   margin-top: 8px;
   margin-bottom: 16px;
@@ -13041,8 +13061,21 @@ img, svg, canvas {
   .ad-container {
     margin: 12px auto;
     padding: 6px;
-    min-height: 70px;
-    max-height: 80px;
+    min-height: 50px;
+    max-height: 60px;
+  }
+
+  /* Slim 320x50-style banner on phones so the ad slot isn't a giant grey box. */
+  .ad-top-banner,
+  .ad-bottom-content {
+    height: 50px;
+    min-height: 50px;
+    max-height: 50px;
+  }
+  .ad-top-banner .adsbygoogle,
+  .ad-bottom-content .adsbygoogle {
+    height: 50px;
+    max-height: 50px;
   }
 
   .ad-top-banner {
@@ -19715,9 +19748,9 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   border: 1px solid var(--border, #1e3a5f);
   border-radius: 8px; padding: 9px 12px 9px 0; gap: 8px;
   overflow: hidden;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
-.rf-row:hover { background: var(--hover-bg, rgba(255,255,255,.04)); }
+.rf-row:hover { background: #1f3357; border-color: var(--pos-accent, #38bdf8); }
 .rf-left-bar {
   width: 3px; align-self: stretch; flex-shrink: 0;
   background: var(--pos-accent, #94a3b8);
