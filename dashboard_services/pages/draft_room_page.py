@@ -155,13 +155,13 @@ _DRAFT_ROOM_HTML = r"""
   .dr-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
   .dr-field select, .dr-field input {
     padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--card-bg); color: var(--text); font-size: 13px; outline: none; min-height: 36px;
+    background: var(--card); color: var(--text); font-size: 13px; outline: none; min-height: 36px;
   }
   .dr-setup-actions { margin-top: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .dr-setup-note { font-size: 12px; color: var(--text-muted); }
   .dr-btn {
     padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
-    border: 1px solid var(--border); background: var(--surface); color: var(--text); white-space: nowrap;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); white-space: nowrap;
   }
   .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
   .dr-btn-ghost { background: transparent; font-weight: 600; }
@@ -169,7 +169,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-statusbar {
     display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
     padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 10px;
-    background: var(--card-bg,#1a2744);
+    background: var(--card);
+    position: sticky; top: 56px; z-index: 30;
   }
   .dr-status-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .dr-status-right { display: flex; align-items: center; gap: 6px; }
@@ -182,7 +183,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-live-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
   .dr-live-head { font-size: 12px; font-weight: 700; color: var(--text-muted); }
   .dr-live-item { text-align: left; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; }
+    background: var(--bg); color: var(--text); font-size: 13px; cursor: pointer; }
   .dr-live-item:hover { border-color: var(--accent,#38bdf8); }
   .dr-live-status { font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; margin-right: 6px; }
   .dr-ls-drafting { background: rgba(239,68,68,.16); color: #ef4444; }
@@ -191,14 +192,14 @@ _DRAFT_ROOM_HTML = r"""
   .dr-onclock { font-size: 13px; color: var(--text-muted); }
   .dr-onclock b { color: var(--text); }
   .dr-cols { display: grid; grid-template-columns: 1fr 340px; gap: 14px; align-items: start; }
-  .dr-board-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card-bg,#1a2744); padding: 8px; }
+  .dr-board-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 8px; }
   .dr-board { display: grid; gap: 6px; min-width: max-content; }
   .dr-cell {
     border: 1px solid var(--border); border-radius: 8px; padding: 6px; min-height: 52px;
-    background: var(--surface,#0f172a); display: flex; align-items: center; gap: 7px; position: relative;
+    background: var(--bg); display: flex; align-items: center; gap: 7px; position: relative;
   }
   .dr-cell-empty { opacity: .45; }
-  .dr-cell-filled { background: linear-gradient(180deg, rgba(56,189,248,.05), var(--surface,#0f172a)); }
+  .dr-cell-filled { background: linear-gradient(180deg, rgba(56,189,248,.05), var(--bg)); }
   .dr-cell-current { outline: 2px solid var(--accent,#38bdf8); animation: drPulse 1.6s ease-in-out infinite; }
   @keyframes drPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(56,189,248,.0); } 50% { box-shadow: 0 0 0 3px rgba(56,189,248,.18); } }
   .dr-cell-mine { box-shadow: inset 3px 0 0 var(--accent,#38bdf8); }
@@ -213,14 +214,15 @@ _DRAFT_ROOM_HTML = r"""
   .dr-posbadge { font-size: 9px; font-weight: 700; color: #fff; border-radius: 3px; padding: 1px 4px; }
   .dr-colhead { font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; padding: 2px 0; white-space: nowrap; }
   .dr-colhead-you { color: var(--accent,#38bdf8); }
-  .dr-side { border: 1px solid var(--border); border-radius: 10px; background: var(--card-bg,#1a2744); display: flex; flex-direction: column; max-height: 78vh; }
+  .dr-side { border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column;
+    position: sticky; top: 120px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; }
   .dr-side-head { padding: 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
   .dr-side-title { font-size: 14px; font-weight: 800; color: var(--text); }
   .dr-side-controls { display: flex; gap: 6px; }
-  .dr-side-controls input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; }
-  .dr-side-controls select { padding: 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 12px; }
+  .dr-side-controls input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
+  .dr-side-controls select { padding: 7px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
   .dr-pos-filters { display: flex; gap: 4px; flex-wrap: wrap; }
-  .dr-pos { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); cursor: pointer; }
+  .dr-pos { font-size: 11px; font-weight: 700; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; }
   .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
   .dr-ba-list { overflow-y: auto; flex: 1; }
   .dr-ba-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
@@ -235,7 +237,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
   @media (max-width: 900px) {
     .dr-cols { grid-template-columns: 1fr; }
-    .dr-side { max-height: none; order: -1; }
+    .dr-side { position: static; max-height: none; order: -1; }
+    .dr-statusbar { top: 0; }
   }
 </style>
 
@@ -393,40 +396,7 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  function render(){ renderStatus(); renderBoard(); renderBA(); justPick = null; save(); autosaveDB(); }
-
-  // ── Persistence to DB (P4) ─────────────────────────────────────────────────
-  function setSaveStatus(t){ var el = document.getElementById('drSave'); if (el) el.textContent = t || ''; }
-  function autosaveDB(){
-    if (cfg.isGuest || !state) return;
-    if (!Object.keys(state.picks).length && state.mode !== 'live') return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(doSaveDB, 1500);
-  }
-  function doSaveDB(){
-    var total = state.teams * state.rounds;
-    var payload = {
-      id: state.draftId || undefined,
-      type: state.type, teams: state.teams, rounds: state.rounds, sf: state.sf,
-      slot: state.slot, order: state.order, current: state.current,
-      mode: state.mode || 'manual', sourceDraftId: state.sourceDraftId || '',
-      status: (state.current > total) ? 'complete' : 'in_progress',
-      platform: cfg.platform, league_id: cfg.leagueId, season: cfg.season,
-      picks: state.picks
-    };
-    fetch('/api/draft/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      .then(function(r){ return r.ok ? r.json() : null; })
-      .then(function(d){ if (d && d.id){ state.draftId = d.id; save(); setSaveStatus('Saved'); } })
-      .catch(function(){});
-  }
-  function normalizeLoaded(d){
-    return {
-      type: d.type || 'startup', teams: d.teams || 12, rounds: d.rounds || 15,
-      sf: !!d.sf, slot: d.slot || 1, order: d.order || 'snake',
-      picks: d.picks || {}, current: d.current || 1,
-      mode: d.mode || 'manual', sourceDraftId: d.sourceDraftId || '', draftId: d.id
-    };
-  }
+  function render(){ renderStatus(); renderBoard(); renderBA(); justPick = null; save(); }
 
   // ── Live draft (P5, Sleeper) ────────────────────────────────────────────────
   function valLookup(id){ var p = playersById[String(id)]; return (p && state) ? Math.round(valOf(p)) : null; }
@@ -477,7 +447,7 @@ _DRAFT_ROOM_HTML = r"""
         state = {
           type: 'startup', teams: teams, rounds: rounds, sf: !!cfg.isSuperflex,
           slot: slot, order: d.order || 'snake', picks: {}, current: 1,
-          mode: 'live', sourceDraftId: draftId, draftId: (state && state.draftId) || undefined
+          mode: 'live', sourceDraftId: draftId
         };
         applyLivePicks(d.picks || []);
         showMain();
@@ -669,23 +639,11 @@ _DRAFT_ROOM_HTML = r"""
     }
   }
 
-  // Reopen a saved draft from history (?d=<id>), else resume the session draft.
-  var urlD = new URLSearchParams(location.search).get('d');
-  if (urlD && !cfg.isGuest){
-    fetch('/api/draft/load?id=' + encodeURIComponent(urlD))
-      .then(function(r){ return r.ok ? r.json() : null; })
-      .then(function(d){
-        if (d && d.picks){
-          state = normalizeLoaded(d);
-          if (state.mode === 'live'){
-            document.getElementById('drLiveBadge').style.display = '';
-            document.getElementById('drUndo').style.display = 'none';
-          }
-          showMain();
-          loadPlayers();
-        } else { resumeFromSession(); }
-      })
-      .catch(resumeFromSession);
+  // Open a specific league draft from history (?live=<draft_id>), else resume
+  // the in-progress session draft.
+  var urlLive = new URLSearchParams(location.search).get('live');
+  if (urlLive){
+    connectLive(urlLive);
   } else {
     resumeFromSession();
   }
@@ -699,12 +657,18 @@ def build_draft_history_body(
     season: Optional[int],
     platform: Optional[str] = None,
 ) -> str:
-    """Draft History page (P4): lists the user's saved drafts to reopen/review."""
-    if league_id and platform and season:
-        base = f"/{platform}/{int(season)}/{league_id}/draft"
-    else:
-        base = "/draft"
-    cfg_json = json.dumps({"base": base})
+    """Draft History page: the league's real drafts (from Sleeper), openable by
+    any league member to review the board."""
+    has_league = bool(league_id and platform and season)
+    base = f"/{platform}/{int(season)}/{league_id}/draft" if has_league else "/draft"
+    cfg = {
+        "base": base,
+        "leagueId": league_id or "",
+        "platform": platform or "sleeper",
+        "season": int(season) if season else None,
+        "hasLeague": has_league,
+    }
+    cfg_json = json.dumps(cfg)
     return (
         f'<script>window.__draftHistCfg = {cfg_json};</script>\n'
         + _DRAFT_HISTORY_HTML
@@ -715,7 +679,7 @@ _DRAFT_HISTORY_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero">
     <h1 class="dr-title">Draft History</h1>
-    <p class="dr-sub">Your saved and completed drafts. Reopen any board to review the picks.</p>
+    <p class="dr-sub">Your league's drafts. Open any board to review the picks pick-by-pick.</p>
   </div>
   <div id="drHistList" class="dr-hist-list">
     <div class="dr-loading"><div class="loading-spinner" style="width:22px;height:22px;"></div><span>Loading…</span></div>
@@ -729,7 +693,7 @@ _DRAFT_HISTORY_HTML = r"""
   .dr-sub { font-size: 14px; color: var(--text-muted); margin: 0; }
   .dr-hist-list { display: flex; flex-direction: column; gap: 10px; }
   .dr-hist-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--border);
-    border-radius: 10px; background: var(--card-bg,#1a2744); }
+    border-radius: 10px; background: var(--card); }
   .dr-hist-body { flex: 1; min-width: 0; }
   .dr-hist-title { font-size: 15px; font-weight: 700; color: var(--text); }
   .dr-hist-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
@@ -739,7 +703,7 @@ _DRAFT_HISTORY_HTML = r"""
   .dr-hist-tag-complete { background: rgba(148,163,184,.16); color: #94a3b8; }
   .dr-hist-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .dr-btn { padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
-    border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; }
+    border: 1px solid var(--border); background: var(--bg); color: var(--text); text-decoration: none; }
   .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
   .dr-btn-danger { color: #ef4444; border-color: rgba(239,68,68,.4); background: transparent; }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
@@ -748,53 +712,55 @@ _DRAFT_HISTORY_HTML = r"""
 
 <script>
 (function(){
-  var cfg = window.__draftHistCfg || { base: '/draft' };
+  var cfg = window.__draftHistCfg || { base: '/draft', hasLeague: false };
   var listEl = document.getElementById('drHistList');
-  var TYPE_LABEL = { startup: 'Startup', rookie: 'Rookie', redraft: 'Redraft' };
 
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
     return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
 
-  function fmtDate(iso){ try { return new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); } catch(e){ return ''; } }
+  function statusTag(s){
+    var c = (s === 'drafting') ? 'dr-hist-tag-live' : (s === 'complete' ? 'dr-hist-tag-complete' : '');
+    var label = (s === 'drafting') ? 'Live now' : (s === 'pre_draft' ? 'Upcoming' : (s === 'complete' ? 'Complete' : (s || '')));
+    return '<span class="dr-hist-tag ' + c + '">' + esc(label) + '</span>';
+  }
 
   function render(drafts){
     if (!drafts.length){
-      listEl.innerHTML = '<div class="dr-hist-empty">No saved drafts yet. Start one in the <a href="' + esc(cfg.base) + '">Draft Room</a>.</div>';
+      listEl.innerHTML = '<div class="dr-hist-empty">No drafts found for this league yet.</div>';
       return;
     }
+    // Live/upcoming first, then completed.
+    var rank = { drafting: 0, pre_draft: 1, complete: 2 };
+    drafts.sort(function(a, b){ return (rank[a.status] != null ? rank[a.status] : 3) - (rank[b.status] != null ? rank[b.status] : 3); });
     var html = '';
     drafts.forEach(function(d){
-      var statusTag = d.mode === 'live' ? '<span class="dr-hist-tag dr-hist-tag-live">Live</span>'
-        : (d.status === 'complete' ? '<span class="dr-hist-tag dr-hist-tag-complete">Complete</span>'
-        : '<span class="dr-hist-tag">In progress</span>');
-      var title = d.name || ((TYPE_LABEL[d.type] || 'Draft') + (d.sf ? ' · SF' : '') + ' · ' + (d.teams || '?') + ' teams');
-      html += '<div class="dr-hist-card" data-id="' + esc(d.id) + '">'
-        + '<div class="dr-hist-body"><div class="dr-hist-title">' + statusTag + esc(title) + '</div>'
-        + '<div class="dr-hist-meta">' + (d.pick_count || 0) + ' picks · ' + (d.rounds || '?') + ' rounds · updated ' + esc(fmtDate(d.updated_at)) + '</div></div>'
+      var title = (d.type ? (d.type.charAt(0).toUpperCase() + d.type.slice(1)) : 'Draft')
+        + ' · ' + (d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds';
+      html += '<div class="dr-hist-card">'
+        + '<div class="dr-hist-body"><div class="dr-hist-title">' + statusTag(d.status) + esc(title) + '</div>'
+        + '<div class="dr-hist-meta">' + esc((d.order || 'snake')) + ' order' + (d.season ? (' · ' + esc(String(d.season))) : '') + '</div></div>'
         + '<div class="dr-hist-actions">'
-        + '<a class="dr-btn dr-btn-primary" href="' + esc(cfg.base) + '?d=' + encodeURIComponent(d.id) + '">Open</a>'
-        + '<button class="dr-btn dr-btn-danger" data-del="' + esc(d.id) + '">Delete</button>'
+        + '<a class="dr-btn dr-btn-primary" href="' + esc(cfg.base) + '?live=' + encodeURIComponent(d.draft_id) + '">Open board</a>'
         + '</div></div>';
     });
     listEl.innerHTML = html;
   }
 
   function loadList(){
-    fetch('/api/draft/list', { cache: 'no-store' })
+    if (!cfg.hasLeague){
+      listEl.innerHTML = '<div class="dr-hist-empty">Open Draft History from your league to see its drafts. '
+        + 'You can still run a mock in the <a href="' + esc(cfg.base) + '">Draft Room</a>.</div>';
+      return;
+    }
+    fetch('/api/draft/detect?platform=' + encodeURIComponent(cfg.platform)
+        + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''), { cache: 'no-store' })
       .then(function(r){ return r.json(); })
-      .then(function(resp){ render(resp.drafts || []); })
+      .then(function(resp){
+        if (resp.unsupported){ listEl.innerHTML = '<div class="dr-hist-empty">Draft history is available for Sleeper leagues.</div>'; return; }
+        render(resp.drafts || []);
+      })
       .catch(function(){ listEl.innerHTML = '<div class="dr-hist-empty">Could not load drafts.</div>'; });
   }
-
-  listEl.addEventListener('click', function(e){
-    var del = e.target.closest('[data-del]');
-    if (!del) return;
-    if (!confirm('Delete this draft?')) return;
-    fetch('/api/draft/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: del.getAttribute('data-del') }) })
-      .then(function(){ loadList(); })
-      .catch(function(){});
-  });
 
   loadList();
 })();
