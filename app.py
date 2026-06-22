@@ -27004,9 +27004,9 @@ def page_trade_card(share_id: str):
             if pi and pi.get("available") and pi.get("delta"):
                 dlt = pi["delta"]
                 def _pi_sign(v):
-                    return (f'+{v:.1f}' if v > 0 else f'{v:.1f}') if v is not None else "-"
+                    return (f'+{v:.1f}' if v > 0 else f'{v:.1f}') if v is not None else "—"
                 def _pi_pct(v):
-                    return (f'+{v:.1f}%' if v > 0 else f'{v:.1f}%') if v is not None else "-"
+                    return (f'+{v:.1f}%' if v > 0 else f'{v:.1f}%') if v is not None else "—"
                 rows_pi = [
                     ("Playoff Odds", _pi_pct(dlt.get("playoff_pct"))),
                     ("Proj. Wins",   _pi_sign(dlt.get("avg_final_wins"))),
@@ -27015,7 +27015,7 @@ def page_trade_card(share_id: str):
                 ]
                 cells = "".join(
                     f'<div class="pi-cell"><div class="pi-label">{lbl}</div>'
-                    f'<div class="pi-val {("pi-pos" if "+" in val else "pi-neg") if val != "-" else ""}">{val}</div></div>'
+                    f'<div class="pi-val {("pi-pos" if "+" in val else "pi-neg") if val != "—" else ""}">{val}</div></div>'
                     for lbl, val in rows_pi
                 )
                 pi_html = f"""

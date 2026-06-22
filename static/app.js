@@ -15456,7 +15456,7 @@ window._rzBuildLiveHtml = function(pid, state, feed) {
             + (r.pts !== null ? '<span class="rz-pm-spts ' + (r.pts >= 0 ? 'pos' : 'neg') + '">' + (r.pts >= 0 ? '+' : '') + r.pts + '</span>' : '<span class="rz-pm-spts"></span>')
             + '</div>';
         }).join('')
-        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + (total > 0 ? total : (fantasyPts !== null ? fantasyPts : '-')) + ' pts</span></div>'
+        + '<div class="rz-pm-stotal"><span>Fantasy Total</span><span>' + (total > 0 ? total : (fantasyPts !== null ? fantasyPts : '—')) + ' pts</span></div>'
         + '</div>';
     }
   }
@@ -16621,7 +16621,7 @@ window._rzSyncTabLive = function(panel) {
     });
     var tiles = positions.map(function(pos) {
       var ldr = leaders[pos];
-      if (!ldr) return '<div class="rz-pl-tile rz-pl-empty"><div class="rz-pl-pos">' + pos + '</div><div class="rz-pl-name">-</div><div class="rz-pl-pts">-</div></div>';
+      if (!ldr) return '<div class="rz-pl-tile rz-pl-empty"><div class="rz-pl-pos">' + pos + '</div><div class="rz-pl-name">—</div><div class="rz-pl-pts">—</div></div>';
       var p = (_state.player_info || {})[ldr.pid] || {};
       var mine = myStarters.has(ldr.pid) || _isMyRid(ldr.roster_id);
       return (
@@ -17411,7 +17411,7 @@ window._rzSyncTabLive = function(panel) {
       if (!_isGameDay()) {
         // Non-game day: show idle state, don't poll
         _countdown = 3600;
-        if (el) el.textContent = '-';
+        if (el) el.textContent = '—';
         return;
       }
       _countdown = _pollInterval();

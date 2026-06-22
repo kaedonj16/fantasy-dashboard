@@ -61,7 +61,7 @@ def _pc(pos: str) -> str:
 
 def _rank_arrow(change: int | None) -> str:
     if not change:
-        return '<span class="dvt-change dvt-change-flat">-</span>'
+        return '<span class="dvt-change dvt-change-flat">&#8212;</span>'
     if change > 0:
         return f'<span class="dvt-change dvt-change-up">&#9650; {change}</span>'
     return f'<span class="dvt-change dvt-change-down">&#9660; {abs(change)}</span>'
@@ -152,7 +152,7 @@ def build_dynasty_value_chart_body(value_table: list[dict], as_of_date: str | No
             f'<td class="dvt-val" style="color:{val_color};">{val:.0f}</td>'
             f'<td class="dvt-val dvt-sf" style="color:{sf_color};">{sf_val:.0f}</td>'
             f'<td class="dvt-pos-rank">{html.escape(plabel)}</td>'
-            f'<td class="dvt-age">{age or "-"}</td>'
+            f'<td class="dvt-age">{age or "&#8212;"}</td>'
             f'<td>{_rank_arrow(change)}</td>'
             f'</tr>'
         )
@@ -448,7 +448,7 @@ def build_rankings_hub_body(
             f'</td>'
             f'<td class="rnk-val" style="color:{_val_color(val)};">{val:.0f}</td>'
             f'<td class="rnk-val" style="color:{_val_color(sf_val)};">{sf_val:.0f}</td>'
-            f'<td class="rnk-age">{age or "-"}</td>'
+            f'<td class="rnk-age">{age or "&#8212;"}</td>'
             f'<td>{_rank_arrow(change)}</td>'
             f'</tr>'
         )
