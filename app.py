@@ -25950,7 +25950,15 @@ def _run_startup_daily() -> None:
         logger.warning("[startup] Could not kick off daily build: %s", e)
 
 
-threading.Thread(target=_run_startup_daily, daemon=True).start()
+# NOTE: The daily data build is intentionally NOT auto-run inside the web process.
+# Under gunicorn `--preload` this thread runs in the master and the heavy offseason
+# build (SportRadar NCAA scan of ~30k players + rookie eval) pegs Render's single
+# CPU during the port-scan window, so workers can't answer the health probe and the
+# deploy fails with "No open HTTP ports detected". The scheduled cron service
+# (cron_daily.py) owns the daily build; post_deploy.py handles deploy-time refresh.
+# Set RUN_STARTUP_DAILY_BUILD=1 to opt back in (e.g. on a larger, non-web instance).
+if os.environ.get("RUN_STARTUP_DAILY_BUILD") == "1":
+    threading.Thread(target=_run_startup_daily, daemon=True).start()
 
 
 
