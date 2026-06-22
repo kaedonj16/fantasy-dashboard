@@ -19,11 +19,9 @@ def build_prospects_body(is_admin: bool = False) -> str:
         Dynasty prospect rankings - production, athleticism, and draft capital combined
       </div>
     </div>
-    <!-- Page-level tab bar -->
-    <div class="rk-page-tabs">
-      <button class="rk-page-tab active" data-tab="rankings" onclick="rkPageTab('rankings')">Rankings</button>
-      <button class="rk-page-tab" data-tab="draft" onclick="rkPageTab('draft')">Draft Board</button>
-    </div>
+    <!-- Draft Board is now its own page (see the "Draft" nav entry). The Prospects
+         page is rankings-only; the dormant draft panel/JS below is left in place to
+         avoid breaking the rkPageTab handlers but is no longer surfaced. -->
   </div>
 
   <!-- Rankings panel -->

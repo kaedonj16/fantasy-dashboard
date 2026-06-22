@@ -1591,8 +1591,8 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
                 ("Advanced Metrics", "/metrics", "advanced-metrics"),
                 ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "/breakouts", "breakouts"),
                 ("Prospects",       "/prospects",   "prospects"),
-                ("Draft Assistant", "/prospects?tab=draft", "prospects-draft"),
             ], ["players", "prospects", "breakouts", "top-movers"], "playersNavDropdown"),
+            simple_pill("Draft", "/draft", "draft"),
         ]
 
         player_search_html = (
@@ -1739,10 +1739,10 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
         ("Advanced Metrics", "page_advanced_metrics", "advanced-metrics", False),
         ("Breakout Engine <span class='nav-pro-badge'>PRO</span>",   "page_breakouts",  "breakouts", False),
         ("Prospect Rankings", "page_prospects",  "prospects", False),
-        ("Draft Assistant", "page_prospects", "prospects-draft", False, "?tab=draft"),
         ("Waivers & Start/Sit", "page_waivers",  "waivers",   False),
         ("Schedule Assistant",  "page_schedule",  "schedule",  False),
     ], ["players", "prospects", "breakouts", "waivers", "schedule", "top-movers"], "playersNavDropdown"))
+    nav_pills.append(nav_pill("Draft", "page_draft_room", "draft"))
     nav_pills.append(nav_pill_dropdown("Stats", [
         ("Awards",   "page_awards",   "awards",   False),
         ("Graphs",   "page_graphs",   "graphs",   False),
@@ -12444,6 +12444,11 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
 @app.route("/<platform>/<int:season>/<league_id>/prospects")
 def page_prospects(platform: str, season: int, league_id: str):
     """Rookie prospect rankings page - active class auto-detected."""
+    # Draft Assistant moved to its own standalone page; redirect the legacy tab.
+    if request.args.get("tab") == "draft":
+        if platform and season and league_id:
+            return redirect(f"/{platform}/{season}/{league_id}/draft")
+        return redirect("/draft")
     from dashboard_services.pages.rookies_page import build_prospects_body
     from dashboard_services.admin_auth import is_admin
     body_html = build_prospects_body(is_admin=is_admin())
@@ -12931,6 +12936,37 @@ def page_prospects_guest():
     nfl_state = get_nfl_state() or {}
     current_season = int(nfl_state.get("season") or datetime.now().year)
     return page_prospects(platform="sleeper", season=current_season, league_id=None)
+
+
+@app.route("/draft")
+@app.route("/<platform>/<int:season>/<league_id>/draft")
+def page_draft_room(platform: str = None, season: int = None, league_id: str = None):
+    """Standalone Draft Assistant / draft board (manual mode in Phase 2)."""
+    from dashboard_services.pages.draft_room_page import build_draft_room_body
+    is_guest = not league_id
+    num_teams = None
+    is_sf = False
+    if league_id:
+        try:
+            ctx = get_league_ctx_from_cache(platform, league_id, season)
+            num_teams = ctx.get("total_rosters") or None
+            _rp = ctx.get("roster_positions") or []
+            is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
+            league_id = ctx.get("league_id") or league_id
+            season = int(ctx.get("season") or season or datetime.now().year)
+        except Exception as _e:
+            logger.info("[draft-room] league ctx load failed: %s", _e)
+    body = build_draft_room_body(
+        league_id, season, platform,
+        is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,
+    )
+    return render_page(
+        "Draft Assistant | BR Fantasy", league_id, "draft", body, platform, season,
+        description=(
+            "Fantasy football draft assistant and draft board with best-available, "
+            "ADP, and snake / linear / third-round-reversal support for Sleeper, ESPN, and Yahoo."
+        ),
+    )
 
 
 
