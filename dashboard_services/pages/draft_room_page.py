@@ -26,6 +26,7 @@ def build_draft_room_body(
     is_guest: bool = False,
     num_teams: Optional[int] = None,
     is_superflex: bool = False,
+    viewer_user_id: Optional[str] = None,
 ) -> str:
     cfg = {
         "leagueId": league_id or "",
@@ -34,6 +35,7 @@ def build_draft_room_body(
         "isGuest": bool(is_guest),
         "numTeams": int(num_teams) if num_teams else None,
         "isSuperflex": bool(is_superflex),
+        "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
     }
     cfg_json = json.dumps(cfg)
     return (
@@ -87,9 +89,11 @@ _DRAFT_ROOM_HTML = r"""
       </label>
     </div>
     <div class="dr-setup-actions">
-      <button class="dr-btn dr-btn-primary" id="drStart">Start Draft</button>
+      <button class="dr-btn dr-btn-primary" id="drStart">Start Manual Draft</button>
+      <button class="dr-btn" id="drConnect">Connect Live Draft</button>
       <span class="dr-setup-note" id="drResumeNote" style="display:none;"></span>
     </div>
+    <div class="dr-live-list" id="drLiveList" style="display:none;"></div>
   </div>
 
   <!-- Board + side -->
@@ -100,7 +104,9 @@ _DRAFT_ROOM_HTML = r"""
         <span class="dr-pill" id="drPickPill">Pick 1</span>
         <span class="dr-onclock">On the clock: <b id="drOnClock">Team 1</b></span>
         <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
+        <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
         <span class="dr-progress" id="drProgress"></span>
+        <span class="dr-save" id="drSave"></span>
       </div>
       <div class="dr-status-right">
         <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
@@ -170,7 +176,18 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pill { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
     background: rgba(56,189,248,.14); color: var(--accent,#38bdf8); }
   .dr-pill-you { background: rgba(34,197,94,.16); color: #22c55e; }
+  .dr-pill-live { background: rgba(239,68,68,.16); color: #ef4444; animation: drPulse 1.6s ease-in-out infinite; }
   .dr-progress { font-size: 12px; color: var(--text-muted); }
+  .dr-save { font-size: 11px; color: #22c55e; }
+  .dr-live-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .dr-live-head { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+  .dr-live-item { text-align: left; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; }
+  .dr-live-item:hover { border-color: var(--accent,#38bdf8); }
+  .dr-live-status { font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; margin-right: 6px; }
+  .dr-ls-drafting { background: rgba(239,68,68,.16); color: #ef4444; }
+  .dr-ls-pre_draft { background: rgba(245,158,11,.16); color: #f59e0b; }
+  .dr-ls-complete { background: rgba(148,163,184,.16); color: #94a3b8; }
   .dr-onclock { font-size: 13px; color: var(--text-muted); }
   .dr-onclock b { color: var(--text); }
   .dr-cols { display: grid; grid-template-columns: 1fr 340px; gap: 14px; align-items: start; }
@@ -235,6 +252,10 @@ _DRAFT_ROOM_HTML = r"""
   var drafted = {};        // id -> true
   var posFilter = 'ALL';
   var justPick = null;     // pick # filled this render (for the pop-in animation)
+  var playersById = {};    // id -> player (value lookup for live picks)
+  var lastLivePicks = null;// last picks payload from the live feed
+  var saveTimer = null;    // debounce for DB autosave
+  var pollTimer = null;    // live-draft poll interval
 
   // ── Pick-order helper (snake / linear / 3rr) ───────────────────────────────
   function pickDir(r, order){            // true = forward (slot 1 → N)
@@ -353,9 +374,16 @@ _DRAFT_ROOM_HTML = r"""
           players.slice().sort(function(a, b){ return redraftVal(b) - redraftVal(a); })
             .forEach(function(p, i){ p._radp = i + 1; });
         }
-        // rebuild drafted set from saved picks
-        drafted = {};
-        Object.keys(state.picks).forEach(function(k){ var pp = state.picks[k]; if (pp) drafted[String(pp.id)] = true; });
+        playersById = {};
+        players.forEach(function(p){ playersById[String(p.id)] = p; });
+        // Live mode: re-apply picks now that values are available; else rebuild
+        // the drafted set from saved picks.
+        if (state.mode === 'live' && lastLivePicks){
+          applyLivePicks(lastLivePicks);
+        } else {
+          drafted = {};
+          Object.keys(state.picks).forEach(function(k){ var pp = state.picks[k]; if (pp) drafted[String(pp.id)] = true; });
+        }
         render();
       })
       .catch(function(){
@@ -365,7 +393,116 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  function render(){ renderStatus(); renderBoard(); renderBA(); justPick = null; save(); }
+  function render(){ renderStatus(); renderBoard(); renderBA(); justPick = null; save(); autosaveDB(); }
+
+  // ── Persistence to DB (P4) ─────────────────────────────────────────────────
+  function setSaveStatus(t){ var el = document.getElementById('drSave'); if (el) el.textContent = t || ''; }
+  function autosaveDB(){
+    if (cfg.isGuest || !state) return;
+    if (!Object.keys(state.picks).length && state.mode !== 'live') return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(doSaveDB, 1500);
+  }
+  function doSaveDB(){
+    var total = state.teams * state.rounds;
+    var payload = {
+      id: state.draftId || undefined,
+      type: state.type, teams: state.teams, rounds: state.rounds, sf: state.sf,
+      slot: state.slot, order: state.order, current: state.current,
+      mode: state.mode || 'manual', sourceDraftId: state.sourceDraftId || '',
+      status: (state.current > total) ? 'complete' : 'in_progress',
+      platform: cfg.platform, league_id: cfg.leagueId, season: cfg.season,
+      picks: state.picks
+    };
+    fetch('/api/draft/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if (d && d.id){ state.draftId = d.id; save(); setSaveStatus('Saved'); } })
+      .catch(function(){});
+  }
+  function normalizeLoaded(d){
+    return {
+      type: d.type || 'startup', teams: d.teams || 12, rounds: d.rounds || 15,
+      sf: !!d.sf, slot: d.slot || 1, order: d.order || 'snake',
+      picks: d.picks || {}, current: d.current || 1,
+      mode: d.mode || 'manual', sourceDraftId: d.sourceDraftId || '', draftId: d.id
+    };
+  }
+
+  // ── Live draft (P5, Sleeper) ────────────────────────────────────────────────
+  function valLookup(id){ var p = playersById[String(id)]; return (p && state) ? Math.round(valOf(p)) : null; }
+  function applyLivePicks(picks){
+    lastLivePicks = picks;
+    state.picks = {}; drafted = {};
+    picks.forEach(function(p){
+      if (p.pick_no == null) return;
+      state.picks[p.pick_no] = { id: p.player_id, name: p.name, position: p.position, team: p.team, val: valLookup(p.player_id) };
+      if (p.player_id) drafted[String(p.player_id)] = true;
+    });
+    state.current = (picks.length || 0) + 1;
+  }
+  function detectLive(){
+    if (cfg.isGuest || !cfg.leagueId){
+      alert('Live draft sync requires opening the Draft Room from your league.');
+      return;
+    }
+    var box = document.getElementById('drLiveList');
+    box.style.display = ''; box.innerHTML = '<div class="dr-live-head">Detecting drafts…</div>';
+    fetch('/api/draft/detect?platform=' + encodeURIComponent(cfg.platform) + '&league_id=' + encodeURIComponent(cfg.leagueId) + '&season=' + (cfg.season || ''))
+      .then(function(r){ return r.json(); })
+      .then(function(resp){
+        if (resp.unsupported){ box.innerHTML = '<div class="dr-live-head">Live sync currently supports Sleeper leagues.</div>'; return; }
+        var ds = resp.drafts || [];
+        if (!ds.length){ box.innerHTML = '<div class="dr-live-head">No drafts found for this league yet.</div>'; return; }
+        var html = '<div class="dr-live-head">Detected drafts — pick one to connect</div>';
+        ds.forEach(function(d){
+          html += '<button class="dr-live-item" data-id="' + esc(d.draft_id) + '">'
+            + '<span class="dr-live-status dr-ls-' + esc(d.status || '') + '">' + esc(d.status || '') + '</span>'
+            + esc((d.type || 'snake') + ' · ' + (d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds') + '</button>';
+        });
+        box.innerHTML = html;
+      })
+      .catch(function(){ box.innerHTML = '<div class="dr-live-head">Could not detect drafts.</div>'; });
+  }
+  function connectLive(draftId){
+    fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(draftId))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (!d || d.error){ alert('Could not load that draft.'); return; }
+        var teams = parseInt(d.teams || 0, 10) || (cfg.numTeams || 12);
+        var rounds = parseInt(d.rounds || 0, 10) || 15;
+        var slot = 0;
+        if (cfg.viewerUserId && d.draft_order && d.draft_order[cfg.viewerUserId]) {
+          slot = parseInt(d.draft_order[cfg.viewerUserId], 10) || 0;
+        }
+        state = {
+          type: 'startup', teams: teams, rounds: rounds, sf: !!cfg.isSuperflex,
+          slot: slot, order: d.order || 'snake', picks: {}, current: 1,
+          mode: 'live', sourceDraftId: draftId, draftId: (state && state.draftId) || undefined
+        };
+        applyLivePicks(d.picks || []);
+        showMain();
+        document.getElementById('drLiveBadge').style.display = '';
+        document.getElementById('drUndo').style.display = 'none';
+        loadPlayers();
+        startPolling();
+        if (String(d.status) === 'complete') stopPolling();
+      })
+      .catch(function(){ alert('Could not connect to the live draft.'); });
+  }
+  function startPolling(){
+    stopPolling();
+    pollTimer = setInterval(function(){
+      if (!state || state.mode !== 'live') { stopPolling(); return; }
+      fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(state.sourceDraftId))
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if (d && d.picks){ applyLivePicks(d.picks); render(); if (String(d.status) === 'complete') stopPolling(); }
+        })
+        .catch(function(){});
+    }, 5000);
+  }
+  function stopPolling(){ if (pollTimer){ clearInterval(pollTimer); pollTimer = null; } }
+
 
   function userNextPick(){
     var total = state.teams * state.rounds;
@@ -469,6 +606,7 @@ _DRAFT_ROOM_HTML = r"""
 
   // ── Actions ──────────────────────────────────────────────────────────────
   function draftPlayer(id){
+    if (state.mode === 'live') return;   // live board is driven by the platform
     var total = state.teams * state.rounds;
     if (state.current > total) return;
     var p = players.filter(function(x){ return String(x.id) === String(id); })[0];
@@ -495,6 +633,10 @@ _DRAFT_ROOM_HTML = r"""
 
   // ── Wire up ──────────────────────────────────────────────────────────────
   document.getElementById('drStart').addEventListener('click', startDraft);
+  document.getElementById('drConnect').addEventListener('click', detectLive);
+  document.getElementById('drLiveList').addEventListener('click', function(e){
+    var b = e.target.closest('.dr-live-item'); if (b) connectLive(b.getAttribute('data-id'));
+  });
   document.getElementById('drUndo').addEventListener('click', undo);
   document.getElementById('drReset').addEventListener('click', resetDraft);
   document.getElementById('drEdit').addEventListener('click', showSetup);
@@ -513,13 +655,148 @@ _DRAFT_ROOM_HTML = r"""
 
   applyCfgDefaults();
 
-  // Resume an in-progress draft if one is saved for this page.
-  var saved = load();
-  if (saved && saved.teams && saved.picks){
-    state = saved;
-    showMain();
-    loadPlayers();
+  function resumeFromSession(){
+    var saved = load();
+    if (saved && saved.teams && saved.picks){
+      state = saved;
+      if (state.mode === 'live'){
+        document.getElementById('drLiveBadge').style.display = '';
+        document.getElementById('drUndo').style.display = 'none';
+      }
+      showMain();
+      loadPlayers();
+      if (state.mode === 'live' && state.sourceDraftId) startPolling();
+    }
   }
+
+  // Reopen a saved draft from history (?d=<id>), else resume the session draft.
+  var urlD = new URLSearchParams(location.search).get('d');
+  if (urlD && !cfg.isGuest){
+    fetch('/api/draft/load?id=' + encodeURIComponent(urlD))
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        if (d && d.picks){
+          state = normalizeLoaded(d);
+          if (state.mode === 'live'){
+            document.getElementById('drLiveBadge').style.display = '';
+            document.getElementById('drUndo').style.display = 'none';
+          }
+          showMain();
+          loadPlayers();
+        } else { resumeFromSession(); }
+      })
+      .catch(resumeFromSession);
+  } else {
+    resumeFromSession();
+  }
+})();
+</script>
+"""
+
+
+def build_draft_history_body(
+    league_id: Optional[str],
+    season: Optional[int],
+    platform: Optional[str] = None,
+) -> str:
+    """Draft History page (P4): lists the user's saved drafts to reopen/review."""
+    if league_id and platform and season:
+        base = f"/{platform}/{int(season)}/{league_id}/draft"
+    else:
+        base = "/draft"
+    cfg_json = json.dumps({"base": base})
+    return (
+        f'<script>window.__draftHistCfg = {cfg_json};</script>\n'
+        + _DRAFT_HISTORY_HTML
+    )
+
+
+_DRAFT_HISTORY_HTML = r"""
+<div class="dr-wrap">
+  <div class="dr-hero">
+    <h1 class="dr-title">Draft History</h1>
+    <p class="dr-sub">Your saved and completed drafts. Reopen any board to review the picks.</p>
+  </div>
+  <div id="drHistList" class="dr-hist-list">
+    <div class="dr-loading"><div class="loading-spinner" style="width:22px;height:22px;"></div><span>Loading…</span></div>
+  </div>
+</div>
+
+<style>
+  .dr-wrap { max-width: 900px; margin: 0 auto; padding: 12px 14px 48px; }
+  .dr-hero { margin-bottom: 14px; }
+  .dr-title { font-size: clamp(20px,4vw,28px); font-weight: 800; color: var(--text); margin: 0 0 4px; }
+  .dr-sub { font-size: 14px; color: var(--text-muted); margin: 0; }
+  .dr-hist-list { display: flex; flex-direction: column; gap: 10px; }
+  .dr-hist-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--card-bg,#1a2744); }
+  .dr-hist-body { flex: 1; min-width: 0; }
+  .dr-hist-title { font-size: 15px; font-weight: 700; color: var(--text); }
+  .dr-hist-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .dr-hist-tag { font-size: 10px; font-weight: 800; text-transform: uppercase; padding: 1px 7px; border-radius: 999px;
+    background: rgba(56,189,248,.14); color: var(--accent,#38bdf8); margin-right: 6px; }
+  .dr-hist-tag-live { background: rgba(239,68,68,.16); color: #ef4444; }
+  .dr-hist-tag-complete { background: rgba(148,163,184,.16); color: #94a3b8; }
+  .dr-hist-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .dr-btn { padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; }
+  .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
+  .dr-btn-danger { color: #ef4444; border-color: rgba(239,68,68,.4); background: transparent; }
+  .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
+  .dr-hist-empty { padding: 28px; text-align: center; color: var(--text-muted); font-size: 14px; }
+</style>
+
+<script>
+(function(){
+  var cfg = window.__draftHistCfg || { base: '/draft' };
+  var listEl = document.getElementById('drHistList');
+  var TYPE_LABEL = { startup: 'Startup', rookie: 'Rookie', redraft: 'Redraft' };
+
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+
+  function fmtDate(iso){ try { return new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); } catch(e){ return ''; } }
+
+  function render(drafts){
+    if (!drafts.length){
+      listEl.innerHTML = '<div class="dr-hist-empty">No saved drafts yet. Start one in the <a href="' + esc(cfg.base) + '">Draft Room</a>.</div>';
+      return;
+    }
+    var html = '';
+    drafts.forEach(function(d){
+      var statusTag = d.mode === 'live' ? '<span class="dr-hist-tag dr-hist-tag-live">Live</span>'
+        : (d.status === 'complete' ? '<span class="dr-hist-tag dr-hist-tag-complete">Complete</span>'
+        : '<span class="dr-hist-tag">In progress</span>');
+      var title = d.name || ((TYPE_LABEL[d.type] || 'Draft') + (d.sf ? ' · SF' : '') + ' · ' + (d.teams || '?') + ' teams');
+      html += '<div class="dr-hist-card" data-id="' + esc(d.id) + '">'
+        + '<div class="dr-hist-body"><div class="dr-hist-title">' + statusTag + esc(title) + '</div>'
+        + '<div class="dr-hist-meta">' + (d.pick_count || 0) + ' picks · ' + (d.rounds || '?') + ' rounds · updated ' + esc(fmtDate(d.updated_at)) + '</div></div>'
+        + '<div class="dr-hist-actions">'
+        + '<a class="dr-btn dr-btn-primary" href="' + esc(cfg.base) + '?d=' + encodeURIComponent(d.id) + '">Open</a>'
+        + '<button class="dr-btn dr-btn-danger" data-del="' + esc(d.id) + '">Delete</button>'
+        + '</div></div>';
+    });
+    listEl.innerHTML = html;
+  }
+
+  function loadList(){
+    fetch('/api/draft/list', { cache: 'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(function(resp){ render(resp.drafts || []); })
+      .catch(function(){ listEl.innerHTML = '<div class="dr-hist-empty">Could not load drafts.</div>'; });
+  }
+
+  listEl.addEventListener('click', function(e){
+    var del = e.target.closest('[data-del]');
+    if (!del) return;
+    if (!confirm('Delete this draft?')) return;
+    fetch('/api/draft/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: del.getAttribute('data-del') }) })
+      .then(function(){ loadList(); })
+      .catch(function(){});
+  });
+
+  loadList();
 })();
 </script>
 """
