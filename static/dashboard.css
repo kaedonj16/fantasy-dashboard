@@ -19748,9 +19748,9 @@ html[data-theme="dark"] .share-report-btn:hover .share-report-icon {
   border: 1px solid var(--border, #1e3a5f);
   border-radius: 8px; padding: 9px 12px 9px 0; gap: 8px;
   overflow: hidden;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
-.rf-row:hover { background: var(--hover-bg, rgba(255,255,255,.04)); }
+.rf-row:hover { background: #1f3357; border-color: var(--pos-accent, #38bdf8); }
 .rf-left-bar {
   width: 3px; align-self: stretch; flex-shrink: 0;
   background: var(--pos-accent, #94a3b8);

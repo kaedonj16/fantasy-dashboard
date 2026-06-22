@@ -12671,6 +12671,14 @@ function initGlobalPlayerModals() {
         return;
       }
 
+      // Public player links (e.g. /player/<slug>/trade-value on Top Movers,
+      // Rankings, and other SEO pages) open the in-app modal for signed-in
+      // users, but fall through to normal navigation for logged-out visitors.
+      const _link = target.closest('a[href]');
+      if (_link && !window._isSignedIn) {
+        return;
+      }
+
       e.preventDefault();
       e.stopPropagation();
       openPlayerModal(playerId, playerName);
