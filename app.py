@@ -207,12 +207,18 @@ else:
 _sentry_js_dsn = os.environ.get("SENTRY_JS_DSN", "")
 _SENTRY_JS_SNIPPET = ""
 if _sentry_js_dsn:
+    # Load Sentry off the critical path (at idle / after load) so its bundle
+    # doesn't add to mobile Total Blocking Time during initial render. Runtime
+    # errors after load are still captured; only the brief pre-idle window isn't.
     _SENTRY_JS_SNIPPET = (
-        '<script>(function(){var s=document.createElement("script");s.async=true;'
+        '<script>(function(){var done=false;function load(){if(done)return;done=true;'
+        'var s=document.createElement("script");s.async=true;'
         's.src="https://browser.sentry-cdn.com/7.120.0/bundle.min.js";s.crossOrigin="anonymous";'
         's.onload=function(){try{window.Sentry&&Sentry.init({dsn:'
         + json.dumps(_sentry_js_dsn) +
-        ',sampleRate:1.0});}catch(e){}};document.head.appendChild(s);})();</script>'
+        ',sampleRate:1.0});}catch(e){}};document.head.appendChild(s);}'
+        'if("requestIdleCallback"in window){requestIdleCallback(load,{timeout:5000});}'
+        'else{window.addEventListener("load",function(){setTimeout(load,2000);});}})();</script>'
     )
 
 # Plotly is ~1 MB and was loaded on every page even without a chart. Define a
@@ -1827,10 +1833,42 @@ def build_nav(league_id: Optional[str], active: str, platform: str, season: int)
     )
 
 
-_AD_SCRIPT = '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9164153092633845" crossorigin="anonymous"></script>'
+# The AdSense library is the biggest controllable mobile-perf drain: in the
+# <head> it competes for bandwidth on the critical path and runs on the main
+# thread (Total Blocking Time). We now load it lazily (see _AD_INIT) on first
+# user interaction or at idle, so it's off the initial render path. The ad <ins>
+# slots still reserve their fixed height, so deferring the fill causes no CLS.
+_AD_SCRIPT = ''
 _AD_TOP = """<div class="ad-container ad-top-banner"><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></div>"""
 _AD_BOTTOM = """<div class="ad-container ad-bottom-content"><ins class="adsbygoogle" style="display:block;overflow:hidden;" data-ad-client="ca-pub-9164153092633845" data-ad-slot="5233061286" data-ad-format="horizontal" data-full-width-responsive="false"></ins></div>"""
-_AD_INIT = """window.addEventListener('load', function() { setTimeout(function() { try { (adsbygoogle = window.adsbygoogle || []).push({}); (adsbygoogle = window.adsbygoogle || []).push({}); } catch(e) { console.warn('AdSense initialization error:', e); } }, 100); });"""
+_AD_INIT = """(function(){
+  var loaded = false;
+  function loadAds(){
+    if (loaded) return; loaded = true;
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9164153092633845';
+    s.crossOrigin = 'anonymous';
+    s.onload = function(){
+      try {
+        var slots = document.querySelectorAll('ins.adsbygoogle');
+        for (var i = 0; i < slots.length; i++) {
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        }
+      } catch(e) { console.warn('AdSense init error:', e); }
+    };
+    document.head.appendChild(s);
+  }
+  var evts = ['scroll','pointerdown','keydown','touchstart','mousemove'];
+  function onFirstInteract(){
+    evts.forEach(function(e){ window.removeEventListener(e, onFirstInteract); });
+    loadAds();
+  }
+  evts.forEach(function(e){ window.addEventListener(e, onFirstInteract, { passive: true }); });
+  // Fallback so ads still load without any interaction, but well after first paint.
+  if ('requestIdleCallback' in window) { requestIdleCallback(loadAds, { timeout: 4000 }); }
+  else { window.addEventListener('load', function(){ setTimeout(loadAds, 3500); }); }
+})();"""
 
 
 def _recap_ready_banner(league_id: str, platform: str, season: int) -> str:
