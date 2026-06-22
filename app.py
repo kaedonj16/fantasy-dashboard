@@ -6639,6 +6639,30 @@ def format_pick_display_label(
     return f"{year} {rnd}{suffix} (Mid)"
 
 
+# ── TE premium scoring helpers ───────────────────────────────────────────────
+# A league that awards bonus points per TE reception ("TE premium") makes tight
+# ends more valuable. We snap the league's Sleeper `bonus_rec_te` to the supported
+# tiers (0 / 0.5 / 1.0) and scale TE values by +20% per full point — matching the
+# trade calculator so values are consistent across every page that shows them.
+def te_premium_from_settings(scoring_settings) -> float:
+    try:
+        b = float((scoring_settings or {}).get("bonus_rec_te") or 0)
+    except (TypeError, ValueError, AttributeError):
+        return 0.0
+    return 1.0 if b >= 0.75 else 0.5 if b >= 0.25 else 0.0
+
+
+def apply_te_premium(value, position, te_premium) -> float:
+    """Scale a TE's value up for TE-premium leagues; pass-through otherwise."""
+    try:
+        v = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if te_premium and str(position or "").upper() == "TE":
+        return v * (1.0 + te_premium * 0.20)
+    return v
+
+
 def build_activity_body(ctx: dict) -> str:
     league_id = ctx["league_id"]
     resolved_league_id = ctx.get("resolved_league_id", league_id)
@@ -6649,6 +6673,7 @@ def build_activity_body(ctx: dict) -> str:
     season = _safe_int(ctx["season"], 0)
 
     players_values_raw = ctx.get("model_value_table") or []
+    _tep = te_premium_from_settings(ctx.get("scoring_settings"))
     player_val_by_key: Dict[Tuple[str, str, str], float] = {}
     player_val_by_key_np: Dict[Tuple[str, str], float] = {}
     rank_label_by_name: Dict[str, str] = {}
@@ -6669,6 +6694,7 @@ def build_activity_body(ctx: dict) -> str:
                 val = float(row.get("value") or 0.0)
             except Exception:
                 val = 0.0
+            val = apply_te_premium(val, pos, _tep)
 
             player_val_by_key[(name_lower, pos, team)] = val
             player_val_by_key_np[(name_lower, pos)] = val
@@ -7698,9 +7724,18 @@ def build_teams_body(ctx: dict) -> str:
             except Exception:
                 name_to_age[safe_name] = None
 
-    # map sleeper_id -> row
+    # map sleeper_id -> row. Apply the league's TE premium up front (on a shallow
+    # copy, never the cached row) so every downstream value read — sort, age
+    # weighting, positional strength — uses the TE-adjusted value automatically.
+    _tep = te_premium_from_settings(ctx.get("scoring_settings"))
+
+    def _te_adj_row(p: dict) -> dict:
+        if _tep and str(p.get("position") or p.get("pos") or "").upper() == "TE":
+            return {**p, "value": apply_te_premium(p.get("value"), "TE", _tep)}
+        return p
+
     by_id: Dict[str, Dict] = {
-        str(p["id"]): p
+        str(p["id"]): _te_adj_row(p)
         for p in model_vals
         if isinstance(p, dict) and p.get("id") is not None
     }
@@ -11596,13 +11631,23 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       var prLeagueType   = '1qb';
       var prLeagueSize   = 10;
       var prScoringType  = 'dynasty';  // 'dynasty' | 'redraft'
-      var prTePremium    = 0;          // TE premium pts/reception: 0 | 0.5 | 1
+      // Default to the league's TE premium (injected from its scoring settings)
+      // and fall back to Off for the public/no-league view.
+      var prTePremium    = (typeof window.__leagueTePremium === 'number') ? window.__leagueTePremium : 0;
       // Convert TE-premium points/reception into a value multiplier for TEs.
       // ~+20% at full (1.0) PPR-TE premium, scaled linearly.
       function prTeBoost(pos) {
         if (!prTePremium || pos !== 'TE') return 1;
         return 1 + prTePremium * 0.20;
       }
+      // Reflect the league-derived TE premium in the settings toggle on load.
+      (function(){
+        try {
+          document.querySelectorAll('#prTepSection .settings-toggle').forEach(function(b){
+            b.classList.toggle('active', Number(b.getAttribute('data-value')) === prTePremium);
+          });
+        } catch(e) {}
+      })();
       var prPosFilters = new Set();   // empty = All
       var prSearchQuery = '';
       var prLoaded = false;
@@ -12352,6 +12397,18 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       });
     </script>
     """
+
+    # Auto-apply the league's TE premium (from its scoring settings) to the
+    # rankings, so TE-premium leagues see boosted TE values without toggling.
+    if platform and league_id and season:
+        try:
+            _lg = get_league(platform, league_id, season) or {}
+            _lg_tep = te_premium_from_settings(_lg.get("scoring_settings"))
+        except Exception:
+            _lg_tep = 0.0
+        if _lg_tep:
+            body_html += f"\n<script>window.__leagueTePremium = {_lg_tep};</script>"
+
     _players_desc = (
         "Daily-updated fantasy football player rankings and trade values for dynasty and "
         "redraft leagues. Compare players with consensus rankings, trend charts, and advanced "
@@ -20419,6 +20476,7 @@ def api_team_details(roster_id: str):
         league = get_league(platform, league_id, season)
         rosters = get_rosters(platform, league_id, season) or []
         users = get_users(platform, league_id, season) or []
+        _tep = te_premium_from_settings((league or {}).get("scoring_settings"))
 
         # Find the specific roster
         roster = next((r for r in rosters if str(r.get("roster_id")) == str(roster_id)), None)
@@ -20465,7 +20523,6 @@ def api_team_details(roster_id: str):
             value_row = values_by_id.get(pid_str, {})
 
             value = value_row.get("value", 0) or 0
-            total_value += float(value)
 
             position = player_meta.get("pos") or ""
             if position == "PK":
@@ -20484,6 +20541,10 @@ def api_team_details(roster_id: str):
                 player_name = f"{full_team_name} Defense"
                 position = "DEF"
                 player_team = pid_str
+
+            # Apply the league's TE premium now that position is finalized.
+            value = apply_te_premium(value, position, _tep)
+            total_value += float(value)
 
             # Compute precise decimal age from birthday (bDay) when available;
             # fall back to value table integer only when birthday is absent.
