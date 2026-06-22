@@ -11259,6 +11259,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
                 style="padding:7px 10px;border-radius:8px;border:1px solid var(--border);
                        background:var(--card-bg);color:var(--text);font-size:12px;cursor:pointer;outline:none;min-height:34px;min-width:120px;">
                 <option value="value">Value</option>
+                <option value="adp">ADP</option>
                 <option value="age">Age</option>
                 <option value="pos_rank">Pos Rank</option>
                 <option value="ppg">PPG</option>
@@ -11919,6 +11920,16 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
       }
 
       // Map sort key → { header label, cell value function }
+      // ADP (startup): use the SF or 1QB value depending on league type, matching
+      // the prospects page. Null ADP renders as a dash and sorts to the end.
+      function prGetAdp(p) {
+        return prLeagueType === 'sf' ? p.sf_avg_pick : p.avg_pick;
+      }
+      function prFormatAdp(p) {
+        const v = prGetAdp(p);
+        return (v != null) ? Number(v).toFixed(1) : '–';
+      }
+
       const PR_SORT_META = {
         rank:      { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
         value:     { label: 'Value',    cell: p => prFormatValue(prGetValue(p)) },
@@ -11928,6 +11939,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           : (p.pos_rank_label || p.position) },
         ppg:       { label: 'PPG',       cell: p => p.ppg != null ? p.ppg.toFixed(1) : '–' },
         total_pts: { label: 'Total Pts', cell: p => p.total_pts != null ? p.total_pts.toFixed(1) : '–' },
+        adp:       { label: 'ADP',       cell: p => prFormatAdp(p) },
       };
 
       // Sort and filter players, then render rows into the main table
@@ -11938,7 +11950,7 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
         // On mobile (≤768px) the Age column is hidden, so switch the sort column
         // to show whatever is being sorted. On desktop all columns are visible.
         const isMobile = window.innerWidth <= 768;
-        const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts';
+        const _alwaysShowSort = sortBy === 'ppg' || sortBy === 'total_pts' || sortBy === 'adp';
         const sortMeta = (isMobile || _alwaysShowSort) ? (PR_SORT_META[sortBy] || PR_SORT_META.rank) : PR_SORT_META.rank;
         const sortHeaderEl = document.getElementById('prSortHeader');
         if (sortHeaderEl) sortHeaderEl.textContent = sortMeta.label;
@@ -12005,6 +12017,9 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
           players.sort((a, b) => {
             if (sortBy === 'value') {
               return prGetValue(b) - prGetValue(a);
+            } else if (sortBy === 'adp') {
+              const aA = prGetAdp(a); const bA = prGetAdp(b);
+              return (aA != null ? aA : 99999) - (bA != null ? bA : 99999);
             } else if (sortBy === 'age') {
               return (a.age != null ? a.age : 99) - (b.age != null ? b.age : 99);
             } else if (sortBy === 'pos_rank') {
@@ -12366,6 +12381,8 @@ def page_players(platform: str = None, season: int = None, league_id: str = None
               sf_value_14:      Number(p.sf_value_14 || p.sf_value || p.value || 0),
               redraft_value_1qb: p.redraft_value_1qb != null ? Number(p.redraft_value_1qb) : null,
               redraft_value_sf:  p.redraft_value_sf  != null ? Number(p.redraft_value_sf)  : null,
+              avg_pick:          p.avg_pick    != null ? Number(p.avg_pick)    : null,
+              sf_avg_pick:       p.sf_avg_pick != null ? Number(p.sf_avg_pick) : null,
               pos_rank_label:   p.pos_rank_label    || '',
               sf_pos_rank_label:p.sf_pos_rank_label || '',
               pos_rank:         Number(p.pos_rank    || 9999),
@@ -18818,6 +18835,38 @@ def api_league_players():
                 round(v, 1) for v in
                 compute_tier_thresholds(model_value_table, _lt, _sz)
             ]
+
+    # Attach startup ADP (avg_pick / sf_avg_pick) so the rankings page can sort by
+    # ADP, mirroring the prospects page. Best-effort: prefer real league ADP from the
+    # DB, fall back to FantasyCalc consensus startup ADP; never break the response.
+    try:
+        from dashboard_services.adp_service import (
+            fetch_league_adp_from_db as _fl_adp,
+            fetch_fc_startup_adp as _fc_adp,
+        )
+        _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
+
+        def _adp_for(is_sf: bool) -> dict:
+            _m = _fl_adp(is_sf, _adp_season, "startup", min_samples=10) or {}
+            if not _m:
+                _m = _fc_adp(is_sf) or {}
+            out = {}
+            for _k, _v in _m.items():
+                _ap = _v.get("avg_pick") if isinstance(_v, dict) else _v
+                if _ap is not None:
+                    out[str(_k)] = float(_ap)
+            return out
+
+        _adp_1qb = _adp_for(False)
+        _adp_sf = _adp_for(True)
+        for _p in model_value_table:
+            _pid = str(_p.get("id") or "")
+            if _pid in _adp_1qb:
+                _p["avg_pick"] = _adp_1qb[_pid]
+            if _pid in _adp_sf:
+                _p["sf_avg_pick"] = _adp_sf[_pid]
+    except Exception as _e_adp:
+        logger.info("[api/league-players] ADP attach skipped: %s", _e_adp)
 
     return jsonify(_sanitize_for_json({
         "players": model_value_table,
