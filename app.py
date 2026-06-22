@@ -915,11 +915,16 @@ BASE_HTML = """
 
     <link rel="stylesheet" href="/static/{css_file}?v={css_v}">
     <link rel="stylesheet" href="/static/icons.css?v={icons_v}">
-    <!-- Non-critical CSS (icon font, paywall modal) loaded async so it doesn't
-         block first paint; falls back to a normal stylesheet without JS. -->
-    <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}" media="print" onload="this.media='all'">
+    <!-- Font Awesome is render-blocking on purpose: it's the ONLY source of the
+         icon box sizing (.fa{{display:inline-block;width:1em;line-height:1}}). If it
+         loads async, every <i class="fa-…"> renders 0x0 until it applies, then pops
+         to ~1em and reflows everything below it — that was the ~0.4 CLS. It's a tiny
+         (~8 KB) same-origin file, so the render-blocking cost is negligible. -->
+    <link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}">
+    <!-- Paywall CSS only styles the (hidden) upgrade modal — no above-the-fold
+         layout impact — so it stays async and doesn't block first paint. -->
     <link rel="stylesheet" href="/static/paywall.css" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="/static/font-awesome.css?v={fa_v}"><link rel="stylesheet" href="/static/paywall.css"></noscript>
+    <noscript><link rel="stylesheet" href="/static/paywall.css"></noscript>
 
     <!-- Plotly is loaded on demand (window.ensurePlotly) only when a chart is
          actually rendered, instead of ~1 MB on every page. -->
