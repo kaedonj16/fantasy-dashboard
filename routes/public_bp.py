@@ -245,7 +245,7 @@ def support_page(platform: Optional[str] = None, season: Optional[int] = None,
               <div class="static-section-title">2. Go Premium</div>
               <p>
                 Premium unlocks AI-powered insights, breakout candidate rankings, advanced
-                metrics, and a trade intelligence database &mdash; either for your whole league
+                metrics, and a trade intelligence database, either for your whole league
                 or just your own account across all leagues.
               </p>
               <p style="margin-top:8px;">
@@ -338,7 +338,7 @@ def faq_page(platform: Optional[str] = None, season: Optional[int] = None,
               <details class="faq-item">
                 <summary>Do values change for Superflex leagues?</summary>
                 <p>
-                  Yes &mdash; significantly. Quarterbacks are far more valuable in Superflex. The
+                  Yes, significantly. Quarterbacks are far more valuable in Superflex. The
                   rankings and <a href="/trade">trade calculator</a> adjust to your format, and
                   <a href="/guides/superflex-vs-1qb">this guide</a> explains why the same player can
                   have two very different values.
