@@ -492,7 +492,7 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
               <p>
                 BR Fantasy is a custom fantasy football dashboard built on top of public
                 Sleeper API data. It transforms raw league stats into power rankings,
-                weekly matchup previews, trade analysis, graphs, standings, and more &mdash;
+                weekly matchup previews, trade analysis, graphs, standings, and more, 
                 all in one place.
               </p>
             </div>
@@ -501,7 +501,7 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
               <div class="static-section-title">How It Started</div>
               <p>
                 As commissioner of a new dynasty league with my friends, I wanted to make it more
-                fun. So I started making spreadsheets with weekly stats &mdash; showing who scored
+                fun. So I started making spreadsheets with weekly stats, showing who scored
                 the most, which teams were actually good, and who was trash.
               </p>
               <p style="margin-top:8px;">
@@ -517,7 +517,7 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
                 season better than anything I'd played before.
               </p>
               <p style="margin-top:8px;">
-                I liked doing it so much that I just kept expanding it &mdash; more graphs, value
+                I liked doing it so much that I just kept expanding it, more graphs, value
                 tracking, recaps. Basically built out everything I was doing manually into an
                 actual website.
               </p>
@@ -528,14 +528,14 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
               <p>
                 I figured other commissioners might want this too, so I made it accessible. If
                 you're running a league and want to show people what's actually happening beyond
-                just scores, try it &mdash; it's free. If you have feedback or ideas, let me know
+                just scores, try it, it's free. If you have feedback or ideas, let me know
                 on the <a href="/contact">Contact</a> page.
               </p>
               <p style="margin-top:8px;">
                 I'm
                 <a href="https://youtube.com/@hoodiekj" target="_blank" rel="noopener">hoodiekj</a>,
                 a fantasy football player and developer who wanted better tools than the major
-                platforms provide &mdash; and I build and maintain BR Fantasy myself.
+                platforms provide, and I build and maintain BR Fantasy myself.
               </p>
             </div>
 
@@ -560,7 +560,7 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
                 recalculated daily and calibrated against the broader dynasty market, with
                 guardrails that prevent any single noisy input from over- or under-rating a player.
                 The result is a calibrated estimate of what a player is actually worth in
-                league-to-league trades &mdash; not just who scores the most points.
+                league-to-league trades, not just who scores the most points.
               </p>
               <p style="margin-top:8px;">
                 Want to understand the numbers? Our <a href="/guides">strategy guides</a> explain
@@ -575,7 +575,7 @@ def about_page(platform: Optional[str] = None, season: Optional[int] = None,
               <p>
                 BR Fantasy works with <strong>Sleeper</strong> and <strong>ESPN</strong> leagues
                 today, with Yahoo support on the roadmap. It supports dynasty, keeper, and redraft
-                formats, in both single-quarterback and Superflex configurations &mdash; values and
+                formats, in both single-quarterback and Superflex configurations, values and
                 tools adjust automatically to your league's settings.
               </p>
             </div>
@@ -711,7 +711,7 @@ GUIDES = {
                    "redraft rankings, and how to read the numbers behind a deal.",
         "body": """
             <p>
-              Every player in a dynasty league carries a <strong>trade value</strong> &mdash; a
+              Every player in a dynasty league carries a <strong>trade value</strong>: a
               single number meant to capture how much that player is worth in the open market
               of league-to-league trades. It is not the same thing as a redraft ranking. A
               redraft ranking answers &ldquo;who scores the most points this season?&rdquo; A
@@ -730,13 +730,13 @@ GUIDES = {
               A good dynasty value blends several inputs rather than relying on any single source:
             </p>
             <ul style="margin-left:20px; line-height:1.8;">
-              <li><strong>Consensus market data</strong> &mdash; where the crowd of dynasty managers
+              <li><strong>Consensus market data</strong>: where the crowd of dynasty managers
                   is actually pricing a player.</li>
-              <li><strong>Recent on-field production</strong> &mdash; usage, efficiency, and role,
+              <li><strong>Recent on-field production</strong>: usage, efficiency, and role,
                   which move a player's stock week to week.</li>
-              <li><strong>Age and position curve</strong> &mdash; running backs decline early, wide
+              <li><strong>Age and position curve</strong>: running backs decline early, wide
                   receivers and quarterbacks hold value far longer.</li>
-              <li><strong>Situation</strong> &mdash; target share, depth-chart competition, and team
+              <li><strong>Situation</strong>: target share, depth-chart competition, and team
                   context that affect future opportunity.</li>
             </ul>
             <p>
@@ -750,7 +750,7 @@ GUIDES = {
               Most dynasty leagues are either single-quarterback (1QB) or Superflex, and a player's
               value can change dramatically between the two formats. Quarterbacks are far more
               valuable in Superflex because you can start two of them. If your league is Superflex,
-              always look at Superflex values &mdash; using 1QB numbers will badly under-rate every
+              always look at Superflex values, using 1QB numbers will badly under-rate every
               passer. We cover this in depth in
               <a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>.
             </p>
@@ -766,8 +766,8 @@ GUIDES = {
                    "formats and how to avoid badly mispricing a trade.",
         "body": """
             <p>
-              The single biggest factor in a player's dynasty value &mdash; bigger than age,
-              bigger than last week's stat line &mdash; is often just your league format. In a
+              The single biggest factor in a player's dynasty value, bigger than age,
+              bigger than last week's stat line, is often just your league format. In a
               <strong>single-quarterback (1QB)</strong> league you start one QB. In a
               <strong>Superflex</strong> league you can start a second quarterback in a flex spot,
               which makes the position enormously more valuable.
@@ -777,7 +777,7 @@ GUIDES = {
               There are only 32 starting NFL quarterbacks, and in a 12-team Superflex league up to
               24 of them can be in starting lineups every week. That scarcity means even mid-tier
               starters carry real weight, and the elite young passers become the most valuable
-              assets in the entire player pool &mdash; frequently worth more than any running back
+              assets in the entire player pool, frequently worth more than any running back
               or receiver.
             </p>
             <p>
@@ -806,7 +806,7 @@ GUIDES = {
     },
     "reading-advanced-metrics": {
         "title": "Reading Advanced Metrics: A Fantasy Manager's Guide",
-        "summary": "Target share, air yards, snap counts, red-zone usage and more &mdash; what "
+        "summary": "Target share, air yards, snap counts, red-zone usage and more, what "
                    "each metric tells you and which ones actually predict fantasy points.",
         "body": """
             <p>
@@ -817,15 +817,15 @@ GUIDES = {
             </p>
             <div class="static-section-title">Opportunity metrics (the most predictive)</div>
             <ul style="margin-left:20px; line-height:1.8;">
-              <li><strong>Target share</strong> &mdash; the percentage of his team's targets a
+              <li><strong>Target share</strong>: the percentage of his team's targets a
                   receiver or tight end earns. A rising target share is one of the strongest
                   leading indicators of future fantasy production.</li>
-              <li><strong>Snap share</strong> &mdash; how often a player is actually on the field.
+              <li><strong>Snap share</strong>: how often a player is actually on the field.
                   Low snap share caps a player's ceiling no matter how efficient he looks.</li>
-              <li><strong>Air yards</strong> &mdash; the total downfield distance of a player's
+              <li><strong>Air yards</strong>: the total downfield distance of a player's
                   targets. High air yards signal a player is being used in a high-value role even
                   before the catches show up.</li>
-              <li><strong>Red-zone usage</strong> &mdash; touches and targets inside the 20.
+              <li><strong>Red-zone usage</strong>: touches and targets inside the 20.
                   Red-zone volume drives touchdowns, which are the most volatile (and valuable)
                   source of fantasy points.</li>
             </ul>
@@ -833,7 +833,7 @@ GUIDES = {
             <p>
               Yards per route run, yards after catch, and yards per touch describe how well a
               player converts opportunity into production. They are useful, but efficiency is far
-              noisier than volume &mdash; a great yards-per-touch number on five touches a game
+              noisier than volume, a great yards-per-touch number on five touches a game
               won't survive a larger sample. Always weigh efficiency against the opportunity behind
               it.
             </p>
@@ -858,7 +858,7 @@ GUIDES = {
         "body": """
             <p>
               The rookie draft is where dynasty championships are quietly built. Cheap, ascending
-              young talent is the best value in the format &mdash; but rookie picks are also where
+              young talent is the best value in the format, but rookie picks are also where
               managers most often overpay for hype. Here's a framework for drafting well.
             </p>
             <div class="static-section-title">Value the picks, then the players</div>
@@ -870,29 +870,29 @@ GUIDES = {
             </p>
             <div class="static-section-title">What actually predicts rookie success</div>
             <ul style="margin-left:20px; line-height:1.8;">
-              <li><strong>Draft capital</strong> &mdash; where the NFL drafted a player is one of
+              <li><strong>Draft capital</strong>: where the NFL drafted a player is one of
                   the best predictors of opportunity. Teams invest snaps and targets in the players
                   they spent premium picks on.</li>
-              <li><strong>Landing spot</strong> &mdash; the same prospect can be a league-winner or
+              <li><strong>Landing spot</strong>: the same prospect can be a league-winner or
                   a redraft afterthought depending on depth-chart competition and offensive
                   quality.</li>
-              <li><strong>College production at a young age</strong> &mdash; players who dominated
+              <li><strong>College production at a young age</strong>: players who dominated
                   early in their college careers (a strong &ldquo;breakout age&rdquo;) hit at higher
                   rates.</li>
-              <li><strong>Athletic profile</strong> &mdash; testing scores like RAS provide a floor
+              <li><strong>Athletic profile</strong>: testing scores like RAS provide a floor
                   check, especially at receiver and running back.</li>
             </ul>
             <div class="static-section-title">Position priorities</div>
             <p>
-              In most formats, prioritize wide receivers early &mdash; they have the longest dynasty
+              In most formats, prioritize wide receivers early, they have the longest dynasty
               shelf life and the highest hit rate near the top of rookie drafts. Running backs offer
               immediate production but age out fast, so they are better targeted by contending teams.
               In Superflex, a rookie quarterback with a clear path to starting can be worth a top
               pick on its own.
             </p>
             <p>
-              You can study full prospect profiles &mdash; college metrics, draft capital, athletic
-              scores, and live ADP movement &mdash; on the <a href="/prospects">rookie prospects</a>
+              You can study full prospect profiles, college metrics, draft capital, athletic
+              scores, and live ADP movement, on the <a href="/prospects">rookie prospects</a>
               page.
             </p>
             <div class="highlight-box">
@@ -907,7 +907,7 @@ GUIDES = {
                    "buy a player below his real worth or sell above it.",
         "body": """
             <p>
-              Dynasty trade value is not static &mdash; it moves constantly with injuries, depth
+              Dynasty trade value is not static, it moves constantly with injuries, depth
               chart changes, hot streaks, and slumps. The managers who win their leagues over time
               are the ones who trade <em>against</em> these short-term swings: buying players the
               market has soured on and selling players it has temporarily overrated.
@@ -925,7 +925,7 @@ GUIDES = {
             <ul style="margin-left:20px; line-height:1.8;">
               <li>A player riding an unsustainable touchdown rate that his opportunity won't
                   support.</li>
-              <li>An aging running back coming off a big stretch &mdash; sell the name before the
+              <li>An aging running back coming off a big stretch, sell the name before the
                   cliff.</li>
               <li>A backup who spiked in value during a short injury fill-in for a starter who is
                   about to return.</li>
@@ -947,13 +947,13 @@ GUIDES = {
     },
     "evaluating-a-trade": {
         "title": "How to Evaluate a Dynasty Trade",
-        "summary": "A step-by-step process for judging any trade offer &mdash; beyond just adding "
+        "summary": "A step-by-step process for judging any trade offer, beyond just adding "
                    "up the values on each side.",
         "body": """
             <p>
               Adding up trade values on each side of a deal is a useful first check, but it is only
               the beginning. The best trades aren't always the ones that &ldquo;win&rdquo; on raw
-              value &mdash; they're the ones that make <em>your</em> roster better for <em>your</em>
+              value, they're the ones that make <em>your</em> roster better for <em>your</em>
               timeline. Here's a repeatable process.
             </p>
             <div class="static-section-title">Step 1: Check the raw value</div>
@@ -967,7 +967,7 @@ GUIDES = {
             <p>
               Two good players are generally worth more than three mediocre ones, because starting
               lineup spots are limited and the best players are the hardest to replace. When you
-              trade multiple pieces for one stud, expect &mdash; and accept &mdash; paying a small
+              trade multiple pieces for one stud, expect, and accept, paying a small
               value premium for that consolidation.
             </p>
             <div class="static-section-title">Step 3: Match the deal to your timeline</div>
@@ -980,7 +980,7 @@ GUIDES = {
             <div class="static-section-title">Step 4: Value positional scarcity and need</div>
             <p>
               A player is worth more to a roster that needs his position. Don't trade from a
-              position of strength into another position of strength &mdash; address real lineup
+              position of strength into another position of strength, address real lineup
               holes. In Superflex, weigh quarterback depth especially heavily (see
               <a href="/guides/superflex-vs-1qb">Superflex vs 1QB</a>).
             </p>
@@ -1038,7 +1038,7 @@ def guides_index(platform: Optional[str] = None, season: Optional[int] = None,
             <h1 class="static-hero-title">Dynasty &amp; Fantasy Football Guides</h1>
             <div class="static-section">
               <p>
-                Free, in-depth guides to dynasty strategy &mdash; how trade values work, how to read
+                Free, in-depth guides to dynasty strategy, how trade values work, how to read
                 advanced metrics, rookie-draft strategy, and how to win trades. Pair them with our
                 live <a href="{base}/rankings/dynasty">dynasty rankings</a> and
                 <a href="{base}/trade">trade calculator</a> to put the ideas into practice.
