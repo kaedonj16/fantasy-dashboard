@@ -187,6 +187,7 @@ _DRAFT_ROOM_HTML = r"""
           </div>
           <div class="dr-adp-src" id="drAdpSrc"></div>
         </div>
+        <div id="drBestChips" style="display:none;"></div>
         <div class="dr-ba-list" id="drBaList">
           <div class="dr-loading"><div class="loading-spinner" style="width:22px;height:22px;"></div><span>Loading players…</span></div>
         </div>
@@ -197,6 +198,11 @@ _DRAFT_ROOM_HTML = r"""
   <!-- Player preview / draft confirm -->
   <div class="dr-preview-overlay" id="drPreview" style="display:none;">
     <div class="dr-preview-card" id="drPreviewCard"></div>
+  </div>
+
+  <!-- Player comparison -->
+  <div class="dr-cmp-overlay" id="drCompare" style="display:none;">
+    <div class="dr-cmp-card" id="drCompareCard"></div>
   </div>
 
   <!-- End-of-draft summary -->
@@ -514,6 +520,69 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cap-latebody { padding-bottom:2px; }
   /* ── Team tab PS badge ── */
   .dr-rslot-ps { font-size:11px; font-weight:800; flex-shrink:0; margin-right:2px; }
+  /* ── Positional scarcity bar ── */
+  .dr-scarcity { display: flex; border-bottom: 1px solid var(--border); }
+  .dr-scar-pos { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 5px 2px;
+    cursor: pointer; transition: background .12s; }
+  .dr-scar-pos:hover { background: rgba(56,189,248,.07); }
+  .dr-scar-pos:not(:last-child) { border-right: 1px solid var(--border); }
+  .dr-scar-count { font-size: 14px; font-weight: 900; line-height: 1; }
+  .dr-scar-label { font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 1px; }
+  /* ── Best-at-position chips ── */
+  .dr-bchips { display: flex; gap: 6px; padding: 7px 8px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    border-bottom: 1px solid var(--border); }
+  .dr-bchip { display: flex; align-items: flex-end; gap: 6px; padding: 5px 8px 5px; border-radius: 9px;
+    border: 1px solid var(--border); background: var(--bg); cursor: pointer; flex-shrink: 0;
+    transition: border-color .12s, background .12s; }
+  .dr-bchip:hover { border-color: var(--accent,#38bdf8); background: rgba(56,189,248,.06); }
+  .dr-bchip-img { width: 30px; height: 30px; border-radius: 5px 5px 0 0; object-fit: cover;
+    object-position: top center; align-self: flex-end; flex-shrink: 0; }
+  .dr-bchip-body { min-width: 0; line-height: 1.3; }
+  .dr-bchip-name { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; max-width: 68px; }
+  .dr-bchip-adp { font-size: 9px; color: var(--text-muted); }
+  /* ── Balance alert ── */
+  .dr-bal-alert { margin: 8px 10px 2px; padding: 7px 10px; border-radius: 8px; font-size: 11.5px;
+    background: rgba(245,158,11,.12); color: #b45309; border: 1px solid rgba(245,158,11,.3);
+    line-height: 1.4; }
+  .dr-bal-alert b { color: #f59e0b; }
+  /* ── Bye week conflict flag ── */
+  .dr-bye-flag { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 4px;
+    background: rgba(239,68,68,.14); color: #ef4444; margin-left: 5px; white-space: nowrap; }
+  /* ── Compare button in rows ── */
+  .dr-cmp-btn { background: none; border: none; cursor: pointer; font-size: 10px; font-weight: 800;
+    line-height: 1; color: var(--text-muted); padding: 3px 5px; border-radius: 5px;
+    border: 1px solid transparent; transition: all .12s; flex-shrink: 0; letter-spacing: .02em; }
+  .dr-cmp-btn:hover, .dr-cmp-btn.on { color: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8);
+    background: rgba(56,189,248,.1); }
+  /* ── Player comparison overlay ── */
+  .dr-cmp-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.45);
+    display: flex; align-items: flex-start; justify-content: center; padding: 16px; overflow-y: auto; }
+  .dr-cmp-card { position: relative; width: 100%; max-width: 540px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 14px; padding: 18px 16px 16px;
+    box-shadow: 0 16px 50px rgba(0,0,0,.3); margin: auto; }
+  .dr-cmp-close { position: absolute; top: 8px; right: 10px; background: none; border: none;
+    font-size: 22px; line-height: 1; color: var(--text-muted); cursor: pointer; }
+  .dr-cmp-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-muted); text-align: center; margin-bottom: 12px; }
+  .dr-cmp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .dr-cmp-player { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px; }
+  .dr-cmp-top { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 8px; }
+  .dr-cmp-hs { width: 44px; height: 44px; border-radius: 8px 8px 0 0; object-fit: cover;
+    object-position: top center; flex-shrink: 0; }
+  .dr-cmp-name { font-size: 12px; font-weight: 800; color: var(--text); line-height: 1.2; }
+  .dr-cmp-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+  .dr-cmp-ps { font-size: 30px; font-weight: 900; line-height: 1; text-align: center; margin: 6px 0 0; }
+  .dr-cmp-ps-lbl { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--text-muted); text-align: center; margin-bottom: 8px; }
+  .dr-cmp-stats { display: flex; flex-direction: column; gap: 3px; }
+  .dr-cmp-stat { display: flex; justify-content: space-between; align-items: center; padding: 3px 5px;
+    border-radius: 5px; }
+  .dr-cmp-stat-lbl { font-size: 10px; color: var(--text-muted); font-weight: 600; }
+  .dr-cmp-stat-val { font-size: 12px; font-weight: 800; color: var(--text); }
+  .dr-cmp-stat.win { background: rgba(34,197,94,.12); }
+  .dr-cmp-stat.win .dr-cmp-stat-val { color: #22c55e; }
+  .dr-cmp-actions { display: flex; gap: 8px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
 </style>
 
 <script>
@@ -548,6 +617,7 @@ _DRAFT_ROOM_HTML = r"""
   var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
   var _boardSig = null;    // board structure signature (rebuild only when it changes)
   var _summaryShown = false; // auto-open summary only once per draft
+  var compareIds = [];     // 0-2 player IDs staged for comparison
 
   // ── Pick-order helper (snake / linear / 3rr) ───────────────────────────────
   function pickDir(r, order){            // true = forward (slot 1 → N)
@@ -1148,6 +1218,172 @@ _DRAFT_ROOM_HTML = r"""
   }
   function availColor(pct){ return pct >= 65 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444'; }
 
+  // ── Best-at-position chips + scarcity bar ───────────────────────────────────
+  function renderBestChips(){
+    var el = document.getElementById('drBestChips');
+    if (!el) return;
+    if (sideTab !== 'best' && sideTab !== 'rec'){ el.style.display = 'none'; return; }
+    var pool = availablePool();
+    if (!pool.length){ el.style.display = 'none'; return; }
+    var isDynasty = (state.type !== 'redraft');
+    var positions = state.type === 'redraft' ? ['QB','RB','WR','TE','K','DEF'] : ['QB','RB','WR','TE'];
+    // Scarcity bar: T1+T2 remaining in dynasty; skip (0 tier data) in redraft
+    var scarHtml = '';
+    if (isDynasty){
+      scarHtml = '<div class="dr-scarcity">';
+      positions.forEach(function(pos){
+        var n = posTopRemaining(pos);
+        var col = n <= 3 ? '#ef4444' : n <= 6 ? '#f59e0b' : '#22c55e';
+        scarHtml += '<div class="dr-scar-pos" data-scarpos="' + pos + '" title="' + n + ' T1-T2 ' + pos + 's available">'
+          + '<span class="dr-scar-count" style="color:' + col + '">' + n + '</span>'
+          + '<span class="dr-scar-label">' + pos + '</span>'
+          + '</div>';
+      });
+      scarHtml += '</div>';
+    }
+    // Best-at-pos: lowest ADP (or highest value) per position
+    var byPos = {};
+    pool.forEach(function(p){
+      var pos = (p.position || '').toUpperCase();
+      if (positions.indexOf(pos) < 0) return;
+      if (!byPos[pos]){
+        byPos[pos] = p;
+      } else {
+        var a = adpOf(p), ab = adpOf(byPos[pos]);
+        if (a != null && ab != null){ if (a < ab) byPos[pos] = p; }
+        else if (a != null){ byPos[pos] = p; }
+        else if (a == null && ab == null && valOf(p) > valOf(byPos[pos])){ byPos[pos] = p; }
+      }
+    });
+    var chipsHtml = '<div class="dr-bchips">';
+    var hasAny = false;
+    positions.forEach(function(pos){
+      var p = byPos[pos]; if (!p) return;
+      hasAny = true;
+      var adp = adpOf(p);
+      var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : 'Val ' + Math.round(valOf(p));
+      // Last name only to save space
+      var lastName = p.name.split(' ').slice(1).join(' ') || p.name;
+      chipsHtml += '<div class="dr-bchip" data-bchip="' + esc(String(p.id)) + '">'
+        + '<img class="dr-bchip-img" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+        + '<div class="dr-bchip-body">'
+        + '<div class="dr-bchip-name"><span class="dr-posbadge" style="background:' + posColor(pos) + ';font-size:8px;">' + pos + '</span> ' + esc(lastName) + '</div>'
+        + '<div class="dr-bchip-adp">' + sub + '</div>'
+        + '</div></div>';
+    });
+    chipsHtml += '</div>';
+    if (!hasAny){ el.style.display = 'none'; return; }
+    el.innerHTML = scarHtml + chipsHtml;
+    el.style.display = '';
+  }
+
+  // ── Balance alert ───────────────────────────────────────────────────────────
+  // Fires late in drafts when a critical position is severely underfilled.
+  function balanceAlert(){
+    if (!hasOwned()) return '';
+    var remaining = upcomingOwnedPicks().length;
+    if (remaining <= 0 || remaining > 8) return '';
+    var counts = myPosCounts();
+    var targets = posTargets();
+    var msgs = [];
+    ['QB','RB','WR','TE'].forEach(function(pos){
+      var t = targets[pos] || 0;
+      var have = counts[pos] || 0;
+      var need = Math.max(0, t - have);
+      if (!need) return;
+      if (need >= remaining || (have === 0 && remaining <= 4)){
+        msgs.push(need + ' ' + pos + (need > 1 ? 's' : '') + ' needed');
+      }
+    });
+    if (!msgs.length) return '';
+    var picks = remaining === 1 ? '1 pick' : remaining + ' picks';
+    return '<div class="dr-bal-alert"><b>' + picks + ' remaining</b>: ' + msgs.join(', ') + '</div>';
+  }
+
+  // ── Bye week conflict ───────────────────────────────────────────────────────
+  // Returns how many already-owned players share this player's bye week.
+  function byeConflict(p){
+    if (state.type !== 'redraft' || !p.bye_week) return 0;
+    var bw = Number(p.bye_week);
+    var count = 0;
+    myPicksList().forEach(function(mp){
+      var full = playersById[String(mp.id)];
+      if (full && Number(full.bye_week) === bw) count++;
+    });
+    return count;
+  }
+
+  // ── Player comparison ───────────────────────────────────────────────────────
+  function toggleCompare(id){
+    id = String(id);
+    var idx = compareIds.indexOf(id);
+    if (idx >= 0){
+      compareIds.splice(idx, 1);
+      renderSide();
+    } else if (compareIds.length >= 2){
+      compareIds = [id];
+      renderSide();
+    } else {
+      compareIds.push(id);
+      if (compareIds.length === 2) openCompare();
+      else renderSide();
+    }
+  }
+  function closeCompare(){
+    document.getElementById('drCompare').style.display = 'none';
+    compareIds = [];
+    renderSide();
+  }
+  function openCompare(){
+    var p1 = playersById[String(compareIds[0])];
+    var p2 = playersById[String(compareIds[1])];
+    if (!p1 || !p2) return;
+    function cmpCol(p, other){
+      var pos = (p.position || '').toUpperCase();
+      var adp = adpOf(p), oadp = adpOf(other);
+      var vor = vorOf(p), ovor = vorOf(other);
+      var ps = pickScoreFor(p), ops = pickScoreFor(other);
+      var v = valOf(p), ov = valOf(other);
+      var t = tierOf(p), ot = tierOf(other);
+      var age = p.age != null ? Number(p.age) : null;
+      var oage = other.age != null ? Number(other.age) : null;
+      function statRow(lbl, val, oval, higherBetter, fmtFn){
+        if (val == null && oval == null) return '';
+        var vStr = fmtFn ? fmtFn(val) : (val != null ? String(val) : '-');
+        var win = val != null && oval != null && (higherBetter ? val > oval : val < oval);
+        return '<div class="dr-cmp-stat' + (win ? ' win' : '') + '">'
+          + '<span class="dr-cmp-stat-lbl">' + lbl + '</span>'
+          + '<span class="dr-cmp-stat-val">' + vStr + '</span></div>';
+      }
+      var sc = psColor(ps);
+      return '<div class="dr-cmp-player">'
+        + '<div class="dr-cmp-top"><img class="dr-cmp-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+        + '<div><div class="dr-cmp-name"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.name) + '</div>'
+        + '<div class="dr-cmp-meta">' + esc(p.team || '') + (p.age ? ' &middot; Age ' + Number(p.age).toFixed(0) : '') + '</div>'
+        + '</div></div>'
+        + '<div class="dr-cmp-ps" style="color:' + sc + '">' + ps + '</div>'
+        + '<div class="dr-cmp-ps-lbl">Pick Score</div>'
+        + '<div class="dr-cmp-stats">'
+        + statRow('Value', v, ov, true, function(x){ return x != null ? Math.round(x) : '-'; })
+        + statRow('VOR', vor, ovor, true, function(x){ return x != null ? (x >= 0 ? '+' + x : String(x)) : '-'; })
+        + statRow('ADP', adp, oadp, false, function(x){ return x != null ? Number(x).toFixed(1) : 'N/A'; })
+        + (state.type !== 'redraft' ? statRow('Tier', t, ot, false, function(x){ return x != null ? 'T' + x : '-'; }) : '')
+        + statRow('Age', age, oage, state.type !== 'redraft', function(x){ return x != null ? x.toFixed(0) : '-'; })
+        + '</div></div>';
+    }
+    var draftBtns = (isYourTurn() || !sim)
+      ? '<button class="dr-btn dr-btn-primary" data-cmp-draft="' + esc(String(p1.id)) + '">Draft ' + esc(p1.name.split(' ').pop()) + '</button>'
+        + '<button class="dr-btn dr-btn-primary" data-cmp-draft="' + esc(String(p2.id)) + '">Draft ' + esc(p2.name.split(' ').pop()) + '</button>'
+      : '';
+    var h = '<button class="dr-cmp-close" id="drCmpClose" aria-label="Close">&times;</button>'
+      + '<div class="dr-cmp-title">Compare Players</div>'
+      + '<div class="dr-cmp-cols">' + cmpCol(p1, p2) + cmpCol(p2, p1) + '</div>'
+      + (draftBtns ? '<div class="dr-cmp-actions">' + draftBtns + '</div>' : '');
+    var card = document.getElementById('drCompareCard');
+    card.innerHTML = h;
+    document.getElementById('drCompare').style.display = '';
+  }
+
   // ── Pick Score (composite) ──────────────────────────────────────────────────
   // Fuses VOR, raw value, ADP value, tier, quality-adjusted need, position-peak
   // age, momentum, and opportunity cost into one 0-100 score per player.
@@ -1318,10 +1554,16 @@ _DRAFT_ROOM_HTML = r"""
       availLine = '<div class="dr-ba-avail" style="color:' + ac + '">'
         + (ap >= 65 ? '&#10003; ' : '&#8226; ') + ap + '% at #' + opts.availAt.pn + '</div>';
     }
+    // Bye week conflict flag (redraft only)
+    var byeFlag = '';
+    var bc = byeConflict(p);
+    if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
+    // Compare button state
+    var onCmp = compareIds.indexOf(String(p.id)) >= 0;
     return '<div class="dr-ba-row' + availClass + '" data-id="' + esc(String(p.id)) + '">'
       + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + tierBadge(p) + '</div>'
-      + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + '</div>'
+      + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + byeFlag + '</div>'
       + reasonLine + waitLine + availLine + '</div>'
       + '<div class="dr-ba-right-col">'
       + '<div class="dr-ba-metrics">'
@@ -1329,6 +1571,7 @@ _DRAFT_ROOM_HTML = r"""
       + psChip
       + '</div>'
       + '<div class="dr-ba-actions">'
+      + '<button class="dr-cmp-btn' + (onCmp ? ' on' : '') + '" data-cmp="' + esc(String(p.id)) + '" title="Compare">vs</button>'
       + '<button class="dr-star' + (isQueued(p.id) ? ' on' : '') + '" data-star="' + esc(String(p.id)) + '" title="Queue" aria-label="Queue">' + (isQueued(p.id) ? '★' : '☆') + '</button>'
       + (isYourTurn() || !sim ? '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>' : '')
       + '</div>'
@@ -1352,6 +1595,7 @@ _DRAFT_ROOM_HTML = r"""
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
+    renderBestChips();
     if (sideTab === 'rec')      return renderRec();
     if (sideTab === 'queue')    return renderQueue();
     if (sideTab === 'needs')    return renderNeeds();
@@ -1382,7 +1626,7 @@ _DRAFT_ROOM_HTML = r"""
     var maxVal = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxVal) maxVal = v; });
     pool.forEach(function(p){ p._ps = pickScore(p, maxVal, counts); });
     pool.sort(function(a, b){ return b._ps - a._ps; });
-    var html = runBanner();
+    var html = balanceAlert() + runBanner();
     // Assistant looks across your whole draft capital: a player you can likely
     // get at a later owned pick is flagged so you can spend this pick elsewhere.
     var nextPick = nextOwnedAfterCurrent();
@@ -1772,7 +2016,7 @@ _DRAFT_ROOM_HTML = r"""
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
     var nextPick = hasOwned() ? nextOwnedAfterCurrent() : null;
-    var html = '';
+    var html = balanceAlert();
     for (var i = 0; i < Math.min(pool.length, 200); i++){
       var p = pool[i];
       var opts = {};
@@ -2063,12 +2307,33 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drBaSort').addEventListener('change', renderBA);
   document.getElementById('drSearch').addEventListener('input', renderBA);
   document.getElementById('drBaList').addEventListener('click', function(e){
+    var cmp = e.target.closest('[data-cmp]');
+    if (cmp){ e.stopPropagation(); toggleCompare(cmp.getAttribute('data-cmp')); return; }
     var star = e.target.closest('[data-star]');
     if (star){ e.stopPropagation(); toggleQueue(star.getAttribute('data-star')); return; }
     var draft = e.target.closest('[data-draft]');
     if (draft){ e.stopPropagation(); draftPlayer(draft.getAttribute('data-draft')); return; }
     var row = e.target.closest('.dr-ba-row');
     if (row) openPreview(row.getAttribute('data-id'));
+  });
+  // Best-at-pos chips: click chip to open player preview; click scarcity bar to filter position
+  document.getElementById('drBestChips').addEventListener('click', function(e){
+    var chip = e.target.closest('[data-bchip]');
+    if (chip){ openPreview(chip.getAttribute('data-bchip')); return; }
+    var sp = e.target.closest('[data-scarpos]');
+    if (sp){
+      var pos = sp.getAttribute('data-scarpos');
+      posFilter = pos;
+      var btns = document.querySelectorAll('#drPosFilters .dr-pos');
+      btns.forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-pos') === pos); });
+      renderBA();
+    }
+  });
+  // Compare overlay: close, draft from compare
+  document.getElementById('drCompare').addEventListener('click', function(e){
+    if (e.target === this || e.target.closest('#drCmpClose')){ closeCompare(); return; }
+    var d = e.target.closest('[data-cmp-draft]');
+    if (d){ var id = d.getAttribute('data-cmp-draft'); closeCompare(); draftPlayer(id); }
   });
   document.getElementById('drSummaryBtn').addEventListener('click', openSummary);
   document.getElementById('drSummary').addEventListener('click', function(e){
