@@ -135,7 +135,7 @@ _DRAFT_ROOM_HTML = r"""
           <b id="drOnClock">Team 1</b>
         </div>
         <div class="dr-status-pills">
-          <span class="dr-ss-stat" id="drPickPill">1.01</span>
+          <span class="dr-ss-stat" id="drPickPill">Pick: 1.01</span>
           <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
           <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
           <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
@@ -313,8 +313,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cell-body { padding-bottom: 6px; }
   .dr-cell-empty { opacity: .45; }
   .dr-cell-filled { background: linear-gradient(180deg, rgba(56,189,248,.05), var(--bg)); }
-  .dr-cell-current { outline: 2px solid var(--accent,#38bdf8); animation: drPulse 1.6s ease-in-out infinite; }
-  @keyframes drPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(56,189,248,.0); } 50% { box-shadow: 0 0 0 3px rgba(56,189,248,.18); } }
+  .dr-cell-current { box-shadow: inset 0 0 0 2px var(--accent,#38bdf8); animation: drPulse 1.6s ease-in-out infinite; }
+  @keyframes drPulse { 0%,100% { box-shadow: inset 0 0 0 2px var(--accent,#38bdf8); } 50% { box-shadow: inset 0 0 0 2px var(--accent,#38bdf8), 0 0 10px rgba(56,189,248,.2); } }
   .dr-cell-mine { box-shadow: inset 3px 0 0 var(--accent,#38bdf8); opacity: 1; }
   .dr-cell-mine.dr-cell-empty { opacity: 1; background: linear-gradient(180deg, rgba(56,189,248,.10), var(--bg)); }
   .dr-cell-claimed { box-shadow: inset 3px 0 0 #f59e0b; }     /* traded-in pick */
@@ -2219,7 +2219,7 @@ _DRAFT_ROOM_HTML = r"""
     var done = state.current > total;
     var r = Math.ceil(state.current / state.teams);
     var pickInRound = ((state.current - 1) % state.teams) + 1;
-    document.getElementById('drPickPill').textContent = done ? 'Done' : (r + '.' + (pickInRound < 10 ? '0' : '') + pickInRound);
+    document.getElementById('drPickPill').textContent = done ? 'Done' : ('Pick: ' + r + '.' + (pickInRound < 10 ? '0' : '') + pickInRound);
     var oc = document.getElementById('drOnClock');
     var ocWrap = document.getElementById('drOnClockWrap');
     var ocLabel = ocWrap ? ocWrap.querySelector('.dr-onclock-label') : null;
@@ -2235,7 +2235,12 @@ _DRAFT_ROOM_HTML = r"""
     if (ocWrap) ocWrap.classList.toggle('dr-onclock-you', mineNow);
     var nextPill = document.getElementById('drNextPill');
     var np = done ? null : userNextPick();
-    if (np){ nextPill.style.display = ''; nextPill.textContent = 'Your next: #' + np + ' (R' + Math.ceil(np / state.teams) + ')'; }
+    if (np){
+      var npRound = Math.ceil(np / state.teams);
+      var npInRound = ((np - 1) % state.teams) + 1;
+      nextPill.style.display = '';
+      nextPill.textContent = 'Next: ' + npRound + '.' + (npInRound < 10 ? '0' : '') + npInRound;
+    }
     else { nextPill.style.display = 'none'; }
     document.getElementById('drProgress').textContent = Math.min(state.current - 1, total) + ' / ' + total + ' picks';
     var gp = document.getElementById('drGradePill');
