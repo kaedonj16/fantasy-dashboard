@@ -157,6 +157,7 @@ _DRAFT_ROOM_HTML = r"""
         <div class="otc-main-tabs dr-side-tabs" id="drSideTabs">
           <button class="otc-main-tab is-active" data-stab="best">Players</button>
           <button class="otc-main-tab" data-stab="rec">Recs</button>
+          <button class="otc-main-tab" data-stab="future">Future</button>
           <button class="otc-main-tab" data-stab="queue">Queue</button>
           <button class="otc-main-tab" data-stab="needs">Team</button>
         </div>
@@ -385,6 +386,31 @@ _DRAFT_ROOM_HTML = r"""
     background: transparent; color: var(--accent,#122d4b); font-size: 11.5px; font-weight: 800;
     cursor: pointer; flex-shrink: 0; transition: background .12s, color .12s; white-space: nowrap; }
   .dr-ba-row:hover .dr-ba-draft, .dr-ba-draft:hover { background: var(--accent,#122d4b); color: #fff; }
+  /* ── Future picks panel ── */
+  .dr-fp-intro { font-size: 11px; color: var(--text-muted); padding: 10px 12px 6px; line-height: 1.5; }
+  .dr-fp-card { margin: 8px 10px 12px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--card); }
+  .dr-fp-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: rgba(56,189,248,.06); border-bottom: 1px solid var(--border); }
+  .dr-fp-pick { font-size: 14px; font-weight: 800; color: var(--text); }
+  .dr-fp-rd { font-size: 10px; font-weight: 700; color: var(--text-muted); background: rgba(127,127,127,.14); padding: 2px 7px; border-radius: 999px; }
+  .dr-fp-when { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--text-muted); }
+  .dr-fp-when.dr-fp-now { color: var(--accent,#38bdf8); }
+  .dr-fp-insights { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--border); }
+  .dr-fp-ins { background: var(--card); padding: 7px 9px; min-width: 0; }
+  .dr-fp-ins-l { font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+  .dr-fp-ins-v { font-size: 11.5px; font-weight: 700; color: var(--text); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dr-fp-ins-p { font-size: 9.5px; font-weight: 800; margin-top: 1px; }
+  .dr-fp-scarce { font-size: 10.5px; font-weight: 700; color: #f59e0b; padding: 6px 12px; background: rgba(245,158,11,.08); border-top: 1px solid var(--border); }
+  .dr-fp-list { padding: 2px 0; }
+  .dr-fp-row { display: flex; align-items: center; gap: 9px; padding: 6px 12px; cursor: pointer; transition: background .12s; }
+  .dr-fp-row:hover { background: rgba(56,189,248,.06); }
+  .dr-fp-prob { flex-shrink: 0; width: 40px; text-align: center; font-size: 11px; font-weight: 800; padding: 3px 0; border-radius: 6px; }
+  .dr-fp-name { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+  .dr-fp-pos { font-size: 9px; font-weight: 800; }
+  .dr-fp-vor { flex-shrink: 0; font-size: 11px; font-weight: 700; color: var(--text-muted); min-width: 34px; text-align: right; }
+  .dr-fp-val { flex-shrink: 0; font-size: 12.5px; font-weight: 800; color: var(--text); min-width: 38px; text-align: right; }
+  .dr-fp-empty { font-size: 11px; color: var(--text-muted); font-style: italic; padding: 10px 12px; }
+  .dr-fp-gone { font-size: 10.5px; color: var(--text-muted); padding: 7px 12px; border-top: 1px solid var(--border); line-height: 1.4; }
+  .dr-fp-gone-lbl { font-weight: 800; color: #ef4444; }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
   @media (max-width: 900px) {
     .dr-cols { grid-template-columns: 1fr; }
@@ -878,6 +904,64 @@ _DRAFT_ROOM_HTML = r"""
     var k = (p.position || '').toUpperCase() + '|' + t;
     return (_ptc[k] || 0) <= 2;     // tier is drying up
   }
+  // Top-tier (T1+T2) players still available at a position - scarcity signal.
+  function posTopRemaining(pos){
+    pos = (pos || '').toUpperCase();
+    return (_ptc[pos + '|1'] || 0) + (_ptc[pos + '|2'] || 0);
+  }
+
+  // ── Value Over Replacement (VOR) ────────────────────────────────────────────
+  // Replacement level = value of the last startable player at a position across
+  // the league (teams x starters-per-team). VOR(p) = value(p) - replacement.
+  var _repl = {};   // refreshed each render
+  function computeReplacement(){
+    var rs = (state && state.roster) || defaultRoster();
+    var teams = state.teams || 12;
+    var flex = rs.FLEX || 0, sf = rs.SF || 0;
+    var starters = {
+      QB: (rs.QB || 0) + sf * 0.5,
+      RB: (rs.RB || 0) + flex * 0.5,
+      WR: (rs.WR || 0) + flex * 0.5,
+      TE: (rs.TE || 0)
+    };
+    var byPos = { QB: [], RB: [], WR: [], TE: [] };
+    players.forEach(function(p){
+      var pos = (p.position || '').toUpperCase();
+      if (byPos[pos]) byPos[pos].push(valOf(p));
+    });
+    var r = {};
+    Object.keys(byPos).forEach(function(pos){
+      var arr = byPos[pos]; arr.sort(function(a, b){ return b - a; });
+      if (!arr.length){ r[pos] = 0; return; }
+      var idx = Math.round(teams * (starters[pos] || 1)) - 1;
+      if (idx < 0) idx = 0; if (idx >= arr.length) idx = arr.length - 1;
+      r[pos] = arr[idx];
+    });
+    return r;
+  }
+  function vorOf(p){
+    var pos = (p.position || '').toUpperCase();
+    if (_repl[pos] == null) return null;
+    return Math.round(valOf(p) - _repl[pos]);
+  }
+
+  // ── Availability probability ────────────────────────────────────────────────
+  // Model a player's actual draft slot as Normal(ADP, sigma); the chance they
+  // survive to overall pick `pn` is P(slot >= pn) = 1 - CDF((pn - ADP)/sigma).
+  function _normCdf(z){
+    var t = 1 / (1 + 0.2316419 * Math.abs(z));
+    var d = 0.3989423 * Math.exp(-z * z / 2);
+    var p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+    return z >= 0 ? 1 - p : p;
+  }
+  function availProb(p, pn){
+    var a = adpOf(p);
+    if (a == null) return null;
+    var sigma = Math.max(4, Math.min(16, 0.16 * a + 4));  // spread widens later in drafts
+    var z = (pn - a) / sigma;
+    return Math.round((1 - _normCdf(z)) * 100);
+  }
+  function availColor(pct){ return pct >= 65 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444'; }
 
   // ── Pick Score (composite) ──────────────────────────────────────────────────
   // Fuses talent (value), value-vs-ADP, positional need, tier strength + cliff,
@@ -994,12 +1078,14 @@ _DRAFT_ROOM_HTML = r"""
 
   function renderSide(){
     _ptc = posTierCounts();
+    _repl = computeReplacement();
     var kdef = (state.type === 'redraft');
     var kbtns = document.querySelectorAll('.dr-pos-kdef');
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
     if (sideTab === 'rec')      return renderRec();
+    if (sideTab === 'future')   return renderFuture();
     if (sideTab === 'queue')    return renderQueue();
     if (sideTab === 'needs')    return renderNeeds();
     return renderBA();
@@ -1035,6 +1121,80 @@ _DRAFT_ROOM_HTML = r"""
       html += playerRowHtml(p, { reason: pickReason(p, counts) });
     }
     listInto(html);
+  }
+
+  // ── Future picks (availability projections) ─────────────────────────────────
+  function renderFuture(){
+    if (!hasOwned()){ listInto('<div class="dr-empty-note">Claim a draft slot to project your upcoming picks.</div>'); return; }
+    var total = state.teams * state.rounds;
+    var upcoming = upcomingOwnedPicks();
+    if (state.current > total || !upcoming.length){ listInto('<div class="dr-empty-note">No upcoming picks to project.</div>'); return; }
+    var pool = availablePool();
+    var html = '<div class="dr-fp-intro">Players projected available at your upcoming picks, with the chance each is still on the board.</div>';
+    for (var i = 0; i < upcoming.length && i < 4; i++){
+      html += futurePickCard(upcoming[i], pool);
+    }
+    listInto(html);
+  }
+  function futurePickCard(pn, pool){
+    var r = Math.ceil(pn / state.teams);
+    var away = pn - state.current;
+    var isNow = (pn === state.current);
+    var scored = pool.map(function(p){
+      return { p: p, prob: availProb(p, pn), val: valOf(p), vor: vorOf(p), adp: adpOf(p) };
+    });
+    var avail = scored.filter(function(s){ return s.prob != null && s.prob >= 35; })
+      .sort(function(a, b){ return b.val - a.val; });
+    var gone = scored.filter(function(s){ return s.prob != null && s.prob < 35; })
+      .sort(function(a, b){ return b.val - a.val; }).slice(0, 4);
+    var bestAvail = avail[0];
+    var bestVor = avail.slice().sort(function(a, b){ return (b.vor == null ? -1e9 : b.vor) - (a.vor == null ? -1e9 : a.vor); })[0];
+    var bestValue = avail.slice().sort(function(a, b){ return (b.adp - pn) - (a.adp - pn); })[0];
+
+    var when = isNow ? '<span class="dr-fp-when dr-fp-now">On the clock</span>'
+                     : '<span class="dr-fp-when">' + away + ' pick' + (away === 1 ? '' : 's') + ' away</span>';
+    var h = '<div class="dr-fp-card">'
+      + '<div class="dr-fp-head"><span class="dr-fp-pick">Pick #' + pn + '</span>'
+      + '<span class="dr-fp-rd">R' + r + '</span>' + when + '</div>';
+
+    h += '<div class="dr-fp-insights">';
+    if (bestAvail) h += fpInsight('Best available', bestAvail.p.name, bestAvail.prob);
+    if (bestVor && bestVor.vor != null) h += fpInsight('Highest VOR', bestVor.p.name + ' (+' + bestVor.vor + ')', bestVor.prob);
+    if (bestValue && bestValue.adp != null && (bestValue.adp - pn) > 0) h += fpInsight('Best value', bestValue.p.name, bestValue.prob);
+    h += '</div>';
+
+    var scarce = [];
+    ['QB','RB','WR','TE'].forEach(function(pos){
+      var rem = posTopRemaining(pos);
+      if (rem > 0 && rem <= 3) scarce.push(pos + ' (' + rem + ' elite left)');
+    });
+    if (scarce.length) h += '<div class="dr-fp-scarce">&#9888; Scarce now: ' + esc(scarce.join(', ')) + '</div>';
+
+    h += '<div class="dr-fp-list">';
+    if (avail.length){ avail.slice(0, 6).forEach(function(s){ h += fpRow(s); }); }
+    else h += '<div class="dr-fp-empty">Hard to project this far out.</div>';
+    h += '</div>';
+
+    if (gone.length){
+      h += '<div class="dr-fp-gone"><span class="dr-fp-gone-lbl">Likely gone:</span> '
+        + esc(gone.map(function(s){ return s.p.name; }).join(', ')) + '</div>';
+    }
+    return h + '</div>';
+  }
+  function fpInsight(label, val, prob){
+    return '<div class="dr-fp-ins"><div class="dr-fp-ins-l">' + esc(label) + '</div>'
+      + '<div class="dr-fp-ins-v">' + esc(val) + '</div>'
+      + (prob != null ? '<div class="dr-fp-ins-p" style="color:' + availColor(prob) + '">' + prob + '% there</div>' : '')
+      + '</div>';
+  }
+  function fpRow(s){
+    var p = s.p;
+    return '<div class="dr-fp-row" data-id="' + esc(String(p.id)) + '">'
+      + '<span class="dr-fp-prob" style="color:' + availColor(s.prob) + ';background:' + availColor(s.prob) + '1a;">' + s.prob + '%</span>'
+      + '<div class="dr-fp-name">' + esc(p.name) + '<span class="dr-fp-pos" style="color:' + posColor(p.position) + '">' + esc(p.position) + '</span></div>'
+      + '<span class="dr-fp-vor" title="Value over replacement">' + (s.vor != null ? (s.vor >= 0 ? '+' + s.vor : s.vor) : '') + '</span>'
+      + '<span class="dr-fp-val">' + Math.round(s.val) + '</span>'
+      + '</div>';
   }
 
   // ── My Team (roster slots) ──────────────────────────────────────────────────
@@ -1635,7 +1795,7 @@ _DRAFT_ROOM_HTML = r"""
     if (star){ e.stopPropagation(); toggleQueue(star.getAttribute('data-star')); return; }
     var draft = e.target.closest('[data-draft]');
     if (draft){ e.stopPropagation(); draftPlayer(draft.getAttribute('data-draft')); return; }
-    var row = e.target.closest('.dr-ba-row');
+    var row = e.target.closest('.dr-ba-row') || e.target.closest('.dr-fp-row');
     if (row) openPreview(row.getAttribute('data-id'));
   });
   document.getElementById('drSummaryBtn').addEventListener('click', openSummary);
