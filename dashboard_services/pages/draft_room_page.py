@@ -1698,7 +1698,7 @@ _DRAFT_ROOM_HTML = r"""
     return '<div class="dr-ba-row' + availClass + '" data-id="' + esc(String(p.id)) + '">'
       + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + '</div>'
-      + '<div class="dr-ba-meta">' + tierBadge(p) + '<span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + ppgPart + byeFlag + '</div>'
+      + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + ppgPart + tierBadge(p) + byeFlag + '</div>'
       + reasonLine + waitLine + availLine + '</div>'
       + '<div class="dr-ba-right-col">'
       + '<div class="dr-ba-metrics">'
@@ -2545,10 +2545,14 @@ _DRAFT_ROOM_HTML = r"""
     } else {
       h += '<div class="dr-prev-note">Not your pick yet. A CPU team is on the clock.</div>';
     }
-    // Full profile link (skip for picks / non-slug-able names).
-    var slug = playerSlug(p.name);
-    if (slug && pos !== 'PICK'){
-      h += '<a class="dr-btn dr-prev-profile" href="/player/' + encodeURIComponent(slug) + '/trade-value" target="_blank" rel="noopener">View full player profile &#8599;</a>';
+    // Full profile: modal when logged in, external link for guests.
+    if (pos !== 'PICK'){
+      if (!cfg.isGuest && typeof openPlayerModal === 'function'){
+        h += '<button class="dr-btn dr-prev-profile" data-profile="' + esc(String(p.id)) + '" data-profile-name="' + esc(p.name) + '">View full profile</button>';
+      } else {
+        var slug = playerSlug(p.name);
+        if (slug) h += '<a class="dr-btn dr-prev-profile" href="/player/' + encodeURIComponent(slug) + '/trade-value" target="_blank" rel="noopener">View full player profile &#8599;</a>';
+      }
     }
     h += '</div>';
     c.innerHTML = h;
@@ -2649,7 +2653,13 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drPreview').addEventListener('click', function(e){
     if (e.target === this || e.target.closest('#drPrevClose')){ closePreview(); return; }
     var d = e.target.closest('.dr-prev-draft');
-    if (d){ var id = d.getAttribute('data-id'); closePreview(); draftPlayer(id); }
+    if (d){ var id = d.getAttribute('data-id'); closePreview(); draftPlayer(id); return; }
+    var prof = e.target.closest('[data-profile]');
+    if (prof && typeof openPlayerModal === 'function'){
+      e.preventDefault();
+      closePreview();
+      openPlayerModal(prof.getAttribute('data-profile'), prof.getAttribute('data-profile-name') || '');
+    }
   });
   document.getElementById('drPosFilters').addEventListener('click', function(e){
     var b = e.target.closest('.dr-pos'); if (!b) return;
