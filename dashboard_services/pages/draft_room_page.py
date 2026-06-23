@@ -166,6 +166,7 @@ _DRAFT_ROOM_HTML = r"""
           <button class="otc-main-tab" data-stab="rec">Recs</button>
           <button class="otc-main-tab" data-stab="queue">Queue</button>
           <button class="otc-main-tab" data-stab="needs">Team</button>
+          <button class="otc-main-tab" data-stab="league">League</button>
         </div>
         <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
@@ -529,7 +530,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-scar-count { font-size: 14px; font-weight: 900; line-height: 1; }
   .dr-scar-label { font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 1px; }
   /* ── Best-at-position chips ── */
-  .dr-bchips { display: flex; gap: 6px; padding: 7px 8px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  .dr-bchips-header { display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 10px 3px; }
+  .dr-bchips-label { font-size: 10px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--text-muted); }
+  .dr-bchips-hint { font-size: 9px; color: var(--text-muted); opacity: .7; }
+  .dr-bchips { display: flex; gap: 6px; padding: 4px 8px 7px; overflow-x: auto; -webkit-overflow-scrolling: touch;
     border-bottom: 1px solid var(--border); }
   .dr-bchip { display: flex; align-items: flex-end; gap: 6px; padding: 5px 8px 5px; border-radius: 9px;
     border: 1px solid var(--border); background: var(--bg); cursor: pointer; flex-shrink: 0;
@@ -583,6 +589,23 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cmp-stat.win { background: rgba(34,197,94,.12); }
   .dr-cmp-stat.win .dr-cmp-stat-val { color: #22c55e; }
   .dr-cmp-actions { display: flex; gap: 8px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+  /* ── League tab ── */
+  .dr-lg-wrap { padding: 10px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  .dr-lg-row { border: 1px solid var(--border); border-radius: 9px; padding: 9px 10px; background: var(--bg); }
+  .dr-lg-mine { border-color: var(--accent,#38bdf8); background: rgba(56,189,248,.05); }
+  .dr-lg-onclock { border-color: #22c55e; background: rgba(34,197,94,.05); animation: drPulse 1.6s ease-in-out infinite; }
+  .dr-lg-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; gap: 6px; }
+  .dr-lg-team { font-size: 12px; font-weight: 800; color: var(--text); }
+  .dr-lg-next { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+  .dr-lg-next-you { color: #22c55e; font-weight: 700; }
+  .dr-lg-pos-row { display: flex; gap: 4px; flex-wrap: wrap; }
+  .dr-lg-pos { display: flex; flex-direction: column; align-items: center; padding: 3px 7px;
+    border-radius: 6px; border: 1px solid; min-width: 36px; }
+  .dr-lg-pos-label { font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+  .dr-lg-pos-count { font-size: 11px; font-weight: 700; color: var(--text); margin-top: 1px; }
+  .dr-lg-need { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+  .dr-lg-need b { font-weight: 800; }
+  .dr-lg-picks { font-size: 10px; color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
 </style>
 
 <script>
@@ -1255,14 +1278,17 @@ _DRAFT_ROOM_HTML = r"""
         else if (a == null && ab == null && valOf(p) > valOf(byPos[pos])){ byPos[pos] = p; }
       }
     });
-    var chipsHtml = '<div class="dr-bchips">';
+    var chipsHtml = '<div class="dr-bchips-header">'
+      + '<span class="dr-bchips-label">Best Available</span>'
+      + (isDynasty ? '<span class="dr-bchips-hint">Tap position count to filter</span>' : '<span class="dr-bchips-hint">Tap to preview</span>')
+      + '</div>'
+      + '<div class="dr-bchips">';
     var hasAny = false;
     positions.forEach(function(pos){
       var p = byPos[pos]; if (!p) return;
       hasAny = true;
       var adp = adpOf(p);
       var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : 'Val ' + Math.round(valOf(p));
-      // Last name only to save space
       var lastName = p.name.split(' ').slice(1).join(' ') || p.name;
       chipsHtml += '<div class="dr-bchip" data-bchip="' + esc(String(p.id)) + '">'
         + '<img class="dr-bchip-img" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
@@ -1599,7 +1625,99 @@ _DRAFT_ROOM_HTML = r"""
     if (sideTab === 'rec')      return renderRec();
     if (sideTab === 'queue')    return renderQueue();
     if (sideTab === 'needs')    return renderNeeds();
+    if (sideTab === 'league')   return renderLeague();
     return renderBA();
+  }
+
+  // ── League needs tracker ────────────────────────────────────────────────────
+  // Reads actual state.picks to build each team's current roster, then surfaces
+  // their positional gaps. Works identically for mock and live drafts since both
+  // write into state.picks using the same pick-number keys.
+  function renderLeague(){
+    var teams = state.teams || 12;
+    var targets = posTargets();
+    var positions = ['QB','RB','WR','TE'];
+
+    // Map each pick to its team slot and bucket the drafted players.
+    var teamPicks = {};
+    for (var i = 1; i <= teams; i++) teamPicks[i] = [];
+    Object.keys(state.picks).forEach(function(k){
+      var pn = parseInt(k, 10);
+      var p = state.picks[pn]; if (!p) return;
+      var slot = slotOnClock(pn, teams, state.order);
+      if (teamPicks[slot]) teamPicks[slot].push(p);
+    });
+
+    // Find each team's next upcoming unfilled pick.
+    var nextPicks = {};
+    var total = teams * state.rounds;
+    for (var pn = state.current; pn <= total; pn++){
+      var sl = slotOnClock(pn, teams, state.order);
+      if (!nextPicks[sl] && !state.picks[pn]) nextPicks[sl] = pn;
+    }
+
+    function posCounts(picks){
+      var c = { QB:0, RB:0, WR:0, TE:0, K:0, DEF:0 };
+      picks.forEach(function(p){ var pos = (p.position||'').toUpperCase(); if (c[pos] != null) c[pos]++; });
+      return c;
+    }
+    function topNeed(counts){
+      var best = null, bestGap = -1;
+      positions.forEach(function(pos){
+        var gap = Math.max(0, (targets[pos] || 0) - (counts[pos] || 0));
+        if (gap > bestGap){ bestGap = gap; best = gap > 0 ? pos : null; }
+      });
+      return best;
+    }
+
+    // User slot first, then remaining in order.
+    var slots = [];
+    for (var i = 1; i <= teams; i++) slots.push(i);
+    if (state.slot){
+      slots.sort(function(a, b){
+        if (a === state.slot) return -1;
+        if (b === state.slot) return 1;
+        return a - b;
+      });
+    }
+
+    var onClockSlot = slotOnClock(state.current, teams, state.order);
+    var html = '<div class="dr-lg-wrap">';
+    slots.forEach(function(slot){
+      var picks = teamPicks[slot] || [];
+      var counts = posCounts(picks);
+      var nextPick = nextPicks[slot];
+      var isMe = (slot === (state.slot || -1));
+      var isOnClock = (slot === onClockSlot);
+      var need = topNeed(counts);
+      var rowCls = 'dr-lg-row' + (isMe ? ' dr-lg-mine' : '') + (isOnClock && !isMe ? ' dr-lg-onclock' : '');
+      var nextLabel = nextPick
+        ? '<span class="dr-lg-next' + (isMe ? ' dr-lg-next-you' : '') + '">'
+          + (isOnClock ? 'On clock: ' : 'Next: ') + '#' + nextPick + '</span>'
+        : '<span class="dr-lg-next" style="color:#22c55e;">Done</span>';
+      html += '<div class="' + rowCls + '">'
+        + '<div class="dr-lg-header">'
+        + '<span class="dr-lg-team">' + (isMe ? 'You (Team ' + slot + ')' : (isOnClock ? '<b>Team ' + slot + '</b>' : 'Team ' + slot)) + '</span>'
+        + nextLabel + '</div>'
+        + '<div class="dr-lg-pos-row">';
+      positions.forEach(function(pos){
+        var t = targets[pos] || 0;
+        var have = counts[pos] || 0;
+        var filled = have >= t;
+        var col = filled ? '#22c55e' : (have > 0 ? '#f59e0b' : '#ef4444');
+        html += '<div class="dr-lg-pos" style="border-color:' + col + '44;background:' + col + '18;">'
+          + '<span class="dr-lg-pos-label" style="color:' + col + '">' + pos + '</span>'
+          + '<span class="dr-lg-pos-count">' + have + '/' + t + '</span>'
+          + '</div>';
+      });
+      html += '</div>';
+      if (need && !isMe){
+        html += '<div class="dr-lg-need">Likely targeting: <b style="color:' + posColor(need) + '">' + need + '</b></div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    listInto(html);
   }
 
 
