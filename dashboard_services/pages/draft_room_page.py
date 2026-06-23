@@ -113,7 +113,7 @@ _DRAFT_ROOM_HTML = r"""
 
       <div class="dr-setup-section">
         <div class="dr-setup-section-label">Your Draft Capital</div>
-        <div class="dr-setup-desc" style="margin-bottom:8px;">Defaults to your slot's picks. Add picks you acquired in trades (e.g. a second first-rounder), or remove picks you traded away.</div>
+        <div class="dr-setup-desc" style="margin-bottom:8px;">Defaults to your slot's picks. Tap + on a round to add a traded-in pick, or click a pick to remove one you traded away.</div>
         <div id="drCapitalSection"></div>
       </div>
 
@@ -396,6 +396,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ba-pschip small { display: block; font-size: 7.5px; font-weight: 700; letter-spacing: .06em; opacity: .8; margin-top: 2px; }
   .dr-ba-right-col { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
   .dr-ba-metrics { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .dr-ba-actions { display: flex; align-items: center; gap: 6px; }
   .dr-ba-draft { padding: 5px 12px; border-radius: 7px; border: 1px solid var(--accent,#122d4b);
     background: transparent; color: var(--accent,#122d4b); font-size: 11px; font-weight: 800;
     cursor: pointer; white-space: nowrap; transition: background .12s, color .12s; }
@@ -467,25 +468,49 @@ _DRAFT_ROOM_HTML = r"""
   .dr-step-btn:hover { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); }
   .dr-step-val { font-size:14px; font-weight:800; color:var(--text); min-width:18px; text-align:center; }
   /* ── Draft capital (setup) ── */
-  .dr-cap-chips { display:flex; flex-wrap:wrap; gap:7px; padding:12px; background:var(--bg);
-    border:1px solid var(--border); border-radius:10px; margin-bottom:10px; min-height:52px; align-items:center; }
-  .dr-cap-chip { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700;
-    padding:6px 7px 6px 4px; border-radius:8px; background:rgba(56,189,248,.1); color:var(--text);
-    border:1px solid rgba(56,189,248,.3); }
-  .dr-cap-chip-rd { font-size:9px; font-weight:900; text-transform:uppercase; letter-spacing:.05em;
-    padding:3px 7px; border-radius:5px; background:rgba(56,189,248,.22); color:var(--accent,#38bdf8); flex-shrink:0; }
-  .dr-cap-traded { background:rgba(245,158,11,.1); border-color:rgba(245,158,11,.35); }
-  .dr-cap-traded .dr-cap-chip-rd { background:rgba(245,158,11,.22); color:#f59e0b; }
-  .dr-cap-x { border:none; background:rgba(127,127,127,.18); color:var(--text-muted); width:18px; height:18px;
-    border-radius:5px; font-size:14px; line-height:1; cursor:pointer; display:flex; align-items:center;
-    justify-content:center; padding:0; flex-shrink:0; margin-left:2px; }
-  .dr-cap-x:hover { background:#ef4444; color:#fff; }
-  .dr-cap-empty { font-size:12px; color:var(--text-muted); font-style:italic; }
-  .dr-cap-add { display:flex; gap:8px; align-items:center; background:var(--bg);
-    border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
-  .dr-cap-add select { padding:7px 9px; border-radius:7px; border:1px solid var(--border);
-    background:var(--card); color:var(--text); font-size:13px; flex:1; min-width:0; }
-  .dr-cap-add .dr-btn { padding:7px 14px; flex-shrink:0; }
+  .dr-cap-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .dr-cap-count { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; }
+  .dr-cap-list { max-height:440px; overflow-y:auto; border:1px solid var(--border); border-radius:12px;
+    background:var(--bg); padding:4px; }
+  .dr-cap-list::-webkit-scrollbar { width:8px; }
+  .dr-cap-list::-webkit-scrollbar-thumb { background:rgba(127,127,127,.28); border-radius:8px; }
+  .dr-cap-row { display:flex; align-items:center; gap:10px; padding:7px 8px; border-radius:9px;
+    transition:background .12s; }
+  .dr-cap-row:hover { background:rgba(127,127,127,.06); }
+  .dr-cap-row.is-open { background:rgba(56,189,248,.06); }
+  .dr-cap-rlabel { font-size:11px; font-weight:900; color:var(--text); width:54px; flex-shrink:0;
+    letter-spacing:.02em; }
+  .dr-cap-rpicks { flex:1; min-width:0; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .dr-cap-none { font-size:11.5px; color:var(--text-muted); opacity:.6; }
+  .dr-cap-pill { display:inline-flex; align-items:center; gap:3px; font-size:12px; font-weight:700;
+    padding:4px 9px; border-radius:999px; background:rgba(56,189,248,.12); color:var(--text);
+    cursor:pointer; transition:background .12s, color .12s; user-select:none; }
+  .dr-cap-pill:hover { background:#ef4444; color:#fff; }
+  .dr-cap-pill-x { font-style:normal; font-size:13px; line-height:1; opacity:0; width:0; overflow:hidden;
+    transition:opacity .12s, width .12s; }
+  .dr-cap-pill:hover .dr-cap-pill-x { opacity:1; width:11px; }
+  .dr-cap-pill-traded { background:rgba(245,158,11,.16); }
+  .dr-cap-addbtn { width:26px; height:26px; flex-shrink:0; border:none; border-radius:7px;
+    background:rgba(127,127,127,.1); color:var(--text-muted); font-size:17px; font-weight:600; line-height:1;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; transition:all .12s; }
+  .dr-cap-addbtn:hover { background:var(--accent,#38bdf8); color:#fff; }
+  .dr-cap-row.is-open .dr-cap-addbtn { background:var(--accent,#38bdf8); color:#fff; }
+  .dr-cap-picker { display:flex; align-items:center; gap:10px; padding:4px 8px 10px 72px; }
+  .dr-cap-picker-lbl { font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase;
+    letter-spacing:.04em; flex-shrink:0; }
+  .dr-cap-slots { display:flex; flex-wrap:wrap; gap:5px; }
+  .dr-cap-slot { width:28px; height:28px; border:1px solid var(--border); border-radius:7px; background:var(--card);
+    color:var(--text-muted); font-size:11px; font-weight:700; cursor:pointer; transition:all .12s; padding:0; }
+  .dr-cap-slot:hover { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); }
+  .dr-cap-slot.home { border-style:dashed; }
+  .dr-cap-slot.on { background:var(--accent,#38bdf8); border-color:var(--accent,#38bdf8); color:#fff; }
+  .dr-cap-late { border-top:1px solid var(--border); margin-top:4px; }
+  .dr-cap-latehead { width:100%; display:flex; align-items:center; gap:10px; padding:9px 8px; border:none;
+    background:none; cursor:pointer; transition:background .12s; border-radius:9px; }
+  .dr-cap-latehead:hover { background:rgba(127,127,127,.06); }
+  .dr-cap-latecount { flex:1; text-align:left; font-size:11.5px; color:var(--text-muted); }
+  .dr-cap-chev { font-style:normal; font-size:9px; color:var(--text-muted); }
+  .dr-cap-latebody { padding-bottom:2px; }
   /* ── Team tab PS badge ── */
   .dr-rslot-ps { font-size:11px; font-weight:800; flex-shrink:0; margin-right:2px; }
 </style>
@@ -515,6 +540,8 @@ _DRAFT_ROOM_HTML = r"""
   var _setupRoster = null; // roster config built on setup page
   var _setupOwned = null;  // claimed picks (pickNumber -> true) built on setup page
   var _setupOwnedSig = ''; // staleness signature for _setupOwned
+  var _capAddRound = null; // round whose inline slot picker is open (or null)
+  var _capLateOpen = false;// whether the combined late-rounds section is expanded
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
   var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
   var _boardSig = null;    // board structure signature (rebuild only when it changes)
@@ -696,33 +723,77 @@ _DRAFT_ROOM_HTML = r"""
     for (var r = 1; r <= c.rounds; r++) o[pickNum(r, c.slot, c.teams, c.order)] = true;
     return o;
   }
+  // Picks owned in a given round, sorted by overall pick number.
+  function roundPicks(r, c){
+    var out = [];
+    for (var sl = 1; sl <= c.teams; sl++){
+      var pn = pickNum(r, sl, c.teams, c.order);
+      if (_setupOwned[pn]) out.push(pn);
+    }
+    return out.sort(function(a, b){ return a - b; });
+  }
+  // One pick pill (#pn) with a hover remove control.
+  function capPill(pn, c){
+    var sl = slotOnClock(pn, c.teams, c.order);
+    var home = (sl === c.slot);
+    return '<span class="dr-cap-pill' + (home ? '' : ' dr-cap-pill-traded') + '" data-rm="' + pn + '" title="' + (home ? 'Your pick' : 'Traded-in pick') + ' &middot; click to remove">'
+      + '#' + pn + '<i class="dr-cap-pill-x">&times;</i></span>';
+  }
+  // Inline slot picker shown under a round when its + button is active.
+  function capSlotPicker(r, c){
+    var owned = {};
+    roundPicks(r, c).forEach(function(pn){ owned[slotOnClock(pn, c.teams, c.order)] = true; });
+    var cells = '';
+    for (var sl = 1; sl <= c.teams; sl++){
+      var pn = pickNum(r, sl, c.teams, c.order);
+      var on = !!owned[sl], home = (sl === c.slot);
+      cells += '<button type="button" class="dr-cap-slot' + (on ? ' on' : '') + (home ? ' home' : '') + '" data-add="' + pn + '">' + sl + '</button>';
+    }
+    return '<div class="dr-cap-picker"><span class="dr-cap-picker-lbl">Pick a slot</span><div class="dr-cap-slots">' + cells + '</div></div>';
+  }
+  // A single round row: label, owned pills, inline add toggle, optional picker.
+  function capRow(r, c){
+    var pills = roundPicks(r, c).map(function(pn){ return capPill(pn, c); }).join('');
+    var open = (_capAddRound === r);
+    var h = '<div class="dr-cap-row' + (open ? ' is-open' : '') + '">'
+      + '<span class="dr-cap-rlabel">R' + r + '</span>'
+      + '<div class="dr-cap-rpicks">' + (pills || '<span class="dr-cap-none">No picks</span>') + '</div>'
+      + '<button type="button" class="dr-cap-addbtn" data-addround="' + r + '" aria-label="Add pick to round ' + r + '">' + (open ? '&times;' : '+') + '</button>'
+      + '</div>';
+    if (open) h += capSlotPicker(r, c);
+    return h;
+  }
   function renderSetupCapital(){
     var c = setupCtl();
     var sig = [c.teams, c.rounds, c.order, c.slot].join('|');
     if (!_setupOwned || _setupOwnedSig !== sig){
       _setupOwned = defaultSetupOwned(c);   // reset to the slot's natural picks
       _setupOwnedSig = sig;
+      _capAddRound = null; _capLateOpen = false;
     }
-    var picks = Object.keys(_setupOwned).filter(function(k){ return _setupOwned[k]; })
-      .map(Number).sort(function(a, b){ return a - b; });
-    var chips = picks.map(function(pn){
-      var r = Math.ceil(pn / c.teams), sl = slotOnClock(pn, c.teams, c.order);
-      var home = (sl === c.slot);
-      return '<span class="dr-cap-chip' + (home ? '' : ' dr-cap-traded') + '">'
-        + '<span class="dr-cap-chip-rd">' + (home ? 'R' + r : 'R' + r + ' TRADE') + '</span>'
-        + ' #' + pn
-        + '<button type="button" class="dr-cap-x" data-rm="' + pn + '" aria-label="Remove">&times;</button></span>';
-    }).join('');
-    // Add-a-pick control: round + slot selectors.
-    var ropts = '', sopts = '';
-    for (var rr = 1; rr <= c.rounds; rr++) ropts += '<option value="' + rr + '">R' + rr + '</option>';
-    for (var ss = 1; ss <= c.teams; ss++) sopts += '<option value="' + ss + '"' + (ss === c.slot ? ' selected' : '') + '>Slot ' + ss + '</option>';
-    var html = '<div class="dr-cap-chips">' + (chips || '<span class="dr-cap-empty">No picks claimed.</span>') + '</div>'
-      + '<div class="dr-cap-add">'
-      + '<select id="drCapRound">' + ropts + '</select>'
-      + '<select id="drCapSlot">' + sopts + '</select>'
-      + '<button type="button" class="dr-btn" id="drCapAdd">Add pick</button>'
-      + '</div>';
+    var total = Object.keys(_setupOwned).filter(function(k){ return _setupOwned[k]; }).length;
+    // Rounds 1-20 individually; final 5 (when present) collapse into one section.
+    var splitAt = (c.rounds > 20) ? (c.rounds - 5) : c.rounds;
+    var rows = '';
+    for (var r = 1; r <= splitAt; r++) rows += capRow(r, c);
+    var late = '';
+    if (c.rounds > splitAt){
+      var lateCount = 0;
+      for (var lr = splitAt + 1; lr <= c.rounds; lr++) lateCount += roundPicks(lr, c).length;
+      var lateBody = '';
+      if (_capLateOpen){ for (var lr2 = splitAt + 1; lr2 <= c.rounds; lr2++) lateBody += capRow(lr2, c); }
+      late = '<div class="dr-cap-late' + (_capLateOpen ? ' is-open' : '') + '">'
+        + '<button type="button" class="dr-cap-latehead" id="drCapLateToggle">'
+        + '<span class="dr-cap-rlabel">R' + (splitAt + 1) + '-R' + c.rounds + '</span>'
+        + '<span class="dr-cap-latecount">' + lateCount + ' pick' + (lateCount === 1 ? '' : 's') + '</span>'
+        + '<i class="dr-cap-chev">' + (_capLateOpen ? '&#9650;' : '&#9660;') + '</i></button>'
+        + (_capLateOpen ? ('<div class="dr-cap-latebody">' + lateBody + '</div>') : '')
+        + '</div>';
+    }
+    var html = '<div class="dr-cap-head">'
+      + '<span class="dr-cap-count">' + total + ' pick' + (total === 1 ? '' : 's') + ' owned</span>'
+      + '</div>'
+      + '<div class="dr-cap-list">' + rows + late + '</div>';
     document.getElementById('drCapitalSection').innerHTML = html;
   }
 
@@ -1141,7 +1212,6 @@ _DRAFT_ROOM_HTML = r"""
         + (ap >= 65 ? '&#10003; ' : '&#8226; ') + ap + '% at #' + opts.availAt.pn + '</div>';
     }
     return '<div class="dr-ba-row' + availClass + '" data-id="' + esc(String(p.id)) + '">'
-      + '<button class="dr-star' + (isQueued(p.id) ? ' on' : '') + '" data-star="' + esc(String(p.id)) + '" title="Queue" aria-label="Queue">' + (isQueued(p.id) ? '★' : '☆') + '</button>'
       + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + tierBadge(p) + '</div>'
       + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + '</div>'
@@ -1151,7 +1221,10 @@ _DRAFT_ROOM_HTML = r"""
       + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div><div class="dr-ba-sub">' + sub + '</div></div>'
       + psChip
       + '</div>'
+      + '<div class="dr-ba-actions">'
+      + '<button class="dr-star' + (isQueued(p.id) ? ' on' : '') + '" data-star="' + esc(String(p.id)) + '" title="Queue" aria-label="Queue">' + (isQueued(p.id) ? '★' : '☆') + '</button>'
       + '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>'
+      + '</div>'
       + '</div>'
       + '</div>';
   }
@@ -1925,14 +1998,29 @@ _DRAFT_ROOM_HTML = r"""
     renderSetupRoster();
   });
   document.getElementById('drCapitalSection').addEventListener('click', function(e){
+    if (!_setupOwned) _setupOwned = {};
+    // Remove a pick by clicking its pill.
     var rm = e.target.closest('[data-rm]');
     if (rm){ delete _setupOwned[rm.getAttribute('data-rm')]; renderSetupCapital(); return; }
-    if (e.target.closest('#drCapAdd')){
-      var c = setupCtl();
-      var rnd = parseInt(document.getElementById('drCapRound').value, 10) || 1;
-      var sl  = parseInt(document.getElementById('drCapSlot').value, 10) || c.slot;
-      if (!_setupOwned) _setupOwned = {};
-      _setupOwned[pickNum(rnd, sl, c.teams, c.order)] = true;
+    // Toggle a pick on/off from the inline slot picker.
+    var add = e.target.closest('[data-add]');
+    if (add){
+      var pn = add.getAttribute('data-add');
+      if (_setupOwned[pn]) delete _setupOwned[pn]; else _setupOwned[pn] = true;
+      renderSetupCapital();
+      return;
+    }
+    // Open/close the inline slot picker for a round.
+    var ar = e.target.closest('[data-addround]');
+    if (ar){
+      var r = parseInt(ar.getAttribute('data-addround'), 10);
+      _capAddRound = (_capAddRound === r) ? null : r;
+      renderSetupCapital();
+      return;
+    }
+    // Expand/collapse the combined late-rounds section.
+    if (e.target.closest('#drCapLateToggle')){
+      _capLateOpen = !_capLateOpen;
       renderSetupCapital();
     }
   });
