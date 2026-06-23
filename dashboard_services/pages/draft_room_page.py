@@ -293,6 +293,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-run-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: rgba(127,127,127,.14); color: var(--text); }
   .dr-run-hot { background: rgba(239,68,68,.16); color: #ef4444; }
   .dr-ba-delta { font-size: 10px; font-weight: 800; color: #22c55e; }
+  .dr-ba-ps { font-size: 10px; font-weight: 800; color: var(--accent,#38bdf8); }
+  .dr-prev-grade { margin-left: auto; text-align: center; }
+  .dr-prev-grade-v { font-size: 26px; font-weight: 900; color: var(--accent,#38bdf8); line-height: 1; }
+  .dr-prev-grade-l { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-top: 2px; }
+  .dr-prev-reason { font-size: 12px; font-weight: 700; color: var(--text); background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 10px; margin-bottom: 12px; text-align: center; }
   .dr-empty-note { padding: 22px 14px; font-size: 12px; color: var(--text-muted); text-align: center; }
   /* tiers */
   .dr-tier { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 999px; margin-left: 6px;
@@ -1100,9 +1106,24 @@ _DRAFT_ROOM_HTML = r"""
       return valOf(b) - valOf(a);
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
+    var counts = myPosCounts();
+    var maxVal = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxVal) maxVal = v; });
     var html = '';
-    for (var i = 0; i < Math.min(pool.length, 200); i++){ html += playerRowHtml(pool[i]); }
+    for (var i = 0; i < Math.min(pool.length, 200); i++){
+      var p = pool[i];
+      var adp = adpOf(p);
+      var extra = '<div class="dr-ba-adp">' + (adp != null ? ('ADP ' + Number(adp).toFixed(1)) : '') + '</div>'
+        + '<div class="dr-ba-ps">PS ' + pickScore(p, maxVal, counts) + '</div>';
+      html += playerRowHtml(p, extra);
+    }
     listInto(html);
+  }
+
+  // Pick Score for a single player (computes the pool max + your roster counts).
+  function pickScoreFor(p){
+    var pool = availablePool();
+    var maxVal = 0; pool.forEach(function(x){ var v = valOf(x); if (v > maxVal) maxVal = v; });
+    return pickScore(p, maxVal, myPosCounts());
   }
 
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
@@ -1206,7 +1227,7 @@ _DRAFT_ROOM_HTML = r"""
   }
   function openPreview(id){
     var p = playersById[String(id)]; if (!p) return;
-    var adp = adpOf(p), t = tierOf(p);
+    var adp = adpOf(p), t = tierOf(p), ps = pickScoreFor(p);
     var posRank = state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '');
     var c = document.getElementById('drPreviewCard');
     var h = '<button class="dr-prev-close" id="drPrevClose" aria-label="Close">&times;</button>'
@@ -1214,7 +1235,9 @@ _DRAFT_ROOM_HTML = r"""
       + '<img class="dr-prev-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-prev-id"><div class="dr-prev-name">' + esc(p.name) + (t ? (' <span class="dr-tier' + (isTierCliff(p) ? ' dr-tier-cliff' : '') + '">T' + t + '</span>') : '') + '</div>'
       + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + '</div></div>'
+      + '<div class="dr-prev-grade"><div class="dr-prev-grade-v">' + ps + '</div><div class="dr-prev-grade-l">Pick Score</div></div>'
       + '</div>'
+      + '<div class="dr-prev-reason">' + esc(pickReason(p, myPosCounts())) + '</div>'
       + '<div class="dr-prev-stats">'
       + statBox('Value', Math.round(valOf(p)))
       + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '–')
