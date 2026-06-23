@@ -297,11 +297,10 @@ _DRAFT_ROOM_HTML = r"""
   .dr-run-banner { margin: 10px 10px 4px; padding: 8px 10px; border-radius: 8px; font-size: 12px;
     background: rgba(239,68,68,.12); color: #ef4444; border: 1px solid rgba(239,68,68,.3); }
   .dr-run-banner b { color: #ef4444; }
-  .dr-prev-grade { margin-left: auto; text-align: center; }
-  .dr-prev-grade-v { font-size: 26px; font-weight: 900; color: var(--accent,#38bdf8); line-height: 1; }
-  .dr-prev-grade-l { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-top: 2px; }
-  .dr-prev-reason { font-size: 12px; font-weight: 700; color: var(--text); background: var(--bg); border: 1px solid var(--border);
-    border-radius: 8px; padding: 7px 10px; margin-bottom: 12px; text-align: center; }
+  .dr-prev-score-hero { border: 1px solid; border-radius: 10px; padding: 12px 10px 10px; margin-bottom: 12px; text-align: center; }
+  .dr-prev-score-num { font-size: 44px; font-weight: 900; line-height: 1; }
+  .dr-prev-score-lbl { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 2px; }
+  .dr-prev-score-reason { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-top: 6px; }
   .dr-empty-note { padding: 22px 14px; font-size: 12px; color: var(--text-muted); text-align: center; }
   /* tiers */
   .dr-tier { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 999px; margin-left: 6px;
@@ -694,16 +693,24 @@ _DRAFT_ROOM_HTML = r"""
     var t = posTargets()[pos];
     var need = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
     var adp = adpOf(p);
-    // Steal vs reach: positive when a player is still available PAST his ADP
-    // (current pick later than ADP); negative when you'd be reaching for him.
-    var adpVal = (adp != null) ? clamp01((state.current - adp) / 24 + 0.5) : 0.5;
+    // Steal vs reach: reward players who have fallen past ADP, stay neutral for
+    // picks within 8 of ADP (drafting a top-3 player at pick 1 is not a "reach"),
+    // and penalize genuine big reaches beyond that window.
+    var adpVal;
+    if (adp != null) {
+      var gap = state.current - adp;
+      if (gap >= 0)      adpVal = clamp01(gap / 20 + 0.5);           // steal: 0.5 → 1.0
+      else if (gap >= -8) adpVal = clamp01(0.5 + (gap + 8) / 80);    // slight early: ~0.5-0.6
+      else               adpVal = clamp01((gap + 8) / 36 + 0.5);     // big reach penalty
+    } else { adpVal = 0.5; }
     var tier = tierOf(p);
     var tierNorm = tier ? (10 - Math.min(tier, 9)) / 9 : valueNorm;
-    if (isTierCliff(p)) tierNorm = clamp01(tierNorm + 0.15);                         // urgency bump
+    if (isTierCliff(p)) tierNorm = clamp01(tierNorm + 0.15);         // urgency bump
     var mom = clamp01((p.rank_change_7d || 0) / 20 + 0.5);
     var age = (p.age != null) ? Number(p.age) : null;
     var youth = (age != null && ['RB','WR','TE','QB'].indexOf(pos) >= 0) ? clamp01((30 - age) / 12) : 0.5;
-    var s = 0.42*valueNorm + 0.20*need + 0.16*adpVal + 0.10*tierNorm + 0.06*mom + 0.06*youth;
+    // Value + tier are the primary drivers; ADP is a secondary signal.
+    var s = 0.48*valueNorm + 0.18*need + 0.10*adpVal + 0.14*tierNorm + 0.05*mom + 0.05*youth;
     return Math.round(s * 100);
   }
   function pickReason(p, counts){
@@ -1222,24 +1229,34 @@ _DRAFT_ROOM_HTML = r"""
     if (sim && slotOnClock(state.current, state.teams, state.order) !== state.slot) return false;
     return true;
   }
+  function psColor(ps){ return ps >= 90 ? '#22c55e' : ps >= 75 ? '#38bdf8' : ps >= 60 ? '#f59e0b' : '#ef4444'; }
   function openPreview(id){
     var p = playersById[String(id)]; if (!p) return;
     var adp = adpOf(p), t = tierOf(p), ps = pickScoreFor(p);
     var posRank = state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '');
+    var adpGap = (adp != null) ? (state.current - adp) : null;
+    var vsAdp = adpGap != null ? (adpGap >= 0 ? ('+' + Math.round(adpGap)) : String(Math.round(adpGap))) : '–';
+    var sc = psColor(ps);
     var c = document.getElementById('drPreviewCard');
     var h = '<button class="dr-prev-close" id="drPrevClose" aria-label="Close">&times;</button>'
+      // Player identity row
       + '<div class="dr-prev-top">'
       + '<img class="dr-prev-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-prev-id"><div class="dr-prev-name">' + esc(p.name) + (t ? (' <span class="dr-tier' + (isTierCliff(p) ? ' dr-tier-cliff' : '') + '">T' + t + '</span>') : '') + '</div>'
-      + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + '</div></div>'
-      + '<div class="dr-prev-grade"><div class="dr-prev-grade-v">' + ps + '</div><div class="dr-prev-grade-l">Pick Score</div></div>'
+      + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + (posRank ? (' &middot; ' + esc(posRank)) : '') + '</div>'
+      + '</div></div>'
+      // Pick Score hero
+      + '<div class="dr-prev-score-hero" style="border-color:' + sc + ';background:' + sc + '1a;">'
+      + '<div class="dr-prev-score-num" style="color:' + sc + '">' + ps + '</div>'
+      + '<div class="dr-prev-score-lbl">Pick Score</div>'
+      + '<div class="dr-prev-score-reason">' + esc(pickReason(p, myPosCounts())) + '</div>'
       + '</div>'
-      + '<div class="dr-prev-reason">' + esc(pickReason(p, myPosCounts())) + '</div>'
+      // Stats row
       + '<div class="dr-prev-stats">'
       + statBox('Value', Math.round(valOf(p)))
       + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '–')
-      + statBox('Pos Rank', posRank || '–')
-      + (p.age != null ? statBox('Age', Number(p.age).toFixed(1)) : '')
+      + statBox('vs ADP', vsAdp)
+      + (p.age != null ? statBox('Age', Number(p.age).toFixed(1)) : statBox('Pos Rank', posRank || '–'))
       + '</div>';
     if (state.mode === 'live'){
       h += '<div class="dr-prev-note">Live draft. Picks come from the platform.</div>';
