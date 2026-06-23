@@ -700,6 +700,42 @@ _DRAFT_ROOM_HTML = r"""
   .dr-lg-need { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
   .dr-lg-need b { font-weight: 800; }
   .dr-lg-picks { font-size: 10px; color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
+  /* ── Auto-suggest banner ── */
+  .dr-suggest { padding: 8px 10px; border-bottom: 1px solid var(--border); background: rgba(34,197,94,.05); }
+  .dr-suggest-title { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
+    color: #22c55e; margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
+  .dr-suggest-cards { display: flex; flex-direction: column; gap: 4px; }
+  .dr-suggest-card { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px;
+    background: var(--card); border: 1px solid var(--border); cursor: pointer;
+    transition: border-color .12s, background .12s; }
+  .dr-suggest-card:hover { border-color: #22c55e; background: rgba(34,197,94,.05); }
+  .dr-suggest-rank { font-size: 10px; font-weight: 900; color: var(--text-muted); width: 12px; flex-shrink: 0; text-align: center; }
+  .dr-suggest-hs { width: 28px; height: 28px; border-radius: 5px 5px 0 0; object-fit: cover;
+    object-position: top center; align-self: flex-end; flex-shrink: 0; }
+  .dr-suggest-body { flex: 1; min-width: 0; }
+  .dr-suggest-name { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .dr-suggest-reason { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dr-suggest-ps { font-size: 13px; font-weight: 900; flex-shrink: 0; }
+  /* ── Roster projection card ── */
+  .dr-proj-card { margin: 10px 0 2px; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--bg); }
+  .dr-proj-title { font-size: 9px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--text-muted); margin-bottom: 8px; }
+  .dr-proj-stats { display: flex; gap: 10px; }
+  .dr-proj-stat { flex: 1; text-align: center; }
+  .dr-proj-val { font-size: 19px; font-weight: 900; color: var(--text); line-height: 1; }
+  .dr-proj-lbl { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
+  .dr-proj-bar-wrap { margin-top: 8px; }
+  .dr-proj-bar-bg { height: 5px; border-radius: 3px; background: rgba(127,127,127,.15); overflow: hidden; }
+  .dr-proj-bar-fill { height: 100%; border-radius: 3px; background: var(--accent,#38bdf8); }
+  .dr-proj-bar-lbl { font-size: 9px; color: var(--text-muted); margin-top: 3px; }
+  /* ── Summary report card stats row ── */
+  .dr-sum-stats { display: flex; gap: 8px; margin: 10px 0 6px; }
+  .dr-sum-stat { flex: 1; text-align: center; background: var(--bg); border-radius: 8px;
+    padding: 8px 4px; border: 1px solid var(--border); }
+  .dr-sum-stat-v { font-size: 17px; font-weight: 900; color: var(--text); line-height: 1; }
+  .dr-sum-stat-l { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
 </style>
 
 <script>
@@ -2003,6 +2039,31 @@ _DRAFT_ROOM_HTML = r"""
     if (bench.length){ bench.forEach(function(p){ html += slotRow('BN', p); }); }
     else { html += slotRow('BN', null); }
     html += '</div>';
+    // Roster projection: sum proj_ppg for all my drafted players
+    var projPlayers = mine.filter(function(p){ return p.proj_ppg != null; });
+    if (projPlayers.length >= 2){
+      var myProjTotal = 0;
+      projPlayers.forEach(function(p){ myProjTotal += Number(p.proj_ppg); });
+      // League average: distribute top players' proj_ppg across all teams
+      var allProj = [];
+      players.forEach(function(p){ if (p.proj_ppg != null) allProj.push(Number(p.proj_ppg)); });
+      allProj.sort(function(a, b){ return b - a; });
+      var numTeams = state.teams || 12, numRds = state.rounds || 15;
+      var topSlice = allProj.slice(0, numTeams * numRds);
+      var leagueAvg = topSlice.length ? topSlice.reduce(function(a, b){ return a + b; }, 0) / numTeams : 0;
+      var projPct = leagueAvg > 0 ? Math.round(myProjTotal / leagueAvg * 100) : 0;
+      var projColor = projPct >= 108 ? '#22c55e' : projPct >= 92 ? '#f59e0b' : '#ef4444';
+      html += '<div class="dr-proj-card">'
+        + '<div class="dr-proj-title">Roster Projection</div>'
+        + '<div class="dr-proj-stats">'
+        + '<div class="dr-proj-stat"><div class="dr-proj-val">' + myProjTotal.toFixed(1) + '</div><div class="dr-proj-lbl">My Proj PPG</div></div>'
+        + (leagueAvg > 0 ? '<div class="dr-proj-stat"><div class="dr-proj-val">' + leagueAvg.toFixed(1) + '</div><div class="dr-proj-lbl">Avg Team</div></div>' : '')
+        + (leagueAvg > 0 ? '<div class="dr-proj-stat"><div class="dr-proj-val" style="color:' + projColor + '">' + projPct + '%</div><div class="dr-proj-lbl">vs League</div></div>' : '')
+        + '</div>'
+        + (leagueAvg > 0 ? '<div class="dr-proj-bar-wrap"><div class="dr-proj-bar-bg"><div class="dr-proj-bar-fill" style="width:' + Math.min(100, projPct) + '%;background:' + projColor + '"></div></div>'
+          + '<div class="dr-proj-bar-lbl">' + projPlayers.length + ' of ' + mine.length + ' picks have projection data</div></div>' : '')
+        + '</div>';
+    }
     listInto(html);
   }
 
@@ -2288,7 +2349,34 @@ _DRAFT_ROOM_HTML = r"""
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
     var nextPick = hasOwned() ? nextOwnedAfterCurrent() : null;
-    var html = balanceAlert();
+    // Auto-suggest: show top 3 picks when it's the user's turn
+    var suggestHtml = '';
+    if (hasOwned() && isMyPick(state.current) && state.current <= state.teams * state.rounds){
+      var sugPool = availablePool().slice();
+      var sugMax = 0; sugPool.forEach(function(x){ var v = valOf(x); if (v > sugMax) sugMax = v; });
+      var sugCounts = myPosCounts();
+      sugPool.forEach(function(x){ x._sugps = pickScore(x, sugMax, sugCounts); });
+      sugPool.sort(function(a, b){ return b._sugps - a._sugps; });
+      var top3 = sugPool.slice(0, 3);
+      if (top3.length){
+        suggestHtml = '<div class="dr-suggest"><div class="dr-suggest-title">&#9650; Your Pick - Top Suggestions</div><div class="dr-suggest-cards">';
+        top3.forEach(function(p, i){
+          var sc = psColor(p._sugps);
+          suggestHtml += '<div class="dr-suggest-card" data-id="' + esc(String(p.id)) + '">'
+            + '<span class="dr-suggest-rank">' + (i + 1) + '</span>'
+            + '<img class="dr-suggest-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+            + '<div class="dr-suggest-body">'
+            + '<div class="dr-suggest-name">' + esc(p.name) + '</div>'
+            + '<div class="dr-suggest-reason"><span class="dr-posbadge" style="background:' + posColor(p.position) + ';font-size:8px;padding:1px 4px;">' + esc(p.position) + '</span> '
+            + esc(pickReason(p, sugCounts)) + '</div>'
+            + '</div>'
+            + '<span class="dr-suggest-ps" style="color:' + sc + '">' + p._sugps + '</span>'
+            + '</div>';
+        });
+        suggestHtml += '</div></div>';
+      }
+    }
+    var html = suggestHtml + balanceAlert();
     for (var i = 0; i < Math.min(pool.length, 200); i++){
       var p = pool[i];
       var opts = {};
@@ -2350,8 +2438,26 @@ _DRAFT_ROOM_HTML = r"""
         + gradeBars(g)
       : '';
 
+    // Report card stats: proj PPG, tier captures, avg pick score
+    var sumProjTotal = 0, sumProjCount = 0;
+    var sumT12 = 0, sumPsTotal = 0, sumPsCount = 0;
+    mine.forEach(function(p){
+      if (p.proj_ppg != null){ sumProjTotal += Number(p.proj_ppg); sumProjCount++; }
+      var t = tierOf(p); if (t != null && t <= 2) sumT12++;
+      var ps = p.ps; if (ps != null){ sumPsTotal += ps; sumPsCount++; }
+    });
+    var statsHtml = '';
+    if (mine.length){
+      statsHtml = '<div class="dr-sum-stats">';
+      if (sumProjCount >= 2) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + sumProjTotal.toFixed(1) + '</div><div class="dr-sum-stat-l">Proj PPG</div></div>';
+      if (state.type !== 'redraft') statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + sumT12 + '</div><div class="dr-sum-stat-l">T1-2 Picks</div></div>';
+      if (sumPsCount >= 2) statsHtml += '<div class="dr-sum-stat"><div class="dr-sum-stat-v">' + Math.round(sumPsTotal / sumPsCount) + '</div><div class="dr-sum-stat-l">Avg Pick Score</div></div>';
+      statsHtml += '</div>';
+    }
+
     var html = '<button class="dr-prev-close" id="drSumClose" aria-label="Close">&times;</button>'
-      + '<div class="dr-sum-header"><div class="dr-sum-title">Draft Complete</div>' + gradeHtml + '</div>'
+      + '<div class="dr-sum-header"><div class="dr-sum-title">Draft Report Card</div>' + gradeHtml + '</div>'
+      + statsHtml
       + '<div class="dr-sum-section">Starters</div>';
     starters.forEach(function(s){ html += sumRow(s.slot, s.p); });
     html += '<div class="dr-sum-section">Bench</div>';
@@ -2618,6 +2724,8 @@ _DRAFT_ROOM_HTML = r"""
     if (star){ e.stopPropagation(); toggleQueue(star.getAttribute('data-star')); return; }
     var draft = e.target.closest('[data-draft]');
     if (draft){ e.stopPropagation(); draftPlayer(draft.getAttribute('data-draft')); return; }
+    var sug = e.target.closest('.dr-suggest-card');
+    if (sug){ openPreview(sug.getAttribute('data-id')); return; }
     var row = e.target.closest('.dr-ba-row');
     if (row) openPreview(row.getAttribute('data-id'));
   });
