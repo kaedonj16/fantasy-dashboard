@@ -135,8 +135,9 @@ _DRAFT_ROOM_HTML = r"""
           <b id="drOnClock">Team 1</b>
         </div>
         <div class="dr-status-pills">
-          <span class="dr-pill" id="drRoundPill">Round 1</span>
-          <span class="dr-pill" id="drPickPill">Pick 1</span>
+          <span class="dr-ss-stat" id="drRoundPill">Round 1</span>
+          <span class="dr-ss-sep">&middot;</span>
+          <span class="dr-ss-stat" id="drPickPill">Pick 1</span>
           <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
           <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
           <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
@@ -269,6 +270,9 @@ _DRAFT_ROOM_HTML = r"""
   }
   .dr-status-info { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1; }
   .dr-status-pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+  /* Prominent round/pick stats inside status bar */
+  .dr-ss-stat { font-size: 15px; font-weight: 800; color: var(--text); white-space: nowrap; }
+  .dr-ss-sep { font-size: 13px; color: var(--text-muted); font-weight: 700; }
   .dr-status-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   /* On-the-clock hero chip */
   .dr-onclock { display: flex; flex-direction: column; gap: 1px; padding: 6px 14px; border-radius: 10px;
@@ -299,7 +303,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ls-drafting { background: rgba(239,68,68,.16); color: #ef4444; }
   .dr-ls-pre_draft { background: rgba(245,158,11,.16); color: #f59e0b; }
   .dr-ls-complete { background: rgba(148,163,184,.16); color: #94a3b8; }
-  .dr-cols { display: grid; grid-template-columns: 1fr 340px; gap: 14px; align-items: start; }
+  .dr-cols { display: grid; grid-template-columns: 1fr 375px; gap: 14px; align-items: start; }
   .dr-board-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 6px; }
   .dr-board { display: grid; gap: 5px; min-width: max-content; }
   .dr-cell {
@@ -335,7 +339,8 @@ _DRAFT_ROOM_HTML = r"""
     position: sticky; top: 120px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; overflow: hidden; }
   /* Reuse the trade-calculator pill tabs (otc-main-tabs), evenly spread across panel */
   .dr-side-tabs.otc-main-tabs { width: auto; margin: 8px; }
-  .dr-side-tabs .otc-main-tab { flex: 1; text-align: center; padding: 7px 4px; font-size: 12px; }
+  .dr-side-tabs .otc-main-tab { flex: 1; display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 7px 4px; font-size: 12px; }
   /* Team needs hover tooltip */
   .dr-team-tip { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
     padding: 10px 12px; box-shadow: 0 8px 28px rgba(0,0,0,.28); min-width: 160px; }
@@ -487,6 +492,11 @@ _DRAFT_ROOM_HTML = r"""
     .dr-ba-list { max-height: none; }
     .dr-board-wrap { max-width: calc(100vw - 16px); }
   }
+  @media (max-width: 480px) {
+    /* Hide player headshots in board cells on very small screens so columns stay readable */
+    .dr-hs { display: none; }
+    .dr-cell { min-height: 38px; }
+  }
   @media (max-width: 640px) {
     .dr-wrap { padding: 8px 8px 32px; }
     .dr-setup-card { padding: 16px; }
@@ -499,6 +509,7 @@ _DRAFT_ROOM_HTML = r"""
     .dr-onclock b { font-size: 13px; white-space: nowrap; }
     .dr-status-pills { gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
     .dr-status-pills::-webkit-scrollbar { display: none; }
+    .dr-ss-stat { font-size: 13px; }
     .dr-pill { font-size: 10px; padding: 2px 7px; }
     .dr-pick-timer { font-size: 12px; min-width: 32px; padding: 2px 6px; }
     .dr-progress, .dr-save { font-size: 10px; white-space: nowrap; }
@@ -1749,7 +1760,6 @@ _DRAFT_ROOM_HTML = r"""
     for (var i = 0; i < kbtns.length; i++){ kbtns[i].style.display = kdef ? '' : 'none'; }
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
-    renderBestChips();
     if (sideTab === 'rec')   return renderRec();
     if (sideTab === 'queue') return renderQueue();
     if (sideTab === 'needs') return renderNeeds();
@@ -2273,7 +2283,7 @@ _DRAFT_ROOM_HTML = r"""
     var html = '<div class="dr-colhead"></div>';
     for (var s = 1; s <= teams; s++){
       var you = (s === state.slot) ? ' dr-colhead-you' : '';
-      html += '<div class="dr-colhead' + you + '">' + esc(teamName(s)) + (s === state.slot ? ' ★' : '') + '</div>';
+      html += '<div class="dr-colhead' + you + '" data-slot="' + s + '" style="cursor:default;">' + esc(teamName(s)) + (s === state.slot ? ' ★' : '') + '</div>';
     }
     for (var rnd = 1; rnd <= rounds; rnd++){
       html += '<div class="dr-colhead">R' + rnd + '</div>';
@@ -2850,20 +2860,19 @@ _DRAFT_ROOM_HTML = r"""
     if (!board || !tip) return;
     var _tipSlot = null;
     board.addEventListener('mouseover', function(e){
-      if (window.matchMedia('(max-width: 900px)').matches) return;
-      var cell = e.target.closest('[data-pn]');
-      if (!cell){ tip.style.display = 'none'; _tipSlot = null; return; }
-      var pn = parseInt(cell.getAttribute('data-pn'), 10);
-      var slot = slotOnClock(pn, state.teams || 12, state.order);
-      if (slot === _tipSlot) return; // same team, no rebuild
+      if (window.matchMedia('(max-width: 900px)').matches) { tip.style.display = 'none'; return; }
+      var head = e.target.closest('[data-slot]');
+      if (!head){ tip.style.display = 'none'; _tipSlot = null; return; }
+      var slot = parseInt(head.getAttribute('data-slot'), 10);
+      if (slot === _tipSlot) return;
       _tipSlot = slot;
       tip.innerHTML = buildTeamTip(slot);
       tip.style.display = '';
     });
     board.addEventListener('mousemove', function(e){
       if (tip.style.display === 'none') return;
-      var x = e.clientX + 16, y = e.clientY + 16;
-      if (x + 200 > window.innerWidth) x = e.clientX - 200;
+      var x = e.clientX + 16, y = e.clientY + 24;
+      if (x + 200 > window.innerWidth) x = e.clientX - 210;
       if (y + 180 > window.innerHeight) y = e.clientY - 180;
       tip.style.left = x + 'px';
       tip.style.top = y + 'px';
