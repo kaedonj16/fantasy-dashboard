@@ -584,11 +584,12 @@ _DRAFT_ROOM_HTML = r"""
       var t = targets[pos] || 0, have = counts[pos] || 0;
       var need = t ? Math.max(0, t - have) / t : 0;
       var over = (t && have >= t) ? (have - t + 1) : 0;
-      p._eff = simAdp(p) * (1 - 0.18 * need) * (1 + 0.55 * over);
+      // Keep adjustments small so elite players don't slip far past their ADP.
+      p._eff = simAdp(p) * (1 - 0.08 * need) * (1 + 0.22 * over);
     });
     pool.sort(function(a, b){ return a._eff - b._eff; });
-    // Variance: choose within a small window, biased toward the top (keeps tiers).
-    var win = Math.min(pool.length, 5);
+    // Tighter window (3) keeps picks near ADP while still allowing light variance.
+    var win = Math.min(pool.length, 3);
     var idx = Math.floor(win * (1 - Math.sqrt(1 - Math.random())));
     if (idx >= win) idx = win - 1;
     return pool[idx];
