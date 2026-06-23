@@ -49,7 +49,7 @@ _DRAFT_ROOM_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero">
     <h1 class="dr-title">Draft Room</h1>
-    <p class="dr-sub">Mock against ADP-driven CPU teams, draft manually, or sync a live Sleeper draft &mdash;
+    <p class="dr-sub">Mock against ADP-driven CPU teams, draft manually, or sync a live Sleeper draft,
       with best-available, recommendations, tiers, and your live draft grade.</p>
   </div>
 
@@ -771,7 +771,7 @@ _DRAFT_ROOM_HTML = r"""
     var hot = '';
     ['RB','WR','QB','TE'].forEach(function(pos){ if (!hot && last5[pos] >= 3) hot = pos; });
     if (!hot) return '';
-    return '<div class="dr-run-banner">&#128293; <b>' + hot + ' run</b> &mdash; ' + last5[hot]
+    return '<div class="dr-run-banner"><i class="fa-solid fa-fire"></i> <b>' + hot + ' run</b>: ' + last5[hot]
       + ' of the last 5 picks. Weigh your ' + hot + ' need before the tier dries up.</div>';
   }
 
@@ -921,7 +921,7 @@ _DRAFT_ROOM_HTML = r"""
         if (resp.unsupported){ box.innerHTML = '<div class="dr-live-head">Live sync currently supports Sleeper leagues.</div>'; return; }
         var ds = resp.drafts || [];
         if (!ds.length){ box.innerHTML = '<div class="dr-live-head">No drafts found for this league yet.</div>'; return; }
-        var html = '<div class="dr-live-head">Detected drafts — pick one to connect</div>';
+        var html = '<div class="dr-live-head">Detected drafts. Pick one to connect</div>';
         ds.forEach(function(d){
           html += '<button class="dr-live-item" data-id="' + esc(d.draft_id) + '">'
             + '<span class="dr-live-status dr-ls-' + esc(d.status || '') + '">' + esc(d.status || '') + '</span>'
@@ -1234,11 +1234,11 @@ _DRAFT_ROOM_HTML = r"""
       + (p.age != null ? statBox('Age', Number(p.age).toFixed(1)) : '')
       + '</div>';
     if (state.mode === 'live'){
-      h += '<div class="dr-prev-note">Live draft — picks come from the platform.</div>';
+      h += '<div class="dr-prev-note">Live draft. Picks come from the platform.</div>';
     } else if (isYourTurn()){
       h += '<button class="dr-btn dr-btn-primary dr-btn-lg dr-prev-draft" data-id="' + esc(String(p.id)) + '">Draft ' + esc(p.name) + '</button>';
     } else if (sim){
-      h += '<div class="dr-prev-note">Not your pick yet — a CPU team is on the clock.</div>';
+      h += '<div class="dr-prev-note">Not your pick yet. A CPU team is on the clock.</div>';
     } else {
       h += '<button class="dr-btn dr-btn-primary dr-btn-lg dr-prev-draft" data-id="' + esc(String(p.id)) + '">Draft ' + esc(p.name) + '</button>';
     }
