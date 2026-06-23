@@ -139,13 +139,14 @@ _DRAFT_ROOM_HTML = r"""
           <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
           <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
           <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
-          <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
-          <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;"></span>
           <span class="dr-progress" id="drProgress"></span>
           <span class="dr-save" id="drSave"></span>
         </div>
       </div>
       <div class="dr-status-right">
+        <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
+        <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;"></span>
+        <span class="dr-sr-gap"></span>
         <button class="dr-btn dr-btn-primary" id="drSimStart" style="display:none;">&#9654;&nbsp; Start Draft</button>
         <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
         <button class="dr-btn dr-btn-ghost dr-opts-trigger" id="drOptsBtn" aria-label="Options">&#9881;</button>
@@ -272,6 +273,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ss-stat { font-size: 15px; font-weight: 800; color: var(--text); white-space: nowrap; }
   .dr-ss-sep { font-size: 13px; color: var(--text-muted); font-weight: 700; }
   .dr-status-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .dr-sr-gap { flex: 1; }
   /* On-the-clock hero chip */
   .dr-onclock { display: flex; flex-direction: column; gap: 1px; padding: 6px 14px; border-radius: 10px;
     background: var(--bg); border: 1px solid var(--border); flex-shrink: 0; line-height: 1.2; }
