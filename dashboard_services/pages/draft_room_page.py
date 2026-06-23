@@ -1155,34 +1155,44 @@ _DRAFT_ROOM_HTML = r"""
   function pickScore(p, maxVal, counts){
     var pos = (p.position || '').toUpperCase();
     var valueNorm = maxVal > 0 ? clamp01(valOf(p) / maxVal) : 0;
-    var t = posTargets()[pos];
-    // Need ramps in from 0 at pick 1 to full weight by pick 13 — early picks
-    // should be pure talent grabs, not roster-need influenced.
-    var needRaw = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
-    var needRamp = clamp01((state.current - 1) / 12);
-    // Blend toward neutral (0.5) in early picks rather than zeroing out the weight —
-    // dropping to 0 silently removes 18% of the formula and caps elite players at ~82.
-    var need = (1 - needRamp) * 0.5 + needRamp * needRaw;
+
+    // ADP component: normalized relative to the player's own ADP so a 2-pick
+    // fall from ADP 1.6 is proportionally as significant as a 10-pick fall from
+    // ADP 20. relGap of +0.5 (fell half their ADP) → full steal; -0.3 → clear reach.
     var adp = adpOf(p);
-    // Steal vs reach: CPU sim now picks within ~2-3 spots of ADP, so any fall
-    // beyond 4 is a real value signal and a reach beyond 4 is a real cost.
-    // Neutral zone tightened from ±8 to ±4 to match sim fidelity.
     var adpVal;
     if (adp != null) {
       var gap = state.current - adp;
-      if (gap >= 0)       adpVal = clamp01(gap / 14 + 0.5);           // steal: 0.5 → 1.0 over 7 picks
-      else if (gap >= -4) adpVal = 0.5;                                // neutral zone: within 4 of ADP
-      else                adpVal = clamp01((gap + 4) / 28 + 0.5);     // reach penalty beyond 4
+      var relGap = gap / Math.max(adp, 1.5);
+      if (relGap >= 0.5)       adpVal = 1.0;                              // clear steal
+      else if (relGap >= 0)    adpVal = 0.5 + relGap;                     // slight steal: 0.5 → 1.0
+      else if (relGap >= -0.3) adpVal = 0.5 + relGap;                     // slight reach: 0.5 → 0.2
+      else                     adpVal = Math.max(0, 0.2 + relGap * 0.25); // bigger reach
     } else { adpVal = 0.5; }
+
     var tier = tierOf(p);
-    var tierNorm = tier ? (10 - Math.min(tier, 9)) / 9 : valueNorm;
-    if (isTierCliff(p)) tierNorm = clamp01(tierNorm + 0.15);         // urgency bump
-    var mom = clamp01((p.rank_change_7d || 0) / 20 + 0.5);
+    var tierScore = tier ? clamp01((10 - Math.min(tier, 9)) / 9) : valueNorm;
+    if (isTierCliff(p)) tierScore = clamp01(tierScore + 0.15);
+
+    // Need ramps in from pick 13; early picks reward pure talent-first approach.
+    var t = posTargets()[pos];
+    var needRaw = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
+    var needRamp = clamp01((state.current - 1) / 12);
+    var need = (1 - needRamp) * 0.5 + needRamp * needRaw;
+
     var age = (p.age != null) ? Number(p.age) : null;
     var youth = (age != null && ['RB','WR','TE','QB'].indexOf(pos) >= 0) ? clamp01((30 - age) / 12) : 0.5;
-    // Value + tier are the primary drivers; ADP is a secondary signal.
-    var s = 0.48*valueNorm + 0.18*need + 0.10*adpVal + 0.14*tierNorm + 0.05*mom + 0.05*youth;
-    return Math.round(s * 100);
+    var mom = clamp01((p.rank_change_7d || 0) / 20 + 0.5);
+
+    // Weights sum slightly above 1.0 so elite picks with great minor factors can
+    // reach 100; output is clamped. ADP is the dominant real-time signal.
+    var s = 0.40*valueNorm + 0.35*adpVal + 0.15*tierScore + 0.10*need + 0.03*youth + 0.03*mom;
+
+    // QB overfill penalty: in 1QB formats a second QB drains a roster spot that
+    // should go to a skill player. Score is slashed to reflect the opportunity cost.
+    if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1) s *= 0.25;
+
+    return Math.round(clamp01(s) * 100);
   }
   // How many players remain in this player's (position|tier) bucket.
   function tierRemaining(p){
@@ -1195,21 +1205,26 @@ _DRAFT_ROOM_HTML = r"""
     var need = t ? Math.max(0, t - (counts[pos] || 0)) : 0;
     var adp = adpOf(p);
     var fell = (adp != null) ? Math.round(state.current - adp) : null;
+    var relGap = (adp != null) ? ((state.current - adp) / Math.max(adp, 1.5)) : null;
     var tier = tierOf(p);
     var left = tierRemaining(p);
-    // Tier cliff: the most urgent signal — name the tier and how many remain.
+    // QB overfill: most important warning in 1QB formats.
+    if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1){
+      return 'Low value — 2nd QB wastes a roster spot in 1QB';
+    }
+    // Tier cliff: urgent positional scarcity.
     if (isTierCliff(p) && tier != null){
       if (left <= 1) return 'Last ' + pos + ' in Tier ' + tier + ' — grab now';
       return 'Only ' + left + ' ' + pos + 's left in Tier ' + tier;
     }
-    // Big steal: fell well past ADP.
-    if (fell != null && fell >= 8) return 'Steal — fell ' + fell + ' picks past ADP';
-    // Roster need — only surface this after the first 4 picks.
+    // Relative steal: fell significantly relative to their own ADP tier.
+    if (relGap != null && relGap >= 1.0) return 'Elite steal — ' + fell + ' picks past ADP';
+    if (relGap != null && relGap >= 0.5) return 'Steal — fell ' + fell + ' picks past ADP';
+    // Roster need after early picks.
     if (need > 0 && state.current > 4){
       if (tier != null && tier <= 2) return 'Tier ' + tier + ' ' + pos + ' fills a need';
       return 'Fills ' + pos + ' need (' + need + ' more to target)';
     }
-    // Falls a little past ADP without being a full cliff.
     if (fell != null && fell >= 3) return 'Good value — ' + fell + ' past ADP';
     if (tier != null && tier <= 2) return 'Elite tier (T' + tier + ') talent';
     return 'Best available';
