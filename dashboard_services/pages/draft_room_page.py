@@ -135,9 +135,7 @@ _DRAFT_ROOM_HTML = r"""
           <b id="drOnClock">Team 1</b>
         </div>
         <div class="dr-status-pills">
-          <span class="dr-ss-stat" id="drRoundPill">Round 1</span>
-          <span class="dr-ss-sep">&middot;</span>
-          <span class="dr-ss-stat" id="drPickPill">Pick 1</span>
+          <span class="dr-ss-stat" id="drPickPill">1.01</span>
           <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
           <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
           <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
@@ -2218,8 +2216,8 @@ _DRAFT_ROOM_HTML = r"""
     var total = state.teams * state.rounds;
     var done = state.current > total;
     var r = Math.ceil(state.current / state.teams);
-    document.getElementById('drRoundPill').textContent = done ? 'Complete' : ('Round ' + r);
-    document.getElementById('drPickPill').textContent  = done ? (total + ' picks') : ('Pick ' + state.current);
+    var pickInRound = ((state.current - 1) % state.teams) + 1;
+    document.getElementById('drPickPill').textContent = done ? 'Done' : (r + '.' + (pickInRound < 10 ? '0' : '') + pickInRound);
     var oc = document.getElementById('drOnClock');
     var ocWrap = document.getElementById('drOnClockWrap');
     var ocLabel = ocWrap ? ocWrap.querySelector('.dr-onclock-label') : null;
