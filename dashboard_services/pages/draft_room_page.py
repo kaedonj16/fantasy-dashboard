@@ -26,6 +26,7 @@ def build_draft_room_body(
     is_guest: bool = False,
     num_teams: Optional[int] = None,
     is_superflex: bool = False,
+    roster_positions: Optional[list] = None,
     viewer_user_id: Optional[str] = None,
 ) -> str:
     cfg = {
@@ -35,6 +36,7 @@ def build_draft_room_body(
         "isGuest": bool(is_guest),
         "numTeams": int(num_teams) if num_teams else None,
         "isSuperflex": bool(is_superflex),
+        "rosterPositions": list(roster_positions) if roster_positions else None,
         "viewerUserId": str(viewer_user_id) if viewer_user_id else "",
     }
     cfg_json = json.dumps(cfg)
@@ -310,8 +312,6 @@ _DRAFT_ROOM_HTML = r"""
   .dr-run-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
   .dr-run-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: rgba(127,127,127,.14); color: var(--text); }
   .dr-run-hot { background: rgba(239,68,68,.16); color: #ef4444; }
-  .dr-ba-delta { font-size: 10px; font-weight: 800; color: #22c55e; }
-  .dr-ba-ps { font-size: 10px; font-weight: 800; color: var(--accent,#38bdf8); }
   .dr-run-banner { margin: 10px 10px 4px; padding: 8px 10px; border-radius: 8px; font-size: 12px;
     background: rgba(239,68,68,.12); color: #ef4444; border: 1px solid rgba(239,68,68,.3); }
   .dr-run-banner b { color: #ef4444; }
@@ -325,8 +325,7 @@ _DRAFT_ROOM_HTML = r"""
     background: rgba(127,127,127,.18); color: var(--text-muted); vertical-align: middle; }
   .dr-tier-cliff { background: rgba(239,68,68,.16); color: #ef4444; }
   /* pick score */
-  .dr-ba-score { font-size: 16px; font-weight: 800; color: var(--accent,#38bdf8); line-height: 1; }
-  .dr-ba-reason { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
+  .dr-ba-reason { font-size: 10px; color: var(--text-muted); margin-top: 3px; font-weight: 600; }
   /* draft grade */
   .dr-pill-grade { background: rgba(34,197,94,.16); color: #22c55e; }
   .dr-grade-card { display: flex; align-items: center; gap: 12px; padding: 12px; margin: 10px 10px 4px;
@@ -368,20 +367,24 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
   .dr-adp-src { font-size: 10px; color: var(--text-muted); }
   .dr-ba-list { overflow-y: auto; flex: 1; }
-  .dr-ba-row { display: flex; align-items: center; gap: 9px; padding: 6px 10px 6px 8px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
-  .dr-ba-row:hover { background: rgba(56,189,248,.07); }
-  .dr-ba-row:hover .dr-ba-draft { opacity: 1; }
-  .dr-ba-hs { width: 38px; height: 38px; border-radius: 8px 8px 0 0; object-fit: cover; object-position: top center;
+  .dr-ba-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 10px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
+  .dr-ba-row:hover { background: rgba(56,189,248,.06); }
+  .dr-ba-hs { width: 40px; height: 40px; border-radius: 9px 9px 0 0; object-fit: cover; object-position: top center;
     flex-shrink: 0; background: transparent; align-self: flex-end; }
   .dr-ba-body { min-width: 0; flex: 1; line-height: 1.3; }
-  .dr-ba-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dr-ba-meta { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; margin-top: 1px; }
-  .dr-ba-right { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-  .dr-ba-val { font-size: 14px; font-weight: 800; color: var(--text); line-height: 1; }
-  .dr-ba-sub { font-size: 10px; color: var(--text-muted); line-height: 1; }
-  .dr-ba-draft { opacity: 0; padding: 4px 10px; border-radius: 6px; border: none;
-    background: var(--accent,#122d4b); color: #fff; font-size: 11px; font-weight: 700;
-    cursor: pointer; flex-shrink: 0; transition: opacity .12s; white-space: nowrap; }
+  .dr-ba-name { font-size: 13.5px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dr-ba-meta { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .dr-ba-right { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 52px; }
+  .dr-ba-val { font-size: 15px; font-weight: 800; color: var(--text); line-height: 1; }
+  .dr-ba-sub { font-size: 10.5px; color: var(--text-muted); line-height: 1; white-space: nowrap; }
+  /* Compact pick-score chip shown in the row */
+  .dr-ba-pschip { flex-shrink: 0; width: 34px; text-align: center; border-radius: 7px; padding: 4px 0;
+    font-size: 13px; font-weight: 800; line-height: 1; }
+  .dr-ba-pschip small { display: block; font-size: 7.5px; font-weight: 700; letter-spacing: .06em; opacity: .8; margin-top: 2px; }
+  .dr-ba-draft { padding: 6px 13px; border-radius: 8px; border: 1px solid var(--accent,#122d4b);
+    background: transparent; color: var(--accent,#122d4b); font-size: 11.5px; font-weight: 800;
+    cursor: pointer; flex-shrink: 0; transition: background .12s, color .12s; white-space: nowrap; }
+  .dr-ba-row:hover .dr-ba-draft, .dr-ba-draft:hover { background: var(--accent,#122d4b); color: #fff; }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
   @media (max-width: 900px) {
     .dr-cols { grid-template-columns: 1fr; }
@@ -559,9 +562,34 @@ _DRAFT_ROOM_HTML = r"""
     document.getElementById('drRounds').value = (this.value === 'rookie') ? '4' : '15';
   });
 
+  // Map a Sleeper-style roster_positions list into our slot counts.
+  function rosterFromLeague(){
+    var rp = cfg.rosterPositions;
+    if (!rp || !rp.length) return null;
+    var r = { QB:0, SF:0, RB:0, WR:0, TE:0, FLEX:0, K:0, DEF:0, BN:0 };
+    var map = {
+      QB:'QB', RB:'RB', WR:'WR', TE:'TE',
+      FLEX:'FLEX', WRRB_FLEX:'FLEX', REC_FLEX:'FLEX', WRRBTE_FLEX:'FLEX',
+      SUPER_FLEX:'SF', SFLEX:'SF',
+      K:'K', DEF:'DEF', DST:'DEF', BN:'BN'
+    };
+    rp.forEach(function(s){
+      var key = map[String(s).toUpperCase()];
+      if (key) r[key]++;            // IDP/TAXI/IR positions are ignored
+    });
+    if (!(r.QB+r.RB+r.WR+r.TE+r.FLEX+r.SF)) return null;  // no usable starters
+    return r;
+  }
   function defaultRoster(sf, rd){
     if (sf === undefined) sf = state && state.sf;
     if (rd === undefined) rd = state && state.type === 'redraft';
+    // Prefer the connected league's actual roster shape when available.
+    var lg = rosterFromLeague();
+    if (lg){
+      // Keep K/DEF only for redraft; dynasty/rookie boards skip them.
+      if (!rd){ lg.K = 0; lg.DEF = 0; }
+      return lg;
+    }
     return { QB:1, SF:sf?1:0, RB:2, WR:3, TE:1, FLEX:sf?0:1,
              K:rd?1:0, DEF:rd?1:0, BN:rd?5:7 };
   }
@@ -934,18 +962,24 @@ _DRAFT_ROOM_HTML = r"""
     save(); renderSide();
   }
 
-  function playerRowHtml(p, extra){
+  // opts: { reason: text shown under the meta line, sub: overrides the ADP sub-line }
+  function playerRowHtml(p, opts){
+    opts = opts || {};
     var adp = adpOf(p);
     var ps = pickScoreFor(p);
-    var adpStr = adp != null ? 'ADP ' + Number(adp).toFixed(1) : '';
-    var psStr  = ps  != null ? 'PS '  + ps : '';
-    var sub    = extra != null ? extra : ('<div class="dr-ba-sub">' + [adpStr, psStr].filter(Boolean).join(' &middot; ') + '</div>');
+    var sub = (opts.sub != null) ? opts.sub : (adp != null ? 'ADP ' + Number(adp).toFixed(1) : '');
+    var reasonLine = opts.reason ? '<div class="dr-ba-reason">' + esc(opts.reason) + '</div>' : '';
+    var psChip = (ps != null)
+      ? '<div class="dr-ba-pschip" style="color:' + psColor(ps) + ';background:' + psColor(ps) + '1a;">' + ps + '<small>PS</small></div>'
+      : '';
     return '<div class="dr-ba-row" data-id="' + esc(String(p.id)) + '">'
       + '<button class="dr-star' + (isQueued(p.id) ? ' on' : '') + '" data-star="' + esc(String(p.id)) + '" title="Queue" aria-label="Queue">' + (isQueued(p.id) ? '★' : '☆') + '</button>'
       + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + tierBadge(p) + '</div>'
-      + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + '</div></div>'
-      + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div>' + sub + '</div>'
+      + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + '</div>'
+      + reasonLine + '</div>'
+      + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div><div class="dr-ba-sub">' + sub + '</div></div>'
+      + psChip
       + '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>'
       + '</div>';
   }
@@ -998,8 +1032,7 @@ _DRAFT_ROOM_HTML = r"""
     var html = runBanner();
     for (var i = 0; i < Math.min(pool.length, 50); i++){
       var p = pool[i];
-      var extra = '<div class="dr-ba-score">' + p._ps + '</div><div class="dr-ba-reason">' + esc(pickReason(p, counts)) + '</div>';
-      html += playerRowHtml(p, extra);
+      html += playerRowHtml(p, { reason: pickReason(p, counts) });
     }
     listInto(html);
   }
@@ -1347,23 +1380,15 @@ _DRAFT_ROOM_HTML = r"""
       return valOf(b) - valOf(a);
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
-    var counts = myPosCounts();
-    var maxVal = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxVal) maxVal = v; });
     var html = '';
     for (var i = 0; i < Math.min(pool.length, 200); i++){
       var p = pool[i];
-      var adp = adpOf(p);
-      var right;
+      var opts = null;
       if (sortBy === 'steals'){
         var d = steal(p);
-        right = (d > 0 ? ('<div class="dr-ba-delta">+' + Math.round(d) + ' vs ADP</div>')
-                       : ('<div class="dr-ba-adp">' + (adp != null ? ('ADP ' + Number(adp).toFixed(1)) : '') + '</div>'))
-          + '<div class="dr-ba-ps">PS ' + pickScore(p, maxVal, counts) + '</div>';
-      } else {
-        right = '<div class="dr-ba-adp">' + (adp != null ? ('ADP ' + Number(adp).toFixed(1)) : '') + '</div>'
-          + '<div class="dr-ba-ps">PS ' + pickScore(p, maxVal, counts) + '</div>';
+        if (d > 0) opts = { sub: '+' + Math.round(d) + ' vs ADP' };
       }
-      html += playerRowHtml(p, right);
+      html += playerRowHtml(p, opts);
     }
     listInto(html);
   }

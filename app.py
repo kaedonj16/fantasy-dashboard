@@ -12952,11 +12952,15 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     is_guest = not league_id
     num_teams = None
     is_sf = False
+    roster_positions = None
     if league_id:
         try:
             ctx = get_league_ctx_from_cache(platform, league_id, season)
             num_teams = ctx.get("total_rosters") or None
             _rp = ctx.get("roster_positions") or []
+            if hasattr(_rp, "tolist"):
+                _rp = _rp.tolist()
+            roster_positions = [str(s) for s in _rp] if _rp else None
             is_sf = any(str(s).upper() in {"SUPER_FLEX", "SFLEX"} for s in _rp)
             league_id = ctx.get("league_id") or league_id
             season = int(ctx.get("season") or season or datetime.now().year)
@@ -12965,6 +12969,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
     body = build_draft_room_body(
         league_id, season, platform,
         is_guest=is_guest, num_teams=num_teams, is_superflex=is_sf,
+        roster_positions=roster_positions,
         viewer_user_id=session.get("viewer_user_id"),
     )
     return render_page(
