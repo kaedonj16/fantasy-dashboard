@@ -3863,6 +3863,7 @@ thead th {
 
 /* ── Trade calc main tabs ───────────────────────────────────── */
 .otc-main-tabs {
+  min-height: 30px
   display: flex;
   gap: 4px;
   background: var(--row);
