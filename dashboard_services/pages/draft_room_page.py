@@ -121,6 +121,7 @@ _DRAFT_ROOM_HTML = r"""
         <span class="dr-pill" id="drPickPill">Pick 1</span>
         <span class="dr-onclock">On the clock: <b id="drOnClock">Team 1</b></span>
         <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
+        <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;"></span>
         <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
         <span class="dr-progress" id="drProgress"></span>
         <span class="dr-save" id="drSave"></span>
@@ -285,6 +286,24 @@ _DRAFT_ROOM_HTML = r"""
   .dr-run-hot { background: rgba(239,68,68,.16); color: #ef4444; }
   .dr-ba-delta { font-size: 10px; font-weight: 800; color: #22c55e; }
   .dr-empty-note { padding: 22px 14px; font-size: 12px; color: var(--text-muted); text-align: center; }
+  /* tiers */
+  .dr-tier { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 999px; margin-left: 6px;
+    background: rgba(127,127,127,.18); color: var(--text-muted); vertical-align: middle; }
+  .dr-tier-cliff { background: rgba(239,68,68,.16); color: #ef4444; }
+  /* pick score */
+  .dr-ba-score { font-size: 16px; font-weight: 800; color: var(--accent,#38bdf8); line-height: 1; }
+  .dr-ba-reason { font-size: 9px; color: var(--text-muted); margin-top: 2px; }
+  /* draft grade */
+  .dr-pill-grade { background: rgba(34,197,94,.16); color: #22c55e; }
+  .dr-grade-card { display: flex; align-items: center; gap: 12px; padding: 12px; margin: 10px 10px 4px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+  .dr-grade-letter { font-size: 34px; font-weight: 900; color: var(--accent,#38bdf8); line-height: 1; min-width: 48px; text-align: center; }
+  .dr-grade-meta { flex: 1; min-width: 0; }
+  .dr-grade-pace { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .dr-gbar-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+  .dr-gbar-lbl { font-size: 10px; color: var(--text-muted); width: 50px; flex-shrink: 0; }
+  .dr-gbar { flex: 1; height: 6px; border-radius: 999px; background: rgba(127,127,127,.18); overflow: hidden; }
+  .dr-gbar-fill { height: 100%; border-radius: 999px; background: var(--accent,#38bdf8); }
   .dr-side-title { font-size: 14px; font-weight: 800; color: var(--text); }
   .dr-side-controls { display: flex; gap: 6px; }
   .dr-side-controls input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
@@ -333,6 +352,7 @@ _DRAFT_ROOM_HTML = r"""
   var simSpeed = 700;      // ms between CPU picks
   var simPaused = false;
   var sideTab = 'best';    // best | rec | needs | runs | steals
+  var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
 
   // ── Pick-order helper (snake / linear / 3rr) ───────────────────────────────
   function pickDir(r, order){            // true = forward (slot 1 → N)
@@ -441,6 +461,7 @@ _DRAFT_ROOM_HTML = r"""
       .then(function(r){ return r.json(); })
       .then(function(resp){
         var raw = Array.isArray(resp) ? resp : (resp.players || []);
+        tierThresholds = (!Array.isArray(resp) && resp.tier_thresholds) ? resp.tier_thresholds : {};
         players = raw.filter(function(p){
           if (!p || p.id == null) return false;
           var pos = String(p.position || '').toUpperCase();
@@ -550,11 +571,77 @@ _DRAFT_ROOM_HTML = r"""
     return c;
   }
   function listInto(html){ document.getElementById('drBaList').innerHTML = html; }
+
+  // ── Tiers + cliffs ──────────────────────────────────────────────────────────
+  function tierOf(p){
+    if (state.type === 'redraft') return null;   // tiers are keyed to dynasty value
+    var lt = state.sf ? 'sf' : '1qb';
+    var sz = String(state.teams);
+    var tbl = (tierThresholds[lt] || {})[sz] || (tierThresholds['1qb'] || {})['10'] || [];
+    if (!tbl.length) return null;
+    var v = valOf(p);
+    for (var i = 0; i < tbl.length; i++){ if (v >= tbl[i]) return i + 1; }
+    return tbl.length + 1;
+  }
+  // Count of still-available players per (position|tier) — drives cliff alerts.
+  function posTierCounts(){
+    var m = {};
+    availablePool().forEach(function(p){
+      var t = tierOf(p); if (t == null) return;
+      var k = (p.position || '').toUpperCase() + '|' + t;
+      m[k] = (m[k] || 0) + 1;
+    });
+    return m;
+  }
+  var _ptc = {};   // refreshed each render
+  function isTierCliff(p){
+    var t = tierOf(p); if (t == null) return false;
+    var k = (p.position || '').toUpperCase() + '|' + t;
+    return (_ptc[k] || 0) <= 2;     // tier is drying up
+  }
+
+  // ── Pick Score (composite) ──────────────────────────────────────────────────
+  // Fuses talent (value), value-vs-ADP, positional need, tier strength + cliff,
+  // momentum and youth into one 0-100 number per available player.
+  function clamp01(x){ return x < 0 ? 0 : (x > 1 ? 1 : x); }
+  function pickScore(p, maxVal, counts){
+    var pos = (p.position || '').toUpperCase();
+    var valueNorm = maxVal > 0 ? clamp01(valOf(p) / maxVal) : 0;
+    var t = posTargets()[pos];
+    var need = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
+    var adp = adpOf(p);
+    var adpVal = (adp != null) ? clamp01((adp - state.current) / 24 + 0.5) : 0.5;  // >0.5 = falling past ADP
+    var tier = tierOf(p);
+    var tierNorm = tier ? (10 - Math.min(tier, 9)) / 9 : valueNorm;
+    if (isTierCliff(p)) tierNorm = clamp01(tierNorm + 0.15);                         // urgency bump
+    var mom = clamp01((p.rank_change_7d || 0) / 20 + 0.5);
+    var age = (p.age != null) ? Number(p.age) : null;
+    var youth = (age != null && ['RB','WR','TE','QB'].indexOf(pos) >= 0) ? clamp01((30 - age) / 12) : 0.5;
+    var s = 0.42*valueNorm + 0.20*need + 0.16*adpVal + 0.10*tierNorm + 0.06*mom + 0.06*youth;
+    return Math.round(s * 100);
+  }
+  function pickReason(p, counts){
+    var pos = (p.position || '').toUpperCase();
+    var t = posTargets()[pos];
+    var need = t ? Math.max(0, t - (counts[pos] || 0)) : 0;
+    var adp = adpOf(p);
+    if (adp != null && (adp - state.current) >= 8) return 'Value vs ADP';
+    if (isTierCliff(p)) return pos + ' tier cliff';
+    if (need > 0) return 'Fills ' + pos + ' need';
+    return 'Best available';
+  }
+
+  function tierBadge(p){
+    var t = tierOf(p); if (t == null) return '';
+    var cliff = isTierCliff(p) ? ' dr-tier-cliff' : '';
+    return '<span class="dr-tier' + cliff + '">T' + t + '</span>';
+  }
+
   function playerRowHtml(p, extra){
     var adp = adpOf(p);
     return '<div class="dr-ba-row" data-id="' + esc(String(p.id)) + '">'
       + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
-      + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + '</div>'
+      + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + tierBadge(p) + '</div>'
       + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + '</div></div>'
       + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div>'
       + (extra != null ? extra : ('<div class="dr-ba-adp">' + (adp != null ? ('ADP ' + Number(adp).toFixed(1)) : '') + '</div>'))
@@ -562,6 +649,7 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function renderSide(){
+    _ptc = posTierCounts();
     var bc = document.getElementById('drBestControls');
     if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
     if (sideTab === 'rec')    return renderRec();
@@ -573,13 +661,18 @@ _DRAFT_ROOM_HTML = r"""
 
   function renderRec(){
     if (!state.slot){ listInto('<div class="dr-empty-note">Set your pick slot to get personalized recommendations.</div>'); return; }
-    var counts = myPosCounts(), targets = posTargets();
-    function nw(pos){ var t = targets[pos]; if (!t) return 0; return Math.min(1, Math.max(0, t - (counts[pos]||0)) / t); }
+    var counts = myPosCounts();
     var pool = availablePool().slice();
-    pool.forEach(function(p){ p._rec = valOf(p) * (0.7 + 0.3 * nw((p.position||'').toUpperCase())); });
-    pool.sort(function(a, b){ return b._rec - a._rec; });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players available.</div>'); return; }
-    var html = ''; for (var i = 0; i < Math.min(pool.length, 50); i++){ html += playerRowHtml(pool[i]); }
+    var maxVal = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxVal) maxVal = v; });
+    pool.forEach(function(p){ p._ps = pickScore(p, maxVal, counts); });
+    pool.sort(function(a, b){ return b._ps - a._ps; });
+    var html = '';
+    for (var i = 0; i < Math.min(pool.length, 50); i++){
+      var p = pool[i];
+      var extra = '<div class="dr-ba-score">' + p._ps + '</div><div class="dr-ba-reason">' + esc(pickReason(p, counts)) + '</div>';
+      html += playerRowHtml(p, extra);
+    }
     listInto(html);
   }
 
@@ -628,11 +721,61 @@ _DRAFT_ROOM_HTML = r"""
       + '<span class="dr-rslot-pos" style="background:' + slotColor(slot) + '">' + slot + '</span>'
       + '<span class="dr-rslot-empty">open</span></div>';
   }
+  // ── Draft grade / roster strength ───────────────────────────────────────────
+  function gradeTeam(){
+    if (!state.slot) return null;
+    var mine = [];
+    Object.keys(state.picks).forEach(function(k){
+      var pn = parseInt(k, 10);
+      if (slotOnClock(pn, state.teams, state.order) === state.slot) mine.push({ pn: pn, p: state.picks[k] });
+    });
+    if (!mine.length) return null;
+    var deltas = [], counts = { QB:0, RB:0, WR:0, TE:0 }, tierTop = 0;
+    mine.forEach(function(m){
+      var pos = (m.p.position || '').toUpperCase();
+      if (counts[pos] != null) counts[pos]++;
+      var full = playersById[String(m.p.id)];
+      if (full){
+        var adp = adpOf(full);
+        if (adp != null) deltas.push(m.pn - adp);     // picked later than ADP = value
+        var t = tierOf(full); if (t && t <= 2) tierTop++;
+      }
+    });
+    var avgDelta = deltas.length ? deltas.reduce(function(a,b){ return a+b; }, 0) / deltas.length : 0;
+    var valuePts = Math.round(clamp01((avgDelta + 10) / 25) * 40);  // value vs ADP
+    var targets = posTargets(), bsum = 0;
+    ['QB','RB','WR','TE'].forEach(function(pos){ var t = targets[pos] || 0; bsum += t ? Math.min(counts[pos] || 0, t) / t : 0; });
+    var balancePts = Math.round((bsum / 4) * 35);                   // positional balance
+    var tierPts = Math.min(25, tierTop * 6);                        // tier capture
+    var total = valuePts + balancePts + tierPts;
+    return { score: total, value: valuePts, balance: balancePts, tier: tierPts, count: mine.length };
+  }
+  function gradeLetter(s){
+    if (s>=90) return 'A+'; if (s>=85) return 'A'; if (s>=80) return 'A-';
+    if (s>=75) return 'B+'; if (s>=70) return 'B'; if (s>=65) return 'B-';
+    if (s>=60) return 'C+'; if (s>=55) return 'C'; if (s>=50) return 'C-';
+    if (s>=40) return 'D';  return 'F';
+  }
+  function gradePace(s){ return s>=75 ? 'Ahead of pace' : (s>=55 ? 'On pace' : 'Behind pace'); }
+  function gradeBar(label, val, max){
+    var pct = max ? Math.round(val / max * 100) : 0;
+    return '<div class="dr-gbar-row"><span class="dr-gbar-lbl">' + label + '</span>'
+      + '<div class="dr-gbar"><div class="dr-gbar-fill" style="width:' + pct + '%"></div></div></div>';
+  }
+
   function renderNeeds(){
     if (!state.slot){ listInto('<div class="dr-empty-note">Set your pick slot to see your team build.</div>'); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var used = {};
-    var html = '<div class="dr-roster">';
+    var html = '';
+    var g = gradeTeam();
+    if (g){
+      html += '<div class="dr-grade-card"><div class="dr-grade-letter">' + gradeLetter(g.score) + '</div>'
+        + '<div class="dr-grade-meta"><div class="dr-grade-pace">' + gradePace(g.score) + '</div>'
+        + gradeBar('Value', g.value, 40) + gradeBar('Balance', g.balance, 35) + gradeBar('Tiers', g.tier, 25)
+        + '</div></div>';
+    }
+    html += '<div class="dr-roster">';
     lineupSlots().forEach(function(slot){
       var pick = null;
       for (var i = 0; i < mine.length; i++){ if (!used[i] && slotEligible(slot, mine[i].position)){ pick = mine[i]; used[i] = true; break; } }
@@ -771,6 +914,9 @@ _DRAFT_ROOM_HTML = r"""
     if (np){ nextPill.style.display = ''; nextPill.textContent = 'Your next: #' + np + ' (R' + Math.ceil(np / state.teams) + ')'; }
     else { nextPill.style.display = 'none'; }
     document.getElementById('drProgress').textContent = Math.min(state.current - 1, total) + ' / ' + total + ' picks';
+    var gp = document.getElementById('drGradePill');
+    var g = gradeTeam();
+    if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score); } else { gp.style.display = 'none'; }
   }
 
   function renderBoard(){
