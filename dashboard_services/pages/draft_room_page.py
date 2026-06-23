@@ -697,7 +697,9 @@ _DRAFT_ROOM_HTML = r"""
     // should be pure talent grabs, not roster-need influenced.
     var needRaw = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
     var needRamp = clamp01((state.current - 1) / 12);
-    var need = needRaw * needRamp;
+    // Blend toward neutral (0.5) in early picks rather than zeroing out the weight —
+    // dropping to 0 silently removes 18% of the formula and caps elite players at ~82.
+    var need = (1 - needRamp) * 0.5 + needRamp * needRaw;
     var adp = adpOf(p);
     // Steal vs reach: CPU sim now picks within ~2-3 spots of ADP, so any fall
     // beyond 4 is a real value signal and a reach beyond 4 is a real cost.
@@ -881,15 +883,22 @@ _DRAFT_ROOM_HTML = r"""
       var full = playersById[String(m.p.id)];
       if (full){
         var adp = adpOf(full);
-        if (adp != null) deltas.push(m.pn - adp);     // picked later than ADP = value
+        if (adp != null) {
+          var gap = m.pn - adp;
+          // ±2 neutral zone — matches sim tolerance; only excess past ±2 counts
+          deltas.push(gap > 2 ? gap - 2 : gap < -2 ? gap + 2 : 0);
+        }
         var t = tierOf(full); if (t && t <= 2) tierTop++;
       }
     });
     var avgDelta = deltas.length ? deltas.reduce(function(a,b){ return a+b; }, 0) / deltas.length : 0;
-    var valuePts = Math.round(clamp01((avgDelta + 10) / 25) * 40);  // value vs ADP
+    // Value: 0 effective delta (at ADP ±2) = 50% of 40; +8 steal = 100%; -8 reach = 0%
+    var valuePts = Math.round(clamp01((avgDelta + 10) / 20) * 40);
     var targets = posTargets(), bsum = 0;
     ['QB','RB','WR','TE'].forEach(function(pos){ var t = targets[pos] || 0; bsum += t ? Math.min(counts[pos] || 0, t) / t : 0; });
-    var balancePts = Math.round((bsum / 4) * 35);                   // positional balance
+    // Balance: ramp from a neutral floor (0.85) so 1-2 picks don't score near-zero
+    var balanceRamp = Math.min(1, mine.length / 8);
+    var balancePts = Math.round(((1 - balanceRamp) * 0.85 + balanceRamp * (bsum / 4)) * 35);
     var tierPts = Math.min(25, tierTop * 6);                        // tier capture
     var total = valuePts + balancePts + tierPts;
     return { score: total, value: valuePts, balance: balancePts, tier: tierPts, count: mine.length };
@@ -900,7 +909,7 @@ _DRAFT_ROOM_HTML = r"""
     if (s>=60) return 'C+'; if (s>=55) return 'C'; if (s>=50) return 'C-';
     if (s>=40) return 'D';  return 'F';
   }
-  function gradePace(s){ return s>=75 ? 'Ahead of pace' : (s>=55 ? 'On pace' : 'Behind pace'); }
+  function gradePace(s){ return s>=75 ? 'Ahead of pace' : (s>=48 ? 'On pace' : 'Behind pace'); }
   function gradeBar(label, val, max){
     var pct = max ? Math.round(val / max * 100) : 0;
     return '<div class="dr-gbar-row"><span class="dr-gbar-lbl">' + label + '</span>'
