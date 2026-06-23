@@ -406,8 +406,7 @@ _DRAFT_ROOM_HTML = r"""
   var simPaused = false;
   var sideTab = 'best';    // best | rec | needs | runs | steals
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
-  var adpSources = {};     // {startup|rookie|redraft: 'FantasyCalc'|'DraftCrawl'|'none'}
-  var fcAdp = {};          // sleeperId -> FantasyCalc ADP (fetched from the browser; FC blocks our server)
+  var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
   var _boardSig = null;    // board structure signature (rebuild only when it changes)
 
   // ── Pick-order helper (snake / linear / 3rr) ───────────────────────────────
@@ -506,39 +505,14 @@ _DRAFT_ROOM_HTML = r"""
     return state.sf ? (p.sf_value || p.value || 0) : (p.value || 0);
   }
   function adpOf(p){
-    // Prefer FantasyCalc (browser-fetched) when loaded; else the server feed.
-    var fc = fcAdp[String(p.id)];
-    if (fc != null) return fc;
+    // Sleeper community ADP (server-side, aggregated from real Sleeper drafts).
+    // Redraft has no Sleeper feed, so it falls back to a value-derived rank.
     if (state.type === 'rookie') return state.sf ? p.sf_rookie_avg_pick : p.rookie_avg_pick;
     if (state.type === 'redraft'){
       var ra = state.sf ? p.sf_redraft_avg_pick : p.redraft_avg_pick;
       return (ra != null) ? ra : (p._radp != null ? p._radp : null);
     }
     return state.sf ? p.sf_avg_pick : p.avg_pick;
-  }
-
-  // FantasyCalc blocks our server IP, so fetch ADP from the browser (like the
-  // rest of the app). Maps sleeperId -> overall rank for the current format.
-  function fcUrl(){
-    var nq = state.sf ? 2 : 1;
-    if (state.type === 'rookie')  return 'https://fantasycalc.com/api/values/current?numQbs=' + nq + '&type=1&ppr=0.5';
-    if (state.type === 'redraft') return 'https://fantasycalc.com/api/values/current?numQbs=' + nq + '&ppr=1&isDynasty=false';
-    return 'https://fantasycalc.com/api/values/current?numQbs=' + nq + '&ppr=0.5';
-  }
-  function loadFcAdp(){
-    fcAdp = {};
-    fetch(fcUrl(), { credentials: 'omit' })
-      .then(function(r){ return r.ok ? r.json() : []; })
-      .then(function(arr){
-        if (!Array.isArray(arr) || !arr.length) return;
-        arr.forEach(function(e){
-          if (!e || !e.overallRank) return;
-          var p = e.player || {}; var sid = String(p.sleeperId || '');
-          if (sid && sid !== 'null' && sid !== 'undefined') fcAdp[sid] = e.overallRank;
-        });
-        if (Object.keys(fcAdp).length){ adpSources[state.type] = 'FantasyCalc'; render(); }
-      })
-      .catch(function(){});
   }
 
   function loadPlayers(){
@@ -573,7 +547,6 @@ _DRAFT_ROOM_HTML = r"""
           Object.keys(state.picks).forEach(function(k){ var pp = state.picks[k]; if (pp) drafted[String(pp.id)] = true; });
         }
         render();
-        loadFcAdp();              // override server ADP with FantasyCalc (browser fetch)
         if (sim) scheduleSim();   // begin CPU picks once players are loaded
       })
       .catch(function(){

@@ -19015,9 +19015,11 @@ def api_league_players():
             return out
 
         def _crawl_adp(is_sf: bool, draft_type: str, key: str, min_s: int) -> dict:
+            # ADP aggregated from real Sleeper drafts (our crawler) - reachable
+            # server-side with no bot/CORS issues, unlike FantasyCalc/DraftSharks.
             _m = _fl_adp(is_sf, _adp_season, draft_type, min_samples=min_s) or {}
             if _m:
-                _adp_sources[key] = "DraftCrawl"
+                _adp_sources[key] = "Sleeper"
             return _norm_adp(_m)
 
         _adp_1qb, _adp_sf = _crawl_adp(False, "startup", "startup", 10), _crawl_adp(True, "startup", "startup", 10)
