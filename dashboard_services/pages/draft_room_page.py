@@ -171,7 +171,7 @@ _DRAFT_ROOM_HTML = r"""
             <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
             <select id="drBaSort">
               <option value="value">Value</option>
-              <option value="adp">ADP</option>
+              <option value="adp" selected>ADP</option>
               <option value="steals">Steals</option>
             </select>
           </div>
