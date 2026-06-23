@@ -700,23 +700,6 @@ _DRAFT_ROOM_HTML = r"""
   .dr-lg-need { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
   .dr-lg-need b { font-weight: 800; }
   .dr-lg-picks { font-size: 10px; color: var(--text-muted); margin-top: 4px; line-height: 1.4; }
-  /* ── Auto-suggest banner ── */
-  .dr-suggest { padding: 8px 10px; border-bottom: 1px solid var(--border); background: rgba(34,197,94,.05); }
-  .dr-suggest-title { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em;
-    color: #22c55e; margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
-  .dr-suggest-cards { display: flex; flex-direction: column; gap: 4px; }
-  .dr-suggest-card { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px;
-    background: var(--card); border: 1px solid var(--border); cursor: pointer;
-    transition: border-color .12s, background .12s; }
-  .dr-suggest-card:hover { border-color: #22c55e; background: rgba(34,197,94,.05); }
-  .dr-suggest-rank { font-size: 10px; font-weight: 900; color: var(--text-muted); width: 12px; flex-shrink: 0; text-align: center; }
-  .dr-suggest-hs { width: 28px; height: 28px; border-radius: 5px 5px 0 0; object-fit: cover;
-    object-position: top center; align-self: flex-end; flex-shrink: 0; }
-  .dr-suggest-body { flex: 1; min-width: 0; }
-  .dr-suggest-name { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis; }
-  .dr-suggest-reason { font-size: 10px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dr-suggest-ps { font-size: 13px; font-weight: 900; flex-shrink: 0; }
   /* ── Roster projection card ── */
   .dr-proj-card { margin: 10px 0 2px; padding: 10px 12px; border-radius: 10px;
     border: 1px solid var(--border); background: var(--bg); }
@@ -2349,34 +2332,7 @@ _DRAFT_ROOM_HTML = r"""
     });
     if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
     var nextPick = hasOwned() ? nextOwnedAfterCurrent() : null;
-    // Auto-suggest: show top 3 picks when it's the user's turn
-    var suggestHtml = '';
-    if (hasOwned() && isMyPick(state.current) && state.current <= state.teams * state.rounds){
-      var sugPool = availablePool().slice();
-      var sugMax = 0; sugPool.forEach(function(x){ var v = valOf(x); if (v > sugMax) sugMax = v; });
-      var sugCounts = myPosCounts();
-      sugPool.forEach(function(x){ x._sugps = pickScore(x, sugMax, sugCounts); });
-      sugPool.sort(function(a, b){ return b._sugps - a._sugps; });
-      var top3 = sugPool.slice(0, 3);
-      if (top3.length){
-        suggestHtml = '<div class="dr-suggest"><div class="dr-suggest-title">&#9650; Your Pick - Top Suggestions</div><div class="dr-suggest-cards">';
-        top3.forEach(function(p, i){
-          var sc = psColor(p._sugps);
-          suggestHtml += '<div class="dr-suggest-card" data-id="' + esc(String(p.id)) + '">'
-            + '<span class="dr-suggest-rank">' + (i + 1) + '</span>'
-            + '<img class="dr-suggest-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
-            + '<div class="dr-suggest-body">'
-            + '<div class="dr-suggest-name">' + esc(p.name) + '</div>'
-            + '<div class="dr-suggest-reason"><span class="dr-posbadge" style="background:' + posColor(p.position) + ';font-size:8px;padding:1px 4px;">' + esc(p.position) + '</span> '
-            + esc(pickReason(p, sugCounts)) + '</div>'
-            + '</div>'
-            + '<span class="dr-suggest-ps" style="color:' + sc + '">' + p._sugps + '</span>'
-            + '</div>';
-        });
-        suggestHtml += '</div></div>';
-      }
-    }
-    var html = suggestHtml + balanceAlert();
+    var html = balanceAlert();
     for (var i = 0; i < Math.min(pool.length, 200); i++){
       var p = pool[i];
       var opts = {};
@@ -2724,8 +2680,6 @@ _DRAFT_ROOM_HTML = r"""
     if (star){ e.stopPropagation(); toggleQueue(star.getAttribute('data-star')); return; }
     var draft = e.target.closest('[data-draft]');
     if (draft){ e.stopPropagation(); draftPlayer(draft.getAttribute('data-draft')); return; }
-    var sug = e.target.closest('.dr-suggest-card');
-    if (sug){ openPreview(sug.getAttribute('data-id')); return; }
     var row = e.target.closest('.dr-ba-row');
     if (row) openPreview(row.getAttribute('data-id'));
   });
