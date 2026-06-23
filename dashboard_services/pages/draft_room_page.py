@@ -386,18 +386,22 @@ _DRAFT_ROOM_HTML = r"""
   /* player preview */
   .dr-preview-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.45);
     display: flex; align-items: flex-start; justify-content: center; padding: 16px; overflow-y: auto; }
-  .dr-preview-card { position: relative; width: 100%; max-width: 360px; background: var(--card);
-    border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: 0 16px 50px rgba(0,0,0,.3); margin: auto; }
-  .dr-prev-close { position: absolute; top: 8px; right: 10px; background: none; border: none; font-size: 22px;
-    line-height: 1; color: var(--text-muted); cursor: pointer; }
-  .dr-prev-top { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
-  .dr-prev-hs { width: 64px; height: 64px; border-radius: 10px 10px 0 0; object-fit: cover; object-position: top center; background: transparent; flex-shrink: 0; }
-  .dr-prev-name { font-size: 18px; font-weight: 800; color: var(--text); }
-  .dr-prev-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
-  .dr-prev-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
-  .dr-prev-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 4px; text-align: center; }
-  .dr-prev-stat-v { font-size: 15px; font-weight: 800; color: var(--text); }
-  .dr-prev-stat-l { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-top: 2px; }
+  .dr-preview-card { position: relative; width: 100%; max-width: 380px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 16px; padding: 18px 18px 16px; box-shadow: 0 18px 56px rgba(0,0,0,.34); margin: auto; }
+  .dr-prev-close { position: absolute; top: 10px; right: 12px; width: 28px; height: 28px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 999px; font-size: 17px; line-height: 1;
+    color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background .12s, color .12s; }
+  .dr-prev-close:hover { background: rgba(239,68,68,.12); color: #ef4444; }
+  .dr-prev-top { display: flex; align-items: flex-end; gap: 13px; margin-bottom: 14px; padding-right: 28px; }
+  .dr-prev-hs { width: 66px; height: 66px; border-radius: 12px 12px 0 0; object-fit: cover; object-position: top center; background: rgba(127,127,127,.08); flex-shrink: 0; }
+  .dr-prev-name { font-size: 19px; font-weight: 800; color: var(--text); line-height: 1.15; }
+  .dr-prev-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .dr-prev-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 14px; }
+  .dr-prev-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 9px 4px 8px; text-align: center; }
+  .dr-prev-stat-v { font-size: 16px; font-weight: 800; color: var(--text); letter-spacing: -.01em; line-height: 1; }
+  .dr-prev-stat-l { font-size: 8.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 4px; font-weight: 700; }
+  .dr-prev-stat-sub { font-size: 8.5px; color: var(--text-muted); margin-top: 1px; opacity: .7; font-weight: 600; }
   .dr-prev-btns { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
   .dr-prev-draft { width: 100%; }
   .dr-prev-profile { display: block; width: 100%; text-align: center; text-decoration: none; box-sizing: border-box; }
@@ -1456,6 +1460,8 @@ _DRAFT_ROOM_HTML = r"""
       var ps = pickScoreFor(p), ops = pickScoreFor(other);
       var v = valOf(p), ov = valOf(other);
       var t = tierOf(p), ot = tierOf(other);
+      var ppg = p.ppg != null ? Number(p.ppg) : null;
+      var oppg = other.ppg != null ? Number(other.ppg) : null;
       var age = p.age != null ? Number(p.age) : null;
       var oage = other.age != null ? Number(other.age) : null;
       function statRow(lbl, val, oval, higherBetter, fmtFn){
@@ -1476,10 +1482,11 @@ _DRAFT_ROOM_HTML = r"""
         + '<div class="dr-cmp-ps-lbl">Pick Score</div>'
         + '<div class="dr-cmp-stats">'
         + statRow('Value', v, ov, true, function(x){ return x != null ? Math.round(x) : '-'; })
+        + statRow('PPG', ppg, oppg, true, function(x){ return x != null ? x.toFixed(1) : 'N/A'; })
         + statRow('VOR', vor, ovor, true, function(x){ return x != null ? (x >= 0 ? '+' + x : String(x)) : '-'; })
         + statRow('ADP', adp, oadp, false, function(x){ return x != null ? Number(x).toFixed(1) : 'N/A'; })
         + (state.type !== 'redraft' ? statRow('Tier', t, ot, false, function(x){ return x != null ? 'T' + x : '-'; }) : '')
-        + statRow('Age', age, oage, state.type !== 'redraft', function(x){ return x != null ? x.toFixed(0) : '-'; })
+        + statRow('Age', age, oage, false, function(x){ return x != null ? x.toFixed(0) : '-'; })
         + '</div></div>';
     }
     var draftBtns = (isYourTurn() || !sim)
@@ -2437,8 +2444,11 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Player preview / draft confirm ──────────────────────────────────────────
-  function statBox(label, val){
-    return '<div class="dr-prev-stat"><div class="dr-prev-stat-v">' + val + '</div><div class="dr-prev-stat-l">' + label + '</div></div>';
+  function statBox(label, val, sub){
+    return '<div class="dr-prev-stat"><div class="dr-prev-stat-v">' + val + '</div>'
+      + '<div class="dr-prev-stat-l">' + label + '</div>'
+      + (sub ? '<div class="dr-prev-stat-sub">' + sub + '</div>' : '')
+      + '</div>';
   }
   function isYourTurn(){
     if (state.mode === 'live') return false;
@@ -2462,6 +2472,8 @@ _DRAFT_ROOM_HTML = r"""
     var vorStr = (vor != null) ? (vor >= 0 ? '+' + vor : String(vor)) : '-';
     var pos = (p.position || '').toUpperCase();
     var scarce = posTopRemaining(pos);
+    var ppg = (p.ppg != null) ? Number(p.ppg) : null;
+    var ppgSub = (p.ppg_rank != null) ? (pos + p.ppg_rank) : (p.ppg_season ? String(p.ppg_season) : '');
     var sc = psColor(ps);
     var pc = posColor(p.position);
     var c = document.getElementById('drPreviewCard');
@@ -2487,8 +2499,8 @@ _DRAFT_ROOM_HTML = r"""
       + statBox('VOR', vorStr)
       + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '-')
       + statBox('vs ADP', vsAdp)
+      + (ppg != null ? statBox('PPG', ppg.toFixed(1), ppgSub) : statBox('Pos Rank', posRank || '-'))
       + statBox(pos + ' T1-2 left', scarce)
-      + (p.bye_week ? statBox('Bye Wk', p.bye_week) : (p.age != null ? statBox('Age', Number(p.age).toFixed(1)) : statBox('Pos Rank', posRank || '-')))
       + '</div>';
     // Survival probability at the user's next upcoming pick
     var nextOwnedPick = nextOwnedAfterCurrent();
