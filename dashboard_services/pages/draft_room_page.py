@@ -350,9 +350,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-gbar-fill { height: 100%; border-radius: 999px; background: var(--accent,#38bdf8); }
   /* player preview */
   .dr-preview-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.45);
-    display: flex; align-items: center; justify-content: center; padding: 16px; }
+    display: flex; align-items: flex-start; justify-content: center; padding: 16px; overflow-y: auto; }
   .dr-preview-card { position: relative; width: 100%; max-width: 360px; background: var(--card);
-    border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: 0 16px 50px rgba(0,0,0,.3); }
+    border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: 0 16px 50px rgba(0,0,0,.3); margin: auto; }
   .dr-prev-close { position: absolute; top: 8px; right: 10px; background: none; border: none; font-size: 22px;
     line-height: 1; color: var(--text-muted); cursor: pointer; }
   .dr-prev-top { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
@@ -363,8 +363,9 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 4px; text-align: center; }
   .dr-prev-stat-v { font-size: 15px; font-weight: 800; color: var(--text); }
   .dr-prev-stat-l { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-top: 2px; }
+  .dr-prev-btns { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
   .dr-prev-draft { width: 100%; }
-  .dr-prev-profile { width: 100%; margin-top: 8px; text-align: center; text-decoration: none; }
+  .dr-prev-profile { display: block; width: 100%; text-align: center; text-decoration: none; box-sizing: border-box; }
   .dr-prev-note { font-size: 12px; color: var(--text-muted); text-align: center; padding: 6px 0; }
   /* queue star */
   .dr-star { background: none; border: none; cursor: pointer; font-size: 15px; line-height: 1; flex-shrink: 0;
@@ -1815,25 +1816,21 @@ _DRAFT_ROOM_HTML = r"""
       + statBox(pos + ' T1-2 left', scarce)
       + (p.bye_week ? statBox('Bye Wk', p.bye_week) : (p.age != null ? statBox('Age', Number(p.age).toFixed(1)) : statBox('Pos Rank', posRank || '-')))
       + '</div>';
-    // Survival probability at each upcoming owned pick (up to 4)
-    var upPicks = upcomingOwnedPicks().filter(function(pn){ return pn > state.current; }).slice(0, 4);
-    if (upPicks.length){
-      var pickChips = upPicks.map(function(pn){
-        var prob = availProb(p, pn);
-        if (prob == null) return null;
+    // Survival probability at the user's next upcoming pick
+    var nextOwnedPick = nextOwnedAfterCurrent();
+    if (nextOwnedPick){
+      var prob = availProb(p, nextOwnedPick);
+      if (prob != null){
         var col = availColor(prob);
-        return '<div class="dr-prev-avail-pick" style="background:' + col + '14;border:1px solid ' + col + '44;">'
-          + '<span style="color:' + col + ';font-size:14px;font-weight:900;">' + prob + '%</span>'
-          + '<span class="dr-prev-avail-pn">at #' + pn + '</span>'
-          + '</div>';
-      }).filter(Boolean).join('');
-      if (pickChips){
         h += '<div class="dr-prev-avail-track">'
-          + '<div class="dr-prev-avail-label">Survival at your picks</div>'
-          + '<div class="dr-prev-avail-picks">' + pickChips + '</div>'
-          + '</div>';
+          + '<div class="dr-prev-avail-label">Survival at your next pick (#' + nextOwnedPick + ')</div>'
+          + '<div class="dr-prev-avail-picks"><div class="dr-prev-avail-pick" style="background:' + col + '14;border:1px solid ' + col + '44;">'
+          + '<span style="color:' + col + ';font-size:18px;font-weight:900;">' + prob + '%</span>'
+          + '<span class="dr-prev-avail-pn">' + (prob >= 65 ? 'Likely available' : prob >= 40 ? 'Might be there' : 'Unlikely to last') + '</span>'
+          + '</div></div></div>';
       }
     }
+    h += '<div class="dr-prev-btns">';
     if (state.mode === 'live'){
       h += '<div class="dr-prev-note">Live draft. Picks come from the platform.</div>';
     } else if (isYourTurn() || !sim){
@@ -1846,6 +1843,7 @@ _DRAFT_ROOM_HTML = r"""
     if (slug && pos !== 'PICK'){
       h += '<a class="dr-btn dr-prev-profile" href="/player/' + encodeURIComponent(slug) + '/trade-value" target="_blank" rel="noopener">View full player profile &#8599;</a>';
     }
+    h += '</div>';
     c.innerHTML = h;
     document.getElementById('drPreview').style.display = '';
   }
