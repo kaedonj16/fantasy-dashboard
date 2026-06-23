@@ -1722,7 +1722,7 @@ _DRAFT_ROOM_HTML = r"""
     if (bc >= 2) byeFlag = '<span class="dr-bye-flag">Bye ' + p.bye_week + ' clash</span>';
     // Projected (or actual) PPG for meta line
     var ppgNum = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
-    var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) : '';
+    var ppgPart = ppgNum != null ? ' · ' + ppgNum.toFixed(1) + ' PPG' : '';
     // Compare button state
     var onCmp = compareIds.indexOf(String(p.id)) >= 0;
     return '<div class="dr-ba-row' + availClass + '" data-id="' + esc(String(p.id)) + '">'
