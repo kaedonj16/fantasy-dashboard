@@ -383,8 +383,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ba-list { overflow-y: auto; flex: 1; }
   .dr-ba-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 10px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
   .dr-ba-row:hover { background: rgba(56,189,248,.06); }
-  .dr-ba-hs { width: 60px; height: 60px; border-radius: 10px 10px 0 0; object-fit: cover; object-position: top center;
-    flex-shrink: 0; background: transparent; align-self: flex-end; }
+  .dr-ba-hs { width: 50px; height: 50px; border-radius: 9px 9px 0 0; object-fit: cover; object-position: top center;
+    flex-shrink: 0; background: transparent; align-self: flex-end; margin-bottom: -8px; }
   .dr-ba-body { min-width: 0; flex: 1; line-height: 1.3; }
   .dr-ba-name { font-size: 13.5px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dr-ba-meta { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 2px; }
@@ -1201,7 +1201,7 @@ _DRAFT_ROOM_HTML = r"""
     var age = (p.age != null) ? Number(p.age) : null;
     var youth = 0.5;
     if (age != null && ['RB','WR','TE','QB'].indexOf(pos) >= 0){
-      var agePeaks = { RB: 24, WR: 27, TE: 27, QB: 29 };
+      var agePeaks = { RB: 26, WR: 27, TE: 27, QB: 29 };
       var peak = agePeaks[pos] || 27;
       youth = clamp01((peak - age + 4) / 8);
     }
