@@ -146,6 +146,7 @@ _DRAFT_ROOM_HTML = r"""
           <option value="300">Fast</option>
           <option value="60">Instant</option>
         </select>
+        <button class="dr-btn dr-btn-primary" id="drSimStart" style="display:none;">&#9654;&nbsp; Start Draft</button>
         <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
         <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
         <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
@@ -536,6 +537,7 @@ _DRAFT_ROOM_HTML = r"""
   var simTimer = null;
   var simSpeed = 700;      // ms between CPU picks
   var simPaused = false;
+  var simStarted = false;  // CPU picks only run once the user hits Start Draft
   var sideTab = 'best';    // best | rec | needs | runs
   var _setupRoster = null; // roster config built on setup page
   var _setupOwned = null;  // claimed picks (pickNumber -> true) built on setup page
@@ -948,7 +950,7 @@ _DRAFT_ROOM_HTML = r"""
     return pool[idx];
   }
   function scheduleSim(){
-    if (!sim || simPaused) return;
+    if (!sim || simPaused || !simStarted) return;
     var total = state.teams * state.rounds;
     if (state.current > total){ endSim(); return; }
     if (isMyPick(state.current)) return; // wait for the user
@@ -956,7 +958,7 @@ _DRAFT_ROOM_HTML = r"""
     simTimer = setTimeout(simStep, simSpeed);
   }
   function simStep(){
-    if (!sim || simPaused) return;
+    if (!sim || simPaused || !simStarted) return;
     var total = state.teams * state.rounds;
     if (state.current > total){ endSim(); render(); return; }
     if (isMyPick(state.current)){ render(); return; } // your turn
@@ -966,24 +968,45 @@ _DRAFT_ROOM_HTML = r"""
   }
   function endSim(){
     sim = false; clearTimeout(simTimer);
-    var sp = document.getElementById('drSimSpeed'); if (sp) sp.style.display = 'none';
-    var tg = document.getElementById('drSimToggle'); if (tg) tg.style.display = 'none';
+    syncSimControls();
   }
   function toggleSim(){
     simPaused = !simPaused;
     document.getElementById('drSimToggle').textContent = simPaused ? 'Resume' : 'Pause';
     if (simPaused) clearTimeout(simTimer); else scheduleSim();
   }
+  // Reflect the current mock state on the status-bar controls.
+  function syncSimControls(){
+    var start = document.getElementById('drSimStart');
+    var tg = document.getElementById('drSimToggle');
+    var sp = document.getElementById('drSimSpeed');
+    var ready = sim && !simStarted;        // pre-draft: claim picks / look around
+    var running = sim && simStarted;       // CPU picks rolling
+    start.style.display = ready ? '' : 'none';
+    tg.style.display = running ? '' : 'none';
+    sp.style.display = (ready || running) ? '' : 'none';
+    if (running){ tg.textContent = simPaused ? 'Resume' : 'Pause'; }
+  }
+  // User hit Start Draft: kick off the CPU picks.
+  function beginSim(){
+    if (!sim || simStarted) return;
+    simStarted = true; simPaused = false;
+    if (state) state.simStarted = true;
+    save();
+    syncSimControls();
+    scheduleSim();
+  }
   function startMock(){
     state = readSetup();
     state.owned = _setupOwned || defaultOwned();
+    state.mode = 'mock';
+    state.simStarted = false;
     _summaryShown = false;
     drafted = {};
-    sim = true; simPaused = false;
+    sim = true; simPaused = false; simStarted = false;
     var sp = document.getElementById('drSimSpeed');
     simSpeed = parseInt(sp.value, 10) || 700;
-    sp.style.display = '';
-    var tg = document.getElementById('drSimToggle'); tg.style.display = ''; tg.textContent = 'Pause';
+    syncSimControls();
     save();
     showMain();
     loadPlayers();
@@ -1551,6 +1574,7 @@ _DRAFT_ROOM_HTML = r"""
     document.getElementById('drPickPill').textContent  = done ? (total + ' picks') : ('Pick ' + state.current);
     var oc = document.getElementById('drOnClock');
     if (done) { oc.textContent = 'Draft complete'; }
+    else if (sim && !simStarted) { oc.textContent = 'Ready - claim picks, then Start Draft'; }
     else {
       var slot = slotOnClock(state.current, state.teams, state.order);
       oc.textContent = isMyPick(state.current) ? ('Team ' + slot + ' (You)') : ('Team ' + slot);
@@ -1925,6 +1949,7 @@ _DRAFT_ROOM_HTML = r"""
   // ── Wire up ──────────────────────────────────────────────────────────────
   document.getElementById('drStart').addEventListener('click', startDraft);
   document.getElementById('drStartSim').addEventListener('click', startMock);
+  document.getElementById('drSimStart').addEventListener('click', beginSim);
   document.getElementById('drSimToggle').addEventListener('click', toggleSim);
   document.getElementById('drSimSpeed').addEventListener('change', function(){
     simSpeed = parseInt(this.value, 10) || 700;
@@ -2039,6 +2064,12 @@ _DRAFT_ROOM_HTML = r"""
         } else {
           document.getElementById('drLiveBadge').style.display = '';
         }
+      } else if (state.mode === 'mock'){
+        // Restore the mock: a not-yet-started draft comes back to the Start
+        // Draft (ready) state; an in-progress one resumes running.
+        var done = state.current > state.teams * state.rounds;
+        if (!done){ sim = true; simStarted = !!state.simStarted; simPaused = false; }
+        syncSimControls();
       }
       showMain();
       loadPlayers();
