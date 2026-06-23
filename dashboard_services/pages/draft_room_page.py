@@ -699,15 +699,15 @@ _DRAFT_ROOM_HTML = r"""
     var needRamp = clamp01((state.current - 1) / 12);
     var need = needRaw * needRamp;
     var adp = adpOf(p);
-    // Steal vs reach: reward players who have fallen past ADP, stay neutral for
-    // picks within 8 of ADP (drafting a top-3 player at pick 1 is not a "reach"),
-    // and penalize genuine big reaches beyond that window.
+    // Steal vs reach: CPU sim now picks within ~2-3 spots of ADP, so any fall
+    // beyond 4 is a real value signal and a reach beyond 4 is a real cost.
+    // Neutral zone tightened from ±8 to ±4 to match sim fidelity.
     var adpVal;
     if (adp != null) {
       var gap = state.current - adp;
-      if (gap >= 0)      adpVal = clamp01(gap / 20 + 0.5);           // steal: 0.5 → 1.0
-      else if (gap >= -8) adpVal = clamp01(0.5 + (gap + 8) / 80);    // slight early: ~0.5-0.6
-      else               adpVal = clamp01((gap + 8) / 36 + 0.5);     // big reach penalty
+      if (gap >= 0)       adpVal = clamp01(gap / 14 + 0.5);           // steal: 0.5 → 1.0 over 7 picks
+      else if (gap >= -4) adpVal = 0.5;                                // neutral zone: within 4 of ADP
+      else                adpVal = clamp01((gap + 4) / 28 + 0.5);     // reach penalty beyond 4
     } else { adpVal = 0.5; }
     var tier = tierOf(p);
     var tierNorm = tier ? (10 - Math.min(tier, 9)) / 9 : valueNorm;
