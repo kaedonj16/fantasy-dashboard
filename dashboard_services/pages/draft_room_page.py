@@ -1896,6 +1896,7 @@ _DRAFT_ROOM_HTML = r"""
     toggleOwned(pn);
     _boardSig = null;                   // ownership changed: force board rebuild
     render();
+    if (sim) scheduleSim();             // if you released the current pick, let the CPU run
   });
   document.getElementById('drConnect').addEventListener('click', detectLive);
   document.getElementById('drLiveList').addEventListener('click', function(e){
