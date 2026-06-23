@@ -394,6 +394,7 @@ _DRAFT_ROOM_HTML = r"""
     font-size: 13px; font-weight: 800; line-height: 1; }
   .dr-ba-pschip small { display: block; font-size: 7.5px; font-weight: 700; letter-spacing: .06em; opacity: .8; margin-top: 2px; }
   .dr-ba-right-col { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+  .dr-ba-metrics { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
   .dr-ba-draft { padding: 5px 12px; border-radius: 7px; border: 1px solid var(--accent,#122d4b);
     background: transparent; color: var(--accent,#122d4b); font-size: 11px; font-weight: 800;
     cursor: pointer; white-space: nowrap; transition: background .12s, color .12s; }
@@ -1145,8 +1146,10 @@ _DRAFT_ROOM_HTML = r"""
       + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + '</div>'
       + reasonLine + waitLine + availLine + '</div>'
       + '<div class="dr-ba-right-col">'
+      + '<div class="dr-ba-metrics">'
       + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div><div class="dr-ba-sub">' + sub + '</div></div>'
       + psChip
+      + '</div>'
       + '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>'
       + '</div>'
       + '</div>';
