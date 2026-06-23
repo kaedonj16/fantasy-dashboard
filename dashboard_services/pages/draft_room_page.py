@@ -772,8 +772,8 @@ _DRAFT_ROOM_HTML = r"""
       _capAddRound = null; _capLateOpen = false;
     }
     var total = Object.keys(_setupOwned).filter(function(k){ return _setupOwned[k]; }).length;
-    // Rounds 1-20 individually; final 5 (when present) collapse into one section.
-    var splitAt = (c.rounds > 20) ? (c.rounds - 5) : c.rounds;
+    // Always show R1-R20 individually. Everything from R21 onwards collapses into one section.
+    var splitAt = Math.min(20, c.rounds);
     var rows = '';
     for (var r = 1; r <= splitAt; r++) rows += capRow(r, c);
     var late = '';
