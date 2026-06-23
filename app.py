@@ -13023,10 +13023,13 @@ def api_draft_detect():
         drafts = get_drafts(platform, league_id, season) or []
         for d in drafts:
             settings = d.get("settings") or {}
+            rounds_val = int(settings.get("rounds") or 15)
+            draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
             out.append({
                 "draft_id": str(d.get("draft_id") or ""),
                 "status": d.get("status"),
                 "type": d.get("type"),
+                "draft_type": draft_type,
                 "season": d.get("season"),
                 "teams": settings.get("teams"),
                 "rounds": settings.get("rounds"),
@@ -13083,9 +13086,16 @@ def api_draft_live():
     except Exception as _e_sn:
         logger.info("[draft-live] slot names skipped: %s", _e_sn)
 
+    rounds_val = int(settings.get("rounds") or 15)
+    # Derive high-level draft type from round count: Sleeper rookie drafts are
+    # always short (1-5 rounds); anything longer is a startup/dynasty draft.
+    draft_type = "rookie" if 0 < rounds_val <= 5 else "startup"
+    pick_timer = int(settings.get("pick_timer") or 0)
     return jsonify({
         "status": draft.get("status"),
         "type": draft.get("type"),
+        "draft_type": draft_type,
+        "pick_timer": pick_timer,
         "teams": settings.get("teams"),
         "rounds": settings.get("rounds"),
         "order": _order_from_sleeper(draft),

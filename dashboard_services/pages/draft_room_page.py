@@ -136,6 +136,8 @@ _DRAFT_ROOM_HTML = r"""
         <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
         <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;"></span>
         <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
+        <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
+        <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
         <span class="dr-progress" id="drProgress"></span>
         <span class="dr-save" id="drSave"></span>
       </div>
@@ -258,6 +260,9 @@ _DRAFT_ROOM_HTML = r"""
     background: rgba(56,189,248,.14); color: var(--accent,#38bdf8); }
   .dr-pill-you { background: rgba(34,197,94,.16); color: #22c55e; }
   .dr-pill-live { background: rgba(239,68,68,.16); color: #ef4444; animation: drPulse 1.6s ease-in-out infinite; }
+  .dr-pill-upcoming { background: rgba(245,158,11,.16); color: #f59e0b; }
+  .dr-pick-timer { font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; min-width: 38px; }
+  .dr-pick-timer.urgent { color: #ef4444; }
   .dr-progress { font-size: 12px; color: var(--text-muted); }
   .dr-save { font-size: 11px; color: #22c55e; }
   .dr-live-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -643,6 +648,9 @@ _DRAFT_ROOM_HTML = r"""
   var _summaryShown = false; // auto-open summary only once per draft
   var compareIds = [];     // 0-2 player IDs staged for comparison
   var _chipsCollapsed = false; // best-at-pos strip collapsed state
+  var _timerInterval = null;   // pick countdown setInterval handle
+  var _timerPickStart = null;  // Date.now() when current pick slot opened
+  var _timerPickNo = null;     // which pick number the timer is counting for
 
   // ── Pick-order helper (snake / linear / 3rr) ───────────────────────────────
   function pickDir(r, order){            // true = forward (slot 1 → N)
@@ -1952,6 +1960,9 @@ _DRAFT_ROOM_HTML = r"""
           slot = parseInt(d.draft_order[cfg.viewerUserId], 10) || 0;
         }
         var isComplete = String(d.status) === 'complete';
+        var isDrafting = String(d.status) === 'drafting';
+        // draft_type from backend (rookie vs startup) — fall back to round-count heuristic
+        var draftType = d.draft_type || (parseInt(d.rounds) <= 5 ? 'rookie' : 'startup');
         // Build ownership from actual picks (who picked what), falling back to slot for future picks.
         var owned = {};
         var madePickNos = {};
@@ -1966,22 +1977,24 @@ _DRAFT_ROOM_HTML = r"""
           }
         }
         state = {
-          type: 'startup', teams: teams, rounds: rounds, sf: !!cfg.isSuperflex,
+          type: draftType, teams: teams, rounds: rounds, sf: !!cfg.isSuperflex,
           slot: slot, order: order, picks: {}, current: 1,
           owned: Object.keys(owned).length ? owned : null,
           mode: 'live', isComplete: isComplete, sourceDraftId: draftId,
+          pickTimer: parseInt(d.pick_timer) || 0,
           slotNames: d.slot_names || {}, queue: []
         };
         applyLivePicks(d.picks || []);
         showMain();
         document.getElementById('drUndo').style.display = 'none';
+        document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
+        document.getElementById('drUpcomingBadge').style.display = (!isDrafting && !isComplete) ? '' : 'none';
         if (isComplete){
           document.getElementById('drSide').style.display = 'none';
-          document.getElementById('drLiveBadge').style.display = 'none';
         } else {
           document.getElementById('drSide').style.display = '';
-          document.getElementById('drLiveBadge').style.display = '';
           startPolling();
+          if (isDrafting) startPickTimer();
         }
         loadPlayers();
       })
@@ -1994,19 +2007,54 @@ _DRAFT_ROOM_HTML = r"""
       fetch('/api/draft/live?platform=' + encodeURIComponent(cfg.platform) + '&draft_id=' + encodeURIComponent(state.sourceDraftId))
         .then(function(r){ return r.json(); })
         .then(function(d){
-          if (d && d.picks){
-            applyLivePicks(d.picks); render();
-            if (String(d.status) === 'complete'){
-              stopPolling(); state.isComplete = true; save();
-              document.getElementById('drSide').style.display = 'none';
-              document.getElementById('drLiveBadge').style.display = 'none';
-            }
+          if (!d || !d.picks) return;
+          var prevCurrent = state.current;
+          applyLivePicks(d.picks); render();
+          var isDrafting = String(d.status) === 'drafting';
+          document.getElementById('drLiveBadge').style.display = isDrafting ? '' : 'none';
+          document.getElementById('drUpcomingBadge').style.display = (!isDrafting && String(d.status) !== 'complete') ? '' : 'none';
+          if (isDrafting && state.current !== prevCurrent) startPickTimer();
+          if (String(d.status) === 'complete'){
+            stopPolling(); stopPickTimer(); state.isComplete = true; save();
+            document.getElementById('drSide').style.display = 'none';
           }
         })
         .catch(function(){});
     }, 5000);
   }
   function stopPolling(){ if (pollTimer){ clearInterval(pollTimer); pollTimer = null; } }
+
+  // ── Pick countdown timer ────────────────────────────────────────────────────
+  // Counts down from state.pickTimer seconds. Clock starts fresh whenever the
+  // current pick number changes (detected by the poll loop above).
+  function startPickTimer(){
+    stopPickTimer();
+    if (!state || !state.pickTimer) return;
+    _timerPickNo = state.current;
+    _timerPickStart = Date.now();
+    var el = document.getElementById('drPickTimer');
+    if (el) el.style.display = '';
+    function tick(){
+      if (!state || state.pickTimer <= 0){ stopPickTimer(); return; }
+      var elapsed = Math.round((Date.now() - _timerPickStart) / 1000);
+      var remaining = Math.max(0, state.pickTimer - elapsed);
+      var m = Math.floor(remaining / 60), s = remaining % 60;
+      var txt = m > 0 ? (m + ':' + (s < 10 ? '0' : '') + s) : (remaining + 's');
+      var el2 = document.getElementById('drPickTimer');
+      if (el2){
+        el2.textContent = txt;
+        el2.className = 'dr-pick-timer' + (remaining <= 30 ? ' urgent' : '');
+      }
+      if (remaining === 0) stopPickTimer();
+    }
+    tick();
+    _timerInterval = setInterval(tick, 1000);
+  }
+  function stopPickTimer(){
+    if (_timerInterval){ clearInterval(_timerInterval); _timerInterval = null; }
+    var el = document.getElementById('drPickTimer');
+    if (el){ el.style.display = 'none'; el.textContent = ''; }
+  }
 
 
   function userNextPick(){
@@ -2538,8 +2586,11 @@ _DRAFT_ROOM_HTML = r"""
         if (state.isComplete){
           document.getElementById('drSide').style.display = 'none';
           document.getElementById('drLiveBadge').style.display = 'none';
+          document.getElementById('drUpcomingBadge').style.display = 'none';
         } else {
-          document.getElementById('drLiveBadge').style.display = '';
+          // Badges are refreshed on the first poll; hide both until confirmed
+          document.getElementById('drLiveBadge').style.display = 'none';
+          document.getElementById('drUpcomingBadge').style.display = 'none';
         }
       } else if (state.mode === 'mock'){
         // Restore the mock: a not-yet-started draft comes back to the Start
@@ -2649,7 +2700,8 @@ _DRAFT_HISTORY_HTML = r"""
     drafts.sort(function(a, b){ return (rank[a.status] != null ? rank[a.status] : 3) - (rank[b.status] != null ? rank[b.status] : 3); });
     var html = '';
     drafts.forEach(function(d){
-      var title = (d.type ? (d.type.charAt(0).toUpperCase() + d.type.slice(1)) : 'Draft')
+      var typeLabel = d.draft_type ? (d.draft_type.charAt(0).toUpperCase() + d.draft_type.slice(1)) : 'Draft';
+      var title = typeLabel + ' Draft'
         + ' · ' + (d.teams || '?') + ' teams · ' + (d.rounds || '?') + ' rounds';
       html += '<div class="dr-hist-card">'
         + '<div class="dr-hist-body"><div class="dr-hist-title">' + statusTag(d.status) + esc(title) + '</div>'
