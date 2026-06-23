@@ -129,17 +129,22 @@ _DRAFT_ROOM_HTML = r"""
   <!-- Board + side -->
   <div class="dr-main" id="drMain" style="display:none;">
     <div class="dr-statusbar">
-      <div class="dr-status-left">
-        <span class="dr-pill" id="drRoundPill">Round 1</span>
-        <span class="dr-pill" id="drPickPill">Pick 1</span>
-        <span class="dr-onclock">On the clock: <b id="drOnClock">Team 1</b></span>
-        <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
-        <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;"></span>
-        <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
-        <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
-        <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
-        <span class="dr-progress" id="drProgress"></span>
-        <span class="dr-save" id="drSave"></span>
+      <div class="dr-status-info">
+        <div class="dr-onclock" id="drOnClockWrap">
+          <span class="dr-onclock-label">On the clock</span>
+          <b id="drOnClock">Team 1</b>
+        </div>
+        <div class="dr-status-pills">
+          <span class="dr-pill" id="drRoundPill">Round 1</span>
+          <span class="dr-pill" id="drPickPill">Pick 1</span>
+          <span class="dr-pick-timer" id="drPickTimer" style="display:none;"></span>
+          <span class="dr-pill dr-pill-live" id="drLiveBadge" style="display:none;">&#9679; LIVE</span>
+          <span class="dr-pill dr-pill-upcoming" id="drUpcomingBadge" style="display:none;">Upcoming</span>
+          <span class="dr-pill dr-pill-you" id="drNextPill" style="display:none;"></span>
+          <span class="dr-pill dr-pill-grade" id="drGradePill" style="display:none;"></span>
+          <span class="dr-progress" id="drProgress"></span>
+          <span class="dr-save" id="drSave"></span>
+        </div>
       </div>
       <div class="dr-status-right">
         <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
@@ -163,6 +168,7 @@ _DRAFT_ROOM_HTML = r"""
         <div class="dr-board" id="drBoard"></div>
       </div>
       <aside class="dr-side" id="drSide">
+        <button class="dr-sheet-handle" id="drSheetHandle" aria-label="Resize panel"><span class="dr-sheet-grip"></span></button>
         <div class="otc-main-tabs dr-side-tabs" id="drSideTabs">
           <button class="otc-main-tab is-active" data-stab="best">Players</button>
           <button class="otc-main-tab" data-stab="rec">Recs</button>
@@ -249,22 +255,34 @@ _DRAFT_ROOM_HTML = r"""
   .dr-btn-ghost { background: transparent; font-weight: 600; }
   .dr-btn-danger { color: #ef4444; border-color: rgba(239,68,68,.4); }
   .dr-statusbar {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
-    padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 10px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 12px;
     background: var(--card);
     position: sticky; top: 56px; z-index: 30;
   }
-  .dr-status-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .dr-status-right { display: flex; align-items: center; gap: 6px; }
+  .dr-status-info { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1; }
+  .dr-status-pills { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+  .dr-status-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  /* On-the-clock hero chip */
+  .dr-onclock { display: flex; flex-direction: column; gap: 1px; padding: 6px 14px; border-radius: 10px;
+    background: var(--bg); border: 1px solid var(--border); flex-shrink: 0; line-height: 1.2; }
+  .dr-onclock-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text-muted); }
+  .dr-onclock b { font-size: 15px; font-weight: 800; color: var(--text); white-space: nowrap; }
+  .dr-onclock.dr-onclock-you { background: rgba(34,197,94,.1); border-color: rgba(34,197,94,.4); }
+  .dr-onclock.dr-onclock-you b { color: #22c55e; }
   .dr-pill { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
-    background: rgba(56,189,248,.14); color: var(--accent,#38bdf8); }
+    background: rgba(56,189,248,.14); color: var(--accent,#38bdf8); white-space: nowrap; }
   .dr-pill-you { background: rgba(34,197,94,.16); color: #22c55e; }
   .dr-pill-live { background: rgba(239,68,68,.16); color: #ef4444; animation: drPulse 1.6s ease-in-out infinite; }
   .dr-pill-upcoming { background: rgba(245,158,11,.16); color: #f59e0b; }
-  .dr-pick-timer { font-size: 13px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; min-width: 38px; }
-  .dr-pick-timer.urgent { color: #ef4444; }
-  .dr-progress { font-size: 12px; color: var(--text-muted); }
+  .dr-pick-timer { font-size: 14px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums;
+    min-width: 40px; padding: 2px 8px; border-radius: 7px; background: rgba(127,127,127,.1); text-align: center; }
+  .dr-pick-timer.urgent { color: #fff; background: #ef4444; animation: drPulse 1s ease-in-out infinite; }
+  .dr-progress { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
   .dr-save { font-size: 11px; color: #22c55e; }
+  /* Bottom-sheet drag handle (mobile only) */
+  .dr-sheet-handle { display: none; }
   .dr-live-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
   .dr-live-head { font-size: 12px; font-weight: 700; color: var(--text-muted); }
   .dr-live-item { text-align: left; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border);
@@ -274,8 +292,6 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ls-drafting { background: rgba(239,68,68,.16); color: #ef4444; }
   .dr-ls-pre_draft { background: rgba(245,158,11,.16); color: #f59e0b; }
   .dr-ls-complete { background: rgba(148,163,184,.16); color: #94a3b8; }
-  .dr-onclock { font-size: 13px; color: var(--text-muted); }
-  .dr-onclock b { color: var(--text); }
   .dr-cols { display: grid; grid-template-columns: 1fr 340px; gap: 14px; align-items: start; }
   .dr-board-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 6px; }
   .dr-board { display: grid; gap: 5px; min-width: max-content; }
@@ -426,19 +442,46 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-avail-pn { font-size: 10px; font-weight: 600; color: var(--text-muted); }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
   @media (max-width: 900px) {
-    .dr-cols { grid-template-columns: 1fr; }
-    .dr-side { position: static; max-height: none; order: -1; }
+    .dr-cols { grid-template-columns: 1fr; padding-bottom: 16vh; }
     .dr-statusbar { top: 0; }
+    /* The side panel becomes a draggable bottom sheet */
+    .dr-side {
+      position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+      width: 100%; height: 92vh; max-height: 92vh; align-self: auto; order: 0;
+      border-radius: 18px 18px 0 0; border-bottom: none;
+      box-shadow: 0 -10px 40px rgba(0,0,0,.28); z-index: 50;
+      transform: translateY(56vh);          /* default: ~36vh visible (mid snap) */
+      transition: transform .3s cubic-bezier(.32,.72,0,1);
+    }
+    .dr-side.dragging { transition: none; }
+    .dr-sheet-handle {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; height: 26px; padding: 0; border: none; background: none;
+      cursor: grab; flex-shrink: 0; touch-action: none;
+    }
+    .dr-sheet-handle:active { cursor: grabbing; }
+    .dr-sheet-grip { width: 40px; height: 5px; border-radius: 999px; background: var(--border);
+      transition: background .12s; }
+    .dr-sheet-handle:active .dr-sheet-grip { background: var(--accent,#38bdf8); }
+    .dr-ba-list { max-height: none; }
   }
   @media (max-width: 640px) {
     .dr-wrap { padding: 8px 8px 32px; }
     .dr-setup-card { padding: 16px; }
-    .dr-statusbar { padding: 8px; gap: 6px; }
-    .dr-status-left { gap: 6px; }
-    .dr-onclock { width: 100%; }
+    /* Stacked, scrollable status bar */
+    .dr-statusbar { padding: 8px 10px; gap: 8px; flex-direction: column; align-items: stretch; border-radius: 10px; }
+    .dr-status-info { width: 100%; flex-wrap: wrap; gap: 8px; }
+    .dr-onclock { flex: 1; min-width: 0; }
+    .dr-onclock b { white-space: normal; }
+    .dr-status-pills { gap: 6px; }
+    .dr-progress, .dr-save { font-size: 10px; }
+    .dr-status-right {
+      width: 100%; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+      flex-wrap: nowrap; padding-bottom: 2px; scrollbar-width: none;
+    }
+    .dr-status-right::-webkit-scrollbar { display: none; }
+    .dr-status-right .dr-btn { flex: 0 0 auto; padding: 8px 12px; }
     .dr-side-tabs .otc-main-tab { padding: 8px 12px; }
-    .dr-side { max-height: 60vh; }            /* keep the board reachable below */
-    .dr-ba-list { max-height: 52vh; }
     .dr-board-wrap { padding: 4px; }
     .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
     .dr-setup-cta .dr-btn { width: 100%; }
@@ -2072,12 +2115,18 @@ _DRAFT_ROOM_HTML = r"""
     document.getElementById('drRoundPill').textContent = done ? 'Complete' : ('Round ' + r);
     document.getElementById('drPickPill').textContent  = done ? (total + ' picks') : ('Pick ' + state.current);
     var oc = document.getElementById('drOnClock');
-    if (done) { oc.textContent = 'Draft complete'; }
-    else if (sim && !simStarted) { oc.textContent = 'Ready - claim picks, then Start Draft'; }
+    var ocWrap = document.getElementById('drOnClockWrap');
+    var ocLabel = ocWrap ? ocWrap.querySelector('.dr-onclock-label') : null;
+    var mineNow = false;
+    if (done) { oc.textContent = 'Draft complete'; if (ocLabel) ocLabel.style.display = 'none'; }
+    else if (sim && !simStarted) { oc.textContent = 'Ready to draft'; if (ocLabel){ ocLabel.style.display = ''; ocLabel.textContent = 'Claim picks, then Start'; } }
     else {
       var slot = slotOnClock(state.current, state.teams, state.order);
-      oc.textContent = isMyPick(state.current) ? ('Team ' + slot + ' (You)') : ('Team ' + slot);
+      mineNow = isMyPick(state.current);
+      oc.textContent = mineNow ? ('You (Team ' + slot + ')') : teamName(slot);
+      if (ocLabel){ ocLabel.style.display = ''; ocLabel.textContent = 'On the clock'; }
     }
+    if (ocWrap) ocWrap.classList.toggle('dr-onclock-you', mineNow);
     var nextPill = document.getElementById('drNextPill');
     var np = done ? null : userNextPick();
     if (np){ nextPill.style.display = ''; nextPill.textContent = 'Your next: #' + np + ' (R' + Math.ceil(np / state.teams) + ')'; }
@@ -2604,6 +2653,66 @@ _DRAFT_ROOM_HTML = r"""
       if (state.mode === 'live' && state.sourceDraftId && !state.isComplete) startPolling();
     }
   }
+
+  // ── Mobile bottom-sheet drag behavior ───────────────────────────────────────
+  // Below 900px the side panel is a draggable sheet with three snap points:
+  // peek (~14vh), mid (~38vh, default), and full (~92vh). Drag the grip handle
+  // up/down; on release it snaps to the nearest point.
+  (function initSheet(){
+    var sheet = document.getElementById('drSide');
+    var handle = document.getElementById('drSheetHandle');
+    if (!sheet || !handle) return;
+    var mq = window.matchMedia('(max-width: 900px)');
+    var dragging = false, startY = 0, startT = 0, curT = 0, snapIdx = 1;
+    function ih(){ return window.innerHeight; }
+    // translateY offsets (px): full (whole 92vh sheet shows), mid (~36vh), peek (~12vh)
+    function snaps(){ return [0, ih() * 0.56, ih() * 0.80]; }
+    function applyT(t){ curT = t; sheet.style.transform = 'translateY(' + t + 'px)'; }
+    function snapTo(idx){
+      var pts = snaps();
+      snapIdx = Math.max(0, Math.min(pts.length - 1, idx));
+      sheet.classList.remove('dragging');
+      applyT(pts[snapIdx]);
+    }
+    function pointY(e){ return e.touches ? e.touches[0].clientY : e.clientY; }
+    function onDown(e){
+      if (!mq.matches) return;
+      dragging = true; startY = pointY(e); startT = curT;
+      sheet.classList.add('dragging');
+      e.preventDefault();
+    }
+    function onMove(e){
+      if (!dragging) return;
+      var dy = pointY(e) - startY;
+      var t = Math.max(0, Math.min(ih() * 0.86, startT + dy));
+      applyT(t);
+      if (e.cancelable) e.preventDefault();
+    }
+    function onUp(){
+      if (!dragging) return;
+      dragging = false;
+      var pts = snaps(), best = 0, bd = Infinity;
+      for (var i = 0; i < pts.length; i++){ var d = Math.abs(pts[i] - curT); if (d < bd){ bd = d; best = i; } }
+      snapTo(best);
+    }
+    handle.addEventListener('touchstart', onDown, { passive: false });
+    handle.addEventListener('mousedown', onDown);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('touchend', onUp);
+    window.addEventListener('mouseup', onUp);
+    // Tapping a tab while peeking lifts the sheet to mid so the content shows.
+    document.getElementById('drSideTabs').addEventListener('click', function(){
+      if (mq.matches && snapIdx === 2) snapTo(1);
+    });
+    function applyMode(){
+      if (mq.matches){ snapTo(snapIdx); }
+      else { sheet.style.transform = ''; sheet.classList.remove('dragging'); }
+    }
+    if (mq.addEventListener) mq.addEventListener('change', applyMode); else mq.addListener(applyMode);
+    window.addEventListener('resize', function(){ if (mq.matches) snapTo(snapIdx); });
+    applyMode();
+  })();
 
   // Open a specific league draft from history (?live=<draft_id>), else resume
   // the in-progress session draft.
