@@ -48,52 +48,69 @@ def build_draft_room_body(
 _DRAFT_ROOM_HTML = r"""
 <div class="dr-wrap">
   <div class="dr-hero">
-    <h1 class="dr-title">Draft Assistant</h1>
+    <h1 class="dr-title">Draft Room</h1>
     <p class="dr-sub">Build your board, draft manually, and see the best available in real time.
       Live draft sync is coming soon.</p>
   </div>
 
   <!-- Setup -->
-  <div class="dr-setup card" id="drSetup">
-    <div class="dr-setup-grid">
-      <label class="dr-field"><span>Draft Type</span>
-        <select id="drType">
-          <option value="startup">Startup (Dynasty)</option>
-          <option value="rookie">Rookie (Dynasty)</option>
-          <option value="redraft">Redraft</option>
-        </select>
-      </label>
-      <label class="dr-field"><span>Teams</span>
-        <select id="drTeams">
-          <option>8</option><option>10</option><option selected>12</option><option>14</option>
-        </select>
-      </label>
-      <label class="dr-field"><span>Rounds</span>
-        <input id="drRounds" type="number" min="1" max="40" value="15">
-      </label>
-      <label class="dr-field"><span>Your Pick</span>
-        <select id="drSlot"></select>
-      </label>
-      <label class="dr-field"><span>Format</span>
-        <select id="drSf">
-          <option value="0">1QB</option>
-          <option value="1">Superflex</option>
-        </select>
-      </label>
-      <label class="dr-field"><span>Order</span>
-        <select id="drOrder">
-          <option value="snake">Snake</option>
-          <option value="linear">Linear</option>
-          <option value="3rr">3rd Round Reversal</option>
-        </select>
-      </label>
+  <div class="dr-setup" id="drSetup">
+    <div class="dr-setup-card">
+      <div class="dr-setup-header">
+        <h2 class="dr-setup-title">Set up your draft</h2>
+        <p class="dr-setup-desc">Run a mock against ADP-driven CPU teams, draft manually, or connect a live Sleeper draft.</p>
+      </div>
+
+      <div class="dr-setup-section">
+        <div class="dr-setup-section-label">Format</div>
+        <div class="dr-setup-grid">
+          <label class="dr-field"><span>Draft Type</span>
+            <select id="drType">
+              <option value="startup">Startup (Dynasty)</option>
+              <option value="rookie">Rookie (Dynasty)</option>
+              <option value="redraft">Redraft</option>
+            </select>
+          </label>
+          <label class="dr-field"><span>Scoring</span>
+            <select id="drSf">
+              <option value="0">1QB</option>
+              <option value="1">Superflex</option>
+            </select>
+          </label>
+          <label class="dr-field"><span>Pick Order</span>
+            <select id="drOrder">
+              <option value="snake">Snake</option>
+              <option value="linear">Linear</option>
+              <option value="3rr">3rd Round Reversal</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="dr-setup-section">
+        <div class="dr-setup-section-label">League</div>
+        <div class="dr-setup-grid">
+          <label class="dr-field"><span>Teams</span>
+            <select id="drTeams">
+              <option>8</option><option>10</option><option selected>12</option><option>14</option>
+            </select>
+          </label>
+          <label class="dr-field"><span>Rounds</span>
+            <input id="drRounds" type="number" min="1" max="40" value="15">
+          </label>
+          <label class="dr-field"><span>Your Pick</span>
+            <select id="drSlot"></select>
+          </label>
+        </div>
+      </div>
+
+      <div class="dr-setup-cta">
+        <button class="dr-btn dr-btn-primary dr-btn-lg" id="drStartSim">&#9654;&nbsp; Start Mock Draft</button>
+        <button class="dr-btn dr-btn-lg" id="drStart">Draft Manually</button>
+        <button class="dr-btn dr-btn-ghost" id="drConnect">Connect Live Draft</button>
+      </div>
+      <div class="dr-live-list" id="drLiveList" style="display:none;"></div>
     </div>
-    <div class="dr-setup-actions">
-      <button class="dr-btn dr-btn-primary" id="drStart">Start Manual Draft</button>
-      <button class="dr-btn" id="drConnect">Connect Live Draft</button>
-      <span class="dr-setup-note" id="drResumeNote" style="display:none;"></span>
-    </div>
-    <div class="dr-live-list" id="drLiveList" style="display:none;"></div>
   </div>
 
   <!-- Board + side -->
@@ -109,6 +126,13 @@ _DRAFT_ROOM_HTML = r"""
         <span class="dr-save" id="drSave"></span>
       </div>
       <div class="dr-status-right">
+        <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
+          <option value="1400">Slow</option>
+          <option value="700" selected>Normal</option>
+          <option value="300">Fast</option>
+          <option value="60">Instant</option>
+        </select>
+        <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
         <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
         <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
         <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset">Reset</button>
@@ -120,8 +144,14 @@ _DRAFT_ROOM_HTML = r"""
         <div class="dr-board" id="drBoard"></div>
       </div>
       <aside class="dr-side">
-        <div class="dr-side-head">
-          <div class="dr-side-title">Best Available</div>
+        <div class="dr-side-tabs" id="drSideTabs">
+          <button class="dr-stab active" data-stab="best">Best</button>
+          <button class="dr-stab" data-stab="rec">Recs</button>
+          <button class="dr-stab" data-stab="needs">Needs</button>
+          <button class="dr-stab" data-stab="runs">Runs</button>
+          <button class="dr-stab" data-stab="steals">Steals</button>
+        </div>
+        <div class="dr-side-head" id="drBestControls">
           <div class="dr-side-controls">
             <input id="drSearch" type="search" placeholder="Search…" autocomplete="off">
             <select id="drBaSort">
@@ -146,19 +176,32 @@ _DRAFT_ROOM_HTML = r"""
 </div>
 
 <style>
-  .dr-wrap { max-width: 1200px; margin: 0 auto; padding: 12px 14px 48px; }
-  .dr-hero { margin-bottom: 14px; }
+  .dr-wrap { max-width: 1640px; margin: 0 auto; padding: 10px 12px 40px; }
+  .dr-hero { margin-bottom: 12px; }
   .dr-title { font-size: clamp(20px,4vw,28px); font-weight: 800; color: var(--text); margin: 0 0 4px; }
   .dr-sub { font-size: 14px; color: var(--text-muted); margin: 0; }
-  .dr-setup { padding: 16px; }
-  .dr-setup-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 12px; }
-  .dr-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+  /* ── Setup (redesigned) ── */
+  .dr-setup { display: flex; justify-content: center; padding: 8px 0; }
+  .dr-setup-card { width: 100%; max-width: 720px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px 24px 22px; box-shadow: 0 8px 30px rgba(0,0,0,.10); }
+  .dr-setup-header { margin-bottom: 18px; }
+  .dr-setup-title { font-size: 20px; font-weight: 800; color: var(--text); margin: 0 0 4px; }
+  .dr-setup-desc { font-size: 13px; color: var(--text-muted); margin: 0; line-height: 1.5; }
+  .dr-setup-section { padding: 14px 0; border-top: 1px solid var(--border); }
+  .dr-setup-section:first-of-type { border-top: none; padding-top: 0; }
+  .dr-setup-section-label { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 10px; }
+  .dr-setup-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 12px; }
+  .dr-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
   .dr-field select, .dr-field input {
-    padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--card); color: var(--text); font-size: 13px; outline: none; min-height: 36px;
+    padding: 9px 11px; border-radius: 9px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-size: 14px; font-weight: 600; outline: none; min-height: 40px;
   }
-  .dr-setup-actions { margin-top: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .dr-setup-note { font-size: 12px; color: var(--text-muted); }
+  .dr-field select:focus, .dr-field input:focus { border-color: var(--accent,#38bdf8); }
+  .dr-setup-cta { margin-top: 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .dr-btn-lg { padding: 12px 22px; font-size: 14px; border-radius: 10px; }
+  .dr-sim-speed { padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg);
+    color: var(--text); font-size: 12px; font-weight: 600; }
   .dr-btn {
     padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;
     border: 1px solid var(--border); background: var(--bg); color: var(--text); white-space: nowrap;
@@ -192,12 +235,13 @@ _DRAFT_ROOM_HTML = r"""
   .dr-onclock { font-size: 13px; color: var(--text-muted); }
   .dr-onclock b { color: var(--text); }
   .dr-cols { display: grid; grid-template-columns: 1fr 340px; gap: 14px; align-items: start; }
-  .dr-board-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 8px; }
-  .dr-board { display: grid; gap: 6px; min-width: max-content; }
+  .dr-board-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 6px; }
+  .dr-board { display: grid; gap: 5px; min-width: max-content; }
   .dr-cell {
-    border: 1px solid var(--border); border-radius: 8px; padding: 6px; min-height: 52px;
-    background: var(--bg); display: flex; align-items: center; gap: 7px; position: relative;
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 6px 0; min-height: 50px;
+    background: var(--bg); display: flex; align-items: flex-end; gap: 6px; position: relative; overflow: hidden;
   }
+  .dr-cell-body { padding-bottom: 6px; }
   .dr-cell-empty { opacity: .45; }
   .dr-cell-filled { background: linear-gradient(180deg, rgba(56,189,248,.05), var(--bg)); }
   .dr-cell-current { outline: 2px solid var(--accent,#38bdf8); animation: drPulse 1.6s ease-in-out infinite; }
@@ -207,7 +251,8 @@ _DRAFT_ROOM_HTML = r"""
   @keyframes drPop { 0% { transform: scale(.92); opacity: .3; } 100% { transform: scale(1); opacity: 1; } }
   .dr-cell-val { position: absolute; top: 2px; right: 5px; font-size: 9px; font-weight: 800; color: var(--accent,#38bdf8); }
   .dr-cell-num { position: absolute; top: 2px; left: 5px; font-size: 9px; font-weight: 700; color: var(--text-muted); }
-  .dr-hs { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: rgba(0,0,0,.15); }
+  .dr-hs { width: 40px; height: 40px; border-radius: 8px 8px 0 0; object-fit: cover; object-position: top center;
+    flex-shrink: 0; background: transparent; align-self: flex-end; }
   .dr-cell-body { min-width: 0; line-height: 1.2; }
   .dr-cell-name { font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 96px; }
   .dr-cell-meta { font-size: 10px; color: var(--text-muted); }
@@ -215,8 +260,26 @@ _DRAFT_ROOM_HTML = r"""
   .dr-colhead { font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; padding: 2px 0; white-space: nowrap; }
   .dr-colhead-you { color: var(--accent,#38bdf8); }
   .dr-side { border: 1px solid var(--border); border-radius: 10px; background: var(--card); display: flex; flex-direction: column;
-    position: sticky; top: 120px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; }
+    position: sticky; top: 120px; align-self: start; max-height: calc(100vh - 134px); z-index: 20; overflow: hidden; }
+  .dr-side-tabs { display: flex; border-bottom: 1px solid var(--border); }
+  .dr-stab { flex: 1; padding: 9px 4px; font-size: 12px; font-weight: 700; background: transparent; border: none;
+    border-bottom: 2px solid transparent; color: var(--text-muted); cursor: pointer; }
+  .dr-stab.active { color: var(--accent,#38bdf8); border-bottom-color: var(--accent,#38bdf8); }
   .dr-side-head { padding: 10px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+  /* command-center panels (needs / runs) */
+  .dr-panel { padding: 12px; overflow-y: auto; }
+  .dr-need-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .dr-need-pos { width: 30px; font-size: 11px; font-weight: 800; color: #fff; border-radius: 4px; padding: 2px 0; text-align: center; }
+  .dr-need-bar { flex: 1; height: 8px; border-radius: 999px; background: rgba(127,127,127,.18); overflow: hidden; }
+  .dr-need-fill { height: 100%; border-radius: 999px; }
+  .dr-need-txt { font-size: 11px; color: var(--text-muted); white-space: nowrap; min-width: 64px; text-align: right; }
+  .dr-need-tag { font-size: 10px; font-weight: 800; color: #ef4444; }
+  .dr-run-line { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+  .dr-run-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .dr-run-chip { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: rgba(127,127,127,.14); color: var(--text); }
+  .dr-run-hot { background: rgba(239,68,68,.16); color: #ef4444; }
+  .dr-ba-delta { font-size: 10px; font-weight: 800; color: #22c55e; }
+  .dr-empty-note { padding: 22px 14px; font-size: 12px; color: var(--text-muted); text-align: center; }
   .dr-side-title { font-size: 14px; font-weight: 800; color: var(--text); }
   .dr-side-controls { display: flex; gap: 6px; }
   .dr-side-controls input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
@@ -227,7 +290,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-ba-list { overflow-y: auto; flex: 1; }
   .dr-ba-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
   .dr-ba-row:hover { background: rgba(56,189,248,.08); }
-  .dr-ba-hs { width: 30px; height: 30px; border-radius: 5px; object-fit: cover; flex-shrink: 0; background: rgba(0,0,0,.15); }
+  .dr-ba-hs { width: 36px; height: 36px; border-radius: 7px 7px 0 0; object-fit: cover; object-position: top center;
+    flex-shrink: 0; background: transparent; align-self: flex-end; }
   .dr-ba-body { min-width: 0; flex: 1; line-height: 1.25; }
   .dr-ba-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dr-ba-meta { font-size: 11px; color: var(--text-muted); }
@@ -259,6 +323,11 @@ _DRAFT_ROOM_HTML = r"""
   var lastLivePicks = null;// last picks payload from the live feed
   var saveTimer = null;    // debounce for DB autosave
   var pollTimer = null;    // live-draft poll interval
+  var sim = false;         // mock-draft simulation active
+  var simTimer = null;
+  var simSpeed = 700;      // ms between CPU picks
+  var simPaused = false;
+  var sideTab = 'best';    // best | rec | needs | runs | steals
 
   // ── Pick-order helper (snake / linear / 3rr) ───────────────────────────────
   function pickDir(r, order){            // true = forward (slot 1 → N)
@@ -340,6 +409,7 @@ _DRAFT_ROOM_HTML = r"""
     document.getElementById('drMain').style.display = '';
   }
   function showSetup(){
+    endSim();
     document.getElementById('drMain').style.display = 'none';
     document.getElementById('drSetup').style.display = '';
   }
@@ -354,7 +424,9 @@ _DRAFT_ROOM_HTML = r"""
     return state.sf ? (p.sf_value || p.value || 0) : (p.value || 0);
   }
   function adpOf(p){
-    // Redraft has no market ADP feed, so derive a rank from redraft value.
+    // Rookie drafts use rookie-specific ADP; redraft derives a rank from redraft
+    // value (no market feed); startup uses the consensus (FantasyCalc) ADP.
+    if (state.type === 'rookie') return state.sf ? p.sf_rookie_avg_pick : p.rookie_avg_pick;
     if (state.type === 'redraft') return (p._radp != null ? p._radp : null);
     return state.sf ? p.sf_avg_pick : p.avg_pick;
   }
@@ -388,6 +460,7 @@ _DRAFT_ROOM_HTML = r"""
           Object.keys(state.picks).forEach(function(k){ var pp = state.picks[k]; if (pp) drafted[String(pp.id)] = true; });
         }
         render();
+        if (sim) scheduleSim();   // begin CPU picks once players are loaded
       })
       .catch(function(){
         document.getElementById('drBaList').innerHTML =
@@ -396,7 +469,168 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  function render(){ renderStatus(); renderBoard(); renderBA(); justPick = null; save(); }
+  function render(){ renderStatus(); renderBoard(); renderSide(); justPick = null; save(); }
+
+  // ── Simulation (mock draft) ─────────────────────────────────────────────────
+  function simAdp(p){
+    var a = adpOf(p);
+    return (a != null) ? a : (10000 - (valOf(p) / 100));  // ADP-less players sort after, by value
+  }
+  function simPick(){
+    var pool = availablePool();
+    if (!pool.length) return null;
+    pool.sort(function(a, b){ return simAdp(a) - simAdp(b); });
+    // Variance: choose within a small window, biased toward the top so picks
+    // generally follow ADP but don't play out identically (stays within tiers).
+    var win = Math.min(pool.length, 5);
+    var idx = Math.floor(win * (1 - Math.sqrt(1 - Math.random())));
+    if (idx >= win) idx = win - 1;
+    return pool[idx];
+  }
+  function scheduleSim(){
+    if (!sim || simPaused) return;
+    var total = state.teams * state.rounds;
+    if (state.current > total){ endSim(); return; }
+    if (slotOnClock(state.current, state.teams, state.order) === state.slot) return; // wait for the user
+    clearTimeout(simTimer);
+    simTimer = setTimeout(simStep, simSpeed);
+  }
+  function simStep(){
+    if (!sim || simPaused) return;
+    var total = state.teams * state.rounds;
+    if (state.current > total){ endSim(); render(); return; }
+    if (slotOnClock(state.current, state.teams, state.order) === state.slot){ render(); return; } // your turn
+    var p = simPick();
+    if (p) { commitPick(p); render(); }
+    scheduleSim();
+  }
+  function endSim(){
+    sim = false; clearTimeout(simTimer);
+    var sp = document.getElementById('drSimSpeed'); if (sp) sp.style.display = 'none';
+    var tg = document.getElementById('drSimToggle'); if (tg) tg.style.display = 'none';
+  }
+  function toggleSim(){
+    simPaused = !simPaused;
+    document.getElementById('drSimToggle').textContent = simPaused ? 'Resume' : 'Pause';
+    if (simPaused) clearTimeout(simTimer); else scheduleSim();
+  }
+  function startMock(){
+    state = readSetup();
+    drafted = {};
+    sim = true; simPaused = false;
+    var sp = document.getElementById('drSimSpeed');
+    simSpeed = parseInt(sp.value, 10) || 700;
+    sp.style.display = '';
+    var tg = document.getElementById('drSimToggle'); tg.style.display = ''; tg.textContent = 'Pause';
+    save();
+    showMain();
+    loadPlayers();
+  }
+
+  // ── Command-center panels ───────────────────────────────────────────────────
+  function availablePool(){ return players.filter(function(p){ return !drafted[String(p.id)]; }); }
+  function myPicksList(){
+    var out = [];
+    if (!state.slot) return out;
+    Object.keys(state.picks).forEach(function(k){
+      var pn = parseInt(k, 10);
+      if (slotOnClock(pn, state.teams, state.order) === state.slot) out.push(state.picks[k]);
+    });
+    return out;
+  }
+  function posTargets(){ return state.sf ? { QB:3, RB:5, WR:6, TE:2 } : { QB:2, RB:6, WR:7, TE:2 }; }
+  function myPosCounts(){
+    var c = { QB:0, RB:0, WR:0, TE:0 };
+    myPicksList().forEach(function(p){ var pos = (p.position||'').toUpperCase(); if (c[pos] != null) c[pos]++; });
+    return c;
+  }
+  function listInto(html){ document.getElementById('drBaList').innerHTML = html; }
+  function playerRowHtml(p, extra){
+    var adp = adpOf(p);
+    return '<div class="dr-ba-row" data-id="' + esc(String(p.id)) + '">'
+      + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+      + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + '</div>'
+      + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + '</div></div>'
+      + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div>'
+      + (extra != null ? extra : ('<div class="dr-ba-adp">' + (adp != null ? ('ADP ' + Number(adp).toFixed(1)) : '') + '</div>'))
+      + '</div></div>';
+  }
+
+  function renderSide(){
+    var bc = document.getElementById('drBestControls');
+    if (bc) bc.style.display = (sideTab === 'best') ? '' : 'none';
+    if (sideTab === 'rec')    return renderRec();
+    if (sideTab === 'needs')  return renderNeeds();
+    if (sideTab === 'runs')   return renderRuns();
+    if (sideTab === 'steals') return renderSteals();
+    return renderBA();
+  }
+
+  function renderRec(){
+    if (!state.slot){ listInto('<div class="dr-empty-note">Set your pick slot to get personalized recommendations.</div>'); return; }
+    var counts = myPosCounts(), targets = posTargets();
+    function nw(pos){ var t = targets[pos]; if (!t) return 0; return Math.min(1, Math.max(0, t - (counts[pos]||0)) / t); }
+    var pool = availablePool().slice();
+    pool.forEach(function(p){ p._rec = valOf(p) * (0.7 + 0.3 * nw((p.position||'').toUpperCase())); });
+    pool.sort(function(a, b){ return b._rec - a._rec; });
+    if (!pool.length){ listInto('<div class="dr-empty-note">No players available.</div>'); return; }
+    var html = ''; for (var i = 0; i < Math.min(pool.length, 50); i++){ html += playerRowHtml(pool[i]); }
+    listInto(html);
+  }
+
+  function renderSteals(){
+    var pool = availablePool().filter(function(p){ return adpOf(p) != null; });
+    pool.forEach(function(p){ p._steal = state.current - adpOf(p); });   // available past ADP = value
+    pool = pool.filter(function(p){ return p._steal > 0; });
+    pool.sort(function(a, b){ return b._steal - a._steal; });
+    if (!pool.length){ listInto('<div class="dr-empty-note">No value-vs-ADP steals yet. Players still available past their ADP show up here.</div>'); return; }
+    var html = ''; for (var i = 0; i < Math.min(pool.length, 50); i++){
+      var p = pool[i];
+      html += playerRowHtml(p, '<div class="dr-ba-delta">+' + Math.round(p._steal) + ' vs ADP</div>');
+    }
+    listInto(html);
+  }
+
+  function renderNeeds(){
+    if (!state.slot){ listInto('<div class="dr-empty-note">Set your pick slot to track your roster needs.</div>'); return; }
+    var counts = myPosCounts(), targets = posTargets();
+    var html = '<div class="dr-panel">';
+    ['QB','RB','WR','TE'].forEach(function(pos){
+      var have = counts[pos] || 0, t = targets[pos] || 0;
+      var pct = t ? Math.min(100, Math.round(have / t * 100)) : 0;
+      var need = Math.max(0, t - have);
+      html += '<div class="dr-need-row">'
+        + '<span class="dr-need-pos" style="background:' + posColor(pos) + '">' + pos + '</span>'
+        + '<div class="dr-need-bar"><div class="dr-need-fill" style="width:' + pct + '%;background:' + posColor(pos) + '"></div></div>'
+        + '<span class="dr-need-txt">' + have + ' / ' + t + (need > 0 ? (' <span class="dr-need-tag">+' + need + '</span>') : '') + '</span>'
+        + '</div>';
+    });
+    html += '</div>';
+    listInto(html);
+  }
+
+  function renderRuns(){
+    var recent = [];
+    for (var pn = state.current - 1; pn >= 1 && recent.length < 8; pn--){ if (state.picks[pn]) recent.push(state.picks[pn]); }
+    var counts = { QB:0, RB:0, WR:0, TE:0 }, last5 = { QB:0, RB:0, WR:0, TE:0 };
+    recent.forEach(function(p, i){ var pos = (p.position||'').toUpperCase(); if (counts[pos] != null){ counts[pos]++; if (i < 5) last5[pos]++; } });
+    var html = '<div class="dr-panel">';
+    if (!recent.length){
+      html += '<div class="dr-empty-note">No picks yet. Positional runs appear as the draft unfolds.</div>';
+    } else {
+      html += '<div class="dr-run-line">Last ' + recent.length + ' picks by position</div><div class="dr-run-chips">';
+      ['QB','RB','WR','TE'].forEach(function(pos){
+        var hot = last5[pos] >= 3;
+        html += '<span class="dr-run-chip' + (hot ? ' dr-run-hot' : '') + '">' + pos + ' ' + counts[pos] + (hot ? ' &#128293;' : '') + '</span>';
+      });
+      html += '</div>';
+      ['QB','RB','WR','TE'].forEach(function(pos){
+        if (last5[pos] >= 3) html += '<div class="dr-run-line"><b style="color:#ef4444">' + pos + ' run</b> &mdash; ' + last5[pos] + ' of the last 5 picks. Weigh your ' + pos + ' need before the tier dries up.</div>';
+      });
+    }
+    html += '</div>';
+    listInto(html);
+  }
 
   // ── Live draft (P5, Sleeper) ────────────────────────────────────────────────
   function valLookup(id){ var p = playersById[String(id)]; return (p && state) ? Math.round(valOf(p)) : null; }
@@ -504,7 +738,7 @@ _DRAFT_ROOM_HTML = r"""
   function renderBoard(){
     var board = document.getElementById('drBoard');
     var teams = state.teams, rounds = state.rounds;
-    board.style.gridTemplateColumns = '34px repeat(' + teams + ', minmax(116px, 1fr))';
+    board.style.gridTemplateColumns = '30px repeat(' + teams + ', minmax(108px, 1fr))';
     var html = '';
     // header row
     html += '<div class="dr-colhead"></div>';
@@ -536,14 +770,20 @@ _DRAFT_ROOM_HTML = r"""
       }
     }
     board.innerHTML = html;
+    // Keep the pick on the clock centered/visible without manual scrolling.
+    var cur = board.querySelector('.dr-cell-current');
+    if (cur){
+      requestAnimationFrame(function(){
+        try { cur.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); }
+        catch (e) { try { cur.scrollIntoView(); } catch (_) {} }
+      });
+    }
   }
 
   function renderBA(){
-    var listEl = document.getElementById('drBaList');
     var sortBy = document.getElementById('drBaSort').value;
     var q = (document.getElementById('drSearch').value || '').trim().toLowerCase();
-    var pool = players.filter(function(p){
-      if (drafted[String(p.id)]) return false;
+    var pool = availablePool().filter(function(p){
       if (posFilter !== 'ALL' && String(p.position||'').toUpperCase() !== posFilter) return false;
       if (q && String(p.name||'').toLowerCase().indexOf(q) < 0) return false;
       return true;
@@ -555,37 +795,32 @@ _DRAFT_ROOM_HTML = r"""
       }
       return valOf(b) - valOf(a);
     });
-    if (!pool.length){ listEl.innerHTML = '<div class="dr-loading">No players match.</div>'; return; }
+    if (!pool.length){ listInto('<div class="dr-empty-note">No players match.</div>'); return; }
     var html = '';
-    for (var i = 0; i < Math.min(pool.length, 200); i++){
-      var p = pool[i];
-      var adp = adpOf(p);
-      html += '<div class="dr-ba-row" data-id="' + esc(String(p.id)) + '">';
-      html += '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
-      html += '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + '</div>';
-      html += '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + '</div></div>';
-      html += '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div>';
-      html += '<div class="dr-ba-adp">' + (adp != null ? ('ADP ' + Number(adp).toFixed(1)) : '') + '</div></div>';
-      html += '</div>';
-    }
-    listEl.innerHTML = html;
+    for (var i = 0; i < Math.min(pool.length, 200); i++){ html += playerRowHtml(pool[i]); }
+    listInto(html);
   }
 
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
     return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
 
   // ── Actions ──────────────────────────────────────────────────────────────
+  function commitPick(p){
+    state.picks[state.current] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)) };
+    drafted[String(p.id)] = true;
+    justPick = state.current;
+    state.current++;
+  }
   function draftPlayer(id){
     if (state.mode === 'live') return;   // live board is driven by the platform
     var total = state.teams * state.rounds;
     if (state.current > total) return;
-    var p = players.filter(function(x){ return String(x.id) === String(id); })[0];
+    if (sim && slotOnClock(state.current, state.teams, state.order) !== state.slot) return; // not your turn
+    var p = playersById[String(id)];
     if (!p || drafted[String(id)]) return;
-    state.picks[state.current] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)) };
-    drafted[String(id)] = true;
-    justPick = state.current;
-    state.current++;
+    commitPick(p);
     render();
+    if (sim) scheduleSim();   // resume CPU picks after your selection
   }
   function undo(){
     if (state.current <= 1) return;
@@ -603,6 +838,17 @@ _DRAFT_ROOM_HTML = r"""
 
   // ── Wire up ──────────────────────────────────────────────────────────────
   document.getElementById('drStart').addEventListener('click', startDraft);
+  document.getElementById('drStartSim').addEventListener('click', startMock);
+  document.getElementById('drSimToggle').addEventListener('click', toggleSim);
+  document.getElementById('drSimSpeed').addEventListener('change', function(){
+    simSpeed = parseInt(this.value, 10) || 700;
+  });
+  document.getElementById('drSideTabs').addEventListener('click', function(e){
+    var b = e.target.closest('.dr-stab'); if (!b) return;
+    sideTab = b.getAttribute('data-stab');
+    this.querySelectorAll('.dr-stab').forEach(function(x){ x.classList.toggle('active', x === b); });
+    renderSide();
+  });
   document.getElementById('drConnect').addEventListener('click', detectLive);
   document.getElementById('drLiveList').addEventListener('click', function(e){
     var b = e.target.closest('.dr-live-item'); if (b) connectLive(b.getAttribute('data-id'));

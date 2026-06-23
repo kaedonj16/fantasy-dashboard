@@ -12947,7 +12947,7 @@ def page_prospects_guest():
 @app.route("/draft")
 @app.route("/<platform>/<int:season>/<league_id>/draft")
 def page_draft_room(platform: str = None, season: int = None, league_id: str = None):
-    """Standalone Draft Assistant / draft board (manual mode in Phase 2)."""
+    """Standalone Draft Room / draft board."""
     from dashboard_services.pages.draft_room_page import build_draft_room_body
     is_guest = not league_id
     num_teams = None
@@ -12968,7 +12968,7 @@ def page_draft_room(platform: str = None, season: int = None, league_id: str = N
         viewer_user_id=session.get("viewer_user_id"),
     )
     return render_page(
-        "Draft Assistant | BR Fantasy", league_id, "draft", body, platform, season,
+        "Draft Room | BR Fantasy", league_id, "draft", body, platform, season,
         description=(
             "Fantasy football draft assistant and draft board with best-available, "
             "ADP, and snake / linear / third-round-reversal support for Sleeper, ESPN, and Yahoo."
@@ -18972,35 +18972,55 @@ def api_league_players():
                 compute_tier_thresholds(model_value_table, _lt, _sz)
             ]
 
-    # Attach startup ADP (avg_pick / sf_avg_pick) so the rankings page can sort by
-    # ADP, mirroring the prospects page. Best-effort: prefer real league ADP from the
-    # DB, fall back to FantasyCalc consensus startup ADP; never break the response.
+    # Attach ADP so the rankings/draft room can sort & simulate by ADP.
+    # Priority: FantasyCalc consensus (primary) -> DraftCrawl league ADP (fallback).
+    # Startup ADP -> avg_pick/sf_avg_pick; rookie ADP -> rookie_avg_pick/sf_rookie_avg_pick.
+    # Best-effort: never break the response.
     try:
         from dashboard_services.adp_service import (
             fetch_league_adp_from_db as _fl_adp,
             fetch_fc_startup_adp as _fc_adp,
+            fetch_fc_rookie_adp as _fc_rookie_adp,
         )
         _adp_season = int((get_nfl_state() or {}).get("season") or datetime.now().year)
 
-        def _adp_for(is_sf: bool) -> dict:
-            _m = _fl_adp(is_sf, _adp_season, "startup", min_samples=10) or {}
-            if not _m:
-                _m = _fc_adp(is_sf) or {}
+        def _norm_adp(_m: dict) -> dict:
             out = {}
-            for _k, _v in _m.items():
-                _ap = _v.get("avg_pick") if isinstance(_v, dict) else _v
+            for _k, _v in (_m or {}).items():
+                if isinstance(_v, dict):
+                    _ap = _v.get("avg_pick")
+                    if _ap is None:
+                        _ap = _v.get("adp_rank")
+                else:
+                    _ap = _v
                 if _ap is not None:
                     out[str(_k)] = float(_ap)
             return out
 
-        _adp_1qb = _adp_for(False)
-        _adp_sf = _adp_for(True)
+        def _startup_adp(is_sf: bool) -> dict:
+            _m = _fc_adp(is_sf) or {}                                   # FantasyCalc primary
+            if not _m:
+                _m = _fl_adp(is_sf, _adp_season, "startup", min_samples=10) or {}  # DraftCrawl fallback
+            return _norm_adp(_m)
+
+        def _rookie_adp(is_sf: bool) -> dict:
+            _m = _fc_rookie_adp(is_sf, _adp_season) or {}              # FantasyCalc primary
+            if not _m:
+                _m = _fl_adp(is_sf, _adp_season, "rookie", min_samples=5) or {}    # DraftCrawl fallback
+            return _norm_adp(_m)
+
+        _adp_1qb, _adp_sf = _startup_adp(False), _startup_adp(True)
+        _radp_1qb, _radp_sf = _rookie_adp(False), _rookie_adp(True)
         for _p in model_value_table:
             _pid = str(_p.get("id") or "")
             if _pid in _adp_1qb:
                 _p["avg_pick"] = _adp_1qb[_pid]
             if _pid in _adp_sf:
                 _p["sf_avg_pick"] = _adp_sf[_pid]
+            if _pid in _radp_1qb:
+                _p["rookie_avg_pick"] = _radp_1qb[_pid]
+            if _pid in _radp_sf:
+                _p["sf_rookie_avg_pick"] = _radp_sf[_pid]
     except Exception as _e_adp:
         logger.info("[api/league-players] ADP attach skipped: %s", _e_adp)
 
