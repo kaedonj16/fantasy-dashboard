@@ -111,6 +111,12 @@ _DRAFT_ROOM_HTML = r"""
         <div id="drRosterSection"></div>
       </div>
 
+      <div class="dr-setup-section">
+        <div class="dr-setup-section-label">Your Draft Capital</div>
+        <div class="dr-setup-desc" style="margin-bottom:8px;">Defaults to your slot's picks. Add picks you acquired in trades (e.g. a second first-rounder), or remove picks you traded away.</div>
+        <div id="drCapitalSection"></div>
+      </div>
+
       <div class="dr-setup-cta">
         <button class="dr-btn dr-btn-primary dr-btn-lg" id="drStartSim">&#9654;&nbsp; Start Mock Draft</button>
         <button class="dr-btn dr-btn-lg" id="drStart">Draft Manually</button>
@@ -468,6 +474,19 @@ _DRAFT_ROOM_HTML = r"""
     display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0; }
   .dr-step-btn:hover { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); }
   .dr-step-val { font-size:14px; font-weight:800; color:var(--text); min-width:18px; text-align:center; }
+  /* ── Draft capital (setup) ── */
+  .dr-cap-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .dr-cap-chip { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700;
+    padding:5px 6px 5px 10px; border-radius:999px; background:rgba(56,189,248,.12); color:var(--text);
+    border:1px solid rgba(56,189,248,.35); }
+  .dr-cap-traded { background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.4); }
+  .dr-cap-x { border:none; background:rgba(127,127,127,.2); color:var(--text); width:16px; height:16px;
+    border-radius:999px; font-size:13px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+  .dr-cap-x:hover { background:#ef4444; color:#fff; }
+  .dr-cap-empty { font-size:12px; color:var(--text-muted); font-style:italic; }
+  .dr-cap-add { display:flex; gap:8px; align-items:center; }
+  .dr-cap-add select { padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px; }
+  .dr-cap-add .dr-btn { padding:8px 14px; }
   /* ── Team tab PS badge ── */
   .dr-rslot-ps { font-size:11px; font-weight:800; flex-shrink:0; margin-right:2px; }
 </style>
@@ -496,6 +515,7 @@ _DRAFT_ROOM_HTML = r"""
   var sideTab = 'best';    // best | rec | needs | runs
   var _setupRoster = null; // roster config built on setup page
   var _setupOwned = null;  // claimed picks (pickNumber -> true) built on setup page
+  var _setupOwnedSig = ''; // staleness signature for _setupOwned
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
   var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
   var _boardSig = null;    // board structure signature (rebuild only when it changes)
@@ -587,6 +607,7 @@ _DRAFT_ROOM_HTML = r"""
   });
   document.getElementById('drType').addEventListener('change', function(){
     document.getElementById('drRounds').value = (this.value === 'rookie') ? '4' : '15';
+    renderSetupCapital();   // rounds changed: refresh the claimed-pick list
   });
 
   // Map a Sleeper-style roster_positions list into our slot counts.
@@ -656,6 +677,49 @@ _DRAFT_ROOM_HTML = r"""
     document.getElementById('drRosterSection').innerHTML = html;
   }
 
+  // ── Setup: draft capital (claimed picks) ────────────────────────────────────
+  function setupCtl(){
+    return {
+      teams:  parseInt(document.getElementById('drTeams').value, 10) || 12,
+      rounds: Math.max(1, Math.min(40, parseInt(document.getElementById('drRounds').value, 10) || 15)),
+      order:  document.getElementById('drOrder').value,
+      slot:   parseInt(document.getElementById('drSlot').value, 10) || 1
+    };
+  }
+  function defaultSetupOwned(c){
+    var o = {};
+    for (var r = 1; r <= c.rounds; r++) o[pickNum(r, c.slot, c.teams, c.order)] = true;
+    return o;
+  }
+  function renderSetupCapital(){
+    var c = setupCtl();
+    var sig = [c.teams, c.rounds, c.order, c.slot].join('|');
+    if (!_setupOwned || _setupOwnedSig !== sig){
+      _setupOwned = defaultSetupOwned(c);   // reset to the slot's natural picks
+      _setupOwnedSig = sig;
+    }
+    var picks = Object.keys(_setupOwned).filter(function(k){ return _setupOwned[k]; })
+      .map(Number).sort(function(a, b){ return a - b; });
+    var chips = picks.map(function(pn){
+      var r = Math.ceil(pn / c.teams), sl = slotOnClock(pn, c.teams, c.order);
+      var home = (sl === c.slot);
+      return '<span class="dr-cap-chip' + (home ? '' : ' dr-cap-traded') + '">'
+        + 'R' + r + ' &middot; #' + pn
+        + '<button type="button" class="dr-cap-x" data-rm="' + pn + '" aria-label="Remove">&times;</button></span>';
+    }).join('');
+    // Add-a-pick control: round + slot selectors.
+    var ropts = '', sopts = '';
+    for (var rr = 1; rr <= c.rounds; rr++) ropts += '<option value="' + rr + '">R' + rr + '</option>';
+    for (var ss = 1; ss <= c.teams; ss++) sopts += '<option value="' + ss + '"' + (ss === c.slot ? ' selected' : '') + '>Slot ' + ss + '</option>';
+    var html = '<div class="dr-cap-chips">' + (chips || '<span class="dr-cap-empty">No picks claimed.</span>') + '</div>'
+      + '<div class="dr-cap-add">'
+      + '<select id="drCapRound">' + ropts + '</select>'
+      + '<select id="drCapSlot">' + sopts + '</select>'
+      + '<button type="button" class="dr-btn" id="drCapAdd">Add pick</button>'
+      + '</div>';
+    document.getElementById('drCapitalSection').innerHTML = html;
+  }
+
   function readSetup(){
     var teams = parseInt(document.getElementById('drTeams').value, 10);
     var sf = document.getElementById('drSf').value === '1';
@@ -696,6 +760,7 @@ _DRAFT_ROOM_HTML = r"""
     document.getElementById('drMain').style.display = 'none';
     document.getElementById('drSetup').style.display = '';
     renderSetupRoster();
+    renderSetupCapital();
   }
 
   // ── Data ─────────────────────────────────────────────────────────────────
@@ -1833,8 +1898,13 @@ _DRAFT_ROOM_HTML = r"""
 
   applyCfgDefaults();
   renderSetupRoster();
+  renderSetupCapital();
   document.getElementById('drSf').addEventListener('change', function(){ _setupRoster = null; renderSetupRoster(); });
   document.getElementById('drType').addEventListener('change', function(){ _setupRoster = null; renderSetupRoster(); });
+  // Any control that changes the pick map resets claimed picks to the slot default.
+  ['drTeams','drRounds','drOrder','drSlot'].forEach(function(idn){
+    document.getElementById(idn).addEventListener('change', renderSetupCapital);
+  });
   document.getElementById('drRosterSection').addEventListener('click', function(e){
     var step = e.target.closest('.dr-step-btn');
     if (!step) return;
@@ -1844,6 +1914,18 @@ _DRAFT_ROOM_HTML = r"""
     if (!_setupRoster) _setupRoster = defaultRoster();
     _setupRoster[key] = Math.max(0, (_setupRoster[key] || 0) + d);
     renderSetupRoster();
+  });
+  document.getElementById('drCapitalSection').addEventListener('click', function(e){
+    var rm = e.target.closest('[data-rm]');
+    if (rm){ delete _setupOwned[rm.getAttribute('data-rm')]; renderSetupCapital(); return; }
+    if (e.target.closest('#drCapAdd')){
+      var c = setupCtl();
+      var rnd = parseInt(document.getElementById('drCapRound').value, 10) || 1;
+      var sl  = parseInt(document.getElementById('drCapSlot').value, 10) || c.slot;
+      if (!_setupOwned) _setupOwned = {};
+      _setupOwned[pickNum(rnd, sl, c.teams, c.order)] = true;
+      renderSetupCapital();
+    }
   });
 
   function resumeFromSession(){
