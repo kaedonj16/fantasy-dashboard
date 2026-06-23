@@ -442,7 +442,7 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-avail-pn { font-size: 10px; font-weight: 600; color: var(--text-muted); }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
   @media (max-width: 900px) {
-    .dr-cols { grid-template-columns: 1fr; padding-bottom: 16vh; }
+    .dr-cols { grid-template-columns: 1fr; padding-bottom: 52vh; }
     .dr-statusbar { top: 0; }
     /* The side panel becomes a draggable bottom sheet */
     .dr-side {
@@ -450,7 +450,7 @@ _DRAFT_ROOM_HTML = r"""
       width: 100%; height: 92vh; max-height: 92vh; align-self: auto; order: 0;
       border-radius: 18px 18px 0 0; border-bottom: none;
       box-shadow: 0 -10px 40px rgba(0,0,0,.28); z-index: 50;
-      transform: translateY(56vh);          /* default: ~36vh visible (mid snap) */
+      transform: translateY(42vh);          /* default: ~50vh visible (mid snap) */
       transition: transform .3s cubic-bezier(.32,.72,0,1);
     }
     .dr-side.dragging { transition: none; }
@@ -464,25 +464,32 @@ _DRAFT_ROOM_HTML = r"""
       transition: background .12s; }
     .dr-sheet-handle:active .dr-sheet-grip { background: var(--accent,#38bdf8); }
     .dr-ba-list { max-height: none; }
+    .dr-board-wrap { max-width: calc(100vw - 16px); }
   }
   @media (max-width: 640px) {
     .dr-wrap { padding: 8px 8px 32px; }
     .dr-setup-card { padding: 16px; }
-    /* Stacked, scrollable status bar */
-    .dr-statusbar { padding: 8px 10px; gap: 8px; flex-direction: column; align-items: stretch; border-radius: 10px; }
-    .dr-status-info { width: 100%; flex-wrap: wrap; gap: 8px; }
-    .dr-onclock { flex: 1; min-width: 0; }
-    .dr-onclock b { white-space: normal; }
-    .dr-status-pills { gap: 6px; }
-    .dr-progress, .dr-save { font-size: 10px; }
+    /* Status bar: two compact rows */
+    .dr-statusbar { padding: 6px 10px; gap: 5px; flex-direction: column; align-items: stretch; border-radius: 10px; }
+    /* Row 1: on-clock inline + pills scroll */
+    .dr-status-info { width: 100%; flex-wrap: nowrap; gap: 8px; align-items: center; }
+    .dr-onclock { flex-direction: row; align-items: center; gap: 5px; padding: 4px 10px; flex-shrink: 0; }
+    .dr-onclock-label { font-size: 8px; }
+    .dr-onclock b { font-size: 13px; white-space: nowrap; }
+    .dr-status-pills { gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; }
+    .dr-status-pills::-webkit-scrollbar { display: none; }
+    .dr-pill { font-size: 10px; padding: 2px 7px; }
+    .dr-pick-timer { font-size: 12px; min-width: 32px; padding: 2px 6px; }
+    .dr-progress, .dr-save { font-size: 10px; white-space: nowrap; }
+    /* Row 2: buttons scroll */
     .dr-status-right {
-      width: 100%; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+      width: 100%; gap: 5px; overflow-x: auto; -webkit-overflow-scrolling: touch;
       flex-wrap: nowrap; padding-bottom: 2px; scrollbar-width: none;
     }
     .dr-status-right::-webkit-scrollbar { display: none; }
-    .dr-status-right .dr-btn { flex: 0 0 auto; padding: 8px 12px; }
-    .dr-side-tabs .otc-main-tab { padding: 8px 12px; }
-    .dr-board-wrap { padding: 4px; }
+    .dr-status-right .dr-btn { flex: 0 0 auto; padding: 7px 11px; font-size: 12px; }
+    .dr-side-tabs .otc-main-tab { padding: 7px 10px; font-size: 12px; }
+    .dr-board-wrap { padding: 4px; max-width: calc(100vw - 16px); overflow-x: auto; }
     .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
     .dr-setup-cta .dr-btn { width: 100%; }
     .dr-prev-stats { grid-template-columns: repeat(2, 1fr); }
@@ -577,13 +584,15 @@ _DRAFT_ROOM_HTML = r"""
   .dr-scar-pos:not(:last-child) { border-right: 1px solid var(--border); }
   .dr-scar-count { font-size: 14px; font-weight: 900; line-height: 1; }
   .dr-scar-label { font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 1px; }
-  /* ── Best-at-position chips ── */
+  /* ── Best-at-position chips + T1-2 counts ── */
   .dr-bchips-header { display: flex; align-items: center; justify-content: space-between;
     padding: 5px 10px 4px; cursor: pointer; transition: background .12s; border-bottom: 1px solid var(--border); }
   .dr-bchips-header:hover { background: rgba(127,127,127,.05); }
   .dr-bchips-label { font-size: 10px; font-weight: 800; text-transform: uppercase;
     letter-spacing: .06em; color: var(--text-muted); }
   .dr-bchips-hint { font-size: 9px; color: var(--text-muted); opacity: .7; }
+  .dr-bchips-section-title { font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--text-muted); padding: 5px 10px 2px; }
   .dr-bchips { display: flex; gap: 6px; padding: 4px 8px 7px; overflow-x: auto; -webkit-overflow-scrolling: touch;
     border-bottom: 1px solid var(--border); }
   .dr-bchip { display: flex; align-items: flex-end; gap: 6px; padding: 5px 8px 5px; border-radius: 9px;
@@ -1303,10 +1312,10 @@ _DRAFT_ROOM_HTML = r"""
     if (!pool.length){ el.style.display = 'none'; return; }
     var isDynasty = (state.type !== 'redraft');
     var positions = state.type === 'redraft' ? ['QB','RB','WR','TE','K','DEF'] : ['QB','RB','WR','TE'];
-    // Scarcity bar: T1+T2 remaining in dynasty; skip (0 tier data) in redraft
+    // T1-2 counts: remaining top-tier players per position (dynasty only)
     var scarHtml = '';
     if (isDynasty){
-      scarHtml = '<div class="dr-scarcity">';
+      scarHtml = '<div class="dr-bchips-section-title">T1-2 Counts</div><div class="dr-scarcity">';
       positions.forEach(function(pos){
         var n = posTopRemaining(pos);
         var col = n <= 3 ? '#ef4444' : n <= 6 ? '#f59e0b' : '#22c55e';
@@ -1331,31 +1340,30 @@ _DRAFT_ROOM_HTML = r"""
         else if (a == null && ab == null && valOf(p) > valOf(byPos[pos])){ byPos[pos] = p; }
       }
     });
-    var chipsHtml = '<div class="dr-bchips-header" id="drBestChipsToggle">'
-      + '<span class="dr-bchips-label">Best Available</span>'
-      + '<span class="dr-bchips-hint">' + (_chipsCollapsed
-          ? '&#9654;'
-          : (isDynasty ? 'Tap count to filter &#9660;' : 'Tap to preview &#9660;'))
-        + '</span>'
-      + '</div>'
-      + (_chipsCollapsed ? '' : '<div class="dr-bchips">');
     var hasAny = false;
+    var bchipsInner = '';
     positions.forEach(function(pos){
       var p = byPos[pos]; if (!p) return;
       hasAny = true;
       var adp = adpOf(p);
       var sub = adp != null ? 'ADP ' + Number(adp).toFixed(1) : 'Val ' + Math.round(valOf(p));
       var lastName = p.name.split(' ').slice(1).join(' ') || p.name;
-      chipsHtml += '<div class="dr-bchip" data-bchip="' + esc(String(p.id)) + '">'
+      bchipsInner += '<div class="dr-bchip" data-bchip="' + esc(String(p.id)) + '">'
         + '<img class="dr-bchip-img" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
         + '<div class="dr-bchip-body">'
         + '<div class="dr-bchip-name"><span class="dr-posbadge" style="background:' + posColor(pos) + ';font-size:8px;">' + pos + '</span> ' + esc(lastName) + '</div>'
         + '<div class="dr-bchip-adp">' + sub + '</div>'
         + '</div></div>';
     });
-    if (!_chipsCollapsed) chipsHtml += '</div>';
+    var bchipsHtml = '<div class="dr-bchips-section-title">Best Available</div><div class="dr-bchips">' + bchipsInner + '</div>';
     if (!hasAny){ el.style.display = 'none'; return; }
-    el.innerHTML = (_chipsCollapsed ? '' : scarHtml) + chipsHtml;
+    // Single outer toggle collapses both T1-2 Counts and Best Available together
+    var toggleHtml = '<div class="dr-bchips-header" id="drBestChipsToggle">'
+      + '<span class="dr-bchips-label">Player Tools</span>'
+      + '<span class="dr-bchips-hint">' + (_chipsCollapsed ? '&#9654; Show' : '&#9660; Hide') + '</span>'
+      + '</div>';
+    var contentHtml = _chipsCollapsed ? '' : (scarHtml + bchipsHtml);
+    el.innerHTML = toggleHtml + contentHtml;
     el.style.display = '';
   }
 
@@ -2666,7 +2674,7 @@ _DRAFT_ROOM_HTML = r"""
     var dragging = false, startY = 0, startT = 0, curT = 0, snapIdx = 1;
     function ih(){ return window.innerHeight; }
     // translateY offsets (px): full (whole 92vh sheet shows), mid (~36vh), peek (~12vh)
-    function snaps(){ return [0, ih() * 0.56, ih() * 0.80]; }
+    function snaps(){ return [0, ih() * 0.42, ih() * 0.80]; }
     function applyT(t){ curT = t; sheet.style.transform = 'translateY(' + t + 'px)'; }
     function snapTo(idx){
       var pts = snaps();
