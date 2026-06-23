@@ -1698,7 +1698,7 @@ _DRAFT_ROOM_HTML = r"""
     return '<div class="dr-ba-row' + availClass + '" data-id="' + esc(String(p.id)) + '">'
       + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + '</div>'
-      + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + ppgPart + tierBadge(p) + byeFlag + '</div>'
+      + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + tierBadge(p) + ppgPart + byeFlag + '</div>'
       + reasonLine + waitLine + availLine + '</div>'
       + '<div class="dr-ba-right-col">'
       + '<div class="dr-ba-metrics">'
