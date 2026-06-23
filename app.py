@@ -19057,6 +19057,18 @@ def api_league_players():
     except Exception as _e_fp:
         logger.info(f"[api/league-players] Projected PPG enrichment skipped: {_e_fp}")
 
+    # Enrich with real PPR-based VORP from advanced metrics (last completed season)
+    try:
+        from data_building.advanced_metrics import get_value_leaderboard as _get_vorp_lb
+        _vorp_rows = _get_vorp_lb("vorp", limit=5000, num_teams=12) or []
+        _vorp_map = {str(r.get("player_id") or ""): float(r.get("value") or 0) for r in _vorp_rows}
+        for _player in model_value_table:
+            _pid = str(_player.get("id") or "")
+            if _pid in _vorp_map:
+                _player["vorp"] = round(_vorp_map[_pid], 1)
+    except Exception as _e_vorp:
+        logger.info(f"[api/league-players] VORP enrichment skipped: {_e_vorp}")
+
     # Compute tier thresholds for every league-type × size combination so the
     # frontend can display each player's tier badge without a second API call.
     _tier_thresholds_all = {}

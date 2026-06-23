@@ -1456,7 +1456,9 @@ _DRAFT_ROOM_HTML = r"""
     function cmpCol(p, other){
       var pos = (p.position || '').toUpperCase();
       var adp = adpOf(p), oadp = adpOf(other);
-      var vor = vorOf(p), ovor = vorOf(other);
+      var vor = p.vorp != null ? Number(p.vorp) : vorOf(p);
+      var ovor = other.vorp != null ? Number(other.vorp) : vorOf(other);
+      var vorLbl = (p.vorp != null || other.vorp != null) ? 'VORP' : 'VOR';
       var ps = pickScoreFor(p), ops = pickScoreFor(other);
       var v = valOf(p), ov = valOf(other);
       var t = tierOf(p), ot = tierOf(other);
@@ -1484,7 +1486,7 @@ _DRAFT_ROOM_HTML = r"""
         + '<div class="dr-cmp-stats">'
         + statRow('Value', v, ov, true, function(x){ return x != null ? Math.round(x) : '-'; })
         + statRow(ppgRowLbl, ppg, oppg, true, function(x){ return x != null ? x.toFixed(1) : 'N/A'; })
-        + statRow('VOR', vor, ovor, true, function(x){ return x != null ? (x >= 0 ? '+' + x : String(x)) : '-'; })
+        + statRow(vorLbl, vor, ovor, true, function(x){ return x != null ? (x >= 0 ? '+' + (Number.isInteger(x) ? x : x.toFixed(1)) : (x.toFixed ? x.toFixed(1) : String(x))) : '-'; })
         + statRow('ADP', adp, oadp, false, function(x){ return x != null ? Number(x).toFixed(1) : 'N/A'; })
         + (state.type !== 'redraft' ? statRow('Tier', t, ot, false, function(x){ return x != null ? 'T' + x : '-'; }) : '')
         + statRow('Age', age, oage, false, function(x){ return x != null ? x.toFixed(0) : '-'; })
@@ -2469,8 +2471,10 @@ _DRAFT_ROOM_HTML = r"""
     var posRank = state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '');
     var adpGap = (adp != null) ? (state.current - adp) : null;
     var vsAdp = adpGap != null ? (adpGap >= 0 ? ('+' + Math.round(adpGap)) : String(Math.round(adpGap))) : '-';
-    var vor = vorOf(p);
-    var vorStr = (vor != null) ? (vor >= 0 ? '+' + vor : String(vor)) : '-';
+    // Use real PPR-based VORP from API when available; fall back to dynasty-value VOR
+    var vorpVal = (p.vorp != null) ? Number(p.vorp) : vorOf(p);
+    var vorpLbl = (p.vorp != null) ? 'VORP' : 'VOR';
+    var vorStr = (vorpVal != null) ? (vorpVal >= 0 ? '+' + (Number.isInteger(vorpVal) ? vorpVal : vorpVal.toFixed(1)) : String(vorpVal.toFixed ? vorpVal.toFixed(1) : vorpVal)) : '-';
     var pos = (p.position || '').toUpperCase();
     var scarce = posTopRemaining(pos);
     // Prefer forward-looking projected PPG; fall back to last season actual
@@ -2500,7 +2504,7 @@ _DRAFT_ROOM_HTML = r"""
       // Stats grid
       + '<div class="dr-prev-stats">'
       + statBox('Value', Math.round(valOf(p)))
-      + statBox('VOR', vorStr)
+      + statBox(vorpLbl, vorStr)
       + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '-')
       + statBox('vs ADP', vsAdp)
       + (ppg != null ? statBox(ppgLbl, ppg.toFixed(1), ppgSub) : statBox('Pos Rank', posRank || '-'))
