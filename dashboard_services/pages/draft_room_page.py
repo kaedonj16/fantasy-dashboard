@@ -485,6 +485,7 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function showMain(){
+    _boardSig = null;   // always force a full board rebuild when entering the draft view
     document.getElementById('drSetup').style.display = 'none';
     document.getElementById('drMain').style.display = '';
   }
@@ -691,7 +692,11 @@ _DRAFT_ROOM_HTML = r"""
     var pos = (p.position || '').toUpperCase();
     var valueNorm = maxVal > 0 ? clamp01(valOf(p) / maxVal) : 0;
     var t = posTargets()[pos];
-    var need = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
+    // Need ramps in from 0 at pick 1 to full weight by pick 13 — early picks
+    // should be pure talent grabs, not roster-need influenced.
+    var needRaw = t ? clamp01(Math.max(0, t - (counts[pos] || 0)) / t) : 0;
+    var needRamp = clamp01((state.current - 1) / 12);
+    var need = needRaw * needRamp;
     var adp = adpOf(p);
     // Steal vs reach: reward players who have fallen past ADP, stay neutral for
     // picks within 8 of ADP (drafting a top-3 player at pick 1 is not a "reach"),
@@ -733,8 +738,8 @@ _DRAFT_ROOM_HTML = r"""
     }
     // Big steal: fell well past ADP.
     if (fell != null && fell >= 8) return 'Steal — fell ' + fell + ' picks past ADP';
-    // Roster need, with a touch of context.
-    if (need > 0){
+    // Roster need — only surface this after the first 4 picks.
+    if (need > 0 && state.current > 4){
       if (tier != null && tier <= 2) return 'Tier ' + tier + ' ' + pos + ' fills a need';
       return 'Fills ' + pos + ' need (' + need + ' more to target)';
     }
