@@ -1881,7 +1881,7 @@ _DRAFT_ROOM_HTML = r"""
     var maxVal = 0; pool.forEach(function(p){ var v = valOf(p); if (v > maxVal) maxVal = v; });
     pool.forEach(function(p){ p._ps = pickScore(p, maxVal, counts); });
     pool.sort(function(a, b){ return b._ps - a._ps; });
-    var html = balanceAlert() + runBanner();
+    var html = balanceAlert();
     // Assistant looks across your whole draft capital: a player you can likely
     // get at a later owned pick is flagged so you can spend this pick elsewhere.
     var nextPick = nextOwnedAfterCurrent();
