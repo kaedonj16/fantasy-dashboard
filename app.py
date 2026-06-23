@@ -13060,13 +13060,32 @@ def api_draft_live():
             "position": (meta.get("position") or "").upper(),
             "team": meta.get("team") or "",
         })
+
+    # Map draft slot -> team/owner display name (so the board shows real names).
+    slot_names = {}
+    draft_order = draft.get("draft_order") or {}     # {user_id: slot}
+    try:
+        _lid = draft.get("league_id")
+        _season = int(draft.get("season") or season or datetime.now().year)
+        if _lid and draft_order:
+            _users = get_users(platform, _lid, _season) or []
+            _by_uid = {str(u.get("user_id")): u for u in _users}
+            for _uid, _slot in draft_order.items():
+                _u = _by_uid.get(str(_uid)) or {}
+                _name = ((_u.get("metadata") or {}).get("team_name")
+                         or _u.get("display_name") or ("Team " + str(_slot)))
+                slot_names[str(_slot)] = _name
+    except Exception as _e_sn:
+        logger.info("[draft-live] slot names skipped: %s", _e_sn)
+
     return jsonify({
         "status": draft.get("status"),
         "type": draft.get("type"),
         "teams": settings.get("teams"),
         "rounds": settings.get("rounds"),
         "order": _order_from_sleeper(draft),
-        "draft_order": draft.get("draft_order") or {},
+        "draft_order": draft_order,
+        "slot_names": slot_names,
         "picks": picks,
     })
 

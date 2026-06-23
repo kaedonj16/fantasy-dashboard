@@ -174,6 +174,11 @@ _DRAFT_ROOM_HTML = r"""
       </aside>
     </div>
   </div>
+
+  <!-- Player preview / draft confirm -->
+  <div class="dr-preview-overlay" id="drPreview" style="display:none;">
+    <div class="dr-preview-card" id="drPreviewCard"></div>
+  </div>
 </div>
 
 <style>
@@ -304,6 +309,23 @@ _DRAFT_ROOM_HTML = r"""
   .dr-gbar-lbl { font-size: 10px; color: var(--text-muted); width: 50px; flex-shrink: 0; }
   .dr-gbar { flex: 1; height: 6px; border-radius: 999px; background: rgba(127,127,127,.18); overflow: hidden; }
   .dr-gbar-fill { height: 100%; border-radius: 999px; background: var(--accent,#38bdf8); }
+  /* player preview */
+  .dr-preview-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.45);
+    display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .dr-preview-card { position: relative; width: 100%; max-width: 360px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: 0 16px 50px rgba(0,0,0,.3); }
+  .dr-prev-close { position: absolute; top: 8px; right: 10px; background: none; border: none; font-size: 22px;
+    line-height: 1; color: var(--text-muted); cursor: pointer; }
+  .dr-prev-top { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
+  .dr-prev-hs { width: 64px; height: 64px; border-radius: 10px 10px 0 0; object-fit: cover; object-position: top center; background: transparent; flex-shrink: 0; }
+  .dr-prev-name { font-size: 18px; font-weight: 800; color: var(--text); }
+  .dr-prev-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+  .dr-prev-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  .dr-prev-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 4px; text-align: center; }
+  .dr-prev-stat-v { font-size: 15px; font-weight: 800; color: var(--text); }
+  .dr-prev-stat-l { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-top: 2px; }
+  .dr-prev-draft { width: 100%; }
+  .dr-prev-note { font-size: 12px; color: var(--text-muted); text-align: center; padding: 6px 0; }
   .dr-side-title { font-size: 14px; font-weight: 800; color: var(--text); }
   .dr-side-controls { display: flex; gap: 6px; }
   .dr-side-controls input { flex: 1; min-width: 0; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12px; }
@@ -353,6 +375,7 @@ _DRAFT_ROOM_HTML = r"""
   var simPaused = false;
   var sideTab = 'best';    // best | rec | needs | runs | steals
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
+  var _boardSig = null;    // board structure signature (rebuild only when it changes)
 
   // ── Pick-order helper (snake / linear / 3rr) ───────────────────────────────
   function pickDir(r, order){            // true = forward (slot 1 → N)
@@ -502,12 +525,31 @@ _DRAFT_ROOM_HTML = r"""
     var a = adpOf(p);
     return (a != null) ? a : (10000 - (valOf(p) / 100));  // ADP-less players sort after, by value
   }
+  function teamCounts(slot){
+    var c = { QB:0, RB:0, WR:0, TE:0 };
+    Object.keys(state.picks).forEach(function(k){
+      if (slotOnClock(parseInt(k,10), state.teams, state.order) === slot){
+        var pos = (state.picks[k].position||'').toUpperCase(); if (c[pos] != null) c[pos]++;
+      }
+    });
+    return c;
+  }
   function simPick(){
     var pool = availablePool();
     if (!pool.length) return null;
-    pool.sort(function(a, b){ return simAdp(a) - simAdp(b); });
-    // Variance: choose within a small window, biased toward the top so picks
-    // generally follow ADP but don't play out identically (stays within tiers).
+    // CPU picks follow ADP but are need-aware: needed positions get pulled a bit
+    // earlier and already-filled positions pushed later, so rosters stay realistic.
+    var slot = slotOnClock(state.current, state.teams, state.order);
+    var counts = teamCounts(slot), targets = posTargets();
+    pool.forEach(function(p){
+      var pos = (p.position||'').toUpperCase();
+      var t = targets[pos] || 0, have = counts[pos] || 0;
+      var need = t ? Math.max(0, t - have) / t : 0;
+      var over = (t && have >= t) ? (have - t + 1) : 0;
+      p._eff = simAdp(p) * (1 - 0.18 * need) * (1 + 0.55 * over);
+    });
+    pool.sort(function(a, b){ return a._eff - b._eff; });
+    // Variance: choose within a small window, biased toward the top (keeps tiers).
     var win = Math.min(pool.length, 5);
     var idx = Math.floor(win * (1 - Math.sqrt(1 - Math.random())));
     if (idx >= win) idx = win - 1;
@@ -824,6 +866,7 @@ _DRAFT_ROOM_HTML = r"""
       if (p.player_id) drafted[String(p.player_id)] = true;
     });
     state.current = (picks.length || 0) + 1;
+    _boardSig = null;   // force a full board rebuild on the next render
   }
   function detectLive(){
     if (cfg.isGuest || !cfg.leagueId){
@@ -862,7 +905,7 @@ _DRAFT_ROOM_HTML = r"""
         state = {
           type: 'startup', teams: teams, rounds: rounds, sf: !!cfg.isSuperflex,
           slot: slot, order: d.order || 'snake', picks: {}, current: 1,
-          mode: 'live', sourceDraftId: draftId
+          mode: 'live', sourceDraftId: draftId, slotNames: d.slot_names || {}
         };
         applyLivePicks(d.picks || []);
         showMain();
@@ -919,49 +962,71 @@ _DRAFT_ROOM_HTML = r"""
     if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score); } else { gp.style.display = 'none'; }
   }
 
-  function renderBoard(){
+  // ── Board rendering (incremental) ───────────────────────────────────────────
+  function teamName(slot){
+    if (state.slotNames && state.slotNames[slot]) return state.slotNames[slot];
+    return (slot === state.slot) ? 'You' : ('Team ' + slot);
+  }
+  function cellClass(pn){
+    var slot = slotOnClock(pn, state.teams, state.order);
+    var pl = state.picks[pn];
+    return 'dr-cell' + (pl ? ' dr-cell-filled' : ' dr-cell-empty')
+      + (slot === state.slot ? ' dr-cell-mine' : '') + (pn === justPick ? ' dr-cell-just' : '');
+  }
+  function cellInner(pn){
+    var pl = state.picks[pn];
+    var h = '<span class="dr-cell-num">' + pn + '</span>';
+    if (pl){
+      if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
+      h += '<img class="dr-hs" src="' + hsUrl(pl.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
+      h += '<div class="dr-cell-body"><div class="dr-cell-name">' + esc(pl.name) + '</div>'
+        + '<div class="dr-cell-meta"><span class="dr-posbadge" style="background:' + posColor(pl.position) + '">' + esc(pl.position) + '</span> ' + esc(pl.team || '') + '</div></div>';
+    }
+    return h;
+  }
+  function buildBoard(){
     var board = document.getElementById('drBoard');
     var teams = state.teams, rounds = state.rounds;
     board.style.gridTemplateColumns = '30px repeat(' + teams + ', minmax(108px, 1fr))';
-    var html = '';
-    // header row
-    html += '<div class="dr-colhead"></div>';
+    var html = '<div class="dr-colhead"></div>';
     for (var s = 1; s <= teams; s++){
       var you = (s === state.slot) ? ' dr-colhead-you' : '';
-      html += '<div class="dr-colhead' + you + '">Team ' + s + (s === state.slot ? ' ★' : '') + '</div>';
+      html += '<div class="dr-colhead' + you + '">' + esc(teamName(s)) + (s === state.slot ? ' ★' : '') + '</div>';
     }
     for (var rnd = 1; rnd <= rounds; rnd++){
       html += '<div class="dr-colhead">R' + rnd + '</div>';
       for (var slot = 1; slot <= teams; slot++){
         var pn = pickNum(rnd, slot, teams, state.order);
-        var pl = state.picks[pn];
-        var isCurrent = (pn === state.current);
-        var mine = (slot === state.slot);
-        var cls = 'dr-cell' + (pl ? ' dr-cell-filled' : ' dr-cell-empty')
-          + (isCurrent ? ' dr-cell-current' : '') + (mine ? ' dr-cell-mine' : '')
-          + (pn === justPick ? ' dr-cell-just' : '');
-        html += '<div class="' + cls + '">';
-        html += '<span class="dr-cell-num">' + pn + '</span>';
-        if (pl){
-          if (pl.val != null) html += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
-          html += '<img class="dr-hs" src="' + hsUrl(pl.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
-          html += '<div class="dr-cell-body">';
-          html += '<div class="dr-cell-name">' + esc(pl.name) + '</div>';
-          html += '<div class="dr-cell-meta"><span class="dr-posbadge" style="background:' + posColor(pl.position) + '">' + esc(pl.position) + '</span> ' + esc(pl.team || '') + '</div>';
-          html += '</div>';
-        }
-        html += '</div>';
+        html += '<div class="' + cellClass(pn) + '" id="dc' + pn + '">' + cellInner(pn) + '</div>';
       }
     }
     board.innerHTML = html;
-    // Keep the pick on the clock centered/visible without manual scrolling.
-    var cur = board.querySelector('.dr-cell-current');
+    _boardSig = boardSig();
+    refreshCurrent();
+  }
+  function paintCell(pn){
+    var el = document.getElementById('dc' + pn);
+    if (!el) return;
+    el.className = cellClass(pn);
+    el.innerHTML = cellInner(pn);
+  }
+  function refreshCurrent(){
+    var prev = document.querySelector('.dr-cell-current');
+    if (prev) prev.classList.remove('dr-cell-current');
+    var cur = document.getElementById('dc' + state.current);
     if (cur){
+      cur.classList.add('dr-cell-current');
       requestAnimationFrame(function(){
         try { cur.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); }
         catch (e) { try { cur.scrollIntoView(); } catch (_) {} }
       });
     }
+  }
+  function boardSig(){ return [state.teams, state.rounds, state.order, state.slot, state.mode || 'm'].join('|'); }
+  function renderBoard(){
+    // Full rebuild only when the board structure changes; otherwise picks are
+    // painted incrementally by commitPick/undo for smooth (Instant) sims.
+    if (_boardSig !== boardSig()) buildBoard();
   }
 
   function renderBA(){
@@ -990,10 +1055,13 @@ _DRAFT_ROOM_HTML = r"""
 
   // ── Actions ──────────────────────────────────────────────────────────────
   function commitPick(p){
-    state.picks[state.current] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)) };
+    var pn = state.current;
+    state.picks[pn] = { id: p.id, name: p.name, position: p.position, team: p.team, val: Math.round(valOf(p)) };
     drafted[String(p.id)] = true;
-    justPick = state.current;
+    justPick = pn;
     state.current++;
+    paintCell(pn);        // fill just-picked cell (incremental)
+    refreshCurrent();     // move the on-the-clock highlight + auto-scroll
   }
   function draftPlayer(id){
     if (state.mode === 'live') return;   // live board is driven by the platform
@@ -1007,10 +1075,12 @@ _DRAFT_ROOM_HTML = r"""
     if (sim) scheduleSim();   // resume CPU picks after your selection
   }
   function undo(){
-    if (state.current <= 1) return;
+    if (state.current <= 1 || state.mode === 'live') return;
     state.current--;
     var p = state.picks[state.current];
     if (p) { delete drafted[String(p.id)]; delete state.picks[state.current]; }
+    paintCell(state.current);
+    refreshCurrent();
     render();
   }
   function resetDraft(){
@@ -1019,6 +1089,47 @@ _DRAFT_ROOM_HTML = r"""
     state = null;
     showSetup();
   }
+
+  // ── Player preview / draft confirm ──────────────────────────────────────────
+  function statBox(label, val){
+    return '<div class="dr-prev-stat"><div class="dr-prev-stat-v">' + val + '</div><div class="dr-prev-stat-l">' + label + '</div></div>';
+  }
+  function isYourTurn(){
+    if (state.mode === 'live') return false;
+    if (state.current > state.teams * state.rounds) return false;
+    if (sim && slotOnClock(state.current, state.teams, state.order) !== state.slot) return false;
+    return true;
+  }
+  function openPreview(id){
+    var p = playersById[String(id)]; if (!p) return;
+    var adp = adpOf(p), t = tierOf(p);
+    var posRank = state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '');
+    var c = document.getElementById('drPreviewCard');
+    var h = '<button class="dr-prev-close" id="drPrevClose" aria-label="Close">&times;</button>'
+      + '<div class="dr-prev-top">'
+      + '<img class="dr-prev-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+      + '<div class="dr-prev-id"><div class="dr-prev-name">' + esc(p.name) + (t ? (' <span class="dr-tier' + (isTierCliff(p) ? ' dr-tier-cliff' : '') + '">T' + t + '</span>') : '') + '</div>'
+      + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + '</div></div>'
+      + '</div>'
+      + '<div class="dr-prev-stats">'
+      + statBox('Value', Math.round(valOf(p)))
+      + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '–')
+      + statBox('Pos Rank', posRank || '–')
+      + (p.age != null ? statBox('Age', Number(p.age).toFixed(1)) : '')
+      + '</div>';
+    if (state.mode === 'live'){
+      h += '<div class="dr-prev-note">Live draft — picks come from the platform.</div>';
+    } else if (isYourTurn()){
+      h += '<button class="dr-btn dr-btn-primary dr-btn-lg dr-prev-draft" data-id="' + esc(String(p.id)) + '">Draft ' + esc(p.name) + '</button>';
+    } else if (sim){
+      h += '<div class="dr-prev-note">Not your pick yet — a CPU team is on the clock.</div>';
+    } else {
+      h += '<button class="dr-btn dr-btn-primary dr-btn-lg dr-prev-draft" data-id="' + esc(String(p.id)) + '">Draft ' + esc(p.name) + '</button>';
+    }
+    c.innerHTML = h;
+    document.getElementById('drPreview').style.display = '';
+  }
+  function closePreview(){ document.getElementById('drPreview').style.display = 'none'; }
 
   // ── Wire up ──────────────────────────────────────────────────────────────
   document.getElementById('drStart').addEventListener('click', startDraft);
@@ -1044,7 +1155,12 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drSearch').addEventListener('input', renderBA);
   document.getElementById('drBaList').addEventListener('click', function(e){
     var row = e.target.closest('.dr-ba-row');
-    if (row) draftPlayer(row.getAttribute('data-id'));
+    if (row) openPreview(row.getAttribute('data-id'));   // preview first, draft from there
+  });
+  document.getElementById('drPreview').addEventListener('click', function(e){
+    if (e.target === this || e.target.closest('#drPrevClose')){ closePreview(); return; }
+    var d = e.target.closest('.dr-prev-draft');
+    if (d){ var id = d.getAttribute('data-id'); closePreview(); draftPlayer(id); }
   });
   document.getElementById('drPosFilters').addEventListener('click', function(e){
     var b = e.target.closest('.dr-pos'); if (!b) return;
