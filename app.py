@@ -19038,6 +19038,25 @@ def api_league_players():
     except Exception as _e_lp:
         logger.info(f"[api/league-players] PPG enrichment skipped: {_e_lp}")
 
+    # Enrich with projected season PPG from FantasyPros projections cache
+    try:
+        _proj_year = date.today().year
+        _fp_proj_path = os.path.join("cache", f"fp_projections_{_proj_year}_ppr.json")
+        _fp_proj_data = read_json_cached(_fp_proj_path)
+        if _fp_proj_data:
+            for _player in model_value_table:
+                _pid = str(_player.get("id") or "")
+                _fp_e = _fp_proj_data.get(_pid)
+                if _fp_e:
+                    _pj = float(_fp_e.get("ppg") or 0)
+                    if _pj > 0:
+                        _player["proj_ppg"] = round(_pj, 1)
+                        _sp = float(_fp_e.get("season_pts") or 0)
+                        if _sp > 0:
+                            _player["proj_pts"] = round(_sp, 1)
+    except Exception as _e_fp:
+        logger.info(f"[api/league-players] Projected PPG enrichment skipped: {_e_fp}")
+
     # Compute tier thresholds for every league-type × size combination so the
     # frontend can display each player's tier badge without a second API call.
     _tier_thresholds_all = {}

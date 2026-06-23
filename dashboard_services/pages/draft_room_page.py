@@ -1460,8 +1460,9 @@ _DRAFT_ROOM_HTML = r"""
       var ps = pickScoreFor(p), ops = pickScoreFor(other);
       var v = valOf(p), ov = valOf(other);
       var t = tierOf(p), ot = tierOf(other);
-      var ppg = p.ppg != null ? Number(p.ppg) : null;
-      var oppg = other.ppg != null ? Number(other.ppg) : null;
+      var ppg = p.proj_ppg != null ? Number(p.proj_ppg) : (p.ppg != null ? Number(p.ppg) : null);
+      var oppg = other.proj_ppg != null ? Number(other.proj_ppg) : (other.ppg != null ? Number(other.ppg) : null);
+      var ppgRowLbl = (p.proj_ppg != null || other.proj_ppg != null) ? 'Proj PPG' : 'PPG';
       var age = p.age != null ? Number(p.age) : null;
       var oage = other.age != null ? Number(other.age) : null;
       function statRow(lbl, val, oval, higherBetter, fmtFn){
@@ -1482,7 +1483,7 @@ _DRAFT_ROOM_HTML = r"""
         + '<div class="dr-cmp-ps-lbl">Pick Score</div>'
         + '<div class="dr-cmp-stats">'
         + statRow('Value', v, ov, true, function(x){ return x != null ? Math.round(x) : '-'; })
-        + statRow('PPG', ppg, oppg, true, function(x){ return x != null ? x.toFixed(1) : 'N/A'; })
+        + statRow(ppgRowLbl, ppg, oppg, true, function(x){ return x != null ? x.toFixed(1) : 'N/A'; })
         + statRow('VOR', vor, ovor, true, function(x){ return x != null ? (x >= 0 ? '+' + x : String(x)) : '-'; })
         + statRow('ADP', adp, oadp, false, function(x){ return x != null ? Number(x).toFixed(1) : 'N/A'; })
         + (state.type !== 'redraft' ? statRow('Tier', t, ot, false, function(x){ return x != null ? 'T' + x : '-'; }) : '')
@@ -2472,8 +2473,11 @@ _DRAFT_ROOM_HTML = r"""
     var vorStr = (vor != null) ? (vor >= 0 ? '+' + vor : String(vor)) : '-';
     var pos = (p.position || '').toUpperCase();
     var scarce = posTopRemaining(pos);
-    var ppg = (p.ppg != null) ? Number(p.ppg) : null;
-    var ppgSub = (p.ppg_rank != null) ? (pos + p.ppg_rank) : (p.ppg_season ? String(p.ppg_season) : '');
+    // Prefer forward-looking projected PPG; fall back to last season actual
+    var ppg = null, ppgLbl = 'PPG', ppgSub = '';
+    if (p.proj_ppg != null){ ppg = Number(p.proj_ppg); ppgLbl = 'Proj PPG'; ppgSub = 'projected'; }
+    else if (p.ppg != null){ ppg = Number(p.ppg); ppgLbl = 'PPG';
+      ppgSub = p.ppg_rank != null ? (pos + p.ppg_rank) : (p.ppg_season ? String(p.ppg_season) : ''); }
     var sc = psColor(ps);
     var pc = posColor(p.position);
     var c = document.getElementById('drPreviewCard');
@@ -2499,7 +2503,7 @@ _DRAFT_ROOM_HTML = r"""
       + statBox('VOR', vorStr)
       + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '-')
       + statBox('vs ADP', vsAdp)
-      + (ppg != null ? statBox('PPG', ppg.toFixed(1), ppgSub) : statBox('Pos Rank', posRank || '-'))
+      + (ppg != null ? statBox(ppgLbl, ppg.toFixed(1), ppgSub) : statBox('Pos Rank', posRank || '-'))
       + statBox(pos + ' T1-2 left', scarce)
       + '</div>';
     // Survival probability at the user's next upcoming pick
