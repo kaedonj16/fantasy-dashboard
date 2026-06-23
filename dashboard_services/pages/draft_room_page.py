@@ -531,7 +531,8 @@ _DRAFT_ROOM_HTML = r"""
   .dr-scar-label { font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-top: 1px; }
   /* ── Best-at-position chips ── */
   .dr-bchips-header { display: flex; align-items: center; justify-content: space-between;
-    padding: 5px 10px 3px; }
+    padding: 5px 10px 4px; cursor: pointer; transition: background .12s; border-bottom: 1px solid var(--border); }
+  .dr-bchips-header:hover { background: rgba(127,127,127,.05); }
   .dr-bchips-label { font-size: 10px; font-weight: 800; text-transform: uppercase;
     letter-spacing: .06em; color: var(--text-muted); }
   .dr-bchips-hint { font-size: 9px; color: var(--text-muted); opacity: .7; }
@@ -641,6 +642,7 @@ _DRAFT_ROOM_HTML = r"""
   var _boardSig = null;    // board structure signature (rebuild only when it changes)
   var _summaryShown = false; // auto-open summary only once per draft
   var compareIds = [];     // 0-2 player IDs staged for comparison
+  var _chipsCollapsed = false; // best-at-pos strip collapsed state
 
   // ── Pick-order helper (snake / linear / 3rr) ───────────────────────────────
   function pickDir(r, order){            // true = forward (slot 1 → N)
@@ -1278,11 +1280,14 @@ _DRAFT_ROOM_HTML = r"""
         else if (a == null && ab == null && valOf(p) > valOf(byPos[pos])){ byPos[pos] = p; }
       }
     });
-    var chipsHtml = '<div class="dr-bchips-header">'
+    var chipsHtml = '<div class="dr-bchips-header" id="drBestChipsToggle">'
       + '<span class="dr-bchips-label">Best Available</span>'
-      + (isDynasty ? '<span class="dr-bchips-hint">Tap position count to filter</span>' : '<span class="dr-bchips-hint">Tap to preview</span>')
+      + '<span class="dr-bchips-hint">' + (_chipsCollapsed
+          ? '&#9654;'
+          : (isDynasty ? 'Tap count to filter &#9660;' : 'Tap to preview &#9660;'))
+        + '</span>'
       + '</div>'
-      + '<div class="dr-bchips">';
+      + (_chipsCollapsed ? '' : '<div class="dr-bchips">');
     var hasAny = false;
     positions.forEach(function(pos){
       var p = byPos[pos]; if (!p) return;
@@ -1297,9 +1302,9 @@ _DRAFT_ROOM_HTML = r"""
         + '<div class="dr-bchip-adp">' + sub + '</div>'
         + '</div></div>';
     });
-    chipsHtml += '</div>';
+    if (!_chipsCollapsed) chipsHtml += '</div>';
     if (!hasAny){ el.style.display = 'none'; return; }
-    el.innerHTML = scarHtml + chipsHtml;
+    el.innerHTML = (_chipsCollapsed ? '' : scarHtml) + chipsHtml;
     el.style.display = '';
   }
 
@@ -2434,8 +2439,13 @@ _DRAFT_ROOM_HTML = r"""
     var row = e.target.closest('.dr-ba-row');
     if (row) openPreview(row.getAttribute('data-id'));
   });
-  // Best-at-pos chips: click chip to open player preview; click scarcity bar to filter position
+  // Best-at-pos chips: collapse toggle, chip preview, scarcity filter
   document.getElementById('drBestChips').addEventListener('click', function(e){
+    if (e.target.closest('#drBestChipsToggle')){
+      _chipsCollapsed = !_chipsCollapsed;
+      renderBestChips();
+      return;
+    }
     var chip = e.target.closest('[data-bchip]');
     if (chip){ openPreview(chip.getAttribute('data-bchip')); return; }
     var sp = e.target.closest('[data-scarpos]');
