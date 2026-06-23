@@ -361,16 +361,20 @@ _DRAFT_ROOM_HTML = r"""
   .dr-pos.active { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
   .dr-adp-src { font-size: 10px; color: var(--text-muted); }
   .dr-ba-list { overflow-y: auto; flex: 1; }
-  .dr-ba-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
-  .dr-ba-row:hover { background: rgba(56,189,248,.08); }
-  .dr-ba-hs { width: 36px; height: 36px; border-radius: 7px 7px 0 0; object-fit: cover; object-position: top center;
+  .dr-ba-row { display: flex; align-items: center; gap: 9px; padding: 6px 10px 6px 8px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .12s; }
+  .dr-ba-row:hover { background: rgba(56,189,248,.07); }
+  .dr-ba-row:hover .dr-ba-draft { opacity: 1; }
+  .dr-ba-hs { width: 38px; height: 38px; border-radius: 8px 8px 0 0; object-fit: cover; object-position: top center;
     flex-shrink: 0; background: transparent; align-self: flex-end; }
-  .dr-ba-body { min-width: 0; flex: 1; line-height: 1.25; }
+  .dr-ba-body { min-width: 0; flex: 1; line-height: 1.3; }
   .dr-ba-name { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dr-ba-meta { font-size: 11px; color: var(--text-muted); }
-  .dr-ba-right { text-align: right; flex-shrink: 0; }
-  .dr-ba-val { font-size: 13px; font-weight: 800; color: var(--text); }
-  .dr-ba-adp { font-size: 10px; color: var(--text-muted); }
+  .dr-ba-meta { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; margin-top: 1px; }
+  .dr-ba-right { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .dr-ba-val { font-size: 14px; font-weight: 800; color: var(--text); line-height: 1; }
+  .dr-ba-sub { font-size: 10px; color: var(--text-muted); line-height: 1; }
+  .dr-ba-draft { opacity: 0; padding: 4px 10px; border-radius: 6px; border: none;
+    background: var(--accent,#122d4b); color: #fff; font-size: 11px; font-weight: 700;
+    cursor: pointer; flex-shrink: 0; transition: opacity .12s; white-space: nowrap; }
   .dr-loading { display: flex; align-items: center; gap: 10px; padding: 24px; color: var(--text-muted); font-size: 13px; justify-content: center; }
   @media (max-width: 900px) {
     .dr-cols { grid-template-columns: 1fr; }
@@ -885,14 +889,18 @@ _DRAFT_ROOM_HTML = r"""
 
   function playerRowHtml(p, extra){
     var adp = adpOf(p);
+    var ps = pickScoreFor(p);
+    var adpStr = adp != null ? 'ADP ' + Number(adp).toFixed(1) : '';
+    var psStr  = ps  != null ? 'PS '  + ps : '';
+    var sub    = extra != null ? extra : ('<div class="dr-ba-sub">' + [adpStr, psStr].filter(Boolean).join(' &middot; ') + '</div>');
     return '<div class="dr-ba-row" data-id="' + esc(String(p.id)) + '">'
       + '<button class="dr-star' + (isQueued(p.id) ? ' on' : '') + '" data-star="' + esc(String(p.id)) + '" title="Queue" aria-label="Queue">' + (isQueued(p.id) ? '★' : '☆') + '</button>'
       + '<img class="dr-ba-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-ba-body"><div class="dr-ba-name">' + esc(p.name) + tierBadge(p) + '</div>'
-      + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + '</div></div>'
-      + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div>'
-      + (extra != null ? extra : ('<div class="dr-ba-adp">' + (adp != null ? ('ADP ' + Number(adp).toFixed(1)) : '') + '</div>'))
-      + '</div></div>';
+      + '<div class="dr-ba-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span>' + esc(p.team || '') + '</div></div>'
+      + '<div class="dr-ba-right"><div class="dr-ba-val">' + Math.round(valOf(p)) + '</div>' + sub + '</div>'
+      + '<button class="dr-ba-draft" data-draft="' + esc(String(p.id)) + '" title="Draft now">Draft</button>'
+      + '</div>';
   }
 
   function renderQueue(){
@@ -1535,6 +1543,8 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drBaList').addEventListener('click', function(e){
     var star = e.target.closest('[data-star]');
     if (star){ e.stopPropagation(); toggleQueue(star.getAttribute('data-star')); return; }
+    var draft = e.target.closest('[data-draft]');
+    if (draft){ e.stopPropagation(); draftPlayer(draft.getAttribute('data-draft')); return; }
     var row = e.target.closest('.dr-ba-row');
     if (row) openPreview(row.getAttribute('data-id'));
   });
