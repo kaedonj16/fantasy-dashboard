@@ -267,7 +267,14 @@ _DRAFT_ROOM_HTML = r"""
   .dr-cell-filled { background: linear-gradient(180deg, rgba(56,189,248,.05), var(--bg)); }
   .dr-cell-current { outline: 2px solid var(--accent,#38bdf8); animation: drPulse 1.6s ease-in-out infinite; }
   @keyframes drPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(56,189,248,.0); } 50% { box-shadow: 0 0 0 3px rgba(56,189,248,.18); } }
-  .dr-cell-mine { box-shadow: inset 3px 0 0 var(--accent,#38bdf8); }
+  .dr-cell-mine { box-shadow: inset 3px 0 0 var(--accent,#38bdf8); opacity: 1; }
+  .dr-cell-mine.dr-cell-empty { opacity: 1; background: linear-gradient(180deg, rgba(56,189,248,.10), var(--bg)); }
+  .dr-cell-claimed { box-shadow: inset 3px 0 0 #f59e0b; }     /* traded-in pick */
+  .dr-cell-claimable { cursor: pointer; }
+  .dr-cell-claimable:hover { outline: 1px dashed var(--accent,#38bdf8); outline-offset: -2px; }
+  .dr-cell-mineflag { position: absolute; top: 2px; right: 5px; font-size: 8px; font-weight: 800;
+    letter-spacing: .04em; color: var(--accent,#38bdf8); }
+  .dr-cell-claimed .dr-cell-mineflag { color: #f59e0b; }
   .dr-cell-just { animation: drPop .35s ease; }
   @keyframes drPop { 0% { transform: scale(.92); opacity: .3; } 100% { transform: scale(1); opacity: 1; } }
   .dr-cell-val { position: absolute; top: 2px; right: 5px; font-size: 9px; font-weight: 800; color: var(--accent,#38bdf8); }
@@ -458,6 +465,7 @@ _DRAFT_ROOM_HTML = r"""
   var simPaused = false;
   var sideTab = 'best';    // best | rec | needs | runs
   var _setupRoster = null; // roster config built on setup page
+  var _setupOwned = null;  // claimed picks (pickNumber -> true) built on setup page
   var tierThresholds = {}; // {leagueType:{size:[...]}} from /api/league-players
   var adpSources = {};     // {startup|rookie|redraft: 'Sleeper'|'none'} from /api/league-players
   var _boardSig = null;    // board structure signature (rebuild only when it changes)
@@ -483,6 +491,41 @@ _DRAFT_ROOM_HTML = r"""
     return pickDir(r, order) ? posInRound : (teams - posInRound + 1);
   }
   window.draftPickOrder = { pickDir: pickDir, pickNum: pickNum, slotOnClock: slotOnClock };
+
+  // ── Pick ownership ─────────────────────────────────────────────────────────
+  // The user can own any set of picks (multiple firsts via trades, etc.).
+  // state.owned maps pickNumber -> true. When absent we fall back to the home
+  // slot so older saved sessions keep working.
+  function isMyPick(pn){
+    if (state && state.owned) return !!state.owned[pn];
+    return !!(state && state.slot && slotOnClock(pn, state.teams, state.order) === state.slot);
+  }
+  function defaultOwned(){
+    var o = {};
+    if (!state || !state.slot) return o;
+    var tot = state.teams * state.rounds;
+    for (var pn = 1; pn <= tot; pn++){
+      if (slotOnClock(pn, state.teams, state.order) === state.slot) o[pn] = true;
+    }
+    return o;
+  }
+  function ensureOwned(){ if (state && !state.owned) state.owned = defaultOwned(); }
+  function ownedPicks(){
+    ensureOwned();
+    if (!state || !state.owned) return [];
+    return Object.keys(state.owned).filter(function(k){ return state.owned[k]; })
+      .map(Number).sort(function(a, b){ return a - b; });
+  }
+  function hasOwned(){ return ownedPicks().length > 0; }
+  // Upcoming owned picks that have not been made yet (current pick included).
+  function upcomingOwnedPicks(){
+    return ownedPicks().filter(function(pn){ return pn >= state.current && !state.picks[pn]; });
+  }
+  function toggleOwned(pn){
+    ensureOwned();
+    if (state.owned[pn]) delete state.owned[pn]; else state.owned[pn] = true;
+    save();
+  }
 
   // ── Persistence ────────────────────────────────────────────────────────────
   function save(){ try { sessionStorage.setItem(sessKey, JSON.stringify(state)); } catch(e){} }
@@ -578,6 +621,7 @@ _DRAFT_ROOM_HTML = r"""
 
   function startDraft(){
     state = readSetup();
+    state.owned = _setupOwned || defaultOwned();
     _summaryShown = false;
     drafted = {};
     save();
@@ -664,7 +708,7 @@ _DRAFT_ROOM_HTML = r"""
     if (state && !state.queue) state.queue = [];
     renderStatus(); renderBoard(); renderSide(); justPick = null; save();
     var _tot = state.teams * state.rounds;
-    if (state.current > _tot && !_summaryShown && state.slot && !sim){
+    if (state.current > _tot && !_summaryShown && hasOwned() && !sim){
       _summaryShown = true;
       setTimeout(openSummary, 500);
     }
@@ -710,7 +754,7 @@ _DRAFT_ROOM_HTML = r"""
     if (!sim || simPaused) return;
     var total = state.teams * state.rounds;
     if (state.current > total){ endSim(); return; }
-    if (slotOnClock(state.current, state.teams, state.order) === state.slot) return; // wait for the user
+    if (isMyPick(state.current)) return; // wait for the user
     clearTimeout(simTimer);
     simTimer = setTimeout(simStep, simSpeed);
   }
@@ -718,7 +762,7 @@ _DRAFT_ROOM_HTML = r"""
     if (!sim || simPaused) return;
     var total = state.teams * state.rounds;
     if (state.current > total){ endSim(); render(); return; }
-    if (slotOnClock(state.current, state.teams, state.order) === state.slot){ render(); return; } // your turn
+    if (isMyPick(state.current)){ render(); return; } // your turn
     var p = simPick();
     if (p) { commitPick(p); render(); }
     scheduleSim();
@@ -735,6 +779,7 @@ _DRAFT_ROOM_HTML = r"""
   }
   function startMock(){
     state = readSetup();
+    state.owned = _setupOwned || defaultOwned();
     _summaryShown = false;
     drafted = {};
     sim = true; simPaused = false;
@@ -751,10 +796,10 @@ _DRAFT_ROOM_HTML = r"""
   function availablePool(){ return players.filter(function(p){ return !drafted[String(p.id)]; }); }
   function myPicksList(){
     var out = [];
-    if (!state.slot) return out;
+    if (!hasOwned()) return out;
     Object.keys(state.picks).forEach(function(k){
       var pn = parseInt(k, 10);
-      if (slotOnClock(pn, state.teams, state.order) === state.slot) out.push(state.picks[k]);
+      if (isMyPick(pn)) out.push(state.picks[k]);
     });
     return out;
   }
@@ -943,7 +988,7 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function renderRec(){
-    if (!state.slot){ listInto('<div class="dr-empty-note">Set your pick slot to get personalized recommendations.</div>'); return; }
+    if (!hasOwned()){ listInto('<div class="dr-empty-note">Set your pick slot to get personalized recommendations.</div>'); return; }
     var counts = myPosCounts();
     var pool = availablePool().slice();
     if (!pool.length){ listInto('<div class="dr-empty-note">No players available.</div>'); return; }
@@ -999,11 +1044,11 @@ _DRAFT_ROOM_HTML = r"""
   }
   // ── Draft grade / roster strength ───────────────────────────────────────────
   function gradeTeam(){
-    if (!state.slot) return null;
+    if (!hasOwned()) return null;
     var mine = [];
     Object.keys(state.picks).forEach(function(k){
       var pn = parseInt(k, 10);
-      if (slotOnClock(pn, state.teams, state.order) === state.slot) mine.push({ pn: pn, p: state.picks[k] });
+      if (isMyPick(pn)) mine.push({ pn: pn, p: state.picks[k] });
     });
     if (!mine.length) return null;
     var deltas = [], counts = { QB:0, RB:0, WR:0, TE:0 }, tierTop = 0;
@@ -1071,7 +1116,7 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function renderNeeds(){
-    if (!state.slot){ listInto('<div class="dr-empty-note">Set your pick slot to see your team build.</div>'); return; }
+    if (!hasOwned()){ listInto('<div class="dr-empty-note">Set your pick slot to see your team build.</div>'); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var used = {};
     var html = '';
@@ -1177,7 +1222,7 @@ _DRAFT_ROOM_HTML = r"""
   function userNextPick(){
     var total = state.teams * state.rounds;
     for (var pn = state.current; pn <= total; pn++){
-      if (slotOnClock(pn, state.teams, state.order) === state.slot) return pn;
+      if (isMyPick(pn)) return pn;
     }
     return null;
   }
@@ -1192,7 +1237,7 @@ _DRAFT_ROOM_HTML = r"""
     if (done) { oc.textContent = 'Draft complete'; }
     else {
       var slot = slotOnClock(state.current, state.teams, state.order);
-      oc.textContent = (slot === state.slot) ? ('Team ' + slot + ' (You)') : ('Team ' + slot);
+      oc.textContent = isMyPick(state.current) ? ('Team ' + slot + ' (You)') : ('Team ' + slot);
     }
     var nextPill = document.getElementById('drNextPill');
     var np = done ? null : userNextPick();
@@ -1213,12 +1258,22 @@ _DRAFT_ROOM_HTML = r"""
   function cellClass(pn){
     var slot = slotOnClock(pn, state.teams, state.order);
     var pl = state.picks[pn];
+    var mine = isMyPick(pn);
+    // A claimed pick that is not your home slot is a traded-in pick.
+    var traded = mine && state.slot && slot !== state.slot;
     return 'dr-cell' + (pl ? ' dr-cell-filled' : ' dr-cell-empty')
-      + (slot === state.slot ? ' dr-cell-mine' : '') + (pn === justPick ? ' dr-cell-just' : '');
+      + (mine ? ' dr-cell-mine' : '') + (traded ? ' dr-cell-claimed' : '')
+      + ((canClaim(pn)) ? ' dr-cell-claimable' : '')
+      + (pn === justPick ? ' dr-cell-just' : '');
+  }
+  // Future, uncommitted picks can be claimed/unclaimed in mock/manual mode.
+  function canClaim(pn){
+    return state.mode !== 'live' && pn >= state.current && !state.picks[pn];
   }
   function cellInner(pn){
     var pl = state.picks[pn];
     var h = '<span class="dr-cell-num">' + pn + '</span>';
+    if (isMyPick(pn) && !pl) h += '<span class="dr-cell-mineflag">YOU</span>';
     if (pl){
       if (pl.val != null) h += '<span class="dr-cell-val">' + Math.round(pl.val) + '</span>';
       h += '<img class="dr-hs" src="' + hsUrl(pl.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">';
@@ -1240,7 +1295,7 @@ _DRAFT_ROOM_HTML = r"""
       html += '<div class="dr-colhead">R' + rnd + '</div>';
       for (var slot = 1; slot <= teams; slot++){
         var pn = pickNum(rnd, slot, teams, state.order);
-        html += '<div class="' + cellClass(pn) + '" id="dc' + pn + '">' + cellInner(pn) + '</div>';
+        html += '<div class="' + cellClass(pn) + '" id="dc' + pn + '" data-pn="' + pn + '">' + cellInner(pn) + '</div>';
       }
     }
     board.innerHTML = html;
@@ -1265,7 +1320,7 @@ _DRAFT_ROOM_HTML = r"""
       });
     }
   }
-  function boardSig(){ return [state.teams, state.rounds, state.order, state.slot, state.mode || 'm'].join('|'); }
+  function boardSig(){ return [state.teams, state.rounds, state.order, state.slot, state.mode || 'm', ownedPicks().join(',')].join('|'); }
   function renderBoard(){
     // Full rebuild only when the board structure changes; otherwise picks are
     // painted incrementally by commitPick/undo for smooth (Instant) sims.
@@ -1395,7 +1450,7 @@ _DRAFT_ROOM_HTML = r"""
     if (state.mode === 'live') return;   // live board is driven by the platform
     var total = state.teams * state.rounds;
     if (state.current > total) return;
-    if (sim && slotOnClock(state.current, state.teams, state.order) !== state.slot) return; // not your turn
+    if (sim && !isMyPick(state.current)) return; // not your turn
     var p = playersById[String(id)];
     if (!p || drafted[String(id)]) return;
     commitPick(p);
@@ -1420,7 +1475,7 @@ _DRAFT_ROOM_HTML = r"""
 
   // ── Share a draft image ─────────────────────────────────────────────────────
   function shareDraft(){
-    if (!state || !state.slot){ alert('Pick a draft slot to build and share your team.'); return; }
+    if (!state || !hasOwned()){ alert('Pick a draft slot to build and share your team.'); return; }
     var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
     var used = {}, rows = [];
     lineupSlots().forEach(function(slot){
@@ -1474,7 +1529,7 @@ _DRAFT_ROOM_HTML = r"""
   function isYourTurn(){
     if (state.mode === 'live') return false;
     if (state.current > state.teams * state.rounds) return false;
-    if (sim && slotOnClock(state.current, state.teams, state.order) !== state.slot) return false;
+    if (sim && !isMyPick(state.current)) return false;
     return true;
   }
   function psColor(ps){ return ps >= 90 ? '#22c55e' : ps >= 75 ? '#38bdf8' : ps >= 60 ? '#f59e0b' : '#ef4444'; }
@@ -1533,6 +1588,14 @@ _DRAFT_ROOM_HTML = r"""
     this.querySelectorAll('.otc-main-tab').forEach(function(x){ x.classList.toggle('is-active', x === b); });
     renderSide();
   });
+  document.getElementById('drBoard').addEventListener('click', function(e){
+    var cell = e.target.closest('[data-pn]'); if (!cell) return;
+    var pn = parseInt(cell.getAttribute('data-pn'), 10);
+    if (!canClaim(pn)) return;          // only future, uncommitted picks (mock/manual)
+    toggleOwned(pn);
+    _boardSig = null;                   // ownership changed: force board rebuild
+    render();
+  });
   document.getElementById('drConnect').addEventListener('click', detectLive);
   document.getElementById('drLiveList').addEventListener('click', function(e){
     var b = e.target.closest('.dr-live-item'); if (b) connectLive(b.getAttribute('data-id'));
@@ -1587,6 +1650,7 @@ _DRAFT_ROOM_HTML = r"""
     if (saved && saved.teams && saved.picks){
       state = saved;
       if (!state.roster) state.roster = defaultRoster();
+      if (!state.owned) state.owned = defaultOwned();
       if (state.mode === 'live'){
         document.getElementById('drLiveBadge').style.display = '';
         document.getElementById('drUndo').style.display = 'none';
