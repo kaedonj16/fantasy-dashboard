@@ -349,11 +349,12 @@ _DRAFT_ROOM_HTML = r"""
   .dr-prev-hs { width: 64px; height: 64px; border-radius: 10px 10px 0 0; object-fit: cover; object-position: top center; background: transparent; flex-shrink: 0; }
   .dr-prev-name { font-size: 18px; font-weight: 800; color: var(--text); }
   .dr-prev-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
-  .dr-prev-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  .dr-prev-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
   .dr-prev-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 4px; text-align: center; }
   .dr-prev-stat-v { font-size: 15px; font-weight: 800; color: var(--text); }
   .dr-prev-stat-l { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-top: 2px; }
   .dr-prev-draft { width: 100%; }
+  .dr-prev-profile { width: 100%; margin-top: 8px; text-align: center; text-decoration: none; }
   .dr-prev-note { font-size: 12px; color: var(--text-muted); text-align: center; padding: 6px 0; }
   /* queue star */
   .dr-star { background: none; border: none; cursor: pointer; font-size: 15px; line-height: 1; flex-shrink: 0;
@@ -1718,12 +1719,21 @@ _DRAFT_ROOM_HTML = r"""
     return true;
   }
   function psColor(ps){ return ps >= 90 ? '#22c55e' : ps >= 75 ? '#38bdf8' : ps >= 60 ? '#f59e0b' : '#ef4444'; }
+  // Client-side slug matching player_page.slugify on the server.
+  function playerSlug(name){
+    return String(name || '').toLowerCase().replace(/&/g, ' and ')
+      .replace(/['‘’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
   function openPreview(id){
     var p = playersById[String(id)]; if (!p) return;
     var adp = adpOf(p), t = tierOf(p), ps = pickScoreFor(p);
     var posRank = state.sf ? (p.sf_pos_rank_label || '') : (p.pos_rank_label || '');
     var adpGap = (adp != null) ? (state.current - adp) : null;
     var vsAdp = adpGap != null ? (adpGap >= 0 ? ('+' + Math.round(adpGap)) : String(Math.round(adpGap))) : '–';
+    var vor = vorOf(p);
+    var vorStr = (vor != null) ? (vor >= 0 ? '+' + vor : String(vor)) : '–';
+    var pos = (p.position || '').toUpperCase();
+    var scarce = posTopRemaining(pos);
     var sc = psColor(ps);
     var c = document.getElementById('drPreviewCard');
     var h = '<button class="dr-prev-close" id="drPrevClose" aria-label="Close">&times;</button>'
@@ -1731,7 +1741,7 @@ _DRAFT_ROOM_HTML = r"""
       + '<div class="dr-prev-top">'
       + '<img class="dr-prev-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
       + '<div class="dr-prev-id"><div class="dr-prev-name">' + esc(p.name) + (t ? (' <span class="dr-tier' + (isTierCliff(p) ? ' dr-tier-cliff' : '') + '">T' + t + '</span>') : '') + '</div>'
-      + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + (posRank ? (' &middot; ' + esc(posRank)) : '') + '</div>'
+      + '<div class="dr-prev-meta"><span class="dr-posbadge" style="background:' + posColor(p.position) + '">' + esc(p.position) + '</span> ' + esc(p.team || '') + (posRank ? (' &middot; ' + esc(posRank)) : '') + (p.bye_week ? (' &middot; Bye ' + p.bye_week) : '') + '</div>'
       + '</div></div>'
       // Pick Score hero
       + '<div class="dr-prev-score-hero" style="border-color:' + sc + ';background:' + sc + '1a;">'
@@ -1739,21 +1749,27 @@ _DRAFT_ROOM_HTML = r"""
       + '<div class="dr-prev-score-lbl">Pick Score</div>'
       + '<div class="dr-prev-score-reason">' + esc(pickReason(p, myPosCounts())) + '</div>'
       + '</div>'
-      // Stats row
+      // Stats grid
       + '<div class="dr-prev-stats">'
       + statBox('Value', Math.round(valOf(p)))
+      + statBox('VOR', vorStr)
       + statBox('ADP', adp != null ? Number(adp).toFixed(1) : '–')
       + statBox('vs ADP', vsAdp)
-      + (p.age != null ? statBox('Age', Number(p.age).toFixed(1)) : statBox('Pos Rank', posRank || '–'))
+      + statBox(pos + ' T1-2 left', scarce)
+      + (p.bye_week ? statBox('Bye', 'Wk ' + p.bye_week)
+                    : (p.age != null ? statBox('Age', Number(p.age).toFixed(1)) : statBox('Pos Rank', posRank || '–')))
       + '</div>';
     if (state.mode === 'live'){
       h += '<div class="dr-prev-note">Live draft. Picks come from the platform.</div>';
-    } else if (isYourTurn()){
+    } else if (isYourTurn() || !sim){
       h += '<button class="dr-btn dr-btn-primary dr-btn-lg dr-prev-draft" data-id="' + esc(String(p.id)) + '">Draft ' + esc(p.name) + '</button>';
-    } else if (sim){
-      h += '<div class="dr-prev-note">Not your pick yet. A CPU team is on the clock.</div>';
     } else {
-      h += '<button class="dr-btn dr-btn-primary dr-btn-lg dr-prev-draft" data-id="' + esc(String(p.id)) + '">Draft ' + esc(p.name) + '</button>';
+      h += '<div class="dr-prev-note">Not your pick yet. A CPU team is on the clock.</div>';
+    }
+    // Full profile link (skip for picks / non-slug-able names).
+    var slug = playerSlug(p.name);
+    if (slug && pos !== 'PICK'){
+      h += '<a class="dr-btn dr-prev-profile" href="/player/' + encodeURIComponent(slug) + '/trade-value" target="_blank" rel="noopener">View full player profile &#8599;</a>';
     }
     c.innerHTML = h;
     document.getElementById('drPreview').style.display = '';

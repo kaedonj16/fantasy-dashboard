@@ -14610,6 +14610,49 @@ def _norm_sched_team(t):
     return _SCHED_TEAM_ALIAS.get(t, t)
 
 
+_TEAM_BYE_CACHE: dict = {}   # season -> {team: bye_week}
+
+def _team_bye_map(season: int) -> dict:
+    """Derive each team's bye week from the loaded weekly schedules.
+
+    Returns {} when no schedule data is available for the season, so callers
+    never show a fabricated bye. A team's bye is the single regular-season week
+    (5-14) in which it has no scheduled game. Cached per season per process.
+    """
+    season = int(season)
+    if season in _TEAM_BYE_CACHE:
+        return _TEAM_BYE_CACHE[season]
+    played: dict = {}
+    teams_seen = set()
+    any_games = False
+    for w in range(1, 19):
+        try:
+            games = load_week_schedule(season, w) or []
+        except Exception:
+            games = []
+        if not games:
+            continue
+        any_games = True
+        for g in games:
+            for side in ("home", "away"):
+                t = _norm_sched_team(g.get(side))
+                if t:
+                    played.setdefault(t, set()).add(w)
+                    teams_seen.add(t)
+    byes: dict = {}
+    if any_games:
+        for t in teams_seen:
+            weeks = played.get(t, set())
+            missing = [w for w in range(5, 15) if w not in weeks]
+            if len(missing) == 1:        # exactly one bye in the normal window
+                byes[t] = missing[0]
+        # Only trust the result if it covers most of the league.
+        if len(byes) < 20:
+            byes = {}
+    _TEAM_BYE_CACHE[season] = byes
+    return byes
+
+
 def _sched_rank_color(rank, total):
     """Color for a matchup by opponent's fpts-allowed rank (1 = easiest)."""
     if not rank or not total:
@@ -19081,6 +19124,20 @@ def api_league_players():
                 _adp_sources[_mode] = "DraftCrawl"
     except Exception as _e_adp:
         logger.info("[api/league-players] ADP attach skipped: %s", _e_adp)
+
+    # Attach NFL bye week per player (by team) when real schedule data exists.
+    # No fabricated byes: if the season schedule is not loaded this is a no-op.
+    try:
+        _season_for_bye = int((get_nfl_state() or {}).get("season") or datetime.now().year)
+        _byes = _team_bye_map(_season_for_bye)
+        if _byes:
+            for _p in model_value_table:
+                _tm = str(_p.get("team") or "").upper().strip()
+                _bw = _byes.get(_norm_sched_team(_tm))
+                if _bw:
+                    _p["bye_week"] = _bw
+    except Exception as _e_bye:
+        logger.info("[api/league-players] bye attach skipped: %s", _e_bye)
 
     # Optionally append K/DEF (draftable in redraft) when ?kdef=1. Kept out of the
     # default response so dynasty rankings stay skill-position only.
