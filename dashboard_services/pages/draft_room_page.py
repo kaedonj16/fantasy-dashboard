@@ -147,19 +147,22 @@ _DRAFT_ROOM_HTML = r"""
         </div>
       </div>
       <div class="dr-status-right">
-        <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
-          <option value="1400">Slow</option>
-          <option value="700" selected>Normal</option>
-          <option value="300">Fast</option>
-          <option value="60">Instant</option>
-        </select>
         <button class="dr-btn dr-btn-primary" id="drSimStart" style="display:none;">&#9654;&nbsp; Start Draft</button>
         <button class="dr-btn dr-btn-ghost" id="drSimToggle" style="display:none;">Pause</button>
-        <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
-        <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
-        <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
-        <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
-        <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset">Reset</button>
+        <button class="dr-btn dr-btn-ghost dr-opts-trigger" id="drOptsBtn" aria-label="Options">&#9881;</button>
+        <div class="dr-opts-panel" id="drOptsPanel">
+          <select class="dr-sim-speed" id="drSimSpeed" style="display:none;" title="Simulation speed">
+            <option value="1400">Slow</option>
+            <option value="700" selected>Normal</option>
+            <option value="300">Fast</option>
+            <option value="60">Instant</option>
+          </select>
+          <button class="dr-btn dr-btn-ghost" id="drSummaryBtn" style="display:none;">Summary</button>
+          <button class="dr-btn dr-btn-ghost" id="drShare">Share</button>
+          <button class="dr-btn dr-btn-ghost" id="drUndo">Undo</button>
+          <button class="dr-btn dr-btn-ghost" id="drEdit">Edit Setup</button>
+          <button class="dr-btn dr-btn-ghost dr-btn-danger" id="drReset">Reset</button>
+        </div>
       </div>
     </div>
 
@@ -253,6 +256,9 @@ _DRAFT_ROOM_HTML = r"""
   }
   .dr-btn-primary { background: var(--accent,#38bdf8); border-color: var(--accent,#38bdf8); color: #fff; }
   .dr-btn-ghost { background: transparent; font-weight: 600; }
+  /* Mobile options menu - hidden on desktop, inline panel */
+  .dr-opts-trigger { display: none; }
+  .dr-opts-panel { display: flex; align-items: center; gap: 6px; }
   .dr-btn-danger { color: #ef4444; border-color: rgba(239,68,68,.4); }
   .dr-statusbar {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -488,6 +494,21 @@ _DRAFT_ROOM_HTML = r"""
     }
     .dr-status-right::-webkit-scrollbar { display: none; }
     .dr-status-right .dr-btn { flex: 0 0 auto; padding: 7px 11px; font-size: 12px; }
+    /* Gear/options button: show on mobile */
+    .dr-opts-trigger { display: flex; padding: 7px 11px; font-size: 15px; }
+    /* Options panel: floating dropdown anchored to statusbar */
+    .dr-statusbar { position: relative; }
+    .dr-opts-panel {
+      display: none; flex-direction: column; gap: 2px;
+      position: absolute; top: calc(100% + 6px); right: 0;
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 6px; z-index: 200; min-width: 155px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.3);
+    }
+    .dr-opts-panel.is-open { display: flex; }
+    .dr-opts-panel .dr-btn { width: 100%; text-align: left; padding: 9px 14px; border-radius: 8px; font-size: 13px; }
+    .dr-opts-panel .dr-sim-speed { width: 100%; margin: 2px 0; padding: 6px 8px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; }
     .dr-side-tabs .otc-main-tab { padding: 7px 10px; font-size: 12px; }
     .dr-board-wrap { padding: 4px; max-width: calc(100vw - 16px); overflow-x: auto; }
     .dr-cta, .dr-setup-cta { flex-direction: column; align-items: stretch; }
@@ -2532,6 +2553,25 @@ _DRAFT_ROOM_HTML = r"""
   document.getElementById('drUndo').addEventListener('click', undo);
   document.getElementById('drReset').addEventListener('click', resetDraft);
   document.getElementById('drEdit').addEventListener('click', showSetup);
+  // Mobile options menu toggle
+  (function(){
+    var optsBtn = document.getElementById('drOptsBtn');
+    var optsPanel = document.getElementById('drOptsPanel');
+    if (!optsBtn || !optsPanel) return;
+    optsBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      optsPanel.classList.toggle('is-open');
+    });
+    optsPanel.addEventListener('click', function(e){
+      e.stopPropagation(); // keep open for select interaction
+      if (e.target.classList.contains('dr-btn') || e.target.closest('.dr-btn')) {
+        optsPanel.classList.remove('is-open');
+      }
+    });
+    document.addEventListener('click', function(){
+      optsPanel.classList.remove('is-open');
+    });
+  })();
   document.getElementById('drBaSort').addEventListener('change', renderBA);
   document.getElementById('drSearch').addEventListener('input', renderBA);
   document.getElementById('drBaList').addEventListener('click', function(e){
