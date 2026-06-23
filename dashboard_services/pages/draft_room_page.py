@@ -1201,7 +1201,7 @@ _DRAFT_ROOM_HTML = r"""
     var age = (p.age != null) ? Number(p.age) : null;
     var youth = 0.5;
     if (age != null && ['RB','WR','TE','QB'].indexOf(pos) >= 0){
-      var agePeaks = { RB: 26, WR: 27, TE: 27, QB: 29 };
+      var agePeaks = { RB: 24, WR: 27, TE: 27, QB: 29 };
       var peak = agePeaks[pos] || 27;
       youth = clamp01((peak - age + 4) / 8);
     }
