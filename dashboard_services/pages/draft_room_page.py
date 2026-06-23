@@ -1210,7 +1210,7 @@ _DRAFT_ROOM_HTML = r"""
     var left = tierRemaining(p);
     // QB overfill: most important warning in 1QB formats.
     if (!state.sf && pos === 'QB' && (counts['QB'] || 0) >= 1){
-      return 'Low value — 2nd QB wastes a roster spot in 1QB';
+      return 'Starting QB already filled — this pick could be a skill player';
     }
     // Tier cliff: urgent positional scarcity.
     if (isTierCliff(p) && tier != null){
