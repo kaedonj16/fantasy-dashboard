@@ -387,20 +387,20 @@ _DRAFT_ROOM_HTML = r"""
     .dr-setup-cta .dr-btn { width: 100%; }
     .dr-prev-stats { grid-template-columns: repeat(2, 1fr); }
   }
-  /* ── End-of-draft summary ── */
+  /* Summary overlay */
   .dr-summary-overlay { position:fixed; inset:0; z-index:1001; background:rgba(0,0,0,.55);
     display:flex; align-items:flex-start; justify-content:center; padding:16px; overflow-y:auto; }
   .dr-summary-card { position:relative; width:100%; max-width:480px; margin:auto; background:var(--card);
     border:1px solid var(--border); border-radius:16px; padding:20px 18px;
-    box-shadow:0 20px 60px rgba(0,0,0,.35); }
+    box-shadow:0 16px 60px rgba(0,0,0,.35); }
   .dr-sum-header { text-align:center; margin-bottom:12px; }
-  .dr-sum-title { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted); }
+  .dr-sum-title { font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); }
   .dr-sum-grade { font-size:52px; font-weight:900; line-height:1; margin:6px 0 4px; }
   .dr-sum-pace { font-size:12px; color:var(--text-muted); }
   .dr-sum-section { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
-    color:var(--text-muted); margin:12px 0 4px; }
+    color:var(--text-muted); margin:12px 0 4px; padding-top:4px; }
   .dr-sum-row { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); }
-  .dr-sum-slot { font-size:9px; font-weight:800; color:#fff; border-radius:4px; padding:3px 0;
+  .dr-sum-slot-badge { font-size:9px; font-weight:800; color:#fff; border-radius:4px; padding:3px 0;
     width:34px; flex-shrink:0; text-align:center; }
   .dr-sum-hs { width:30px; height:30px; border-radius:5px 5px 0 0; object-fit:cover;
     object-position:top center; flex-shrink:0; align-self:flex-end; background:transparent; }
@@ -412,19 +412,19 @@ _DRAFT_ROOM_HTML = r"""
   .dr-sum-ps { font-size:14px; font-weight:800; flex-shrink:0; }
   .dr-sum-footer { display:flex; gap:8px; margin-top:16px; }
   .dr-sum-footer .dr-btn { flex:1; text-align:center; }
-  /* ── Roster settings tab ── */
-  .dr-settings-wrap { padding:10px; overflow-y:auto; }
+  /* Roster settings */
+  .dr-settings-wrap { padding:10px 10px 4px; display:flex; flex-direction:column; overflow-y:auto; }
   .dr-settings-desc { font-size:11px; color:var(--text-muted); margin-bottom:10px; line-height:1.5; }
   .dr-settings-total { font-size:11px; color:var(--text-muted); margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
   .dr-srow { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); }
-  .dr-srow-badge { font-size:10px; font-weight:800; color:#fff; border-radius:5px; padding:3px 8px; min-width:68px; text-align:center; flex-shrink:0; }
+  .dr-srow-badge { font-size:10px; font-weight:800; color:#fff; border-radius:5px; padding:3px 8px; min-width:66px; text-align:center; flex-shrink:0; }
   .dr-stepper { display:flex; align-items:center; gap:8px; margin-left:auto; }
   .dr-step-btn { width:26px; height:26px; border-radius:6px; border:1px solid var(--border);
     background:var(--bg); color:var(--text); font-size:16px; font-weight:700; cursor:pointer;
-    display:flex; align-items:center; justify-content:center; padding:0; flex-shrink:0; }
+    display:flex; align-items:center; justify-content:center; line-height:1; padding:0; flex-shrink:0; }
   .dr-step-btn:hover { border-color:var(--accent,#38bdf8); color:var(--accent,#38bdf8); }
   .dr-step-val { font-size:15px; font-weight:800; color:var(--text); min-width:20px; text-align:center; }
-  /* ── Team tab PS badge ── */
+  /* Team tab PS badge */
   .dr-rslot-ps { font-size:11px; font-weight:800; flex-shrink:0; margin-right:2px; }
 </style>
 
@@ -876,32 +876,35 @@ _DRAFT_ROOM_HTML = r"""
   }
 
   function renderSettings(){
-    var rs = (state && state.roster) || defaultRoster();
+    var rs = state.roster || defaultRoster();
     var rows = [
-      { key:'QB',   label:'Quarterback', color: posColor('QB') },
-      { key:'SF',   label:'Superflex',   color: '#a78bfa',  hide: !state.sf },
-      { key:'RB',   label:'Running Back', color: posColor('RB') },
-      { key:'WR',   label:'Wide Receiver', color: posColor('WR') },
-      { key:'TE',   label:'Tight End',   color: posColor('TE') },
-      { key:'FLEX', label:'Flex',        color: '#14b8a6',  hide: !!state.sf },
-      { key:'K',    label:'Kicker',      color: '#94a3b8',  hide: state.type !== 'redraft' },
-      { key:'DEF',  label:'Defense',     color: '#64748b',  hide: state.type !== 'redraft' },
-      { key:'BN',   label:'Bench',       color: '#64748b' }
+      { key:'QB', label:'QB', always:true },
+      { key:'SF', label:'SF', cond: state.sf },
+      { key:'RB', label:'RB', always:true },
+      { key:'WR', label:'WR', always:true },
+      { key:'TE', label:'TE', always:true },
+      { key:'FLEX', label:'FLEX', always:true },
+      { key:'K',   label:'K',   cond: state.type==='redraft' },
+      { key:'DEF', label:'DEF', cond: state.type==='redraft' },
+      { key:'BN',  label:'BN',  always:true }
     ];
-    var total = Object.keys(rs).reduce(function(s,k){ return s+(rs[k]||0); }, 0);
-    var html = '<div class="dr-settings-wrap"><div class="dr-settings-desc">Adjust roster slots — pick scores and grades update live.</div>';
-    rows.forEach(function(row){
-      if (row.hide) return;
-      var val = rs[row.key] || 0;
+    var total = 0;
+    Object.keys(rs).forEach(function(k){ total += rs[k]||0; });
+    var html = '<div class="dr-settings-wrap">'
+      + '<div class="dr-settings-desc">Customize your roster format. Changes update recommendations immediately.</div>';
+    rows.forEach(function(r){
+      if (!r.always && !r.cond) return;
+      var val = rs[r.key]||0;
       html += '<div class="dr-srow">'
-        + '<span class="dr-srow-badge" style="background:' + row.color + '">' + esc(row.label) + '</span>'
+        + '<span class="dr-srow-badge" style="background:' + slotColor(r.key) + '">' + r.label + '</span>'
         + '<div class="dr-stepper">'
-        + '<button class="dr-step-btn" data-key="' + row.key + '" data-d="-1">&#8722;</button>'
+        + '<button class="dr-step-btn" data-key="' + r.key + '" data-d="-1">&#x2212;</button>'
         + '<span class="dr-step-val">' + val + '</span>'
-        + '<button class="dr-step-btn" data-key="' + row.key + '" data-d="1">+</button>'
+        + '<button class="dr-step-btn" data-key="' + r.key + '" data-d="1">+</button>'
         + '</div></div>';
     });
-    html += '<div class="dr-settings-total">' + total + ' roster slots &middot; ' + (state.rounds||15) + ' rounds</div></div>';
+    html += '<div class="dr-settings-total">Total roster slots: ' + total + '</div>';
+    html += '</div>';
     listInto(html);
   }
 
@@ -1159,7 +1162,7 @@ _DRAFT_ROOM_HTML = r"""
     var gp = document.getElementById('drGradePill');
     var g = gradeTeam();
     if (g){ gp.style.display = ''; gp.textContent = 'Grade ' + gradeLetter(g.score); } else { gp.style.display = 'none'; }
-    document.getElementById('drSummaryBtn').style.display = (done && state.slot) ? '' : 'none';
+    document.getElementById('drSummaryBtn').style.display = done ? '' : 'none';
   }
 
   // ── Board rendering (incremental) ───────────────────────────────────────────
@@ -1280,49 +1283,61 @@ _DRAFT_ROOM_HTML = r"""
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
     return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
 
-  // ── Summary overlay ──────────────────────────────────────────────────────
+  // ── Summary overlay ─────────────────────────────────────────────────────────
   function openSummary(){
-    var picks = myPicksList();
-    if (!picks.length) return;
-    var rows = picks.map(function(p, i){
-      var pickNum = i + 1;
-      var ps = (p.ps != null) ? p.ps : '—';
-      var color = (p.ps != null) ? psColor(p.ps) : '#888';
-      var reason = p.reason || '';
-      return '<tr>'
-        + '<td style="padding:6px 10px;color:#aaa;font-size:13px;">#' + pickNum + '</td>'
-        + '<td style="padding:6px 10px;font-weight:600;">' + esc(p.name) + '</td>'
-        + '<td style="padding:6px 10px;color:#aaa;font-size:13px;">' + esc(p.position) + ' · ' + esc(p.team) + '</td>'
-        + '<td style="padding:6px 10px;text-align:center;font-weight:700;font-size:15px;color:' + color + ';">' + ps + '</td>'
-        + '<td style="padding:6px 10px;color:#aaa;font-size:12px;">' + esc(reason) + '</td>'
-        + '</tr>';
-    }).join('');
-    var grade = gradeTeam();
-    var letter = grade >= 90 ? 'A+' : grade >= 85 ? 'A' : grade >= 80 ? 'A−' : grade >= 75 ? 'B+' : grade >= 70 ? 'B' : grade >= 65 ? 'B−' : grade >= 60 ? 'C+' : grade >= 55 ? 'C' : grade >= 50 ? 'C−' : 'D';
-    var gradeColor = grade >= 80 ? '#4ade80' : grade >= 65 ? '#facc15' : '#f87171';
-    var html = '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 12px;">'
-      + '<span style="font-size:18px;font-weight:700;">Draft Summary</span>'
-      + '<div style="display:flex;align-items:center;gap:16px;">'
-      + '<span style="font-size:28px;font-weight:900;color:' + gradeColor + ';">' + letter + '</span>'
-      + '<button onclick="closeSummary()" style="background:none;border:none;color:#aaa;font-size:22px;cursor:pointer;">&#x2715;</button>'
-      + '</div></div>'
-      + '<div style="overflow-x:auto;padding:0 8px 16px;">'
-      + '<table style="width:100%;border-collapse:collapse;">'
-      + '<thead><tr style="border-bottom:1px solid #333;">'
-      + '<th style="padding:6px 10px;text-align:left;font-size:12px;color:#aaa;font-weight:600;">Pick</th>'
-      + '<th style="padding:6px 10px;text-align:left;font-size:12px;color:#aaa;font-weight:600;">Player</th>'
-      + '<th style="padding:6px 10px;text-align:left;font-size:12px;color:#aaa;font-weight:600;">Pos/Team</th>'
-      + '<th style="padding:6px 10px;text-align:center;font-size:12px;color:#aaa;font-weight:600;">Score</th>'
-      + '<th style="padding:6px 10px;text-align:left;font-size:12px;color:#aaa;font-weight:600;">Reason</th>'
-      + '</tr></thead>'
-      + '<tbody>' + rows + '</tbody>'
-      + '</table></div>';
-    document.getElementById('drSummaryCard').innerHTML = html;
-    document.getElementById('drSummary').style.display = 'flex';
+    if (!state || !state.slot) return;
+    var g = gradeTeam();
+    var mine = myPicksList().slice().sort(function(a, b){ return (b.val || 0) - (a.val || 0); });
+    var used = {};
+    var slots = lineupSlots();
+    var starters = [];
+    slots.forEach(function(slot){
+      var pick = null;
+      for (var i = 0; i < mine.length; i++){ if (!used[i] && slotEligible(slot, mine[i].position)){ pick = mine[i]; used[i] = true; break; } }
+      starters.push({ slot: slot, p: pick });
+    });
+    var bench = [];
+    for (var i = 0; i < mine.length; i++){ if (!used[i]) bench.push(mine[i]); }
+
+    function sumRow(slot, p){
+      if (!p) return '<div class="dr-sum-row"><span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
+        + '<span class="dr-sum-empty">open</span></div>';
+      var roundPicked = Object.keys(state.picks).filter(function(k){ return state.picks[k] && state.picks[k].id === p.id; }).map(function(k){ return Math.ceil(parseInt(k,10)/state.teams); })[0] || '';
+      var psStr = (p.ps != null) ? '<span class="dr-sum-ps" style="color:' + psColor(p.ps) + '">' + p.ps + '</span>' : '';
+      return '<div class="dr-sum-row">'
+        + '<span class="dr-sum-slot-badge" style="background:' + slotColor(slot) + '">' + slot + '</span>'
+        + '<img class="dr-sum-hs" src="' + hsUrl(p.id) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+        + '<div class="dr-sum-body"><div class="dr-sum-name">' + esc(p.name) + '</div>'
+        + '<div class="dr-sum-meta">' + esc(p.position) + (p.team ? ' \xb7 ' + esc(p.team) : '') + (roundPicked ? ' \xb7 Rd ' + roundPicked : '') + '</div>'
+        + (p.reason ? '<div class="dr-sum-reason">' + esc(p.reason) + '</div>' : '')
+        + '</div>' + psStr + '</div>';
+    }
+
+    var gradeHtml = g
+      ? '<div class="dr-sum-grade">' + gradeLetter(g.score) + '</div><div class="dr-sum-pace">' + gradePace(g.score) + '</div>'
+        + gradeBar('Value', g.value, 40) + gradeBar('Balance', g.balance, 35) + gradeBar('Tiers', g.tier, 25)
+      : '';
+
+    var html = '<button class="dr-prev-close" id="drSumClose" aria-label="Close">&times;</button>'
+      + '<div class="dr-sum-header"><div class="dr-sum-title">Draft Complete</div>' + gradeHtml + '</div>'
+      + '<div class="dr-sum-section">Starters</div>';
+    starters.forEach(function(s){ html += sumRow(s.slot, s.p); });
+    html += '<div class="dr-sum-section">Bench</div>';
+    if (bench.length){ bench.forEach(function(p){ html += sumRow('BN', p); }); }
+    else { html += sumRow('BN', null); }
+    html += '<div class="dr-sum-footer">'
+      + '<button class="dr-btn dr-btn-primary" id="drSumShare">Share</button>'
+      + '<button class="dr-btn" id="drSumCloseBtn">Close</button>'
+      + '</div>';
+
+    var card = document.getElementById('drSummaryCard');
+    card.innerHTML = html;
+    document.getElementById('drSummary').style.display = '';
+    document.getElementById('drSumClose').addEventListener('click', closeSummary);
+    document.getElementById('drSumCloseBtn').addEventListener('click', closeSummary);
+    document.getElementById('drSumShare').addEventListener('click', function(){ closeSummary(); shareDraft(); });
   }
-  function closeSummary(){
-    document.getElementById('drSummary').style.display = 'none';
-  }
+  function closeSummary(){ document.getElementById('drSummary').style.display = 'none'; }
 
   // ── Actions ──────────────────────────────────────────────────────────────
   function commitPick(p){
