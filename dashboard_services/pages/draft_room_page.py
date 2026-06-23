@@ -899,7 +899,10 @@ _DRAFT_ROOM_HTML = r"""
     // Balance: ramp from a neutral floor (0.85) so 1-2 picks don't score near-zero
     var balanceRamp = Math.min(1, mine.length / 8);
     var balancePts = Math.round(((1 - balanceRamp) * 0.85 + balanceRamp * (bsum / 4)) * 35);
-    var tierPts = Math.min(25, tierTop * 6);                        // tier capture
+    // Tier: normalize by what's realistically achievable — at most ~3 elite picks
+    // in any draft. 1 T1 pick at pick 1 = full tier credit, not 6/25.
+    var tierTarget = mine.length <= 1 ? 1 : mine.length <= 5 ? 2 : 3;
+    var tierPts = Math.round(clamp01(tierTop / tierTarget) * 25);
     var total = valuePts + balancePts + tierPts;
     return { score: total, value: valuePts, balance: balancePts, tier: tierPts, count: mine.length };
   }
